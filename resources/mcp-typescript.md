@@ -2,30 +2,67 @@
 
 > Model Context Protocol (MCP), TypeScript AI SDKs, and RAG systems for Node.js/TypeScript
 
-**🎯 Purpose:** MCP/AI resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
-**🤖 For:** AI agents and developers building MCP servers and TypeScript AI tools
-**🌐 Focus:** MCP SDK, Vercel AI SDK, LangChainJS - Pure TypeScript AI
-**📱 Mobile:** AI features in React Native using same TypeScript libraries
-**⚙️ Runtime:** 100% Node.js/TypeScript - MCP servers, AI agents, RAG systems
-
-**Last Updated:** October 13, 2025
+**🎯 Purpose:** MCP/AI resources for building MCP servers and TypeScript AI applications  
+**🌐 Focus:** MCP SDK, Vercel AI SDK, LangChainJS - Pure TypeScript AI  
+**⚙️ Runtime:** 100% Node.js/TypeScript - MCP servers, AI agents, RAG systems  
+**📅 Updated:** October 13, 2025
 
 ---
 
-## 🎯 Best for Application Generation
+## Quick Reference
 
-This file provides **MCP and TypeScript AI guidance** to help AI agents:
-1. **Build MCP servers** - Create tools, resources, and prompts with MCP SDK
-2. **Integrate AI** - Vercel AI SDK, LangChainJS for TypeScript applications
-3. **Implement RAG** - Vector databases, embeddings, retrieval with TypeScript
-4. **Deploy agents** - Production-ready AI agents with MCP protocol
-5. **Use in mobile** - Same TypeScript AI libraries work in React Native
+### Model Context Protocol (Start Here)
+- **Official SDK:** `modelcontextprotocol/typescript-sdk` - Official TypeScript SDK for MCP
+- **Official Examples:** `modelcontextprotocol/servers` - Reference MCP server implementations
+- **Official Curriculum:** `microsoft/mcp-for-beginners` (12K+ ⭐) - Learn MCP fundamentals
+- **Best Framework:** `punkpeye/fastmcp` (2.6K+ ⭐) - Fast, elegant TypeScript MCP framework
+- **AI Native IDE:** `opensumi/core` (3.5K+ ⭐) - MCP Client for building AI-native IDEs
+- **Official CLI:** `modelcontextprotocol/create-typescript-server` - Bootstrap MCP projects
 
-**Generation Priorities:**
-- ⚡ **MCP SDK** - Build context-aware AI tools for Claude and other LLMs
-- ⚡ **Vercel AI SDK** - Best TypeScript AI SDK for Next.js/React (2025)
-- ⚡ **LangChainJS** - Comprehensive TypeScript LLM framework
-- ⚡ **Qdrant + pgvector** - Production vector databases with TS clients
+### Essential MCP Servers
+- **Design to Code:** `GLips/Figma-Context-MCP` (11K+ ⭐) - Figma layout info for AI agents
+- **UI Components:** `Jpisnice/shadcn-ui-mcp-server` (2.4K+ ⭐) - shadcn UI context
+- **Documentation:** `cyberagiinc/DevDocs` (1.9K+ ⭐) - Free, private tech docs MCP
+- **Repository Packing:** `yamadashy/repomix` (20K+ ⭐) - Pack repo into AI-friendly file
+
+### TypeScript AI Frameworks
+- **Best AI SDK:** `vercel/ai` (18K+ ⭐) - THE TypeScript AI toolkit
+- **Agent Integrations:** `ComposioHQ/composio` (26K+ ⭐) - 100+ integrations for agents
+- **With Observability:** `VoltAgent/voltagent` (3.6K+ ⭐) - Built-in LLM observability
+- **Multi-Agent:** `awslabs/agent-squad` (7K+ ⭐) - AWS-backed framework
+
+### LangChain & LangGraph
+- **Main Framework:** `langchain-ai/langchain` (117K+ ⭐) - Context-aware reasoning apps
+- **TypeScript LangGraph:** `langchain-ai/langgraphjs` (2.2K+ ⭐) - Graph-based agents
+- **LangChain + MCP:** Use adapters in main monorepo - Connect LangChain with MCP
+
+### RAG Systems
+- **Enterprise RAG:** `infiniflow/ragflow` (66K+ ⭐) - Leading RAG engine
+- **Live Data Sync:** `pathwaycom/llm-app` (44K+ ⭐) - RAG with Sharepoint/Drive sync
+- **Production Ready:** `QuivrHQ/quivr` (39K+ ⭐) - Opiniated RAG for apps
+- **Browser-Based:** `oramasearch/orama` (10K+ ⭐) - Search & RAG in <2KB
+
+### Vector Databases
+- **Code Search:** `zilliztech/claude-context` (4K+ ⭐) - Make codebase context for Claude
+- **Official Client:** `pinecone-io/pinecone-ts-client` - Pinecone TypeScript client
+- **Browser Storage:** `oramasearch/orama` (10K+ ⭐) - Vector search in browser
+
+### Claude/Anthropic Ecosystem
+- **Full-Featured Chat:** `danny-avila/LibreChat` (31K+ ⭐) - Multi-model chat with agents
+- **Claude Code GUI:** `winfunc/opcode` (18K+ ⭐) - GUI for Claude Code
+- **Multi-Agent:** `wshobson/agents` (18K+ ⭐) - Orchestration for Claude Code
+- **Resources:** `hesreallyhim/awesome-claude-code` (15K+ ⭐) - Curated Claude Code list
+
+### Workflow & Orchestration
+- **Best Overall:** `n8n-io/n8n` (148K+ ⭐) - Visual workflow automation with native AI
+- **Build & Deploy:** `simstudioai/sim` (17K+ ⭐) - Open-source agent workflows
+- **Visual Development:** `coze-dev/coze-studio` (18K+ ⭐) - All-in-one agent platform
+- **Managed Platform:** `triggerdotdev/trigger.dev` (13K+ ⭐) - Fully-managed AI workflows
+
+### Observability & Monitoring
+- **Essential Platform:** `langfuse/langfuse` (17K+ ⭐) - Open-source LLM engineering
+- **ML Lifecycle:** `mlflow/mlflow` (22K+ ⭐) - End-to-end tracking & governance
+- **AI Observability:** `Arize-ai/phoenix` (7K+ ⭐) - AI observability & evaluation
 
 ---
 
@@ -42,13 +79,24 @@ This file provides **MCP and TypeScript AI guidance** to help AI agents:
 - [Agent Orchestration & Deployment](#agent-orchestration--deployment)
 - [AI Development Platforms](#ai-development-platforms)
 - [LLM Observability & Monitoring](#llm-observability--monitoring)
-- [Quick Reference](#quick-reference)
 
 ---
 
 ## Model Context Protocol (MCP)
 
 ### Official & Core MCP Resources
+
+**⭐ modelcontextprotocol/typescript-sdk** ⚡ ESSENTIAL
+- Official TypeScript SDK for Model Context Protocol
+- Build MCP clients and servers with type safety
+- 🔗 https://github.com/modelcontextprotocol/typescript-sdk
+- **Use Case:** Official SDK for building MCP applications in TypeScript
+
+**⭐ modelcontextprotocol/servers** ⚡ ESSENTIAL
+- Official collection of reference MCP server implementations
+- Examples and templates for building MCP servers
+- 🔗 https://github.com/modelcontextprotocol/servers
+- **Use Case:** Official MCP server examples and reference implementations
 
 **⭐ microsoft/mcp-for-beginners** (11,732 stars) ⚡ ESSENTIAL
 - Official open-source curriculum for Model Context Protocol fundamentals
@@ -1085,91 +1133,5 @@ This file provides **MCP and TypeScript AI guidance** to help AI agents:
 
 ---
 
-## Quick Reference
-
-### By Category
-
-**Essential MCP Resources:**
-- `microsoft/mcp-for-beginners` - Official MCP curriculum
-- `punkpeye/fastmcp` - TypeScript MCP framework
-- `GLips/Figma-Context-MCP` - Figma to AI integration
-- `opensumi/core` - AI Native IDE framework
-
-**Top TypeScript AI Frameworks:**
-- `vercel/ai` - THE TypeScript AI SDK
-- `ComposioHQ/composio` - 100+ agent integrations
-- `VoltAgent/voltagent` - TypeScript agents with observability
-- `awslabs/agent-squad` - AWS multi-agent framework
-
-**LangChain/LangGraph:**
-- `langchain-ai/langchain` - Main LangChain framework
-- `langchain-ai/langgraphjs` - LangGraph for TypeScript
-- `langchain-ai/deepagentsjs` - Deep agents in JS
-
-**RAG Leaders:**
-- `infiniflow/ragflow` - Leading RAG engine
-- `pathwaycom/llm-app` - RAG with live data sync
-- `QuivrHQ/quivr` - Production RAG integration
-- `HKUDS/LightRAG` - Fast RAG implementation
-
-**Vector Databases:**
-- `zilliztech/claude-context` - Code search MCP
-- `pinecone-io/pinecone-ts-client` - Pinecone TypeScript
-- `oramasearch/orama` - Browser-based search & RAG
-
-**Claude Ecosystem:**
-- `winfunc/opcode` - Claude Code GUI
-- `wshobson/agents` - Claude multi-agent orchestration
-- `hesreallyhim/awesome-claude-code` - Claude resources
-
-**Observability:**
-- `langfuse/langfuse` - LLM engineering platform
-- `mlflow/mlflow` - ML/LLM lifecycle management
-- `Arize-ai/phoenix` - AI observability
-
-**Workflow Platforms:**
-- `n8n-io/n8n` - Visual workflow automation
-- `simstudioai/sim` - Build and deploy agents
-- `coze-dev/coze-studio` - Visual agent development
-
-### By Use Case
-
-**Building MCP Servers:**
-1. Start with `microsoft/mcp-for-beginners`
-2. Use `punkpeye/fastmcp` or `QuantGeekDev/mcp-framework`
-3. Bootstrap with `modelcontextprotocol/create-typescript-server`
-4. Monitor with `hyprmcp/jetski` or `shinzo-labs/shinzo-ts`
-
-**TypeScript AI Applications:**
-1. Use `vercel/ai` as foundation
-2. Add `ComposioHQ/composio` for integrations
-3. Implement with `langchain-ai/langgraphjs` for complex flows
-4. Monitor with `langfuse/langfuse`
-
-**RAG Implementation:**
-1. Start with `QuivrHQ/quivr` for quick setup
-2. Use `oramasearch/orama` for browser-based
-3. Choose `infiniflow/ragflow` for enterprise
-4. Optimize with `Marker-Inc-Korea/AutoRAG`
-
-**Agent Development:**
-1. Use `vercel/ai` or `ComposioHQ/composio`
-2. Orchestrate with `n8n-io/n8n` or `simstudioai/sim`
-3. Monitor with `langfuse/langfuse`
-4. Deploy with MCP servers for extensibility
-
----
-
-## Statistics
-
-- **Total Repositories:** 200+
-- **Total Stars:** 2.5M+
-- **Primary Language:** TypeScript/JavaScript
-- **Categories:** 12 major categories
-- **Focus Areas:** MCP, Agents, RAG, Vector DBs, Observability
-
----
-
 *Part of octocode-mcp resources collection*
-*Last updated: October 13, 2025*
 

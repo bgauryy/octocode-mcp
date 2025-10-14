@@ -2,7 +2,7 @@
 
 **The Complete AI Development Team for Claude Code**
 
-Transform your ideas into production-ready code through a structured 7-phase workflow powered by 8 specialized AI agents.
+Transform your ideas into production-ready code through a structured 7-phase workflow powered by 7 specialized AI agents working together with human oversight at 5 critical approval gates.
 
 ---
 
@@ -11,7 +11,7 @@ Transform your ideas into production-ready code through a structured 7-phase wor
 1. [Overview](#overview)
 2. [Quick Start](#quick-start)
 3. [Complete Workflow](#complete-workflow)
-4. [The 8 Agents](#the-8-agents)
+4. [The 7 Agents](#the-7-agents)
 5. [Technical Architecture](#technical-architecture)
 6. [Communication Protocol](#communication-protocol)
 7. [File Locking System](#file-locking-system)
@@ -25,11 +25,9 @@ Transform your ideas into production-ready code through a structured 7-phase wor
 
 ### What is Octocode Claude Plugin?
 
-Octocode transforms Claude into **8 specialized AI agents** working together through a **7-phase workflow** with **5 human approval gates** to create production-ready applications.
+Octocode transforms Claude into **7 specialized AI agents** working together through a **7-phase workflow** with **5 human approval gates** to create production-ready applications.
 
-**Timeline:** 30-70 minutes (depending on project complexity)
-
-**Key Innovation:** Parallel execution where possible (Phase 2 runs architecture + UX simultaneously, Phase 6 runs multiple implementation agents in parallel).
+**Key Innovation:** Clean waterfall flow with human checkpoints, parallel implementation (Phase 6 runs multiple implementation agents simultaneously).
 
 ### The Complete Flow
 
@@ -40,15 +38,15 @@ USER REQUEST
      ↓
 [Gate 1] PRD Approval
      ↓
-[Phase 2] Architecture & UX Design (agent-architect + agent-ux IN PARALLEL)
+[Phase 2] Architecture Design (agent-architect)
      ↓
-[Gate 2] Design Approval
+[Gate 2] Architecture Approval
      ↓
 [Phase 3] Design Validation (agent-design-verification)
      ↓
 [Gate 3] Task Breakdown Approval
      ↓
-[Phase 4] Context Research (agent-research-context)
+[Phase 4] Context Research (agent-research-context, can run parallel)
      ↓
 [Phase 5] Task Orchestration (agent-manager)
      ↓
@@ -66,17 +64,18 @@ PRODUCTION-READY CODE
 ### Key Features
 
 - **🚪 5 Human Approval Gates** - Review and approve at critical decision points
-- **🔬 Research-Driven Decisions** - Analyzes 100k+ GitHub repositories for best practices
+- **🔬 Research-Driven Decisions** - Uses curated resources + 100k+ GitHub repositories for best practices
 - **🧠 Critical Thinking Framework** - Self-questioning, devil's advocate, alternatives evaluation
-- **🎨 Parallel Architecture + UX** - Backend architect and UX engineer work simultaneously
+- **🎯 Clean Waterfall Flow** - Sequential phases with clear checkpoints, parallel implementation
 - **🔒 Production-Ready** - File locking, state persistence, comprehensive observability, runtime testing
 
 ### Curated Resources
 
 **📚 All agents access curated development resources:**
-- Resources: https://github.com/bgauryy/octocode-mcp/tree/main/resources
-- README: https://github.com/bgauryy/octocode-mcp/blob/main/resources/README.md
-- Includes: Architecture, Frontend, Backend, Database, Testing, Security, Infrastructure, Tooling, Project Examples, Frameworks, AI Agents, Learning resources
+- **Resources:** https://github.com/bgauryy/octocode-mcp/tree/main/resources
+- **Contains:** 610+ curated Node.js/TypeScript repositories in 12 specialized files
+- **Files:** project-examples, architecture, frontend-libs, fullstack-frameworks, backend, database, auth, testing, security, tooling, ai-agents, mcp-typescript
+- **Usage:** Agents read resources first, then validate with GitHub search via octocode-mcp
 
 ---
 
@@ -129,10 +128,9 @@ cd octocode-mcp/octocode-claude-plugin
 
 ## Complete Workflow
 
-### Phase 1: Requirements Gathering (2-5 minutes)
+### Phase 1: Requirements Gathering
 
-**Agent:** `agent-product` (Opus model)  
-**Duration:** 2-5 minutes
+**Agent:** `agent-product` (Opus model)
 
 #### What Happens
 
@@ -199,37 +197,12 @@ cd octocode-mcp/octocode-claude-plugin
 
 ---
 
-### Phase 2: Architecture & UX Design (5-10 minutes, PARALLEL)
+### Phase 2: Architecture Design
 
-**Agents:** `agent-architect` + `agent-ux` (Both Opus)  
-**Duration:** 5-10 minutes  
-**🔥 Innovation:** Both agents run **simultaneously** with active coordination
+**Agent:** `agent-architect` (Opus)  
+**Responsibility:** Complete system architecture (backend + frontend framework selection)
 
-#### Parallel Execution
-
-```
-                    Requirements Approved
-                            │
-                            ▼
-              ┌─────────────┴─────────────┐
-              │                           │
-              ▼                           ▼
-    ┌──────────────────┐        ┌──────────────────┐
-    │ agent-architect  │◄──────►│    agent-ux      │
-    │    (Backend)     │  Chat  │   (Frontend)     │
-    └──────────────────┘        └──────────────────┘
-              │                           │
-              │    Coordination Topics:   │
-              │    • Frontend framework   │
-              │    • API contracts        │
-              │    • Real-time strategy   │
-              │    • Performance needs    │
-              │                           │
-              ▼                           ▼
-    .octocode/designs/        .octocode/ux/
-```
-
-#### 2A: Backend Architecture (agent-architect)
+#### Architecture Process
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -246,9 +219,9 @@ cd octocode-mcp/octocode-claude-plugin
 │     • ACCESS CURATED RESOURCES FIRST (priority!)        │
 │       https://github.com/bgauryy/octocode-mcp/resources │
 │     • Search GitHub for similar projects (>1000 stars)   │
-│     • Analyze tech stack patterns                        │
+│     • Analyze tech stack patterns (backend + frontend)   │
 │     • Extract architecture patterns                      │
-│     • Study database designs                             │
+│     • Study database designs + UI patterns               │
 └─────────────────────────────────────────────────────────┘
                          │
                          ▼
@@ -257,6 +230,7 @@ cd octocode-mcp/octocode-claude-plugin
 │     • Minimum 3 alternatives per major decision          │
 │     • Score each option (1-10) with justification        │
 │     • Document pros/cons                                 │
+│     • Evaluate both backend AND frontend choices         │
 └─────────────────────────────────────────────────────────┘
                          │
                          ▼
@@ -269,103 +243,44 @@ cd octocode-mcp/octocode-claude-plugin
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│  5. Create Architecture Documentation                    │
-│     • architecture.md - System overview                  │
-│     • tech-stack.md - Technology choices with rationale  │
+│  5. Create Complete Architecture Documentation           │
+│     • architecture.md - System overview (full stack)     │
+│     • tech-stack.md - All technology choices             │
 │     • api-design.md - API endpoints                      │
 │     • database-schema.md - Database design               │
+│     • ui-approach.md - Frontend framework & UI library   │
 │     • tradeoffs.md - Decisions and alternatives          │
 └─────────────────────────────────────────────────────────┘
 ```
 
-#### 2B: Frontend Architecture & UX (agent-ux)
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  1. User Empathy Phase                                   │
-│     • Who are the users and what do they need?           │
-│     • What's their context and goals?                    │
-│     • Is this design inclusive?                          │
-└─────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────┐
-│  2. Research Phase (octocode-mcp)                       │
-│     • ACCESS CURATED RESOURCES FIRST (priority!)        │
-│       https://github.com/bgauryy/octocode-mcp/resources │
-│     • UI patterns in successful apps                     │
-│     • Component library analysis                         │
-│     • Design systems                                     │
-│     • Accessibility implementations                      │
-└─────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────┐
-│  3. UX Critical Thinking                                 │
-│     • What problem does this UI solve?                   │
-│     • Evaluate 3+ design alternatives                    │
-│     • WCAG 2.1 AA accessibility validation               │
-│     • Mobile-first approach                              │
-└─────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────┐
-│  4. Create UX Documentation                              │
-│     • user-flows.md - User journeys                      │
-│     • wireframes.md - ASCII wireframes                   │
-│     • component-library.md - UI components               │
-│     • design-system.md - Colors, typography, spacing     │
-│     • accessibility.md - WCAG compliance                 │
-│     • frontend-architecture.md - Framework, state        │
-└─────────────────────────────────────────────────────────┘
-```
-
-#### Coordination Example
-
-```markdown
-[14:15:00] agent-architect → agent-ux
-Topic: Frontend Framework Recommendation
-Message: I recommend Next.js 14 with App Router. Your input?
-
-[14:16:00] agent-ux → agent-architect
-Response: Agreed on Next.js 14
-API Requirements:
-1. Need /api/dashboard/summary for portfolio stats
-2. Real-time price updates via WebSocket
-3. Cursor-based pagination for holdings
-
-[14:17:00] agent-architect → agent-ux
-Confirmed: All supported
-- Using tRPC subscriptions for real-time
-- Cursor pagination implemented
-Updated: .octocode/designs/api-design.md
-```
-
 #### Output
-- `.octocode/designs/` - Complete backend architecture
-- `.octocode/ux/` - Complete UX design
+- `.octocode/designs/` - Complete system architecture (backend + frontend)
+  - `architecture.md` - Full system design
+  - `tech-stack.md` - Backend + Frontend choices with rationale
+  - `api-design.md` - API endpoints and contracts
+  - `database-schema.md` - Database design
+  - `ui-approach.md` - Frontend framework, UI library, design approach
+  - `tradeoffs.md` - All decisions with alternatives
 
-#### 🚪 Gate 2: Combined Architecture & UX Review
+#### 🚪 Gate 2: Architecture Review
 
 **User reviews:**
-- Backend architecture and tech stack
+- Complete system architecture (backend + frontend)
+- Technology stack (full stack)
 - Database schema and API design
-- UX design and component library
-- Frontend-backend alignment
+- Frontend framework and UI approach
 
 **Options:**
-1. ✅ Approve - Continue to validation
-2. 📝 Modify Backend - Request architecture changes
-3. 🎨 Modify UX - Request UX changes
-4. ❓ Ask Questions - Clarify decisions
-5. 🔄 Alternative - Request different approach
+1. ✅ Approve - Continue to validation (architect creates project structure)
+2. 📝 Modify - Request architecture changes
+3. ❓ Ask Questions - Clarify decisions
+4. 🔄 Alternative - Request different approach
 
 ---
 
-### Phase 3: Design Validation (2-3 minutes)
+### Phase 3: Design Validation
 
-**Agent:** `agent-design-verification` (Sonnet model)  
-**Duration:** 2-3 minutes
+**Agent:** `agent-design-verification` (Sonnet model)
 
 #### What Happens
 
@@ -412,24 +327,20 @@ Updated: .octocode/designs/api-design.md
 - [ ] Task 1.1: Setup Next.js
       Files: [package.json, tsconfig.json]
       Complexity: low
-      Estimated: 15min
       [can-run-parallel-with: 1.2]
 
 - [ ] Task 2.1: Implement auth
       Files: [src/auth/auth.ts]
       Complexity: medium
-      Estimated: 45min
 
 - [ ] Task 2.2: Add API routes
       Files: [src/api/routes.ts]
       Complexity: medium
-      Estimated: 30min
       [can-run-parallel-with: 2.1] ✅
 
 - [ ] Task 2.3: Implement logout
       Files: [src/auth/auth.ts]
       Complexity: low
-      Estimated: 20min
       [blocked-by: 2.1] ⚠️ (both need auth.ts)
 ```
 
@@ -452,10 +363,10 @@ Updated: .octocode/designs/api-design.md
 
 ---
 
-### Phase 4: Context Research (3-5 minutes)
+### Phase 4: Context Research
 
 **Agent:** `agent-research-context` (Sonnet model)  
-**Duration:** 3-5 minutes (runs in parallel)
+**Note:** Can run in parallel with other phases
 
 #### What Happens
 
@@ -535,10 +446,9 @@ export const portfolioRouter = router({
 
 ---
 
-### Phase 5: Task Orchestration (1-2 minutes)
+### Phase 5: Task Orchestration
 
-**Agent:** `agent-manager` (Sonnet model)  
-**Duration:** 1-2 minutes
+**Agent:** `agent-manager` (Sonnet model)
 
 #### What Happens
 
@@ -611,10 +521,9 @@ export const portfolioRouter = router({
 
 ---
 
-### Phase 6: Implementation (15-40 minutes, PARALLEL)
+### Phase 6: Implementation (PARALLEL)
 
-**Agent:** `agent-implementation` (Sonnet model, 4-5 instances)  
-**Duration:** 15-40 minutes
+**Agent:** `agent-implementation` (Sonnet model, 4-5 instances running simultaneously)
 
 #### What Happens (Per Agent Instance)
 
@@ -703,10 +612,9 @@ Legend: ✓ Complete  🔄 In Progress
 
 ---
 
-### Phase 7: Quality Assurance (3-5 minutes)
+### Phase 7: Quality Assurance
 
-**Agent:** `agent-verification` (Sonnet model)  
-**Duration:** 3-5 minutes
+**Agent:** `agent-verification` (Sonnet model)
 
 #### What Happens
 
@@ -816,7 +724,7 @@ Legend: ✓ Complete  🔄 In Progress
 
 ---
 
-## The 8 Agents
+## The 7 Agents
 
 ### 1. agent-product (Product Manager) - Opus
 
@@ -847,16 +755,17 @@ Legend: ✓ Complete  🔄 In Progress
 
 ### 2. agent-architect (Solution Architect) - Opus
 
-**When:** Phase 2A (runs in parallel with agent-ux)  
-**Tools:** Read, Write, Grep, Glob, TodoWrite, octocode-mcp, WebSearch  
-**Key Responsibility:** Design backend architecture with critical thinking
+**When:** Phase 2  
+**Tools:** Read, Write, Grep, Glob, LS, TodoWrite  
+**Key Responsibility:** Design complete system architecture (backend + frontend framework selection) with critical thinking
 
 **Input:** `.octocode/requirements/`  
 **Output:** `.octocode/designs/`
-- `architecture.md` - System architecture
-- `tech-stack.md` - Technology choices
+- `architecture.md` - System architecture (full stack)
+- `tech-stack.md` - Technology choices (backend + frontend)
 - `api-design.md` - API endpoints
 - `database-schema.md` - Database design
+- `ui-approach.md` - Frontend framework, UI library choice
 - `tradeoffs.md` - Design decisions
 
 **Critical Thinking Framework:**
@@ -885,62 +794,21 @@ Legend: ✓ Complete  🔄 In Progress
    - Include research links
    - Confidence score
 
-**Coordination Protocol:**
-- Communicates with agent-ux on frontend framework
-- Shares API requirements
-- Aligns on real-time data strategy
+**Key Features:**
+- Handles BOTH backend AND frontend architecture
+- Selects frontend framework and UI component library
+- Creates initial project structure after Gate 2 approval
+- Documents all decisions with alternatives
 
 ---
 
-### 3. agent-ux (UX Engineer) - Opus
-
-**When:** Phase 2B (runs in parallel with agent-architect)  
-**Tools:** Read, Write, WebSearch, WebFetch, TodoWrite, octocode-mcp  
-**Key Responsibility:** Design frontend architecture and UX
-
-**Input:** `.octocode/requirements/`, `.octocode/designs/architecture.md`  
-**Output:** `.octocode/ux/`
-- `user-flows.md` - User journeys
-- `wireframes.md` - ASCII wireframes
-- `component-library.md` - UI components
-- `design-system.md` - Colors, typography, spacing
-- `accessibility.md` - WCAG 2.1 AA compliance
-- `responsive-design.md` - Breakpoints
-- `frontend-architecture.md` - Framework, state, routing
-
-**UX Critical Thinking Framework:**
-1. **User Empathy Phase**
-   - Who are users? Context? Goals?
-   - What assumptions about users?
-
-2. **Problem Definition**
-   - What problem does this UI solve?
-   - Simplest solution?
-
-3. **Design Alternatives**
-   - 3+ design approaches
-   - Accessibility validation
-   - Mobile-first validation
-
-4. **Research Phase**
-   - UI patterns from successful apps
-   - Component library analysis
-   - Design system examples
-
-**Coordination Protocol:**
-- Receives backend architecture from agent-architect
-- Communicates API requirements from UX
-- Agrees on frontend framework
-
----
-
-### 4. agent-design-verification (Technical Lead) - Sonnet
+### 3. agent-design-verification (Technical Lead) - Sonnet
 
 **When:** Phase 3  
-**Tools:** Read, Write, Grep, Glob, TodoWrite  
+**Tools:** Read, Write, Grep, Glob, LS, TodoWrite  
 **Key Responsibility:** Validate designs and create task breakdown
 
-**Input:** `.octocode/requirements/`, `.octocode/designs/`, `.octocode/ux/`  
+**Input:** `.octocode/requirements/`, `.octocode/designs/`  
 **Output:** `.octocode/tasks.md`
 
 **Key Features:**
@@ -963,11 +831,11 @@ For each task pair (task_i, task_j):
 
 ---
 
-### 5. agent-research-context (Research Specialist) - Sonnet
+### 4. agent-research-context (Research Specialist) - Sonnet
 
-**When:** Phase 4 (can run in parallel)  
-**Tools:** Read, Write, TodoWrite, octocode-mcp (primary tool)  
-**Key Responsibility:** Gather implementation patterns from GitHub
+**When:** Phase 4 (can run in parallel with Phase 5)  
+**Tools:** Read, Write, LS, TodoWrite  
+**Key Responsibility:** Gather implementation patterns from GitHub using octocode-mcp
 
 **Input:** `.octocode/designs/`, `.octocode/tasks.md`  
 **Output:** `.octocode/context/*.md`
@@ -1000,10 +868,10 @@ For each task pair (task_i, task_j):
 
 ---
 
-### 6. agent-manager (Engineering Manager) - Sonnet
+### 5. agent-manager (Engineering Manager) - Sonnet
 
 **When:** Phase 5 & 6  
-**Tools:** Read, Write, TodoWrite, Bash, Task  
+**Tools:** Read, Write, TodoWrite, Bash, BashOutput, Task, KillShell  
 **Key Responsibility:** Orchestrate parallel implementation
 
 **Input:** `.octocode/tasks.md`, `.octocode/context/`  
@@ -1060,11 +928,11 @@ class LockManager {
 
 ---
 
-### 7. agent-implementation (Software Engineer) - Sonnet
+### 6. agent-implementation (Software Engineer) - Sonnet
 
 **When:** Phase 6 (4-5 instances in parallel)  
-**Tools:** Read, Write, Edit, Bash, Grep, Glob, TodoWrite, octocode-mcp (optional)  
-**Key Responsibility:** Implement features following designs
+**Tools:** Read, Write, Edit, Bash, BashOutput, Grep, Glob, LS, TodoWrite  
+**Key Responsibility:** Implement features following designs and context guides
 
 **Input:** Task assignment, `.octocode/designs/`, `.octocode/context/`  
 **Output:** Production code with tests
@@ -1108,11 +976,11 @@ class LockManager {
 
 ---
 
-### 8. agent-verification (QA Engineer) - Sonnet
+### 7. agent-verification (QA Engineer) - Sonnet
 
 **When:** Phase 7  
-**Tools:** Read, Bash, Grep, Glob, TodoWrite, chrome-devtools-mcp  
-**Key Responsibility:** Comprehensive quality assurance
+**Tools:** Read, Bash, BashOutput, Grep, Glob, LS, TodoWrite, KillShell  
+**Key Responsibility:** Comprehensive quality assurance including runtime testing
 
 **Input:** Complete codebase, all requirements/designs  
 **Output:** `.octocode/verification-report.md`
@@ -1388,27 +1256,18 @@ Runtime Testing (Chrome):
 │   ├── error-handling.md
 │   └── performance.md
 │
-├── designs/                # Phase 2A output (agent-architect)
+├── designs/                # Phase 2 output (agent-architect)
 │   ├── architecture.md
 │   ├── tech-stack.md
 │   ├── component-structure.md
 │   ├── api-design.md
 │   ├── database-schema.md
 │   ├── data-flow.md
+│   ├── ui-approach.md
 │   ├── auth-strategy.md
 │   ├── testing-strategy.md
 │   ├── deployment.md
 │   └── tradeoffs.md
-│
-├── ux/                     # Phase 2B output (agent-ux)
-│   ├── user-flows.md
-│   ├── wireframes.md
-│   ├── component-library.md
-│   ├── design-system.md
-│   ├── interaction-patterns.md
-│   ├── accessibility.md
-│   ├── responsive-design.md
-│   └── frontend-architecture.md
 │
 ├── context/                # Phase 4 output (agent-research-context)
 │   ├── nextjs-realtime-patterns.md
@@ -1546,11 +1405,10 @@ Used for general information sharing.
 | From Agent | Question Type | Route To | Response Time |
 |------------|---------------|----------|---------------|
 | agent-implementation | Requirements | agent-product | Immediate |
-| agent-implementation | Backend/API | agent-architect | Immediate |
-| agent-implementation | Frontend/UX | agent-ux | Immediate |
+| agent-implementation | Architecture/Design | agent-architect | Immediate |
 | agent-architect | Requirements | agent-product | Immediate |
-| agent-architect | UX coordination | agent-ux | Immediate |
-| agent-ux | Backend coordination | agent-architect | Immediate |
+| agent-manager | Task assignment | agent-implementation | Immediate |
+| agent-design-verification | Design issues | agent-architect | Immediate |
 
 ### Communication Logging
 
@@ -1898,20 +1756,19 @@ Use the agent-product agent to create a PRD for a simple todo app
 Expected:
 - ✅ Agent asks clarifying questions
 - ✅ Creates documents in `.octocode/requirements/`
-- ✅ Logs decisions to `.octocode/debug/agent-decisions.json`
 - ✅ Presents Gate 1 approval
 
-**agent-architect + agent-ux (parallel):**
+**agent-architect:**
 ```
-Launch agent-architect and agent-ux in parallel for the todo app
+Launch agent-architect to design architecture for the todo app
 ```
 
 Expected:
-- ✅ Both agents run simultaneously
-- ✅ Agents communicate with each other
-- ✅ UX creates documents in `.octocode/ux/`
-- ✅ Frontend architecture aligns with backend
-- ✅ Combined Gate 2 presentation
+- ✅ Creates complete system architecture (backend + frontend)
+- ✅ Documents in `.octocode/designs/`
+- ✅ Includes frontend framework and UI library choices
+- ✅ Presents Gate 2 for approval
+- ✅ Creates initial project structure after approval
 
 ### End-to-End Testing
 
@@ -1923,9 +1780,9 @@ Expected:
 
 **Verify all phases complete:**
 - Phase 1: Requirements (2-5 min)
-- Phase 2: Architecture & UX (5-10 min)
+- Phase 2: Architecture (5-10 min)
 - Phase 3: Validation (2-3 min)
-- Phase 4: Research (3-5 min)
+- Phase 4: Research (3-5 min, can run parallel)
 - Phase 5-6: Implementation (15-40 min)
 - Phase 7: Verification (3-5 min)
 
@@ -1938,7 +1795,6 @@ ls -R .octocode/
 # .octocode/
 #   ├── requirements/
 #   ├── designs/
-#   ├── ux/
 #   ├── context/
 #   ├── tasks.md
 #   ├── logs/
@@ -1980,7 +1836,7 @@ Expected:
 /octocode-generate Build a todo app with React frontend and Express backend
 ```
 
-**Phase 1: Requirements (5 min)**
+**Phase 1: Requirements**
 - agent-product asks clarifying questions
 - Creates PRD with features:
   1. User authentication
@@ -1989,30 +1845,28 @@ Expected:
   4. Filter by status
 - **Gate 1:** User approves PRD ✅
 
-**Phase 2: Architecture & UX (10 min, parallel)**
-- agent-architect: Next.js + Express + PostgreSQL
-- agent-ux: Clean UI with cards
-- **Gate 2:** User approves both ✅
+**Phase 2: Architecture**
+- agent-architect: Next.js + Express + PostgreSQL + UI library selection
+- **Gate 2:** User approves architecture ✅
+- Architect creates initial project structure
 
-**Phase 3: Validation (3 min)**
+**Phase 3: Validation**
 - 20 tasks created, 12 can run in parallel
 - **Gate 3:** User approves ✅
 
-**Phase 4: Research (5 min)**
-- 4 context guides created
+**Phase 4: Research (parallel)**
+- 3 context guides created
 
-**Phase 5-6: Implementation (25 min)**
+**Phase 5-6: Implementation**
 - 4 agents work in parallel
 - All 20 tasks completed
 - **Gate 4:** Live dashboard monitored
 
-**Phase 7: Verification (5 min)**
+**Phase 7: Verification**
 - ✅ Build passes
 - ✅ 85 tests pass (88% coverage)
 - ✅ All features verified
 - **Gate 5:** User approves ✅
-
-**Total Time:** ~53 minutes
 
 ---
 
@@ -2024,7 +1878,7 @@ Expected:
 multiple portfolios, price alerts, and performance charts. Use React and PostgreSQL.
 ```
 
-**Phase 1: Requirements (10 min)**
+**Phase 1: Requirements**
 - PRD with must-have features:
   1. User authentication (email + OAuth)
   2. Create/edit multiple portfolios
@@ -2035,32 +1889,30 @@ multiple portfolios, price alerts, and performance charts. Use React and Postgre
   7. Transaction history
 - **Gate 1:** User approves ✅
 
-**Phase 2: Architecture & UX (15 min, parallel)**
-- agent-architect: Next.js 14 + tRPC + Prisma + PostgreSQL
-- agent-ux: Dashboard with large chart, card-based stats
+**Phase 2: Architecture**
+- agent-architect: Next.js 14 + tRPC + Prisma + PostgreSQL + UI library
+- Creates dashboard architecture with charts and stats
 - **Gate 2:** User approves ✅
+- Creates initial project structure
 
-**Phase 3: Validation (7 min)**
+**Phase 3: Validation**
 - 35 tasks, 18 can run in parallel
 - **Gate 3:** User approves ✅
 
-**Phase 4: Research (12 min)**
-- 6 context guides created
+**Phase 4: Research (parallel)**
+- 5 context guides created
 
-**Phase 5-6: Implementation (150 min)**
+**Phase 5-6: Implementation**
 - 4 agents work in parallel
 - All 35 tasks completed
 - **Gate 4:** Live dashboard monitored
 
-**Phase 7: Verification (35 min)**
+**Phase 7: Verification**
 - ✅ Build passes
 - ✅ 142 tests pass (89% coverage)
 - ✅ All 7 features verified
 - ✅ Runtime testing: No errors
 - **Gate 5:** User approves ✅
-
-**Total Time:** 3 hours 42 minutes  
-**(Traditional sequential: 8-10 hours)**
 
 ---
 
@@ -2133,13 +1985,14 @@ multiple portfolios, price alerts, and performance charts. Use React and Postgre
    - Never proceeds on wrong direction
    - User stays informed throughout
 
-### Estimated Timeline
+### Development Process
 
-- **Small Project (Todo App):** 30-40 minutes
-- **Medium Project (Dashboard):** 40-60 minutes
-- **Large Project (E-commerce):** 60-90 minutes
-
-**Time Saved:** 50-60% faster vs sequential execution
+**Benefits:** 
+- Clean waterfall flow with clear phase transitions
+- Parallel implementation with multiple agents
+- Human checkpoints at 5 critical gates
+- File locking prevents conflicts
+- Complete observability and state persistence
 
 ### Quality Metrics
 

@@ -1,31 +1,69 @@
-# Frontend Development Resources
+# Frontend Libraries & Components
 
-> Comprehensive Node.js/TypeScript frontend frameworks, libraries, and React ecosystem for web + mobile
+> React ecosystem libraries, UI components, state management, animations, 3D graphics, and mobile
 
-**🎯 Purpose:** Frontend resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
-**🤖 For:** AI agents and developers building React web and React Native mobile applications
-**🌐 Focus:** React 19, Next.js 15, TypeScript - Modern JavaScript ecosystem
-**📱 Mobile:** React Native components, state management, animations included
-**⚙️ Runtime:** All frontend tooling runs on Node.js (Vite, Next.js, Metro bundler)
-
-**Last Updated:** October 13, 2025
+**🎯 Purpose:** Frontend library resources for AI agents building React web and mobile applications  
+**🌐 Focus:** React 19 libraries, UI components, widgets, animations, 3D graphics  
+**⚙️ Runtime:** All frontend tooling runs on Node.js (Vite, Next.js, Metro bundler)  
+**📅 Updated:** October 14, 2025
 
 ---
 
-## 🎯 Best for Application Generation
+## Quick Reference
 
-This file provides **frontend building blocks** to help AI agents:
-1. **Choose state management** - Zustand vs Redux, Context vs URL state
-2. **Select UI libraries** - Shadcn UI, Material UI, Chakra UI comparisons
-3. **Implement forms** - React Hook Form with Zod validation
-4. **Add animations** - Framer Motion, Lottie, React Spring
-5. **Build mobile apps** - React Native with same state/form libraries
+### State Management (Start Here - 2025 Best)
+- **Client State:** `pmndrs/zustand` (55K+ ⭐) - THE recommended state solution (#1 pick)
+- **Server State:** `TanStack/query` (47K+ ⭐) - THE server state solution (replaces Redux)
+- **URL State:** nuqs - Game-changing URL query params as state
+- **Built-in:** React Context - For rarely-changing global state only
 
-**Generation Priorities:**
-- ⚡ **Zustand + TanStack Query** - Modern state management for 2025
-- ⚡ **Shadcn UI** - Copy-paste components with Tailwind (web)
-- ⚡ **React Hook Form** - Best form library for web + mobile
-- ⚡ **React Native** - Cross-platform mobile with shared logic
+### UI Component Libraries (2025 Top Picks)
+- **#1 Choice:** `shadcn/ui` - Copy/paste components, Tailwind + TypeScript (2025 winner)
+- **Enterprise:** `mui/material-ui` (97K+ ⭐) - Complete design system, mature
+- **Developer-Friendly:** `chakra-ui/chakra-ui` (39K+ ⭐) - Accessible, themeable
+- **Headless:** `radix-ui/primitives` (16K+ ⭐) - Unstyled, accessible primitives
+
+### Forms & Validation (#1 Standard)
+- **Forms:** `react-hook-form/react-hook-form` (44K+ ⭐) - THE form solution
+- **Validation:** `colinhacks/zod` (36K+ ⭐) - TypeScript schema validation
+- **Integration:** React Hook Form + Zod = Perfect combo
+
+### Animations (#1 Choice)
+- **Modern API:** `framer/motion` (26K+ ⭐) - THE animation library for 2025
+- **After Effects:** `airbnb/lottie-web` (31K+ ⭐) - JSON animations from AE
+- **React Spring:** `pmndrs/react-spring` (29K+ ⭐) - Physics-based animations
+
+### 3D Graphics
+- **React + Three.js:** `pmndrs/react-three-fiber` (29K+ ⭐) - THE 3D solution for React
+- **3D UI:** `pmndrs/drei` (9K+ ⭐) - Helper components for R3F
+- **Core Engine:** `mrdoob/three.js` (106K+ ⭐) - JavaScript 3D library
+
+### React Native & Mobile
+- **Framework:** `expo/expo` (35K+ ⭐) - Best React Native development platform
+- **Navigation:** `react-navigation/react-navigation` (24K+ ⭐) - THE routing solution
+- **UI Components:** `react-native-elements/react-native-elements` (25K+ ⭐) - Cross-platform UI
+
+### Decision Guide
+| Need | Choose | Why |
+|------|--------|-----|
+| State Management | Zustand + TanStack Query | Client + server state covered |
+| UI Components | Shadcn UI | Best DX, Tailwind, TypeScript |
+| Forms | React Hook Form + Zod | Best performance + validation |
+| Animations | Framer Motion | Modern, powerful, best DX |
+| 3D Graphics | React Three Fiber | Three.js in React |
+| Mobile | Expo + React Native | Best development experience |
+
+---
+
+## Table of Contents
+1. [Core React Library](#core-react-library)
+2. [State Management](#state-management-2025-recommendations)
+3. [UI Component Libraries](#ui-component-libraries-2025-top-picks)
+4. [Forms & Validation](#forms--validation-2025-standard)
+5. [Animation Libraries](#react-animation-libraries)
+6. [Styling & CSS](#tailwind-css--utilities)
+7. [Next.js & Boilerplates](#nextjs--modern-react)
+8. [React Native & Mobile](#react-native--mobile)
 
 ---
 
@@ -459,46 +497,41 @@ This file provides **frontend building blocks** to help AI agents:
 
 ## Quick Reference - Frontend (2025)
 
-### Essential Libraries
-- **React Core:** `facebook/react` - THE UI library (239K+ stars)
-- **State Management:** `pmndrs/zustand` - THE modern choice, replaces Redux
-- **Server State:** `TanStack/query` - Game-changer for remote data
-- **Forms:** `react-hook-form/react-hook-form` - THE standard (43K+ stars)
+### 🏆 Top Picks for 2025 (Ordered by Priority)
 
-### UI Component Libraries (Choose ONE)
-1. **Tailwind Projects:** `shadcn-ui/ui` - THE trending choice for 2025, copy-paste components
-2. **Enterprise:** `mui/material-ui` - Most mature, comprehensive (96K+ stars)
-3. **Accessibility-First:** `chakra-ui/chakra-ui` - Best accessibility defaults
-4. **Feature-Rich:** `mantinedev/mantine` - All-in-one with 100+ components
-5. **Next.js Projects:** `heroui-inc/heroui` - Beautiful, performance-focused
+**State Management:**
+1. **Zustand** - `pmndrs/zustand` (55K+ stars) — #1 client state, replaces Redux
+2. **TanStack Query** - `TanStack/query` (47K+ stars) — #1 server state
+3. **React Context** - Built-in — For rare globals (theme, auth)
+4. **nuqs** - URL state management — Game-changer for query params
 
-### Styling
-- **CSS Framework:** `tailwindlabs/tailwindcss` - THE standard utility-first CSS
-- **Tailwind Components:** `saadeghi/daisyui` - Ready-to-use Tailwind components
-- **Unstyled Primitives:** `radix-ui/primitives` - Foundation for custom design systems
+**UI Component Libraries:**
+1. **Shadcn UI** - `shadcn-ui/ui` (100K+ stars) — #1 for 2025, copy-paste Tailwind components
+2. **Material UI** - `mui/material-ui` (97K+ stars) — #1 for enterprise
+3. **Chakra UI** - `chakra-ui/chakra-ui` (39K+ stars) — Best accessibility
+4. **Mantine** - `mantinedev/mantine` (29K+ stars) — Feature-rich, 100+ components
+5. **Hero UI** - `heroui-inc/heroui` (27K+ stars) — Next.js optimized
 
-### Animation
-- **Modern:** `motiondivision/motion` - THE React animation library (formerly Framer Motion)
-- **After Effects:** `airbnb/lottie-web` - Production-quality animations
-- **Physics-Based:** `pmndrs/react-spring` - Spring physics animations
-- **3D:** `pmndrs/react-three-fiber` - Three.js in React
+**Forms & Validation:**
+1. **React Hook Form** - `react-hook-form/react-hook-form` (44K+ stars) — THE standard
 
-### Next.js & Boilerplates
-- **Next.js Production:** `ixartz/Next-js-Boilerplate` - Best Next.js 15 starter
-- **SaaS:** `ixartz/SaaS-Boilerplate` - Complete SaaS with auth, multi-tenancy
-- **Full-Stack:** `kriasoft/react-starter-kit` - tRPC + Next.js
+**Styling:**
+1. **Tailwind CSS** - `tailwindlabs/tailwindcss` (91K+ stars) — #1 CSS framework
+2. **DaisyUI** - `saadeghi/daisyui` (39K+ stars) — Tailwind components
+3. **Radix UI** - `radix-ui/primitives` (18K+ stars) — Unstyled primitives
 
-### State Management Decision Tree
-1. **Server Data?** → TanStack Query (replaces most Redux)
-2. **Client State?** → Zustand (simple, fast, no boilerplate)
-3. **URL State?** → nuqs (game-changer for query params)
-4. **Rare Globals?** → React Context (themes, auth)
-5. **Legacy Redux?** → Redux Toolkit (only for existing apps)
+**Animation:**
+1. **Framer Motion** - `motiondivision/motion` (30K+ stars) — #1 React animations
+2. **Lottie** - `airbnb/lottie-web` (31K+ stars) — After Effects animations
+3. **React Spring** - `pmndrs/react-spring` (29K+ stars) — Physics-based
+4. **React Three Fiber** - `pmndrs/react-three-fiber` (30K+ stars) — 3D graphics
 
-### 2025 Stack Recommendations
-**Modern Stack:** React + Zustand + TanStack Query + Shadcn UI + Tailwind
-**Enterprise Stack:** React + Redux Toolkit + TanStack Query + Material UI
-**Next.js Stack:** Next.js 15 + tRPC + Zustand + Shadcn UI + Tailwind
+**Development Tools:**
+1. **Storybook** - `storybookjs/storybook` (88K+ stars) — Component development
+
+**Mobile:**
+1. **React Native** - Cross-platform mobile (use same state/form libraries as web)
+2. **Expo** - `expo/expo` (44K+ stars) — React Native platform
 
 ---
 

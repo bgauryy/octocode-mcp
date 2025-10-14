@@ -1,40 +1,46 @@
 # Full-Stack Frameworks & UI Libraries
 
-> Node.js-based full-stack frameworks, UI component libraries, and visualization for web applications
+> Node.js full-stack frameworks, UI component libraries, and data visualization
 
-**🎯 Purpose:** Framework resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
-**🤖 For:** AI agents and developers choosing frameworks for Node.js web applications
-**🌐 Focus:** Next.js 15, React frameworks - JavaScript/TypeScript ecosystem
-**📱 Mobile:** See frontend.md for React Native frameworks
-**⚙️ Runtime:** All frameworks run on Node.js (Next.js, Remix, Astro)
-
-**Last Updated:** October 13, 2025
+**🎯 Purpose:** Framework resources for AI agents building Node.js/TypeScript applications  
+**🌐 Focus:** Next.js 15, React frameworks - JavaScript/TypeScript ecosystem  
+**⚙️ Runtime:** All frameworks run on Node.js (Next.js, Remix, Astro)  
+**📅 Updated:** October 14, 2025
 
 ---
 
-## 🎯 Best for Application Generation
+## Quick Reference
 
-This file provides **framework guidance** to help AI agents:
-1. **Choose framework** - Next.js vs Remix vs Astro vs Vite
-2. **Select UI library** - Shadcn UI vs Material UI vs Chakra UI
-3. **Pick charting** - Recharts vs Chart.js vs D3 for data visualization
-4. **Add 3D graphics** - Three.js, React Three Fiber for 3D
-5. **Understand features** - SSR, SSG, ISR, Server Components, Streaming
+### Full-Stack Frameworks (Start Here)
+- **#1 Choice (95%):** `vercel/next.js` (143K+ ⭐) - Next.js 15 with React 19, SSR/SSG/ISR
+- **Fast SPAs:** `vitejs/vite` (72K+ ⭐) - Lightning-fast dev, no SSR needed
+- **Edge-Native:** `remix-run/remix` (30K+ ⭐) - Edge-first, nested routing
+- **Content-Heavy:** `withastro/astro` (49K+ ⭐) - Static sites, multi-framework
 
-**Generation Priorities:**
-- ⚡ **Next.js 15** - Default choice for full-stack React apps (2025)
-- ⚡ **Shadcn UI** - Best component library for Tailwind + TypeScript
-- ⚡ **Recharts** - Best charts for React with TypeScript
-- ⚡ **Server Components** - Modern React with streaming SSR
+### Decision Guide: Which Framework?
+| Need | Choose | Why |
+|------|--------|-----|
+| Full-Stack + SEO | Next.js 15 | SSR/SSG/ISR, React 19, production-ready |
+| Fast SPA (no SSR) | Vite + React | Instant dev, simple, client-only |
+| Edge + Real-time | Remix | Edge-native, nested routes, data loading |
+| Static Content | Astro | Minimal JS, fast builds, multi-framework |
 
----
+### UI Component Libraries (See frontend-libs.md)
+- **#1 Choice:** Shadcn UI - Copy/paste, Tailwind + TypeScript
+- **Enterprise:** Material UI (97K+ ⭐) - Complete design system
+- **Developer-Friendly:** Chakra UI (39K+ ⭐) - Accessible, themeable
 
-## Table of Contents
-1. [Full-Stack Frameworks](#full-stack-frameworks)
-2. [UI Component Libraries](#ui-component-libraries)
-3. [Charts & Visualization](#charts--visualization)
-4. [3D Graphics & WebGL](#3d-graphics--webgl)
-5. [Quick Reference & Decision Guide](#quick-reference--decision-guide)
+### Charts & Visualization
+- **Best Overall:** `apache/echarts` (61K+ ⭐) - Enterprise-grade, feature-rich
+- **React Simple:** `recharts/recharts` (25K+ ⭐) - Declarative React charts
+- **Full Power:** `d3/d3` (109K+ ⭐) - Ultimate flexibility, steep learning curve
+
+### When to Choose Each Chart Library
+| Need | Choose | Why |
+|------|--------|-----|
+| Enterprise Dashboards | ECharts | Feature-rich, performant, professional |
+| React Integration | Recharts | Simple API, declarative, React-native |
+| Custom Visualizations | D3 | Maximum flexibility, full control |
 
 ---
 
@@ -76,6 +82,47 @@ This file provides **framework guidance** to help AI agents:
 - ❌ Content-heavy static sites with minimal interactivity → Use **Astro**
 - ❌ Need edge-native with heavy real-time data handling → Use **Remix**
 - ❌ Want to avoid React entirely → Use **SvelteKit**
+- ❌ Simple SPA without SSR → Use **Vite + React**
+
+---
+
+### Vite + React - Fast Development for SPAs
+
+**⭐ vitejs/vite** (72,000+ stars) ⚡ HIGHLY RECOMMENDED
+- Next Generation Frontend Tooling - Instant server start, lightning-fast HMR
+- 🔗 https://github.com/vitejs/vite
+- **Use Case:** Client-side SPAs, dashboards, admin panels, internal tools (no SSR needed)
+
+**Why Vite in 2025:**
+- **Lightning Fast Dev:** Instant server start, sub-100ms HMR updates
+- **Simple Setup:** Zero-config for most use cases, minimal boilerplate
+- **Modern by Default:** ESM-first, native TypeScript, modern CSS
+- **Framework Agnostic:** Works with React, Vue, Svelte, vanilla JS
+- **Production Optimized:** Uses Rollup for efficient bundling
+- **Rich Plugin Ecosystem:** Extensive plugin support for any need
+
+**Best Paired With:**
+- React 19 + TypeScript for modern React development
+- React Router for client-side routing
+- TanStack Query for data fetching
+- Shadcn UI for components
+
+**When to Choose Vite:**
+- ✅ You're building a client-side SPA (no SSR requirement)
+- ✅ You want the fastest possible development experience
+- ✅ You need a simple, lightweight framework setup
+- ✅ You're building dashboards, admin panels, or internal tools
+- ✅ SEO is not a priority for your application
+
+**When NOT to Choose Vite:**
+- ❌ You need server-side rendering or static site generation → Use **Next.js**
+- ❌ SEO is critical for your application → Use **Next.js** or **Astro**
+- ❌ You need built-in backend API routes → Use **Next.js** or **Remix**
+
+**Trade-offs:**
+- No built-in SSR/SSG (client-side only by default)
+- Need to add routing, data fetching libraries manually
+- Better for apps behind auth, not public-facing marketing sites
 
 ---
 
@@ -508,155 +555,6 @@ The React UI landscape in 2025 is evolving from fully-featured libraries (MUI, A
 - Fast and lightweight JavaScript game engine
 - 🔗 https://github.com/playcanvas/engine
 - **Use Case:** Game-oriented WebGL, 2D/3D games
-
----
-
-## Quick Reference & Decision Guide
-
-### Full-Stack Framework Decision Tree
-
-**Choose Next.js if:**
-- You need production-ready React with all rendering strategies
-- SEO and performance are critical
-- You want the largest ecosystem and job market
-- You're building e-commerce, SaaS, or content platforms
-- **→ 95% of React projects should start here**
-
-**Choose Remix if:**
-- Your app is data-intensive with heavy mutations
-- You want edge-native from the start
-- You prioritize web standards and progressive enhancement
-- You're building real-time dashboards or interactive platforms
-
-**Choose Astro if:**
-- You're building content-heavy static sites
-- Performance and minimal JavaScript are top priorities
-- You need multi-framework support
-- You're building blogs, docs, or marketing sites
-
-**Choose SvelteKit if:**
-- You want smaller bundles than React
-- You prefer simpler, more readable code
-- You're building internal tools
-- Your team wants to explore beyond React
-
----
-
-### UI Library Decision Tree
-
-**Choose Shadcn UI if:**
-- You use Tailwind CSS
-- You want maximum customization
-- You prefer owning your component code
-- Your design doesn't follow Material Design
-- **→ Best for modern projects in 2025**
-
-**Choose Material UI if:**
-- You need enterprise-grade components
-- You like Material Design
-- You want comprehensive out-of-the-box features
-- You're building complex data-heavy applications
-
-**Choose Ant Design if:**
-- You're building enterprise/admin applications
-- You need extensive data visualization
-- You require strong internationalization
-- You want opinionated, consistent design
-
-**Choose Chakra UI if:**
-- You want accessible, hook-based components
-- You prefer a modern, flexible API
-- You need good TypeScript support
-
----
-
-### Chart Library Decision Tree
-
-**Choose ECharts if:**
-- You need comprehensive chart types (100+)
-- You're handling large datasets (10,000+ points)
-- You want WebGL performance
-- You're building enterprise dashboards
-- **→ Best general-purpose choice for 2025**
-
-**Choose Recharts if:**
-- You're building React applications
-- You need standard chart types (line, bar, pie, area)
-- You want simple, declarative components
-- Developer experience is a priority
-
-**Choose D3.js (or Visx) if:**
-- You need highly customized, unique visualizations
-- You have strong JavaScript/SVG expertise
-- Visual design is critical to your project
-- Standard chart types don't meet your needs
-
-**Choose Chart.js if:**
-- You need lightweight, simple charts
-- You're not using React
-- Quick setup is important
-
----
-
-### 2025 Recommended Stack Combinations
-
-**Modern SaaS Application:**
-- Framework: **Next.js 15** (App Router)
-- UI Library: **Shadcn UI** + Tailwind CSS
-- Charts: **ECharts** or **Recharts**
-- State: React Server Components + Zustand
-- Backend: **Next.js API Routes** or **NestJS**
-
-**Enterprise Dashboard:**
-- Framework: **Next.js 15** or **Remix**
-- UI Library: **Ant Design** or **Material UI**
-- Charts: **ECharts** (for complex visualizations)
-- State: Redux Toolkit or Zustand
-- Backend: **NestJS** or **Django**
-
-**Content-Heavy Marketing Site:**
-- Framework: **Astro** (with React islands)
-- UI Library: **Shadcn UI** or **Tailwind CSS**
-- Charts: **Chart.js** (if needed)
-- CMS: **Contentful** or **Strapi**
-
-**3D Product Showcase:**
-- Framework: **Next.js 15**
-- 3D Library: **React Three Fiber** + **Drei**
-- UI Library: **Shadcn UI**
-- Animation: **Framer Motion**
-
----
-
-### Key 2025 Trends
-
-**Framework Trends:**
-1. **Next.js dominance continues** - Still the default choice for React applications
-2. **Partial Prerendering** - Game-changer for performance
-3. **Server Components adoption** - Reducing client-side JavaScript
-4. **Edge-first architecture** - Remix and Next.js leading the way
-5. **Content-focused alternatives** - Astro growing for static/content sites
-
-**UI Library Trends:**
-1. **Shadcn UI disruption** - Copy-and-own model gaining massive traction
-2. **Tailwind integration** - Essential for modern UI libraries
-3. **Headless components** - Separation of logic and styling
-4. **Accessibility-first** - WCAG compliance becoming standard
-5. **Bundle size discipline** - Moving away from monolithic libraries
-
-**Visualization Trends:**
-1. **ECharts market leadership** - Best balance of power and usability
-2. **React-specific solutions** - Recharts and Visx for React apps
-3. **WebGL for performance** - Handling larger datasets efficiently
-4. **Declarative APIs** - Simpler chart creation with React components
-
----
-
-**Top Picks for 2025:**
-- **Full-Stack Framework:** `vercel/next.js` (143K+ stars)
-- **UI Library:** `shadcn-ui/ui` (66K+ stars) for modern projects, `mui/material-ui` (94K+ stars) for enterprise
-- **Charts:** `apache/echarts` (63K+ stars) for comprehensive needs, `recharts/recharts` (24.8K+ stars) for React simplicity
-- **3D Graphics:** `mrdoob/three.js` (110K+ stars) with `pmndrs/react-three-fiber` (29.6K+ stars) for React
 
 ---
 

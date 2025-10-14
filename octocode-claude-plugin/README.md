@@ -1,4 +1,4 @@
-# 🏗️ Octocode Vibe
+# 🏗️ Octocode Claude Plugin
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/bgauryy/octocode-mcp)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -6,7 +6,7 @@
 
 > **Transform Claude into a complete AI development team that takes your idea from concept to production-ready code**
 
-Turn "Build a blog platform" into a full-stack, tested, production-ready application in **3-5 hours** instead of days. With 8 specialized AI agents, research-driven decisions from 100k+ GitHub repos, and 5 human approval gates to keep you in control.
+Turn "Build a blog platform" into a full-stack, tested, production-ready application. With 7 specialized AI agents, research-driven decisions from 100k+ GitHub repos, and 5 human approval gates to keep you in control.
 
 ---
 
@@ -26,12 +26,12 @@ That's it! The AI team will guide you through requirements, design, implementati
 
 ---
 
-## 🎯 What Is Octocode Vibe?
+## 🎯 What Is Octocode?
 
-A **Claude Code plugin** that orchestrates 8 specialized AI agents through a structured 7-phase workflow:
+A **Claude Code plugin** that orchestrates 7 specialized AI agents through a structured 7-phase workflow:
 
 ```
-💭 Requirements → 🏗️ Architecture + 🎨 UX → ✅ Validation → 🔬 Research 
+💭 Requirements → 🏗️ Architecture → ✅ Validation → 🔬 Research 
 → 🎯 Orchestration → 💻 Implementation → ✅ Quality Check
 ```
 
@@ -39,21 +39,17 @@ A **Claude Code plugin** that orchestrates 8 specialized AI agents through a str
 
 ---
 
-## ✨ Why Use Octocode Vibe?
+## ✨ Why Use Octocode?
 
-### 🚀 50% Faster Development
-- **Traditional**: 8-12 hours for a full-stack app (sequential development)
-- **Octocode Vibe**: 3-5 hours (parallel agents working simultaneously)
+### 🚀 Parallel Execution
+- Multiple implementation agents work simultaneously
+- File locking system prevents conflicts
+- Efficient task orchestration for faster development
 
 ### 🧠 Research-Driven Decisions
 - Analyzes **100k+ GitHub repositories** for best practices
 - Evaluates **3+ alternatives** for every major decision
 - Critical thinking framework with self-questioning and devil's advocate
-
-### 🎨 Frontend-Backend Harmony
-- **Industry first**: Architecture and UX design run **in parallel**
-- No more "backend designed without frontend consideration"
-- API contracts match UI needs from day one
 
 ### 🔍 Complete Transparency
 - See **every decision** with reasoning
@@ -73,15 +69,14 @@ A **Claude Code plugin** that orchestrates 8 specialized AI agents through a str
 | Agent | Role | Model | What They Do |
 |-------|------|-------|--------------|
 | 🎯 **Product Manager** | Requirements | Opus | Asks clarifying questions, creates PRD, researches competitors |
-| 🏗️ **Architect** | Backend Design | Opus | Designs architecture, evaluates tech stacks, critical thinking |
-| 🎨 **UX Engineer** | Frontend Design | Opus | Creates design system, ensures accessibility, mobile-first |
+| 🏗️ **Architect** | System Design | Opus | Designs complete architecture (backend + frontend), evaluates tech stacks, critical thinking |
 | ✅ **Tech Lead** | Validation | Sonnet | Reviews architecture, breaks down tasks, detects conflicts |
 | 🔬 **Research Specialist** | Best Practices | Sonnet | Finds code examples from top repos, extracts patterns |
 | 🎯 **Engineering Manager** | Orchestration | Sonnet | Assigns tasks, prevents conflicts, tracks progress |
-| 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns, self-tests |
+| 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns, self-tests (multiple instances work in parallel) |
 | ✅ **QA Engineer** | Quality | Sonnet | Tests in browser, checks security, verifies production-readiness |
 
-**Cost-optimized**: Opus for strategic thinking (3 agents), Sonnet for execution (5 agents)
+**Cost-optimized**: Opus for strategic thinking (2 agents), Sonnet for execution (5 agents)
 
 ---
 
@@ -94,32 +89,32 @@ rich text editor, and comments
 
 ### What Happens Next
 
-**Phase 1: Requirements** *(2-3 min)*
-- Agent asks about user roles, features, tech preferences
-- Creates comprehensive PRD with research
+**Phase 1: Requirements**
+- Product Manager asks about user roles, features, tech preferences
+- Creates comprehensive PRD with research from GitHub
 - **[Gate 1]** You approve the requirements
 
-**Phase 2: Design** *(10-15 min)*
-- Architect + UX work **simultaneously**
-- Complete architecture + design system
-- **[Gate 2]** You approve both designs
+**Phase 2: Architecture**
+- Architect designs complete system (backend + frontend)
+- Evaluates alternatives with critical thinking framework
+- **[Gate 2]** You approve the architecture
 
-**Phase 3: Planning** *(5 min)*
-- Tech Lead breaks into 15-20 atomic tasks
+**Phase 3: Validation**
+- Tech Lead breaks project into atomic tasks
 - Detects potential file conflicts
-- **[Gate 3]** You approve the plan
+- **[Gate 3]** You approve the task plan
 
-**Phase 4: Research** *(10 min)*
-- Finds best auth, editor, and comment implementations
-- Copy-paste ready examples from top repos
+**Phase 4: Research**
+- Research Specialist finds best auth, editor, and comment implementations
+- Creates copy-paste ready examples from top repos
 
-**Phase 5-6: Build** *(2-3 hours)*
-- 4-5 engineers work in parallel
-- Manager prevents conflicts
-- **[Gate 4]** See real-time progress
+**Phase 5-6: Implementation**
+- 4-5 Software Engineers work in parallel
+- Engineering Manager orchestrates and prevents conflicts
+- **[Gate 4]** Monitor real-time progress
 
-**Phase 7: Verify** *(20 min)*
-- QA tests in Chrome browser
+**Phase 7: Verification**
+- QA Engineer tests in Chrome browser
 - Runs security checks, linting, tests
 - **[Gate 5]** Final approval
 
@@ -159,17 +154,17 @@ user management, and role-based access control
 
 ## 🏆 Comparison with Other Tools
 
-| Feature | Octocode Vibe | claude-flow | dify | Microsoft |
-|---------|---------------|-------------|------|-----------|
-| **Specialized Agents** | ✅ 8 focused | 74 general | Platform | Framework |
+| Feature | Octocode | claude-flow | dify | Microsoft |
+|---------|----------|-------------|------|-----------|
+| **Specialized Agents** | ✅ 7 focused | 74 general | Platform | Framework |
 | **Approval Gates** | ✅ 5 gates | ⚠️ Basic | ❌ None | ⚠️ YAML |
 | **Observability** | ✅ **Best-in-class** | ⚠️ Good | ⚠️ Basic | ⚠️ Good |
 | **Critical Thinking** | ✅ **Unique** | ❌ None | ❌ None | ❌ None |
-| **Parallel Arch + UX** | ✅ **Industry first** | ❌ None | ❌ None | ❌ None |
 | **File Conflict Prevention** | ✅ Atomic locks | ⚠️ Basic | ⚠️ Basic | ❌ None |
 | **Browser Testing** | ✅ Chrome DevTools | ❌ None | ⚠️ Limited | ❌ None |
+| **Research-Driven** | ✅ GitHub analysis | ⚠️ Limited | ❌ None | ❌ None |
 
-**Verdict**: More focused, better transparency, unique innovations not found elsewhere.
+**Verdict**: More focused, better transparency, unique innovations.
 
 ---
 
@@ -225,15 +220,15 @@ cd octocode-mcp/octocode-claude-plugin
 
 ### The 7 Phases
 
-| Phase | Duration | What Happens | Gate |
-|-------|----------|--------------|------|
-| **1. Requirements** | 2-3 min | Product Manager asks questions, creates PRD | ✋ Gate 1 |
-| **2. Design** | 10-15 min | Architect + UX work in parallel | ✋ Gate 2 |
-| **3. Validation** | 5 min | Tech Lead breaks into tasks | ✋ Gate 3 |
-| **4. Research** | 10 min | Find best practices from GitHub | - |
-| **5. Orchestration** | 1 min | Manager assigns tasks with file locks | - |
-| **6. Implementation** | 2-3 hours | 4-5 engineers work in parallel | ✋ Gate 4 (progress) |
-| **7. Quality** | 20 min | QA verifies everything | ✋ Gate 5 |
+| Phase | What Happens | Gate |
+|-------|--------------|------|
+| **1. Requirements** | Product Manager asks questions, creates PRD | ✋ Gate 1 |
+| **2. Architecture** | Architect designs complete system (backend + frontend) | ✋ Gate 2 |
+| **3. Validation** | Tech Lead breaks into tasks, detects conflicts | ✋ Gate 3 |
+| **4. Research** | Research Specialist finds best practices from GitHub | - |
+| **5. Orchestration** | Manager assigns tasks with file locks | - |
+| **6. Implementation** | 4-5 Software Engineers work in parallel | ✋ Gate 4 |
+| **7. Verification** | QA Engineer verifies everything | ✋ Gate 5 |
 
 ### Behind the Scenes
 
@@ -259,12 +254,13 @@ Manager assigns: "Implement auth.ts"
 
 ---
 
-## 📊 Performance & Quality
+## 📊 Quality Standards
 
-### Speed Comparison
-- **Traditional Sequential**: 8-12 hours
-- **Octocode Vibe Parallel**: 3-5 hours
-- **Improvement**: **50-60% faster**
+### Parallel Execution Benefits
+- Multiple agents work simultaneously
+- Atomic file locking prevents conflicts
+- Efficient task orchestration
+- Real-time progress monitoring
 
 ### Quality Enforcement
 - ✅ **80-90% test coverage** (enforced)
@@ -310,11 +306,11 @@ Enables the QA agent to:
 
 | Doc | Description |
 |-----|-------------|
-| **[WORKFLOW_GUIDE.md](./WORKFLOW_GUIDE.md)** | ⭐ Complete workflow, agent roles, file locking system |
-| **[FLOW.md](./FLOW.md)** | 🎯 Visual walkthrough of 7-phase workflow |
-| **[TECHNICAL_GUIDE.md](./TECHNICAL_GUIDE.md)** | 🔧 Plugin architecture for contributors |
-| **[COMMUNICATION_STANDARD.md](./COMMUNICATION_STANDARD.md)** | Inter-agent protocols |
-| **[agents/](./agents/)** | Documentation for all 8 agents |
+| **[COMPLETE_GUIDE.md](./docs/COMPLETE_GUIDE.md)** | ⭐ Comprehensive guide covering all phases, agents, and systems |
+| **[FLOW.md](./docs/FLOW.md)** | 🎯 Visual walkthrough of the 7-phase workflow |
+| **[agents/](./agents/)** | Individual documentation for all 7 agents |
+
+**Want more details?** Read the [Complete Guide](./docs/COMPLETE_GUIDE.md) for in-depth understanding of the workflow, communication protocols, file locking, and state management.
 
 ---
 
@@ -385,6 +381,6 @@ MIT License - Free to use, modify, and distribute.
 
 **Made with ❤️ by Guy Bary**
 
-🏗️ **Octocode Vibe** - Transform Claude into a complete AI development team
+🏗️ **Octocode** - Transform Claude into a complete AI development team
 
 *From idea to production-ready code, research-driven and quality-enforced*

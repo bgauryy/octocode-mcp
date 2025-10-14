@@ -1,25 +1,26 @@
-# OAuth & Authentication Resources
+# Authentication & Authorization Resources
 
-> Authentication, OAuth, and authorization for Node.js/TypeScript web and mobile applications
+> Authentication, authorization, OAuth, and security libraries for Node.js/TypeScript backend applications
 
-**🎯 Purpose:** Auth resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
-**🤖 For:** AI agents and developers implementing authentication in Node.js apps
-**🌐 Focus:** NextAuth.js, Passport.js, SuperTokens - Node.js authentication
-**📱 Mobile:** OAuth flows, JWT, and session management for React Native apps
-**⚙️ Runtime:** 100% Node.js authentication libraries and middleware
+**🎯 Purpose:** Authentication resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+**🤖 For:** AI agents and developers implementing authentication in Node.js backend servers
+**🌐 Focus:** NextAuth.js, Passport.js, SuperTokens - Node.js authentication libraries
+**🔐 Core Topics:** OAuth 2.0/2.1, JWT, session management, passwordless auth, 2FA, WebAuthn
+**⚙️ Runtime:** 100% Node.js authentication libraries and middleware for backend APIs
+**📱 Client Support:** Serves web, mobile (React Native), desktop, and any HTTP client
 
-**Last Updated:** October 13, 2025
+**Last Updated:** October 14, 2025
 
 ---
 
 ## 🎯 Best for Application Generation
 
-This file provides **authentication guidance** to help AI agents:
+This file provides **Node.js authentication resources** to help AI agents:
 1. **Choose auth strategy** - NextAuth.js vs Passport.js vs SuperTokens
 2. **Implement OAuth** - OAuth 2.0/2.1, social login (Google, GitHub, etc.)
 3. **Handle sessions** - JWT vs session cookies, refresh tokens
 4. **Add 2FA** - WebAuthn, TOTP, SMS verification
-5. **Secure mobile** - Same auth for web and React Native mobile apps
+5. **Build backend APIs** - Authentication for Node.js servers serving any client (web, mobile, desktop)
 
 **Generation Priorities:**
 - ⚡ **NextAuth.js** - Best for Next.js with 80+ OAuth providers (2025 default)
@@ -149,31 +150,26 @@ This file provides **authentication guidance** to help AI agents:
 
 ### Enterprise SSO & Identity Management
 
-**⭐ authelia/authelia** (25,473 stars) ⚡ ESSENTIAL
-- **Description:** Single Sign-On Multi-Factor portal for web apps, OpenID Certified™
-- 🔗 https://github.com/authelia/authelia
-- **Key Features:**
-  - SSO with OpenID Connect, OAuth 2.0
-  - Two-factor authentication (TOTP, WebAuthn, Duo)
-  - LDAP, Active Directory integration
-  - Reverse proxy authentication
-- **Use Case:** Self-hosted SSO for internal applications and infrastructure
-
-**⭐ Keycloak** (Node.js client: 607⭐)
-- **Description:** Open source identity and access management
+**⭐ keycloak/keycloak-nodejs-admin-client** (607 stars) ⚡ HIGHLY RECOMMENDED
+- **Description:** Node.js client for Keycloak Admin REST API
 - 🔗 https://github.com/keycloak/keycloak-nodejs-admin-client
 - **Key Features:**
-  - SSO with SAML, OpenID Connect, OAuth 2.0
-  - User federation (LDAP, Active Directory)
-  - Social login and identity brokering
-  - Admin console and account management
-- **Use Case:** Enterprise identity management and SSO
+  - Admin operations from Node.js
+  - User management and realm configuration
+  - Full TypeScript support
+  - Client credentials and bearer token auth
+- **Use Case:** Managing Keycloak from Node.js applications
 - **React Example:** https://github.com/dasniko/keycloak-reactjs-demo (508⭐)
 
-**⭐ authgear/authgear-server** (339 stars)
-- **Description:** Open source alternative to Auth0 / Firebase Auth
-- 🔗 https://github.com/authgear/authgear-server
-- **Use Case:** Authentication service with self-hosted option
+**⭐ panva/node-openid-client** (1,933 stars) ⚡ HIGHLY RECOMMENDED
+- **Description:** OpenID Certified™ Relying Party (RP, Client) for Node.js
+- 🔗 https://github.com/panva/node-openid-client
+- **Key Features:**
+  - OpenID Connect Relying Party implementation
+  - OAuth 2.0 client
+  - Passport strategy support
+  - Works with any certified OpenID Provider
+- **Use Case:** Integrating with enterprise SSO providers from Node.js
 
 ---
 
@@ -298,15 +294,15 @@ This file provides **authentication guidance** to help AI agents:
   - QR code generation support
 - **Use Case:** Adding 2FA/TOTP to Node.js applications
 
-**⭐ Bubka/2FAuth** (3,445 stars)
-- **Description:** Web app to manage Two-Factor Authentication (2FA) accounts
-- 🔗 https://github.com/Bubka/2FAuth
-- **Use Case:** Self-hosted 2FA management
-
-**⭐ privacyidea/privacyidea** (1,650 stars)
-- **Description:** Multi-factor authentication system (2FA, MFA, OTP, FIDO Server)
-- 🔗 https://github.com/privacyidea/privacyidea
-- **Use Case:** Enterprise-grade MFA solution
+**⭐ speakeasyjs/speakeasy** (2,730 stars)
+- **Description:** Two-factor authentication for Node.js - One-time passcode generator
+- 🔗 https://github.com/speakeasyjs/speakeasy
+- **Key Features:**
+  - TOTP and HOTP support
+  - Google Authenticator compatible
+  - QR code generation
+  - Time-based one-time passwords
+- **Use Case:** Adding 2FA to Node.js applications
 
 ---
 
@@ -326,15 +322,16 @@ This file provides **authentication guidance** to help AI agents:
 - 🔗 https://github.com/yackermann/awesome-webauthn
 - **Use Case:** Learning and reference for WebAuthn implementation
 
-**⭐ passwordless-lib/fido2-net-lib** (1,350 stars)
-- **Description:** Passkeys, FIDO2 and WebAuthn .NET library
-- 🔗 https://github.com/passwordless-lib/fido2-net-lib
-- **Use Case:** WebAuthn for .NET applications
-
-**⭐ go-webauthn/webauthn** (1,117 stars)
-- **Description:** FIDO2 Conformant WebAuthn and Passkey backend for Go
-- 🔗 https://github.com/go-webauthn/webauthn
-- **Use Case:** WebAuthn implementation for Go backend
+**⭐ MasterKale/SimpleWebAuthn** (1,876 stars) ⚡ HIGHLY RECOMMENDED
+- **Description:** WebAuthn, Simplified. A collection of TypeScript-first libraries for simpler WebAuthn integration
+- 🔗 https://github.com/MasterKale/SimpleWebAuthn
+- **Key Features:**
+  - `@simplewebauthn/server` - Node.js server library
+  - `@simplewebauthn/browser` - Browser client library
+  - TypeScript-first with excellent type safety
+  - Supports passkeys and platform authenticators
+  - Works with Express, Fastify, and other Node.js frameworks
+- **Use Case:** Easiest way to implement WebAuthn in Node.js applications
 
 **⭐ aws-samples/amazon-cognito-passwordless-auth** (431 stars)
 - **Description:** Passwordless authentication with Amazon Cognito
@@ -624,10 +621,6 @@ const isValid = authenticator.verify({ token: userToken, secret });
 
 ### Authentication Tutorials & Guides
 
-**⭐ callicoder/spring-boot-react-oauth2-social-login-demo** (1,522 stars)
-- Spring Boot React OAuth2 Social Login with Google, Facebook, and GitHub
-- 🔗 https://github.com/callicoder/spring-boot-react-oauth2-social-login-demo
-
 **⭐ bradtraversy/storybooks** (584 stars)
 - Node.js app with Google OAuth example
 - 🔗 https://github.com/bradtraversy/storybooks
@@ -636,17 +629,21 @@ const isValid = authenticator.verify({ token: userToken, secret });
 - OAuth2 implementation examples for Node.js
 - 🔗 https://github.com/IntuitDeveloper/oauth2-nodejs
 
-### OAuth Proxy & Reverse Proxy Auth
+### Authentication Middleware & Utilities
 
-**⭐ bitly/oauth2_proxy** (5,096 stars)
-- Reverse proxy that provides authentication with Google, GitHub, or other providers
-- 🔗 https://github.com/bitly/oauth2_proxy
-- **Use Case:** Add OAuth to legacy applications without code changes
+**⭐ jaredhanson/connect-ensure-login** (303 stars)
+- Login session ensuring middleware for Connect and Express
+- 🔗 https://github.com/jaredhanson/connect-ensure-login
+- **Use Case:** Ensure users are authenticated before accessing routes
 
-**⭐ greenpau/caddy-security** (1,931 stars)
-- Authentication, Authorization, and Accounting plugin for Caddy v2
-- 🔗 https://github.com/greenpau/caddy-security
-- **Key Features:** Form-Based, Basic, Local, LDAP, OpenID Connect, OAuth 2.0, SAML
+**⭐ expressjs/cors** (6,889 stars) ⚡ ESSENTIAL
+- CORS middleware for Express.js
+- 🔗 https://github.com/expressjs/cors
+- **Key Features:**
+  - Simple and configurable CORS middleware
+  - Supports dynamic origin validation
+  - Pre-flight request handling
+- **Use Case:** Essential for securing cross-origin requests in Node.js APIs
 
 ---
 
@@ -674,35 +671,6 @@ const isValid = authenticator.verify({ token: userToken, secret });
 - **Passkey support:** Up from 12% to 60% of top sites
 - **OAuth 2.1 adoption:** 34% of new implementations
 - **Password breach detection:** 78% of auth platforms integrate HIBP
-
----
-
-## 🎯 Summary
-
-**Essential Tools:**
-- **Next.js:** Use NextAuth.js (27.6K⭐)
-- **Node.js:** Use Passport.js (23.4K⭐)
-- **Self-Hosted:** Use SuperTokens (14.6K⭐) or Stack Auth (6.3K⭐)
-- **Enterprise:** Use Authelia (25.4K⭐) or Keycloak
-- **2FA:** Use otplib (2.1K⭐)
-- **Passkeys:** Use WebAuthn libraries or Hanko (8.4K⭐)
-
-**Modern Authentication Stack (2025):**
-```
-Frontend: NextAuth.js or SuperTokens UI
-Backend: Passport.js or SuperTokens Core
-Tokens: JWT with short-lived access tokens + refresh tokens
-MFA: TOTP (otplib) or WebAuthn
-Session: Redis-backed sessions (express-session + connect-redis)
-Passwordless: Magic links or Passkeys (WebAuthn)
-```
-
-**Key Takeaways:**
-1. **Passwordless is the future** - Implement passkeys or magic links
-2. **MFA is essential** - Add 2FA for sensitive operations
-3. **OAuth 2.1 over OAuth 2.0** - Better security defaults
-4. **Self-hosted vs managed** - SuperTokens/Stack Auth vs Auth0/Clerk
-5. **JWT best practices** - Short-lived tokens with refresh token rotation
 
 ---
 

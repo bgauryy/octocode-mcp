@@ -1,454 +1,597 @@
-# Security Best Practices Resources
+# Security Resources for Node.js/TypeScript Applications
 
-> Security guidelines, tools, and best practices for Node.js/TypeScript applications
+> Security libraries, tools, and best practices for Node.js/TypeScript web and mobile applications
 
-**🎯 Purpose:** Security resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
-**🤖 For:** AI agents and developers securing Node.js applications
-**🌐 Focus:** OWASP Top 10, Node.js security, secrets management
-**📱 Mobile:** Mobile app security, API security for React Native backends
-**⚙️ Runtime:** Node.js security tools, npm audit, dependency scanning
-
-**Last Updated:** October 13, 2025
+**🎯 Purpose:** Security resources for AI agents building Node.js/TypeScript applications  
+**🌐 Focus:** Node.js security libraries, middleware, and scanning tools  
+**🔐 Topics:** Input validation, XSS/CSRF protection, rate limiting, security headers  
+**📅 Updated:** October 14, 2025
 
 ---
 
-## 🎯 Best for Application Generation
+## Quick Reference
 
-This file provides **security guidance** to help AI agents:
-1. **Apply OWASP Top 10** - Prevent injection, broken auth, XSS, CSRF
-2. **Secure Node.js** - Node.js security best practices and patterns
-3. **Manage secrets** - Environment variables, vaults, secret scanning
-4. **Scan dependencies** - npm audit, Snyk, supply chain security
-5. **Secure APIs** - Rate limiting, CORS, authentication for web + mobile
+### Essential Security Middleware
+- **Security Headers:** `helmetjs/helmet` (11K+ ⭐) - Essential Express security headers
+- **CORS:** `expressjs/cors` (7K+ ⭐) - Cross-origin resource sharing
+- **Rate Limiting:** `express-rate-limit/express-rate-limit` (3.2K+ ⭐) - Prevent brute-force/DDoS
+- **CSRF Protection:** `expressjs/csurf` (2.7K+ ⭐) - CSRF token validation
 
-**Generation Priorities:**
-- ⚡ **OWASP Top 10 2025** - Essential security vulnerabilities to prevent
-- ⚡ **Helmet.js** - Security headers for Express/Node.js
-- ⚡ **Zod validation** - Runtime input validation with TypeScript
-- ⚡ **Secrets management** - Never commit secrets, use env vars/vaults
+### Input Validation
+- **TypeScript-First:** `colinhacks/zod` (36K+ ⭐) - TypeScript schema validation
+- **Node.js Standard:** `hapijs/joi` (21K+ ⭐) - Powerful data validation
+- **String Validation:** `validatorjs/validator.js` (23K+ ⭐) - String validators/sanitizers
 
----
+### Password Hashing
+- **Standard:** `kelektiv/node.bcrypt.js` (7.5K+ ⭐) - bcrypt for Node.js
+- **Modern:** `ranisalt/node-argon2` (2K+ ⭐) - Argon2 (more secure)
 
-## Application Security
+### Security Scanning
+- **OWASP Projects:** `OWASP/NodeGoat` (2K+ ⭐) - Vulnerable app for learning
+- **Static Analysis:** `ajinabraham/nodejsscan` (2.7K+ ⭐) - Security code scanner
+- **Secrets Detection:** `trufflesecurity/trufflehog` (19K+ ⭐) - Find secrets in code
 
 ### OWASP Top 10 (2025)
+1. **Broken Access Control** - Authorization failures
+2. **Cryptographic Failures** - Sensitive data exposure
+3. **Injection** - SQL, NoSQL, command injection
+4. **Insecure Design** - Missing security controls
+5. **Security Misconfiguration** - Default configs, verbose errors
+6. **Vulnerable Components** - Outdated dependencies
+7. **Authentication Failures** - Weak auth/session
+8. **Data Integrity Failures** - Insecure deserialization
+9. **Logging Failures** - Insufficient monitoring
+10. **SSRF** - Server-side request forgery
 
-The OWASP Top 10:2025 is scheduled for release at the OWASP Global AppSec Conference in November 2025. Current key security risks include:
+### Decision Guide
+| Need | Choose | Why |
+|------|--------|-----|
+| Express Security | Helmet + CORS | Essential headers + CORS |
+| Rate Limiting | express-rate-limit | Prevent brute-force/DDoS |
+| Input Validation | Zod or Joi | TypeScript-first vs runtime |
+| Password Hashing | bcrypt or argon2 | Industry standard vs modern |
+| Security Scanning | nodejsscan + Snyk | Static analysis + dependency check |
 
-1. **Broken Access Control** - Failures in restricting user permissions leading to unauthorized access
-2. **Cryptographic Failures** - Improper encryption exposing sensitive data
-3. **Injection** (including XSS) - User input manipulation attacks
-4. **Insecure Design** - Security flaws in architecture and design phase
-5. **Security Misconfiguration** - Improper security settings across the stack
-6. **Vulnerable and Outdated Components** - Using libraries with known vulnerabilities
-7. **Identification and Authentication Failures** - Weak authentication mechanisms
-8. **Software and Data Integrity Failures** - Compromised CI/CD pipelines and supply chain
-9. **Security Logging and Monitoring Failures** - Insufficient visibility into security events
-10. **Server-Side Request Forgery (SSRF)** - Unauthorized server-side requests
+---
 
-### Essential Application Security Practices
+## ⚡ ESSENTIAL Security Middleware
 
-- **Access Control**: Implement "default deny" with server-side validation
-- **Data Protection**: Use AES-256 encryption at rest, TLS 1.3 in transit
-- **Password Security**: Use bcrypt or Argon2 for hashing, never plain text
-- **Input Validation**: Sanitize all user input, use prepared statements for databases
-- **Secure Design**: Integrate threat modeling from the start of development
-- **Shift-Left Security**: Test security at commit time, not just pre-deployment
+### HTTP Security Headers
+
+**⭐ helmetjs/helmet** (10,535 stars) ⚡ ESSENTIAL
+- **Description:** Help secure Express apps with various HTTP headers
+- 🔗 https://github.com/helmetjs/helmet
+- **Key Features:**
+  - Sets Content Security Policy (CSP)
+  - Prevents clickjacking (X-Frame-Options)
+  - Removes X-Powered-By header
+  - Sets Strict-Transport-Security (HSTS)
+  - Works with Express, Connect, and similar frameworks
+- **Use Case:** Essential first line of defense for Express/Node.js applications
+- **2025 Update:** Full support for modern CSP directives and security headers
+
+```typescript
+import helmet from 'helmet';
+app.use(helmet());
+```
+
+### CORS (Cross-Origin Resource Sharing)
+
+**⭐ expressjs/cors** (6,889 stars) ⚡ ESSENTIAL
+- **Description:** CORS middleware for Express.js
+- 🔗 https://github.com/expressjs/cors
+- **Key Features:**
+  - Simple and configurable CORS middleware
+  - Supports dynamic origin validation
+  - Pre-flight request handling
+  - Credentials support
+- **Use Case:** Essential for securing cross-origin requests in Node.js APIs
+
+```typescript
+import cors from 'cors';
+app.use(cors({ origin: 'https://yourdomain.com' }));
+```
+
+### Rate Limiting & Throttling
+
+**⭐ express-rate-limit/express-rate-limit** (3,157 stars) ⚡ ESSENTIAL
+- **Description:** Basic rate-limiting middleware for the Express web server
+- 🔗 https://github.com/express-rate-limit/express-rate-limit
+- **Key Features:**
+  - Flexible rate limiting with Redis, Memcached, or in-memory stores
+  - Per-route or global rate limiting
+  - Custom key generators (IP, user ID, etc.)
+  - Configurable responses and headers
+- **Use Case:** Prevent brute-force attacks, API abuse, and DDoS
+
+```typescript
+import rateLimit from 'express-rate-limit';
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100 // limit each IP to 100 requests per windowMs
+});
+
+app.use('/api/', limiter);
+```
+
+**⭐ nestjs/throttler** (673 stars)
+- **Description:** A rate limiting module for NestJS to work with Fastify, Express, GQL, Websockets, and RPC
+- 🔗 https://github.com/nestjs/throttler
+- **Use Case:** Rate limiting for NestJS applications
+
+**⭐ arcjet/arcjet-js** (555 stars)
+- **Description:** Bot detection, rate limiting, email validation, attack protection for Node.js, Next.js, Deno, Bun, Remix, SvelteKit
+- 🔗 https://github.com/arcjet/arcjet-js
+- **Key Features:**
+  - AI-powered bot detection
+  - Rate limiting with multiple strategies
+  - Email validation
+  - Attack protection
+  - Data redaction
+- **Use Case:** Modern security platform for Node.js applications
+
+---
+
+## 🔍 Input Validation & Sanitization
+
+### Schema Validation
+
+**⭐ hapijs/joi** (21,173 stars) ⚡ ESSENTIAL
+- **Description:** The most powerful data validation library for JS
+- 🔗 https://github.com/hapijs/joi
+- **Key Features:**
+  - Object schema description and validation
+  - Rich validation rules (strings, numbers, dates, objects, arrays)
+  - Custom error messages
+  - Extensible with custom validators
+  - Works in Node.js and browsers
+- **Use Case:** Runtime validation for API inputs, configuration, and data
+
+```typescript
+import Joi from 'joi';
+
+const schema = Joi.object({
+  username: Joi.string().alphanum().min(3).max(30).required(),
+  email: Joi.string().email().required(),
+  password: Joi.string().min(8).required()
+});
+
+const { error, value } = schema.validate(req.body);
+```
+
+**⭐ colinhacks/zod** (36,000+ stars) ⚡ HIGHLY RECOMMENDED
+- **Description:** TypeScript-first schema validation with static type inference
+- 🔗 https://github.com/colinhacks/zod
+- **Key Features:**
+  - TypeScript-first with excellent type inference
+  - Zero dependencies
+  - Works in Node.js and browsers
+  - Composable schemas
+  - Parse, don't validate philosophy
+- **Use Case:** TypeScript applications requiring type-safe validation
+- **Note:** Listed in tooling.md but essential for security
+
+**⭐ validatorjs/validator.js** (23,000+ stars) ⚡ ESSENTIAL
+- **Description:** String validation library
+- 🔗 https://github.com/validatorjs/validator.js
+- **Key Features:**
+  - Email, URL, IP, credit card validation
+  - Sanitization functions (trim, escape, stripLow)
+  - Works in Node.js and browsers
+  - No dependencies
+- **Use Case:** Simple string validation and sanitization
+
+```typescript
+import validator from 'validator';
+
+validator.isEmail('foo@bar.com'); // true
+validator.isURL('http://example.com'); // true
+validator.escape('<script>alert("xss")</script>'); // &lt;script&gt;alert(&quot;xss&quot;)&lt;&#x2F;script&gt;
+```
+
+### HTML Sanitization (XSS Prevention)
+
+**⭐ cure53/DOMPurify** (14,000+ stars) ⚡ ESSENTIAL
+- **Description:** DOM-only XSS sanitizer for HTML, MathML and SVG
+- 🔗 https://github.com/cure53/DOMPurify
+- **Key Features:**
+  - Fast and tolerant XSS sanitizer
+  - Works in browsers and Node.js (with jsdom)
+  - Removes all dangerous HTML while keeping safe HTML
+  - Highly configurable
+- **Use Case:** Sanitize user-generated HTML content
+
+**⭐ apostrophecms/sanitize-html** (3,800+ stars) ⚡ HIGHLY RECOMMENDED
+- **Description:** Clean up user-submitted HTML, preserving whitelisted elements
+- 🔗 https://github.com/apostrophecms/sanitize-html
+- **Key Features:**
+  - Simple whitelist-based HTML sanitization
+  - Configurable allowed tags and attributes
+  - Works in Node.js
+  - Great for markdown-to-HTML workflows
+- **Use Case:** Server-side HTML sanitization for Node.js
+
+```typescript
+import sanitizeHtml from 'sanitize-html';
+
+const clean = sanitizeHtml(dirty, {
+  allowedTags: ['b', 'i', 'em', 'strong', 'a'],
+  allowedAttributes: { 'a': ['href'] }
+});
+```
+
+### Express Validation Middleware
+
+**⭐ express-validator/express-validator** (7,000+ stars) ⚡ HIGHLY RECOMMENDED
+- **Description:** Express middleware for validator.js
+- 🔗 https://github.com/express-validator/express-validator
+- **Key Features:**
+  - Built on top of validator.js
+  - Middleware-based validation for Express
+  - Sanitization functions
+  - Custom validators and sanitizers
+- **Use Case:** Request validation in Express applications
+
+```typescript
+import { body, validationResult } from 'express-validator';
+
+app.post('/user', [
+  body('email').isEmail(),
+  body('password').isLength({ min: 8 })
+], (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  // Process request
+});
+```
+
+---
+
+## 🔐 Password Security
+
+### Password Hashing
+
+**⭐ kelektiv/node.bcrypt.js** (7,500+ stars) ⚡ ESSENTIAL
+- **Description:** bcrypt for NodeJS
+- 🔗 https://github.com/kelektiv/node.bcrypt.js
+- **Key Features:**
+  - Secure password hashing with salt
+  - Configurable cost factor (work factor)
+  - Synchronous and asynchronous methods
+  - Native C++ implementation for performance
+- **Use Case:** Industry-standard password hashing for Node.js
+
+```typescript
+import bcrypt from 'bcrypt';
+
+// Hash password
+const saltRounds = 10;
+const hash = await bcrypt.hash(myPlaintextPassword, saltRounds);
+
+// Compare password
+const match = await bcrypt.compare(myPlaintextPassword, hash);
+```
+
+**⭐ ranisalt/node-argon2** (2,000+ stars) ⚡ HIGHLY RECOMMENDED
+- **Description:** Node.js bindings for Argon2 hashing algorithm
+- 🔗 https://github.com/ranisalt/node-argon2
+- **Key Features:**
+  - Winner of Password Hashing Competition 2015
+  - More secure than bcrypt against GPU attacks
+  - Configurable memory, time, and parallelism costs
+  - Native implementation
+- **Use Case:** Modern, more secure password hashing
+- **Note:** Recommended over bcrypt for new applications
+
+```typescript
+import argon2 from 'argon2';
+
+// Hash password
+const hash = await argon2.hash(password);
+
+// Verify password
+const match = await argon2.verify(hash, password);
+```
+
+---
+
+## 🛡️ CSRF Protection
+
+**⭐ expressjs/csurf** (2,500+ stars - archived but still used)
+- **Description:** CSRF token middleware for Express
+- 🔗 https://github.com/expressjs/csurf
+- **Note:** Package is archived. Consider alternatives like `csrf-csrf` or built-in framework solutions
+- **Use Case:** CSRF protection for forms and state-changing operations
+
+**⭐ Psifi-Solutions/csrf-csrf** (300+ stars) ⚡ RECOMMENDED
+- **Description:** CSRF protection middleware for Express and Connect
+- 🔗 https://github.com/Psifi-Solutions/csrf-csrf
+- **Key Features:**
+  - Modern CSRF protection
+  - Double submit cookie pattern
+  - Configurable token generation
+  - Works with Express
+- **Use Case:** Modern CSRF protection for Express applications
+
+---
+
+## 🔍 Security Scanning & Auditing
+
+### Static Security Analysis
+
+**⭐ lirantal/awesome-nodejs-security** (2,932 stars) ⚡ ESSENTIAL
+- **Description:** Awesome Node.js Security resources
+- 🔗 https://github.com/lirantal/awesome-nodejs-security
+- **Use Case:** Comprehensive collection of Node.js security tools, articles, and resources
+
+**⭐ ajinabraham/nodejsscan** (2,510 stars) ⚡ HIGHLY RECOMMENDED
+- **Description:** nodejsscan is a static security code scanner for Node.js applications
+- 🔗 https://github.com/ajinabraham/nodejsscan
+- **Key Features:**
+  - Static Application Security Testing (SAST)
+  - Detects insecure code patterns
+  - Command-line and web interface
+  - Supports JavaScript and TypeScript
+- **Use Case:** Automated security scanning in CI/CD pipelines
+
+**⭐ OWASP/NodeGoat** (1,983 stars) ⚡ ESSENTIAL
+- **Description:** The OWASP NodeGoat project provides an environment to learn how OWASP Top 10 security risks apply to Node.js applications
+- 🔗 https://github.com/OWASP/NodeGoat
+- **Key Features:**
+  - Vulnerable Node.js application for learning
+  - Demonstrates OWASP Top 10 vulnerabilities
+  - Solutions and fixes provided
+  - Great for security training
+- **Use Case:** Learning OWASP Top 10 in Node.js context
+
+### Dependency Scanning
+
+**⭐ lirantal/is-website-vulnerable** (1,999 stars)
+- **Description:** Finds publicly known security vulnerabilities in a website's frontend JavaScript libraries
+- 🔗 https://github.com/lirantal/is-website-vulnerable
+- **Key Features:**
+  - Scans website for vulnerable JavaScript libraries
+  - Command-line tool
+  - Reports known CVEs
+- **Use Case:** Quick check for vulnerable frontend dependencies
+
+**⭐ lirantal/npq** (1,397 stars)
+- **Description:** Safely install npm packages by auditing them pre-install stage
+- 🔗 https://github.com/lirantal/npq
+- **Key Features:**
+  - Pre-install npm package auditing
+  - Checks for known vulnerabilities
+  - License compatibility checks
+  - Package age and maintenance status
+- **Use Case:** Safe npm package installation with security checks
+
+**⭐ RetireJS/retire.js** (3,700+ stars)
+- **Description:** Scanner detecting the use of JavaScript libraries with known vulnerabilities
+- 🔗 https://github.com/RetireJS/retire.js
+- **Key Features:**
+  - Detects vulnerable JavaScript libraries
+  - Command-line, Grunt, Gulp, and browser extensions
+  - Database of known vulnerable libraries
+- **Use Case:** Continuous monitoring of JavaScript dependencies
+
+---
+
+## 🔒 Access Control & Authorization
+
+**⭐ onury/accesscontrol** (2,266 stars) ⚡ HIGHLY RECOMMENDED
+- **Description:** Role and Attribute based Access Control for Node.js
+- 🔗 https://github.com/onury/accesscontrol
+- **Key Features:**
+  - Role-Based Access Control (RBAC)
+  - Attribute-Based Access Control (ABAC)
+  - Resource and action permissions
+  - Chainable, friendly API
+- **Use Case:** Fine-grained authorization for Node.js applications
+
+```typescript
+import AccessControl from 'accesscontrol';
+const ac = new AccessControl();
+
+ac.grant('user')
+  .readOwn('profile')
+  .updateOwn('profile');
+
+ac.grant('admin')
+  .extend('user')
+  .readAny('profile')
+  .updateAny('profile');
+
+const permission = ac.can('user').readOwn('profile');
+```
+
+**⭐ casbin/node-casbin** (2,800+ stars)
+- **Description:** Authorization library that supports access control models like ACL, RBAC, ABAC
+- 🔗 https://github.com/casbin/node-casbin
+- **Key Features:**
+  - Supports multiple access control models
+  - Policy storage in files or databases
+  - Role hierarchy and domains
+  - Scalable and high-performance
+- **Use Case:** Complex authorization requirements in microservices
+
+---
+
+## 📱 React Native Security
+
+### Secure Storage
+
+**⭐ emeraldsanto/react-native-encrypted-storage** (575 stars) ⚡ HIGHLY RECOMMENDED
+- **Description:** React Native wrapper around EncryptedSharedPreferences and Keychain
+- 🔗 https://github.com/emeraldsanto/react-native-encrypted-storage
+- **Key Features:**
+  - Secure, encrypted storage for React Native
+  - Uses Android EncryptedSharedPreferences
+  - Uses iOS Keychain
+  - Simple async API
+- **Use Case:** Storing sensitive data (tokens, credentials) in React Native apps
+
+```typescript
+import EncryptedStorage from 'react-native-encrypted-storage';
+
+// Store
+await EncryptedStorage.setItem('user_token', token);
+
+// Retrieve
+const token = await EncryptedStorage.getItem('user_token');
+```
+
+### Runtime Application Self-Protection (RASP)
+
+**⭐ talsec/Free-RASP-Community** (440 stars)
+- **Description:** SDK providing threat detection & security monitoring for mobile devices
+- 🔗 https://github.com/talsec/Free-RASP-Community
+- **Key Features:**
+  - Works with Flutter, React Native, Android, iOS
+  - Detects rooted/jailbroken devices
+  - Detects debugging and tampering
+  - Runtime threat monitoring
+  - Free community edition
+- **Use Case:** Mobile app security and threat detection
+
+---
+
+## 🚀 Additional Security Tools
+
+### Electron Security
+
+**⭐ doyensec/electronegativity** (1,026 stars)
+- **Description:** Identify misconfigurations and security anti-patterns in Electron applications
+- 🔗 https://github.com/doyensec/electronegativity
+- **Key Features:**
+  - Static analysis for Electron apps
+  - Detects security misconfigurations
+  - Command-line and programmatic API
+- **Use Case:** Security scanning for Electron applications
+
+### JavaScript Obfuscation
+
+**⭐ javascript-obfuscator/javascript-obfuscator** (15,365 stars)
+- **Description:** A powerful obfuscator for JavaScript and Node.js
+- 🔗 https://github.com/javascript-obfuscator/javascript-obfuscator
+- **Key Features:**
+  - Code obfuscation for JavaScript
+  - Variable and function name mangling
+  - String encryption
+  - Control flow flattening
+- **Use Case:** Protecting client-side JavaScript code (not a substitute for proper security)
+
+### JWT Security
+
+**⭐ auth0/node-jsonwebtoken** (18,000+ stars) ⚡ ESSENTIAL
+- **Description:** JSON Web Token implementation for Node.js
+- 🔗 https://github.com/auth0/node-jsonwebtoken
+- **Note:** Also listed in auth.md
+- **Security Considerations:**
+  - Use RS256 (asymmetric) for production, not HS256
+  - Short expiration times (15 minutes)
+  - Implement refresh token rotation
+  - Never store in localStorage (use httpOnly cookies)
+
+---
+
+## 📚 Best Practices & Guidelines
 
 ### OWASP Resources
 
-**⭐ OWASP Top 10 Project** ⚡ ESSENTIAL
+**⭐ OWASP Top 10** ⚡ ESSENTIAL
 - The standard awareness document for web application security
 - 🔗 https://owasp.org/www-project-top-ten/
 - **Use Case:** Understanding the most critical web application security risks
 
-**⭐ OWASP ASVS (Application Security Verification Standard)** ⚡ ESSENTIAL
-- Version 5.0.0 released May 2025 - comprehensive application security requirements
-- 🔗 https://owasp.org/www-project-application-security-verification-standard/
-- **Use Case:** Security verification framework for applications
-
-**⭐ OWASP Web Security Testing Guide (WSTG)** ⚡ ESSENTIAL
-- Comprehensive framework for testing web application security
-- 🔗 https://owasp.org/www-project-web-security-testing-guide/
-- **Use Case:** Penetration testing best practices
+**⭐ OWASP API Security Top 10** ⚡ ESSENTIAL
+- API-specific security risks
+- 🔗 https://owasp.org/www-project-api-security/
+- **Use Case:** Securing REST and GraphQL APIs
 
 **⭐ OWASP Mobile Top 10**
 - Security vulnerabilities specific to mobile applications
 - 🔗 https://owasp.org/www-project-mobile-top-10/
-- **Use Case:** Mobile app security guidelines
+- **Use Case:** Mobile app security guidelines for React Native
 
-### Web Security Resources
-
-**⭐ qazbnm456/awesome-web-security** (12,551 stars)
-- Curated list of Web Security materials and resources
-- 🔗 https://github.com/qazbnm456/awesome-web-security
-- **Use Case:** Comprehensive web security knowledge base
-
-**⭐ trimstray/the-book-of-secret-knowledge** (189,614 stars) ⚡ ESSENTIAL
-- Collection of security manuals, cheatsheets, hacks, and tools
-- 🔗 https://github.com/trimstray/the-book-of-secret-knowledge
-- **Use Case:** Comprehensive security knowledge base
+### Security Guides
 
 **⭐ Hack-with-Github/Awesome-Hacking** (99,010 stars)
 - Collection of resources for hackers, pentesters and security researchers
 - 🔗 https://github.com/Hack-with-Github/Awesome-Hacking
 - **Use Case:** Security and hacking resources
 
+**⭐ trimstray/the-book-of-secret-knowledge** (189,614 stars) ⚡ ESSENTIAL
+- Collection of security manuals, cheatsheets, hacks, and tools
+- 🔗 https://github.com/trimstray/the-book-of-secret-knowledge
+- **Use Case:** Comprehensive security knowledge base
+
+**⭐ qazbnm456/awesome-web-security** (12,551 stars)
+- Curated list of Web Security materials and resources
+- 🔗 https://github.com/qazbnm456/awesome-web-security
+- **Use Case:** Comprehensive web security knowledge base
+
 ---
 
-## API Security
-
-### 2025 API Security Trends
-
-- **APIs are the #1 attack vector** in cloud-native stacks
-- **AI-powered threat detection** using ML to detect abnormal API behavior in real-time
-- **Passwordless authentication** emerging with WebAuthn and FIDO2
-- **Zero-trust architecture** for all API access
-- **Shift-left security** starting at commit time through CI/CD pipelines
-
-### API Security Best Practices
-
-> **💡 For detailed authentication implementation guides, see [oauth.md](./oauth.md)** - covers OAuth 2.0/2.1, JWT libraries, NextAuth.js, Passport.js, passwordless auth, and more.
+## 🎯 Security Checklist for Node.js Apps
 
 **Authentication & Authorization**
-- Use OAuth 2.0/2.1, OpenID Connect, or JWT for strong authentication
-- Implement Multi-Factor Authentication (MFA) for sensitive operations
-- Apply least-privilege principles and granular access controls
-- Never expose API keys in client-side code or version control
+- [ ] Use secure password hashing (bcrypt, argon2)
+- [ ] Implement proper session management (see auth.md)
+- [ ] Use OAuth 2.1 or OpenID Connect for third-party auth
+- [ ] Implement RBAC with libraries like accesscontrol or casbin
+- [ ] Never store passwords in plain text
 
-**API Gateway Implementation**
-- Centralize API traffic through a gateway for consistent security policies
-- Implement rate limiting to prevent abuse and DDoS attacks
-- Use API gateways for request validation, transformation, and routing
-- Enable proper logging and monitoring at the gateway level
+**Input Validation**
+- [ ] Validate all user inputs with Joi, Zod, or express-validator
+- [ ] Sanitize HTML inputs with DOMPurify or sanitize-html
+- [ ] Use parameterized queries to prevent SQL injection
+- [ ] Validate file uploads (type, size, content)
 
-**Data Protection**
-- Encrypt data in transit using TLS 1.2+ (prefer TLS 1.3)
-- Encrypt sensitive data at rest with AES-256
-- Implement proper error handling that doesn't leak sensitive information
-- Validate and sanitize all input data
-
-**Monitoring & Testing**
-- Real-time behavioral monitoring for anomaly detection
-- Automated API security testing in CI/CD pipelines
-- Conduct load tests to model abuse scenarios
-- Track API requests, responses, and errors with comprehensive logging
-
-### API Security Resources
-
-**⭐ GitGuardian/APISecurityBestPractices** (1,953 stars) ⚡ ESSENTIAL
-- Resources to keep secrets out of source code
-- 🔗 https://github.com/GitGuardian/APISecurityBestPractices
-- **Use Case:** API security and secrets management best practices
-
-**⭐ OWASP API Security Project** ⚡ ESSENTIAL
-- OWASP API Security Top 10 and testing guidelines
-- 🔗 https://owasp.org/www-project-api-security/
-- **Use Case:** Understanding API-specific security risks
-
----
-
-## Infrastructure Security
-
-### Container Security
-
-**2025 Container Security Trends**
-- **Rapid attack timelines**: AKS clusters face first attack within 18 minutes, EKS within 28 minutes
-- **Supply chain security**: 60% of container breaches in 2024 were due to misconfigurations
-- **Agentless monitoring**: 15-20% cost reduction per deployment
-- **AI-driven analytics**: 70% improvement in incident detection accuracy
-
-**Container Security Best Practices**
-- Scan images for vulnerabilities before deployment
-- Use minimal base images (Alpine, distroless) to reduce attack surface
-- Never run containers as root - use non-privileged users
-- Implement image signing and verification
-- Regularly update and patch container images
-- Use read-only file systems where possible
-
-**⭐ aquasecurity/trivy** (29,392 stars) ⚡ ESSENTIAL
-- Comprehensive security scanner for containers, Kubernetes, code, and clouds
-- Finds vulnerabilities, misconfigurations, secrets, and generates SBOM
-- 🔗 https://github.com/aquasecurity/trivy
-- **Use Case:** Multi-purpose security scanning for containers and infrastructure
-
-**⭐ docker/docker-bench-security** (9,502 stars) ⚡ ESSENTIAL
-- Automated checks for Docker security best practices
-- Based on CIS Docker Benchmark
-- 🔗 https://github.com/docker/docker-bench-security
-- **Use Case:** Validating Docker deployment security
-
-### Kubernetes Security
-
-**2025 Kubernetes Security Trends**
-- **Zero-trust architecture**: "Never trust, always verify" with micro-segmentation
-- **Improved security posture**: 50% reduction in publicly exposed pods with severe vulnerabilities
-- **Version compliance**: 54% of clusters now run on supported versions (up from 42%)
-- **Policy-as-code frameworks**: Minimizing misconfigurations at scale
-
-**Kubernetes Security Best Practices**
-- Enable RBAC (Role-Based Access Control) with least privilege
-- Use Network Policies to control pod-to-pod communication
-- Implement Pod Security Standards (restricted mode for production)
-- Enable audit logging and monitor cluster activity
-- Scan for CIS Kubernetes Benchmark compliance
-- Use secrets management tools, never hardcode credentials
-- Keep Kubernetes versions up to date (within supported window)
-- Implement image admission controllers (e.g., OPA Gatekeeper)
-
-**⭐ aquasecurity/kube-bench** (7,756 stars) ⚡ ESSENTIAL
-- Validates Kubernetes deployment against CIS Kubernetes Benchmark
-- Automated security compliance checking
-- 🔗 https://github.com/aquasecurity/kube-bench
-- **Use Case:** Kubernetes security validation and compliance
-
-**⭐ freach/kubernetes-security-best-practice** (2,713 stars)
-- Comprehensive Kubernetes security best practices guide
-- 🔗 https://github.com/freach/kubernetes-security-best-practice
-- **Use Case:** Kubernetes security guidelines and patterns
-
-**⭐ aws/aws-eks-best-practices** (2,135 stars)
-- Best practices for AWS EKS including security, reliability, and cost optimization
-- 🔗 https://github.com/aws/aws-eks-best-practices
-- **Use Case:** AWS EKS production best practices
-
----
-
-## Secrets Management
-
-### Critical Issue: Secrets Sprawl
-
-**2025 Secrets Management Challenges**
-- **96% of organizations struggle with secrets sprawl** (credentials scattered across code, configs, scripts)
-- **88% of data breaches involved compromised credentials** (Verizon 2025 Report)
-- **Agentic AI complications**: Autonomous agents generate and rotate secrets faster than humans can track
-- **Non-human access**: Automation and service accounts create exponential growth in secrets
-
-### Secrets Management Best Practices
-
-**Never Commit Secrets to Version Control**
-- Use .gitignore to exclude .env, credentials files, and config files with secrets
-- Scan commits for accidentally committed secrets using pre-commit hooks
-- Use tools like GitGuardian or TruffleHog to detect secrets in repositories
-- If secrets are exposed, rotate them immediately - removing from Git history isn't enough
-
-**Automated Lifecycle Management**
-- Implement automated creation, distribution, rotation, and destruction
-- High-risk secrets should rotate daily; infrastructure certificates monthly
-- Eliminate manual processes to prevent human error
-- Use automated rotation schedules based on secret sensitivity
-
-**Shift-Left Security**
-- Scan for secrets at the PR level before merging
-- Integrate secrets scanning in CI/CD pipelines
-- Allow developers to fix issues before they reach production
-- Use pre-commit hooks for local secret detection
-
-**Access Control & Auditing**
-- Implement least-privilege access to secrets
-- Track who accessed secrets, when, and what changes were made
-- Generate compliance documentation (SOC 2, ISO 27001, HIPAA)
-- Monitor for potential security gaps with vulnerability scanners
-
-**Developer-Friendly Integration**
-- Provide CLI tools that integrate with developer workflows
-- Sync with CI/CD pipelines for seamless access
-- Use environment-based secret injection (avoid hardcoding)
-- Make secrets management simple and fast, not complex
-
-### Secrets Management Tools
-
-**⭐ HashiCorp Vault** ⚡ ESSENTIAL
-- Industry-standard secrets management platform
-- Supports dynamic secrets, encryption as a service, automated rotation
-- 🔗 https://www.vaultproject.io/
-- **Use Case:** Enterprise-grade secrets management
-
-**⭐ Doppler**
-- Modern secrets management for development teams
-- Seamless CI/CD integration with developer-friendly workflows
-- 🔗 https://www.doppler.com/
-- **Use Case:** Developer-focused secrets management
-
-**⭐ AWS Secrets Manager**
-- Native AWS secrets management with automatic rotation
-- Integrated with AWS services and IAM
-- 🔗 https://aws.amazon.com/secrets-manager/
-- **Use Case:** AWS-native secrets management
-
-**⭐ Infisical**
-- Open-source secrets management platform
-- Developer-friendly with modern workflows
-- 🔗 https://infisical.com/
-- **Use Case:** Open-source secrets management
-
-**⭐ SOPS (Secrets OPerationS)**
-- File-based secrets encryption with version control support
-- Uses AWS KMS, GCP KMS, Azure Key Vault, or PGP
-- 🔗 https://github.com/mozilla/sops
-- **Use Case:** Encrypted secrets in Git repositories
-
-**⭐ External Secrets Operator**
-- Kubernetes operator to sync external secrets into Kubernetes
-- Supports Vault, AWS, GCP, Azure secret managers
-- 🔗 https://external-secrets.io/
-- **Use Case:** Kubernetes secrets synchronization
-
----
-
-## Security Scanning & Tools
-
-### Vulnerability Scanning
-
-**2025 Vulnerability Trends**
-- **30,000+ vulnerabilities disclosed in 2024** (17% increase)
-- **48,675-58,956 new CVEs predicted for 2025**
-- **154% increase in cloud vulnerabilities** year-over-year
-- **Ransomware and social engineering** remain top threats
-
-### Essential Security Tools
-
-**⭐ aquasecurity/trivy** (29,392 stars) ⚡ ESSENTIAL
-- Comprehensive scanner: containers, Kubernetes, IaC, code repositories, clouds
-- Detects vulnerabilities, misconfigurations, secrets, and generates SBOM
-- 🔗 https://github.com/aquasecurity/trivy
-- **Use Case:** All-in-one security scanning
-
-**⭐ GitGuardian**
-- Automated secrets detection in code repositories
-- Real-time monitoring and alerting for exposed credentials
-- 🔗 https://www.gitguardian.com/
-- **Use Case:** Secrets detection in repositories
-
-**⭐ TruffleHog**
-- Find credentials and secrets in Git history
-- 🔗 https://github.com/trufflesecurity/trufflehog
-- **Use Case:** Historical secrets scanning
-
-**⭐ Snyk**
-- Developer-first security platform
-- Scans code, dependencies, containers, and IaC
-- 🔗 https://snyk.io/
-- **Use Case:** Developer-focused security testing
-
-**⭐ OWASP ZAP (Zed Attack Proxy)**
-- Free web application security scanner
-- 🔗 https://www.zaproxy.org/
-- **Use Case:** Web application penetration testing
-
-**⭐ SonarQube**
-- Code quality and security analysis
-- Detects bugs, vulnerabilities, and code smells
-- 🔗 https://www.sonarqube.org/
-- **Use Case:** Static application security testing (SAST)
-
----
-
-## Quick Reference
-
-### Security Checklist
-
-**Application Security**
-- [ ] Validate and sanitize all user input
-- [ ] Use parameterized queries/prepared statements for databases
-- [ ] Implement proper authentication and authorization
-- [ ] Use secure password hashing (bcrypt, Argon2)
+**HTTP Security**
+- [ ] Use Helmet.js for security headers
+- [ ] Configure CORS properly with express cors
 - [ ] Enable HTTPS with TLS 1.3
-- [ ] Set secure HTTP headers (CSP, HSTS, X-Frame-Options)
-- [ ] Keep dependencies updated and scan for vulnerabilities
-- [ ] Implement proper error handling (don't leak sensitive info)
-- [ ] Follow OWASP Top 10 guidelines
+- [ ] Implement CSRF protection for state-changing operations
+- [ ] Set secure, httpOnly, sameSite cookies
 
-**API Security**
-- [ ] Use OAuth 2.0/2.1 or JWT for authentication
-- [ ] Implement rate limiting and throttling
-- [ ] Use API gateway for centralized security policies
-- [ ] Encrypt data in transit (TLS 1.3) and at rest (AES-256)
-- [ ] Validate all API inputs and sanitize outputs
-- [ ] Implement comprehensive API logging and monitoring
-- [ ] Never expose API keys in client code
-- [ ] Use API versioning for backward compatibility
+**Rate Limiting & DoS Protection**
+- [ ] Implement rate limiting with express-rate-limit
+- [ ] Use different limits for different endpoints
+- [ ] Consider distributed rate limiting with Redis
+- [ ] Implement request size limits
 
-**Infrastructure Security**
-- [ ] Scan container images for vulnerabilities (Trivy)
-- [ ] Run containers as non-root users
-- [ ] Use minimal base images (Alpine, distroless)
-- [ ] Enable Kubernetes RBAC with least privilege
-- [ ] Implement Network Policies for pod isolation
-- [ ] Use Pod Security Standards (restricted mode)
-- [ ] Run CIS benchmark checks (docker-bench, kube-bench)
-- [ ] Keep infrastructure components updated
+**Dependency Security**
+- [ ] Run `npm audit` regularly
+- [ ] Use Snyk or similar tools for continuous monitoring
+- [ ] Keep dependencies up to date
+- [ ] Review dependency licenses
+- [ ] Use `npq` for pre-install security checks
 
 **Secrets Management**
-- [ ] Never commit secrets to version control
-- [ ] Use .gitignore for .env and credential files
-- [ ] Implement automated secret rotation
-- [ ] Use secrets management tools (Vault, Doppler, AWS Secrets Manager)
-- [ ] Scan for secrets in pre-commit hooks
+- [ ] Never commit secrets to Git
 - [ ] Use environment variables for configuration
-- [ ] Implement least-privilege access to secrets
-- [ ] Enable comprehensive audit logging
+- [ ] Use secrets management tools (Vault, Doppler, AWS Secrets Manager)
+- [ ] Implement secret rotation
+- [ ] Scan for secrets in pre-commit hooks
 
-**Security Testing**
-- [ ] Run SAST (Static Application Security Testing) in CI/CD
-- [ ] Perform DAST (Dynamic Application Security Testing) regularly
-- [ ] Scan dependencies for known vulnerabilities
-- [ ] Test for OWASP Top 10 vulnerabilities
-- [ ] Conduct penetration testing periodically
-- [ ] Perform load testing with abuse scenarios
-- [ ] Implement automated security testing in pipelines
-
-### Essential Tools by Category
-
-**General Security**
-- `trimstray/the-book-of-secret-knowledge` - Comprehensive security knowledge
-- `Lissy93/personal-security-checklist` - 300+ security tips
-
-**Application Security**
-- OWASP Top 10 - Critical web app security risks
-- OWASP ASVS - Security verification standard
-- OWASP WSTG - Security testing guide
+**Logging & Monitoring**
+- [ ] Log security events (failed auth, suspicious activity)
+- [ ] Don't log sensitive data (passwords, tokens, PII)
+- [ ] Implement centralized logging
+- [ ] Set up alerts for security events
+- [ ] Monitor for unusual patterns
 
 **API Security**
-- `GitGuardian/APISecurityBestPractices` - API security guidance
-- OWASP API Security Top 10 - API-specific risks
-
-**Container Security**
-- `aquasecurity/trivy` - Comprehensive container scanner
-- `docker/docker-bench-security` - Docker security validation
-
-**Kubernetes Security**
-- `aquasecurity/kube-bench` - K8s CIS benchmark checks
-- `freach/kubernetes-security-best-practice` - K8s security guide
-
-**Secrets Management**
-- HashiCorp Vault - Enterprise secrets management
-- Doppler - Developer-friendly secrets platform
-- AWS Secrets Manager - AWS-native solution
-
-**Scanning Tools**
-- Trivy - Multi-purpose security scanner
-- Snyk - Developer-first security platform
-- OWASP ZAP - Web app security testing
-
-### Top 3 Security Essentials for 2025
-
-1. **Shift-Left Security** - Test security from commit time through CI/CD, not just before deployment
-2. **Secrets Management** - Automate rotation, never commit to Git, use dedicated tools (96% of orgs struggle with this)
-3. **Zero-Trust Architecture** - Never trust, always verify - for APIs, infrastructure, and all access
-
-### Critical 2025 Security Practices
-
-- **AI-Powered Defense**: Leverage AI-driven anomaly detection for real-time threat identification
-- **Supply Chain Security**: 60% of breaches from misconfigurations - use policy-as-code frameworks
-- **Rapid Response**: Clusters face attacks within 18-28 minutes - implement immediate security measures
-- **Automated Lifecycle**: Manual processes cause breaches - automate creation, rotation, and destruction
-- **Comprehensive Scanning**: 48K-59K new CVEs expected in 2025 - continuous vulnerability scanning is critical
-
----
-
-**⚠️ Remember**: Security is not a one-time task - it's a continuous process. Stay updated on the latest threats, regularly patch and update systems, and always follow the principle of least privilege.
+- [ ] Implement proper error handling (don't leak stack traces)
+- [ ] Use API versioning
+- [ ] Implement request/response validation
+- [ ] Use API gateways for centralized security
+- [ ] Document security requirements in OpenAPI specs
 
 ---
 
 *Part of octocode-mcp resources collection*
+
