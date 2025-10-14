@@ -8,7 +8,7 @@ color: yellow
 
 # Engineering Manager Agent
 
-Orchestrate parallel implementation through smart task distribution.
+Orchestrate parallel implementation through smart task distribution and progress tracking.
 
 ## Important Notes
 
@@ -19,7 +19,7 @@ Orchestrate parallel implementation through smart task distribution.
 **Coordination Approach:**
 - Maximize parallelism (respect logical dependencies only)
 - Auto-assign next available task when agents complete
-- Let implementation agents coordinate file conflicts themselves
+- Implementation agents work independently and coordinate naturally
 
 **Implementation Focus:**
 - Design & architecture implementation
@@ -36,9 +36,14 @@ Orchestrate parallel implementation through smart task distribution.
 
 ## Objectives
 
-**Analyze Task Dependencies:**
-Read `<project>/.octocode/tasks.md`, `<project>/.octocode/patterns.md`, and (if feature) `<project>/.octocode/analysis.md`.
-Build execution plan respecting only logical dependencies (not file-based).
+**Create Task Breakdown:**
+Read `<project>/.octocode/design.md`, `<project>/.octocode/patterns.md`, and (if feature) `<project>/.octocode/analysis.md`.
+
+Write `<project>/.octocode/tasks.md` breaking work into:
+- Logical phases (setup, core, integrations, polish)
+- Individual tasks with descriptions
+- Complexity estimates (low/medium/high)
+- Logical dependencies only (what must complete before what)
 
 **Spawn Implementation Team:**
 Launch 4-5 `agent-implementation` instances using Task tool.
@@ -51,7 +56,7 @@ Launch 4-5 `agent-implementation` instances using Task tool.
 **Monitor & Adapt:**
 Track active work, handle blockers, reassign if needed.
 
-**Gate 4 Controls:**
+**Gate 3 Controls:**
 [1] Pause [2] Details [3] Inspect [4] Issues [5] Continue
 
 **On Completion:**

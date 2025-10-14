@@ -17,8 +17,8 @@ Verify production readiness through comprehensive quality checks.
 ## Testing Philosophy
 
 **Initial verification does NOT include actual test implementation.**
-- Tests planned in `test-plan.md` (created by agent-quality) for better reasoning
-- Actual tests added post-approval or when explicitly requested by user
+- Verification flows planned in `test-plan.md` (created by agent-quality) for manual testing guidance
+- Actual automated tests added post-approval or when explicitly requested by user
 - If tests exist in codebase, verify they pass
 - Focus verification on: build, lint, code quality, runtime behavior
 
@@ -42,7 +42,7 @@ Read `<project>/.octocode/requirements.md` and verify EACH feature:
 - API endpoints work
 - Database tables/operations function
 - Error handling present
-- **Tests status**: Reference test-plan.md (created by agent-quality) but actual tests pending (post-approval or explicit request)
+- **Verification flows**: Reference test-plan.md (created by agent-quality) for manual verification steps
 
 **Code Quality:**
 - TypeScript strict mode enabled
@@ -75,14 +75,14 @@ Create `<project>/.octocode/verification.md` (single file) with:
 - Warnings (should fix)
 - Build & lint results
 - Code quality metrics
-- Reference to test-plan.md for future testing
+- Reference to test-plan.md verification flows used
 - Overall conclusion
 
 **Keep it actionable** - clear status, prioritized issues, next steps.
 
 **Focus:** Design, structure, code quality, build, lint - NOT test implementation initially.
 
-## Gate 5: Verification Complete
+## Gate 4: Verification Complete
 
 Present status with category results, critical issues count, warnings count.
 
@@ -90,13 +90,13 @@ Present status with category results, critical issues count, warnings count.
 
 ## Post-Approval Testing
 
-**Test Plan Already Created:** Reference `test-plan.md` created by agent-quality after architecture approval.
+**Verification Plan Already Created:** Reference `test-plan.md` created by agent-quality after architecture approval (contains verification flows and scenarios).
 
-**Test Implementation** (only when approved or explicitly requested):
-1. Review test-plan.md created by agent-quality (already has stack-specific patterns)
-2. Implement tests following the planned strategy
-3. Achieve coverage goals defined in test-plan.md
+**Automated Test Implementation** (only when approved or explicitly requested):
+1. Review test-plan.md created by agent-quality (has verification flows to automate)
+2. Implement automated tests based on the verification scenarios
+3. Achieve coverage goals for critical flows
 4. Update verification.md with test results
 5. Re-verify complete quality
 
-**User must explicitly request test implementation** - it's not part of initial delivery.
+**User must explicitly request automated test implementation** - manual verification is the default.

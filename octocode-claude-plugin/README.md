@@ -37,14 +37,14 @@ That's it! The AI team will guide you through requirements, design, implementati
 A **Claude Code plugin** that provides **two powerful commands**:
 
 ### `/octocode-generate` - Build from Scratch
-Orchestrates 7 specialized AI agents through a structured 7-phase workflow:
+Orchestrates 6 specialized AI agents through a structured 6-phase workflow:
 
 ```
-💭 Requirements → 🏗️ Architecture → ✅ Validation → 🔬 Research 
-→ 🎯 Orchestration → 💻 Implementation → ✅ Quality Check
+💭 Requirements → 🏗️ Architecture → 🔬 Research 
+→ 🎯 Planning → 💻 Implementation → ✅ Quality Check
 ```
 
-**You approve at 5 critical gates** - the AI team handles the rest.
+**You approve at 4 critical gates** - the AI team handles the rest.
 
 ### `/octocode-feature` - Enhance Existing Code
 Analyzes existing codebases and safely adds features or fixes bugs through 6 phases:
@@ -54,7 +54,7 @@ Analyzes existing codebases and safely adds features or fixes bugs through 6 pha
 → 💻 Implementation → ✅ Verification
 ```
 
-**You approve at 3 critical gates** - perfect for production codebases.
+**You approve at 4 critical gates** - perfect for production codebases.
 
 ### Important: Git Operations
 
@@ -91,7 +91,7 @@ Analyzes existing codebases and safely adds features or fixes bugs through 6 pha
 
 ## 🤖 Meet Your AI Team
 
-**9 specialized agents total**: 7 agents for `/octocode-generate`, 6 agents for `/octocode-feature` (5 agents are shared between both commands)
+**8 specialized agents total**: 6 agents for `/octocode-generate`, 6 agents for `/octocode-feature` (4 agents are shared between both commands)
 
 ### For `/octocode-generate` (Build from Scratch)
 
@@ -99,9 +99,9 @@ Analyzes existing codebases and safely adds features or fixes bugs through 6 pha
 |-------|------|-------|--------------|
 | 🎯 **Product Manager** | Requirements | Opus | Asks clarifying questions, creates PRD, researches competitors |
 | 🏗️ **Architect** | System Design | Opus | Designs complete architecture (backend + frontend), evaluates tech stacks, critical thinking |
-| ✅ **Tech Lead** | Validation | Sonnet | Reviews architecture, breaks down tasks, detects conflicts |
+| 🔬 **Quality Architect** | Verification Planning | Opus | Creates verification flows and test scenarios (not test code) |
 | 🔬 **Research Specialist** | Best Practices | Sonnet | Finds code examples from top repos, extracts patterns |
-| 🎯 **Engineering Manager** | Orchestration | Sonnet | Assigns tasks, prevents conflicts, tracks progress |
+| 🎯 **Engineering Manager** | Orchestration | Sonnet | Creates task breakdown, assigns tasks, tracks progress |
 | 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns, ensures build passes (multiple instances work in parallel) |
 | ✅ **QA Engineer** | Quality | Sonnet | Tests in browser, checks security, verifies production-readiness |
 
@@ -112,7 +112,7 @@ Analyzes existing codebases and safely adds features or fixes bugs through 6 pha
 | 📊 **Code Analyst** | Codebase Review | Sonnet | Analyzes existing code, identifies patterns, assesses quality |
 | 🎯 **Feature Analyst** | Impact Analysis | Opus | Critical thinking on changes, assesses risks, plans implementation |
 | 🔬 **Research Specialist** | Best Practices | Sonnet | Finds implementation patterns matching existing code style |
-| 🎯 **Engineering Manager** | Orchestration | Sonnet | Coordinates parallel work, manages file locks |
+| 🎯 **Engineering Manager** | Orchestration | Sonnet | Creates task breakdown, assigns tasks, tracks progress |
 | 💻 **Software Engineer** | Implementation | Sonnet | Modifies code following existing patterns (multiple instances) |
 | ✅ **QA Engineer** | Quality | Sonnet | Tests changes, verifies no regression in existing features |
 
@@ -160,30 +160,29 @@ rich text editor, and comments
 
 **Phase 2: Architecture** → Creates `design.md` + `test-plan.md`
 - Architect designs complete system (backend + frontend)
-- Quality Architect creates test strategy (for reasoning)
+- Quality Architect creates verification flows (not test code)
 - **✋ Gate 2:** You approve architecture
-- **✋ Gate 2.5:** You approve test plan
+- **✋ Gate 2.5:** You approve verification plan
 
-**Phase 3: Validation** → Creates `tasks.md`
-- Tech Lead breaks project into atomic tasks
-- **✋ Gate 3:** You approve task plan
+**Phase 3: Research** → Creates `patterns.md`
+- Research Specialist finds best implementations from top repos (runs parallel with Phase 4)
 
-**Phase 4: Research** → Creates `patterns.md`
-- Research Specialist finds best implementations from top repos
+**Phase 4: Planning** → Creates `tasks.md`
+- Engineering Manager breaks project into tasks and assigns work
 
-**Phase 5-6: Implementation** → Updates `tasks.md` with progress
+**Phase 5: Implementation** → Updates `tasks.md` with progress
 - 4-5 Software Engineers work in parallel
-- **🔄 Gate 4:** Monitor live, pause/continue anytime
+- **🔄 Gate 3:** Monitor live, pause/continue anytime
 
-**Phase 7: Verification** → Creates `verification.md`
+**Phase 6: Verification** → Creates `verification.md`
 - QA Engineer tests in Chrome browser, runs all checks
-- **✋ Gate 5:** Final approval
+- **✋ Gate 4:** Final approval
 
-**Result: 6 single files, 5 approval gates, production-ready code**
+**Result: 5 single files, 4 approval gates, production-ready code**
 
 ### What You Get
 
-✅ **6 documentation files** (requirements, design, test-plan, tasks, patterns, verification)  
+✅ **5 documentation files** (requirements, design, test-plan, tasks, patterns, verification)  
 ✅ **Full-stack application** (Next.js + PostgreSQL)  
 ✅ **User authentication** (JWT + OAuth)  
 ✅ **Rich text editor** (TipTap)  
@@ -192,7 +191,7 @@ rich text editor, and comments
 ✅ **TypeScript strict mode**  
 ✅ **Lint passing**  
 ✅ **Working MVP** ready for testing phase  
-✅ **You approved** at 5 decision gates  
+✅ **You approved** at 4 decision gates  
 
 ---
 
@@ -226,11 +225,11 @@ user management, and role-based access control
 
 | Feature | Octocode | claude-flow | dify | Microsoft |
 |---------|----------|-------------|------|-----------|
-| **Specialized Agents** | ✅ 9 specialized | 74 general | Platform | Framework |
-| **Approval Gates** | ✅ 3-5 gates | ⚠️ Basic | ❌ None | ⚠️ YAML |
+| **Specialized Agents** | ✅ 8 specialized | 74 general | Platform | Framework |
+| **Approval Gates** | ✅ 4 gates | ⚠️ Basic | ❌ None | ⚠️ YAML |
 | **Observability** | ✅ **Best-in-class** | ⚠️ Good | ⚠️ Basic | ⚠️ Good |
 | **Critical Thinking** | ✅ **Unique** | ❌ None | ❌ None | ❌ None |
-| **File Conflict Prevention** | ✅ Atomic locks | ⚠️ Basic | ⚠️ Basic | ❌ None |
+| **Parallel Execution** | ✅ Multiple agents | ⚠️ Basic | ⚠️ Basic | ❌ None |
 | **Browser Testing** | ✅ Chrome DevTools | ❌ None | ⚠️ Limited | ❌ None |
 | **Research-Driven** | ✅ GitHub analysis | ⚠️ Limited | ❌ None | ❌ None |
 
@@ -288,19 +287,18 @@ cd octocode-mcp/octocode-claude-plugin
 
 ## 🔧 How It Works
 
-### The 7 Phases (for `/octocode-generate`)
+### The 6 Phases (for `/octocode-generate`)
 
 | Phase | Agent | Output | Human Gate |
 |-------|-------|--------|------------|
 | **1. Requirements** | Product Manager | `requirements.md` | ✋ Gate 1 |
 | **2. Architecture** | Architect + Quality | `design.md` + `test-plan.md` | ✋ Gate 2 + 2.5 |
-| **3. Validation** | Tech Lead | `tasks.md` | ✋ Gate 3 |
-| **4. Research** | Research Specialist | `patterns.md` | (parallel) |
-| **5. Orchestration** | Manager | Progress tracking | (planning) |
-| **6. Implementation** | 4-5 Engineers | Code + updates to `tasks.md` | 🔄 Gate 4 (live) |
-| **7. Verification** | QA Engineer | `verification.md` | ✋ Gate 5 |
+| **3. Research** | Research Specialist | `patterns.md` | (parallel with Phase 4) |
+| **4. Planning** | Manager | `tasks.md` | (no gate) |
+| **5. Implementation** | 4-5 Engineers | Code + updates to `tasks.md` | 🔄 Gate 3 (live) |
+| **6. Verification** | QA Engineer | `verification.md` | ✋ Gate 4 |
 
-**Result: 6 single files, clear ownership, human control at every gate**
+**Result: 5 single files, clear ownership, human control at every gate**
 
 ### The 6 Phases (for `/octocode-feature`)
 
@@ -308,22 +306,22 @@ cd octocode-mcp/octocode-claude-plugin
 |-------|-------|--------|------------|
 | **1. Code Review** | Code Analyst | `codebase-review.md` | ✋ Gate 1 |
 | **2. Analysis** | Feature Analyst | `analysis.md` | ✋ Gate 2 |
-| **3. Research** | Research Specialist | `patterns.md` | (parallel) |
-| **4. Planning** | Manager | Progress tracking | (planning) |
+| **3. Research** | Research Specialist | `patterns.md` | (parallel with Phase 4) |
+| **4. Planning** | Manager | `tasks.md` | (no gate) |
 | **5. Implementation** | 4-5 Engineers | Code + updates to `tasks.md` | 🔄 Gate 3 (live) |
-| **6. Verification** | QA Engineer | `verification.md` | ✋ Final |
+| **6. Verification** | QA Engineer | `verification.md` | ✋ Gate 4 |
 
-**Result: 5 single files, clear ownership, safe changes with human approval**
+**Result: 4 single files, clear ownership, safe changes with human approval**
 
 ### Behind the Scenes
 
-**File Locking System**: Prevents conflicts
+**Task Coordination**: Smart parallelization
 ```
-Manager assigns: "Implement auth.ts"
-→ Creates: .octocode/locks/auth.ts.lock
-→ Engineer 1 works on auth.ts
-→ Engineer 2 cannot touch auth.ts
-→ Release lock when done
+Manager creates task breakdown
+→ Assigns tasks to available engineers
+→ Engineers work independently
+→ Natural coordination through code structure
+→ Progress tracked in tasks.md
 ```
 
 **Progress Tracking**: Clear visibility in `.octocode/`
@@ -338,8 +336,8 @@ Manager assigns: "Implement auth.ts"
 
 ### Parallel Execution Benefits
 - Multiple agents work simultaneously
-- Atomic file locking prevents conflicts
-- Efficient task orchestration
+- Smart task coordination
+- Efficient orchestration
 - Real-time progress monitoring
 
 ### Quality Enforcement
@@ -388,11 +386,11 @@ Enables the QA agent to:
 | Doc | Description |
 |-----|-------------|
 | **[COMPLETE_GUIDE.md](./docs/COMPLETE_GUIDE.md)** | ⭐ Comprehensive guide for `/octocode-generate` workflow |
-| **[FLOW.md](./docs/FLOW.md)** | 🎯 Visual walkthrough of the 7-phase workflow |
+| **[FLOW.md](./docs/FLOW.md)** | 🎯 Visual walkthrough of the 6-phase workflow |
 | **[agents/](./agents/)** | Individual documentation for all 9 specialized agents |
 | **[commands/](./commands/)** | Detailed specifications for both commands |
 
-**Want more details?** Read the [Complete Guide](./docs/COMPLETE_GUIDE.md) for in-depth understanding of the workflow, communication protocols, file locking, and state management.
+**Want more details?** Read the [Complete Guide](./docs/COMPLETE_GUIDE.md) for in-depth understanding of the workflow, communication protocols, and state management.
 
 ---
 

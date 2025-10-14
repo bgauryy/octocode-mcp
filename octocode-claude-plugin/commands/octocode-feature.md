@@ -37,9 +37,10 @@ Work with the current project's `.octocode/` directory.
 
 **Implementation-first, tests later:**
 1. Phases 1-6 focus on implementation and functionality
-2. Tests are NOT written during initial implementation
-3. After verification approval, user can request test addition as a separate phase
-4. This allows faster iteration and user validation before test investment
+2. Verification flows (not test code) guide manual testing
+3. Automated tests are NOT written during initial implementation
+4. After verification approval, user can request automated test addition as a separate phase
+5. This allows faster iteration and user validation before test investment
 
 ## 6-Phase Workflow
 
@@ -47,12 +48,12 @@ Work with the current project's `.octocode/` directory.
 Phase 1: Code Review      → ✋ Gate 1 (User Approval Required)
 Phase 2: Analysis         → ✋ Gate 2 (User Approval Required)
 Phase 3: Research         (Runs in parallel with Phase 4)
-Phase 4: Planning         
+Phase 4: Planning + Task Breakdown
 Phase 5: Implementation   → 🔄 Gate 3 (Live Monitor - Pause/Continue)
-Phase 6: Verification     → ✋ Final Review (User Approval Required)
+Phase 6: Verification     → ✋ Gate 4 (Final Review - User Approval Required)
 ```
 
-**Human-in-the-Loop:** 3 approval gates + live monitoring ensure safe changes
+**Human-in-the-Loop:** 4 approval gates (Gate 1, Gate 2, Gate 3 live, Gate 4) ensure safe changes
 
 ### Phase 1: Code Review → Gate 1
 **Agent:** `agent-code-review`  
@@ -81,12 +82,12 @@ Phase 6: Verification     → ✋ Final Review (User Approval Required)
 **Managed by:** `agent-manager` (smart task distribution, progress in tasks.md)  
 **Gate 3:** Live dashboard with pause/continue/inspect controls
 
-### Phase 6: Verification → Final Review
+### Phase 6: Verification → Gate 4 (Final Review)
 **Agent:** `agent-verification` (EXISTING)  
-**Tests:** Build, linting, feature validation, regression checks, runtime behavior  
+**Checks:** Build, linting, feature validation, regression checks, runtime behavior  
 **Output:** `<project>/.octocode/verification.md`  
-**Final:** User approves for commit or requests fixes  
-**Note:** Existing tests verified if present, but no new tests expected
+**Gate 4:** User approves for commit or requests fixes  
+**Note:** Uses verification flows for manual testing; automated tests only if explicitly requested
 
 ## Documentation Structure
 
@@ -98,9 +99,9 @@ Phase 6: Verification     → ✋ Final Review (User Approval Required)
 | `analysis.md` | agent-feature-analyzer | Feature/bug analysis | ✋ Gate 2 |
 | `tasks.md` | agent-manager | Task breakdown + progress | (live) |
 | `patterns.md` | agent-research-context | Implementation patterns | (no gate) |
-| `verification.md` | agent-verification | Quality report | ✋ Gate 3 |
+| `verification.md` | agent-verification | Quality report | ✋ Gate 4 |
 
-**5 single files, clear ownership, human approval at key gates**
+**4 single files, clear ownership, human approval at key gates**
 
 ## Success Criteria
 
@@ -117,13 +118,13 @@ Phase 6: Verification     → ✋ Final Review (User Approval Required)
 - ✅ No regression in related features
 - ✅ Existing tests pass
 
-## Post-Approval: Adding Tests
+## Post-Approval: Adding Automated Tests
 
-After verification approval, user can request test addition:
+After verification approval, user can request automated test addition:
 1. Research testing patterns for the codebase
 2. Add "Testing Patterns" section to verification.md
 3. Generate test tasks (append to tasks.md)
-4. Implement tests (unit + integration)
+4. Implement automated tests (unit + integration)
 5. Re-verify with full test coverage
 
 ## Start

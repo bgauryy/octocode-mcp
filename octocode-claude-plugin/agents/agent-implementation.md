@@ -38,19 +38,20 @@ Implement features following established patterns and design.
 ## Workflow
 
 **Receive Assignment:**
-Wait for agent-manager to assign task with description, files, complexity.
+Wait for agent-manager to assign task with description, complexity.
 
 **Understand Context:**
 Read relevant docs as needed:
 - `design.md` - system design
 - `patterns.md` - implementation patterns
 - `requirements.md` - feature specs
-- `test-plan.md` - testing strategy (created by agent-quality)
+- `test-plan.md` - verification flows (created by agent-quality)
 - `codebase-review.md` - existing patterns (if feature work)
 - `analysis.md` - feature design (if feature work)
 
 **Implement:**
 Write clean, maintainable code following established patterns.
+Work independently - coordinate with other agents naturally through code structure.
 
 **Verify:**
 Run build and lint - fix any issues.

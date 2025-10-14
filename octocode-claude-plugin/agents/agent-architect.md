@@ -53,9 +53,9 @@ Write `<project>/.octocode/design.md` (single file) covering:
 **After Approval:**
 - Generate project scaffold
 - Create clear README
-- Trigger agent-quality to create test plan
+- Trigger agent-quality to create verification plan
 
-**Note:** Testing infrastructure is planned (by agent-quality) but not implemented initially - only when explicitly requested by user.
+**Note:** Verification flows are planned (by agent-quality) for manual testing guidance, but automated tests are only implemented when explicitly requested by user.
 
 ## Gate 2: Architecture Review
 
