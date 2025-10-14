@@ -6,9 +6,6 @@ arguments:
   - name: project_idea
     description: Your application idea or request
     required: true
-  - name: --resume
-    description: Resume from previous session
-    required: false
 ---
 
 # Octocode Development Command
@@ -54,51 +51,56 @@ Phase 7: Verification    → Gate 5 ✋ (User Approval)
 
 ### Phase 1: Requirements → Gate 1
 **Agent:** `agent-product`  
-**Output:** `<project>/.octocode/requirements/*` (PRD, features, user stories)  
+**Output:** `<project>/.octocode/requirements.md`  
 **Gate 1:** User approves requirements
 
 ### Phase 2: Architecture → Gate 2
 **Agent:** `agent-architect`  
-**Output:** `<project>/.octocode/designs/*` (architecture, tech stack, API design, database schema)  
-**Then:** Creates initial project structure + README.md  
+**Output:** `<project>/.octocode/design.md` + `<project>/README.md`  
+**Then:** Creates initial project structure  
 **Gate 2:** User approves architecture  
 **Note:** No testing strategy defined yet
 
 ### Phase 3: Validation → Gate 3
 **Agent:** `agent-design-verification`  
-**Input:** Requirements + Architecture  
-**Output:** `<project>/.octocode/tasks.md` (task breakdown with dependencies)  
+**Input:** requirements.md + design.md  
+**Output:** `<project>/.octocode/tasks.md`  
 **Gate 3:** User approves task plan  
 **Note:** Tasks do NOT include test writing
 
 ### Phase 4: Research (Parallel)
 **Agent:** `agent-research-context`  
-**Input:** Architecture + Tasks  
-**Output:** `<project>/.octocode/context/*` (implementation patterns from GitHub)  
+**Input:** design.md + tasks.md  
+**Output:** `<project>/.octocode/patterns.md`  
 **Note:** Runs while planning happens, excludes testing patterns
 
 ### Phase 5: Planning
 **Agent:** `agent-manager`  
-**Input:** Tasks + Context  
+**Input:** tasks.md + patterns.md  
 **Output:** Execution plan with parallelization strategy
 
 ### Phase 6: Implementation → Gate 4
 **Agents:** Multiple `agent-implementation` instances  
-**Managed by:** `agent-manager` (smart task distribution, progress tracking)  
+**Managed by:** `agent-manager` (smart task distribution, progress in tasks.md)  
 **Gate 4:** Live dashboard with pause/continue/inspect controls
 
 ### Phase 7: Verification → Gate 5
 **Agent:** `agent-verification`  
 **Tests:** Build, linting, features, performance, security, runtime behavior  
-**Output:** `<project>/.octocode/verification-report.md`  
+**Output:** `<project>/.octocode/verification.md`  
 **Gate 5:** User approves for deployment or requests fixes  
 **Note:** Existing tests verified if present, but no new tests expected
 
-## State Management
+## Documentation Structure
 
-**Checkpoints:** `<project>/.octocode/execution-state.json` (updated after each phase)  
-**Logs:** `<project>/.octocode/logs/*` and `<project>/.octocode/debug/*`  
-**Resume:** `--resume` flag loads from execution-state.json
+**All docs in** `<project>/.octocode/`:
+- `requirements.md` - Product requirements
+- `design.md` - Architecture & tech stack
+- `tasks.md` - Task breakdown with progress
+- `patterns.md` - Implementation patterns
+- `verification.md` - Quality report
+
+**Total: 5 files** (vs 20+ in previous approach)
 
 ## Success Criteria
 
@@ -112,8 +114,8 @@ Phase 7: Verification    → Gate 5 ✋ (User Approval)
 
 After Gate 5 approval, user can request test addition:
 1. Research testing patterns
-2. Create `<project>/.octocode/context/testing-patterns.md`
-3. Generate test tasks
+2. Add "Testing Patterns" section to verification.md
+3. Generate test tasks (append to tasks.md)
 4. Implement tests
 5. Re-verify with full test coverage
 

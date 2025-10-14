@@ -6,9 +6,6 @@ arguments:
   - name: request
     description: Feature to add or bug to fix
     required: true
-  - name: --resume
-    description: Resume from previous session
-    required: false
 ---
 
 # Octocode Feature Command
@@ -53,43 +50,48 @@ Phase 6: Verification     → Final Review
 
 ### Phase 1: Code Review → Gate 1
 **Agent:** `agent-code-review`  
-**Output:** `<project>/.octocode/codebase-review/*` (tech stack, architecture, patterns)  
+**Output:** `<project>/.octocode/codebase-review.md`  
 **Gate 1:** User approves codebase understanding
 
 ### Phase 2: Feature/Bug Analysis → Gate 2
 **Agent:** `agent-feature-analyzer`  
-**Output:** `<project>/.octocode/analysis/*` (understanding, impact, risks, plan)  
+**Output:** `<project>/.octocode/analysis.md`  
 **Gate 2:** User approves implementation plan  
 **Note:** Plan does NOT include test writing
 
 ### Phase 3: Research (Parallel)
 **Agent:** `agent-research-context` (EXISTING)  
-**Input:** Analysis + Codebase patterns  
-**Output:** `<project>/.octocode/context/*` (implementation patterns from GitHub)  
+**Input:** analysis.md + codebase-review.md  
+**Output:** `<project>/.octocode/patterns.md`  
 **Note:** Runs while planning happens, excludes testing patterns
 
 ### Phase 4: Planning
 **Agent:** `agent-manager` (EXISTING)  
-**Input:** Analysis + Context  
-**Output:** Execution plan with smart task distribution
+**Input:** analysis.md + patterns.md  
+**Output:** `<project>/.octocode/tasks.md` with execution plan
 
 ### Phase 5: Implementation → Gate 3
 **Agents:** Multiple `agent-implementation` instances (EXISTING)  
-**Managed by:** `agent-manager` (smart task distribution, progress tracking)  
+**Managed by:** `agent-manager` (smart task distribution, progress in tasks.md)  
 **Gate 3:** Live dashboard with pause/continue/inspect controls
 
 ### Phase 6: Verification → Final Review
 **Agent:** `agent-verification` (EXISTING)  
 **Tests:** Build, linting, feature validation, regression checks, runtime behavior  
-**Output:** `<project>/.octocode/verification-report.md`  
+**Output:** `<project>/.octocode/verification.md`  
 **Final:** User approves for commit or requests fixes  
 **Note:** Existing tests verified if present, but no new tests expected
 
-## State Management
+## Documentation Structure
 
-**Checkpoints:** `<project>/.octocode/execution-state.json` (updated after each phase)  
-**Logs:** `<project>/.octocode/logs/*` and `<project>/.octocode/debug/*`  
-**Resume:** `--resume` flag loads from execution-state.json
+**All docs in** `<project>/.octocode/`:
+- `codebase-review.md` - Existing code analysis
+- `analysis.md` - Feature/bug analysis
+- `tasks.md` - Task breakdown with progress
+- `patterns.md` - Implementation patterns
+- `verification.md` - Quality report
+
+**Total: 5 files** (vs 20+ in previous approach)
 
 ## Success Criteria
 
@@ -110,8 +112,8 @@ Phase 6: Verification     → Final Review
 
 After verification approval, user can request test addition:
 1. Research testing patterns for the codebase
-2. Create `<project>/.octocode/context/testing-patterns.md`
-3. Generate test tasks
+2. Add "Testing Patterns" section to verification.md
+3. Generate test tasks (append to tasks.md)
 4. Implement tests (unit + integration)
 5. Re-verify with full test coverage
 

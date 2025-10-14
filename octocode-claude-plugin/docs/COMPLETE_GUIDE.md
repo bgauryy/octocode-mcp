@@ -1287,12 +1287,8 @@ Runtime Testing (Chrome):
 │   ├── research-queries.json
 │   └── phase-timeline.json
 │
-├── backups/                # State backups
-│   └── execution-state-*.json
-│
-├── tasks.md                # Phase 3 output (agent-design-verification)
+├── tasks.md                # Phase 3 output (agent-design-verification, updated inline with progress)
 ├── locks.json              # Phase 5/6 (agent-manager)
-├── execution-state.json    # State management
 └── verification-report.md  # Phase 7 output (agent-verification)
 ```
 
@@ -1591,128 +1587,38 @@ Timeline:
 
 ---
 
-## State Management
+## Progress Tracking
 
-### Execution State File
+### Task Status in tasks.md
 
-**File:** `.octocode/execution-state.json`
+Progress is tracked inline in `.octocode/tasks.md` with status markers:
 
-```json
-{
-  "version": "1.0",
-  "sessionId": "uuid-v4-here",
-  "timestamp": "2025-10-12T14:30:00Z",
-  "currentPhase": "implementation",
-  "phaseStatus": {
-    "requirements": "completed",
-    "architecture": "completed",
-    "validation": "completed",
-    "research": "completed",
-    "orchestration": "completed",
-    "implementation": "in-progress",
-    "verification": "pending"
-  },
-  "tasks": {
-    "total": 35,
-    "completed": 23,
-    "inProgress": 3,
-    "pending": 9
-  },
-  "completedTasks": ["1.1", "1.2", "1.3", "..."],
-  "activeTasks": {
-    "3.1": {
-      "agentId": "agent-implementation-1",
-      "startedAt": "2025-10-12T14:28:00Z",
-      "lockedFiles": ["src/api/portfolio.ts"]
-    },
-    "3.2": {
-      "agentId": "agent-implementation-2",
-      "startedAt": "2025-10-12T14:28:05Z",
-      "lockedFiles": ["src/components/AlertList.tsx"]
-    },
-    "3.3": {
-      "agentId": "agent-implementation-3",
-      "startedAt": "2025-10-12T14:29:00Z",
-      "lockedFiles": ["src/components/Chart.tsx"]
-    }
-  },
-  "lastCheckpoint": "2025-10-12T14:30:00Z"
-}
+```markdown
+## Phase 2: Backend
+- [x] 2.1: Auth logic ✅ (completed, agent-impl-1)
+- [⏳] 2.2: API routes (in-progress, agent-impl-2)
+- [⏸️] 2.3: Auth middleware (waiting for 2.1)
+- [ ] 2.4: Database migrations (pending)
+
+## Phase 3: Frontend  
+- [x] 3.1: Login component ✅ (completed, agent-impl-3)
+- [ ] 3.2: Dashboard UI (pending)
+
+Status: 23/35 tasks complete (65%)
+Active: impl-2 on 2.2, impl-4 on 3.2
 ```
 
-### Atomic State Updates
+**Status Markers:**
+- `[ ]` - Pending
+- `[⏳]` - In progress
+- `[⏸️]` - Blocked/waiting
+- `[x]` - Completed (with ✅)
 
-```typescript
-function updateExecutionState(update: Partial<ExecutionState>): void {
-  // 1. Read current state
-  const state = readState('.octocode/execution-state.json')
-
-  // 2. Apply updates
-  const newState = { ...state, ...update, timestamp: new Date().toISOString() }
-
-  // 3. Write to temporary file
-  writeState('.octocode/execution-state.tmp.json', newState)
-
-  // 4. Verify JSON is valid
-  const verification = readState('.octocode/execution-state.tmp.json')
-  if (!verification) {
-    throw new Error('State verification failed')
-  }
-
-  // 5. Atomic rename (atomic operation at OS level)
-  rename('.octocode/execution-state.tmp.json', '.octocode/execution-state.json')
-
-  // 6. Backup previous state
-  backup('.octocode/execution-state.json', '.octocode/backups/execution-state-${timestamp}.json')
-}
-```
-
-### Resume Functionality
-
-```typescript
-function resumeSession(): void {
-  // 1. Load state
-  const state = readState('.octocode/execution-state.json')
-
-  if (!state) {
-    throw new Error('No session to resume')
-  }
-
-  console.log(`Resuming session ${state.sessionId}`)
-  console.log(`Current phase: ${state.currentPhase}`)
-  console.log(`Progress: ${state.tasks.completed}/${state.tasks.total} tasks`)
-
-  // 2. Determine resume point
-  switch (state.currentPhase) {
-    case 'requirements':
-      if (state.phaseStatus.requirements === 'completed') {
-        startPhase2()
-      } else {
-        resumePhase1()
-      }
-      break
-
-    case 'implementation':
-      // Resume with active tasks
-      resumeImplementation(state.activeTasks)
-      break
-
-    // ... handle other phases
-  }
-}
-```
-
-**Resume Command:**
-```bash
-# If interrupted, resume with:
-/octocode-generate --resume
-
-# System will:
-# 1. Load .octocode/execution-state.json
-# 2. Determine current phase
-# 3. Load all previous work
-# 4. Continue from last checkpoint
-```
+This provides:
+- Single source of truth for progress
+- Human-readable status at a glance
+- Agent assignments visible
+- No duplicate state management
 
 ---
 
@@ -1800,31 +1706,9 @@ ls -R .octocode/
 #   ├── tasks.md
 #   ├── logs/
 #   ├── debug/
-#   ├── execution-state.json
 #   ├── locks.json
 #   └── verification-report.md
 ```
-
-### Resume Functionality Test
-
-```bash
-# After Phase 3, simulate interruption
-# (manually stop or kill Claude Code session)
-
-# Restart Claude Code
-claude
-
-# Should see session-start hook notification
-
-# Resume
-/octocode-generate --resume
-```
-
-Expected:
-- ✅ Hook detects previous state
-- ✅ Loads from `.octocode/execution-state.json`
-- ✅ Continues from last phase
-- ✅ No duplicate work
 
 ---
 

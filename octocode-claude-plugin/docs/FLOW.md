@@ -280,19 +280,18 @@ Phase 4 (Research Context) and Phase 5 (Planning) can run **simultaneously** to 
 ### Responsibilities (Planning)
 
 1. **Analyze tasks** from `.octocode/tasks.md`
-2. **Identify file dependencies** (which tasks share files?)
+2. **Identify task dependencies** (logical prerequisites)
 3. **Create execution plan** with parallelization strategy
-4. **Initialize state management** (locks.json, execution-state.json)
 
-### File Dependency Analysis Example
+### Dependency Analysis Example
 
 ```
-Task 3.1: Files [src/auth/auth.ts, src/types/user.ts]
-Task 3.2: Files [src/api/api.ts, src/api/routes.ts]
-Task 3.3: Files [src/auth/auth.ts]
+Task 3.1: Implement auth logic
+Task 3.2: Create API endpoints
+Task 3.3: Add auth middleware (depends on 3.1)
 
-→ 3.1 and 3.2: No shared files ✅ Run in parallel
-→ 3.1 and 3.3: Both need auth.ts ❌ Run sequentially
+→ 3.1 and 3.2: Independent ✅ Run in parallel
+→ 3.3: Depends on 3.1 ❌ Run after 3.1 completes
 ```
 
 ```mermaid
@@ -330,22 +329,20 @@ graph TB
     Impl3[agent-implementation-3<br/>Software Engineer]
     Impl4[agent-implementation-4<br/>Software Engineer]
 
-    Locks[(locks.json<br/>File Locks)]
-    State[(execution-state.json<br/>Progress)]
-    Context[(context/*<br/>Patterns)]
+    Tasks[(tasks.md<br/>Progress)]
+    Context[(patterns.md<br/>Patterns)]
 
     Manager -->|Assign Task 1| Impl1
     Manager -->|Assign Task 2| Impl2
     Manager -->|Assign Task 3| Impl3
     Manager -->|Assign Task 4| Impl4
 
-    Impl1 -->|Request Lock| Manager
-    Impl2 -->|Request Lock| Manager
-    Impl3 -->|Request Lock| Manager
-    Impl4 -->|Request Lock| Manager
+    Impl1 -->|Report Status| Manager
+    Impl2 -->|Report Status| Manager
+    Impl3 -->|Report Status| Manager
+    Impl4 -->|Report Status| Manager
 
-    Manager -->|Manage| Locks
-    Manager -->|Update| State
+    Manager -->|Update| Tasks
 
     Impl1 -.->|Read| Context
     Impl2 -.->|Read| Context
@@ -353,8 +350,7 @@ graph TB
     Impl4 -.->|Read| Context
 
     style Manager fill:#ffd700
-    style Locks fill:#ffcccc
-    style State fill:#ccffcc
+    style Tasks fill:#ccffcc
     style Context fill:#ccccff
 ```
 
@@ -364,51 +360,20 @@ graph TB
 sequenceDiagram
     participant Manager as agent-manager
     participant Impl as agent-implementation
-    participant Locks as locks.json
     participant Files as Codebase
 
     Manager->>Impl: Assign Task 2.3
     Impl->>Impl: Read task details
     Impl->>Impl: Study context guides
-    Impl->>Manager: Request lock [file1.ts, file2.ts]
-    Manager->>Locks: Check availability
-
-    alt Files Available
-        Manager->>Locks: Acquire locks
-        Manager->>Impl: ✅ GRANTED
-        Impl->>Files: Read files
-        Impl->>Files: Implement solution
-        Impl->>Impl: Run tests
-        Impl->>Impl: Run linting
-        Impl->>Manager: ✅ COMPLETED (28min)
-        Manager->>Locks: Release locks
-        Manager->>Impl: Assign next task
-    else Files Locked
-        Manager->>Impl: ⏳ WAIT
-        Note over Impl: Wait up to 30s
-        Manager->>Impl: ✅ GRANTED (when available)
-    end
+    Impl->>Files: Read files
+    Impl->>Files: Implement solution
+    Impl->>Impl: Run build check
+    Impl->>Impl: Run linting
+    Impl->>Manager: ✅ COMPLETED (28min)
+    Manager->>Impl: Assign next task
 ```
 
-### File Lock Management
-
-**locks.json:**
-```json
-{
-  "locks": {
-    "src/auth/auth.ts": {
-      "lockedBy": "agent-implementation-1",
-      "taskId": "3.1",
-      "acquiredAt": "2025-10-14T14:30:00Z"
-    }
-  }
-}
-```
-
-**Operations:**
-- **Acquire:** Check all files available → Grant atomically or WAIT
-- **Release:** Task completes → Release atomically → Notify waiting agents
-- **Stale Detection:** Auto-release locks older than 5 minutes
+**Note:** Agents work independently and coordinate through version control. If multiple agents need to modify the same files, they work on their tasks and conflicts are resolved through standard merge strategies.
 
 ### Progress Tracking
 
@@ -431,35 +396,24 @@ Progress: [████████░░░░░░░░] 65% (23/35 tasks)
   Phase 2: ████████ 100% (8/8) ✅
   Phase 3: ██████░░ 75% (9/12)
 
-🔒 Current Locks:
-  • src/api/portfolio.ts (agent-impl-1)
-  • src/components/AlertList.tsx (agent-impl-2)
+⏳ Current Work:
+  • Task 4.2: Portfolio API (agent-impl-1)
+  • Task 4.3: Price alerts (agent-impl-2)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Last update: 10s ago
 ```
 
-### State Persistence
+### Progress Tracking in tasks.md
 
-**execution-state.json:**
-```json
-{
-  "currentPhase": "implementation",
-  "tasks": {
-    "total": 35,
-    "completed": 23,
-    "inProgress": 3,
-    "pending": 9
-  },
-  "activeAgents": [
-    {
-      "agentId": "agent-implementation-1",
-      "taskId": "4.2",
-      "lockedFiles": ["src/api/portfolio.ts"]
-    }
-  ],
-  "lastCheckpoint": "2025-10-14T14:30:00Z"
-}
+**Inline progress markers:**
+```markdown
+## Phase 2: Backend
+- [x] 2.1: Auth logic ✅ (completed)
+- [⏳] 2.2: API routes (in-progress, agent-impl-2)
+- [⏸️] 2.3: Auth middleware (waiting for 2.1)
+
+Status: 23/35 tasks complete (65%)
 ```
 
 ### Gate 4: Live Monitoring 🔄
@@ -687,47 +641,6 @@ Options:
 
 ---
 
-## State Management & Resume
-
-### Files
-
-| File | Purpose |
-|------|---------|
-| `.octocode/execution-state.json` | Current phase, progress, active agents |
-| `.octocode/locks.json` | File locks during implementation |
-| `.octocode/tasks.md` | Task list with status updates |
-| `.octocode/logs/progress-dashboard.md` | Live progress display |
-| `.octocode/logs/issues-log.md` | Problems and resolutions |
-| `.octocode/debug/communication-log.md` | Agent-to-agent communication |
-
-### Resume Capability
-
-**Command:** `/octocode-generate --resume`
-
-**Behavior:**
-1. Load `.octocode/execution-state.json`
-2. Check current phase
-3. Resume from last checkpoint
-4. Restore file locks if in implementation
-5. Continue from where it stopped
-
-```mermaid
-flowchart LR
-    Start([Resume Flag]) --> Load[Load execution-state.json]
-    Load --> Check{Current Phase?}
-    Check -->|Requirements| P1[Continue Phase 1]
-    Check -->|Architecture| P2[Continue Phase 2]
-    Check -->|Validation| P3[Continue Phase 3]
-    Check -->|Research| P4[Continue Phase 4]
-    Check -->|Implementation| P6[Restore locks<br/>Continue Phase 6]
-    Check -->|Verification| P7[Continue Phase 7]
-
-    style Start fill:#e1f5ff
-    style P6 fill:#fff3cd
-```
-
----
-
 ## Inter-Agent Communication
 
 ```mermaid
@@ -865,9 +778,8 @@ The flow has been verified to be:
 1. **Complete** - All phases connect properly
 2. **Logical** - Each phase builds on previous work
 3. **Efficient** - Phases 4 & 5 run in parallel
-4. **Safe** - File locking prevents conflicts
-5. **Resumable** - State persists after each phase
-6. **Validated** - 5 human gates ensure quality
-7. **Production-Ready** - Comprehensive verification before deployment
+4. **Safe** - Implementation agents coordinate through version control
+5. **Validated** - 5 human gates ensure quality
+6. **Production-Ready** - Comprehensive verification before deployment
 
 All agent responsibilities are clear, inputs/outputs are well-defined, and communication paths are established.

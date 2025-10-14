@@ -189,13 +189,6 @@ user management, and role-based access control
 /octocode-feature Fix: User login not working on Safari mobile
 ```
 
-### Resume Previous Session
-```bash
-/octocode-generate --resume
-# or
-/octocode-feature --resume
-```
-
 ---
 
 ## 🏆 Comparison with Other Tools
@@ -298,16 +291,11 @@ Manager assigns: "Implement auth.ts"
 → Release lock when done
 ```
 
-**Observability**: Everything logged to `.octocode/debug/`
-- Decisions with reasoning
-- Agent communications
-- Research queries and sources
-- Timeline and performance metrics
-
-**State Persistence**: Resume anytime
-```bash
-/octocode-generate --resume
-```
+**Progress Tracking**: Clear visibility in `.octocode/`
+- Task progress in tasks.md (inline status)
+- Agent communications logged
+- Research queries and sources documented
+- Decision reasoning captured
 
 ---
 
