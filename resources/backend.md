@@ -2,45 +2,61 @@
 
 > Node.js backend frameworks, API design patterns, and server-side architecture
 
-**🎯 Purpose:** Backend resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
-**🤖 For:** AI agents and developers building production-ready Node.js servers
-**🌐 Focus:** Node.js, Express, NestJS, Fastify - Pure JavaScript/TypeScript backend
-**📱 Mobile:** Backend APIs serving web and React Native mobile clients
-**⚙️ Runtime:** 100% Node.js - no other server runtimes
-
-**Last Updated:** October 13, 2025
+**🎯 Purpose:** Backend resources for AI agents building Node.js/TypeScript applications  
+**🌐 Focus:** NestJS, Fastify, Express - Pure JavaScript/TypeScript backend  
+**⚙️ Runtime:** 100% Node.js - no other server runtimes  
+**📅 Updated:** October 13, 2025
 
 ---
 
-## 🎯 Best for Application Generation
+## Quick Reference
 
-This file provides **backend building blocks** to help AI agents:
-1. **Choose framework** - NestJS vs Fastify vs Express comparisons
-2. **Design APIs** - REST vs GraphQL vs tRPC with type safety
-3. **Implement validation** - Zod, Joi, class-validator patterns
-4. **Structure code** - Clean architecture, layered architecture, DDD
-5. **Serve all clients** - Same backend for web, mobile, and third-party APIs
+### Best Practices (Must-Read)
+- **Essential Guide:** `goldbergyoni/nodebestpractices` (104K+ ⭐) - THE Node.js best practices (2025)
+- **TypeScript Backend:** `Sairyss/backend-best-practices` (2K+ ⭐) - Backend with TS + Node.js
 
-**Generation Priorities:**
-- ⚡ **NestJS** - Enterprise-grade applications with DI and modularity
-- ⚡ **Fastify** - High-performance APIs with TypeScript
-- ⚡ **tRPC** - End-to-end type safety without code generation
-- ⚡ **Zod** - Runtime validation with TypeScript inference
+### Frameworks (Start Here)
+- **Enterprise Grade:** `nestjs/nest` (73K+ ⭐) - Progressive framework with DI, modular architecture
+- **High Performance:** `fastify/fastify` (35K+ ⭐) - 2-3x faster than Express, TypeScript-first
+- **Most Popular:** `expressjs/express` (68K+ ⭐) - Minimalist framework, massive ecosystem
+- **Real-Time:** `socketio/socket.io` (62K+ ⭐) - WebSocket communication standard
+
+### API Design
+- **End-to-End Type Safety:** `trpc/trpc` (36K+ ⭐) - TypeScript RPC without code generation
+- **REST Boilerplate:** `danielfsousa/express-rest-boilerplate` (2.6K+ ⭐) - Production Express API
+- **GraphQL:** `apollographql/apollo-server` (14K+ ⭐) - Spec-compliant GraphQL server
+- **REST API Generator:** `w3tecch/express-typescript-boilerplate` (2.8K+ ⭐) - TypeScript + Express
+
+### Validation & Schema
+- **TypeScript-First:** `colinhacks/zod` (36K+ ⭐) - TypeScript schema validation
+- **Node.js Standard:** `hapijs/joi` (21K+ ⭐) - Powerful data validation
+- **Class-Based:** `typestack/class-validator` (11K+ ⭐) - Decorator-based validation
+
+### Production Boilerplates
+- **NestJS Starter:** `brocoders/nestjs-boilerplate` (4K+ ⭐) - Production-ready with Auth, DB, Docker
+- **Express + TypeScript:** `edwinhern/express-typescript-2025` (1.1K+ ⭐) - 2025 best practices
+- **Fastify Starter:** `yonathan06/fastify-typescript-boilerplate` (424 ⭐) - Fastify + TypeScript
+
+### Decision Guide
+| Need | Choose | Why |
+|------|--------|-----|
+| Enterprise App | NestJS | Structured, DI, microservices-ready |
+| High Performance | Fastify | 2-3x faster, JSON schema validation |
+| Simple REST API | Express | Minimal, widely adopted, huge ecosystem |
+| End-to-End Type Safety | tRPC | No code generation, TypeScript RPC |
+| Real-Time | Socket.IO | WebSocket standard |
 
 ---
 
-## Must-Read Best Practices
+## Best Practices (Essential Reading)
 
-**⭐ goldbergyoni/nodebestpractices** (104,369 stars) ⚡ ESSENTIAL
-- 🏆 The Node.js best practices list (Updated 2025)
+**⭐ goldbergyoni/nodebestpractices** (104K+ ⭐) ⚡ ESSENTIAL
 - 🔗 https://github.com/goldbergyoni/nodebestpractices
-- **Use Case:** THE definitive Node.js best practices guide - must-read for all Node.js developers
-- **Why Essential:** 100K+ stars, comprehensive coverage of security, performance, architecture, and production practices
+- THE definitive Node.js best practices guide (Updated 2025)
 
-**⭐ Sairyss/backend-best-practices** (2,046 stars)
-- Best practices, tools and guidelines for backend development. Code examples in TypeScript + NodeJS
+**⭐ Sairyss/backend-best-practices** (2K+ ⭐)
 - 🔗 https://github.com/Sairyss/backend-best-practices
-- **Use Case:** Backend development with TypeScript + Node.js
+- Backend development with TypeScript + Node.js
 
 ---
 
@@ -81,16 +97,6 @@ This file provides **backend building blocks** to help AI agents:
 - The world's most flexible commerce platform
 - 🔗 https://github.com/medusajs/medusa
 - **Use Case:** Headless commerce with Node.js
-
-**⭐ mochajs/mocha** (22,836 stars)
-- ☕️ Simple, flexible, fun JavaScript test framework
-- 🔗 https://github.com/mochajs/mocha
-- **Use Case:** Popular JavaScript testing framework
-
-**⭐ eggjs/egg** (18,977 stars)
-- 🥚 Born to build better enterprise frameworks and apps with Node.js & Koa
-- 🔗 https://github.com/eggjs/egg
-- **Use Case:** Enterprise Node.js framework
 
 **⭐ adonisjs/core** (18,291 stars)
 - TypeScript-first web framework for building web apps and API servers
@@ -240,6 +246,76 @@ This file provides **backend building blocks** to help AI agents:
 
 ---
 
+## Messaging & Job Queues (2025 Recommendations)
+
+### Message Brokers & Event Streaming
+
+**⭐ tulios/kafkajs** (3,935 stars) ⚡ HIGHLY RECOMMENDED
+- Modern Apache Kafka client for Node.js with TypeScript support
+- 🔗 https://github.com/tulios/kafkajs
+- **Use Case:** Event streaming, event sourcing, high-throughput messaging (100K+ msg/sec)
+- **Why Recommended:** Best Kafka client for Node.js - actively maintained, production-ready, TypeScript-first
+- **2025 Recommendation:** Choose KafkaJS for event-driven microservices and event sourcing
+- **Best For:** Event streaming, log aggregation, real-time analytics, multi-service data pipelines
+
+**⭐ amqp-node/amqplib** (3,799 stars) ⚡ HIGHLY RECOMMENDED
+- AMQP 0-9-1 library and client for Node.js (RabbitMQ)
+- 🔗 https://github.com/amqp-node/amqplib
+- **Use Case:** Message broker integration, complex routing, reliable messaging (10K-50K msg/sec)
+- **Why Recommended:** Official RabbitMQ client for Node.js - mature, battle-tested
+- **2025 Recommendation:** Choose RabbitMQ/amqplib for complex routing and reliable delivery
+- **Best For:** Task distribution, microservices communication, complex message routing patterns
+
+### Job Queues & Background Processing
+
+**⭐ Automattic/kue** (9,459 stars)
+- Priority job queue backed by Redis, built for Node.js
+- 🔗 https://github.com/Automattic/kue
+- **Use Case:** Priority-based background jobs with web UI
+- **Note:** Mature but less actively maintained - consider BullMQ for new projects
+
+**⭐ taskforcesh/bullmq** (7,717 stars) ⚡ ESSENTIAL
+- Modern message queue and batch processing for Node.js and Python based on Redis
+- 🔗 https://github.com/taskforcesh/bullmq
+- **Use Case:** Background jobs, scheduled tasks, reliable job processing (100-10K jobs/sec)
+- **Why Essential:** THE modern job queue for Node.js - replaces Bull with better performance and features
+- **2025 Recommendation:** Choose BullMQ for all new Node.js projects requiring background jobs
+- **Best For:** Email sending, image processing, scheduled tasks, delayed jobs, retries
+- **Features:** Job prioritization, rate limiting, repeatable jobs, parent-child jobs, event listeners
+
+**⭐ bee-queue/bee-queue** (3,977 stars) ⚡ HIGHLY RECOMMENDED
+- Simple, fast, robust job/task queue for Node.js, backed by Redis
+- 🔗 https://github.com/bee-queue/bee-queue
+- **Use Case:** Lightweight job queue for simple background tasks
+- **Why Recommended:** Simpler alternative to BullMQ - less features but faster for basic use cases
+- **2025 Recommendation:** Choose Bee-Queue for simple job queues without complex features
+- **Best For:** Simple background tasks, minimal configuration, performance-critical queues
+
+**⭐ felixmosh/bull-board** (2,985 stars)
+- Queue background jobs inspector - Web UI for Bull/BullMQ
+- 🔗 https://github.com/felixmosh/bull-board
+- **Use Case:** Monitor and manage Bull/BullMQ queues via web dashboard
+- **Why Useful:** Essential tool for debugging and monitoring job queues in development/production
+
+### Job Queue Decision Guide (2025)
+
+- **Choose BullMQ if:** Need full-featured job queue (priority, scheduling, retries, rate limiting)
+- **Choose Bee-Queue if:** Need simple, fast queue without complex features
+- **Choose Kafka if:** Event streaming, event sourcing, high-throughput data pipelines
+- **Choose RabbitMQ if:** Complex message routing, multi-protocol support, enterprise messaging
+
+### Messaging Patterns by Use Case
+
+| Use Case | Technology | Performance | Complexity | Best For |
+|----------|-----------|-------------|------------|----------|
+| **Background Jobs** | BullMQ + Redis | 100-10K jobs/sec | Low | Email, image processing, scheduled tasks |
+| **Simple Queue** | Bee-Queue + Redis | 10K+ jobs/sec | Very Low | Basic async tasks, simple workers |
+| **Event Streaming** | KafkaJS + Kafka | 100K+ msg/sec | High | Event sourcing, log aggregation, analytics |
+| **Message Broker** | amqplib + RabbitMQ | 10K-50K msg/sec | Medium | Microservices, complex routing, reliable delivery |
+| **Real-Time Updates** | Socket.io | 1K-10K connections | Low | Chat, notifications, live updates |
+
+---
+
 ## Fullstack TypeScript Examples
 
 **⭐ payloadcms/payload** (38,095 stars) ⚡ HIGHLY RECOMMENDED
@@ -304,35 +380,6 @@ This file provides **backend building blocks** to help AI agents:
 - 🍱 Bentocache is a robust multi-tier caching library for Node.js applications
 - 🔗 https://github.com/Julien-R44/bentocache
 - **Use Case:** Multi-tier caching with Redis support
-
----
-
-## Quick Reference - Node.js Backend (2025)
-
-### Start Here
-- **Best Practices:** `goldbergyoni/nodebestpractices` - Must-read for all Node.js developers
-
-### Framework Choices
-- **Enterprise Applications:** `nestjs/nest` - Structured, TypeScript-first, microservices-ready
-- **High Performance:** `fastify/fastify` - 2-3x faster than Express, modern TypeScript support
-- **Classic/Legacy:** `expressjs/express` - Most widely adopted, massive ecosystem
-- **Real-Time:** `socketio/socket.io` - WebSocket communication standard
-
-### API Architecture
-- **TypeScript Full-Stack:** `trpc/trpc` - Zero-overhead type-safe APIs for Next.js/React
-- **Flexible Queries:** `graphql-hive/graphql-yoga` - GraphQL for complex data requirements
-- **Public/Multi-Language:** `microsoft/api-guidelines` - REST for public APIs
-
-### Production Boilerplates
-- **Enterprise Backend:** `fifocode/nodejs-backend-architecture-typescript` - 10M+ user proven architecture
-- **REST API:** `hagopj13/node-express-boilerplate` - Express + MongoDB + JWT
-- **Full-Stack:** `kriasoft/react-starter-kit` - tRPC + Next.js + Cloudflare Workers
-
-### 2025 Recommendations
-- **New Enterprise Project?** → NestJS + GraphQL or tRPC
-- **Performance Critical?** → Fastify + REST or tRPC
-- **Simple API?** → Express + REST
-- **TypeScript Full-Stack?** → tRPC + Next.js
 
 ---
 

@@ -21,33 +21,60 @@ This file provides **complete project structures** to help AI agents:
 4. **Understand modern stacks** - T3 Stack, Bulletproof React, Enterprise TypeScript
 
 **Generation Priorities:**
-- ⚡ **T3 Stack** - Fastest MVP generation with end-to-end type safety
-- ⚡ **Bulletproof React** - Scalable feature-based architecture
+- ⚡ **T3 Stack (Next.js)** - Fastest MVP with SSR/SEO + end-to-end type safety
+- ⚡ **Bulletproof React (Vite)** - Fastest SPA development with scalable architecture
 - ⚡ **Enterprise Stack** - Large-scale applications with microservices
 
----
+**Build Tool Decision (2025 Standard):**
+- 🚀 **Use Vite:** Pure client-side SPAs, internal tools, dashboards, rapid prototyping
+- 🔍 **Use Next.js:** SSR/SEO required, marketing sites, blogs, e-commerce, content platforms
+
+**Testing Framework (2025 Standard):**
+- ✅ **Primary:** Vitest (faster, better DX, Vite-compatible)
+- 🔄 **Alternative:** Jest (for legacy NestJS patterns only)
+- 🎭 **E2E:** Playwright (modern, fast, reliable)
 
 ---
 
 ## Quick Reference
 
+### Build Tool Selection Guide (2025)
+
+| Your Project Type | Build Tool | Stack | Example |
+|------------------|-----------|-------|---------|
+| Marketing site, blog, e-commerce | **Next.js** | T3 Stack | Example 1 |
+| Internal dashboard, admin panel | **Vite** | Bulletproof React | Example 2 |
+| SPA with no SEO needs | **Vite** | Bulletproof React | Example 2 |
+| Content-heavy site (CMS) | **Next.js** | T3 Stack | Example 1 |
+| Rapid prototype (SPA) | **Vite** | Bulletproof + Vite | Example 2 |
+| Enterprise with SSR | **Next.js** | NestJS + Next.js | Example 3 |
+| Enterprise SPA | **Vite** | NestJS + Vite | Example 3 |
+
+**Simple Rule:** Need SSR/SEO? → Next.js | Building SPA? → Vite
+
 ### Top 3 Project Templates for 2025
 
 1. **⚡ ESSENTIAL - T3 Stack (create-t3-app)** - 35k+ GitHub stars
-   - Best for: Rapid MVP development, type-safe full-stack apps
+   - Best for: Rapid MVP development with SSR/SEO, type-safe full-stack apps
    - Stack: Next.js 15 + tRPC + Prisma + NextAuth + Tailwind
+   - Build Tool: Next.js (use when SEO/SSR needed)
+   - Testing: Vitest + Playwright
    - Why: Zero boilerplate, end-to-end type safety, massive community
    - Get started: `npx create-t3-app@latest`
 
 2. **⚡ PRODUCTION-READY - Bulletproof React Architecture** - 28k+ GitHub stars
-   - Best for: Scalable React applications with clear boundaries
-   - Stack: Feature-based architecture, proven patterns
-   - Why: Battle-tested structure, enterprise-grade organization
+   - Best for: Scalable React SPAs with clear boundaries (no SSR needed)
+   - Stack: Vite + React + Feature-based architecture + TypeScript
+   - Build Tool: Vite (fastest dev experience for SPAs)
+   - Testing: Vitest + Testing Library + MSW
+   - Why: Battle-tested structure, lightning-fast HMR, enterprise-grade organization
    - Repository: github.com/alan2207/bulletproof-react
 
 3. **⚡ PRODUCTION-READY - Next.js Enterprise Boilerplate** - 10k+ GitHub stars
-   - Best for: High-performance, maintainable enterprise apps
+   - Best for: High-performance enterprise apps with SSR/SEO
    - Stack: Next.js 15 + TypeScript + Tailwind + Drizzle ORM + Testing Suite
+   - Build Tool: Next.js (SSR/SEO optimized)
+   - Testing: Vitest + Playwright
    - Why: Production-ready with monitoring, testing, CI/CD configured
    - Repository: github.com/ixartz/Next-js-Boilerplate
 
@@ -96,29 +123,61 @@ src/
 
 ### Modern Stack Recommendations
 
+#### Choosing Your Build Tool: Vite vs Next.js
+
+**Use Vite when:**
+- Building pure client-side SPAs
+- Rapid prototyping and experimentation
+- Micro-frontend architectures
+- SSR/SEO is not a critical concern
+- Want fastest dev server and hot module replacement
+- Building internal tools or dashboards
+
+**Use Next.js when:**
+- Server-side rendering (SSR) required
+- SEO is essential (marketing sites, blogs, e-commerce)
+- Need static site generation (SSG) or incremental static regeneration (ISR)
+- Building full-stack React applications
+- Want zero-config deployment on Vercel
+- Team projects with structured conventions
+
 #### For Startups/MVPs (Speed Priority)
+
+**Option A: With SSR/SEO (Marketing, Blog, E-commerce)**
 - **Frontend:** Next.js 15 + React 19 + Tailwind CSS
 - **Backend:** tRPC (type-safe APIs without overhead)
 - **Database:** Prisma + PostgreSQL (Vercel Postgres or Supabase)
 - **Auth:** NextAuth.js or Clerk
+- **Testing:** Vitest + Testing Library + Playwright
 - **Deployment:** Vercel (zero-config)
 - **Example:** T3 Stack (Example 1)
 
+**Option B: Client-Side SPA (Internal Tools, Dashboards)**
+- **Frontend:** Vite + React 19 + Tailwind CSS
+- **Backend:** tRPC or REST APIs
+- **Database:** Prisma + PostgreSQL
+- **Auth:** Clerk or custom JWT
+- **Testing:** Vitest + Testing Library
+- **Deployment:** Netlify, Vercel, or Cloudflare Pages
+- **Example:** Bulletproof React with Vite (Example 2)
+
 #### For Enterprise/Scale (Robustness Priority)
-- **Frontend:** Next.js 15 + React 19 + TypeScript strict mode
+- **Frontend:** Next.js 15 or Vite + React 19 + TypeScript strict mode
 - **Backend:** NestJS (modular, microservices-ready)
 - **Database:** Prisma + PostgreSQL + Redis caching
 - **Auth:** Passport.js with JWT + OAuth 2.0
+- **Testing:** Vitest (unit/integration) + Playwright (E2E)
 - **Deployment:** Kubernetes or AWS ECS
 - **Example:** Enterprise TypeScript Stack (Example 3)
 
 #### For Traditional Teams (Familiarity Priority)
-- **Frontend:** React 19 + Vite + TypeScript
+- **Frontend:** Vite + React 19 + TypeScript
 - **Backend:** Express.js + REST APIs
 - **Database:** MongoDB + Mongoose or PostgreSQL + TypeORM
 - **Auth:** Passport.js or JWT
+- **Testing:** Vitest + Testing Library
 - **Deployment:** Traditional cloud providers
-- **Example:** Classic Full Stack (Example 2)
+- **Example:** Classic Full Stack (Example 4)
 
 ---
 
@@ -279,6 +338,7 @@ my-t3-monorepo/
 - **Testing:** Vitest + Testing Library + Playwright
 - **Validation:** Zod for runtime type validation
 - **Build Tool:** Turborepo for monorepos, standard Next.js otherwise
+- **Dev Server:** Next.js dev server (optimized for App Router)
 
 ### Getting Started
 
@@ -307,7 +367,7 @@ npx create-t3-app@latest
 
 ### Related Resources
 
-- [Frontend Development](./frontend.md) - Next.js 15, React 19, Tailwind
+- [Frontend Libraries](./frontend-libs.md) - Next.js 15, React 19, Tailwind
 - [Backend Development](./backend.md) - tRPC, API design
 - [Database & ORM](./database.md) - Prisma best practices
 - [Tooling & Productivity](./tooling.md) - Turborepo, monorepos
@@ -488,16 +548,17 @@ Features represent complete vertical slices of functionality, not technical laye
 
 ### Technology Details
 
-- **Build Tool:** Vite (recommended) or Next.js or CRA
+- **Build Tool:** Vite (recommended for SPAs) or Next.js (if SSR/SEO needed)
 - **Framework:** React 19 with TypeScript strict mode
 - **Styling:** Tailwind CSS or CSS Modules
 - **State Management:**
   - React Query (server state)
   - Zustand or Context (client state)
 - **Form Handling:** React Hook Form + Zod
-- **Testing:** Vitest + Testing Library + MSW (mock service worker)
-- **Routing:** React Router v6+ or Next.js App Router
+- **Testing:** Vitest (preferred) + Testing Library + MSW (mock service worker)
+- **Routing:** React Router v6+ (Vite) or Next.js App Router (Next.js)
 - **API Client:** Axios or native fetch with wrapper
+- **Dev Server:** Vite (lightning-fast HMR)
 
 ### Getting Started
 
@@ -537,7 +598,7 @@ git clone https://github.com/alan2207/bulletproof-react.git
 
 ### Related Resources
 
-- [Frontend Development](./frontend.md) - React patterns, component design
+- [Frontend Libraries](./frontend-libs.md) - React patterns, component design
 - [Testing](./testing.md) - Testing strategies for features
 - **Official Docs:** https://github.com/alan2207/bulletproof-react
 
@@ -798,7 +859,10 @@ enterprise-stack/
 - **WebSocket:** Socket.io via @nestjs/websockets
 - **Auth:** Passport.js with JWT strategy, OAuth 2.0
 - **Validation:** class-validator + class-transformer + Zod
-- **Testing:** Jest (unit/integration), Supertest (E2E)
+- **Testing:** 
+  - Frontend: Vitest (preferred) + Testing Library
+  - Backend: Vitest (preferred) or Jest + Supertest (E2E)
+  - E2E: Playwright
 - **Monitoring:** Prometheus metrics, Sentry error tracking
 - **Monorepo:** Nx (recommended for NestJS) or Turborepo
 
@@ -838,7 +902,7 @@ enterprise-stack/
 
 ### Related Resources
 
-- [Frontend Development](./frontend.md) - Next.js, React, Apollo
+- [Frontend Libraries](./frontend-libs.md) - Next.js, React, Apollo
 - [Backend Development](./backend.md) - NestJS, GraphQL, microservices
 - [Database & ORM](./database.md) - Prisma advanced patterns
 - [Architecture](./architecture.md) - Clean Architecture with NestJS
@@ -1024,17 +1088,18 @@ classic-fullstack/
 
 ### Technology Details
 
-- **Frontend:** React 19, TypeScript, Vite, Redux Toolkit
+- **Frontend:** React 19, TypeScript, Vite (fast dev server + HMR), Redux Toolkit
 - **Styling:** Tailwind CSS or Material-UI
 - **API Client:** Axios with interceptors for auth, error handling
 - **Routing:** React Router v6+
 - **Backend:** Express.js, Node.js 20+
 - **Database:** MongoDB with Mongoose
 - **Auth:** JWT or Passport.js (Local, Google, GitHub strategies)
-- **Validation:** express-validator or Joi
+- **Validation:** express-validator or Joi + Zod
 - **Testing:**
-  - Frontend: Vitest + Testing Library
-  - Backend: Jest + Supertest
+  - Frontend: Vitest (preferred) + Testing Library
+  - Backend: Vitest (preferred) or Jest + Supertest
+  - E2E: Playwright
 - **API Documentation:** Swagger/OpenAPI
 
 ### Deployment
@@ -1060,7 +1125,7 @@ classic-fullstack/
 
 ### Related Resources
 
-- [Frontend Development](./frontend.md) - React, Redux
+- [Frontend Libraries](./frontend-libs.md) - React, Redux
 - [Backend Development](./backend.md) - Express.js, REST APIs
 - [Database & ORM](./database.md) - MongoDB, Mongoose
 
@@ -1132,30 +1197,51 @@ classic-fullstack/
 
 ### Decision Matrix
 
-| Project Type | Recommended Stack | Why |
-|-------------|------------------|-----|
-| **Startup MVP** | Example 1 (T3 Stack) | Fastest time to market, type safety, easy deployment |
-| **Scalable React App** | Example 2 (Bulletproof) | Feature-based architecture scales perfectly |
-| **Enterprise/Microservices** | Example 3 (NestJS + GraphQL) | Modular architecture, microservices-ready |
-| **Traditional Web App** | Example 4 (MERN) | Familiar patterns, good documentation |
-| **E-commerce** | Example 1 or 3 | Type safety for payments, scalability |
-| **SaaS Platform** | Example 1 or 3 | Multi-tenancy, subscriptions, scalability |
-| **Content Site/Blog** | Example 1 (T3/Next.js) | SSR/SSG, SEO optimization |
-| **Real-time Apps** | Example 1 or 3 | WebSocket support with type safety |
-| **Internal Tools** | Example 1 (T3) | Fast development, full-stack in one repo |
-| **API-First Product** | Example 3 (NestJS) | OpenAPI docs, multiple API types |
+| Project Type | Build Tool | Recommended Stack | Why |
+|-------------|-----------|------------------|-----|
+| **Startup MVP (with SEO)** | Next.js | Example 1 (T3 Stack) | Fastest time to market, SSR/SEO, type safety |
+| **Startup MVP (SPA)** | Vite | Example 2 (Bulletproof + Vite) | Fastest dev experience, client-side only |
+| **Scalable React App** | Vite or Next.js | Example 2 (Bulletproof) | Feature-based architecture scales perfectly |
+| **Enterprise/Microservices** | Next.js or Vite | Example 3 (NestJS + GraphQL) | Modular architecture, microservices-ready |
+| **Traditional Web App** | Vite | Example 4 (MERN + Vite) | Familiar patterns, fast dev server |
+| **E-commerce** | Next.js | Example 1 or 3 | SSR/SEO critical, type safety for payments |
+| **SaaS Platform** | Vite or Next.js | Example 1 or 3 | Multi-tenancy, subscriptions, scalability |
+| **Content Site/Blog** | Next.js | Example 1 (T3/Next.js) | SSR/SSG essential, SEO optimization |
+| **Real-time Apps** | Vite or Next.js | Example 1 or 3 | WebSocket support with type safety |
+| **Internal Tools/Dashboards** | Vite | Example 2 (Bulletproof + Vite) | Fast dev, no SSR needed, rapid iteration |
+| **API-First Product** | Vite (frontend) | Example 3 (NestJS) | OpenAPI docs, multiple API types |
 
 ### Technology Comparison
+
+#### Build Tool: Vite vs Next.js
+**Vite Advantages:**
+- ⚡ Lightning-fast dev server with instant HMR
+- 🚀 Faster cold starts and hot reloads
+- 🎯 Pure SPA focus - no SSR complexity
+- 🔧 Simple configuration
+- 📦 Better for micro-frontends
+
+**Next.js Advantages:**
+- 🔍 Built-in SSR/SSG/ISR for SEO
+- 📱 Image optimization out of the box
+- 🛣️ File-based routing (App Router)
+- ⚙️ Zero-config deployment on Vercel
+- 🎯 Full-stack capabilities (API routes)
+
+**When to Choose:**
+- **Vite:** Internal tools, dashboards, admin panels, SPAs, prototypes
+- **Next.js:** Marketing sites, blogs, e-commerce, any public-facing content requiring SEO
 
 #### Type Safety (Most Important in 2025)
 1. **Excellent:** Example 1 (tRPC end-to-end), Example 3 (GraphQL + Prisma)
 2. **Good:** Example 2 (TypeScript + patterns), Example 4 (TypeScript + REST)
 
 #### Developer Experience
-1. **Best:** Example 1 (T3) - Zero API overhead, instant feedback
-2. **Great:** Example 2 (Bulletproof) - Clear patterns, easy navigation
-3. **Good:** Example 3 (NestJS) - Strong patterns but steeper learning curve
-4. **Familiar:** Example 4 (MERN) - Traditional but well-known
+1. **Best DX (SPA):** Vite + Example 2 (Bulletproof) - Fastest HMR, clean architecture
+2. **Best DX (Full-Stack):** Example 1 (T3) - Zero API overhead, instant feedback
+3. **Great:** Example 2 (Bulletproof) - Clear patterns, easy navigation
+4. **Good:** Example 3 (NestJS) - Strong patterns but steeper learning curve
+5. **Familiar:** Example 4 (MERN) - Traditional but well-known
 
 #### Scalability
 1. **Enterprise-grade:** Example 3 (NestJS microservices)
@@ -1184,21 +1270,29 @@ classic-fullstack/
 ```
 START
   |
-  ├─ Need rapid MVP (< 3 months)?
-  │   └─ YES → Example 1: T3 Stack ⚡
-  │   └─ NO → Continue
+  ├─ Do you need SEO / Server-Side Rendering?
+  │   ├─ YES → Use Next.js
+  │   │   ├─ Need rapid MVP? → Example 1: T3 Stack ⚡
+  │   │   └─ Enterprise/Microservices? → Example 3: NestJS + Next.js ⚡
+  │   │
+  │   └─ NO → Use Vite (faster dev experience)
+  │       ├─ Feature-based architecture? → Example 2: Bulletproof + Vite ⚡
+  │       ├─ Traditional MERN? → Example 4: MERN + Vite
+  │       └─ Enterprise? → Example 3: NestJS + Vite
   |
-  ├─ Building large enterprise app with microservices?
-  │   └─ YES → Example 3: NestJS + GraphQL ⚡
-  │   └─ NO → Continue
-  |
-  ├─ React-focused app with clear feature boundaries?
-  │   └─ YES → Example 2: Bulletproof React ⚡
-  │   └─ NO → Continue
-  |
-  ├─ Team has MERN experience and prefers traditional?
-  │   └─ YES → Example 4: Classic MERN
-  │   └─ NO → Default to Example 1: T3 Stack
+  ├─ Alternative Decision Path (by project type):
+  │   ├─ Marketing site, blog, e-commerce?
+  │   │   └─ YES → Next.js (Example 1 or 3) ⚡
+  │   │
+  │   ├─ Internal tool, dashboard, admin panel?
+  │   │   └─ YES → Vite (Example 2) ⚡
+  │   │
+  │   ├─ Large enterprise with microservices?
+  │   │   └─ YES → Example 3: NestJS + (Vite or Next.js) ⚡
+  │   │
+  │   └─ Rapid prototype/MVP?
+  │       ├─ Need SEO? → Example 1: T3 Stack (Next.js) ⚡
+  │       └─ SPA only? → Example 2: Bulletproof + Vite ⚡
 ```
 
 ---
@@ -1265,25 +1359,34 @@ START
 
 ### Testing Strategy
 
+**Testing Framework Preference:**
+- **Primary:** Vitest (faster, better TypeScript support, compatible with Vite)
+- **Alternative:** Jest (if needed for specific NestJS patterns or legacy codebases)
+- **E2E:** Playwright (recommended for 2025) or Cypress
+
 **Unit Tests (60-70% of tests):**
 - Test business logic in isolation
-- Mock external dependencies
+- Mock external dependencies with Vitest or MSW
 - Fast execution (< 5 seconds for entire suite)
+- Use Vitest's built-in mocking and snapshot testing
 
 **Integration Tests (20-30% of tests):**
 - Test API endpoints with real database (test DB)
 - Test multiple units working together
 - Use factories for test data
+- Vitest for API integration tests with Supertest
 
 **E2E Tests (10-20% of tests):**
 - Test critical user flows only
-- Use Playwright (recommended for 2025) or Cypress
+- Use Playwright (recommended) for modern browser automation
 - Run on CI for every PR
+- Parallel execution for faster test runs
 
 **Coverage Goals:**
 - Critical paths: 90%+ coverage
 - Overall: 70-80% coverage
 - Focus on business logic, not boilerplate
+- Use Vitest's built-in coverage with v8 or istanbul
 
 ### Security (Non-Negotiable for 2025)
 
@@ -1398,7 +1501,7 @@ START
 ## Related Resources
 
 ### Core Development
-- [Frontend Development](./frontend.md) - React 19, Next.js 15, UI libraries
+- [Frontend Libraries](./frontend-libs.md) - React 19, Next.js 15, UI libraries
 - [Backend Development](./backend.md) - Node.js, NestJS, tRPC, REST, GraphQL
 - [Database & ORM](./database.md) - Prisma, TypeORM, MongoDB
 - [Architecture](./architecture.md) - System design, patterns, best practices
@@ -1439,7 +1542,4 @@ START
 
 ---
 
-*This document is part of the octocode-vibe-plugin agent system. For more information, see the main [Agent Architect Resources](./README.md).*
-
-**Last Updated:** October 13, 2025
-**Version:** 2.0 (2025 Refresh)
+*Part of octocode-mcp resources collection*

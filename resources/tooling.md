@@ -2,55 +2,47 @@
 
 > Development tools, monorepo management, and productivity for Node.js/TypeScript workflows
 
-**🎯 Purpose:** Tooling resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
-**🤖 For:** AI agents and developers optimizing Node.js development workflows
-**🌐 Focus:** Biome, Turborepo, Vite - Modern JavaScript/TypeScript tooling
-**📱 Mobile:** React Native build tools, Metro bundler, EAS Build
-**⚙️ Runtime:** All development tools run on Node.js
-
-**Last Updated:** October 13, 2025
+**🎯 Purpose:** Tooling resources for AI agents building Node.js/TypeScript applications  
+**🌐 Focus:** Biome, Turborepo, Vite - Modern JavaScript/TypeScript tooling  
+**⚙️ Runtime:** All development tools run on Node.js  
+**📅 Updated:** October 13, 2025
 
 ---
 
-## 🎯 Best for Application Generation
+## Quick Reference
 
-This file provides **tooling guidance** to help AI agents:
-1. **Choose linter/formatter** - Biome (replaces ESLint + Prettier)
-2. **Setup monorepos** - Turborepo vs pnpm workspaces vs Nx
-3. **Configure builds** - Vite, Rollup, esbuild for TypeScript
-4. **Document code** - Storybook, Docusaurus, TypeDoc
-5. **Test APIs** - Hoppscotch, Postman, REST Client
+### Code Quality & Formatting (Start Here)
+- **All-in-One (2025 Default):** `biomejs/biome` (22K+ ⭐) - Replaces ESLint + Prettier (25x faster)
+- **Traditional Linter:** `eslint/eslint` (29K+ ⭐) - Industry standard, extensive plugins
+- **Traditional Formatter:** `prettier/prettier` (49K+ ⭐) - Opinionated code formatter
 
-**Generation Priorities:**
-- ⚡ **Biome** - All-in-one linter/formatter (25x faster than Prettier, 2025 default)
-- ⚡ **Turborepo** - Best monorepo build system for Node.js
-- ⚡ **Vite** - Modern build tool for frontend development
-- ⚡ **Hoppscotch** - Open-source API testing (Postman alternative)
+### Monorepo Management
+- **Best for Next.js:** `vercel/turborepo` (29K+ ⭐) - Fast builds, intelligent caching
+- **Enterprise-Grade:** `nrwl/nx` (24K+ ⭐) - Advanced dependency management
+- **Simple & Efficient:** pnpm workspaces - Fast installs, small disk footprint
 
----
+### Build Tools
+- **Frontend (Modern):** `vitejs/vite` (72K+ ⭐) - Instant dev server, lightning HMR
+- **Library Bundling:** `rollup/rollup` (26K+ ⭐) - ES modules bundler
+- **Speed:** `evanw/esbuild` (39K+ ⭐) - Extremely fast bundler in Go
 
-## Top 3 Developer Tools for 2025
+### API Testing
+- **Best Open Source:** `hoppscotch/hoppscotch` (75K+ ⭐) - Lightweight, browser-based
+- **Alternative:** `usebruno/bruno` (29K+ ⭐) - Offline-first API client
 
-### 1. Biome - Code Quality Revolution
-**⭐ biomejs/biome** (21,568 stars) ⚡ ESSENTIAL
-- All-in-one toolchain replacing ESLint + Prettier + parts of Babel
-- 🔗 https://github.com/biomejs/biome
-- **Why Essential:** 25x faster than Prettier, 15x faster than ESLint. Built in Rust with unified configuration in a single `biome.json` file. Simplifies workflows and reduces configuration complexity dramatically.
-- **2025 Status:** 80% faster build pipelines reported by adopters. Roadmap 2025 includes Biome 2.0 release.
+### Documentation
+- **Component Docs:** `storybookjs/storybook` (85K+ ⭐) - UI component explorer
+- **Static Sites:** `facebook/docusaurus` (59K+ ⭐) - Documentation websites
+- **API Docs:** `TypeStrong/typedoc` (8K+ ⭐) - TypeScript documentation generator
 
-### 2. Turborepo - Monorepo Build System
-**⭐ vercel/turborepo** (28,846 stars) ⚡ ESSENTIAL
-- High-performance build system optimized for JavaScript and TypeScript monorepos
-- 🔗 https://github.com/vercel/turborepo
-- **Why Essential:** Intelligent task management, innovative caching mechanisms (30s builds → 0.2s from cache), and raw speed. Backed by Vercel with active development.
-- **2025 Recommendation:** Best for teams prioritizing build optimization and simplicity. More agnostic than Nx - easy to migrate away if needed.
-
-### 3. Hoppscotch - API Development
-**⭐ hoppscotch/hoppscotch** (74,963 stars) ⚡ ESSENTIAL
-- Open source API development ecosystem - alternative to Postman, Insomnia
-- 🔗 https://github.com/hoppscotch/hoppscotch
-- **Why Essential:** Lightweight, browser-based, supports REST, GraphQL, and WebSocket APIs. Code generation for 13+ programming languages. Free and open-source with active community.
-- **2025 Recommendation:** Perfect for individual developers and teams wanting Git-friendly API testing without vendor lock-in.
+### Decision Guide
+| Need | Choose | Why |
+|------|--------|-----|
+| Lint + Format | Biome | 25x faster, unified config |
+| Monorepo (Next.js) | Turborepo | Fast builds, simple |
+| Monorepo (Enterprise) | Nx | Advanced features, mature |
+| Frontend Build | Vite | Instant dev, modern |
+| API Testing | Hoppscotch | Open-source, Git-friendly |
 
 ---
 

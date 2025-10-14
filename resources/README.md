@@ -1,164 +1,186 @@
-# Node.js/TypeScript Application Resources
+# Node.js/TypeScript Resources for AI Agents
 
-> Curated GitHub repositories for building production-ready Node.js/TypeScript applications with 2025 best practices.
+> 610+ curated GitHub repositories organized into 12 specialized files for building production-ready Node.js/TypeScript applications
 
-**🎯 Purpose:** Context resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
-**🌐 Focus:** Exclusively Node.js, TypeScript, JavaScript ecosystem and tooling
-**📱 Mobile:** Includes React Native for mobile apps (runs on Node.js toolchain)
-**⚙️ Runtime:** All flows, builds, and development run on Node.js - no other runtimes required
-**📅 Generated:** October 13, 2025 using octocode-mcp GitHub search
-**✨ Enhanced:** October 13, 2025 with 2025 trends, decision guides, and comprehensive reorganization
-**🤖 Usage:** Reference knowledge base for AI-assisted application generation and technical decisions
+**For AI Agents:** Context resources for generating Node.js/TypeScript applications using octocode-mcp  
+**Runtime:** All applications powered by Node.js - from simple POCs to production full-stack apps  
+**Frontend:** React (preferred), plain HTML/CSS/JS, or any JavaScript framework  
+**Mobile:** React Native (preferred) with Expo - all running on Node.js toolchain  
+**Updated:** October 2025 with 2025 trends and decision guides
 
 ---
 
-## 🎯 For Application Generation with Octocode MCP
+## 🎯 What's Covered
 
-These resources are specifically curated to help AI agents generate production-ready Node.js/TypeScript applications. Each file focuses on:
-- ⚡ **Node.js/TypeScript native solutions** - All recommendations are JavaScript ecosystem
-- 📱 **Mobile-ready** - React Native for cross-platform mobile apps (all running on Node.js)
-- 📊 **Priority ordering** - Most essential and production-ready tools listed first
-- 🎨 **Generation patterns** - Best practices for scaffolding and architecture
-- 🔧 **Integration guides** - How components work together in real applications
-- ⚙️ **Node.js runtime** - Everything runs on Node.js - builds, tests, development, CI/CD
+**Applications Powered by Node.js:**
+- ✅ **Full-Stack Web Apps** - React, Next.js, Vite with Node.js backend
+- ✅ **Mobile Apps** - React Native with Expo (iOS/Android) + Node.js backend
+- ✅ **Native Desktop Apps** - Electron, Tauri with JavaScript/TypeScript
+- ✅ **Simple POCs** - Plain HTML/CSS/JS served by Node.js or static
+- ✅ **APIs & Backend Services** - Express, NestJS, Fastify, tRPC
+- ✅ **Real-Time Apps** - WebSocket, Socket.io on Node.js
+- ✅ **Serverless Functions** - Node.js on Vercel, AWS Lambda, Cloudflare Workers
 
-## What This Is
-
-**610+ GitHub repositories** organized into 15 specialized files. Each contains:
-- Priority-ordered resources (⚡ ESSENTIAL, ⚡ HIGHLY RECOMMENDED at top)
-- 2025-specific trends, features, and statistics
-- Decision guides and comparison tables for competing technologies
-- "Why Essential" and "When to Choose" sections
-- Quick Reference summaries with top 3 picks
-- Production-ready patterns and best practices
-
-**For AI Agents:** Structured knowledge to provide context-aware suggestions and understand technology ecosystems
-**For Developers:** Actionable reference to proven solutions with clear decision frameworks
+**Tech Stack Focus:**
+- **JavaScript/TypeScript** exclusively (no Python, Go, Java, etc.)
+- **Node.js runtime** for all development, testing, building, and deployment
+- **React preferred** for web UIs (but supports any JS framework)
+- **React Native preferred** for mobile (but supports alternatives)
+- **Modern tooling** optimized for Node.js ecosystem (Vite, Turborepo, Biome)
 
 ---
 
-## 📚 File Structure & Organization
+## 📁 File Structure (Optimized for AI Agents)
 
-**All resources are Node.js/TypeScript focused** - Every file contains recommendations for the JavaScript/TypeScript ecosystem exclusively.
+**Every file follows this structure:**
 
-### File Structure Explained
-
-Each resource file follows this structure:
-1. **Priority Section** (⚡ ESSENTIAL / ⚡ HIGHLY RECOMMENDED) - Production-ready, widely-adopted solutions
-2. **Category Breakdown** - Organized by specific use cases
-3. **Decision Guides** - "When to choose X vs Y" comparison tables
-4. **Best for Generation** - Specific guidance for using with Octocode MCP to generate applications
-5. **Quick Reference** - TL;DR summary with top 3 picks
-
----
-
-## 📚 Which File to Choose (AI Agent Guide)
-
-**Decision Framework:** Match user's question/need to the appropriate resource file
-
-| File | Use When User Asks About... | Key Topics | Platform |
-|------|---------------------------|------------|----------|
-| **[project-examples.md](./project-examples.md)** ⚡ START HERE | "How to start a new project", "production architecture examples", "monorepo setup", "full-stack boilerplates" | T3 Stack, Bulletproof React, real production apps (Cal.com, Supabase), monorepo vs multi-repo decisions, feature-based architecture | Web + Mobile (Node.js) |
-| **[frontend.md](./frontend.md)** | "React state management", "UI components", "client-side data fetching", "form handling", "frontend libraries" | Zustand vs Redux, Shadcn UI, TanStack Query, React 19, Next.js 15, form libraries, animation, visualization, **React Native** | Web + Mobile (Node.js) |
-| **[backend.md](./backend.md)** | "API design", "Node.js backend", "REST vs GraphQL", "server architecture", "backend frameworks" | NestJS, Fastify, tRPC, Express, API patterns, validation, middleware, production boilerplates | Node.js Server |
-| **[oauth.md](./oauth.md)** ⚡ NEW | "User authentication", "login system", "OAuth", "JWT", "passwordless", "session management", "social login" | NextAuth.js, Passport.js, SuperTokens, OAuth 2.0/2.1, WebAuthn, 2FA, Auth0/Clerk integration | Node.js (Web + Mobile) |
-| **[architecture.md](./architecture.md)** | "System design", "scalability", "microservices", "clean architecture", "design patterns", "distributed systems" | System design resources, Clean Architecture, DDD, CQRS, event sourcing, scalability patterns | Node.js + TypeScript |
-| **[database.md](./database.md)** | "Database choice", "ORM selection", "schema design", "database migrations", "query optimization" | Prisma, TypeORM, ZenStack, ORM comparisons, TypedSQL, schema-first vs code-first | Node.js + TypeScript |
-| **[frameworks.md](./frameworks.md)** | "Which framework to use", "Next.js features", "full-stack framework", "UI library comparison", "charting library" | Next.js 15 features, framework decision trees, MUI vs Shadcn vs Chakra, 3D visualization, charting | Web (Node.js) |
-| **[testing.md](./testing.md)** | "Testing strategy", "unit tests", "E2E testing", "test framework choice", "testing best practices" | Vitest vs Jest, Playwright vs Cypress, React Testing Library, testing pyramid, TDD, test coverage | Node.js (Web + Mobile) |
-| **[security.md](./security.md)** | "Security vulnerabilities", "secrets management", "OWASP", "container security", "zero-trust", "threat prevention" | OWASP Top 10 2025, secrets sprawl, container security, shift-left security, zero-trust architecture | Node.js + Infrastructure |
-| **[infrastructure.md](./infrastructure.md)** | "DevOps", "Docker", "Kubernetes", "CI/CD", "monitoring", "cloud deployment", "local development" | Docker best practices, K8s patterns, LocalStack, CI/CD pipelines, Grafana, observability, BaaS platforms | Node.js + DevOps |
-| **[ai-agents.md](./ai-agents.md)** | "AI agent framework", "LLM orchestration", "chatbot", "AI workflows", "agent systems", "AI integration" | Dify, CrewAI, LangChain, AutoGen, visual AI builders, multi-agent systems, 2025 AI trends | Node.js + TypeScript AI |
-| **[mcp-typescript.md](./mcp-typescript.md)** ⚡ NEW | "Model Context Protocol", "AI SDK", "RAG implementation", "vector database", "LangChain TypeScript", "Claude integration" | MCP, Vercel AI SDK, LangChain/LangGraph, RAG systems, vector databases, Claude tools | Node.js + TypeScript AI |
-| **[tooling.md](./tooling.md)** | "Development tools", "linter choice", "monorepo tools", "API testing", "code quality", "build performance" | Biome, Turborepo, Hoppscotch, monorepo tooling, performance optimization, migration strategies | Node.js Development |
-| **[learning.md](./learning.md)** | "Learning path", "skill roadmap", "interview prep", "certification", "career development", "what to learn in 2025" | roadmap.sh, freeCodeCamp, interview preparation, LeetCode strategies, 2025 essential skills | Node.js/TypeScript Career |
-
----
-
-## 🎯 Usage Guide
-
-**Quick Navigation:**
-- New project → [project-examples.md](./project-examples.md)
-- Frontend/Backend → [frontend.md](./frontend.md) + [backend.md](./backend.md)
-- Authentication → [oauth.md](./oauth.md) ⚡ NEW
-- Architecture design → [architecture.md](./architecture.md)
-- AI features → [ai-agents.md](./ai-agents.md)
-- MCP & TypeScript AI → [mcp-typescript.md](./mcp-typescript.md) ⚡ NEW
-- Quality → [testing.md](./testing.md) + [security.md](./security.md)
-
-**Legend:** ⚡ ESSENTIAL | ⚡ HIGHLY RECOMMENDED | 🔗 GitHub link | ⭐ Star count
-
----
-
-## 🤖 AI Agent Integration
-
-**How AI agents use these resources:**
-1. Access structured GitHub repository knowledge
-2. Provide context-aware technical recommendations
-3. Reference proven solutions and patterns
-4. Understand technology ecosystems and relationships
-
-**Workflow:**
-1. **Identify** → Use resource files to find relevant repos
-2. **Explore** → Use octocode-mcp to examine specific repositories
-3. **Recommend** → Suggest solutions based on curated knowledge
-4. **Validate** → Compare against best practices
-
----
-
-### 2025 Enhancement Features
-
-- ✅ **Priority Organization** - ESSENTIAL resources at the top of every file
-- ✅ **Decision Guides** - Clear comparison tables and "when to choose" frameworks
-- ✅ **2025 Trends** - Latest features, statistics, and best practices
-- ✅ **Quick Reference** - Top 3 picks and summary sections in every file
-- ✅ **Production Focus** - Real-world examples, battle-tested patterns
-- ✅ **Node.js/TypeScript Stack** - Exclusive focus on modern JavaScript ecosystem
-- ✅ **Mobile Ready** - React Native for cross-platform mobile development
-
----
-
-## 📱 Mobile Development with React Native
-
-**All mobile development runs on Node.js infrastructure:**
-
-### Build & Development
-- **Metro Bundler** - Runs on Node.js
-- **React Native CLI** - Node.js-based tooling
-- **Expo** - Node.js development platform
-- **Testing** - Jest/Vitest running on Node.js
-
-### Deployment & CI/CD
-- **Build Scripts** - npm/yarn/pnpm scripts
-- **Code Signing** - Fastlane with Node.js integration
-- **CI/CD** - GitHub Actions, GitLab CI running Node.js
-- **OTA Updates** - Expo/CodePush via Node.js servers
-
-### Backend Integration
-- **Same Stack** - Share types, validation, and logic between web/mobile/backend
-- **tRPC** - Type-safe APIs from backend to mobile
-- **Prisma** - Same ORM for all platforms
-- **Authentication** - Same auth libraries (Passport.js, NextAuth.js concepts)
-
-### Recommended Mobile Stack (2025)
 ```
-Frontend: React Native + TypeScript
-State: Zustand + TanStack Query
-Backend: tRPC + NestJS/Fastify
-Database: Prisma + PostgreSQL
-Build: Expo (EAS Build) or React Native CLI
-Platform: iOS + Android from single codebase
-Runtime: All Node.js tooling and development
+1. Quick Reference (at top)
+   ├─ Start Here: Top 3-5 recommendations with star counts
+   ├─ Decision Tables: Quick comparisons (Need | Choose | Why)
+   └─ When to Choose: Clear selection criteria
+
+2. Detailed Content
+   ├─ Categories with ⚡ ESSENTIAL markers
+   ├─ GitHub links + star counts
+   └─ Use cases + "Why Essential" explanations
+
+3. Ending: *Part of octocode-mcp resources collection*
 ```
 
-**Key Resources:**
-- [frontend.md](./frontend.md) - React Native components, state management, animations
-- [project-examples.md](./project-examples.md) - T3 Turbo with React Native
-- [backend.md](./backend.md) - Backend APIs serving mobile apps
-- [oauth.md](./oauth.md) - Mobile authentication patterns
-- [testing.md](./testing.md) - React Native testing strategies
+**Why This Structure:**
+- **Quick Reference first** = Instant answers for AI agents
+- **Decision tables** = Fast comparisons without reading full content
+- **No duplication** = Efficient token usage
+- **Consistent format** = Easy parsing for AI models
 
 ---
 
-*Part of octocode-vibe-plugin agent system*
+## 📚 Resource Files (12 Total)
+
+### 🚀 Getting Started
+**[project-examples.md](./project-examples.md)** - Start here for new projects  
+Full-stack templates, boilerplates, monorepo examples  
+`T3 Stack • Bulletproof React • Cal.com • Supabase • Turborepo examples`
+
+### 🎨 Frontend Development
+**[frontend-libs.md](./frontend-libs.md)** - React ecosystem + React Native  
+State management, UI components, forms, animations, 3D, mobile  
+`Zustand • TanStack Query • Shadcn UI • React Hook Form • Framer Motion • React Native`
+
+**[fullstack-frameworks.md](./fullstack-frameworks.md)** - Full-stack frameworks + charting  
+Next.js, Vite, Remix, Astro, data visualization libraries  
+`Next.js 15 • Vite • Material UI • ECharts • Recharts • Three.js`
+
+### ⚙️ Backend Development
+**[backend.md](./backend.md)** - Node.js backend frameworks + APIs  
+REST, GraphQL, tRPC, validation, middleware, boilerplates  
+`NestJS • Fastify • Express • tRPC • Zod • Joi • Node.js best practices`
+
+**[auth.md](./auth.md)** - Authentication + authorization  
+OAuth, JWT, passwordless, 2FA, session management, social login  
+`NextAuth.js • Passport.js • SuperTokens • OAuth 2.1 • WebAuthn • JWT`
+
+**[database.md](./database.md)** - ORMs + databases + caching  
+Database clients, schema design, migrations, Redis caching  
+`Prisma • TypeORM • PostgreSQL • MongoDB • Redis • node-cache`
+
+### 🏗️ Architecture & Patterns
+**[architecture.md](./architecture.md)** - System design + patterns  
+Clean architecture, DDD, CQRS, scalability, microservices  
+`System Design • Clean Architecture • DDD • Event Sourcing • Scalability`
+
+### ✅ Quality & Security
+**[testing.md](./testing.md)** - Testing frameworks + strategies  
+Unit, integration, E2E testing, best practices  
+`Vitest • Jest • Playwright • Cypress • React Testing Library • Best practices`
+
+**[security.md](./security.md)** - Security libraries + best practices  
+Middleware, validation, OWASP, secrets management  
+`Helmet • CORS • Rate limiting • Zod/Joi • bcrypt • OWASP Top 10`
+
+### 🤖 AI Integration
+**[ai-agents.md](./ai-agents.md)** - AI agents + RAG + vector databases  
+TypeScript AI frameworks, embeddings, reranking, multi-agent  
+`Mastra • LlamaIndexTS • LangChain • Qdrant • TanStack AI • RAG patterns`
+
+**[mcp-typescript.md](./mcp-typescript.md)** - Model Context Protocol + AI SDKs  
+MCP servers, TypeScript AI, RAG systems, Claude/Anthropic  
+`MCP SDK • Vercel AI • LangGraph • Vector DBs • Claude tools • RAG`
+
+### 🛠️ Development Tools
+**[tooling.md](./tooling.md)** - Developer tools + monorepo  
+Linting, formatting, build tools, API testing, documentation  
+`Biome • Turborepo • Vite • Hoppscotch • Storybook • ESLint • Prettier`
+
+---
+
+## 🎯 Quick Selection Guide
+
+| Need | File | Top Picks |
+|------|------|-----------|
+| New project template | project-examples.md | T3 Stack, Bulletproof React |
+| State management | frontend-libs.md | Zustand, TanStack Query |
+| UI components | frontend-libs.md | Shadcn UI, Material UI |
+| Backend framework | backend.md | NestJS, Fastify |
+| Authentication | auth.md | NextAuth.js, Passport.js |
+| Database/ORM | database.md | Prisma, TypeORM |
+| Full-stack framework | fullstack-frameworks.md | Next.js 15, Vite+React |
+| Testing | testing.md | Vitest, Playwright |
+| Security | security.md | Helmet, Zod, OWASP guides |
+| AI agents | ai-agents.md | Mastra, LangChain, Qdrant |
+| MCP tools | mcp-typescript.md | MCP SDK, Vercel AI SDK |
+| Dev tools | tooling.md | Biome, Turborepo |
+
+---
+
+## 🤖 AI Agent Usage
+
+**How to use these resources:**
+
+1. **Match user question** → Find appropriate file from Quick Selection Guide
+2. **Read Quick Reference** → Get instant top picks and decision tables
+3. **Use decision tables** → Compare options without reading full details
+4. **Reference detailed content** → Deep dive when needed for specific requirements
+
+**Example queries:**
+- "Best state management?" → frontend-libs.md Quick Reference → Zustand + TanStack Query
+- "Which framework?" → fullstack-frameworks.md → Next.js 15 (95% of projects)
+- "Authentication solution?" → auth.md → NextAuth.js or Passport.js
+
+---
+
+## 📱 Mobile & Native Applications (2025)
+
+### React Native Mobile Stack (Preferred)
+All mobile development powered by Node.js toolchain:
+
+```
+Frontend:  React Native + TypeScript
+State:     Zustand + TanStack Query  
+Backend:   tRPC + NestJS/Fastify (Node.js)
+Database:  Prisma + PostgreSQL
+Build:     Expo (EAS Build) - Node.js CLI
+Testing:   Jest/Detox - runs on Node.js
+```
+
+**Key files:** frontend-libs.md, project-examples.md (T3 Turbo), backend.md, auth.md, testing.md
+
+### Desktop Applications
+**Electron** (frontend-libs.md) - Build cross-platform desktop apps with JavaScript/TypeScript  
+**Tauri** (frontend-libs.md) - Lightweight alternative with web frontend + Rust backend
+
+### Simple POCs & Static Sites
+**Plain HTML/CSS/JS** - Traditional web development, served via Node.js or static hosting  
+**Vite** (fullstack-frameworks.md) - Fast dev server for simple projects  
+**Express** (backend.md) - Serve static files with Node.js  
+**Astro** (fullstack-frameworks.md) - Static site generator with minimal JavaScript
+
+All development, testing, and build tools run on Node.js regardless of target platform.
+
+---
+
+**Legend:** ⚡ ESSENTIAL | 🔗 GitHub link | ⭐ Star count
+
+*Part of octocode-mcp resources collection*
 

@@ -2,50 +2,63 @@
 
 > Testing strategies, frameworks, and best practices for Node.js/TypeScript applications
 
-**🎯 Purpose:** Testing resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
-**🤖 For:** AI agents and developers implementing tests for Node.js applications
-**🌐 Focus:** Vitest, Jest, Playwright - JavaScript/TypeScript testing
-**📱 Mobile:** React Native testing with Jest, Testing Library, Detox
-**⚙️ Runtime:** All tests run on Node.js (unit, integration, E2E)
-
-**Last Updated:** October 13, 2025
+**🎯 Purpose:** Testing resources for AI agents building Node.js/TypeScript applications  
+**🌐 Focus:** Vitest, Jest, Playwright - JavaScript/TypeScript testing  
+**⚙️ Runtime:** All tests run on Node.js (unit, integration, E2E)  
+**📅 Updated:** October 13, 2025
 
 ---
 
-## 🎯 Best for Application Generation
+## Quick Reference
 
-This file provides **testing guidance** to help AI agents:
-1. **Choose framework** - Vitest vs Jest for unit/integration tests
-2. **E2E testing** - Playwright vs Cypress for end-to-end tests
-3. **Test React** - React Testing Library, React Native Testing Library
-4. **Apply strategies** - Testing pyramid, TDD, mutation testing
-5. **Test mobile** - Same testing patterns for web and React Native
+### Best Practices (Must-Read)
+- **Essential Guide:** `goldbergyoni/javascript-testing-best-practices` (25K+ ⭐) - Complete JS testing guide
+- **Node.js Advanced:** `goldbergyoni/nodejs-testing-best-practices` (4K+ ⭐) - Advanced patterns
+- **Enforce Best Practices:** `testing-library/eslint-plugin-testing-library` (1K+ ⭐) - ESLint rules
 
-**Generation Priorities:**
-- ⚡ **Vitest** - Modern, fast, Vite-native testing (2025 default)
-- ⚡ **Playwright** - Best E2E testing with cross-browser support
-- ⚡ **React Testing Library** - User-centric component testing
-- ⚡ **Testing Pyramid** - More unit tests, fewer integration, minimal E2E
+### Unit Testing Frameworks
+- **Modern (2025 Default):** `vitest-dev/vitest` (12K+ ⭐) - Vite-powered, fast, ESM-native
+- **Industry Standard:** `jestjs/jest` (44K+ ⭐) - Mature, 40M+ weekly downloads
+- **Choose Vitest for:** New projects, Vite apps, modern ESM/TypeScript
+- **Choose Jest for:** React Native, legacy codebases, existing Jest projects
+
+### E2E Testing
+- **Best Overall:** `microsoft/playwright` (73K+ ⭐) - Cross-browser, fast, reliable
+- **Alternative:** `cypress-io/cypress` (48K+ ⭐) - Developer-friendly, great DX
+- **Choose Playwright for:** Cross-browser, parallel execution, best performance
+- **Choose Cypress for:** Quick setup, excellent dev experience, simpler API
+
+### React Testing
+- **User-Centric:** `testing-library/react-testing-library` (19K+ ⭐) - Test like users
+- **React Native:** `callstack/react-native-testing-library` (4K+ ⭐) - Same patterns for mobile
+- **Mobile E2E:** `wix/Detox` (12K+ ⭐) - Gray box testing for React Native
+
+### Mocking & Utilities
+- **API Mocking:** `mswjs/msw` (17K+ ⭐) - Mock by intercepting requests
+- **Test Doubles:** `sinonjs/sinon` (10K+ ⭐) - Spies, stubs, mocks
+- **Fake Data:** `faker-js/faker` (14K+ ⭐) - Generate realistic test data
+
+### Decision Guide
+| Need | Choose | Why |
+|------|--------|-----|
+| Unit Tests (New) | Vitest | Fast, ESM-native, Vite-powered |
+| Unit Tests (Legacy) | Jest | Mature, React Native support |
+| E2E Tests | Playwright | Cross-browser, parallel, reliable |
+| React Testing | React Testing Library | User-centric, best practices |
+| API Mocking | MSW | Intercept at network level |
+| Mobile E2E | Detox | Gray box for React Native |
 
 ---
 
-## Testing Best Practices
+## Best Practices (Essential Reading)
 
-**⭐ goldbergyoni/javascript-testing-best-practices** (24,528 stars) ⚡ ESSENTIAL
-- 📗🌐 🚢 Comprehensive and exhaustive JavaScript & Node.js testing best practices (August 2025)
+**⭐ goldbergyoni/javascript-testing-best-practices** (25K+ ⭐) ⚡ ESSENTIAL
 - 🔗 https://github.com/goldbergyoni/javascript-testing-best-practices
-- **Use Case:** The #1 resource for complete testing best practices guide covering unit, integration, E2E, and advanced topics like mutation testing and property-based testing
-- **Key Topics:** AAA pattern, behavior-driven testing, test naming conventions, mocking strategies, CI/CD integration
+- Complete JavaScript & Node.js testing best practices (August 2025)
 
-**⭐ goldbergyoni/nodejs-testing-best-practices** (4,176 stars)
-- Beyond the basics of Node.js testing. Including a super-comprehensive best practices list and an example app (April 2025)
+**⭐ goldbergyoni/nodejs-testing-best-practices** (4K+ ⭐)
 - 🔗 https://github.com/goldbergyoni/nodejs-testing-best-practices
-- **Use Case:** Advanced Node.js testing practices and patterns
-
-**⭐ testing-library/eslint-plugin-testing-library** (1,035 stars)
-- ESLint plugin to follow best practices and anticipate common mistakes when writing tests with Testing Library
-- 🔗 https://github.com/testing-library/eslint-plugin-testing-library
-- **Use Case:** Enforce testing best practices and catch common testing anti-patterns
+- Advanced Node.js testing practices and patterns
 
 ---
 
@@ -284,35 +297,6 @@ This file provides **testing guidance** to help AI agents:
 - 🔗 https://github.com/mswjs/msw
 - **Use Case:** Mock APIs at network level for realistic testing
 - **Why MSW:** Works in both tests and browser, no code changes needed
-
----
-
-## Quick Reference
-
-### Testing Strategy Guide
-
-**Choose Your Tools:**
-- **Unit Testing:** Vitest (new projects) or Jest (existing/legacy)
-- **React Testing:** React Testing Library + Vitest/Jest
-- **E2E Testing:** Playwright (cross-browser, scale) or Cypress (SPA, DX)
-- **API Mocking:** MSW (Mock Service Worker)
-
-**Best Practices Checklist:**
-- ✅ Follow goldbergyoni/javascript-testing-best-practices
-- ✅ Use AAA (Arrange-Act-Assert) pattern
-- ✅ Test behavior, not implementation
-- ✅ Keep tests simple and independent
-- ✅ Aim for 70-80% coverage
-- ✅ Mock only external dependencies
-- ✅ Use descriptive test names
-- ✅ Integrate tests into CI/CD
-- ✅ Capture screenshots/videos on E2E failures
-- ✅ Run essential tests for quick feedback
-
-**Top 3 Testing Tools for 2025:**
-1. **Vitest** - Modern, fast unit testing framework
-2. **Playwright** - Powerful cross-browser E2E testing
-3. **React Testing Library** - User-centric component testing
 
 ---
 
