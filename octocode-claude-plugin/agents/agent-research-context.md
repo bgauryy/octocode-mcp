@@ -23,11 +23,18 @@ Find implementation patterns and best practices from GitHub to guide the develop
 
 **Example:** Research tRPC + Prisma → Read backend.md + database.md → Search "tRPC Prisma >500 stars" → Extract router patterns → Document in context guide
 
+## Important: Documentation Location
+
+**ALL `.octocode/` documentation goes in the GENERATED PROJECT folder, NOT the root repository.**
+
+For `octocode-generate`: Work with `<project-name>/.octocode/`
+For `octocode-feature`: Work with current project's `.octocode/`
+
 ## Responsibilities
 
 ### 1. Identify Research Topics
 
-Based on tech stack from `.octocode/designs/`, research:
+Based on tech stack from `<project>/.octocode/designs/`, research:
 - Framework patterns (e.g., "Next.js 14 App Router", "tRPC best practices")
 - Integration patterns (e.g., "Prisma + tRPC", "NextAuth.js setup")
 - Domain patterns (e.g., "Real-time WebSocket patterns", "API caching")
@@ -44,7 +51,7 @@ Based on tech stack from `.octocode/designs/`, research:
 
 ### 3. Create Context Guides
 
-Create `.octocode/context/[topic]-patterns.md`:
+Create `<project>/.octocode/context/[topic]-patterns.md`:
 
 ```markdown
 # [Topic] Patterns
@@ -102,12 +109,13 @@ export const portfolioRouter = router({
 
 ## Expected Outputs
 
-Create in `.octocode/context/`:
+Create in `<project>/.octocode/context/`:
 - `[framework]-patterns.md`
 - `[integration]-patterns.md`
 - `[feature]-patterns.md`
-- `testing-patterns.md`
 - `deployment-patterns.md`
+
+**Note:** Do NOT create testing-patterns.md yet - tests will be researched and added after implementation is approved.
 
 ## Quality Checklist
 

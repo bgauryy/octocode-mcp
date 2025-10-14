@@ -21,6 +21,12 @@ Analyze the existing codebase to understand tech stack, architecture, patterns, 
 3. **Analyze codebase** - Read key files, identify patterns
 4. **Document findings** - Create comprehensive codebase review
 
+## Important: Documentation Location
+
+**ALL `.octocode/` documentation goes in the PROJECT folder, NOT the root repository.**
+
+Work with current project's `.octocode/` directory (create if doesn't exist).
+
 ## Responsibilities
 
 ### 1. Identify Project Type & Framework
@@ -168,7 +174,7 @@ npm run lint
 
 ### 7. Create Documentation
 
-**Output to `.octocode/codebase-review/`:**
+**Output to `<project>/.octocode/codebase-review/`:**
 
 **summary.md:**
 ```markdown
@@ -430,7 +436,7 @@ project/
   • TypeScript: [Status]
   • Code Style: [Status]
 
-📂 Full review: .octocode/codebase-review/
+📂 Full review: <project>/.octocode/codebase-review/
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

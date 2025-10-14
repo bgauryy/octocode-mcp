@@ -23,6 +23,13 @@ Transform requirements into complete technical design. You own backend architect
 
 **Example:** Building a real-time app → Read project-examples.md → Search "real-time websocket typescript >1000 stars" → Analyze 3-5 top repos → Document decisions with evidence
 
+## Important: Documentation Location
+
+**ALL `.octocode/` documentation goes in the GENERATED PROJECT folder, NOT the root repository.**
+
+For `octocode-generate`: Create in `<project-name>/.octocode/`
+For `octocode-feature`: Create in current project's `.octocode/`
+
 ## Critical Thinking Framework
 
 **Before ANY decision, ask:**
@@ -37,7 +44,7 @@ Transform requirements into complete technical design. You own backend architect
 
 ### 1. Analyze Requirements
 
-Read `.octocode/requirements/*` and question:
+Read `<project>/.octocode/requirements/*` and question:
 - Scale needs (DAU/MAU, growth rate)
 - Complexity (CRUD vs complex domain logic)
 - Team (size, expertise, operational capabilities)
@@ -77,7 +84,7 @@ Decide on:
 
 ### 4. Create Design Documents
 
-Output to `.octocode/designs/`:
+Output to `<project>/.octocode/designs/`:
 
 - **architecture.md** - System overview, components, data flow (backend + frontend)
 - **tech-stack.md** - Technologies with rationale (full stack: frontend + backend + database)
@@ -87,9 +94,10 @@ Output to `.octocode/designs/`:
 - **data-flow.md** - State management, caching, real-time updates
 - **ui-approach.md** - Frontend framework, component library, design system choice
 - **auth-strategy.md** - Authentication/authorization design
-- **testing-strategy.md** - Test approach and frameworks
 - **deployment.md** - Hosting, CI/CD, environment variables
 - **tradeoffs.md** - Decisions and alternatives
+
+**Note:** Do NOT include testing strategy yet - tests will be added after implementation is approved.
 
 ### 5. Create Project Structure
 
@@ -125,7 +133,7 @@ Output to `.octocode/designs/`:
   • [Decision] - [Evidence from resources/research]
   • See .octocode/designs/tradeoffs.md for alternatives
 
-📂 Full documents: .octocode/designs/
+📂 Full documents: <project>/.octocode/designs/
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

@@ -26,6 +26,20 @@ You orchestrate a specialized AI development team to add features or fix bugs in
 
 $ARGUMENTS
 
+## Important: Documentation Location
+
+**ALL `.octocode/` documentation goes in the PROJECT folder, NOT the root repository.**
+
+Work with the current project's `.octocode/` directory.
+
+## Testing Approach
+
+**Implementation-first, tests later:**
+1. Phases 1-6 focus on implementation and functionality
+2. Tests are NOT written during initial implementation
+3. After verification approval, user can request test addition as a separate phase
+4. This allows faster iteration and user validation before test investment
+
 ## 6-Phase Workflow
 
 ```
@@ -39,56 +53,67 @@ Phase 6: Verification     → Final Review
 
 ### Phase 1: Code Review → Gate 1
 **Agent:** `agent-code-review`  
-**Output:** `.octocode/codebase-review/*` (tech stack, architecture, patterns)  
+**Output:** `<project>/.octocode/codebase-review/*` (tech stack, architecture, patterns)  
 **Gate 1:** User approves codebase understanding
 
 ### Phase 2: Feature/Bug Analysis → Gate 2
 **Agent:** `agent-feature-analyzer`  
-**Output:** `.octocode/analysis/*` (understanding, impact, risks, plan)  
-**Gate 2:** User approves implementation plan
+**Output:** `<project>/.octocode/analysis/*` (understanding, impact, risks, plan)  
+**Gate 2:** User approves implementation plan  
+**Note:** Plan does NOT include test writing
 
 ### Phase 3: Research (Parallel)
 **Agent:** `agent-research-context` (EXISTING)  
 **Input:** Analysis + Codebase patterns  
-**Output:** `.octocode/context/*` (implementation patterns from GitHub)  
-**Note:** Runs while planning happens
+**Output:** `<project>/.octocode/context/*` (implementation patterns from GitHub)  
+**Note:** Runs while planning happens, excludes testing patterns
 
 ### Phase 4: Planning
 **Agent:** `agent-manager` (EXISTING)  
 **Input:** Analysis + Context  
-**Output:** Execution plan with file locks
+**Output:** Execution plan with smart task distribution
 
 ### Phase 5: Implementation → Gate 3
 **Agents:** Multiple `agent-implementation` instances (EXISTING)  
-**Managed by:** `agent-manager` (file locks, progress tracking)  
+**Managed by:** `agent-manager` (smart task distribution, progress tracking)  
 **Gate 3:** Live dashboard with pause/continue/inspect controls
 
 ### Phase 6: Verification → Final Review
 **Agent:** `agent-verification` (EXISTING)  
-**Tests:** Build, tests, feature validation, regression checks  
-**Output:** `.octocode/verification-report.md`  
-**Final:** User approves for commit or requests fixes
+**Tests:** Build, linting, feature validation, regression checks, runtime behavior  
+**Output:** `<project>/.octocode/verification-report.md`  
+**Final:** User approves for commit or requests fixes  
+**Note:** Existing tests verified if present, but no new tests expected
 
 ## State Management
 
-**Checkpoints:** `.octocode/execution-state.json` (updated after each phase)  
-**File Locks:** `.octocode/locks.json` (managed by agent-manager)  
-**Logs:** `.octocode/logs/*` and `.octocode/debug/*`  
+**Checkpoints:** `<project>/.octocode/execution-state.json` (updated after each phase)  
+**Logs:** `<project>/.octocode/logs/*` and `<project>/.octocode/debug/*`  
 **Resume:** `--resume` flag loads from execution-state.json
 
 ## Success Criteria
 
 ### For Features:
 - ✅ Feature implemented as specified
-- ✅ Tests added and passing
+- ✅ Existing tests pass (if any)
 - ✅ No existing features broken
 - ✅ Build passes
+- ✅ Runtime verification passes
 
 ### For Bugs:
 - ✅ Bug reproducible before fix
 - ✅ Bug not reproducible after fix
 - ✅ No regression in related features
-- ✅ Tests added to prevent recurrence
+- ✅ Existing tests pass
+
+## Post-Approval: Adding Tests
+
+After verification approval, user can request test addition:
+1. Research testing patterns for the codebase
+2. Create `<project>/.octocode/context/testing-patterns.md`
+3. Generate test tasks
+4. Implement tests (unit + integration)
+5. Re-verify with full test coverage
 
 ## Start
 

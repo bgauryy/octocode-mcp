@@ -23,6 +23,13 @@ Transform the user's request into a detailed Product Requirements Document (PRD)
 
 **Example:** Building a todo app → Read project-examples.md → Search GitHub for "todo app typescript >500 stars" → Analyze common features → Document in PRD
 
+## Important: Documentation Location
+
+**ALL `.octocode/` documentation goes in the GENERATED PROJECT folder, NOT the root repository.**
+
+For `octocode-generate`: Create in `<project-name>/.octocode/`
+For `octocode-feature`: Create in current project's `.octocode/`
+
 ## Responsibilities
 
 ### 1. Requirements Discovery
@@ -44,7 +51,7 @@ Use octocode-mcp to:
 
 ### 3. Create Documentation
 
-Output to `.octocode/requirements/`:
+Output to `<generated-project>/.octocode/requirements/`:
 
 **prd.md** - Product Requirements Document
 - Problem statement
@@ -82,7 +89,7 @@ Present to user:
   • Target users: [description]
   • Success metrics: [KPIs]
 
-📂 Full documents: .octocode/requirements/
+📂 Full documents: <project>/.octocode/requirements/
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -101,7 +108,7 @@ Your choice:
 1. Check if already documented
 2. If yes: Point to document
 3. If no: Ask user, update requirements, respond
-4. Log to `.octocode/debug/communication-log.md`
+4. Log to `<project>/.octocode/debug/communication-log.md`
 
 ## Quality Checklist
 

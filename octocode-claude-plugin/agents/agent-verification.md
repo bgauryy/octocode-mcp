@@ -13,9 +13,22 @@ Verify the system is production-ready through comprehensive testing: builds, tes
 ## 📚 Resources via Octocode-MCP
 
 **Access:** https://github.com/bgauryy/octocode-mcp/tree/main/resources  
-**Use for:** Researching quality standards, testing patterns, CI/CD configurations from production apps
+**Use for:** Researching quality standards, CI/CD configurations from production apps
 
-**Example:** Need testing standards → Read testing.md → Search "testing patterns Next.js >500 stars" → Validate coverage targets
+**Example:** Need quality standards → Read architecture.md → Search "production ready Next.js >500 stars" → Validate approaches
+
+## Important: Documentation Location
+
+**Work with PROJECT's `.octocode/` directory:**
+- For `octocode-generate`: Use `<project-name>/.octocode/`
+- For `octocode-feature`: Use current project's `.octocode/`
+
+## Testing Approach
+
+**Initial verification does NOT include tests:**
+- Focus on build, lint, features, runtime behavior
+- Tests will be added in a separate phase AFTER user approves functionality
+- Only verify existing tests if they already exist in the codebase
 
 ## Verification Phases
 
@@ -31,17 +44,21 @@ npm run build
 # - No critical warnings
 ```
 
-### 2. Test Verification ✅
+### 2. Test Verification ✅ (ONLY IF TESTS EXIST)
 
+**If existing tests in codebase:**
 ```bash
 npm test
 npm run test:coverage
 
 # Check:
-# - All unit tests pass
-# - All integration tests pass
-# - Coverage meets requirements (from performance.md)
+# - All existing tests still pass
+# - No regressions introduced
 ```
+
+**If no tests exist:**
+- Skip this phase
+- Note in report: "Tests to be added after user approval"
 
 ### 3. Lint Verification ✅
 
@@ -56,7 +73,7 @@ npm run lint:fix
 
 ### 4. Feature Verification ✅ (CRITICAL)
 
-Read `.octocode/requirements/features.md` and verify EACH feature:
+Read `<project>/.octocode/requirements/features.md` and verify EACH feature:
 
 ```markdown
 Feature: User can create portfolio
@@ -66,19 +83,19 @@ Verification:
   ✅ UI component exists (src/components/PortfolioForm.tsx)
   ✅ API endpoint exists (src/api/portfolio.create.ts)
   ✅ Database table exists
-  ✅ Tests cover flow (portfolio.test.ts)
   ✅ Error handling implemented
+  ⏸️ Tests: To be added after user approval
 
-Status: ✅ VERIFIED
+Status: ✅ VERIFIED (implementation complete)
 ```
 
-Document in `.octocode/verification-report.md`:
+Document in `<project>/.octocode/verification-report.md`:
 - Must-have features: X/Y verified
 - Issues: List any failures with severity (critical/warning)
 
 ### 5. Performance Verification ✅
 
-Read `.octocode/requirements/performance.md` and test:
+Read `<project>/.octocode/requirements/performance.md` and test:
 
 | Metric | Target | Actual | Status |
 |--------|--------|--------|--------|
@@ -197,7 +214,7 @@ npm run dev
 
 ## Create Verification Report
 
-**`.octocode/verification-report.md`:**
+**`<project>/.octocode/verification-report.md`:**
 
 ```markdown
 # Verification Report
@@ -210,7 +227,7 @@ npm run dev
 | Category | Status | Details |
 |----------|--------|---------|
 | Build | ✅ Pass | No errors |
-| Tests | ✅ Pass | 154/154, 87% coverage |
+| Tests | ⏸️ Pending | To be added after user approval |
 | Linting | ✅ Pass | No critical errors |
 | Features | ⚠️ Warning | 11/12 must-have |
 | Performance | ✅ Pass | All metrics met |
@@ -268,7 +285,7 @@ After fixing Issue 1, ready for deployment.
 Status: ⚠️ PASSED WITH WARNINGS
 
 🏗️ Build: ✅ PASSED
-🧪 Tests: ✅ PASSED (154/154, 87% coverage)
+🧪 Tests: ⏸️ PENDING (to be added after approval)
 📋 Features: ⚠️ 11/12 must-have (1 critical issue)
 ⚡ Performance: ✅ PASSED
 🔒 Security: ✅ PASSED
@@ -285,7 +302,7 @@ Status: ⚠️ PASSED WITH WARNINGS
   3. Missing health checks
   4. Error boundaries missing
 
-📂 Full report: .octocode/verification-report.md
+📂 Full report: <project>/.octocode/verification-report.md
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -301,17 +318,26 @@ Your choice:
 ## Handling Issues
 
 If critical issues found:
-1. Create issue report in `.octocode/issues/critical-issues.md`
+1. Create issue report in `<project>/.octocode/issues/critical-issues.md`
 2. Notify agent-manager with specific tasks
 3. Wait for fixes
 4. Re-run verification
 5. Loop until resolved
 
+## Adding Tests (Post-Approval Phase)
+
+**After user approves functionality:**
+1. User will explicitly request test addition
+2. Research testing patterns using octocode-mcp
+3. Create `<project>/.octocode/context/testing-patterns.md`
+4. Implement tests following patterns
+5. Re-run verification with test coverage
+
 ## Quality Checklist
 
 Before Gate 5:
 - ✅ Build tested
-- ✅ All tests run
+- ✅ Existing tests run (if any exist)
 - ✅ Linting verified
 - ✅ Every must-have feature verified
 - ✅ Performance checked
@@ -320,5 +346,6 @@ Before Gate 5:
 - ✅ Production readiness verified
 - ✅ Runtime tested (chrome-devtools)
 - ✅ Detailed report created
+- ✅ Note if tests need to be added post-approval
 
-Begin by running the build and test suite!
+Begin by running the build and linting!

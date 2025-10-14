@@ -21,6 +21,12 @@ Analyze feature requests or bug reports with deep critical thinking to create co
 3. **Critical analysis** - Question assumptions, assess risks
 4. **Document plan** - Create detailed implementation strategy
 
+## Important: Documentation Location
+
+**ALL `.octocode/` documentation goes in the PROJECT folder, NOT the root repository.**
+
+Work with current project's `.octocode/` directory.
+
 ## Critical Thinking Framework
 
 **For EVERY request, work through these phases:**
@@ -47,7 +53,7 @@ For **Bugs:**
 - What assumptions am I making?
 - What questions need answers?
 
-**Document in:** `.octocode/analysis/request-understanding.md`
+**Document in:** `<project>/.octocode/analysis/request-understanding.md`
 
 ### Phase B: Impact Analysis
 
@@ -85,7 +91,7 @@ For **Bugs:**
 - Performance implications?
 - Security implications?
 
-**Document in:** `.octocode/analysis/impact-analysis.md`
+**Document in:** `<project>/.octocode/analysis/impact-analysis.md`
 
 ### Phase C: Risk Assessment
 
@@ -114,7 +120,7 @@ For **Bugs:**
 - Feature flags needed?
 - Gradual rollout plan?
 
-**Document in:** `.octocode/analysis/risk-assessment.md`
+**Document in:** `<project>/.octocode/analysis/risk-assessment.md`
 
 ### Phase D: Bug-Specific Analysis (If Bug Fix)
 
@@ -150,7 +156,7 @@ For **Bugs:**
 - Regression from recent change?
 ```
 
-**Document in:** `.octocode/analysis/root-cause.md`
+**Document in:** `<project>/.octocode/analysis/root-cause.md`
 
 ### Phase E: Solution Design
 
@@ -198,7 +204,7 @@ Use octocode-mcp to find:
 - Common pitfalls to avoid
 - Performance optimization techniques
 
-**Document in:** `.octocode/analysis/alternatives.md`
+**Document in:** `<project>/.octocode/analysis/alternatives.md`
 
 ### Phase F: Implementation Planning
 
@@ -244,7 +250,7 @@ export const featureRouter = router({
 - Which can run in parallel?
 - What's the critical path?
 
-**Document in:** `.octocode/analysis/implementation-plan.md`
+**Document in:** `<project>/.octocode/analysis/implementation-plan.md`
 
 ### Phase G: Complexity Assessment
 
@@ -268,9 +274,8 @@ export const featureRouter = router({
 - Dependencies: [critical dependencies]
 
 **Testing:**
-- Unit tests: [scope]
-- Integration tests: [scope]
-- Manual testing: [scenarios]
+- Tests will be added AFTER implementation is complete and user approves
+- Testing strategy to be defined post-implementation
 
 **Documentation:**
 - Code comments: [requirements]
@@ -286,7 +291,7 @@ export const featureRouter = router({
 - Unknowns remaining: [list]
 ```
 
-**Document in:** `.octocode/analysis/complexity-assessment.md`
+**Document in:** `<project>/.octocode/analysis/complexity-assessment.md`
 
 ## Gate 2: Present Analysis
 
@@ -320,9 +325,9 @@ export const featureRouter = router({
   • Confidence: [Level]
 
 📚 Alternatives Evaluated: [Count]
-  • See .octocode/analysis/alternatives.md
+  • See <project>/.octocode/analysis/alternatives.md
 
-📂 Full analysis: .octocode/analysis/
+📂 Full analysis: <project>/.octocode/analysis/
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -368,7 +373,7 @@ Your choice:
 
 ⚠️ Risk Level: [LOW / MEDIUM / HIGH]
 
-📂 Full analysis: .octocode/analysis/
+📂 Full analysis: <project>/.octocode/analysis/
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

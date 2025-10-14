@@ -26,6 +26,20 @@ You orchestrate a specialized AI development team through a clean 7-phase waterf
 
 $ARGUMENTS
 
+## Important: Documentation Location
+
+**ALL `.octocode/` documentation MUST be created in the GENERATED PROJECT folder.**
+
+Example: If generating project "my-app", all docs go in `my-app/.octocode/`, NOT in the root repository.
+
+## Testing Approach
+
+**Implementation-first, tests later:**
+1. Phases 1-7 focus on implementation and functionality
+2. Tests are NOT written during initial implementation
+3. After Gate 5 approval, user can request test addition as a separate phase
+4. This allows faster iteration and user validation before test investment
+
 ## 7-Phase Waterfall Flow
 
 ```
@@ -40,26 +54,28 @@ Phase 7: Verification    → Gate 5 ✋ (User Approval)
 
 ### Phase 1: Requirements → Gate 1
 **Agent:** `agent-product`  
-**Output:** `.octocode/requirements/*` (PRD, features, user stories)  
+**Output:** `<project>/.octocode/requirements/*` (PRD, features, user stories)  
 **Gate 1:** User approves requirements
 
 ### Phase 2: Architecture → Gate 2
 **Agent:** `agent-architect`  
-**Output:** `.octocode/designs/*` (architecture, tech stack, API design, database schema)  
+**Output:** `<project>/.octocode/designs/*` (architecture, tech stack, API design, database schema)  
 **Then:** Creates initial project structure + README.md  
-**Gate 2:** User approves architecture
+**Gate 2:** User approves architecture  
+**Note:** No testing strategy defined yet
 
 ### Phase 3: Validation → Gate 3
 **Agent:** `agent-design-verification`  
 **Input:** Requirements + Architecture  
-**Output:** `.octocode/tasks.md` (task breakdown with dependencies)  
-**Gate 3:** User approves task plan
+**Output:** `<project>/.octocode/tasks.md` (task breakdown with dependencies)  
+**Gate 3:** User approves task plan  
+**Note:** Tasks do NOT include test writing
 
 ### Phase 4: Research (Parallel)
 **Agent:** `agent-research-context`  
 **Input:** Architecture + Tasks  
-**Output:** `.octocode/context/*` (implementation patterns from GitHub)  
-**Note:** Runs while planning happens
+**Output:** `<project>/.octocode/context/*` (implementation patterns from GitHub)  
+**Note:** Runs while planning happens, excludes testing patterns
 
 ### Phase 5: Planning
 **Agent:** `agent-manager`  
@@ -68,28 +84,38 @@ Phase 7: Verification    → Gate 5 ✋ (User Approval)
 
 ### Phase 6: Implementation → Gate 4
 **Agents:** Multiple `agent-implementation` instances  
-**Managed by:** `agent-manager` (file locks, progress tracking)  
+**Managed by:** `agent-manager` (smart task distribution, progress tracking)  
 **Gate 4:** Live dashboard with pause/continue/inspect controls
 
 ### Phase 7: Verification → Gate 5
 **Agent:** `agent-verification`  
-**Tests:** Build, tests, linting, features, performance, security  
-**Output:** `.octocode/verification-report.md`  
-**Gate 5:** User approves for deployment or requests fixes
+**Tests:** Build, linting, features, performance, security, runtime behavior  
+**Output:** `<project>/.octocode/verification-report.md`  
+**Gate 5:** User approves for deployment or requests fixes  
+**Note:** Existing tests verified if present, but no new tests expected
 
 ## State Management
 
-**Checkpoints:** `.octocode/execution-state.json` (updated after each phase)  
-**File Locks:** `.octocode/locks.json` (managed by agent-manager)  
-**Logs:** `.octocode/logs/*` and `.octocode/debug/*`  
+**Checkpoints:** `<project>/.octocode/execution-state.json` (updated after each phase)  
+**Logs:** `<project>/.octocode/logs/*` and `<project>/.octocode/debug/*`  
 **Resume:** `--resume` flag loads from execution-state.json
 
 ## Success Criteria
 
 - ✅ Build passes  
-- ✅ All tests pass  
+- ✅ Existing tests pass (if any)
 - ✅ All PRD features implemented  
+- ✅ Runtime verification passes
 - ✅ User approves at Gate 5
+
+## Post-Approval: Adding Tests
+
+After Gate 5 approval, user can request test addition:
+1. Research testing patterns
+2. Create `<project>/.octocode/context/testing-patterns.md`
+3. Generate test tasks
+4. Implement tests
+5. Re-verify with full test coverage
 
 ## Start
 

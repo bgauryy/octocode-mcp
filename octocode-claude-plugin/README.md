@@ -1,12 +1,15 @@
 # 🏗️ Octocode Claude Plugin
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/bgauryy/octocode-mcp)
+[![Version](https://img.shields.io/badge/version-1.0.0--beta-orange.svg)](https://github.com/bgauryy/octocode-mcp)
+[![Status](https://img.shields.io/badge/status-BETA-yellow.svg)](https://github.com/bgauryy/octocode-mcp)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-%3E%3D1.0.0-purple.svg)](https://claude.com/code)
 
+> **⚠️ BETA: Still being optimized**
+
 > **Transform Claude into a complete AI development team that takes your idea from concept to production-ready code**
 
-Turn "Build a blog platform" into a full-stack, tested, production-ready application. With 7 specialized AI agents, research-driven decisions from 100k+ GitHub repos, and 5 human approval gates to keep you in control.
+Turn "Build a blog platform" into a full-stack, tested, production-ready application. With specialized AI agents, research-driven decisions from 100k+ GitHub repos, and human approval gates to keep you in control.
 
 ---
 
@@ -18,8 +21,11 @@ Turn "Build a blog platform" into a full-stack, tested, production-ready applica
 /plugin install octocode
 /restart
 
-# Build something amazing
+# Build something amazing from scratch
 /octocode-generate Build a todo app with React and Express
+
+# Or add features to existing code
+/octocode-feature Add user profile page with avatar upload
 ```
 
 That's it! The AI team will guide you through requirements, design, implementation, and testing.
@@ -28,7 +34,10 @@ That's it! The AI team will guide you through requirements, design, implementati
 
 ## 🎯 What Is Octocode?
 
-A **Claude Code plugin** that orchestrates 7 specialized AI agents through a structured 7-phase workflow:
+A **Claude Code plugin** that provides **two powerful commands**:
+
+### `/octocode-generate` - Build from Scratch
+Orchestrates 7 specialized AI agents through a structured 7-phase workflow:
 
 ```
 💭 Requirements → 🏗️ Architecture → ✅ Validation → 🔬 Research 
@@ -36,6 +45,16 @@ A **Claude Code plugin** that orchestrates 7 specialized AI agents through a str
 ```
 
 **You approve at 5 critical gates** - the AI team handles the rest.
+
+### `/octocode-feature` - Enhance Existing Code
+Analyzes existing codebases and safely adds features or fixes bugs through 6 phases:
+
+```
+📊 Code Review → 🎯 Analysis → 🔬 Research → 🎯 Planning
+→ 💻 Implementation → ✅ Verification
+```
+
+**You approve at 3 critical gates** - perfect for production codebases.
 
 ---
 
@@ -66,6 +85,10 @@ A **Claude Code plugin** that orchestrates 7 specialized AI agents through a str
 
 ## 🤖 Meet Your AI Team
 
+**9 specialized agents total**: 7 agents for `/octocode-generate`, 6 agents for `/octocode-feature` (5 agents are shared between both commands)
+
+### For `/octocode-generate` (Build from Scratch)
+
 | Agent | Role | Model | What They Do |
 |-------|------|-------|--------------|
 | 🎯 **Product Manager** | Requirements | Opus | Asks clarifying questions, creates PRD, researches competitors |
@@ -76,7 +99,18 @@ A **Claude Code plugin** that orchestrates 7 specialized AI agents through a str
 | 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns, self-tests (multiple instances work in parallel) |
 | ✅ **QA Engineer** | Quality | Sonnet | Tests in browser, checks security, verifies production-readiness |
 
-**Cost-optimized**: Opus for strategic thinking (2 agents), Sonnet for execution (5 agents)
+### For `/octocode-feature` (Enhance Existing Code)
+
+| Agent | Role | Model | What They Do |
+|-------|------|-------|--------------|
+| 📊 **Code Analyst** | Codebase Review | Sonnet | Analyzes existing code, identifies patterns, assesses quality |
+| 🎯 **Feature Analyst** | Impact Analysis | Opus | Critical thinking on changes, assesses risks, plans implementation |
+| 🔬 **Research Specialist** | Best Practices | Sonnet | Finds implementation patterns matching existing code style |
+| 🎯 **Engineering Manager** | Orchestration | Sonnet | Coordinates parallel work, manages file locks |
+| 💻 **Software Engineer** | Implementation | Sonnet | Modifies code following existing patterns (multiple instances) |
+| ✅ **QA Engineer** | Quality | Sonnet | Tests changes, verifies no regression in existing features |
+
+**Cost-optimized**: Opus for strategic thinking, Sonnet for analysis and execution
 
 ---
 
@@ -133,21 +167,33 @@ rich text editor, and comments
 
 ## 🎨 More Examples
 
-### Mobile App
+### Build Mobile App from Scratch
 ```bash
 /octocode-generate React Native fitness tracker with workout plans, 
 progress charts, and social features
 ```
 
-### Enterprise Dashboard
+### Build Enterprise Dashboard from Scratch
 ```bash
 /octocode-generate Analytics dashboard with real-time charts, 
 user management, and role-based access control
 ```
 
+### Add Feature to Existing App
+```bash
+/octocode-feature Add dark mode toggle with user preference persistence
+```
+
+### Fix Bug in Existing App
+```bash
+/octocode-feature Fix: User login not working on Safari mobile
+```
+
 ### Resume Previous Session
 ```bash
 /octocode-generate --resume
+# or
+/octocode-feature --resume
 ```
 
 ---
@@ -156,8 +202,8 @@ user management, and role-based access control
 
 | Feature | Octocode | claude-flow | dify | Microsoft |
 |---------|----------|-------------|------|-----------|
-| **Specialized Agents** | ✅ 7 focused | 74 general | Platform | Framework |
-| **Approval Gates** | ✅ 5 gates | ⚠️ Basic | ❌ None | ⚠️ YAML |
+| **Specialized Agents** | ✅ 9 specialized | 74 general | Platform | Framework |
+| **Approval Gates** | ✅ 3-5 gates | ⚠️ Basic | ❌ None | ⚠️ YAML |
 | **Observability** | ✅ **Best-in-class** | ⚠️ Good | ⚠️ Basic | ⚠️ Good |
 | **Critical Thinking** | ✅ **Unique** | ❌ None | ❌ None | ❌ None |
 | **File Conflict Prevention** | ✅ Atomic locks | ⚠️ Basic | ⚠️ Basic | ❌ None |
@@ -218,7 +264,7 @@ cd octocode-mcp/octocode-claude-plugin
 
 ## 🔧 How It Works
 
-### The 7 Phases
+### The 7 Phases (for `/octocode-generate`)
 
 | Phase | What Happens | Gate |
 |-------|--------------|------|
@@ -229,6 +275,17 @@ cd octocode-mcp/octocode-claude-plugin
 | **5. Orchestration** | Manager assigns tasks with file locks | - |
 | **6. Implementation** | 4-5 Software Engineers work in parallel | ✋ Gate 4 |
 | **7. Verification** | QA Engineer verifies everything | ✋ Gate 5 |
+
+### The 6 Phases (for `/octocode-feature`)
+
+| Phase | What Happens | Gate |
+|-------|--------------|------|
+| **1. Code Review** | Code Analyst analyzes existing codebase | ✋ Gate 1 |
+| **2. Analysis** | Feature Analyst assesses impact and risks | ✋ Gate 2 |
+| **3. Research** | Research Specialist finds implementation patterns | - |
+| **4. Planning** | Manager creates execution plan with file locks | - |
+| **5. Implementation** | 4-5 Software Engineers work in parallel | ✋ Gate 3 |
+| **6. Verification** | QA Engineer tests changes and regression | - |
 
 ### Behind the Scenes
 
@@ -270,8 +327,8 @@ Manager assigns: "Implement auth.ts"
 - ✅ **Security scanned**
 
 ### Cost Optimization
-- **Opus (expensive)**: 3 agents for strategic decisions
-- **Sonnet (efficient)**: 5 agents for implementation
+- **Opus (expensive)**: 2-3 agents for strategic decisions (depends on command)
+- **Sonnet (efficient)**: 4-6 agents for analysis and implementation
 - **Research-driven**: Reduces trial-and-error costs
 
 ---
@@ -306,9 +363,10 @@ Enables the QA agent to:
 
 | Doc | Description |
 |-----|-------------|
-| **[COMPLETE_GUIDE.md](./docs/COMPLETE_GUIDE.md)** | ⭐ Comprehensive guide covering all phases, agents, and systems |
+| **[COMPLETE_GUIDE.md](./docs/COMPLETE_GUIDE.md)** | ⭐ Comprehensive guide for `/octocode-generate` workflow |
 | **[FLOW.md](./docs/FLOW.md)** | 🎯 Visual walkthrough of the 7-phase workflow |
-| **[agents/](./agents/)** | Individual documentation for all 7 agents |
+| **[agents/](./agents/)** | Individual documentation for all 9 specialized agents |
+| **[commands/](./commands/)** | Detailed specifications for both commands |
 
 **Want more details?** Read the [Complete Guide](./docs/COMPLETE_GUIDE.md) for in-depth understanding of the workflow, communication protocols, file locking, and state management.
 

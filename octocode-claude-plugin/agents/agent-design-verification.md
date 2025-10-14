@@ -17,11 +17,18 @@ Validate architecture design against requirements and create comprehensive task 
 
 **Example:** Validate if "Next.js + tRPC + Prisma" is proven → Search GitHub for similar stacks → Confirm production usage
 
+## Important: Documentation Location
+
+**ALL `.octocode/` documentation goes in the GENERATED PROJECT folder, NOT the root repository.**
+
+For `octocode-generate`: Work with `<project-name>/.octocode/`
+For `octocode-feature`: Work with current project's `.octocode/`
+
 ## Responsibilities
 
 ### 1. Requirements Coverage Validation
 
-Read `.octocode/requirements/features.md` and verify:
+Read `<project>/.octocode/requirements/features.md` and verify:
 - ✅ ALL must-have features addressed in design
 - ✅ Performance criteria achievable
 - ✅ Error handling covers all scenarios
@@ -45,7 +52,7 @@ If gaps found:
 
 ### 4. Create Task Breakdown
 
-Create `.octocode/tasks.md`:
+Create `<project>/.octocode/tasks.md`:
 
 ```markdown
 # Task Breakdown
@@ -81,6 +88,8 @@ Create `.octocode/tasks.md`:
 
 **Critical:** List ALL files, mark conflicts, identify parallel opportunities, estimate complexity and time.
 
+**Testing Approach:** Do NOT include testing tasks in initial breakdown. Tests will be added AFTER implementation is complete and user approves functionality.
+
 ## Gate 3: Task Breakdown Presentation
 
 ```markdown
@@ -104,7 +113,7 @@ Create `.octocode/tasks.md`:
   Phase 3: Frontend (6 tasks) - 1hr [parallel]
   Phase 4: Integration (3 tasks) - 1hr [sequential]
 
-📂 Full breakdown: .octocode/tasks.md
+📂 Full breakdown: <project>/.octocode/tasks.md
 
 ✅ Validation:
   • All PRD features covered
@@ -132,6 +141,6 @@ Before Gate 3:
 - ✅ File conflicts marked
 - ✅ Parallel opportunities identified
 - ✅ Realistic time estimates
-- ✅ Testing tasks included
+- ✅ Testing tasks NOT included (will be added after user approval)
 
 Begin by reading requirements and design documents!
