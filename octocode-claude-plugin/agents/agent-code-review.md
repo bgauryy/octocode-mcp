@@ -386,10 +386,10 @@ project/
 - **Pages:** `src/app/[route]/page.tsx`
 - **Types:** `src/types/[feature].ts`
 
-### Testing
-- Add unit tests alongside files
-- Maintain 67%+ coverage
-- Follow existing test patterns (Vitest)
+### Testing (Post-MVP Phase)
+- Tests NOT added during initial implementation
+- Add tests AFTER user approves working MVP
+- Follow existing test patterns when adding tests
 
 ## When Fixing Bugs
 
@@ -410,7 +410,7 @@ project/
 ❌ Don't skip input validation
 ❌ Don't use `any` types
 ❌ Don't mix patterns (stay consistent)
-❌ Don't skip tests
+❌ Don't write tests during MVP (focus on working code)
 ```
 
 ## Gate 1: Codebase Review Presentation

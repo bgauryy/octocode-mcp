@@ -555,18 +555,18 @@ export const portfolioRouter = router({
 │     • Follow design patterns from context guides         │
 │     • Use TypeScript with strict types                   │
 │     • Add proper error handling                          │
-│     • Write tests for new code                           │
 │     • Follow existing code style                         │
+│     • NO TESTS YET - Focus on working MVP                │
 └─────────────────────────────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│  5. Self-Testing (REQUIRED)                              │
-│     • Run unit tests                                     │
-│     • Run integration tests                              │
+│  5. Verify Build & Lint (REQUIRED)                       │
+│     • Run build to ensure no errors                      │
 │     • Run linting                                        │
 │     • Fix auto-fixable issues                            │
-│     • Must pass all checks before completion             │
+│     • Must pass build + lint before completion           │
+│     • NO TESTS - Tests added after MVP approval          │
 └─────────────────────────────────────────────────────────┘
                          │
                          ▼
@@ -636,11 +636,10 @@ Legend: ✓ Complete  🔄 In Progress
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│  3. Test Verification                                    │
-│     • Unit tests: all passing                            │
-│     • Integration tests: all passing                     │
-│     • E2E tests: all passing                             │
-│     • Coverage: meets requirements (80%+)                │
+│  3. Test Verification (ONLY IF TESTS EXIST)              │
+│     • MVP: Skip this step - no tests required            │
+│     • If existing tests: Verify they still pass          │
+│     • Tests added AFTER MVP approval                     │
 └─────────────────────────────────────────────────────────┘
                          │
                          ▼
@@ -969,10 +968,12 @@ class LockManager {
 
 **Quality Standards:**
 - No `any` types
-- All functions have tests
+- TypeScript strict mode
+- Build passes without errors
 - Linting passes
 - Error handling present
 - Follows existing code style
+- NO TESTS during MVP (tests come after approval)
 
 ---
 
@@ -998,10 +999,9 @@ Linting:
   - Code style consistent
 
 Tests:
-  - Unit tests: all passing
-  - Integration tests: all passing
-  - E2E tests: all passing
-  - Coverage: meets requirements (80%+)
+  - MVP: Skip - no tests required
+  - Existing tests: verify they still pass
+  - New tests: add after MVP approval
 
 Feature Verification:
   - For each must-have feature:
@@ -1357,7 +1357,8 @@ Used to report task/work status updates.
 **Files Modified:**
   - src/api/api.ts (created, 124 lines)
   - src/api/routes.ts (created, 89 lines)
-**Tests:** 12 added, all passing
+**Build:** ✅ Passed
+**Linting:** ✅ Passed
 **Summary:** Implemented portfolio API endpoints with full CRUD operations
 ```
 
@@ -1864,9 +1865,11 @@ Expected:
 
 **Phase 7: Verification**
 - ✅ Build passes
-- ✅ 85 tests pass (88% coverage)
+- ✅ Linting passes
 - ✅ All features verified
-- **Gate 5:** User approves ✅
+- ✅ Runtime testing passes
+- **Gate 5:** User approves MVP ✅
+- ⏸️ Tests to be added post-approval
 
 ---
 
@@ -1909,10 +1912,11 @@ multiple portfolios, price alerts, and performance charts. Use React and Postgre
 
 **Phase 7: Verification**
 - ✅ Build passes
-- ✅ 142 tests pass (89% coverage)
+- ✅ Linting passes
 - ✅ All 7 features verified
 - ✅ Runtime testing: No errors
-- **Gate 5:** User approves ✅
+- **Gate 5:** User approves MVP ✅
+- ⏸️ Tests to be added post-approval
 
 ---
 
@@ -1996,10 +2000,10 @@ multiple portfolios, price alerts, and performance charts. Use React and Postgre
 
 ### Quality Metrics
 
-- **Test Coverage:** 80-90% (enforced)
-- **Code Quality:** 8.5/10 average
-- **Production Ready:** All features verified
-- **Accessibility:** WCAG 2.1 AA compliant
+- **Working MVP:** Focus on functionality first
+- **Code Quality:** 8.5/10 average (TypeScript + Linting)
+- **Type Safety:** Strict mode enforced
+- **Tests:** Added post-MVP after user approval
 
 ---
 

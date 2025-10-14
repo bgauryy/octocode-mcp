@@ -62,8 +62,8 @@ Analyzes existing codebases and safely adds features or fixes bugs through 6 pha
 
 ### 🚀 Parallel Execution
 - Multiple implementation agents work simultaneously
-- File locking system prevents conflicts
-- Efficient task orchestration for faster development
+- Smart task distribution prevents conflicts
+- MVP-first approach: working code before tests
 
 ### 🧠 Research-Driven Decisions
 - Analyzes **100k+ GitHub repositories** for best practices
@@ -76,10 +76,10 @@ Analyzes existing codebases and safely adds features or fixes bugs through 6 pha
 - Know **which repos influenced** the architecture
 
 ### 🔒 Production-Ready Quality
-- **80-90% test coverage** enforced
-- **WCAG 2.1 AA accessibility** compliance
+- **Focus on working MVP first** - Build, types, lint
+- **Tests added after MVP** - User approves functionality first
 - Comprehensive verification + browser testing
-- Zero file conflicts with atomic locking
+- Smart task distribution for parallel work
 
 ---
 
@@ -96,7 +96,7 @@ Analyzes existing codebases and safely adds features or fixes bugs through 6 pha
 | ✅ **Tech Lead** | Validation | Sonnet | Reviews architecture, breaks down tasks, detects conflicts |
 | 🔬 **Research Specialist** | Best Practices | Sonnet | Finds code examples from top repos, extracts patterns |
 | 🎯 **Engineering Manager** | Orchestration | Sonnet | Assigns tasks, prevents conflicts, tracks progress |
-| 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns, self-tests (multiple instances work in parallel) |
+| 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns, ensures build passes (multiple instances work in parallel) |
 | ✅ **QA Engineer** | Quality | Sonnet | Tests in browser, checks security, verifies production-readiness |
 
 ### For `/octocode-feature` (Enhance Existing Code)
@@ -159,9 +159,9 @@ rich text editor, and comments
 ✅ Rich text editor (TipTap)  
 ✅ Comment system with moderation  
 ✅ Responsive design (mobile-first)  
-✅ WCAG AA accessible  
-✅ 85%+ test coverage  
-✅ Production-ready deployment  
+✅ TypeScript strict mode  
+✅ Lint passing  
+✅ Working MVP ready for testing phase  
 
 ---
 
@@ -320,11 +320,11 @@ Manager assigns: "Implement auth.ts"
 - Real-time progress monitoring
 
 ### Quality Enforcement
-- ✅ **80-90% test coverage** (enforced)
-- ✅ **WCAG 2.1 AA** accessibility (enforced)
-- ✅ **8.5/10 code quality** (linting + analysis)
-- ✅ **Browser tested** (Chrome DevTools)
-- ✅ **Security scanned**
+- ✅ **Working MVP first** - Focus on functionality
+- ✅ **TypeScript strict mode** - Type safety enforced
+- ✅ **8.5/10 code quality** - Linting + analysis
+- ✅ **Browser tested** - Chrome DevTools verification
+- ✅ **Tests after approval** - Add comprehensive tests post-MVP
 
 ### Cost Optimization
 - **Opus (expensive)**: 2-3 agents for strategic decisions (depends on command)

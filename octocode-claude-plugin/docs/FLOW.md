@@ -481,10 +481,11 @@ Each implementation agent must:
 - ✅ Add TypeScript types (no `any`)
 - ✅ Validate inputs (Zod, etc.)
 - ✅ Handle errors gracefully
-- ✅ Write unit tests
+- ✅ Ensure build passes
 - ✅ Pass linting
 - ❌ No console.log (use proper logging)
 - ❌ No hardcoded values (use env vars)
+- ❌ NO TESTS yet (tests after MVP approval)
 
 ---
 
@@ -527,12 +528,16 @@ npm run build
 # Check: Build completes without errors
 ```
 
-### 2. Test Verification ✅
+### 2. Test Verification ✅ (ONLY IF TESTS EXIST)
 
+**For MVP - Skip this step:**
+- Tests are NOT created during MVP phase
+- Focus on working functionality first
+
+**If existing tests:**
 ```bash
 npm test
-npm run test:coverage
-# Check: All tests pass, coverage meets requirements
+# Check: Existing tests still pass (no regressions)
 ```
 
 ### 3. Lint Verification ✅
@@ -555,10 +560,10 @@ Verification:
   ✅ UI component exists (src/components/PortfolioForm.tsx)
   ✅ API endpoint exists (src/api/portfolio.create.ts)
   ✅ Database table exists
-  ✅ Tests cover flow (portfolio.test.ts)
   ✅ Error handling implemented
+  ⏸️ Tests: To be added after MVP approval
 
-Status: ✅ VERIFIED
+Status: ✅ VERIFIED (MVP complete)
 ```
 
 ### 5. Performance Verification ✅
@@ -630,7 +635,7 @@ Compare against `.octocode/requirements/performance.md`:
 | Category | Status | Details |
 |----------|--------|---------|
 | Build | ✅ Pass | No errors |
-| Tests | ✅ Pass | 154/154, 87% coverage |
+| Tests | ⏸️ Pending | To be added post-MVP |
 | Linting | ✅ Pass | No critical errors |
 | Features | ✅ Pass | 12/12 must-have |
 | Performance | ✅ Pass | All metrics met |
@@ -661,7 +666,7 @@ Compare against `.octocode/requirements/performance.md`:
 Status: ✅ PASSED
 
 🏗️ Build: ✅ PASSED
-🧪 Tests: ✅ PASSED (154/154, 87% coverage)
+🧪 Tests: ⏸️ PENDING (to be added after MVP approval)
 📋 Features: ✅ 12/12 must-have
 ⚡ Performance: ✅ PASSED
 🔒 Security: ✅ PASSED
@@ -826,14 +831,14 @@ flowchart TD
 At Gate 5, application must meet:
 
 - ✅ Build passes without errors
-- ✅ All tests pass (unit + integration)
+- ✅ Existing tests pass (if any exist)
 - ✅ All PRD features implemented and verified
-- ✅ Performance metrics met
-- ✅ Security scan passes
+- ✅ TypeScript strict mode enabled
+- ✅ Linting passes
 - ✅ Code quality standards met
-- ✅ Production readiness checklist complete
 - ✅ Runtime testing passes (no console errors)
-- ✅ User approves at Gate 5
+- ✅ User approves MVP at Gate 5
+- ⏸️ Tests to be added post-approval
 
 ---
 
