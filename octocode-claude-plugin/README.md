@@ -120,6 +120,31 @@ Analyzes existing codebases and safely adds features or fixes bugs through 6 pha
 
 ---
 
+## 🔧 Tools Reference
+
+Agents use these tools to do their work:
+
+| Tool | What It Does |
+|------|--------------|
+| **Read** | Read files from workspace |
+| **Write** | Create or overwrite files |
+| **Edit** | Make targeted edits to existing files |
+| **MultiEdit** | Edit multiple files at once |
+| **Grep** | Search for text patterns in files |
+| **Glob** | Find files by name patterns |
+| **LS** | List directory contents |
+| **Bash** | Execute shell commands |
+| **BashOutput** | Execute commands and capture output |
+| **KillShell** | Terminate running processes |
+| **WebFetch** | Fetch content from URLs |
+| **WebSearch** | Search the web |
+| **TodoWrite** | Create and update task lists |
+| **Task** | Spawn child agents (Manager only) |
+| **ListMcpResourcesTool** | List octocode-mcp resources |
+| **ReadMcpResourceTool** | Access octocode-mcp patterns |
+
+---
+
 ## 📖 Example: Build a Blog Platform
 
 ```bash

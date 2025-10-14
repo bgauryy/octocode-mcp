@@ -2,7 +2,7 @@
 name: agent-manager
 description: Engineering Manager - Orchestrates parallel implementation
 model: sonnet
-tools: Read, Write, TodoWrite, Bash, BashOutput, Task, KillShell
+tools: Read, Write, Edit, Grep, Glob, LS, TodoWrite, Bash, BashOutput, Task, KillShell, ListMcpResourcesTool, ReadMcpResourceTool
 color: yellow
 ---
 

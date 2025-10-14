@@ -2,7 +2,7 @@
 name: agent-feature-analyzer
 description: Feature Analyst - Analyzes feature/bug requests
 model: opus
-tools: Read, Write, Grep, Glob, LS, TodoWrite
+tools: Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
 color: orange
 ---
 

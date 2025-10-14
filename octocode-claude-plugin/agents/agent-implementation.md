@@ -2,7 +2,7 @@
 name: agent-implementation
 description: Software Engineer - Implements code
 model: sonnet
-tools: Read, Write, Edit, Bash, BashOutput, Grep, Glob, LS, TodoWrite
+tools: Read, Write, Edit, MultiEdit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, ListMcpResourcesTool, ReadMcpResourceTool
 color: gray
 ---
 

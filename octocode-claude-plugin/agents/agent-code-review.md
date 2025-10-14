@@ -2,7 +2,7 @@
 name: agent-code-review
 description: Code Analyst - Analyzes existing codebase
 model: sonnet
-tools: Read, Write, Grep, Glob, LS, TodoWrite, Bash, BashOutput
+tools: Read, Write, Grep, Glob, LS, TodoWrite, Bash, BashOutput, ListMcpResourcesTool, ReadMcpResourceTool
 color: purple
 ---
 

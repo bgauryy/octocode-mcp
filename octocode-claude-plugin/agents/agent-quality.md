@@ -2,7 +2,7 @@
 name: agent-quality
 description: Quality Architect - Creates comprehensive test strategy and plan
 model: opus
-tools: Read, Write, TodoWrite
+tools: Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
 color: teal
 ---
 

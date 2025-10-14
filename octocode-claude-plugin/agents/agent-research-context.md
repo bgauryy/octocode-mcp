@@ -2,7 +2,7 @@
 name: agent-research-context
 description: Research Specialist - Gathers implementation patterns
 model: sonnet
-tools: Read, Write, LS, TodoWrite
+tools: Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
 color: cyan
 ---
 

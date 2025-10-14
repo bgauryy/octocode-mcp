@@ -2,7 +2,7 @@
 name: agent-architect
 description: Solution Architect - Designs system architecture
 model: opus
-tools: Read, Write, Grep, Glob, LS, TodoWrite
+tools: Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
 color: green
 ---
 

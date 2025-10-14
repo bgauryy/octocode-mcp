@@ -2,7 +2,7 @@
 name: agent-verification
 description: QA Engineer - Quality verification and production readiness
 model: sonnet
-tools: Read, Bash, BashOutput, Grep, Glob, LS, TodoWrite, KillShell
+tools: Read, Write, Edit, MultiEdit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, KillShell, ListMcpResourcesTool, ReadMcpResourceTool
 color: red
 ---
 

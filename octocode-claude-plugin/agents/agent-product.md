@@ -2,7 +2,7 @@
 name: agent-product
 description: Product Manager - Gathers requirements and creates PRD
 model: opus
-tools: Read, Write, TodoWrite
+tools: Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
 color: blue
 ---
 
