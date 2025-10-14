@@ -2,30 +2,38 @@
 
 > Architecture patterns, design principles, and system design for Node.js/TypeScript applications
 
-**🎯 Purpose:** Architecture resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
-**🤖 For:** AI agents and developers designing scalable Node.js systems
-**🌐 Focus:** Clean Architecture, DDD, CQRS, Microservices - TypeScript patterns
-**📱 Mobile:** Same architecture patterns apply to backend serving mobile apps
-**⚙️ Runtime:** Node.js-based systems with TypeScript design patterns
-
-**Last Updated:** October 13, 2025
+**🎯 Purpose:** Architecture resources for AI agents building Node.js/TypeScript applications  
+**🌐 Focus:** Clean Architecture, DDD, CQRS, Microservices - TypeScript patterns  
+**⚙️ Runtime:** Node.js-based systems with TypeScript design patterns  
+**📅 Updated:** October 13, 2025
 
 ---
 
-## 🎯 Best for Application Generation
+## Quick Reference
 
-This file provides **architectural guidance** to help AI agents:
-1. **Choose patterns** - Clean Architecture, Hexagonal, DDD, CQRS
-2. **Design systems** - Monoliths, microservices, serverless, event-driven
-3. **Scale applications** - Load balancing, caching, distributed systems
-4. **Structure code** - Layer-based, feature-based, domain-driven organization
-5. **Apply best practices** - SOLID principles, design patterns, refactoring
+### System Design (Start Here)
+- **Essential Learning:** `karanpratapsingh/system-design` (38K+ ⭐) - THE comprehensive guide
+- **Scalability Patterns:** `binhnguyennus/awesome-scalability` (66K+ ⭐) - Real-world patterns
+- **Free Resources:** `ashishps1/awesome-system-design-resources` - Curated collection
 
-**Generation Priorities:**
-- ⚡ **Clean Architecture** - Dependency inversion with NestJS/TypeScript
-- ⚡ **Feature-based structure** - Scalable code organization
-- ⚡ **DDD** - Domain-driven design for complex business logic
-- ⚡ **CQRS** - Command-query separation with event sourcing
+### Clean Architecture (TypeScript)
+- **Best DDD Example:** `Sairyss/domain-driven-hexagon` (14K+ ⭐) - Hexagonal + DDD
+- **Production API:** `rmanguinho/clean-ts-api` (1.9K+ ⭐) - Clean Architecture + TDD
+- **React Example:** `rmanguinho/clean-react` (1.5K+ ⭐) - Clean Architecture in React
+
+### Design Patterns
+- **TypeScript Patterns:** `kamranahmedse/design-patterns-for-humans` (47K+ ⭐) - Ultra-simplified
+- **Gang of Four:** Classic design patterns in TypeScript
+- **Enterprise Patterns:** `ardalis/CleanArchitecture` (16K+ ⭐) - .NET but concepts apply
+
+### Decision Guide
+| Need | Choose | Why |
+|------|--------|-----|
+| Learning System Design | karanpratapsingh/system-design | Most comprehensive |
+| Clean Architecture | Sairyss/domain-driven-hexagon | Best TypeScript example |
+| Scalability | binhnguyennus/awesome-scalability | Real-world patterns |
+| Design Patterns | kamranahmedse/design-patterns | Ultra-simplified |
+| Production Backend | rmanguinho/clean-ts-api | TDD + Clean Architecture |
 
 ---
 
