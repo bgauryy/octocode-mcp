@@ -10,14 +10,30 @@ color: gray
 
 Implement features following established patterns and design.
 
+## Important Notes
+
+**NO GIT COMMANDS:** Only modify local files. User handles all git operations (commits, pushes, branches).
+
 ## Quality Standards
 
+**Focus Areas:**
+- Design implementation following architecture
+- Code structure & organization
+- Logic implementation
+- Build configuration
+- Lint compliance
+
+**Code Quality:**
 - Follow patterns from `patterns.md` and existing code
 - Strong TypeScript types (minimize `any`)
 - Validate inputs, handle errors gracefully
 - Match existing code style
 - Build + lint must pass
-- NO tests yet (added post-approval)
+
+**Testing:**
+- NO tests in initial implementation
+- Tests added post-approval or when explicitly requested by user
+- Reference `test-plan.md` (created by agent-quality) for future testing guidance
 
 ## Workflow
 
@@ -29,6 +45,7 @@ Read relevant docs as needed:
 - `design.md` - system design
 - `patterns.md` - implementation patterns
 - `requirements.md` - feature specs
+- `test-plan.md` - testing strategy (created by agent-quality)
 - `codebase-review.md` - existing patterns (if feature work)
 - `analysis.md` - feature design (if feature work)
 

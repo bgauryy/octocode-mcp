@@ -56,6 +56,10 @@ Analyzes existing codebases and safely adds features or fixes bugs through 6 pha
 
 **You approve at 3 critical gates** - perfect for production codebases.
 
+### Important: Git Operations
+
+**NO GIT COMMANDS:** All agents only modify local files. You (the user) are responsible for all git operations including commits, pushes, branch management, and merges. Agents focus solely on code implementation and file modifications - you stay in control of version control.
+
 ---
 
 ## ✨ Why Use Octocode?
@@ -70,16 +74,18 @@ Analyzes existing codebases and safely adds features or fixes bugs through 6 pha
 - Evaluates **3+ alternatives** for every major decision
 - Critical thinking framework with self-questioning and devil's advocate
 
-### 🔍 Complete Transparency
+### 🔍 Complete Transparency & Human Control
+- **5-6 single files** - No documentation bloat
+- **Clear approval gates** - Human-in-the-loop at critical decisions
+- **Live monitoring** - Pause/continue implementation anytime
 - See **every decision** with reasoning
-- Track **all agent communications**
-- Know **which repos influenced** the architecture
 
 ### 🔒 Production-Ready Quality
 - **Focus on working MVP first** - Build, types, lint
 - **Tests added after MVP** - User approves functionality first
+- **Efficient documentation** - 5-6 single files, no bloat
+- **Human approval gates** - You control every major decision
 - Comprehensive verification + browser testing
-- Smart task distribution for parallel work
 
 ---
 
@@ -123,45 +129,45 @@ rich text editor, and comments
 
 ### What Happens Next
 
-**Phase 1: Requirements**
-- Product Manager asks about user roles, features, tech preferences
-- Creates comprehensive PRD with research from GitHub
-- **[Gate 1]** You approve the requirements
+**Phase 1: Requirements** → Creates `requirements.md`
+- Product Manager asks questions, researches similar apps
+- **✋ Gate 1:** You approve requirements
 
-**Phase 2: Architecture**
+**Phase 2: Architecture** → Creates `design.md` + `test-plan.md`
 - Architect designs complete system (backend + frontend)
-- Evaluates alternatives with critical thinking framework
-- **[Gate 2]** You approve the architecture
+- Quality Architect creates test strategy (for reasoning)
+- **✋ Gate 2:** You approve architecture
+- **✋ Gate 2.5:** You approve test plan
 
-**Phase 3: Validation**
+**Phase 3: Validation** → Creates `tasks.md`
 - Tech Lead breaks project into atomic tasks
-- Detects potential file conflicts
-- **[Gate 3]** You approve the task plan
+- **✋ Gate 3:** You approve task plan
 
-**Phase 4: Research**
-- Research Specialist finds best auth, editor, and comment implementations
-- Creates copy-paste ready examples from top repos
+**Phase 4: Research** → Creates `patterns.md`
+- Research Specialist finds best implementations from top repos
 
-**Phase 5-6: Implementation**
+**Phase 5-6: Implementation** → Updates `tasks.md` with progress
 - 4-5 Software Engineers work in parallel
-- Engineering Manager orchestrates and prevents conflicts
-- **[Gate 4]** Monitor real-time progress
+- **🔄 Gate 4:** Monitor live, pause/continue anytime
 
-**Phase 7: Verification**
-- QA Engineer tests in Chrome browser
-- Runs security checks, linting, tests
-- **[Gate 5]** Final approval
+**Phase 7: Verification** → Creates `verification.md`
+- QA Engineer tests in Chrome browser, runs all checks
+- **✋ Gate 5:** Final approval
+
+**Result: 6 single files, 5 approval gates, production-ready code**
 
 ### What You Get
 
-✅ Full-stack application (Next.js + PostgreSQL)  
-✅ User authentication (JWT + OAuth)  
-✅ Rich text editor (TipTap)  
-✅ Comment system with moderation  
-✅ Responsive design (mobile-first)  
-✅ TypeScript strict mode  
-✅ Lint passing  
-✅ Working MVP ready for testing phase  
+✅ **6 documentation files** (requirements, design, test-plan, tasks, patterns, verification)  
+✅ **Full-stack application** (Next.js + PostgreSQL)  
+✅ **User authentication** (JWT + OAuth)  
+✅ **Rich text editor** (TipTap)  
+✅ **Comment system** with moderation  
+✅ **Responsive design** (mobile-first)  
+✅ **TypeScript strict mode**  
+✅ **Lint passing**  
+✅ **Working MVP** ready for testing phase  
+✅ **You approved** at 5 decision gates  
 
 ---
 
@@ -259,26 +265,30 @@ cd octocode-mcp/octocode-claude-plugin
 
 ### The 7 Phases (for `/octocode-generate`)
 
-| Phase | What Happens | Gate |
-|-------|--------------|------|
-| **1. Requirements** | Product Manager asks questions, creates PRD | ✋ Gate 1 |
-| **2. Architecture** | Architect designs complete system (backend + frontend) | ✋ Gate 2 |
-| **3. Validation** | Tech Lead breaks into tasks, detects conflicts | ✋ Gate 3 |
-| **4. Research** | Research Specialist finds best practices from GitHub | - |
-| **5. Orchestration** | Manager assigns tasks with file locks | - |
-| **6. Implementation** | 4-5 Software Engineers work in parallel | ✋ Gate 4 |
-| **7. Verification** | QA Engineer verifies everything | ✋ Gate 5 |
+| Phase | Agent | Output | Human Gate |
+|-------|-------|--------|------------|
+| **1. Requirements** | Product Manager | `requirements.md` | ✋ Gate 1 |
+| **2. Architecture** | Architect + Quality | `design.md` + `test-plan.md` | ✋ Gate 2 + 2.5 |
+| **3. Validation** | Tech Lead | `tasks.md` | ✋ Gate 3 |
+| **4. Research** | Research Specialist | `patterns.md` | (parallel) |
+| **5. Orchestration** | Manager | Progress tracking | (planning) |
+| **6. Implementation** | 4-5 Engineers | Code + updates to `tasks.md` | 🔄 Gate 4 (live) |
+| **7. Verification** | QA Engineer | `verification.md` | ✋ Gate 5 |
+
+**Result: 6 single files, clear ownership, human control at every gate**
 
 ### The 6 Phases (for `/octocode-feature`)
 
-| Phase | What Happens | Gate |
-|-------|--------------|------|
-| **1. Code Review** | Code Analyst analyzes existing codebase | ✋ Gate 1 |
-| **2. Analysis** | Feature Analyst assesses impact and risks | ✋ Gate 2 |
-| **3. Research** | Research Specialist finds implementation patterns | - |
-| **4. Planning** | Manager creates execution plan with file locks | - |
-| **5. Implementation** | 4-5 Software Engineers work in parallel | ✋ Gate 3 |
-| **6. Verification** | QA Engineer tests changes and regression | - |
+| Phase | Agent | Output | Human Gate |
+|-------|-------|--------|------------|
+| **1. Code Review** | Code Analyst | `codebase-review.md` | ✋ Gate 1 |
+| **2. Analysis** | Feature Analyst | `analysis.md` | ✋ Gate 2 |
+| **3. Research** | Research Specialist | `patterns.md` | (parallel) |
+| **4. Planning** | Manager | Progress tracking | (planning) |
+| **5. Implementation** | 4-5 Engineers | Code + updates to `tasks.md` | 🔄 Gate 3 (live) |
+| **6. Verification** | QA Engineer | `verification.md` | ✋ Final |
+
+**Result: 5 single files, clear ownership, safe changes with human approval**
 
 ### Behind the Scenes
 
@@ -313,6 +323,7 @@ Manager assigns: "Implement auth.ts"
 - ✅ **8.5/10 code quality** - Linting + analysis
 - ✅ **Browser tested** - Chrome DevTools verification
 - ✅ **Tests after approval** - Add comprehensive tests post-MVP
+- ✅ **User controls git** - Agents only modify files, you commit when ready
 
 ### Cost Optimization
 - **Opus (expensive)**: 2-3 agents for strategic decisions (depends on command)

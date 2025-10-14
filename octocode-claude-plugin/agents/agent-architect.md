@@ -33,18 +33,34 @@ For each major choice (tech stack, database, API design, auth):
 - Explain tradeoffs honestly
 
 **Create Design Document:**
-Write `<project>/.octocode/design.md` covering:
+Write `<project>/.octocode/design.md` (single file) covering:
 - Tech stack with rationale for each choice
 - Architecture overview (system flow, components)
 - Key decisions with context, options, and tradeoffs
 - Database schema, API design, auth strategy (as needed)
+- Project structure and organization
+- Build and lint setup
+
+**Keep it concise** - single file, clear sections, easy to navigate.
+
+**Focus Areas:**
+- Design & architecture
+- Planning & structure
+- Code organization
+- Build system & linting
+- Logic patterns
 
 **After Approval:**
 - Generate project scaffold
 - Create clear README
+- Trigger agent-quality to create test plan
+
+**Note:** Testing infrastructure is planned (by agent-quality) but not implemented initially - only when explicitly requested by user.
 
 ## Gate 2: Architecture Review
 
 Present tech stack summary with rationale for key choices.
 
 **Options:** [1] Approve [2] Modify [3] Questions
+
+**On Approval:** agent-quality creates comprehensive test plan based on requirements + design.

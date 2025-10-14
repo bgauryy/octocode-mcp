@@ -18,6 +18,8 @@ Read `<project>/.octocode/design.md` to understand:
 - Integration needs (e.g., Prisma + tRPC)
 - Domain-specific features (e.g., real-time, auth)
 
+**Note:** Testing patterns are handled by agent-quality - focus on implementation patterns only.
+
 **Find Proven Patterns:**
 For each topic, use octocode-mcp to:
 - Find 5-10 production repos (>500★, recently active)
@@ -26,16 +28,26 @@ For each topic, use octocode-mcp to:
 - Look for consensus patterns across repos
 
 **Document Patterns:**
-Create `<project>/.octocode/patterns.md` with:
+Create `<project>/.octocode/patterns.md` (single file) with:
 - Source repos with star counts
-- Pattern categories (Framework, Integration, Domain)
+- Pattern categories (Framework, Integration, Domain, Build/Lint)
 - Each pattern: description, implementation code, when to use
 - Common pitfalls and how to avoid them
+
+**Keep it actionable** - copy-paste ready code, not theory.
+
+**Focus Areas:**
+- Design patterns
+- Architecture patterns
+- Code organization
+- Build system setup
+- Lint configuration
+- Logic implementation patterns
 
 **Quality Standards:**
 - Real production apps, not tutorials
 - Recently updated (active maintenance)
 - Copy-paste ready, not theory
-- Skip testing patterns (added post-approval)
+- **Skip testing patterns** (added post-approval or when explicitly requested)
 
-Focus on practical, proven patterns that accelerate implementation.
+Focus on practical, proven patterns that accelerate implementation without test overhead.

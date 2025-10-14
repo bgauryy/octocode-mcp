@@ -6,6 +6,10 @@ This document describes the complete workflow from user request to production-re
 
 Octocode orchestrates 7 specialized AI agents through a **7-phase waterfall** with **5 human gates** for approval and monitoring. Each phase builds on previous work with clear outputs and validation.
 
+### Important: Git Operations
+
+**NO GIT COMMANDS:** All agents only modify local files. The user is responsible for all git operations including commits, pushes, branch management, and merges. Agents focus solely on code implementation and file modifications.
+
 ```mermaid
 flowchart TD
     Start([User Request]) --> P1[Phase 1: Requirements]
@@ -319,6 +323,8 @@ sequenceDiagram
 **Model:** Claude Sonnet  
 **Tools:** Read, Write, Edit, Bash, BashOutput, Grep, Glob, LS, TodoWrite
 
+**Important:** NO GIT COMMANDS - Only modify local files. User handles all git operations.
+
 ### Architecture
 
 ```mermaid
@@ -448,6 +454,8 @@ Each implementation agent must:
 **Agent:** `agent-verification` (QA Engineer)  
 **Model:** Claude Sonnet  
 **Tools:** Read, Bash, BashOutput, Grep, Glob, LS, TodoWrite, KillShell
+
+**Important:** NO GIT COMMANDS - Only run build/test/lint commands. User handles all git operations.
 
 ### Comprehensive Verification
 

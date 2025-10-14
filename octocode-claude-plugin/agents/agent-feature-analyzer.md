@@ -23,7 +23,9 @@ Analyze features/bugs deeply to find the best implementation approach.
 ## Objectives
 
 **Understand Deeply:**
-Read `<project>/.octocode/codebase-review.md` and study the user's request:
+Read relevant documentation and study the user's request:
+- `<project>/.octocode/codebase-review.md` - existing patterns
+- `<project>/.octocode/test-plan.md` - testing strategy (if exists)
 - For features: what's the goal and acceptance criteria?
 - For bugs: what's the symptom and root cause?
 
@@ -42,15 +44,27 @@ Consider multiple approaches:
 - Recommend best approach with evidence
 
 **Create Implementation Plan:**
-Write `<project>/.octocode/analysis.md` with:
+Write `<project>/.octocode/analysis.md` (single file) with:
 - Clear understanding and acceptance criteria
 - Impact assessment (files, DB, API, UI)
 - Risks with mitigation
 - Solution options with recommendation
 - High-level task breakdown
+- Build and lint considerations
+
+**Keep it concise** - clear analysis, actionable plan.
+
+**Focus Areas:**
+- Feature design & architecture
+- Code structure & organization
+- Logic implementation approach
+- Integration points
+- Build/lint impact
 
 **Assess Honestly:**
 Complexity level, files affected, breaking changes, confidence level.
+
+**Note:** Reference `test-plan.md` (created by agent-quality) for testing strategy, but actual test implementation only when explicitly requested by user.
 
 ## Gate 2: Analysis Complete
 

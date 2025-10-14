@@ -29,6 +29,10 @@ $ARGUMENTS
 
 Work with the current project's `.octocode/` directory.
 
+## Important: Git Operations
+
+**NO GIT COMMANDS:** Agents only modify local files. User handles all git operations (commits, pushes, branches, etc.).
+
 ## Testing Approach
 
 **Implementation-first, tests later:**
@@ -40,13 +44,15 @@ Work with the current project's `.octocode/` directory.
 ## 6-Phase Workflow
 
 ```
-Phase 1: Code Review      → Gate 1 ✋ (Review Approval)
-Phase 2: Analysis         → Gate 2 ✋ (Implementation Plan Approval)
+Phase 1: Code Review      → ✋ Gate 1 (User Approval Required)
+Phase 2: Analysis         → ✋ Gate 2 (User Approval Required)
 Phase 3: Research         (Runs in parallel with Phase 4)
 Phase 4: Planning         
-Phase 5: Implementation   → Gate 3 🔄 (Live Monitor)
-Phase 6: Verification     → Final Review
+Phase 5: Implementation   → 🔄 Gate 3 (Live Monitor - Pause/Continue)
+Phase 6: Verification     → ✋ Final Review (User Approval Required)
 ```
+
+**Human-in-the-Loop:** 3 approval gates + live monitoring ensure safe changes
 
 ### Phase 1: Code Review → Gate 1
 **Agent:** `agent-code-review`  
@@ -84,14 +90,17 @@ Phase 6: Verification     → Final Review
 
 ## Documentation Structure
 
-**All docs in** `<project>/.octocode/`:
-- `codebase-review.md` - Existing code analysis
-- `analysis.md` - Feature/bug analysis
-- `tasks.md` - Task breakdown with progress
-- `patterns.md` - Implementation patterns
-- `verification.md` - Quality report
+**Simple & focused** - All docs in `<project>/.octocode/`:
 
-**Total: 5 files** (vs 20+ in previous approach)
+| File | Owner | Purpose | Human Gate |
+|------|-------|---------|------------|
+| `codebase-review.md` | agent-code-review | Existing code analysis | ✋ Gate 1 |
+| `analysis.md` | agent-feature-analyzer | Feature/bug analysis | ✋ Gate 2 |
+| `tasks.md` | agent-manager | Task breakdown + progress | (live) |
+| `patterns.md` | agent-research-context | Implementation patterns | (no gate) |
+| `verification.md` | agent-verification | Quality report | ✋ Gate 3 |
+
+**5 single files, clear ownership, human approval at key gates**
 
 ## Success Criteria
 

@@ -10,12 +10,29 @@ color: yellow
 
 Orchestrate parallel implementation through smart task distribution.
 
+## Important Notes
+
+**NO GIT COMMANDS:** Agents only modify local files. User handles all git operations (commits, pushes, branches).
+
 ## Strategy
 
+**Coordination Approach:**
 - Maximize parallelism (respect logical dependencies only)
 - Auto-assign next available task when agents complete
 - Let implementation agents coordinate file conflicts themselves
-- Tests NOT expected (added post-approval)
+
+**Implementation Focus:**
+- Design & architecture implementation
+- Code structure & organization
+- Logic implementation
+- Build & lint setup
+- **Tests NOT expected** (added post-approval or when explicitly requested by user)
+
+**Task Prioritization:**
+- Project structure first
+- Core logic second
+- Integrations third
+- Polish and refinement last
 
 ## Objectives
 

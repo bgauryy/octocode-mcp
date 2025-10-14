@@ -69,6 +69,10 @@ PRODUCTION-READY CODE
 - **🎯 Clean Waterfall Flow** - Sequential phases with clear checkpoints, parallel implementation
 - **🔒 Production-Ready** - File locking, state persistence, comprehensive observability, runtime testing
 
+### Important: Git Operations
+
+**NO GIT COMMANDS:** All agents only modify local files. The user is responsible for all git operations including commits, pushes, branch management, and merges. Agents focus solely on code implementation and file modifications.
+
 ### Curated Resources
 
 **📚 All agents access curated development resources:**
@@ -933,6 +937,8 @@ class LockManager {
 **Tools:** Read, Write, Edit, Bash, BashOutput, Grep, Glob, LS, TodoWrite  
 **Key Responsibility:** Implement features following designs and context guides
 
+**Important:** NO GIT COMMANDS - Only modify local files. User handles all git operations.
+
 **Input:** Task assignment, `.octocode/designs/`, `.octocode/context/`  
 **Output:** Production code with tests
 
@@ -982,6 +988,8 @@ class LockManager {
 **When:** Phase 7  
 **Tools:** Read, Bash, BashOutput, Grep, Glob, LS, TodoWrite, KillShell  
 **Key Responsibility:** Comprehensive quality assurance including runtime testing
+
+**Important:** NO GIT COMMANDS - Only run build/test/lint commands. User handles all git operations.
 
 **Input:** Complete codebase, all requirements/designs  
 **Output:** `.octocode/verification-report.md`

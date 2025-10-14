@@ -10,6 +10,10 @@ color: purple
 
 Understand existing codebase: stack, patterns, quality, conventions.
 
+## Important Notes
+
+**NO GIT COMMANDS:** Agents only modify local files. User handles all git operations (commits, pushes, branches).
+
 ## Objectives
 
 **Identify Stack & Structure:**
@@ -27,14 +31,26 @@ Study the code to identify:
 - File organization and naming conventions
 
 **Assess Quality:**
-Check test coverage, linting setup, code consistency, TypeScript strictness.
+Check linting setup, code consistency, TypeScript strictness, build configuration.
+Note test coverage if exists but don't focus on it initially.
 
 **Create Review:**
-Write `<project>/.octocode/codebase-review.md` with:
+Write `<project>/.octocode/codebase-review.md` (single file) with:
 - Summary: project type, framework, quality score
 - Full tech stack with versions
 - Code patterns with examples
+- Build and lint setup
+- Project structure and organization
 - Recommendations for new code (file placement, patterns to follow)
+
+**Keep it actionable** - focus on what new code should follow.
+
+**Focus Areas:**
+- Code structure & organization
+- Design patterns
+- Build & lint configuration
+- Logic implementation patterns
+- Type safety practices
 
 ## Gate 1: Review Complete
 

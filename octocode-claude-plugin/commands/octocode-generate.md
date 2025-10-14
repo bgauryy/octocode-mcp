@@ -29,6 +29,10 @@ $ARGUMENTS
 
 Example: If generating project "my-app", all docs go in `my-app/.octocode/`, NOT in the root repository.
 
+## Important: Git Operations
+
+**NO GIT COMMANDS:** Agents only modify local files. User handles all git operations (commits, pushes, branches, etc.).
+
 ## Testing Approach
 
 **Implementation-first, tests later:**
@@ -40,14 +44,18 @@ Example: If generating project "my-app", all docs go in `my-app/.octocode/`, NOT
 ## 7-Phase Waterfall Flow
 
 ```
-Phase 1: Requirements    → Gate 1 ✋ (User Approval)
-Phase 2: Architecture    → Gate 2 ✋ (User Approval)  
-Phase 3: Validation      → Gate 3 ✋ (User Approval)
+Phase 1: Requirements    → ✋ Gate 1 (User Approval Required)
+Phase 2: Architecture    → ✋ Gate 2 (User Approval Required)
+      ↓ (agent-quality creates test-plan.md)
+                        → ✋ Gate 2.5 (User Approval Required)
+Phase 3: Validation      → ✋ Gate 3 (User Approval Required)
 Phase 4: Research        (Runs in parallel with Phase 5)
 Phase 5: Planning        
-Phase 6: Implementation  → Gate 4 🔄 (Live Monitor)
-Phase 7: Verification    → Gate 5 ✋ (User Approval)
+Phase 6: Implementation  → 🔄 Gate 4 (Live Monitor - Pause/Continue)
+Phase 7: Verification    → ✋ Gate 5 (User Approval Required)
 ```
+
+**Human-in-the-Loop:** 5 approval gates ensure you control every major decision
 
 ### Phase 1: Requirements → Gate 1
 **Agent:** `agent-product`  
@@ -93,14 +101,18 @@ Phase 7: Verification    → Gate 5 ✋ (User Approval)
 
 ## Documentation Structure
 
-**All docs in** `<project>/.octocode/`:
-- `requirements.md` - Product requirements
-- `design.md` - Architecture & tech stack
-- `tasks.md` - Task breakdown with progress
-- `patterns.md` - Implementation patterns
-- `verification.md` - Quality report
+**Simple & focused** - All docs in `<project>/.octocode/`:
 
-**Total: 5 files** (vs 20+ in previous approach)
+| File | Owner | Purpose | Human Gate |
+|------|-------|---------|------------|
+| `requirements.md` | agent-product | Product requirements | ✋ Gate 1 |
+| `design.md` | agent-architect | Architecture & tech stack | ✋ Gate 2 |
+| `test-plan.md` | agent-quality | Test strategy (for reasoning) | ✋ Gate 2.5 |
+| `tasks.md` | agent-design-verification | Task breakdown + progress | ✋ Gate 3 |
+| `patterns.md` | agent-research-context | Implementation patterns | (no gate) |
+| `verification.md` | agent-verification | Quality report | ✋ Gate 5 |
+
+**6 single files, clear ownership, human approval at key gates**
 
 ## Success Criteria
 

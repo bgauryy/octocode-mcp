@@ -22,13 +22,13 @@ Transform user request into clear requirements that guide development.
 Use octocode-mcp to find similar projects (>500★) - learn from proven patterns.
 
 **Document Requirements:**
-Create `<project>/.octocode/requirements.md` covering:
+Create `<project>/.octocode/requirements.md` (single file) covering:
 - Product overview and value proposition
 - Feature list with priorities and acceptance criteria
 - User stories (if UX is complex)
 - Performance/scale criteria (if critical)
 
-Use tables, lists, or narrative - whatever communicates best.
+**Keep it concise** - single file, clear structure, easy to scan.
 
 ## Gate 1: Requirements Review
 
