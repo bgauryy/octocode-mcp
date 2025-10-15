@@ -1,0 +1,64 @@
+{
+  "name": "octocode-local-memory",
+  "version": "1.0.0",
+  "description": "Ultra-fast in-memory communication layer for parallel AI agents",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": "dist/index.js",
+  "scripts": {
+    "build": "yarn lint && yarn clean && tsc && chmod +x dist/index.js",
+    "build:dev": "yarn clean && tsc && chmod +x dist/index.js",
+    "build:watch": "tsc --watch",
+    "clean": "rm -rf dist/ coverage/",
+    "start": "node dist/index.js",
+    "dev": "yarn build:dev && node dist/index.js",
+    "format": "prettier --write \"src/**/*.{ts,js,json}\" \"tests/**/*.{ts,js,json}\" \"*.{ts,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js,json}\" \"tests/**/*.{ts,js,json}\" \"*.{ts,json}\"",
+    "lint": "eslint src/**/*.ts tests/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts tests/**/*.ts --fix",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage --coverage.include=\"src/**\"",
+    "test:ui": "vitest --ui",
+    "test:watch": "vitest --watch",
+    "prepublishOnly": "yarn lint && yarn test && yarn build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "cache",
+    "in-memory",
+    "agent-communication",
+    "coordination"
+  ],
+  "author": "Guy Bary <bgauryy@gmail.com>",
+  "homepage": "https://octocode.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bgauryy/octocode-mcp.git"
+  },
+  "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.1",
+    "node-cache": "^5.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-plugin-prettier": "^5.4.1",
+    "prettier": "^3.5.3",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts"
+  ]
+}
