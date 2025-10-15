@@ -30,8 +30,10 @@ export const TOOL_HINTS = {
       'Prefer implementation repos over awesome-lists/templates for working code examples',
       'Compare top results: look for common dependencies, patterns, and architectural choices',
       'Bulk-query multiple candidates across different orgs/languages to broaden perspective',
+      'For exploration: use topicsToSearch for precise, curated discovery of related repositories',
     ],
     empty: [
+      'Start with topicsToSearch for exploration - more precise than keywords for discovering repos by category',
       'Separate keywordsToSearch and topicsToSearch into distinct queries for better results',
       'Switch between keywordsToSearch (broader, name/description/readme) and topicsToSearch (precise, curated tags)',
       'Adjust filters: use stars filter for popular repos, relax size/date constraints if too restrictive',

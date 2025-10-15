@@ -147,11 +147,18 @@ async function searchMultipleGitHubRepos(
             ? apiResult.data.repositories || []
             : ([] satisfies SimplifiedRepository[]);
 
+        // Generate custom hints based on search type
+        const customHints = generateSearchSpecificHints(
+          query,
+          repositories.length > 0
+        );
+
         return createSuccessResult(
           query,
           { repositories },
           repositories.length > 0,
-          'GITHUB_SEARCH_REPOSITORIES'
+          'GITHUB_SEARCH_REPOSITORIES',
+          customHints
         );
       } catch (error) {
         return handleCatchError(error, query);
@@ -164,4 +171,44 @@ async function searchMultipleGitHubRepos(
       >,
     }
   );
+}
+
+/**
+ * Generate search-specific hints based on query type and results
+ */
+function generateSearchSpecificHints(
+  query: GitHubReposSearchQuery,
+  hasResults: boolean
+): string[] | undefined {
+  const hints: string[] = [];
+  const hasTopics = hasValidTopics(query);
+  const hasKeywords = hasValidKeywords(query);
+
+  if (hasTopics && hasResults) {
+    // Topic search with results - encourage exploration but verify relevance
+    hints.push(
+      "CRITICAL: Verify each repository's relevance to your researchGoal - topic results are broad categories"
+    );
+    hints.push(
+      'Topic search found curated repositories - excellent for exploration and discovery'
+    );
+    hints.push(
+      'Explore related topics to discover more repositories in similar categories'
+    );
+  } else if (hasTopics && !hasResults) {
+    // Topic search with no results - suggest alternatives
+    hints.push(
+      'No results for topic search - try related or broader topics for exploration'
+    );
+    hints.push(
+      'Consider switching to keywordsToSearch for broader coverage of name/description/readme'
+    );
+  } else if (hasKeywords && !hasResults && !hasTopics) {
+    // Keywords search with no results - suggest topics
+    hints.push(
+      'No results with keywords - try topicsToSearch for more precise, curated exploration'
+    );
+  }
+
+  return hints.length > 0 ? hints : undefined;
 }
