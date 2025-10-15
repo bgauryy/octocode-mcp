@@ -21,29 +21,41 @@ Turn "Build a blog platform" into a full-stack, tested, production-ready applica
 /plugin install octocode
 /restart
 
-# Build something amazing from scratch
-/octocode-generate Build a todo app with React and Express
+# FAST
+/octocode-generate-quick Build a todo app with React and Express
+
+# THOROUGH
+/octocode-generate Build a complex SaaS platform
 
 # Or add features to existing code
 /octocode-feature Add user profile page with avatar upload
 ```
 
-That's it! The AI team will guide you through requirements, design, implementation, and testing.
+That's it! The AI team will guide you through the workflow.
 
 ---
 
 ## 🎯 What Is Octocode?
 
-A **Claude Code plugin** that provides **two powerful commands**:
+A **Claude Code plugin** that provides **three powerful commands**:
 
-### `/octocode-generate` - Build from Scratch
-Orchestrates 6 specialized AI agents through a streamlined 4-phase workflow:
+### `/octocode-generate-quick` - Build Fast ⚡ NEW!
+**FASTEST**: Single planning agent creates complete spec → 1 approval gate → implementation
+
+```
+🚀 Rapid Planning → ✋ Gate → 💻 Parallel Implementation → ✅ Quality Loops
+```
+
+**Time:** 20-50 minutes | **Best for:** MVPs, prototypes, small-medium projects
+
+### `/octocode-generate` - Build Thorough
+Orchestrates 6 specialized AI agents through comprehensive 4-phase workflow:
 
 ```
 💭 Requirements → 🏗️ Architecture → 🎯 Planning → 💻 Implementation
 ```
 
-**You approve at 3 critical gates** - the AI team handles the rest, you verify at the end.
+**Time:** 60-120 minutes | **Best for:** Complex/enterprise projects | **You approve at 4 gates**
 
 ### `/octocode-feature` - Enhance Existing Code
 Analyzes existing codebases and safely adds features or fixes bugs through 4 phases:
@@ -52,7 +64,7 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 📊 Code Review → 🎯 Analysis → 🎯 Planning → 💻 Implementation
 ```
 
-**You approve at 3 critical gates** - perfect for production codebases.
+**Time:** 30-90 minutes | **Best for:** Production codebases | **You approve at 3 gates**
 
 ### Important: Git Operations
 
@@ -61,6 +73,11 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 ---
 
 ## ✨ Why Use Octocode?
+
+### ⚡ Choose Your Speed
+- **Quick Mode**: 1 agent, 1 gate, 20-50 min - Perfect for MVPs
+- **Standard Mode**: 6 agents, 4 gates, 60-120 min - Thorough for complex projects
+- **Feature Mode**: 4 agents, 3 gates, 30-90 min - Safe for production code
 
 ### 🚀 Parallel Execution
 - Multiple implementation agents work simultaneously
@@ -72,18 +89,17 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 - Evaluates **3+ alternatives** for every major decision
 - Critical thinking framework with self-questioning and devil's advocate
 
-### 🔍 Complete Transparency & Human Control
-- **5-6 single files** - No documentation bloat
-- **Clear approval gates** - Human-in-the-loop at critical decisions
+### 🔍 Streamlined Documentation
+- **Quick Mode**: 1 consolidated file (~80KB) - Everything in one place
+- **Standard Mode**: 4 separate files (~50KB each) - Comprehensive documentation
+- **Clear approval gates** - Human control at critical decisions
 - **Live monitoring** - Pause/continue implementation anytime
-- See **every decision** with reasoning
 
 ### 🔒 MVP-First Approach
 - **Working code FIRST** - Build + Types + Lint (NO TESTS during MVP)
 - **Tests AFTER user approval** - See working product before investing in tests
-- **Efficient documentation** - 4 single files, no bloat
-- **Human approval gates** - You control every major decision
-- **Manual verification** - test-plan.md guides your verification
+- **Quality validation loops** - Automated checks catch issues
+- **Manual verification** - test-plan guides your testing
 
 ---
 
@@ -91,7 +107,17 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 
 **7 specialized agents total**: 5 agents for `/octocode-generate`, 4 agents for `/octocode-feature` (3 agents are shared between both commands)
 
-### For `/octocode-generate` (Build from Scratch)
+### For `/octocode-generate-quick` ⚡ NEW! (Fast Build)
+
+| Agent | Role | Model | What They Do |
+|-------|------|-------|--------------|
+| 🚀 **Rapid Planner** | All Planning | Opus | Requirements + Architecture + Tasks in ONE pass, creates single consolidated spec |
+| 🎯 **Engineering Manager** | Orchestration | Sonnet | Reads spec, assigns tasks, tracks progress |
+| 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns (multiple instances work in parallel) |
+
+**Fast & efficient**: 1 planning agent, 1 approval gate, ~20-50 min
+
+### For `/octocode-generate` (Thorough Build)
 
 | Agent | Role | Model | What They Do |
 |-------|------|-------|--------------|
@@ -102,6 +128,8 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 | 🎯 **Engineering Manager** | Orchestration | Sonnet | Creates task breakdown, assigns tasks, tracks progress |
 | 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns, ensures build passes (multiple instances work in parallel) |
 
+**Comprehensive**: 6 agents, 4 approval gates, ~60-120 min
+
 ### For `/octocode-feature` (Enhance Existing Code)
 
 | Agent | Role | Model | What They Do |
@@ -111,7 +139,9 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 | 🎯 **Engineering Manager** | Orchestration | Sonnet | Creates task breakdown, assigns tasks, tracks progress |
 | 💻 **Software Engineer** | Implementation | Sonnet | Modifies code following existing patterns (multiple instances) |
 
-**Cost-optimized**: Opus for strategic thinking, Sonnet for analysis and execution
+**Production-safe**: 4 agents, 3 approval gates, ~30-90 min
+
+**Cost-optimized**: Opus for strategic thinking, Sonnet for execution
 
 ---
 
@@ -171,12 +201,36 @@ Agents use these tools to do their work:
 
 ## 📖 Example: Build a Blog Platform
 
+### Quick Mode ⚡ (Recommended for this project)
+
+```bash
+/octocode-generate-quick Build a blog platform with authentication, 
+rich text editor, and comments
+```
+
+**Phase 1: Rapid Planning** → Creates `docs/PROJECT_SPEC.md` (~80KB)
+- Rapid Planner asks 2-3 questions, researches similar apps
+- Creates complete spec: requirements + architecture + verification + tasks
+- **✋ Gate 1:** You approve complete specification
+
+**Phase 2: Implementation** → Updates `docs/PROJECT_SPEC.md` with progress
+- 4-5 Software Engineers work in parallel
+- **🔄 Monitor:** Live progress, pause/continue anytime
+
+**Phase 3: Quality Loops** → Validation
+- Rapid Planner validates build, lint, types
+- Creates fix tasks if issues found (max 3 loops)
+
+**Result: 1 consolidated file (~80KB), 1 approval gate, ~30-40 min, production-ready code**
+
+---
+
+### Standard Mode (For complex enterprise version)
+
 ```bash
 /octocode-generate Build a blog platform with authentication, 
 rich text editor, and comments
 ```
-
-### What Happens Next
 
 **Phase 1: Requirements** → Creates `docs/requirements.md`
 - Product Manager asks questions, researches similar apps
@@ -197,12 +251,7 @@ rich text editor, and comments
 - 4-5 Software Engineers work in parallel
 - **🔄 Gate 3:** Monitor live, pause/continue anytime - Final gate
 
-**After Implementation:**
-- You run build/lint checks
-- You follow test-plan.md for manual verification
-- You commit when ready
-
-**Result: 4 single files (<50KB each) in `docs/`, 3 approval gates, production-ready code**
+**Result: 4 separate files (<50KB each), 4 approval gates, ~60-90 min, production-ready code**
 
 ### What You Get
 
@@ -222,26 +271,30 @@ rich text editor, and comments
 
 ## 🎨 More Examples
 
-### Build Mobile App from Scratch
+### Quick MVPs ⚡
 ```bash
-/octocode-generate React Native fitness tracker with workout plans, 
-progress charts, and social features
+# Fast prototypes (20-40 min)
+/octocode-generate-quick Build a URL shortener with analytics
+/octocode-generate-quick Create a markdown note-taking app
+/octocode-generate-quick Build a simple task tracker API
 ```
 
-### Build Enterprise Dashboard from Scratch
+### Complex Projects (Thorough Mode)
 ```bash
+# Enterprise apps (60-120 min)
+/octocode-generate React Native fitness tracker with workout plans, 
+progress charts, and social features
+
 /octocode-generate Analytics dashboard with real-time charts, 
 user management, and role-based access control
 ```
 
-### Add Feature to Existing App
+### Enhance Existing Code
 ```bash
+# Add features or fix bugs
 /octocode-feature Add dark mode toggle with user preference persistence
-```
-
-### Fix Bug in Existing App
-```bash
 /octocode-feature Fix: User login not working on Safari mobile
+/octocode-feature Implement real-time notifications with WebSocket
 ```
 
 ---
@@ -425,12 +478,15 @@ Enables the QA agent to:
 
 | Doc | Description |
 |-----|-------------|
-| **[COMPLETE_GUIDE.md](./docs/COMPLETE_GUIDE.md)** | ⭐ Comprehensive guide for `/octocode-generate` workflow |
-| **[FLOW.md](./docs/FLOW.md)** | 🎯 Visual walkthrough of the 4-phase workflow |
-| **[agents/](./agents/)** | Individual documentation for all 6 specialized agents |
-| **[commands/](./commands/)** | Detailed specifications for both commands |
+| **[QUICK_MODE.md](./docs/QUICK_MODE.md)** | ⚡ NEW! Guide to fast development with `/octocode-generate-quick` |
+| **[COMPLETE_GUIDE.md](./docs/COMPLETE_GUIDE.md)** | ⭐ Comprehensive guide for standard `/octocode-generate` workflow |
+| **[FLOW.md](./docs/FLOW.md)** | 🎯 Visual walkthrough of all workflows |
+| **[agents/](./agents/)** | Individual documentation for all 8 specialized agents |
+| **[commands/](./commands/)** | Detailed specifications for all three commands |
 
-**Want more details?** Read the [Complete Guide](./docs/COMPLETE_GUIDE.md) for in-depth understanding of the workflow, communication protocols, and state management.
+**Want more details?** 
+- **Fast development?** Read [Quick Mode Guide](./docs/QUICK_MODE.md)
+- **Thorough approach?** Read [Complete Guide](./docs/COMPLETE_GUIDE.md)
 
 ---
 
