@@ -1,8 +1,10 @@
 # Octocode Claude Plugin - Complete Guide
 
+> **⚠️ NOTE: This document is being updated to reflect the new 5-phase workflow where research is integrated into each agent using Octocode MCP directly. References to agent-research-context are deprecated.**
+
 **The Complete AI Development Team for Claude Code**
 
-Transform your ideas into production-ready code through a structured 7-phase workflow powered by 7 specialized AI agents working together with human oversight at 5 critical approval gates.
+Transform your ideas into production-ready code through a structured 5-phase workflow powered by 7 specialized AI agents working together with human oversight at 4 critical approval gates.
 
 ---
 
@@ -68,6 +70,10 @@ PRODUCTION-READY CODE
 - **🧠 Critical Thinking Framework** - Self-questioning, devil's advocate, alternatives evaluation
 - **🎯 Clean Waterfall Flow** - Sequential phases with clear checkpoints, parallel implementation
 - **🔒 Production-Ready** - File locking, state persistence, comprehensive observability, runtime testing
+
+### Important: Git Operations
+
+**NO GIT COMMANDS:** All agents only modify local files. The user is responsible for all git operations including commits, pushes, branch management, and merges. Agents focus solely on code implementation and file modifications.
 
 ### Curated Resources
 
@@ -555,18 +561,18 @@ export const portfolioRouter = router({
 │     • Follow design patterns from context guides         │
 │     • Use TypeScript with strict types                   │
 │     • Add proper error handling                          │
-│     • Write tests for new code                           │
 │     • Follow existing code style                         │
+│     • NO TESTS YET - Focus on working MVP                │
 └─────────────────────────────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│  5. Self-Testing (REQUIRED)                              │
-│     • Run unit tests                                     │
-│     • Run integration tests                              │
+│  5. Verify Build & Lint (REQUIRED)                       │
+│     • Run build to ensure no errors                      │
 │     • Run linting                                        │
 │     • Fix auto-fixable issues                            │
-│     • Must pass all checks before completion             │
+│     • Must pass build + lint before completion           │
+│     • NO TESTS - Tests added after MVP approval          │
 └─────────────────────────────────────────────────────────┘
                          │
                          ▼
@@ -636,11 +642,10 @@ Legend: ✓ Complete  🔄 In Progress
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│  3. Test Verification                                    │
-│     • Unit tests: all passing                            │
-│     • Integration tests: all passing                     │
-│     • E2E tests: all passing                             │
-│     • Coverage: meets requirements (80%+)                │
+│  3. Test Verification (ONLY IF TESTS EXIST)              │
+│     • MVP: Skip this step - no tests required            │
+│     • If existing tests: Verify they still pass          │
+│     • Tests added AFTER MVP approval                     │
 └─────────────────────────────────────────────────────────┘
                          │
                          ▼
@@ -831,11 +836,13 @@ For each task pair (task_i, task_j):
 
 ---
 
-### 4. agent-research-context (Research Specialist) - Sonnet
+### 4. ~~agent-research-context~~ (Research Specialist) - DEPRECATED
 
-**When:** Phase 4 (can run in parallel with Phase 5)  
-**Tools:** Read, Write, LS, TodoWrite  
-**Key Responsibility:** Gather implementation patterns from GitHub using octocode-mcp
+> **⚠️ DEPRECATED:** This agent has been removed. Research is now integrated directly into other agents using Octocode MCP (Product Manager researches during requirements, Architect researches during design, etc.)
+
+**Previously When:** Phase 4 (could run in parallel with Phase 5)
+**Previously Tools:** Read, Write, LS, TodoWrite
+**Previous Responsibility:** Gather implementation patterns from GitHub using octocode-mcp
 
 **Input:** `.octocode/designs/`, `.octocode/tasks.md`  
 **Output:** `.octocode/context/*.md`
@@ -934,6 +941,8 @@ class LockManager {
 **Tools:** Read, Write, Edit, Bash, BashOutput, Grep, Glob, LS, TodoWrite  
 **Key Responsibility:** Implement features following designs and context guides
 
+**Important:** NO GIT COMMANDS - Only modify local files. User handles all git operations.
+
 **Input:** Task assignment, `.octocode/designs/`, `.octocode/context/`  
 **Output:** Production code with tests
 
@@ -969,10 +978,12 @@ class LockManager {
 
 **Quality Standards:**
 - No `any` types
-- All functions have tests
+- TypeScript strict mode
+- Build passes without errors
 - Linting passes
 - Error handling present
 - Follows existing code style
+- NO TESTS during MVP (tests come after approval)
 
 ---
 
@@ -981,6 +992,8 @@ class LockManager {
 **When:** Phase 7  
 **Tools:** Read, Bash, BashOutput, Grep, Glob, LS, TodoWrite, KillShell  
 **Key Responsibility:** Comprehensive quality assurance including runtime testing
+
+**Important:** NO GIT COMMANDS - Only run build/test/lint commands. User handles all git operations.
 
 **Input:** Complete codebase, all requirements/designs  
 **Output:** `.octocode/verification-report.md`
@@ -998,10 +1011,9 @@ Linting:
   - Code style consistent
 
 Tests:
-  - Unit tests: all passing
-  - Integration tests: all passing
-  - E2E tests: all passing
-  - Coverage: meets requirements (80%+)
+  - MVP: Skip - no tests required
+  - Existing tests: verify they still pass
+  - New tests: add after MVP approval
 
 Feature Verification:
   - For each must-have feature:
@@ -1287,12 +1299,8 @@ Runtime Testing (Chrome):
 │   ├── research-queries.json
 │   └── phase-timeline.json
 │
-├── backups/                # State backups
-│   └── execution-state-*.json
-│
-├── tasks.md                # Phase 3 output (agent-design-verification)
+├── tasks.md                # Phase 3 output (agent-design-verification, updated inline with progress)
 ├── locks.json              # Phase 5/6 (agent-manager)
-├── execution-state.json    # State management
 └── verification-report.md  # Phase 7 output (agent-verification)
 ```
 
@@ -1357,7 +1365,8 @@ Used to report task/work status updates.
 **Files Modified:**
   - src/api/api.ts (created, 124 lines)
   - src/api/routes.ts (created, 89 lines)
-**Tests:** 12 added, all passing
+**Build:** ✅ Passed
+**Linting:** ✅ Passed
 **Summary:** Implemented portfolio API endpoints with full CRUD operations
 ```
 
@@ -1590,128 +1599,38 @@ Timeline:
 
 ---
 
-## State Management
+## Progress Tracking
 
-### Execution State File
+### Task Status in tasks.md
 
-**File:** `.octocode/execution-state.json`
+Progress is tracked inline in `.octocode/tasks.md` with status markers:
 
-```json
-{
-  "version": "1.0",
-  "sessionId": "uuid-v4-here",
-  "timestamp": "2025-10-12T14:30:00Z",
-  "currentPhase": "implementation",
-  "phaseStatus": {
-    "requirements": "completed",
-    "architecture": "completed",
-    "validation": "completed",
-    "research": "completed",
-    "orchestration": "completed",
-    "implementation": "in-progress",
-    "verification": "pending"
-  },
-  "tasks": {
-    "total": 35,
-    "completed": 23,
-    "inProgress": 3,
-    "pending": 9
-  },
-  "completedTasks": ["1.1", "1.2", "1.3", "..."],
-  "activeTasks": {
-    "3.1": {
-      "agentId": "agent-implementation-1",
-      "startedAt": "2025-10-12T14:28:00Z",
-      "lockedFiles": ["src/api/portfolio.ts"]
-    },
-    "3.2": {
-      "agentId": "agent-implementation-2",
-      "startedAt": "2025-10-12T14:28:05Z",
-      "lockedFiles": ["src/components/AlertList.tsx"]
-    },
-    "3.3": {
-      "agentId": "agent-implementation-3",
-      "startedAt": "2025-10-12T14:29:00Z",
-      "lockedFiles": ["src/components/Chart.tsx"]
-    }
-  },
-  "lastCheckpoint": "2025-10-12T14:30:00Z"
-}
+```markdown
+## Phase 2: Backend
+- [x] 2.1: Auth logic ✅ (completed, agent-impl-1)
+- [⏳] 2.2: API routes (in-progress, agent-impl-2)
+- [⏸️] 2.3: Auth middleware (waiting for 2.1)
+- [ ] 2.4: Database migrations (pending)
+
+## Phase 3: Frontend  
+- [x] 3.1: Login component ✅ (completed, agent-impl-3)
+- [ ] 3.2: Dashboard UI (pending)
+
+Status: 23/35 tasks complete (65%)
+Active: impl-2 on 2.2, impl-4 on 3.2
 ```
 
-### Atomic State Updates
+**Status Markers:**
+- `[ ]` - Pending
+- `[⏳]` - In progress
+- `[⏸️]` - Blocked/waiting
+- `[x]` - Completed (with ✅)
 
-```typescript
-function updateExecutionState(update: Partial<ExecutionState>): void {
-  // 1. Read current state
-  const state = readState('.octocode/execution-state.json')
-
-  // 2. Apply updates
-  const newState = { ...state, ...update, timestamp: new Date().toISOString() }
-
-  // 3. Write to temporary file
-  writeState('.octocode/execution-state.tmp.json', newState)
-
-  // 4. Verify JSON is valid
-  const verification = readState('.octocode/execution-state.tmp.json')
-  if (!verification) {
-    throw new Error('State verification failed')
-  }
-
-  // 5. Atomic rename (atomic operation at OS level)
-  rename('.octocode/execution-state.tmp.json', '.octocode/execution-state.json')
-
-  // 6. Backup previous state
-  backup('.octocode/execution-state.json', '.octocode/backups/execution-state-${timestamp}.json')
-}
-```
-
-### Resume Functionality
-
-```typescript
-function resumeSession(): void {
-  // 1. Load state
-  const state = readState('.octocode/execution-state.json')
-
-  if (!state) {
-    throw new Error('No session to resume')
-  }
-
-  console.log(`Resuming session ${state.sessionId}`)
-  console.log(`Current phase: ${state.currentPhase}`)
-  console.log(`Progress: ${state.tasks.completed}/${state.tasks.total} tasks`)
-
-  // 2. Determine resume point
-  switch (state.currentPhase) {
-    case 'requirements':
-      if (state.phaseStatus.requirements === 'completed') {
-        startPhase2()
-      } else {
-        resumePhase1()
-      }
-      break
-
-    case 'implementation':
-      // Resume with active tasks
-      resumeImplementation(state.activeTasks)
-      break
-
-    // ... handle other phases
-  }
-}
-```
-
-**Resume Command:**
-```bash
-# If interrupted, resume with:
-/octocode-generate --resume
-
-# System will:
-# 1. Load .octocode/execution-state.json
-# 2. Determine current phase
-# 3. Load all previous work
-# 4. Continue from last checkpoint
-```
+This provides:
+- Single source of truth for progress
+- Human-readable status at a glance
+- Agent assignments visible
+- No duplicate state management
 
 ---
 
@@ -1799,31 +1718,9 @@ ls -R .octocode/
 #   ├── tasks.md
 #   ├── logs/
 #   ├── debug/
-#   ├── execution-state.json
 #   ├── locks.json
 #   └── verification-report.md
 ```
-
-### Resume Functionality Test
-
-```bash
-# After Phase 3, simulate interruption
-# (manually stop or kill Claude Code session)
-
-# Restart Claude Code
-claude
-
-# Should see session-start hook notification
-
-# Resume
-/octocode-generate --resume
-```
-
-Expected:
-- ✅ Hook detects previous state
-- ✅ Loads from `.octocode/execution-state.json`
-- ✅ Continues from last phase
-- ✅ No duplicate work
 
 ---
 
@@ -1864,9 +1761,11 @@ Expected:
 
 **Phase 7: Verification**
 - ✅ Build passes
-- ✅ 85 tests pass (88% coverage)
+- ✅ Linting passes
 - ✅ All features verified
-- **Gate 5:** User approves ✅
+- ✅ Runtime testing passes
+- **Gate 5:** User approves MVP ✅
+- ⏸️ Tests to be added post-approval
 
 ---
 
@@ -1909,10 +1808,11 @@ multiple portfolios, price alerts, and performance charts. Use React and Postgre
 
 **Phase 7: Verification**
 - ✅ Build passes
-- ✅ 142 tests pass (89% coverage)
+- ✅ Linting passes
 - ✅ All 7 features verified
 - ✅ Runtime testing: No errors
-- **Gate 5:** User approves ✅
+- **Gate 5:** User approves MVP ✅
+- ⏸️ Tests to be added post-approval
 
 ---
 
@@ -1996,10 +1896,10 @@ multiple portfolios, price alerts, and performance charts. Use React and Postgre
 
 ### Quality Metrics
 
-- **Test Coverage:** 80-90% (enforced)
-- **Code Quality:** 8.5/10 average
-- **Production Ready:** All features verified
-- **Accessibility:** WCAG 2.1 AA compliant
+- **Working MVP:** Focus on functionality first
+- **Code Quality:** 8.5/10 average (TypeScript + Linting)
+- **Type Safety:** Strict mode enforced
+- **Tests:** Added post-MVP after user approval
 
 ---
 

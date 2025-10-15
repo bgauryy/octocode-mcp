@@ -1,7 +1,7 @@
 {
   "name": "octocode-claude-plugin",
-  "description": "Complete AI development team with 8 specialized agents for requirements gathering, architecture design, UX design, implementation, and QA. Features gate-based workflow with human approval, comprehensive observability, and octocode-mcp integration for research-driven decisions.",
-  "version": "1.0.0",
+  "description": "BETA: AI development team with specialized agents for building projects from scratch (octocode-generate) or enhancing existing code (octocode-feature). Features gate-based workflow, parallel execution, and research-driven decisions. Still being optimized.",
+  "version": "1.0.0-beta",
   "author": {
     "name": "Guy Bary",
     "email": "bgauryy@gmail.com"

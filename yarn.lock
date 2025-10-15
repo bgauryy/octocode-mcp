@@ -4265,6 +4265,26 @@ __metadata:
   languageName: node
   linkType: hard
 
+"octocode-local-memory@workspace:packages/octocode-local-memory":
+  version: 0.0.0-use.local
+  resolution: "octocode-local-memory@workspace:packages/octocode-local-memory"
+  dependencies:
+    "@modelcontextprotocol/sdk": "npm:^1.18.1"
+    "@types/node": "npm:^22.15.29"
+    "@typescript-eslint/eslint-plugin": "npm:^6.21.0"
+    "@typescript-eslint/parser": "npm:^6.21.0"
+    eslint: "npm:^8.57.0"
+    eslint-config-prettier: "npm:^10.1.5"
+    eslint-plugin-prettier: "npm:^5.4.1"
+    node-cache: "npm:^5.1.2"
+    prettier: "npm:^3.5.3"
+    typescript: "npm:^5.9.2"
+    vitest: "npm:^3.2.4"
+  bin:
+    octocode-local-memory: dist/index.js
+  languageName: unknown
+  linkType: soft
+
 "octocode-mcp@workspace:packages/octocode-mcp":
   version: 0.0.0-use.local
   resolution: "octocode-mcp@workspace:packages/octocode-mcp"

@@ -1,12 +1,15 @@
 # 🏗️ Octocode Claude Plugin
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/bgauryy/octocode-mcp)
+[![Version](https://img.shields.io/badge/version-1.0.0--beta-orange.svg)](https://github.com/bgauryy/octocode-mcp)
+[![Status](https://img.shields.io/badge/status-BETA-yellow.svg)](https://github.com/bgauryy/octocode-mcp)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-%3E%3D1.0.0-purple.svg)](https://claude.com/code)
 
+> **⚠️ BETA: Still being optimized**
+
 > **Transform Claude into a complete AI development team that takes your idea from concept to production-ready code**
 
-Turn "Build a blog platform" into a full-stack, tested, production-ready application. With 7 specialized AI agents, research-driven decisions from 100k+ GitHub repos, and 5 human approval gates to keep you in control.
+Turn "Build a blog platform" into a full-stack, tested, production-ready application. With specialized AI agents, research-driven decisions from 100k+ GitHub repos, and human approval gates to keep you in control.
 
 ---
 
@@ -18,8 +21,11 @@ Turn "Build a blog platform" into a full-stack, tested, production-ready applica
 /plugin install octocode
 /restart
 
-# Build something amazing
+# Build something amazing from scratch
 /octocode-generate Build a todo app with React and Express
+
+# Or add features to existing code
+/octocode-feature Add user profile page with avatar upload
 ```
 
 That's it! The AI team will guide you through requirements, design, implementation, and testing.
@@ -28,14 +34,29 @@ That's it! The AI team will guide you through requirements, design, implementati
 
 ## 🎯 What Is Octocode?
 
-A **Claude Code plugin** that orchestrates 7 specialized AI agents through a structured 7-phase workflow:
+A **Claude Code plugin** that provides **two powerful commands**:
+
+### `/octocode-generate` - Build from Scratch
+Orchestrates 6 specialized AI agents through a streamlined 4-phase workflow:
 
 ```
-💭 Requirements → 🏗️ Architecture → ✅ Validation → 🔬 Research 
-→ 🎯 Orchestration → 💻 Implementation → ✅ Quality Check
+💭 Requirements → 🏗️ Architecture → 🎯 Planning → 💻 Implementation
 ```
 
-**You approve at 5 critical gates** - the AI team handles the rest.
+**You approve at 3 critical gates** - the AI team handles the rest, you verify at the end.
+
+### `/octocode-feature` - Enhance Existing Code
+Analyzes existing codebases and safely adds features or fixes bugs through 4 phases:
+
+```
+📊 Code Review → 🎯 Analysis → 🎯 Planning → 💻 Implementation
+```
+
+**You approve at 3 critical gates** - perfect for production codebases.
+
+### Important: Git Operations
+
+**NO GIT COMMANDS:** All agents only modify local files. You (the user) are responsible for all git operations including commits, pushes, branch management, and merges. Agents focus solely on code implementation and file modifications - you stay in control of version control.
 
 ---
 
@@ -43,40 +64,78 @@ A **Claude Code plugin** that orchestrates 7 specialized AI agents through a str
 
 ### 🚀 Parallel Execution
 - Multiple implementation agents work simultaneously
-- File locking system prevents conflicts
-- Efficient task orchestration for faster development
+- Smart task distribution prevents conflicts
+- MVP-first approach: working code before tests
 
 ### 🧠 Research-Driven Decisions
 - Analyzes **100k+ GitHub repositories** for best practices
 - Evaluates **3+ alternatives** for every major decision
 - Critical thinking framework with self-questioning and devil's advocate
 
-### 🔍 Complete Transparency
+### 🔍 Complete Transparency & Human Control
+- **5-6 single files** - No documentation bloat
+- **Clear approval gates** - Human-in-the-loop at critical decisions
+- **Live monitoring** - Pause/continue implementation anytime
 - See **every decision** with reasoning
-- Track **all agent communications**
-- Know **which repos influenced** the architecture
 
-### 🔒 Production-Ready Quality
-- **80-90% test coverage** enforced
-- **WCAG 2.1 AA accessibility** compliance
-- Comprehensive verification + browser testing
-- Zero file conflicts with atomic locking
+### 🔒 MVP-First Approach
+- **Working code FIRST** - Build + Types + Lint (NO TESTS during MVP)
+- **Tests AFTER user approval** - See working product before investing in tests
+- **Efficient documentation** - 4 single files, no bloat
+- **Human approval gates** - You control every major decision
+- **Manual verification** - test-plan.md guides your verification
 
 ---
 
 ## 🤖 Meet Your AI Team
 
+**6 specialized agents total**: 4 agents for `/octocode-generate`, 4 agents for `/octocode-feature` (3 agents are shared between both commands)
+
+### For `/octocode-generate` (Build from Scratch)
+
 | Agent | Role | Model | What They Do |
 |-------|------|-------|--------------|
-| 🎯 **Product Manager** | Requirements | Opus | Asks clarifying questions, creates PRD, researches competitors |
-| 🏗️ **Architect** | System Design | Opus | Designs complete architecture (backend + frontend), evaluates tech stacks, critical thinking |
-| ✅ **Tech Lead** | Validation | Sonnet | Reviews architecture, breaks down tasks, detects conflicts |
-| 🔬 **Research Specialist** | Best Practices | Sonnet | Finds code examples from top repos, extracts patterns |
-| 🎯 **Engineering Manager** | Orchestration | Sonnet | Assigns tasks, prevents conflicts, tracks progress |
-| 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns, self-tests (multiple instances work in parallel) |
-| ✅ **QA Engineer** | Quality | Sonnet | Tests in browser, checks security, verifies production-readiness |
+| 🎯 **Product Manager** | Requirements | Opus | Asks clarifying questions, creates PRD, researches competitors using Octocode MCP |
+| 🏗️ **Architect** | System Design | Opus | Designs complete architecture (backend + frontend), researches proven patterns via Octocode MCP |
+| 🔬 **Quality Architect** | Verification Planning | Opus | Creates verification flows and test scenarios, researches testing patterns via Octocode MCP |
+| 🎯 **Engineering Manager** | Orchestration | Sonnet | Creates task breakdown, assigns tasks, tracks progress |
+| 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns, ensures build passes (multiple instances work in parallel) |
 
-**Cost-optimized**: Opus for strategic thinking (2 agents), Sonnet for execution (5 agents)
+### For `/octocode-feature` (Enhance Existing Code)
+
+| Agent | Role | Model | What They Do |
+|-------|------|-------|--------------|
+| 📊 **Code Analyst** | Codebase Review | Sonnet | Analyzes existing code, identifies patterns, assesses quality |
+| 🎯 **Feature Analyst** | Impact Analysis | Opus | Critical thinking on changes, researches implementation patterns via Octocode MCP |
+| 🎯 **Engineering Manager** | Orchestration | Sonnet | Creates task breakdown, assigns tasks, tracks progress |
+| 💻 **Software Engineer** | Implementation | Sonnet | Modifies code following existing patterns (multiple instances) |
+
+**Cost-optimized**: Opus for strategic thinking, Sonnet for analysis and execution
+
+---
+
+## 🔧 Tools Reference
+
+Agents use these tools to do their work:
+
+| Tool | What It Does |
+|------|--------------|
+| **Read** | Read files from workspace |
+| **Write** | Create or overwrite files |
+| **Edit** | Make targeted edits to existing files |
+| **MultiEdit** | Edit multiple files at once |
+| **Grep** | Search for text patterns in files |
+| **Glob** | Find files by name patterns |
+| **LS** | List directory contents |
+| **Bash** | Execute shell commands |
+| **BashOutput** | Execute commands and capture output |
+| **KillShell** | Terminate running processes |
+| **WebFetch** | Fetch content from URLs |
+| **WebSearch** | Search the web |
+| **TodoWrite** | Create and update task lists |
+| **Task** | Spawn child agents (Manager only) |
+| **ListMcpResourcesTool** | List octocode-mcp resources |
+| **ReadMcpResourceTool** | Access octocode-mcp patterns |
 
 ---
 
@@ -89,65 +148,68 @@ rich text editor, and comments
 
 ### What Happens Next
 
-**Phase 1: Requirements**
-- Product Manager asks about user roles, features, tech preferences
-- Creates comprehensive PRD with research from GitHub
-- **[Gate 1]** You approve the requirements
+**Phase 1: Requirements** → Creates `docs/requirements.md`
+- Product Manager asks questions, researches similar apps
+- **✋ Gate 1:** You approve requirements
 
-**Phase 2: Architecture**
-- Architect designs complete system (backend + frontend)
-- Evaluates alternatives with critical thinking framework
-- **[Gate 2]** You approve the architecture
+**Phase 2: Architecture** → Creates `docs/design.md` + `docs/test-plan.md`
+- Architect designs complete system (backend + frontend), researches proven architectures via Octocode MCP
+- Quality Architect creates verification flows (manual testing guide), researches testing patterns via Octocode MCP
+- **✋ Gate 2:** You approve architecture
+- **✋ Gate 2.5:** You approve verification plan
 
-**Phase 3: Validation**
-- Tech Lead breaks project into atomic tasks
-- Detects potential file conflicts
-- **[Gate 3]** You approve the task plan
+**Phase 3: Planning** → Creates `docs/tasks.md`
+- Engineering Manager breaks project into tasks and assigns work
 
-**Phase 4: Research**
-- Research Specialist finds best auth, editor, and comment implementations
-- Creates copy-paste ready examples from top repos
-
-**Phase 5-6: Implementation**
+**Phase 4: Implementation** → Updates `docs/tasks.md` with progress
 - 4-5 Software Engineers work in parallel
-- Engineering Manager orchestrates and prevents conflicts
-- **[Gate 4]** Monitor real-time progress
+- **🔄 Gate 3:** Monitor live, pause/continue anytime - Final gate
 
-**Phase 7: Verification**
-- QA Engineer tests in Chrome browser
-- Runs security checks, linting, tests
-- **[Gate 5]** Final approval
+**After Implementation:**
+- You run build/lint checks
+- You follow test-plan.md for manual verification
+- You commit when ready
+
+**Result: 4 single files (<50KB each) in `docs/`, 3 approval gates, production-ready code**
 
 ### What You Get
 
-✅ Full-stack application (Next.js + PostgreSQL)  
-✅ User authentication (JWT + OAuth)  
-✅ Rich text editor (TipTap)  
-✅ Comment system with moderation  
-✅ Responsive design (mobile-first)  
-✅ WCAG AA accessible  
-✅ 85%+ test coverage  
-✅ Production-ready deployment  
+✅ **4 documentation files** in `docs/` (<50KB each): requirements, design, test-plan, tasks  
+✅ **Full-stack application** (Next.js + PostgreSQL)  
+✅ **User authentication** (JWT + OAuth)  
+✅ **Rich text editor** (TipTap)  
+✅ **Comment system** with moderation  
+✅ **Responsive design** (mobile-first)  
+✅ **TypeScript strict mode**  
+✅ **Lint passing**  
+✅ **Working MVP** ready for testing phase  
+✅ **You approved** at 4 decision gates  
+✅ **Each doc** includes "Created by octocode-mcp" footer  
 
 ---
 
 ## 🎨 More Examples
 
-### Mobile App
+### Build Mobile App from Scratch
 ```bash
 /octocode-generate React Native fitness tracker with workout plans, 
 progress charts, and social features
 ```
 
-### Enterprise Dashboard
+### Build Enterprise Dashboard from Scratch
 ```bash
 /octocode-generate Analytics dashboard with real-time charts, 
 user management, and role-based access control
 ```
 
-### Resume Previous Session
+### Add Feature to Existing App
 ```bash
-/octocode-generate --resume
+/octocode-feature Add dark mode toggle with user preference persistence
+```
+
+### Fix Bug in Existing App
+```bash
+/octocode-feature Fix: User login not working on Safari mobile
 ```
 
 ---
@@ -156,11 +218,11 @@ user management, and role-based access control
 
 | Feature | Octocode | claude-flow | dify | Microsoft |
 |---------|----------|-------------|------|-----------|
-| **Specialized Agents** | ✅ 7 focused | 74 general | Platform | Framework |
-| **Approval Gates** | ✅ 5 gates | ⚠️ Basic | ❌ None | ⚠️ YAML |
+| **Specialized Agents** | ✅ 8 specialized | 74 general | Platform | Framework |
+| **Approval Gates** | ✅ 4 gates | ⚠️ Basic | ❌ None | ⚠️ YAML |
 | **Observability** | ✅ **Best-in-class** | ⚠️ Good | ⚠️ Basic | ⚠️ Good |
 | **Critical Thinking** | ✅ **Unique** | ❌ None | ❌ None | ❌ None |
-| **File Conflict Prevention** | ✅ Atomic locks | ⚠️ Basic | ⚠️ Basic | ❌ None |
+| **Parallel Execution** | ✅ Multiple agents | ⚠️ Basic | ⚠️ Basic | ❌ None |
 | **Browser Testing** | ✅ Chrome DevTools | ❌ None | ⚠️ Limited | ❌ None |
 | **Research-Driven** | ✅ GitHub analysis | ⚠️ Limited | ❌ None | ❌ None |
 
@@ -218,39 +280,53 @@ cd octocode-mcp/octocode-claude-plugin
 
 ## 🔧 How It Works
 
-### The 7 Phases
+### The 4 Phases (for `/octocode-generate`)
 
-| Phase | What Happens | Gate |
-|-------|--------------|------|
-| **1. Requirements** | Product Manager asks questions, creates PRD | ✋ Gate 1 |
-| **2. Architecture** | Architect designs complete system (backend + frontend) | ✋ Gate 2 |
-| **3. Validation** | Tech Lead breaks into tasks, detects conflicts | ✋ Gate 3 |
-| **4. Research** | Research Specialist finds best practices from GitHub | - |
-| **5. Orchestration** | Manager assigns tasks with file locks | - |
-| **6. Implementation** | 4-5 Software Engineers work in parallel | ✋ Gate 4 |
-| **7. Verification** | QA Engineer verifies everything | ✋ Gate 5 |
+| Phase | Agent | Output | Size | Human Gate |
+|-------|-------|--------|------|------------|
+| **1. Requirements** | Product Manager | `docs/requirements.md` | <50KB | ✋ Gate 1 |
+| **2. Architecture** | Architect + Quality | `docs/design.md` + `docs/test-plan.md` | <50KB each | ✋ Gate 2 + 2.5 |
+| **3. Planning** | Manager | `docs/tasks.md` | <50KB | (no gate) |
+| **4. Implementation** | 4-5 Engineers | Code + updates to `docs/tasks.md` | - | 🔄 Gate 3 (final) |
+
+**Result: 4 single files (<50KB each) in `docs/`, clear ownership, human control at every gate**
+
+**All docs include footer:** `**Created by octocode-mcp**`
+
+**Note:** Research is integrated into each agent's work using Octocode MCP directly (Product Manager researches during requirements, Architect researches during design, etc.). User verifies manually after implementation.
+
+### The 4 Phases (for `/octocode-feature`)
+
+| Phase | Agent | Output | Size | Human Gate |
+|-------|-------|--------|------|------------|
+| **1. Code Review** | Code Analyst | `docs/codebase-review.md` | <50KB | ✋ Gate 1 |
+| **2. Analysis** | Feature Analyst | `docs/analysis.md` | <50KB | ✋ Gate 2 |
+| **3. Planning** | Manager | `docs/tasks.md` | <50KB | (no gate) |
+| **4. Implementation** | 4-5 Engineers | Code + updates to `docs/tasks.md` | - | 🔄 Gate 3 (final) |
+
+**Result: 3 single files (<50KB each) in `docs/`, clear ownership, safe changes with human approval**
+
+**All docs include footer:** `**Created by octocode-mcp**`
+
+**Note:** Research is integrated - Feature Analyst uses Octocode MCP during analysis to find proven implementation patterns. User verifies manually after implementation.
 
 ### Behind the Scenes
 
-**File Locking System**: Prevents conflicts
+**Task Coordination**: Smart parallelization
 ```
-Manager assigns: "Implement auth.ts"
-→ Creates: .octocode/locks/auth.ts.lock
-→ Engineer 1 works on auth.ts
-→ Engineer 2 cannot touch auth.ts
-→ Release lock when done
+Manager creates task breakdown
+→ Assigns tasks to available engineers
+→ Engineers work independently
+→ Natural coordination through code structure
+→ Progress tracked in tasks.md
 ```
 
-**Observability**: Everything logged to `.octocode/debug/`
-- Decisions with reasoning
-- Agent communications
-- Research queries and sources
-- Timeline and performance metrics
-
-**State Persistence**: Resume anytime
-```bash
-/octocode-generate --resume
-```
+**Progress Tracking**: Clear visibility in `docs/`
+- Task progress in tasks.md (inline status)
+- Agent communications logged
+- Research queries and sources documented
+- Decision reasoning captured
+- All files kept under 50KB for optimal AI processing
 
 ---
 
@@ -258,20 +334,22 @@ Manager assigns: "Implement auth.ts"
 
 ### Parallel Execution Benefits
 - Multiple agents work simultaneously
-- Atomic file locking prevents conflicts
-- Efficient task orchestration
+- Smart task coordination
+- Efficient orchestration
 - Real-time progress monitoring
 
-### Quality Enforcement
-- ✅ **80-90% test coverage** (enforced)
-- ✅ **WCAG 2.1 AA** accessibility (enforced)
-- ✅ **8.5/10 code quality** (linting + analysis)
-- ✅ **Browser tested** (Chrome DevTools)
-- ✅ **Security scanned**
+### Quality Enforcement (Build + Types + Lint)
+- ✅ **Build passes** - No compilation errors
+- ✅ **TypeScript strict mode** - Type safety enforced, minimal `any`
+- ✅ **Lint passes** - Clean, consistent code
+- ✅ **Manual verification** - User tests features following test-plan.md
+- ❌ **NO automated tests during MVP** - Tests added after user approval
+- ✅ **User controls git** - Agents only modify files, you commit when ready
+- ✅ **Optimized docs** - All files <50KB for efficient AI processing
 
 ### Cost Optimization
-- **Opus (expensive)**: 3 agents for strategic decisions
-- **Sonnet (efficient)**: 5 agents for implementation
+- **Opus (expensive)**: 2-3 agents for strategic decisions (depends on command)
+- **Sonnet (efficient)**: 4-6 agents for analysis and implementation
 - **Research-driven**: Reduces trial-and-error costs
 
 ---
@@ -306,11 +384,12 @@ Enables the QA agent to:
 
 | Doc | Description |
 |-----|-------------|
-| **[COMPLETE_GUIDE.md](./docs/COMPLETE_GUIDE.md)** | ⭐ Comprehensive guide covering all phases, agents, and systems |
-| **[FLOW.md](./docs/FLOW.md)** | 🎯 Visual walkthrough of the 7-phase workflow |
-| **[agents/](./agents/)** | Individual documentation for all 7 agents |
+| **[COMPLETE_GUIDE.md](./docs/COMPLETE_GUIDE.md)** | ⭐ Comprehensive guide for `/octocode-generate` workflow |
+| **[FLOW.md](./docs/FLOW.md)** | 🎯 Visual walkthrough of the 4-phase workflow |
+| **[agents/](./agents/)** | Individual documentation for all 6 specialized agents |
+| **[commands/](./commands/)** | Detailed specifications for both commands |
 
-**Want more details?** Read the [Complete Guide](./docs/COMPLETE_GUIDE.md) for in-depth understanding of the workflow, communication protocols, file locking, and state management.
+**Want more details?** Read the [Complete Guide](./docs/COMPLETE_GUIDE.md) for in-depth understanding of the workflow, communication protocols, and state management.
 
 ---
 

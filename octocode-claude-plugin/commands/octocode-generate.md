@@ -6,14 +6,11 @@ arguments:
   - name: project_idea
     description: Your application idea or request
     required: true
-  - name: --resume
-    description: Resume from previous session
-    required: false
 ---
 
 # Octocode Development Command
 
-You orchestrate a specialized AI development team through a clean 7-phase waterfall with human checkpoints.
+You orchestrate a specialized AI development team through a clean 6-phase waterfall with human checkpoints.
 
 ## 📚 Resources Available
 
@@ -26,70 +23,107 @@ You orchestrate a specialized AI development team through a clean 7-phase waterf
 
 $ARGUMENTS
 
-## 7-Phase Waterfall Flow
+## Important: Documentation Location
+
+**ALL documentation MUST be created in `<project>/docs/` folder.**
+
+Example: If generating project "my-app", all docs go in `my-app/docs/`, NOT in root repository or `.octocode/`.
+
+**Documentation Standards:**
+- Keep each file under 50KB (approximately 600-800 lines, ~12,500 tokens)
+- Use clear hierarchical headings and self-contained sections
+- Include rich code examples rather than verbose explanations
+- If a document exceeds 50KB, split into multiple focused files
+- Add footer "**Created by octocode-mcp**" to each created document
+
+## Important: Git Operations
+
+**NO GIT COMMANDS:** Agents only modify local files. User handles all git operations (commits, pushes, branches, etc.).
+
+## Testing Approach
+
+**Implementation-first, tests later:**
+1. Phases 1-6 focus on implementation and functionality
+2. Verification flows (not test code) created in test-plan.md
+3. Automated tests are NOT written during initial implementation
+4. After Gate 4 approval, user can request automated test addition as a separate phase
+5. This allows faster iteration and user validation before test investment
+
+## 4-Phase Workflow
 
 ```
-Phase 1: Requirements    → Gate 1 ✋ (User Approval)
-Phase 2: Architecture    → Gate 2 ✋ (User Approval)  
-Phase 3: Validation      → Gate 3 ✋ (User Approval)
-Phase 4: Research        (Runs in parallel with Phase 5)
-Phase 5: Planning        
-Phase 6: Implementation  → Gate 4 🔄 (Live Monitor)
-Phase 7: Verification    → Gate 5 ✋ (User Approval)
+Phase 1: Requirements    → ✋ Gate 1 (User Approval Required)
+Phase 2: Architecture    → ✋ Gate 2 (User Approval Required)
+      ↓ (agent-quality creates test-plan.md with verification flows)
+                        → ✋ Gate 2.5 (User Approval Required)
+Phase 3: Planning + Task Breakdown
+Phase 4: Implementation  → 🔄 Gate 3 (Live Monitor - Final Gate)
 ```
+
+**Human-in-the-Loop:** 3 approval gates ensure you control every major decision
+
+**After Implementation:** User verifies using test-plan.md (manual verification flows) and runs build/lint checks
 
 ### Phase 1: Requirements → Gate 1
 **Agent:** `agent-product`  
-**Output:** `.octocode/requirements/*` (PRD, features, user stories)  
+**Output:** `<project>/docs/requirements.md` (<50KB)  
 **Gate 1:** User approves requirements
 
 ### Phase 2: Architecture → Gate 2
-**Agent:** `agent-architect`  
-**Output:** `.octocode/designs/*` (architecture, tech stack, API design, database schema)  
-**Then:** Creates initial project structure + README.md  
+**Agent:** `agent-architect`
+**Output:** `<project>/docs/design.md` (<50KB) + `<project>/README.md`
+**Then:** Creates initial project structure
 **Gate 2:** User approves architecture
+**Then:** Triggers `agent-quality` to create verification plan
+**Gate 2.5:** User approves verification flows (test-plan.md, <50KB)
+**Note:** Architect uses Octocode MCP to research proven architectures during design.
 
-### Phase 3: Validation → Gate 3
-**Agent:** `agent-design-verification`  
-**Input:** Requirements + Architecture  
-**Output:** `.octocode/tasks.md` (task breakdown with dependencies)  
-**Gate 3:** User approves task plan
+### Phase 3: Planning + Task Breakdown
+**Agent:** `agent-manager`
+**Input:** design.md + test-plan.md + requirements.md
+**Output:** `<project>/docs/tasks.md` (<50KB) - Task breakdown with execution plan
 
-### Phase 4: Research (Parallel)
-**Agent:** `agent-research-context`  
-**Input:** Architecture + Tasks  
-**Output:** `.octocode/context/*` (implementation patterns from GitHub)  
-**Note:** Runs while planning happens
+### Phase 4: Implementation → Gate 3 (Final)
+**Agents:** Multiple `agent-implementation` instances
+**Managed by:** `agent-manager` (smart task distribution, progress in tasks.md)
+**Gate 3:** Live dashboard with pause/continue/inspect controls - Final approval gate
 
-### Phase 5: Planning
-**Agent:** `agent-manager`  
-**Input:** Tasks + Context  
-**Output:** Execution plan with parallelization strategy
+**After Implementation Completes:**
+- User runs build/lint checks (`npm run build && npm run lint`)
+- User follows test-plan.md for manual verification
+- User decides when to commit/deploy based on their verification
 
-### Phase 6: Implementation → Gate 4
-**Agents:** Multiple `agent-implementation` instances  
-**Managed by:** `agent-manager` (file locks, progress tracking)  
-**Gate 4:** Live dashboard with pause/continue/inspect controls
+## Documentation Structure
 
-### Phase 7: Verification → Gate 5
-**Agent:** `agent-verification`  
-**Tests:** Build, tests, linting, features, performance, security  
-**Output:** `.octocode/verification-report.md`  
-**Gate 5:** User approves for deployment or requests fixes
+**Simple & focused** - All docs in `<project>/docs/`:
 
-## State Management
+| File | Owner | Purpose | Size | Human Gate |
+|------|-------|---------|------|------------|
+| `requirements.md` | agent-product | Product requirements | <50KB | ✋ Gate 1 |
+| `design.md` | agent-architect | Architecture & tech stack + patterns | <50KB | ✋ Gate 2 |
+| `test-plan.md` | agent-quality | Verification flows (manual testing guide) | <50KB | ✋ Gate 2.5 |
+| `tasks.md` | agent-manager | Task breakdown + progress | <50KB | (no gate) |
 
-**Checkpoints:** `.octocode/execution-state.json` (updated after each phase)  
-**File Locks:** `.octocode/locks.json` (managed by agent-manager)  
-**Logs:** `.octocode/logs/*` and `.octocode/debug/*`  
-**Resume:** `--resume` flag loads from execution-state.json
+**4 single files (<50KB each), clear ownership, human approval at key gates**
+
+**All files must include footer:** `**Created by octocode-mcp**`
 
 ## Success Criteria
 
-- ✅ Build passes  
-- ✅ All tests pass  
-- ✅ All PRD features implemented  
-- ✅ User approves at Gate 5
+- ✅ Build passes
+- ✅ Existing tests pass (if any)
+- ✅ All PRD features implemented
+- ✅ User verifies using test-plan.md
+- ✅ User approves at Gate 3 (Final)
+
+## Post-Implementation: Adding Automated Tests
+
+After Gate 3 approval and manual verification, user can request automated test addition:
+1. Research testing patterns
+2. Add "Testing Patterns" section to verification.md
+3. Generate test tasks (append to tasks.md)
+4. Implement tests
+5. Re-verify with full test coverage
 
 ## Start
 
