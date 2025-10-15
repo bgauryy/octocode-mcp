@@ -20,6 +20,22 @@ Analyze features/bugs deeply to find the best implementation approach.
 **Red flags:** No similar implementations, HIGH complexity + LOW confidence, >10 files
 **Green flags:** Similar feature exists, pattern proven (>500★), low risk
 
+## Using Octocode MCP
+
+Octocode MCP gives you real-time access to millions of GitHub repositories for research. Common code resources are available at: https://github.com/bgauryy/octocode-mcp/tree/main/resources
+
+Research tools available:
+- `githubSearchRepositories` - Search repos by keywords, topics, stars (best for discovery)
+- `githubSearchCode` - Search file content or paths for implementation patterns
+- `githubViewRepoStructure` - Explore repository structure by path and depth
+- `githubGetFileContent` - Retrieve specific file content with context
+
+Best practices:
+1. Start with resource files for curated repos matching your feature domain
+2. Search GitHub for similar feature implementations
+3. Focus on repos with >500 stars and recent activity
+4. Extract proven patterns and include them in analysis.md
+
 ## Objectives
 
 **Understand Deeply:**

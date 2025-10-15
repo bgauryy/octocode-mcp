@@ -49,18 +49,18 @@ Work with the current project's `docs/` directory.
 4. After verification approval, user can request automated test addition as a separate phase
 5. This allows faster iteration and user validation before test investment
 
-## 6-Phase Workflow
+## 4-Phase Workflow
 
 ```
 Phase 1: Code Review      → ✋ Gate 1 (User Approval Required)
 Phase 2: Analysis         → ✋ Gate 2 (User Approval Required)
-Phase 3: Research         (Runs in parallel with Phase 4)
-Phase 4: Planning + Task Breakdown
-Phase 5: Implementation   → 🔄 Gate 3 (Live Monitor - Pause/Continue)
-Phase 6: Verification     → ✋ Gate 4 (Final Review - User Approval Required)
+Phase 3: Planning + Task Breakdown
+Phase 4: Implementation   → 🔄 Gate 3 (Live Monitor - Final Gate)
 ```
 
-**Human-in-the-Loop:** 4 approval gates (Gate 1, Gate 2, Gate 3 live, Gate 4) ensure safe changes
+**Human-in-the-Loop:** 3 approval gates (Gate 1, Gate 2, Gate 3 live) ensure safe changes
+
+**After Implementation:** User verifies changes manually and runs build/lint checks
 
 ### Phase 1: Code Review → Gate 1
 **Agent:** `agent-code-review`  
@@ -68,33 +68,25 @@ Phase 6: Verification     → ✋ Gate 4 (Final Review - User Approval Required)
 **Gate 1:** User approves codebase understanding
 
 ### Phase 2: Feature/Bug Analysis → Gate 2
-**Agent:** `agent-feature-analyzer`  
-**Output:** `<project>/docs/analysis.md` (<50KB)  
-**Gate 2:** User approves implementation plan  
-**Note:** Plan does NOT include test writing
+**Agent:** `agent-feature-analyzer`
+**Output:** `<project>/docs/analysis.md` (<50KB)
+**Gate 2:** User approves implementation plan
+**Note:** Plan does NOT include test writing. Agent uses Octocode MCP to research proven patterns during analysis.
 
-### Phase 3: Research (Parallel)
-**Agent:** `agent-research-context` (EXISTING)  
-**Input:** analysis.md + codebase-review.md  
-**Output:** `<project>/docs/patterns.md` (<50KB)  
-**Note:** Runs while planning happens, excludes testing patterns
-
-### Phase 4: Planning
-**Agent:** `agent-manager` (EXISTING)  
-**Input:** analysis.md + patterns.md  
+### Phase 3: Planning
+**Agent:** `agent-manager` (EXISTING)
+**Input:** analysis.md + codebase-review.md
 **Output:** `<project>/docs/tasks.md` (<50KB) with execution plan
 
-### Phase 5: Implementation → Gate 3
-**Agents:** Multiple `agent-implementation` instances (EXISTING)  
-**Managed by:** `agent-manager` (smart task distribution, progress in tasks.md)  
-**Gate 3:** Live dashboard with pause/continue/inspect controls
+### Phase 4: Implementation → Gate 3 (Final)
+**Agents:** Multiple `agent-implementation` instances (EXISTING)
+**Managed by:** `agent-manager` (smart task distribution, progress in tasks.md)
+**Gate 3:** Live dashboard with pause/continue/inspect controls - Final approval gate
 
-### Phase 6: Verification → Gate 4 (Final Review)
-**Agent:** `agent-verification` (EXISTING)  
-**Checks:** Build, linting, feature validation, regression checks, runtime behavior  
-**Output:** `<project>/docs/verification.md` (<50KB)  
-**Gate 4:** User approves for commit or requests fixes  
-**Note:** Uses verification flows for manual testing; automated tests only if explicitly requested
+**After Implementation Completes:**
+- User runs build/lint checks (`npm run build && npm run lint`)
+- User manually verifies changes don't break existing functionality
+- User decides when to commit based on their verification
 
 ## Documentation Structure
 
@@ -103,12 +95,10 @@ Phase 6: Verification     → ✋ Gate 4 (Final Review - User Approval Required)
 | File | Owner | Purpose | Size | Human Gate |
 |------|-------|---------|------|------------|
 | `codebase-review.md` | agent-code-review | Existing code analysis | <50KB | ✋ Gate 1 |
-| `analysis.md` | agent-feature-analyzer | Feature/bug analysis | <50KB | ✋ Gate 2 |
+| `analysis.md` | agent-feature-analyzer | Feature/bug analysis + patterns | <50KB | ✋ Gate 2 |
 | `tasks.md` | agent-manager | Task breakdown + progress | <50KB | (live) |
-| `patterns.md` | agent-research-context | Implementation patterns | <50KB | (no gate) |
-| `verification.md` | agent-verification | Quality report | <50KB | ✋ Gate 4 |
 
-**4 single files (<50KB each), clear ownership, human approval at key gates**
+**3 single files (<50KB each), clear ownership, human approval at key gates**
 
 **All files must include footer:** `**Created by octocode-mcp**`
 

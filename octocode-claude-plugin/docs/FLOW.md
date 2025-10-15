@@ -1,10 +1,12 @@
 # Octocode Development Flow
 
+> **⚠️ NOTE: This document is being updated to reflect the new 5-phase workflow where research is integrated into each agent using Octocode MCP directly. Some sections may reference the old agent-research-context agent.**
+
 This document describes the complete workflow from user request to production-ready code using the Octocode AI development team.
 
 ## Overview
 
-Octocode orchestrates 7 specialized AI agents through a **7-phase waterfall** with **5 human gates** for approval and monitoring. Each phase builds on previous work with clear outputs and validation.
+Octocode orchestrates 7 specialized AI agents through a **5-phase workflow** with **4 human gates** for approval and monitoring. Each phase builds on previous work with clear outputs and validation. Research is integrated into each agent's work using Octocode MCP directly.
 
 ### Important: Git Operations
 
@@ -735,7 +737,7 @@ flowchart TD
 | `agent-product` | Product Manager | Opus | Read, Write, TodoWrite | 1 |
 | `agent-architect` | Solution Architect | Opus | Read, Write, Grep, Glob, LS, TodoWrite | 2 |
 | `agent-design-verification` | Technical Lead | Sonnet | Read, Write, Grep, Glob, LS, TodoWrite | 3 |
-| `agent-research-context` | Research Specialist | Sonnet | Read, Write, LS, TodoWrite | 4 |
+| ~~`agent-research-context`~~ | ~~Research Specialist~~ | ~~Sonnet~~ | ~~Removed - research integrated into other agents~~ | ~~4~~ |
 | `agent-manager` | Engineering Manager | Sonnet | Read, Write, TodoWrite, Bash, Task, KillShell | 5-6 |
 | `agent-implementation` | Software Engineer | Sonnet | Read, Write, Edit, Bash, Grep, Glob, LS, TodoWrite | 6 |
 | `agent-verification` | QA Engineer | Sonnet | Read, Bash, Grep, Glob, LS, TodoWrite, KillShell | 7 |

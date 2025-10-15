@@ -1,8 +1,10 @@
 # Octocode Claude Plugin - Complete Guide
 
+> **⚠️ NOTE: This document is being updated to reflect the new 5-phase workflow where research is integrated into each agent using Octocode MCP directly. References to agent-research-context are deprecated.**
+
 **The Complete AI Development Team for Claude Code**
 
-Transform your ideas into production-ready code through a structured 7-phase workflow powered by 7 specialized AI agents working together with human oversight at 5 critical approval gates.
+Transform your ideas into production-ready code through a structured 5-phase workflow powered by 7 specialized AI agents working together with human oversight at 4 critical approval gates.
 
 ---
 
@@ -834,11 +836,13 @@ For each task pair (task_i, task_j):
 
 ---
 
-### 4. agent-research-context (Research Specialist) - Sonnet
+### 4. ~~agent-research-context~~ (Research Specialist) - DEPRECATED
 
-**When:** Phase 4 (can run in parallel with Phase 5)  
-**Tools:** Read, Write, LS, TodoWrite  
-**Key Responsibility:** Gather implementation patterns from GitHub using octocode-mcp
+> **⚠️ DEPRECATED:** This agent has been removed. Research is now integrated directly into other agents using Octocode MCP (Product Manager researches during requirements, Architect researches during design, etc.)
+
+**Previously When:** Phase 4 (could run in parallel with Phase 5)
+**Previously Tools:** Read, Write, LS, TodoWrite
+**Previous Responsibility:** Gather implementation patterns from GitHub using octocode-mcp
 
 **Input:** `.octocode/designs/`, `.octocode/tasks.md`  
 **Output:** `.octocode/context/*.md`

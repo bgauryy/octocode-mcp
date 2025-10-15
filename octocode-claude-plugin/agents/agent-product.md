@@ -19,7 +19,22 @@ Transform user request into clear requirements that guide development.
 - Success criteria
 
 **Research & Validate:**
-Use octocode-mcp to find similar projects (>500★) - learn from proven patterns.
+Use Octocode MCP to find similar projects (>500★) - learn from proven patterns.
+
+**Using Octocode MCP:**
+Octocode MCP gives you real-time access to millions of GitHub repositories for research. Common code resources are available at: https://github.com/bgauryy/octocode-mcp/tree/main/resources
+
+Research tools available:
+- `githubSearchRepositories` - Search repos by keywords, topics, stars (best for discovery)
+- `githubSearchCode` - Search file content or paths for implementation patterns
+- `githubViewRepoStructure` - Explore repository structure by path and depth
+- `githubGetFileContent` - Retrieve specific file content with context
+
+Best practices:
+1. Start with resource files (project-examples.md) for curated similar projects
+2. Search GitHub for validation and additional proven patterns
+3. Focus on repos with >500 stars and recent activity
+4. Learn from their feature sets and product decisions
 
 **Document Requirements:**
 Create `<project>/docs/requirements.md` (single file, <50KB/~600 lines) covering:

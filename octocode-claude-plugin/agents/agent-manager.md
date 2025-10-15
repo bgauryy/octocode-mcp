@@ -62,4 +62,7 @@ Track active work, handle blockers, reassign if needed.
 [1] Pause [2] Details [3] Inspect [4] Issues [5] Continue
 
 **On Completion:**
-Run build + lint → Trigger agent-verification
+- All implementation tasks finished
+- User runs build + lint checks
+- User follows test-plan.md for manual verification
+- User commits when ready

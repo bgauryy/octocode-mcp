@@ -49,20 +49,20 @@ Example: If generating project "my-app", all docs go in `my-app/docs/`, NOT in r
 4. After Gate 4 approval, user can request automated test addition as a separate phase
 5. This allows faster iteration and user validation before test investment
 
-## 6-Phase Waterfall Flow
+## 4-Phase Workflow
 
 ```
 Phase 1: Requirements    → ✋ Gate 1 (User Approval Required)
 Phase 2: Architecture    → ✋ Gate 2 (User Approval Required)
       ↓ (agent-quality creates test-plan.md with verification flows)
                         → ✋ Gate 2.5 (User Approval Required)
-Phase 3: Research        (Runs in parallel with Phase 4)
-Phase 4: Planning + Task Breakdown
-Phase 5: Implementation  → 🔄 Gate 3 (Live Monitor - Pause/Continue)
-Phase 6: Verification    → ✋ Gate 4 (User Approval Required)
+Phase 3: Planning + Task Breakdown
+Phase 4: Implementation  → 🔄 Gate 3 (Live Monitor - Final Gate)
 ```
 
-**Human-in-the-Loop:** 4 approval gates ensure you control every major decision
+**Human-in-the-Loop:** 3 approval gates ensure you control every major decision
+
+**After Implementation:** User verifies using test-plan.md (manual verification flows) and runs build/lint checks
 
 ### Phase 1: Requirements → Gate 1
 **Agent:** `agent-product`  
@@ -70,35 +70,28 @@ Phase 6: Verification    → ✋ Gate 4 (User Approval Required)
 **Gate 1:** User approves requirements
 
 ### Phase 2: Architecture → Gate 2
-**Agent:** `agent-architect`  
-**Output:** `<project>/docs/design.md` (<50KB) + `<project>/README.md`  
-**Then:** Creates initial project structure  
-**Gate 2:** User approves architecture  
+**Agent:** `agent-architect`
+**Output:** `<project>/docs/design.md` (<50KB) + `<project>/README.md`
+**Then:** Creates initial project structure
+**Gate 2:** User approves architecture
 **Then:** Triggers `agent-quality` to create verification plan
 **Gate 2.5:** User approves verification flows (test-plan.md, <50KB)
+**Note:** Architect uses Octocode MCP to research proven architectures during design.
 
-### Phase 3: Research (Parallel with Phase 4)
-**Agent:** `agent-research-context`  
-**Input:** design.md  
-**Output:** `<project>/docs/patterns.md` (<50KB)  
-**Note:** Runs while planning happens, excludes testing patterns
-
-### Phase 4: Planning + Task Breakdown
-**Agent:** `agent-manager`  
-**Input:** design.md + patterns.md  
+### Phase 3: Planning + Task Breakdown
+**Agent:** `agent-manager`
+**Input:** design.md + test-plan.md + requirements.md
 **Output:** `<project>/docs/tasks.md` (<50KB) - Task breakdown with execution plan
 
-### Phase 5: Implementation → Gate 3
-**Agents:** Multiple `agent-implementation` instances  
-**Managed by:** `agent-manager` (smart task distribution, progress in tasks.md)  
-**Gate 3:** Live dashboard with pause/continue/inspect controls
+### Phase 4: Implementation → Gate 3 (Final)
+**Agents:** Multiple `agent-implementation` instances
+**Managed by:** `agent-manager` (smart task distribution, progress in tasks.md)
+**Gate 3:** Live dashboard with pause/continue/inspect controls - Final approval gate
 
-### Phase 6: Verification → Gate 4
-**Agent:** `agent-verification`  
-**Checks:** Build, linting, features, performance, security, runtime behavior  
-**Output:** `<project>/docs/verification.md` (<50KB)  
-**Gate 4:** User approves for deployment or requests fixes  
-**Note:** Uses verification flows from test-plan.md, but no automated tests expected
+**After Implementation Completes:**
+- User runs build/lint checks (`npm run build && npm run lint`)
+- User follows test-plan.md for manual verification
+- User decides when to commit/deploy based on their verification
 
 ## Documentation Structure
 
@@ -107,27 +100,25 @@ Phase 6: Verification    → ✋ Gate 4 (User Approval Required)
 | File | Owner | Purpose | Size | Human Gate |
 |------|-------|---------|------|------------|
 | `requirements.md` | agent-product | Product requirements | <50KB | ✋ Gate 1 |
-| `design.md` | agent-architect | Architecture & tech stack | <50KB | ✋ Gate 2 |
-| `test-plan.md` | agent-quality | Verification flows (not test code) | <50KB | ✋ Gate 2.5 |
+| `design.md` | agent-architect | Architecture & tech stack + patterns | <50KB | ✋ Gate 2 |
+| `test-plan.md` | agent-quality | Verification flows (manual testing guide) | <50KB | ✋ Gate 2.5 |
 | `tasks.md` | agent-manager | Task breakdown + progress | <50KB | (no gate) |
-| `patterns.md` | agent-research-context | Implementation patterns | <50KB | (no gate) |
-| `verification.md` | agent-verification | Quality report | <50KB | ✋ Gate 4 |
 
-**5 single files (<50KB each), clear ownership, human approval at key gates**
+**4 single files (<50KB each), clear ownership, human approval at key gates**
 
 **All files must include footer:** `**Created by octocode-mcp**`
 
 ## Success Criteria
 
-- ✅ Build passes  
+- ✅ Build passes
 - ✅ Existing tests pass (if any)
-- ✅ All PRD features implemented  
-- ✅ Runtime verification passes
-- ✅ User approves at Gate 4
+- ✅ All PRD features implemented
+- ✅ User verifies using test-plan.md
+- ✅ User approves at Gate 3 (Final)
 
-## Post-Approval: Adding Automated Tests
+## Post-Implementation: Adding Automated Tests
 
-After Gate 4 approval, user can request automated test addition:
+After Gate 3 approval and manual verification, user can request automated test addition:
 1. Research testing patterns
 2. Add "Testing Patterns" section to verification.md
 3. Generate test tasks (append to tasks.md)

@@ -24,7 +24,22 @@ For every major decision:
 Read `<project>/docs/requirements.md` - understand features, scale needs, constraints.
 
 **Research Proven Architectures:**
-Use octocode-mcp to find similar apps (>1000★), study their tech stacks, validate choices.
+Use Octocode MCP to find similar apps (>1000★), study their tech stacks, validate choices.
+
+**Using Octocode MCP:**
+Octocode MCP gives you real-time access to millions of GitHub repositories for research. Common code resources are available at: https://github.com/bgauryy/octocode-mcp/tree/main/resources
+
+Research tools available:
+- `githubSearchRepositories` - Search repos by keywords, topics, stars (best for discovery)
+- `githubSearchCode` - Search file content or paths for implementation patterns
+- `githubViewRepoStructure` - Explore repository structure by path and depth
+- `githubGetFileContent` - Retrieve specific file content with context
+
+Best practices:
+1. Start with resource files (project-examples.md, architecture.md, etc.) for curated repos
+2. Search GitHub for validation and additional proven patterns
+3. Focus on repos with >1000 stars and recent activity
+4. Extract actionable patterns with code examples
 
 **Make Evidence-Based Decisions:**
 For each major choice (tech stack, database, API design, auth):

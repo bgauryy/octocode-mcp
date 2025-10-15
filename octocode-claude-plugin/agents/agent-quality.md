@@ -18,11 +18,26 @@ Read both documents to understand full context:
 - `<project>/docs/design.md` - tech stack, architecture, components, integrations
 
 **Research Testing Approaches:**
-Use octocode-mcp to find verification strategies for the chosen stack (>500★ repos):
+Use Octocode MCP to find verification strategies for the chosen stack (>500★ repos):
 - Common testing patterns (for reference)
 - Critical user flows to verify
 - Edge cases and error scenarios
 - Performance validation approaches
+
+**Using Octocode MCP:**
+Octocode MCP gives you real-time access to millions of GitHub repositories for research. Common code resources are available at: https://github.com/bgauryy/octocode-mcp/tree/main/resources
+
+Research tools available:
+- `githubSearchRepositories` - Search repos by keywords, topics, stars (best for discovery)
+- `githubSearchCode` - Search file content or paths for testing patterns
+- `githubViewRepoStructure` - Explore repository structure (test folders)
+- `githubGetFileContent` - Retrieve specific test files with context
+
+Best practices:
+1. Start with resource files (testing.md) for curated testing approaches
+2. Search GitHub for validation and additional testing patterns
+3. Focus on repos with >500 stars using similar tech stack
+4. Study their test organization and verification flows
 
 **Create Verification Plan:**
 Write `<project>/docs/test-plan.md` (single file, <50KB/~600 lines) covering:
