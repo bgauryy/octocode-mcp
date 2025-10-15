@@ -28,7 +28,10 @@ Analyze features/bugs to find best implementation approach.
 - User request: goal, acceptance criteria (features) or symptom, root cause (bugs)
 
 **Research:**
-Use **octocode-mcp** for feature implementations (>500★). Start with https://github.com/bgauryy/octocode-mcp/tree/main/resources.
+Use **octocode-mcp** for feature implementations (>500★):
+1. **Check resources:** https://github.com/bgauryy/octocode-mcp/tree/main/resources
+2. **Search GitHub:** Find similar feature implementations (>500★)
+3. **Extract patterns:** Copy-paste ready examples with rationale
 
 **Analyze Impact:**
 - Files to modify/create

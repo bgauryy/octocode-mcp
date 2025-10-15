@@ -7,8 +7,7 @@
 Standard `/octocode-generate`:
 - 6 phases with 4 approval gates
 - 4 separate documentation files
-- 60-120 minutes for simple projects
-- Comprehensive but **slow**
+- Comprehensive but **slower**
 
 **For MVPs, prototypes, and small projects, this is overkill.**
 
@@ -17,7 +16,7 @@ Standard `/octocode-generate`:
 New `/octocode-generate-quick`:
 - **3 phases** with **1 approval gate**
 - **1 consolidated document** (PROJECT_SPEC.md)
-- **20-50 minutes** for most projects
+- **Faster** for most projects
 - Fast but still **quality-focused**
 
 ---
@@ -31,14 +30,14 @@ New `/octocode-generate-quick`:
 | **Phases** | 3 | 6 |
 | **Gates** | 1 | 4 |
 | **Documents** | 1 file (~80KB) | 4 files (~200KB) |
-| **Time** | 20-50 min | 60-120 min |
+| **Speed** | Faster | Slower |
 | **Best For** | MVPs, prototypes, small projects | Complex/enterprise projects |
 
 ---
 
 ## Quick Mode Workflow
 
-### Phase 1: Rapid Planning (5-10 min)
+### Phase 1: Rapid Planning
 
 **agent-rapid-planner** creates complete specification:
 
@@ -60,7 +59,7 @@ Create PROJECT_SPEC.md:
 
 **Single document, everything in one place!**
 
-### Phase 2: Implementation (15-40 min)
+### Phase 2: Implementation
 
 **agent-manager** + **4-5 agent-implementation** instances:
 
@@ -78,7 +77,7 @@ Progress updated inline in PROJECT_SPEC.md
 
 **Parallel execution, same as standard mode!**
 
-### Phase 3: Quality Loops (5 min)
+### Phase 3: Quality Loops
 
 **agent-rapid-planner** validates:
 
@@ -188,40 +187,39 @@ Created by octocode-mcp
 ### Quick Mode Timeline
 
 ```
-00:00  /octocode-generate-quick "Build a todo app with React and Express"
-00:02  agent-rapid-planner asks 2 questions
-00:05  agent-rapid-planner creates PROJECT_SPEC.md
-00:06  ✋ GATE: User reviews and approves spec
-00:07  agent-manager assigns tasks to 4 implementation agents
-00:30  Implementation complete
-00:32  agent-rapid-planner validates (build ✅, lint ✅, types ✅)
-00:33  ✅ Done - Ready for user testing
+1. /octocode-generate-quick "Build a todo app with React and Express"
+2. agent-rapid-planner asks 2 questions
+3. agent-rapid-planner creates PROJECT_SPEC.md
+4. ✋ GATE: User reviews and approves spec
+5. agent-manager assigns tasks to 4 implementation agents
+6. Implementation by parallel agents
+7. agent-rapid-planner validates (build ✅, lint ✅, types ✅)
+8. ✅ Done - Ready for user testing
 ```
 
-**Total: ~33 minutes**
+**Quick mode complete**
 
 ### Standard Mode Timeline (for comparison)
 
 ```
-00:00  /octocode-generate "Build a todo app with React and Express"
-00:05  agent-product creates requirements.md
-00:06  ✋ Gate 1: Approve requirements
-00:15  agent-architect creates design.md
-00:16  ✋ Gate 2: Approve architecture
-00:25  agent-quality creates test-plan.md
-00:26  ✋ Gate 2.5: Approve test plan
-00:35  agent-founding-engineer creates scaffold + README
-00:36  ✋ Gate 2.75: Approve foundation
-00:40  agent-manager creates tasks.md
-00:45  Implementation begins (4 agents)
-01:15  Implementation complete
-01:18  agent-verification validates
-01:20  ✅ Done - Ready for user testing
+1. /octocode-generate "Build a todo app with React and Express"
+2. agent-product creates requirements.md
+3. ✋ Gate 1: Approve requirements
+4. agent-architect creates design.md + scaffold + README
+5. ✋ Gate 2: Approve architecture
+6. agent-quality-architect (Mode 1) creates test-plan.md
+7. ✋ Gate 2.5: Approve test plan
+8. agent-manager creates tasks.md
+9. Implementation begins (2-8 agents in parallel)
+10. 🔄 Gate 3: Monitor progress
+11. agent-quality-architect (Mode 3) runs QA + bug scan
+12. Fix loop if needed (max 2)
+13. ✅ Done - Ready for user testing
 ```
 
-**Total: ~80 minutes**
+**Standard mode complete**
 
-**Quick mode is 2.4x faster!**
+**Quick mode is faster!**
 
 ---
 
@@ -304,13 +302,13 @@ Quick mode is **faster**, not **sloppier**:
 ### Quick Mode (1 Opus + 4-5 Sonnet agents)
 
 **Phase 1 (Planning):**
-- 1 × Opus agent: ~$0.50-1.00 (5-10 min)
+- 1 × Opus agent: ~$0.50-1.00
 
 **Phase 2 (Implementation):**
-- 4-5 × Sonnet agents: ~$2.00-4.00 (25-40 min combined)
+- 4-5 × Sonnet agents: ~$2.00-4.00
 
 **Phase 3 (Validation):**
-- 1 × Opus agent: ~$0.10-0.20 (2-3 min)
+- 1 × Opus agent: ~$0.10-0.20
 
 **Total: ~$2.60-5.20**
 
@@ -445,7 +443,7 @@ Common causes:
 
 After using quick mode, you should have:
 
-✅ **Fast turnaround** - Project complete in 20-50 minutes
+✅ **Fast turnaround** - Project complete quickly
 ✅ **Working code** - Build, lint, types all pass
 ✅ **Single spec** - Everything documented in PROJECT_SPEC.md
 ✅ **Quality validated** - Automated checks passed

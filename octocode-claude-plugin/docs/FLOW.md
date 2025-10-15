@@ -1,17 +1,18 @@
 # Octocode Command Flows
 
-This document explains the complete workflows for both Octocode commands: `/octocode-generate` (build from scratch) and `/octocode-feature` (enhance existing code).
+This document explains the complete workflows for all three Octocode commands: `/octocode-generate-quick` (fast build), `/octocode-generate` (thorough build), and `/octocode-feature` (enhance existing code).
 
 ---
 
 ## Overview
 
-Octocode provides **two specialized workflows**:
+Octocode provides **three specialized workflows**:
 
-1. **`/octocode-generate`** - Build projects from scratch (6 agents, 4 gates)
-2. **`/octocode-feature`** - Add features or fix bugs in existing code (4 agents, 3 gates)
+1. **`/octocode-generate-quick`** ⚡ - Fast build from scratch (3 agents, 1 gate)
+2. **`/octocode-generate`** - Thorough build from scratch (5 agents, 3 gates)
+3. **`/octocode-feature`** - Add features or fix bugs in existing code (3 agents, 2 gates)
 
-Both workflows follow the **MVP-first approach**:
+All workflows follow the **MVP-first approach**:
 - ✅ Build passes
 - ✅ Types correct
 - ✅ Lint passes
@@ -24,12 +25,124 @@ Both workflows follow the **MVP-first approach**:
 
 ---
 
-## Command 1: `/octocode-generate` - Build from Scratch
+## Command 1: `/octocode-generate-quick` ⚡ - Fast Build from Scratch
+
+**Purpose:** Quickly transform an idea into production-ready code
+**Agents:** 3 specialized agents (agent-rapid-planner, agent-manager, agent-implementation)
+**Gates:** 1 human approval checkpoint
+**Output:** `docs/PROJECT_SPEC.md` (~80KB consolidated doc), working codebase
+
+### Workflow Diagram
+
+```mermaid
+flowchart TD
+    Start([User Request]) --> P1[Phase 1: Rapid Planning]
+    P1 --> G1{Gate 1: Approve Spec?}
+    G1 -->|No| P1
+    G1 -->|Yes| P2[Phase 2: Implementation]
+    P2 --> P3[Phase 3: Quality & Code Review]
+    P3 --> Issues{Issues Found?}
+    Issues -->|Yes - Loop 1-2| P2
+    Issues -->|No| End([Complete & Reviewed])
+    End --> Manual[User runs build, lint, manual tests]
+    Manual --> Commit[User commits when ready]
+
+    style Start fill:#e1f5ff
+    style End fill:#d4edda
+    style G1 fill:#fff3cd
+```
+
+### Phase 1: Rapid Planning
+
+**Agent:** `agent-rapid-planner` (Rapid Planner)
+**Model:** Claude Opus
+**Tools:** Read, Write, Edit, Grep, Glob, LS, Bash, BashOutput, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+
+**What Happens:**
+1. Asks 2-3 critical questions (if needed)
+2. Researches boilerplate commands and 2-3 similar projects using **octocode-mcp**
+3. Creates single consolidated PROJECT_SPEC.md with:
+   - Overview & Requirements
+   - Architecture & Design (with boilerplate CLI command)
+   - Verification Plan
+   - Implementation Tasks
+
+**Output:** `<project>/docs/PROJECT_SPEC.md` (~80KB)
+- Everything in one file for speed
+- Includes 🚀 Quick Start Command with CLI boilerplate
+- Task breakdown with complexity and parallelization
+- Footer: "**Created by octocode-mcp**"
+
+**✋ Gate 1: Specification Review (ONLY GATE)**
+
+User reviews complete spec and can:
+- ✅ **Approve & Start Building** → Continue to Implementation
+- 📝 **Modify** → Request changes
+- ❓ **Questions** → Clarify sections
+
+### Phase 2: Implementation
+
+**Agents:** 2-8 instances of `agent-implementation` (Software Engineers, dynamically scaled)
+**Managed by:** `agent-manager` (Engineering Manager)
+**Model:** Claude Sonnet (both)
+**Tools:** Same as standard mode implementation
+
+**Dynamic Scaling:** Agent count (2-8) determined by task complexity score
+**Coordination:** Same as standard mode using **octocode-local-memory**
+
+**Output:**
+- Complete feature implementation
+- Updated `docs/PROJECT_SPEC.md` with progress inline
+
+**🔄 Live Monitoring:** User can pause/continue/inspect
+
+### Phase 3: Quality Check & Code Review
+
+**Agent:** `agent-rapid-planner` (returns for validation)
+**Model:** Claude Opus
+
+**What Happens:**
+1. **Build Validation:**
+   - Run `npm run build` - must pass
+   - Run `npm run lint` - must pass
+   - TypeScript strict mode check
+   - Feature completeness check
+
+2. **Code Review (Bug Prevention):**
+   - Logic flow analysis (critical paths, edge cases, async patterns)
+   - Type safety & validation check
+   - Error handling review
+   - Security scan (secrets, XSS, SQL injection, auth)
+   - Performance & resources (memory leaks, cleanup)
+   - Common bug patterns (mutations, race conditions, state issues)
+
+3. **If Issues Found:**
+   - Create fix tasks in PROJECT_SPEC.md
+   - Back to implementation (max 2 loops)
+
+4. **If All Clean:**
+   - Update PROJECT_SPEC.md with ✅ Complete & Reviewed status
+
+**Output:** Validated, bug-scanned, production-ready code
+
+### Post-Implementation
+
+**User Actions:**
+1. Run `npm run build && npm run lint` - Verify
+2. Follow manual testing steps from section 3
+3. Test edge cases and scenarios
+4. Commit when ready (user controls git)
+
+**Tests added post-MVP only when user requests.**
+
+---
+
+## Command 2: `/octocode-generate` - Thorough Build from Scratch
 
 **Purpose:** Transform an idea into production-ready code
-**Agents:** 6 specialized agents
-**Gates:** 4 human approval checkpoints
-**Output:** `docs/requirements.md`, `docs/design.md`, `docs/test-plan.md`, `docs/tasks.md`, README.md, working codebase
+**Agents:** 4 specialized agents
+**Gates:** 3 human approval checkpoints
+**Output:** `docs/requirements.md`, `docs/design.md`, `docs/test-plan.md`, `docs/tasks.md`, README.md, `docs/bug-report.md`, working codebase
 
 ### Workflow Diagram
 
@@ -38,20 +151,20 @@ flowchart TD
     Start([User Request]) --> P1[Phase 1: Requirements]
     P1 --> G1{Gate 1: Approve Requirements?}
     G1 -->|No| P1
-    G1 -->|Yes| P2[Phase 2: Architecture Design]
+    G1 -->|Yes| P2[Phase 2: Architecture + Foundation]
     P2 --> G2{Gate 2: Approve Architecture?}
     G2 -->|No| P2
     G2 -->|Yes| P2_5[Phase 2.5: Verification Planning]
     P2_5 --> G2_5{Gate 2.5: Approve Test Plan?}
     G2_5 -->|No| P2_5
-    G2_5 -->|Yes| P2_75[Phase 2.75: Project Foundation]
-    P2_75 --> G2_75{Gate 2.75: Approve Foundation?}
-    G2_75 -->|No| P2_75
-    G2_75 -->|Yes| P3[Phase 3: Task Planning]
+    G2_5 -->|Yes| P3[Phase 3: Task Planning]
     P3 --> P4[Phase 4: Implementation]
     P4 --> G3{Gate 3: Monitor Progress}
     G3 -->|Pause| P4
-    G3 -->|Continue| End([Implementation Complete])
+    G3 -->|Continue| P5[Phase 5: Quality Assurance]
+    P5 --> Issues{Issues Found?}
+    Issues -->|Yes - Loop 1-2| P4
+    Issues -->|No| End([Complete & Reviewed])
     End --> Manual[User runs build, lint, test-plan.md]
     Manual --> Commit[User commits when ready]
 
@@ -60,8 +173,8 @@ flowchart TD
     style G1 fill:#fff3cd
     style G2 fill:#fff3cd
     style G2_5 fill:#fff3cd
-    style G2_75 fill:#fff3cd
     style G3 fill:#fff3cd
+    style P2A fill:#d4edda
 ```
 
 ### Phase 1: Requirements Gathering
@@ -91,17 +204,20 @@ User reviews and can:
 
 ---
 
-### Phase 2: Architecture Design
+### Phase 2: Architecture Design + Foundation Creation
 
 **Agent:** `agent-architect` (Solution Architect)
 **Model:** Claude Opus
-**Tools:** Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+**Tools:** Read, Write, Edit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
 
 **What Happens:**
+
+**Part 1: Architecture Design**
 1. Studies requirements document
-2. Researches proven architectures using **octocode-mcp** (>1000★ repos)
-3. Applies critical thinking framework to design decisions
-4. Creates comprehensive design document
+2. **🚀 Prioritizes boilerplate commands:** Checks `https://github.com/bgauryy/octocode-mcp/blob/main/resources/boilerplate_cli.md` FIRST
+3. Researches proven architectures using **octocode-mcp** (>1000★ repos)
+4. Applies critical thinking framework to design decisions
+5. Creates comprehensive design document
 
 **Critical Thinking Questions:**
 - What am I optimizing for? (performance/maintainability/cost)
@@ -110,6 +226,7 @@ User reviews and can:
 - What's the evidence? (proven at scale)
 
 **Output:** `<project>/docs/design.md` (<50KB)
+- **Boilerplate command** - CLI command to initialize project (if applicable)
 - Tech stack with rationale
 - Architecture overview (system flow, components)
 - Key decisions with context, options, tradeoffs
@@ -121,17 +238,35 @@ User reviews and can:
 **✋ Gate 2: Architecture Review**
 
 User reviews tech stack and can:
-- ✅ **Approve** → Triggers Phase 2.5
+- ✅ **Approve** → Architect continues to create foundation
 - 📝 **Modify** → Request changes
 - ❓ **Questions** → Clarify decisions
+
+**Part 2: Foundation Creation** (runs AFTER Gate 2 approval)
+
+5. Executes boilerplate CLI command (e.g., `npx create-next-app@latest`)
+6. Scaffolds project structure per design.md
+7. Configures build system, linting, TypeScript
+8. Creates README.md with setup instructions
+9. Verifies foundation (`npm install`, `npm run build`, `npm run lint`)
+
+**Output:**
+- Complete project scaffold
+- README.md in project root
+- All dependencies installed
+- Build + lint passing
+
+**Proceeds directly to Phase 2.5**
 
 ---
 
 ### Phase 2.5: Verification Planning
 
-**Agent:** `agent-quality` (Quality Architect)
+**Agent:** `agent-quality-architect` (Quality Architect - Mode 1)
 **Model:** Claude Opus
-**Tools:** Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+**Tools:** Read, Write, Grep, Glob, LS, TodoWrite, Bash, BashOutput, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+
+**Mode:** Verification Planning (Mode 1 of 3)
 
 **🚨 IMPORTANT: Creates VERIFICATION GUIDES, NOT TEST CODE**
 
@@ -159,60 +294,9 @@ User reviews tech stack and can:
 **✋ Gate 2.5: Verification Plan Review**
 
 User reviews and can:
-- ✅ **Approve** → Triggers Phase 2.75
+- ✅ **Approve** → Proceed to Task Planning
 - 📝 **Adjust Coverage** → Modify plan
 - ❓ **Questions** → Clarify approach
-
----
-
-### Phase 2.75: Project Foundation
-
-**Agent:** `agent-founding-engineer` (Founding Engineer)
-**Model:** Claude Sonnet
-**Tools:** Read, Write, Edit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, ListMcpResourcesTool, ReadMcpResourceTool
-
-**What Happens:**
-1. Studies design.md and test-plan.md
-2. Creates initial project scaffold
-3. Sets up build system and tooling
-4. Verifies foundation works
-
-**Actions:**
-1. **Generate scaffold:**
-   - Initialize package.json with dependencies
-   - Set up build system (TypeScript, bundler, etc.)
-   - Configure linting (ESLint, Prettier)
-   - Create project structure per design.md
-   - Add config files (.gitignore, tsconfig.json, etc.)
-
-2. **Implement core structure:**
-   - Create placeholder files for main components
-   - Set up entry points (main.ts, index.ts, etc.)
-   - Add type definitions
-   - Ensure clean architecture boundaries
-
-3. **Verify foundation:**
-   - Run `npm install`
-   - Verify `npm run build` passes
-   - Verify `npm run lint` passes
-   - Ensure types are correct
-
-**Output:**
-- Complete project scaffold
-- `README.md` in project root with:
-  - Project overview and purpose
-  - Tech stack
-  - Setup instructions
-  - Development commands
-  - Project structure overview
-  - Footer: "**Created by octocode-mcp**"
-
-**✋ Gate 2.75: Foundation Review**
-
-User reviews initial project and can:
-- ✅ **Approve** → Continue to Planning
-- 📝 **Adjust** → Request changes
-- ❓ **Questions** → Clarify structure
 
 ---
 
@@ -241,10 +325,12 @@ User reviews initial project and can:
 
 ### Phase 4: Implementation
 
-**Agents:** 4-5 instances of `agent-implementation` (Software Engineers)
+**Agents:** 2-8 instances of `agent-implementation` (Software Engineers, dynamically scaled)
 **Managed by:** `agent-manager`
 **Model:** Claude Sonnet
 **Tools:** Read, Write, Edit, MultiEdit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, ListMcpResourcesTool, ReadMcpResourceTool
+
+**Dynamic Scaling:** Manager analyzes task complexity and spawns optimal agent count (2-8)
 
 **Coordination via octocode-local-memory:**
 - Task assignments: `setStorage("task:{id}", taskData, ttl: 3600)`
@@ -303,6 +389,56 @@ User can monitor in real-time:
 
 ---
 
+### Phase 5: Quality Assurance
+
+**Agent:** `agent-quality-architect` (Quality Architect - Mode 3)
+**Model:** Claude Opus
+**Tools:** Read, Write, Grep, Glob, LS, TodoWrite, Bash, BashOutput, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+
+**Mode:** Bug Scanning (Mode 3 of 3)
+
+**What Happens:**
+
+**Step 1: Build Validation**
+1. Run `npm run build` (or equivalent) - must pass
+2. Run `npm run lint` (or equivalent) - must be clean
+3. Check TypeScript compilation - no type errors
+4. Verify feature completeness against requirements/design docs
+
+**Step 2: Code Review for Runtime Bugs**
+
+Scan all newly implemented code for common bug patterns:
+
+1. **Logic Flow Issues** - Edge cases, conditionals, loops, async/await, state updates
+2. **Type Safety Issues** - Input validation, API response validation, type guards
+3. **Error Handling** - Try-catch blocks, user-friendly errors, no silent failures
+4. **Security Issues** - No hardcoded secrets, input sanitization, auth checks
+5. **Performance & Memory** - Event listeners cleanup, resource cleanup, efficient queries
+6. **Common Pitfalls** - Array mutations, race conditions, state issues
+
+**Output:** `<project>/docs/bug-report.md` (~20KB)
+
+**Decision Tree:**
+
+- **If Build/Lint/Types Fail:** Create bug report → Manager spawns fix tasks
+- **If 1-5 Critical Issues:** Create bug report → Manager spawns fix tasks → Re-scan (max 2 loops)
+- **If 6+ Critical Issues:** Create bug report → User decision point
+- **If Clean (0 critical):** Update docs with ✅ Quality Reviewed status → Done!
+
+**Communication with Manager:**
+```bash
+setStorage("qa:status", "complete", ttl: 3600)
+setStorage("qa:result", "{critical: N, warnings: N, status: 'clean'|'issues'}", ttl: 3600)
+```
+
+**Key Principles:**
+- Focus on runtime bugs (what breaks in production)
+- Provide specific file:line references
+- Suggest concrete fixes
+- Keep scan time under 5 minutes
+
+---
+
 ### Post-Implementation
 
 **User Actions:**
@@ -315,43 +451,45 @@ User can monitor in real-time:
 
 ---
 
-## Command 2: `/octocode-feature` - Enhance Existing Code
+## Command 3: `/octocode-feature` - Enhance Existing Code
 
 **Purpose:** Add features or fix bugs in existing codebases
-**Agents:** 4 specialized agents
-**Gates:** 3 human approval checkpoints
+**Agents:** 3 specialized agents
+**Gates:** 2 human approval checkpoints
 **Output:** `docs/codebase-review.md`, `docs/analysis.md`, `docs/tasks.md`, modified codebase
 
 ### Workflow Diagram
 
 ```mermaid
 flowchart TD
-    Start([User Request]) --> P1[Phase 1: Code Review]
-    P1 --> G1{Gate 1: Approve Review?}
-    G1 -->|No| P1
-    G1 -->|Yes| P2[Phase 2: Feature Analysis]
+    Start([User Request]) --> P1[Phase 1: Codebase Analysis]
+    P1 --> P2[Phase 2: Feature Analysis]
     P2 --> G2{Gate 2: Approve Analysis?}
     G2 -->|No| P2
     G2 -->|Yes| P3[Phase 3: Task Planning]
     P3 --> P4[Phase 4: Implementation]
     P4 --> G3{Gate 3: Monitor Progress}
     G3 -->|Pause| P4
-    G3 -->|Continue| End([Implementation Complete])
+    G3 -->|Continue| P5[Phase 5: Quality Assurance]
+    P5 --> Issues{Issues Found?}
+    Issues -->|Yes - Loop 1-2| P4
+    Issues -->|No| End([Complete & Reviewed])
     End --> Manual[User runs build, lint, existing tests]
     Manual --> Commit[User commits when ready]
 
     style Start fill:#e1f5ff
     style End fill:#d4edda
-    style G1 fill:#fff3cd
     style G2 fill:#fff3cd
     style G3 fill:#fff3cd
 ```
 
-### Phase 1: Code Review
+### Phase 1: Codebase Analysis
 
-**Agent:** `agent-code-review` (Code Analyst)
-**Model:** Claude Sonnet
-**Tools:** Read, Write, Grep, Glob, LS, TodoWrite, Bash, BashOutput, ListMcpResourcesTool, ReadMcpResourceTool
+**Agent:** `agent-quality-architect` (Quality Architect - Mode 2)
+**Model:** Claude Opus
+**Tools:** Read, Write, Grep, Glob, LS, TodoWrite, Bash, BashOutput, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+
+**Mode:** Codebase Analysis (Mode 2 of 3)
 
 **What Happens:**
 1. Analyzes package files and configs
@@ -360,7 +498,7 @@ flowchart TD
 4. Creates comprehensive review document
 
 **Output:** `<project>/docs/codebase-review.md` (<50KB)
-- Summary: project type, framework, quality score
+- Summary: project type, framework, quality score (1-10)
 - Full tech stack with versions
 - Code patterns with examples
 - Build and lint setup
@@ -368,12 +506,7 @@ flowchart TD
 - Recommendations for new code
 - Footer: "**Created by octocode-mcp**"
 
-**✋ Gate 1: Review Complete**
-
-User reviews and can:
-- ✅ **Proceed** → Continue to Analysis
-- 📊 **Details** → Review specific sections
-- ❓ **Questions** → Clarify findings
+**No Gate 1** - Proceeds directly to Feature Analysis
 
 ---
 
@@ -443,7 +576,7 @@ User reviews and can:
 
 **Same as `/octocode-generate` Phase 4:**
 
-- 4-5 `agent-implementation` instances work in parallel
+- 2-8 `agent-implementation` instances work in parallel (dynamically scaled)
 - Coordinate via **octocode-local-memory** (task assignments, file locks, status updates)
 - Follow existing code patterns from codebase-review.md
 - Update tasks.md with progress
@@ -467,6 +600,26 @@ User can monitor in real-time:
 
 ---
 
+### Phase 5: Quality Assurance
+
+**Agent:** `agent-quality-architect` (Quality Architect - Mode 3)
+**Model:** Claude Opus
+**Tools:** Read, Write, Grep, Glob, LS, TodoWrite, Bash, BashOutput, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+
+**Mode:** Bug Scanning (Mode 3 of 3)
+
+**What Happens:**
+Same as Phase 5 in `/octocode-generate` (see above) - scans modified code for runtime bugs, validates build/lint/types, creates bug report if issues found.
+
+**Output:** `<project>/docs/bug-report.md`
+
+**Decision Tree:**
+- **If Issues Found (1-5):** Manager spawns fix tasks → Re-scan (max 2 loops)
+- **If Issues Found (6+):** User decision point
+- **If Clean:** Update docs with ✅ Quality Reviewed status → Done!
+
+---
+
 ### Post-Implementation
 
 **User Actions:**
@@ -480,7 +633,7 @@ User can monitor in real-time:
 
 ---
 
-## Agent Communication (Both Commands)
+## Agent Communication (All Commands)
 
 Agents communicate using **octocode-local-memory MCP** (storage-based, NOT files):
 
@@ -547,9 +700,10 @@ setStorage("answer:impl-1:architect:auth-approach", JSON.stringify({
 **Purpose:** Finding proven patterns, researching implementations
 
 **Used by:**
+- ✅ agent-rapid-planner (quick mode: all research in one pass)
 - ✅ agent-product (requirements research)
-- ✅ agent-architect (architecture research)
-- ✅ agent-quality (testing patterns research)
+- ✅ agent-architect (architecture research + **boilerplate commands - CHECK FIRST!**)
+- ✅ agent-quality-architect (Mode 1: testing patterns, Mode 2: codebase patterns, Mode 3: bug patterns)
 - ✅ agent-feature-analyzer (implementation patterns research)
 - ⚠️ agent-implementation (only for missing patterns)
 
@@ -580,33 +734,44 @@ setStorage("answer:impl-1:architect:auth-approach", JSON.stringify({
 
 ## Summary Tables
 
-### `/octocode-generate` Flow
+### `/octocode-generate-quick` Flow ⚡
+
+| Phase | Agent | Output | Gate |
+|-------|-------|--------|------|
+| 1. Rapid Planning | agent-rapid-planner | `docs/PROJECT_SPEC.md` (~80KB) | ✋ Gate 1 (ONLY) |
+| 2. Implementation | agent-manager + 2-8 × agent-implementation (dynamic) | Code + updated PROJECT_SPEC.md | 🔄 Monitor |
+| 3. Quality & Review | agent-rapid-planner | Validation + bug scan | - |
+
+**Result:** 1 consolidated doc (~80KB), working codebase, 1 approval gate, automated code review
+
+### `/octocode-generate` Flow (Standard)
 
 | Phase | Agent | Output | Gate |
 |-------|-------|--------|------|
 | 1. Requirements | agent-product | `docs/requirements.md` | ✋ Gate 1 |
-| 2. Architecture | agent-architect | `docs/design.md` | ✋ Gate 2 |
-| 2.5. Verification | agent-quality | `docs/test-plan.md` | ✋ Gate 2.5 |
-| 2.75. Foundation | agent-founding-engineer | Scaffold + README | ✋ Gate 2.75 |
+| 2. Architecture + Foundation | agent-architect | `docs/design.md` + Scaffold + README | ✋ Gate 2 |
+| 2.5. Verification | agent-quality-architect (Mode 1) | `docs/test-plan.md` | ✋ Gate 2.5 |
 | 3. Planning | agent-manager | `docs/tasks.md` | - |
-| 4. Implementation | 4-5 × agent-implementation | Code + updated tasks.md | 🔄 Gate 3 |
+| 4. Implementation | 2-8 × agent-implementation (dynamic) | Code + updated tasks.md | 🔄 Gate 3 |
+| 5. Quality Assurance | agent-quality-architect (Mode 3) | `docs/bug-report.md` | 🔄 Fix loop |
 
-**Result:** 4 docs (<50KB each), working codebase, 4 approval gates
+**Result:** 5 docs (<50KB each), working codebase, 3 approval gates, automated QA
 
 ### `/octocode-feature` Flow
 
 | Phase | Agent | Output | Gate |
 |-------|-------|--------|------|
-| 1. Code Review | agent-code-review | `docs/codebase-review.md` | ✋ Gate 1 |
-| 2. Analysis | agent-feature-analyzer | `docs/analysis.md` | ✋ Gate 2 |
+| 1. Codebase Analysis | agent-quality-architect (Mode 2) | `docs/codebase-review.md` | ✋ Gate 1 |
+| 2. Feature Analysis | agent-feature-analyzer | `docs/analysis.md` | ✋ Gate 2 |
 | 3. Planning | agent-manager | `docs/tasks.md` | - |
-| 4. Implementation | 4-5 × agent-implementation | Code + updated tasks.md | 🔄 Gate 3 |
+| 4. Implementation | 2-8 × agent-implementation (dynamic) | Code + updated tasks.md | 🔄 Gate 3 |
+| 5. Quality Assurance | agent-quality-architect (Mode 3) | `docs/bug-report.md` | 🔄 Fix loop |
 
-**Result:** 3 docs (<50KB each), modified codebase, 3 approval gates
+**Result:** 4 docs (<50KB each), modified codebase, 2 approval gates, automated QA
 
 ---
 
-## Quality Standards (Both Commands)
+## Quality Standards (All Commands)
 
 **MVP-First Approach:**
 - ✅ Build passes (`npm run build`)

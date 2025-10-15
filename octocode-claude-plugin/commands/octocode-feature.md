@@ -36,10 +36,11 @@ Tests added post-MVP when user requests.
 
 ## Workflow
 
-**Phase 1: Code Review** → `agent-code-review` → `codebase-review.md` → ✋ Gate 1
-**Phase 2: Analysis** → `agent-feature-analyzer` → `analysis.md` → ✋ Gate 2
+**Phase 1: Codebase Analysis** → `agent-quality-architect` (Mode 2: Codebase Analysis) → `codebase-review.md` → ✋ Gate 1
+**Phase 2: Feature Analysis** → `agent-feature-analyzer` → `analysis.md` → ✋ Gate 2
 **Phase 3: Planning** → `agent-manager` → `tasks.md`
-**Phase 4: Implementation** → 4-5 `agent-implementation` (parallel, coordinated via octocode-local-memory) → 🔄 Gate 3 (live monitor)
+**Phase 4: Implementation** → 2-8 `agent-implementation` (dynamically scaled, parallel, coordinated via octocode-local-memory) → 🔄 Gate 3 (live monitor)
+**Phase 5: Quality Assurance** → `agent-quality-architect` (Mode 3: Bug Scan) → `bug-report.md` → 🔄 Fix loop if needed (max 2 loops)
 
 **Post-Implementation:** User runs `npm run build && npm run lint`, verifies changes, commits when ready
 
@@ -47,11 +48,12 @@ Tests added post-MVP when user requests.
 
 | File | Agent | Gate |
 |------|-------|------|
-| `codebase-review.md` | agent-code-review | ✋ 1 |
+| `codebase-review.md` | agent-quality-architect (Mode 2) | ✋ 1 |
 | `analysis.md` | agent-feature-analyzer | ✋ 2 |
 | `tasks.md` | agent-manager | - |
+| `bug-report.md` | agent-quality-architect (Mode 3) | 🔄 Fix loop |
 
 ## Start
 
-Launch `agent-code-review` to analyze existing codebase.
+Launch `agent-quality-architect` (Mode 2: Codebase Analysis) to analyze existing codebase.
 

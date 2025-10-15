@@ -1,6 +1,6 @@
 # Node.js/TypeScript Resources for AI Agents
 
-> 610+ curated GitHub repositories organized into 12 specialized files for building production-ready Node.js/TypeScript applications
+> 650+ curated GitHub repositories organized into 13 specialized files for building production-ready Node.js/TypeScript applications
 
 **For AI Agents:** Context resources for generating Node.js/TypeScript applications using octocode-mcp  
 **Runtime:** All applications powered by Node.js - from simple POCs to production full-stack apps  
@@ -56,9 +56,14 @@
 
 ---
 
-## 📚 Resource Files (12 Total)
+## 📚 Resource Files (13 Total)
 
 ### 🚀 Getting Started
+
+**[boilerplate_cli.md](./boilerplate_cli.md)** - ⚡ NEW! One-command project generators  
+All CLI commands for scaffolding projects instantly  
+`create-t3-app • create-next-app • create vite • Nx • Turborepo • Ignite • Hygen`
+
 **[project-examples.md](./project-examples.md)** - Start here for new projects  
 Full-stack templates, boilerplates, monorepo examples  
 `T3 Stack • Bulletproof React • Cal.com • Supabase • Turborepo examples`
@@ -119,6 +124,7 @@ Linting, formatting, build tools, API testing, documentation
 
 | Need | File | Top Picks |
 |------|------|-----------|
+| **Quick project start** | **boilerplate_cli.md** | **create-t3-app, create-next-app, create vite** |
 | New project template | project-examples.md | T3 Stack, Bulletproof React |
 | State management | frontend-libs.md | Zustand, TanStack Query |
 | UI components | frontend-libs.md | Shadcn UI, Material UI |
@@ -144,6 +150,7 @@ Linting, formatting, build tools, API testing, documentation
 4. **Reference detailed content** → Deep dive when needed for specific requirements
 
 **Example queries:**
+- "Create a new project fast?" → boilerplate_cli.md → npx create-t3-app@latest
 - "Best state management?" → frontend-libs.md Quick Reference → Zustand + TanStack Query
 - "Which framework?" → fullstack-frameworks.md → Next.js 15 (95% of projects)
 - "Authentication solution?" → auth.md → NextAuth.js or Passport.js
