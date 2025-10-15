@@ -105,7 +105,7 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 
 ## 🤖 Meet Your AI Team
 
-**8 specialized agents total**: Choose your workflow complexity
+**7 specialized agents total**: 5 agents for `/octocode-generate`, 4 agents for `/octocode-feature` (3 agents are shared between both commands)
 
 ### For `/octocode-generate-quick` ⚡ NEW! (Fast Build)
 
