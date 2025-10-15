@@ -41,7 +41,7 @@ $ARGUMENTS
   ↳ `agent-quality` → `test-plan.md` → ✋ Gate 2.5
   ↳ `agent-founding-engineer` → project scaffold + README → ✋ Gate 2.75
 **Phase 3: Planning** → `agent-manager` → `tasks.md`
-**Phase 4: Implementation** → 4-5 `agent-implementation` (parallel, coordinated via octocode-local-memory) → 🔄 Gate 3 (live monitor)
+**Phase 4: Implementation** → 2-8 `agent-implementation` (dynamically scaled, parallel, coordinated via octocode-local-memory) → 🔄 Gate 3 (live monitor)
 
 **Post-Implementation:** User runs `npm run build && npm run lint`, follows test-plan.md, commits when ready
 

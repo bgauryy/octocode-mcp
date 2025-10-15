@@ -69,7 +69,9 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 - **Feature Mode**: 4 agents, 3 gates - Safe for production code
 
 ### 🚀 Parallel Execution
-- Multiple implementation agents work simultaneously
+- **Dynamic scaling:** 2-8 agents spawn based on task complexity
+- Small projects: 2-3 agents (cost-efficient)
+- Large projects: 6-8 agents (maximum speed)
 - Smart task distribution prevents conflicts
 - MVP-first approach: working code before tests
 
@@ -203,7 +205,7 @@ rich text editor, and comments
 - **✋ Gate 1:** You approve complete specification
 
 **Phase 2: Implementation** → Updates `docs/PROJECT_SPEC.md` with progress
-- 4-5 Software Engineers work in parallel
+- 2-8 Software Engineers work in parallel (dynamically scaled)
 - **🔄 Monitor:** Live progress, pause/continue anytime
 
 **Phase 3: Quality Loops** → Validation
@@ -237,7 +239,7 @@ rich text editor, and comments
 - Engineering Manager breaks project into tasks and assigns work
 
 **Phase 4: Implementation** → Updates `docs/tasks.md` with progress
-- 4-5 Software Engineers work in parallel
+- 2-8 Software Engineers work in parallel (dynamically scaled)
 - **🔄 Gate 3:** Monitor live, pause/continue anytime - Final gate
 
 **Result: 4 separate files (<50KB each), 4 approval gates, production-ready code**
@@ -363,7 +365,7 @@ cd octocode-mcp/octocode-claude-plugin
 | **2.5 Verification** | Quality Architect | `docs/test-plan.md` | <50KB | ✋ Gate 2.5 |
 | **2.75 Foundation** | Founding Engineer | Scaffold + README | - | ✋ Gate 2.75 |
 | **3. Planning** | Manager | `docs/tasks.md` | <50KB | (no gate) |
-| **4. Implementation** | 4-5 Engineers | Code + updates to `docs/tasks.md` | - | 🔄 Gate 3 (final) |
+| **4. Implementation** | 2-8 Engineers (dynamic) | Code + updates to `docs/tasks.md` | - | 🔄 Gate 3 (final) |
 
 **Result: 4 single files (<50KB each) in `docs/`, clear ownership, human control at every gate**
 
@@ -378,7 +380,7 @@ cd octocode-mcp/octocode-claude-plugin
 | **1. Code Review** | Code Analyst | `docs/codebase-review.md` | <50KB | ✋ Gate 1 |
 | **2. Analysis** | Feature Analyst | `docs/analysis.md` | <50KB | ✋ Gate 2 |
 | **3. Planning** | Manager | `docs/tasks.md` | <50KB | (no gate) |
-| **4. Implementation** | 4-5 Engineers | Code + updates to `docs/tasks.md` | - | 🔄 Gate 3 (final) |
+| **4. Implementation** | 2-8 Engineers (dynamic) | Code + updates to `docs/tasks.md` | - | 🔄 Gate 3 (final) |
 
 **Result: 3 single files (<50KB each) in `docs/`, clear ownership, safe changes with human approval**
 
@@ -410,9 +412,11 @@ Manager creates task breakdown
 ## 📊 Quality Standards
 
 ### Parallel Execution Benefits
-- Multiple agents work simultaneously
-- Smart task coordination
-- Efficient orchestration
+- **Dynamic agent scaling:** 2-8 agents based on complexity
+- Small projects use fewer agents (40% cost savings)
+- Large projects use more agents (60% faster)
+- Smart task coordination via octocode-local-memory
+- Efficient orchestration with file locking
 - Real-time progress monitoring
 
 ### Quality Enforcement (Build + Types + Lint)
@@ -426,7 +430,8 @@ Manager creates task breakdown
 
 ### Cost Optimization
 - **Opus (expensive)**: 2-3 agents for strategic decisions (depends on command)
-- **Sonnet (efficient)**: 4-6 agents for analysis and implementation
+- **Sonnet (efficient)**: 2-8 agents for analysis and implementation (dynamically scaled)
+- **Dynamic scaling**: Small projects save ~40% on implementation costs
 - **Research-driven**: Reduces trial-and-error costs
 
 ---

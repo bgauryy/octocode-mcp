@@ -43,7 +43,7 @@ Tests added post-MVP when user requests.
 ## Workflow (3 Simple Phases)
 
 **Phase 1: Rapid Planning** → `agent-rapid-planner` → `PROJECT_SPEC.md` → ✋ **SINGLE GATE**
-**Phase 2: Implementation** → 4-5 `agent-implementation` (parallel) → 🔄 Live monitor
+**Phase 2: Implementation** → 2-8 `agent-implementation` (dynamically scaled, parallel) → 🔄 Live monitor
 **Phase 3: Quality Check & Code Review** → `agent-rapid-planner` → Build/Lint validation + Bug scan → ✅ Done
 
 **Post-Implementation:** User runs `npm run build && npm run lint`, verifies, commits when ready
@@ -134,7 +134,7 @@ npx create-next-app@latest my-app --typescript --tailwind --app
 
 ### Phase 2: Implementation
 
-**agent-manager** orchestrates 4-5 `agent-implementation` instances:
+**agent-manager** orchestrates 2-8 `agent-implementation` instances (dynamically scaled based on task complexity):
 - Task assignments via octocode-local-memory
 - File locks prevent conflicts
 - Progress updates inline in PROJECT_SPEC.md

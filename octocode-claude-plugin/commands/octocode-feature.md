@@ -39,7 +39,7 @@ Tests added post-MVP when user requests.
 **Phase 1: Code Review** → `agent-code-review` → `codebase-review.md` → ✋ Gate 1
 **Phase 2: Analysis** → `agent-feature-analyzer` → `analysis.md` → ✋ Gate 2
 **Phase 3: Planning** → `agent-manager` → `tasks.md`
-**Phase 4: Implementation** → 4-5 `agent-implementation` (parallel, coordinated via octocode-local-memory) → 🔄 Gate 3 (live monitor)
+**Phase 4: Implementation** → 2-8 `agent-implementation` (dynamically scaled, parallel, coordinated via octocode-local-memory) → 🔄 Gate 3 (live monitor)
 
 **Post-Implementation:** User runs `npm run build && npm run lint`, verifies changes, commits when ready
 

@@ -82,11 +82,12 @@ User reviews complete spec and can:
 
 ### Phase 2: Implementation
 
-**Agents:** 4-5 instances of `agent-implementation` (Software Engineers)
+**Agents:** 2-8 instances of `agent-implementation` (Software Engineers, dynamically scaled)
 **Managed by:** `agent-manager` (Engineering Manager)
 **Model:** Claude Sonnet (both)
 **Tools:** Same as standard mode implementation
 
+**Dynamic Scaling:** Agent count (2-8) determined by task complexity score
 **Coordination:** Same as standard mode using **octocode-local-memory**
 
 **Output:**
@@ -353,10 +354,12 @@ User reviews initial project and can:
 
 ### Phase 4: Implementation
 
-**Agents:** 4-5 instances of `agent-implementation` (Software Engineers)
+**Agents:** 2-8 instances of `agent-implementation` (Software Engineers, dynamically scaled)
 **Managed by:** `agent-manager`
 **Model:** Claude Sonnet
 **Tools:** Read, Write, Edit, MultiEdit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, ListMcpResourcesTool, ReadMcpResourceTool
+
+**Dynamic Scaling:** Manager analyzes task complexity and spawns optimal agent count (2-8)
 
 **Coordination via octocode-local-memory:**
 - Task assignments: `setStorage("task:{id}", taskData, ttl: 3600)`
@@ -555,7 +558,7 @@ User reviews and can:
 
 **Same as `/octocode-generate` Phase 4:**
 
-- 4-5 `agent-implementation` instances work in parallel
+- 2-8 `agent-implementation` instances work in parallel (dynamically scaled)
 - Coordinate via **octocode-local-memory** (task assignments, file locks, status updates)
 - Follow existing code patterns from codebase-review.md
 - Update tasks.md with progress
@@ -698,7 +701,7 @@ setStorage("answer:impl-1:architect:auth-approach", JSON.stringify({
 | Phase | Agent | Output | Gate |
 |-------|-------|--------|------|
 | 1. Rapid Planning | agent-rapid-planner | `docs/PROJECT_SPEC.md` (~80KB) | ✋ Gate 1 (ONLY) |
-| 2. Implementation | agent-manager + 4-5 × agent-implementation | Code + updated PROJECT_SPEC.md | 🔄 Monitor |
+| 2. Implementation | agent-manager + 2-8 × agent-implementation (dynamic) | Code + updated PROJECT_SPEC.md | 🔄 Monitor |
 | 3. Quality & Review | agent-rapid-planner | Validation + bug scan | - |
 
 **Result:** 1 consolidated doc (~80KB), working codebase, 1 approval gate, automated code review
@@ -712,7 +715,7 @@ setStorage("answer:impl-1:architect:auth-approach", JSON.stringify({
 | 2.5. Verification | agent-quality | `docs/test-plan.md` | ✋ Gate 2.5 |
 | 2.75. Foundation | agent-founding-engineer | Scaffold + README | ✋ Gate 2.75 |
 | 3. Planning | agent-manager | `docs/tasks.md` | - |
-| 4. Implementation | 4-5 × agent-implementation | Code + updated tasks.md | 🔄 Gate 3 |
+| 4. Implementation | 2-8 × agent-implementation (dynamic) | Code + updated tasks.md | 🔄 Gate 3 |
 
 **Result:** 4 docs (<50KB each), working codebase, 4 approval gates
 
@@ -723,7 +726,7 @@ setStorage("answer:impl-1:architect:auth-approach", JSON.stringify({
 | 1. Code Review | agent-code-review | `docs/codebase-review.md` | ✋ Gate 1 |
 | 2. Analysis | agent-feature-analyzer | `docs/analysis.md` | ✋ Gate 2 |
 | 3. Planning | agent-manager | `docs/tasks.md` | - |
-| 4. Implementation | 4-5 × agent-implementation | Code + updated tasks.md | 🔄 Gate 3 |
+| 4. Implementation | 2-8 × agent-implementation (dynamic) | Code + updated tasks.md | 🔄 Gate 3 |
 
 **Result:** 3 docs (<50KB each), modified codebase, 3 approval gates
 
