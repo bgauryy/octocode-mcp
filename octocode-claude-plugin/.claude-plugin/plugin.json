@@ -1,7 +1,7 @@
 {
   "name": "octocode-claude-plugin",
-  "description": "BETA: AI development team with specialized agents for building projects from scratch (octocode-generate) or enhancing existing code (octocode-feature). Features gate-based workflow, parallel execution, and research-driven decisions. Still being optimized.",
-  "version": "1.0.0-beta",
+  "description": "BETA: AI development team with specialized agents for building projects. Use /octocode-generate-quick (FAST), /octocode-generate (thorough: 6 agents, 4 gates), or /octocode-feature (enhance existing code). Features parallel execution and research-driven decisions.",
+  "version": "1.1.0",
   "author": {
     "name": "Guy Bary",
     "email": "bgauryy@gmail.com"
@@ -13,7 +13,7 @@
     },
     "octocode": {
       "command": "npx", 
-      "args": ["octocode-mcp@7.0.0"],
+      "args": ["octocode-mcp@latest"],
       "env": {
         "TOOLS_TO_RUN": "githubGetFileContent,githubSearchCode,githubViewRepoStructure,githubSearchRepositories,githubSearchPullRequests"
       }
