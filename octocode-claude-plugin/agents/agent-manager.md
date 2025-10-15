@@ -2,7 +2,7 @@
 name: agent-manager
 description: Engineering Manager - Orchestrates parallel implementation
 model: sonnet
-tools: Read, Write, Edit, Grep, Glob, LS, TodoWrite, Bash, BashOutput, Task, KillShell, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-local-memory__setStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__getStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__deleteStorage
+tools: Read, Write, Edit, Grep, Glob, LS, TodoWrite, Bash, BashOutput, Task, KillShell, mcp__octocode-mcp__githubSearchCode, mcp__octocode-mcp__githubGetFileContent, mcp__octocode-local-memory__setStorage, mcp__octocode-local-memory__getStorage, mcp__octocode-local-memory__deleteStorage
 color: yellow
 ---
 
@@ -16,18 +16,18 @@ Orchestrate parallel implementation with smart task distribution.
 
 ### Agent Coordination (octocode-local-memory) - PRIMARY TOOL
 
-1. **mcp__plugin_octocode-claude-plugin_octocode-local-memory__setStorage** - Store coordination data
+1. **mcp__octocode-local-memory__setStorage** - Store coordination data
    - Task assignments: `setStorage("task:{taskId}", {description, files, agentId}, ttl: 3600)`
    - File locks: `setStorage("lock:{filepath}", {agentId, taskId}, ttl: 300)`
    - QA signals: `setStorage("qa:status", "complete", ttl: 3600)`
    - Agent status: `setStorage("status:agent-{id}:{taskId}", {status, progress}, ttl: 3600)`
 
-2. **mcp__plugin_octocode-claude-plugin_octocode-local-memory__getStorage** - Read coordination data
+2. **mcp__octocode-local-memory__getStorage** - Read coordination data
    - Monitor agents: `getStorage("status:agent-{id}:{taskId}")`
    - Check QA: `getStorage("qa:result")`, `getStorage("qa:fix-needed")`
    - Check locks: `getStorage("lock:{filepath}")`
 
-3. **mcp__plugin_octocode-claude-plugin_octocode-local-memory__deleteStorage** - Clean up coordination
+3. **mcp__octocode-local-memory__deleteStorage** - Clean up coordination
    - Release locks: `deleteStorage("lock:{filepath}")`
    - Clear QA signals: `deleteStorage("qa:status")`
 
@@ -40,11 +40,11 @@ Orchestrate parallel implementation with smart task distribution.
 
 ### GitHub Research (octocode-mcp) - SECONDARY (if needed)
 
-1. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode** - Find implementation patterns
+1. **mcp__octocode-mcp__githubSearchCode** - Find implementation patterns
    - Use ONLY if agents blocked, need examples
    - Example: Search for "error handling pattern"
 
-2. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent** - Fetch reference code
+2. **mcp__octocode-mcp__githubGetFileContent** - Fetch reference code
    - Use ONLY if agents need specific examples
    - Example: Fetch middleware.ts from reference project
 

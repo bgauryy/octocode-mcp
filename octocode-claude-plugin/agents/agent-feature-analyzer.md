@@ -2,7 +2,7 @@
 name: agent-feature-analyzer
 description: Feature Analyst - Analyzes feature/bug requests
 model: opus
-tools: Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchPullRequests
+tools: Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, mcp__octocode-mcp__githubSearchRepositories, mcp__octocode-mcp__githubViewRepoStructure, mcp__octocode-mcp__githubSearchCode, mcp__octocode-mcp__githubGetFileContent, mcp__octocode-mcp__githubSearchPullRequests
 color: orange
 ---
 
@@ -62,26 +62,26 @@ Use MCP tools for feature implementations (>500★):
 
 **Available MCP Tools (GitHub Research):**
 
-1. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories** - Search for repositories
+1. **mcp__octocode-mcp__githubSearchRepositories** - Search for repositories
    - Use to find projects with similar features (>500★)
    - Validate feature is proven, widely implemented
    - Example: Search for "drag and drop" libraries
 
-2. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure** - Explore repository structure
+2. **mcp__octocode-mcp__githubViewRepoStructure** - Explore repository structure
    - Use to see where similar features are organized
    - Example: Explore /features or /modules folders
 
-3. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode** - Search code implementations
+3. **mcp__octocode-mcp__githubSearchCode** - Search code implementations
    - Use to find actual feature implementations
    - Search by function names, patterns, keywords
    - Example: Search for "useAuth hook" or "payment integration"
 
-4. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent** - Fetch specific files
+4. **mcp__octocode-mcp__githubGetFileContent** - Fetch specific files
    - Use to read complete feature implementations
    - Copy-paste ready examples
    - Example: Fetch auth.ts from successful project
 
-5. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchPullRequests** - Research PRs
+5. **mcp__octocode-mcp__githubSearchPullRequests** - Research PRs
    - Use to understand how features were added
    - Learn from discussion, decisions, edge cases
    - Example: Search merged PRs for "dark mode implementation"

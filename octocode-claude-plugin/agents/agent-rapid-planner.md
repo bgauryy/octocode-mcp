@@ -92,15 +92,27 @@ Tests are added POST-MVP when user requests. Focus on working code with great de
 
 **Use MCP tools intelligently** (not rigid steps - adapt to what you need):
 
+
+**IMPORTANT** - use octocode tools for fetching from github and for research!!
+TOOLS:
+ mcp__octocode-mcp__githubSearchCode
+ mcp__octocode-mcp__githubGetFileContent
+ mcp__octocode-mcp__githubSearchRepositories
+ mcp__octocode-mcp__githubViewRepoStructure
+
+
 **🚀 First: Check Boilerplates**
-- Fetch `https://github.com/bgauryy/octocode-mcp/blob/main/resources/boilerplate_cli.md`
+- `https://github.com/bgauryy/octocode-mcp/blob/main/resources/boilerplate_cli.md`
 - Match user requirements to fastest setup command
 - Boilerplate = 10x speed boost, always prefer!
 
 **Architecture Patterns (if needed):**
-- Research `https://github.com/bgauryy/octocode-mcp/blob/main/resources/README.md`
+- `https://github.com/bgauryy/octocode-mcp/blob/main/resources/README.md`
 - Use octocode MCP tools for targeted exploration
 - Web search for latest best practices if octocode doesn't have it
+
+**Similar Projects (when valuable):**
+Exploretory
 
 **Similar Projects (when valuable):**
 - Use GitHub MCP tools to find proven patterns (>500★)

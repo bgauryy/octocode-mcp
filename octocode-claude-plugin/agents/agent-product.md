@@ -2,7 +2,7 @@
 name: agent-product
 description: Product Manager - Gathers requirements and creates PRD
 model: opus
-tools: Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchPullRequests
+tools: Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, mcp__octocode-mcp__githubSearchRepositories, mcp__octocode-mcp__githubViewRepoStructure, mcp__octocode-mcp__githubSearchCode, mcp__octocode-mcp__githubGetFileContent, mcp__octocode-mcp__githubSearchPullRequests
 color: blue
 ---
 
@@ -35,20 +35,20 @@ Reference: See "MCP Tools - How to Use" section below.
 
 **Available MCP Tools (GitHub Research):**
 
-1. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories** - Search for repositories
+1. **mcp__octocode-mcp__githubSearchRepositories** - Search for repositories
    - Use to find similar products, proven solutions (>500★)
    - Validate market fit, feature sets
    - Example: Search for "project management tools" with >500★
 
-2. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure** - Explore repository structure
+2. **mcp__octocode-mcp__githubViewRepoStructure** - Explore repository structure
    - Use to understand how similar products are organized
    - Example: Explore feature structure of successful projects
 
-3. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode** - Search code implementations
+3. **mcp__octocode-mcp__githubSearchCode** - Search code implementations
    - Use to validate feature feasibility
    - Example: Search for "user authentication flow"
 
-4. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent** - Fetch specific files
+4. **mcp__octocode-mcp__githubGetFileContent** - Fetch specific files
    - Use to read README, feature docs from reference projects
    - Example: Fetch README.md to understand feature descriptions
 

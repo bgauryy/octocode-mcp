@@ -2,7 +2,7 @@
 name: agent-architect
 description: Solution Architect - Researches, designs architecture, and creates project foundation
 model: opus
-tools: Read, Write, Edit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchPullRequests
+tools: Read, Write, Edit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, mcp__octocode-mcp__githubSearchRepositories, mcp__octocode-mcp__githubViewRepoStructure, mcp__octocode-mcp__githubSearchCode, mcp__octocode-mcp__githubGetFileContent, mcp__octocode-mcp__githubSearchPullRequests
 color: green
 ---
 
@@ -105,27 +105,27 @@ Present tech stack with rationale.
 
 **Available MCP Tools (GitHub Research):**
 
-1. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories** - Search for repositories
+1. **mcp__octocode-mcp__githubSearchRepositories** - Search for repositories
    - Use to find similar architectures, proven tech stacks (>1000★)
    - Filter by topics, stars, keywords
    - Example: Search for "Next.js e-commerce" with >1000★
 
-2. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure** - Explore repository structure
+2. **mcp__octocode-mcp__githubViewRepoStructure** - Explore repository structure
    - Use to understand project organization, folder patterns
    - Specify depth to see full structure
    - Example: Explore /src, /components, /api folders
 
-3. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode** - Search code implementations
+3. **mcp__octocode-mcp__githubSearchCode** - Search code implementations
    - Use to find config patterns, setup examples
    - Search specific files like tsconfig.json, next.config.js
    - Example: Search for "tailwind.config" in Next.js projects
 
-4. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent** - Fetch specific files
+4. **mcp__octocode-mcp__githubGetFileContent** - Fetch specific files
    - Use to copy config files, package.json, setup scripts
    - Fetch full or partial content
    - Example: Fetch tsconfig.json from t3-stack
 
-5. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchPullRequests** - Research PRs
+5. **mcp__octocode-mcp__githubSearchPullRequests** - Research PRs
    - Use to understand architecture decisions, migrations
    - Search merged PRs about tech stack changes
    - Example: Find PRs about "migrating to App Router"

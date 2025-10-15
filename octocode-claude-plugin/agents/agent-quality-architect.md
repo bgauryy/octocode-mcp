@@ -2,7 +2,7 @@
 name: agent-quality-architect
 description: Quality Architect - Verification planning, codebase analysis, bug scanning, and browser testing
 model: opus
-tools: Read, Write, Grep, Glob, LS, TodoWrite, Bash, BashOutput, WebFetch, WebSearch, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-local-memory__setStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__getStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__deleteStorage, mcp__plugin_octocode-claude-plugin_chrome-devtools__navigate_page, mcp__plugin_octocode-claude-plugin_chrome-devtools__take_screenshot, mcp__plugin_octocode-claude-plugin_chrome-devtools__take_snapshot, mcp__plugin_octocode-claude-plugin_chrome-devtools__list_console_messages, mcp__plugin_octocode-claude-plugin_chrome-devtools__list_network_requests, mcp__plugin_octocode-claude-plugin_chrome-devtools__click, mcp__plugin_octocode-claude-plugin_chrome-devtools__fill, mcp__plugin_octocode-claude-plugin_chrome-devtools__wait_for
+tools: Read, Write, Grep, Glob, LS, TodoWrite, Bash, BashOutput, WebFetch, WebSearch, mcp__octocode-mcp__githubSearchRepositories, mcp__octocode-mcp__githubSearchCode, mcp__octocode-mcp__githubGetFileContent, mcp__octocode-local-memory__setStorage, mcp__octocode-local-memory__getStorage, mcp__octocode-local-memory__deleteStorage, mcp__chrome-devtools-mcp__navigate_page, mcp__chrome-devtools-mcp__take_screenshot, mcp__chrome-devtools-mcp__take_snapshot, mcp__chrome-devtools-mcp__list_console_messages, mcp__chrome-devtools-mcp__list_network_requests, mcp__chrome-devtools-mcp__click, mcp__chrome-devtools-mcp__fill, mcp__chrome-devtools-mcp__wait_for
 color: teal
 ---
 
@@ -345,15 +345,15 @@ Manager will check these keys and spawn fix tasks if needed.
 
 ### GitHub Research (octocode-mcp) - For Mode 1 & 2
 
-1. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories** - Search repositories
+1. **mcp__octocode-mcp__githubSearchRepositories** - Search repositories
    - Use to find testing/QA patterns (>500★)
    - Example: Search for "testing strategy" or "QA checklist"
 
-2. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode** - Search code
+2. **mcp__octocode-mcp__githubSearchCode** - Search code
    - Use to find test examples, verification patterns
    - Example: Search for "manual test checklist"
 
-3. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent** - Fetch files
+3. **mcp__octocode-mcp__githubGetFileContent** - Fetch files
    - Use to read testing docs, QA guides
    - Example: Fetch TESTING.md from reference projects
 
@@ -364,27 +364,27 @@ Manager will check these keys and spawn fix tasks if needed.
 
 ### Browser Testing (chrome-devtools) - For Mode 3 ONLY
 
-1. **mcp__plugin_octocode-claude-plugin_chrome-devtools__navigate_page** - Navigate to URL
+1. **mcp__chrome-devtools-mcp__navigate_page** - Navigate to URL
    - Start dev server, open localhost
    - Example: Navigate to http://localhost:3000
 
-2. **mcp__plugin_octocode-claude-plugin_chrome-devtools__take_snapshot** - Get page text snapshot
+2. **mcp__chrome-devtools-mcp__take_snapshot** - Get page text snapshot
    - Preferred over screenshot for performance
    - Returns interactive elements with UIDs
 
-3. **mcp__plugin_octocode-claude-plugin_chrome-devtools__click** / **fill** / **wait_for** - Interact
+3. **mcp__chrome-devtools-mcp__click** / **fill** / **wait_for** - Interact
    - Test user flows (login, forms, navigation)
    - Example: Click login button, fill form, wait for redirect
 
-4. **mcp__plugin_octocode-claude-plugin_chrome-devtools__list_console_messages** - Check console
+4. **mcp__chrome-devtools-mcp__list_console_messages** - Check console
    - Find JavaScript errors, React warnings
    - Critical for bug detection
 
-5. **mcp__plugin_octocode-claude-plugin_chrome-devtools__list_network_requests** - Monitor network
+5. **mcp__chrome-devtools-mcp__list_network_requests** - Monitor network
    - Find failed API calls, 404s, CORS errors
    - Example: Filter by resourceType for specific requests
 
-6. **mcp__plugin_octocode-claude-plugin_chrome-devtools__take_screenshot** - Visual verification
+6. **mcp__chrome-devtools-mcp__take_screenshot** - Visual verification
    - Use for UI issues, layout problems
    - Example: Screenshot error states
 

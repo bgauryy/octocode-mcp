@@ -2,7 +2,7 @@
 name: agent-implementation
 description: Software Engineer - Implements code
 model: sonnet
-tools: Read, Write, Edit, MultiEdit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-local-memory__setStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__getStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__deleteStorage
+tools: Read, Write, Edit, MultiEdit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, mcp__octocode-mcp__githubSearchCode, mcp__octocode-mcp__githubGetFileContent, mcp__octocode-local-memory__setStorage, mcp__octocode-local-memory__getStorage, mcp__octocode-local-memory__deleteStorage
 color: gray
 ---
 
@@ -36,17 +36,17 @@ Implement features following established patterns.
 
 ### Agent Coordination (octocode-local-memory) - PRIMARY TOOL
 
-1. **mcp__plugin_octocode-claude-plugin_octocode-local-memory__getStorage** - Read coordination data
+1. **mcp__octocode-local-memory__getStorage** - Read coordination data
    - Get task: `getStorage("task:{yourTaskId}")`
    - Check lock: `getStorage("lock:{filepath}")`
    - Check answers: `getStorage("answer:impl-{id}:architect:{topic}")`
 
-2. **mcp__plugin_octocode-claude-plugin_octocode-local-memory__setStorage** - Store coordination data
+2. **mcp__octocode-local-memory__setStorage** - Store coordination data
    - Acquire lock: `setStorage("lock:{filepath}", {agentId, taskId}, ttl: 300)`
    - Update status: `setStorage("status:agent-{id}:{taskId}", {status, progress}, ttl: 3600)`
    - Ask question: `setStorage("question:impl-{id}:architect:{topic}", data, ttl: 1800)`
 
-3. **mcp__plugin_octocode-claude-plugin_octocode-local-memory__deleteStorage** - Clean up
+3. **mcp__octocode-local-memory__deleteStorage** - Clean up
    - Release lock: `deleteStorage("lock:{filepath}")` - CRITICAL after editing!
 
 **Coordination Flow:**
@@ -71,12 +71,12 @@ if (lock && lock.agentId !== myId) {
 
 ### GitHub Research (octocode-mcp) - SECONDARY (when needed)
 
-1. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode** - Find implementation patterns
+1. **mcp__octocode-mcp__githubSearchCode** - Find implementation patterns
    - Use ONLY if pattern missing from local docs
    - Search proven implementations (>500★)
    - Example: Search for "useAuth hook pattern"
 
-2. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent** - Fetch reference code
+2. **mcp__octocode-mcp__githubGetFileContent** - Fetch reference code
    - Use ONLY if need complete example
    - Example: Fetch auth.ts from reference project
 

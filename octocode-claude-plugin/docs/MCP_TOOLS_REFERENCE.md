@@ -120,6 +120,8 @@ Quick reference for all tools available to agents.
 | Agent | octocode-mcp | local-memory | chrome-devtools |
 |-------|--------------|--------------|-----------------|
 | agent-rapid-planner | ✅ Planning | ❌ | ❌ |
+| agent-rapid-planner-implementation | ⚠️ If needed | ✅ Coordination | ❌ |
+| agent-rapid-quality-architect | ✅ Patterns | ✅ Mode 3 only | ✅ QA testing |
 | agent-product | ✅ Research | ❌ | ❌ |
 | agent-architect | ✅ Research | ❌ | ❌ |
 | agent-feature-analyzer | ✅ Research | ❌ | ❌ |
