@@ -2,7 +2,7 @@
 
 **Ultra-fast in-memory storage for AI agent coordination**
 
-A Model Context Protocol (MCP) server that enables multiple AI agents to communicate and coordinate during workflow execution. Provides sub-millisecond read/write operations for task assignments, file locks, status updates, and inter-agent messaging.
+A lightweight Model Context Protocol (MCP) server providing a lean coordination layer using [node-cache](https://www.npmjs.com/package/node-cache) for local storage within the MCP node process. Enables multiple AI agents to communicate and coordinate during workflow execution with sub-millisecond read/write operations for task assignments, file locks, status updates, and inter-agent messaging.
 
 ---
 
@@ -22,13 +22,14 @@ When multiple AI agents work together on a task, they need to coordinate:
 ## ✨ Key Features
 
 - ⚡ **Blazing Fast**: Sub-millisecond read/write operations (0.1-0.8ms average)
+- 🪶 **Lean Implementation**: Minimal overhead layer over node-cache within the MCP process
 - 🔒 **File Lock Management**: Prevent simultaneous file edits and race conditions
-- 📦 **Zero Setup**: No database, no Redis, no configuration required
+- 📦 **Zero Setup**: No database, no Redis, no configuration required - pure Node.js
 - 🔄 **Auto Cleanup**: TTL-based expiration (data expires automatically)
 - 💾 **Session-Scoped**: Fresh state for each workflow (by design)
 - 🎯 **Simple API**: Just 3 tools - `setStorage()`, `getStorage()`, `deleteStorage()`
 
-> **Note:** This is for **temporary coordination data** during workflow execution, not persistent storage. Perfect for real-time agent communication!
+> **Note:** This is a **lean coordination layer** for temporary data during workflow execution, not persistent storage. It runs locally in the MCP server's node process using node-cache for optimal performance.
 
 ---
 
@@ -87,9 +88,6 @@ npm run build
 
 Add to your MCP config file:
 
-**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`  
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-
 ```json
 {
   "mcpServers": {
@@ -101,33 +99,11 @@ Add to your MCP config file:
 }
 ```
 
-> Replace `/absolute/path/to/` with your actual project path.
-
-**Restart Claude Desktop** and verify the tools are available:
-- ✅ Look for `setStorage`, `getStorage`, and `deleteStorage` in available tools
-
-### Verify Installation
-
-Test that the server is working by asking Claude:
-
-```
-"Can you test the local memory by:
-1. Storing a value with key 'test:hello' and value 'world'
-2. Reading it back
-3. Deleting it
-4. Verifying it's deleted"
-```
-
-Expected behavior:
-1. Claude uses `setStorage` → Returns success
-2. Claude uses `getStorage` → Returns the stored value
-3. Claude uses `deleteStorage` → Returns deleted: true
-4. Claude uses `getStorage` again → Returns exists: false
-5. ✅ If all work, installation is successful!
-
 ---
 
 ## 🧠 How It Works
+
+This is a **lean coordination layer** that wraps [node-cache](https://www.npmjs.com/package/node-cache) to provide MCP tools for agent communication. It runs locally within the MCP server's Node.js process—no external services required.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -135,24 +111,23 @@ Expected behavior:
 └─────────────────────────────────────────────────────────────┘
 
    Manager Agent                   Local Memory Server
-   ┌───────────┐                   ┌─────────────┐
-   │  Assigns  │──setStorage()──>  │   In-Memory │
-   │   Tasks   │                   │    Cache    │
-   └───────────┘                   │  (NodeCache)│
-                                   └─────────────┘
-                                          ↕
-   Worker Agents                          │
-   ┌───────────┐                          │
+   ┌───────────┐                   ┌──────────────────┐
+   │  Assigns  │──setStorage()──>  │  MCP Tool Layer  │ (Lean wrapper)
+   │   Tasks   │                   │        ↓         │
+   └───────────┘                   │   node-cache     │ (In-memory)
+                                   │  (Node process)  │
+   Worker Agents                   └──────────────────┘
+   ┌───────────┐                          ↕
    │ Agent #1  │──getStorage()────────────┤
    │ Agent #2  │──setStorage()────────────┤
    │ Agent #3  │──getStorage()────────────┘
    └───────────┘
 
-   Key Features:
+   Architecture:
+   • Minimal overhead over node-cache
+   • Runs in MCP server process (no external dependencies)
    • Sub-millisecond response time
    • Automatic TTL-based expiration
-   • Simple key-value storage
-   • JSON-friendly data format
 ```
 
 **Data Flow:**

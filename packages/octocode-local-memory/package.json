@@ -1,6 +1,6 @@
 {
   "name": "octocode-local-memory",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Ultra-fast in-memory communication layer for parallel AI agents",
   "type": "module",
   "main": "dist/index.js",
