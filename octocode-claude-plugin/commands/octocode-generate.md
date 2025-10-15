@@ -42,10 +42,11 @@ $ARGUMENTS
   ↳ `agent-founding-engineer` → project scaffold + README → ✋ Gate 2.75
 **Phase 3: Planning** → `agent-manager` → `tasks.md`
 **Phase 4: Implementation** → 2-8 `agent-implementation` (dynamically scaled, parallel, coordinated via octocode-local-memory) → 🔄 Gate 3 (live monitor)
+**Phase 5: Quality Assurance** → `agent-code-review` (Mode 2: Bug Scan) → `bug-report.md` → 🔄 Fix loop if needed (max 2 loops)
 
 **Post-Implementation:** User runs `npm run build && npm run lint`, follows test-plan.md, commits when ready
 
-**Note:** Standard mode does NOT include automated code review. Only `/octocode-generate-quick` has code review phase by agent-rapid-planner.
+**Note:** Standard mode NOW includes automated code review by `agent-code-review` (Phase 5). This catches runtime bugs before user testing.
 
 ## Docs
 
@@ -56,6 +57,7 @@ $ARGUMENTS
 | `test-plan.md` | agent-quality | ✋ 2.5 |
 | README.md + scaffold | agent-founding-engineer | ✋ 2.75 |
 | `tasks.md` | agent-manager | - |
+| `bug-report.md` | agent-code-review | 🔄 Fix loop |
 
 ## Start
 

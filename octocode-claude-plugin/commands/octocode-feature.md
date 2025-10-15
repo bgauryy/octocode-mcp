@@ -36,10 +36,11 @@ Tests added post-MVP when user requests.
 
 ## Workflow
 
-**Phase 1: Code Review** → `agent-code-review` → `codebase-review.md` → ✋ Gate 1
+**Phase 1: Code Review** → `agent-code-review` (Mode 1: Analysis) → `codebase-review.md` → ✋ Gate 1
 **Phase 2: Analysis** → `agent-feature-analyzer` → `analysis.md` → ✋ Gate 2
 **Phase 3: Planning** → `agent-manager` → `tasks.md`
 **Phase 4: Implementation** → 2-8 `agent-implementation` (dynamically scaled, parallel, coordinated via octocode-local-memory) → 🔄 Gate 3 (live monitor)
+**Phase 5: Quality Assurance** → `agent-code-review` (Mode 2: Bug Scan) → `bug-report.md` → 🔄 Fix loop if needed (max 2 loops)
 
 **Post-Implementation:** User runs `npm run build && npm run lint`, verifies changes, commits when ready
 
@@ -47,9 +48,10 @@ Tests added post-MVP when user requests.
 
 | File | Agent | Gate |
 |------|-------|------|
-| `codebase-review.md` | agent-code-review | ✋ 1 |
+| `codebase-review.md` | agent-code-review (Mode 1) | ✋ 1 |
 | `analysis.md` | agent-feature-analyzer | ✋ 2 |
 | `tasks.md` | agent-manager | - |
+| `bug-report.md` | agent-code-review (Mode 2) | 🔄 Fix loop |
 
 ## Start
 

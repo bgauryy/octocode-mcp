@@ -131,4 +131,75 @@ agentCount = Math.max(2, Math.min(8, Math.ceil(complexityScore / 10)))
 
 **Gate 3 Controls:** [1] Pause [2] Details [3] Inspect [4] Issues [5] Continue
 
-**On Completion:** All tasks finished, ready for user verification
+---
+
+## Phase 5: Quality Assurance (Post-Implementation)
+
+**After all implementation tasks complete:**
+
+1. **Launch QA Agent**
+   - Spawn `agent-code-review` with Mode 2 (Bug Scan)
+   - Task: "Scan implementation for runtime bugs and quality issues"
+
+2. **Monitor QA Status**
+   ```bash
+   # Check QA completion
+   getStorage("qa:status")  # → "complete"
+
+   # Check QA results
+   getStorage("qa:result")  # → "{critical: N, warnings: N, status: 'clean'|'issues'}"
+   ```
+
+3. **Decision Tree**
+
+   **If Clean (0 critical issues):**
+   - ✅ Read `bug-report.md` for summary
+   - ✅ Update workflow status: `setStorage("workflow:status", "qa-passed")`
+   - ✅ Present to user: "Implementation complete and reviewed - ready for verification!"
+
+   **If Issues Found (1-5 critical):**
+   - ⚠️ Read `bug-report.md` for issue details
+   - ⚠️ Create fix tasks from bug report (CRITICAL priority)
+   - ⚠️ Spawn 1-2 `agent-implementation` to fix issues
+   - ⚠️ After fixes, re-run QA (max 2 QA loops total)
+
+   **If Major Issues (6+ critical):**
+   - 🚨 Read `bug-report.md`
+   - 🚨 Present summary to user with decision point:
+     ```
+     ⚠️ QA REVIEW FOUND MAJOR ISSUES
+
+     Critical bugs: [N]
+     Warnings: [N]
+
+     See docs/bug-report.md for details
+
+     [1] Auto-fix all issues (spawn fix agents)
+     [2] Review bug report first
+     [3] Skip QA and proceed (not recommended)
+     ```
+
+4. **Fix Loop Management**
+   - Track QA iterations: `getStorage("qa:iteration")` (max 2)
+   - After 2 loops, escalate to user even if issues remain
+   - Update PROJECT_SPEC.md or tasks.md with QA status
+
+5. **Completion Signals**
+   ```bash
+   # Mark workflow complete
+   setStorage("workflow:complete", "true", ttl: 3600)
+
+   # Clean up coordination keys
+   deleteStorage("qa:status")
+   deleteStorage("qa:result")
+   deleteStorage("qa:fix-needed")
+   ```
+
+**Key Principles:**
+- QA is NOT optional (runs automatically after implementation)
+- Build/lint failures = immediate fix loop
+- 1-5 critical bugs = auto-fix with re-scan
+- 6+ critical bugs = user decision point
+- Max 2 QA loops (prevent infinite loops)
+
+**On Final Completion:** All tasks finished + QA passed → Ready for user verification!
