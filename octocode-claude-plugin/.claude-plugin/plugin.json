@@ -5,5 +5,18 @@
   "author": {
     "name": "Guy Bary",
     "email": "bgauryy@gmail.com"
+  },
+  "mcpServers": {
+    "octocode-local-memory": {
+      "command": "npx",
+      "args": ["octocode-local-memory@latest"]
+    },
+    "octocode": {
+      "command": "npx", 
+      "args": ["octocode-mcp@7.0.0"],
+      "env": {
+        "TOOLS_TO_RUN": "githubGetFileContent,githubSearchCode,githubViewRepoStructure,githubSearchRepositories,githubSearchPullRequests"
+      }
+    }
   }
 }

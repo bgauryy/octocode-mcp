@@ -1,795 +1,649 @@
-# Octocode Development Flow
+# Octocode Command Flows
 
-> **⚠️ NOTE: This document is being updated to reflect the new 5-phase workflow where research is integrated into each agent using Octocode MCP directly. Some sections may reference the old agent-research-context agent.**
+This document explains the complete workflows for both Octocode commands: `/octocode-generate` (build from scratch) and `/octocode-feature` (enhance existing code).
 
-This document describes the complete workflow from user request to production-ready code using the Octocode AI development team.
+---
 
 ## Overview
 
-Octocode orchestrates 7 specialized AI agents through a **5-phase workflow** with **4 human gates** for approval and monitoring. Each phase builds on previous work with clear outputs and validation. Research is integrated into each agent's work using Octocode MCP directly.
+Octocode provides **two specialized workflows**:
+
+1. **`/octocode-generate`** - Build projects from scratch (6 agents, 4 gates)
+2. **`/octocode-feature`** - Add features or fix bugs in existing code (4 agents, 3 gates)
+
+Both workflows follow the **MVP-first approach**:
+- ✅ Build passes
+- ✅ Types correct
+- ✅ Lint passes
+- ✅ Features work
+- ❌ NO tests until post-MVP (user request only)
 
 ### Important: Git Operations
 
-**NO GIT COMMANDS:** All agents only modify local files. The user is responsible for all git operations including commits, pushes, branch management, and merges. Agents focus solely on code implementation and file modifications.
+**NO GIT COMMANDS:** All agents only modify local files. You (the user) are responsible for all git operations including commits, pushes, branch management, and merges.
+
+---
+
+## Command 1: `/octocode-generate` - Build from Scratch
+
+**Purpose:** Transform an idea into production-ready code
+**Agents:** 6 specialized agents
+**Gates:** 4 human approval checkpoints
+**Output:** `docs/requirements.md`, `docs/design.md`, `docs/test-plan.md`, `docs/tasks.md`, README.md, working codebase
+
+### Workflow Diagram
 
 ```mermaid
 flowchart TD
     Start([User Request]) --> P1[Phase 1: Requirements]
-    P1 --> G1{Gate 1: Approve?}
+    P1 --> G1{Gate 1: Approve Requirements?}
     G1 -->|No| P1
-    G1 -->|Yes| P2[Phase 2: Architecture]
-    P2 --> G2{Gate 2: Approve?}
+    G1 -->|Yes| P2[Phase 2: Architecture Design]
+    P2 --> G2{Gate 2: Approve Architecture?}
     G2 -->|No| P2
-    G2 -->|Yes| P3[Phase 3: Validation]
-    P3 --> G3{Gate 3: Approve?}
-    G3 -->|No| P3
-    G3 -->|Yes| P4P5[Phase 4+5: Research & Planning]
-    P4P5 --> P6[Phase 6: Implementation]
-    P6 --> G4{Gate 4: Monitor}
-    G4 -->|Pause| P6
-    G4 -->|Continue| P7[Phase 7: Verification]
-    P7 --> G5{Gate 5: Approve?}
-    G5 -->|Fix| P6
-    G5 -->|Yes| End([Production Ready])
+    G2 -->|Yes| P2_5[Phase 2.5: Verification Planning]
+    P2_5 --> G2_5{Gate 2.5: Approve Test Plan?}
+    G2_5 -->|No| P2_5
+    G2_5 -->|Yes| P2_75[Phase 2.75: Project Foundation]
+    P2_75 --> G2_75{Gate 2.75: Approve Foundation?}
+    G2_75 -->|No| P2_75
+    G2_75 -->|Yes| P3[Phase 3: Task Planning]
+    P3 --> P4[Phase 4: Implementation]
+    P4 --> G3{Gate 3: Monitor Progress}
+    G3 -->|Pause| P4
+    G3 -->|Continue| End([Implementation Complete])
+    End --> Manual[User runs build, lint, test-plan.md]
+    Manual --> Commit[User commits when ready]
+
+    style Start fill:#e1f5ff
+    style End fill:#d4edda
+    style G1 fill:#fff3cd
+    style G2 fill:#fff3cd
+    style G2_5 fill:#fff3cd
+    style G2_75 fill:#fff3cd
+    style G3 fill:#fff3cd
+```
+
+### Phase 1: Requirements Gathering
+
+**Agent:** `agent-product` (Product Manager)
+**Model:** Claude Opus
+**Tools:** Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+
+**What Happens:**
+1. Asks clarifying questions about the project
+2. Researches similar projects using **octocode-mcp** (610+ curated repos)
+3. Creates comprehensive requirements document
+
+**Output:** `<project>/docs/requirements.md` (<50KB)
+- Product overview and value proposition
+- Feature list with priorities and acceptance criteria
+- User stories (if UX is complex)
+- Performance/scale criteria (if critical)
+- Footer: "**Created by octocode-mcp**"
+
+**✋ Gate 1: Requirements Review**
+
+User reviews and can:
+- ✅ **Approve** → Continue to Architecture
+- 📝 **Modify** → Request changes
+- ❓ **Questions** → Clarify specific points
+
+---
+
+### Phase 2: Architecture Design
+
+**Agent:** `agent-architect` (Solution Architect)
+**Model:** Claude Opus
+**Tools:** Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+
+**What Happens:**
+1. Studies requirements document
+2. Researches proven architectures using **octocode-mcp** (>1000★ repos)
+3. Applies critical thinking framework to design decisions
+4. Creates comprehensive design document
+
+**Critical Thinking Questions:**
+- What am I optimizing for? (performance/maintainability/cost)
+- What are the constraints? (scale/budget/expertise)
+- What could go wrong?
+- What's the evidence? (proven at scale)
+
+**Output:** `<project>/docs/design.md` (<50KB)
+- Tech stack with rationale
+- Architecture overview (system flow, components)
+- Key decisions with context, options, tradeoffs
+- Database schema, API design, auth strategy (as needed)
+- Project structure and organization
+- Build and lint setup
+- Footer: "**Created by octocode-mcp**"
+
+**✋ Gate 2: Architecture Review**
+
+User reviews tech stack and can:
+- ✅ **Approve** → Triggers Phase 2.5
+- 📝 **Modify** → Request changes
+- ❓ **Questions** → Clarify decisions
+
+---
+
+### Phase 2.5: Verification Planning
+
+**Agent:** `agent-quality` (Quality Architect)
+**Model:** Claude Opus
+**Tools:** Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+
+**🚨 IMPORTANT: Creates VERIFICATION GUIDES, NOT TEST CODE**
+
+**What Happens:**
+1. Studies requirements and design documents
+2. Researches testing approaches using **octocode-mcp** (>500★ repos)
+3. Creates manual verification plan (NOT test code)
+
+**Output:** `<project>/docs/test-plan.md` (<50KB)
+- Verification strategy (what needs verification, manual steps)
+- Feature verification flows (step-by-step user flows)
+- Component verification mapping (API, DB, UI interactions)
+- Test data scenarios (sample data, edge cases)
+- Quality checklist (build, lint, performance, security)
+- Verification guidance (how to verify, what to look for)
+- Footer: "**Created by octocode-mcp**"
+
+**This is a MANUAL VERIFICATION GUIDE:**
+- ✅ What features to check
+- ✅ How to verify each works
+- ✅ What scenarios to test
+- ❌ NOT .test.ts files
+- ❌ NOT Jest/Vitest setup
+
+**✋ Gate 2.5: Verification Plan Review**
+
+User reviews and can:
+- ✅ **Approve** → Triggers Phase 2.75
+- 📝 **Adjust Coverage** → Modify plan
+- ❓ **Questions** → Clarify approach
+
+---
+
+### Phase 2.75: Project Foundation
+
+**Agent:** `agent-founding-engineer` (Founding Engineer)
+**Model:** Claude Sonnet
+**Tools:** Read, Write, Edit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, ListMcpResourcesTool, ReadMcpResourceTool
+
+**What Happens:**
+1. Studies design.md and test-plan.md
+2. Creates initial project scaffold
+3. Sets up build system and tooling
+4. Verifies foundation works
+
+**Actions:**
+1. **Generate scaffold:**
+   - Initialize package.json with dependencies
+   - Set up build system (TypeScript, bundler, etc.)
+   - Configure linting (ESLint, Prettier)
+   - Create project structure per design.md
+   - Add config files (.gitignore, tsconfig.json, etc.)
+
+2. **Implement core structure:**
+   - Create placeholder files for main components
+   - Set up entry points (main.ts, index.ts, etc.)
+   - Add type definitions
+   - Ensure clean architecture boundaries
+
+3. **Verify foundation:**
+   - Run `npm install`
+   - Verify `npm run build` passes
+   - Verify `npm run lint` passes
+   - Ensure types are correct
+
+**Output:**
+- Complete project scaffold
+- `README.md` in project root with:
+  - Project overview and purpose
+  - Tech stack
+  - Setup instructions
+  - Development commands
+  - Project structure overview
+  - Footer: "**Created by octocode-mcp**"
+
+**✋ Gate 2.75: Foundation Review**
+
+User reviews initial project and can:
+- ✅ **Approve** → Continue to Planning
+- 📝 **Adjust** → Request changes
+- ❓ **Questions** → Clarify structure
+
+---
+
+### Phase 3: Task Planning
+
+**Agent:** `agent-manager` (Engineering Manager)
+**Model:** Claude Sonnet
+**Tools:** Read, Write, Edit, Grep, Glob, LS, TodoWrite, Bash, BashOutput, Task, KillShell, ListMcpResourcesTool, ReadMcpResourceTool
+
+**What Happens:**
+1. Reads design.md and patterns (if exists)
+2. Creates comprehensive task breakdown
+3. Identifies logical dependencies
+4. Plans parallelization strategy
+
+**Output:** `<project>/docs/tasks.md` (<50KB)
+- Logical phases (setup, core, integrations, polish)
+- Individual tasks with descriptions
+- Complexity estimates (low/medium/high)
+- Logical dependencies only
+- Footer: "**Created by octocode-mcp**"
+
+**No Gate** - Manager proceeds directly to implementation
+
+---
+
+### Phase 4: Implementation
+
+**Agents:** 4-5 instances of `agent-implementation` (Software Engineers)
+**Managed by:** `agent-manager`
+**Model:** Claude Sonnet
+**Tools:** Read, Write, Edit, MultiEdit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, ListMcpResourcesTool, ReadMcpResourceTool
+
+**Coordination via octocode-local-memory:**
+- Task assignments: `setStorage("task:{id}", taskData, ttl: 3600)`
+- Status updates: `setStorage("status:agent-{id}:{taskId}", statusData, ttl: 3600)`
+- File locks: `setStorage("lock:{filepath}", lockData, ttl: 300)` → `deleteStorage("lock:{filepath}")`
+- Inter-agent messages: `setStorage("question:impl-{id}:{target}:{topic}", questionData, ttl: 1800)`
+
+**Implementation Workflow:**
+```mermaid
+sequenceDiagram
+    participant Manager as agent-manager
+    participant Impl1 as agent-implementation-1
+    participant Impl2 as agent-implementation-2
+    participant Storage as octocode-local-memory
+
+    Manager->>Storage: setStorage("task:1", taskData)
+    Manager->>Storage: setStorage("task:2", taskData)
+
+    Impl1->>Storage: getStorage("task:1")
+    Impl2->>Storage: getStorage("task:2")
+
+    Impl1->>Storage: setStorage("lock:src/auth.ts", lockData)
+    Impl1->>Impl1: Write code
+    Impl1->>Storage: deleteStorage("lock:src/auth.ts")
+
+    Impl1->>Storage: setStorage("status:agent-1:task-1", {status: "completed"})
+
+    Manager->>Storage: getStorage("status:agent-1:task-1")
+    Manager->>Manager: Update tasks.md
+    Manager->>Storage: setStorage("task:3", nextTaskData)
+```
+
+**Quality Standards (Per Task):**
+- ✅ Follow design patterns from docs
+- ✅ TypeScript strict mode, minimize `any`
+- ✅ Validate inputs (Zod, etc.)
+- ✅ Handle errors gracefully
+- ✅ Build passes
+- ✅ Lint passes
+- ❌ NO console.log (use proper logging)
+- ❌ NO hardcoded values (use env vars)
+- ❌ NO TESTS yet
+
+**Output:**
+- Complete feature implementation
+- Updated `docs/tasks.md` with progress
+
+**🔄 Gate 3: Live Implementation Monitoring**
+
+User can monitor in real-time:
+- ⏸️ **Pause** - Stop all agents, save state
+- 📊 **Details** - View task status
+- 🔍 **Inspect** - View agent's work
+- ⚠️ **Issues** - Review errors
+- 🔄 **Continue** - Keep monitoring
+
+---
+
+### Post-Implementation
+
+**User Actions:**
+1. Run `npm run build` - Verify build passes
+2. Run `npm run lint` - Verify lint passes
+3. Follow `docs/test-plan.md` - Manual verification
+4. Commit changes when ready (user controls git)
+
+**Tests added post-MVP only when user requests.**
+
+---
+
+## Command 2: `/octocode-feature` - Enhance Existing Code
+
+**Purpose:** Add features or fix bugs in existing codebases
+**Agents:** 4 specialized agents
+**Gates:** 3 human approval checkpoints
+**Output:** `docs/codebase-review.md`, `docs/analysis.md`, `docs/tasks.md`, modified codebase
+
+### Workflow Diagram
+
+```mermaid
+flowchart TD
+    Start([User Request]) --> P1[Phase 1: Code Review]
+    P1 --> G1{Gate 1: Approve Review?}
+    G1 -->|No| P1
+    G1 -->|Yes| P2[Phase 2: Feature Analysis]
+    P2 --> G2{Gate 2: Approve Analysis?}
+    G2 -->|No| P2
+    G2 -->|Yes| P3[Phase 3: Task Planning]
+    P3 --> P4[Phase 4: Implementation]
+    P4 --> G3{Gate 3: Monitor Progress}
+    G3 -->|Pause| P4
+    G3 -->|Continue| End([Implementation Complete])
+    End --> Manual[User runs build, lint, existing tests]
+    Manual --> Commit[User commits when ready]
 
     style Start fill:#e1f5ff
     style End fill:#d4edda
     style G1 fill:#fff3cd
     style G2 fill:#fff3cd
     style G3 fill:#fff3cd
-    style G4 fill:#fff3cd
-    style G5 fill:#fff3cd
 ```
+
+### Phase 1: Code Review
+
+**Agent:** `agent-code-review` (Code Analyst)
+**Model:** Claude Sonnet
+**Tools:** Read, Write, Grep, Glob, LS, TodoWrite, Bash, BashOutput, ListMcpResourcesTool, ReadMcpResourceTool
+
+**What Happens:**
+1. Analyzes package files and configs
+2. Studies code to identify patterns and conventions
+3. Assesses quality (linting, TypeScript, build)
+4. Creates comprehensive review document
+
+**Output:** `<project>/docs/codebase-review.md` (<50KB)
+- Summary: project type, framework, quality score
+- Full tech stack with versions
+- Code patterns with examples
+- Build and lint setup
+- Project structure and organization
+- Recommendations for new code
+- Footer: "**Created by octocode-mcp**"
+
+**✋ Gate 1: Review Complete**
+
+User reviews and can:
+- ✅ **Proceed** → Continue to Analysis
+- 📊 **Details** → Review specific sections
+- ❓ **Questions** → Clarify findings
 
 ---
 
-## Phase 1: Requirements Gathering
+### Phase 2: Feature Analysis
 
-**Agent:** `agent-product` (Product Manager)  
-**Model:** Claude Opus  
-**Tools:** Read, Write, TodoWrite
+**Agent:** `agent-feature-analyzer` (Feature Analyst)
+**Model:** Claude Opus
+**Tools:** Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
 
-### Responsibilities
+**What Happens:**
+1. Reads codebase-review.md and user request
+2. Applies critical thinking framework
+3. Researches implementation patterns using **octocode-mcp** (>500★ repos)
+4. Analyzes impact and creates implementation plan
 
-1. **Discover requirements** through clarifying questions
-2. **Research similar projects** using octocode-mcp GitHub resources
-3. **Create comprehensive PRD** with features, user stories, success metrics
+**Critical Thinking Questions:**
+- What's the simplest solution?
+- What could go wrong?
+- What am I assuming?
+- Is there production evidence?
 
-### Inputs
+**Red Flags:** No similar implementations, HIGH complexity + LOW confidence, >10 files
+**Green Flags:** Similar feature exists, pattern proven (>500★), low risk
 
-- User's project request
-- Octocode-MCP resources (610+ curated Node.js/TypeScript repos)
+**Output:** `<project>/docs/analysis.md` (<50KB)
+- Clear understanding and acceptance criteria
+- Impact assessment (files, DB, API, UI)
+- Risks with mitigation
+- Solution options with recommendation
+- High-level task breakdown
+- Build and lint considerations
+- Footer: "**Created by octocode-mcp**"
 
-### Outputs
+**✋ Gate 2: Analysis Complete**
 
-Created in `.octocode/requirements/`:
-
-| File | Description |
-|------|-------------|
-| `prd.md` | Product Requirements Document with problem, users, features, metrics |
-| `features.md` | Detailed feature specs with acceptance criteria and dependencies |
-| `user-stories.md` | User journeys, edge cases, error scenarios |
-| `error-handling.md` | Error scenarios and handling strategies |
-| `performance.md` | Performance criteria and SLAs |
-
-### Gate 1: PRD Approval ✋
-
-User reviews requirements summary and can:
-- ✅ **Approve** → Continue to Architecture
-- 📝 **Modify** → Request changes to requirements
-- ❓ **Questions** → Clarify specific points
-- 📖 **Review** → Read full PRD documentation
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Agent-Product
-    participant MCP as Octocode-MCP
-
-    User->>Agent-Product: Project request
-    Agent-Product->>User: Clarifying questions
-    User->>Agent-Product: Answers
-    Agent-Product->>MCP: Search similar projects
-    MCP-->>Agent-Product: 610+ repo patterns
-    Agent-Product->>Agent-Product: Create PRD
-    Agent-Product->>User: Present requirements summary
-    User->>Agent-Product: Approve/Modify
-```
+User reviews and can:
+- ✅ **Implement** → Continue to Planning
+- 📝 **Adjust** → Modify approach
+- 🔍 **Review** → Deep dive into analysis
 
 ---
 
-## Phase 2: Architecture Design
+### Phase 3: Task Planning
 
-**Agent:** `agent-architect` (Solution Architect)  
-**Model:** Claude Opus  
-**Tools:** Read, Write, Grep, Glob, LS, TodoWrite
+**Agent:** `agent-manager` (Engineering Manager)
+**Model:** Claude Sonnet
+**Tools:** Read, Write, Edit, Grep, Glob, LS, TodoWrite, Bash, BashOutput, Task, KillShell, ListMcpResourcesTool, ReadMcpResourceTool
 
-### Responsibilities
+**What Happens:**
+1. Reads design.md, patterns.md (if exists), and analysis.md
+2. Creates task breakdown
+3. Identifies dependencies
+4. Plans parallelization
 
-1. **Analyze requirements** with critical thinking framework
-2. **Research best practices** from production repositories (>1000 stars)
-3. **Design complete architecture** (backend + frontend + database)
-4. **Document all decisions** with evidence and rationale
-5. **Create project structure** after approval
+**Output:** `<project>/docs/tasks.md` (<50KB)
+- Logical phases
+- Individual tasks with descriptions
+- Complexity estimates
+- Logical dependencies
+- Footer: "**Created by octocode-mcp**"
 
-### Critical Thinking Framework
-
-Before ANY major decision:
-
-1. What am I optimizing for? (Performance? Maintainability? Cost?)
-2. What are the constraints? (Scale? Budget? Team?)
-3. What are my assumptions? (Prove them with evidence)
-4. What questions need answers? (List unknowns)
-5. What would make this wrong? (Failure modes)
-
-### Outputs
-
-Created in `.octocode/designs/`:
-
-| File | Description |
-|------|-------------|
-| `architecture.md` | System overview, components, data flow (backend + frontend) |
-| `tech-stack.md` | Full stack choices with rationale (framework, database, auth, etc.) |
-| `component-structure.md` | Module organization (backend + frontend folders) |
-| `api-design.md` | Endpoints, contracts, versioning |
-| `database-schema.md` | Tables, fields, relationships, indexes |
-| `data-flow.md` | State management, caching, real-time updates |
-| `ui-approach.md` | Frontend framework, component library, design system |
-| `auth-strategy.md` | Authentication/authorization design |
-| `testing-strategy.md` | Test approach and frameworks |
-| `deployment.md` | Hosting, CI/CD, environment variables |
-| `tradeoffs.md` | Decisions, alternatives, and justifications |
-
-### Gate 2: Architecture Review ✋
-
-User reviews tech stack and key decisions, then agent creates:
-- Initial project structure
-- README.md with what/why/how
-- Configuration files
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Agent-Architect
-    participant MCP as Octocode-MCP
-
-    Agent-Architect->>Agent-Architect: Read requirements
-    Agent-Architect->>MCP: Research similar architectures
-    MCP-->>Agent-Architect: Production patterns
-    Agent-Architect->>Agent-Architect: Apply critical thinking
-    Agent-Architect->>Agent-Architect: Design architecture
-    Agent-Architect->>User: Present tech stack & decisions
-    User->>Agent-Architect: Approve
-    Agent-Architect->>Agent-Architect: Create project structure
-    Agent-Architect->>User: Project initialized
-```
+**No Gate** - Manager proceeds directly to implementation
 
 ---
 
-## Phase 3: Design Validation & Task Planning
-
-**Agent:** `agent-design-verification` (Technical Lead)  
-**Model:** Claude Sonnet  
-**Tools:** Read, Write, Grep, Glob, LS, TodoWrite
-
-### Responsibilities
-
-1. **Validate requirements coverage** - Ensure all features have design
-2. **Validate architecture soundness** - Check for missing components
-3. **Identify issues** - Escalate to agent-product or agent-architect
-4. **Create comprehensive task breakdown** with dependencies
-
-### Task Breakdown Format
-
-```markdown
-## Phase N: [Name] [parallel-group]
-
-- [ ] N.1: Task name
-      Files: [file1.ts, file2.ts]
-      Complexity: low
-      [can-run-parallel]
-
-- [ ] N.2: Another task
-      Files: [file3.ts]
-      Complexity: medium
-      [can-run-parallel-with: N.1]
-
-- [ ] N.3: Dependent task
-      Files: [file1.ts]
-      Complexity: low
-      [blocked-by: N.1] ⚠️ (shared file)
-```
-
-### Outputs
-
-Created in `.octocode/`:
-
-| File | Description |
-|------|-------------|
-| `tasks.md` | Complete task breakdown with files, dependencies, estimates, parallelization hints |
-
-### Gate 3: Task Plan Approval ✋
-
-User reviews:
-- Total tasks and time estimates
-- Parallelization strategy
-- Phase breakdown
-
-Can adjust scope or optimize parallelization.
-
-```mermaid
-sequenceDiagram
-    participant Agent-Verification
-    participant Agent-Product
-    participant Agent-Architect
-    participant User
-
-    Agent-Verification->>Agent-Verification: Read requirements + design
-    Agent-Verification->>Agent-Verification: Validate coverage
-    alt Issues Found
-        Agent-Verification->>Agent-Product: Requirements questions
-        Agent-Verification->>Agent-Architect: Design concerns
-    end
-    Agent-Verification->>Agent-Verification: Create task breakdown
-    Agent-Verification->>User: Present execution plan
-    User->>Agent-Verification: Approve/Modify
-```
-
----
-
-## Phase 4: Research Context (Parallel)
-
-**Agent:** `agent-research-context` (Research Specialist)  
-**Model:** Claude Sonnet  
-**Tools:** Read, Write, LS, TodoWrite
-
-### Responsibilities
-
-1. **Identify research topics** from tech stack
-2. **Search GitHub** for production implementations (>500 stars)
-3. **Extract code patterns** (50-100 line examples)
-4. **Create copy-paste ready guides**
-
-### Research Strategy
-
-For each tech component:
-1. Read relevant resource files (project-examples.md, architecture.md, etc.)
-2. Search GitHub for proven patterns
-3. Study 5-10 high-quality repositories
-4. Extract and document common patterns
-5. Include pitfalls and alternatives
-
-### Outputs
-
-Created in `.octocode/context/`:
-
-| File Pattern | Description |
-|--------------|-------------|
-| `[framework]-patterns.md` | Framework-specific patterns (e.g., Next.js, tRPC) |
-| `[integration]-patterns.md` | Integration patterns (e.g., Prisma + tRPC) |
-| `[feature]-patterns.md` | Feature implementations (e.g., real-time WebSocket) |
-| `testing-patterns.md` | Testing approaches and examples |
-| `deployment-patterns.md` | Deployment and CI/CD patterns |
-
-### Parallel Execution
-
-Phase 4 (Research Context) and Phase 5 (Planning) can run **simultaneously** to optimize workflow efficiency.
-
----
-
-## Phase 5: Execution Planning
-
-**Agent:** `agent-manager` (Engineering Manager)  
-**Model:** Claude Sonnet  
-**Tools:** Read, Write, TodoWrite, Bash, BashOutput, Task, KillShell
-
-### Responsibilities (Planning)
-
-1. **Analyze tasks** from `.octocode/tasks.md`
-2. **Identify task dependencies** (logical prerequisites)
-3. **Create execution plan** with parallelization strategy
-
-### Dependency Analysis Example
-
-```
-Task 3.1: Implement auth logic
-Task 3.2: Create API endpoints
-Task 3.3: Add auth middleware (depends on 3.1)
-
-→ 3.1 and 3.2: Independent ✅ Run in parallel
-→ 3.3: Depends on 3.1 ❌ Run after 3.1 completes
-```
-
-```mermaid
-sequenceDiagram
-    participant Agent-Research as agent-research-context
-    participant Agent-Manager as agent-manager
-    participant Tasks as tasks.md
-
-    par Research & Planning
-        Agent-Research->>Agent-Research: Research patterns
-        Agent-Research->>Agent-Research: Create context guides
-    and
-        Agent-Manager->>Tasks: Read task breakdown
-        Agent-Manager->>Agent-Manager: Analyze dependencies
-        Agent-Manager->>Agent-Manager: Create execution plan
-    end
-```
-
----
-
-## Phase 6: Implementation
-
-**Agents:** Multiple `agent-implementation` instances (4-5 running in parallel)  
-**Managed by:** `agent-manager`  
-**Model:** Claude Sonnet  
-**Tools:** Read, Write, Edit, Bash, BashOutput, Grep, Glob, LS, TodoWrite
-
-**Important:** NO GIT COMMANDS - Only modify local files. User handles all git operations.
-
-### Architecture
-
-```mermaid
-graph TB
-    Manager[agent-manager<br/>Engineering Manager]
-    Impl1[agent-implementation-1<br/>Software Engineer]
-    Impl2[agent-implementation-2<br/>Software Engineer]
-    Impl3[agent-implementation-3<br/>Software Engineer]
-    Impl4[agent-implementation-4<br/>Software Engineer]
-
-    Tasks[(tasks.md<br/>Progress)]
-    Context[(patterns.md<br/>Patterns)]
-
-    Manager -->|Assign Task 1| Impl1
-    Manager -->|Assign Task 2| Impl2
-    Manager -->|Assign Task 3| Impl3
-    Manager -->|Assign Task 4| Impl4
-
-    Impl1 -->|Report Status| Manager
-    Impl2 -->|Report Status| Manager
-    Impl3 -->|Report Status| Manager
-    Impl4 -->|Report Status| Manager
-
-    Manager -->|Update| Tasks
-
-    Impl1 -.->|Read| Context
-    Impl2 -.->|Read| Context
-    Impl3 -.->|Read| Context
-    Impl4 -.->|Read| Context
-
-    style Manager fill:#ffd700
-    style Tasks fill:#ccffcc
-    style Context fill:#ccccff
-```
-
-### Implementation Workflow
-
-```mermaid
-sequenceDiagram
-    participant Manager as agent-manager
-    participant Impl as agent-implementation
-    participant Files as Codebase
-
-    Manager->>Impl: Assign Task 2.3
-    Impl->>Impl: Read task details
-    Impl->>Impl: Study context guides
-    Impl->>Files: Read files
-    Impl->>Files: Implement solution
-    Impl->>Impl: Run build check
-    Impl->>Impl: Run linting
-    Impl->>Manager: ✅ COMPLETED (28min)
-    Manager->>Impl: Assign next task
-```
-
-**Note:** Agents work independently and coordinate through version control. If multiple agents need to modify the same files, they work on their tasks and conflicts are resolved through standard merge strategies.
-
-### Progress Tracking
-
-**Live Dashboard (.octocode/logs/progress-dashboard.md):**
-
-```
-⚡ IMPLEMENTATION IN PROGRESS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Progress: [████████░░░░░░░░] 65% (23/35 tasks)
-
-🤖 Active Agents:
-  agent-impl-1 → Task 4.2: Portfolio API [2min elapsed]
-  agent-impl-2 → Task 4.3: Price alerts [5min elapsed]
-  agent-impl-3 → Task 4.5: Chart component [1min elapsed]
-  agent-impl-4 → Idle (waiting for auth.ts unlock)
-
-✅ Completed: 23 tasks
-  Phase 1: ████████ 100% (5/5) ✅
-  Phase 2: ████████ 100% (8/8) ✅
-  Phase 3: ██████░░ 75% (9/12)
-
-⏳ Current Work:
-  • Task 4.2: Portfolio API (agent-impl-1)
-  • Task 4.3: Price alerts (agent-impl-2)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Last update: 10s ago
-```
-
-### Progress Tracking in tasks.md
-
-**Inline progress markers:**
-```markdown
-## Phase 2: Backend
-- [x] 2.1: Auth logic ✅ (completed)
-- [⏳] 2.2: API routes (in-progress, agent-impl-2)
-- [⏸️] 2.3: Auth middleware (waiting for 2.1)
-
-Status: 23/35 tasks complete (65%)
-```
-
-### Gate 4: Live Monitoring 🔄
-
-**Interactive dashboard with controls:**
-- ⏸️ **Pause** - Stop all agents, save state
-- 📊 **Details** - View task status
-- 🔍 **Inspect** - View agent's work
+### Phase 4: Implementation
+
+**Same as `/octocode-generate` Phase 4:**
+
+- 4-5 `agent-implementation` instances work in parallel
+- Coordinate via **octocode-local-memory** (task assignments, file locks, status updates)
+- Follow existing code patterns from codebase-review.md
+- Update tasks.md with progress
+
+**Quality Standards:**
+- ✅ Build passes
+- ✅ Types correct
+- ✅ Lint passes
+- ✅ Existing tests pass (if any)
+- ✅ Feature/fix works
+- ❌ NO new test files (until post-MVP)
+
+**🔄 Gate 3: Live Implementation Monitoring**
+
+User can monitor in real-time:
+- ⏸️ **Pause** - Stop all agents
+- 📊 **Details** - View status
+- 🔍 **Inspect** - View work
 - ⚠️ **Issues** - Review errors
 - 🔄 **Continue** - Keep monitoring
-- 🛑 **Stop** - Graceful shutdown
-
-Auto-refreshes every 30 seconds.
-
-### Quality Standards (Per Task)
-
-Each implementation agent must:
-- ✅ Follow design patterns from context guides
-- ✅ Add TypeScript types (no `any`)
-- ✅ Validate inputs (Zod, etc.)
-- ✅ Handle errors gracefully
-- ✅ Ensure build passes
-- ✅ Pass linting
-- ❌ No console.log (use proper logging)
-- ❌ No hardcoded values (use env vars)
-- ❌ NO TESTS yet (tests after MVP approval)
 
 ---
 
-## Phase 7: Verification
+### Post-Implementation
 
-**Agent:** `agent-verification` (QA Engineer)  
-**Model:** Claude Sonnet  
-**Tools:** Read, Bash, BashOutput, Grep, Glob, LS, TodoWrite, KillShell
+**User Actions:**
+1. Run `npm run build` - Verify build passes
+2. Run `npm run lint` - Verify lint passes
+3. Run existing tests (if any) - Ensure no regressions
+4. Verify changes manually
+5. Commit when ready (user controls git)
 
-**Important:** NO GIT COMMANDS - Only run build/test/lint commands. User handles all git operations.
-
-### Comprehensive Verification
-
-```mermaid
-flowchart LR
-    Start([Implementation<br/>Complete]) --> Build[1. Build<br/>Verification]
-    Build --> Tests[2. Test<br/>Verification]
-    Tests --> Lint[3. Lint<br/>Verification]
-    Lint --> Features[4. Feature<br/>Verification]
-    Features --> Perf[5. Performance<br/>Verification]
-    Perf --> Code[6. Code Quality<br/>Review]
-    Code --> Prod[7. Production<br/>Readiness]
-    Prod --> Runtime[8. Runtime<br/>Testing]
-    Runtime --> Report[Generate<br/>Report]
-    Report --> Gate5{Gate 5}
-
-    style Build fill:#d1ecf1
-    style Tests fill:#d1ecf1
-    style Lint fill:#d1ecf1
-    style Features fill:#fff3cd
-    style Perf fill:#d1ecf1
-    style Code fill:#d1ecf1
-    style Prod fill:#fff3cd
-    style Runtime fill:#fff3cd
-    style Gate5 fill:#f8d7da
-```
-
-### 1. Build Verification ✅
-
-```bash
-npm run build
-# Check: Build completes without errors
-```
-
-### 2. Test Verification ✅ (ONLY IF TESTS EXIST)
-
-**For MVP - Skip this step:**
-- Tests are NOT created during MVP phase
-- Focus on working functionality first
-
-**If existing tests:**
-```bash
-npm test
-# Check: Existing tests still pass (no regressions)
-```
-
-### 3. Lint Verification ✅
-
-```bash
-npm run lint
-npm run lint:fix
-# Check: No critical lint errors
-```
-
-### 4. Feature Verification ✅ (CRITICAL)
-
-**For EACH feature in `.octocode/requirements/features.md`:**
-
-```markdown
-Feature: User can create portfolio
-PRD: Section 3.1
-
-Verification:
-  ✅ UI component exists (src/components/PortfolioForm.tsx)
-  ✅ API endpoint exists (src/api/portfolio.create.ts)
-  ✅ Database table exists
-  ✅ Error handling implemented
-  ⏸️ Tests: To be added after MVP approval
-
-Status: ✅ VERIFIED (MVP complete)
-```
-
-### 5. Performance Verification ✅
-
-Compare against `.octocode/requirements/performance.md`:
-
-| Metric | Target | Actual | Status |
-|--------|--------|--------|--------|
-| Page load | <2s | 1.2s | ✅ |
-| API response | <500ms | 180ms | ✅ |
-| Cache hit rate | >80% | 92% | ✅ |
-
-### 6. Code Quality Review ✅
-
-**Checks:**
-- TypeScript strict mode enabled
-- No `any` types (or minimal with justification)
-- No functions >100 lines
-- No nesting >5 levels
-- Minimal `@ts-ignore` usage
-
-### 7. Production Readiness ✅
-
-**Environment:**
-- `.env.example` exists
-- `.env` in `.gitignore`
-
-**Security:**
-- No hardcoded secrets
-- Security headers configured (helmet, cors)
-
-**Infrastructure:**
-- Deployment configs exist (Dockerfile, docker-compose.yml)
-- CI/CD pipeline configured
-
-### 8. Runtime Testing ✅
-
-**Using Chrome DevTools:**
-1. Start dev server (`npm run dev`)
-2. Open in Chrome
-3. Navigate key user flows
-4. Monitor console for errors
-5. Check network requests
-6. Test interactions
-
-**Look for:**
-- ❌ JavaScript errors
-- ⚠️ Console warnings
-- ❌ Failed requests (404, 500)
-- ❌ CORS errors
-
-**Measure performance:**
-- LCP < 2.5s
-- FID < 100ms
-- CLS < 0.1
-
-### Verification Report
-
-**Generated: `.octocode/verification-report.md`**
-
-```markdown
-# Verification Report
-
-**Date:** 2025-10-14
-**Status:** ✅ PASSED / ⚠️ PASSED WITH WARNINGS / ❌ FAILED
-
-## Summary
-
-| Category | Status | Details |
-|----------|--------|---------|
-| Build | ✅ Pass | No errors |
-| Tests | ⏸️ Pending | To be added post-MVP |
-| Linting | ✅ Pass | No critical errors |
-| Features | ✅ Pass | 12/12 must-have |
-| Performance | ✅ Pass | All metrics met |
-| Security | ✅ Pass | No vulnerabilities |
-| Code Quality | ✅ Pass | No issues |
-| Production | ✅ Pass | Ready for deployment |
-| Runtime | ✅ Pass | No console errors |
-
-## Critical Issues ❌
-[None or list issues with severity, location, fix description]
-
-## Warnings ⚠️
-[None or list warnings]
-
-## Next Steps
-[Must Fix (P0) / Recommended / Optional]
-
-## Conclusion
-[Production-ready status and recommendations]
-```
-
-### Gate 5: Final Approval ✋
-
-```markdown
-✅ VERIFICATION COMPLETE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Status: ✅ PASSED
-
-🏗️ Build: ✅ PASSED
-🧪 Tests: ⏸️ PENDING (to be added after MVP approval)
-📋 Features: ✅ 12/12 must-have
-⚡ Performance: ✅ PASSED
-🔒 Security: ✅ PASSED
-📊 Code Quality: 9.5/10
-🚀 Production: ✅ READY
-🌐 Runtime: ✅ PASSED
-
-📂 Full report: .octocode/verification-report.md
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Options:
-  [1] 🚀 Ship It - Deploy to production
-  [2] 🔧 Fix Issues - Address remaining items
-  [3] 🔄 Iterate - Add improvements
-  [4] 📖 Review - See full report
-```
+**New tests added only when user requests.**
 
 ---
 
-## Inter-Agent Communication
+## Agent Communication (Both Commands)
 
-```mermaid
-sequenceDiagram
-    participant Impl as agent-implementation
-    participant Mgr as agent-manager
-    participant Arch as agent-architect
-    participant Prod as agent-product
+Agents communicate using **octocode-local-memory MCP** (storage-based, NOT files):
 
-    Note over Impl: Unclear requirement
-    Impl->>Mgr: Forward question
-    Mgr->>Prod: Requirements question
-    Prod->>Prod: Check PRD
-    alt Already Documented
-        Prod->>Mgr: Point to document
-        Mgr->>Impl: Answer with reference
-    else Not Documented
-        Prod->>Prod: Ask user
-        Prod->>Prod: Update requirements
-        Prod->>Mgr: Updated answer
-        Mgr->>Impl: Answer with update
-    end
-
-    Note over Impl: Unclear design
-    Impl->>Mgr: Technical question
-    Mgr->>Arch: Design question
-    Arch->>Arch: Clarify decision
-    Arch->>Mgr: Detailed answer
-    Mgr->>Impl: Answer
+### Task Assignment (Manager → Implementation)
+```javascript
+setStorage("task:3.1", JSON.stringify({
+  taskId: "3.1",
+  agentId: "agent-implementation-1",
+  description: "Implement user authentication",
+  files: ["src/auth/login.ts"],
+  complexity: "medium"
+}), ttl: 3600);
 ```
 
-**Communication Log:** `.octocode/debug/communication-log.md`
-
----
-
-## Resource Utilization
-
-### Octocode-MCP Resources
-
-**Location:** https://github.com/bgauryy/octocode-mcp/tree/main/resources
-
-**Contents:**
-- 610+ curated Node.js/TypeScript repositories
-- 12 specialized files organized by domain
-
-| File | Purpose | Used By |
-|------|---------|---------|
-| `project-examples.md` | Full-stack project templates | All agents (START HERE) |
-| `architecture.md` | Architecture patterns | architect, research |
-| `frontend-libs.md` | Frontend frameworks & libraries | product, architect |
-| `backend.md` | Backend frameworks & tools | architect, research |
-| `database.md` | Database & ORM patterns | architect, research |
-| `auth.md` | Authentication solutions | architect, research |
-| `fullstack-frameworks.md` | Integrated frameworks (Next.js, etc.) | architect |
-| `testing.md` | Testing strategies & tools | architect, verification |
-| `tooling.md` | Development tools & CLI | architect, implementation |
-| `security.md` | Security best practices | architect, verification |
-| `ai-agents.md` | AI integration patterns | architect (if needed) |
-| `mcp-typescript.md` | MCP TypeScript examples | architect (if needed) |
-
-### Agent Resource Usage Pattern
-
-```mermaid
-flowchart TD
-    Agent[Any Agent] --> Local{Check Local Docs}
-    Local -->|Found| Use[Use Documentation]
-    Local -->|Not Found| MCP[Query Octocode-MCP]
-    MCP --> Search[Search GitHub]
-    Search --> Study[Study Repos]
-    Study --> Extract[Extract Patterns]
-    Extract --> Document[Document Findings]
-
-    style Agent fill:#e1f5ff
-    style MCP fill:#d4edda
-    style Document fill:#fff3cd
+### Status Updates (Implementation → Manager)
+```javascript
+setStorage("status:agent-1:task-3.1", JSON.stringify({
+  status: "in_progress",
+  progress: 65,
+  currentStep: "Writing auth logic"
+}), ttl: 3600);
 ```
 
----
+### File Locks (Prevent Conflicts)
+```javascript
+// Before editing
+setStorage("lock:src/auth/login.ts", JSON.stringify({
+  lockedBy: "agent-implementation-1",
+  taskId: "3.1"
+}), ttl: 300);
 
-## Agent Specialization Summary
+// After editing
+deleteStorage("lock:src/auth/login.ts");
+```
 
-| Agent | Role | Model | Key Tools | Phase |
-|-------|------|-------|-----------|-------|
-| `agent-product` | Product Manager | Opus | Read, Write, TodoWrite | 1 |
-| `agent-architect` | Solution Architect | Opus | Read, Write, Grep, Glob, LS, TodoWrite | 2 |
-| `agent-design-verification` | Technical Lead | Sonnet | Read, Write, Grep, Glob, LS, TodoWrite | 3 |
-| ~~`agent-research-context`~~ | ~~Research Specialist~~ | ~~Sonnet~~ | ~~Removed - research integrated into other agents~~ | ~~4~~ |
-| `agent-manager` | Engineering Manager | Sonnet | Read, Write, TodoWrite, Bash, Task, KillShell | 5-6 |
-| `agent-implementation` | Software Engineer | Sonnet | Read, Write, Edit, Bash, Grep, Glob, LS, TodoWrite | 6 |
-| `agent-verification` | QA Engineer | Sonnet | Read, Bash, Grep, Glob, LS, TodoWrite, KillShell | 7 |
+### Inter-Agent Questions
+```javascript
+// Implementation asks architect
+setStorage("question:impl-1:architect:auth-approach", JSON.stringify({
+  question: "Should we use JWT or sessions?",
+  context: "Working on task 3.1"
+}), ttl: 1800);
 
-### Model Selection Rationale
+// Architect responds
+setStorage("answer:impl-1:architect:auth-approach", JSON.stringify({
+  answer: "Use JWT tokens",
+  reasoning: "Better scalability"
+}), ttl: 3600);
+```
 
-- **Opus (Phases 1-2):** Complex reasoning, critical thinking, architecture decisions
-- **Sonnet (Phases 3-7):** Fast execution, code implementation, verification tasks
+**Why storage instead of files?**
+- **50x faster** (< 1ms vs 10-50ms per operation)
+- Built-in concurrency safety
+- Automatic TTL-based cleanup
+- Simple key-value API
 
----
-
-## Success Criteria
-
-At Gate 5, application must meet:
-
-- ✅ Build passes without errors
-- ✅ Existing tests pass (if any exist)
-- ✅ All PRD features implemented and verified
-- ✅ TypeScript strict mode enabled
-- ✅ Linting passes
-- ✅ Code quality standards met
-- ✅ Runtime testing passes (no console errors)
-- ✅ User approves MVP at Gate 5
-- ⏸️ Tests to be added post-approval
-
----
-
-## Process Flow Summary
-
-**Sample project: Todo App with Real-time Collaboration**
-
-| Phase | Key Activities | Gate |
-|-------|----------------|------|
-| Phase 1: Requirements | Product Manager gathers requirements, creates PRD | ✋ Gate 1: User reviews requirements |
-| Phase 2: Architecture | Architect designs complete system | ✋ Gate 2: User reviews architecture |
-| Phase 3: Validation | Tech Lead creates task breakdown | ✋ Gate 3: User reviews task plan |
-| Phase 4: Research | Research Specialist finds patterns | **Runs parallel with Phase 5** |
-| Phase 5: Planning | Manager analyzes dependencies | - |
-| Phase 6: Implementation | 4-5 Software Engineers work in parallel | ✋ Gate 4: Live progress monitoring |
-| Phase 7: Verification | QA Engineer runs all checks | ✋ Gate 5: Final approval |
+📖 **Full patterns:** [AGENT_COMMUNICATION.md](./AGENT_COMMUNICATION.md)
 
 ---
 
-## Flow Verification ✅
+## MCPs Used by Agents
 
-The flow has been verified to be:
+### octocode-mcp: Code Research & Planning
+**Purpose:** Finding proven patterns, researching implementations
 
-1. **Complete** - All phases connect properly
-2. **Logical** - Each phase builds on previous work
-3. **Efficient** - Phases 4 & 5 run in parallel
-4. **Safe** - Implementation agents coordinate through version control
-5. **Validated** - 5 human gates ensure quality
-6. **Production-Ready** - Comprehensive verification before deployment
+**Used by:**
+- ✅ agent-product (requirements research)
+- ✅ agent-architect (architecture research)
+- ✅ agent-quality (testing patterns research)
+- ✅ agent-feature-analyzer (implementation patterns research)
+- ⚠️ agent-implementation (only for missing patterns)
 
-All agent responsibilities are clear, inputs/outputs are well-defined, and communication paths are established.
+**Usage:**
+- Search 100M+ GitHub repositories
+- Access curated resources (610+ repos, 12 files)
+- Extract proven patterns
+- Find similar projects
+
+📚 **Resources:** https://github.com/bgauryy/octocode-mcp/tree/main/resources
+
+### octocode-local-memory: Agent Coordination
+**Purpose:** Fast inter-agent communication during parallel implementation
+
+**Used by:**
+- ✅ agent-manager (task assignment, progress tracking)
+- ✅ agent-implementation (status updates, file locks, questions)
+
+**Operations:**
+- Task assignments (1-2ms)
+- File locks (< 1ms)
+- Status updates (< 1ms)
+- Inter-agent messages (1-2ms)
+
+**Performance:** 50x faster than file-based coordination
+
+---
+
+## Summary Tables
+
+### `/octocode-generate` Flow
+
+| Phase | Agent | Output | Gate |
+|-------|-------|--------|------|
+| 1. Requirements | agent-product | `docs/requirements.md` | ✋ Gate 1 |
+| 2. Architecture | agent-architect | `docs/design.md` | ✋ Gate 2 |
+| 2.5. Verification | agent-quality | `docs/test-plan.md` | ✋ Gate 2.5 |
+| 2.75. Foundation | agent-founding-engineer | Scaffold + README | ✋ Gate 2.75 |
+| 3. Planning | agent-manager | `docs/tasks.md` | - |
+| 4. Implementation | 4-5 × agent-implementation | Code + updated tasks.md | 🔄 Gate 3 |
+
+**Result:** 4 docs (<50KB each), working codebase, 4 approval gates
+
+### `/octocode-feature` Flow
+
+| Phase | Agent | Output | Gate |
+|-------|-------|--------|------|
+| 1. Code Review | agent-code-review | `docs/codebase-review.md` | ✋ Gate 1 |
+| 2. Analysis | agent-feature-analyzer | `docs/analysis.md` | ✋ Gate 2 |
+| 3. Planning | agent-manager | `docs/tasks.md` | - |
+| 4. Implementation | 4-5 × agent-implementation | Code + updated tasks.md | 🔄 Gate 3 |
+
+**Result:** 3 docs (<50KB each), modified codebase, 3 approval gates
+
+---
+
+## Quality Standards (Both Commands)
+
+**MVP-First Approach:**
+- ✅ Build passes (`npm run build`)
+- ✅ Types correct (TypeScript strict, minimal `any`)
+- ✅ Lint passes (`npm run lint`)
+- ✅ Features work as designed
+- ✅ Existing tests pass (for `/octocode-feature`)
+- ❌ NO new test files until post-MVP
+- ❌ NO automated testing during MVP
+
+**Post-MVP:**
+- User runs build/lint checks
+- User follows test-plan.md for manual verification (generate) or tests changes (feature)
+- User commits when ready (user controls git)
+- Tests added only when user requests
+
+**Documentation:**
+- All docs in `<project>/docs/`
+- All docs <50KB each
+- All docs include footer: "**Created by octocode-mcp**"
+
+---
+
+## Success Metrics
+
+**At completion, you have:**
+
+✅ **Clear documentation** - 3-4 concise files explaining everything
+✅ **Working code** - Build + lint + types all pass
+✅ **Human approval** - You approved 3-4 times during workflow
+✅ **Production-ready** - Manual verification complete
+✅ **Version control** - You commit when ready (agents don't touch git)
+✅ **Efficient process** - Parallel execution, research-driven decisions
+✅ **Quality-focused** - MVP first, tests when you request
+
+---
+
+**Made with ❤️ by Guy Bary**
+
+🏗️ **Octocode** - Transform Claude into a complete AI development team
