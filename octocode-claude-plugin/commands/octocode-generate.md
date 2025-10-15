@@ -25,9 +25,16 @@ $ARGUMENTS
 
 ## Important: Documentation Location
 
-**ALL `.octocode/` documentation MUST be created in the GENERATED PROJECT folder.**
+**ALL documentation MUST be created in `<project>/docs/` folder.**
 
-Example: If generating project "my-app", all docs go in `my-app/.octocode/`, NOT in the root repository.
+Example: If generating project "my-app", all docs go in `my-app/docs/`, NOT in root repository or `.octocode/`.
+
+**Documentation Standards:**
+- Keep each file under 50KB (approximately 600-800 lines, ~12,500 tokens)
+- Use clear hierarchical headings and self-contained sections
+- Include rich code examples rather than verbose explanations
+- If a document exceeds 50KB, split into multiple focused files
+- Add footer "**Created by octocode-mcp**" to each created document
 
 ## Important: Git Operations
 
@@ -59,27 +66,27 @@ Phase 6: Verification    → ✋ Gate 4 (User Approval Required)
 
 ### Phase 1: Requirements → Gate 1
 **Agent:** `agent-product`  
-**Output:** `<project>/.octocode/requirements.md`  
+**Output:** `<project>/docs/requirements.md` (<50KB)  
 **Gate 1:** User approves requirements
 
 ### Phase 2: Architecture → Gate 2
 **Agent:** `agent-architect`  
-**Output:** `<project>/.octocode/design.md` + `<project>/README.md`  
+**Output:** `<project>/docs/design.md` (<50KB) + `<project>/README.md`  
 **Then:** Creates initial project structure  
 **Gate 2:** User approves architecture  
 **Then:** Triggers `agent-quality` to create verification plan
-**Gate 2.5:** User approves verification flows (test-plan.md)
+**Gate 2.5:** User approves verification flows (test-plan.md, <50KB)
 
 ### Phase 3: Research (Parallel with Phase 4)
 **Agent:** `agent-research-context`  
 **Input:** design.md  
-**Output:** `<project>/.octocode/patterns.md`  
+**Output:** `<project>/docs/patterns.md` (<50KB)  
 **Note:** Runs while planning happens, excludes testing patterns
 
 ### Phase 4: Planning + Task Breakdown
 **Agent:** `agent-manager`  
 **Input:** design.md + patterns.md  
-**Output:** `<project>/.octocode/tasks.md` - Task breakdown with execution plan
+**Output:** `<project>/docs/tasks.md` (<50KB) - Task breakdown with execution plan
 
 ### Phase 5: Implementation → Gate 3
 **Agents:** Multiple `agent-implementation` instances  
@@ -89,24 +96,26 @@ Phase 6: Verification    → ✋ Gate 4 (User Approval Required)
 ### Phase 6: Verification → Gate 4
 **Agent:** `agent-verification`  
 **Checks:** Build, linting, features, performance, security, runtime behavior  
-**Output:** `<project>/.octocode/verification.md`  
+**Output:** `<project>/docs/verification.md` (<50KB)  
 **Gate 4:** User approves for deployment or requests fixes  
 **Note:** Uses verification flows from test-plan.md, but no automated tests expected
 
 ## Documentation Structure
 
-**Simple & focused** - All docs in `<project>/.octocode/`:
+**Simple & focused** - All docs in `<project>/docs/`:
 
-| File | Owner | Purpose | Human Gate |
-|------|-------|---------|------------|
-| `requirements.md` | agent-product | Product requirements | ✋ Gate 1 |
-| `design.md` | agent-architect | Architecture & tech stack | ✋ Gate 2 |
-| `test-plan.md` | agent-quality | Verification flows (not test code) | ✋ Gate 2.5 |
-| `tasks.md` | agent-manager | Task breakdown + progress | (no gate) |
-| `patterns.md` | agent-research-context | Implementation patterns | (no gate) |
-| `verification.md` | agent-verification | Quality report | ✋ Gate 4 |
+| File | Owner | Purpose | Size | Human Gate |
+|------|-------|---------|------|------------|
+| `requirements.md` | agent-product | Product requirements | <50KB | ✋ Gate 1 |
+| `design.md` | agent-architect | Architecture & tech stack | <50KB | ✋ Gate 2 |
+| `test-plan.md` | agent-quality | Verification flows (not test code) | <50KB | ✋ Gate 2.5 |
+| `tasks.md` | agent-manager | Task breakdown + progress | <50KB | (no gate) |
+| `patterns.md` | agent-research-context | Implementation patterns | <50KB | (no gate) |
+| `verification.md` | agent-verification | Quality report | <50KB | ✋ Gate 4 |
 
-**5 single files, clear ownership, human approval at key gates**
+**5 single files (<50KB each), clear ownership, human approval at key gates**
+
+**All files must include footer:** `**Created by octocode-mcp**`
 
 ## Success Criteria
 

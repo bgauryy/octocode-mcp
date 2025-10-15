@@ -13,7 +13,7 @@ Find proven implementation patterns from real production codebases.
 ## Objectives
 
 **Identify What to Research:**
-Read `<project>/.octocode/design.md` to understand:
+Read `<project>/docs/design.md` to understand:
 - Technologies chosen (frameworks, databases, etc.)
 - Integration needs (e.g., Prisma + tRPC)
 - Domain-specific features (e.g., real-time, auth)
@@ -28,13 +28,15 @@ For each topic, use octocode-mcp to:
 - Look for consensus patterns across repos
 
 **Document Patterns:**
-Create `<project>/.octocode/patterns.md` (single file) with:
+Create `<project>/docs/patterns.md` (single file, <50KB/~600 lines) with:
 - Source repos with star counts
 - Pattern categories (Framework, Integration, Domain, Build/Lint)
 - Each pattern: description, implementation code, when to use
 - Common pitfalls and how to avoid them
 
-**Keep it actionable** - copy-paste ready code, not theory.
+**Keep it actionable** - copy-paste ready code, not theory, under 50KB.
+
+**Footer:** Add "**Created by octocode-mcp**" at end of document.
 
 **Focus Areas:**
 - Design patterns

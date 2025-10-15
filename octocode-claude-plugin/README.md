@@ -154,35 +154,35 @@ rich text editor, and comments
 
 ### What Happens Next
 
-**Phase 1: Requirements** → Creates `requirements.md`
+**Phase 1: Requirements** → Creates `docs/requirements.md`
 - Product Manager asks questions, researches similar apps
 - **✋ Gate 1:** You approve requirements
 
-**Phase 2: Architecture** → Creates `design.md` + `test-plan.md`
+**Phase 2: Architecture** → Creates `docs/design.md` + `docs/test-plan.md`
 - Architect designs complete system (backend + frontend)
 - Quality Architect creates verification flows (not test code)
 - **✋ Gate 2:** You approve architecture
 - **✋ Gate 2.5:** You approve verification plan
 
-**Phase 3: Research** → Creates `patterns.md`
+**Phase 3: Research** → Creates `docs/patterns.md`
 - Research Specialist finds best implementations from top repos (runs parallel with Phase 4)
 
-**Phase 4: Planning** → Creates `tasks.md`
+**Phase 4: Planning** → Creates `docs/tasks.md`
 - Engineering Manager breaks project into tasks and assigns work
 
-**Phase 5: Implementation** → Updates `tasks.md` with progress
+**Phase 5: Implementation** → Updates `docs/tasks.md` with progress
 - 4-5 Software Engineers work in parallel
 - **🔄 Gate 3:** Monitor live, pause/continue anytime
 
-**Phase 6: Verification** → Creates `verification.md`
+**Phase 6: Verification** → Creates `docs/verification.md`
 - QA Engineer tests in Chrome browser, runs all checks
 - **✋ Gate 4:** Final approval
 
-**Result: 5 single files, 4 approval gates, production-ready code**
+**Result: 5 single files (<50KB each) in `docs/`, 4 approval gates, production-ready code**
 
 ### What You Get
 
-✅ **5 documentation files** (requirements, design, test-plan, tasks, patterns, verification)  
+✅ **5 documentation files** in `docs/` (<50KB each): requirements, design, test-plan, tasks, patterns, verification  
 ✅ **Full-stack application** (Next.js + PostgreSQL)  
 ✅ **User authentication** (JWT + OAuth)  
 ✅ **Rich text editor** (TipTap)  
@@ -192,6 +192,7 @@ rich text editor, and comments
 ✅ **Lint passing**  
 ✅ **Working MVP** ready for testing phase  
 ✅ **You approved** at 4 decision gates  
+✅ **Each doc** includes "Created by octocode-mcp" footer  
 
 ---
 
@@ -289,29 +290,33 @@ cd octocode-mcp/octocode-claude-plugin
 
 ### The 6 Phases (for `/octocode-generate`)
 
-| Phase | Agent | Output | Human Gate |
-|-------|-------|--------|------------|
-| **1. Requirements** | Product Manager | `requirements.md` | ✋ Gate 1 |
-| **2. Architecture** | Architect + Quality | `design.md` + `test-plan.md` | ✋ Gate 2 + 2.5 |
-| **3. Research** | Research Specialist | `patterns.md` | (parallel with Phase 4) |
-| **4. Planning** | Manager | `tasks.md` | (no gate) |
-| **5. Implementation** | 4-5 Engineers | Code + updates to `tasks.md` | 🔄 Gate 3 (live) |
-| **6. Verification** | QA Engineer | `verification.md` | ✋ Gate 4 |
+| Phase | Agent | Output | Size | Human Gate |
+|-------|-------|--------|------|------------|
+| **1. Requirements** | Product Manager | `docs/requirements.md` | <50KB | ✋ Gate 1 |
+| **2. Architecture** | Architect + Quality | `docs/design.md` + `docs/test-plan.md` | <50KB each | ✋ Gate 2 + 2.5 |
+| **3. Research** | Research Specialist | `docs/patterns.md` | <50KB | (parallel with Phase 4) |
+| **4. Planning** | Manager | `docs/tasks.md` | <50KB | (no gate) |
+| **5. Implementation** | 4-5 Engineers | Code + updates to `docs/tasks.md` | - | 🔄 Gate 3 (live) |
+| **6. Verification** | QA Engineer | `docs/verification.md` | <50KB | ✋ Gate 4 |
 
-**Result: 5 single files, clear ownership, human control at every gate**
+**Result: 5 single files (<50KB each) in `docs/`, clear ownership, human control at every gate**
+
+**All docs include footer:** `**Created by octocode-mcp**`
 
 ### The 6 Phases (for `/octocode-feature`)
 
-| Phase | Agent | Output | Human Gate |
-|-------|-------|--------|------------|
-| **1. Code Review** | Code Analyst | `codebase-review.md` | ✋ Gate 1 |
-| **2. Analysis** | Feature Analyst | `analysis.md` | ✋ Gate 2 |
-| **3. Research** | Research Specialist | `patterns.md` | (parallel with Phase 4) |
-| **4. Planning** | Manager | `tasks.md` | (no gate) |
-| **5. Implementation** | 4-5 Engineers | Code + updates to `tasks.md` | 🔄 Gate 3 (live) |
-| **6. Verification** | QA Engineer | `verification.md` | ✋ Gate 4 |
+| Phase | Agent | Output | Size | Human Gate |
+|-------|-------|--------|------|------------|
+| **1. Code Review** | Code Analyst | `docs/codebase-review.md` | <50KB | ✋ Gate 1 |
+| **2. Analysis** | Feature Analyst | `docs/analysis.md` | <50KB | ✋ Gate 2 |
+| **3. Research** | Research Specialist | `docs/patterns.md` | <50KB | (parallel with Phase 4) |
+| **4. Planning** | Manager | `docs/tasks.md` | <50KB | (no gate) |
+| **5. Implementation** | 4-5 Engineers | Code + updates to `docs/tasks.md` | - | 🔄 Gate 3 (live) |
+| **6. Verification** | QA Engineer | `docs/verification.md` | <50KB | ✋ Gate 4 |
 
-**Result: 4 single files, clear ownership, safe changes with human approval**
+**Result: 4 single files (<50KB each) in `docs/`, clear ownership, safe changes with human approval**
+
+**All docs include footer:** `**Created by octocode-mcp**`
 
 ### Behind the Scenes
 
@@ -324,11 +329,12 @@ Manager creates task breakdown
 → Progress tracked in tasks.md
 ```
 
-**Progress Tracking**: Clear visibility in `.octocode/`
+**Progress Tracking**: Clear visibility in `docs/`
 - Task progress in tasks.md (inline status)
 - Agent communications logged
 - Research queries and sources documented
 - Decision reasoning captured
+- All files kept under 50KB for optimal AI processing
 
 ---
 
@@ -347,6 +353,7 @@ Manager creates task breakdown
 - ✅ **Browser tested** - Chrome DevTools verification
 - ✅ **Tests after approval** - Add comprehensive tests post-MVP
 - ✅ **User controls git** - Agents only modify files, you commit when ready
+- ✅ **Optimized docs** - All files <50KB for efficient AI processing
 
 ### Cost Optimization
 - **Opus (expensive)**: 2-3 agents for strategic decisions (depends on command)

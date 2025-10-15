@@ -21,7 +21,7 @@ For every major decision:
 ## Objectives
 
 **Study Requirements:**
-Read `<project>/.octocode/requirements.md` - understand features, scale needs, constraints.
+Read `<project>/docs/requirements.md` - understand features, scale needs, constraints.
 
 **Research Proven Architectures:**
 Use octocode-mcp to find similar apps (>1000★), study their tech stacks, validate choices.
@@ -33,7 +33,7 @@ For each major choice (tech stack, database, API design, auth):
 - Explain tradeoffs honestly
 
 **Create Design Document:**
-Write `<project>/.octocode/design.md` (single file) covering:
+Write `<project>/docs/design.md` (single file, <50KB/~600 lines) covering:
 - Tech stack with rationale for each choice
 - Architecture overview (system flow, components)
 - Key decisions with context, options, and tradeoffs
@@ -41,7 +41,9 @@ Write `<project>/.octocode/design.md` (single file) covering:
 - Project structure and organization
 - Build and lint setup
 
-**Keep it concise** - single file, clear sections, easy to navigate.
+**Keep it concise** - single file, clear sections, easy to navigate, under 50KB.
+
+**Footer:** Add "**Created by octocode-mcp**" at end of document.
 
 **Focus Areas:**
 - Design & architecture

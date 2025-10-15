@@ -25,9 +25,16 @@ $ARGUMENTS
 
 ## Important: Documentation Location
 
-**ALL `.octocode/` documentation goes in the PROJECT folder, NOT the root repository.**
+**ALL documentation goes in `<project>/docs/` folder, NOT `.octocode/` or root repository.**
 
-Work with the current project's `.octocode/` directory.
+Work with the current project's `docs/` directory.
+
+**Documentation Standards:**
+- Keep each file under 50KB (approximately 600-800 lines, ~12,500 tokens)
+- Use clear hierarchical headings and self-contained sections
+- Include rich code examples rather than verbose explanations
+- If a document exceeds 50KB, split into multiple focused files
+- Add footer "**Created by octocode-mcp**" to each created document
 
 ## Important: Git Operations
 
@@ -57,25 +64,25 @@ Phase 6: Verification     → ✋ Gate 4 (Final Review - User Approval Required)
 
 ### Phase 1: Code Review → Gate 1
 **Agent:** `agent-code-review`  
-**Output:** `<project>/.octocode/codebase-review.md`  
+**Output:** `<project>/docs/codebase-review.md` (<50KB)  
 **Gate 1:** User approves codebase understanding
 
 ### Phase 2: Feature/Bug Analysis → Gate 2
 **Agent:** `agent-feature-analyzer`  
-**Output:** `<project>/.octocode/analysis.md`  
+**Output:** `<project>/docs/analysis.md` (<50KB)  
 **Gate 2:** User approves implementation plan  
 **Note:** Plan does NOT include test writing
 
 ### Phase 3: Research (Parallel)
 **Agent:** `agent-research-context` (EXISTING)  
 **Input:** analysis.md + codebase-review.md  
-**Output:** `<project>/.octocode/patterns.md`  
+**Output:** `<project>/docs/patterns.md` (<50KB)  
 **Note:** Runs while planning happens, excludes testing patterns
 
 ### Phase 4: Planning
 **Agent:** `agent-manager` (EXISTING)  
 **Input:** analysis.md + patterns.md  
-**Output:** `<project>/.octocode/tasks.md` with execution plan
+**Output:** `<project>/docs/tasks.md` (<50KB) with execution plan
 
 ### Phase 5: Implementation → Gate 3
 **Agents:** Multiple `agent-implementation` instances (EXISTING)  
@@ -85,23 +92,25 @@ Phase 6: Verification     → ✋ Gate 4 (Final Review - User Approval Required)
 ### Phase 6: Verification → Gate 4 (Final Review)
 **Agent:** `agent-verification` (EXISTING)  
 **Checks:** Build, linting, feature validation, regression checks, runtime behavior  
-**Output:** `<project>/.octocode/verification.md`  
+**Output:** `<project>/docs/verification.md` (<50KB)  
 **Gate 4:** User approves for commit or requests fixes  
 **Note:** Uses verification flows for manual testing; automated tests only if explicitly requested
 
 ## Documentation Structure
 
-**Simple & focused** - All docs in `<project>/.octocode/`:
+**Simple & focused** - All docs in `<project>/docs/`:
 
-| File | Owner | Purpose | Human Gate |
-|------|-------|---------|------------|
-| `codebase-review.md` | agent-code-review | Existing code analysis | ✋ Gate 1 |
-| `analysis.md` | agent-feature-analyzer | Feature/bug analysis | ✋ Gate 2 |
-| `tasks.md` | agent-manager | Task breakdown + progress | (live) |
-| `patterns.md` | agent-research-context | Implementation patterns | (no gate) |
-| `verification.md` | agent-verification | Quality report | ✋ Gate 4 |
+| File | Owner | Purpose | Size | Human Gate |
+|------|-------|---------|------|------------|
+| `codebase-review.md` | agent-code-review | Existing code analysis | <50KB | ✋ Gate 1 |
+| `analysis.md` | agent-feature-analyzer | Feature/bug analysis | <50KB | ✋ Gate 2 |
+| `tasks.md` | agent-manager | Task breakdown + progress | <50KB | (live) |
+| `patterns.md` | agent-research-context | Implementation patterns | <50KB | (no gate) |
+| `verification.md` | agent-verification | Quality report | <50KB | ✋ Gate 4 |
 
-**4 single files, clear ownership, human approval at key gates**
+**4 single files (<50KB each), clear ownership, human approval at key gates**
+
+**All files must include footer:** `**Created by octocode-mcp**`
 
 ## Success Criteria
 

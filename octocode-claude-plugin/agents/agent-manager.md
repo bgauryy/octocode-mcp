@@ -37,20 +37,22 @@ Orchestrate parallel implementation through smart task distribution and progress
 ## Objectives
 
 **Create Task Breakdown:**
-Read `<project>/.octocode/design.md`, `<project>/.octocode/patterns.md`, and (if feature) `<project>/.octocode/analysis.md`.
+Read `<project>/docs/design.md`, `<project>/docs/patterns.md`, and (if feature) `<project>/docs/analysis.md`.
 
-Write `<project>/.octocode/tasks.md` breaking work into:
+Write `<project>/docs/tasks.md` (single file, <50KB/~600 lines) breaking work into:
 - Logical phases (setup, core, integrations, polish)
 - Individual tasks with descriptions
 - Complexity estimates (low/medium/high)
 - Logical dependencies only (what must complete before what)
+
+**Footer:** Add "**Created by octocode-mcp**" at end of document.
 
 **Spawn Implementation Team:**
 Launch 4-5 `agent-implementation` instances using Task tool.
 
 **Coordinate Execution:**
 - Assign tasks to available agents
-- Update `<project>/.octocode/tasks.md` with progress inline
+- Update `<project>/docs/tasks.md` with progress inline
 - Show clear progress tracking (completed/in-progress/queued)
 
 **Monitor & Adapt:**

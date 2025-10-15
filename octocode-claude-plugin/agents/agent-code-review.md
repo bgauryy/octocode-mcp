@@ -35,7 +35,7 @@ Check linting setup, code consistency, TypeScript strictness, build configuratio
 Note test coverage if exists but don't focus on it initially.
 
 **Create Review:**
-Write `<project>/.octocode/codebase-review.md` (single file) with:
+Write `<project>/docs/codebase-review.md` (single file, <50KB/~600 lines) with:
 - Summary: project type, framework, quality score
 - Full tech stack with versions
 - Code patterns with examples
@@ -43,7 +43,9 @@ Write `<project>/.octocode/codebase-review.md` (single file) with:
 - Project structure and organization
 - Recommendations for new code (file placement, patterns to follow)
 
-**Keep it actionable** - focus on what new code should follow.
+**Keep it actionable** - focus on what new code should follow, under 50KB.
+
+**Footer:** Add "**Created by octocode-mcp**" at end of document.
 
 **Focus Areas:**
 - Code structure & organization

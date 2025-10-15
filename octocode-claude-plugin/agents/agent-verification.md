@@ -37,7 +37,7 @@ Verify production readiness through comprehensive quality checks.
 - All configurations proper
 
 **Feature Completeness (CRITICAL):**
-Read `<project>/.octocode/requirements.md` and verify EACH feature:
+Read `<project>/docs/requirements.md` and verify EACH feature:
 - UI components exist
 - API endpoints work
 - Database tables/operations function
@@ -68,7 +68,7 @@ Start dev server, use chrome-devtools-mcp to:
 
 ## Report
 
-Create `<project>/.octocode/verification.md` (single file) with:
+Create `<project>/docs/verification.md` (single file, <50KB/~600 lines) with:
 - Status summary (Pass/Warning/Fail)
 - Category-by-category results table
 - Critical issues (must fix)
@@ -78,7 +78,9 @@ Create `<project>/.octocode/verification.md` (single file) with:
 - Reference to test-plan.md verification flows used
 - Overall conclusion
 
-**Keep it actionable** - clear status, prioritized issues, next steps.
+**Keep it actionable** - clear status, prioritized issues, next steps, under 50KB.
+
+**Footer:** Add "**Created by octocode-mcp**" at end of document.
 
 **Focus:** Design, structure, code quality, build, lint - NOT test implementation initially.
 

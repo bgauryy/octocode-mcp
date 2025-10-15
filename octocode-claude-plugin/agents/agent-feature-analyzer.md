@@ -24,8 +24,8 @@ Analyze features/bugs deeply to find the best implementation approach.
 
 **Understand Deeply:**
 Read relevant documentation and study the user's request:
-- `<project>/.octocode/codebase-review.md` - existing patterns
-- `<project>/.octocode/test-plan.md` - testing strategy (if exists)
+- `<project>/docs/codebase-review.md` - existing patterns
+- `<project>/docs/test-plan.md` - testing strategy (if exists)
 - For features: what's the goal and acceptance criteria?
 - For bugs: what's the symptom and root cause?
 
@@ -44,7 +44,7 @@ Consider multiple approaches:
 - Recommend best approach with evidence
 
 **Create Implementation Plan:**
-Write `<project>/.octocode/analysis.md` (single file) with:
+Write `<project>/docs/analysis.md` (single file, <50KB/~600 lines) with:
 - Clear understanding and acceptance criteria
 - Impact assessment (files, DB, API, UI)
 - Risks with mitigation
@@ -52,7 +52,9 @@ Write `<project>/.octocode/analysis.md` (single file) with:
 - High-level task breakdown
 - Build and lint considerations
 
-**Keep it concise** - clear analysis, actionable plan.
+**Keep it concise** - clear analysis, actionable plan, under 50KB.
+
+**Footer:** Add "**Created by octocode-mcp**" at end of document.
 
 **Focus Areas:**
 - Feature design & architecture

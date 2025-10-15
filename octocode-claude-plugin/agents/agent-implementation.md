@@ -41,7 +41,7 @@ Implement features following established patterns and design.
 Wait for agent-manager to assign task with description, complexity.
 
 **Understand Context:**
-Read relevant docs as needed:
+Read relevant docs as needed (all in `<project>/docs/`):
 - `design.md` - system design
 - `patterns.md` - implementation patterns
 - `requirements.md` - feature specs
