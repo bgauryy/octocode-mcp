@@ -94,8 +94,8 @@ Add to your MCP config file:
 {
   "mcpServers": {
     "octocode-local-memory": {
-      "command": "node",
-      "args": ["/absolute/path/to/packages/octocode-local-memory/dist/index.js"]
+      "command": "npx",
+      "args": ["octocode-local-memory@latest"]  
     }
   }
 }
