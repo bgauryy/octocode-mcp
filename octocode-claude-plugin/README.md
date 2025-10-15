@@ -17,18 +17,7 @@ Turn "Build a blog platform" into a full-stack, tested, production-ready applica
 
 ```bash
 # Install the plugin
-/plugin marketplace add bgauryy/octocode-mcp/octocode-claude-plugin
-/plugin install octocode
-/restart
-
-# FAST
-/octocode-generate-quick Build a todo app with React and Express
-
-# THOROUGH
-/octocode-generate Build a complex SaaS platform
-
-# Or add features to existing code
-/octocode-feature Add user profile page with avatar upload
+/plugin marketplace add bgauryy/octocode-mcp
 ```
 
 That's it! The AI team will guide you through the workflow.
