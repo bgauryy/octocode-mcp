@@ -78,12 +78,12 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 - **Live monitoring** - Pause/continue implementation anytime
 - See **every decision** with reasoning
 
-### 🔒 Production-Ready Quality
-- **Focus on working MVP first** - Build, types, lint
-- **Tests added after MVP** - User approves functionality first
-- **Efficient documentation** - 5-6 single files, no bloat
+### 🔒 MVP-First Approach
+- **Working code FIRST** - Build + Types + Lint (NO TESTS during MVP)
+- **Tests AFTER user approval** - See working product before investing in tests
+- **Efficient documentation** - 4 single files, no bloat
 - **Human approval gates** - You control every major decision
-- Comprehensive verification + browser testing
+- **Manual verification** - test-plan.md guides your verification
 
 ---
 
@@ -338,12 +338,12 @@ Manager creates task breakdown
 - Efficient orchestration
 - Real-time progress monitoring
 
-### Quality Enforcement
-- ✅ **Working MVP first** - Focus on functionality
-- ✅ **TypeScript strict mode** - Type safety enforced
-- ✅ **8.5/10 code quality** - Linting + analysis
-- ✅ **Browser tested** - Chrome DevTools verification
-- ✅ **Tests after approval** - Add comprehensive tests post-MVP
+### Quality Enforcement (Build + Types + Lint)
+- ✅ **Build passes** - No compilation errors
+- ✅ **TypeScript strict mode** - Type safety enforced, minimal `any`
+- ✅ **Lint passes** - Clean, consistent code
+- ✅ **Manual verification** - User tests features following test-plan.md
+- ❌ **NO automated tests during MVP** - Tests added after user approval
 - ✅ **User controls git** - Agents only modify files, you commit when ready
 - ✅ **Optimized docs** - All files <50KB for efficient AI processing
 
