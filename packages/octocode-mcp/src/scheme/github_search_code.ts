@@ -27,6 +27,7 @@ export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
     .int()
     .min(1)
     .max(20)
+    .default(10)
     .optional()
     .describe(GITHUB_SEARCH_CODE.resultLimit.limit),
   minify: z

@@ -19,11 +19,14 @@ export const COMMON = {
   },
   filters: {
     stars: 'Stars filter (e.g., ">1000", "100..500", "<100")',
-    created: 'Creation date (e.g., ">=2024-01-01")',
-    updated: 'Last update date (e.g., ">=2024-06-01")',
+    created:
+      'Creation date filter (e.g., ">=YYYY-MM-DD", "YYYY-MM-DD..YYYY-MM-DD")',
+    updated: 'Last update date filter (e.g., ">=YYYY-MM-DD")',
     state: 'State filter: "open" or "closed"',
-    extension: 'File extension without dot (e.g., ts, js, py)',
-    filename: 'Filename substring (case-insensitive)',
+    extension:
+      'File extension without dot (e.g., ts, js, py) - filters content search to specific file types',
+    filename:
+      'Filename pattern (case-insensitive) - filters content search to files matching this substring in their name',
   },
   users: {
     author: 'Creator/author of the content',
@@ -66,7 +69,7 @@ export const COMMON = {
 export const GITHUB_SEARCH_CODE = {
   search: {
     keywordsToSearch:
-      'Specific terms to search for (AND logic). When match="file" (default): searches inside file content for code, functions, variables. When match="path": searches in file/directory names and paths. Prefer function/error/class names for content, file/folder names for paths',
+      'Specific terms to search for (AND logic). When match="file" (default): searches inside file content for code, functions, variables - returns paths WITH text_matches[]. When match="path": searches in file/directory names only - returns paths WITHOUT text_matches. Prefer function/class/error names for content search, file/folder names for path discovery',
   },
   scope: {
     owner: COMMON.scope.owner,
@@ -76,9 +79,9 @@ export const GITHUB_SEARCH_CODE = {
     extension: COMMON.filters.extension,
     stars: COMMON.filters.stars,
     filename: COMMON.filters.filename,
-    path: 'Folder substring to limit scope (e.g., "src/components")',
+    path: 'Directory path to limit content search scope (e.g., "src/components" searches only in that folder)',
     match:
-      'Where to search: "file" (content, default) or "path" (filenames/dirs). Use "path" to discover, then "file" to inspect',
+      'Search mode: "file" (search IN content, default) or "path" (search file/directory names). Use "path" for discovery, "file" for implementation details',
   },
   resultLimit: {
     limit: 'Max results (1–20). Use small numbers for focused searches',
@@ -93,23 +96,23 @@ export const GITHUB_SEARCH_CODE = {
 export const GITHUB_SEARCH_REPOS = {
   search: {
     keywordsToSearch:
-      'AND search across name/description/README. Use for functionality discovery',
+      'Keywords for AND search across repository name/description/README. Use for finding repos with specific functionality or technology',
     topicsToSearch:
-      'Exact GitHub topic tags (e.g., ["typescript", "cli"]). Use for category discovery',
+      'Exact GitHub topic tags (e.g., ["typescript", "cli"]). Use for category-based discovery of curated repositories',
   },
   scope: {
     owner: COMMON.scope.owner,
   },
   filters: {
     stars: COMMON.filters.stars,
-    size: 'Repo size in KB (e.g., ">1000", "<500")',
+    size: 'Repository size in KB (e.g., ">1000", "<500") - useful for finding lightweight utilities or substantial projects',
     created: COMMON.filters.created,
     updated: COMMON.filters.updated,
     match:
-      'Fields to search (OR): ["name"|"description"|"readme"]. Default: all',
+      'Fields to search in (OR logic): ["name"|"description"|"readme"]. Default: searches all fields',
   },
   sorting: {
-    sort: 'Sort by: stars | forks | updated | best-match',
+    sort: 'Sort by: stars (popularity) | forks (activity) | updated (recency) | best-match (relevance)',
   },
   resultLimit: {
     limit: 'Max repositories (1–20)',
@@ -119,10 +122,12 @@ export const GITHUB_SEARCH_REPOS = {
 // GitHub pull request search tool descriptions
 export const GITHUB_SEARCH_PULL_REQUESTS = {
   search: {
-    query: 'Text query across PR title, body, comments',
+    query:
+      'Free-text search query across PR title, body, and comments - use for finding PRs discussing specific topics or issues',
   },
   scope: {
-    prNumber: 'Direct PR number (fastest way to fetch a single PR)',
+    prNumber:
+      'Direct PR number for fetching a specific PR (fastest method, bypasses search)',
     owner: COMMON.scope.owner,
     repo: COMMON.scope.repo,
   },
@@ -133,8 +138,8 @@ export const GITHUB_SEARCH_PULL_REQUESTS = {
     commenter: COMMON.users.commenter,
     involves: COMMON.users.involves,
     mentions: COMMON.users.mentions,
-    'review-requested': 'Requested reviewer',
-    'reviewed-by': 'User who reviewed',
+    'review-requested': 'User requested as reviewer',
+    'reviewed-by': 'User who reviewed the PR',
     label: COMMON.labels.label,
     'no-label': COMMON.labels['no-label'],
     'no-milestone': COMMON.labels['no-milestone'],
@@ -142,27 +147,33 @@ export const GITHUB_SEARCH_PULL_REQUESTS = {
     'no-assignee': COMMON.labels['no-assignee'],
     head: COMMON.git.head,
     base: COMMON.git.base,
-    created: 'Creation date (e.g., ">=2024-01-01", "2024-01-01..2024-03-31")',
-    updated: 'Last update date',
+    created:
+      'Creation date filter (e.g., ">=YYYY-MM-DD", "YYYY-MM-DD..YYYY-MM-DD") - useful for recent PRs or date ranges',
+    updated: 'Last update date filter - useful for finding recently active PRs',
     closed: COMMON.dates.closed,
     'merged-at': COMMON.dates['merged-at'],
     comments: COMMON.engagement.comments,
     reactions: COMMON.engagement.reactions,
     interactions: COMMON.engagement.interactions,
-    merged: COMMON.git.merged,
+    merged:
+      'Merged status (boolean) - use merged=true with state="closed" to find production code changes',
     draft: COMMON.git.draft,
-    match: 'Fields to search (OR): ["title"|"body"|"comments"]. Default: all',
+    match:
+      'Fields to search query in (OR logic): ["title"|"body"|"comments"]. Default: searches all fields',
   },
   sorting: {
-    sort: 'Sort by: created | updated | best-match',
+    sort: 'Sort by: created (newest first) | updated (most recent activity) | best-match (most relevant to query)',
     order: COMMON.sorting.order,
   },
   resultLimit: {
-    limit: 'Max PRs (1–100, default 30)',
+    limit:
+      'Max PRs to return (1-10, default 5) - use lower numbers for focused analysis',
   },
   outputShaping: {
-    withComments: 'Include comment threads (token expensive)',
-    withContent: 'Include diffs/changes (very token expensive)',
+    withComments:
+      'Include full comment threads and discussions (token expensive but useful for understanding PR context and decisions)',
+    withContent:
+      'Include code diffs and file changes (very token expensive but essential for implementation analysis)',
   },
 };
 
@@ -171,20 +182,25 @@ export const GITHUB_FETCH_CONTENT = {
   scope: {
     owner: COMMON.scope.owner,
     repo: COMMON.scope.repo,
-    branch: 'Branch/tag/SHA (optional; auto-fallback to default branch)',
-    path: 'Full file path from repo root (validate path first)',
+    branch:
+      'Branch/tag/SHA (optional; automatically falls back to default branch if not specified)',
+    path: 'Full file path from repository root (validate with githubViewRepoStructure or githubSearchCode before fetching)',
   },
   processing: {
     minified: COMMON.processing.minified,
     sanitize: COMMON.processing.sanitize,
   },
   range: {
-    startLine: 'Start line for partial read (requires endLine)',
-    endLine: 'End line for partial read (requires startLine)',
-    fullContent: 'Return entire file (token expensive for large files)',
-    matchString: 'Pattern to find within the file',
+    startLine:
+      'Start line number for partial read (must use with endLine) - efficient for reading specific sections',
+    endLine:
+      'End line number for partial read (must use with startLine) - efficient for reading specific sections',
+    fullContent:
+      'Return entire file content (token expensive for large files, use partial reads when possible)',
+    matchString:
+      'Search pattern to find within the file - returns only matching sections with context (most efficient for targeted reads)',
     matchStringContextLines:
-      'Lines of context around matches (0–50, default 5)',
+      'Lines of context to show around each match (1-50, default 5) - use with matchString for focused content retrieval',
   },
 };
 
@@ -194,10 +210,10 @@ export const GITHUB_VIEW_REPO_STRUCTURE = {
     owner: COMMON.scope.owner,
     repo: COMMON.scope.repo,
     branch: COMMON.scope.branch,
-    path: 'Directory path (default "" for root)',
+    path: 'Directory path to explore (use "" or omit for root directory) - helps navigate to specific folders',
   },
   range: {
     depth:
-      'Depth: 1 (current directory) or 2 (include subdirectories). Default: 1',
+      'Exploration depth: 1 (current directory only - shows immediate files/folders) or 2 (includes subdirectories - shows nested structure). Default: 1',
   },
 };
