@@ -37,27 +37,25 @@ $ARGUMENTS
 ## Workflow
 
 **Phase 1: Requirements** → `agent-product` → `requirements.md` → ✋ Gate 1
-**Phase 2: Architecture Design** → `agent-architect` → `design.md` → ✋ Gate 2
-  ↳ `agent-quality` → `test-plan.md` → ✋ Gate 2.5
-  ↳ `agent-founding-engineer` → project scaffold + README → ✋ Gate 2.75
+**Phase 2: Architecture & Foundation** → `agent-architect` → `design.md` + project scaffold + README → ✋ Gate 2
+**Phase 2.5: Verification Planning** → `agent-quality-architect` (Mode 1) → `test-plan.md` → ✋ Gate 2.5
 **Phase 3: Planning** → `agent-manager` → `tasks.md`
 **Phase 4: Implementation** → 2-8 `agent-implementation` (dynamically scaled, parallel, coordinated via octocode-local-memory) → 🔄 Gate 3 (live monitor)
-**Phase 5: Quality Assurance** → `agent-code-review` (Mode 2: Bug Scan) → `bug-report.md` → 🔄 Fix loop if needed (max 2 loops)
+**Phase 5: Quality Assurance** → `agent-quality-architect` (Mode 3: Bug Scan) → `bug-report.md` → 🔄 Fix loop if needed (max 2 loops)
 
 **Post-Implementation:** User runs `npm run build && npm run lint`, follows test-plan.md, commits when ready
 
-**Note:** Standard mode NOW includes automated code review by `agent-code-review` (Phase 5). This catches runtime bugs before user testing.
+**Note:** Standard mode includes automated code review by `agent-quality-architect` (Phase 5). This catches runtime bugs before user testing.
 
 ## Docs
 
 | File | Agent | Gate |
 |------|-------|------|
 | `requirements.md` | agent-product | ✋ 1 |
-| `design.md` | agent-architect | ✋ 2 |
-| `test-plan.md` | agent-quality | ✋ 2.5 |
-| README.md + scaffold | agent-founding-engineer | ✋ 2.75 |
+| `design.md` + scaffold + README | agent-architect | ✋ 2 |
+| `test-plan.md` | agent-quality-architect (Mode 1) | ✋ 2.5 |
 | `tasks.md` | agent-manager | - |
-| `bug-report.md` | agent-code-review | 🔄 Fix loop |
+| `bug-report.md` | agent-quality-architect (Mode 3) | 🔄 Fix loop |
 
 ## Start
 

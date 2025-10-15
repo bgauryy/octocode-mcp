@@ -48,7 +48,7 @@ Tests added post-MVP when user requests.
 
 **Post-Implementation:** User runs `npm run build && npm run lint`, verifies, commits when ready
 
-**Note:** Quick mode INCLUDES automated code review by `agent-rapid-planner` (Phase 3). Standard mode NOW also has code review by `agent-code-review` (Phase 5).
+**Note:** Quick mode INCLUDES automated code review by `agent-rapid-planner` (Phase 3). Standard mode also has code review by `agent-quality-architect` (Phase 5).
 
 ## Single Document Structure
 
@@ -175,7 +175,7 @@ npx create-next-app@latest my-app --typescript --tailwind --app
 | Mode | Phases | Gates | Docs | Code Review |
 |------|--------|-------|------|-------------|
 | **Quick** | 3 | 1 | 1 file | ✅ Phase 3 (rapid-planner) |
-| Standard | 6 | 4 | 5 files | ✅ Phase 5 (code-review) |
+| Standard | 5 | 3 | 5 files | ✅ Phase 5 (quality-architect) |
 
 **Quick mode is faster!** Both modes now include automated code review for bug prevention.
 

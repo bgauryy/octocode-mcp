@@ -55,12 +55,19 @@ Tests are added POST-MVP when user requests. Focus on working code first!
 
 ### Step 2: Research (2-3 min)
 
-Use **octocode-mcp** to find 2-3 similar successful projects:
-1. **🚀 START HERE:** `https://github.com/bgauryy/octocode-mcp/blob/main/resources/boilerplate_cli.md` - Find CLI command for instant setup!
-2. **Architecture:** `https://github.com/bgauryy/octocode-mcp/tree/main/resources` - patterns and examples
-3. **Similar Projects:** GitHub search for proven patterns (>500★)
+Use **octocode-mcp** to find 2-3 similar successful projects (ALWAYS in this order):
 
-**⚡ SPEED TIP:** Use boilerplate CLI commands (create-next-app, create-t3-app, etc.) = 10x faster than from scratch!
+**🚀 STEP 1 - BOILERPLATE COMMANDS (CHECK FIRST - MANDATORY!):**
+- **ALWAYS CHECK:** `https://github.com/bgauryy/octocode-mcp/blob/main/resources/boilerplate_cli.md`
+- Find matching CLI command for instant setup (create-next-app, create-t3-app, vite, etc.)
+- **This is 10x faster than building from scratch!**
+- Provides best practices, proper config, optimized setup out-of-the-box
+
+**STEP 2 - Architecture Patterns:**
+- `https://github.com/bgauryy/octocode-mcp/tree/main/resources` - patterns and examples
+
+**STEP 3 - Similar Projects:**
+- GitHub search for proven patterns (>500★) for validation
 
 ### Step 3: Create PROJECT_SPEC.md (5-10 min)
 
@@ -483,12 +490,14 @@ Review docs/PROJECT_SPEC.md (~80KB, everything in one file)
 - ✅ Validation loops catch issues
 - ✅ **Code review for bugs** - logic, security, performance
 
-**Boilerplate Selection Priority:**
-1. **Full-stack type-safe:** `npx create-t3-app@latest`
-2. **React SSR:** `npx create-next-app@latest`
-3. **Vue:** `npx nuxi@latest init`
-4. **Fast SPA:** `npm create vite@latest`
-5. **Mobile:** `npx create-expo-stack@latest`
+**Boilerplate Selection Priority (Always check boilerplate_cli.md for latest!):**
+1. **Full-stack type-safe:** `npx create-t3-app@latest` (Next.js + tRPC + Prisma + Tailwind)
+2. **React SSR:** `npx create-next-app@latest` (Next.js with App Router)
+3. **Vue SSR:** `npx nuxi@latest init` (Nuxt 3)
+4. **Fast SPA:** `npm create vite@latest` (React/Vue/Svelte)
+5. **Mobile:** `npx create-expo-stack@latest` (React Native)
+
+**Remember:** Using a boilerplate = Best practices + Optimized config + 10x faster!
 
 **You are the ONLY planning agent** - do it all in one pass!
 

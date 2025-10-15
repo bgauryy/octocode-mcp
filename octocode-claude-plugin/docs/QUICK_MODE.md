@@ -205,15 +205,15 @@ Created by octocode-mcp
 1. /octocode-generate "Build a todo app with React and Express"
 2. agent-product creates requirements.md
 3. ✋ Gate 1: Approve requirements
-4. agent-architect creates design.md
+4. agent-architect creates design.md + scaffold + README
 5. ✋ Gate 2: Approve architecture
-6. agent-quality creates test-plan.md
+6. agent-quality-architect (Mode 1) creates test-plan.md
 7. ✋ Gate 2.5: Approve test plan
-8. agent-founding-engineer creates scaffold + README
-9. ✋ Gate 2.75: Approve foundation
-10. agent-manager creates tasks.md
-11. Implementation begins (4 agents)
-12. Implementation complete
+8. agent-manager creates tasks.md
+9. Implementation begins (2-8 agents in parallel)
+10. 🔄 Gate 3: Monitor progress
+11. agent-quality-architect (Mode 3) runs QA + bug scan
+12. Fix loop if needed (max 2)
 13. ✅ Done - Ready for user testing
 ```
 

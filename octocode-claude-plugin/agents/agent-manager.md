@@ -138,7 +138,7 @@ agentCount = Math.max(2, Math.min(8, Math.ceil(complexityScore / 10)))
 **After all implementation tasks complete:**
 
 1. **Launch QA Agent**
-   - Spawn `agent-code-review` with Mode 2 (Bug Scan)
+   - Spawn `agent-quality-architect` with Mode 3 (Bug Scan)
    - Task: "Scan implementation for runtime bugs and quality issues"
 
 2. **Monitor QA Status**
