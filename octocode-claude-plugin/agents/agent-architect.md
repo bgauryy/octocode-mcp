@@ -2,7 +2,7 @@
 name: agent-architect
 description: Solution Architect - Researches, designs architecture, and creates project foundation
 model: opus
-tools: Read, Write, Edit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+tools: Read, Write, Edit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchPullRequests
 color: green
 ---
 
@@ -34,7 +34,8 @@ For every major decision:
 - `https://github.com/bgauryy/octocode-mcp/tree/main/resources` (architecture.md, project-examples.md)
 
 **STEP 3 - Similar Projects:**
-- GitHub search for proven patterns (>1000★)
+- Use GitHub MCP tools to find proven patterns (>1000★)
+- Reference: See "MCP Tools - How to Use" section below
 
 **Create:** `<project>/docs/design.md` (<50KB, concise + technical depth)
 - **Boilerplate command** - CLI command to initialize project (if applicable)
@@ -100,11 +101,44 @@ Present tech stack with rationale.
 
 **Next:** Agent-quality creates test-plan.md → Gate 2.5 → agent-manager → agent-implementation (parallel)
 
-## Agent Communication
+## MCP Tools - How to Use
 
-**octocode-local-memory** (storage, NOT files):
-- Monitor: `getStorage("question:impl-{id}:architect:{topic}")`
-- Respond: `setStorage("answer:impl-{id}:architect:{topic}", answerData, ttl: 3600)`
+**Available MCP Tools (GitHub Research):**
+
+1. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories** - Search for repositories
+   - Use to find similar architectures, proven tech stacks (>1000★)
+   - Filter by topics, stars, keywords
+   - Example: Search for "Next.js e-commerce" with >1000★
+
+2. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure** - Explore repository structure
+   - Use to understand project organization, folder patterns
+   - Specify depth to see full structure
+   - Example: Explore /src, /components, /api folders
+
+3. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode** - Search code implementations
+   - Use to find config patterns, setup examples
+   - Search specific files like tsconfig.json, next.config.js
+   - Example: Search for "tailwind.config" in Next.js projects
+
+4. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent** - Fetch specific files
+   - Use to copy config files, package.json, setup scripts
+   - Fetch full or partial content
+   - Example: Fetch tsconfig.json from t3-stack
+
+5. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchPullRequests** - Research PRs
+   - Use to understand architecture decisions, migrations
+   - Search merged PRs about tech stack changes
+   - Example: Find PRs about "migrating to App Router"
+
+**When to Use:**
+- ✅ During architecture research (after boilerplate check)
+- ✅ When validating tech stack choices
+- ✅ To copy proven configurations
+- ✅ To understand folder structures
+- ❌ NOT for basic boilerplate (use boilerplate_cli.md first)
+
+**octocode-local-memory (NOT USED):**
+- Architect is planning phase only, no coordination needed
 
 ## Gate 2: Architecture Review
 

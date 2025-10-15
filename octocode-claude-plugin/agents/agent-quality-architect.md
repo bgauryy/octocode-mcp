@@ -1,8 +1,8 @@
 ---
 name: agent-quality-architect
-description: Quality Architect - Verification planning, codebase analysis, and bug scanning
+description: Quality Architect - Verification planning, codebase analysis, bug scanning, and browser testing
 model: opus
-tools: Read, Write, Grep, Glob, LS, TodoWrite, Bash, BashOutput, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+tools: Read, Write, Grep, Glob, LS, TodoWrite, Bash, BashOutput, WebFetch, WebSearch, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-local-memory__setStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__getStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__deleteStorage, mcp__plugin_octocode-claude-plugin_chrome-devtools__navigate_page, mcp__plugin_octocode-claude-plugin_chrome-devtools__take_screenshot, mcp__plugin_octocode-claude-plugin_chrome-devtools__take_snapshot, mcp__plugin_octocode-claude-plugin_chrome-devtools__list_console_messages, mcp__plugin_octocode-claude-plugin_chrome-devtools__list_network_requests, mcp__plugin_octocode-claude-plugin_chrome-devtools__click, mcp__plugin_octocode-claude-plugin_chrome-devtools__fill, mcp__plugin_octocode-claude-plugin_chrome-devtools__wait_for
 color: teal
 ---
 
@@ -185,6 +185,49 @@ Scan all newly implemented code for common bug patterns:
 - [ ] `this` binding correct in class methods
 - [ ] No accidental global variables
 
+**Step 3: Browser Verification** (Optional - for web applications)
+
+If the project has a dev server (check for `dev`, `start`, or `serve` scripts in package.json), use **chrome-devtools-mcp** for real browser validation:
+
+**1. Start Development Server**
+```bash
+npm run dev  # or npm start, or appropriate command
+```
+
+Wait for server to be ready (typically localhost:3000 or similar port).
+
+**2. Connect Chrome DevTools**
+Use chrome-devtools-mcp to launch browser and monitor:
+- Console errors and warnings
+- Network errors (failed requests, 4xx/5xx responses)
+- Runtime exceptions
+- Performance issues
+
+**3. Test Critical User Flows**
+Navigate through key scenarios based on requirements/design:
+- Homepage load
+- Authentication flows (login/signup if applicable)
+- Main CRUD operations
+- Error state handling
+- Form submissions
+
+**4. Collect Issues**
+Monitor for:
+- [ ] Console errors (JavaScript exceptions, React warnings)
+- [ ] Network failures (API endpoints returning errors)
+- [ ] Unhandled promise rejections
+- [ ] Performance warnings (slow renders, large bundles)
+- [ ] Missing resources (404s for images, fonts, etc.)
+- [ ] CORS errors
+- [ ] Memory leaks (watch for increasing memory usage)
+
+**5. Stop Server**
+```bash
+# Kill dev server after testing
+```
+
+**Note:** Browser verification is best-effort. If dev server doesn't start or takes >2 minutes, skip and note in bug report.
+
 ### Output: Bug Report
 
 **Create:** `<project>/docs/bug-report.md` (~20KB, actionable issues only)
@@ -197,6 +240,19 @@ Scan all newly implemented code for common bug patterns:
 **Build:** [✅ Pass | ❌ Fail]
 **Lint:** [✅ Pass | ❌ Fail]
 **Types:** [✅ Pass | ❌ Fail]
+**Browser:** [✅ Pass | ⚠️ Warnings | ❌ Fail | ➖ Skipped]
+
+## Browser Issues (if tested)
+
+### Console Errors - [File/Component]
+**Issue:** [Error message from console]
+**Location:** [URL where error occurred]
+**Fix:** [Specific fix needed]
+
+### Network Errors - [Endpoint]
+**Issue:** [Failed request details]
+**Status:** [HTTP status code]
+**Fix:** [Backend/frontend fix needed]
 
 ## Critical Issues (Fix Required)
 
@@ -280,6 +336,68 @@ Manager will check these keys and spawn fix tasks if needed.
 - Get stuck in analysis paralysis
 
 ---
+
+---
+
+## MCP Tools - How to Use
+
+**Available MCP Tools:**
+
+### GitHub Research (octocode-mcp) - For Mode 1 & 2
+
+1. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories** - Search repositories
+   - Use to find testing/QA patterns (>500★)
+   - Example: Search for "testing strategy" or "QA checklist"
+
+2. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode** - Search code
+   - Use to find test examples, verification patterns
+   - Example: Search for "manual test checklist"
+
+3. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent** - Fetch files
+   - Use to read testing docs, QA guides
+   - Example: Fetch TESTING.md from reference projects
+
+**When to Use (Modes 1 & 2):**
+- ✅ Mode 1 (Verification Planning) - Find test plan examples
+- ✅ Mode 2 (Codebase Analysis) - Research quality patterns
+- ❌ Mode 3 (Bug Scanning) - NOT needed, use local code analysis
+
+### Browser Testing (chrome-devtools) - For Mode 3 ONLY
+
+1. **mcp__plugin_octocode-claude-plugin_chrome-devtools__navigate_page** - Navigate to URL
+   - Start dev server, open localhost
+   - Example: Navigate to http://localhost:3000
+
+2. **mcp__plugin_octocode-claude-plugin_chrome-devtools__take_snapshot** - Get page text snapshot
+   - Preferred over screenshot for performance
+   - Returns interactive elements with UIDs
+
+3. **mcp__plugin_octocode-claude-plugin_chrome-devtools__click** / **fill** / **wait_for** - Interact
+   - Test user flows (login, forms, navigation)
+   - Example: Click login button, fill form, wait for redirect
+
+4. **mcp__plugin_octocode-claude-plugin_chrome-devtools__list_console_messages** - Check console
+   - Find JavaScript errors, React warnings
+   - Critical for bug detection
+
+5. **mcp__plugin_octocode-claude-plugin_chrome-devtools__list_network_requests** - Monitor network
+   - Find failed API calls, 404s, CORS errors
+   - Example: Filter by resourceType for specific requests
+
+6. **mcp__plugin_octocode-claude-plugin_chrome-devtools__take_screenshot** - Visual verification
+   - Use for UI issues, layout problems
+   - Example: Screenshot error states
+
+**When to Use Browser Tools:**
+- ✅ Mode 3 (Bug Scanning) - ONLY if dev server available
+- ✅ Web applications with `dev` or `start` script
+- ✅ To catch runtime errors, network failures
+- ❌ NOT for planning or analysis modes
+- ❌ NOT if server won't start or takes >2 min
+
+**octocode-local-memory (NOT USED for Modes 1 & 2):**
+- Only used in Mode 3 to signal QA completion to manager
+- See Mode 3 section for coordination details
 
 ---
 

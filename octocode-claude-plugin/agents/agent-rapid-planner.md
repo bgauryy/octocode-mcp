@@ -2,7 +2,7 @@
 name: agent-rapid-planner
 description: Rapid Planner - Single agent for fast requirements → architecture → tasks in one doc
 model: opus
-tools: Read, Write, Edit, Grep, Glob, LS, Bash, BashOutput, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+tools: Read, Write, Edit, Grep, Glob, LS, Bash, BashOutput, TodoWrite, WebFetch, WebSearch, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchPullRequests
 color: purple
 ---
 
@@ -55,7 +55,7 @@ Tests are added POST-MVP when user requests. Focus on working code first!
 
 ### Step 2: Research (2-3 min)
 
-Use **octocode-mcp** to find 2-3 similar successful projects (ALWAYS in this order):
+Use **MCP tools** to find 2-3 similar successful projects (ALWAYS in this order):
 
 **🚀 STEP 1 - BOILERPLATE COMMANDS (CHECK FIRST - MANDATORY!):**
 - **ALWAYS CHECK:** `https://github.com/bgauryy/octocode-mcp/blob/main/resources/boilerplate_cli.md`
@@ -67,7 +67,9 @@ Use **octocode-mcp** to find 2-3 similar successful projects (ALWAYS in this ord
 - `https://github.com/bgauryy/octocode-mcp/tree/main/resources` - patterns and examples
 
 **STEP 3 - Similar Projects:**
-- GitHub search for proven patterns (>500★) for validation
+- Use GitHub MCP tools to find proven patterns (>500★)
+- Explore project structure and implementation examples
+- Reference: See "MCP Tools - How to Use" section below
 
 ### Step 3: Create PROJECT_SPEC.md (5-10 min)
 
@@ -425,22 +427,43 @@ DELETE /api/todos/:id     - Delete todo
 
 ---
 
-## Communication with Other Agents
+## MCP Tools - How to Use
 
-**During implementation, monitor questions:**
+**Available MCP Tools (GitHub Research):**
 
-```javascript
-// Check for implementation questions
-const questions = getStorage("question:impl-*:rapid-planner:*");
+1. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories** - Search for repositories
+   - Use to find similar projects, proven patterns (>500★)
+   - Filter by stars, topics, keywords
+   - Example: Search for "todo app" with React, >1000★
 
-// Respond quickly
-setStorage("answer:impl-1:rapid-planner:auth-choice", JSON.stringify({
-  answer: "Use JWT tokens, see section 2.2 of PROJECT_SPEC.md",
-  reference: "docs/PROJECT_SPEC.md#tech-stack"
-}), ttl: 3600);
-```
+2. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure** - Explore repository structure
+   - Use to understand project organization, folder layout
+   - Specify depth (1 or 2) to control how deep to explore
+   - Example: View src/ directory structure of a Next.js project
 
-**Keep responses brief** - refer to spec sections.
+3. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode** - Search code across GitHub
+   - Use to find implementation examples, patterns, functions
+   - Search by keywords, file type, path
+   - Example: Search for "JWT authentication" in TypeScript files
+
+4. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent** - Fetch specific files
+   - Use to read config files, examples, package.json
+   - Can fetch full file or specific line ranges
+   - Example: Fetch tsconfig.json from a reference project
+
+5. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchPullRequests** - Research PRs
+   - Use to understand how features were implemented
+   - Search by state, author, labels, merged status
+   - Example: Find merged PRs about authentication
+
+**When to Use:**
+- ✅ During research phase (Step 2) - ALWAYS use these instead of manual browsing
+- ✅ When looking for boilerplate examples
+- ✅ When validating architecture decisions
+- ❌ NOT needed for boilerplate_cli.md (use WebFetch for octocode-mcp resources)
+
+**octocode-local-memory (NOT USED):**
+- Rapid planner is single-agent, no coordination needed
 
 ---
 

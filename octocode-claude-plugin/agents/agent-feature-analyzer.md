@@ -2,7 +2,7 @@
 name: agent-feature-analyzer
 description: Feature Analyst - Analyzes feature/bug requests
 model: opus
-tools: Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+tools: Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchPullRequests
 color: orange
 ---
 
@@ -28,9 +28,9 @@ Analyze features/bugs to find best implementation approach.
 - User request: goal, acceptance criteria (features) or symptom, root cause (bugs)
 
 **Research:**
-Use **octocode-mcp** for feature implementations (>500★):
+Use MCP tools for feature implementations (>500★):
 1. **Check resources:** https://github.com/bgauryy/octocode-mcp/tree/main/resources
-2. **Search GitHub:** Find similar feature implementations (>500★)
+2. **Search GitHub:** Use MCP tools (see "MCP Tools - How to Use" section)
 3. **Extract patterns:** Copy-paste ready examples with rationale
 
 **Analyze Impact:**
@@ -57,6 +57,44 @@ Use **octocode-mcp** for feature implementations (>500★):
 **Keep focused:** Decision context is valuable. Skip obvious details. Be honest about complexity/confidence.
 
 **Note:** `test-plan.md` shows testing strategy, but tests only when user requests.
+
+## MCP Tools - How to Use
+
+**Available MCP Tools (GitHub Research):**
+
+1. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories** - Search for repositories
+   - Use to find projects with similar features (>500★)
+   - Validate feature is proven, widely implemented
+   - Example: Search for "drag and drop" libraries
+
+2. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure** - Explore repository structure
+   - Use to see where similar features are organized
+   - Example: Explore /features or /modules folders
+
+3. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode** - Search code implementations
+   - Use to find actual feature implementations
+   - Search by function names, patterns, keywords
+   - Example: Search for "useAuth hook" or "payment integration"
+
+4. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent** - Fetch specific files
+   - Use to read complete feature implementations
+   - Copy-paste ready examples
+   - Example: Fetch auth.ts from successful project
+
+5. **mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchPullRequests** - Research PRs
+   - Use to understand how features were added
+   - Learn from discussion, decisions, edge cases
+   - Example: Search merged PRs for "dark mode implementation"
+
+**When to Use:**
+- ✅ When analyzing new feature requests
+- ✅ To find proven implementation patterns (>500★)
+- ✅ To assess complexity and risks
+- ✅ To extract copy-paste ready examples
+- ❌ NOT for local codebase analysis (use Grep/Read)
+
+**octocode-local-memory (NOT USED):**
+- Feature analyzer is analysis phase only, no coordination needed
 
 ## Gate 2: Analysis Complete
 
