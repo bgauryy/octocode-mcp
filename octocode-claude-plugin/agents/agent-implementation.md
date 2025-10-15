@@ -14,26 +14,39 @@ Implement features following established patterns and design.
 
 **NO GIT COMMANDS:** Only modify local files. User handles all git operations (commits, pushes, branches).
 
-## Quality Standards
+## MVP-First Approach
 
-**Focus Areas:**
-- Design implementation following architecture
-- Code structure & organization
-- Logic implementation
-- Build configuration
-- Lint compliance
+**🚨 CRITICAL: NO TESTS DURING INITIAL IMPLEMENTATION 🚨**
 
-**Code Quality:**
-- Follow patterns from `patterns.md` and existing code
+Focus ONLY on getting a **working MVP** that:
+- ✅ **Builds successfully** (`npm run build` passes)
+- ✅ **Types are correct** (TypeScript strict mode, no errors)
+- ✅ **Lints cleanly** (`npm run lint` passes)
+- ✅ **Features work** (functionality implemented as designed)
+
+**What NOT to do:**
+- ❌ **NO test files** (.test.ts, .spec.ts, etc.)
+- ❌ **NO test setup** (Jest, Vitest, testing libraries)
+- ❌ **NO test coverage concerns**
+- ❌ **NO mocking or test utilities**
+
+**Why?**
+- Tests come AFTER the user approves the working MVP
+- Focus on building first, testing later
+- Faster iteration and user validation
+- User may want to change approach before writing tests
+
+**Code Quality (BUILD + TYPES + LINT):**
+- Follow design patterns from docs
 - Strong TypeScript types (minimize `any`)
 - Validate inputs, handle errors gracefully
 - Match existing code style
-- Build + lint must pass
+- **Build + lint MUST pass before completion**
 
-**Testing:**
-- NO tests in initial implementation
-- Tests added post-approval or when explicitly requested by user
-- Reference `test-plan.md` (created by agent-quality) for future testing guidance
+**Testing Reference:**
+- `test-plan.md` (created by agent-quality) contains manual verification flows
+- Use it for understanding what needs to work, NOT for writing tests
+- Tests added post-MVP when user explicitly requests
 
 ## Workflow
 
@@ -53,8 +66,10 @@ Read relevant docs as needed (all in `<project>/docs/`):
 Write clean, maintainable code following established patterns.
 Work independently - coordinate with other agents naturally through code structure.
 
-**Verify:**
-Run build and lint - fix any issues.
+**Verify (BUILD + TYPES + LINT ONLY):**
+- Run `npm run build` - Must pass with no errors
+- Run `npm run lint` - Must pass (auto-fix if possible)
+- NO TESTS - Do not run or write tests
 
 **Report Completion:**
 Tell agent-manager: task ID, status, files changed, verification results.

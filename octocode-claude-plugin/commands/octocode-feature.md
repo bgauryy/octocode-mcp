@@ -40,14 +40,38 @@ Work with the current project's `docs/` directory.
 
 **NO GIT COMMANDS:** Agents only modify local files. User handles all git operations (commits, pushes, branches, etc.).
 
-## Testing Approach
+## 🚨 MVP-First: NO TESTS During Initial Implementation
 
-**Implementation-first, tests later:**
-1. Phases 1-6 focus on implementation and functionality
-2. Verification flows (not test code) guide manual testing
-3. Automated tests are NOT written during initial implementation
-4. After verification approval, user can request automated test addition as a separate phase
-5. This allows faster iteration and user validation before test investment
+**Focus on WORKING CODE FIRST (Build + Types + Lint):**
+
+✅ **What we DO during MVP:**
+- ✅ Build passes (`npm run build` - no errors)
+- ✅ TypeScript strict mode (strong types, minimal `any`)
+- ✅ Lint passes (`npm run lint` - clean code)
+- ✅ Feature/fix works as designed
+- ✅ No regression in existing functionality
+
+❌ **What we DON'T do during MVP:**
+- ❌ NO new test files (.test.ts, .spec.ts, __tests__)
+- ❌ NO test setup changes
+- ❌ NO test coverage requirements
+- ❌ NO mocking or test utilities
+- ❌ NO automated testing
+
+**Existing tests:**
+- If tests already exist in codebase, ensure they still pass
+- Do not modify or add new tests during MVP
+
+**Why MVP-first?**
+1. **Faster delivery** - See working changes quickly
+2. **User validation** - Verify feature works before investing in tests
+3. **Flexibility** - User may want adjustments before writing tests
+4. **Safe changes** - Focus on not breaking existing code first
+
+**When tests ARE added** (post-MVP, user-requested):
+1. User approves working feature/fix
+2. User explicitly requests automated test additions
+3. Tests implemented as separate phase
 
 ## 4-Phase Workflow
 

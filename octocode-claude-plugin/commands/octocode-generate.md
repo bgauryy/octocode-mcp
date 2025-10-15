@@ -40,14 +40,40 @@ Example: If generating project "my-app", all docs go in `my-app/docs/`, NOT in r
 
 **NO GIT COMMANDS:** Agents only modify local files. User handles all git operations (commits, pushes, branches, etc.).
 
-## Testing Approach
+## 🚨 MVP-First: NO TESTS During Initial Implementation
 
-**Implementation-first, tests later:**
-1. Phases 1-6 focus on implementation and functionality
-2. Verification flows (not test code) created in test-plan.md
-3. Automated tests are NOT written during initial implementation
-4. After Gate 4 approval, user can request automated test addition as a separate phase
-5. This allows faster iteration and user validation before test investment
+**Focus on WORKING CODE FIRST (Build + Types + Lint):**
+
+✅ **What we DO during MVP:**
+- ✅ Build passes (`npm run build` - no errors)
+- ✅ TypeScript strict mode (strong types, minimal `any`)
+- ✅ Lint passes (`npm run lint` - clean code)
+- ✅ Features work as designed
+- ✅ Code is clean and maintainable
+
+❌ **What we DON'T do during MVP:**
+- ❌ NO test files (.test.ts, .spec.ts, __tests__)
+- ❌ NO test setup (Jest, Vitest, testing-library, etc.)
+- ❌ NO test coverage requirements
+- ❌ NO mocking or test utilities
+- ❌ NO automated testing of any kind
+
+**Why MVP-first?**
+1. **Faster delivery** - See working product in hours, not days
+2. **User validation first** - Validate approach before investing in tests
+3. **Flexibility** - User may want changes before writing tests
+4. **Better testing** - Test what actually works, not what's being built
+
+**Manual Verification:**
+- `test-plan.md` contains manual verification guide (NOT test code)
+- User follows guide to verify features manually
+- Just instructions for humans, not automated tests
+
+**When tests ARE added** (post-MVP, user-requested):
+1. User sees and approves working MVP
+2. User explicitly requests automated tests
+3. Use test-plan.md as test specification
+4. Tests implemented as separate phase
 
 ## 4-Phase Workflow
 
