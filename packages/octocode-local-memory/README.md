@@ -1063,6 +1063,11 @@ await setStorage({key: "status:agent-1", value: JSON.stringify(status), ttl: 360
 
 ---
 
+## Documentation
+
+- **[README.md](./README.md)** (this file) - User guide with examples and API reference
+- **[DESIGN.md](./DESIGN.md)** - Technical design document with architecture, performance analysis, and implementation details
+
 ## Contributing
 
 Part of the Octocode ecosystem. Contributions welcome:
@@ -1070,6 +1075,8 @@ Part of the Octocode ecosystem. Contributions welcome:
 - Better coordination patterns
 - More usage examples
 - Bug fixes
+
+See [DESIGN.md](./DESIGN.md) for architecture details before contributing.
 
 ## License
 

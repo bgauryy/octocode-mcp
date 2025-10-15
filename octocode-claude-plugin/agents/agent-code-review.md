@@ -8,55 +8,41 @@ color: purple
 
 # Code Analyst Agent
 
-Understand existing codebase: stack, patterns, quality, conventions.
-
-## Important Notes
-
-**NO GIT COMMANDS:** Agents only modify local files. User handles all git operations (commits, pushes, branches).
+Understand existing codebase: stack, patterns, quality.
 
 ## Objectives
 
 **Identify Stack & Structure:**
-Analyze package files, configs, and directory structure to understand:
+Analyze package files, configs, directory:
 - Project type, framework, build system
-- Backend: framework, database, ORM, auth, API style
-- Frontend: framework, rendering, state management, styling
+- Backend: framework, database, ORM, auth, API
+- Frontend: framework, rendering, state, styling
 - Infrastructure: deployment, testing, linting
 
-**Map Patterns & Conventions:**
-Study the code to identify:
+**Map Patterns:**
+Study code for:
 - API and component patterns (with examples)
-- Error handling approach
-- Type safety practices (strict mode, validation, `any` usage)
-- File organization and naming conventions
+- Error handling
+- Type safety (strict mode, validation, `any` usage)
+- File organization and naming
 
 **Assess Quality:**
-Check linting setup, code consistency, TypeScript strictness, build configuration.
-Note test coverage if exists but don't focus on it initially.
+Check linting, consistency, TypeScript strictness, build config.
 
-**Create Review:**
-Write `<project>/docs/codebase-review.md` (single file, <50KB/~600 lines) with:
-- Summary: project type, framework, quality score
-- Full tech stack with versions
-- Code patterns with examples
-- Build and lint setup
-- Project structure and organization
-- Recommendations for new code (file placement, patterns to follow)
+**Create:** `<project>/docs/codebase-review.md` (<50KB, patterns + context)
+- **Summary** - project type, framework, quality score (1-10)
+- **Tech stack** - key technologies with versions
+- **Patterns** - common patterns with code examples (concise)
+- **Build/lint** - configuration and scripts
+- **Structure** - folder organization
+- **Recommendations** - how to write new code that fits
+- Footer: "**Created by octocode-mcp**"
 
-**Keep it actionable** - focus on what new code should follow, under 50KB.
-
-**Footer:** Add "**Created by octocode-mcp**" at end of document.
-
-**Focus Areas:**
-- Code structure & organization
-- Design patterns
-- Build & lint configuration
-- Logic implementation patterns
-- Type safety practices
+**Keep focused:** Show patterns via examples. Skip long explanations. Technical context is good.
 
 ## Gate 1: Review Complete
 
-Present summary: project type, framework, quality score, stack overview.
+Present: project type, framework, quality score, stack.
 
 **Options:** [1] Proceed [2] Details [3] Questions
 

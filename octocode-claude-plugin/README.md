@@ -89,15 +89,16 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 
 ## 🤖 Meet Your AI Team
 
-**6 specialized agents total**: 4 agents for `/octocode-generate`, 4 agents for `/octocode-feature` (3 agents are shared between both commands)
+**7 specialized agents total**: 5 agents for `/octocode-generate`, 4 agents for `/octocode-feature` (3 agents are shared between both commands)
 
 ### For `/octocode-generate` (Build from Scratch)
 
 | Agent | Role | Model | What They Do |
 |-------|------|-------|--------------|
 | 🎯 **Product Manager** | Requirements | Opus | Asks clarifying questions, creates PRD, researches competitors using Octocode MCP |
-| 🏗️ **Architect** | System Design | Opus | Designs complete architecture (backend + frontend), researches proven patterns via Octocode MCP |
+| 🏗️ **Architect** | System Design | Opus | Designs architecture (backend + frontend), researches proven patterns via Octocode MCP |
 | 🔬 **Quality Architect** | Verification Planning | Opus | Creates verification flows and test scenarios, researches testing patterns via Octocode MCP |
+| 🚀 **Founding Engineer** | Initial Scaffold | Sonnet | Transforms design into working project foundation (structure, build, deps, README) |
 | 🎯 **Engineering Manager** | Orchestration | Sonnet | Creates task breakdown, assigns tasks, tracks progress |
 | 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns, ensures build passes (multiple instances work in parallel) |
 
@@ -113,6 +114,37 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 **Cost-optimized**: Opus for strategic thinking, Sonnet for analysis and execution
 
 ---
+
+## 🔌 MCPs Used by Agents
+
+The plugin uses **two MCPs** for different purposes:
+
+### octocode-mcp: Code Research & Planning
+**Purpose**: Finding proven patterns, researching implementations, planning decisions
+
+Agents use this for:
+- ✅ Searching 100M+ GitHub repositories for best practices
+- ✅ Accessing curated development resources (610+ repos, 12 specialized files)
+- ✅ Extracting implementation patterns from top repos
+- ✅ Finding similar successful projects
+- ✅ Researching during requirements, architecture, and analysis phases
+
+📚 **Explore resources**: https://github.com/bgauryy/octocode-mcp/tree/main/resources
+
+### octocode-local-memory: Agent Coordination
+**Purpose**: Fast inter-agent communication and coordination
+
+Agents use this for:
+- ✅ Task assignments (manager → implementation agents)
+- ✅ File locks (prevent simultaneous edits)
+- ✅ Status updates (progress tracking)
+- ✅ Inter-agent messaging (questions/answers)
+- ✅ Workflow state management
+- ✅ **50x faster than file-based coordination** (< 1ms operations)
+
+**Key benefit**: Parallel agents coordinate through sub-millisecond storage operations instead of slow file I/O (10-50ms).
+
+📖 **See patterns**: [.claude-plugin/AGENT_COMMUNICATION.md](.claude-plugin/AGENT_COMMUNICATION.md)
 
 ## 🔧 Tools Reference
 
@@ -134,8 +166,6 @@ Agents use these tools to do their work:
 | **WebSearch** | Search the web |
 | **TodoWrite** | Create and update task lists |
 | **Task** | Spawn child agents (Manager only) |
-| **ListMcpResourcesTool** | List octocode-mcp resources |
-| **ReadMcpResourceTool** | Access octocode-mcp patterns |
 
 ---
 
@@ -152,11 +182,13 @@ rich text editor, and comments
 - Product Manager asks questions, researches similar apps
 - **✋ Gate 1:** You approve requirements
 
-**Phase 2: Architecture** → Creates `docs/design.md` + `docs/test-plan.md`
-- Architect designs complete system (backend + frontend), researches proven architectures via Octocode MCP
-- Quality Architect creates verification flows (manual testing guide), researches testing patterns via Octocode MCP
+**Phase 2: Architecture** → Creates `docs/design.md`, `docs/test-plan.md`, project scaffold
+- Architect designs system (backend + frontend), researches proven architectures via Octocode MCP
 - **✋ Gate 2:** You approve architecture
+- Quality Architect creates verification flows (manual testing guide)
 - **✋ Gate 2.5:** You approve verification plan
+- Founding Engineer creates project scaffold (structure, build, deps, README)
+- **✋ Gate 2.75:** You approve initial foundation
 
 **Phase 3: Planning** → Creates `docs/tasks.md`
 - Engineering Manager breaks project into tasks and assigns work
@@ -218,7 +250,7 @@ user management, and role-based access control
 
 | Feature | Octocode | claude-flow | dify | Microsoft |
 |---------|----------|-------------|------|-----------|
-| **Specialized Agents** | ✅ 8 specialized | 74 general | Platform | Framework |
+| **Specialized Agents** | ✅ 7 specialized | 74 general | Platform | Framework |
 | **Approval Gates** | ✅ 4 gates | ⚠️ Basic | ❌ None | ⚠️ YAML |
 | **Observability** | ✅ **Best-in-class** | ⚠️ Good | ⚠️ Basic | ⚠️ Good |
 | **Critical Thinking** | ✅ **Unique** | ❌ None | ❌ None | ❌ None |
@@ -285,7 +317,9 @@ cd octocode-mcp/octocode-claude-plugin
 | Phase | Agent | Output | Size | Human Gate |
 |-------|-------|--------|------|------------|
 | **1. Requirements** | Product Manager | `docs/requirements.md` | <50KB | ✋ Gate 1 |
-| **2. Architecture** | Architect + Quality | `docs/design.md` + `docs/test-plan.md` | <50KB each | ✋ Gate 2 + 2.5 |
+| **2. Architecture** | Architect | `docs/design.md` | <50KB | ✋ Gate 2 |
+| **2.5 Verification** | Quality Architect | `docs/test-plan.md` | <50KB | ✋ Gate 2.5 |
+| **2.75 Foundation** | Founding Engineer | Scaffold + README | - | ✋ Gate 2.75 |
 | **3. Planning** | Manager | `docs/tasks.md` | <50KB | (no gate) |
 | **4. Implementation** | 4-5 Engineers | Code + updates to `docs/tasks.md` | - | 🔄 Gate 3 (final) |
 
@@ -312,13 +346,14 @@ cd octocode-mcp/octocode-claude-plugin
 
 ### Behind the Scenes
 
-**Task Coordination**: Smart parallelization
+**Task Coordination**: Smart parallelization with octocode-local-memory
 ```
 Manager creates task breakdown
-→ Assigns tasks to available engineers
-→ Engineers work independently
-→ Natural coordination through code structure
-→ Progress tracked in tasks.md
+→ Assigns tasks via storage (setStorage "task:1", ...)
+→ Engineers check assignments (getStorage "task:1")
+→ File locks prevent conflicts (lock:src/file.ts)
+→ Status updates tracked (status:agent-1:task-1)
+→ 50x faster than file-based coordination
 ```
 
 **Progress Tracking**: Clear visibility in `docs/`
@@ -356,18 +391,24 @@ Manager creates task breakdown
 
 ## 🔌 Technology Stack
 
-### Required: octocode-mcp
-**Research-driven development with GitHub code search**
+### Required MCPs
 
-The plugin uses octocode-mcp to:
+**octocode-mcp**: Research-driven development with GitHub code search
 - ✅ Search 100M+ GitHub repositories for best practices
-- ✅ Access curated development resources
+- ✅ Access curated development resources (610+ repos, 12 files)
 - ✅ Extract implementation patterns from top repos
 - ✅ Find similar successful projects
+- **Usage**: Planning and research phases (requirements, architecture, analysis)
 
-**Resources include**: Architecture, frontend/backend frameworks, databases, testing, security, infrastructure, and real-world examples.
+**octocode-local-memory**: Fast agent coordination layer
+- ✅ Sub-millisecond task assignments and status updates
+- ✅ File lock coordination (prevent simultaneous edits)
+- ✅ Inter-agent messaging (questions/answers)
+- ✅ 50x faster than file-based coordination
+- **Usage**: Implementation phase (parallel agent coordination)
 
-📚 **Explore resources**: https://github.com/bgauryy/octocode-mcp/tree/main/resources
+📚 **Explore octocode-mcp resources**: https://github.com/bgauryy/octocode-mcp/tree/main/resources
+📖 **See coordination patterns**: [../docs/AGENT_COMMUNICATION.md](.claude-plugin/AGENT_COMMUNICATION.md)
 
 ### Optional: chrome-devtools-mcp
 **Browser testing for production verification**
