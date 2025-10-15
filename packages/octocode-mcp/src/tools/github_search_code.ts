@@ -106,12 +106,21 @@ async function searchMultipleGitHubCode(
           getNameWithOwner(apiResult)
         );
 
+        // For path search, only return paths (text_matches would be confusing)
+        // For file/content search, include text_matches with code snippets
         const files = apiResult.data.items
           .filter(item => !shouldIgnoreFile(item.path))
-          .map(item => ({
-            path: item.path,
-            text_matches: item.matches.map(match => match.context),
-          }));
+          .map(item => {
+            if (query.match === 'path') {
+              // Path search: only return the matched paths
+              return { path: item.path };
+            }
+            // Content search: include text_matches showing where keyword appears
+            return {
+              path: item.path,
+              text_matches: item.matches.map(match => match.context),
+            };
+          });
 
         return createSuccessResult(
           query,
