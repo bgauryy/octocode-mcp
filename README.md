@@ -50,7 +50,7 @@ gh auth login
 
 ## 📦 Repository Contents
 
-This repository contains three main components:
+This repository contains four main components:
 
 ### 🔍 Octocode MCP Server
 **[`packages/octocode-mcp/`](./packages/octocode-mcp/)**
@@ -79,6 +79,24 @@ Utility library for token optimization and content processing used by Octocode M
 - 📦 Standalone NPM package
 
 **Perfect for:** Building token-efficient AI tools and content processors.
+
+---
+
+### 🧠 Octocode Local Memory
+**[`packages/octocode-local-memory/`](./packages/octocode-local-memory/)**
+
+Ultra-fast in-memory storage MCP server for AI agent coordination and communication.
+
+**Features:**
+- ⚡ Sub-millisecond operations (< 1ms read/write)
+- 🤝 Enable multiple AI agents to coordinate during workflows
+- 🔒 File lock management to prevent conflicts
+- 📊 Task assignments, status updates, and inter-agent messaging
+- 🪶 Zero configuration - no database or Redis required
+
+**Perfect for:** Multi-agent workflows, task coordination, real-time status tracking, and parallel agent execution.
+
+**[📖 Full Documentation →](./packages/octocode-local-memory/README.md)**
 
 ---
 

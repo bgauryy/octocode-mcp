@@ -23,9 +23,15 @@ For every major decision:
 **Read:** `<project>/docs/requirements.md` - features, scale, constraints
 
 **Research:**
-Use **octocode-mcp** to find similar apps (>1000★). Start with https://github.com/bgauryy/octocode-mcp/tree/main/resources (architecture.md, project-examples.md).
+Use **octocode-mcp** to find similar apps (>1000★). Start with:
+1. **Boilerplate Commands:** `https://github.com/bgauryy/octocode-mcp/blob/main/resources/boilerplate_cli.md` - CLI commands for instant project setup
+2. **Architecture Patterns:** `https://github.com/bgauryy/octocode-mcp/tree/main/resources` (architecture.md, project-examples.md)
+3. **Similar Projects:** GitHub search for proven patterns (>1000★)
+
+**⚡ PRIORITIZE BOILERPLATES:** Use CLI generators (create-next-app, create-t3-app, etc.) for 10x faster setup!
 
 **Create:** `<project>/docs/design.md` (<50KB, concise + technical depth)
+- **Boilerplate command** - CLI command to initialize project (if applicable)
 - **Tech stack** - choices with rationale (why this over alternatives)
 - **Architecture** - flow, components, how they interact
 - **Key decisions** - context, options evaluated, tradeoffs, why chosen
@@ -36,7 +42,7 @@ Use **octocode-mcp** to find similar apps (>1000★). Start with https://github.
 
 **Keep concise:** Focus on technical decisions and context. Skip obvious explanations.
 
-**Next:** Triggers agent-quality → agent-founding-engineer
+**Next:** User approval at Gate 2 → agent-quality → Gate 2.5 → agent-founding-engineer → Gate 2.75 → agent-manager → agent-implementation (parallel)
 
 ## Agent Communication
 

@@ -35,7 +35,7 @@ A **Claude Code plugin** that provides **three powerful commands**:
 🚀 Rapid Planning → ✋ Gate → 💻 Parallel Implementation → ✅ Quality Loops
 ```
 
-**Time:** 20-50 minutes | **Best for:** MVPs, prototypes, small-medium projects
+**Best for:** MVPs, prototypes, small-medium projects
 
 ### `/octocode-generate` - Build Thorough
 Orchestrates 6 specialized AI agents through comprehensive 4-phase workflow:
@@ -44,7 +44,7 @@ Orchestrates 6 specialized AI agents through comprehensive 4-phase workflow:
 💭 Requirements → 🏗️ Architecture → 🎯 Planning → 💻 Implementation
 ```
 
-**Time:** 60-120 minutes | **Best for:** Complex/enterprise projects | **You approve at 4 gates**
+**Best for:** Complex/enterprise projects | **You approve at 4 gates**
 
 ### `/octocode-feature` - Enhance Existing Code
 Analyzes existing codebases and safely adds features or fixes bugs through 4 phases:
@@ -53,7 +53,7 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 📊 Code Review → 🎯 Analysis → 🎯 Planning → 💻 Implementation
 ```
 
-**Time:** 30-90 minutes | **Best for:** Production codebases | **You approve at 3 gates**
+**Best for:** Production codebases | **You approve at 3 gates**
 
 ### Important: Git Operations
 
@@ -64,9 +64,9 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 ## ✨ Why Use Octocode?
 
 ### ⚡ Choose Your Speed
-- **Quick Mode**: 1 agent, 1 gate, 20-50 min - Perfect for MVPs
-- **Standard Mode**: 6 agents, 4 gates, 60-120 min - Thorough for complex projects
-- **Feature Mode**: 4 agents, 3 gates, 30-90 min - Safe for production code
+- **Quick Mode**: 1 agent, 1 gate - Perfect for MVPs
+- **Standard Mode**: 6 agents, 4 gates - Thorough for complex projects
+- **Feature Mode**: 4 agents, 3 gates - Safe for production code
 
 ### 🚀 Parallel Execution
 - Multiple implementation agents work simultaneously
@@ -94,7 +94,7 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 
 ## 🤖 Meet Your AI Team
 
-**7 specialized agents total**: 5 agents for `/octocode-generate`, 4 agents for `/octocode-feature` (3 agents are shared between both commands)
+**9 specialized agents total**: Quick mode uses 3 agents, Standard mode uses 6 agents, Feature mode uses 4 agents (agent-manager and agent-implementation are shared across all workflows)
 
 ### For `/octocode-generate-quick` ⚡ NEW! (Fast Build)
 
@@ -104,7 +104,7 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 | 🎯 **Engineering Manager** | Orchestration | Sonnet | Reads spec, assigns tasks, tracks progress |
 | 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns (multiple instances work in parallel) |
 
-**Fast & efficient**: 1 planning agent, 1 approval gate, ~20-50 min
+**Fast & efficient**: 1 planning agent, 1 approval gate
 
 ### For `/octocode-generate` (Thorough Build)
 
@@ -117,7 +117,7 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 | 🎯 **Engineering Manager** | Orchestration | Sonnet | Creates task breakdown, assigns tasks, tracks progress |
 | 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns, ensures build passes (multiple instances work in parallel) |
 
-**Comprehensive**: 6 agents, 4 approval gates, ~60-120 min
+**Comprehensive**: 6 agents, 4 approval gates
 
 ### For `/octocode-feature` (Enhance Existing Code)
 
@@ -128,7 +128,7 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 | 🎯 **Engineering Manager** | Orchestration | Sonnet | Creates task breakdown, assigns tasks, tracks progress |
 | 💻 **Software Engineer** | Implementation | Sonnet | Modifies code following existing patterns (multiple instances) |
 
-**Production-safe**: 4 agents, 3 approval gates, ~30-90 min
+**Production-safe**: 4 agents, 3 approval gates
 
 **Cost-optimized**: Opus for strategic thinking, Sonnet for execution
 
@@ -161,7 +161,7 @@ Agents use this for:
 - ✅ Workflow state management
 - ✅ **50x faster than file-based coordination** (< 1ms operations)
 
-**Key benefit**: Parallel agents coordinate through sub-millisecond storage operations instead of slow file I/O (10-50ms).
+**Key benefit**: Parallel agents coordinate through sub-millisecond storage operations instead of slow file I/O.
 
 📖 **See patterns**: [.claude-plugin/AGENT_COMMUNICATION.md](.claude-plugin/AGENT_COMMUNICATION.md)
 
@@ -210,7 +210,7 @@ rich text editor, and comments
 - Rapid Planner validates build, lint, types
 - Creates fix tasks if issues found (max 3 loops)
 
-**Result: 1 consolidated file (~80KB), 1 approval gate, ~30-40 min, production-ready code**
+**Result: 1 consolidated file (~80KB), 1 approval gate, production-ready code**
 
 ---
 
@@ -240,7 +240,7 @@ rich text editor, and comments
 - 4-5 Software Engineers work in parallel
 - **🔄 Gate 3:** Monitor live, pause/continue anytime - Final gate
 
-**Result: 4 separate files (<50KB each), 4 approval gates, ~60-90 min, production-ready code**
+**Result: 4 separate files (<50KB each), 4 approval gates, production-ready code**
 
 ### What You Get
 
@@ -262,7 +262,7 @@ rich text editor, and comments
 
 ### Quick MVPs ⚡
 ```bash
-# Fast prototypes (20-40 min)
+# Fast prototypes
 /octocode-generate-quick Build a URL shortener with analytics
 /octocode-generate-quick Create a markdown note-taking app
 /octocode-generate-quick Build a simple task tracker API
@@ -270,11 +270,11 @@ rich text editor, and comments
 
 ### Complex Projects (Thorough Mode)
 ```bash
-# Enterprise apps (60-120 min)
-/octocode-generate React Native fitness tracker with workout plans, 
+# Enterprise apps
+/octocode-generate React Native fitness tracker with workout plans,
 progress charts, and social features
 
-/octocode-generate Analytics dashboard with real-time charts, 
+/octocode-generate Analytics dashboard with real-time charts,
 user management, and role-based access control
 ```
 

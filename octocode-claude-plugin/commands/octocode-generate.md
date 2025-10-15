@@ -45,6 +45,8 @@ $ARGUMENTS
 
 **Post-Implementation:** User runs `npm run build && npm run lint`, follows test-plan.md, commits when ready
 
+**Note:** Standard mode does NOT include automated code review. Only `/octocode-generate-quick` has code review phase by agent-rapid-planner.
+
 ## Docs
 
 | File | Agent | Gate |

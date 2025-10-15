@@ -1,17 +1,18 @@
 # Octocode Command Flows
 
-This document explains the complete workflows for both Octocode commands: `/octocode-generate` (build from scratch) and `/octocode-feature` (enhance existing code).
+This document explains the complete workflows for all three Octocode commands: `/octocode-generate-quick` (fast build), `/octocode-generate` (thorough build), and `/octocode-feature` (enhance existing code).
 
 ---
 
 ## Overview
 
-Octocode provides **two specialized workflows**:
+Octocode provides **three specialized workflows**:
 
-1. **`/octocode-generate`** - Build projects from scratch (6 agents, 4 gates)
-2. **`/octocode-feature`** - Add features or fix bugs in existing code (4 agents, 3 gates)
+1. **`/octocode-generate-quick`** ⚡ NEW! - Fast build from scratch (3 agents, 1 gate)
+2. **`/octocode-generate`** - Thorough build from scratch (6 agents, 4 gates)
+3. **`/octocode-feature`** - Add features or fix bugs in existing code (4 agents, 3 gates)
 
-Both workflows follow the **MVP-first approach**:
+All workflows follow the **MVP-first approach**:
 - ✅ Build passes
 - ✅ Types correct
 - ✅ Lint passes
@@ -24,7 +25,118 @@ Both workflows follow the **MVP-first approach**:
 
 ---
 
-## Command 1: `/octocode-generate` - Build from Scratch
+## Command 1: `/octocode-generate-quick` ⚡ - Fast Build from Scratch
+
+**Purpose:** Quickly transform an idea into production-ready code
+**Agents:** 3 specialized agents (agent-rapid-planner, agent-manager, agent-implementation)
+**Gates:** 1 human approval checkpoint
+**Output:** `docs/PROJECT_SPEC.md` (~80KB consolidated doc), working codebase
+
+### Workflow Diagram
+
+```mermaid
+flowchart TD
+    Start([User Request]) --> P1[Phase 1: Rapid Planning]
+    P1 --> G1{Gate 1: Approve Spec?}
+    G1 -->|No| P1
+    G1 -->|Yes| P2[Phase 2: Implementation]
+    P2 --> P3[Phase 3: Quality & Code Review]
+    P3 --> Issues{Issues Found?}
+    Issues -->|Yes - Loop 1-2| P2
+    Issues -->|No| End([Complete & Reviewed])
+    End --> Manual[User runs build, lint, manual tests]
+    Manual --> Commit[User commits when ready]
+
+    style Start fill:#e1f5ff
+    style End fill:#d4edda
+    style G1 fill:#fff3cd
+```
+
+### Phase 1: Rapid Planning
+
+**Agent:** `agent-rapid-planner` (Rapid Planner)
+**Model:** Claude Opus
+**Tools:** Read, Write, Edit, Grep, Glob, LS, Bash, BashOutput, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
+
+**What Happens:**
+1. Asks 2-3 critical questions (if needed)
+2. Researches boilerplate commands and 2-3 similar projects using **octocode-mcp**
+3. Creates single consolidated PROJECT_SPEC.md with:
+   - Overview & Requirements
+   - Architecture & Design (with boilerplate CLI command)
+   - Verification Plan
+   - Implementation Tasks
+
+**Output:** `<project>/docs/PROJECT_SPEC.md` (~80KB)
+- Everything in one file for speed
+- Includes 🚀 Quick Start Command with CLI boilerplate
+- Task breakdown with complexity and parallelization
+- Footer: "**Created by octocode-mcp**"
+
+**✋ Gate 1: Specification Review (ONLY GATE)**
+
+User reviews complete spec and can:
+- ✅ **Approve & Start Building** → Continue to Implementation
+- 📝 **Modify** → Request changes
+- ❓ **Questions** → Clarify sections
+
+### Phase 2: Implementation
+
+**Agents:** 4-5 instances of `agent-implementation` (Software Engineers)
+**Managed by:** `agent-manager` (Engineering Manager)
+**Model:** Claude Sonnet (both)
+**Tools:** Same as standard mode implementation
+
+**Coordination:** Same as standard mode using **octocode-local-memory**
+
+**Output:**
+- Complete feature implementation
+- Updated `docs/PROJECT_SPEC.md` with progress inline
+
+**🔄 Live Monitoring:** User can pause/continue/inspect
+
+### Phase 3: Quality Check & Code Review
+
+**Agent:** `agent-rapid-planner` (returns for validation)
+**Model:** Claude Opus
+
+**What Happens:**
+1. **Build Validation:**
+   - Run `npm run build` - must pass
+   - Run `npm run lint` - must pass
+   - TypeScript strict mode check
+   - Feature completeness check
+
+2. **Code Review (Bug Prevention):**
+   - Logic flow analysis (critical paths, edge cases, async patterns)
+   - Type safety & validation check
+   - Error handling review
+   - Security scan (secrets, XSS, SQL injection, auth)
+   - Performance & resources (memory leaks, cleanup)
+   - Common bug patterns (mutations, race conditions, state issues)
+
+3. **If Issues Found:**
+   - Create fix tasks in PROJECT_SPEC.md
+   - Back to implementation (max 2 loops)
+
+4. **If All Clean:**
+   - Update PROJECT_SPEC.md with ✅ Complete & Reviewed status
+
+**Output:** Validated, bug-scanned, production-ready code
+
+### Post-Implementation
+
+**User Actions:**
+1. Run `npm run build && npm run lint` - Verify
+2. Follow manual testing steps from section 3
+3. Test edge cases and scenarios
+4. Commit when ready (user controls git)
+
+**Tests added post-MVP only when user requests.**
+
+---
+
+## Command 2: `/octocode-generate` - Thorough Build from Scratch
 
 **Purpose:** Transform an idea into production-ready code
 **Agents:** 6 specialized agents
@@ -315,7 +427,7 @@ User can monitor in real-time:
 
 ---
 
-## Command 2: `/octocode-feature` - Enhance Existing Code
+## Command 3: `/octocode-feature` - Enhance Existing Code
 
 **Purpose:** Add features or fix bugs in existing codebases
 **Agents:** 4 specialized agents
@@ -480,7 +592,7 @@ User can monitor in real-time:
 
 ---
 
-## Agent Communication (Both Commands)
+## Agent Communication (All Commands)
 
 Agents communicate using **octocode-local-memory MCP** (storage-based, NOT files):
 
@@ -547,6 +659,7 @@ setStorage("answer:impl-1:architect:auth-approach", JSON.stringify({
 **Purpose:** Finding proven patterns, researching implementations
 
 **Used by:**
+- ✅ agent-rapid-planner (quick mode: all research in one pass)
 - ✅ agent-product (requirements research)
 - ✅ agent-architect (architecture research)
 - ✅ agent-quality (testing patterns research)
@@ -580,7 +693,17 @@ setStorage("answer:impl-1:architect:auth-approach", JSON.stringify({
 
 ## Summary Tables
 
-### `/octocode-generate` Flow
+### `/octocode-generate-quick` Flow ⚡
+
+| Phase | Agent | Output | Gate |
+|-------|-------|--------|------|
+| 1. Rapid Planning | agent-rapid-planner | `docs/PROJECT_SPEC.md` (~80KB) | ✋ Gate 1 (ONLY) |
+| 2. Implementation | agent-manager + 4-5 × agent-implementation | Code + updated PROJECT_SPEC.md | 🔄 Monitor |
+| 3. Quality & Review | agent-rapid-planner | Validation + bug scan | - |
+
+**Result:** 1 consolidated doc (~80KB), working codebase, 1 approval gate, automated code review
+
+### `/octocode-generate` Flow (Standard)
 
 | Phase | Agent | Output | Gate |
 |-------|-------|--------|------|
@@ -606,7 +729,7 @@ setStorage("answer:impl-1:architect:auth-approach", JSON.stringify({
 
 ---
 
-## Quality Standards (Both Commands)
+## Quality Standards (All Commands)
 
 **MVP-First Approach:**
 - ✅ Build passes (`npm run build`)
