@@ -148,8 +148,8 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
   limit: z
     .number()
     .min(1)
-    .max(100)
-    .default(30)
+    .max(10)
+    .default(5)
     .optional()
     .describe(GITHUB_SEARCH_PULL_REQUESTS.resultLimit.limit),
   withComments: z

@@ -749,4 +749,160 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       );
     });
   });
+
+  describe('Custom hints per response', () => {
+    it('should add topic search hints when topicsToSearch is used with results', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              repository: 'ml/repo',
+              stars: 5000,
+              description: 'ML repo',
+              url: 'https://github.com/ml/repo',
+              updatedAt: '2024-01-01',
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              topicsToSearch: ['machine-learning'],
+              reasoning: 'Find ML repos',
+            },
+          ],
+        }
+      );
+
+      const responseText = result.content[0]?.text as string;
+
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('status: "hasResults"');
+      // Check for custom hints in hasResultsStatusHints
+      expect(responseText).toContain('hasResultsStatusHints:');
+      // CRITICAL hint should be first
+      expect(responseText).toContain(
+        "CRITICAL: Verify each repository's relevance to your researchGoal - topic results are broad categories"
+      );
+      expect(responseText).toContain(
+        'Topic search found curated repositories - excellent for exploration and discovery'
+      );
+      expect(responseText).toContain(
+        'Explore related topics to discover more repositories in similar categories'
+      );
+    });
+
+    it('should add suggestion hints when topicsToSearch returns no results', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              topicsToSearch: ['nonexistent-topic'],
+              reasoning: 'Find repos',
+            },
+          ],
+        }
+      );
+
+      const responseText = result.content[0]?.text as string;
+
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('status: "empty"');
+      // Check for custom hints in emptyStatusHints
+      expect(responseText).toContain('emptyStatusHints:');
+      expect(responseText).toContain(
+        'No results for topic search - try related or broader topics for exploration'
+      );
+      expect(responseText).toContain(
+        'Consider switching to keywordsToSearch for broader coverage of name/description/readme'
+      );
+    });
+
+    it('should suggest topic search when keywords return no results', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['nonexistent-keyword'],
+              reasoning: 'Find repos',
+            },
+          ],
+        }
+      );
+
+      const responseText = result.content[0]?.text as string;
+
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('status: "empty"');
+      // Check for custom hint suggesting topics in emptyStatusHints
+      expect(responseText).toContain('emptyStatusHints:');
+      expect(responseText).toContain(
+        'No results with keywords - try topicsToSearch for more precise, curated exploration'
+      );
+    });
+
+    it('should not add custom hints when keywords return results', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              repository: 'test/repo',
+              stars: 100,
+              description: 'Test repo',
+              url: 'https://github.com/test/repo',
+              updatedAt: '2024-01-01',
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['test'],
+              reasoning: 'Find repos',
+            },
+          ],
+        }
+      );
+
+      const responseText = result.content[0]?.text as string;
+
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('status: "hasResults"');
+      // Should not have custom hints for keyword search with results
+      // Only general tool hints in hasResultsStatusHints
+      expect(responseText).not.toContain(
+        'Topic search found curated repositories'
+      );
+      // CRITICAL: Should NOT have the relevance verification hint for keyword searches
+      expect(responseText).not.toContain(
+        "CRITICAL: Verify each repository's relevance to your researchGoal"
+      );
+    });
+  });
 });

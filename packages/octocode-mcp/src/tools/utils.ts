@@ -78,16 +78,27 @@ export function createSuccessResult<T>(
   },
   data: T,
   hasContent: boolean,
-  _toolName: keyof typeof TOOL_NAMES
+  _toolName: keyof typeof TOOL_NAMES,
+  customHints?: string[]
 ): ToolSuccessResult<T extends Record<string, unknown> ? T : never> & T {
   const status = hasContent ? ('hasResults' as const) : ('empty' as const);
 
-  return {
+  const result: Record<string, unknown> = {
     status,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
     ...data,
-  } as ToolSuccessResult<T extends Record<string, unknown> ? T : never> & T;
+  };
+
+  // Only include hints if they exist
+  if (customHints && customHints.length > 0) {
+    result.hints = customHints;
+  }
+
+  return result as ToolSuccessResult<
+    T extends Record<string, unknown> ? T : never
+  > &
+    T;
 }
 
 /**

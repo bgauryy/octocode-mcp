@@ -1,75 +1,327 @@
-# Octocode MCP - Smart Assistant for Code Context Creation
-
-**The missing piece for AI agents that need quality code context. Transform any AI assistant into a code research expert that enriches context for better code handling, documentation, and complex ecosystem solutions.**
-
 <div align="center">
   <img src="https://github.com/bgauryy/octocode-mcp/raw/main/packages/octocode-mcp/assets/logo_white.png" width="400px" alt="Octocode Logo">
-</div>
-
-<div align="center">
   
-  [![Version](https://img.shields.io/badge/version-6.0.0-blue.svg)](./package.json)
-  [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
-  [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.12.0-brightgreen)](https://nodejs.org/)
+  # Octocode MCP
+  
+  **Transform Any AI Assistant Into a Code Research Expert**
+  
+  The missing piece for AI agents that need quality code context. Search millions of repositories, analyze real implementations, and discover proven patterns — all through a secure, token-efficient MCP server.
+  
   [![MCP Community Server](https://img.shields.io/badge/Model_Context_Protocol-Official_Community_Server-blue?style=flat-square)](https://github.com/modelcontextprotocol/servers)
   [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bgauryy/octocode-mcp)
   [![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/bgauryy/octocode-mcp)](https://archestra.ai/mcp-catalog/bgauryy__octocode-mcp)
-
-
+  
 </div>
+
+---
+
+## 📑 Table of Contents
+
+- [Why Octocode MCP?](#-why-octocode-mcp)
+- [Quick Start](#-quick-start-2-minutes)
+- [How to Choose the Right Tool](#-how-to-choose-the-right-tool)
+- [Available Tools](#-available-research-tools)
+- [Platform Setup](#-platform-setup)
+- [Real-World Examples](#-real-world-examples)
+- [Advanced Configuration](#-advanced-configuration)
+- [Documentation & Resources](#-documentation--resources)
+- [Community & Support](#-community--support)
+
+---
 
 ## 🎯 Why Octocode MCP?
 
-**The Context Gap Problem:** Most MCP servers today focus on web searches and documentation. But when AI agents need to understand code, implement complex solutions, or work within specific ecosystems, they lack the deep, contextual code knowledge that makes the difference between generic and expert-level assistance.
+### The Context Gap Problem
 
-**Octocode MCP solves this** by providing AI agents with real-time, intelligent access to millions of code repositories, enabling them to:
+Most AI assistants today have **generic knowledge** but lack **deep, contextual understanding** of real-world code solutions. When you need to:
 
-### 🚀 **Core Capabilities**
-- **🔍 Smart Code Context Creation** - Find and analyze real implementations with semantic understanding
-- **🏗️ Complex Ecosystem Solutions** - Understand how solutions work within private organizations and specific tech stacks
-- **📚 Documentation Enhancement** - Enrich docs with real code examples and best practices
-- **🎯 Example Discovery** - Find proven patterns and implementations for any coding challenge
-- **🔄 Progressive Research** - AI-powered research flows that build comprehensive understanding
+- ✅ Implement complex features with proven patterns
+- ✅ Debug difficult issues by finding similar solutions
+- ✅ Understand how enterprise-scale systems work
+- ✅ Learn best practices from production code
+- ✅ Create comprehensive technical documentation
 
-### 💡 **Perfect For**
-- **Code Creation**: Get context about patterns, libraries, and implementations before writing code
-- **Complex Bug Solutions**: Find solutions for complex bugs (which most LLMs struggle with) by analyzing real fixes and debugging approaches
-- **Complex Solutions**: Understand how enterprise-level solutions are architected and implemented  
-- **Documentation**: Find real examples to support technical documentation and guides
-- **Learning & Best Practices**: Discover how experienced developers solve similar problems
-- **Ecosystem Understanding**: Navigate complex codebases and understand organizational patterns
+**You hit a wall.** Generic AI knowledge isn't enough.
 
-**Octocode MCP is the missing piece** that transforms any developer or AI agent from having generic knowledge to having deep, contextual understanding of real-world code solutions.
+### The Octocode Solution
 
-**Octocode boosts velocity, secured, and optimized (token-wise) for individuals and organizations** - providing enterprise-grade code context creation that scales from individual developers to large teams.
+Octocode MCP bridges this gap by providing AI assistants with **real-time access to millions of GitHub repositories**, enabling:
 
-## 🚀 Quick Setup
+| Capability | What You Get |
+|-----------|-------------|
+| **🔍 Smart Code Discovery** | Find relevant implementations using semantic search across millions of repositories |
+| **📊 Progressive Research** | AI-powered workflows that build comprehensive understanding through multiple queries |
+| **🏗️ Ecosystem Understanding** | Analyze how real organizations structure complex systems and solve hard problems |
+| **📚 Real-World Examples** | Access production code, not toy examples or outdated tutorials |
+| **🔒 Enterprise-Grade Security** | Automatic content sanitization, respects GitHub permissions, redacts sensitive data |
+| **⚡ Token-Efficient** | Smart content minification reduces token usage by up to 70% |
+
+### Perfect For
+
+- **🎨 Code Creation**: Get context about patterns, libraries, and implementations before writing code
+- **🐛 Complex Bug Fixes**: Find real solutions for complex bugs by analyzing how others solved similar issues
+- **🏢 Enterprise Solutions**: Understand how large-scale systems are architected and maintained
+- **📖 Documentation**: Enrich technical docs with real, tested code examples
+- **🎓 Learning**: Discover how experienced developers tackle challenging problems
+- **🔍 Technology Research**: Research new frameworks, patterns, and best practices
+
+### See The Difference
+
+**[🎯 Live Demo: ThreeJS Code Creation Comparison](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)**
+
+This interactive comparison shows how Octocode MCP transforms AI assistants from providing generic code suggestions to delivering expert-level, context-rich implementations.
+
+---
+
+## 🚀 Quick Start (2 Minutes)
 
 ### Prerequisites
+
 - **Node.js** >= 18.12.0
-- **GitHub Authentication** (choose one method below)
+- **GitHub Authentication** (choose one):
+  - [GitHub CLI](https://cli.github.com/) (recommended): `gh auth login`
+  - Personal Access Token: Create at [github.com/settings/tokens](https://github.com/settings/tokens) with `repo`, `read:user`, `read:org` scopes
 
-### Authentication Setup
+### Installation
 
-**Option 1: GitHub CLI (Recommended)**
-```bash
-# Install GitHub CLI if needed
-# macOS: brew install gh
-# Windows: winget install --id GitHub.cli
+Add Octocode MCP to your AI assistant's configuration:
 
-# Authenticate
-gh auth login
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp@latest"]
+    }
+  }
+}
 ```
 
-**Option 2: Personal Access Token**
-1. Create token at [GitHub Settings → Personal Access Tokens](https://github.com/settings/tokens)
-2. Required scopes: `repo`, `read:user`, `read:org`
+**Need help finding your config file?** See [Platform Setup](#-platform-setup) for detailed instructions for Claude Desktop, Cursor, Windsurf, and VS Code.
 
-### MCP Configuration
+**Using a Personal Access Token?** Add it to the `env` section (see Platform Setup for examples).
 
-Add to your AI assistant's MCP configuration:
+### Verify Installation
 
-**With GitHub CLI:**
+After setup, try this in your AI assistant:
+
+```
+"Search for React hooks implementations in popular repositories"
+```
+
+If you see search results from GitHub repositories, you're all set! 🎉
+
+---
+
+## 🧭 How to Choose the Right Tool
+
+Use this decision tree to select the perfect tool for your task:
+
+```
+📝 What do you want to do?
+
+├─ 🔍 Find code or examples
+│  ├─ Know what you're looking for → githubSearchCode
+│  └─ Need to discover repositories first → githubSearchRepositories
+│
+├─ 📂 Explore a repository
+│  ├─ See file/folder structure → githubViewRepoStructure
+│  └─ Read specific files → githubGetFileContent
+│
+├─ 📚 Understand changes/history
+│  └─ Analyze pull requests → githubSearchPullRequests
+│
+└─ 🎯 Not sure where to start?
+   └─ Start broad with githubSearchRepositories → then narrow down
+```
+
+### Quick Reference Table
+
+| Goal | Tool | What It Returns |
+|------|------|----------------|
+| **Find specific code** | `githubSearchCode` | Code snippets with context |
+| **Discover repositories** | `githubSearchRepositories` | Repo list with stars, topics |
+| **Explore structure** | `githubViewRepoStructure` | File/folder tree |
+| **Read files** | `githubGetFileContent` | Full or partial file content |
+| **Analyze changes** | `githubSearchPullRequests` | PR details, diffs, discussions |
+
+---
+
+## 🛠️ Available Research Tools
+
+### Default Tools (Always Enabled)
+
+#### `githubSearchCode`
+**Find specific code implementations across repositories**
+
+**Best for:**
+- Finding how a function/class is implemented
+- Discovering code patterns and examples
+- Researching library usage
+
+**Not recommended for:**
+- Finding repositories (use `githubSearchRepositories`)
+- Reading full files (use `githubGetFileContent`)
+
+**Example Prompts:**
+- "Find React useEffect cleanup patterns"
+- "Show me OAuth2 implementation in Node.js"
+- "Search for error handling in GraphQL resolvers"
+
+**Arguments:**
+```typescript
+{
+  keywordsToSearch: string[];     // Required: Terms to search for
+  owner?: string;                 // Filter by repo owner
+  repo?: string;                  // Filter by specific repo
+  path?: string;                  // Search in specific directory
+  filename?: string;              // Filter by filename
+  extension?: string;             // Filter by file type
+  limit?: number;                 // Max results (1-20)
+}
+```
+
+---
+
+#### `githubSearchRepositories`
+**Discover repositories by topic, language, or description**
+
+**Best for:**
+- Finding projects in specific domains
+- Discovering popular implementations
+- Research technology ecosystems
+
+**Not recommended for:**
+- Searching inside code (use `githubSearchCode`)
+- Reading repository content (use `githubViewRepoStructure` first)
+
+**Example Prompts:**
+- "Find popular React component libraries"
+- "Show me microservices examples with high stars"
+- "Discover AI agent frameworks"
+
+**Arguments:**
+```typescript
+{
+  keywordsToSearch?: string[];    // Search in name/description
+  topicsToSearch?: string[];      // Search by GitHub topics
+  owner?: string;                 // Filter by owner
+  stars?: string;                 // e.g., ">1000", "100..500"
+  language?: string;              // e.g., "TypeScript"
+  sort?: string;                  // "stars" | "forks" | "updated"
+  limit?: number;                 // Max results (1-20)
+}
+```
+
+---
+
+#### `githubViewRepoStructure`
+**Explore repository file and folder structure**
+
+**Best for:**
+- Understanding project organization
+- Finding where specific code lives
+- Navigating before reading files
+
+**Not recommended for:**
+- Reading file contents (use `githubGetFileContent`)
+- Searching across repos (use `githubSearchCode`)
+
+**Example Prompts:**
+- "Show me the structure of the React repository"
+- "What's in the src folder of this project?"
+- "Explore the components directory"
+
+**Arguments:**
+```typescript
+{
+  owner: string;                  // Required: Repository owner
+  repo: string;                   // Required: Repository name
+  path?: string;                  // Directory path (default: root)
+  depth?: number;                 // 1 = current dir, 2 = with subdirs
+  branch?: string;                // Branch name (default: main branch)
+}
+```
+
+---
+
+#### `githubGetFileContent`
+**Read file contents with smart context retrieval**
+
+**Best for:**
+- Reading specific files
+- Getting code context around matches
+- Line-range based reading
+
+**Not recommended for:**
+- Searching across files (use `githubSearchCode`)
+- Finding files (use `githubViewRepoStructure`)
+
+**Example Prompts:**
+- "Show me the README of this repo"
+- "Read the authentication module"
+- "Get lines 50-100 of this file"
+
+**Arguments:**
+```typescript
+{
+  owner: string;                  // Required: Repository owner
+  repo: string;                   // Required: Repository name
+  path: string;                   // Required: File path
+  startLine?: number;             // Optional: Start reading from line
+  endLine?: number;               // Optional: End reading at line
+  matchString?: string;           // Optional: Find and return context around match
+  matchStringContextLines?: number; // Lines of context (default: 5)
+  branch?: string;                // Branch name
+}
+```
+
+---
+
+### Advanced Tools (Optional)
+
+#### `githubSearchPullRequests`
+**Analyze pull requests, changes, and discussions**
+
+**Enable with:** `export ENABLE_TOOLS="githubSearchPullRequests"`
+
+**Best for:**
+- Understanding how features were implemented
+- Learning from code review discussions
+- Analyzing bug fixes and solutions
+
+**Not recommended for:**
+- Current code search (use `githubSearchCode`)
+- General repository discovery (use `githubSearchRepositories`)
+
+**Example Prompts:**
+- "Show me recent authentication PRs"
+- "Find PRs that fixed performance issues"
+- "Analyze how they implemented dark mode"
+
+**Arguments:**
+```typescript
+{
+  owner?: string;                 // Repository owner
+  repo?: string;                  // Repository name
+  prNumber?: number;              // Specific PR number
+  state?: "open" | "closed";      // PR state
+  merged?: boolean;               // Only merged PRs
+  query?: string;                 // Free-text search
+  limit?: number;                 // Max results (1-10)
+  withContent?: boolean;          // Include code diffs
+  withComments?: boolean;         // Include discussions
+}
+```
+
+---
+
+## 🖥️ Platform Setup
+
+### Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
 ```json
 {
   "mcpServers": {
@@ -86,7 +338,7 @@ Add to your AI assistant's MCP configuration:
 {
   "mcpServers": {
     "octocode": {
-      "command": "npx", 
+      "command": "npx",
       "args": ["octocode-mcp@latest"],
       "env": {
         "GITHUB_TOKEN": "ghp_your_token_here"
@@ -96,124 +348,257 @@ Add to your AI assistant's MCP configuration:
 }
 ```
 
-**That's it!** Your AI assistant can now search and analyze GitHub repositories.
+Restart Claude Desktop to activate.
 
-## 🛠️ Available Research Tools
+---
 
-| Tool | Purpose | Default | Description |
-|------|---------|---------|-------------|
-| **`githubSearchCode`** | Code Discovery | ✅ | Search code across repositories with semantic queries |
-| **`githubSearchRepositories`** | Repository Discovery | ✅ | Find repositories by topic, language, or description |
-| **`githubViewRepoStructure`** | Structure Analysis | ✅ | Explore repository file structure and navigation |
-| **`githubGetFileContent`** | Content Access | ✅ | Fetch specific files or code sections with context |
-| **`githubSearchPullRequests`** | History Analysis | ❌ | Analyze pull requests and code changes |
+### Cursor
 
-**Default tools** are automatically enabled. **Non-default tools** require configuration (see Advanced Setup below).
+1. Open **Cursor Settings** → **Features** → **MCP Servers**
+2. Click **"+ Add New Global MCP Server"**
+3. Enter configuration:
 
-## 🎯 Real-World Context Creation Examples
-
-**Code Creation Context:**
-```
-"I need to implement OAuth2 in my Node.js app - show me real implementations"
-→ Finds proven OAuth2 patterns → Analyzes security practices → Provides implementation context
-```
-
-**Complex Ecosystem Solutions:**
-```
-"How do large organizations handle microservices communication?"
-→ Discovers enterprise patterns → Examines real architectures → Explains design decisions
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp@latest"]
+    }
+  }
+}
 ```
 
-**Documentation Enhancement:**
+4. Save and restart Cursor
+
+**Access in Cursor:** Use the Composer (⌘+L on Mac) and select "Agent" mode to automatically use Octocode tools.
+
+---
+
+### Windsurf
+
+Add to `~/.codeium/windsurf/model_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp@latest"]
+    }
+  }
+}
 ```
-"Find real examples of GraphQL error handling for my API docs"
-→ Searches GraphQL implementations → Extracts error patterns → Provides documentation examples
+
+Restart Windsurf after configuration.
+
+---
+
+### VS Code
+
+**One-Click Installation:**
+
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_MCP-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=octocode&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22octocode-mcp%40latest%22%5D%7D)
+
+**Manual Installation:**
+
+Add to User Settings (JSON) — Press `Ctrl/Cmd + Shift + P` → `Preferences: Open User Settings (JSON)`:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "octocode": {
+        "command": "npx",
+        "args": ["octocode-mcp@latest"]
+      }
+    }
+  }
+}
 ```
 
-**Best Practices Discovery:**
-```
-"What are the current best practices for React state management in 2024?"
-→ Analyzes modern React apps → Compares state solutions → Identifies trending patterns
-```
+---
 
+## 📺 Real-World Examples
 
-**See the dramatic difference in AI assistant capability:**
-**[🎯 Live Demo: ThreeJS Code Creation Comparison](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)**
+### Example 1: Deep Code Research
+**Prompt:** "Explain deeply how React hooks work under the hood, using information from code and documents."
 
-This interactive comparison shows how Octocode MCP transforms AI assistants from providing generic code suggestions to delivering expert-level, context-rich implementations with real-world patterns and best practices.
+Watch the AI use Octocode to:
+1. Search React repository for hooks implementation
+2. Analyze the source code structure
+3. Read specific files for technical details
+4. Synthesize comprehensive explanation
 
-## 📺 Examples
+**[📺 Watch on YouTube](https://www.youtube.com/watch?v=BCOpsRjAPU4&t=9s)**
 
-### Example 1: Deep code research with Octocode
-- **Prompt**:
-```
-Explain deeply how React hooks work under the hood, using information from code and documents.
-Provide a technical explanation, covering both basic and advanced concepts.
-Do a deep research
-```
-- **Video**: [YouTube](https://www.youtube.com/watch?v=BCOpsRjAPU4&t=9s)
+---
 
-### Example 2: Learn about AI Agents using Octocode
-- **Goal**: Create context for agents creation
-- **Video**: [YouTube](https://www.youtube.com/watch?v=rhQ3nTwU9kw)
+### Example 2: Learn About AI Agents
+**Goal:** Create comprehensive context for building AI agents
 
-### Example 3: Review PRs using Octocode
-- **Video**: [YouTube](https://www.youtube.com/watch?v=rhQ3nTwU9kw)
+**[📺 Watch on YouTube](https://www.youtube.com/watch?v=rhQ3nTwU9kw)**
 
+---
+
+### Example 3: Review Pull Requests
+**Goal:** Analyze how features are implemented through PR reviews
+
+**[📺 Watch on YouTube](https://www.youtube.com/watch?v=rhQ3nTwU9kw)**
+
+---
+
+### Example 4: Complex ThreeJS Implementation
+**See the dramatic difference** between generic AI and Octocode-enhanced AI:
+
+**[🎯 Interactive Demo](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)**
+
+This comparison shows how Octocode transforms AI from generic suggestions to expert-level implementations with real-world patterns.
+
+---
 
 ## ⚙️ Advanced Configuration
 
 ### Tool Selection
+
+**Run Specific Tools Only (Exclusive Mode):**
 ```bash
-# Run only specific tools (exclusive mode)
 export TOOLS_TO_RUN="githubSearchCode,githubSearchRepositories"
+```
 
-# Enable additional tools (additive mode) 
+**Enable Additional Tools (Additive Mode):**
+```bash
 export ENABLE_TOOLS="githubSearchPullRequests"
+```
 
-# Disable specific default tools
+**Disable Specific Default Tools:**
+```bash
 export DISABLE_TOOLS="githubViewRepoStructure"
+```
 
-# Enable experimental features
+**Enable Experimental Features:**
+```bash
 export BETA="1"
 ```
 
 **Note:** `TOOLS_TO_RUN` cannot be combined with `ENABLE_TOOLS`/`DISABLE_TOOLS`.
 
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GITHUB_TOKEN` | Personal Access Token for authentication | Uses `gh` CLI if not set |
+| `TOOLS_TO_RUN` | Comma-separated list of tools to run exclusively | All default tools |
+| `ENABLE_TOOLS` | Comma-separated list of additional tools to enable | None |
+| `DISABLE_TOOLS` | Comma-separated list of tools to disable | None |
+| `BETA` | Enable experimental features | `0` |
+
+### Example Configuration with Environment Variables
+
+**Claude Desktop Config:**
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp@latest"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here",
+        "ENABLE_TOOLS": "githubSearchPullRequests"
+      }
+    }
+  }
+}
+```
+
 ### Enterprise Features
-- **Content Sanitization**: Automatic detection and redaction of sensitive data
-- **Smart Token Management**: Efficient content reduction for large codebases  
-- **Access Control**: Uses your GitHub permissions (public/private repositories)
-- **Rate Limiting**: Built-in GitHub API rate limit handling
+
+**Content Sanitization:**
+- Automatic detection and redaction of API keys, tokens, passwords
+- Pattern-based secret detection across 50+ types
+- Configurable through security policies
+
+**Token Optimization:**
+- Smart content minification (up to 70% reduction)
+- Partial file reading for large files
+- Structured, predictable response formats
+
+**Access Control:**
+- Respects your GitHub permissions
+- Works with public and private repositories
+- Organization-level access support
+
+**Rate Limiting:**
+- Built-in GitHub API rate limit handling
+- Automatic retries with exponential backoff
+- Progress indicators for long operations
+
+---
 
 ## 📚 Documentation & Resources
 
-| Resource | Description |
-|----------|-------------|
-| **[🌐 octocode.ai](https://octocode.ai)** | Interactive tutorials and community |
-| **[📺 YouTube Channel](https://www.youtube.com/@Octocode-ai)** | Video tutorials and demos |
-| **[📚 Usage Guide](./docs/USAGE_GUIDE.md)** | 20+ examples and best practices |
-| **[🔐 Authentication Guide](./docs/AUTHENTICATION.md)** | Complete setup and enterprise features |
-| **[🔧 Tool Schemas](./docs/TOOL_SCHEMAS.md)** | Complete API reference for all tools |
-| **[🏗️ Architecture Overview](./docs/summary.md)** | System design and performance details |
+| Resource | Description | Link |
+|----------|-------------|------|
+| **🌐 Official Website** | Interactive tutorials and community | [octocode.ai](https://octocode.ai) |
+| **📺 YouTube Channel** | Video tutorials and demos | [Octocode on YouTube](https://www.youtube.com/@Octocode-ai) |
+| **📖 Usage Guide** | 20+ examples and best practices | [USAGE_GUIDE.md](./docs/USAGE_GUIDE.md) |
+| **🔐 Authentication Guide** | Complete setup and enterprise features | [AUTHENTICATION.md](./docs/AUTHENTICATION.md) |
+| **🔧 Tool Schemas** | Complete API reference for all tools | [TOOL_SCHEMAS.md](./docs/TOOL_SCHEMAS.md) |
+| **🏗️ Architecture** | System design and performance details | [summary.md](./docs/summary.md) |
+| **📦 NPM Package** | Latest releases and changelog | [octocode-mcp on NPM](https://www.npmjs.com/package/octocode-mcp) |
 
-## 🚨 Need Help?
-
-- **Issues & Bugs:** [GitHub Issues](https://github.com/bgauryy/octocode-mcp/issues)
-- **Community:** [Discord](https://discord.gg/octocode)
-- **Documentation:** [octocode.ai](https://octocode.ai)
 ---
 
-  <a href="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp">
-    <img width="380" height="200" src="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp/badge" />
-  </a>
+## 💬 Community & Support
+
+### Get Help
+
+- **💡 Feature Requests:** [GitHub Discussions](https://github.com/bgauryy/octocode-mcp/discussions/new?category=ideas)
+- **🐛 Issues & Bugs:** [GitHub Issues](https://github.com/bgauryy/octocode-mcp/issues)
+- **📖 Documentation:** [octocode.ai](https://octocode.ai)
+- **🎓 Video Tutorials:** [YouTube Channel](https://www.youtube.com/@Octocode-ai)
+
+### Contributing
+
+We welcome contributions! Octocode MCP is open source and community-driven.
+
+1. **Fork the repository** on GitHub
+2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
+3. **Make your changes** with tests
+4. **Run tests**: `yarn test`
+5. **Submit a pull request**
+
+See our [Contributing Guide](./CONTRIBUTING.md) for detailed instructions.
+
+### Show Your Support
+
+If Octocode MCP helps you build better AI applications, consider:
+
+- ⭐ **Star the repository** on [GitHub](https://github.com/bgauryy/octocode-mcp)
+- 🐦 **Share on Twitter** with #OctocodeMCP
+- 📝 **Write a blog post** about your experience
+- 🎥 **Create a tutorial** and share with the community
+
+---
 
 <div align="center">
-  <p>Built with ❤️ for developers</p>
-  <p>
-    <a href="https://octocode.ai">Website</a> •
-    <a href="https://github.com/bgauryy/octocode-mcp">GitHub</a> •
-    <a href="https://www.npmjs.com/package/octocode-mcp">NPM</a> •
-    <a href="https://discord.gg/octocode">Discord</a>
-  </p>
+
+## 🌟 Recognition
+
+<a href="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp/badge" alt="Octocode MCP on Glama" />
+</a>
+
+---
+
+### Built with ❤️ for developers by developers
+
+**[Website](https://octocode.ai)** • **[GitHub](https://github.com/bgauryy/octocode-mcp)** • **[NPM](https://www.npmjs.com/package/octocode-mcp)**
+
+---
+
+*Octocode MCP is an official MCP Community Server*
+
+[![MCP Community](https://img.shields.io/badge/Model_Context_Protocol-Official_Community_Server-blue?style=for-the-badge)](https://github.com/modelcontextprotocol/servers)
+
 </div>
