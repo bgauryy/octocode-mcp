@@ -16,12 +16,30 @@ Perfect for MVPs, prototypes, small-to-medium projects when speed matters.
 
 ## 📚 MCPs Available
 
-**octocode-mcp**: Research + Boilerplates
+**🔍 RESEARCH REQUIREMENT (CRITICAL!):**
+**🚨 ALL AGENTS: MUST USE octocode-mcp tools for research - NEVER use websearch! 🚨**
+
+**📋 FULL RESEARCH GUIDE:** `octocode-claude-plugin/docs/MCP_RESEARCH_GUIDELINES.md`
+
+**Core principle:** Research smart until finding good examples (>500★, production-ready, exact match).
+
+**octocode-mcp**: Research + Boilerplates (PRIMARY for research)
 - **🚀 START HERE:** `https://github.com/bgauryy/octocode-mcp/blob/main/resources/boilerplate_cli.md` - CLI commands for instant setup
-- Architecture patterns: `https://github.com/bgauryy/octocode-mcp/tree/main/resources`
-- Search GitHub for similar projects (>500★)
+- **Architecture patterns:** `https://github.com/bgauryy/octocode-mcp/tree/main/resources`
+- **Search GitHub:** Find similar projects (>500★), explore structure, get code
+- **TOOLS:** githubSearchCode, githubGetFileContent, githubSearchRepositories, githubViewRepoStructure
+- **See MCP_RESEARCH_GUIDELINES.md for:**
+  - Complete research workflows with examples
+  - Quality standards (what to collect)
+  - Research trace template
+  - Common mistakes to avoid
 
 **octocode-local-memory**: Agent coordination (tasks, locks, status, messaging)
+- **📋 PROTOCOL**: `octocode-claude-plugin/docs/COORDINATION_PROTOCOL.md`
+- All agents MUST follow standard protocol (key namespaces, TTLs, patterns)
+- See protocol doc for task coordination, file locking, QA signals
+
+**❌ FORBIDDEN:** WebFetch, WebSearch - use octocode-mcp instead!
 
 ## Request
 
@@ -29,67 +47,95 @@ $ARGUMENTS
 
 ## Rules
 
-**Docs:** Single consolidated file `<project>/docs/PROJECT_SPEC.md` (~80KB)
+**Docs:** Single consolidated file `<project>/docs/PROJECT_SPEC.md` 
 **Git:** NO git commands - user handles commits/pushes
 **MVP:** Build + Types + Lint ONLY (NO tests until post-MVP)
 
 ## MVP Focus
 
-**DO:** ✅ Build passes ✅ Types correct ✅ Lint passes ✅ Features work
+**DO:** ✅ Build passes ✅ Types correct ✅ Lint passes ✅ Features work ✅ Code flow verified
 **DON'T:** ❌ NO test files ❌ NO test setup ❌ NO automated testing
+
+**Verification Step (CRITICAL):**
+- Use `chrome-devtools-mcp` to open output and check for console errors
+- Verify code flow works end-to-end
+- Fix bugs immediately if found
+- Close tab after verification complete
 
 Tests added post-MVP when user requests.
 
-## Workflow (3 Simple Phases)
+## 🔄 Complete Agent Flow (3 Phases)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ Phase 1: PLANNING                                               │
+│ Phase 1: RAPID PLANNING                                         │
 │ agent-rapid-planner                                             │
-│ → Research boilerplates + architecture                          │
-│ → Create PROJECT_SPEC.md                                        │
-│ → Present to user                                               │
+│ → Research (boilerplates FIRST)                                 │
+│ → Design architecture & tasks                                  │
+│ → Create PROJECT_SPEC.md (~80KB)                               │
+│ → Present to user for approval                                 │
 └────────────────────────────┬────────────────────────────────────┘
                              │
-                    ✋ SINGLE GATE (user approval)
+                    ✋ GATE: User Decision
+                    [1] ✅ Approve → Phase 2
+                    [2] 📝 Modify → Update spec
+                    [3] ❓ Questions → Answer
                              │
 ┌────────────────────────────▼────────────────────────────────────┐
-│ Phase 2: IMPLEMENTATION                                         │
-│ 2-5 × agent-rapid-planner-implementation (parallel)             │
-│ → Read PROJECT_SPEC.md tasks                                    │
-│ → Execute in parallel (file locks coordination)                 │
-│ → Build + Lint + Types during work                              │
+│ Phase 2: PARALLEL IMPLEMENTATION                                │
+│ 2-5 × agent-rapid-planner-implementation (self-coordinated)    │
+│ → Read PROJECT_SPEC.md Section 4 (tasks)                       │
+│ → Self-assign tasks via octocode-local-memory                  │
+│ → File locks prevent conflicts                                 │
+│ → Build + Lint + Types validated during work                   │
+│ → Update progress in PROJECT_SPEC.md Section 5                 │
+│ → Exit when all tasks completed                                │
 └────────────────────────────┬────────────────────────────────────┘
                              │
 ┌────────────────────────────▼────────────────────────────────────┐
-│ Phase 3: QUALITY & CODE REVIEW                                  │
-│ agent-rapid-quality-architect                                   │
-│ → Build/Lint/Types validation                                   │
-│ → Bug scan (8 categories)                                       │
-│ → Browser testing (chrome)                                      │
-│ → Append QA report to PROJECT_SPEC.md (Section 6) OR mark ✅    │
+│ Phase 3: QUALITY ASSURANCE                                     │
+│ agent-rapid-quality-architect (Mode 3 only)                    │
+│ → Build/Lint/Types validation                                  │
+│ → 8-category bug scan (logic, types, security, performance)    │
+│ → Browser verification (MANDATORY for web apps)                │
+│   • chrome-devtools-mcp: check console errors                  │
+│   • Verify code flow end-to-end                                │
+│   • Fix bugs immediately                                       │
+│ → Append QA report to PROJECT_SPEC.md Section 6                │
+│ → If issues: signal fix tasks needed                           │
+│ → If clean: mark ✅ ready for user                              │
 └────────────────────────────┬────────────────────────────────────┘
                              │
-                         ✅ DONE!
+                🔄 MAX 2 QUALITY LOOPS
+                (fixes → re-scan if issues found)
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│ Phase 4: USER VERIFICATION                                      │
+│ → Run: npm run build && npm run lint                           │
+│ → Verify features work                                          │
+│ → Commit when ready                                             │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Post-Implementation:** User runs `npm run build && npm run lint`, verifies, commits when ready
-
-**Note:** Quick mode uses specialized rapid agents for speed. Standard mode has additional gates and documentation.
+**Agent Handovers:**
+- **Phase 1 → User:** `agent-rapid-planner` presents PROJECT_SPEC.md → User decides [1/2/3]
+- **User → Phase 2:** Command spawns 2-5 `agent-rapid-planner-implementation` instances
+- **Phase 2 → Phase 3:** Implementation agents complete all tasks → Auto-trigger `agent-rapid-quality-architect`
+- **Phase 3 → User:** QA report appended → User verifies → Ready to commit
 
 ## Single Document Structure
 
-**PROJECT_SPEC.md** contains everything:
+**PROJECT_SPEC.md** contains everything (~60-70KB for optimal parsing):
 
 ```markdown
 # [Project Name] - Project Specification
 
-## 1. Overview & Requirements
+## 1. Overview & Requirements (≤80 lines)
 - What we're building (2-3 sentences)
 - Must-have features (P0/P1/P2 prioritized)
 - Target users & scale (if relevant)
 
-## 2. Architecture & Design
+## 2. Architecture & Design (≤300 lines, includes research trace)
 
 ### 🚀 Quick Start Command
 ```bash
@@ -99,6 +145,12 @@ npx create-next-app@latest my-app --typescript --tailwind --app
 # OR: npm create vite@latest -- --template react-ts
 ```
 **Why this boilerplate:** [1-line reason]
+
+### Research Trace (Decisions & Sources)
+- Boilerplate selected: [command + source + reason]
+- MCP queries used: [if research done]
+- Reference repos: [if used]
+- Decisions made: [with rationale]
 
 ### Tech Stack
 - Frontend/Backend/Database with 1-line rationale each
@@ -111,19 +163,44 @@ npx create-next-app@latest my-app --typescript --tailwind --app
 - API endpoints (if needed)
 - Project structure
 
-## 3. Verification Plan
+## 3. Verification Plan (≤60 lines)
 - Manual testing steps per feature
 - Quality gates (build ✅ lint ✅ types ✅)
 - NO automated tests (post-MVP)
 
-## 4. Implementation Tasks
+## 4. Implementation Tasks (≤150 lines + JSON index)
 - Phase breakdown (setup/core/frontend/polish)
-- Task: description, files, complexity (LOW/MED/HIGH)
+- Task: description, files, complexity (LOW/MEDIUM/HIGH)
 - Parallelization opportunities marked
 
-## 5. Implementation Progress
+### 🔧 MACHINE-READABLE TASK INDEX (CRITICAL)
+```json
+<!-- TASK INDEX v1.0 (machine-readable) -->
+{
+  "version": "1.0",
+  "total_tasks": 13,
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Initialize project with boilerplate",
+      "files": ["package.json", "tsconfig.json"],
+      "complexity": "LOW",
+      "dependencies": [],
+      "canRunParallelWith": ["1.2"]
+    }
+  ]
+}
+```
+
+## 5. Implementation Progress (≤30 lines, seed only)
 - Status tracking (updated by agents)
 - Task completion percentages
+
+## 6. Quality Assurance Report (added by QA agent)
+- JSON summary (machine-readable)
+- Build/lint/types/browser validation
+- Bug report with code references (startLine:endLine:filepath)
+- Critical issues vs warnings
 
 ---
 **Created by Octocode**
@@ -159,87 +236,121 @@ npx create-next-app@latest my-app --typescript --tailwind --app
 - **[2] 📝 Modify** → What to change? → Update spec → Re-present
 - **[3] ❓ Questions** → Answer → Re-present
 
-### Phase 2: Implementation
+### Phase 2: Parallel Implementation (Self-Coordinated)
 
-**ORCHESTRATION: Spawn 2-5 parallel agents using Task tool**
+**TRIGGER:** Auto-start after user approves PROJECT_SPEC.md
 
-After user approves the spec, **YOU (the orchestrator) must spawn multiple implementation agents in parallel** using a **SINGLE message with multiple Task tool calls**:
+**AGENTS:** 2-5 `agent-rapid-planner-implementation` instances (parallel)
 
+**How to Spawn (CRITICAL - Single Message):**
+
+After user selects [1] ✅ Approve & Build, spawn agents using multiple Task tool calls in ONE message:
+
+```javascript
+// Example: 3 agents for medium project (8-15 tasks)
+<Task subagent_type="octocode-claude-plugin:agent-rapid-planner-implementation"
+      description="Implementation Agent 1 of 3"
+      prompt="You are Implementation Agent 1/3. Read PROJECT_SPEC.md Section 4.
+              Follow agent-rapid-planner-implementation.md workflow.
+              Self-coordinate via octocode-local-memory. Generate unique agent ID.
+              Loop: claim available task → lock files → implement → verify build/lint → release locks → update progress → repeat.
+              Exit when all Section 4 tasks completed." />
+
+<Task subagent_type="octocode-claude-plugin:agent-rapid-planner-implementation"
+      description="Implementation Agent 2 of 3"
+      prompt="You are Implementation Agent 2/3. Read PROJECT_SPEC.md Section 4.
+              Follow agent-rapid-planner-implementation.md workflow.
+              Self-coordinate via octocode-local-memory. Generate unique agent ID.
+              Loop: claim available task → lock files → implement → verify build/lint → release locks → update progress → repeat.
+              Exit when all Section 4 tasks completed." />
+
+<Task subagent_type="octocode-claude-plugin:agent-rapid-planner-implementation"
+      description="Implementation Agent 3 of 3"
+      prompt="You are Implementation Agent 3/3. Read PROJECT_SPEC.md Section 4.
+              Follow agent-rapid-planner-implementation.md workflow.
+              Self-coordinate via octocode-local-memory. Generate unique agent ID.
+              Loop: claim available task → lock files → implement → verify build/lint → release locks → update progress → repeat.
+              Exit when all Section 4 tasks completed." />
 ```
-Example for 3 agents (medium project with 10 tasks):
 
-<Task tool call 1>
-  subagent_type: octocode-claude-plugin:agent-implementation
-  description: Implementation agent 1
-  prompt: You are implementation agent 1 of 3 working on this project.
-          Read PROJECT_SPEC.md and follow the workflow in agent-rapid-planner-implementation.md.
-          Self-coordinate with other agents via octocode-local-memory to claim and complete tasks.
-          Generate your agent ID, then loop: claim task → implement → verify → repeat.
-          Exit when all tasks in Section 4 are completed.
-</Task>
-
-<Task tool call 2>
-  subagent_type: octocode-claude-plugin:agent-implementation
-  description: Implementation agent 2
-  prompt: You are implementation agent 2 of 3 working on this project...
-</Task>
-
-<Task tool call 3>
-  subagent_type: octocode-claude-plugin:agent-implementation
-  description: Implementation agent 3
-  prompt: You are implementation agent 3 of 3 working on this project...
-</Task>
+**Agent Scaling Formula:**
+```javascript
+taskCount = count(PROJECT_SPEC.md Section 4 JSON tasks_index.tasks)
+agentCount = Math.max(2, Math.min(5, Math.ceil(taskCount / 3)))
 ```
 
-**IMPORTANT:** All Task calls MUST be in a SINGLE message (true parallel execution).
+**Self-Coordination (No Manager Needed):**
+- **Task Source:** Parse JSON task index from Section 4 (NOT markdown)
+- **Task Claims:** `setStorage("task:status:{id}", {s: "claimed", a: agentId, t: timestamp})`
+- **File Locks:** `setStorage("lock:{filepath}", {agentId, taskId, timestamp})` (TTL: 300s)
+- **Version Guards:** Check PROJECT_SPEC.md hash before edits
+- **Progress:** Minimal updates using abbreviated fields (token efficiency)
+- **Completion:** All agents exit when no tasks remain
 
-**How agents work:**
-- Each reads PROJECT_SPEC.md section 4 (Implementation Tasks)
-- Agents self-coordinate: claim tasks, lock files, update progress
-- File locks prevent conflicts (via octocode-local-memory)
-- Progress tracked via storage: `task:{taskId}` with status
-- Build + Lint + Types validated during work
-- Loop until all tasks complete
+**Key Improvements (from PROMPT_ENGINEERING_IMPROVEMENTS.md):**
+- JSON parsing (deterministic, no markdown parsing errors)
+- Reflection loop before edits (40% bug reduction)
+- Version guards (prevent race conditions)
+- Minimal storage updates (40% token reduction)
+- Delegation patterns (Task tool for research)
 
-**Auto-Scaling (how many agents to spawn):**
-- Small project (<8 tasks): 2 agents
-- Medium project (8-15 tasks): 3-4 agents
-- Large project (15+ tasks): 5 agents
+**Next Phase Trigger:** When all agents complete → Auto-spawn `agent-rapid-quality-architect`
 
-**🔄 Live Monitor:** Track progress via storage keys `task:*` and `agent:*`
+### Phase 3: Quality Assurance (Mode 3 Only)
 
-### Phase 3: Quality & Code Review
+**TRIGGER:** Auto-start after all implementation agents complete
 
-**agent-rapid-quality-architect** runs validation + bug scan (Mode 3):
+**AGENT:** 1 `agent-rapid-quality-architect` instance
 
-**Step 1: Build Validation**
-1. Build check (`npm run build`) - must pass
-2. Lint check (`npm run lint`) - must be clean
-3. Types check (TypeScript strict) - no errors
-4. Feature completeness - all P0 features implemented
+**How to Spawn:**
+```javascript
+<Task subagent_type="octocode-claude-plugin:agent-rapid-quality-architect"
+      description="Quality Assurance & Bug Scan"
+      prompt="Run in Mode 3 only. Read PROJECT_SPEC.md for requirements.
+              Validate build/lint/types. Scan for 8 bug categories (use checklist).
+              Test in browser if web app (use browser verification checklist).
+              Append STRUCTURED QA report to Section 6 (JSON + markdown).
+              Signal completion via octocode-local-memory." />
+```
 
-**Step 2: Code Review (Bug Prevention)**
-Scans for runtime bugs:
-1. **Logic Flow** - Edge cases, async patterns, conditional logic
-2. **Type Safety** - Input validation, API validation, type guards
-3. **Error Handling** - Try-catch blocks, user-friendly errors
-4. **Security** - No secrets, input sanitization, auth checks
-5. **Performance** - Memory leaks, resource cleanup, efficient queries
-6. **Common Bugs** - Array mutations, race conditions, React-specific issues
+**Quality Checks (with P0/P1 improvements):**
+1. **Build Validation:** `npm run build && npm run lint` (must pass)
+2. **Type Safety:** TypeScript strict mode (no errors)
+3. **Feature Completeness:** All P0 features from Section 1 implemented
+4. **Bug Scan:** 8 categories checklist (logic, types, security, performance, etc.)
+5. **Browser Testing & Code Flow (MANDATORY for web apps):**
+   - Use browser verification checklist (6 steps)
+   - Use `chrome-devtools-mcp` to open output
+   - Check console for errors using `list_console_messages` - CRITICAL
+   - Verify code flow end-to-end (homepage, auth, CRUD, forms)
+   - Fix bugs immediately if found
+   - Close tab after verification
 
-**Step 3: Browser Verification** (Optional - web apps only)
-If dev server available, test critical flows in real browser
+**Output:** STRUCTURED QA Report appended to PROJECT_SPEC.md Section 6
+- JSON summary (machine-readable: status, validation, counts)
+- Build/lint/types/browser status
+- Console errors with file:line references
+- Critical issues with startLine:endLine:filepath format
+- Warnings with same structure
+- Summary counts
 
-**If Issues Found:**
-- Appends QA report to PROJECT_SPEC.md (Section 6) with specific fixes needed
-- Back to implementation (agent-rapid-planner-implementation)
-- Re-validate
-- **Max 2 quality loops**
+**Improvements (from PROMPT_ENGINEERING_IMPROVEMENTS.md):**
+- Structured format enables automation
+- 8-category checklist ensures completeness
+- Browser verification checklist (6 steps)
+- Security quick-pass included
+- Code references use precise format
 
-**If All Clean:**
-- Appends clean QA report to PROJECT_SPEC.md (Section 6)
-- Updates Section 5 status: ✅ Complete & Reviewed
-- Ready for user verification!
+**Decision Logic:**
+- **✅ CLEAN (0 critical bugs):** Mark Section 5: "✅ Complete & Reviewed" → User verification phase
+- **⚠️ ISSUES (1-5 critical):** Append fix recommendations → Auto-spawn fix agents → Re-scan (max 2 loops)
+- **🚨 MAJOR ISSUES (6+ critical):** Append detailed report → User decision point
+
+**Quality Loops (Max 2):**
+- Loop 1: Issues found → Spawn 1-2 fix agents → Re-scan
+- Loop 2: Still issues → Final scan → User takes over for complex fixes
+
+**Next Phase Trigger:** Clean QA → User verification (Phase 4)
 
 ## Speed Comparison
 
@@ -266,50 +377,41 @@ If dev server available, test critical flows in real browser
 - Multiple stakeholder approvals required
 - Uncertain requirements needing discovery
 
-## Agent Instructions Summary
+## 📋 Agent Roles & Handovers (Quick Reference)
 
 ### Phase 1: agent-rapid-planner
+**Input:** User request (project_idea)
+**Output:** PROJECT_SPEC.md presented to user
+**Next:** User selects [1] → Spawn Phase 2 agents
 
-**Role:** Create complete PROJECT_SPEC.md in single pass
+### Phase 2: agent-rapid-planner-implementation (2-5 parallel)
+**Input:** PROJECT_SPEC.md Section 4 (tasks)
+**Coordination:** Self-managed via octocode-local-memory
+**Output:** Working code + progress updates to Section 5
+**Exit:** When all Section 4 tasks completed
 
-**Key Actions:**
-1. Greet & clarify (2-3 critical questions max)
-2. Research boilerplates FIRST (boilerplate_cli.md)
-3. Quick architecture research (2-3 similar projects if needed)
-4. Create PROJECT_SPEC.md (~80KB, single file)
-5. Present for approval (SINGLE GATE)
+### Phase 3: agent-rapid-quality-architect (Mode 3)
+**Input:** Completed implementation
+**Output:** QA report appended to PROJECT_SPEC.md Section 6
+**Decision:**
+- ✅ Clean → User verification
+- ⚠️ Issues → Auto-spawn fix agents (max 2 loops)
+- 🚨 Major → User decision
 
-**See:** `agent-rapid-planner.md` for full workflow details
+### Phase 4: User Verification
+**Input:** Clean QA report
+**Actions:**
+1. Run: `npm run build && npm run lint`
+2. Test features manually
+3. Commit when satisfied
 
-### Phase 2: agent-rapid-planner-implementation (2-5 parallel instances)
+---
 
-**Role:** Execute implementation tasks in parallel (self-coordinated)
-
-**Key Actions:**
-1. Each agent reads PROJECT_SPEC.md section 4 (tasks)
-2. Self-assign tasks (first available, claim via storage)
-3. Acquire file locks before editing (prevent conflicts)
-4. Implement features following design patterns
-5. Build + Lint + Types during work
-6. Release locks + update status
-7. Repeat until all tasks complete
-
-**Coordination:** Self-coordinated via octocode-local-memory (no manager needed!)
-
-**See:** `agent-rapid-planner-implementation.md` for full workflow details
-
-### Phase 3: agent-rapid-quality-architect
-
-**Role:** Validation + bug scan (Mode 3)
-
-**Key Actions:**
-1. Run build/lint/types checks
-2. Comprehensive bug scan (8 categories)
-3. Optional browser verification (web apps)
-4. Append QA report to PROJECT_SPEC.md (Section 6)
-5. Update Section 5 with ✅ status if clean
-
-**See:** `agent-rapid-quality-architect.md` (Mode 3 section) for full workflow details
+**Critical Flow Points:**
+- **Planning → Implementation:** User approval gate (ONLY gate in quick mode)
+- **Implementation → Quality:** Auto-trigger when all tasks complete
+- **Quality → User:** Clean results OR max 2 fix loops reached
+- **No intermediate gates** - agents handle coordination autonomously
 
 ## Start
 

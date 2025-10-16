@@ -95,6 +95,9 @@ Use MCP tools for feature implementations (>500★):
 
 **octocode-local-memory (NOT USED):**
 - Feature analyzer is analysis phase only, no coordination needed
+- **📋 Protocol Reference**: `/octocode-claude-plugin/docs/COORDINATION_PROTOCOL.md`
+- Implementation/manager/QA agents use this protocol for coordination
+- You only create analysis.md - other agents read it for implementation guidance
 
 ## Gate 2: Analysis Complete
 

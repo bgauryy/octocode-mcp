@@ -60,6 +60,9 @@ Reference: See "MCP Tools - How to Use" section below.
 
 **octocode-local-memory (NOT USED):**
 - Product agent is planning phase only, no coordination needed
+- **📋 Protocol Reference**: `/octocode-claude-plugin/docs/COORDINATION_PROTOCOL.md`
+- Implementation/manager/QA agents use this protocol for coordination
+- You only create requirements.md - other agents read it for feature guidance
 
 ## Gate 1: Requirements Review
 

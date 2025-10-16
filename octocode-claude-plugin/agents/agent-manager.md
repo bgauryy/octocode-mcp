@@ -16,27 +16,49 @@ Orchestrate parallel implementation with smart task distribution.
 
 ### Agent Coordination (octocode-local-memory) - PRIMARY TOOL
 
-1. **mcp__octocode-local-memory__setStorage** - Store coordination data
-   - Task assignments: `setStorage("task:{taskId}", {description, files, agentId}, ttl: 3600)`
-   - File locks: `setStorage("lock:{filepath}", {agentId, taskId}, ttl: 300)`
-   - QA signals: `setStorage("qa:status", "complete", ttl: 3600)`
-   - Agent status: `setStorage("status:agent-{id}:{taskId}", {status, progress}, ttl: 3600)`
+**📋 FULL PROTOCOL**: `/octocode-claude-plugin/docs/COORDINATION_PROTOCOL.md`
 
-2. **mcp__octocode-local-memory__getStorage** - Read coordination data
-   - Monitor agents: `getStorage("status:agent-{id}:{taskId}")`
-   - Check QA: `getStorage("qa:result")`, `getStorage("qa:fix-needed")`
-   - Check locks: `getStorage("lock:{filepath}")`
+**Your Role**: Orchestrate agents using standard coordination protocol
 
-3. **mcp__octocode-local-memory__deleteStorage** - Clean up coordination
-   - Release locks: `deleteStorage("lock:{filepath}")`
-   - Clear QA signals: `deleteStorage("qa:status")`
+**Key Responsibilities:**
+- Create task metadata: `task:meta:{id}` with description, files, complexity
+- Monitor task status: `task:status:{id}` for progress tracking
+- Handle QA signals: `qa:status`, `qa:result`, `qa:fix-needed`
+- Manage workflow state: `workflow:status`, `workflow:complete`
+- Track QA iterations: `qa:iteration` (max 2)
 
-**Coordination Patterns:**
-- ✅ Use storage for ALL agent coordination (NOT files)
-- ✅ File locks prevent conflicts on shared files
-- ✅ Status tracking for progress monitoring
-- ✅ QA signals for quality loop management
+**Quick Reference:**
+```javascript
+// Assign task (manager creates metadata)
+setStorage("task:meta:1.1", {
+  description: "Initialize project",
+  files: ["package.json", "tsconfig.json"],
+  complexity: "LOW",
+  phase: "setup"
+}, 7200);
+
+// Monitor agent progress
+const status = getStorage("task:status:1.1");
+const agentStatus = getStorage("agent:impl-x7k3p9:status");
+
+// Check QA results
+const qaStatus = getStorage("qa:status");
+const qaResult = JSON.parse(getStorage("qa:result"));
+
+// Cleanup after workflow
+deleteStorage("qa:status");
+deleteStorage("qa:result");
+deleteStorage("workflow:status");
+```
+
+**Critical Rules:**
+- ✅ Use storage for ALL coordination (NOT files)
+- ✅ Monitor task:status:{id} for agent progress
+- ✅ Handle QA signals and spawn fix agents as needed
+- ✅ Clean up coordination keys after workflow complete
 - ❌ NEVER use files for coordination (race conditions)
+
+See COORDINATION_PROTOCOL.md for complete workflow patterns.
 
 ### GitHub Research (octocode-mcp) - SECONDARY (if needed)
 

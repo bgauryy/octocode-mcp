@@ -36,38 +36,48 @@ Implement features following established patterns.
 
 ### Agent Coordination (octocode-local-memory) - PRIMARY TOOL
 
-1. **mcp__octocode-local-memory__getStorage** - Read coordination data
-   - Get task: `getStorage("task:{yourTaskId}")`
-   - Check lock: `getStorage("lock:{filepath}")`
-   - Check answers: `getStorage("answer:impl-{id}:architect:{topic}")`
+**📋 FULL PROTOCOL**: `/octocode-claude-plugin/docs/COORDINATION_PROTOCOL.md`
 
-2. **mcp__octocode-local-memory__setStorage** - Store coordination data
-   - Acquire lock: `setStorage("lock:{filepath}", {agentId, taskId}, ttl: 300)`
-   - Update status: `setStorage("status:agent-{id}:{taskId}", {status, progress}, ttl: 3600)`
-   - Ask question: `setStorage("question:impl-{id}:architect:{topic}", data, ttl: 1800)`
+**CRITICAL**: Follow standard protocol to avoid race conditions and file conflicts!
 
-3. **mcp__octocode-local-memory__deleteStorage** - Clean up
-   - Release lock: `deleteStorage("lock:{filepath}")` - CRITICAL after editing!
-
-**Coordination Flow:**
-1. Get task assignment from manager
-2. Check/acquire file locks before editing
-3. Update status during work (in_progress, progress %)
-4. Release locks immediately after editing
-5. Signal completion with status update
+**Quick Reference:**
+- `task:meta:{id}` - Task definition (read from manager)
+- `task:status:{id}` - Update execution state (claimed → in_progress → completed)
+- `lock:{filepath}` - MANDATORY before ANY file edit (TTL: 300s)
+- `agent:{agentId}:status` - Track your lifecycle
+- `question:impl-{id}:{target}:{topic}` - Ask for help
+- `answer:impl-{id}:{target}:{topic}` - Check for responses
 
 **File Lock Protocol (CRITICAL):**
-```
-// Before editing ANY file
-const lock = getStorage("lock:src/auth.ts")
-if (lock && lock.agentId !== myId) {
-  // Wait or skip, file is locked
-} else {
-  setStorage("lock:src/auth.ts", {agentId: myId, taskId: taskId}, ttl: 300)
-  // Edit file
-  deleteStorage("lock:src/auth.ts")  // MUST release!
+```javascript
+// ALWAYS use try/finally pattern
+const lockKey = `lock:${filepath}`;
+try {
+  setStorage(lockKey, {agentId: myId, taskId, timestamp: Date.now()}, 300);
+  await editFile(filepath, changes);
+} finally {
+  deleteStorage(lockKey); // GUARANTEES release even on error
 }
 ```
+
+**Task Execution Flow:**
+```javascript
+// 1. Read task metadata
+const meta = getStorage("task:meta:1.1");
+
+// 2. Claim task (use atomic pattern)
+setStorage("task:status:1.1", {status: "claimed", agentId: myId, ...}, 7200);
+const verify = getStorage("task:status:1.1");
+if (verify.agentId !== myId) { /* another agent claimed it */ }
+
+// 3. Update progress
+setStorage("task:status:1.1", {status: "in_progress", progress: 50, ...}, 7200);
+
+// 4. Complete
+setStorage("task:status:1.1", {status: "completed", filesChanged: [...], ...}, 7200);
+```
+
+See COORDINATION_PROTOCOL.md for stale task recovery and error handling.
 
 ### GitHub Research (octocode-mcp) - SECONDARY (when needed)
 
@@ -112,8 +122,19 @@ if (lock && lock.agentId !== myId) {
 
 ## Getting Help
 
-**octocode-local-memory:**
-- Ask: `setStorage("question:impl-{id}:architect:{topic}", data, ttl: 1800)`
-- Check: `getStorage("answer:impl-{id}:architect:{topic}")`
+**📋 See COORDINATION_PROTOCOL.md "Questions & Answers" section**
 
-**octocode-mcp:** Search GitHub for proven patterns
+**octocode-local-memory:**
+```javascript
+// Ask manager or architect
+setStorage("question:impl-{agentId}:manager:{topic}", {
+  question: "How should I handle error state?",
+  context: {taskId: "3.2", files: ["src/api/client.ts"]},
+  timestamp: Date.now()
+}, 1800);
+
+// Check for answer
+const answer = getStorage("answer:impl-{agentId}:manager:{topic}");
+```
+
+**octocode-mcp:** Search GitHub for proven patterns (see MCP Tools section above)

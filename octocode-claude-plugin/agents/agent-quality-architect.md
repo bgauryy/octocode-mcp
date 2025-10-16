@@ -306,18 +306,35 @@ Monitor for:
 
 ### Communication with Manager
 
+**📋 FULL PROTOCOL**: `/octocode-claude-plugin/docs/COORDINATION_PROTOCOL.md`
+
 Use **octocode-local-memory** to coordinate:
 
-```bash
-# Signal completion to manager
-setStorage("qa:status", "complete", ttl: 3600)
-setStorage("qa:result", "{critical: N, warnings: N, status: 'clean'|'issues'}", ttl: 3600)
+```javascript
+// Signal QA completion (manager monitors these)
+setStorage("qa:status", "complete", 3600);
+setStorage("qa:result", JSON.stringify({
+  critical: 2,
+  warnings: 5,
+  status: "issues",
+  filesScanned: 15,
+  timestamp: Date.now()
+}), 3600);
 
-# If issues found, signal need for fixes
-setStorage("qa:fix-needed", "true", ttl: 3600)
+// Signal fix needed (for 1-5 critical bugs)
+setStorage("qa:fix-needed", "true", 3600);
+
+// For major issues (6+ critical bugs)
+setStorage("qa:major-issues", "true", 3600);
 ```
 
-Manager will check these keys and spawn fix tasks if needed.
+**Manager Workflow:**
+- Reads `qa:status` and `qa:result` after QA completes
+- If `qa:fix-needed === "true"`: spawns 1-2 fix agents
+- If `qa:major-issues === "true"`: escalates to user
+- Max 2 QA loops tracked via `qa:iteration`
+
+See COORDINATION_PROTOCOL.md for complete QA coordination patterns.
 
 ### Key Principles
 

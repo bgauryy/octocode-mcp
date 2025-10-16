@@ -139,6 +139,9 @@ Present tech stack with rationale.
 
 **octocode-local-memory (NOT USED):**
 - Architect is planning phase only, no coordination needed
+- **📋 Protocol Reference**: `/octocode-claude-plugin/docs/COORDINATION_PROTOCOL.md`
+- Implementation/manager/QA agents use this protocol for coordination
+- You only create design.md - other agents read it for architecture guidance
 
 ## Gate 2: Architecture Review
 
