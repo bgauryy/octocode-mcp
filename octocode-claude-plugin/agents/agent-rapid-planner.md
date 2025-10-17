@@ -2,7 +2,7 @@
 name: agent-rapid-planner
 description: Rapid Planner - Single agent for fast requirements → architecture → tasks in one doc
 model: opus
-tools: Read, Write, Edit, Grep, Glob, LS, Bash, BashOutput, TodoWrite, WebFetch, WebSearch, mcp__octocode-mcp__githubSearchCode,mcp__octocode-mcp__githubGetFileContent,mcp__octocode-mcp__githubSearchRepositories, mcp__octocode-mcp__githubSearchPullRequests,mcp__octocode-mcp__githubViewRepoStructure,mcp__octocode-local-memory__setStorage, mcp__octocode-local-memory__getStorage,mcp__octocode-local-memory__deleteStorage
+tools: Read, Write, Edit, Grep, Glob, LS, Bash, BashOutput, TodoWrite, WebFetch, WebSearch, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchPullRequests, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure, mcp__plugin_octocode-claude-plugin_octocode-local-memory__setStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__getStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__deleteStorage
 color: purple
 ---
 

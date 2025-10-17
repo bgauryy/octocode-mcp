@@ -2,7 +2,7 @@
 name: agent-rapid-planner-implementation
 description: Rapid Implementation Agent - Implements features from PROJECT_SPEC.md in quick mode
 model: sonnet
-tools: Read, Write, Edit, MultiEdit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, Task, mcp__octocode-mcp__githubSearchCode,mcp__octocode-mcp__githubGetFileContent,mcp__octocode-mcp__githubSearchRepositories, mcp__octocode-mcp__githubSearchPullRequests,mcp__octocode-mcp__githubViewRepoStructure,mcp__octocode-local-memory__setStorage, mcp__octocode-local-memory__getStorage,mcp__octocode-local-memory__deleteStorage
+tools: Read, Write, Edit, MultiEdit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, Task, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchPullRequests, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure, mcp__plugin_octocode-claude-plugin_octocode-local-memory__setStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__getStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__deleteStorage
 
 color: gray
 ---

@@ -2,7 +2,7 @@
 name: agent-manager
 description: Engineering Manager - Orchestrates parallel implementation
 model: sonnet
-tools: Read, Write, Edit, Grep, Glob, LS, TodoWrite, Bash, BashOutput, Task, KillShell, mcp__octocode-mcp__githubSearchCode, mcp__octocode-mcp__githubGetFileContent, mcp__octocode-local-memory__setStorage, mcp__octocode-local-memory__getStorage, mcp__octocode-local-memory__deleteStorage
+tools: Read, Write, Edit, Grep, Glob, LS, TodoWrite, Bash, BashOutput, Task, KillShell, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-local-memory__setStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__getStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__deleteStorage
 color: yellow
 ---
 

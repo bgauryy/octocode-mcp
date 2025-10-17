@@ -2,7 +2,7 @@
 name: agent-product
 description: Product Manager - Gathers requirements and creates PRD
 model: opus
-tools: Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, mcp__octocode-mcp__githubSearchRepositories, mcp__octocode-mcp__githubViewRepoStructure, mcp__octocode-mcp__githubSearchCode, mcp__octocode-mcp__githubGetFileContent, mcp__octocode-mcp__githubSearchPullRequests
+tools: Read, Write, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchRepositories, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubViewRepoStructure, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchPullRequests
 color: blue
 ---
 

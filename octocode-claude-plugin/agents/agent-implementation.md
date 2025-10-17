@@ -2,7 +2,7 @@
 name: agent-implementation
 description: Software Engineer - Implements code
 model: sonnet
-tools: Read, Write, Edit, MultiEdit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, mcp__octocode-mcp__githubSearchCode, mcp__octocode-mcp__githubGetFileContent, mcp__octocode-local-memory__setStorage, mcp__octocode-local-memory__getStorage, mcp__octocode-local-memory__deleteStorage
+tools: Read, Write, Edit, MultiEdit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubSearchCode, mcp__plugin_octocode-claude-plugin_octocode-mcp__githubGetFileContent, mcp__plugin_octocode-claude-plugin_octocode-local-memory__setStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__getStorage, mcp__plugin_octocode-claude-plugin_octocode-local-memory__deleteStorage
 color: gray
 ---
 
