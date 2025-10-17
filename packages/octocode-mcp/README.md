@@ -1,8 +1,6 @@
 <div align="center">
   <img src="https://github.com/bgauryy/octocode-mcp/raw/main/packages/octocode-mcp/assets/logo_white.png" width="400px" alt="Octocode Logo">
   
-  # Octocode MCP
-  
   **Transform Any AI Assistant Into a Code Research Expert**
   
   The missing piece for AI agents that need quality code context. Search millions of repositories, analyze real implementations, and discover proven patterns — all through a secure, token-efficient MCP server.
@@ -568,7 +566,7 @@ We welcome contributions! Octocode MCP is open source and community-driven.
 4. **Run tests**: `yarn test`
 5. **Submit a pull request**
 
-See our [Contributing Guide](./CONTRIBUTING.md) for detailed instructions.
+For questions or suggestions, please open an issue on GitHub.
 
 ### Show Your Support
 

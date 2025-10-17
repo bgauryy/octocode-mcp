@@ -61,10 +61,8 @@ export class LsCommandBuilder extends BaseCommandBuilder {
       }
     }
 
-    // Directories only
-    if (query.directoriesOnly) {
-      this.addFlag('-d');
-    }
+    // Directories only - don't use -d flag, filter after parsing instead
+    // The -d flag lists the directory itself, not its contents
 
     // Add the path
     this.addArg(query.path);

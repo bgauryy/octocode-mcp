@@ -40,14 +40,14 @@ export class FindCommandBuilder extends BaseCommandBuilder {
       if (query.names.length === 1) {
         this.addOption('-name', query.names[0]);
       } else {
-        this.addArg('\\(');
+        this.addArg('(');
         query.names.forEach((name, index) => {
           if (index > 0) {
             this.addArg('-o');
           }
           this.addOption('-name', name);
         });
-        this.addArg('\\)');
+        this.addArg(')');
       }
     }
     // Single name (case-sensitive)
@@ -129,13 +129,13 @@ export class FindCommandBuilder extends BaseCommandBuilder {
     // Exclude directories with prune pattern
     if (query.excludeDir && query.excludeDir.length > 0) {
       for (const dir of query.excludeDir) {
-        this.addArg('\\(');
+        this.addArg('(');
         this.addArg('-path');
         this.addArg(`*/${dir}`);
         this.addArg('-o');
         this.addArg('-path');
         this.addArg(`*/${dir}/*`);
-        this.addArg('\\)');
+        this.addArg(')');
         this.addArg('-prune');
         this.addArg('-o');
       }

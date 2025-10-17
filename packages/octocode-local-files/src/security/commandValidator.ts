@@ -67,10 +67,7 @@ function validateCommandArgs(
  * Identifies which argument positions contain search patterns vs paths
  * Patterns can safely contain regex metacharacters like |, (), etc.
  */
-function getPatternArgPositions(
-  command: string,
-  args: string[]
-): Set<number> {
+function getPatternArgPositions(command: string, args: string[]): Set<number> {
   const patternPositions = new Set<number>();
 
   if (command === 'grep') {
@@ -81,7 +78,18 @@ function getPatternArgPositions(
       // Skip flags and their values
       if (arg.startsWith('-')) {
         // If it's an option with value (like -A 3), skip next arg too
-        if (['-A', '-B', '-C', '-m', '--include', '--exclude', '--exclude-dir', '--binary-files'].includes(arg)) {
+        if (
+          [
+            '-A',
+            '-B',
+            '-C',
+            '-m',
+            '--include',
+            '--exclude',
+            '--exclude-dir',
+            '--binary-files',
+          ].includes(arg)
+        ) {
           i++; // Skip the value
         }
         continue;
@@ -95,18 +103,23 @@ function getPatternArgPositions(
     }
   } else if (command === 'find') {
     // In find: patterns come after -name, -iname, -path, -regex options
-    // Also \(, \), -o are structural elements that can contain ()
+    // Also (, ), -o are structural elements that can contain ()
+    // Note: Using spawn() passes args directly without shell, so no backslash needed
     for (let i = 0; i < args.length; i++) {
       const arg = args[i];
       const prevArg = i > 0 ? args[i - 1] : '';
-      
+
       // Arguments that are search patterns
-      if (['-name', '-iname', '-path', '-regex', '-size', '-perm'].includes(prevArg)) {
+      if (
+        ['-name', '-iname', '-path', '-regex', '-size', '-perm'].includes(
+          prevArg
+        )
+      ) {
         patternPositions.add(i);
       }
-      
-      // Structural elements for grouping
-      if (arg === '\\(' || arg === '\\)' || arg === '-o') {
+
+      // Structural elements for grouping (unescaped because spawn passes them directly)
+      if (arg === '(' || arg === ')' || arg === '-o') {
         patternPositions.add(i);
       }
     }

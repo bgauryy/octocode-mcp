@@ -34,8 +34,9 @@ export async function viewStructure(
       };
     }
 
-    // For tree view or recursive with depth, use custom implementation
-    if (query.treeView || query.depth) {
+    // For tree view, recursive mode, or depth, use custom fs-based implementation
+    // This avoids parsing complex ls -R output which has directory headers
+    if (query.treeView || query.depth || query.recursive) {
       return await viewStructureRecursive(query, pathValidation.sanitizedPath!);
     }
 
@@ -105,7 +106,7 @@ export async function viewStructure(
       0
     );
 
-    const status = entries.length > 0 ? 'hasResults' : 'empty';
+    const status = filteredEntries.length > 0 ? 'hasResults' : 'empty';
     return {
       status,
       path: query.path,
@@ -170,8 +171,9 @@ function parseLsLongFormat(output: string): DirectoryEntry[] {
 
     // Parse ls -l format: permissions links owner group size date time name
     // Size can be numeric (123456) or human-readable (1.5M, 192K) when -h flag is used
+    // Note: permissions may have @ or + suffix on macOS for extended attributes
     const match = line.match(
-      /^([\w-]+)\s+\d+\s+\w+\s+\w+\s+([\d.]+[KMGT]?)\s+(\w+\s+\d+\s+[\d:]+)\s+(.+)$/
+      /^([\w-]+[@+]?)\s+\d+\s+\w+\s+\w+\s+([\d.]+[KMGT]?)\s+(\w+\s+\d+\s+[\d:]+)\s+(.+)$/
     );
 
     if (match) {
@@ -238,18 +240,77 @@ async function viewStructureRecursive(
   basePath: string
 ): Promise<ViewStructureResult> {
   const entries: DirectoryEntry[] = [];
-  const maxDepth = query.depth || 2;
+  // Default depth of 10 for recursive without explicit depth (deep enough for most cases)
+  const maxDepth = query.depth || (query.recursive ? 10 : 2);
 
   await walkDirectory(basePath, basePath, 0, maxDepth, entries);
 
-  const status = entries.length > 0 ? 'hasResults' : 'empty';
+  // Apply filters
+  let filteredEntries = entries;
+
+  if (query.pattern) {
+    filteredEntries = filteredEntries.filter((e) =>
+      e.name.includes(query.pattern!)
+    );
+  }
+
+  if (query.extension) {
+    filteredEntries = filteredEntries.filter(
+      (e) => e.extension === query.extension
+    );
+  }
+
+  if (query.extensions && query.extensions.length > 0) {
+    filteredEntries = filteredEntries.filter(
+      (e) => e.extension && query.extensions!.includes(e.extension)
+    );
+  }
+
+  if (query.directoriesOnly) {
+    filteredEntries = filteredEntries.filter((e) => e.type === 'directory');
+  }
+
+  if (query.filesOnly) {
+    filteredEntries = filteredEntries.filter((e) => e.type === 'file');
+  }
+
+  // Apply sorting
+  if (query.sortBy) {
+    filteredEntries = filteredEntries.sort((a, b) => {
+      let comparison = 0;
+      switch (query.sortBy) {
+        case 'size':
+          comparison = (a.size || 0) - (b.size || 0);
+          break;
+        case 'time':
+          comparison = (a.modified || '').localeCompare(b.modified || '');
+          break;
+        case 'extension':
+          comparison = (a.extension || '').localeCompare(b.extension || '');
+          break;
+        case 'name':
+        default:
+          comparison = a.name.localeCompare(b.name);
+          break;
+      }
+      return query.reverse ? -comparison : comparison;
+    });
+  }
+
+  // Apply limit
+  if (query.limit) {
+    filteredEntries = filteredEntries.slice(0, query.limit);
+  }
+
+  const status = filteredEntries.length > 0 ? 'hasResults' : 'empty';
   return {
     status,
     path: query.path,
-    entries: query.limit ? entries.slice(0, query.limit) : entries,
-    totalFiles: entries.filter((e) => e.type === 'file').length,
-    totalDirectories: entries.filter((e) => e.type === 'directory').length,
-    totalSize: entries.reduce((sum, e) => sum + (e.size || 0), 0),
+    entries: filteredEntries,
+    totalFiles: filteredEntries.filter((e) => e.type === 'file').length,
+    totalDirectories: filteredEntries.filter((e) => e.type === 'directory')
+      .length,
+    totalSize: filteredEntries.reduce((sum, e) => sum + (e.size || 0), 0),
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
     hints: getToolHints('LOCAL_VIEW_STRUCTURE', status),
