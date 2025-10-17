@@ -6,7 +6,7 @@ A lightweight Model Context Protocol (MCP) server providing a lean coordination 
 
 ---
 
-## 🎯 What Problem Does This Solve?
+##  What Problem Does This Solve?
 
 When multiple AI agents work together on a task, they need to coordinate:
 - 🎭 **Manager agents** assign tasks → **Implementation agents** execute them
@@ -27,7 +27,7 @@ When multiple AI agents work together on a task, they need to coordinate:
 - 📦 **Zero Setup**: No database, no Redis, no configuration required - pure Node.js
 - 🔄 **Auto Cleanup**: TTL-based expiration (data expires automatically)
 - 💾 **Session-Scoped**: Fresh state for each workflow (by design)
-- 🎯 **Simple API**: Just 3 tools - `setStorage()`, `getStorage()`, `deleteStorage()`
+-  **Simple API**: Just 3 tools - `setStorage()`, `getStorage()`, `deleteStorage()`
 
 > **Note:** This is a **lean coordination layer** for temporary data during workflow execution, not persistent storage. It runs locally in the MCP server's node process using node-cache for optimal performance.
 
@@ -764,7 +764,7 @@ await fs.writeFile("docs/architecture.md", documentation);
 await fs.writeFile("config.json", JSON.stringify(config));
 ```
 
-**Memory for coordination, files for artifacts** = Best of both worlds! 🎯
+**Memory for coordination, files for artifacts** = Best of both worlds! 
 
 ## Limitations
 

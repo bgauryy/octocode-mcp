@@ -4,7 +4,7 @@
 
 An MCP (Model Context Protocol) server that empowers AI assistants with intelligent local file system exploration capabilities. Built with token efficiency, security, and agent-optimized workflows in mind.
 
-## 🎯 Why This MCP Server?
+##  Why This MCP Server?
 
 AI agents need to understand codebases quickly and efficiently. Traditional file reading approaches waste tokens and time. **octocode-local-files** solves this by providing:
 
@@ -17,7 +17,7 @@ Understand the layout before diving into content. Start broad, then refine based
 - **Pattern-Based Extraction**: Find specific code sections with context lines
 - **Bulk Operations**: Process 5-10 queries in parallel (5-10x faster than sequential)
 
-### **🎯 Semantic Search Without Embeddings**
+### ** Semantic Search Without Embeddings**
 Fast grep-based pattern matching with regex support. Find functions, classes, imports, or any text pattern across your codebase in milliseconds.
 
 ### **🔒 Security-First Design**
@@ -350,7 +350,7 @@ Set `WORKSPACE_ROOT` environment variable to restrict access to specific directo
 
 ---
 
-## 🎯 Bulk Operations: 5-10x Faster
+##  Bulk Operations: 5-10x Faster
 
 **All tools support 1-10 queries per call**. Process multiple searches in parallel instead of sequential calls.
 

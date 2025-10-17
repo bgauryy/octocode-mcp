@@ -2,7 +2,7 @@
 
 > Model Context Protocol (MCP), TypeScript AI SDKs, and RAG systems for Node.js/TypeScript
 
-**🎯 Purpose:** MCP/AI resources for building MCP servers and TypeScript AI applications  
+** Purpose:** MCP/AI resources for building MCP servers and TypeScript AI applications  
 **🌐 Focus:** MCP SDK, Vercel AI SDK, LangChainJS - Pure TypeScript AI  
 **⚙️ Runtime:** 100% Node.js/TypeScript - MCP servers, AI agents, RAG systems  
 **📅 Updated:** October 13, 2025

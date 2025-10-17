@@ -7,6 +7,30 @@ import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema.js';
 import { TOOL_NAMES } from '../constants.js';
 
 /**
+ * Tool description for MCP registration
+ */
+export const LOCAL_SEARCH_CONTENT_DESCRIPTION = `Search file content using grep (unix text search tool).
+
+Why: Fast pattern matching in code - find implementations, usage, strings, or patterns across files.
+
+SEMANTIC: YOU are the semantic layer - translate user intent → multiple patterns → bulk parallel execution = instant semantic search. No embeddings!
+Example: "auth flow?" → queries=[{pattern:"login|auth"}, {pattern:"session|token"}, {pattern:"password"}]
+
+Examples:
+• Semantic bulk: queries=[{pattern:"try|catch|error"}, {pattern:"throw|reject"}, {pattern:"Error\\("}]
+• Multi-pattern: queries=[{pattern:"TODO"}, {pattern:"FIXME"}, {pattern:"BUG"}]
+• Function calls: pattern="functionName\\(", regex=true, include=["*.ts"]
+• Literal (3x faster): pattern="import React", fixedString=true
+• Context aware: pattern="error", contextLines=3-5
+
+Best Practices:
+- Break user intent into multiple related patterns (synonyms, variations)
+- Bulk queries = 5-10x faster, better semantic coverage
+- Combine patterns: "auth|login|signin" for comprehensive search
+- contextLines=3-5 for code flow understanding
+- excludeDir=["node_modules","dist",".git"] to skip artifacts`;
+
+/**
  * Search content query schema
  */
 export const SearchContentQuerySchema = BaseQuerySchema.extend({

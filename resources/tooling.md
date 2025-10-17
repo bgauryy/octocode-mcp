@@ -2,7 +2,7 @@
 
 > Development tools, monorepo management, and productivity for Node.js/TypeScript workflows
 
-**🎯 Purpose:** Tooling resources for AI agents building Node.js/TypeScript applications  
+** Purpose:** Tooling resources for AI agents building Node.js/TypeScript applications  
 **🌐 Focus:** Biome, Turborepo, Vite - Modern JavaScript/TypeScript tooling  
 **⚙️ Runtime:** All development tools run on Node.js  
 **📅 Updated:** October 13, 2025

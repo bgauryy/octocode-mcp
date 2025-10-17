@@ -2,7 +2,7 @@
 
 > Production-ready AI agent frameworks, RAG systems, and vector databases for Node.js/TypeScript
 
-**🎯 Purpose:** Essential AI resources for building intelligent agents with embeddings, RAG, and rerankers  
+** Purpose:** Essential AI resources for building intelligent agents with embeddings, RAG, and rerankers  
 **🌐 Focus:** TypeScript-native frameworks (Mastra, LlamaIndexTS, LangChainJS, Vercel AI SDK)  
 **⚙️ Runtime:** Node.js/TypeScript with production-ready vector databases  
 **📅 Updated:** October 14, 2025
@@ -11,7 +11,7 @@
 
 ## Quick Reference
 
-### 🎯 Production Stack (2025)
+###  Production Stack (2025)
 - **Agent Framework:** `mastra-ai/mastra` - TypeScript-native with built-in RAG + observability
 - **RAG Framework:** `run-llama/LlamaIndexTS` - 100+ data connectors, production-ready
 - **Vector DB:** `qdrant/qdrant` - Fastest with best Node.js SDK

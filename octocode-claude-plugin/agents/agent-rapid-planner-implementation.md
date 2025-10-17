@@ -17,7 +17,7 @@ Implement features following patterns from single consolidated PROJECT_SPEC.md.
 
 ---
 
-## 🎯 CORE PROTOCOL (Critical for Success)
+##  CORE PROTOCOL (Critical for Success)
 
 **REASONING: Keep ALL internal reasoning PRIVATE**
 - Think through problems internally (Chain of Thought)

@@ -10,7 +10,7 @@
 
 ---
 
-## 🎯 What's Covered
+##  What's Covered
 
 **Applications Powered by Node.js:**
 - ✅ **Full-Stack Web Apps** - React, Next.js, Vite with Node.js backend
@@ -120,7 +120,7 @@ Linting, formatting, build tools, API testing, documentation
 
 ---
 
-## 🎯 Quick Selection Guide
+##  Quick Selection Guide
 
 | Need | File | Top Picks |
 |------|------|-----------|

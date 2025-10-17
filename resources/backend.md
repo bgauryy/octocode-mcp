@@ -2,7 +2,7 @@
 
 > Node.js backend frameworks, API design patterns, and server-side architecture
 
-**🎯 Purpose:** Backend resources for AI agents building Node.js/TypeScript applications  
+** Purpose:** Backend resources for AI agents building Node.js/TypeScript applications  
 **🌐 Focus:** NestJS, Fastify, Express - Pure JavaScript/TypeScript backend  
 **⚙️ Runtime:** 100% Node.js - no other server runtimes  
 **📅 Updated:** October 13, 2025

@@ -2,7 +2,7 @@
 
 > Real-world Node.js/TypeScript project structures for production-ready applications
 
-**🎯 Purpose:** Reference architectures for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+** Purpose:** Reference architectures for AI agents using octocode-mcp to generate Node.js/TypeScript applications
 **🤖 For:** AI agents and developers building production applications
 **🌐 Focus:** Modern TypeScript/JavaScript stacks - Web + Mobile (Node.js)
 **📱 Mobile:** React Native monorepo examples with shared codebase
@@ -12,7 +12,7 @@
 
 ---
 
-## 🎯 Best for Application Generation
+##  Best for Application Generation
 
 This file provides **complete project structures** to help AI agents:
 1. **Scaffold full-stack applications** - Ready-to-use templates and boilerplates
@@ -1217,7 +1217,7 @@ classic-fullstack/
 **Vite Advantages:**
 - ⚡ Lightning-fast dev server with instant HMR
 - 🚀 Faster cold starts and hot reloads
-- 🎯 Pure SPA focus - no SSR complexity
+-  Pure SPA focus - no SSR complexity
 - 🔧 Simple configuration
 - 📦 Better for micro-frontends
 
@@ -1226,7 +1226,7 @@ classic-fullstack/
 - 📱 Image optimization out of the box
 - 🛣️ File-based routing (App Router)
 - ⚙️ Zero-config deployment on Vercel
-- 🎯 Full-stack capabilities (API routes)
+-  Full-stack capabilities (API routes)
 
 **When to Choose:**
 - **Vite:** Internal tools, dashboards, admin panels, SPAs, prototypes

@@ -36,7 +36,7 @@
 
 **Octocode** is a revolutionary AI-powered code analysis and research platform that transforms how developers, teams, and organizations understand, explore, and work with codebases. Built on the **Model Context Protocol (MCP)**, Octocode provides AI assistants with unprecedented capabilities to analyze GitHub repositories, search code semantically, and extract actionable insights from millions of open-source and private repositories.
 
-### 🎯 The Vision
+###  The Vision
 
 While most code context and research MCPs rely on documentation from a single repository, Octocode focuses on actual code analysis and documentation from real repositories at runtime, and is focused on understanding complex flows anywhere in the GitHub ecosystem.
 
@@ -56,7 +56,7 @@ In the age of AI-assisted development, the bottleneck isn't writing code—it's 
 - **🌐 Ecosystem Analysis** - Navigate complex relationships between repositories and dependencies
 - **📊 Implementation-First Approach** - Focus on actual code rather than just documentation
 
-## 🎯 Who Is This For?
+##  Who Is This For?
 
 ### For Developers
 Navigate complex multi-repo architectures, understand organizational issues at scale, and generate custom documentation on-demand from real code examples. Create contextual documentation directly in your IDE, or ask OctoCode to learn from any repository and implement similar patterns in your current project.
@@ -199,7 +199,7 @@ Choose your preferred installation method:
 
 <table>
 <tr>
-<th>🎯 Main Package (Recommended)</th>
+<th> Main Package (Recommended)</th>
 <th>🔧 Individual Packages</th>
 </tr>
 <tr>
@@ -263,7 +263,7 @@ Using [GitHub CLI](https://cli.github.com/) provides seamless authentication aft
 
 
 
-## 🎯 Use Cases & Applications
+##  Use Cases & Applications
 
 <table>
 <tr>
@@ -361,7 +361,7 @@ Octocode represents the future of AI-assisted development where artificial intel
 <table>
 <tr>
 <td align="center" width="25%">
-<h4>🎯 Purpose-Built</h4>
+<h4> Purpose-Built</h4>
 Designed specifically for AI-assisted code research and analysis
 </td>
 <td align="center" width="25%">

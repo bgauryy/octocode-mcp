@@ -9,7 +9,7 @@
 - 🔍 **Advanced Code Search** - Semantic search across GitHub repositories with flexible filtering
 - 📁 **Repository Analysis** - Explore repository structure and fetch file content efficiently
 - 🔄 **Pull Request Analysis** - Search and analyze PRs with optional diffs and comments
-- 🎯 **Bulk Operations** - Process multiple queries in parallel for maximum efficiency
+-  **Bulk Operations** - Process multiple queries in parallel for maximum efficiency
 - 🔒 **Security First** - Content sanitization, secret detection, and validation
 - ⚡ **Performance** - Intelligent caching, rate limiting, and token optimization
 - 📊 **Session Tracking** - Monitor tool usage and performance
@@ -417,7 +417,7 @@ Every response includes **contextual hints** based on:
 ```typescript
 // For empty results:
 [
-  "🎯 Try synonyms or variations in separate queries",
+  " Try synonyms or variations in separate queries",
   "Broader patterns: \"error|fail|bug\" with regex",
   "Remove restrictive filters incrementally",
   "Check repository name and permissions"
@@ -425,7 +425,7 @@ Every response includes **contextual hints** based on:
 
 // For successful results:
 [
-  "🎯 Use bulk queries for comprehensive coverage",
+  " Use bulk queries for comprehensive coverage",
   "Fetch content for specific matched files",
   "Narrow scope with extension or path filters"
 ]

@@ -7,6 +7,28 @@ import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema.js';
 import { TOOL_NAMES } from '../constants.js';
 
 /**
+ * Tool description for MCP registration
+ */
+export const LOCAL_FETCH_CONTENT_DESCRIPTION = `Fetch file content with partial read support for token optimization.
+
+IMPORTANT:
+- Use a maximum of 10,000 tokens per request.
+- For large files, use partial reads (see Modes section below).
+- Check file size before fetching it.
+
+Modes:
+• Full Content: fullContent=true (default) Returns the entire file (minified).
+• Line Range: startLine=10, endLine=50 Returns a specific line range.
+• Match String: matchString="function", matchStringContextLines=5 Returns pattern matches with context (BEST for semantic use).
+
+Best Practices:
+- matchString mode is the most token-efficient for semantic extraction.
+- matchStringContextLines=5-15 balances context and token usage.
+- Bulk queries are 5-10x faster for parallel fetching.
+- minified=true (default) optimizes token usage.
+- Progressive use: try matchString first, then line ranges if needed.`;
+
+/**
  * Schema descriptions for fetch content parameters
  */
 const FETCH_CONTENT_DESCRIPTIONS = {

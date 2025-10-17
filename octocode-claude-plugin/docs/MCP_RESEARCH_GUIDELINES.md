@@ -6,7 +6,7 @@
 
 ---
 
-## 🎯 Core Principle: Smart Research Until Finding Good Examples
+##  Core Principle: Smart Research Until Finding Good Examples
 
 **Don't stop at first result - research until you find quality patterns that actually solve the problem.**
 

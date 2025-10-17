@@ -223,6 +223,47 @@ export interface FetchContentResult extends BaseQuery {
 }
 
 /**
+ * View binary query parameters
+ */
+export interface ViewBinaryQuery extends BaseQuery {
+  path: string;
+  operation:
+    | 'identify'
+    | 'strings'
+    | 'strings-utf16le'
+    | 'hexdump'
+    | 'magic-bytes'
+    | 'full-inspection';
+  minLength?: number;
+  maxBytes?: number;
+  hexLines?: number;
+  includeOffsets?: boolean;
+}
+
+/**
+ * View binary result
+ */
+export interface ViewBinaryResult extends BaseQuery {
+  status: 'hasResults' | 'empty' | 'error';
+  path?: string;
+  operation?: string;
+  fileType?: string;
+  magicBytes?: string;
+  strings?: string[];
+  hexDump?: string;
+  fullInspection?: {
+    fileType: string;
+    magicBytes: string;
+    asciiStrings: string[];
+    utf16leStrings: string[];
+    hexPreview: string;
+  };
+  stringCount?: number;
+  error?: string;
+  hints?: readonly string[];
+}
+
+/**
  * Bulk operation query wrapper
  */
 export interface BulkQuery<T> {

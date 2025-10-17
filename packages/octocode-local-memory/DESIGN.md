@@ -1,6 +1,6 @@
 # Simple Cache MCP Server - Design Document
 
-## 🎯 Project Overview
+##  Project Overview
 
 **Project Name:** Simple Cache MCP Server  
 **Version:** 1.0.0  
@@ -737,7 +737,7 @@ async function executeTask() {
 
 ---
 
-## 🎯 Use Case Scenarios
+##  Use Case Scenarios
 
 ### Primary Use Cases
 

@@ -7,6 +7,29 @@ import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema.js';
 import { TOOL_NAMES } from '../constants.js';
 
 /**
+ * Tool description for MCP registration
+ */
+export const LOCAL_VIEW_STRUCTURE_DESCRIPTION = `Explore directory structure using ls (unix directory listing).
+
+Why: Understand codebase organization, find entry points, identify file types, spot patterns.
+
+SEMANTIC: Map user concepts to directory patterns → bulk parallel = instant structural understanding.
+Example: "main code?" → queries=[{path:"src"}, {path:"lib"}, {path:"app"}]
+
+Examples:
+• Semantic: "architecture" → queries=[{path:"src",depth:2}, {path:"config"}, {path:"docs"}]
+• Bulk explore: queries=[{path:"src"}, {path:"tests"}, {path:"config"}]
+• Recent: sortBy="time", details=true, reverse=false
+• Large files: sortBy="size", reverse=true, humanReadable=true
+• By type: extensions=["ts","tsx"], filesOnly=true, summary=true
+
+Best Practices:
+- Map concepts to multiple dirs: "frontend" → src/, components/, pages/, app/
+- Bulk queries explore related locations in parallel
+- details=true + humanReadable=true for metadata
+- Start depth=1-2, use summary=true for stats`;
+
+/**
  * View structure query schema
  */
 export const ViewStructureQuerySchema = BaseQuerySchema.extend({

@@ -14,7 +14,7 @@
 
 ---
 
-## 🎯 What is Octocode?
+##  What is Octocode?
 
 Octocode MCP gives AI assistants **real-time access to millions of GitHub repositories**, enabling them to provide context-rich, production-quality responses based on real-world code implementations.
 
@@ -154,7 +154,7 @@ Multi-agent development system for Claude Code that transforms ideas into produc
 
 ## 🎥 See It In Action
 
-### [🎯 Live Demo: ThreeJS Implementation Comparison](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)
+### [ Live Demo: ThreeJS Implementation Comparison](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)
 See the dramatic difference between generic AI and Octocode-enhanced AI.
 
 ### [📺 YouTube Examples](https://www.youtube.com/@Octocode-ai)
