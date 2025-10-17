@@ -40,10 +40,11 @@ When multiple AI agents work together on a task, they need to coordinate:
   - [Setup with Claude Desktop](#setup-with-claude-desktop)
   - [Verify Installation](#verify-installation)
 - [How It Works](#how-it-works)
+- [Agent Protocol Guide (Instruction Templates)](#agent-protocol-guide-instruction-templates)
 - [Your First Agent Workflow](#your-first-agent-workflow)
 - [API Reference](#api-reference)
   - [When Should Agents Use These Tools?](#when-should-agents-use-these-tools)
-  - [setStorage()](#setstorageket-value-ttl)
+  - [setStorage()](#setstoragekey-value-ttl)
   - [getStorage()](#getstoragekey)
   - [deleteStorage()](#deletestoragekey)
 - [Usage Examples](#usage-examples)
@@ -80,8 +81,8 @@ npx octocode-local-memory@latest
 ```bash
 # Clone and build
 cd packages/octocode-local-memory
-npm install
-npm run build
+yarn
+yarn build
 ```
 
 ### Setup with Claude Desktop
@@ -97,6 +98,17 @@ Add to your MCP config file:
     }
   }
 }
+```
+
+### Verify Installation
+
+```bash
+# Build once (if developing locally)
+yarn build
+
+# Start the server directly to verify it boots
+yarn start
+# Expect: logs like "octocode-local-memory server running on stdio"
 ```
 
 ---
@@ -134,7 +146,59 @@ This is a **lean coordination layer** that wraps [node-cache](https://www.npmjs.
 1. **Manager Agent** → Writes tasks to storage → `setStorage("task:1", {...})`
 2. **Worker Agent** → Reads assigned task → `getStorage("task:1")`
 3. **Worker Agent** → Updates progress → `setStorage("status:agent-1", {...})`
-4. **Manager Agent** → Monitors all agents → `getStorage("status:*")`
+4. **Manager Agent** → Monitors all agents → poll exact keys like `getStorage("status:{agentId}:{taskId}")`
+
+---
+
+## Agent Protocol Guide (Instruction Templates)
+
+Use these ready-to-drop instructions in your agents. They assume exact-key access, session-scoped in-process memory, and TTL-based cleanup. Refer to `Key Naming Conventions` for key patterns.
+
+- **At a glance**
+  - Exposes exactly three tools: `setStorage`, `getStorage`, `deleteStorage`
+  - In-process memory via NodeCache (same process as the MCP server)
+  - Session-scoped; default TTL 3600s; per-key TTL supported
+  - Exact-key lookups only (no listing or wildcard search)
+  - Use namespaced keys (e.g., `task:{id}`, `lock:{filePath}`, `status:{agent}:{task}`)
+
+### Manager agent instruction (Lean Tasks + Answers)
+
+```text
+Protocol goals: assign tasks, receive status, answer questions.
+
+When assigning a task:
+- setStorage key "task:{taskId}" with JSON: { description, files[], assignedTo, priority, createdAt } and ttl 3600.
+
+When monitoring progress:
+- getStorage key "status:{agentId}:{taskId}" periodically; treat missing key as no update yet.
+
+When answering questions:
+- getStorage key "question:{agentId}:{topic}"; if exists, setStorage key "answer:{agentId}:{topic}" with JSON: { answer, reasoning, timestamp } and ttl 3600.
+
+When closing a task:
+- deleteStorage "task:{taskId}" and any transient status keys related to the task.
+```
+
+### Worker/implementation agent instruction (Tasks + Locks + Status)
+
+```text
+Protocol goals: accept tasks, coordinate locks, report progress.
+
+On startup / polling loop:
+- getStorage "task:{taskId}" assigned to me. If exists, parse JSON and proceed.
+
+Before editing a file:
+- getStorage "lock:{filePath}"; if not exists, setStorage "lock:{filePath}" with JSON { lockedBy: myId, taskId, acquiredAt } and ttl 300. If exists, wait and retry.
+
+While working:
+- setStorage "status:{myId}:{taskId}" with JSON { status, progress, currentStep, timestamp } and ttl 600.
+
+For clarifications:
+- setStorage "question:{myId}:{topic}" with JSON { from: myId, to: managerId, question, context, timestamp } and ttl 1800.
+
+On completion:
+- deleteStorage "lock:{filePath}"; setStorage final "status:{myId}:{taskId}" with status=completed and ttl 3600.
+```
 
 ---
 
@@ -822,19 +886,19 @@ Understanding these limitations will help you use the tool effectively:
 
 ```bash
 # Build
-npm run build
+yarn build
 
 # Watch mode
-npm run build:watch
+yarn build:watch
 
 # Run tests
-npm test
+yarn test
 
 # Run server
-npm start
+yarn start
 
 # Development (build + run)
-npm run dev
+yarn dev
 ```
 
 ## Troubleshooting
@@ -847,7 +911,7 @@ Solutions:
 1. ✅ Check config file path is correct for your OS
 2. ✅ Verify JSON syntax (no trailing commas, proper quotes)
 3. ✅ Ensure absolute path to `dist/index.js` is correct
-4. ✅ Make sure you ran `npm run build` first
+4. ✅ Make sure you ran `yarn build` first
 5. ✅ Restart Claude Desktop completely (quit and reopen)
 6. ✅ Check Claude Desktop logs: `~/Library/Logs/Claude/mcp*.log` (macOS)
 
@@ -856,8 +920,8 @@ Solutions:
 Solutions:
 ```bash
 cd packages/octocode-local-memory
-npm install          # Install dependencies
-npm run build        # Build the project
+yarn                 # Install dependencies
+yarn build           # Build the project
 ls -la dist/         # Verify dist/index.js exists
 ```
 
@@ -942,7 +1006,7 @@ If you're still having issues:
 **Debug mode:**
 ```bash
 # Run server directly to see console output
-npm start
+yarn start
 ```
 
 ## Best Practices
@@ -1067,14 +1131,6 @@ await setStorage({key: "status:agent-1", value: JSON.stringify(status), ttl: 360
 
 - **[README.md](./README.md)** (this file) - User guide with examples and API reference
 - **[DESIGN.md](./DESIGN.md)** - Technical design document with architecture, performance analysis, and implementation details
-
-## Contributing
-
-Part of the Octocode ecosystem. Contributions welcome:
-- Performance improvements
-- Better coordination patterns
-- More usage examples
-- Bug fixes
 
 See [DESIGN.md](./DESIGN.md) for architecture details before contributing.
 
