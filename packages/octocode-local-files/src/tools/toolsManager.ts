@@ -28,7 +28,7 @@ import {
   LOCAL_FETCH_CONTENT_DESCRIPTION,
 } from '../scheme/local_fetch_content.js';
 import {
-  BulkViewBinarySchema,
+  ViewBinaryQuerySchema,
   LOCAL_VIEW_BINARY_DESCRIPTION,
 } from '../scheme/local_view_binary.js';
 import type {
@@ -40,8 +40,6 @@ import type {
   FindFilesResult,
   FetchContentQuery,
   FetchContentResult,
-  ViewBinaryQuery,
-  ViewBinaryResult,
 } from '../types.js';
 
 /**
@@ -116,20 +114,27 @@ export function registerTools(server: McpServer): void {
     }
   );
 
-  // Register local_view_binary tool
+  // Register local_view_binary tool (single query, no bulk)
   server.registerTool(
     TOOL_NAMES.LOCAL_VIEW_BINARY,
     {
       description: LOCAL_VIEW_BINARY_DESCRIPTION,
-      inputSchema: BulkViewBinarySchema.shape,
+      inputSchema: ViewBinaryQuerySchema.shape,
     },
     async (args): Promise<CallToolResult> => {
-      const parsed = BulkViewBinarySchema.parse(args);
-      return executeBulkOperation<ViewBinaryQuery, ViewBinaryResult>(
-        parsed.queries,
-        viewBinary,
-        { toolName: TOOL_NAMES.LOCAL_VIEW_BINARY }
-      );
+      const parsed = ViewBinaryQuerySchema.parse(args);
+      const result = await viewBinary(parsed);
+
+      // Format as single result response (not bulk)
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+        isError: result.status === 'error',
+      };
     }
   );
 }

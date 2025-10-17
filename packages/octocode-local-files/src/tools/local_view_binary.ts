@@ -6,6 +6,7 @@ import { safeExec } from '../utils/exec.js';
 import { pathValidator } from '../security/pathValidator.js';
 import { getToolHints } from './hints.js';
 import type { ViewBinaryQuery, ViewBinaryResult } from '../types.js';
+import { withDataCache, generateCacheKey } from '../utils/cache.js';
 
 /**
  * Executes a binary viewing query
@@ -112,12 +113,14 @@ async function extractStrings(
   utf16le: boolean
 ): Promise<ViewBinaryResult> {
   const minLength = query.minLength || 6;
-  let result;
+  const encoding = utf16le ? 'utf16le' : 'ascii';
+  const cacheKey = generateCacheKey(`binary-${encoding}-strings`, {
+    path,
+    minLength,
+  });
 
-  if (utf16le) {
-    // UTF-16LE: First convert with iconv, then extract strings
-    // Convert to UTF-8 first (iconv doesn't pipe directly, so we use separate commands)
-    try {
+  const getStrings = async (): Promise<string[]> => {
+    if (utf16le) {
       const iconvResult = await safeExec('iconv', [
         '-f',
         'UTF-16LE',
@@ -127,64 +130,47 @@ async function extractStrings(
       ]);
 
       if (!iconvResult.success) {
-        return {
-          status: 'error',
-          error: iconvResult.stderr || 'Failed to convert UTF-16LE encoding',
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
-        };
+        throw new Error(
+          iconvResult.stderr || 'Failed to convert UTF-16LE encoding'
+        );
       }
 
-      // Extract strings from the converted content
-      // Since we have UTF-8 text now, we can filter it ourselves
-      const lines = iconvResult.stdout
+      return iconvResult.stdout
         .split('\n')
         .map((line) => line.trim())
         .filter((line) => line.length >= minLength && isPrintableString(line))
         .slice(0, 1000);
+    } else {
+      const result = await safeExec('strings', ['-n', String(minLength), path]);
 
-      result = {
-        success: true,
-        stdout: lines.join('\n'),
-        stderr: '',
-        code: 0,
-      };
-    } catch (error) {
-      return {
-        status: 'error',
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Failed to extract UTF-16LE strings',
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
-      };
+      if (!result.success) {
+        throw new Error(result.stderr || 'Failed to extract strings');
+      }
+
+      return result.stdout
+        .split('\n')
+        .filter((line) => line.trim())
+        .slice(0, 1000);
     }
-  } else {
-    // ASCII strings - safe direct execution
-    result = await safeExec('strings', ['-n', String(minLength), path]);
-  }
+  };
 
-  if (!result.success) {
+  let strings: string[];
+  try {
+    strings = await withDataCache(cacheKey, getStrings, { ttl: 900 });
+  } catch (error) {
     return {
       status: 'error',
-      error: result.stderr || 'Failed to extract strings',
+      error: error instanceof Error ? error.message : String(error),
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
     };
   }
-
-  const strings = result.stdout
-    .split('\n')
-    .filter((line) => line.trim())
-    .slice(0, 1000); // Limit to 1000 strings
 
   if (strings.length === 0) {
     return {
       status: 'empty',
       path,
       operation: utf16le ? 'strings-utf16le' : 'strings',
-      stringCount: 0,
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
       hints: getToolHints('LOCAL_VIEW_BINARY', 'empty'),
@@ -212,6 +198,36 @@ function isPrintableString(str: string): boolean {
   // eslint-disable-next-line no-control-regex
   const controlChars = str.match(/[\x00-\x1F\x7F]/g);
   return !controlChars || controlChars.length < str.length * 0.1;
+}
+
+function extractMatches(
+  content: string,
+  pattern: string,
+  context: number
+): string {
+  const lines = content.split('\n');
+  const matches: string[] = [];
+  const regex = new RegExp(pattern, 'gi');
+  for (let i = 0; i < lines.length; i++) {
+    if (regex.test(lines[i])) {
+      const start = Math.max(0, i - context);
+      const end = Math.min(lines.length, i + context + 1);
+      matches.push(`--- Match at line ${i + 1} ---`);
+      for (let j = start; j < end; j++) {
+        matches.push(`${j + 1}|${lines[j]}`);
+      }
+    }
+  }
+  return matches.length > 0 ? matches.join('\n') : '';
+}
+
+function simpleMinify(content: string): string {
+  return content
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l)
+    .join('\n')
+    .replace(/\s+/g, ' ');
 }
 
 /**
@@ -409,15 +425,31 @@ async function extractArchiveFile(
     };
   }
 
-  // Use unzip -p to extract file to stdout (no disk writes)
-  const result = await safeExec('unzip', ['-p', path, query.archiveFile]);
+  const cacheKey = generateCacheKey('binary-extract-full', {
+    path,
+    archiveFile: query.archiveFile,
+  });
 
-  if (!result.success) {
+  const getFullContent = async (): Promise<string> => {
+    const result = await safeExec('unzip', ['-p', path, query.archiveFile!]);
+
+    if (!result.success) {
+      throw new Error(
+        result.stderr ||
+          `Failed to extract '${query.archiveFile}' from archive. File may not exist.`
+      );
+    }
+
+    return result.stdout;
+  };
+
+  let fullContent: string;
+  try {
+    fullContent = await withDataCache(cacheKey, getFullContent, { ttl: 900 });
+  } catch (error) {
     return {
       status: 'error',
-      error:
-        result.stderr ||
-        `Failed to extract '${query.archiveFile}' from archive. File may not exist.`,
+      error: error instanceof Error ? error.message : String(error),
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
       hints: [
@@ -428,9 +460,27 @@ async function extractArchiveFile(
     };
   }
 
-  const content = result.stdout;
+  let extractedContent = fullContent;
 
-  if (!content || content.length === 0) {
+  if (!query.fullContent) {
+    if (query.startLine && query.endLine) {
+      const lines = fullContent.split('\n');
+      extractedContent = lines
+        .slice(query.startLine - 1, query.endLine)
+        .join('\n');
+    } else if (query.matchString) {
+      const pattern = query.matchString as string;
+      const context = query.matchStringContextLines ?? 5;
+      extractedContent = extractMatches(fullContent, pattern, context);
+    }
+    // If no partial specified, still return full
+  }
+
+  if (query.minified) {
+    extractedContent = simpleMinify(extractedContent);
+  }
+
+  if (extractedContent.length === 0) {
     return {
       status: 'empty',
       path,
@@ -447,8 +497,8 @@ async function extractArchiveFile(
     path,
     operation: 'extract-file',
     archiveFile: query.archiveFile,
-    extractedContent: content,
-    contentLength: content.length,
+    extractedContent,
+    contentLength: extractedContent.length,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
     hints: getToolHints('LOCAL_VIEW_BINARY', 'hasResults'),

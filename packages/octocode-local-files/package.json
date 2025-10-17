@@ -41,6 +41,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.18.1",
+    "node-cache": "^5.1.2",
     "octocode-utils": "workspace:^5.0.0",
     "zod": "^3.25.26"
   },

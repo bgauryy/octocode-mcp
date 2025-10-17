@@ -7,6 +7,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { registerTools } from './tools/toolsManager.js';
 import { pathValidator } from './security/pathValidator.js';
+import { clearAllCache } from './utils/cache.js';
 
 /**
  * Main server initialization
@@ -34,6 +35,7 @@ async function main(): Promise<void> {
 
   // Set up signal handlers for graceful shutdown
   const cleanup = () => {
+    clearAllCache();
     process.exit(0);
   };
 

@@ -242,6 +242,12 @@ export interface ViewBinaryQuery extends BaseQuery {
   includeOffsets?: boolean;
   maxFiles?: number;
   archiveFile?: string;
+  fullContent?: boolean;
+  startLine?: number;
+  endLine?: number;
+  matchString?: string;
+  matchStringContextLines?: number;
+  minified?: boolean;
 }
 
 /**
