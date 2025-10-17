@@ -17,14 +17,14 @@
 export const TOOL_HINTS = {
   LOCAL_SEARCH_CONTENT: {
     hasResults: [
-      '🎯 Semantic: Break concepts into multiple queries for comprehensive coverage',
+      ' Semantic: Break concepts into multiple queries for comprehensive coverage',
       'Add contextLines=5-10 for code understanding',
       'Use filesOnly=true to identify files before deep search',
       'Narrow scope with include=["*.js","*.ts"] for speed',
       'Combine wholeWord=true to avoid partial matches',
     ],
     empty: [
-      '🎯 Semantic: Try synonyms, variations, abbreviations in separate queries',
+      ' Semantic: Try synonyms, variations, abbreviations in separate queries',
       'Broader patterns: "error|fail|bug|exception" with regex=true',
       'Use caseInsensitive=true or smartCase=true',
       'Remove restrictive filters (include, excludeDir)',
@@ -41,14 +41,14 @@ export const TOOL_HINTS = {
 
   LOCAL_VIEW_STRUCTURE: {
     hasResults: [
-      '🎯 Semantic: Map concepts to multiple dirs for comprehensive view',
+      ' Semantic: Map concepts to multiple dirs for comprehensive view',
       'Sort by time: sortBy="time", details=true for recent changes',
       'Sort by size: sortBy="size", reverse=true, humanReadable=true',
       'Use depth=1-2 for controlled exploration',
       'Filter by extensions: extensions=["js","ts"]',
     ],
     empty: [
-      '🎯 Semantic: Try directory name variations in bulk queries',
+      ' Semantic: Try directory name variations in bulk queries',
       'Try hidden=true to show dotfiles (.git, .env)',
       'Remove restrictive filters (pattern, extension)',
       'Use recursive=true or depth=1-2 for subdirectories',
@@ -65,14 +65,14 @@ export const TOOL_HINTS = {
 
   LOCAL_FIND_FILES: {
     hasResults: [
-      '🎯 Semantic: Map concepts to file patterns in parallel queries',
+      ' Semantic: Map concepts to file patterns in parallel queries',
       'Combine filters: type="f" + name + modifiedWithin',
       'Add details=true for size/permissions/timestamps',
       'Use names=["*.ts","*.js"] for multiple extensions',
       'containsPattern bridges file discovery + content search',
     ],
     empty: [
-      '🎯 Semantic: Think naming variations and conventions',
+      ' Semantic: Think naming variations and conventions',
       'Broaden patterns: use wildcards or iname for case-insensitive',
       'Remove restrictive filters incrementally',
       'Increase maxDepth to search deeper',
@@ -89,14 +89,14 @@ export const TOOL_HINTS = {
 
   LOCAL_FETCH_CONTENT: {
     hasResults: [
-      '🎯 Semantic: Use matchString for targeted extraction with context',
+      ' Semantic: Use matchString for targeted extraction with context',
       'Multiple matchStrings on same file for complete picture',
       'matchStringContextLines=5-15 balances context vs tokens',
       'For known locations: use startLine/endLine',
       'Set minified=false when exact formatting matters',
     ],
     empty: [
-      '🎯 Semantic: Try related terms or use LOCAL_SEARCH_CONTENT first',
+      ' Semantic: Try related terms or use LOCAL_SEARCH_CONTENT first',
       'matchString not found - broaden to synonyms',
       'Try fullContent=true to check file content',
       'Check file exists with LOCAL_FIND_FILES',
@@ -110,12 +110,36 @@ export const TOOL_HINTS = {
       'Use partial reads for large files',
     ],
   },
+
+  LOCAL_VIEW_BINARY: {
+    hasResults: [
+      ' Semantic: Use full-inspection for comprehensive first analysis',
+      'Bulk operations: identify + strings + magic-bytes in single call',
+      'For Windows PE: use strings-utf16le to extract wide strings',
+      'minLength=8-10 reduces noise in string extraction',
+      'Check magic-bytes against known signatures (MZ, ELF, WASM, etc.)',
+    ],
+    empty: [
+      ' Semantic: Try different operations or increase sensitivity',
+      'For strings: reduce minLength to 3-4 for more results',
+      'Check if file is actually binary with operation="identify"',
+      'UTF-16LE: use strings-utf16le for Windows executables',
+      'Increase hexLines or maxBytes for more data',
+    ],
+    error: [
+      'Ensure binary inspection tools available: strings, hexdump, iconv',
+      'Check file exists: test -f <path> && test -r <path>',
+      'Path must be within workspace boundaries',
+      'Binary may be corrupted - try operation="identify" first',
+      'For UTF-16LE on macOS: ensure iconv is available',
+    ],
+  },
 } as const;
 
 /**
  * Get hints for a specific tool and status
  *
- * @param toolName - The tool name (LOCAL_SEARCH_CONTENT, LOCAL_VIEW_STRUCTURE, LOCAL_FIND_FILES, LOCAL_FETCH_CONTENT)
+ * @param toolName - The tool name (LOCAL_SEARCH_CONTENT, LOCAL_VIEW_STRUCTURE, LOCAL_FIND_FILES, LOCAL_FETCH_CONTENT, LOCAL_VIEW_BINARY)
  * @param status - The result status (hasResults, empty, error)
  * @returns Array of contextual hints for the given tool and status
  *

@@ -16,3 +16,5 @@ coverage
 
 # sqlite DB
 mcp.sqlite
+
+context

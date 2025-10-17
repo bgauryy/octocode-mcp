@@ -2,7 +2,7 @@
 
 > Node.js full-stack frameworks, UI component libraries, and data visualization
 
-**🎯 Purpose:** Framework resources for AI agents building Node.js/TypeScript applications  
+** Purpose:** Framework resources for AI agents building Node.js/TypeScript applications  
 **🌐 Focus:** Next.js 15, React frameworks - JavaScript/TypeScript ecosystem  
 **⚙️ Runtime:** All frameworks run on Node.js (Next.js, Remix, Astro)  
 **📅 Updated:** October 14, 2025

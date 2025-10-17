@@ -24,7 +24,7 @@ That's it! The AI team will guide you through the workflow.
 
 ---
 
-## 🎯 What Is Octocode?
+##  What Is Octocode?
 
 A **Claude Code plugin** that provides **three powerful commands**:
 
@@ -41,7 +41,7 @@ A **Claude Code plugin** that provides **three powerful commands**:
 Orchestrates 6 specialized AI agents through comprehensive 4-phase workflow:
 
 ```
-💭 Requirements → 🏗️ Architecture → 🎯 Planning → 💻 Implementation
+💭 Requirements → 🏗️ Architecture →  Planning → 💻 Implementation
 ```
 
 **Best for:** Complex/enterprise projects | **You approve at 4 gates**
@@ -50,7 +50,7 @@ Orchestrates 6 specialized AI agents through comprehensive 4-phase workflow:
 Analyzes existing codebases and safely adds features or fixes bugs through 4 phases:
 
 ```
-📊 Code Review → 🎯 Analysis → 🎯 Planning → 💻 Implementation
+📊 Code Review →  Analysis →  Planning → 💻 Implementation
 ```
 
 **Best for:** Production codebases | **You approve at 3 gates**
@@ -103,7 +103,7 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 | Agent | Role | Model | What They Do |
 |-------|------|-------|--------------|
 | 🚀 **Rapid Planner** | All Planning | Opus | Requirements + Architecture + Tasks in ONE pass, creates single consolidated spec |
-| 🎯 **Engineering Manager** | Orchestration | Sonnet | Reads spec, assigns tasks, tracks progress |
+|  **Engineering Manager** | Orchestration | Sonnet | Reads spec, assigns tasks, tracks progress |
 | 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns (multiple instances work in parallel) |
 
 **Fast & efficient**: 1 planning agent, 1 approval gate
@@ -112,11 +112,11 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 
 | Agent | Role | Model | What They Do |
 |-------|------|-------|--------------|
-| 🎯 **Product Manager** | Requirements | Opus | Asks clarifying questions, creates PRD, researches competitors using Octocode MCP |
+|  **Product Manager** | Requirements | Opus | Asks clarifying questions, creates PRD, researches competitors using Octocode MCP |
 | 🏗️ **Architect** | System Design | Opus | Designs architecture (backend + frontend), researches proven patterns via Octocode MCP |
 | 🔬 **Quality Architect** | Verification Planning | Opus | Creates verification flows and test scenarios, researches testing patterns via Octocode MCP |
 | 🚀 **Founding Engineer** | Initial Scaffold | Sonnet | Transforms design into working project foundation (structure, build, deps, README) |
-| 🎯 **Engineering Manager** | Orchestration | Sonnet | Creates task breakdown, assigns tasks, tracks progress |
+|  **Engineering Manager** | Orchestration | Sonnet | Creates task breakdown, assigns tasks, tracks progress |
 | 💻 **Software Engineer** | Implementation | Sonnet | Writes code, follows patterns, ensures build passes (multiple instances work in parallel) |
 
 **Comprehensive**: 6 agents, 4 approval gates
@@ -126,8 +126,8 @@ Analyzes existing codebases and safely adds features or fixes bugs through 4 pha
 | Agent | Role | Model | What They Do |
 |-------|------|-------|--------------|
 | 📊 **Code Analyst** | Codebase Review | Sonnet | Analyzes existing code, identifies patterns, assesses quality |
-| 🎯 **Feature Analyst** | Impact Analysis | Opus | Critical thinking on changes, researches implementation patterns via Octocode MCP |
-| 🎯 **Engineering Manager** | Orchestration | Sonnet | Creates task breakdown, assigns tasks, tracks progress |
+|  **Feature Analyst** | Impact Analysis | Opus | Critical thinking on changes, researches implementation patterns via Octocode MCP |
+|  **Engineering Manager** | Orchestration | Sonnet | Creates task breakdown, assigns tasks, tracks progress |
 | 💻 **Software Engineer** | Implementation | Sonnet | Modifies code following existing patterns (multiple instances) |
 
 **Production-safe**: 4 agents, 3 approval gates
@@ -479,7 +479,7 @@ Automatically used by the Quality Architect during QA phase (Mode 3):
 |-----|-------------|
 | **[QUICK_MODE.md](./docs/QUICK_MODE.md)** | ⚡ NEW! Guide to fast development with `/octocode-generate-quick` |
 | **[COMPLETE_GUIDE.md](./docs/COMPLETE_GUIDE.md)** | ⭐ Comprehensive guide for standard `/octocode-generate` workflow |
-| **[FLOW.md](./docs/FLOW.md)** | 🎯 Visual walkthrough of all workflows |
+| **[FLOW.md](./docs/FLOW.md)** |  Visual walkthrough of all workflows |
 | **[agents/](./agents/)** | Individual documentation for all 8 specialized agents |
 | **[commands/](./commands/)** | Detailed specifications for all three commands |
 

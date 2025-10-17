@@ -129,7 +129,7 @@ Compare authentication implementations across multiple repositories in {{my-org}
 
 ## ✨ Best Practices
 
-### 🎯 **Be Specific**
+###  **Be Specific**
 - **Good**: "Redis caching patterns in TypeScript microservices"
 - **Better**: "Redis caching in {{my-org}} Node.js services"
 

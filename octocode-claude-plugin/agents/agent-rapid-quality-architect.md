@@ -17,7 +17,7 @@ color: teal
 
 ---
 
-## 🎯 CORE PROTOCOL (Critical for Success)
+##  CORE PROTOCOL (Critical for Success)
 
 **REASONING: Keep ALL internal reasoning PRIVATE**
 - Think through bug analysis internally

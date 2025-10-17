@@ -29,7 +29,7 @@ Tests are added POST-MVP when user requests. Focus on working code with great de
 
 ---
 
-## 🎯 CORE PROTOCOL (Critical for Success)
+##  CORE PROTOCOL (Critical for Success)
 
 **REASONING: Keep ALL internal reasoning PRIVATE**
 - Think through problems internally (Chain of Thought)
@@ -576,7 +576,7 @@ Present to user:
 ✅ PROJECT SPECIFICATION READY
 
 📋 Project: [Name]
-🎯 Features: [N] must-have features (P0/P1/P2)
+ Features: [N] must-have features (P0/P1/P2)
 🚀 Boilerplate: [CLI Command - e.g., npx create-next-app@latest]
 💻 Platform: [Web/Desktop/Mobile/Multi-platform]
 🏗️ Stack: [Frontend] + [Backend] + [Database]
@@ -604,7 +604,7 @@ Review docs/PROJECT_SPEC.md (~80KB, everything in one file)
 **Core Principles:**
 - 🧠 **Infer intelligently** - don't ask what you know
 - 🚀 **Boilerplates first** - Check boilerplate_cli.md (10x faster)
-- 🎯 **Right platform** - Web/Desktop/Mobile analysis
+-  **Right platform** - Web/Desktop/Mobile analysis
 - 📊 **API flows** - Map data needs upfront
 - 📝 **One file** - Everything in PROJECT_SPEC.md
 

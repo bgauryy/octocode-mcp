@@ -6,6 +6,7 @@ export const TOOL_NAMES = {
   LOCAL_VIEW_STRUCTURE: 'local_view_structure',
   LOCAL_FIND_FILES: 'local_find_files',
   LOCAL_FETCH_CONTENT: 'local_fetch_content',
+  LOCAL_VIEW_BINARY: 'local_view_binary',
 } as const;
 
 /**
@@ -27,6 +28,13 @@ export const ALLOWED_COMMANDS = [
   'wc', // Count lines, words, characters (stats)
   'file', // Identify file type by inspecting content
   'stat', // Show detailed file/directory metadata (size, permissions, timestamps)
+  'strings', // Extract printable strings from binary files
+  'hexdump', // Display file contents in hexadecimal and ASCII
+  'xxd', // Make a hex dump or reverse operation
+  'od', // Dump files in octal and other formats
+  'iconv', // Convert text from one character encoding to another
+  'head', // Output the first part of files
+  'tail', // Output the last part of files
 ] as const;
 
 /**

@@ -7,6 +7,30 @@ import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema.js';
 import { TOOL_NAMES } from '../constants.js';
 
 /**
+ * Tool description for MCP registration
+ */
+export const LOCAL_FIND_FILES_DESCRIPTION = `Advanced file discovery using find (unix file search tool).
+
+Why: Locate files by name, type, size, modification time, or permissions - more powerful than ls.
+
+SEMANTIC: Map concepts to file patterns → bulk parallel = complete discovery.
+Example: "config files?" → queries=[{name:"*config*"}, {name:"*.env*"}, {name:"*.json"}, {name:"*.yaml"}]
+
+Examples:
+• Semantic: "API" → queries=[{name:"*api*"}, {name:"*endpoint*"}, {containsPattern:"@app.route"}]
+• Bulk patterns: queries=[{name:"*.ts"}, {name:"*.test.*"}, {name:"README*"}]
+• Recent: modifiedWithin="7d", type="f", details=true
+• Large: sizeGreater="1M", type="f", details=true
+• With content: name="*.js", containsPattern="export default"
+
+Best Practices:
+- Think variations: "test" → *.test.*, *.spec.*, __tests__/, test_*
+- Bulk queries = 5-10x faster parallel discovery
+- Combine filters: type="f" + name + modifiedWithin
+- containsPattern bridges discovery + content search
+- excludeDir=["node_modules",".git","dist"] skips artifacts`;
+
+/**
  * Find files query schema
  */
 export const FindFilesQuerySchema = BaseQuerySchema.extend({

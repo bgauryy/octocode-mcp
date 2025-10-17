@@ -2,7 +2,7 @@
 
 > Database design, ORMs, and data management for Node.js/TypeScript applications
 
-**🎯 Purpose:** Database resources for AI agents building Node.js/TypeScript applications  
+** Purpose:** Database resources for AI agents building Node.js/TypeScript applications  
 **🌐 Focus:** Prisma, TypeORM, Drizzle - TypeScript-first ORMs  
 **⚙️ Runtime:** Node.js database clients and TypeScript ORMs  
 **📅 Updated:** October 13, 2025

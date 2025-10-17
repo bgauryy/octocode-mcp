@@ -2,7 +2,7 @@
 
 > Authentication, authorization, OAuth, and security libraries for Node.js/TypeScript backend applications
 
-**🎯 Purpose:** Authentication resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+** Purpose:** Authentication resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
 **🤖 For:** AI agents and developers implementing authentication in Node.js backend servers
 **🌐 Focus:** NextAuth.js, Passport.js, SuperTokens - Node.js authentication libraries
 **🔐 Core Topics:** OAuth 2.0/2.1, JWT, session management, passwordless auth, 2FA, WebAuthn
@@ -13,7 +13,7 @@
 
 ---
 
-## 🎯 Best for Application Generation
+##  Best for Application Generation
 
 This file provides **Node.js authentication resources** to help AI agents:
 1. **Choose auth strategy** - NextAuth.js vs Passport.js vs SuperTokens
@@ -30,7 +30,7 @@ This file provides **Node.js authentication resources** to help AI agents:
 
 ---
 
-## 🎯 Quick Reference
+##  Quick Reference
 
 **Top 3 Authentication Solutions for 2025:**
 
