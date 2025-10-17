@@ -3,8 +3,7 @@
  */
 
 import { z } from 'zod';
-import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema.js';
-import { TOOL_NAMES } from '../constants.js';
+import { BaseQuerySchema } from './baseSchema.js';
 
 /**
  * Tool description for MCP registration
@@ -24,9 +23,6 @@ Only use this tool for defensive security analysis, reverse engineering for unde
 debugging, vulnerability research, and educational purposes. Read and analyze only - never 
 execute or modify.
 
-SEMANTIC: Break binary analysis into targeted operations → parallel bulk = comprehensive understanding.
-Example: "analyze binary" → queries=[{operation:"identify"}, {operation:"strings"}, {operation:"magic-bytes"}]
-
 Operations:
 • identify - Detect file type (PE, ELF, Mach-O, WASM, JAR, etc.)
 • strings - Extract ASCII printable strings (min length 6)
@@ -37,6 +33,13 @@ Operations:
 • extract-file - Extract and read specific file from archive
 • full-inspection - Complete analysis: type + magic + strings + hex preview + archive listing
 
+Partial Content Support for extract-file:
+- Use fullContent=true to get entire extracted file (token expensive).
+- Use startLine/endLine for line range.
+- Use matchString with matchStringContextLines for matches with context.
+- minified=true to reduce token usage.
+- Similar to local_fetch_content for handling large extracted files.
+
 Examples:
 • Quick analysis: operation="identify", path="/path/to/binary"
 • Find strings: operation="strings", minLength=8, path="/bin/ls"
@@ -45,7 +48,6 @@ Examples:
 • List JAR/ZIP: operation="list-archive", path="plugin.jar", maxFiles=100
 • Extract file: operation="extract-file", path="plugin.jar", archiveFile="META-INF/plugin.xml"
 • Complete view: operation="full-inspection", path="library.so"
-• Bulk semantic: queries=[{operation:"identify"}, {operation:"strings"}, {operation:"hexdump", hexLines:20}]
 
 Best Practices:
 - Start with "identify" to understand file type
@@ -54,7 +56,6 @@ Best Practices:
 - Extract strings for embedded text, URLs, error messages
 - Check magic-bytes to verify file format (signatures)
 - Use strings-utf16le for PE/Windows binaries (DLL, EXE)
-- Bulk queries for complete binary understanding in single call
 - minLength=6-8 reduces noise in string extraction
 - hexLines=20-50 for meaningful hex preview
 - maxFiles limits archive listing (default: 200, max: 1000)
@@ -129,15 +130,59 @@ export const ViewBinaryQuerySchema = BaseQuerySchema.extend({
     .describe(
       'Specific file path within archive to extract (required for extract-file operation)'
     ),
+
+  // Partial content options for extract-file
+  fullContent: z
+    .boolean()
+    .default(false)
+    .optional()
+    .describe(
+      'For extract-file: Return entire extracted content (token expensive for large files)'
+    ),
+
+  startLine: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe(
+      'For extract-file: Start line number for partial read (must use with endLine)'
+    ),
+
+  endLine: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe(
+      'For extract-file: End line number for partial read (must use with startLine)'
+    ),
+
+  matchString: z
+    .string()
+    .optional()
+    .describe(
+      'For extract-file: Search pattern to find within the extracted file - returns only matching sections with context'
+    ),
+
+  matchStringContextLines: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .default(5)
+    .optional()
+    .describe(
+      'For extract-file: Lines of context around each match (1-50, default 5)'
+    ),
+
+  minified: z
+    .boolean()
+    .default(true)
+    .optional()
+    .describe(
+      'For extract-file: Minify extracted content for token efficiency (removes extra whitespace)'
+    ),
 });
 
-/**
- * Bulk view binary schema
- */
-export const BulkViewBinarySchema = createBulkQuerySchema(
-  TOOL_NAMES.LOCAL_VIEW_BINARY,
-  ViewBinaryQuerySchema
-);
-
 export type ViewBinaryQuery = z.infer<typeof ViewBinaryQuerySchema>;
-export type BulkViewBinaryQuery = z.infer<typeof BulkViewBinarySchema>;
