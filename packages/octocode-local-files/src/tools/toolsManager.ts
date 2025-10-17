@@ -9,12 +9,28 @@ import { searchContent } from './local_search_content.js';
 import { viewStructure } from './local_view_structure.js';
 import { findFiles } from './local_find_files.js';
 import { fetchContent } from './local_fetch_content.js';
+import { viewBinary } from './local_view_binary.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
-import { BulkSearchContentSchema } from '../scheme/local_search_content.js';
-import { BulkViewStructureSchema } from '../scheme/local_view_structure.js';
-import { BulkFindFilesSchema } from '../scheme/local_find_files.js';
-import { BulkFetchContentSchema } from '../scheme/local_fetch_content.js';
-import { TOOL_DESCRIPTIONS } from '../scheme/toolsDescriptions.js';
+import {
+  BulkSearchContentSchema,
+  LOCAL_SEARCH_CONTENT_DESCRIPTION,
+} from '../scheme/local_search_content.js';
+import {
+  BulkViewStructureSchema,
+  LOCAL_VIEW_STRUCTURE_DESCRIPTION,
+} from '../scheme/local_view_structure.js';
+import {
+  BulkFindFilesSchema,
+  LOCAL_FIND_FILES_DESCRIPTION,
+} from '../scheme/local_find_files.js';
+import {
+  BulkFetchContentSchema,
+  LOCAL_FETCH_CONTENT_DESCRIPTION,
+} from '../scheme/local_fetch_content.js';
+import {
+  BulkViewBinarySchema,
+  LOCAL_VIEW_BINARY_DESCRIPTION,
+} from '../scheme/local_view_binary.js';
 import type {
   SearchContentQuery,
   SearchContentResult,
@@ -24,6 +40,8 @@ import type {
   FindFilesResult,
   FetchContentQuery,
   FetchContentResult,
+  ViewBinaryQuery,
+  ViewBinaryResult,
 } from '../types.js';
 
 /**
@@ -34,7 +52,7 @@ export function registerTools(server: McpServer): void {
   server.registerTool(
     TOOL_NAMES.LOCAL_SEARCH_CONTENT,
     {
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.LOCAL_SEARCH_CONTENT],
+      description: LOCAL_SEARCH_CONTENT_DESCRIPTION,
       inputSchema: BulkSearchContentSchema.shape,
     },
     async (args): Promise<CallToolResult> => {
@@ -51,7 +69,7 @@ export function registerTools(server: McpServer): void {
   server.registerTool(
     TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
     {
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.LOCAL_VIEW_STRUCTURE],
+      description: LOCAL_VIEW_STRUCTURE_DESCRIPTION,
       inputSchema: BulkViewStructureSchema.shape,
     },
     async (args): Promise<CallToolResult> => {
@@ -68,7 +86,7 @@ export function registerTools(server: McpServer): void {
   server.registerTool(
     TOOL_NAMES.LOCAL_FIND_FILES,
     {
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.LOCAL_FIND_FILES],
+      description: LOCAL_FIND_FILES_DESCRIPTION,
       inputSchema: BulkFindFilesSchema.shape,
     },
     async (args): Promise<CallToolResult> => {
@@ -85,7 +103,7 @@ export function registerTools(server: McpServer): void {
   server.registerTool(
     TOOL_NAMES.LOCAL_FETCH_CONTENT,
     {
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.LOCAL_FETCH_CONTENT],
+      description: LOCAL_FETCH_CONTENT_DESCRIPTION,
       inputSchema: BulkFetchContentSchema.shape,
     },
     async (args): Promise<CallToolResult> => {
@@ -94,6 +112,23 @@ export function registerTools(server: McpServer): void {
         parsed.queries,
         fetchContent,
         { toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT }
+      );
+    }
+  );
+
+  // Register local_view_binary tool
+  server.registerTool(
+    TOOL_NAMES.LOCAL_VIEW_BINARY,
+    {
+      description: LOCAL_VIEW_BINARY_DESCRIPTION,
+      inputSchema: BulkViewBinarySchema.shape,
+    },
+    async (args): Promise<CallToolResult> => {
+      const parsed = BulkViewBinarySchema.parse(args);
+      return executeBulkOperation<ViewBinaryQuery, ViewBinaryResult>(
+        parsed.queries,
+        viewBinary,
+        { toolName: TOOL_NAMES.LOCAL_VIEW_BINARY }
       );
     }
   );

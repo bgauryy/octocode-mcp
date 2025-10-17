@@ -2,7 +2,7 @@
 
 > Architecture patterns, design principles, and system design for Node.js/TypeScript applications
 
-**🎯 Purpose:** Architecture resources for AI agents building Node.js/TypeScript applications  
+** Purpose:** Architecture resources for AI agents building Node.js/TypeScript applications  
 **🌐 Focus:** Clean Architecture, DDD, CQRS, Microservices - TypeScript patterns  
 **⚙️ Runtime:** Node.js-based systems with TypeScript design patterns  
 **📅 Updated:** October 13, 2025

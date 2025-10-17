@@ -90,7 +90,7 @@ Detailed authentication documentation:
 
 ---
 
-## 🎯 Quick Navigation
+##  Quick Navigation
 
 ### By Topic
 

@@ -212,7 +212,7 @@ Large Language Models process data more efficiently when it follows predictable 
 - **Reduced Scanning**: No need to search through objects to find essential keys - they're always in predictable positions
 - **Token Efficiency**: Consistent formatting reduces token overhead and improves parsing efficiency
 
-##### 🎯 **Cognitive Load Reduction**
+#####  **Cognitive Load Reduction**
 - **Mental Model Simplification**: LLMs can build a single mental model for object structure that applies recursively
 - **Attention Focus**: With structure predictable, models can dedicate more attention to semantic content
 - **Error Reduction**: Consistent patterns reduce the likelihood of misinterpreting data relationships
@@ -316,7 +316,7 @@ async function minifyContent(
 
 #### Features
 
-- **🎯 Smart Strategy Selection** - Automatically chooses optimal minification approach
+- ** Smart Strategy Selection** - Automatically chooses optimal minification approach
 - **🛡️ Error Resilience** - Graceful fallbacks when minification fails
 - **📏 Size Limits** - Protects against oversized content (1MB limit)
 - **🔧 Multi-Engine** - Uses Terser, CleanCSS, and html-minifier-terser

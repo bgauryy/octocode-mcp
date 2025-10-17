@@ -27,7 +27,7 @@
 
 ---
 
-## 🎯 Why Octocode MCP?
+##  Why Octocode MCP?
 
 ### The Context Gap Problem
 
@@ -65,7 +65,7 @@ Octocode MCP bridges this gap by providing AI assistants with **real-time access
 
 ### See The Difference
 
-**[🎯 Live Demo: ThreeJS Code Creation Comparison](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)**
+**[ Live Demo: ThreeJS Code Creation Comparison](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)**
 
 This interactive comparison shows how Octocode MCP transforms AI assistants from providing generic code suggestions to delivering expert-level, context-rich implementations.
 
@@ -129,7 +129,7 @@ Use this decision tree to select the perfect tool for your task:
 ├─ 📚 Understand changes/history
 │  └─ Analyze pull requests → githubSearchPullRequests
 │
-└─ 🎯 Not sure where to start?
+└─  Not sure where to start?
    └─ Start broad with githubSearchRepositories → then narrow down
 ```
 
@@ -449,7 +449,7 @@ Watch the AI use Octocode to:
 ### Example 4: Complex ThreeJS Implementation
 **See the dramatic difference** between generic AI and Octocode-enhanced AI:
 
-**[🎯 Interactive Demo](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)**
+**[ Interactive Demo](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)**
 
 This comparison shows how Octocode transforms AI from generic suggestions to expert-level implementations with real-world patterns.
 

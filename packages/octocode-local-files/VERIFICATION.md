@@ -129,7 +129,7 @@ yarn format             # Format code with Prettier
 yarn format:check       # Check formatting
 ```
 
-## 🎯 Core Purpose Validated
+##  Core Purpose Validated
 
 **octocode-local-files** successfully provides AI agents with:
 

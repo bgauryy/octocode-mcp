@@ -2,7 +2,7 @@
 
 > React ecosystem libraries, UI components, state management, animations, 3D graphics, and mobile
 
-**🎯 Purpose:** Frontend library resources for AI agents building React web and mobile applications  
+** Purpose:** Frontend library resources for AI agents building React web and mobile applications  
 **🌐 Focus:** React 19 libraries, UI components, widgets, animations, 3D graphics  
 **⚙️ Runtime:** All frontend tooling runs on Node.js (Vite, Next.js, Metro bundler)  
 **📅 Updated:** October 14, 2025

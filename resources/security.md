@@ -2,7 +2,7 @@
 
 > Security libraries, tools, and best practices for Node.js/TypeScript web and mobile applications
 
-**🎯 Purpose:** Security resources for AI agents building Node.js/TypeScript applications  
+** Purpose:** Security resources for AI agents building Node.js/TypeScript applications  
 **🌐 Focus:** Node.js security libraries, middleware, and scanning tools  
 **🔐 Topics:** Input validation, XSS/CSRF protection, rate limiting, security headers  
 **📅 Updated:** October 14, 2025
@@ -535,7 +535,7 @@ const token = await EncryptedStorage.getItem('user_token');
 
 ---
 
-## 🎯 Security Checklist for Node.js Apps
+##  Security Checklist for Node.js Apps
 
 **Authentication & Authorization**
 - [ ] Use secure password hashing (bcrypt, argon2)

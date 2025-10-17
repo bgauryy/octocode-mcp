@@ -2,7 +2,7 @@
 
 > Testing strategies, frameworks, and best practices for Node.js/TypeScript applications
 
-**🎯 Purpose:** Testing resources for AI agents building Node.js/TypeScript applications  
+** Purpose:** Testing resources for AI agents building Node.js/TypeScript applications  
 **🌐 Focus:** Vitest, Jest, Playwright - JavaScript/TypeScript testing  
 **⚙️ Runtime:** All tests run on Node.js (unit, integration, E2E)  
 **📅 Updated:** October 13, 2025

@@ -223,6 +223,78 @@ export interface FetchContentResult extends BaseQuery {
 }
 
 /**
+ * View binary query parameters
+ */
+export interface ViewBinaryQuery extends BaseQuery {
+  path: string;
+  operation:
+    | 'identify'
+    | 'strings'
+    | 'strings-utf16le'
+    | 'hexdump'
+    | 'magic-bytes'
+    | 'list-archive'
+    | 'extract-file'
+    | 'full-inspection';
+  minLength?: number;
+  maxBytes?: number;
+  hexLines?: number;
+  includeOffsets?: boolean;
+  maxFiles?: number;
+  archiveFile?: string;
+}
+
+/**
+ * View binary result
+ */
+export interface ViewBinaryResult extends BaseQuery {
+  status: 'hasResults' | 'empty' | 'error';
+  path?: string;
+  operation?: string;
+  fileType?: string;
+  magicBytes?: string;
+  strings?: string[];
+  hexDump?: string;
+  archiveContents?: {
+    entries: Array<{
+      size: number;
+      date: string;
+      time: string;
+      name: string;
+    }>;
+    totalFiles: number;
+    totalDirectories: number;
+    totalSize: number;
+    truncated: boolean;
+  };
+  archiveFile?: string;
+  extractedContent?: string;
+  contentLength?: number;
+  fullInspection?: {
+    fileType: string;
+    magicBytes: string;
+    asciiStrings: string[];
+    utf16leStrings: string[];
+    hexPreview: string;
+    archiveContents?: {
+      entries: Array<{
+        size: number;
+        date: string;
+        time: string;
+        name: string;
+      }>;
+      totalFiles: number;
+      totalDirectories: number;
+      totalSize: number;
+      truncated: boolean;
+    };
+  };
+  stringCount?: number;
+  error?: string;
+  hints?: readonly string[];
+}
+
+/**
  * Bulk operation query wrapper
  */
 export interface BulkQuery<T> {
