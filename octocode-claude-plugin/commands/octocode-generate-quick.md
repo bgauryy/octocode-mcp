@@ -123,6 +123,8 @@ Tests added post-MVP when user requests.
 - **Phase 2 → Phase 3:** Implementation agents complete all tasks → Auto-trigger `agent-rapid-quality-architect`
 - **Phase 3 → User:** QA report appended → User verifies → Ready to commit
 
+**Note:** Quick mode INCLUDES automated code review by `agent-rapid-planner` (Phase 3). Standard mode also has code review by `agent-quality-architect` (Phase 5).
+
 ## Single Document Structure
 
 **PROJECT_SPEC.md** contains everything (~60-70KB for optimal parsing):
