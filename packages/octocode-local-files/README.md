@@ -4,6 +4,26 @@
 
 An MCP (Model Context Protocol) server that empowers AI assistants with intelligent local file system exploration capabilities. Built with token efficiency, security, and agent-optimized workflows in mind.
 
+---
+
+## ⚠️ DISCLAIMER
+
+**This MCP server is provided for research, development, and educational purposes only.**
+
+**USE AT YOUR OWN RISK.** By using this software, you acknowledge and agree that:
+
+- **No Warranty**: This software is provided "AS IS" without warranty of any kind, either express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement.
+- **User Responsibility**: You are solely responsible for ensuring you have proper authorization before accessing, reading, or analyzing any files, directories, or systems.
+- **Legal Compliance**: You agree to comply with all applicable local, state, national, and international laws and regulations when using this tool.
+- **Liability**: The authors and contributors shall not be held liable for any damages, losses, or legal issues arising from the use or misuse of this software.
+- **Security**: While security measures are implemented, users must evaluate and ensure the tool meets their specific security requirements before use.
+- **Authorization Required**: Only use this tool on systems and files you own or have explicit permission to access.
+- **Copyright & License**: Copyright © 2025 Octocode Team. This software is licensed under the MIT License (see [LICENSE.md](./LICENSE.md)). All copies or substantial portions must include the copyright notice and license terms.
+
+**IF YOU DO NOT AGREE TO THESE TERMS, DO NOT USE THIS SOFTWARE.**
+
+---
+
 ##  Why This MCP Server?
 
 AI agents need to understand codebases quickly and efficiently. Traditional file reading approaches waste tokens and time. **octocode-local-files** solves this by providing:

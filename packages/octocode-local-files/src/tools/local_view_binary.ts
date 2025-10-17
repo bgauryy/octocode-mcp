@@ -44,6 +44,12 @@ export async function viewBinary(
       case 'magic-bytes':
         return await extractMagicBytes(sanitizedPath, query);
 
+      case 'list-archive':
+        return await listArchiveContents(sanitizedPath, query);
+
+      case 'extract-file':
+        return await extractArchiveFile(sanitizedPath, query);
+
       case 'full-inspection':
         return await performFullInspection(sanitizedPath, query);
 
@@ -293,6 +299,163 @@ async function extractMagicBytes(
 }
 
 /**
+ * List contents of archive (ZIP/JAR/etc)
+ */
+async function listArchiveContents(
+  path: string,
+  query: ViewBinaryQuery
+): Promise<ViewBinaryResult> {
+  const maxFiles = query.maxFiles || 200;
+
+  // Use unzip -l to list archive contents
+  const result = await safeExec('unzip', ['-l', path]);
+
+  if (!result.success) {
+    return {
+      status: 'error',
+      error: result.stderr || 'Failed to list archive contents',
+      researchGoal: query.researchGoal,
+      reasoning: query.reasoning,
+    };
+  }
+
+  // Parse unzip output
+  const lines = result.stdout.split('\n');
+  const entries: Array<{
+    size: number;
+    date: string;
+    time: string;
+    name: string;
+  }> = [];
+
+  // Find the content lines (skip header and footer)
+  let inContent = false;
+  for (const line of lines) {
+    // Start of file listing (after the dashes)
+    if (line.match(/^-+$/)) {
+      if (!inContent) {
+        inContent = true;
+        continue;
+      } else {
+        // End of file listing
+        break;
+      }
+    }
+
+    if (inContent && line.trim()) {
+      // Parse line: "  Length      Date    Time    Name"
+      // Example: "     3360  06-23-2025 17:44   META-INF/plugin.xml"
+      const match = line.match(/^\s*(\d+)\s+(\S+)\s+(\S+)\s+(.+)$/);
+      if (match) {
+        entries.push({
+          size: parseInt(match[1], 10),
+          date: match[2],
+          time: match[3],
+          name: match[4],
+        });
+
+        if (entries.length >= maxFiles) break;
+      }
+    }
+  }
+
+  if (entries.length === 0) {
+    return {
+      status: 'empty',
+      path,
+      operation: 'list-archive',
+      researchGoal: query.researchGoal,
+      reasoning: query.reasoning,
+      hints: getToolHints('LOCAL_VIEW_BINARY', 'empty'),
+    };
+  }
+
+  // Extract summary info
+  const totalFiles = entries.filter((e) => !e.name.endsWith('/')).length;
+  const totalDirs = entries.filter((e) => e.name.endsWith('/')).length;
+  const totalSize = entries.reduce((sum, e) => sum + e.size, 0);
+
+  return {
+    status: 'hasResults',
+    path,
+    operation: 'list-archive',
+    archiveContents: {
+      entries,
+      totalFiles,
+      totalDirectories: totalDirs,
+      totalSize,
+      truncated: entries.length >= maxFiles,
+    },
+    researchGoal: query.researchGoal,
+    reasoning: query.reasoning,
+    hints: getToolHints('LOCAL_VIEW_BINARY', 'hasResults'),
+  };
+}
+
+/**
+ * Extract and read specific file from archive
+ */
+async function extractArchiveFile(
+  path: string,
+  query: ViewBinaryQuery
+): Promise<ViewBinaryResult> {
+  if (!query.archiveFile) {
+    return {
+      status: 'error',
+      error:
+        'archiveFile parameter is required for extract-file operation. Specify the file path within the archive.',
+      researchGoal: query.researchGoal,
+      reasoning: query.reasoning,
+    };
+  }
+
+  // Use unzip -p to extract file to stdout (no disk writes)
+  const result = await safeExec('unzip', ['-p', path, query.archiveFile]);
+
+  if (!result.success) {
+    return {
+      status: 'error',
+      error:
+        result.stderr ||
+        `Failed to extract '${query.archiveFile}' from archive. File may not exist.`,
+      researchGoal: query.researchGoal,
+      reasoning: query.reasoning,
+      hints: [
+        'Use list-archive operation first to see available files',
+        'Ensure the file path matches exactly (case-sensitive)',
+        'Check that the archive is a valid ZIP/JAR file',
+      ],
+    };
+  }
+
+  const content = result.stdout;
+
+  if (!content || content.length === 0) {
+    return {
+      status: 'empty',
+      path,
+      operation: 'extract-file',
+      archiveFile: query.archiveFile,
+      researchGoal: query.researchGoal,
+      reasoning: query.reasoning,
+      hints: getToolHints('LOCAL_VIEW_BINARY', 'empty'),
+    };
+  }
+
+  return {
+    status: 'hasResults',
+    path,
+    operation: 'extract-file',
+    archiveFile: query.archiveFile,
+    extractedContent: content,
+    contentLength: content.length,
+    researchGoal: query.researchGoal,
+    reasoning: query.reasoning,
+    hints: getToolHints('LOCAL_VIEW_BINARY', 'hasResults'),
+  };
+}
+
+/**
  * Perform full inspection (all operations combined)
  */
 async function performFullInspection(
@@ -300,13 +463,14 @@ async function performFullInspection(
   query: ViewBinaryQuery
 ): Promise<ViewBinaryResult> {
   // Run all operations in parallel
-  const [fileTypeRes, magicRes, asciiRes, utf16Res, hexRes] =
+  const [fileTypeRes, magicRes, asciiRes, utf16Res, hexRes, archiveRes] =
     await Promise.allSettled([
       identifyFileType(path, query),
       extractMagicBytes(path, query),
       extractStrings(path, query, false),
       extractStrings(path, query, true),
       generateHexDump(path, { ...query, hexLines: 20 }),
+      listArchiveContents(path, { ...query, maxFiles: 50 }), // Try archive listing
     ]);
 
   // Extract results
@@ -321,6 +485,15 @@ async function performFullInspection(
   const hexPreview =
     hexRes.status === 'fulfilled' ? hexRes.value.hexDump || '' : '';
 
+  // Check if it's an archive (ZIP/JAR)
+  let archiveInfo = undefined;
+  if (
+    archiveRes.status === 'fulfilled' &&
+    archiveRes.value.status === 'hasResults'
+  ) {
+    archiveInfo = archiveRes.value.archiveContents;
+  }
+
   return {
     status: 'hasResults',
     path,
@@ -331,6 +504,7 @@ async function performFullInspection(
       asciiStrings: asciiStrings.slice(0, 50), // Limit to 50 strings
       utf16leStrings: utf16leStrings.slice(0, 50),
       hexPreview,
+      archiveContents: archiveInfo, // Include if it's an archive
     },
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,

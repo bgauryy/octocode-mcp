@@ -33,25 +33,31 @@ Operations:
 • strings-utf16le - Extract UTF-16LE strings (Windows PE files)
 • hexdump - View hex + ASCII side-by-side (configurable lines)
 • magic-bytes - Show first 32 bytes in hex (file signature)
-• full-inspection - Complete analysis: type + magic + strings + hex preview
+• list-archive - List contents of ZIP/JAR/archive files
+• extract-file - Extract and read specific file from archive
+• full-inspection - Complete analysis: type + magic + strings + hex preview + archive listing
 
 Examples:
 • Quick analysis: operation="identify", path="/path/to/binary"
 • Find strings: operation="strings", minLength=8, path="/bin/ls"
 • Windows PE: operation="strings-utf16le", minLength=6, path="program.exe"
 • Verify signature: operation="magic-bytes", path="file.wasm"
+• List JAR/ZIP: operation="list-archive", path="plugin.jar", maxFiles=100
+• Extract file: operation="extract-file", path="plugin.jar", archiveFile="META-INF/plugin.xml"
 • Complete view: operation="full-inspection", path="library.so"
 • Bulk semantic: queries=[{operation:"identify"}, {operation:"strings"}, {operation:"hexdump", hexLines:20}]
 
 Best Practices:
 - Start with "identify" to understand file type
 - Use "full-inspection" for comprehensive first-time analysis
+- For JAR/ZIP files: use "list-archive" to see contents, then "extract-file" for specific files
 - Extract strings for embedded text, URLs, error messages
 - Check magic-bytes to verify file format (signatures)
 - Use strings-utf16le for PE/Windows binaries (DLL, EXE)
 - Bulk queries for complete binary understanding in single call
 - minLength=6-8 reduces noise in string extraction
 - hexLines=20-50 for meaningful hex preview
+- maxFiles limits archive listing (default: 200, max: 1000)
 
 Platform Compatibility:
 - Works on Linux and macOS with standard Unix tools
@@ -71,10 +77,12 @@ export const ViewBinaryQuerySchema = BaseQuerySchema.extend({
       'strings-utf16le',
       'hexdump',
       'magic-bytes',
+      'list-archive',
+      'extract-file',
       'full-inspection',
     ])
     .describe(
-      'Operation: identify (file type), strings (ASCII), strings-utf16le (UTF-16LE), hexdump (hex+ASCII), magic-bytes (signature), full-inspection (complete analysis)'
+      'Operation: identify (file type), strings (ASCII), strings-utf16le (UTF-16LE), hexdump (hex+ASCII), magic-bytes (signature), list-archive (ZIP/JAR contents), extract-file (read file from archive), full-inspection (complete analysis)'
     ),
 
   // String extraction options
@@ -104,6 +112,23 @@ export const ViewBinaryQuerySchema = BaseQuerySchema.extend({
     .boolean()
     .optional()
     .describe('Include byte offsets in output (default: true)'),
+
+  // Archive inspection options
+  maxFiles: z
+    .number()
+    .min(1)
+    .max(1000)
+    .optional()
+    .describe(
+      'Maximum number of files to list from archive (default: 200, max: 1000)'
+    ),
+
+  archiveFile: z
+    .string()
+    .optional()
+    .describe(
+      'Specific file path within archive to extract (required for extract-file operation)'
+    ),
 });
 
 /**
