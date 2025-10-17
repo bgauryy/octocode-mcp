@@ -457,14 +457,19 @@ Manager creates task breakdown
 📚 **Explore octocode-mcp resources**: https://github.com/bgauryy/octocode-mcp/tree/main/resources
 📖 **See coordination patterns**: [../docs/AGENT_COMMUNICATION.md](.claude-plugin/AGENT_COMMUNICATION.md)
 
-### Optional: chrome-devtools-mcp
-**Browser testing for production verification**
+### chrome-devtools-mcp
+**Integrated browser testing for quality assurance**
 
-Enables the QA agent to:
-- Launch and test in Chrome
-- Monitor console errors
-- Verify UI rendering
-- Check performance metrics (LCP, FID, CLS)
+Automatically used by the Quality Architect during QA phase (Mode 3):
+- ✅ Launches dev server and opens Chrome for real browser testing
+- ✅ Monitors console errors and warnings in real-time
+- ✅ Detects network failures (failed API requests, 404s, CORS errors)
+- ✅ Identifies runtime exceptions and unhandled promise rejections
+- ✅ Validates critical user flows (login, CRUD operations, error states)
+- ✅ Reports all browser issues in bug-report.md
+
+**When it runs**: After build validation, before final sign-off (web apps only)
+**Benefit**: Catches browser-specific issues that static analysis can't detect
 
 ---
 

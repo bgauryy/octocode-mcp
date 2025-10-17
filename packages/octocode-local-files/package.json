@@ -1,0 +1,62 @@
+{
+  "name": "octocode-local-files",
+  "version": "1.0.0",
+  "description": "MCP server for local file system research using Linux commands",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/src/index.d.ts",
+  "bin": "dist/index.js",
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "manifest.json"
+  ],
+  "scripts": {
+    "build": "yarn lint && yarn clean && tsc -p tsconfig.build.json && rollup -c",
+    "build:dev": "yarn clean && rollup -c",
+    "build:watch": "rollup -c --watch",
+    "clean": "rm -rf dist/",
+    "debug": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest --watch",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui",
+    "lint": "eslint src/**/*.ts tests/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts tests/**/*.ts --fix",
+    "format": "prettier --write \"src/**/*.{ts,js,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js,json}\""
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "local-files",
+    "file-system",
+    "grep",
+    "find",
+    "ls",
+    "cli",
+    "ai-assistant"
+  ],
+  "author": "Octocode Team",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.1",
+    "octocode-utils": "workspace:^5.0.0",
+    "zod": "^3.25.26"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.3",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-typescript": "^12.1.2",
+    "@types/node": "^22.15.29",
+    "eslint": "^8.57.0",
+    "prettier": "^3.5.3",
+    "rollup": "^4.46.2",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

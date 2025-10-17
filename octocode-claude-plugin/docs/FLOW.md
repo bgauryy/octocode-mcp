@@ -28,7 +28,7 @@ All workflows follow the **MVP-first approach**:
 ## Command 1: `/octocode-generate-quick` ⚡ - Fast Build from Scratch
 
 **Purpose:** Quickly transform an idea into production-ready code
-**Agents:** 3 specialized agents (agent-rapid-planner, agent-manager, agent-implementation)
+**Agents:** 3 specialized agents (agent-rapid-planner, agent-rapid-planner-implementation, agent-rapid-quality-architect)
 **Gates:** 1 human approval checkpoint
 **Output:** `docs/PROJECT_SPEC.md` (~80KB consolidated doc), working codebase
 
@@ -36,20 +36,32 @@ All workflows follow the **MVP-first approach**:
 
 ```mermaid
 flowchart TD
-    Start([User Request]) --> P1[Phase 1: Rapid Planning]
-    P1 --> G1{Gate 1: Approve Spec?}
-    G1 -->|No| P1
-    G1 -->|Yes| P2[Phase 2: Implementation]
-    P2 --> P3[Phase 3: Quality & Code Review]
-    P3 --> Issues{Issues Found?}
-    Issues -->|Yes - Loop 1-2| P2
-    Issues -->|No| End([Complete & Reviewed])
-    End --> Manual[User runs build, lint, manual tests]
-    Manual --> Commit[User commits when ready]
+    Start([User Request]) --> P1[Phase 1: Rapid Planning<br/>agent-rapid-planner]
+    P1 --> Output1[docs/PROJECT_SPEC.md ~80KB]
+    Output1 --> G1{Gate 1: Approve Spec?}
+    G1 -->|No - Modify| P1
+    G1 -->|Yes - Approved| P2[Phase 2: Implementation<br/>2-5 × agent-rapid-planner-implementation<br/>self-coordinated parallel]
+    P2 --> Monitor{🔄 Monitor Progress}
+    Monitor -->|Pause| P2
+    Monitor -->|Continue| P3[Phase 3: Quality & Code Review<br/>agent-rapid-quality-architect]
+    P3 --> BuildCheck[Build/Lint/Types Validation]
+    BuildCheck --> CodeReview[Bug Scan & Code Review]
+    CodeReview --> Browser[Optional: Browser Testing]
+    Browser --> Issues{Issues Found?}
+    Issues -->|Yes - 1-5 issues<br/>Loop 1-2| P2
+    Issues -->|6+ issues| UserDecision{User Decision}
+    UserDecision -->|Fix| P2
+    UserDecision -->|Accept| End
+    Issues -->|No - Clean| End([✅ Complete & Reviewed])
+    End --> Manual[User: npm run build/lint<br/>Manual testing]
+    Manual --> Commit[User: git commit when ready]
 
     style Start fill:#e1f5ff
     style End fill:#d4edda
     style G1 fill:#fff3cd
+    style Monitor fill:#e3f2fd
+    style Issues fill:#fff3cd
+    style UserDecision fill:#fff3cd
 ```
 
 ### Phase 1: Rapid Planning
@@ -82,24 +94,49 @@ User reviews complete spec and can:
 
 ### Phase 2: Implementation
 
-**Agents:** 2-8 instances of `agent-implementation` (Software Engineers, dynamically scaled)
-**Managed by:** `agent-manager` (Engineering Manager)
-**Model:** Claude Sonnet (both)
-**Tools:** Same as standard mode implementation
+**Agent:** `agent-rapid-planner-implementation` (Software Engineer)
+**Model:** Claude Sonnet
+**Tools:** Read, Write, Edit, MultiEdit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, Task, octocode-mcp (GitHub tools), octocode-local-memory (coordination)
 
-**Dynamic Scaling:** Agent count (2-8) determined by task complexity score
-**Coordination:** Same as standard mode using **octocode-local-memory**
+**Parallel Execution:** 2-5 agents spawn automatically based on task count (auto-scaling)
+- Small project (<8 tasks): 2 agents
+- Medium project (8-15 tasks): 3-4 agents
+- Large project (15+ tasks): 5 agents
+
+**Self-Coordination via octocode-local-memory:**
+- **Task claiming:** Atomic claim-verify pattern prevents race conditions
+- **File locking:** MANDATORY locks before any edit (5-min TTL)
+- **Progress tracking:** Real-time status updates via storage
+- **Getting help:** Task tool spawns Explore agents when blocked
+- **Stale recovery:** Auto-reclaim tasks abandoned >10 min
+
+**What Happens:**
+1. Each agent reads PROJECT_SPEC.md (sections 1, 2, 4)
+2. Agents self-coordinate to claim available tasks
+3. Acquire file locks before editing (prevents conflicts)
+4. Implement features following design patterns
+5. Validate Build + Lint + Types with retry logic (1 retry)
+6. Release locks immediately after editing
+7. Update task status and loop until all complete
+
+**Quality Standards (Per Task):**
+- ✅ Build passes with retry logic
+- ✅ Types correct
+- ✅ Lint passes
+- ✅ File locks released properly
+- ✅ Can delegate research via Task tool
 
 **Output:**
 - Complete feature implementation
-- Updated `docs/PROJECT_SPEC.md` with progress inline
+- Updated `docs/PROJECT_SPEC.md` with progress
 
 **🔄 Live Monitoring:** User can pause/continue/inspect
 
 ### Phase 3: Quality Check & Code Review
 
-**Agent:** `agent-rapid-planner` (returns for validation)
+**Agent:** `agent-rapid-quality-architect` (Quality Architect - Mode 3)
 **Model:** Claude Opus
+**Tools:** Read, Write, Grep, Glob, LS, TodoWrite, Bash, BashOutput, chrome-devtools (browser testing), octocode-local-memory (coordination)
 
 **What Happens:**
 1. **Build Validation:**
@@ -108,22 +145,30 @@ User reviews complete spec and can:
    - TypeScript strict mode check
    - Feature completeness check
 
-2. **Code Review (Bug Prevention):**
-   - Logic flow analysis (critical paths, edge cases, async patterns)
-   - Type safety & validation check
+2. **Code Review (Bug Scan - 8 Categories):**
+   - Logic flow analysis (edge cases, async patterns)
+   - Type safety & validation
    - Error handling review
    - Security scan (secrets, XSS, SQL injection, auth)
    - Performance & resources (memory leaks, cleanup)
-   - Common bug patterns (mutations, race conditions, state issues)
+   - React-specific bugs (hooks, state mutations)
+   - Common JavaScript/TypeScript pitfalls
+   - API integration verification
 
-3. **If Issues Found:**
-   - Create fix tasks in PROJECT_SPEC.md
+3. **Browser Verification (Optional - Web Apps Only):**
+   - Start dev server if available
+   - Test critical user flows in real browser
+   - Monitor console errors, network failures
+   - Check runtime exceptions
+
+4. **If Issues Found:**
+   - Create `docs/bug-report.md` with specific fixes
    - Back to implementation (max 2 loops)
 
-4. **If All Clean:**
+5. **If All Clean:**
    - Update PROJECT_SPEC.md with ✅ Complete & Reviewed status
 
-**Output:** Validated, bug-scanned, production-ready code
+**Output:** Validated, bug-scanned, production-ready code + optional bug-report.md
 
 ### Post-Implementation
 
@@ -148,33 +193,46 @@ User reviews complete spec and can:
 
 ```mermaid
 flowchart TD
-    Start([User Request]) --> P1[Phase 1: Requirements]
-    P1 --> G1{Gate 1: Approve Requirements?}
-    G1 -->|No| P1
-    G1 -->|Yes| P2[Phase 2: Architecture + Foundation]
-    P2 --> G2{Gate 2: Approve Architecture?}
-    G2 -->|No| P2
-    G2 -->|Yes| P2_5[Phase 2.5: Verification Planning]
-    P2_5 --> G2_5{Gate 2.5: Approve Test Plan?}
-    G2_5 -->|No| P2_5
-    G2_5 -->|Yes| P3[Phase 3: Task Planning]
-    P3 --> P4[Phase 4: Implementation]
-    P4 --> G3{Gate 3: Monitor Progress}
-    G3 -->|Pause| P4
-    G3 -->|Continue| P5[Phase 5: Quality Assurance]
-    P5 --> Issues{Issues Found?}
-    Issues -->|Yes - Loop 1-2| P4
-    Issues -->|No| End([Complete & Reviewed])
-    End --> Manual[User runs build, lint, test-plan.md]
-    Manual --> Commit[User commits when ready]
+    Start([User Request]) --> P1[Phase 1: Requirements<br/>agent-product]
+    P1 --> Output1[docs/requirements.md]
+    Output1 --> G1{Gate 1: Approve Requirements?}
+    G1 -->|No - Modify| P1
+    G1 -->|Yes - Approved| P2A[Phase 2 Part 1: Architecture Design<br/>agent-architect]
+    P2A --> Output2[docs/design.md]
+    Output2 --> G2{Gate 2: Approve Architecture?}
+    G2 -->|No - Modify| P2A
+    G2 -->|Yes - Approved| P2B[Phase 2 Part 2: Foundation Creation<br/>agent-architect]
+    P2B --> Output3[Project scaffold + README]
+    Output3 --> P2_5[Phase 2.5: Verification Planning<br/>agent-quality-architect]
+    P2_5 --> Output4[docs/test-plan.md]
+    Output4 --> G2_5{Gate 2.5: Approve Test Plan?}
+    G2_5 -->|No - Adjust| P2_5
+    G2_5 -->|Yes - Approved| P3[Phase 3: Task Planning<br/>agent-manager]
+    P3 --> Output5[docs/tasks.md]
+    Output5 --> P4[Phase 4: Implementation<br/>agent-manager + 2-8 x agent-implementation]
+    P4 --> Monitor{🔄 Gate 3: Monitor Progress}
+    Monitor -->|Pause| P4
+    Monitor -->|Continue| P5[Phase 5: Quality Assurance<br/>agent-quality-architect]
+    P5 --> BuildCheck[Build/Lint/Types Validation]
+    BuildCheck --> CodeReview[Bug Scan & Code Review]
+    CodeReview --> Output6[docs/bug-report.md if issues]
+    Output6 --> Issues{Issues Found?}
+    Issues -->|Yes - 1-5 issues<br/>Loop 1-2| P4
+    Issues -->|6+ issues| UserDecision{User Decision}
+    UserDecision -->|Fix| P4
+    UserDecision -->|Accept| End
+    Issues -->|No - Clean| End([✅ Complete & Reviewed])
+    End --> Manual[User: npm run build/lint<br/>Follow test-plan.md]
+    Manual --> Commit[User: git commit when ready]
 
     style Start fill:#e1f5ff
     style End fill:#d4edda
     style G1 fill:#fff3cd
     style G2 fill:#fff3cd
     style G2_5 fill:#fff3cd
-    style G3 fill:#fff3cd
-    style P2A fill:#d4edda
+    style Monitor fill:#e3f2fd
+    style Issues fill:#fff3cd
+    style UserDecision fill:#fff3cd
 ```
 
 ### Phase 1: Requirements Gathering
@@ -210,7 +268,24 @@ User reviews and can:
 **Model:** Claude Opus
 **Tools:** Read, Write, Edit, Bash, BashOutput, Grep, Glob, LS, TodoWrite, WebFetch, WebSearch, ListMcpResourcesTool, ReadMcpResourceTool
 
-**What Happens:**
+**Two-Part Process:**
+
+```mermaid
+flowchart TD
+    Start([Requirements Approved]) --> Part1[Part 1: Architecture Design]
+    Part1 --> Design[Create design.md]
+    Design --> G2{Gate 2: Approve Architecture?}
+    G2 -->|No - Modify| Part1
+    G2 -->|Yes - Approved| Part2[Part 2: Foundation Creation]
+    Part2 --> Scaffold[Execute boilerplate CLI]
+    Scaffold --> Config[Configure build/lint/TypeScript]
+    Config --> Verify[Verify foundation]
+    Verify --> Phase25([Proceed to Phase 2.5])
+
+    style Start fill:#e1f5ff
+    style G2 fill:#fff3cd
+    style Phase25 fill:#d4edda
+```
 
 **Part 1: Architecture Design**
 1. Studies requirements document
@@ -462,25 +537,36 @@ setStorage("qa:result", "{critical: N, warnings: N, status: 'clean'|'issues'}", 
 
 ```mermaid
 flowchart TD
-    Start([User Request]) --> P1[Phase 1: Codebase Analysis]
-    P1 --> P2[Phase 2: Feature Analysis]
-    P2 --> G2{Gate 2: Approve Analysis?}
-    G2 -->|No| P2
-    G2 -->|Yes| P3[Phase 3: Task Planning]
-    P3 --> P4[Phase 4: Implementation]
-    P4 --> G3{Gate 3: Monitor Progress}
-    G3 -->|Pause| P4
-    G3 -->|Continue| P5[Phase 5: Quality Assurance]
-    P5 --> Issues{Issues Found?}
-    Issues -->|Yes - Loop 1-2| P4
-    Issues -->|No| End([Complete & Reviewed])
-    End --> Manual[User runs build, lint, existing tests]
-    Manual --> Commit[User commits when ready]
+    Start([User Request:<br/>Feature or Bug Fix]) --> P1[Phase 1: Codebase Analysis<br/>agent-quality-architect]
+    P1 --> Output1[docs/codebase-review.md]
+    Output1 --> P2[Phase 2: Feature Analysis<br/>agent-feature-analyzer]
+    P2 --> Output2[docs/analysis.md]
+    Output2 --> G2{Gate 2: Approve Analysis?}
+    G2 -->|No - Adjust| P2
+    G2 -->|Yes - Implement| P3[Phase 3: Task Planning<br/>agent-manager]
+    P3 --> Output3[docs/tasks.md]
+    Output3 --> P4[Phase 4: Implementation<br/>agent-manager + 2-8 x agent-implementation]
+    P4 --> Monitor{🔄 Gate 3: Monitor Progress}
+    Monitor -->|Pause| P4
+    Monitor -->|Continue| P5[Phase 5: Quality Assurance<br/>agent-quality-architect]
+    P5 --> BuildCheck[Build/Lint/Types Validation]
+    BuildCheck --> CodeReview[Bug Scan & Code Review]
+    CodeReview --> Output4[docs/bug-report.md if issues]
+    Output4 --> Issues{Issues Found?}
+    Issues -->|Yes - 1-5 issues<br/>Loop 1-2| P4
+    Issues -->|6+ issues| UserDecision{User Decision}
+    UserDecision -->|Fix| P4
+    UserDecision -->|Accept| End
+    Issues -->|No - Clean| End([✅ Complete & Reviewed])
+    End --> Manual[User: npm run build/lint<br/>Run existing tests]
+    Manual --> Commit[User: git commit when ready]
 
     style Start fill:#e1f5ff
     style End fill:#d4edda
     style G2 fill:#fff3cd
-    style G3 fill:#fff3cd
+    style Monitor fill:#e3f2fd
+    style Issues fill:#fff3cd
+    style UserDecision fill:#fff3cd
 ```
 
 ### Phase 1: Codebase Analysis
@@ -637,8 +723,41 @@ Same as Phase 5 in `/octocode-generate` (see above) - scans modified code for ru
 
 Agents communicate using **octocode-local-memory MCP** (storage-based, NOT files):
 
-### Task Assignment (Manager → Implementation)
+```mermaid
+flowchart LR
+    Manager[agent-manager] -->|setStorage task:id| Storage[(octocode-local-memory)]
+    Storage -->|getStorage task:id| Impl1[agent-implementation-1]
+    Storage -->|getStorage task:id| Impl2[agent-implementation-2]
+
+    Impl1 -->|setStorage lock:file| Storage
+    Impl1 -->|deleteStorage lock:file| Storage
+    Impl2 -->|setStorage lock:file| Storage
+    Impl2 -->|deleteStorage lock:file| Storage
+
+    Impl1 -->|setStorage status:agent-1:task| Storage
+    Impl2 -->|setStorage status:agent-2:task| Storage
+    Storage -->|getStorage status:*| Manager
+
+    Impl1 -->|setStorage question:impl-1:architect| Storage
+    Storage -->|getStorage question:*| Architect[agent-architect]
+    Architect -->|setStorage answer:impl-1:architect| Storage
+    Storage -->|getStorage answer:*| Impl1
+
+    QA[agent-quality-architect] -->|setStorage qa:status| Storage
+    QA -->|setStorage qa:result| Storage
+    Storage -->|getStorage qa:*| Manager
+
+    style Storage fill:#ffe6cc
+    style Manager fill:#d4edda
+    style QA fill:#cce5ff
+    style Architect fill:#cce5ff
+```
+
+### Task Assignment & Claiming
+
+**Manager-Based (Standard Mode):**
 ```javascript
+// Manager assigns task
 setStorage("task:3.1", JSON.stringify({
   taskId: "3.1",
   agentId: "agent-implementation-1",
@@ -646,6 +765,35 @@ setStorage("task:3.1", JSON.stringify({
   files: ["src/auth/login.ts"],
   complexity: "medium"
 }), ttl: 3600);
+```
+
+**Self-Coordinated (Quick Mode):**
+```javascript
+// Agent attempts to claim task (atomic pattern)
+setStorage("task:3.1", JSON.stringify({
+  status: "claimed",
+  agentId: "agent-impl-xyz123",
+  claimedAt: Date.now()
+}), ttl: 3600);
+
+// Verify claim succeeded (prevent race conditions)
+const verify = getStorage("task:3.1");
+if (verify.agentId === myAgentId) {
+  // Successfully claimed! Proceed with implementation
+} else {
+  // Another agent claimed it first, try next task
+}
+
+// Stale task recovery (>10 min old)
+if (Date.now() - taskStatus.claimedAt > 600000) {
+  // Reclaim abandoned task
+  setStorage("task:3.1", JSON.stringify({
+    status: "claimed",
+    agentId: myAgentId,
+    claimedAt: Date.now(),
+    reclaimedFrom: taskStatus.agentId
+  }), ttl: 3600);
+}
 ```
 
 ### Status Updates (Implementation → Manager)
@@ -659,17 +807,70 @@ setStorage("status:agent-1:task-3.1", JSON.stringify({
 
 ### File Locks (Prevent Conflicts)
 ```javascript
-// Before editing
+// Before editing (MANDATORY - 5 min TTL)
 setStorage("lock:src/auth/login.ts", JSON.stringify({
   lockedBy: "agent-implementation-1",
-  taskId: "3.1"
+  taskId: "3.1",
+  timestamp: Date.now()
 }), ttl: 300);
 
-// After editing
+// Perform edits
+
+// After editing (CRITICAL - release immediately!)
 deleteStorage("lock:src/auth/login.ts");
 ```
 
-### Inter-Agent Questions
+**Best Practices:**
+- ⚠️ NEVER edit without acquiring lock first
+- ⚠️ ALWAYS release locks immediately after editing
+- ⚠️ Lock TTL is 300 seconds (5 min) - complete edits quickly
+- ✅ Check for existing locks before claiming
+
+### Build/Lint Retry Logic (Quick Mode)
+```javascript
+// Automatic retry on build/lint failure
+let buildSuccess = false;
+let retryCount = 0;
+const maxRetries = 1;
+
+while (!buildSuccess && retryCount <= maxRetries) {
+  try {
+    await runBuildAndLint();
+    buildSuccess = true;
+  } catch (buildError) {
+    if (retryCount < maxRetries) {
+      // First failure - try to fix immediate issues
+      await analyzeBuildError(buildError);
+      await fixImmediateIssues(); // e.g., missing imports, type errors
+      retryCount++;
+    } else {
+      // Second failure - mark as blocked
+      setStorage(`task:blocked:${taskId}`, JSON.stringify({
+        agentId: myAgentId,
+        error: buildError,
+        files: files,
+        needsHelp: true
+      }), ttl: 1800);
+
+      // Release locks and return to task loop
+      break;
+    }
+  }
+}
+```
+
+### Getting Help When Blocked
+
+**Option 1: Task Tool (Preferred for Quick Mode)**
+```javascript
+// Spawn Explore agent for research
+Task({
+  subagent_type: "Explore",
+  prompt: "Research React hook patterns for authentication"
+});
+```
+
+**Option 2: Storage-Based Questions**
 ```javascript
 // Implementation asks architect
 setStorage("question:impl-1:architect:auth-approach", JSON.stringify({
@@ -701,11 +902,12 @@ setStorage("answer:impl-1:architect:auth-approach", JSON.stringify({
 
 **Used by:**
 - ✅ agent-rapid-planner (quick mode: all research in one pass)
+- ✅ agent-rapid-planner-implementation (via Task tool for research when blocked)
 - ✅ agent-product (requirements research)
 - ✅ agent-architect (architecture research + **boilerplate commands - CHECK FIRST!**)
 - ✅ agent-quality-architect (Mode 1: testing patterns, Mode 2: codebase patterns, Mode 3: bug patterns)
 - ✅ agent-feature-analyzer (implementation patterns research)
-- ⚠️ agent-implementation (only for missing patterns)
+- ⚠️ agent-implementation (only for missing patterns, or via Task tool)
 
 **Usage:**
 - Search 100M+ GitHub repositories
@@ -720,15 +922,30 @@ setStorage("answer:impl-1:architect:auth-approach", JSON.stringify({
 
 **Used by:**
 - ✅ agent-manager (task assignment, progress tracking)
+- ✅ agent-rapid-planner-implementation (self-coordination: task claiming, file locks, status updates)
 - ✅ agent-implementation (status updates, file locks, questions)
 
 **Operations:**
-- Task assignments (1-2ms)
-- File locks (< 1ms)
+- Task claiming (atomic claim-verify pattern)
+- File locks (< 1ms, 5-min TTL)
 - Status updates (< 1ms)
 - Inter-agent messages (1-2ms)
+- Stale task recovery (>10 min timeout)
 
 **Performance:** 50x faster than file-based coordination
+
+### Task Tool: Dynamic Agent Delegation
+**Purpose:** Allow implementation agents to spawn sub-agents for research/help
+
+**Used by:**
+- ✅ agent-rapid-planner-implementation (NEW! spawns Explore agents when blocked)
+- ✅ agent-implementation (can delegate research tasks)
+- ✅ agent-manager (spawns implementation agents)
+
+**Benefits:**
+- Prevents agents from blocking on unclear patterns
+- Enables parallel research while maintaining implementation flow
+- Improves resilience and autonomy
 
 ---
 
@@ -739,10 +956,17 @@ setStorage("answer:impl-1:architect:auth-approach", JSON.stringify({
 | Phase | Agent | Output | Gate |
 |-------|-------|--------|------|
 | 1. Rapid Planning | agent-rapid-planner | `docs/PROJECT_SPEC.md` (~80KB) | ✋ Gate 1 (ONLY) |
-| 2. Implementation | agent-manager + 2-8 × agent-implementation (dynamic) | Code + updated PROJECT_SPEC.md | 🔄 Monitor |
-| 3. Quality & Review | agent-rapid-planner | Validation + bug scan | - |
+| 2. Implementation | 2-5 × agent-rapid-planner-implementation (self-coordinated, parallel) | Code + updated PROJECT_SPEC.md | 🔄 Monitor |
+| 3. Quality & Review | agent-rapid-quality-architect | Validation + bug scan + optional browser test | - |
 
 **Result:** 1 consolidated doc (~80KB), working codebase, 1 approval gate, automated code review
+
+**Key Features:**
+- ⚡ Auto-scaling: 2-5 parallel agents based on task count
+- 🔒 Self-coordinated: Atomic task claiming + mandatory file locks
+- 🔄 Retry logic: Automatic build/lint retry (1 attempt)
+- 🆘 Task tool: Can spawn Explore agents when blocked
+- ♻️ Stale recovery: Auto-reclaim abandoned tasks >10 min
 
 ### `/octocode-generate` Flow (Standard)
 
