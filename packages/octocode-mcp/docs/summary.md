@@ -1,6 +1,6 @@
 # Octocode-MCP Architecture Summary
 
-**Octocode-MCP** is a Model Context Protocol (MCP) server that provides AI assistants with advanced GitHub repository analysis, code discovery, and package exploration capabilities. This document provides a comprehensive overview of the system architecture based on the actual codebase structure.
+**Octocode-MCP** is a Model Context Protocol (MCP) server that provides AI assistants with advanced GitHub repository analysis and code discovery capabilities. This document provides a comprehensive overview of the system architecture based on the actual codebase structure.
 
 ## Table of Contents
 
@@ -10,7 +10,6 @@
   - [Entry Points & Server](#entry-points--server)
   - [Configuration Management](#configuration-management)  
   - [GitHub API Integration](#github-api-integration)
-  - [NPM Integration](#npm-integration)
   - [MCP Tools](#mcp-tools)
   - [Schema Validation](#schema-validation)
   - [Security Layer](#security-layer)
@@ -44,13 +43,10 @@ graph TB
     Security --> Toolset[Tool Execution]
     
     Toolset --> GitHub_Tools[GitHub Tools]
-    Toolset --> NPM_Tools[NPM Tools]
     
     GitHub_Tools --> GitHub_Client[GitHub API Client]
-    NPM_Tools --> NPM_Exec[NPM Command Execution]
     
     GitHub_Client --> Cache[Cache Layer]
-    NPM_Exec --> Cache
     
     Cache --> Memory[(In-Memory Storage)]
     
@@ -149,39 +145,9 @@ Comprehensive GitHub API abstraction layer:
 - **Scope Analysis**: OAuth scope validation and recommendations
 - **File Access Hints**: Context-aware suggestions for file/branch issues
 
-### NPM Integration
-
-NPM package management and command execution:
-
-#### Base Command Builder
-- **Abstract Base Class**: Framework for CLI command construction
-- **Parameter Normalization**: Consistent argument handling
-- **Flag Management**: Systematic command-line flag building
-- **Query Support**: Search term handling with AND/OR logic
-
-#### NPM Command Builder
-- **Package Search**: NPM registry search command construction
-- **Package View**: Detailed package metadata retrieval
-- **JSON Output**: Structured data extraction from NPM CLI
-
-#### Package Operations
-- **Multi-Ecosystem Search**: NPM and Python package discovery
-- **Metadata Enhancement**: Repository URL extraction and validation
-- **Bulk Operations**: Parallel package processing
-- **Deduplication**: Intelligent package result optimization
-
-#### NPM API Integration
-- **Connection Testing**: NPM registry connectivity verification
-- **Status Management**: NPM availability caching
-- **Command Execution**: Secure NPM CLI command execution
-
-#### User Details
-- **Registry Configuration**: NPM registry URL detection
-- **Connection Status**: NPM CLI availability checking
-
 ### MCP Tools
 
-The tool system follows a modular architecture with comprehensive GitHub and NPM capabilities:
+The tool system follows a modular architecture with comprehensive GitHub capabilities:
 
 #### Core GitHub Tools
 1. **GitHub Code Search**
@@ -208,35 +174,25 @@ The tool system follows a modular architecture with comprehensive GitHub and NPM
    - File/folder filtering options with clean results
    - Start with root path, use specific paths for focused exploration
 
-   - Date range filtering (author-date, committer-date) with operators
-   - Optional diff content (WARNING: token expensive)
-   - queryTerms for commit message keywords and author analysis
-
-6. **GitHub Pull Request Search**
+5. **GitHub Pull Request Search**
    - PR search by state/author/labels with bulk queries
    - Direct PR fetching by number (prNumber + owner/repo) - most efficient
    - Optional comments/diffs (WARNING: token expensive)
    - Filter by state/review status for targeted results
-
-7. **Package Search**
-   - Multi-ecosystem search (NPM + Python) with bulk queries
-   - Rich metadata with GitHub repository links
-   - Configurable search strategies and limits
-   - Search by functionality rather than exact names
 
 #### Tool Infrastructure
 
 **Tool Configuration**:
 - Tool registry and configuration management
 - Feature toggling and tool enabling/disabling
-- Tool categorization (search, content, history, npm)
+- Tool categorization (search, content, history)
 
-**Tool Name Mapping**:
-- GitHub Code Search → `githubSearchCode`
-- GitHub File Content → `githubGetFileContent`
-- GitHub Repository Search → `githubSearchRepositories`
-- GitHub Repository Structure → `githubViewRepoStructure`
-- GitHub Pull Request Search → `githubSearchPullRequests`
+**Tool Names**:
+- `githubSearchCode` - GitHub Code Search
+- `githubGetFileContent` - GitHub File Content
+- `githubSearchRepositories` - GitHub Repository Search
+- `githubViewRepoStructure` - GitHub Repository Structure
+- `githubSearchPullRequests` - GitHub Pull Request Search
 
 **Tool Manager**:
 - Dynamic tool registration
@@ -250,10 +206,10 @@ The tool system follows a modular architecture with comprehensive GitHub and NPM
 - Tool navigation and workflow suggestions
 
 **Type Definitions**:
-- Package metadata types (NPM, Python)
-- Enhanced package result structures
-- Query parameter definitions
+- GitHub API response types
+- Tool query parameter definitions
 - Bulk operation interfaces
+- Enhanced result structures
 
 ### Schema Validation
 
@@ -271,7 +227,6 @@ Comprehensive Zod-based schema validation for all tool parameters:
 - **GitHub PR Search**: State filters, review status, file changes
 - **GitHub Repository Search**: Topics, languages, quality filters
 - **Repository Structure**: Path exploration, depth control
-- **Package Search**: Multi-ecosystem queries, metadata options
 
 ### Security Layer
 
@@ -347,7 +302,7 @@ export async function withDataCache<T>(
 ```
 
 #### Command Execution
-- **Secure NPM Command Execution**: Whitelist-based command validation
+- **Secure Command Execution**: Whitelist-based command validation
 - **Argument Escaping**: Shell injection prevention
 - **Timeout Management**: Configurable command timeouts
 - **Error Handling**: Structured command result parsing
@@ -421,7 +376,6 @@ sequenceDiagram
     participant Tool as Tool Handler
     participant Cache as Cache Layer
     participant GitHub as GitHub API
-    participant NPM as NPM CLI
     
     Client->>Server: Tool Request
     Server->>Config: Get Configuration
@@ -436,13 +390,8 @@ sequenceDiagram
     alt Cache Hit
         Cache-->>Tool: Cached Result
     else Cache Miss
-        alt GitHub Tool
-            Tool->>GitHub: API Request with Token
-            GitHub-->>Tool: API Response
-        else NPM Tool
-            Tool->>NPM: CLI Command
-            NPM-->>Tool: Command Output
-        end
+        Tool->>GitHub: API Request with Token
+        GitHub-->>Tool: API Response
         Tool->>Tool: Process & Minify Content
         Tool->>Security: Content Filtering
         Security-->>Tool: Safe Content
@@ -503,7 +452,7 @@ The security architecture is built on multiple protective layers:
    - **Safe Processing**: Content minification with security preservation
 
 4. **Execution Security Layer**
-   - **Command Whitelisting**: Only allowed NPM commands can be executed
+   - **API Request Validation**: Secure GitHub API request handling
    - **Argument Escaping**: Shell injection prevention for CLI commands
    - **Timeout Management**: Prevents resource exhaustion attacks
    - **Credential Isolation**: Secure in-memory credential storage with encryption
@@ -572,7 +521,7 @@ The security architecture is built on multiple protective layers:
 
 ### Tool Categories
 
-The system provides 7 comprehensive tools organized by functionality:
+The system provides 5 comprehensive tools organized by functionality:
 
 #### Default Tools (Enabled by Default)
 1. **Repository Discovery Tools**
@@ -587,9 +536,6 @@ The system provides 7 comprehensive tools organized by functionality:
 3. **History Analysis Tools**
    - **GitHub Pull Request Search**: PR workflow analysis, review status, file changes
 
-4. **Package Ecosystem Tools**
-   - **Package Search**: Multi-ecosystem discovery (NPM + Python) with repository linking
-
 ### Research Methodology
 
 The system implements a **progressive refinement** approach optimized for AI assistants:
@@ -597,7 +543,7 @@ The system implements a **progressive refinement** approach optimized for AI ass
 1. **Discovery Phase**: 
    - Broad repository/code searches with quality filters
    - Topic and language-based exploration
-   - Package ecosystem analysis for dependencies
+   - Repository structure and organization analysis
 
 2. **Analysis Phase**: 
    - Deep-dive into specific repositories and files
@@ -614,8 +560,8 @@ The system implements a **progressive refinement** approach optimized for AI ass
 Tools are designed for **strategic integration** with intelligent chaining:
 
 ```
-Package Search → Repository Search → Repository Structure
-      ↓                 ↓                    ↓
+Repository Search → Repository Structure
+      ↓                    ↓
 Code Search ←→ File Content ←→ PR Search
       ↓                 ↓                    ↓
    Research Synthesis & Hint Generation
@@ -624,8 +570,8 @@ Code Search ←→ File Content ←→ PR Search
 **Common Workflows**:
 - **Architecture Exploration**: Repository Search → Structure → File Content → Code Search
 - **Change Analysis**: PR Search → File Content (with diff context)
-- **Dependency Research**: Package Search → Repository Search → Code Search
 - **Implementation Discovery**: Code Search → File Content → Repository Structure
+- **Code Pattern Analysis**: Repository Search → Code Search → File Content
 
 ### Intelligent Hint System
 
@@ -646,12 +592,12 @@ Code Search ←→ File Content ←→ PR Search
 
 ## Summary
 
-Octocode-MCP represents a comprehensive, production-ready MCP server that bridges AI assistants with GitHub's vast code ecosystem and NPM package registry. Built with a focus on security, performance, and intelligent research workflows, it provides a robust foundation for AI-powered development tools.
+Octocode-MCP represents a comprehensive, production-ready MCP server that bridges AI assistants with GitHub's vast code ecosystem. Built with a focus on security, performance, and intelligent research workflows, it provides a robust foundation for AI-powered development tools.
 
 ### Key Strengths
 
 **🏗️ Clean Architecture**: 
-- Modular design with clear separation between GitHub API, NPM integration, security, and tools
+- Modular design with clear separation between GitHub API, security, and tools
 - Comprehensive schema validation and type safety throughout
 - Extensible tool system with consistent patterns and interfaces
 

@@ -2,11 +2,11 @@
 
 ## Overview
 
-Octocode-MCP provides 7 specialized tools for GitHub repository analysis and package discovery. Each tool supports bulk operations, progressive refinement strategies, and research-goal-driven hint generation.
+Octocode-MCP provides 5 specialized tools for GitHub repository analysis. Each tool supports bulk operations, progressive refinement strategies, and research-goal-driven hint generation.
 
 ## Tools Reference
 
-### 1. GitHub Code Search (`mcp_octocode_githubSearchCode`)
+### 1. GitHub Code Search (`githubSearchCode`)
 
 **Description:** Search code across GitHub repositories with strategic query planning and progressive refinement.
 
@@ -49,7 +49,7 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
 
 ---
 
-### 2. GitHub File Content Fetch (`mcp_octocode_githubGetFileContent`)
+### 2. GitHub File Content Fetch (`githubGetFileContent`)
 
 **Description:** Fetch file contents from GitHub repositories with intelligent context extraction and partial access capabilities.
 
@@ -95,7 +95,7 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
 
 ---
 
-### 3. GitHub Repository Search (`mcp_octocode_githubSearchRepositories`)
+### 3. GitHub Repository Search (`githubSearchRepositories`)
 
 **Description:** Search and discover GitHub repositories with smart filtering and bulk operations.
 
@@ -136,7 +136,7 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
 
 ---
 
-### 4. GitHub Repository Structure View (`mcp_octocode_githubViewRepoStructure`)
+### 4. GitHub Repository Structure View (`githubViewRepoStructure`)
 
 **Description:** Explore GitHub repository structure with intelligent navigation and smart filtering.
 
@@ -173,7 +173,7 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
 
 ---
 
-### 5. GitHub Pull Request Search (`mcp_octocode_githubSearchPullRequests`)
+### 5. GitHub Pull Request Search (`githubSearchPullRequests`)
 
 **Description:** Search GitHub pull requests with intelligent filtering and comprehensive analysis.
 

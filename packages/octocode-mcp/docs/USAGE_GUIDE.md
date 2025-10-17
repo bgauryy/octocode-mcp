@@ -48,15 +48,14 @@ Transform your code research and development workflow with AI-powered GitHub int
 - Seamless access to both public and private repositories
 
 ### 📦 **Package Intelligence**
-- **NPM & Python**: Comprehensive package discovery across ecosystems
+- Bridge to GitHub repositories for package source analysis
 - Repository linking and integration analysis
-- Dependency relationship mapping
-- Version tracking and metadata extraction
-- Bridge packages to their source repositories for code analysis
+- Dependency relationship mapping through GitHub code search
+- Version tracking through GitHub releases and tags
 
 ## 🛠️ Available Tools
 
-Octocode MCP provides 7 specialized tools for comprehensive code research:
+Octocode MCP provides 5 specialized tools for comprehensive code research:
 
 | Tool | Description | Default | Type |
 |------|-------------|---------|------|
@@ -107,9 +106,9 @@ Create comprehensive documentation for implementing Zustand in a React 18 applic
 Check PR #123 from microsoft/vscode and review the changes against our coding standards
 ```
 
-### 📦 **Package Discovery & Analysis**
+### 📦 **Library Discovery & Analysis**
 ```
-Search for Node.js HTTP client libraries and compare their GitHub repositories
+Search GitHub for Node.js HTTP client libraries and compare their implementations
 ```
 
 ### 🎨 **Exploratory Research**
@@ -179,10 +178,10 @@ Enable advanced features with `BETA=1`:
 | Use Case | Description | Tools Used |
 |----------|-------------|------------|
 | **Standards Mapping** | Discover and document coding patterns across teams | `githubSearchCode`, `githubSearchRepositories` |
-| **Security Auditing** | Identify vulnerabilities and access control patterns with audit logging | `githubSearchCode`, `githubGetFileContent` + `AUDIT_ALL_ACCESS=true` |
+| **Security Auditing** | Identify vulnerabilities and access control patterns | `githubSearchCode`, `githubGetFileContent` |
 | **Architecture Analysis** | Trace data flows and service dependencies | `githubViewRepoStructure`, `githubSearchCode` |
 | **Knowledge Extraction** | Capture institutional knowledge from pull request histories | `githubSearchPullRequests` |
-| **Package Governance** | Track and audit package usage across repositories | `githubSearchCode` |
+| **Dependency Governance** | Track and audit dependency usage across repositories | `githubSearchCode`, `githubViewRepoStructure` |
 
 ## 🚀 Getting Started
 
@@ -222,7 +221,7 @@ export ENABLE_LOGGING=true
 Octocode MCP integrates seamlessly with MCP-compatible AI assistants:
 
 ### Server Capabilities
-- **Tools**: 7 specialized GitHub and package research tools
+- **Tools**: 5 specialized GitHub research tools
 - **Resources**: Access to prompts and system configurations
 - **Sampling**: AI-enhanced code explanations (Beta)
 - **Caching**: Intelligent response caching for performance

@@ -11,12 +11,16 @@
       "command": "npx",
       "args": ["octocode-local-memory@latest"]
     },
-    "octocode": {
-      "command": "npx", 
+    "octocode-mcp": {
+      "command": "npx",
       "args": ["octocode-mcp@latest"],
       "env": {
         "TOOLS_TO_RUN": "githubGetFileContent,githubSearchCode,githubViewRepoStructure,githubSearchRepositories,githubSearchPullRequests"
       }
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp"]
     }
   }
 }
