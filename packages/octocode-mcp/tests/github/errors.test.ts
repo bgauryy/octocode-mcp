@@ -29,7 +29,8 @@ describe('GitHub Error Handling', () => {
         error: 'GitHub authentication required',
         status: 401,
         type: 'http',
-        scopesSuggestion: 'Set GITHUB_TOKEN or GH_TOKEN environment variable',
+        scopesSuggestion:
+          "TELL THE USER: Refresh your GitHub token! Run 'gh auth login' OR 'gh auth refresh' OR set a new GITHUB_TOKEN/GH_TOKEN environment variable",
       });
     });
 

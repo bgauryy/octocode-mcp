@@ -282,7 +282,8 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         error: 'GitHub authentication required',
         status: 401,
         type: 'http',
-        scopesSuggestion: 'Set GITHUB_TOKEN or GH_TOKEN environment variable',
+        scopesSuggestion:
+          "TELL THE USER: Refresh your GitHub token! Run 'gh auth login' OR 'gh auth refresh' OR set a new GITHUB_TOKEN/GH_TOKEN environment variable",
       });
 
       const result = await mockServer.callTool(
@@ -304,7 +305,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         'GitHub Octokit API Error: GitHub authentication required'
       );
       expect(responseText).toContain(
-        'Set GITHUB_TOKEN or GH_TOKEN environment variable'
+        "Run 'gh auth login' OR 'gh auth refresh'"
       );
     });
   });
