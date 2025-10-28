@@ -38,12 +38,12 @@ import { TOOL_NAMES } from '../src/constants.js';
 
 // Mock implementations
 const mockMcpServer = {
-  connect: vi.fn(),
-  close: vi.fn(),
+  connect: vi.fn(function () {}),
+  close: vi.fn(function () {}),
 };
 
 const mockTransport = {
-  start: vi.fn(),
+  start: vi.fn(function () {}),
 };
 
 const mockRegisterPrompts = vi.mocked(registerPrompts);
@@ -103,37 +103,44 @@ describe('Index Module', () => {
     process.env.GITHUB_TOKEN = 'test-token';
 
     // Setup default mock implementations
-    mockMcpServerConstructor.mockImplementation(
-      () => mockMcpServer as unknown as InstanceType<typeof McpServer>
-    );
-    mockStdioServerTransport.mockImplementation(
-      () =>
-        mockTransport as unknown as InstanceType<typeof StdioServerTransport>
-    );
+    mockMcpServerConstructor.mockImplementation(function () {
+      return mockMcpServer as unknown as InstanceType<typeof McpServer>;
+    });
+    mockStdioServerTransport.mockImplementation(function () {
+      return mockTransport as unknown as InstanceType<
+        typeof StdioServerTransport
+      >;
+    });
 
     // Mock GitHub CLI token
     mockGetGithubCLIToken.mockResolvedValue('cli-token');
 
     // Create spies for process methods - use a safer mock that doesn't throw by default
-    processExitSpy = vi
-      .spyOn(process, 'exit')
-      .mockImplementation((_code?: string | number | null | undefined) => {
-        // Don't throw by default - let individual tests override if needed
-        return undefined as never;
-      });
+    processExitSpy = vi.spyOn(process, 'exit').mockImplementation(function (
+      _code?: string | number | null | undefined
+    ) {
+      // Don't throw by default - let individual tests override if needed
+      return undefined as never;
+    });
     processStdinResumeSpy = vi
       .spyOn(process.stdin, 'resume')
-      .mockImplementation(() => process.stdin);
+      .mockImplementation(function () {
+        return process.stdin;
+      });
     processStdinOnSpy = vi
       .spyOn(process.stdin, 'once')
-      .mockImplementation(() => process.stdin);
-    processOnSpy = vi.spyOn(process, 'once').mockImplementation(() => process);
+      .mockImplementation(function () {
+        return process.stdin;
+      });
+    processOnSpy = vi.spyOn(process, 'once').mockImplementation(function () {
+      return process;
+    });
     processStdoutUncorkSpy = vi
       .spyOn(process.stdout, 'uncork')
-      .mockImplementation(() => {});
+      .mockImplementation(function () {});
     processStderrUncorkSpy = vi
       .spyOn(process.stderr, 'uncork')
-      .mockImplementation(() => {});
+      .mockImplementation(function () {});
 
     // Mock server connect to resolve immediately
     mockMcpServer.connect.mockResolvedValue(undefined);
@@ -143,32 +150,36 @@ describe('Index Module', () => {
     const mockRegisteredTool = {
       name: 'mock-tool',
       description: 'Mock tool',
-      callback: vi.fn(),
+      callback: vi.fn(function () {}),
       enabled: true,
-      enable: vi.fn(),
-      disable: vi.fn(),
-      getStatus: vi.fn(),
-      getMetrics: vi.fn(),
-      update: vi.fn(),
-      remove: vi.fn(),
+      enable: vi.fn(function () {}),
+      disable: vi.fn(function () {}),
+      getStatus: vi.fn(function () {}),
+      getMetrics: vi.fn(function () {}),
+      update: vi.fn(function () {}),
+      remove: vi.fn(function () {}),
     };
-    mockRegisterPrompts.mockImplementation(() => mockRegisteredTool);
-    mockRegisterGitHubSearchCodeTool.mockImplementation(
-      () => mockRegisteredTool
-    );
-    mockRegisterFetchGitHubFileContentTool.mockImplementation(
-      () => mockRegisteredTool
-    );
-    mockRegisterSearchGitHubReposTool.mockImplementation(
-      () => mockRegisteredTool
-    );
-    mockRegisterSearchGitHubPullRequestsTool.mockImplementation(
-      () => mockRegisteredTool
-    );
-    mockRegisterViewGitHubRepoStructureTool.mockImplementation(
-      () => mockRegisteredTool
-    );
-    mockRegisterSampling.mockImplementation(() => mockRegisteredTool);
+    mockRegisterPrompts.mockImplementation(function () {
+      return mockRegisteredTool;
+    });
+    mockRegisterGitHubSearchCodeTool.mockImplementation(function () {
+      return mockRegisteredTool;
+    });
+    mockRegisterFetchGitHubFileContentTool.mockImplementation(function () {
+      return mockRegisteredTool;
+    });
+    mockRegisterSearchGitHubReposTool.mockImplementation(function () {
+      return mockRegisteredTool;
+    });
+    mockRegisterSearchGitHubPullRequestsTool.mockImplementation(function () {
+      return mockRegisteredTool;
+    });
+    mockRegisterViewGitHubRepoStructureTool.mockImplementation(function () {
+      return mockRegisteredTool;
+    });
+    mockRegisterSampling.mockImplementation(function () {
+      return mockRegisteredTool;
+    });
 
     // Mock simplified dependencies
     mockIsBetaEnabled.mockReturnValue(false);

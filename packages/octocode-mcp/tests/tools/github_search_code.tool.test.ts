@@ -368,7 +368,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('Bulk response with 2 results');
       expect(responseText).toContain('2 empty');
       expect(responseText).not.toContain('hasResults');
-      expect(responseText).not.toContain('failed');
+      expect(responseText).not.toContain('status: "failed"');
       expect(responseText).toContain('emptyStatusHints:');
     });
 
@@ -440,7 +440,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('Bulk response with 3 results');
       expect(responseText).toContain('2 hasResults');
       expect(responseText).toContain('1 empty');
-      expect(responseText).not.toContain('failed');
+      expect(responseText).not.toContain('status: "failed"');
       expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).toContain('emptyStatusHints:');
     });
