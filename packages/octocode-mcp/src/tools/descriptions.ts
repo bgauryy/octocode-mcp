@@ -40,7 +40,7 @@ EXAMPLES:
   path="config.json", fullContent=true, minified=false  # Config file, keep formatting
 
 GUARDS:
-  config? - minified=false | know pattern? - matchString | large file? - use line range`,
+  config? - minified=false | know pattern? - matchString | large file? - use line range | efficiency? - prefer startLine/endLine over fullContent, justify range in reasoning`,
   [TOOL_NAMES.GITHUB_SEARCH_CODE]: `CODE SEARCH - Search file content or filenames/paths
 
 PURPOSE: Search file contents for code patterns or search file/directory names
@@ -50,8 +50,9 @@ AVOID: Broad terms | No owner/repo (rate limits)
 
 WORKFLOW:
   Step 1: Discovery (match="path") - Find files [25x faster]
-  Step 2: Detailed (match="file", limit=5) - Get matches with context
-  Step 3: Read (${TOOL_NAMES.GITHUB_FETCH_CONTENT} matchString) - Full content
+  Step 2: (Optional) Use ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to understand structure when exploring unfamiliar repos
+  Step 3: Detailed (match="file", limit=5) - Get matches with context
+  Step 4: Read (${TOOL_NAMES.GITHUB_FETCH_CONTENT} matchString) - Full content
 
 MODES:
   - match="file": Search IN content → returns text_matches[]
@@ -83,7 +84,7 @@ EXAMPLES:
   match="path", keywordsToSearch=["auth"]  # Fast: find files with "auth" in path
   owner="facebook", repo="react", keywordsToSearch=["useState"]  # Content search
   path="src/api", extension="ts", keywordsToSearch=["export", "function"]  # Precise
-  queries=[{keywordsToSearch:["auth"]},{keywordsToSearch:["user"]}]  # Bulk
+  queries=[{keywordsToSearch:["termExample"],match:"path"},{keywordsToSearch:["patternExample"],match:"file",limit:5}]  # Bulk: combine discovery + detailed search
   keywordsToSearch=["validateUser"], match="file", limit=5  # Detailed matches
 
 GUARDS:
@@ -220,6 +221,11 @@ GOTCHAS:
 NEXT_STEP:
   hasResults → ${TOOL_NAMES.GITHUB_FETCH_CONTENT} for current code or ${TOOL_NAMES.GITHUB_SEARCH_CODE} for patterns
   empty → Broaden filters or try different state
+
+COMMON PATTERNS:
+  - Research implementations: state="closed", merged=true, withContent=true
+  - Track discussions: state="open", withComments=true, limit=5
+  - Find expert contributions: author="username", state="closed", merged=true
 
 EXAMPLES:
   owner="facebook", repo="react", prNumber=123  # FASTEST: direct fetch
