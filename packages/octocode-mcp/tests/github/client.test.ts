@@ -8,27 +8,35 @@ import {
 
 // Mock dependencies
 vi.mock('../../src/serverConfig.js', () => ({
-  getGitHubToken: vi.fn(),
-  getServerConfig: vi.fn(() => ({
-    timeout: 30000,
-    version: '1.0.0',
-  })),
+  getGitHubToken: vi.fn(function () {}),
+  getServerConfig: vi.fn(function () {
+    return {
+      timeout: 30000,
+      version: '1.0.0',
+    };
+  }),
 }));
 
 vi.mock('octokit', () => {
   const mockOctokitInstance = {
     rest: {
       repos: {
-        get: vi.fn(),
+        get: vi.fn(function () {}),
       },
     },
   };
 
   const mockOctokitClass = vi
-    .fn()
-    .mockImplementation(() => mockOctokitInstance);
+    .fn(function () {
+      return mockOctokitInstance;
+    })
+    .mockImplementation(function () {
+      return mockOctokitInstance;
+    });
   (mockOctokitClass as unknown as { plugin: typeof vi.fn }).plugin = vi.fn(
-    () => mockOctokitClass
+    function () {
+      return mockOctokitClass;
+    }
   );
 
   return {
@@ -173,11 +181,19 @@ describe('GitHub Client', () => {
       mockGetGitHubToken.mockResolvedValue('test-token');
 
       // Mock to return different objects for each call
-      const mockInstance1 = { rest: { repos: { get: vi.fn() } } };
-      const mockInstance2 = { rest: { repos: { get: vi.fn() } } };
+      const mockInstance1 = {
+        rest: { repos: { get: vi.fn(function () {}) } },
+      };
+      const mockInstance2 = {
+        rest: { repos: { get: vi.fn(function () {}) } },
+      };
       mockOctokit
-        .mockReturnValueOnce(mockInstance1)
-        .mockReturnValueOnce(mockInstance2);
+        .mockImplementationOnce(function () {
+          return mockInstance1;
+        })
+        .mockImplementationOnce(function () {
+          return mockInstance2;
+        });
 
       // Create instance
       const instance1 = await getOctokit();
@@ -209,12 +225,14 @@ describe('GitHub Client', () => {
       mockOctokitInstance = {
         rest: {
           repos: {
-            get: vi.fn(),
+            get: vi.fn(function () {}),
           },
         },
       };
 
-      mockOctokit.mockImplementation(() => mockOctokitInstance);
+      mockOctokit.mockImplementation(function () {
+        return mockOctokitInstance;
+      });
       mockGetGitHubToken.mockResolvedValue('test-token');
     });
 

@@ -71,7 +71,7 @@
     "rollup": "^4.46.2",
     "rollup-plugin-terser": "^7.0.2",
     "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "vitest": "^4.0.4"
   },
   "engines": {
     "node": ">=18.12.0"
