@@ -46,7 +46,8 @@ export const ERROR_MESSAGES = {
    */
   [ERROR_CODES.AUTH_REQUIRED]: {
     message: 'GitHub authentication required',
-    suggestion: 'Set GITHUB_TOKEN or GH_TOKEN environment variable',
+    suggestion:
+      "TELL THE USER: Refresh your GitHub token! Run 'gh auth login' OR 'gh auth refresh' OR set a new GITHUB_TOKEN/GH_TOKEN environment variable",
     explanation:
       'API request requires authentication. GitHub APIs have different rate limits for authenticated (5000/hour) vs unauthenticated (60/hour) requests.',
   },

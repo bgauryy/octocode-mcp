@@ -1,130 +1,236 @@
 import { TOOL_NAMES } from '../constants.js';
 
 export const DESCRIPTIONS = {
-  [TOOL_NAMES.GITHUB_FETCH_CONTENT]: `Retrieve file content
+  [TOOL_NAMES.GITHUB_FETCH_CONTENT]: `FILE READER - Read file contents with smart extraction
 
-Modes: fullContent | startLine+endLine | matchString+matchStringContextLines
-Required: path (verify with ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} or ${TOOL_NAMES.GITHUB_SEARCH_CODE})
-Best: Partial reads, matchString from code search  (From text_matches)
-Workflow: Search code/View structure → Fetch content
+PURPOSE: Read file contents using patterns, line ranges, or full file mode
 
-Examples:
-# Line range
-startLine=1 endLine=10
+USE_WHEN: Have file path | After ${TOOL_NAMES.GITHUB_SEARCH_CODE}/${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} discovery
+AVOID: Unknown location - search first
 
-# Match string (5 lines context above/below specific string) - usually used after ${TOOL_NAMES.GITHUB_SEARCH_CODE} for more context on relevant lines
-matchString="some string to find" matchStringContextLines=5
+WORKFLOW:
+  Step 1: Discovery (${TOOL_NAMES.GITHUB_SEARCH_CODE}/${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE})
+  Step 2: Read (matchString or line range)
+  Step 3: Explore related patterns
 
-# Branch-specific
-branch="main"`,
-  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `Search file content or filenames/paths using keywords
+MODES:
+  - matchString + matchStringContextLines: Extract specific sections [85% token savings]
+  - startLine + endLine: Read line range
+  - fullContent: Read entire file
 
-Modes: match='file' (content, default) or match='path' (filenames/dirs)
-- match='file': Search IN content → returns files[{path, text_matches[]}] - DEFAULT
-- match='path': Search filenames/dirs → returns files[{path}] only
-Best: Path for discovery, file for details. Bulk queries for efficiency. Search specific patterns and semantic 
-Workflow: Search repos/code/View structure → Search code → Fetch content
+OPTIMIZATION:
+  - matchString: 85% token savings
+  - Bulk queries: 5-10x faster
+  - minified=true (default): 30-60% savings
 
-Examples:
+GOTCHAS:
+  - minified=true breaks JSON/YAML formatting
+  - matchString returns empty if no matches
+  - Large files may be truncated
 
-# Basic content search (default)
-keywordsToSearch=["term1", "term2"]
+NEXT_STEP:
+  hasResults → ${TOOL_NAMES.GITHUB_SEARCH_CODE} for related patterns
+  empty → ${TOOL_NAMES.GITHUB_SEARCH_CODE}/${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to locate file
 
-# Path discovery (find files by name)
-match="path", keywordsToSearch=["term1", "term2"]
+EXAMPLES:
+  matchString="validateUser", matchStringContextLines=20  # BEST: targeted read
+  startLine=1, endLine=100  # Line range
+  fullContent=true  # Full file
+  queries=[{path:"a.ts",matchString:"fn1"},{path:"b.ts",matchString:"fn2"}]  # Bulk
+  path="config.json", fullContent=true, minified=false  # Config file, keep formatting
 
-# Repository-scoped search
-owner="facebook", repo="react", keywordsToSearch=["term1", "term2"]
+GUARDS:
+  config? - minified=false | know pattern? - matchString | large file? - use line range`,
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `CODE SEARCH - Search file content or filenames/paths
 
-# Directory-scoped search (content in specific folder)
-path="src/api", keywordsToSearch=["function", "export"]
+PURPOSE: Search file contents for code patterns or search file/directory names
 
-# Filename filter (content in files matching name pattern)
-filename="config", keywordsToSearch=["term1", "term2"]
+USE_WHEN: Know patterns | Need discovery
+AVOID: Broad terms | No owner/repo (rate limits)
 
-# Combined filters (directory + extension + content)
-path="src/utils", extension="ts", keywordsToSearch=["term1", "term2"]
+WORKFLOW:
+  Step 1: Discovery (match="path") - Find files [25x faster]
+  Step 2: Detailed (match="file", limit=5) - Get matches with context
+  Step 3: Read (${TOOL_NAMES.GITHUB_FETCH_CONTENT} matchString) - Full content
 
-# Multi-keyword AND logic
-keywordsToSearch=["term1", "term2", "term3"]
+MODES:
+  - match="file": Search IN content → returns text_matches[]
+  - match="path": Search filenames/dirs → 25x faster
 
-# Popular repos
-keywordsToSearch=["term1", "term2"], stars=">1000"
+FILTERS:
+  - owner/repo: Repository scope (RECOMMENDED)
+  - path: Directory scope
+  - extension: File type
+  - stars: Popular repos only
 
-# Limit results
-keywordsToSearch=["term1", "term2"], limit=10`,
-  [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: `Search repositories by keywords, topics, or filters
+OPTIMIZATION:
+  - match="path": 20 tokens vs 500 with text_matches
+  - Bulk queries: 5-10x faster
+  - limit=5-10: Focused results
+  - Specific keywords over generic terms
 
-Modes: keywordsToSearch (name/desc/readme, broader) OR topicsToSearch (GitHub topics, precise, BEST FOR EXPLORATION)
-Best: Topics for discovery, keywords for specific functionality, stars for quality
-Workflow: Search repos → View structure/Search code/Fetch content
+GOTCHAS:
+  - keywordsToSearch uses AND logic
+  - match="file" without limit = token explosion
+  - No owner/repo = rate limits
+  - text_matches → use for ${TOOL_NAMES.GITHUB_FETCH_CONTENT} matchString
 
-Examples:
+NEXT_STEP:
+  hasResults → ${TOOL_NAMES.GITHUB_FETCH_CONTENT} matchString for full context
+  empty → ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} or broaden search
 
-# Topics search (best for discovery - returns curated repos)
-topicsToSearch=["topic1", "topic2"]
+EXAMPLES:
+  match="path", keywordsToSearch=["auth"]  # Fast: find files with "auth" in path
+  owner="facebook", repo="react", keywordsToSearch=["useState"]  # Content search
+  path="src/api", extension="ts", keywordsToSearch=["export", "function"]  # Precise
+  queries=[{keywordsToSearch:["auth"]},{keywordsToSearch:["user"]}]  # Bulk
+  keywordsToSearch=["validateUser"], match="file", limit=5  # Detailed matches
 
-# Keywords with quality filter
-keywordsToSearch=["term1", "term2"], stars=">1000"
+GUARDS:
+  discovery? - match="path" | many results? - limit=5-10 | no scope? - add owner/repo`,
+  [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: `REPOSITORY SEARCH - Search repos by keywords/topics
 
-# Owner-scoped search (repos from specific org/user)
-owner="ownerName", keywordsToSearch=["term1", "term2"]
+PURPOSE: Discover GitHub repositories. Gateway for codebase exploration.
 
-# Name-only search (keyword in repo name only)
-keywordsToSearch=["term1", "term2"], match=["name"]
+USE_WHEN: Starting research | Finding projects/libraries
+AVOID: Know repo name - go to ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} | Need code patterns - use ${TOOL_NAMES.GITHUB_SEARCH_CODE}
 
-# Sort by popularity
-stars=">1000", sort="stars"
+WORKFLOW:
+  Step 1: Discover (topicsToSearch or keywordsToSearch)
+  Step 2: Explore (${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE})
+  Step 3: Search (${TOOL_NAMES.GITHUB_SEARCH_CODE})
+  Step 4: Read (${TOOL_NAMES.GITHUB_FETCH_CONTENT})
 
-# Recent repos
-keywordsToSearch=["term1", "term2"], created=">=YYYY-MM-DD"
+MODES:
+  - topicsToSearch: ["typescript", "cli"] - curated, exact topic tags (BEST)
+  - keywordsToSearch: ["term1", "term2"] - name/desc/README, AND logic
 
-# Recently updated (active development)
-keywordsToSearch=["term1", "term2"], sort="updated", updated=">=YYYY-MM-DD"
+FILTERS:
+  - stars=">1000": Quality filter
+  - owner: Scope to org/user
+  - created/updated: Date filters (">=YYYY-MM-DD")
+  - match=["name"]: Search scope
 
-# Limit results
-keywordsToSearch=["term1", "term2"], limit=5`,
-  [TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]: `Explore repository structure by path and depth
+OPTIMIZATION:
+  - topicsToSearch: Most precise
+  - stars=">1000": Quality filter
+  - sort="stars": Popular repos
+  - limit=5-10: Focused results
+  - Bulk queries: Parallel searches
 
-Depth: 1 (current dir only) or 2 (includes subdirs). Returns files[] and folders[]
-Best: Use to discover paths before fetching content or searching code
-Workflow: Search repos → View structure → Search code/Fetch content
+GOTCHAS:
+  - keywordsToSearch uses AND logic
+  - topicsToSearch needs exact tags
+  - size in KB not MB ("1000" = 1MB)
+  - No filters = generic results
 
-Examples:
+NEXT_STEP:
+  hasResults → ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} or ${TOOL_NAMES.GITHUB_SEARCH_CODE}
+  empty → Broaden filters or try synonyms
 
-# Root exploration (depth 1 - files/folders in root)
-owner="ownerName", repo="repoName", branch="main", path="", depth=1
+EXAMPLES:
+  topicsToSearch=["typescript", "cli"], stars=">1000"  # BEST: curated quality repos
+  keywordsToSearch=["authentication", "jwt"], stars=">500"  # Keyword search with quality
+  owner="facebook", sort="stars", limit=10  # Org's popular repos
+  keywordsToSearch=["react"], match=["name"], stars=">1000"  # Name-only search
+  created=">=2024-01-01", sort="updated", limit=5  # Recent active projects
+  queries=[{topicsToSearch:["mcp"]},{keywordsToSearch:["mcp"]}]  # Bulk parallel
 
-# Directory with subdirs (depth 2 - includes nested structure)
-owner="ownerName", repo="repoName", branch="main", path="src", depth=2`,
-  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `Search PRs or fetch specific PR by number
+GUARDS:
+  discovery? - topicsToSearch+stars | quality? - stars=">1000" | maintained? - updated filter`,
+  [TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]: `DIRECTORY EXPLORER - Understand codebase organization
 
-Modes: Direct fetch (prNumber) or Search (filters). Returns pull_requests[] with metadata
-Filters: state, author, labels, branches, dates, query. Sort: created/updated/best-match. Limit 1-10 (default 5)
-Optional: withComments (discussion threads), withContent (code diffs) - token expensive
-Best: prNumber for direct access, state="open"|"closed"+merged=true for production code
-Workflow: Search repos → Search PRs → Analyze changes/discussions
+PURPOSE: Display directory structure with file sizes
 
-Examples:
+USE_WHEN: New codebase | Need structure overview
+AVOID: Know filename - use ${TOOL_NAMES.GITHUB_SEARCH_CODE} | Need content - use ${TOOL_NAMES.GITHUB_FETCH_CONTENT}
 
-# Direct PR fetch (fastest)
-prNumber=123, owner="ownerName", repo="repoName"
+WORKFLOW:
+  Step 1: Overview (depth=1, path="")
+  Step 2: Drill down (depth=2, path="src")
+  Step 3: Search (${TOOL_NAMES.GITHUB_SEARCH_CODE})
+  Step 4: Read (${TOOL_NAMES.GITHUB_FETCH_CONTENT})
 
-# Recent open PRs
-owner="ownerName", repo="repoName", state="open", limit=5
+OPTIONS:
+  - depth: 1 (fast) or 2 (includes subdirs)
+  - path: "" (root) or "src/api" (specific dir)
+  - branch: "main" or branch/tag/SHA
 
-# Merged PRs (production code)
-owner="ownerName", repo="repoName", state="closed", merged=true
+OPTIMIZATION:
+  - depth=1 first, drill down later
+  - Bulk queries: Parallel exploration
+  - Use for discovery, then ${TOOL_NAMES.GITHUB_SEARCH_CODE} for content
 
-# Filter by author/label
-owner="ownerName", repo="repoName", author="username", label="bug"
+GOTCHAS:
+  - depth=2 on large dirs = slow
+  - path no leading slash: "src/api" not "/src/api"
+  - Returns files[] and folders[], no content
+  - >100 files may truncate
 
-# Search by text
-owner="ownerName", repo="repoName", query="term1", match=["title", "body"]
+NEXT_STEP:
+  hasResults → ${TOOL_NAMES.GITHUB_SEARCH_CODE} or ${TOOL_NAMES.GITHUB_FETCH_CONTENT}
+  empty → Check parent or verify repo
 
-# With implementation details (diffs)
-prNumber=123, owner="ownerName", repo="repoName", withContent=true
+EXAMPLES:
+  owner="facebook", repo="react", branch="main", path="", depth=1  # Root overview
+  owner="facebook", repo="react", branch="main", path="src", depth=2  # Deep dive
+  queries=[{owner:"facebook",repo:"react",branch:"main",path:""},{owner:"facebook",repo:"react",branch:"main",path:"src"}]  # Bulk
+  owner="facebook", repo="react", branch="main", path="packages/react-dom", depth=1  # Monorepo
 
-# With discussion context (comments)
-prNumber=123, owner="ownerName", repo="repoName", withComments=true`,
+GUARDS:
+  new? - depth=1, path="" | large? - depth=1 first | monorepo? - explore each package`,
+  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `PR SEARCH - Search or fetch PRs
+
+PURPOSE: Search/fetch PRs with metadata, discussions, and diffs
+
+USE_WHEN: Need PR context | Research implementations | Review merged changes
+AVOID: Need current code - use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} | Need all patterns - use ${TOOL_NAMES.GITHUB_SEARCH_CODE}
+
+WORKFLOW:
+  Step 1: Discover (prNumber or search filters)
+  Step 2: Analyze (withComments/withContent)
+  Step 3: Compare (${TOOL_NAMES.GITHUB_FETCH_CONTENT} for current state)
+
+MODES:
+  - prNumber=123: Direct fetch (10x faster)
+  - Search: state/author/labels/dates filters
+
+FILTERS:
+  - state="open"|"closed": PR status
+  - merged=true: Production code (with state="closed")
+  - author/label/query: Filter criteria
+  - created/updated/closed: Date filters
+  - comments/reactions: Engagement filters
+
+OPTIMIZATION:
+  - prNumber: 10x faster
+  - state="closed"+merged=true: Production only
+  - limit=3-5: Focused results
+  - withComments=false: 50% token savings
+  - withContent=false: 80% token savings
+  - Bulk queries: Parallel analysis
+
+GOTCHAS:
+  - withContent=true = VERY token expensive
+  - withComments=true = token expensive
+  - merged=true requires state="closed"
+  - label can be string or array (OR logic)
+  - prNumber ignores other filters
+
+NEXT_STEP:
+  hasResults → ${TOOL_NAMES.GITHUB_FETCH_CONTENT} for current code or ${TOOL_NAMES.GITHUB_SEARCH_CODE} for patterns
+  empty → Broaden filters or try different state
+
+EXAMPLES:
+  owner="facebook", repo="react", prNumber=123  # FASTEST: direct fetch
+  owner="facebook", repo="react", state="open", limit=5  # Recent open PRs
+  owner="facebook", repo="react", state="closed", merged=true, limit=5  # Production code
+  owner="facebook", repo="react", author="username", label="bug"  # Author's bug fixes
+  owner="facebook", repo="react", query="authentication", match=["title", "body"]  # Text search
+  owner="facebook", repo="react", prNumber=123, withContent=true  # PR with diffs
+  owner="facebook", repo="react", prNumber=123, withComments=true  # PR with discussions
+  queries=[{owner:"facebook",repo:"react",prNumber:123},{owner:"vercel",repo:"next.js",prNumber:456}]  # Bulk
+
+GUARDS:
+  code analysis? - withContent=true | context? - withComments=true | production? - state="closed"+merged=true`,
 };
