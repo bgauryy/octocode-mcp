@@ -26,18 +26,15 @@ vi.mock('octokit', () => {
     },
   };
 
-  const mockOctokitClass = vi
-    .fn(function () {
-      return mockOctokitInstance;
-    })
-    .mockImplementation(function () {
-      return mockOctokitInstance;
-    });
-  (mockOctokitClass as unknown as { plugin: typeof vi.fn }).plugin = vi.fn(
-    function () {
+  const mockOctokitClass = vi.fn(function () {
+    return mockOctokitInstance;
+  });
+
+  Object.assign(mockOctokitClass, {
+    plugin: vi.fn(function () {
       return mockOctokitClass;
-    }
-  );
+    }),
+  });
 
   return {
     Octokit: mockOctokitClass,
