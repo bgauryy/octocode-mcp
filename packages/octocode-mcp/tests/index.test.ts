@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import {
+  McpServer,
+  RegisteredTool,
+} from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 // Mock all dependencies before importing index
@@ -150,7 +153,9 @@ describe('Index Module', () => {
     const mockRegisteredTool = {
       name: 'mock-tool',
       description: 'Mock tool',
-      callback: vi.fn(function () {}),
+      callback: vi.fn(function () {
+        return { content: [{ type: 'text', text: '' }] };
+      }),
       enabled: true,
       enable: vi.fn(function () {}),
       disable: vi.fn(function () {}),
@@ -158,7 +163,7 @@ describe('Index Module', () => {
       getMetrics: vi.fn(function () {}),
       update: vi.fn(function () {}),
       remove: vi.fn(function () {}),
-    };
+    } as unknown as RegisteredTool;
     mockRegisterPrompts.mockImplementation(function () {
       return mockRegisteredTool;
     });
