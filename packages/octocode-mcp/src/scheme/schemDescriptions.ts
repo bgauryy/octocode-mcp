@@ -200,7 +200,7 @@ export const GITHUB_FETCH_CONTENT = {
     matchString:
       'Search pattern to find within the file - returns only matching sections with context (most efficient for targeted reads)',
     matchStringContextLines:
-      'Lines of context to show around each match (1-50, default 5) - use with matchString for focused content retrieval',
+      'Lines of context to show around matchString match - MAX 50',
   },
 };
 
