@@ -38,8 +38,9 @@ Watch Octocode transform a simple prompt into a complete production-ready applic
 
 **💬 The Single Prompt:**
 
-> **Prompt: Use Octocode MCP for Deep Research**
->
+> **Prompt: 
+
+> Use Octocode MCP for Deep Research**
 > I want to build an application with chat (front-end) that shows a chat window to the user.  
 > The user enters a prompt in the chat, and the application sends the prompt to an Express backend that uses AI to process the request.
 >
@@ -58,7 +59,9 @@ Watch Octocode transform a simple prompt into a complete production-ready applic
 
 https://github.com/user-attachments/assets/4225ab98-ae2f-46dc-b3ce-7d117e552b8c
 
-*Octocode researches best practices from thousands of repositories and creates a detailed implementation plan*
+[Octocode Plan Document](https://gist.github.com/bgauryy/06504671c0d5fef727fe22c492e054d6)
+
+*Octocode researches best practices from Millions of repositories and creates a detailed implementation plan*
 
 **⚡ Phase 2: Implementation** *(Run the plan using any CLI/IDE)*
 
