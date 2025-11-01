@@ -79,10 +79,10 @@ describe('ToolsManager', () => {
       expect(result.failedTools).toEqual([]);
 
       // Verify default tools were called
-      expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
-      expect(DEFAULT_TOOLS[1]?.fn).toHaveBeenCalledWith(mockServer); // githubGetFileContent
-      expect(DEFAULT_TOOLS[2]?.fn).toHaveBeenCalledWith(mockServer); // githubViewRepoStructure
-      expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchRepositories
+      expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer, undefined); // githubSearchCode
+      expect(DEFAULT_TOOLS[1]?.fn).toHaveBeenCalledWith(mockServer, undefined); // githubGetFileContent
+      expect(DEFAULT_TOOLS[2]?.fn).toHaveBeenCalledWith(mockServer, undefined); // githubViewRepoStructure
+      expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalledWith(mockServer, undefined); // githubSearchRepositories
 
       // Verify non-default tools were NOT called
       expect(DEFAULT_TOOLS[4]?.fn).not.toHaveBeenCalled(); // githubSearchPullRequests
@@ -110,8 +110,8 @@ describe('ToolsManager', () => {
       expect(result.failedTools).toEqual([]);
 
       // Verify only specified tools were called
-      expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
-      expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchPullRequests
+      expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer, undefined); // githubSearchCode
+      expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalledWith(mockServer, undefined); // githubSearchPullRequests
 
       // Verify other tools were NOT called
       expect(DEFAULT_TOOLS[1]?.fn).not.toHaveBeenCalled(); // githubGetFileContent
@@ -140,8 +140,8 @@ describe('ToolsManager', () => {
       expect(result.successCount).toBe(2);
       expect(result.failedTools).toEqual([]);
 
-      expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
-      expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchPullRequests
+      expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer, undefined); // githubSearchCode
+      expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalledWith(mockServer, undefined); // githubSearchPullRequests
     });
 
     it('should register no tools if TOOLS_TO_RUN contains only non-existent tools', () => {
@@ -187,7 +187,7 @@ describe('ToolsManager', () => {
       );
 
       // Should use TOOLS_TO_RUN exclusively
-      expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
+      expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer, undefined); // githubSearchCode
       expect(DEFAULT_TOOLS[4]?.fn).not.toHaveBeenCalled(); // githubSearchPullRequests
     });
 

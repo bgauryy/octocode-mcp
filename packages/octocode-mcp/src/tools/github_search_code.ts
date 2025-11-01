@@ -1,7 +1,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
-import type { UserContext } from '../types.js';
+import type {
+  UserContext,
+  ToolInvocationCallback,
+  GitHubCodeSearchQuery,
+  SearchResult,
+} from '../types.js';
 import { TOOL_NAMES } from '../constants.js';
 import { GitHubCodeSearchBulkQuerySchema } from '../scheme/github_search_code.js';
 import { searchGitHubCodeAPI } from '../github/codeSearch.js';
@@ -14,9 +19,11 @@ import {
   handleCatchError,
   createSuccessResult,
 } from './utils.js';
-import type { GitHubCodeSearchQuery, SearchResult } from '../types.js';
 
-export function registerGitHubSearchCodeTool(server: McpServer) {
+export function registerGitHubSearchCodeTool(
+  server: McpServer,
+  callback?: ToolInvocationCallback
+) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_CODE,
     {
@@ -39,11 +46,18 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
-        return searchMultipleGitHubCode(
-          args.queries || [],
-          authInfo,
-          userContext
-        );
+        const queries = args.queries || [];
+
+        // Invoke callback if provided
+        if (callback) {
+          try {
+            await callback(TOOL_NAMES.GITHUB_SEARCH_CODE, queries);
+          } catch {
+            // Silently ignore callback errors
+          }
+        }
+
+        return searchMultipleGitHubCode(queries, authInfo, userContext);
       }
     )
   );

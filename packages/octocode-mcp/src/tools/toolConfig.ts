@@ -3,6 +3,7 @@ import {
   RegisteredTool,
 } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TOOL_NAMES } from '../constants.js';
+import { ToolInvocationCallback } from '../types.js';
 import { registerGitHubSearchCodeTool } from './github_search_code.js';
 import { registerFetchGitHubFileContentTool } from './github_fetch_content.js';
 import { registerSearchGitHubReposTool } from './github_search_repos.js';
@@ -14,7 +15,7 @@ export interface ToolConfig {
   description: string;
   isDefault: boolean;
   type: 'search' | 'content' | 'history' | 'debug';
-  fn: (server: McpServer) => RegisteredTool;
+  fn: (server: McpServer, callback?: ToolInvocationCallback) => RegisteredTool;
 }
 
 export const GITHUB_SEARCH_CODE: ToolConfig = {

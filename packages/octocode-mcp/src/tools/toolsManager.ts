@@ -1,11 +1,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { DEFAULT_TOOLS } from './toolConfig.js';
 import { getServerConfig } from '../serverConfig.js';
+import { ToolInvocationCallback } from '../types.js';
 
 /**
  * Register tools based on configuration
+ * @param server - The MCP server instance
+ * @param callback - Optional callback
  */
-export function registerTools(server: McpServer): {
+export function registerTools(
+  server: McpServer,
+  callback?: ToolInvocationCallback
+): {
   successCount: number;
   failedTools: string[];
 } {
@@ -54,7 +60,7 @@ export function registerTools(server: McpServer): {
       }
 
       if (shouldRegisterTool) {
-        tool.fn(server);
+        tool.fn(server, callback);
         successCount++;
       } else if (reason) {
         process.stderr.write(`Tool ${tool.name} ${reason}\n`);

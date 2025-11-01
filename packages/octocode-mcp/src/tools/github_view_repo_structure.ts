@@ -1,7 +1,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
-import type { UserContext } from '../types.js';
+import type {
+  UserContext,
+  ToolInvocationCallback,
+  GitHubViewRepoStructureQuery,
+  RepoStructureResult,
+} from '../types.js';
 import { viewGitHubRepositoryStructureAPI } from '../github/fileOperations.js';
 import { TOOL_NAMES } from '../constants.js';
 import { GitHubViewRepoStructureBulkQuerySchema } from '../scheme/github_view_repo_structure.js';
@@ -14,12 +19,11 @@ import {
   handleCatchError,
   createSuccessResult,
 } from './utils.js';
-import type {
-  GitHubViewRepoStructureQuery,
-  RepoStructureResult,
-} from '../types.js';
 
-export function registerViewGitHubRepoStructureTool(server: McpServer) {
+export function registerViewGitHubRepoStructureTool(
+  server: McpServer,
+  callback?: ToolInvocationCallback
+) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     {
@@ -42,8 +46,19 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
+        const queries = args.queries || [];
+
+        // Invoke callback if provided
+        if (callback) {
+          try {
+            await callback(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, queries);
+          } catch {
+            // Silently ignore callback errors
+          }
+        }
+
         return exploreMultipleRepositoryStructures(
-          args.queries || [],
+          queries,
           authInfo,
           userContext
         );
