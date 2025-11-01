@@ -24,7 +24,7 @@ Octocode-MCP provides 5 specialized tools for GitHub repository analysis. Each t
       id?: string,                    // Optional query identifier
       reasoning?: string,             // Optional reasoning for research
 
-      queryTerms: string[],           // 1-5 search terms (AND logic)
+      keywordsToSearch: string[],     // 1-5 search terms (AND logic)
       owner?: string | string[],      // Repository owner(s)
       repo?: string | string[],       // Repository name(s)
       language?: string,              // Programming language filter
@@ -69,7 +69,7 @@ Octocode-MCP provides 5 specialized tools for GitHub repository analysis. Each t
 
       owner: string,                     // Repository owner
       repo: string,                      // Repository name
-      filePath: string,                  // Exact path from repo root
+      path: string,                      // Exact path from repo root
       branch?: string,                   // Branch/tag/commit SHA
 
       // Retrieval controls
@@ -113,9 +113,9 @@ Octocode-MCP provides 5 specialized tools for GitHub repository analysis. Each t
       id?: string,                    // Optional query identifier
       reasoning?: string,             // Optional reasoning for research
 
-      queryTerms?: string[],          // Search terms for name/desc/readme
+      keywordsToSearch?: string[],    // Search terms for name/desc/readme
+      topicsToSearch?: string[],      // GitHub topic tags for discovery
       owner?: string | string[] | null,
-      topics?: string | string[] | null,
       language?: string | null,
       stars?: number | string | null, // e.g., ">=100", "50..500"
       size?: string | null,           // Size filter string
