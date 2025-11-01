@@ -382,6 +382,18 @@ export interface PullRequestSearchResult
 // TOOL OPERATIONS - Bulk processing, caching, and execution utilities
 // ============================================================================
 
+// ─── Tool Invocation Callback ───────────────────────────────────────────────
+
+/**
+ * Optional callback invoked when a tool is called with queries
+ * @param toolName - The name of the tool being invoked
+ * @param queries - Array of query objects passed to the tool
+ */
+export type ToolInvocationCallback = (
+  toolName: string,
+  queries: unknown[]
+) => Promise<void>;
+
 // ─── Bulk Operations (executeBulkOperation) ─────────────────────────────────
 
 /** Processed result from bulk query execution */

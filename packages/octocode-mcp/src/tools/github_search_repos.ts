@@ -1,7 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
-import type { UserContext } from '../types.js';
+import type {
+  UserContext,
+  ToolInvocationCallback,
+  GitHubReposSearchQuery,
+  SimplifiedRepository,
+  RepoSearchResult,
+} from '../types.js';
 import { searchGitHubReposAPI } from '../github/repoSearch.js';
 import { TOOL_NAMES } from '../constants.js';
 import { GitHubReposSearchQuerySchema } from '../scheme/github_search_repos.js';
@@ -13,13 +19,11 @@ import {
   handleCatchError,
   createSuccessResult,
 } from './utils.js';
-import type {
-  GitHubReposSearchQuery,
-  SimplifiedRepository,
-  RepoSearchResult,
-} from '../types.js';
 
-export function registerSearchGitHubReposTool(server: McpServer) {
+export function registerSearchGitHubReposTool(
+  server: McpServer,
+  callback?: ToolInvocationCallback
+) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
     {
@@ -42,11 +46,18 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
-        return searchMultipleGitHubRepos(
-          args.queries || [],
-          authInfo,
-          userContext
-        );
+        const queries = args.queries || [];
+
+        // Invoke callback if provided
+        if (callback) {
+          try {
+            await callback(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, queries);
+          } catch {
+            // Silently ignore callback errors
+          }
+        }
+
+        return searchMultipleGitHubRepos(queries, authInfo, userContext);
       }
     )
   );

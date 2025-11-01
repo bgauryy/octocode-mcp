@@ -1,7 +1,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
-import type { UserContext } from '../types.js';
+import type {
+  UserContext,
+  ToolInvocationCallback,
+  FileContentQuery,
+  ContentResult,
+} from '../types.js';
 import { fetchGitHubFileContentAPI } from '../github/fileOperations.js';
 import { TOOL_NAMES } from '../constants.js';
 import { FileContentBulkQuerySchema } from '../scheme/github_fetch_content.js';
@@ -15,9 +20,11 @@ import {
   createSuccessResult,
   handleApiError,
 } from './utils.js';
-import type { FileContentQuery, ContentResult } from '../types.js';
 
-export function registerFetchGitHubFileContentTool(server: McpServer) {
+export function registerFetchGitHubFileContentTool(
+  server: McpServer,
+  callback?: ToolInvocationCallback
+) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_FETCH_CONTENT,
     {
@@ -40,9 +47,20 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
+        const queries = args.queries || [];
+
+        // Invoke callback if provided
+        if (callback) {
+          try {
+            await callback(TOOL_NAMES.GITHUB_FETCH_CONTENT, queries);
+          } catch {
+            // Silently ignore callback errors
+          }
+        }
+
         return fetchMultipleGitHubFileContents(
           server,
-          args.queries || [],
+          queries,
           authInfo,
           userContext
         );

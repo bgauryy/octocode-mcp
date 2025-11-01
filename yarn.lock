@@ -4379,12 +4379,6 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"octocode@workspace:packages/octocode":
-  version: 0.0.0-use.local
-  resolution: "octocode@workspace:packages/octocode"
-  languageName: unknown
-  linkType: soft
-
 "octokit@npm:^5.0.3":
   version: 5.0.3
   resolution: "octokit@npm:5.0.3"
