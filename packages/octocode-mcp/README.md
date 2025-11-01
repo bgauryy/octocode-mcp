@@ -1,88 +1,49 @@
-<div align="center">
-  <img src="https://github.com/bgauryy/octocode-mcp/raw/main/packages/octocode-mcp/assets/logo_white.png" width="400px" alt="Octocode Logo">
-  
-  **Transform Any AI Assistant Into a Code Research Expert**
-  
-  The missing piece for AI agents that need quality code context. Search millions of repositories, analyze real implementations, and discover proven patterns — all through a secure, token-efficient MCP server.
-  
-  [![MCP Community Server](https://img.shields.io/badge/Model_Context_Protocol-Official_Community_Server-blue?style=flat-square)](https://github.com/modelcontextprotocol/servers)
-  [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bgauryy/octocode-mcp)
-  [![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/bgauryy/octocode-mcp)](https://archestra.ai/mcp-catalog/bgauryy__octocode-mcp)
-  
-</div>
+# Octocode MCP Server
+
+**Model Context Protocol Server for GitHub Code Research**
+
+[![NPM Version](https://img.shields.io/npm/v/octocode-mcp)](https://www.npmjs.com/package/octocode-mcp)
+[![License](https://img.shields.io/npm/l/octocode-mcp)](../../LICENSE)
+
+MCP server implementation providing five specialized tools for AI-driven GitHub code research with enterprise-grade security and token optimization.
+
+**For general overview and getting started, see the [main README](../../README.md).**
 
 ---
 
-## 📑 Table of Contents
+## Table of Contents
 
-- [Why Octocode MCP?](#-why-octocode-mcp)
-- [Quick Start](#-quick-start-2-minutes)
-- [How to Choose the Right Tool](#-how-to-choose-the-right-tool)
-- [Available Tools](#-available-research-tools)
-- [Platform Setup](#-platform-setup)
-- [Real-World Examples](#-real-world-examples)
-- [Advanced Configuration](#-advanced-configuration)
-- [Documentation & Resources](#-documentation--resources)
-- [Community & Support](#-community--support)
-
----
-
-##  Why Octocode MCP?
-
-### The Context Gap Problem
-
-Most AI assistants today have **generic knowledge** but lack **deep, contextual understanding** of real-world code solutions. When you need to:
-
-- ✅ Implement complex features with proven patterns
-- ✅ Debug difficult issues by finding similar solutions
-- ✅ Understand how enterprise-scale systems work
-- ✅ Learn best practices from production code
-- ✅ Create comprehensive technical documentation
-
-**You hit a wall.** Generic AI knowledge isn't enough.
-
-### The Octocode Solution
-
-Octocode MCP bridges this gap by providing AI assistants with **real-time access to millions of GitHub repositories**, enabling:
-
-| Capability | What You Get |
-|-----------|-------------|
-| **🔍 Smart Code Discovery** | Find relevant implementations using semantic search across millions of repositories |
-| **📊 Progressive Research** | AI-powered workflows that build comprehensive understanding through multiple queries |
-| **🏗️ Ecosystem Understanding** | Analyze how real organizations structure complex systems and solve hard problems |
-| **📚 Real-World Examples** | Access production code, not toy examples or outdated tutorials |
-| **🔒 Enterprise-Grade Security** | Automatic content sanitization, respects GitHub permissions, redacts sensitive data |
-| **⚡ Token-Efficient** | Smart content minification reduces token usage by up to 70% |
-
-### Perfect For
-
-- **🎨 Code Creation**: Get context about patterns, libraries, and implementations before writing code
-- **🐛 Complex Bug Fixes**: Find real solutions for complex bugs by analyzing how others solved similar issues
-- **🏢 Enterprise Solutions**: Understand how large-scale systems are architected and maintained
-- **📖 Documentation**: Enrich technical docs with real, tested code examples
-- **🎓 Learning**: Discover how experienced developers tackle challenging problems
-- **🔍 Technology Research**: Research new frameworks, patterns, and best practices
-
-### See The Difference
-
-**[ Live Demo: ThreeJS Code Creation Comparison](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)**
-
-This interactive comparison shows how Octocode MCP transforms AI assistants from providing generic code suggestions to delivering expert-level, context-rich implementations.
+- [Installation](#installation)
+- [API Reference](#api-reference)
+  - [githubSearchCode](#githubsearchcode)
+  - [githubSearchRepositories](#githubsearchrepositories)
+  - [githubViewRepoStructure](#githubviewrepostructure)
+  - [githubGetFileContent](#githubgetfilecontent)
+  - [githubSearchPullRequests](#githubsearchpullrequests)
+- [Configuration](#configuration)
+- [Authentication](#authentication)
+- [Advanced Usage](#advanced-usage)
+- [Documentation](#documentation)
 
 ---
 
-## 🚀 Quick Start (2 Minutes)
+## Installation
 
-### Prerequisites
+### NPM
 
-- **Node.js** >= 18.12.0
-- **GitHub Authentication** (choose one):
-  - [GitHub CLI](https://cli.github.com/) (recommended): `gh auth login`
-  - Personal Access Token: Create at [github.com/settings/tokens](https://github.com/settings/tokens) with `repo`, `read:user`, `read:org` scopes
+```bash
+npm install octocode-mcp
+```
 
-### Installation
+### NPX (Recommended for MCP)
 
-Add Octocode MCP to your AI assistant's configuration:
+```bash
+npx octocode-mcp@latest
+```
+
+### Configuration
+
+Add to your MCP client configuration:
 
 ```json
 {
@@ -95,405 +56,529 @@ Add Octocode MCP to your AI assistant's configuration:
 }
 ```
 
-**Need help finding your config file?** See [Platform Setup](#-platform-setup) for detailed instructions for Claude Desktop, Cursor, Windsurf, and VS Code.
-
-**Using a Personal Access Token?** Add it to the `env` section (see Platform Setup for examples).
-
-### Verify Installation
-
-After setup, try this in your AI assistant:
-
-```
-"Search for React hooks implementations in popular repositories"
-```
-
-If you see search results from GitHub repositories, you're all set! 🎉
+**Platform-specific setup**: See [main README - Platform Setup](../../README.md#platform-specific-setup)
 
 ---
 
-## 🧭 How to Choose the Right Tool
+## API Reference
 
-Use this decision tree to select the perfect tool for your task:
+### githubSearchCode
 
-```
-📝 What do you want to do?
+Search for code implementations across GitHub repositories.
 
-├─ 🔍 Find code or examples
-│  ├─ Know what you're looking for → githubSearchCode
-│  └─ Need to discover repositories first → githubSearchRepositories
-│
-├─ 📂 Explore a repository
-│  ├─ See file/folder structure → githubViewRepoStructure
-│  └─ Read specific files → githubGetFileContent
-│
-├─ 📚 Understand changes/history
-│  └─ Analyze pull requests → githubSearchPullRequests
-│
-└─  Not sure where to start?
-   └─ Start broad with githubSearchRepositories → then narrow down
-```
+#### Parameters
 
-### Quick Reference Table
-
-| Goal | Tool | What It Returns |
-|------|------|----------------|
-| **Find specific code** | `githubSearchCode` | Code snippets with context |
-| **Discover repositories** | `githubSearchRepositories` | Repo list with stars, topics |
-| **Explore structure** | `githubViewRepoStructure` | File/folder tree |
-| **Read files** | `githubGetFileContent` | Full or partial file content |
-| **Analyze changes** | `githubSearchPullRequests` | PR details, diffs, discussions |
-
----
-
-## 🛠️ Available Research Tools
-
-### Default Tools (Always Enabled)
-
-#### `githubSearchCode`
-**Find specific code implementations across repositories**
-
-**Best for:**
-- Finding how a function/class is implemented
-- Discovering code patterns and examples
-- Researching library usage
-
-**Not recommended for:**
-- Finding repositories (use `githubSearchRepositories`)
-- Reading full files (use `githubGetFileContent`)
-
-**Example Prompts:**
-- "Find React useEffect cleanup patterns"
-- "Show me OAuth2 implementation in Node.js"
-- "Search for error handling in GraphQL resolvers"
-
-**Arguments:**
 ```typescript
-{
-  keywordsToSearch: string[];     // Required: Terms to search for
-  owner?: string;                 // Filter by repo owner
-  repo?: string;                  // Filter by specific repo
-  path?: string;                  // Search in specific directory
-  filename?: string;              // Filter by filename
-  extension?: string;             // Filter by file type
-  limit?: number;                 // Max results (1-20)
+interface GithubSearchCodeParams {
+  // Query parameters
+  keywordsToSearch: string[];      // Required: Search terms (AND logic)
+
+  // Filters
+  owner?: string;                  // Repository owner/organization
+  repo?: string;                   // Specific repository name
+  path?: string;                   // Directory path filter
+  filename?: string;               // Filename pattern (case-insensitive)
+  extension?: string;              // File extension without dot (e.g., "ts", "js")
+
+  // Search mode
+  match?: "file" | "path";         // "file" = search IN content (default)
+                                   // "path" = search file/directory names
+
+  // Control
+  limit?: number;                  // Max results: 1-20 (default: 10)
+  minify?: boolean;                // Minify results (default: true)
+  sanitize?: boolean;              // Sanitize secrets (default: true)
 }
 ```
 
----
+#### Response
 
-#### `githubSearchRepositories`
-**Discover repositories by topic, language, or description**
-
-**Best for:**
-- Finding projects in specific domains
-- Discovering popular implementations
-- Research technology ecosystems
-
-**Not recommended for:**
-- Searching inside code (use `githubSearchCode`)
-- Reading repository content (use `githubViewRepoStructure` first)
-
-**Example Prompts:**
-- "Find popular React component libraries"
-- "Show me microservices examples with high stars"
-- "Discover AI agent frameworks"
-
-**Arguments:**
 ```typescript
-{
-  keywordsToSearch?: string[];    // Search in name/description
-  topicsToSearch?: string[];      // Search by GitHub topics
-  owner?: string;                 // Filter by owner
-  stars?: string;                 // e.g., ">1000", "100..500"
-  language?: string;              // e.g., "TypeScript"
-  sort?: string;                  // "stars" | "forks" | "updated"
-  limit?: number;                 // Max results (1-20)
+interface GithubSearchCodeResponse {
+  results: Array<{
+    path: string;                  // File path
+    repository: {
+      owner: string;
+      name: string;
+      full_name: string;
+      html_url: string;
+      description: string;
+      stars: number;
+    };
+    text_matches?: Array<{         // Only when match="file"
+      fragment: string;            // Code snippet with match
+      matches: Array<{
+        text: string;
+        indices: [number, number];
+      }>;
+    }>;
+  }>;
+  total_count: number;
+  incomplete_results: boolean;
 }
 ```
 
----
+#### Best Practices
 
-#### `githubViewRepoStructure`
-**Explore repository file and folder structure**
+- **Discovery**: Use `match="path"` for fast file location (25x faster, 20 tokens vs 500)
+- **Analysis**: Use `match="file"` with low `limit` (5-10) for detailed matches
+- **Scope**: Always specify `owner`/`repo` when possible to avoid rate limits
+- **Keywords**: Use specific terms (function names, error messages) over generic terms
 
-**Best for:**
-- Understanding project organization
-- Finding where specific code lives
-- Navigating before reading files
+#### Examples
 
-**Not recommended for:**
-- Reading file contents (use `githubGetFileContent`)
-- Searching across repos (use `githubSearchCode`)
-
-**Example Prompts:**
-- "Show me the structure of the React repository"
-- "What's in the src folder of this project?"
-- "Explore the components directory"
-
-**Arguments:**
 ```typescript
+// Fast discovery - find files with "auth" in path
 {
-  owner: string;                  // Required: Repository owner
-  repo: string;                   // Required: Repository name
-  path?: string;                  // Directory path (default: root)
-  depth?: number;                 // 1 = current dir, 2 = with subdirs
-  branch?: string;                // Branch name (default: main branch)
+  keywordsToSearch: ["auth"],
+  match: "path"
+}
+
+// Detailed search - find OAuth implementations
+{
+  owner: "passportjs",
+  repo: "passport",
+  keywordsToSearch: ["OAuth2", "strategy"],
+  extension: "js",
+  limit: 5
+}
+
+// Targeted search - find exports in specific directory
+{
+  owner: "facebook",
+  repo: "react",
+  path: "packages/react/src",
+  keywordsToSearch: ["export", "function"],
+  match: "file"
 }
 ```
 
 ---
 
-#### `githubGetFileContent`
-**Read file contents with smart context retrieval**
+### githubSearchRepositories
 
-**Best for:**
-- Reading specific files
-- Getting code context around matches
-- Line-range based reading
+Discover GitHub repositories by topics, keywords, or metadata.
 
-**Not recommended for:**
-- Searching across files (use `githubSearchCode`)
-- Finding files (use `githubViewRepoStructure`)
+#### Parameters
 
-**Example Prompts:**
-- "Show me the README of this repo"
-- "Read the authentication module"
-- "Get lines 50-100 of this file"
-
-**Arguments:**
 ```typescript
-{
-  owner: string;                  // Required: Repository owner
-  repo: string;                   // Required: Repository name
-  path: string;                   // Required: File path
-  startLine?: number;             // Optional: Start reading from line
-  endLine?: number;               // Optional: End reading at line
-  matchString?: string;           // Optional: Find and return context around match
-  matchStringContextLines?: number; // Lines of context (default: 5)
-  branch?: string;                // Branch name
+interface GithubSearchRepositoriesParams {
+  // Query modes (use one or both)
+  topicsToSearch?: string[];       // GitHub topic tags (exact match, curated)
+  keywordsToSearch?: string[];     // Search name/description/README (AND logic)
+
+  // Filters
+  owner?: string;                  // Organization or user
+  stars?: string;                  // Examples: ">1000", "100..500", "<100"
+  language?: string;               // Programming language (e.g., "TypeScript")
+  size?: string;                   // Repo size in KB (e.g., ">1000", "<500")
+  created?: string;                // Creation date (e.g., ">=2024-01-01")
+  updated?: string;                // Last update date
+
+  // Search scope
+  match?: ("name" | "description" | "readme")[];  // Fields to search (OR logic)
+
+  // Control
+  sort?: "stars" | "forks" | "updated" | "best-match";
+  limit?: number;                  // Max results: 1-20 (default: 5)
 }
 ```
 
----
+#### Response
 
-### Advanced Tools (Optional)
-
-#### `githubSearchPullRequests`
-**Analyze pull requests, changes, and discussions**
-
-**Enable with:** `export ENABLE_TOOLS="githubSearchPullRequests"`
-
-**Best for:**
-- Understanding how features were implemented
-- Learning from code review discussions
-- Analyzing bug fixes and solutions
-
-**Not recommended for:**
-- Current code search (use `githubSearchCode`)
-- General repository discovery (use `githubSearchRepositories`)
-
-**Example Prompts:**
-- "Show me recent authentication PRs"
-- "Find PRs that fixed performance issues"
-- "Analyze how they implemented dark mode"
-
-**Arguments:**
 ```typescript
+interface GithubSearchRepositoriesResponse {
+  results: Array<{
+    owner: string;
+    name: string;
+    full_name: string;
+    description: string;
+    html_url: string;
+    stars: number;
+    forks: number;
+    language: string;
+    topics: string[];
+    created_at: string;
+    updated_at: string;
+    size: number;                  // KB
+  }>;
+  total_count: number;
+}
+```
+
+#### Best Practices
+
+- **Discovery**: Use `topicsToSearch` for curated, high-quality results
+- **Quality**: Filter with `stars=">1000"` for production-ready code
+- **Maintenance**: Use `updated` filter for actively maintained projects
+- **Scope**: Combine topics + stars for best results
+
+#### Examples
+
+```typescript
+// Find quality TypeScript CLI tools
 {
-  owner?: string;                 // Repository owner
-  repo?: string;                  // Repository name
-  prNumber?: number;              // Specific PR number
-  state?: "open" | "closed";      // PR state
-  merged?: boolean;               // Only merged PRs
-  query?: string;                 // Free-text search
-  limit?: number;                 // Max results (1-10)
-  withContent?: boolean;          // Include code diffs
-  withComments?: boolean;         // Include discussions
+  topicsToSearch: ["typescript", "cli"],
+  stars: ">1000",
+  sort: "stars"
+}
+
+// Recent authentication libraries
+{
+  keywordsToSearch: ["authentication", "jwt"],
+  language: "JavaScript",
+  updated: ">=2024-01-01",
+  limit: 10
+}
+
+// Organization's popular repos
+{
+  owner: "facebook",
+  sort: "stars",
+  limit: 20
 }
 ```
 
 ---
 
-## 🖥️ Platform Setup
+### githubViewRepoStructure
 
-### Claude Desktop
+Explore repository directory structure with file sizes.
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+#### Parameters
 
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["octocode-mcp@latest"]
-    }
-  }
+```typescript
+interface GithubViewRepoStructureParams {
+  // Required
+  owner: string;                   // Repository owner
+  repo: string;                    // Repository name
+  branch: string;                  // Branch, tag, or SHA
+
+  // Optional
+  path?: string;                   // Directory path (default: "" = root)
+  depth?: 1 | 2;                   // Exploration depth (default: 1)
+                                   // 1 = current directory only
+                                   // 2 = includes subdirectories
 }
 ```
 
-**With Personal Access Token:**
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["octocode-mcp@latest"],
-      "env": {
-        "GITHUB_TOKEN": "ghp_your_token_here"
-      }
-    }
-  }
+#### Response
+
+```typescript
+interface GithubViewRepoStructureResponse {
+  path: string;                    // Current directory path
+  files: Array<{
+    name: string;
+    path: string;
+    size: number;                  // Bytes
+    type: "file";
+  }>;
+  folders: Array<{
+    name: string;
+    path: string;
+    type: "dir";
+    files?: Array<...>;            // Only when depth=2
+    folders?: Array<...>;          // Only when depth=2
+  }>;
 }
 ```
 
-Restart Claude Desktop to activate.
+#### Best Practices
 
----
+- **Start shallow**: Use `depth=1` for overview, then drill down
+- **Navigate**: Use `path` to explore specific directories
+- **Large repos**: Avoid `depth=2` on root of large repositories
 
-### Cursor
+#### Examples
 
-1. Open **Cursor Settings** → **Features** → **MCP Servers**
-2. Click **"+ Add New Global MCP Server"**
-3. Enter configuration:
-
-```json
+```typescript
+// Root overview
 {
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["octocode-mcp@latest"]
-    }
-  }
+  owner: "facebook",
+  repo: "react",
+  branch: "main",
+  path: "",
+  depth: 1
 }
-```
 
-4. Save and restart Cursor
-
-**Access in Cursor:** Use the Composer (⌘+L on Mac) and select "Agent" mode to automatically use Octocode tools.
-
----
-
-### Windsurf
-
-Add to `~/.codeium/windsurf/model_config.json`:
-
-```json
+// Deep dive into specific directory
 {
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["octocode-mcp@latest"]
-    }
-  }
-}
-```
-
-Restart Windsurf after configuration.
-
----
-
-### VS Code
-
-**One-Click Installation:**
-
-[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_MCP-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=octocode&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22octocode-mcp%40latest%22%5D%7D)
-
-**Manual Installation:**
-
-Add to User Settings (JSON) — Press `Ctrl/Cmd + Shift + P` → `Preferences: Open User Settings (JSON)`:
-
-```json
-{
-  "mcp": {
-    "servers": {
-      "octocode": {
-        "command": "npx",
-        "args": ["octocode-mcp@latest"]
-      }
-    }
-  }
+  owner: "facebook",
+  repo: "react",
+  branch: "main",
+  path: "packages/react/src",
+  depth: 2
 }
 ```
 
 ---
 
-## 📺 Real-World Examples
+### githubGetFileContent
 
-### Example 1: Deep Code Research
-**Prompt:** "Explain deeply how React hooks work under the hood, using information from code and documents."
+Read file contents with smart extraction capabilities.
 
-Watch the AI use Octocode to:
-1. Search React repository for hooks implementation
-2. Analyze the source code structure
-3. Read specific files for technical details
-4. Synthesize comprehensive explanation
+#### Parameters
 
-**[📺 Watch on YouTube](https://www.youtube.com/watch?v=BCOpsRjAPU4&t=9s)**
+```typescript
+interface GithubGetFileContentParams {
+  // Required
+  owner: string;                   // Repository owner
+  repo: string;                    // Repository name
+  path: string;                    // File path from repository root
+
+  // Optional
+  branch?: string;                 // Branch, tag, or SHA (default: default branch)
+
+  // Extraction modes (choose one)
+  // Mode 1: Pattern matching (most efficient)
+  matchString?: string;            // Search pattern
+  matchStringContextLines?: number; // Context lines around match (1-50, default: 5)
+
+  // Mode 2: Line range
+  startLine?: number;              // Start line (1-indexed)
+  endLine?: number;                // End line (1-indexed)
+
+  // Mode 3: Full content
+  fullContent?: boolean;           // Return entire file (default: false)
+
+  // Control
+  minified?: boolean;              // Minify content (default: true)
+  sanitize?: boolean;              // Sanitize secrets (default: true)
+}
+```
+
+#### Response
+
+```typescript
+interface GithubGetFileContentResponse {
+  path: string;
+  content: string;                 // File content (full or extracted)
+  size: number;                    // Original file size in bytes
+  encoding: string;
+  sha: string;
+  extraction_mode: "pattern" | "range" | "full";
+  matches_found?: number;          // When using matchString
+}
+```
+
+#### Best Practices
+
+- **Token efficiency**: Use `matchString` for 85% token savings vs `fullContent`
+- **Large files**: Always use extraction (matchString or line range), never fullContent
+- **Config files**: Set `minified=false` for JSON/YAML to preserve formatting
+- **Precision**: Use `matchString` from `githubSearchCode` text_matches for accurate targeting
+
+#### Examples
+
+```typescript
+// Extract function with context (BEST - most efficient)
+{
+  owner: "jaredhanson",
+  repo: "passport",
+  path: "lib/strategies/oauth2.js",
+  matchString: "authorize",
+  matchStringContextLines: 20
+}
+
+// Read specific line range
+{
+  owner: "facebook",
+  repo: "react",
+  path: "packages/react/src/React.js",
+  startLine: 1,
+  endLine: 50
+}
+
+// Read config file (preserve formatting)
+{
+  owner: "microsoft",
+  repo: "TypeScript",
+  path: "tsconfig.json",
+  fullContent: true,
+  minified: false
+}
+```
 
 ---
 
-### Example 2: Learn About AI Agents
-**Goal:** Create comprehensive context for building AI agents
+### githubSearchPullRequests
 
-**[📺 Watch on YouTube](https://www.youtube.com/watch?v=rhQ3nTwU9kw)**
+Analyze pull requests, code changes, and discussions.
+
+**Status**: Optional tool (disabled by default)
+
+**Enable**: Set `ENABLE_TOOLS="githubSearchPullRequests"` in environment
+
+#### Parameters
+
+```typescript
+interface GithubSearchPullRequestsParams {
+  // Identification (use one)
+  owner?: string;                  // Repository owner
+  repo?: string;                   // Repository name
+  prNumber?: number;               // Direct PR fetch (fastest, bypasses search)
+
+  // Search filters (when not using prNumber)
+  state?: "open" | "closed";
+  merged?: boolean;                // Only merged PRs (requires state="closed")
+  query?: string;                  // Free-text search in title/body/comments
+  match?: ("title" | "body" | "comments")[];  // Search scope
+
+  // Author and reviewers
+  author?: string;
+  assignee?: string;
+  reviewedBy?: string;
+
+  // Metadata filters
+  label?: string | string[];       // Label filter (OR logic if array)
+  base?: string;                   // Target branch
+  head?: string;                   // Source branch
+
+  // Date filters
+  created?: string;                // Creation date (e.g., ">=2024-01-01")
+  updated?: string;                // Last update date
+  merged?: string;                 // Merge date
+  closed?: string;                 // Close date
+
+  // Engagement filters
+  comments?: number | string;      // Comment count (e.g., ">5", "10..20")
+  reactions?: number | string;     // Reaction count
+
+  // Control
+  sort?: "created" | "updated" | "best-match";
+  order?: "asc" | "desc";
+  limit?: number;                  // Max results: 1-10 (default: 5)
+
+  // Content inclusion (token expensive)
+  withContent?: boolean;           // Include code diffs (default: false)
+  withComments?: boolean;          // Include comment threads (default: false)
+}
+```
+
+#### Response
+
+```typescript
+interface GithubSearchPullRequestsResponse {
+  results: Array<{
+    number: number;
+    title: string;
+    state: "open" | "closed";
+    merged: boolean;
+    author: string;
+    html_url: string;
+    created_at: string;
+    updated_at: string;
+    merged_at?: string;
+    body: string;
+
+    // When withContent=true
+    files?: Array<{
+      filename: string;
+      status: "added" | "modified" | "removed";
+      additions: number;
+      deletions: number;
+      changes: number;
+      patch?: string;              // Diff content
+    }>;
+
+    // When withComments=true
+    comments?: Array<{
+      author: string;
+      body: string;
+      created_at: string;
+    }>;
+  }>;
+}
+```
+
+#### Best Practices
+
+- **Direct fetch**: Use `prNumber` for 10x faster retrieval
+- **Production code**: Use `state="closed"` + `merged=true` for shipped features
+- **Token management**:
+  - `withComments=false`: 50% token savings
+  - `withContent=false`: 80% token savings
+- **Analysis**: Enable content/comments only when needed for deep analysis
+
+#### Examples
+
+```typescript
+// Fetch specific PR with diffs (direct, fastest)
+{
+  owner: "facebook",
+  repo: "react",
+  prNumber: 12345,
+  withContent: true
+}
+
+// Find merged authentication PRs
+{
+  owner: "passportjs",
+  repo: "passport",
+  state: "closed",
+  merged: true,
+  query: "authentication",
+  limit: 5
+}
+
+// Recent open PRs with discussions
+{
+  owner: "microsoft",
+  repo: "TypeScript",
+  state: "open",
+  sort: "updated",
+  withComments: true,
+  limit: 10
+}
+
+// Author's bug fixes
+{
+  owner: "facebook",
+  repo: "react",
+  author: "gaearon",
+  label: "bug",
+  state: "closed",
+  merged: true
+}
+```
 
 ---
 
-### Example 3: Review Pull Requests
-**Goal:** Analyze how features are implemented through PR reviews
-
-**[📺 Watch on YouTube](https://www.youtube.com/watch?v=rhQ3nTwU9kw)**
-
----
-
-### Example 4: Complex ThreeJS Implementation
-**See the dramatic difference** between generic AI and Octocode-enhanced AI:
-
-**[ Interactive Demo](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)**
-
-This comparison shows how Octocode transforms AI from generic suggestions to expert-level implementations with real-world patterns.
-
----
-
-## ⚙️ Advanced Configuration
-
-### Tool Selection
-
-**Run Specific Tools Only (Exclusive Mode):**
-```bash
-export TOOLS_TO_RUN="githubSearchCode,githubSearchRepositories"
-```
-
-**Enable Additional Tools (Additive Mode):**
-```bash
-export ENABLE_TOOLS="githubSearchPullRequests"
-```
-
-**Disable Specific Default Tools:**
-```bash
-export DISABLE_TOOLS="githubViewRepoStructure"
-```
-
-**Enable Experimental Features:**
-```bash
-export BETA="1"
-```
-
-**Note:** `TOOLS_TO_RUN` cannot be combined with `ENABLE_TOOLS`/`DISABLE_TOOLS`.
+## Configuration
 
 ### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `GITHUB_TOKEN` | Personal Access Token for authentication | Uses `gh` CLI if not set |
-| `TOOLS_TO_RUN` | Comma-separated list of tools to run exclusively | All default tools |
-| `ENABLE_TOOLS` | Comma-separated list of additional tools to enable | None |
-| `DISABLE_TOOLS` | Comma-separated list of tools to disable | None |
-| `BETA` | Enable experimental features | `0` |
+| Variable | Type | Description | Default |
+|----------|------|-------------|---------|
+| `GITHUB_TOKEN` | string | Personal Access Token | Uses `gh` CLI if not set |
+| `TOOLS_TO_RUN` | string | Comma-separated tool list (exclusive mode) | All default tools |
+| `ENABLE_TOOLS` | string | Comma-separated tools to enable (additive) | None |
+| `DISABLE_TOOLS` | string | Comma-separated tools to disable | None |
+| `BETA` | "0" \| "1" | Enable experimental features | "0" |
 
-### Example Configuration with Environment Variables
+**Notes**:
+- `TOOLS_TO_RUN` is mutually exclusive with `ENABLE_TOOLS`/`DISABLE_TOOLS`
+- Default tools: `githubSearchCode`, `githubSearchRepositories`, `githubViewRepoStructure`, `githubGetFileContent`
+- Optional tools: `githubSearchPullRequests`
 
-**Claude Desktop Config:**
+### Tool Selection Examples
+
+```bash
+# Run only search tools (exclusive mode)
+export TOOLS_TO_RUN="githubSearchCode,githubSearchRepositories"
+
+# Enable PR search (additive mode)
+export ENABLE_TOOLS="githubSearchPullRequests"
+
+# Disable structure exploration
+export DISABLE_TOOLS="githubViewRepoStructure"
+
+# Enable experimental features
+export BETA="1"
+```
+
+### MCP Configuration with Environment Variables
+
 ```json
 {
   "mcpServers": {
@@ -502,101 +587,190 @@ export BETA="1"
       "args": ["octocode-mcp@latest"],
       "env": {
         "GITHUB_TOKEN": "ghp_your_token_here",
-        "ENABLE_TOOLS": "githubSearchPullRequests"
+        "ENABLE_TOOLS": "githubSearchPullRequests",
+        "BETA": "1"
       }
     }
   }
 }
 ```
 
-### Enterprise Features
+---
 
-**Content Sanitization:**
-- Automatic detection and redaction of API keys, tokens, passwords
-- Pattern-based secret detection across 50+ types
-- Configurable through security policies
+## Authentication
 
-**Token Optimization:**
-- Smart content minification (up to 70% reduction)
-- Partial file reading for large files
-- Structured, predictable response formats
+### Method 1: GitHub CLI (Recommended)
 
-**Access Control:**
-- Respects your GitHub permissions
-- Works with public and private repositories
-- Organization-level access support
+```bash
+# Install GitHub CLI
+brew install gh  # macOS
+# or download from https://cli.github.com/
 
-**Rate Limiting:**
-- Built-in GitHub API rate limit handling
-- Automatic retries with exponential backoff
-- Progress indicators for long operations
+# Authenticate
+gh auth login
+
+# Verify
+gh auth status
+```
+
+**Pros**: Automatic token refresh, secure credential storage
+**Cons**: Requires separate installation
+
+### Method 2: Personal Access Token
+
+1. Create token at [github.com/settings/tokens](https://github.com/settings/tokens)
+2. Required scopes:
+   - `repo` - Access repositories (public and private)
+   - `read:user` - Read user profile
+   - `read:org` - Read organization data
+3. Add to environment: `GITHUB_TOKEN=ghp_your_token_here`
+
+**Pros**: Simple, direct control
+**Cons**: Manual token management, no auto-refresh
+
+### Rate Limits
+
+| Authentication | Rate Limit | Recommended For |
+|----------------|------------|-----------------|
+| Unauthenticated | 60 req/hour | Testing only |
+| Authenticated | 5,000 req/hour | Production use |
+| GitHub Enterprise | Custom | Enterprise deployments |
+
+**Built-in handling**: Server automatically retries with exponential backoff on rate limit errors.
 
 ---
 
-## 📚 Documentation & Resources
+## Advanced Usage
 
-| Resource | Description | Link |
-|----------|-------------|------|
-| **🌐 Official Website** | Interactive tutorials and community | [octocode.ai](https://octocode.ai) |
-| **📺 YouTube Channel** | Video tutorials and demos | [Octocode on YouTube](https://www.youtube.com/@Octocode-ai) |
-| **📖 Usage Guide** | 20+ examples and best practices | [USAGE_GUIDE.md](./docs/USAGE_GUIDE.md) |
-| **🔐 Authentication Guide** | Complete setup and enterprise features | [AUTHENTICATION.md](./docs/AUTHENTICATION.md) |
-| **🔧 Tool Schemas** | Complete API reference for all tools | [TOOL_SCHEMAS.md](./docs/TOOL_SCHEMAS.md) |
-| **🏗️ Architecture** | System design and performance details | [summary.md](./docs/summary.md) |
-| **📦 NPM Package** | Latest releases and changelog | [octocode-mcp on NPM](https://www.npmjs.com/package/octocode-mcp) |
+### Progressive Research Workflow
+
+Recommended three-phase pattern for deep code understanding:
+
+```typescript
+// PHASE 1: DISCOVER - Find relevant repositories
+const repos = await githubSearchRepositories({
+  topicsToSearch: ["microservices", "typescript"],
+  stars: ">1000"
+});
+
+// PHASE 2: EXPLORE - Understand structure
+const structure = await githubViewRepoStructure({
+  owner: repos.results[0].owner,
+  repo: repos.results[0].name,
+  branch: "main",
+  path: "",
+  depth: 1
+});
+
+// PHASE 3: ANALYZE - Deep dive into code
+const code = await githubSearchCode({
+  owner: repos.results[0].owner,
+  repo: repos.results[0].name,
+  keywordsToSearch: ["event", "handler"],
+  path: "src/services"
+});
+
+const fileContent = await githubGetFileContent({
+  owner: repos.results[0].owner,
+  repo: repos.results[0].name,
+  path: code.results[0].path,
+  matchString: "EventHandler",
+  matchStringContextLines: 30
+});
+```
+
+### Token Optimization Strategies
+
+1. **Use pattern matching over full content**
+   ```typescript
+   // Good: 85% token savings
+   { matchString: "function", matchStringContextLines: 10 }
+
+   // Avoid: High token cost
+   { fullContent: true }
+   ```
+
+2. **Discovery before detailed search**
+   ```typescript
+   // Fast discovery (20 tokens)
+   { keywordsToSearch: ["auth"], match: "path" }
+
+   // Then detailed (500 tokens)
+   { keywordsToSearch: ["OAuth2"], match: "file", limit: 5 }
+   ```
+
+3. **Scope searches**
+   ```typescript
+   // Good: Scoped
+   { owner: "org", repo: "repo", path: "src" }
+
+   // Avoid: Unscoped (slow, generic results)
+   { keywordsToSearch: ["helper"] }
+   ```
+
+### Error Handling
+
+All tools return standard error responses:
+
+```typescript
+interface ErrorResponse {
+  error: {
+    code: string;
+    message: string;
+    details?: any;
+  };
+}
+```
+
+Common error codes:
+- `RATE_LIMIT_EXCEEDED` - Wait for rate limit reset
+- `AUTHENTICATION_FAILED` - Check GitHub credentials
+- `NOT_FOUND` - Repository or file doesn't exist
+- `VALIDATION_ERROR` - Invalid parameters
+- `CONTENT_TOO_LARGE` - File exceeds size limits
+
+### Performance Characteristics
+
+| Operation | Typical Latency | Token Cost (avg) |
+|-----------|----------------|------------------|
+| `githubSearchRepositories` | 200-500ms | 100-300 tokens |
+| `githubSearchCode` (path) | 300-800ms | 50-200 tokens |
+| `githubSearchCode` (file) | 500-1500ms | 500-2000 tokens |
+| `githubViewRepoStructure` (depth=1) | 200-400ms | 100-500 tokens |
+| `githubViewRepoStructure` (depth=2) | 400-1000ms | 500-2000 tokens |
+| `githubGetFileContent` (pattern) | 300-600ms | 200-800 tokens |
+| `githubGetFileContent` (full) | 400-1000ms | 1000-5000 tokens |
+| `githubSearchPullRequests` (no content) | 400-800ms | 200-600 tokens |
+| `githubSearchPullRequests` (with content) | 800-2000ms | 2000-10000 tokens |
 
 ---
 
-## 💬 Community & Support
+## Documentation
 
-### Get Help
+### Comprehensive Resources
 
-- **💡 Feature Requests:** [GitHub Discussions](https://github.com/bgauryy/octocode-mcp/discussions/new?category=ideas)
-- **🐛 Issues & Bugs:** [GitHub Issues](https://github.com/bgauryy/octocode-mcp/issues)
-- **📖 Documentation:** [octocode.ai](https://octocode.ai)
-- **🎓 Video Tutorials:** [YouTube Channel](https://www.youtube.com/@Octocode-ai)
+- **[Main README](../../README.md)** - Getting started, overview, examples
+- **[Usage Guide](./docs/USAGE_GUIDE.md)** - 20+ real-world examples
+- **[Authentication Guide](./docs/AUTHENTICATION.md)** - Setup and troubleshooting
+- **[Tool Schemas](./docs/TOOL_SCHEMAS.md)** - Complete JSON schemas
+- **[Architecture](./docs/summary.md)** - System design and internals
 
-### Contributing
+### External Links
 
-We welcome contributions! Octocode MCP is open source and community-driven.
-
-1. **Fork the repository** on GitHub
-2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
-3. **Make your changes** with tests
-4. **Run tests**: `yarn test`
-5. **Submit a pull request**
-
-For questions or suggestions, please open an issue on GitHub.
-
-### Show Your Support
-
-If Octocode MCP helps you build better AI applications, consider:
-
-- ⭐ **Star the repository** on [GitHub](https://github.com/bgauryy/octocode-mcp)
-- 🐦 **Share on Twitter** with #OctocodeMCP
-- 📝 **Write a blog post** about your experience
-- 🎥 **Create a tutorial** and share with the community
+- **[NPM Package](https://www.npmjs.com/package/octocode-mcp)** - Releases and changelog
+- **[GitHub Repository](https://github.com/bgauryy/octocode-mcp)** - Source code
+- **[Official Website](https://octocode.ai)** - Interactive tutorials
+- **[YouTube Channel](https://www.youtube.com/@Octocode-ai)** - Video guides
 
 ---
 
-<div align="center">
+## Support
 
-## 🌟 Recognition
-
-<a href="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp/badge" alt="Octocode MCP on Glama" />
-</a>
+- **Issues**: [github.com/bgauryy/octocode-mcp/issues](https://github.com/bgauryy/octocode-mcp/issues)
+- **Discussions**: [github.com/bgauryy/octocode-mcp/discussions](https://github.com/bgauryy/octocode-mcp/discussions)
 
 ---
 
-### Built with ❤️ for developers by developers
+## License
 
-**[Website](https://octocode.ai)** • **[GitHub](https://github.com/bgauryy/octocode-mcp)** • **[NPM](https://www.npmjs.com/package/octocode-mcp)**
-
----
-
-*Octocode MCP is an official MCP Community Server*
-
-[![MCP Community](https://img.shields.io/badge/Model_Context_Protocol-Official_Community_Server-blue?style=for-the-badge)](https://github.com/modelcontextprotocol/servers)
-
-</div>
+MIT - See [LICENSE](../../LICENSE) for details.
