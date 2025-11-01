@@ -1,104 +1,97 @@
 <div align="center">
   <img src="https://github.com/bgauryy/octocode-mcp/raw/main/packages/octocode-mcp/assets/logo_white.png" width="400px" alt="Octocode Logo">
-  
+
   # Octocode MCP
-  
-  **Agentic Assistant for AI Agents & IDEs - Smarter Context from Real Code**
-  
+
+  **Intelligent Code Context for AI Systems**
+
+  A Model Context Protocol (MCP) server enabling AI assistants to search, analyze, and extract insights from millions of GitHub repositories with enterprise-grade security and token efficiency.
+
   [![MCP Community Server](https://img.shields.io/badge/Model_Context_Protocol-Official_Community_Server-blue?style=flat-square)](https://github.com/modelcontextprotocol/servers)
   [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bgauryy/octocode-mcp)
   [![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/bgauryy/octocode-mcp)](https://archestra.ai/mcp-catalog/bgauryy__octocode-mcp)
 
-  
 </div>
 
 ---
 
-## 💡 What is Octocode?
+## Table of Contents
 
-Octocode is an **agentic assistant for AI agents and IDEs** that creates smarter context from actual code implementations across millions of GitHub repositories.
-
-### ✨ Key Benefits
-
-- **🎯 Real-World Code Patterns** - Learn from production codebases, not just documentation
-- **🔒 Enterprise-Grade Security** - Built-in content sanitization and secrets detection
-- **🏢 Organization-Wide Support** - Can work on any GitHub organization (based on your permissions), including private orgs
-- **📊 Progressive Research** - Discover → Explore → Analyze workflow for deep code understanding
-
-
-**Perfect for:** Code creation, bug fixes, architecture research, documentation, and learning from real implementations.
+- [See It In Action](#see-it-in-action)
+- [Installation](#installation)
+  - [Quick Start](#quick-start)
+  - [Platform-Specific Setup](#platform-specific-setup)
+- [More Examples](#more-examples)
+- [Overview](#overview)
+- [Architecture](#architecture)
+  - [Octocode MCP Server](#octocode-mcp-server)
+- [Features](#features)
+- [Documentation](#documentation)
+- [Community](#community)
+- [Recognition](#recognition)
+- [License](#license)
 
 ---
 
-## 🎬 See It In Action
+## See It In Action
 
-### 🚀 Full-Stack Agentic App Built in Under 10 Minutes
+### Full-Stack Application Built in Under 10 Minutes
 
-Watch Octocode transform a simple prompt into a complete production-ready application with full-stack implementation (frontend + backend).
+Watch AI assistant use Octocode to research, plan, and build a complete chat application with Express backend.
 
-**💬 The Single Prompt:**
+**The Single Prompt:**
 
-> **Prompt: 
-
-> Use Octocode MCP for Deep Research**
-> I want to build an application with chat (front-end) that shows a chat window to the user.  
+> **Use Octocode MCP for Deep Research**
+>
+> I want to build an application with chat (front-end) that shows a chat window to the user.
 > The user enters a prompt in the chat, and the application sends the prompt to an Express backend that uses AI to process the request.
 >
-> Add a return box (to show the message returned from the AI) and loaders to the UI.  
+> Add a return box (to show the message returned from the AI) and loaders to the UI.
 > I want to build an AI agent system in Node.js using LangChain and LangGraph. Can you research the latest patterns?
 >
-> Please conduct thorough research on how to create this in the best way possible.  
+> Please conduct thorough research on how to create this in the best way possible.
 > Focus on repositories with good documentation and recent activity.
 >
-> - Do a deep research  
-> - Create a plan document  
+> - Do a deep research
+> - Create a plan document
 > - Initiate the plan and create the application
 
-
-**📋 Phase 1: Research & Planning**
+**Phase 1: Research & Planning**
 
 https://github.com/user-attachments/assets/4225ab98-ae2f-46dc-b3ce-7d117e552b8c
 
-[Octocode Plan Document](https://gist.github.com/bgauryy/06504671c0d5fef727fe22c492e054d6)
+[Octocode Plan Document](https://gist.github.com/bgauryy/06504671c0d5fef727fe22c492e054d6) - Detailed architecture and step-by-step guide
 
-*Octocode researches best practices from Millions of repositories and creates a detailed implementation plan*
-
-**⚡ Phase 2: Implementation** *(Run the plan using any CLI/IDE)*
+**Phase 2: Implementation**
 
 https://github.com/user-attachments/assets/2aaee9f1-3592-438a-a633-255b5cbbb8e1
 
-*From plan to working code - full application built with real-world patterns*
+**Result**: Production-ready full-stack application with authentication, real-time features, and best practices - **All in less than 10 minutes**
 
 ---
 
-**🎯 What You Get:**
-- ✅ Deep research across popular repositories
-- ✅ Detailed architecture and implementation plan
-- ✅ Complete working application (frontend + backend)
-- ✅ Production-ready code following industry best practices
-- ⏱️ **All in less than 10 minutes!**
+## Installation
 
----
+### Quick Start
 
-### 🌟 More Examples
+**Prerequisites**:
+- Node.js >= 18.12.0
+- GitHub authentication (choose one):
+  - **GitHub CLI (recommended)**: [https://cli.github.com/](https://cli.github.com/)
+  - **Personal Access Token**: Create at [github.com/settings/tokens](https://github.com/settings/tokens) with scopes: `repo`, `read:user`, `read:org`
 
-- **[🎮 Live Demo: ThreeJS Implementation Comparison](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)**  
-  See the dramatic quality difference between generic AI responses and Octocode-enhanced responses
-  
-- **[📺 YouTube Channel](https://www.youtube.com/@Octocode-ai)**  
-  Deep code research tutorials, AI agent workflows, and pull request analysis
+**Using GitHub CLI**:
 
----
-
-## 🚀 Quick Start
-
-Get started with Octocode in 2 minutes:
+1. Install the GitHub CLI if you haven’t already: [https://cli.github.com/](https://cli.github.com/)
+2. Authenticate with your GitHub account:
 
 ```bash
-# 1. Authenticate with GitHub (install GitHub CLI from https://cli.github.com/)
 gh auth login
+```
 
-# 2. Add to your AI assistant's MCP configuration
+3. Add Octocode MCP to your MCP configuration:
+
+```json
 {
   "mcpServers": {
     "octocode": {
@@ -107,120 +100,291 @@ gh auth login
     }
   }
 }
-
-# 3. Start using it in your AI assistant!
 ```
 
-**[📖 Complete Setup Guide →](./packages/octocode-mcp/README.md#-quick-start-2-minutes)**
+**Using Personal Access Token**:
 
----
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp@latest"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here"
+      }
+    }
+  }
+}
+```
 
-## 📦 What's Inside
+**Using Claude CLI**:
 
-This monorepo contains four powerful tools for AI-enhanced development:
+1. Make sure the GitHub CLI is installed and authenticated:
 
-### 🔍 Octocode MCP Server
-**[`packages/octocode-mcp/`](./packages/octocode-mcp/)** - The core MCP server
-
-Enable AI assistants to search and analyze millions of GitHub repositories with intelligent code discovery.
-
-**Key Features:**
-- 🔍 Smart code search across GitHub's entire public repository index
-- 📊 Progressive research workflows (Discover → Explore → Analyze)
-- 🔒 Enterprise-grade security with automatic secrets sanitization
-- ⚡ Token-efficient responses (up to 70% reduction)
-- 🎯 Context-aware code retrieval with pattern matching
-
-**[📖 Full Documentation →](./packages/octocode-mcp/README.md)**
-
----
-
-### 🧰 Octocode Utils
-**[`packages/octocode-utils/`](./packages/octocode-utils/)** - Utility library
-
-Token optimization and content processing utilities used by Octocode MCP, available as a standalone package.
-
-**Key Features:**
-- 🗜️ Smart content minification for 50+ programming languages
-- ⚡ Advanced token optimization strategies (30-60% savings)
-- 🔧 Helper utilities for content processing
-- 📦 Standalone NPM package for your own projects
-
-**Perfect for:** Building token-efficient AI tools, content processors, and LLM integrations.
-
----
-
-### 🧠 Octocode Local Memory
-**[`packages/octocode-local-memory/`](./packages/octocode-local-memory/)** - In-memory storage MCP
-
-Ultra-fast in-memory storage for AI agent coordination and communication without external dependencies.
-
-**Key Features:**
-- ⚡ Sub-millisecond operations (< 1ms read/write)
-- 🤝 Enable multiple AI agents to coordinate seamlessly
-- 🔒 File lock management to prevent race conditions
-- 📊 Task assignments, status tracking, and inter-agent messaging
-- 🪶 Zero configuration - no database or Redis required
-
-**Perfect for:** Multi-agent workflows, task coordination, real-time status tracking, and parallel agent execution.
-
-**[📖 Full Documentation →](./packages/octocode-local-memory/README.md)**
-
----
-
-### 🤖 Octocode Claude Plugin
-**[`octocode-claude-plugin/`](./octocode-claude-plugin/)** - Multi-agent development system
-
-Transform ideas into production-ready applications with a team of specialized AI agents working in parallel.
-
-**Key Features:**
-- 👥 7 specialized AI agents (Product Manager, Architect, Frontend/Backend/DevOps Engineers, QA, Documentation)
-- 📋 7-phase workflow: Requirements → Architecture → Development → Testing → Documentation → Deployment
-- 🔬 Research-driven decisions from 100,000+ GitHub repositories
-- 🚀 Parallel execution with automatic file conflict prevention
-- ✅ 80-90% test coverage enforcement
-
-**Example Usage:**
 ```bash
-/octocode-generate Build a blog platform with authentication, comments, and admin panel
+gh auth login
 ```
 
-**[📖 Full Documentation →](./octocode-claude-plugin/README.md)**
+2. Register the Octocode MCP server with Claude:
+
+```bash
+claude mcp add -s user octocode-mcp npx 'octocode-mcp@latest'
+```
 
 ---
 
-## 📚 Resources & Documentation
+## More Examples
 
-### 📖 Guides
-- **[🌐 Official Website](https://octocode.ai)** - Interactive tutorials and guides
-- **[📖 Usage Guide](./packages/octocode-mcp/docs/USAGE_GUIDE.md)** - 20+ real-world examples
-- **[🔐 Authentication Setup](./packages/octocode-mcp/docs/AUTHENTICATION.md)** - Complete setup guide
-- **[🔧 API Reference](./packages/octocode-mcp/docs/TOOL_SCHEMAS.md)** - Detailed tool schemas
+### Additional Demonstrations
 
-### 📦 Resources
-- **[📚 Curated Code Resources](./resources/)** - 610+ hand-picked repositories organized by category
+#### ThreeJS Implementation Quality Comparison
+
+**[Interactive Demo](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)**
+
+Side-by-side comparison showing:
+- **Generic AI**: Basic implementation with common patterns
+- **Octocode-Enhanced AI**: Production-grade implementation with advanced techniques from real projects
+
+**Key Differences**:
+- Performance optimizations from high-performance projects
+- Proper resource management patterns
+- Industry-standard error handling
+- Real-world edge case handling
+
+#### Deep Technical Research
+
+**[YouTube: React Hooks Internals](https://www.youtube.com/watch?v=BCOpsRjAPU4&t=9s)**
+
+Demonstrates progressive research workflow:
+1. Repository discovery (React source)
+2. Structure exploration (hooks implementation)
+3. Code analysis (internal mechanisms)
+4. Comprehensive explanation with code references
 
 ---
 
-## 🌟 Community & Support
+## Overview
 
-Join our growing community of developers using Octocode:
+Octocode is an **agentic code research platform** that bridges the gap between AI assistants and real-world code implementations. By providing structured access to GitHub's vast repository ecosystem, it enables AI systems to learn from production codebases rather than relying solely on training data.
 
-- **⭐ Star us on [GitHub](https://github.com/bgauryy/octocode-mcp)** - Show your support!
-- **💬 [GitHub Discussions](https://github.com/bgauryy/octocode-mcp/discussions)** - Ask questions and share ideas
-- **🐛 [Report Issues](https://github.com/bgauryy/octocode-mcp/issues)** - Found a bug? Let us know
-- **📺 [YouTube Channel](https://www.youtube.com/@Octocode-ai)** - Video tutorials and examples
+### Core Capabilities
+
+| Capability | Implementation | Benefit |
+|------------|----------------|---------|
+| **Code Discovery** | Multi-dimensional search across repositories, code, and pull requests | Find relevant implementations in seconds |
+| **Context Extraction** | Smart content retrieval with pattern matching and line-range targeting | Get exactly the context you need |
+| **Token Optimization** | Advanced minification strategies (50+ language support) | 30-70% reduction in token consumption |
+| **Security** | Automatic secrets detection and content sanitization | Enterprise-grade data protection |
+| **Progressive Research** | Workflow-driven exploration (Discover → Explore → Analyze) | Deep understanding of complex systems |
+| **Access Control** | GitHub permission-based access to public and private repositories | Organization-wide code research |
+
+---
+
+## Architecture
+
+### System Design
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     AI Assistant (Client)                    │
+│                  (Claude, Cursor, VS Code)                   │
+└────────────────────────┬────────────────────────────────────┘
+                         │ MCP Protocol (stdio/SSE)
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│                   Octocode MCP Server                        │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  Tool Layer (5 Research Tools)                       │  │
+│  │  - githubSearchCode                                  │  │
+│  │  - githubSearchRepositories                          │  │
+│  │  - githubViewRepoStructure                           │  │
+│  │  - githubGetFileContent                              │  │
+│  │  - githubSearchPullRequests                          │  │
+│  └────────────────────┬─────────────────────────────────┘  │
+│                       │                                      │
+│  ┌────────────────────▼─────────────────────────────────┐  │
+│  │  Processing Layer (octocode-utils)                   │  │
+│  │  - Content Minification (Terser, CSS, HTML)          │  │
+│  │  - JSON to YAML Conversion                           │  │
+│  │  - Secret Detection & Sanitization                   │  │
+│  │  - Token Optimization                                │  │
+│  └────────────────────┬─────────────────────────────────┘  │
+│                       │                                      │
+│  ┌────────────────────▼─────────────────────────────────┐  │
+│  │  GitHub Integration Layer                            │  │
+│  │  - Authentication (gh CLI / PAT)                     │  │
+│  │  - API Client with Rate Limiting                     │  │
+│  │  - Permission-based Access Control                   │  │
+│  └────────────────────┬─────────────────────────────────┘  │
+└────────────────────────┼────────────────────────────────────┘
+                         │
+                         │ GitHub REST API v3 + GraphQL
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│                    GitHub Platform                           │
+│  - Public Repositories (100M+)                              │
+│  - Private Repositories (permission-based)                  │
+│  - Organization Repositories                                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow
+
+1. **Request Phase**: AI assistant sends MCP tool request with search parameters
+2. **Authentication**: Server validates GitHub credentials (gh CLI or PAT)
+3. **Query Execution**: Server executes GitHub API requests with rate limiting
+4. **Content Processing**: Raw responses processed through octocode-utils
+   - Minification for token efficiency
+   - Secret detection and sanitization
+   - JSON to YAML conversion for structured data
+5. **Response Delivery**: Optimized, secure content returned to AI assistant
+
+---
+
+### Octocode MCP Server
+
+**Package**: [`packages/octocode-mcp/`](./packages/octocode-mcp/)
+**NPM**: [`octocode-mcp`](https://www.npmjs.com/package/octocode-mcp)
+**Type**: Model Context Protocol Server
+
+#### Purpose
+
+MCP server providing structured access to GitHub's code ecosystem through five specialized research tools.
+
+#### Research Tools
+
+| Tool | Purpose | Key Parameters | Output |
+|------|---------|----------------|--------|
+| **githubSearchCode** | Find code implementations across repositories | `keywordsToSearch`, `owner`, `repo`, `path`, `extension` | Code snippets with match context |
+| **githubSearchRepositories** | Discover repositories by topic/keywords | `topicsToSearch`, `keywordsToSearch`, `stars`, `language` | Repository metadata (stars, topics, description) |
+| **githubViewRepoStructure** | Explore directory structure | `owner`, `repo`, `path`, `depth` | File tree with sizes |
+| **githubGetFileContent** | Read file contents with smart extraction | `owner`, `repo`, `path`, `matchString`, `startLine`, `endLine` | File content (full or partial) |
+| **githubSearchPullRequests** | Analyze PRs, changes, discussions | `owner`, `repo`, `state`, `merged`, `withContent` | PR metadata, diffs, comments |
+
+**[Full Documentation →](./packages/octocode-mcp/README.md)**
+
+---
+
+## Features
+
+### Progressive Research Workflow
+
+Octocode implements a three-phase research pattern optimized for deep code understanding:
+
+```
+Phase 1: DISCOVER
+├─ githubSearchRepositories
+│  └─ Find relevant projects by topic, stars, language
+└─ Output: List of candidate repositories
+
+Phase 2: EXPLORE
+├─ githubViewRepoStructure
+│  └─ Understand project organization and architecture
+└─ Output: Directory tree with file sizes
+
+Phase 3: ANALYZE
+├─ githubSearchCode
+│  └─ Find specific implementations and patterns
+├─ githubGetFileContent
+│  └─ Deep dive into specific files
+└─ githubSearchPullRequests (optional)
+   └─ Understand evolution and decision rationale
+```
+
+### Advanced Configuration
+
+#### Tool Selection
+
+```bash
+# Run only specific tools (exclusive mode)
+export TOOLS_TO_RUN="githubSearchCode,githubSearchRepositories"
+
+# Enable additional tools (additive mode)
+export ENABLE_TOOLS="githubSearchPullRequests"
+
+# Disable specific default tools
+export DISABLE_TOOLS="githubViewRepoStructure"
+
+# Enable experimental features
+export BETA="1"
+```
+
+#### Environment Variables
+
+| Variable | Type | Description | Default |
+|----------|------|-------------|---------|
+| `GITHUB_TOKEN` | string | Personal Access Token for authentication | Uses `gh` CLI |
+| `TOOLS_TO_RUN` | string | Comma-separated list of tools to run exclusively | All default tools |
+| `ENABLE_TOOLS` | string | Comma-separated list of additional tools to enable | None |
+| `DISABLE_TOOLS` | string | Comma-separated list of tools to disable | None |
+| `BETA` | "0" \| "1" | Enable experimental features | "0" |
+
+**Note**: `TOOLS_TO_RUN` is mutually exclusive with `ENABLE_TOOLS`/`DISABLE_TOOLS`.
+
+---
+
+## Documentation
+
+### Comprehensive Guides
+
+| Resource | Description | Link |
+|----------|-------------|------|
+| **Official Website** | Interactive tutorials, demos, community | [octocode.ai](https://octocode.ai) |
+| **Usage Guide** | 20+ real-world examples and best practices | [USAGE_GUIDE.md](./packages/octocode-mcp/docs/USAGE_GUIDE.md) |
+| **Authentication Guide** | Setup instructions and troubleshooting | [AUTHENTICATION.md](./packages/octocode-mcp/docs/AUTHENTICATION.md) |
+| **Tool Schemas** | Complete API reference for all tools | [TOOL_SCHEMAS.md](./packages/octocode-mcp/docs/TOOL_SCHEMAS.md) |
+| **Architecture** | System design, performance, internals | [summary.md](./packages/octocode-mcp/docs/summary.md) |
+| **YouTube Channel** | Video tutorials and demonstrations | [Octocode on YouTube](https://www.youtube.com/@Octocode-ai) |
+
+
+---
+
+## Community
+
+### Get Support
+
+- **GitHub Discussions**: [Ask questions, share ideas](https://github.com/bgauryy/octocode-mcp/discussions)
+- **GitHub Issues**: [Report bugs, request features](https://github.com/bgauryy/octocode-mcp/issues)
+- **Documentation**: [Complete guides and references](https://octocode.ai)
+- **YouTube**: [Video tutorials and examples](https://www.youtube.com/@Octocode-ai)
+
+### Show Your Support
+
+If Octocode helps your AI development workflow:
+
+- **Star the repository** on [GitHub](https://github.com/bgauryy/octocode-mcp)
+- **Share on social media** with #OctocodeMCP
+- **Write about your experience** on your blog
+- **Create tutorials** and share with the community
+- **Contribute** improvements and bug fixes
+
+---
 
 <div align="center">
-  
-  <a href="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp">
-    <img width="380" height="200" src="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp/badge" />
-  </a>
 
-  ---
+## Recognition
 
-  **Built with ❤️ for developers by developers**
+<a href="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp/badge" alt="Octocode MCP on Glama" />
+</a>
 
-  [Website](https://octocode.ai)
+---
+
+**Built with care for developers by developers**
+
+[Website](https://octocode.ai) • [GitHub](https://github.com/bgauryy/octocode-mcp) • [NPM](https://www.npmjs.com/package/octocode-mcp)
+
+---
+
+*Octocode MCP is an official MCP Community Server*
+
+[![MCP Community](https://img.shields.io/badge/Model_Context_Protocol-Official_Community_Server-blue?style=for-the-badge)](https://github.com/modelcontextprotocol/servers)
 
 </div>
+
+---
+
+## License
+
+MIT - See [LICENSE](./LICENSE) for details.
