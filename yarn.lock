@@ -2715,6 +2715,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"estree-walker@npm:^0.6.1":
+  version: 0.6.1
+  resolution: "estree-walker@npm:0.6.1"
+  checksum: 10c0/6dabc855faa04a1ffb17b6a9121b6008ba75ab5a163ad9dc3d7fca05cfda374c5f5e91418d783496620ca75e99a73c40874d8b75f23b4117508cc8bde78e7b41
+  languageName: node
+  linkType: hard
+
 "estree-walker@npm:^2.0.2":
   version: 2.0.2
   resolution: "estree-walker@npm:2.0.2"
@@ -4311,6 +4318,7 @@ __metadata:
     octokit: "npm:^5.0.3"
     prettier: "npm:^3.5.3"
     rollup: "npm:^4.46.2"
+    rollup-plugin-string: "npm:^3.0.0"
     rollup-plugin-terser: "npm:^7.0.2"
     typescript: "npm:^5.9.2"
     uuid: "npm:^13.0.0"
@@ -4946,6 +4954,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"rollup-plugin-string@npm:^3.0.0":
+  version: 3.0.0
+  resolution: "rollup-plugin-string@npm:3.0.0"
+  dependencies:
+    rollup-pluginutils: "npm:^2.4.1"
+  checksum: 10c0/83bbc2230d5271bc014739d52320b66cd4071fc4f7181369533809e4a3f0269b6cb4873caa96426396b36f694023a9f68f5de7a94254e1f2764ca6bacff61995
+  languageName: node
+  linkType: hard
+
 "rollup-plugin-terser@npm:^7.0.2":
   version: 7.0.2
   resolution: "rollup-plugin-terser@npm:7.0.2"
@@ -4957,6 +4974,15 @@ __metadata:
   peerDependencies:
     rollup: ^2.0.0
   checksum: 10c0/f79b851c6f7b06555d3a8ce7a4e32abd2b7cb8318e89fb8db73e662fa6e3af1a59920e881d111efc65a7437fd9582b61b1f4859b6fd839ba948616829d92432d
+  languageName: node
+  linkType: hard
+
+"rollup-pluginutils@npm:^2.4.1":
+  version: 2.8.2
+  resolution: "rollup-pluginutils@npm:2.8.2"
+  dependencies:
+    estree-walker: "npm:^0.6.1"
+  checksum: 10c0/20947bec5a5dd68b5c5c8423911e6e7c0ad834c451f1a929b1f4e2bc08836ad3f1a722ef2bfcbeca921870a0a283f13f064a317dc7a6768496e98c9a641ba290
   languageName: node
   linkType: hard
 

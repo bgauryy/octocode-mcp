@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { registerPrompts } from './prompts/prompts.js';
-import { registerResources } from './resources.js';
+//import { registerResources } from './resources.js';
 import { registerSampling } from './sampling.js';
 import { clearAllCache } from './utils/cache.js';
 import { registerTools } from './tools/toolsManager.js';
@@ -53,7 +53,7 @@ async function startServer() {
     registerPrompts(server);
     await logger.info('Prompts ready');
 
-    registerResources(server);
+    //registerResources(server);
     await logger.info('Resources ready');
 
     if (isBetaEnabled()) {
