@@ -149,7 +149,7 @@ claude mcp add -s user octocode-mcp npx 'octocode-mcp@latest'
 
 Click the button below to install Octocode MCP in Cursor:
 
-[<img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor">](https://cursor.com/en/install-mcp?name=Octocode&config=eyJjb21tYW5kIjoibnB4IG9jdG9jb2RlLW1jcEBsYXRlc3QifQ%3D%3D)
+[<img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor">](https://cursor.com/en-US/install-mcp?name=octocode&config=eyJjb21tYW5kIjoibnB4IG9jdG9jb2RlLW1jcEBsYXRlc3QifQ%3D%3D)
 
 #### Manual Installation
 
