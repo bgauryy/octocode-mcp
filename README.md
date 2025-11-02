@@ -331,10 +331,10 @@ export BETA="1"
 | Resource | Description | Link |
 |----------|-------------|------|
 | **Official Website** | Interactive tutorials, demos, community | [octocode.ai](https://octocode.ai) |
-| **Usage Guide** | 20+ real-world examples and best practices | [USAGE_GUIDE.md](./packages/octocode-mcp/docs/USAGE_GUIDE.md) |
-| **Authentication Guide** | Setup instructions and troubleshooting | [AUTHENTICATION.md](./packages/octocode-mcp/docs/AUTHENTICATION.md) |
-| **Tool Schemas** | Complete API reference for all tools | [TOOL_SCHEMAS.md](./packages/octocode-mcp/docs/TOOL_SCHEMAS.md) |
-| **Architecture** | System design, performance, internals | [summary.md](./packages/octocode-mcp/docs/summary.md) |
+| **Usage Guide** | 20+ real-world examples and best practices | [USAGE_GUIDE.md](./docs/USAGE_GUIDE.md) |
+| **Authentication Guide** | Setup instructions and troubleshooting | [AUTHENTICATION.md](./docs/AUTHENTICATION.md) |
+| **Tool Schemas** | Complete API reference for all tools | [TOOL_SCHEMAS.md](./docs/TOOL_SCHEMAS.md) |
+| **Architecture** | System design, performance, internals | [SUMMMARY.md](./docs/SUMMMARY.md) |
 | **YouTube Channel** | Video tutorials and demonstrations | [Octocode on YouTube](https://www.youtube.com/@Octocode-ai) |
 
 
