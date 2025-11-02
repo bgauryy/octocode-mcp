@@ -83,16 +83,20 @@ https://github.com/user-attachments/assets/2aaee9f1-3592-438a-a633-255b5cbbb8e1
   - **GitHub CLI (recommended)**: Install from [cli.github.com](https://cli.github.com/) and run `gh auth login`
   - **Personal Access Token**: Create at [github.com/settings/tokens](https://github.com/settings/tokens) with scopes: `repo`, `read:user`, `read:org`
 
-### Quick Start
+### Getting started
 
-**Standard configuration** that works across most MCP clients:
+First, install the Octocode MCP server with your client.
 
-```json
+**Standard config** works in most of the tools:
+
+```js
 {
   "mcpServers": {
     "octocode": {
       "command": "npx",
-      "args": ["octocode-mcp@latest"]
+      "args": [
+        "octocode-mcp@latest"
+      ]
     }
   }
 }
@@ -100,64 +104,83 @@ https://github.com/user-attachments/assets/2aaee9f1-3592-438a-a633-255b5cbbb8e1
 
 > **Note**: This configuration uses GitHub CLI authentication. For Personal Access Token, see the [Authentication Guide](#authentication-methods) below.
 
----
-
-### Platform-Specific Setup
+[<img src="https://img.shields.io/badge/VS_Code-VS_Code?style=flat-square&label=Install%20Server&color=0098FF" alt="Install in VS Code">](https://insiders.vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522octocode%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522octocode-mcp%2540latest%255D%257D) [<img alt="Install in VS Code Insiders" src="https://img.shields.io/badge/VS_Code_Insiders-VS_Code_Insiders?style=flat-square&label=Install%20Server&color=24bfa5">](https://insiders.vscode.dev/redirect?url=vscode-insiders%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522octocode%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522octocode-mcp%2540latest%255D%257D)
 
 <details>
-<summary><b>Claude Desktop</b></summary>
+<summary>Amp</summary>
 
-#### One-Click Install (Recommended)
-
-Use the Claude CLI to install Octocode MCP:
-
-```bash
-# Authenticate with GitHub first
-gh auth login
-
-# Install Octocode MCP
-claude mcp add -s user octocode-mcp npx 'octocode-mcp@latest'
-```
-
-#### Manual Installation
-
-1. Open your Claude Desktop configuration file:
-   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-2. Add Octocode to the configuration:
+Add via the Amp VS Code extension settings screen or by updating your settings.json file:
 
 ```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["octocode-mcp@latest"]
-    }
+"amp.mcpServers": {
+  "octocode": {
+    "command": "npx",
+    "args": [
+      "octocode-mcp@latest"
+    ]
   }
 }
 ```
 
-3. Restart Claude Desktop
+**Amp CLI Setup:**
+
+Add via the `amp mcp add` command below:
+
+```bash
+amp mcp add octocode -- npx octocode-mcp@latest
+```
 
 </details>
 
 <details>
-<summary><b>Cursor</b></summary>
+<summary>Claude Code</summary>
 
-#### One-Click Install
+Use the Claude Code CLI to add the Octocode MCP server:
 
-Click the button below to install Octocode MCP in Cursor:
+```bash
+claude mcp add octocode npx octocode-mcp@latest
+```
 
-[<img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor">](https://cursor.com/en-US/install-mcp?name=octocode&config=eyJjb21tYW5kIjoibnB4IG9jdG9jb2RlLW1jcEBsYXRlc3QifQ%3D%3D)
+</details>
 
-#### Manual Installation
+<details>
+<summary>Claude Desktop</summary>
 
-1. Open Cursor Settings → **MCP** → **Add new MCP Server**
-2. Set **Name**: `octocode`
-3. Set **Type**: `command`
-4. Set **Command**: `npx octocode-mcp@latest`
-5. Click **Save**
+Follow the MCP install [guide](https://modelcontextprotocol.io/quickstart/user), use the standard config above.
+
+</details>
+
+<details>
+<summary>Codex</summary>
+
+Use the Codex CLI to add the Octocode MCP server:
+
+```bash
+codex mcp add octocode npx "octocode-mcp@latest"
+```
+
+Alternatively, create or edit the configuration file `~/.codex/config.toml` and add:
+
+```toml
+[mcp_servers.octocode]
+command = "npx"
+args = ["octocode-mcp@latest"]
+```
+
+For more information, see the [Codex MCP documentation](https://github.com/openai/codex/blob/main/codex-rs/config.md#mcp_servers).
+
+</details>
+
+<details>
+<summary>Cursor</summary>
+
+#### Click the button to install:
+
+[<img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor">](https://cursor.com/en/install-mcp?name=octocode&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJvY3RvY29kZS1tY3BAbGF0ZXN0Il19)
+
+#### Or install manually:
+
+Go to `Cursor Settings` -> `MCP` -> `Add new MCP Server`. Name to your liking, use `command` type with the command `npx octocode-mcp@latest`. You can also verify config or add command like arguments via clicking `Edit`.
 
 #### Project-Specific Configuration
 
@@ -177,122 +200,163 @@ Create `.cursor/mcp.json` in your project root:
 </details>
 
 <details>
-<summary><b>VS Code (Copilot)</b></summary>
+<summary>Cline</summary>
 
-#### One-Click Install
+Add via the Cline VS Code extension settings or by updating your `cline_mcp_settings.json` file:
 
-[<img src="https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square" alt="Install in VS Code">](https://insiders.vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522octocode%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522octocode-mcp%2540latest%2522%255D%257D) [<img alt="Install in VS Code Insiders" src="https://img.shields.io/badge/VS_Code_Insiders-Install_Server-24bfa5?style=flat-square">](https://insiders.vscode.dev/redirect?url=vscode-insiders%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522octocode%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522octocode-mcp%2540latest%2522%255D%257D)
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": [
+        "octocode-mcp@latest"
+      ]
+    }
+  }
+}
+```
 
-#### CLI Installation
+</details>
+
+<details>
+<summary>Gemini CLI</summary>
+
+Follow the MCP install [guide](https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md#configure-the-mcp-server-in-settingsjson), use the standard config above.
+
+</details>
+
+<details>
+<summary>Goose</summary>
+
+#### Click the button to install:
+
+[![Install in Goose](https://block.github.io/goose/img/extension-install-dark.svg)](https://block.github.io/goose/extension?cmd=npx&arg=octocode-mcp%40latest&id=octocode&name=Octocode&description=Intelligent%20code%20research%20and%20GitHub%20repository%20analysis)
+
+#### Or install manually:
+
+Go to `Advanced settings` -> `Extensions` -> `Add custom extension`. Name to your liking, use type `STDIO`, and set the `command` to `npx octocode-mcp@latest`. Click "Add Extension".
+
+</details>
+
+<details>
+<summary>Kiro</summary>
+
+Follow the MCP Servers [documentation](https://kiro.dev/docs/mcp/). For example in `.kiro/settings/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": [
+        "octocode-mcp@latest"
+      ]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>LM Studio</summary>
+
+#### Click the button to install:
+
+[![Add MCP Server octocode to LM Studio](https://files.lmstudio.ai/deeplink/mcp-install-light.svg)](https://lmstudio.ai/install-mcp?name=octocode&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJvY3RvY29kZS1tY3BAbGF0ZXN0Il19)
+
+#### Or install manually:
+
+Go to `Program` in the right sidebar -> `Install` -> `Edit mcp.json`. Use the standard config above.
+
+</details>
+
+<details>
+<summary>opencode</summary>
+
+Follow the MCP Servers [documentation](https://opencode.ai/docs/mcp-servers/). For example in `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "octocode": {
+      "type": "local",
+      "command": [
+        "npx",
+        "octocode-mcp@latest"
+      ],
+      "enabled": true
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>Qodo Gen</summary>
+
+Open [Qodo Gen](https://docs.qodo.ai/qodo-documentation/qodo-gen) chat panel in VSCode or IntelliJ → Connect more tools → + Add new MCP → Paste the standard config above.
+
+Click <code>Save</code>.
+
+</details>
+
+<details>
+<summary>VS Code</summary>
+
+#### Click the button to install:
+
+[<img src="https://img.shields.io/badge/VS_Code-VS_Code?style=flat-square&label=Install%20Server&color=0098FF" alt="Install in VS Code">](https://insiders.vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522octocode%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522octocode-mcp%2540latest%255D%257D) [<img alt="Install in VS Code Insiders" src="https://img.shields.io/badge/VS_Code_Insiders-VS_Code_Insiders?style=flat-square&label=Install%20Server&color=24bfa5">](https://insiders.vscode.dev/redirect?url=vscode-insiders%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522octocode%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522octocode-mcp%2540latest%255D%257D)
+
+#### Or install manually:
+
+Follow the MCP install [guide](https://code.visualstudio.com/docs/copilot/chat/mcp-servers#_add-an-mcp-server), use the standard config above. You can also install the Octocode MCP server using the VS Code CLI:
 
 ```bash
 # For VS Code
 code --add-mcp '{"name":"octocode","command":"npx","args":["octocode-mcp@latest"]}'
-
-# For VS Code Insiders
-code-insiders --add-mcp '{"name":"octocode","command":"npx","args":["octocode-mcp@latest"]}'
 ```
 
-#### Manual Installation
-
-Follow the [VS Code MCP guide](https://code.visualstudio.com/docs/copilot/chat/mcp-servers#_add-an-mcp-server) and use the standard config above.
+After installation, the Octocode MCP server will be available for use with your GitHub Copilot agent in VS Code.
 
 </details>
 
 <details>
-<summary><b>Cline (VS Code Extension)</b></summary>
+<summary>Warp</summary>
 
-1. Open VS Code
-2. Click the **MCP Servers** icon (📚) in the Cline extension
-3. Click **Configure MCP Servers**
-4. Add to `cline_mcp_settings.json`:
+Go to `Settings` -> `AI` -> `Manage MCP Servers` -> `+ Add` to [add an MCP Server](https://docs.warp.dev/knowledge-and-collaboration/mcp#adding-an-mcp-server). Use the standard config above.
 
-```json
+Alternatively, use the slash command `/add-mcp` in the Warp prompt and paste the standard config from above:
+
+```js
 {
   "mcpServers": {
     "octocode": {
       "command": "npx",
-      "args": ["octocode-mcp@latest"]
+      "args": [
+        "octocode-mcp@latest"
+      ]
     }
   }
 }
 ```
 
-5. Restart VS Code or reload Cline
+</details>
+
+<details>
+<summary>Windsurf</summary>
+
+Follow Windsurf MCP [documentation](https://docs.windsurf.com/windsurf/cascade/mcp). Use the standard config above.
 
 </details>
 
 <details>
-<summary><b>Windsurf</b></summary>
+<summary>Zed</summary>
 
-Follow [Windsurf MCP documentation](https://docs.windsurf.com/windsurf/cascade/mcp) and use the standard config above.
-
-</details>
-
-<details>
-<summary><b>Zed</b></summary>
-
-1. Open Zed Settings
-2. Navigate to **MCP Servers**
-3. Add the standard configuration above
-4. Restart Zed
-
-</details>
-
-<details>
-<summary><b>Goose</b></summary>
-
-#### One-Click Install
-
-[![Install in Goose](https://block.github.io/goose/img/extension-install-dark.svg)](https://block.github.io/goose/extension?cmd=npx&arg=octocode-mcp%40latest&id=octocode&name=Octocode&description=Intelligent%20code%20research%20and%20GitHub%20repository%20analysis)
-
-#### Manual Installation
-
-1. Go to **Advanced settings** → **Extensions** → **Add custom extension**
-2. Set **Name**: `octocode`
-3. Set **Type**: `STDIO`
-4. Set **Command**: `npx octocode-mcp@latest`
-5. Click **Add Extension**
-
-</details>
-
-<details>
-<summary><b>LM Studio</b></summary>
-
-#### One-Click Install
-
-[![Add Octocode to LM Studio](https://files.lmstudio.ai/deeplink/mcp-install-light.svg)](https://lmstudio.ai/install-mcp?name=octocode&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJvY3RvY29kZS1tY3BAbGF0ZXN0Il19)
-
-#### Manual Installation
-
-1. Go to **Program** (right sidebar) → **Install** → **Edit mcp.json**
-2. Add the standard configuration above
-3. Save and restart
-
-</details>
-
-<details>
-<summary><b>Warp</b></summary>
-
-#### Using UI
-
-1. Go to **Settings** → **AI** → **Manage MCP Servers** → **+ Add**
-2. Use the standard configuration above
-
-#### Using Slash Command
-
-Type `/add-mcp` in the Warp prompt and paste:
-
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["octocode-mcp@latest"]
-    }
-  }
-}
-```
+Follow the MCP Servers [documentation](https://zed.dev/docs/assistant/model-context-protocol). Use the standard config above.
 
 </details>
 
