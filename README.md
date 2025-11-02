@@ -43,7 +43,7 @@
 
 Watch AI assistant use Octocode to research, plan, and build a complete chat application with Express backend.
 
-**The Single Prompt:**
+**Prompt:**
 
 > **Use Octocode MCP for Deep Research**
 >
@@ -73,6 +73,16 @@ https://github.com/user-attachments/assets/2aaee9f1-3592-438a-a633-255b5cbbb8e1
 **Result**: Production-ready full-stack application with authentication, real-time features, and best practices - **All in less than 10 minutes**
 
 ---
+
+### Research and Build Fullstack Agentic Application with /research command in Under 10 Minutes
+
+**Prompt:**
+
+> /octocode/research How can I use LangChain, LangGraph, and similar open-source AI tools to create agentic 
+> flows between agents for goal-oriented tasks?
+> Can you suggest UI frameworks I can use to build a full-stack AI application?
+
+
 
 ## Installation
 
