@@ -20,7 +20,7 @@
     "noUncheckedIndexedAccess": true,
     "types": ["vitest/globals", "node"]
   },
-  "include": ["src/**/*", "tests/**/*"],
+  "include": ["src/**/*", "tests/**/*", "src/types/**/*.d.ts"],
   "exclude": ["node_modules"],
   "ts-node": {
     "esm": true

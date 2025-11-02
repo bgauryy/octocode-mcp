@@ -1,6 +1,6 @@
 {
   "name": "octocode-mcp",
-  "version": "7.0.3",
+  "version": "7.0.4",
   "description": "Model Context Protocol (MCP) server for advanced GitHub repository analysis and code discovery. Provides AI assistants with powerful tools to search, analyze, and understand codebases across GitHub.",
   "keywords": [
     "mcp",
@@ -69,6 +69,7 @@
     "eslint-plugin-prettier": "^5.4.1",
     "prettier": "^3.5.3",
     "rollup": "^4.46.2",
+    "rollup-plugin-string": "^3.0.0",
     "rollup-plugin-terser": "^7.0.2",
     "typescript": "^5.9.2",
     "vitest": "^4.0.4"
