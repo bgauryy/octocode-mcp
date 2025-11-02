@@ -1,9 +1,20 @@
 import { z } from 'zod';
-import { GENERAL } from './schemDescriptions';
 
 export const BaseQuerySchema = z.object({
-  researchGoal: z.string().optional().describe(GENERAL.base.researchGoal),
-  reasoning: z.string().optional().describe(GENERAL.base.reasoning),
+  mainResearchGoal: z
+    .string()
+    .optional()
+    .describe(
+      'Main research objective (multiple queries can share the same main goal for semantic grouping and session tracking)'
+    ),
+  researchGoal: z
+    .string()
+    .optional()
+    .describe('Specific information this query seeks'),
+  reasoning: z
+    .string()
+    .optional()
+    .describe('Why this query helps achieve the goal'),
 });
 
 export function createBulkQuerySchema<T extends z.ZodTypeAny>(

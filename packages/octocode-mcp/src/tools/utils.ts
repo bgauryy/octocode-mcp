@@ -43,6 +43,7 @@ function extractApiErrorHints(apiError: GitHubAPIError): string[] {
  */
 export function createErrorResult(
   query: {
+    mainResearchGoal?: string;
     researchGoal?: string;
     reasoning?: string;
   },
@@ -54,6 +55,7 @@ export function createErrorResult(
 
   const result: ToolErrorResult = {
     status: 'error',
+    mainResearchGoal: query.mainResearchGoal,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
     error,
@@ -73,6 +75,7 @@ export function createErrorResult(
  */
 export function createSuccessResult<T>(
   query: {
+    mainResearchGoal?: string;
     researchGoal?: string;
     reasoning?: string;
   },
@@ -85,6 +88,7 @@ export function createSuccessResult<T>(
 
   const result: Record<string, unknown> = {
     status,
+    mainResearchGoal: query.mainResearchGoal,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
     ...data,
