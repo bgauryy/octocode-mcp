@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { PROMPT_SYSTEM_PROMPT } from './systemPrompts.js';
+import { PROMPT } from './prompts/research.js';
 
 /**
  * Register resource handlers with the MCP server
@@ -24,7 +24,7 @@ export function registerResources(server: McpServer): void {
               {
                 uri: uri.toString(),
                 mimeType: 'text/markdown',
-                text: PROMPT_SYSTEM_PROMPT,
+                text: PROMPT,
                 description:
                   'Research methodology and tool orchestration guidelines',
               },

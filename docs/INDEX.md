@@ -90,6 +90,76 @@ Detailed authentication documentation:
 
 ---
 
+### 6. [Tools & Research Workflows](./TOOLS_AND_RESEARCH_WORKFLOWS.md)
+**Complete guide to tool ecosystem and research patterns**
+
+Comprehensive workflow guide covering:
+- All 5 tools with detailed capabilities
+- Tool relationships and connections
+- Hint system and guidance flow
+- Progressive refinement patterns
+- Multi-tool research workflows
+- Cross-repository analysis
+- Best practices and common pitfalls
+- Troubleshooting guide
+
+**Use this when:** You want to master multi-step research workflows and understand how tools connect.
+
+---
+
+### 7. [Tools Technical Reference](./TOOLS_TECHNICAL_REFERENCE.md)
+**Implementation details and extension patterns**
+
+Technical implementation guide covering:
+- Tool architecture and registration
+- Bulk operations framework
+- Hint system mechanics
+- Response processing pipeline
+- Error handling system
+- Schema system and validation
+- Performance optimization patterns
+- Security implementation
+- Extension patterns and API
+
+**Use this when:** You need to understand implementation details or extend the tool ecosystem.
+
+---
+
+### 8. [Research Decision Trees](./RESEARCH_DECISION_TREES.md)
+**Systematic thinking algorithms for code research**
+
+Comprehensive decision trees and thinking algorithms:
+- Stage-by-stage research flow (A→B→C→D)
+- Entry point selection matrix
+- Detailed thinking algorithms for each stage
+- Visual decision trees (tool selection, search modes, extraction)
+- Alternative scenarios (bug investigation, architecture learning)
+- Advanced thinking patterns (progressive refinement, hypothesis testing)
+- Recovery strategies for common issues
+- Thinking checkpoints and questions
+
+**Use this when:** You need systematic guidance for complex research workflows or want to optimize your research approach.
+
+---
+
+### 9. [Research Workflows Guide](./RESEARCH_WORKFLOWS_GUIDE.md) ⭐ **START HERE**
+**Concise, action-oriented research reference**
+
+Quick-reference guide with essential workflows:
+- 4-stage research flow (A→B→C→D) with decision points
+- Entry point decision matrix
+- Tool selection rules and quick reference
+- Stage-by-stage decision trees with thinking checkpoints
+- Visual decision flows
+- 4 complete workflow examples (technology learning, bug investigation, API integration, dependency tracing)
+- Recovery strategies for common problems
+- Best practices summary (Do's and Don'ts)
+- Quick decision reference table
+
+**Use this when:** You need a concise, actionable reference for research workflows. Perfect for quick lookup during active research.
+
+---
+
 ##  Quick Navigation
 
 ### By Topic
@@ -101,11 +171,14 @@ Detailed authentication documentation:
 
 #### **Using the Tools**
 1. [Tool Overview](./DOCUMENTATION.md#available-tools) - All 5 tools
-2. [Search Code](./DOCUMENTATION.md#1-githubsearchcode) - Code search tool
-3. [Search Repositories](./DOCUMENTATION.md#2-githubsearchrepositories) - Repo discovery
-4. [Fetch Content](./DOCUMENTATION.md#3-githubgetfilecontent) - File reading
-5. [View Structure](./DOCUMENTATION.md#4-githubviewrepostructure) - Repo exploration
-6. [Search PRs](./DOCUMENTATION.md#5-githubsearchpullrequests) - PR analysis
+2. [Research Workflows Guide](./RESEARCH_WORKFLOWS_GUIDE.md) ⭐ - **Quick reference**
+3. [Tools & Research Workflows](./TOOLS_AND_RESEARCH_WORKFLOWS.md) - Complete workflow guide
+4. [Research Decision Trees](./RESEARCH_DECISION_TREES.md) - Systematic thinking algorithms
+5. [Search Code](./DOCUMENTATION.md#1-githubsearchcode) - Code search tool
+6. [Search Repositories](./DOCUMENTATION.md#2-githubsearchrepositories) - Repo discovery
+7. [Fetch Content](./DOCUMENTATION.md#3-githubgetfilecontent) - File reading
+8. [View Structure](./DOCUMENTATION.md#4-githubviewrepostructure) - Repo exploration
+9. [Search PRs](./DOCUMENTATION.md#5-githubsearchpullrequests) - PR analysis
 
 #### **Advanced Features**
 1. [Bulk Operations](./DOCUMENTATION.md#bulk-operations) - Parallel queries
@@ -115,9 +188,10 @@ Detailed authentication documentation:
 
 #### **Development**
 1. [Architecture](./ARCHITECTURE.md) - System design
-2. [Type Definitions](./DOCUMENTATION.md#type-definitions) - TypeScript types
-3. [Extending the System](./ARCHITECTURE.md#extensibility) - Adding features
-4. [Testing Strategy](./ARCHITECTURE.md#testing-strategy) - Testing guide
+2. [Tools Technical Reference](./TOOLS_TECHNICAL_REFERENCE.md) - Implementation details
+3. [Type Definitions](./DOCUMENTATION.md#type-definitions) - TypeScript types
+4. [Extending the System](./ARCHITECTURE.md#extensibility) - Adding features
+5. [Testing Strategy](./ARCHITECTURE.md#testing-strategy) - Testing guide
 
 #### **Troubleshooting**
 1. [Common Issues](./DOCUMENTATION.md#troubleshooting) - Problem solving
@@ -132,9 +206,10 @@ Detailed authentication documentation:
 ### **New Users**
 Start here:
 1. ✅ [Quick Start Guide](./QUICK_START.md)
-2. ✅ [Tool Overview](./DOCUMENTATION.md#available-tools)
-3. ✅ [Common Workflows](./QUICK_START.md#6-common-workflows)
-4. ✅ [Authentication Setup](./AUTHENTICATION.md)
+2. ✅ [Research Workflows Guide](./RESEARCH_WORKFLOWS_GUIDE.md) ⭐ **Essential reference**
+3. ✅ [Tool Overview](./DOCUMENTATION.md#available-tools)
+4. ✅ [Common Workflows](./QUICK_START.md#6-common-workflows)
+5. ✅ [Authentication Setup](./AUTHENTICATION.md)
 
 ### **Integration Developers**
 Focus on:
@@ -146,16 +221,20 @@ Focus on:
 ### **Contributing Developers**
 Essential reading:
 1. 💻 [Architecture Document](./ARCHITECTURE.md)
-2. 💻 [Development Guide](./DOCUMENTATION.md#development)
-3. 💻 [Extensibility Guide](./ARCHITECTURE.md#extensibility)
-4. 💻 [Testing Strategy](./ARCHITECTURE.md#testing-strategy)
+2. 💻 [Tools Technical Reference](./TOOLS_TECHNICAL_REFERENCE.md)
+3. 💻 [Development Guide](./DOCUMENTATION.md#development)
+4. 💻 [Extensibility Guide](./ARCHITECTURE.md#extensibility)
+5. 💻 [Testing Strategy](./ARCHITECTURE.md#testing-strategy)
 
 ### **AI/ML Engineers**
 Key sections:
-1. 🤖 [Bulk Operations](./DOCUMENTATION.md#bulk-operations)
-2. 🤖 [Contextual Hints](./DOCUMENTATION.md#contextual-hints)
-3. 🤖 [Progressive Refinement](./QUICK_START.md#6-common-workflows)
-4. 🤖 [Type Definitions](./DOCUMENTATION.md#type-definitions)
+1. 🤖 [Research Workflows Guide](./RESEARCH_WORKFLOWS_GUIDE.md) ⭐ **Quick reference**
+2. 🤖 [Research Decision Trees](./RESEARCH_DECISION_TREES.md)
+3. 🤖 [Tools & Research Workflows](./TOOLS_AND_RESEARCH_WORKFLOWS.md)
+4. 🤖 [Bulk Operations](./DOCUMENTATION.md#bulk-operations)
+5. 🤖 [Contextual Hints](./DOCUMENTATION.md#contextual-hints)
+6. 🤖 [Progressive Refinement](./QUICK_START.md#6-common-workflows)
+7. 🤖 [Type Definitions](./DOCUMENTATION.md#type-definitions)
 
 ### **DevOps/Infrastructure**
 Important topics:
@@ -179,6 +258,15 @@ Important topics:
 **Q: How do I search for code in GitHub?**  
 → [githubSearchCode](./DOCUMENTATION.md#1-githubsearchcode)
 
+**Q: How do I create multi-step research workflows?**  
+→ [Research Workflows Guide](./RESEARCH_WORKFLOWS_GUIDE.md) (concise) or [Tools & Research Workflows](./TOOLS_AND_RESEARCH_WORKFLOWS.md) (detailed)
+
+**Q: What's the quickest way to learn research workflows?**  
+→ [Research Workflows Guide](./RESEARCH_WORKFLOWS_GUIDE.md) ⭐
+
+**Q: How should I think about code research systematically?**  
+→ [Research Decision Trees](./RESEARCH_DECISION_TREES.md)
+
 **Q: How do bulk operations work?**  
 → [Bulk Operations](./DOCUMENTATION.md#bulk-operations)
 
@@ -192,7 +280,13 @@ Important topics:
 → [Performance Tips](./DOCUMENTATION.md#performance-tips) or [Performance Considerations](./ARCHITECTURE.md#performance-considerations)
 
 **Q: How do I add a new tool?**  
-→ [Adding New Tools](./ARCHITECTURE.md#adding-new-tools)
+→ [Adding New Tools](./ARCHITECTURE.md#adding-new-tools) or [Extension Patterns](./TOOLS_TECHNICAL_REFERENCE.md#extension-patterns)
+
+**Q: How do tools connect in research workflows?**  
+→ [Tool Relationships](./TOOLS_AND_RESEARCH_WORKFLOWS.md#tool-relationships-map)
+
+**Q: What's the best entry point for my research?**  
+→ [Entry Point Selection](./RESEARCH_DECISION_TREES.md#entry-point-selection-matrix)
 
 **Q: What's the system architecture?**  
 → [Architecture Document](./ARCHITECTURE.md)
@@ -294,6 +388,10 @@ matchString: "export", matchStringContextLines: 10  // Pattern match
 | [Main Documentation](./DOCUMENTATION.md) | ✅ Complete | Oct 2024 | 7.0.0 |
 | [Quick Start](./QUICK_START.md) | ✅ Complete | Oct 2024 | 7.0.0 |
 | [Architecture](./ARCHITECTURE.md) | ✅ Complete | Oct 2024 | 7.0.0 |
+| [Tools & Research Workflows](./TOOLS_AND_RESEARCH_WORKFLOWS.md) | ✅ Complete | Nov 2024 | 7.0.0 |
+| [Tools Technical Reference](./TOOLS_TECHNICAL_REFERENCE.md) | ✅ Complete | Nov 2024 | 7.0.0 |
+| [Research Decision Trees](./RESEARCH_DECISION_TREES.md) | ✅ Complete | Nov 2024 | 7.0.0 |
+| [Research Workflows Guide](./RESEARCH_WORKFLOWS_GUIDE.md) ⭐ | ✅ Complete | Nov 2024 | 7.0.0 |
 | [Authentication](./AUTHENTICATION.md) | ⚠️ Pending | - | - |
 | [Usage Guide](./USAGE_GUIDE.md) | ℹ️ See README | - | - |
 
@@ -318,12 +416,16 @@ Found an issue or want to improve the docs?
 
 ## 📊 Documentation Metrics
 
-- **Total Pages**: 4 main documents
+- **Total Pages**: 8 main documents
 - **Estimated Reading Time**: 
   - Quick Start: 10 minutes
+  - **Research Workflows Guide: 15 minutes** ⭐ **Start here**
   - Main Documentation: 45 minutes
   - Architecture: 30 minutes
-  - Complete: ~90 minutes
+  - Tools & Research Workflows: 35 minutes
+  - Tools Technical Reference: 25 minutes
+  - Research Decision Trees: 30 minutes
+  - Complete: ~190 minutes
 
 ---
 
@@ -333,21 +435,25 @@ Found an issue or want to improve the docs?
 
 **Beginner (Week 1)**
 1. Read [Quick Start Guide](./QUICK_START.md)
-2. Try basic examples
-3. Understand tool parameters
-4. Learn common workflows
+2. Study [Research Workflows Guide](./RESEARCH_WORKFLOWS_GUIDE.md) ⭐
+3. Try basic examples
+4. Understand tool parameters
+5. Learn common workflows
 
 **Intermediate (Week 2-3)**
 1. Read [Main Documentation](./DOCUMENTATION.md)
-2. Master bulk operations
-3. Optimize queries
-4. Handle errors effectively
+2. Deep-dive [Research Decision Trees](./RESEARCH_DECISION_TREES.md)
+3. Study [Tools & Research Workflows](./TOOLS_AND_RESEARCH_WORKFLOWS.md)
+4. Master bulk operations
+5. Optimize queries
+6. Handle errors effectively
 
 **Advanced (Week 4+)**
 1. Study [Architecture](./ARCHITECTURE.md)
-2. Understand internal design
-3. Contribute improvements
-4. Build custom extensions
+2. Study [Tools Technical Reference](./TOOLS_TECHNICAL_REFERENCE.md)
+3. Understand internal design
+4. Contribute improvements
+5. Build custom extensions
 
 ---
 

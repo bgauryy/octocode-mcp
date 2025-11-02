@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
-import { registerPrompts } from './prompts.js';
+import { registerPrompts } from './prompts/prompts.js';
 import { registerResources } from './resources.js';
 import { registerSampling } from './sampling.js';
 import { clearAllCache } from './utils/cache.js';
@@ -34,7 +34,6 @@ async function startServer() {
   try {
     await initialize();
 
-    // Initialize session tracking
     const session = initializeSession();
 
     const server = new McpServer(SERVER_CONFIG, {
@@ -51,15 +50,12 @@ async function startServer() {
 
     await registerAllTools(server);
 
-    // Register prompts
     registerPrompts(server);
     await logger.info('Prompts ready');
 
-    // Register resources
     registerResources(server);
     await logger.info('Resources ready');
 
-    // Register sampling capabilities only if BETA features are enabled
     if (isBetaEnabled()) {
       registerSampling(server);
       await logger.info('Sampling ready (BETA)');
@@ -77,12 +73,10 @@ async function startServer() {
       // Silently ignore logging errors to avoid breaking MCP protocol
     });
 
-    // Ensure all buffered output is sent
     process.stdout.uncork();
     process.stderr.uncork();
 
     const gracefulShutdown = async (signal?: string) => {
-      // Prevent multiple shutdown attempts
       if (shutdownInProgress) {
         return;
       }
@@ -105,15 +99,13 @@ async function startServer() {
           process.exit(1);
         }, 5000);
 
-        // Clear cache and credentials (fastest operations)
         clearAllCache();
         cleanup();
 
-        // Close server
         try {
           await server.close();
         } catch {
-          // Ignore close errors
+          //ignore
         }
 
         // Clear the timeout since we completed successfully
@@ -138,16 +130,13 @@ async function startServer() {
       }
     };
 
-    // Handle process signals - only register once
     process.once('SIGINT', () => gracefulShutdown('SIGINT'));
     process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
-    // Handle stdin close (important for MCP)
     process.stdin.once('close', () => {
       gracefulShutdown('STDIN_CLOSE');
     });
 
-    // Handle uncaught errors - prevent multiple handlers
     process.once('uncaughtException', error => {
       if (logger) {
         logger.error('Uncaught exception', { error: error.message });

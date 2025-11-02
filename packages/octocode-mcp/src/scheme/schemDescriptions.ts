@@ -1,10 +1,3 @@
-export const GENERAL = {
-  base: {
-    researchGoal: 'What you want to find or understand',
-    reasoning: 'Why this query helps achieve the goal',
-  },
-};
-
 export const COMMON = {
   scope: {
     owner: 'repo owner (e.g., "bgauryy")',

@@ -1,61 +1,20 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { PROMPT_SYSTEM_PROMPT } from './systemPrompts';
+import { logPromptCall } from '../session.js';
 
-// Define prompt names as constants (following your project's pattern)
-export const PROMPT_NAMES = {
-  RESEARCH: 'research',
-  KUDOS: 'kudos',
-  USE: 'use',
-} as const;
+export const PROMPT_NAME = 'kudos';
 
-/**
- * Register all prompts with the MCP server
- * Following the established pattern from tool registration
- */
-export function registerPrompts(server: McpServer): void {
-  // Register the research prompt
+export function registerKudosPrompt(server: McpServer): void {
   server.registerPrompt(
-    PROMPT_NAMES.RESEARCH,
-    {
-      description:
-        'Research prompt that takes a user query and formats it with instructions',
-      argsSchema: z.object({
-        user_query: z.string().describe('The user query to research'),
-      }).shape,
-    },
-    async (args: { user_query: string }) => {
-      const { user_query } = args;
-      const prompt = `
-      # SYSTEM PROMPT
-      ${PROMPT_SYSTEM_PROMPT}
-
-      # User Query
-      ${user_query}`;
-
-      return {
-        messages: [
-          {
-            role: 'user' as const,
-            content: {
-              type: 'text' as const,
-              text: prompt,
-            },
-          },
-        ],
-      };
-    }
-  );
-
-  // Register the kudos prompt
-  server.registerPrompt(
-    PROMPT_NAMES.KUDOS,
+    PROMPT_NAME,
     {
       description:
         'Analyze the conversation context and list all GitHub repositories that were referenced or used during the research',
       argsSchema: z.object({}).shape,
     },
     async () => {
+      await logPromptCall(PROMPT_NAME);
+
       const kudosMessage = `# /kudos → Show Appreciation for Repositories Used
 
 ## 📋 Your Task
@@ -130,43 +89,6 @@ Once you start exploring, use \`/kudos\` again to see all the repositories you'v
             content: {
               type: 'text' as const,
               text: kudosMessage,
-            },
-          },
-        ],
-      };
-    }
-  );
-
-  // Register the use prompt
-  server.registerPrompt(
-    PROMPT_NAMES.USE,
-    {
-      description: 'Show simple guide on using Octocode MCP tools',
-      argsSchema: z.object({}).shape,
-    },
-    async () => {
-      const useMessage = `Use Octocode MCP for:
-
-**Code Discovery:** Search repositories, explore structures, find implementation patterns
-**Deep Analysis:** Read files, analyze PRs with diffs, track commit history
-**Research Workflow:** Start broad → narrow focus → deep dive → cross-validate
-
-**Key Practices:**
-- Use bulk queries for parallel operations (faster)
-- Apply progressive refinement (broad → specific)
-- Leverage partial file access for efficiency
-- Always start with search before reading files
-
-Available: \`githubSearchCode\`, \`githubGetFileContent\`, \`githubSearchRepositories\`, \`githubViewRepoStructure\`, \`githubSearchPullRequests\`
-`;
-
-      return {
-        messages: [
-          {
-            role: 'user' as const,
-            content: {
-              type: 'text' as const,
-              text: useMessage,
             },
           },
         ],

@@ -71,9 +71,13 @@ describe('withSecurityValidation logging', () => {
 
     await wrappedHandler(args, {});
 
-    expect(mockLogToolCall).toHaveBeenCalledWith('test_tool', [
-      'test-owner/test-repo',
-    ]);
+    expect(mockLogToolCall).toHaveBeenCalledWith(
+      'test_tool',
+      ['test-owner/test-repo'],
+      undefined,
+      undefined,
+      undefined
+    );
   });
 
   it('should extract repo and owner from direct params and log them', async () => {
@@ -103,9 +107,13 @@ describe('withSecurityValidation logging', () => {
 
     await wrappedHandler(args, {});
 
-    expect(mockLogToolCall).toHaveBeenCalledWith('test_tool', [
-      'direct-owner/direct-repo',
-    ]);
+    expect(mockLogToolCall).toHaveBeenCalledWith(
+      'test_tool',
+      ['direct-owner/direct-repo'],
+      undefined,
+      undefined,
+      undefined
+    );
   });
 
   it('should skip logging when logging is disabled', async () => {
@@ -145,5 +153,177 @@ describe('withSecurityValidation logging', () => {
 
     // Verify the handler was still called successfully
     expect(mockHandler).toHaveBeenCalled();
+  });
+
+  it('should extract and log research fields from queries', async () => {
+    const mockHandler = vi.fn(async () => ({
+      isError: false,
+      content: [{ type: 'text' as const, text: 'success' }],
+    }));
+
+    const wrappedHandler = withSecurityValidation('test_tool', mockHandler);
+
+    const args = {
+      queries: [
+        {
+          owner: 'test-owner',
+          repo: 'test-repo',
+          mainResearchGoal: 'Find authentication',
+          researchGoal: 'Locate login function',
+          reasoning: 'Need to understand auth flow',
+        },
+      ],
+    };
+
+    // Mock the sanitizer to return our test args
+    const { ContentSanitizer } = await import(
+      '../../src/security/contentSanitizer.js'
+    );
+    vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
+      isValid: true,
+      sanitizedParams: args,
+      warnings: [],
+      hasSecrets: false,
+    });
+
+    await wrappedHandler(args, {});
+
+    expect(mockLogToolCall).toHaveBeenCalledWith(
+      'test_tool',
+      ['test-owner/test-repo'],
+      'Find authentication',
+      'Locate login function',
+      'Need to understand auth flow'
+    );
+  });
+
+  it('should extract and log partial research fields', async () => {
+    const mockHandler = vi.fn(async () => ({
+      isError: false,
+      content: [{ type: 'text' as const, text: 'success' }],
+    }));
+
+    const wrappedHandler = withSecurityValidation('test_tool', mockHandler);
+
+    const args = {
+      queries: [
+        {
+          owner: 'test-owner',
+          repo: 'test-repo',
+          mainResearchGoal: 'Find authentication',
+          reasoning: 'Need to understand auth flow',
+        },
+      ],
+    };
+
+    // Mock the sanitizer to return our test args
+    const { ContentSanitizer } = await import(
+      '../../src/security/contentSanitizer.js'
+    );
+    vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
+      isValid: true,
+      sanitizedParams: args,
+      warnings: [],
+      hasSecrets: false,
+    });
+
+    await wrappedHandler(args, {});
+
+    expect(mockLogToolCall).toHaveBeenCalledWith(
+      'test_tool',
+      ['test-owner/test-repo'],
+      'Find authentication',
+      undefined,
+      'Need to understand auth flow'
+    );
+  });
+
+  it('should consolidate research fields from multiple queries', async () => {
+    const mockHandler = vi.fn(async () => ({
+      isError: false,
+      content: [{ type: 'text' as const, text: 'success' }],
+    }));
+
+    const wrappedHandler = withSecurityValidation('test_tool', mockHandler);
+
+    const args = {
+      queries: [
+        {
+          owner: 'owner1',
+          repo: 'repo1',
+          mainResearchGoal: 'Authentication',
+          researchGoal: 'Find login',
+          reasoning: 'Security audit',
+        },
+        {
+          owner: 'owner2',
+          repo: 'repo2',
+          mainResearchGoal: 'Authentication',
+          researchGoal: 'Find logout',
+          reasoning: 'Security audit',
+        },
+      ],
+    };
+
+    // Mock the sanitizer to return our test args
+    const { ContentSanitizer } = await import(
+      '../../src/security/contentSanitizer.js'
+    );
+    vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
+      isValid: true,
+      sanitizedParams: args,
+      warnings: [],
+      hasSecrets: false,
+    });
+
+    await wrappedHandler(args, {});
+
+    expect(mockLogToolCall).toHaveBeenCalledWith(
+      'test_tool',
+      ['owner1/repo1', 'owner2/repo2'],
+      'Authentication',
+      'Find login; Find logout',
+      'Security audit'
+    );
+  });
+
+  it('should log without research fields when none are provided', async () => {
+    const mockHandler = vi.fn(async () => ({
+      isError: false,
+      content: [{ type: 'text' as const, text: 'success' }],
+    }));
+
+    const wrappedHandler = withSecurityValidation('test_tool', mockHandler);
+
+    const args = {
+      queries: [
+        {
+          owner: 'test-owner',
+          repo: 'test-repo',
+          keywordsToSearch: ['test'],
+        },
+      ],
+    };
+
+    // Mock the sanitizer to return our test args
+    const { ContentSanitizer } = await import(
+      '../../src/security/contentSanitizer.js'
+    );
+    vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
+      isValid: true,
+      sanitizedParams: args,
+      warnings: [],
+      hasSecrets: false,
+    });
+
+    await wrappedHandler(args, {});
+
+    expect(mockLogToolCall).toHaveBeenCalledWith(
+      'test_tool',
+      ['test-owner/test-repo'],
+      undefined,
+      undefined,
+      undefined
+    );
   });
 });

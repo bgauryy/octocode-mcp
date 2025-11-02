@@ -95,7 +95,14 @@ function createBulkResponse<
     'emptyStatusHints',
     'errorStatusHints',
   ];
-  const resultFields = ['query', 'status', 'data', 'researchGoal', 'reasoning'];
+  const resultFields = [
+    'query',
+    'status',
+    'data',
+    'mainResearchGoal',
+    'researchGoal',
+    'reasoning',
+  ];
   const standardFields = [...topLevelFields, ...resultFields, 'owner', 'repo'];
   const fullKeysPriority = [
     ...new Set([...standardFields, ...(config.keysPriority || [])]),

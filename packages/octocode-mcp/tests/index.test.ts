@@ -9,7 +9,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js');
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js');
 vi.mock('../src/utils/cache.js');
-vi.mock('../src/prompts.js');
+vi.mock('../src/prompts/prompts.js');
 vi.mock('../src/sampling.js');
 vi.mock('../src/tools/github_search_code.js');
 vi.mock('../src/tools/github_fetch_content.js');
@@ -21,7 +21,7 @@ vi.mock('../src/serverConfig.js');
 vi.mock('../src/tools/toolsManager.js');
 
 // Import mocked functions
-import { registerPrompts } from '../src/prompts.js';
+import { registerPrompts } from '../src/prompts/prompts.js';
 import { registerSampling } from '../src/sampling.js';
 import { registerGitHubSearchCodeTool } from '../src/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from '../src/tools/github_fetch_content.js';

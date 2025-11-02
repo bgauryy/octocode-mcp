@@ -74,6 +74,8 @@ function buildStructureApiRequest(
   query: GitHubViewRepoStructureQuery
 ): GitHubViewRepoStructureQuery {
   return {
+    mainResearchGoal: query.mainResearchGoal,
+    researchGoal: query.researchGoal,
     reasoning: query.reasoning,
     owner: String(query.owner),
     repo: String(query.repo),
