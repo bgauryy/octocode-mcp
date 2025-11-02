@@ -82,7 +82,7 @@ https://github.com/user-attachments/assets/2aaee9f1-3592-438a-a633-255b5cbbb8e1
 > flows between agents for goal-oriented tasks?
 > Can you suggest UI frameworks I can use to build a full-stack AI application?
 
-
+https://github.com/user-attachments/assets/82ed97ae-57a9-46ae-9acd-828a509e711b
 
 ## Installation
 
