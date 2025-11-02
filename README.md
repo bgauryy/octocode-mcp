@@ -337,6 +337,10 @@ Octocode MCP provides intelligent prompt commands that enhance your research wor
 **Purpose**: Systematic code research using decision-tree workflows
 
 **When to use**:
+- **Understanding repository workflows**: Discover how repositories work, trace specific flows through codebases, and understand technical implementations
+- **Cross-repository flow analysis**: Understand complex flows that span multiple repositories, trace data flows across microservices, or analyze how different repos interact
+- **Technical flow investigation**: Deep-dive into technical flows within or across repositories (even cross-repo dependencies and integrations)
+- **Real-world code examples**: Learn from actual production code implementations, not just documentation or tutorials
 - **Deep technical investigations**: Trace code flows, understand complex implementations, analyze architecture decisions
 - **Answering team questions**: Quickly research Slack/Jira questions about features, APIs, or behavior with code-backed answers
 - **Bug investigation**: Find root causes by analyzing code, commit history, and related PRs
