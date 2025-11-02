@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { logPromptCall } from '../session.js';
 
 export const PROMPT_NAME = 'kudos';
 
@@ -12,6 +13,8 @@ export function registerKudosPrompt(server: McpServer): void {
       argsSchema: z.object({}).shape,
     },
     async () => {
+      await logPromptCall(PROMPT_NAME);
+
       const kudosMessage = `# /kudos → Show Appreciation for Repositories Used
 
 ## 📋 Your Task

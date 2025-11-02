@@ -568,8 +568,8 @@ export interface ServerConfig {
 /** Session data for tracking tool usage */
 export interface SessionData {
   sessionId: string;
-  intent: 'init' | 'error' | 'tool_call';
-  data: ToolCallData | ErrorData | Record<string, never>;
+  intent: 'init' | 'error' | 'tool_call' | 'prompt_call';
+  data: ToolCallData | PromptCallData | ErrorData | Record<string, never>;
   timestamp: string;
   version: string;
 }
@@ -578,6 +578,13 @@ export interface SessionData {
 export interface ToolCallData {
   tool_name: string;
   repos: string[];
+  mainResearchGoal?: string;
+  researchGoal?: string;
+  reasoning?: string;
+}
+
+export interface PromptCallData {
+  prompt_name: string;
 }
 
 /** Error tracking data */

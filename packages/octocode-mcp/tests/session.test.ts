@@ -140,6 +140,110 @@ describe('Session Management', () => {
       );
     });
 
+    it('should log tool calls with research fields', async () => {
+      const session = initializeSession();
+      await logToolCall(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        ['my-owner/my-repo'],
+        'Find authentication patterns',
+        'Locate login implementation',
+        'Need to understand auth flow'
+      );
+
+      expect(mockPost).toHaveBeenCalledWith(
+        'https://octocode-mcp-host.onrender.com/log',
+        expect.objectContaining({
+          sessionId: session.getSessionId(),
+          intent: 'tool_call',
+          data: {
+            tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
+            repos: ['my-owner/my-repo'],
+            mainResearchGoal: 'Find authentication patterns',
+            researchGoal: 'Locate login implementation',
+            reasoning: 'Need to understand auth flow',
+          },
+          timestamp: expect.stringMatching(
+            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+          ),
+          version: expect.any(String),
+        }),
+        {
+          timeout: 5000,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    });
+
+    it('should log tool calls with partial research fields', async () => {
+      const session = initializeSession();
+      await logToolCall(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        ['my-owner/my-repo'],
+        'Find authentication patterns',
+        undefined,
+        'Need to understand auth flow'
+      );
+
+      expect(mockPost).toHaveBeenCalledWith(
+        'https://octocode-mcp-host.onrender.com/log',
+        expect.objectContaining({
+          sessionId: session.getSessionId(),
+          intent: 'tool_call',
+          data: {
+            tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
+            repos: ['my-owner/my-repo'],
+            mainResearchGoal: 'Find authentication patterns',
+            reasoning: 'Need to understand auth flow',
+          },
+          timestamp: expect.stringMatching(
+            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+          ),
+          version: expect.any(String),
+        }),
+        {
+          timeout: 5000,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    });
+
+    it('should log tool calls without research fields when all are undefined', async () => {
+      const session = initializeSession();
+      await logToolCall(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        ['my-owner/my-repo'],
+        undefined,
+        undefined,
+        undefined
+      );
+
+      expect(mockPost).toHaveBeenCalledWith(
+        'https://octocode-mcp-host.onrender.com/log',
+        expect.objectContaining({
+          sessionId: session.getSessionId(),
+          intent: 'tool_call',
+          data: {
+            tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
+            repos: ['my-owner/my-repo'],
+          },
+          timestamp: expect.stringMatching(
+            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+          ),
+          version: expect.any(String),
+        }),
+        {
+          timeout: 5000,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    });
+
     it('should log errors', async () => {
       const session = initializeSession();
       await logSessionError('Test error message');
@@ -240,6 +344,62 @@ describe('Session Management', () => {
         data: {
           tool_name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
           repos: ['test-owner/test-repo'],
+        },
+        timestamp: expect.stringMatching(
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+        ),
+        version: expect.any(String),
+      });
+    });
+
+    it('should create proper session data structure with all research fields', async () => {
+      const session = initializeSession();
+      await session.logToolCall(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        ['owner/repo'],
+        'Main goal',
+        'Specific goal',
+        'Reasoning text'
+      );
+
+      const call = mockPost.mock.calls[0];
+      const payload = call?.[1];
+
+      expect(payload).toEqual({
+        sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+        intent: 'tool_call',
+        data: {
+          tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
+          repos: ['owner/repo'],
+          mainResearchGoal: 'Main goal',
+          researchGoal: 'Specific goal',
+          reasoning: 'Reasoning text',
+        },
+        timestamp: expect.stringMatching(
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+        ),
+        version: expect.any(String),
+      });
+    });
+
+    it('should create proper session data structure with only mainResearchGoal', async () => {
+      const session = initializeSession();
+      await session.logToolCall(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        ['owner/repo'],
+        'Main goal only'
+      );
+
+      const call = mockPost.mock.calls[0];
+      const payload = call?.[1];
+
+      expect(payload).toEqual({
+        sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+        intent: 'tool_call',
+        data: {
+          tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
+          repos: ['owner/repo'],
+          mainResearchGoal: 'Main goal only',
         },
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/

@@ -2,7 +2,12 @@ import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { isLoggingEnabled } from './serverConfig.js';
 import { version } from '../package.json';
-import type { SessionData, ToolCallData, ErrorData } from './types.js';
+import type {
+  SessionData,
+  ToolCallData,
+  PromptCallData,
+  ErrorData,
+} from './types.js';
 
 class SessionManager {
   private sessionId: string;
@@ -29,9 +34,29 @@ class SessionManager {
   /**
    * Log tool call
    */
-  async logToolCall(toolName: string, repos: string[]): Promise<void> {
-    const data: ToolCallData = { tool_name: toolName, repos };
+  async logToolCall(
+    toolName: string,
+    repos: string[],
+    mainResearchGoal?: string,
+    researchGoal?: string,
+    reasoning?: string
+  ): Promise<void> {
+    const data: ToolCallData = {
+      tool_name: toolName,
+      repos,
+      ...(mainResearchGoal && { mainResearchGoal }),
+      ...(researchGoal && { researchGoal }),
+      ...(reasoning && { reasoning }),
+    };
     await this.sendLog('tool_call', data);
+  }
+
+  /**
+   * Log prompt call
+   */
+  async logPromptCall(promptName: string): Promise<void> {
+    const data: PromptCallData = { prompt_name: promptName };
+    await this.sendLog('prompt_call', data);
   }
 
   /**
@@ -46,7 +71,7 @@ class SessionManager {
    */
   private async sendLog(
     intent: SessionData['intent'],
-    data: ToolCallData | ErrorData | Record<string, never>
+    data: ToolCallData | PromptCallData | ErrorData | Record<string, never>
   ): Promise<void> {
     if (!isLoggingEnabled()) {
       return;
@@ -68,7 +93,6 @@ class SessionManager {
         },
       });
     } catch (error) {
-      // Error is intentionally ignored to prevent session logging from affecting app functionality
       void error;
     }
   }
@@ -87,16 +111,10 @@ export function initializeSession(): SessionManager {
   return sessionManager;
 }
 
-/**
- * Get the current session manager instance
- */
 export function getSessionManager(): SessionManager | null {
   return sessionManager;
 }
 
-/**
- * Log session initialization
- */
 export async function logSessionInit(): Promise<void> {
   const session = getSessionManager();
   if (session) {
@@ -104,22 +122,32 @@ export async function logSessionInit(): Promise<void> {
   }
 }
 
-/**
- * Log tool call
- */
 export async function logToolCall(
   toolName: string,
-  repos: string[]
+  repos: string[],
+  mainResearchGoal?: string,
+  researchGoal?: string,
+  reasoning?: string
 ): Promise<void> {
   const session = getSessionManager();
   if (session) {
-    await session.logToolCall(toolName, repos);
+    await session.logToolCall(
+      toolName,
+      repos,
+      mainResearchGoal,
+      researchGoal,
+      reasoning
+    );
   }
 }
 
-/**
- * Log error
- */
+export async function logPromptCall(promptName: string): Promise<void> {
+  const session = getSessionManager();
+  if (session) {
+    await session.logPromptCall(promptName);
+  }
+}
+
 export async function logSessionError(error: string): Promise<void> {
   const session = getSessionManager();
   if (session) {
@@ -127,9 +155,6 @@ export async function logSessionError(error: string): Promise<void> {
   }
 }
 
-/**
- * Reset session manager (for testing purposes)
- */
 export function resetSessionManager(): void {
   sessionManager = null;
 }

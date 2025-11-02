@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { logPromptCall } from '../session.js';
 
 export const PROMPT_NAME = 'research';
 
@@ -167,22 +168,21 @@ export function registerResearchPrompt(server: McpServer): void {
   server.registerPrompt(
     PROMPT_NAME,
     {
-      description:
-        'Research prompt that takes a user query and formats it with instructions',
-      argsSchema: z.object({
-        user_query: z.string().describe('The user query to research'),
-      }).shape,
+      description: 'Research prompt that helps the user to use octocode for ',
+
+      //  Type: Technical (code/flows) | Product (docs+code) | Pattern Analysis | Bug Investigation
+      argsSchema: z.object({}).shape, // empty scheme
     },
-    async (args: { user_query: string }) => {
-      const { user_query } = args;
+    async () => {
+      await logPromptCall(PROMPT_NAME);
+
       const prompt = `
       # SYSTEM PROMPT:
       ${PROMPT}
 
       -----
 
-      # User Query:
-      ${user_query}`;
+      # User Query:`;
 
       return {
         messages: [

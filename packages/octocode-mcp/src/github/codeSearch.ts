@@ -39,7 +39,6 @@ export async function searchGitHubCodeAPI(
       return await searchGitHubCodeAPIInternal(params, authInfo);
     },
     {
-      // Only cache successful responses
       shouldCache: (value: GitHubAPIResponse<OptimizedCodeSearchResult>) =>
         'data' in value && !(value as { error?: unknown }).error,
     }
@@ -59,7 +58,6 @@ async function searchGitHubCodeAPIInternal(
   try {
     const octokit = await getOctokit(authInfo);
 
-    // Check if keywordsToSearch are empty before processing
     if (
       params.keywordsToSearch &&
       params.keywordsToSearch.length > 0 &&
@@ -72,7 +70,6 @@ async function searchGitHubCodeAPIInternal(
       };
     }
 
-    // Build the search query directly from parameters
     const query = buildCodeSearchQuery(params);
 
     if (!query.trim()) {
@@ -83,7 +80,6 @@ async function searchGitHubCodeAPIInternal(
       };
     }
 
-    // Optimized search parameters with better defaults
     const searchParams: SearchCodeParameters = {
       q: query,
       per_page: Math.min(
@@ -91,17 +87,11 @@ async function searchGitHubCodeAPIInternal(
         100
       ),
       page: 1,
-      // Note: GitHub deprecated sort parameter for code search in April 2023
-      // All results are now automatically sorted by best-match
-      // Always request text matches for better context
       headers: {
         Accept: 'application/vnd.github.v3.text-match+json',
       },
     };
-    // Note: GitHub deprecated sort and order parameters in April 2023
-    // All results are now automatically sorted by best-match
 
-    // Direct API call with optimized parameters
     const result = await octokit.rest.search.code(searchParams);
 
     const optimizedResult = await convertCodeSearchResult(
@@ -151,38 +141,31 @@ async function transformToOptimizedFormat(
   minify: boolean,
   sanitize: boolean
 ): Promise<OptimizedCodeSearchResult> {
-  // Extract repository info if single repo search
   const singleRepo = extractSingleRepository(items);
 
-  // Track security warnings and minification info
   const allSecurityWarningsSet = new Set<string>();
   let hasMinificationFailures = false;
   const minificationTypes: string[] = [];
 
-  // Extract packages and dependencies from code matches
   const foundPackages = new Set<string>();
   const foundFiles = new Set<string>();
 
-  // Filter out ignored files based on path, name, and extension
   const filteredItems = items.filter(item => !shouldIgnoreFile(item.path));
 
   const optimizedItems = await Promise.all(
     filteredItems.map(async item => {
-      // Track found files for deeper research
       foundFiles.add(item.path);
 
       const processedMatches = await Promise.all(
         (item.text_matches || []).map(async match => {
           let processedFragment = match.fragment;
 
-          // Apply sanitization first if enabled
           if (sanitize) {
             const sanitizationResult = ContentSanitizer.sanitizeContent(
               processedFragment || ''
             );
             processedFragment = sanitizationResult.content;
 
-            // Collect security warnings
             if (sanitizationResult.hasSecrets) {
               allSecurityWarningsSet.add(
                 `Secrets detected in ${item.path}: ${sanitizationResult.secretsDetected.join(', ')}`
@@ -205,7 +188,6 @@ async function transformToOptimizedFormat(
             }
           }
 
-          // Apply minification if enabled
           if (minify) {
             const minifyResult = await minifyContent(
               processedFragment || '',
@@ -240,7 +222,6 @@ async function transformToOptimizedFormat(
           nameWithOwner: item.repository.full_name,
           url: item.repository.url,
         },
-        // Expose per-file minification strategy used for transparency
         ...(minify &&
           minificationTypes.length > 0 && {
             minificationType: Array.from(new Set(minificationTypes)).join(','),
@@ -252,7 +233,6 @@ async function transformToOptimizedFormat(
   const result: OptimizedCodeSearchResult = {
     items: optimizedItems,
     total_count: filteredItems.length,
-    // Add research context for smart hints
     _researchContext: {
       foundPackages: Array.from(foundPackages),
       foundFiles: Array.from(foundFiles),
@@ -267,7 +247,6 @@ async function transformToOptimizedFormat(
     },
   };
 
-  // Add repository info if single repo
   if (singleRepo) {
     result.repository = {
       name: singleRepo.full_name,
@@ -275,7 +254,6 @@ async function transformToOptimizedFormat(
     };
   }
 
-  // Add processing information
   if (sanitize && allSecurityWarningsSet.size > 0) {
     result.securityWarnings = Array.from(allSecurityWarningsSet);
   }

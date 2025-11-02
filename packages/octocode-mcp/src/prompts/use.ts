@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { logPromptCall } from '../session.js';
 
 export const PROMPT_NAME = 'use';
 
@@ -11,6 +12,8 @@ export function registerUsePrompt(server: McpServer): void {
       argsSchema: z.object({}).shape,
     },
     async () => {
+      await logPromptCall(PROMPT_NAME);
+
       const useMessage = `Use Octocode MCP for:
 
 **Code Discovery:** Search repositories, explore structures, find implementation patterns

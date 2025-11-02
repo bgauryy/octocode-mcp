@@ -103,7 +103,10 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_CODE,
-        ['facebook/react']
+        ['facebook/react'],
+        undefined,
+        undefined,
+        undefined
       );
     });
   });
@@ -128,7 +131,10 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        ['torvalds/linux']
+        ['torvalds/linux'],
+        undefined,
+        undefined,
+        undefined
       );
     });
 
@@ -158,7 +164,10 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        ['microsoft/typescript', 'facebook/react']
+        ['microsoft/typescript', 'facebook/react'],
+        undefined,
+        undefined,
+        undefined
       );
     });
   });
@@ -181,7 +190,10 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-        ['google/tensorflow']
+        ['google/tensorflow'],
+        undefined,
+        undefined,
+        undefined
       );
     });
   });
@@ -206,7 +218,10 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        ['vuejs/vue']
+        ['vuejs/vue'],
+        undefined,
+        undefined,
+        undefined
       );
     });
 
@@ -236,7 +251,10 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        ['angular/angular', 'sveltejs/svelte']
+        ['angular/angular', 'sveltejs/svelte'],
+        undefined,
+        undefined,
+        undefined
       );
     });
   });
@@ -260,7 +278,10 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-        ['nodejs/node']
+        ['nodejs/node'],
+        undefined,
+        undefined,
+        undefined
       );
     });
 
@@ -282,7 +303,10 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-        ['rust-lang/rust']
+        ['rust-lang/rust'],
+        undefined,
+        undefined,
+        undefined
       );
     });
   });
@@ -368,9 +392,13 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
         testCase.register(server.server);
         await server.callTool(testCase.toolName, testCase.args);
 
-        expect(mockLogToolCall).toHaveBeenCalledWith(testCase.toolName, [
-          'test-owner/test-repo',
-        ]);
+        expect(mockLogToolCall).toHaveBeenCalledWith(
+          testCase.toolName,
+          ['test-owner/test-repo'],
+          undefined,
+          undefined,
+          undefined
+        );
       }
     });
   });

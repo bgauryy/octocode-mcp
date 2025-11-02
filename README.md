@@ -26,6 +26,10 @@
 - [Architecture](#architecture)
   - [Octocode MCP Server](#octocode-mcp-server)
 - [Features](#features)
+- [Commands](#commands)
+  - [/research - Expert Code Research Agent](#research---expert-code-research-agent)
+  - [/kudos - Repository Appreciation](#kudos---repository-appreciation)
+  - [/use - Quick Reference Guide](#use---quick-reference-guide)
 - [Documentation](#documentation)
 - [Community](#community)
 - [Recognition](#recognition)
@@ -321,6 +325,128 @@ export BETA="1"
 | `BETA` | "0" \| "1" | Enable experimental features | "0" |
 
 **Note**: `TOOLS_TO_RUN` is mutually exclusive with `ENABLE_TOOLS`/`DISABLE_TOOLS`.
+
+---
+
+## Commands
+
+Octocode MCP provides intelligent prompt commands that enhance your research workflow:
+
+### `/research` - Expert Code Research Agent
+
+**Purpose**: Systematic code research using decision-tree workflows
+
+**When to use**:
+- **Deep technical investigations**: Trace code flows, understand complex implementations, analyze architecture decisions
+- **Answering team questions**: Quickly research Slack/Jira questions about features, APIs, or behavior with code-backed answers
+- **Bug investigation**: Find root causes by analyzing code, commit history, and related PRs
+- **Organization features**: Understand how features work across your private/public repositories
+- **Pattern discovery**: Compare implementations across multiple repos to find best practices
+- **Documentation validation**: Verify docs match actual code behavior
+
+**What it does**:
+- Provides systematic guidance through research stages (discovery → exploration → analysis → synthesis)
+- Executes multiple queries in parallel for faster results
+- Shows transparent reasoning at each step
+- Adapts to different research types: code implementation, documentation validation, pattern comparison, or bug investigation
+
+**Usage Examples** (by research type):
+
+**Technical Research** (code-first, understanding implementations):
+```
+/research How does React's useState hook work internally?
+/research How to build a LangChain application with Express backend and Next.js frontend?
+```
+
+**Product Research** (docs + code validation):
+```
+/research What are the rate limiting features in our API according to docs and actual code?
+/research How does authentication work in NextAuth.js? Verify docs against implementation
+```
+
+**Pattern Analysis** (comparing multiple implementations):
+```
+/research Compare state management approaches: Redux vs Zustand vs Jotai
+/research How do popular repos handle WebSocket reconnection logic?
+```
+
+**Bug Investigation** (root cause analysis):
+```
+/research Why is the payment webhook failing? Trace the error through payment-service
+/research User reports slow dashboard loading - investigate performance issues in myorg/frontend
+```
+
+**Key Features**:
+- Progressive refinement (broad → specific → deep dive)
+- Code-as-truth validation (verifies docs against actual implementation)
+- Cross-repository pattern analysis (public & private repos)
+- Comprehensive synthesis with Mermaid diagrams and cited references
+- Perfect for answering technical questions from Slack/Jira with code evidence
+
+---
+
+### `/kudos` - Repository Appreciation
+
+**Purpose**: List and appreciate all GitHub repositories used in your research session
+
+**When to use**:
+- End of a research session to see what repos helped you
+- Finding repositories to star and support
+
+**What it does**:
+- Analyzes conversation history
+- Identifies all GitHub repositories explored via Octocode tools
+- Creates formatted list with links and usage notes
+- Reminds you to show appreciation to maintainers
+
+**Usage**:
+```
+/kudos
+```
+
+**Output Example**:
+```markdown
+# Repositories Used in This Research
+
+## ⭐ Repositories Explored
+
+1. **facebook/react** — https://github.com/facebook/react
+   Searched for hooks implementation and internals
+
+2. **vercel/next.js** — https://github.com/vercel/next.js
+   Explored routing architecture
+```
+
+---
+
+### `/use` - Quick Reference Guide
+
+**Purpose**: Simple reminder of Octocode MCP capabilities and best practices
+
+**When to use**:
+- Quick refresher on available tools
+- Learning key practices for efficient research
+- Getting started with Octocode
+
+**What it covers**:
+- **Code Discovery**: Search repositories, explore structures, find patterns
+- **Deep Analysis**: Read files, analyze PRs with diffs, track commits
+- **Research Workflow**: Progressive refinement methodology
+- **Key Practices**: Bulk queries, partial file access, search-first approach
+
+**Usage**:
+```
+/use
+```
+
+---
+
+### Tips for Using Commands
+
+1. **Start with `/use`** if you're new to Octocode MCP
+2. **Use `/research`** for complex, multi-step investigations that need structured guidance
+3. **Run `/kudos`** at the end of sessions to document sources and show appreciation
+4. Commands work in any MCP-compatible client (Claude, Cursor, etc.)
 
 ---
 

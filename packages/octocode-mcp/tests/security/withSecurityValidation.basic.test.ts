@@ -214,7 +214,10 @@ describe('withSecurityValidation - Additional Coverage', () => {
 
       expect(session.logToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_CODE,
-        ['facebook/react', 'microsoft/vscode']
+        ['facebook/react', 'microsoft/vscode'],
+        undefined,
+        undefined,
+        undefined
       );
     });
 
@@ -556,10 +559,13 @@ describe('withSecurityValidation - Additional Coverage', () => {
         { sessionId: 'test' }
       );
 
-      expect(session.logToolCall).toHaveBeenCalledWith('test-tool', [
-        'facebook/react',
-        'microsoft/vscode',
-      ]);
+      expect(session.logToolCall).toHaveBeenCalledWith(
+        'test-tool',
+        ['facebook/react', 'microsoft/vscode'],
+        undefined,
+        undefined,
+        undefined
+      );
     });
 
     it('should extract owner-only format', async () => {
@@ -596,7 +602,10 @@ describe('withSecurityValidation - Additional Coverage', () => {
 
       expect(session.logToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-        ['facebook', 'microsoft']
+        ['facebook', 'microsoft'],
+        undefined,
+        undefined,
+        undefined
       );
     });
 
@@ -630,9 +639,13 @@ describe('withSecurityValidation - Additional Coverage', () => {
         { sessionId: 'test' }
       );
 
-      expect(session.logToolCall).toHaveBeenCalledWith('test-tool', [
-        'vercel/next.js',
-      ]);
+      expect(session.logToolCall).toHaveBeenCalledWith(
+        'test-tool',
+        ['vercel/next.js'],
+        undefined,
+        undefined,
+        undefined
+      );
     });
   });
 });
