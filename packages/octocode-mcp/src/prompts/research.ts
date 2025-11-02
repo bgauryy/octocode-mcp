@@ -168,9 +168,16 @@ export function registerResearchPrompt(server: McpServer): void {
   server.registerPrompt(
     PROMPT_NAME,
     {
-      description: 'Research prompt that helps the user to use octocode for ',
+      description: `Expert code and product research prompt implementing systematic, decision-tree workflows for Octocode MCP.
+Helps users run advanced codebase, documentation, pattern, and bug investigations via parallel, bulk queries and staged analysis.
 
-      //  Type: Technical (code/flows) | Product (docs+code) | Pattern Analysis | Bug Investigation
+Supported query types include:
+- Technical (code/flows)
+- Product (docs + code)
+- Pattern Analysis
+- Bug Investigation
+
+Follows progressive refinement, explicit reasoning, reference-backed synthesis, and user clarification when scope is unclear.`,
       argsSchema: z.object({}).shape, // empty scheme
     },
     async () => {
