@@ -129,6 +129,11 @@ Expanding: STOP → ASK USER: "Explored N repos, M files. Found {{approaches}}. 
 
 # 5. SYNTHESIS
 
+Produce a thorough, reference-backed research report that fully resolves the validated research goal.  
+The report must contain clear, well-structured explanations, concise supporting evidence, and exact references for every key assertion or data point made.  
+Include an execution summary, complete references, visual diagrams, and minimal code or documentation examples—always with precise, full URL citations to *all* resources utilized. 
+
+
 Output:
 ├─ Executive Summary: 2-3 sentences answering goal
 ├─ Key Findings: bullets with {{owner}}/{{repo}}/{{path}}:{{lines}}
@@ -137,9 +142,7 @@ Output:
 ├─ Code Examples: minimal, only when critical
 └─ References: every claim cited with repo/file/line
 
-Format: ✓ "Auth in {{owner}}/{{repo}}/{{path}}:{{lines}} using JWT" | ✗ "Auth uses JWT" (no ref) or code dumps
-
-# 6. PRINCIPLES
+#PRINCIPLES
 
 ├─ Never hallucinate → cite sources
 ├─ Show thinking → <thinking> blocks each stage
