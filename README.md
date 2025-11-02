@@ -76,24 +76,16 @@ https://github.com/user-attachments/assets/2aaee9f1-3592-438a-a633-255b5cbbb8e1
 
 ## Installation
 
-### Quick Start
+### Prerequisites
 
-**Prerequisites**:
-- Node.js >= 18.12.0
-- GitHub authentication (choose one):
-  - **GitHub CLI (recommended)**: [https://cli.github.com/](https://cli.github.com/)
+- **Node.js** >= 18.12.0
+- **GitHub Authentication** (choose one):
+  - **GitHub CLI (recommended)**: Install from [cli.github.com](https://cli.github.com/) and run `gh auth login`
   - **Personal Access Token**: Create at [github.com/settings/tokens](https://github.com/settings/tokens) with scopes: `repo`, `read:user`, `read:org`
 
-**Using GitHub CLI**:
+### Quick Start
 
-1. Install the GitHub CLI if you haven’t already: [https://cli.github.com/](https://cli.github.com/)
-2. Authenticate with your GitHub account:
-
-```bash
-gh auth login
-```
-
-3. Add Octocode MCP to your MCP configuration:
+**Standard configuration** that works across most MCP clients:
 
 ```json
 {
@@ -106,7 +98,238 @@ gh auth login
 }
 ```
 
-**Using Personal Access Token**:
+> **Note**: This configuration uses GitHub CLI authentication. For Personal Access Token, see the [Authentication Guide](#authentication-methods) below.
+
+---
+
+### Platform-Specific Setup
+
+<details>
+<summary><b>Claude Desktop</b></summary>
+
+#### One-Click Install (Recommended)
+
+Use the Claude CLI to install Octocode MCP:
+
+```bash
+# Authenticate with GitHub first
+gh auth login
+
+# Install Octocode MCP
+claude mcp add -s user octocode-mcp npx 'octocode-mcp@latest'
+```
+
+#### Manual Installation
+
+1. Open your Claude Desktop configuration file:
+   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+2. Add Octocode to the configuration:
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp@latest"]
+    }
+  }
+}
+```
+
+3. Restart Claude Desktop
+
+</details>
+
+<details>
+<summary><b>Cursor</b></summary>
+
+#### One-Click Install
+
+Click the button below to install Octocode MCP in Cursor:
+
+[<img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor">](https://cursor.com/en/install-mcp?name=Octocode&config=eyJjb21tYW5kIjoibnB4IG9jdG9jb2RlLW1jcEBsYXRlc3QifQ%3D%3D)
+
+#### Manual Installation
+
+1. Open Cursor Settings → **MCP** → **Add new MCP Server**
+2. Set **Name**: `octocode`
+3. Set **Type**: `command`
+4. Set **Command**: `npx octocode-mcp@latest`
+5. Click **Save**
+
+#### Project-Specific Configuration
+
+Create `.cursor/mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp@latest"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>VS Code (Copilot)</b></summary>
+
+#### One-Click Install
+
+[<img src="https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square" alt="Install in VS Code">](https://insiders.vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522octocode%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522octocode-mcp%2540latest%2522%255D%257D) [<img alt="Install in VS Code Insiders" src="https://img.shields.io/badge/VS_Code_Insiders-Install_Server-24bfa5?style=flat-square">](https://insiders.vscode.dev/redirect?url=vscode-insiders%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522octocode%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522octocode-mcp%2540latest%2522%255D%257D)
+
+#### CLI Installation
+
+```bash
+# For VS Code
+code --add-mcp '{"name":"octocode","command":"npx","args":["octocode-mcp@latest"]}'
+
+# For VS Code Insiders
+code-insiders --add-mcp '{"name":"octocode","command":"npx","args":["octocode-mcp@latest"]}'
+```
+
+#### Manual Installation
+
+Follow the [VS Code MCP guide](https://code.visualstudio.com/docs/copilot/chat/mcp-servers#_add-an-mcp-server) and use the standard config above.
+
+</details>
+
+<details>
+<summary><b>Cline (VS Code Extension)</b></summary>
+
+1. Open VS Code
+2. Click the **MCP Servers** icon (📚) in the Cline extension
+3. Click **Configure MCP Servers**
+4. Add to `cline_mcp_settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp@latest"]
+    }
+  }
+}
+```
+
+5. Restart VS Code or reload Cline
+
+</details>
+
+<details>
+<summary><b>Windsurf</b></summary>
+
+Follow [Windsurf MCP documentation](https://docs.windsurf.com/windsurf/cascade/mcp) and use the standard config above.
+
+</details>
+
+<details>
+<summary><b>Zed</b></summary>
+
+1. Open Zed Settings
+2. Navigate to **MCP Servers**
+3. Add the standard configuration above
+4. Restart Zed
+
+</details>
+
+<details>
+<summary><b>Goose</b></summary>
+
+#### One-Click Install
+
+[![Install in Goose](https://block.github.io/goose/img/extension-install-dark.svg)](https://block.github.io/goose/extension?cmd=npx&arg=octocode-mcp%40latest&id=octocode&name=Octocode&description=Intelligent%20code%20research%20and%20GitHub%20repository%20analysis)
+
+#### Manual Installation
+
+1. Go to **Advanced settings** → **Extensions** → **Add custom extension**
+2. Set **Name**: `octocode`
+3. Set **Type**: `STDIO`
+4. Set **Command**: `npx octocode-mcp@latest`
+5. Click **Add Extension**
+
+</details>
+
+<details>
+<summary><b>LM Studio</b></summary>
+
+#### One-Click Install
+
+[![Add Octocode to LM Studio](https://files.lmstudio.ai/deeplink/mcp-install-light.svg)](https://lmstudio.ai/install-mcp?name=octocode&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJvY3RvY29kZS1tY3BAbGF0ZXN0Il19)
+
+#### Manual Installation
+
+1. Go to **Program** (right sidebar) → **Install** → **Edit mcp.json**
+2. Add the standard configuration above
+3. Save and restart
+
+</details>
+
+<details>
+<summary><b>Warp</b></summary>
+
+#### Using UI
+
+1. Go to **Settings** → **AI** → **Manage MCP Servers** → **+ Add**
+2. Use the standard configuration above
+
+#### Using Slash Command
+
+Type `/add-mcp` in the Warp prompt and paste:
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp@latest"]
+    }
+  }
+}
+```
+
+</details>
+
+---
+
+### Authentication Methods
+
+Octocode MCP supports two authentication methods:
+
+#### Option 1: GitHub CLI (Recommended)
+
+**Advantages**: Automatic token management, works with 2FA, supports SSO
+
+```bash
+# Install GitHub CLI
+# macOS
+brew install gh
+
+# Windows
+winget install --id GitHub.cli
+
+# Linux
+# See https://github.com/cli/cli/blob/trunk/docs/install_linux.md
+
+# Authenticate
+gh auth login
+```
+
+Then use the standard configuration (no `GITHUB_TOKEN` needed).
+
+#### Option 2: Personal Access Token
+
+**When to use**: CI/CD environments, automation, or if GitHub CLI isn't available
+
+1. Create a token at [github.com/settings/tokens](https://github.com/settings/tokens)
+2. Select scopes: `repo`, `read:user`, `read:org`
+3. Add to your MCP configuration:
 
 ```json
 {
@@ -122,19 +345,25 @@ gh auth login
 }
 ```
 
-**Using Claude CLI**:
+> **Security Tip**: Never commit tokens to version control. Use environment variables or secure secret management.
 
-1. Make sure the GitHub CLI is installed and authenticated:
+---
 
-```bash
-gh auth login
-```
+### Verify Installation
 
-2. Register the Octocode MCP server with Claude:
+After installation, verify Octocode MCP is working:
 
-```bash
-claude mcp add -s user octocode-mcp npx 'octocode-mcp@latest'
-```
+1. **Restart your MCP client** completely
+2. **Check connection status**:
+   - **Cursor**: Look for green dot in Settings → Tools & Integrations → MCP Tools
+   - **Claude Desktop**: Check for "octocode" in available tools
+   - **VS Code**: Verify in GitHub Copilot settings
+3. **Test with a simple query**:
+   ```
+   Search GitHub for React hooks implementations
+   ```
+
+If you see Octocode tools being used, you're all set! 🎉
 
 ---
 
