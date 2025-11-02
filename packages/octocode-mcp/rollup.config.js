@@ -3,6 +3,7 @@ import { nodeResolve } from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
 import json from '@rollup/plugin-json';
 import { terser } from 'rollup-plugin-terser';
+import { string } from 'rollup-plugin-string';
 
 export default {
   input: 'src/index.ts',
@@ -21,6 +22,9 @@ export default {
       preferBuiltins: true
     }),
     commonjs(),
+    string({
+      include: '**/*.md' // Import markdown files as strings
+    }),
     typescript({
       tsconfig: './tsconfig.json',
       sourceMap: false, // Disable source maps in TypeScript compilation
