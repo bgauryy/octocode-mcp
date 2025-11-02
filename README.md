@@ -95,6 +95,36 @@ https://github.com/user-attachments/assets/2aaee9f1-3592-438a-a633-255b5cbbb8e1
 
 https://github.com/user-attachments/assets/82ed97ae-57a9-46ae-9acd-828a509e711b
 
+---
+
+### Discover APIs, Frameworks, and Dive Into Internal Implementation Details
+
+Octocode excels at both **broad discovery** and **deep code analysis**. Whether you're exploring new APIs, finding frameworks, or understanding how popular libraries work under the hood, Octocode provides comprehensive answers in seconds.
+
+**First Prompt - Broad Discovery:**
+
+> list top repositories for:
+>
+> - Stock market APIs (Typescript)
+> - Cursor rules examples
+> - UI for AI
+> - Mobile development using React
+> - State management for React
+
+**What happens:** Octocode searches across GitHub to find the most popular and well-maintained repositories for each category, analyzing stars, activity, documentation quality, and recent updates. You get curated lists with context about each repository's strengths.
+
+**Second Prompt - Deep Implementation Analysis:**
+
+> How React implemented useState under the hood?
+
+**What happens:** Octocode dives into React's source code, traces the implementation flow, analyzes the relevant files (ReactHooks.js, ReactFiberHooks.js), and explains the internal mechanics including fiber architecture, hook state management, and dispatcher patterns—all with code references and detailed explanations.
+
+**The Power:** Move seamlessly from **discovering what exists** to **understanding how it works** in a single conversation. No manual repository hunting or code spelunking required.
+
+https://github.com/user-attachments/assets/c184d5d4-c9b6-40a1-a55a-41cb9b3ecc4f
+
+---
+
 ## Installation
 
 ### Prerequisites
