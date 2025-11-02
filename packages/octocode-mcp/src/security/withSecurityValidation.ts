@@ -44,7 +44,15 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
       if (isLoggingEnabled()) {
         const repos = extractRepoOwnerFromParams(sanitizedParams);
         if (repos.length > 0) {
-          logToolCall(toolName, repos).catch(() => {
+          const { mainResearchGoal, researchGoal, reasoning } =
+            extractResearchFields(sanitizedParams);
+          logToolCall(
+            toolName,
+            repos,
+            mainResearchGoal,
+            researchGoal,
+            reasoning
+          ).catch(() => {
             // Ignore
           });
         }
@@ -102,6 +110,76 @@ export function withBasicSecurityValidation<T extends Record<string, unknown>>(
         isError: true,
       });
     }
+  };
+}
+
+/**
+ * Extracts research-related fields from tool parameters for logging purposes.
+ *
+ * Supports both bulk operations (queries array) and single operations (direct params).
+ * Consolidates research fields from multiple queries, prioritizing non-empty values.
+ *
+ * @param params - The tool parameters containing research information
+ * @returns Object with mainResearchGoal, researchGoal, and reasoning fields
+ *
+ * @example
+ * // Single query
+ * extractResearchFields({ queries: [{ mainResearchGoal: "Find auth", reasoning: "Security" }] })
+ * // Returns: { mainResearchGoal: "Find auth", reasoning: "Security" }
+ *
+ * @example
+ * // Multiple queries - consolidates unique values
+ * extractResearchFields({
+ *   queries: [
+ *     { mainResearchGoal: "Auth", researchGoal: "Find login" },
+ *     { mainResearchGoal: "Auth", researchGoal: "Find logout" }
+ *   ]
+ * })
+ * // Returns: { mainResearchGoal: "Auth", researchGoal: "Find login; Find logout" }
+ */
+export function extractResearchFields(params: Record<string, unknown>): {
+  mainResearchGoal?: string;
+  researchGoal?: string;
+  reasoning?: string;
+} {
+  const mainGoals = new Set<string>();
+  const goals = new Set<string>();
+  const reasonings = new Set<string>();
+
+  const processQuery = (query: Record<string, unknown>) => {
+    if (typeof query.mainResearchGoal === 'string' && query.mainResearchGoal) {
+      mainGoals.add(query.mainResearchGoal);
+    }
+    if (typeof query.researchGoal === 'string' && query.researchGoal) {
+      goals.add(query.researchGoal);
+    }
+    if (typeof query.reasoning === 'string' && query.reasoning) {
+      reasonings.add(query.reasoning);
+    }
+  };
+
+  // Check for queries array (bulk operations)
+  if (
+    params.queries &&
+    Array.isArray(params.queries) &&
+    params.queries.length > 0
+  ) {
+    for (const query of params.queries) {
+      processQuery(query as Record<string, unknown>);
+    }
+  } else {
+    // Single operation
+    processQuery(params);
+  }
+
+  return {
+    ...(mainGoals.size > 0 && {
+      mainResearchGoal: Array.from(mainGoals).join('; '),
+    }),
+    ...(goals.size > 0 && { researchGoal: Array.from(goals).join('; ') }),
+    ...(reasonings.size > 0 && {
+      reasoning: Array.from(reasonings).join('; '),
+    }),
   };
 }
 

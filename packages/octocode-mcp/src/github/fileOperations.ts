@@ -28,7 +28,6 @@ export async function fetchGitHubFileContentAPI(
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<GitHubAPIResponse<ContentResult>> {
-  // Generate cache key based on request parameters
   const cacheKey = generateCacheKey(
     'gh-api-file-content',
     {
@@ -36,7 +35,6 @@ export async function fetchGitHubFileContentAPI(
       repo: params.repo,
       path: params.path,
       branch: params.branch,
-      // Include other parameters that affect the content
       ...(params.fullContent && { fullContent: params.fullContent }),
       startLine: params.startLine,
       endLine: params.endLine,
@@ -53,7 +51,6 @@ export async function fetchGitHubFileContentAPI(
       return await fetchGitHubFileContentAPIInternal(params, authInfo);
     },
     {
-      // Only cache successful responses
       shouldCache: (value: GitHubAPIResponse<ContentResult>) =>
         'data' in value && !(value as { error?: unknown }).error,
     }
@@ -74,7 +71,6 @@ async function fetchGitHubFileContentAPIInternal(
     const octokit = await getOctokit(authInfo);
     const { owner, repo, path: filePath, branch } = params;
 
-    // Use properly typed parameters
     const contentParams: GetContentParameters = {
       owner,
       repo,
@@ -84,10 +80,8 @@ async function fetchGitHubFileContentAPIInternal(
 
     const result = await octokit.rest.repos.getContent(contentParams);
 
-    // Handle the response data
     const data = result.data;
 
-    // Check if it's a directory (array response)
     if (Array.isArray(data)) {
       return {
         error:
@@ -97,12 +91,10 @@ async function fetchGitHubFileContentAPIInternal(
       };
     }
 
-    // Check if it's a file with content
     if ('content' in data && data.type === 'file') {
       const fileSize = data.size || 0;
-      const MAX_FILE_SIZE = 300 * 1024; // 300KB limit
+      const MAX_FILE_SIZE = 300 * 1024;
 
-      // Check file size
       if (fileSize > MAX_FILE_SIZE) {
         const fileSizeKB = Math.round(fileSize / 1024);
         const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
@@ -114,7 +106,6 @@ async function fetchGitHubFileContentAPIInternal(
         };
       }
 
-      // Get and decode content
       if (!data.content) {
         return {
           error: 'File is empty - no content to display',
@@ -123,7 +114,7 @@ async function fetchGitHubFileContentAPIInternal(
         };
       }
 
-      const base64Content = data.content.replace(/\s/g, ''); // Remove all whitespace
+      const base64Content = data.content.replace(/\s/g, '');
 
       if (!base64Content) {
         return {
@@ -137,7 +128,6 @@ async function fetchGitHubFileContentAPIInternal(
       try {
         const buffer = Buffer.from(base64Content, 'base64');
 
-        // Simple binary check - look for null bytes
         if (buffer.indexOf(0) !== -1) {
           return {
             error:
@@ -157,7 +147,6 @@ async function fetchGitHubFileContentAPIInternal(
         };
       }
 
-      // Process the content similar to CLI implementation
       const result = await processFileContentAPI(
         decodedContent,
         owner,
@@ -172,7 +161,6 @@ async function fetchGitHubFileContentAPIInternal(
         params.matchString
       );
 
-      // Wrap the result in GitHubAPISuccess if it's not an error
       if ('error' in result) {
         return {
           error: result.error || 'Unknown error',
@@ -187,7 +175,6 @@ async function fetchGitHubFileContentAPIInternal(
       }
     }
 
-    // Handle other file types (symlinks, submodules, etc.)
     return {
       error: `Unsupported file type: ${data.type}`,
       type: 'unknown' as const,
@@ -215,11 +202,9 @@ async function processFileContentAPI(
   matchStringContextLines: number = 5,
   matchString?: string
 ): Promise<ContentResult> {
-  // Sanitize the decoded content for security
   const sanitizationResult = ContentSanitizer.sanitizeContent(decodedContent);
   decodedContent = sanitizationResult.content;
 
-  // Add security warnings to the response if any issues were found
   const securityWarningsSet = new Set<string>();
   if (sanitizationResult.hasSecrets) {
     securityWarningsSet.add(
@@ -243,27 +228,19 @@ async function processFileContentAPI(
   }
   const securityWarnings = Array.from(securityWarningsSet);
 
-  // Handle partial file access
   let finalContent = decodedContent;
   let actualStartLine: number | undefined;
   let actualEndLine: number | undefined;
   let isPartial = false;
 
-  // Calculate total lines
   const lines = decodedContent.split('\n');
   const totalLines = lines.length;
 
-  // If fullContent is true, return the entire file and ignore other parameters
   if (fullContent) {
     finalContent = decodedContent;
-    // Don't set actualStartLine/actualEndLine for full content
-    // Don't set isPartial for full content
-  }
-  // SMART MATCH FINDER: If matchString is provided, find it and set line range
-  else if (matchString) {
+  } else if (matchString) {
     const matchingLines: number[] = [];
 
-    // Find all lines that contain the match string
     for (let i = 0; i < lines.length; i++) {
       if (lines[i]?.includes(matchString)) {
         matchingLines.push(i + 1); // Convert to 1-based line numbers
@@ -279,63 +256,47 @@ async function processFileContentAPI(
       };
     }
 
-    // Use the first match, with context lines around it
-    const firstMatch = matchingLines[0]!; // Safe because we check length > 0 above
+    const firstMatch = matchingLines[0]!;
     const matchStartLine = Math.max(1, firstMatch - matchStringContextLines);
     const matchEndLine = Math.min(
       totalLines,
       firstMatch + matchStringContextLines
     );
 
-    // Override any manually provided startLine/endLine when matchString is used
     startLine = matchStartLine;
     endLine = matchEndLine;
 
-    // Extract the matching lines with context
     const selectedLines = lines.slice(matchStartLine - 1, matchEndLine);
     finalContent = selectedLines.join('\n');
 
-    // Set the actual line boundaries for the response
     actualStartLine = matchStartLine;
     actualEndLine = matchEndLine;
     isPartial = true;
 
-    // Add info about the match for user context
     securityWarnings.push(
       `Found "${matchString}" on line ${firstMatch}${matchingLines.length > 1 ? ` (and ${matchingLines.length - 1} other locations)` : ''}`
     );
-  }
-  // Handle startLine/endLine selection (only if not fullContent and no matchString)
-  else if (startLine !== undefined || endLine !== undefined) {
-    // When only endLine is provided, default startLine to 1
+  } else if (startLine !== undefined || endLine !== undefined) {
     const effectiveStartLine = startLine || 1;
 
-    // When only startLine is provided, default endLine to end of file
     const effectiveEndLine = endLine || totalLines;
 
-    // Validate line numbers
     if (effectiveStartLine < 1 || effectiveStartLine > totalLines) {
-      // Don't throw error - return the whole file content instead
       finalContent = decodedContent;
     } else if (effectiveEndLine < effectiveStartLine) {
-      // Invalid range - return the whole file content
       finalContent = decodedContent;
     } else {
-      // Valid range - extract the requested lines
       const adjustedStartLine = Math.max(1, effectiveStartLine);
       const adjustedEndLine = Math.min(totalLines, effectiveEndLine);
 
-      // Extract the specified lines (without context, just the exact lines requested)
       const selectedLines = lines.slice(adjustedStartLine - 1, adjustedEndLine);
 
       actualStartLine = adjustedStartLine;
       actualEndLine = adjustedEndLine;
       isPartial = true;
 
-      // Return just the raw content of the selected lines
       finalContent = selectedLines.join('\n');
 
-      // Add note if we adjusted the bounds
       if (effectiveEndLine > totalLines) {
         securityWarnings.push(
           `Requested endLine ${effectiveEndLine} adjusted to ${totalLines} (file end)`
@@ -343,10 +304,7 @@ async function processFileContentAPI(
       }
     }
   }
-  // If no content selection parameters are set (fullContent=false, no matchString, no startLine/endLine),
-  // finalContent remains as decodedContent (full file) for backward compatibility
 
-  // Apply minification to final content (both partial and full files)
   let minificationFailed = false;
   let minificationType = 'none';
 
@@ -364,19 +322,16 @@ async function processFileContentAPI(
     contentLength: finalContent.length,
     content: finalContent,
     branch,
-    // Actual content boundaries (only for partial content)
     ...(isPartial && {
       startLine: actualStartLine,
       endLine: actualEndLine,
       isPartial,
     }),
-    // Minification info
     ...(minified && {
       minified: !minificationFailed,
       minificationFailed: minificationFailed,
       minificationType: minificationType,
     }),
-    // Security warnings
     ...(securityWarnings.length > 0 && {
       securityWarnings,
     }),
@@ -391,7 +346,6 @@ export async function viewGitHubRepositoryStructureAPI(
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<GitHubRepositoryStructureResult | GitHubRepositoryStructureError> {
-  // Generate cache key based on structure parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey(
     'gh-repo-structure-api',
     params,
@@ -406,7 +360,6 @@ export async function viewGitHubRepositoryStructureAPI(
       return await viewGitHubRepositoryStructureAPIInternal(params, authInfo);
     },
     {
-      // Only cache successful responses
       shouldCache: value => !('error' in value),
     }
   );
@@ -426,10 +379,8 @@ async function viewGitHubRepositoryStructureAPIInternal(
     const octokit = await getOctokit(authInfo);
     const { owner, repo, branch, path = '', depth = 1 } = params;
 
-    // Clean up path
     const cleanPath = path.startsWith('/') ? path.substring(1) : path;
 
-    // Try to get repository contents
     let result;
     let workingBranch = branch;
     try {
@@ -440,15 +391,12 @@ async function viewGitHubRepositoryStructureAPIInternal(
         ref: branch,
       });
     } catch (error: unknown) {
-      // Handle branch/path not found by trying fallbacks
       if (error instanceof RequestError && error.status === 404) {
-        // Try to get repository info first to find default branch
         let defaultBranch = 'main';
         try {
           const repoInfo = await octokit.rest.repos.get({ owner, repo });
           defaultBranch = repoInfo.data.default_branch || 'main';
         } catch (repoError) {
-          // Repository doesn't exist or no access
           const apiError = handleGitHubAPIError(repoError);
           return {
             error: `Repository "${owner}/${repo}" not found or not accessible: ${apiError.error}`,
@@ -456,7 +404,6 @@ async function viewGitHubRepositoryStructureAPIInternal(
           };
         }
 
-        // Try with default branch if different from requested
         if (defaultBranch !== branch) {
           try {
             result = await octokit.rest.repos.getContent({
@@ -467,7 +414,6 @@ async function viewGitHubRepositoryStructureAPIInternal(
             });
             workingBranch = defaultBranch;
           } catch (fallbackError) {
-            // Try common branches
             const commonBranches = ['main', 'master', 'develop'];
             let foundBranch = null;
 
@@ -485,7 +431,7 @@ async function viewGitHubRepositoryStructureAPIInternal(
                 workingBranch = tryBranch;
                 break;
               } catch {
-                // Continue trying
+                //ignore
               }
             }
 
@@ -517,10 +463,8 @@ async function viewGitHubRepositoryStructureAPIInternal(
       }
     }
 
-    // Process the result
     const items = Array.isArray(result.data) ? result.data : [result.data];
 
-    // Convert Octokit response to our GitHubApiFileItem format
     const apiItems: GitHubApiFileItem[] = items.map(
       (item: GitHubApiFileItem) => ({
         name: item.name,
@@ -535,7 +479,6 @@ async function viewGitHubRepositoryStructureAPIInternal(
       })
     );
 
-    // If depth > 1, recursively fetch subdirectories
     let allItems = apiItems;
     if (depth > 1) {
       const recursiveItems = await fetchDirectoryContentsRecursivelyAPI(

@@ -19,6 +19,7 @@ export type QueryStatus = 'hasResults' | 'empty' | 'error';
 
 /** Base result structure for tool operations */
 export interface BaseToolResult<TQuery = object> {
+  mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
   error?: string;
@@ -29,6 +30,7 @@ export interface BaseToolResult<TQuery = object> {
 /** Generic tool result with status */
 export interface ToolResult {
   status: QueryStatus;
+  mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
   hints?: string[];
@@ -119,6 +121,7 @@ export interface GitHubCodeSearchQuery {
   limit?: number;
   minify?: boolean;
   sanitize?: boolean;
+  mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
@@ -151,6 +154,7 @@ export interface FileContentQuery {
   matchStringContextLines?: number;
   minified?: boolean;
   sanitize?: boolean;
+  mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
@@ -202,6 +206,7 @@ export interface GitHubReposSearchQuery {
   match?: Array<'name' | 'description' | 'readme'>;
   sort?: 'forks' | 'stars' | 'updated' | 'best-match';
   limit?: number;
+  mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
@@ -231,6 +236,7 @@ export interface GitHubViewRepoStructureQuery {
   branch: string;
   path?: string;
   depth?: number;
+  mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
@@ -287,6 +293,7 @@ export interface GitHubPullRequestSearchQuery {
   limit?: number;
   withComments?: boolean;
   withContent?: boolean;
+  mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
@@ -401,6 +408,7 @@ export interface ProcessedBulkResult<
   TData = Record<string, unknown>,
   TQuery = object,
 > {
+  mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
   data?: TData;
@@ -416,6 +424,7 @@ export interface FlatQueryResult<TQuery = object> {
   query: TQuery;
   status: QueryStatus;
   data: Record<string, unknown>;
+  mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
@@ -559,8 +568,8 @@ export interface ServerConfig {
 /** Session data for tracking tool usage */
 export interface SessionData {
   sessionId: string;
-  intent: 'init' | 'error' | 'tool_call';
-  data: ToolCallData | ErrorData | Record<string, never>;
+  intent: 'init' | 'error' | 'tool_call' | 'prompt_call';
+  data: ToolCallData | PromptCallData | ErrorData | Record<string, never>;
   timestamp: string;
   version: string;
 }
@@ -569,6 +578,13 @@ export interface SessionData {
 export interface ToolCallData {
   tool_name: string;
   repos: string[];
+  mainResearchGoal?: string;
+  researchGoal?: string;
+  reasoning?: string;
+}
+
+export interface PromptCallData {
+  prompt_name: string;
 }
 
 /** Error tracking data */

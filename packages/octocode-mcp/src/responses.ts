@@ -72,6 +72,7 @@ export function createResponseFormat(
       'query',
       'status',
       'data',
+      'mainResearchGoal',
       'researchGoal',
       'reasoning',
     ],

@@ -753,7 +753,7 @@ Common error codes:
 - **[Usage Guide](./docs/USAGE_GUIDE.md)** - 20+ real-world examples
 - **[Authentication Guide](./docs/AUTHENTICATION.md)** - Setup and troubleshooting
 - **[Tool Schemas](./docs/TOOL_SCHEMAS.md)** - Complete JSON schemas
-- **[Architecture](./docs/summary.md)** - System design and internals
+- **[Architecture](./docs/SUMMMARY.md)** - System design and internals
 
 ### External Links
 
