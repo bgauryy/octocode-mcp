@@ -76,6 +76,17 @@ https://github.com/user-attachments/assets/2aaee9f1-3592-438a-a633-255b5cbbb8e1
 
 ### Research and Build Fullstack Agentic Application with /research command in Under 10 Minutes
 
+**Why use the `/research` command?** Instead of manually searching through repositories and piecing together information, let the AI conduct comprehensive research for you:
+
+- **🎯 Intelligent Tool Orchestration**: Automatically selects and combines the right Octocode tools (repository search, code search, file content, PR analysis, repo structure) based on your research needs
+- **🧠 Smart Decision Making**: Makes strategic choices throughout the research flow—when to search broadly vs. specifically, which repositories to explore, and how to validate findings
+- **👥 Multi-Purpose Research**: Perfect for feature discovery (product managers), code understanding (developers), bug investigation, flow analysis, planning from scratch, dependency tracking, security audits, and more
+- **🔬 Specialized Workflows**: Handles Technical Research (code flows), Product Research (docs+code validation), Pattern Analysis (cross-repo comparison), Bug Investigation, Architecture Mapping, API Research, Security/Auth flows, and more
+- **🔍 Transparent Reasoning**: Shows you exactly which tools it's using, what it's searching for, and why at each step
+- **🎨 Adaptive Strategy**: Works across public repos, private organizations, and specific repositories with configurable depth (overview, deep dive, or cross-repo comparison)
+- **📊 Cross-Validated Results**: Leverages multiple Octocode tools to verify information from different sources and perspectives
+- **🚀 Actionable Insights**: Delivers implementation-ready plans with code examples, not just raw information
+
 **Prompt:**
 
 > /octocode/research How can I use LangChain, LangGraph, and similar open-source AI tools to create agentic 
