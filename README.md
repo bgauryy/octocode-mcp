@@ -478,146 +478,151 @@ Octocode is an **agentic code research platform** that bridges the gap between A
 
 ---
 
-## Architecture
+## Tools
 
-### System Design
+Octocode provides five specialized research tools designed to work together for comprehensive code analysis:
 
+### 🔍 githubSearchCode
+
+**Find code implementations across repositories**
+
+Search for specific code patterns, functions, or implementations across millions of repositories.
+
+**Key Features**:
+- **Content Search**: Find code inside files by keywords (AND logic)
+- **Path Search**: Discover files/directories by name (25x faster)
+- **Smart Filtering**: Scope by repository, path, file extension, or popularity
+- **Context-Rich Results**: Returns code snippets with surrounding context
+
+**Common Use Cases**:
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     AI Assistant (Client)                    │
-│                  (Claude, Cursor, VS Code)                   │
-└────────────────────────┬────────────────────────────────────┘
-                         │ MCP Protocol (stdio/SSE)
-                         │
-┌────────────────────────▼────────────────────────────────────┐
-│                   Octocode MCP Server                        │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  Tool Layer (5 Research Tools)                       │  │
-│  │  - githubSearchCode                                  │  │
-│  │  - githubSearchRepositories                          │  │
-│  │  - githubViewRepoStructure                           │  │
-│  │  - githubGetFileContent                              │  │
-│  │  - githubSearchPullRequests                          │  │
-│  └────────────────────┬─────────────────────────────────┘  │
-│                       │                                      │
-│  ┌────────────────────▼─────────────────────────────────┐  │
-│  │  Processing Layer (octocode-utils)                   │  │
-│  │  - Content Minification (Terser, CSS, HTML)          │  │
-│  │  - JSON to YAML Conversion                           │  │
-│  │  - Secret Detection & Sanitization                   │  │
-│  │  - Token Optimization                                │  │
-│  └────────────────────┬─────────────────────────────────┘  │
-│                       │                                      │
-│  ┌────────────────────▼─────────────────────────────────┐  │
-│  │  GitHub Integration Layer                            │  │
-│  │  - Authentication (gh CLI / PAT)                     │  │
-│  │  - API Client with Rate Limiting                     │  │
-│  │  - Permission-based Access Control                   │  │
-│  └────────────────────┬─────────────────────────────────┘  │
-└────────────────────────┼────────────────────────────────────┘
-                         │
-                         │ GitHub REST API v3 + GraphQL
-                         │
-┌────────────────────────▼────────────────────────────────────┐
-│                    GitHub Platform                           │
-│  - Public Repositories (100M+)                              │
-│  - Private Repositories (permission-based)                  │
-│  - Organization Repositories                                │
-└─────────────────────────────────────────────────────────────┘
+• Find implementation examples: "How do popular repos implement OAuth?"
+• Discover patterns: "Search for React custom hooks in vercel repos"
+• Locate functions: "Find error handling patterns in Express apps"
 ```
 
-### Data Flow
-
-1. **Request Phase**: AI assistant sends MCP tool request with search parameters
-2. **Authentication**: Server validates GitHub credentials (gh CLI or PAT)
-3. **Query Execution**: Server executes GitHub API requests with rate limiting
-4. **Content Processing**: Raw responses processed through octocode-utils
-   - Minification for token efficiency
-   - Secret detection and sanitization
-   - JSON to YAML conversion for structured data
-5. **Response Delivery**: Optimized, secure content returned to AI assistant
+**Best Practices**:
+- Start with path search for discovery, then use content search for details
+- Specify `owner`/`repo` to avoid rate limits
+- Use `extension` filter for specific file types
+- Set `limit=5-10` for focused results
 
 ---
 
-### Octocode MCP Server
+### 📚 githubSearchRepositories
 
-**Package**: [`packages/octocode-mcp/`](./packages/octocode-mcp/)
-**NPM**: [`octocode-mcp`](https://www.npmjs.com/package/octocode-mcp)
-**Type**: Model Context Protocol Server
+**Discover repositories by topics and keywords**
 
-#### Purpose
+Your starting point for repository discovery - find the right projects to analyze.
 
-MCP server providing structured access to GitHub's code ecosystem through five specialized research tools.
+**Key Features**:
+- **Topic-Based Discovery**: Search by exact GitHub topics (most precise)
+- **Keyword Search**: Find repos by name, description, or README content
+- **Quality Filters**: Filter by stars, language, size, activity
+- **Sorting Options**: By popularity, recency, or relevance
 
-#### Research Tools
+**Common Use Cases**:
+```
+• Find popular implementations: "Discover TypeScript CLI tools with >1000 stars"
+• Research ecosystems: "Find all React state management libraries"
+• Organization research: "List all repos from microsoft with topic 'ai'"
+```
 
-| Tool | Purpose | Key Parameters | Output |
-|------|---------|----------------|--------|
-| **githubSearchCode** | Find code implementations across repositories | `keywordsToSearch`, `owner`, `repo`, `path`, `extension` | Code snippets with match context |
-| **githubSearchRepositories** | Discover repositories by topic/keywords | `topicsToSearch`, `keywordsToSearch`, `stars`, `language` | Repository metadata (stars, topics, description) |
-| **githubViewRepoStructure** | Explore directory structure | `owner`, `repo`, `path`, `depth` | File tree with sizes |
-| **githubGetFileContent** | Read file contents with smart extraction | `owner`, `repo`, `path`, `matchString`, `startLine`, `endLine` | File content (full or partial) |
-| **githubSearchPullRequests** | Analyze PRs, changes, discussions | `owner`, `repo`, `state`, `merged`, `withContent` | PR metadata, diffs, comments |
+**Best Practices**:
+- Use `topicsToSearch` for curated, high-quality results
+- Apply `stars=">1000"` filter for production-ready code
+- Sort by `stars` for popular repos, `updated` for maintained projects
+- Start broad, then narrow with specific filters
+
+---
+
+### 🗂️ githubViewRepoStructure
+
+**Explore repository directory structure**
+
+Understand how a project is organized before diving into specific files.
+
+**Key Features**:
+- **Directory Tree**: Visual representation of folder structure
+- **File Sizes**: See file sizes to identify important components
+- **Depth Control**: Explore 1 level (overview) or 2 levels (detailed)
+- **Path Targeting**: Navigate directly to specific directories
+
+**Common Use Cases**:
+```
+• Project overview: "Show me the structure of facebook/react"
+• Find entry points: "Explore src/ directory in a monorepo"
+• Understand architecture: "Navigate to the API implementation folder"
+```
+
+**Best Practices**:
+- Start with `depth=1` at root for overview
+- Use `depth=2` for specific directories when you know the structure
+- Navigate progressively: root → interesting folder → specific subfolder
+- Use before reading files to understand project organization
+
+---
+
+### 📄 githubGetFileContent
+
+**Read file contents with smart extraction**
+
+Retrieve specific content from files efficiently - full files or targeted sections.
+
+**Key Features**:
+- **Pattern Matching**: Extract sections matching specific patterns with context
+- **Line Range Reading**: Read specific line ranges for efficiency
+- **Full Content Access**: Get entire file when needed
+- **Content Minification**: Automatic optimization for token efficiency
+
+**Common Use Cases**:
+```
+• Read specific functions: "Get the validateUser function from auth.ts"
+• Extract sections: "Show me all the middleware definitions in app.js"
+• Read configuration: "Get the full package.json file"
+• Analyze specific code: "Read lines 100-150 from the API handler"
+```
+
+**Best Practices**:
+- Use `matchString` with context lines for targeted reads (85% token savings)
+- Use `startLine`/`endLine` for known locations
+- Only use `fullContent=true` for small files or when you need everything
+- Set `minified=false` for config files (JSON, YAML) to preserve formatting
+
+---
+
+### 🔀 githubSearchPullRequests
+
+**Analyze pull requests, changes, and discussions**
+
+Understand how code evolved, why decisions were made, and learn from production changes.
+
+**Key Features**:
+- **PR Discovery**: Search by state, author, labels, dates
+- **Direct Access**: Fetch specific PR by number (10x faster)
+- **Code Diffs**: Include full diff content to see what changed
+- **Discussions**: Access comment threads and review discussions
+- **Merged Code**: Filter for production-ready, merged changes
+
+**Common Use Cases**:
+```
+• Learn from changes: "Show recent merged PRs about authentication"
+• Understand decisions: "Find PRs discussing the API redesign with comments"
+• Track implementations: "See how feature X was implemented with diffs"
+• Expert contributions: "Find PRs by @author in the last 6 months"
+```
+
+**Best Practices**:
+- Use `prNumber` for direct access when you know the PR
+- Filter `state="closed"` + `merged=true` for production code
+- Set `withContent=true` only when you need to see code changes (expensive)
+- Set `withComments=true` to understand context and decisions
+- Use `limit=3-5` for focused analysis
+
+---
+
 
 **[Full Documentation →](./packages/octocode-mcp/README.md)**
-
----
-
-## Features
-
-### Progressive Research Workflow
-
-Octocode implements a three-phase research pattern optimized for deep code understanding:
-
-```
-Phase 1: DISCOVER
-├─ githubSearchRepositories
-│  └─ Find relevant projects by topic, stars, language
-└─ Output: List of candidate repositories
-
-Phase 2: EXPLORE
-├─ githubViewRepoStructure
-│  └─ Understand project organization and architecture
-└─ Output: Directory tree with file sizes
-
-Phase 3: ANALYZE
-├─ githubSearchCode
-│  └─ Find specific implementations and patterns
-├─ githubGetFileContent
-│  └─ Deep dive into specific files
-└─ githubSearchPullRequests (optional)
-   └─ Understand evolution and decision rationale
-```
-
-### Advanced Configuration
-
-#### Tool Selection
-
-```bash
-# Run only specific tools (exclusive mode)
-export TOOLS_TO_RUN="githubSearchCode,githubSearchRepositories"
-
-# Enable additional tools (additive mode)
-export ENABLE_TOOLS="githubSearchPullRequests"
-
-# Disable specific default tools
-export DISABLE_TOOLS="githubViewRepoStructure"
-
-# Enable experimental features
-export BETA="1"
-```
-
-#### Environment Variables
-
-| Variable | Type | Description | Default |
-|----------|------|-------------|---------|
-| `GITHUB_TOKEN` | string | Personal Access Token for authentication | Uses `gh` CLI |
-| `TOOLS_TO_RUN` | string | Comma-separated list of tools to run exclusively | All default tools |
-| `ENABLE_TOOLS` | string | Comma-separated list of additional tools to enable | None |
-| `DISABLE_TOOLS` | string | Comma-separated list of tools to disable | None |
-| `BETA` | "0" \| "1" | Enable experimental features | "0" |
-
-**Note**: `TOOLS_TO_RUN` is mutually exclusive with `ENABLE_TOOLS`/`DISABLE_TOOLS`.
 
 ---
 
@@ -741,9 +746,11 @@ Octocode MCP provides intelligent prompt commands that enhance your research wor
 ### Tips for Using Commands
 
 1. **Start with `/use`** if you're new to Octocode MCP
-2. **Use `/research`** for complex, multi-step investigations that need structured guidance
+2. **Use `/research` for all code research** - This is the recommended way to use Octocode for any research task, providing structured guidance and optimal tool usage
 3. **Run `/kudos`** at the end of sessions to document sources and show appreciation
 4. Commands work in any MCP-compatible client (Claude, Cursor, etc.)
+
+> **💡 Pro Tip**: For any code research, start with `/research` in Octocode MCP. This command intelligently orchestrates all tools for you, optimizing your workflow, depth of analysis, and research quality.
 
 ---
 
@@ -810,4 +817,4 @@ If Octocode helps your AI development workflow:
 
 ## License
 
-MIT - See [LICENSE](./LICENSE) for details.
+MIT - See [LICENSE](./LICENSE.md) for details.
