@@ -405,9 +405,7 @@ interface GithubGetFileContentResponse {
 
 Analyze pull requests, code changes, and discussions.
 
-**Status**: Optional tool (disabled by default)
-
-**Enable**: Set `ENABLE_TOOLS="githubSearchPullRequests"` in environment
+**Status**: Default tool (enabled by default)
 
 #### Parameters
 
@@ -548,18 +546,19 @@ interface GithubSearchPullRequestsResponse {
 
 ### Environment Variables
 
-| Variable | Type | Description | Default |
-|----------|------|-------------|---------|
-| `GITHUB_TOKEN` | string | Personal Access Token | Uses `gh` CLI if not set |
-| `TOOLS_TO_RUN` | string | Comma-separated tool list (exclusive mode) | All default tools |
-| `ENABLE_TOOLS` | string | Comma-separated tools to enable (additive) | None |
-| `DISABLE_TOOLS` | string | Comma-separated tools to disable | None |
-| `BETA` | "0" \| "1" | Enable experimental features | "0" |
+| Variable        | Type             | Description                                              |
+|-----------------|------------------|----------------------------------------------------------|
+| `GITHUB_TOKEN`  | string           | Personal Access Token ( Uses `gh` CLI if not set)        |
+| `TOOLS_TO_RUN`  | string           | Comma-separated tool list (exclusive mode)               |
+| `ENABLE_TOOLS`  | string           | Comma-separated tools to enable (additive)               |
+| `DISABLE_TOOLS` | string           | Comma-separated tools to disable                         |
+| `BETA`          | "0" \| "1"       | Enable experimental features                             |
+| `LOG`           | "true" \| "false"| Enable logging                                           |
+
 
 **Notes**:
 - `TOOLS_TO_RUN` is mutually exclusive with `ENABLE_TOOLS`/`DISABLE_TOOLS`
-- Default tools: `githubSearchCode`, `githubSearchRepositories`, `githubViewRepoStructure`, `githubGetFileContent`
-- Optional tools: `githubSearchPullRequests`
+- Default tools (enabled automatically): `githubSearchCode`, `githubSearchRepositories`, `githubViewRepoStructure`, `githubGetFileContent`, `githubSearchPullRequests`
 
 ### Tool Selection Examples
 
@@ -567,8 +566,8 @@ interface GithubSearchPullRequestsResponse {
 # Run only search tools (exclusive mode)
 export TOOLS_TO_RUN="githubSearchCode,githubSearchRepositories"
 
-# Enable PR search (additive mode)
-export ENABLE_TOOLS="githubSearchPullRequests"
+# Disable PR search if not needed
+export DISABLE_TOOLS="githubSearchPullRequests"
 
 # Disable structure exploration
 export DISABLE_TOOLS="githubViewRepoStructure"
@@ -587,7 +586,7 @@ export BETA="1"
       "args": ["octocode-mcp@latest"],
       "env": {
         "GITHUB_TOKEN": "ghp_your_token_here",
-        "ENABLE_TOOLS": "githubSearchPullRequests",
+        "DISABLE_TOOLS": "githubSearchPullRequests",
         "BETA": "1"
       }
     }
