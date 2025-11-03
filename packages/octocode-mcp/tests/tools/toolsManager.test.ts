@@ -19,7 +19,7 @@ vi.mock('../../src/tools/toolConfig.js', () => {
     },
     {
       name: 'githubSearchPullRequests',
-      isDefault: false,
+      isDefault: true,
       fn: vi.fn(),
     },
   ];
@@ -74,18 +74,16 @@ describe('ToolsManager', () => {
 
       const result = registerTools(mockServer);
 
-      // Should register 4 default tools
-      expect(result.successCount).toBe(4);
+      // Should register all 5 default tools
+      expect(result.successCount).toBe(5);
       expect(result.failedTools).toEqual([]);
 
-      // Verify default tools were called
+      // Verify all default tools were called
       expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer, undefined); // githubSearchCode
       expect(DEFAULT_TOOLS[1]?.fn).toHaveBeenCalledWith(mockServer, undefined); // githubGetFileContent
       expect(DEFAULT_TOOLS[2]?.fn).toHaveBeenCalledWith(mockServer, undefined); // githubViewRepoStructure
       expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalledWith(mockServer, undefined); // githubSearchRepositories
-
-      // Verify non-default tools were NOT called
-      expect(DEFAULT_TOOLS[4]?.fn).not.toHaveBeenCalled(); // githubSearchPullRequests
+      expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalledWith(mockServer, undefined); // githubSearchPullRequests
     });
   });
 
@@ -232,7 +230,7 @@ describe('ToolsManager', () => {
   });
 
   describe('ENABLE_TOOLS/DISABLE_TOOLS Configuration (without TOOLS_TO_RUN)', () => {
-    it('should add non-default tools with ENABLE_TOOLS', () => {
+    it('should register all default tools with ENABLE_TOOLS (no-op for already default tools)', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
@@ -245,7 +243,7 @@ describe('ToolsManager', () => {
 
       const result = registerTools(mockServer);
 
-      // Should register 4 default tools + 1 enabled tool = 5 tools
+      // Should register all 5 default tools (PR is now default, so ENABLE_TOOLS is redundant)
       expect(result.successCount).toBe(5);
       expect(result.failedTools).toEqual([]);
 
@@ -254,8 +252,6 @@ describe('ToolsManager', () => {
       expect(DEFAULT_TOOLS[1]?.fn).toHaveBeenCalled(); // githubGetFileContent
       expect(DEFAULT_TOOLS[2]?.fn).toHaveBeenCalled(); // githubViewRepoStructure
       expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalled(); // githubSearchRepositories
-
-      // Verify enabled tools were called
       expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalled(); // githubSearchPullRequests
     });
 
@@ -275,8 +271,8 @@ describe('ToolsManager', () => {
 
       const result = registerTools(mockServer);
 
-      // Should register 4 default tools - 2 disabled tools = 2 tools
-      expect(result.successCount).toBe(2);
+      // Should register 5 default tools - 2 disabled tools = 3 tools
+      expect(result.successCount).toBe(3);
       expect(result.failedTools).toEqual([]);
 
       // Verify disabled tools were NOT called
@@ -286,6 +282,7 @@ describe('ToolsManager', () => {
       // Verify remaining default tools were called
       expect(DEFAULT_TOOLS[2]?.fn).toHaveBeenCalled(); // githubViewRepoStructure
       expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalled(); // githubSearchRepositories
+      expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalled(); // githubSearchPullRequests
     });
 
     it('should handle both ENABLE_TOOLS and DISABLE_TOOLS', () => {
@@ -302,7 +299,7 @@ describe('ToolsManager', () => {
 
       const result = registerTools(mockServer);
 
-      // Should register (4 default - 1 disabled + 1 enabled) = 4 tools
+      // Should register (5 default - 1 disabled) = 4 tools (ENABLE_TOOLS is redundant for PR)
       expect(result.successCount).toBe(4);
       expect(result.failedTools).toEqual([]);
 
@@ -313,8 +310,6 @@ describe('ToolsManager', () => {
       expect(DEFAULT_TOOLS[1]?.fn).toHaveBeenCalled(); // githubGetFileContent
       expect(DEFAULT_TOOLS[2]?.fn).toHaveBeenCalled(); // githubViewRepoStructure
       expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalled(); // githubSearchRepositories
-
-      // Verify enabled tool was called
       expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalled(); // githubSearchPullRequests
     });
 
@@ -332,7 +327,7 @@ describe('ToolsManager', () => {
 
       const result = registerTools(mockServer);
 
-      // Should register 4 default tools (githubSearchPullRequests should be disabled)
+      // Should register 4 tools (5 default tools - 1 disabled = 4)
       expect(result.successCount).toBe(4);
       expect(result.failedTools).toEqual([]);
 
@@ -359,8 +354,8 @@ describe('ToolsManager', () => {
 
       const result = registerTools(mockServer);
 
-      // Should register 3 successful tools, 1 failed
-      expect(result.successCount).toBe(3);
+      // Should register 4 successful tools, 1 failed (5 total - 1 failed = 4 successful)
+      expect(result.successCount).toBe(4);
       expect(result.failedTools).toEqual([TOOL_NAMES.GITHUB_SEARCH_CODE]);
     });
 
@@ -384,8 +379,8 @@ describe('ToolsManager', () => {
 
       const result = registerTools(mockServer);
 
-      // Should register 2 successful tools, 2 failed
-      expect(result.successCount).toBe(2);
+      // Should register 3 successful tools, 2 failed (5 total - 2 failed = 3 successful)
+      expect(result.successCount).toBe(3);
       expect(result.failedTools).toEqual([
         TOOL_NAMES.GITHUB_SEARCH_CODE,
         TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
@@ -394,6 +389,7 @@ describe('ToolsManager', () => {
       // Verify successful tools were still called
       expect(DEFAULT_TOOLS[1]?.fn).toHaveBeenCalled(); // githubGetFileContent
       expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalled(); // githubSearchRepositories
+      expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalled(); // githubSearchPullRequests
     });
   });
 });
