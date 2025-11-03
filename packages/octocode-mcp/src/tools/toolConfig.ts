@@ -53,7 +53,7 @@ export const GITHUB_SEARCH_REPOSITORIES: ToolConfig = {
 export const GITHUB_SEARCH_PULL_REQUESTS: ToolConfig = {
   name: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
   description: 'Search GitHub pull requests and code reviews',
-  isDefault: false,
+  isDefault: true,
   type: 'history',
   fn: registerSearchGitHubPullRequestsTool,
 };

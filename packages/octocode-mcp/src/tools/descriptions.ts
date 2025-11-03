@@ -3,6 +3,8 @@ import { TOOL_NAMES } from '../constants.js';
 export const DESCRIPTIONS = {
   [TOOL_NAMES.GITHUB_FETCH_CONTENT]: `FILE READER - Read file contents with smart extraction
 
+PARAMS: See schema for parameter details
+
 PURPOSE: Read file contents using patterns, line ranges, or full file mode
 
 USE_WHEN: Have file path | After ${TOOL_NAMES.GITHUB_SEARCH_CODE}/${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} discovery
@@ -13,20 +15,19 @@ WORKFLOW:
   Step 2: Read (matchString or line range)
   Step 3: Explore related patterns
 
-MODES:
-  - matchString + matchStringContextLines: Extract specific sections [85% token savings]
-  - startLine + endLine: Read line range
-  - fullContent: Read entire file
+STRATEGY (choose based on what you know):
+  - matchString: Know function/class/pattern name → start here [most efficient]
+  - startLine + endLine: Know location from prior search → precise extraction
+  - fullContent: Need entire file → use ONLY for small files (<500KB)
 
 OPTIMIZATION:
-  - matchString: 85% token savings
-  - Bulk queries: 5-10x faster
-  - minified=true (default): 30-60% savings
+  - Start lean: Single matchString query first
+  - If related context needed: Bulk queries for multiple files (e.g., auth.ts + user.ts + session.ts in parallel)
 
 GOTCHAS:
-  - minified=true breaks JSON/YAML formatting
-  - matchString returns empty if no matches
-  - Large files may be truncated
+  - minified=true breaks JSON/YAML formatting → use minified=false for config files
+  - matchString returns empty if no matches → try broader pattern or use fullContent
+  - Files >500KB: MUST use matchString or line ranges, fullContent will truncate
 
 NEXT_STEP:
   hasResults → ${TOOL_NAMES.GITHUB_SEARCH_CODE} for related patterns
@@ -43,38 +44,33 @@ GUARDS:
   config? - minified=false | know pattern? - matchString | large file? - use line range | efficiency? - prefer startLine/endLine over fullContent, justify range in reasoning`,
   [TOOL_NAMES.GITHUB_SEARCH_CODE]: `CODE SEARCH - Search file content or filenames/paths
 
+PARAMS: See schema for parameter details
+
 PURPOSE: Search file contents for code patterns or search file/directory names
 
 USE_WHEN: Know patterns | Need discovery
 AVOID: Broad terms | No owner/repo (rate limits)
 
 WORKFLOW:
-  Step 1: Discovery (match="path") - Find files [25x faster]
+  Step 1: Discovery (match="path") - Find files [fastest, most token efficient]
   Step 2: (Optional) Use ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to understand structure when exploring unfamiliar repos
   Step 3: Detailed (match="file", limit=5) - Get matches with context
   Step 4: Read (${TOOL_NAMES.GITHUB_FETCH_CONTENT} matchString) - Full content
 
-MODES:
-  - match="file": Search IN content → returns text_matches[]
-  - match="path": Search filenames/dirs → 25x faster
-
-FILTERS:
-  - owner/repo: Repository scope (RECOMMENDED)
-  - path: Directory scope
-  - extension: File type
-  - stars: Popular repos only
+STRATEGY:
+  - match="path": Fast discovery, returns paths only
+  - match="file": Detailed search, returns text_matches[] with context
+  - Always scope: owner/repo to avoid rate limits
 
 OPTIMIZATION:
-  - match="path": 20 tokens vs 500 with text_matches
-  - Bulk queries: 5-10x faster
-  - limit=5-10: Focused results
-  - Specific keywords over generic terms
+  - Start lean: Know exact term? → Single specific query (e.g., "authenticate")
+  - Uncertain about terms? → Bulk query with variants upfront (e.g., [{keywordsToSearch:["auth"]}, {keywordsToSearch:["authenticate"]}, {keywordsToSearch:["credential"]}])
+  - Semantic variants: "auth"→"authorization"/"authenticate"/"credential", "config"→"configuration"/"settings"/"options"
 
 GOTCHAS:
-  - keywordsToSearch uses AND logic
   - match="file" without limit = token explosion
   - No owner/repo = rate limits
-  - text_matches → use for ${TOOL_NAMES.GITHUB_FETCH_CONTENT} matchString
+  - text_matches show exact locations → copy match text into ${TOOL_NAMES.GITHUB_FETCH_CONTENT} matchString for precise extraction
 
 NEXT_STEP:
   hasResults → ${TOOL_NAMES.GITHUB_FETCH_CONTENT} matchString for full context
@@ -91,6 +87,8 @@ GUARDS:
   discovery? - match="path" | many results? - limit=5-10 | no scope? - add owner/repo`,
   [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: `REPOSITORY SEARCH - Search repos by keywords/topics
 
+PARAMS: See schema for parameter details
+
 PURPOSE: Discover GitHub repositories. Gateway for codebase exploration.
 
 USE_WHEN: Starting research | Finding projects/libraries
@@ -102,32 +100,25 @@ WORKFLOW:
   Step 3: Search (${TOOL_NAMES.GITHUB_SEARCH_CODE})
   Step 4: Read (${TOOL_NAMES.GITHUB_FETCH_CONTENT})
 
-MODES:
-  - topicsToSearch: ["typescript", "cli"] - curated, exact topic tags (BEST)
-  - keywordsToSearch: ["term1", "term2"] - name/desc/README, AND logic
-
-FILTERS:
-  - stars=">1000": Quality filter
-  - owner: Scope to org/user
-  - created/updated: Date filters (">=YYYY-MM-DD")
-  - match=["name"]: Search scope
+STRATEGY:
+  - topicsToSearch: Most precise for curated topic tags
+  - keywordsToSearch: Flexible search across name/desc/README
+  - Always add stars filter for quality (e.g., stars=">1000")
 
 OPTIMIZATION:
-  - topicsToSearch: Most precise
-  - stars=">1000": Quality filter
-  - sort="stars": Popular repos
-  - limit=5-10: Focused results
-  - Bulk queries: Parallel searches
+  - Start lean: Know exact topic? → topicsToSearch with stars filter (e.g., topicsToSearch=["typescript"], stars=">1000")
+  - Uncertain? → Bulk with variants: topics + keywords in parallel (e.g., [{topicsToSearch:["cli"]}, {keywordsToSearch:["command-line"]}])
+  - Semantic variants: "auth"→"authentication"/"oauth", "ai"→"machine-learning"/"llm"
+  - Quality: stars=">1000" for production-ready, sort="stars" for popularity
 
 GOTCHAS:
-  - keywordsToSearch uses AND logic
-  - topicsToSearch needs exact tags
-  - size in KB not MB ("1000" = 1MB)
-  - No filters = generic results
+  - topicsToSearch: use popular topics (e.g., "mcp", "react", "nextjs", "langchain") for best results
+  - size filter uses KB not MB ("1000" = 1MB)
+  - No filters = generic, low-quality results
 
 NEXT_STEP:
   hasResults → ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} or ${TOOL_NAMES.GITHUB_SEARCH_CODE}
-  empty → Broaden filters or try synonyms
+  empty → Try semantic variants or broaden stars filter
 
 EXAMPLES:
   topicsToSearch=["typescript", "cli"], stars=">1000"  # BEST: curated quality repos
@@ -141,6 +132,8 @@ GUARDS:
   discovery? - topicsToSearch+stars | quality? - stars=">1000" | maintained? - updated filter`,
   [TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]: `DIRECTORY EXPLORER - Understand codebase organization
 
+PARAMS: See schema for parameter details
+
 PURPOSE: Display directory structure with file sizes
 
 USE_WHEN: New codebase | Need structure overview
@@ -152,21 +145,21 @@ WORKFLOW:
   Step 3: Search (${TOOL_NAMES.GITHUB_SEARCH_CODE})
   Step 4: Read (${TOOL_NAMES.GITHUB_FETCH_CONTENT})
 
-OPTIONS:
-  - depth: 1 (fast) or 2 (includes subdirs)
-  - path: "" (root) or "src/api" (specific dir)
-  - branch: "main" or branch/tag/SHA
+STRATEGY:
+  - depth=1: Fast overview, see immediate files/folders
+  - depth=2: Deeper view, includes subdirectories (slower)
+  - path="": Start at root, then drill into specific dirs
 
 OPTIMIZATION:
-  - depth=1 first, drill down later
-  - Bulk queries: Parallel exploration
+  - Start lean: depth=1 for overview, only go depth=2 if structure unclear
+  - Bulk queries: Explore key directories in parallel (e.g., [{path:"src"}, {path:"tests"}, {path:"docs"}])
   - Use for discovery, then ${TOOL_NAMES.GITHUB_SEARCH_CODE} for content
 
 GOTCHAS:
-  - depth=2 on large dirs = slow
-  - path no leading slash: "src/api" not "/src/api"
+  - depth=2 on dirs with >50 subdirs = slow, stick to depth=1
+  - path format: "src/api" NOT "/src/api" (no leading slash)
   - Returns files[] and folders[], no content
-  - >100 files may truncate
+  - Dirs with >100 items: result truncates at 100 → use ${TOOL_NAMES.GITHUB_SEARCH_CODE} with path filter instead
 
 NEXT_STEP:
   hasResults → ${TOOL_NAMES.GITHUB_SEARCH_CODE} or ${TOOL_NAMES.GITHUB_FETCH_CONTENT}
@@ -182,61 +175,47 @@ GUARDS:
   new? - depth=1, path="" | large? - depth=1 first | monorepo? - explore each package`,
   [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `PR SEARCH - Search or fetch PRs
 
-PURPOSE: Search/fetch PRs with metadata, discussions, and diffs
+PARAMS: See schema for parameter details
 
-USE_WHEN: Need PR context | Research implementations | Review merged changes
-AVOID: Need current code - use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} | Need all patterns - use ${TOOL_NAMES.GITHUB_SEARCH_CODE}
+PURPOSE: Get PRs with metadata, discussions, and diffs
+
+USE_WHEN: PR context | Implementation research | Review merged changes
+AVOID: Current code → ${TOOL_NAMES.GITHUB_FETCH_CONTENT} | Code patterns → ${TOOL_NAMES.GITHUB_SEARCH_CODE}
 
 WORKFLOW:
-  Step 1: Discover (prNumber or search filters)
+  Step 1: Discover (prNumber or filters)
   Step 2: Analyze (withComments/withContent)
-  Step 3: Compare (${TOOL_NAMES.GITHUB_FETCH_CONTENT} for current state)
+  Step 3: Compare (${TOOL_NAMES.GITHUB_FETCH_CONTENT} for current)
 
-MODES:
-  - prNumber=123: Direct fetch (10x faster)
-  - Search: state/author/labels/dates filters
-
-FILTERS:
-  - state="open"|"closed": PR status
-  - merged=true: Production code (with state="closed")
-  - author/label/query: Filter criteria
-  - created/updated/closed: Date filters
-  - comments/reactions: Engagement filters
+STRATEGY:
+  - prNumber: Direct fetch [fastest] when you know PR number
+  - Search: Filter by state/author/labels/dates for discovery
+  - withContent/withComments: Start without them, add only when needed
+  - limit: Use 3 for initial scan, 5-10 for comprehensive review
 
 OPTIMIZATION:
-  - prNumber: 10x faster
-  - state="closed"+merged=true: Production only
-  - limit=3-5: Focused results
-  - withComments=false: 50% token savings
-  - withContent=false: 80% token savings
-  - Bulk queries: Parallel analysis
+  - Start lean: Know PR number? → prNumber (fastest, most direct)
+  - Searching? → Start with limit=3, no withContent/withComments
+  - Need details? → Sequential: analyze metadata first, then fetch with withContent=true if relevant
+  - Multiple PRs: Bulk queries (e.g., [{prNumber:123}, {prNumber:456}, {prNumber:789}])
 
 GOTCHAS:
-  - withContent=true = VERY token expensive
-  - withComments=true = token expensive
-  - merged=true requires state="closed"
-  - label can be string or array (OR logic)
+  - merged=true needs state="closed"
   - prNumber ignores other filters
+  - label accepts string or array for OR matching
 
 NEXT_STEP:
-  hasResults → ${TOOL_NAMES.GITHUB_FETCH_CONTENT} for current code or ${TOOL_NAMES.GITHUB_SEARCH_CODE} for patterns
-  empty → Broaden filters or try different state
-
-COMMON PATTERNS:
-  - Research implementations: state="closed", merged=true, withContent=true
-  - Track discussions: state="open", withComments=true, limit=5
-  - Find expert contributions: author="username", state="closed", merged=true
+  hasResults → ${TOOL_NAMES.GITHUB_FETCH_CONTENT} for current | ${TOOL_NAMES.GITHUB_SEARCH_CODE} for patterns
+  empty → Broaden filters or change state
 
 EXAMPLES:
-  owner="facebook", repo="react", prNumber=123  # FASTEST: direct fetch
-  owner="facebook", repo="react", state="open", limit=5  # Recent open PRs
-  owner="facebook", repo="react", state="closed", merged=true, limit=5  # Production code
-  owner="facebook", repo="react", author="username", label="bug"  # Author's bug fixes
-  owner="facebook", repo="react", query="authentication", match=["title", "body"]  # Text search
-  owner="facebook", repo="react", prNumber=123, withContent=true  # PR with diffs
-  owner="facebook", repo="react", prNumber=123, withComments=true  # PR with discussions
-  queries=[{owner:"facebook",repo:"react",prNumber:123},{owner:"vercel",repo:"next.js",prNumber:456}]  # Bulk
+  prNumber=123  # FASTEST
+  state="open", limit=5  # Recent
+  state="closed", merged=true, withContent=true  # Implementation research
+  author="username", state="closed", merged=true  # Expert contributions
+  query="auth", match=["title","body"], limit=3  # Text search
+  queries=[{prNumber:123},{prNumber:456}]  # Bulk
 
 GUARDS:
-  code analysis? - withContent=true | context? - withComments=true | production? - state="closed"+merged=true`,
+  implementation? - withContent=true | discussion? - withComments=true | production? - merged=true`,
 };

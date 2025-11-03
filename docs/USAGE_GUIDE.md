@@ -137,10 +137,10 @@ Octocode performs better with specific identifiers like organization names, repo
 
 ### 🔧 **Tool Configuration**
 Customize tool availability via environment variables:
-- `ENABLE_TOOLS="githubSearchPullRequests"` - Enable specific optional tools
+- `ENABLE_TOOLS="toolName"` - Enable specific optional tools
 - `DISABLE_TOOLS="githubSearchCode"` - Disable specific tools (including defaults)
 - `TOOLS_TO_RUN="githubSearchCode,githubGetFileContent"` - Run only specified tools
-- Default tools are automatically enabled unless explicitly disabled
+- Default tools (code search, content fetch, repo structure, repository search, pull requests) are automatically enabled unless explicitly disabled
 
 ###  **Monitoring**
 Control session logging and analytics:
@@ -204,8 +204,8 @@ gh auth login
 # Alternative: Environment variable
 export GITHUB_TOKEN=your_token_here
 
-# Enable optional tools
-export ENABLE_TOOLS="githubSearchPullRequests"
+# Disable specific default tools (if needed)
+export DISABLE_TOOLS="githubSearchPullRequests"
 
 # Beta features
 export BETA=1
