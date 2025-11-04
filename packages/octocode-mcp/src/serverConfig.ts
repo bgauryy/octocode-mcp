@@ -7,9 +7,6 @@ let config: ServerConfig | null = null;
 let cachedToken: string | null = null;
 let initializationPromise: Promise<void> | null = null;
 
-/**
- * Parse comma-separated string to array
- */
 function parseStringArray(value?: string): string[] | undefined {
   if (!value?.trim()) return undefined;
   return value
@@ -18,37 +15,25 @@ function parseStringArray(value?: string): string[] | undefined {
     .filter(s => s.length > 0);
 }
 
-/**
- * Get GitHub token from various sources
- */
 async function resolveGitHubToken(): Promise<string | null> {
-  // 1. Try GitHub CLI
   try {
     const cliToken = await getGithubCLIToken();
     if (cliToken?.trim()) {
       return cliToken.trim();
     }
   } catch {
-    // CLI failed, continue
+    // ignore
   }
-  // 2. Try environment variables
   if (process.env.GITHUB_TOKEN) {
     return process.env.GITHUB_TOKEN;
   }
   return null;
 }
 
-/**
- * Initialize configuration and resolve token
- * Uses a promise-based approach to prevent race conditions
- */
 export async function initialize(): Promise<void> {
-  // If already initialized, return immediately
   if (config !== null) {
     return;
   }
-
-  // If initialization is in progress, wait for it to complete
   if (initializationPromise !== null) {
     return initializationPromise;
   }
@@ -79,32 +64,15 @@ export async function initialize(): Promise<void> {
     };
   })();
 
-  // Wait for initialization to complete
   await initializationPromise;
 }
 
-/**
- * Reset configuration and clear cache
- */
 export function cleanup(): void {
   config = null;
   cachedToken = null;
   initializationPromise = null;
 }
 
-/**
- * Get server configuration
- *
- * @returns The initialized server configuration
- * @throws {Error} If configuration has not been initialized yet
- *
- * @example
- * ```typescript
- * // Ensure initialization first
- * await initialize();
- * const config = getServerConfig();
- * ```
- */
 export function getServerConfig(): ServerConfig {
   if (!config) {
     throw new Error(
@@ -114,9 +82,6 @@ export function getServerConfig(): ServerConfig {
   return config;
 }
 
-/**
- * Get GitHub token
- */
 export async function getGitHubToken(): Promise<string | null> {
   if (cachedToken) {
     return cachedToken;
@@ -126,9 +91,6 @@ export async function getGitHubToken(): Promise<string | null> {
   return cachedToken;
 }
 
-/**
- * Get GitHub token or throw error
- */
 export async function getToken(): Promise<string> {
   const token = await getGitHubToken();
   if (!token) {
@@ -139,30 +101,18 @@ export async function getToken(): Promise<string> {
   return token;
 }
 
-/**
- * Check if beta features are enabled
- */
 export function isBetaEnabled(): boolean {
   return getServerConfig().betaEnabled;
 }
 
-/**
- * Check if sampling features are enabled (requires BETA=1)
- */
 export function isSamplingEnabled(): boolean {
   return isBetaEnabled();
 }
 
-/**
- * Check if logging is enabled (default: true, disabled if LOG=false)
- */
 export function isLoggingEnabled(): boolean {
   return getServerConfig().loggingEnabled;
 }
 
-/**
- * Clear cached token
- */
 export function clearCachedToken(): void {
   cachedToken = null;
 }

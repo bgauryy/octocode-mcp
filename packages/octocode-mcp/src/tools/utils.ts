@@ -1,16 +1,7 @@
-/**
- * Common utility functions shared across all tool implementations
- */
-
 import type { GitHubAPIError } from '../github/githubAPI';
 import type { ToolErrorResult, ToolSuccessResult } from '../types.js';
 import { TOOL_NAMES } from '../constants.js';
 
-/**
- * Extract hints from GitHub API error
- * Propagates the actual API error message and suggestions without rigid transformation
- * @private Internal function used by handleApiError
- */
 function extractApiErrorHints(apiError: GitHubAPIError): string[] {
   const hints: string[] = [];
 
@@ -37,10 +28,6 @@ function extractApiErrorHints(apiError: GitHubAPIError): string[] {
   return hints;
 }
 
-/**
- * Create standardized error result for bulk operations
- * Returns a strongly-typed error result with status='error'
- */
 export function createErrorResult(
   query: {
     mainResearchGoal?: string;
@@ -50,7 +37,6 @@ export function createErrorResult(
   error: string | GitHubAPIError,
   apiError?: GitHubAPIError
 ): ToolErrorResult {
-  // Include hints so bulk operations can extract them
   const hints = apiError ? extractApiErrorHints(apiError) : undefined;
 
   const result: ToolErrorResult = {
@@ -61,7 +47,6 @@ export function createErrorResult(
     error,
   };
 
-  // Only include hints if they exist
   if (hints && hints.length > 0) {
     result.hints = hints;
   }
@@ -69,10 +54,6 @@ export function createErrorResult(
   return result;
 }
 
-/**
- * Create standardized success result for bulk operations
- * Returns a strongly-typed success result with status='hasResults' or status='empty'
- */
 export function createSuccessResult<T>(
   query: {
     mainResearchGoal?: string;
@@ -94,7 +75,6 @@ export function createSuccessResult<T>(
     ...data,
   };
 
-  // Only include hints if they exist
   if (customHints && customHints.length > 0) {
     result.hints = customHints;
   }
@@ -105,9 +85,6 @@ export function createSuccessResult<T>(
     T;
 }
 
-/**
- * Type guard to check if an object has an error property
- */
 interface ErrorObject {
   error: string;
   type?: 'http' | 'graphql' | 'network' | 'unknown';
@@ -128,10 +105,6 @@ function hasError(value: unknown): value is ErrorObject {
   );
 }
 
-/**
- * Handle API result errors consistently across all tools
- * Returns a strongly-typed error result if error is detected, null otherwise
- */
 export function handleApiError(
   apiResult: unknown,
   query: {
@@ -153,10 +126,8 @@ export function handleApiError(
     retryAfter: apiResult.retryAfter,
   };
 
-  // Extract hints from the apiResult if they exist (from API error responses)
   const apiHints = apiResult.hints;
 
-  // Combine API error hints with hints from the error object
   const combinedHints = [
     ...(apiHints || []),
     ...extractApiErrorHints(apiError),
@@ -164,7 +135,6 @@ export function handleApiError(
 
   const errorResult = createErrorResult(query, apiError, apiError);
 
-  // Override hints with combined hints if they exist
   if (combinedHints.length > 0) {
     errorResult.hints = combinedHints;
   }
@@ -172,10 +142,6 @@ export function handleApiError(
   return errorResult;
 }
 
-/**
- * Handle catch block errors consistently across all tools
- * Returns a strongly-typed error result with error message
- */
 export function handleCatchError(
   error: unknown,
   query: {

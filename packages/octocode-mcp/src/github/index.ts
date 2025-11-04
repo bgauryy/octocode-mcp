@@ -5,7 +5,7 @@ export {
   getDefaultBranch,
   clearCachedToken,
 } from './client';
-export { handleGitHubAPIError, generateFileAccessHints } from './errors';
+export { handleGitHubAPIError } from './errors';
 
 // Export enhanced/custom types and utilities
 export type {

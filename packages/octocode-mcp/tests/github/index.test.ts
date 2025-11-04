@@ -22,9 +22,6 @@ describe('GitHub Index Exports', () => {
     it('should export error handling functions', () => {
       expect(githubIndex.handleGitHubAPIError).toBeDefined();
       expect(typeof githubIndex.handleGitHubAPIError).toBe('function');
-
-      expect(githubIndex.generateFileAccessHints).toBeDefined();
-      expect(typeof githubIndex.generateFileAccessHints).toBe('function');
     });
   });
 
@@ -89,7 +86,6 @@ describe('GitHub Index Exports', () => {
         'getDefaultBranch',
         'clearCachedToken',
         'handleGitHubAPIError',
-        'generateFileAccessHints',
         'buildCodeSearchQuery',
         'buildRepoSearchQuery',
         'buildPullRequestSearchQuery',
@@ -125,7 +121,6 @@ describe('GitHub Index Exports', () => {
         'getDefaultBranch',
         'clearCachedToken',
         'handleGitHubAPIError',
-        'generateFileAccessHints',
         'buildCodeSearchQuery',
         'buildRepoSearchQuery',
         'buildPullRequestSearchQuery',

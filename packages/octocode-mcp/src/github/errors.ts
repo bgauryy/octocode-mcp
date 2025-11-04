@@ -9,12 +9,8 @@ import {
   RATE_LIMIT_CONFIG,
   type ErrorCode,
 } from './errorConstants.js';
+import { logRateLimit } from '../session.js';
 
-/**
- * Enhanced error handling for GitHub API
- * Provides detailed error information with scope suggestions and proper typing
- * Uses centralized error constants for maintainability
- */
 export function handleGitHubAPIError(error: unknown): GitHubAPIError {
   // Handle Octokit RequestError
   if (error instanceof RequestError) {
@@ -36,9 +32,6 @@ export function handleGitHubAPIError(error: unknown): GitHubAPIError {
   };
 }
 
-/**
- * Handle Octokit RequestError objects
- */
 function handleRequestError(error: RequestError): GitHubAPIError {
   const { status, message, response } = error;
 
@@ -60,10 +53,6 @@ function handleRequestError(error: RequestError): GitHubAPIError {
   });
 }
 
-/**
- * Handle 403 Forbidden errors
- * These can be: primary rate limit, secondary rate limit, or permission issues
- */
 function handle403Error(
   message: string,
   response?: RequestError['response']
@@ -87,15 +76,17 @@ function handle403Error(
   return handlePermissionError(headers);
 }
 
-/**
- * Handle secondary rate limit (abuse detection)
- */
 function handleSecondaryRateLimit(
   headers?: Record<string, unknown>
 ): GitHubAPIError {
   const retryAfter =
     Number(headers?.['retry-after']) ||
     RATE_LIMIT_CONFIG.SECONDARY_FALLBACK_SECONDS;
+
+  void logRateLimit({
+    limit_type: 'secondary',
+    retry_after_seconds: retryAfter,
+  });
 
   return createErrorResponse(ERROR_CODES.RATE_LIMIT_SECONDARY, {
     error: ERROR_MESSAGES[ERROR_CODES.RATE_LIMIT_SECONDARY].message(retryAfter),
@@ -107,9 +98,6 @@ function handleSecondaryRateLimit(
   });
 }
 
-/**
- * Handle primary rate limit (REST and GraphQL)
- */
 function handlePrimaryRateLimit(
   headers?: Record<string, unknown>
 ): GitHubAPIError {
@@ -132,6 +120,13 @@ function handlePrimaryRateLimit(
       )
     : ERROR_MESSAGES[ERROR_CODES.RATE_LIMIT_PRIMARY].messageWithoutTime;
 
+  void logRateLimit({
+    limit_type: 'primary',
+    retry_after_seconds: retryAfterSeconds,
+    rate_limit_remaining: 0,
+    rate_limit_reset_ms: resetTime ? resetTime.getTime() : undefined,
+  });
+
   return createErrorResponse(ERROR_CODES.RATE_LIMIT_PRIMARY, {
     error: errorMessage,
     status: 403,
@@ -142,9 +137,6 @@ function handlePrimaryRateLimit(
   });
 }
 
-/**
- * Handle permission/scope errors
- */
 function handlePermissionError(
   headers?: Record<string, unknown>
 ): GitHubAPIError {
@@ -168,9 +160,6 @@ function handlePermissionError(
   });
 }
 
-/**
- * Check if error is GraphQL rate limit
- */
 function checkGraphQLRateLimit(response?: RequestError['response']): boolean {
   const errors = (
     response?.data as {
@@ -183,9 +172,6 @@ function checkGraphQLRateLimit(response?: RequestError['response']): boolean {
   );
 }
 
-/**
- * Handle known HTTP errors (401, 404, 422, 502-504)
- */
 function handleKnownHttpError(
   errorCode: ErrorCode,
   status: number
@@ -199,9 +185,6 @@ function handleKnownHttpError(
   });
 }
 
-/**
- * Handle standard JavaScript errors (network, timeout, etc.)
- */
 function handleJavaScriptError(error: Error): GitHubAPIError {
   // Check for connection failures
   if (
@@ -237,9 +220,6 @@ function handleJavaScriptError(error: Error): GitHubAPIError {
   };
 }
 
-/**
- * Create standardized error response
- */
 function createErrorResponse(
   _errorCode: ErrorCode,
   overrides: Partial<GitHubAPIError> & { error: string }
@@ -250,10 +230,6 @@ function createErrorResponse(
   } as GitHubAPIError;
 }
 
-/**
- * Generate scope suggestions for GitHub API access
- * Compares accepted scopes with current token scopes
- */
 function generateScopesSuggestion(
   acceptedScopes: string,
   tokenScopes: string
@@ -278,90 +254,7 @@ function generateScopesSuggestion(
   return ERROR_MESSAGES[ERROR_CODES.FORBIDDEN_PERMISSIONS].fallbackSuggestion;
 }
 
-/**
- * Generate smart hints for file access issues
- * Provides contextual suggestions based on error type and context
- */
-export function generateFileAccessHints(
-  owner: string,
-  repo: string,
-  filePath: string,
-  branch: string,
-  defaultBranch?: string | null,
-  error?: string
-): string[] {
-  const hints: string[] = [];
-
-  if (error?.includes('404')) {
-    hints.push(
-      ...generate404Hints(owner, repo, filePath, branch, defaultBranch)
-    );
-  } else if (error?.includes('403')) {
-    hints.push(...generate403Hints(owner, repo));
-  } else if (error?.includes('rate limit')) {
-    hints.push(...generateRateLimitHints());
-  }
-
-  return hints;
-}
-
-/**
- * Generate hints for 404 errors
- */
-function generate404Hints(
-  owner: string,
-  repo: string,
-  filePath: string,
-  branch: string,
-  defaultBranch?: string | null
-): string[] {
-  const hints: string[] = [];
-
-  // Suggest trying default branch
-  if (defaultBranch && defaultBranch !== branch) {
-    hints.push(
-      `Try the default branch "${defaultBranch}" instead of "${branch}"`
-    );
-  }
-
-  // Suggest using tools to verify path
-  hints.push(
-    `Use githubViewRepoStructure to verify the file path "${filePath}" exists in ${owner}/${repo}`,
-    `Use githubSearchCode to find similar files if "${filePath}" has changed or moved`
-  );
-
-  // Suggest common branch alternatives
-  const commonBranches = ['main', 'master', 'develop', 'dev'];
-  const suggestedBranches = commonBranches
-    .filter(b => b !== branch && b !== defaultBranch)
-    .slice(0, 2);
-
-  if (suggestedBranches.length > 0) {
-    hints.push(`Try common branches: ${suggestedBranches.join(', ')}`);
-  }
-
-  return hints;
-}
-
-/**
- * Generate hints for 403 permission errors
- */
-function generate403Hints(owner: string, repo: string): string[] {
-  return [
-    `Repository ${owner}/${repo} may be private - ensure GITHUB_TOKEN is set`,
-    'Check if you have access permissions to this repository',
-  ];
-}
-
-/**
- * Generate hints for rate limit errors
- */
-function generateRateLimitHints(): string[] {
-  return [
-    'GitHub API rate limit exceeded - wait before retrying',
-    'Set GITHUB_TOKEN environment variable for higher rate limits',
-  ];
-}
+//
 
 // Export error codes for testing and external use
 export { ERROR_CODES, ERROR_MESSAGES, type ErrorCode };

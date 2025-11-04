@@ -10,7 +10,6 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js');
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js');
 vi.mock('../src/utils/cache.js');
 vi.mock('../src/prompts/prompts.js');
-vi.mock('../src/sampling.js');
 vi.mock('../src/tools/github_search_code.js');
 vi.mock('../src/tools/github_fetch_content.js');
 vi.mock('../src/tools/github_search_repos.js');
@@ -22,7 +21,6 @@ vi.mock('../src/tools/toolsManager.js');
 
 // Import mocked functions
 import { registerPrompts } from '../src/prompts/prompts.js';
-import { registerSampling } from '../src/sampling.js';
 import { registerGitHubSearchCodeTool } from '../src/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from '../src/tools/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from '../src/tools/github_search_repos.js';
@@ -76,7 +74,6 @@ const mockRegisterSearchGitHubPullRequestsTool = vi.mocked(
 const mockRegisterViewGitHubRepoStructureTool = vi.mocked(
   registerViewGitHubRepoStructureTool
 );
-const mockRegisterSampling = vi.mocked(registerSampling);
 
 describe('Index Module', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -180,9 +177,6 @@ describe('Index Module', () => {
       return mockRegisteredTool;
     });
     mockRegisterViewGitHubRepoStructureTool.mockImplementation(function () {
-      return mockRegisteredTool;
-    });
-    mockRegisterSampling.mockImplementation(function () {
       return mockRegisteredTool;
     });
 
@@ -664,144 +658,6 @@ describe('Index Module', () => {
       // Verify the process exits with error code
       expect(exitCalled).toBe(true);
       expect(exitCode).toBe(1);
-    });
-  });
-
-  describe('Beta Features Configuration', () => {
-    let originalBeta: string | undefined;
-
-    beforeEach(() => {
-      originalBeta = process.env.BETA;
-      mockRegisterSampling.mockClear();
-      mockIsBetaEnabled.mockClear();
-    });
-
-    afterEach(() => {
-      if (originalBeta !== undefined) {
-        process.env.BETA = originalBeta;
-      } else {
-        delete process.env.BETA;
-      }
-      mockIsBetaEnabled.mockReturnValue(false); // Reset to default
-    });
-
-    it('should register sampling when BETA=1', async () => {
-      process.env.BETA = '1';
-      mockIsBetaEnabled.mockReturnValue(true);
-
-      // Update the server config mock to return beta enabled
-      mockGetServerConfig.mockReturnValue({
-        version: '4.0.5',
-        enableTools: [],
-        disableTools: [],
-        enableLogging: false,
-        betaEnabled: true, // This is key
-        timeout: 30000,
-        maxRetries: 3,
-        loggingEnabled: true,
-      });
-
-      await import('../src/index.js');
-      await waitForAsyncOperations();
-
-      // In the current mocking setup, we can't reliably test the sampling registration
-      // So we just verify that beta is enabled and the module loads successfully
-      expect(mockIsBetaEnabled).toHaveBeenCalled();
-    });
-
-    it('should register sampling when BETA=true', async () => {
-      process.env.BETA = 'true';
-      mockIsBetaEnabled.mockReturnValue(true);
-
-      // Update the server config mock to return beta enabled
-      mockGetServerConfig.mockReturnValue({
-        version: '4.0.5',
-        enableTools: [],
-        disableTools: [],
-        enableLogging: false,
-        betaEnabled: true, // This is key
-        timeout: 30000,
-        maxRetries: 3,
-        loggingEnabled: true,
-      });
-
-      await import('../src/index.js');
-      await waitForAsyncOperations();
-
-      // In the current mocking setup, we can't reliably test the sampling registration
-      // So we just verify that beta is enabled and the module loads successfully
-      expect(mockIsBetaEnabled).toHaveBeenCalled();
-    });
-
-    it('should NOT register sampling when BETA=0', async () => {
-      process.env.BETA = '0';
-
-      await import('../src/index.js');
-      await waitForAsyncOperations();
-
-      // Verify sampling was NOT registered
-      expect(mockRegisterSampling).not.toHaveBeenCalled();
-    });
-
-    it('should NOT register sampling when BETA is not set', async () => {
-      delete process.env.BETA;
-
-      await import('../src/index.js');
-      await waitForAsyncOperations();
-
-      // Verify sampling was NOT registered
-      expect(mockRegisterSampling).not.toHaveBeenCalled();
-    });
-
-    it('should NOT register sampling when BETA=false', async () => {
-      process.env.BETA = 'false';
-
-      await import('../src/index.js');
-      await waitForAsyncOperations();
-
-      // Verify sampling was NOT registered
-      expect(mockRegisterSampling).not.toHaveBeenCalled();
-    });
-
-    it('should configure server capabilities correctly when BETA=1', async () => {
-      process.env.BETA = '1';
-      mockIsBetaEnabled.mockReturnValue(true);
-
-      await import('../src/index.js');
-      await waitForAsyncOperations();
-
-      // Verify server was created with sampling capability
-      expect(mockMcpServerConstructor).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: expect.stringMatching(/octocode-mcp_/),
-        }),
-        expect.objectContaining({
-          capabilities: expect.objectContaining({
-            sampling: {},
-          }),
-        })
-      );
-    });
-
-    it('should configure server capabilities correctly when BETA=0', async () => {
-      process.env.BETA = '0';
-
-      await import('../src/index.js');
-      await waitForAsyncOperations();
-
-      // Verify server was created and find the right call
-      expect(mockMcpServerConstructor).toHaveBeenCalled();
-
-      // Get the last call (most recent) - there may be multiple calls from different tests
-      const calls = mockMcpServerConstructor.mock.calls;
-      const lastCall = calls[calls.length - 1];
-      expect(lastCall).toBeDefined();
-      const capabilities = lastCall![1]!.capabilities;
-
-      // Should have prompts and tools but NOT sampling when BETA=0
-      expect(capabilities).toHaveProperty('prompts');
-      expect(capabilities).toHaveProperty('tools');
-      expect(capabilities).not.toHaveProperty('sampling');
     });
   });
 });
