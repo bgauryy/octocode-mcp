@@ -13,35 +13,27 @@ export const OctokitWithThrottling = Octokit.plugin(throttling);
 // Octokit instance management
 let octokitInstance: InstanceType<typeof OctokitWithThrottling> | null = null;
 
-/**
- * Throttle options - fail immediately on rate limits (no retries)
- * Returns false to prevent any retry attempts when rate limit is hit
- */
 const createThrottleOptions = () => ({
   onRateLimit: (
     _retryAfter: number,
     _options: unknown,
     _octokit: Octokit,
     _retryCount: number
-  ) => false, // Never retry on rate limit - fail immediately
+  ) => false,
   onSecondaryRateLimit: (
     _retryAfter: number,
     _options: unknown,
     _octokit: Octokit,
     _retryCount: number
-  ) => false, // Never retry on secondary rate limit - fail immediately
+  ) => false,
 });
 
-/**
- * Initialize Octokit with centralized token management
- * Token resolution is delegated to serverConfig - single source of truth
- */
 export async function getOctokit(
   authInfo?: AuthInfo
 ): Promise<InstanceType<typeof OctokitWithThrottling>> {
   if (!octokitInstance || authInfo) {
     const token = authInfo?.token || (await getGitHubToken());
-    const baseUrl = 'https://api.github.com'; // Default GitHub API URL
+    const baseUrl = 'https://api.github.com';
     const config = getServerConfig();
 
     const options: OctokitOptions & {
@@ -59,25 +51,13 @@ export async function getOctokit(
   return octokitInstance;
 }
 
-/**
- * Clear cached token - delegates to serverConfig
- * Maintains backward compatibility
- */
 export function clearCachedToken(): void {
-  // Clear local Octokit instance
   octokitInstance = null;
-
-  // The actual token clearing is handled by serverConfig
-  // This function is kept for backward compatibility but doesn't manage tokens directly
 }
 
 // Simple in-memory cache for default branch results
 const defaultBranchCache = new Map<string, string>();
 
-/**
- * Get repository's default branch with caching
- * Token is handled internally by the GitHub client
- */
 export async function getDefaultBranch(
   owner: string,
   repo: string

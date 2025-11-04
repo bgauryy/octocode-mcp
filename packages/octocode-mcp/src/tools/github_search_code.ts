@@ -48,12 +48,11 @@ export function registerGitHubSearchCodeTool(
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
-        // Invoke callback if provided
         if (callback) {
           try {
             await callback(TOOL_NAMES.GITHUB_SEARCH_CODE, queries);
           } catch {
-            // Silently ignore callback errors
+            // ignore callback errors
           }
         }
 
@@ -63,9 +62,6 @@ export function registerGitHubSearchCodeTool(
   );
 }
 
-/**
- * Extract owner and repo from nameWithOwner format (owner/repo)
- */
 function extractOwnerAndRepo(nameWithOwner: string | undefined): {
   owner?: string;
   repo?: string;
@@ -76,9 +72,6 @@ function extractOwnerAndRepo(nameWithOwner: string | undefined): {
   return parts.length === 2 ? { owner: parts[0], repo: parts[1] } : {};
 }
 
-/**
- * Get nameWithOwner from API result
- */
 function getNameWithOwner(apiResult: {
   data: {
     repository?: { name?: string };
@@ -120,16 +113,12 @@ async function searchMultipleGitHubCode(
           getNameWithOwner(apiResult)
         );
 
-        // For path search, only return paths (text_matches would be confusing)
-        // For file/content search, include text_matches with code snippets
         const files = apiResult.data.items
           .filter(item => !shouldIgnoreFile(item.path))
           .map(item => {
             if (query.match === 'path') {
-              // Path search: only return the matched paths
-              return { path: item.path };
+              return { path: item.path, text_matches: [] };
             }
-            // Content search: include text_matches showing where keyword appears
             return {
               path: item.path,
               text_matches: item.matches.map(match => match.context),
@@ -138,7 +127,11 @@ async function searchMultipleGitHubCode(
 
         return createSuccessResult(
           query,
-          { owner, repo, files },
+          {
+            files,
+            owner,
+            repo,
+          } satisfies SearchResult,
           files.length > 0,
           'GITHUB_SEARCH_CODE'
         );

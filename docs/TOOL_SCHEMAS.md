@@ -12,7 +12,7 @@ Octocode-MCP provides 5 specialized tools for GitHub repository analysis. Each t
 
 **Key Features:**
 - Semantic and technical code search
-- Bulk queries (1-10 per request) for comprehensive research
+- Bulk queries (1-3 per request) for optimal resource management
 - Progressive refinement: broad discovery → targeted search
 - Content processing pipeline with sanitization and minification
 

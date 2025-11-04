@@ -1,23 +1,7 @@
-/**
- * Central Type Definitions for Octocode-MCP
- *
- * Organization:
- * 1. Foundation Types - Base types used across all operations
- * 2. GitHub API Types - Types for GitHub tools (code, files, repos, PRs)
- * 3. Tool Operations - Bulk processing, caching, execution utilities
- * 4. Infrastructure - Server config, security, session management
- */
-
 import type { GitHubAPIError } from './github/githubAPI.js';
 
-// ============================================================================
-// FOUNDATION TYPES - Used across all tool operations
-// ============================================================================
-
-/** Query execution status indicator */
 export type QueryStatus = 'hasResults' | 'empty' | 'error';
 
-/** Base result structure for tool operations */
 export interface BaseToolResult<TQuery = object> {
   mainResearchGoal?: string;
   researchGoal?: string;
@@ -27,7 +11,6 @@ export interface BaseToolResult<TQuery = object> {
   query?: TQuery;
 }
 
-/** Generic tool result with status */
 export interface ToolResult {
   status: QueryStatus;
   mainResearchGoal?: string;
@@ -37,39 +20,28 @@ export interface ToolResult {
   [key: string]: unknown; // Tool-specific fields
 }
 
-/** Tool error result */
 export interface ToolErrorResult extends ToolResult {
   status: 'error';
   error: string | GitHubAPIError;
 }
 
-/** Tool success result */
 export interface ToolSuccessResult<T = Record<string, unknown>>
   extends ToolResult {
   status: 'hasResults' | 'empty';
   data?: T;
 }
 
-/** Context for generating contextual hints */
 export interface HintContext {
   resultType: 'hasResults' | 'empty' | 'failed';
   apiError?: GitHubAPIError;
 }
 
-/** Organized hints by result type */
 export interface OrganizedHints {
   hasResults?: string[];
   empty?: string[];
   failed?: string[];
 }
 
-// ============================================================================
-// GITHUB API TYPES - Tools for code discovery and analysis
-// ============================================================================
-
-// ─── GitHub Authentication & Rate Limiting ──────────────────────────────────
-
-/** Authenticated user information from GitHub */
 export interface GitHubUserInfo {
   login: string;
   id: number;
@@ -84,7 +56,6 @@ export interface GitHubUserInfo {
   };
 }
 
-/** Rate limit status for GitHub API endpoints */
 export interface GitHubRateLimitInfo {
   core: {
     limit: number;
@@ -106,9 +77,6 @@ export interface GitHubRateLimitInfo {
   };
 }
 
-// ─── Code Search (github_search_code) ───────────────────────────────────────
-
-/** Query parameters for searching code in GitHub repositories */
 export interface GitHubCodeSearchQuery {
   keywordsToSearch: string[];
   owner?: string;
@@ -568,8 +536,13 @@ export interface ServerConfig {
 /** Session data for tracking tool usage */
 export interface SessionData {
   sessionId: string;
-  intent: 'init' | 'error' | 'tool_call' | 'prompt_call';
-  data: ToolCallData | PromptCallData | ErrorData | Record<string, never>;
+  intent: 'init' | 'error' | 'tool_call' | 'prompt_call' | 'rate_limit';
+  data:
+    | ToolCallData
+    | PromptCallData
+    | ErrorData
+    | RateLimitData
+    | Record<string, never>;
   timestamp: string;
   version: string;
 }
@@ -590,4 +563,28 @@ export interface PromptCallData {
 /** Error tracking data */
 export interface ErrorData {
   error: string;
+}
+
+/** Rate limit tracking data */
+export interface RateLimitData {
+  /**
+   * The kind of rate limit that occurred
+   * - primary: Hourly quota exhausted (REST/GraphQL)
+   * - secondary: Abuse detection (too frequent)
+   * - graphql: GraphQL-specific rate limiting indication
+   * - precheck_blocked: Proactive block based on current rate limits
+   */
+  limit_type: 'primary' | 'secondary' | 'graphql' | 'precheck_blocked';
+  /** Seconds to wait before retrying (if known) */
+  retry_after_seconds?: number;
+  /** Remaining requests at the time of the event */
+  rate_limit_remaining?: number;
+  /** Epoch milliseconds for reset time (if known) */
+  rate_limit_reset_ms?: number;
+  /** Optional HTTP method involved */
+  api_method?: string;
+  /** Optional API URL that was being called */
+  api_url?: string;
+  /** Additional free-form details */
+  details?: string;
 }

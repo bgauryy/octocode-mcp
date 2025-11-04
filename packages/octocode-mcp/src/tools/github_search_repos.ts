@@ -48,12 +48,11 @@ export function registerSearchGitHubReposTool(
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
-        // Invoke callback if provided
         if (callback) {
           try {
             await callback(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, queries);
           } catch {
-            // Silently ignore callback errors
+            // ignore callback errors
           }
         }
 
@@ -63,9 +62,6 @@ export function registerSearchGitHubReposTool(
   );
 }
 
-/**
- * Check if a query has valid topics
- */
 function hasValidTopics(query: GitHubReposSearchQuery): boolean {
   return Boolean(
     query.topicsToSearch &&
@@ -75,16 +71,10 @@ function hasValidTopics(query: GitHubReposSearchQuery): boolean {
   );
 }
 
-/**
- * Check if a query has valid keywords
- */
 function hasValidKeywords(query: GitHubReposSearchQuery): boolean {
   return Boolean(query.keywordsToSearch && query.keywordsToSearch.length > 0);
 }
 
-/**
- * Create a search-specific reasoning message
- */
 function createSearchReasoning(
   originalReasoning: string | undefined,
   searchType: 'topics' | 'keywords'
@@ -96,10 +86,6 @@ function createSearchReasoning(
     : `${searchType.charAt(0).toUpperCase() + searchType.slice(1)}-based repository search`;
 }
 
-/**
- * Expands queries that have both topicsToSearch and keywordsToSearch into separate queries
- * This improves search effectiveness by allowing each search type to be optimized independently
- */
 function expandQueriesWithBothSearchTypes(
   queries: GitHubReposSearchQuery[]
 ): GitHubReposSearchQuery[] {
@@ -158,7 +144,6 @@ async function searchMultipleGitHubRepos(
             ? apiResult.data.repositories || []
             : ([] satisfies SimplifiedRepository[]);
 
-        // Generate custom hints based on search type
         const customHints = generateSearchSpecificHints(
           query,
           repositories.length > 0
@@ -184,9 +169,6 @@ async function searchMultipleGitHubRepos(
   );
 }
 
-/**
- * Generate search-specific hints based on query type and results
- */
 function generateSearchSpecificHints(
   query: GitHubReposSearchQuery,
   hasResults: boolean

@@ -1,13 +1,7 @@
 import type { GitHubCodeSearchQuery, GitHubReposSearchQuery } from '../types';
 import { GitHubPullRequestsSearchParams } from './githubAPI';
 
-/**
- * Helper function to intelligently detect if an owner is a user or organization
- * and return the appropriate search qualifier
- */
 export function getOwnerQualifier(owner: string): string {
-  // Use org: for organization-style names (containing hyphens, underscores, or 'org')
-  // This heuristic covers most common organization naming patterns
   if (
     owner.includes('-') ||
     owner.includes('_') ||
@@ -19,15 +13,9 @@ export function getOwnerQualifier(owner: string): string {
   }
 }
 
-/**
- * Base query builder class with shared utilities
- */
 abstract class BaseQueryBuilder {
   protected queryParts: string[] = [];
 
-  /**
-   * Add owner/repo filters to the query
-   */
   addOwnerRepo(params: {
     owner?: string | string[] | null;
     repo?: string | string[] | null;
@@ -54,9 +42,6 @@ abstract class BaseQueryBuilder {
     return this;
   }
 
-  /**
-   * Add date filters to the query
-   */
   addDateFilters(
     params: Record<string, unknown> | GitHubPullRequestsSearchParams
   ): this {
@@ -78,9 +63,6 @@ abstract class BaseQueryBuilder {
     return this;
   }
 
-  /**
-   * Add language filter
-   */
   addLanguageFilter(language?: string | null | undefined): this {
     if (language && language !== null) {
       const mappedLanguage = mapLanguageToGitHub(language);
@@ -89,9 +71,6 @@ abstract class BaseQueryBuilder {
     return this;
   }
 
-  /**
-   * Add array-based filters
-   */
   addArrayFilter(
     values: string | string[] | null | undefined,
     prefix: string,
@@ -107,9 +86,6 @@ abstract class BaseQueryBuilder {
     return this;
   }
 
-  /**
-   * Add boolean filters
-   */
   addBooleanFilter(
     value: boolean | undefined,
     trueQuery: string,
@@ -123,9 +99,6 @@ abstract class BaseQueryBuilder {
     return this;
   }
 
-  /**
-   * Add simple filters
-   */
   addSimpleFilter(
     value: string | number | null | undefined,
     key: string
@@ -136,24 +109,17 @@ abstract class BaseQueryBuilder {
     return this;
   }
 
-  /**
-   * Build the final query string
-   */
   build(): string {
     return this.queryParts.join(' ').trim();
   }
 }
 
-/**
- * Code search query builder
- */
 class CodeSearchQueryBuilder extends BaseQueryBuilder {
   addQueryTerms(params: GitHubCodeSearchQuery): this {
     if (
       Array.isArray(params.keywordsToSearch) &&
       params.keywordsToSearch.length > 0
     ) {
-      // Filter out empty strings
       const nonEmptyTerms = params.keywordsToSearch.filter(
         term => term && term.trim()
       );
@@ -189,9 +155,6 @@ class CodeSearchQueryBuilder extends BaseQueryBuilder {
   }
 }
 
-/**
- * Repository search query builder
- */
 class RepoSearchQueryBuilder extends BaseQueryBuilder {
   addQueryTerms(params: GitHubReposSearchQuery): this {
     if (
@@ -240,9 +203,6 @@ class RepoSearchQueryBuilder extends BaseQueryBuilder {
   }
 }
 
-/**
- * Pull request search query builder
- */
 class PullRequestSearchQueryBuilder extends BaseQueryBuilder {
   addBasicFilters(params: GitHubPullRequestsSearchParams): this {
     if (params.query && params.query.trim()) {
@@ -285,7 +245,6 @@ class PullRequestSearchQueryBuilder extends BaseQueryBuilder {
   }
 
   addReviewFilters(_params: GitHubPullRequestsSearchParams): this {
-    // Review and checks filters removed
     return this;
   }
 
@@ -308,9 +267,6 @@ class PullRequestSearchQueryBuilder extends BaseQueryBuilder {
   }
 }
 
-/**
- * Map common language identifiers to GitHub's search API language values
- */
 function mapLanguageToGitHub(language: string): string {
   const languageMap: Record<string, string> = {
     // JavaScript family
@@ -382,9 +338,6 @@ function mapLanguageToGitHub(language: string): string {
   return languageMap[language.toLowerCase()] || language;
 }
 
-/**
- * Build search query string for GitHub API from parameters
- */
 export function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
   return new CodeSearchQueryBuilder()
     .addQueryTerms(params)
@@ -394,9 +347,6 @@ export function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
     .build();
 }
 
-/**
- * Build search query string for repository search
- */
 export function buildRepoSearchQuery(params: GitHubReposSearchQuery): string {
   return new RepoSearchQueryBuilder()
     .addQueryTerms(params)
@@ -407,10 +357,6 @@ export function buildRepoSearchQuery(params: GitHubReposSearchQuery): string {
     .build();
 }
 
-/**
- * Build pull request search query string for GitHub API
- * GitHub pull request search query building
- */
 export function buildPullRequestSearchQuery(
   params: GitHubPullRequestsSearchParams
 ): string {
@@ -429,9 +375,6 @@ export function buildPullRequestSearchQuery(
     .build();
 }
 
-/**
- * Determine if we should use search API vs list API
- */
 export function shouldUseSearchForPRs(
   params: GitHubPullRequestsSearchParams
 ): boolean {

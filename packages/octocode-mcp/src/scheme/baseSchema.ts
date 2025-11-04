@@ -25,9 +25,9 @@ export function createBulkQuerySchema<T extends z.ZodTypeAny>(
     queries: z
       .array(singleQuerySchema)
       .min(1)
-      .max(10)
+      .max(3)
       .describe(
-        `Research queries for ${toolName}. Review tool schema and descriptions before creating queries for optimal results`
+        `Research queries for ${toolName} (1-3 queries per call for optimal resource management). Review schema before use for optimal results`
       ),
   });
 }

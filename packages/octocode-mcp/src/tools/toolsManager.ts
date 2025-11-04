@@ -3,11 +3,6 @@ import { DEFAULT_TOOLS } from './toolConfig.js';
 import { getServerConfig } from '../serverConfig.js';
 import { ToolInvocationCallback } from '../types.js';
 
-/**
- * Register tools based on configuration
- * @param server - The MCP server instance
- * @param callback - Optional callback
- */
 export function registerTools(
   server: McpServer,
   callback?: ToolInvocationCallback

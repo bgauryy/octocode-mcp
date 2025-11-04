@@ -48,12 +48,11 @@ export function registerViewGitHubRepoStructureTool(
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
-        // Invoke callback if provided
         if (callback) {
           try {
             await callback(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, queries);
           } catch {
-            // Silently ignore callback errors
+            // ignore callback errors
           }
         }
 
@@ -67,9 +66,6 @@ export function registerViewGitHubRepoStructureTool(
   );
 }
 
-/**
- * Build API request from query with proper type conversions
- */
 function buildStructureApiRequest(
   query: GitHubViewRepoStructureQuery
 ): GitHubViewRepoStructureQuery {
@@ -85,9 +81,6 @@ function buildStructureApiRequest(
   };
 }
 
-/**
- * Filter files and folders to exclude ignored items
- */
 function filterStructureItems(apiResult: {
   files: Array<{ path: string }>;
   folders?: { folders?: Array<{ path: string }> };
@@ -104,18 +97,12 @@ function filterStructureItems(apiResult: {
   return { filteredFiles, filteredFolders };
 }
 
-/**
- * Remove path prefix from file/folder paths
- */
 function removePathPrefix(path: string, prefix: string): string {
   return prefix && path.startsWith(prefix)
     ? path.substring(prefix.length)
     : path;
 }
 
-/**
- * Create empty structure result for error cases
- */
 function createEmptyStructureResult(
   query: GitHubViewRepoStructureQuery,
   error: NonNullable<

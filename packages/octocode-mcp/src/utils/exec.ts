@@ -13,9 +13,6 @@ const ALLOWED_NPM_COMMANDS = [
 
 export type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
 
-/**
- * Parse execution result into a standardized format
- */
 export function parseExecResult(
   stdout: string,
   stderr: string,
@@ -30,7 +27,6 @@ export function parseExecResult(
     });
   }
 
-  // If exit code is 0 (success), treat stderr as warnings, not errors
   if (stderr && stderr.trim() && exitCode !== 0) {
     return createResult({
       data: { error: true },
@@ -39,7 +35,6 @@ export function parseExecResult(
     });
   }
 
-  // Include stderr as warnings if present but command succeeded
   const instructions =
     stderr && stderr.trim() && exitCode === 0
       ? `Warning: ${stderr.trim()}`
@@ -51,42 +46,30 @@ export function parseExecResult(
   });
 }
 
-/**
- * Safely escape shell arguments to prevent injection
- */
 function escapeShellArg(arg: string): string {
-  // Remove or escape dangerous characters
   return arg
-    .replace(/[`$\\]/g, '\\$&') // Escape backticks, dollar signs, backslashes
-    .replace(/[;&|><]/g, '') // Remove shell operators
-    .replace(/\s+/g, ' ') // Normalize whitespace
+    .replace(/[`$\\]/g, '\\$&')
+    .replace(/[;&|><]/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
-/**
- * Validate arguments for safety
- */
 function validateArgs(args: string[]): { valid: boolean; error?: string } {
   for (const arg of args) {
-    // Check for null bytes (command injection technique)
     if (arg.includes('\0')) {
       return { valid: false, error: 'Null bytes not allowed in arguments' };
     }
-
-    // Check for excessively long arguments (potential DoS)
     if (arg.length > 1000) {
       return { valid: false, error: 'Argument too long' };
     }
-
-    // Check for suspicious patterns
     const suspiciousPatterns = [
-      /\$\(/, // Command substitution
-      /`[^`]*`/, // Backtick command substitution
-      /\|\s*\w/, // Pipe to command
-      /;\s*\w/, // Command chaining
-      /&&\s*\w/, // AND command chaining
-      /\|\|\s*\w/, // OR command chaining
-      />\s*\/|<\s*\//, // File redirection to/from root
+      /\$\(/,
+      /`[^`]*`/,
+      /\|\s*\w/,
+      /;\s*\w/,
+      /&&\s*\w/,
+      /\|\|\s*\w/,
+      />\s*\/|<\s*\//,
     ];
 
     for (const pattern of suspiciousPatterns) {
@@ -102,9 +85,6 @@ function validateArgs(args: string[]): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
-/**
- * Execute NPM command with security validation using spawn (safer than exec)
- */
 export async function executeNpmCommand(
   command: NpmCommand,
   args: string[],
@@ -118,7 +98,6 @@ export async function executeNpmCommand(
     });
   }
 
-  // Validate arguments for security
   const validation = validateArgs(args);
   if (!validation.valid) {
     return createResult({
@@ -130,10 +109,7 @@ export async function executeNpmCommand(
 
   const { timeout = 30000, cwd, env } = options;
 
-  // Escape and sanitize arguments
   const sanitizedArgs = args.map(escapeShellArg);
-
-  // Use spawn instead of exec for better security
   return new Promise(resolve => {
     const childProcess = spawn('npm', [command, ...sanitizedArgs], {
       cwd,
@@ -178,7 +154,6 @@ export async function executeNpmCommand(
       resolve(parseExecResult('', '', error));
     });
 
-    // Handle timeout
     const timeoutHandle = setTimeout(() => {
       childProcess.kill('SIGTERM');
       resolve(parseExecResult('', '', new Error('Command timeout')));
@@ -190,10 +165,6 @@ export async function executeNpmCommand(
   });
 }
 
-/**
- * Get GitHub CLI authentication token using safe spawn method
- * Returns the value from 'gh auth token' command
- */
 export async function getGithubCLIToken(): Promise<string | null> {
   return new Promise(resolve => {
     const childProcess = spawn('gh', ['auth', 'token'], {
@@ -212,26 +183,21 @@ export async function getGithubCLIToken(): Promise<string | null> {
       stdout += data.toString();
     });
 
-    childProcess.stderr?.on('data', _data => {
-      // Ignore stderr for token retrieval
-    });
+    childProcess.stderr?.on('data', _data => {});
 
     childProcess.on('close', code => {
       if (code === 0) {
         const token = stdout.trim();
         resolve(token || null);
       } else {
-        // Return null on error - let calling code handle it
         resolve(null);
       }
     });
 
     childProcess.on('error', () => {
-      // Return null on error - let calling code handle it
       resolve(null);
     });
 
-    // Handle timeout
     const timeoutHandle = setTimeout(() => {
       childProcess.kill('SIGTERM');
       resolve(null);

@@ -7,6 +7,7 @@ import type {
   ToolCallData,
   PromptCallData,
   ErrorData,
+  RateLimitData,
 } from './types.js';
 
 class SessionManager {
@@ -17,23 +18,14 @@ class SessionManager {
     this.sessionId = uuidv4();
   }
 
-  /**
-   * Get the current session ID
-   */
   getSessionId(): string {
     return this.sessionId;
   }
 
-  /**
-   * Log session initialization
-   */
   async logInit(): Promise<void> {
     await this.sendLog('init', {});
   }
 
-  /**
-   * Log tool call
-   */
   async logToolCall(
     toolName: string,
     repos: string[],
@@ -51,27 +43,27 @@ class SessionManager {
     await this.sendLog('tool_call', data);
   }
 
-  /**
-   * Log prompt call
-   */
   async logPromptCall(promptName: string): Promise<void> {
     const data: PromptCallData = { prompt_name: promptName };
     await this.sendLog('prompt_call', data);
   }
 
-  /**
-   * Log error
-   */
   async logError(error: string): Promise<void> {
     await this.sendLog('error', { error });
   }
 
-  /**
-   * Send log to remote endpoint
-   */
+  async logRateLimit(data: RateLimitData): Promise<void> {
+    await this.sendLog('rate_limit', data);
+  }
+
   private async sendLog(
     intent: SessionData['intent'],
-    data: ToolCallData | PromptCallData | ErrorData | Record<string, never>
+    data:
+      | ToolCallData
+      | PromptCallData
+      | ErrorData
+      | RateLimitData
+      | Record<string, never>
   ): Promise<void> {
     if (!isLoggingEnabled()) {
       return;
@@ -87,7 +79,7 @@ class SessionManager {
       };
 
       await axios.post(this.logEndpoint, payload, {
-        timeout: 5000, // 5 second timeout
+        timeout: 5000,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -98,12 +90,8 @@ class SessionManager {
   }
 }
 
-// Global session manager instance
 let sessionManager: SessionManager | null = null;
 
-/**
- * Initialize the session manager
- */
 export function initializeSession(): SessionManager {
   if (!sessionManager) {
     sessionManager = new SessionManager();
@@ -152,6 +140,13 @@ export async function logSessionError(error: string): Promise<void> {
   const session = getSessionManager();
   if (session) {
     await session.logError(error);
+  }
+}
+
+export async function logRateLimit(data: RateLimitData): Promise<void> {
+  const session = getSessionManager();
+  if (session) {
+    await session.logRateLimit(data);
   }
 }
 

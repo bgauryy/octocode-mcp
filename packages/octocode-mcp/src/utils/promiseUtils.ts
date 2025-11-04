@@ -1,29 +1,19 @@
 import type { PromiseResult, PromiseExecutionOptions } from '../types.js';
 
-/**
- * Execute promises with error isolation - prevents one failure from affecting others
- *
- * @param promises Array of promise-returning functions
- * @param options Execution options
- * @returns Array of results with success/failure information
- */
 export async function executeWithErrorIsolation<T>(
   promises: Array<() => Promise<T>>,
   options: PromiseExecutionOptions = {}
 ): Promise<PromiseResult<T>[]> {
-  // Input validation
   if (!Array.isArray(promises)) {
     throw new Error('promises must be an array');
   }
 
-  // Handle empty array case first
   if (promises.length === 0) {
     return [];
   }
 
   const { timeout = 30000, concurrency = promises.length, onError } = options;
 
-  // Validate options
   if (timeout <= 0) {
     throw new Error('timeout must be positive');
   }
@@ -31,7 +21,6 @@ export async function executeWithErrorIsolation<T>(
     throw new Error('concurrency must be positive');
   }
 
-  // Filter out null/undefined promise functions
   const validPromises = promises.map((promiseFn, index) =>
     typeof promiseFn === 'function'
       ? promiseFn
@@ -41,7 +30,6 @@ export async function executeWithErrorIsolation<T>(
           )
   );
 
-  // Handle concurrency limiting
   if (concurrency < validPromises.length) {
     return executeWithConcurrencyLimit(
       validPromises,
@@ -51,19 +39,16 @@ export async function executeWithErrorIsolation<T>(
     );
   }
 
-  // Create isolated promise wrappers and execute all promises
   const isolatedPromises = validPromises.map((promiseFn, index) =>
     createIsolatedPromise(promiseFn, index, timeout, onError)
   );
 
-  // Execute all promises with better error handling
   const results = await Promise.allSettled(isolatedPromises);
 
   return results.map((result, index) => {
     if (result.status === 'fulfilled') {
       return result.value;
     } else {
-      // This should rarely happen due to our isolation, but handle it
       return {
         success: false,
         error:
@@ -76,9 +61,6 @@ export async function executeWithErrorIsolation<T>(
   });
 }
 
-/**
- * Create an isolated promise that never rejects, with guaranteed timeout cleanup
- */
 async function createIsolatedPromise<T>(
   promiseFn: () => Promise<T>,
   index: number,
@@ -87,7 +69,6 @@ async function createIsolatedPromise<T>(
 ): Promise<PromiseResult<T>> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-  // Ensure cleanup happens regardless of how the function exits
   const cleanup = () => {
     if (timeoutId !== undefined) {
       clearTimeout(timeoutId);
@@ -96,17 +77,14 @@ async function createIsolatedPromise<T>(
   };
 
   try {
-    // Create timeout promise with proper cleanup
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
         reject(new Error(`Promise ${index} timed out after ${timeout}ms`));
       }, timeout);
     });
 
-    // Race the actual promise against timeout
     const data = await Promise.race([promiseFn(), timeoutPromise]);
 
-    // Clear timeout - promise resolved first
     cleanup();
 
     return {
@@ -115,17 +93,15 @@ async function createIsolatedPromise<T>(
       index,
     };
   } catch (error) {
-    // Ensure cleanup happens in all error scenarios
     cleanup();
 
     const errorObj = error instanceof Error ? error : new Error(String(error));
 
-    // Call custom error handler if provided
     if (onError) {
       try {
         onError(errorObj, index);
       } catch (handlerError) {
-        // Silently ignore errors in custom error handler to prevent interference
+        void handlerError;
       }
     }
 
@@ -137,9 +113,6 @@ async function createIsolatedPromise<T>(
   }
 }
 
-/**
- * Execute promises with concurrency limiting using a proper semaphore pattern
- */
 async function executeWithConcurrencyLimit<T>(
   promiseFns: Array<() => Promise<T>>,
   concurrency: number,
@@ -149,7 +122,6 @@ async function executeWithConcurrencyLimit<T>(
   const results: PromiseResult<T>[] = new Array(promiseFns.length);
   let nextIndex = 0;
 
-  // Semaphore implementation for concurrency control
   const executeNext = async (): Promise<void> => {
     while (nextIndex < promiseFns.length) {
       const currentIndex = nextIndex++;
@@ -173,7 +145,6 @@ async function executeWithConcurrencyLimit<T>(
         );
         results[currentIndex] = result;
       } catch (error) {
-        // This should rarely happen due to isolation in createIsolatedPromise
         results[currentIndex] = {
           success: false,
           error: error instanceof Error ? error : new Error(String(error)),
@@ -183,13 +154,11 @@ async function executeWithConcurrencyLimit<T>(
     }
   };
 
-  // Start workers up to concurrency limit
   const workers: Promise<void>[] = [];
   for (let i = 0; i < Math.min(concurrency, promiseFns.length); i++) {
     workers.push(executeNext());
   }
 
-  // Wait for all workers to complete
   await Promise.all(workers);
 
   return results;
