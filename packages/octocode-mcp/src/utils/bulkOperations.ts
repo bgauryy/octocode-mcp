@@ -263,6 +263,7 @@ async function processBulkQueries<
   const queryResults = await executeWithErrorIsolation(queryPromiseFunctions, {
     timeout: 60000,
     continueOnError: true,
+    concurrency: 3, // Limit concurrent requests to prevent rate limiting
     onError: (error: Error, index: number) => {
       errors.push({
         queryIndex: index,
