@@ -18,10 +18,6 @@ import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import type { UserContext } from '../types.js';
 
-/**
- * Search GitHub pull requests using Octokit API with caching
- * Token management is handled internally by the GitHub client
- */
 export async function searchGitHubPullRequestsAPI(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
@@ -52,9 +48,6 @@ export async function searchGitHubPullRequestsAPI(
   return result;
 }
 
-/**
- * Internal implementation of searchGitHubPullRequestsAPI without caching
- */
 async function searchGitHubPullRequestsAPIInternal(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
@@ -88,7 +81,6 @@ async function searchGitHubPullRequestsAPIInternal(
       return await searchPullRequestsWithREST(octokit, params);
     }
 
-    // Use Search API for complex queries (like gh search prs)
     const searchQuery = buildPullRequestSearchQuery(params);
 
     if (!searchQuery) {
@@ -100,10 +92,6 @@ async function searchGitHubPullRequestsAPIInternal(
       };
     }
 
-    // Execute search using GitHub Search API (issues endpoint filters PRs)
-    // Map sort values to GitHub API supported values
-    // GitHub API supports: comments, reactions, reactions-*, created, updated
-    // Filter out unsupported values like 'best-match' and 'interactions'
     const sortValue =
       params.sort && params.sort !== 'best-match' && params.sort !== 'created'
         ? params.sort
@@ -126,14 +114,12 @@ async function searchGitHubPullRequestsAPIInternal(
         (item: Record<string, unknown>) => item.pull_request
       ) || [];
 
-    // Transform pull requests to our expected format
     const transformedPRs: GitHubPullRequestItem[] = await Promise.all(
       pullRequests.map(async (item: Record<string, unknown>) => {
         return await transformPullRequestItem(item, params, octokit);
       })
     );
 
-    // Get owner/repo from params (normalized to strings)
     const owner = Array.isArray(params.owner)
       ? params.owner[0]
       : params.owner || '';
@@ -141,7 +127,6 @@ async function searchGitHubPullRequestsAPIInternal(
       ? params.repo[0]
       : params.repo || '';
 
-    // Transform to expected GitHub API format
     const formattedPRs = transformedPRs.map(pr => ({
       id: 0, // We don't have this in our format
       number: pr.number,
@@ -149,11 +134,11 @@ async function searchGitHubPullRequestsAPIInternal(
       url: pr.url,
       html_url: pr.url,
       state: pr.state as 'open' | 'closed',
-      draft: pr.draft ?? false, // Default to false if undefined
+      draft: pr.draft ?? false,
       merged: pr.state === 'closed' && !!pr.merged_at,
       created_at: pr.created_at,
       updated_at: pr.updated_at,
-      closed_at: pr.closed_at ?? undefined, // Convert null to undefined
+      closed_at: pr.closed_at ?? undefined,
       merged_at: pr.merged_at,
       author: {
         login: pr.author,
@@ -182,7 +167,6 @@ async function searchGitHubPullRequestsAPIInternal(
         pr.file_changes?.files.reduce((sum, file) => sum + file.deletions, 0) ||
         0,
       changed_files: pr.file_changes?.total_count || 0,
-      // Include file_changes if it was requested and fetched
       ...(pr.file_changes && {
         file_changes: pr.file_changes.files?.map(file => ({
           filename: file.filename,
@@ -211,9 +195,6 @@ async function searchGitHubPullRequestsAPIInternal(
   }
 }
 
-/**
- * Use REST API for simple repository-specific searches (like gh pr list)
- */
 async function searchPullRequestsWithREST(
   octokit: InstanceType<typeof OctokitWithThrottling>,
   params: GitHubPullRequestsSearchParams
@@ -222,31 +203,26 @@ async function searchPullRequestsWithREST(
     const owner = params.owner as string;
     const repo = params.repo as string;
 
-    // Use pulls.list for simple repository searches
     const listParams: Record<string, unknown> = {
       owner,
       repo,
       state: params.state || 'open',
       per_page: Math.min(params.limit || 30, 100),
-      // REST API only supports 'created' and 'updated' sort for pulls.list
       sort: params.sort === 'updated' ? 'updated' : 'created',
       direction: params.order || 'desc',
     };
 
-    // Add simple filters that REST API supports
     if (params.head) listParams.head = params.head;
     if (params.base) listParams.base = params.base;
 
     const result = await octokit.rest.pulls.list(listParams);
 
-    // Transform to our expected format
     const transformedPRs: GitHubPullRequestItem[] = await Promise.all(
       result.data.map(async (item: Record<string, unknown>) => {
         return await transformPullRequestItemFromREST(item, params, octokit);
       })
     );
 
-    // Transform to expected GitHub API format
     const formattedPRs = transformedPRs.map(pr => ({
       id: 0,
       number: pr.number,
@@ -287,7 +263,6 @@ async function searchPullRequestsWithREST(
         pr.file_changes?.files.reduce((sum, file) => sum + file.deletions, 0) ||
         0,
       changed_files: pr.file_changes?.total_count || 0,
-      // Include file_changes if it was requested and fetched
       ...(pr.file_changes && {
         file_changes: pr.file_changes.files?.map(file => ({
           filename: file.filename,
@@ -316,14 +291,10 @@ async function searchPullRequestsWithREST(
   }
 }
 
-/**
- * Shared helper: Create base PR transformation with sanitization
- */
 function createBasePRTransformation(item: Record<string, unknown>): {
   prData: GitHubPullRequestItem;
   sanitizationWarnings: Set<string>;
 } {
-  // Sanitize title and body content
   const titleSanitized = ContentSanitizer.sanitizeContent(
     (item.title as string) || ''
   );
@@ -331,7 +302,6 @@ function createBasePRTransformation(item: Record<string, unknown>): {
     ? ContentSanitizer.sanitizeContent(item.body as string)
     : { content: undefined, warnings: [] };
 
-  // Collect all sanitization warnings
   const sanitizationWarnings = new Set<string>([
     ...titleSanitized.warnings,
     ...bodySanitized.warnings,
@@ -368,7 +338,6 @@ function createBasePRTransformation(item: Record<string, unknown>): {
     base_sha: (item.base as Record<string, unknown>)?.sha as string,
   };
 
-  // Add optional merged_at field if present
   if (item.merged_at) {
     prData.merged_at = new Date(item.merged_at as string).toLocaleDateString(
       'en-GB'
@@ -378,9 +347,6 @@ function createBasePRTransformation(item: Record<string, unknown>): {
   return { prData, sanitizationWarnings };
 }
 
-/**
- * Shared helper: Fetch PR comments
- */
 async function fetchPRComments(
   octokit: InstanceType<typeof OctokitWithThrottling>,
   owner: string,
@@ -409,14 +375,10 @@ async function fetchPRComments(
       ),
     }));
   } catch (e) {
-    // Return empty array if comments fetch fails
     return [];
   }
 }
 
-/**
- * Shared helper: Normalize owner/repo from params
- */
 function normalizeOwnerRepo(params: GitHubPullRequestsSearchParams): {
   owner: string | undefined;
   repo: string | undefined;
@@ -426,9 +388,6 @@ function normalizeOwnerRepo(params: GitHubPullRequestsSearchParams): {
   return { owner, repo };
 }
 
-/**
- * Transform pull request item from Search API response
- */
 async function transformPullRequestItem(
   item: Record<string, unknown>,
   params: GitHubPullRequestsSearchParams,
@@ -437,12 +396,10 @@ async function transformPullRequestItem(
   const { prData: result, sanitizationWarnings } =
     createBasePRTransformation(item);
 
-  // Add sanitization warnings if any were detected
   if (sanitizationWarnings.size > 0) {
     result._sanitization_warnings = Array.from(sanitizationWarnings);
   }
 
-  // Get additional PR details if needed (head/base SHA, etc.)
   if (params.withContent || item.pull_request) {
     try {
       const { owner, repo } = normalizeOwnerRepo(params);
@@ -461,7 +418,6 @@ async function transformPullRequestItem(
           result.base_sha = prDetails.data.base?.sha;
           result.draft = prDetails.data.draft ?? false;
 
-          // Fetch file changes if requested
           if (params.withContent) {
             const fileChanges = await fetchPRFileChangesAPI(
               owner,
@@ -475,11 +431,10 @@ async function transformPullRequestItem(
         }
       }
     } catch (e) {
-      // Continue without additional details if API call fails
+      void e;
     }
   }
 
-  // Fetch comments if requested
   if (params.withComments) {
     const { owner, repo } = normalizeOwnerRepo(params);
     if (owner && repo) {
@@ -495,10 +450,6 @@ async function transformPullRequestItem(
   return result;
 }
 
-/**
- * Fetch file changes for a pull request using GitHub API
- * Returns proper GitHub API types for pull request files
- */
 async function fetchPRFileChangesAPI(
   owner: string,
   repo: string,
@@ -513,7 +464,6 @@ async function fetchPRFileChangesAPI(
       pull_number: prNumber,
     });
 
-    // result.data is already properly typed as DiffEntry[] from GitHub API
     const files: DiffEntry[] = result.data;
 
     return {
@@ -521,14 +471,10 @@ async function fetchPRFileChangesAPI(
       files,
     };
   } catch (error) {
-    // Return null if file changes fetch fails
     return null;
   }
 }
 
-/**
- * Transform pull request item from REST API response
- */
 export async function transformPullRequestItemFromREST(
   item: Record<string, unknown>,
   params: GitHubPullRequestsSearchParams,
@@ -538,12 +484,10 @@ export async function transformPullRequestItemFromREST(
   const { prData: result, sanitizationWarnings } =
     createBasePRTransformation(item);
 
-  // Add sanitization warnings if any were detected
   if (sanitizationWarnings.size > 0) {
     result._sanitization_warnings = Array.from(sanitizationWarnings);
   }
 
-  // Fetch file changes if requested
   if (params.withContent) {
     const fileChanges = await fetchPRFileChangesAPI(
       params.owner as string,
@@ -556,7 +500,6 @@ export async function transformPullRequestItemFromREST(
     }
   }
 
-  // Fetch comments if requested
   if (params.withComments) {
     result.comments = await fetchPRComments(
       octokit,
@@ -569,16 +512,11 @@ export async function transformPullRequestItemFromREST(
   return result;
 }
 
-/**
- * Fetch a specific pull request by number using GitHub REST API
- * More efficient than search when we know the exact PR number
- */
 export async function fetchGitHubPullRequestByNumberAPI(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<PullRequestSearchResult> {
-  // Generate cache key for specific PR fetch (NO TOKEN DATA)
   const cacheKey = generateCacheKey(
     'gh-api-prs',
     {
@@ -605,9 +543,6 @@ export async function fetchGitHubPullRequestByNumberAPI(
   return result;
 }
 
-/**
- * Internal implementation of fetchGitHubPullRequestByNumberAPI without caching
- */
 async function fetchGitHubPullRequestByNumberAPIInternal(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo
@@ -615,7 +550,6 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
   try {
     const octokit = await getOctokit(authInfo);
 
-    // Extract values from params
     const owner = params.owner as string;
     const repo = params.repo as string;
     const prNumber = params.prNumber!;

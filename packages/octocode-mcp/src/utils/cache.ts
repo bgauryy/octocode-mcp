@@ -4,13 +4,12 @@ import type { CacheStats } from '../types.js';
 
 const VERSION = 'v1';
 
-// Simplified cache configuration
 const cache = new NodeCache({
-  stdTTL: 86400, // Default 24 hour cache
-  checkperiod: 3600, // Check for expired keys every 1 hour
-  maxKeys: 1000, // Limit cache to 1000 entries
-  deleteOnExpire: true, // Automatically delete expired keys
-  useClones: false, // Better performance
+  stdTTL: 86400,
+  checkperiod: 3600,
+  maxKeys: 1000,
+  deleteOnExpire: true,
+  useClones: false,
 });
 
 const cacheStats: CacheStats = {
@@ -21,40 +20,29 @@ const cacheStats: CacheStats = {
   lastReset: new Date(),
 };
 
-// TTL configurations for different cache types (in seconds)
 export const CACHE_TTL_CONFIG = {
-  // GitHub API calls - optimized TTL based on data volatility
-  'gh-api-code': 3600, // 1 hour - code changes frequently
-  'gh-api-repos': 7200, // 2 hours - repo metadata more stable
-  'gh-api-prs': 1800, // 30 minutes - PRs change frequently
-  'gh-api-file-content': 3600, // 1 hour - file content changes
-  'gh-repo-structure-api': 7200, // 2 hours - structure more stable
-  'github-user': 900, // 15 minutes - user info for rate limiting
-
-  // Default fallback
-  default: 86400, // 24 hours
+  'gh-api-code': 3600,
+  'gh-api-repos': 7200,
+  'gh-api-prs': 1800,
+  'gh-api-file-content': 3600,
+  'gh-repo-structure-api': 7200,
+  'github-user': 900,
+  default: 86400,
 } as const;
 
 export type CachePrefix = keyof typeof CACHE_TTL_CONFIG | string;
 
-/**
- * Generate a simple, robust cache key
- * SHA-256 hashes are collision-resistant enough for our use case
- */
 export function generateCacheKey(
   prefix: string,
   params: unknown,
   sessionId?: string
 ): string {
-  // Create a stable parameter string
   const paramString = createStableParamString(params);
 
-  // Include session ID in the parameter string if provided
   const finalParamString = sessionId
     ? `${sessionId}:${paramString}`
     : paramString;
 
-  // Use SHA-256 hash for security (64 chars)
   const hash = crypto
     .createHash('sha256')
     .update(finalParamString)
@@ -63,9 +51,6 @@ export function generateCacheKey(
   return `${VERSION}-${prefix}:${hash}`;
 }
 
-/**
- * Create a stable string representation of parameters
- */
 function createStableParamString(params: unknown): string {
   if (params === null) {
     return 'null';
@@ -83,7 +68,6 @@ function createStableParamString(params: unknown): string {
     return `[${params.map(createStableParamString).join(',')}]`;
   }
 
-  // Sort keys and create stable representation
   const sortedKeys = Object.keys(params as Record<string, unknown>).sort();
   const sortedEntries = sortedKeys.map(key => {
     const value = (params as Record<string, unknown>)[key];
@@ -128,7 +112,7 @@ export async function withDataCache<T>(
         return cached;
       }
     } catch (_e) {
-      // ignore cache read errors
+      // ignore
     }
   }
 
@@ -160,10 +144,8 @@ export async function withDataCache<T>(
  * Clear all cache entries and reset statistics
  */
 export function clearAllCache(): void {
-  // Clear main cache
   cache.flushAll();
 
-  // Reset statistics
   cacheStats.hits = 0;
   cacheStats.misses = 0;
   cacheStats.sets = 0;
@@ -189,8 +171,4 @@ export function getCacheStats(): CacheStats & {
 /**
  * Perform periodic cleanup (simplified - NodeCache handles this automatically)
  */
-export function performPeriodicCleanup(): void {
-  // NodeCache automatically handles cleanup with checkperiod
-  // This function is kept for compatibility but does nothing
-  // The cache will automatically clean up expired keys
-}
+export function performPeriodicCleanup(): void {}

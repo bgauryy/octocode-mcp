@@ -16,10 +16,6 @@ import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { shouldIgnoreFile } from '../utils/fileFilters';
 import type { UserContext } from '../types.js';
 
-/**
- * Search GitHub code using Octokit API with optimized performance and caching
- * Token management is handled internally by the GitHub client
- */
 export async function searchGitHubCodeAPI(
   params: GitHubCodeSearchQuery,
   authInfo?: AuthInfo,
@@ -47,10 +43,6 @@ export async function searchGitHubCodeAPI(
   return result;
 }
 
-/**
- * Internal implementation of searchGitHubCodeAPI without caching
- * Token management is handled internally by the GitHub client
- */
 async function searchGitHubCodeAPIInternal(
   params: GitHubCodeSearchQuery,
   authInfo?: AuthInfo
@@ -120,9 +112,6 @@ async function searchGitHubCodeAPIInternal(
   }
 }
 
-/**
- * Convert Octokit code search result to our format with proper typing
- */
 async function convertCodeSearchResult(
   octokitResult: SearchCodeResponse,
   minify: boolean = true,
@@ -133,9 +122,6 @@ async function convertCodeSearchResult(
   return transformToOptimizedFormat(items, minify, sanitize);
 }
 
-/**
- * Transform GitHub API response to optimized format with enhanced information
- */
 async function transformToOptimizedFormat(
   items: CodeSearchResultItem[],
   minify: boolean,
@@ -269,9 +255,6 @@ async function transformToOptimizedFormat(
   return result;
 }
 
-/**
- * Extract single repository if all results are from same repo
- */
 function extractSingleRepository(items: CodeSearchResultItem[]) {
   if (items.length === 0) return null;
 

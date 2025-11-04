@@ -14,10 +14,6 @@ import { buildRepoSearchQuery } from './queryBuilders';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
-/**
- * Search GitHub repositories using Octokit API with proper TypeScript types and caching
- * Token management is handled internally by the GitHub client
- */
 export async function searchGitHubReposAPI(
   params: GitHubReposSearchQuery,
   authInfo?: AuthInfo,
@@ -53,9 +49,6 @@ export async function searchGitHubReposAPI(
   return result;
 }
 
-/**
- * Internal implementation of searchGitHubReposAPI without caching
- */
 async function searchGitHubReposAPIInternal(
   params: GitHubReposSearchQuery,
   authInfo?: AuthInfo
@@ -77,21 +70,18 @@ async function searchGitHubReposAPIInternal(
       };
     }
 
-    // Use properly typed parameters
     const searchParams: SearchReposParameters = {
       q: query,
       per_page: Math.min(params.limit || 30, 100),
       page: 1,
     };
 
-    // Add sort and order if specified
     if (params.sort && params.sort !== 'best-match') {
       searchParams.sort = params.sort as SearchReposParameters['sort'];
     }
 
     const result = await octokit.rest.search.repos(searchParams);
 
-    // Transform repository results to match CLI format with proper typing
     const repositories = result.data.items
       .map((repo: RepoSearchResultItem) => {
         const fullName = repo.full_name;
@@ -112,13 +102,10 @@ async function searchGitHubReposAPIInternal(
           updatedAt: new Date(repo.updated_at).toLocaleDateString('en-GB'),
         };
       })
-      // Sort by stars (descending) then by updatedAt (descending)
       .sort((a: SimplifiedRepository, b: SimplifiedRepository) => {
-        // First sort by stars (higher stars first)
         if (b.stars !== a.stars) {
           return b.stars - a.stars;
         }
-        // If stars are equal, sort by updatedAt (more recent first)
         const dateA = new Date(a.updatedAt.split('/').reverse().join('-'));
         const dateB = new Date(b.updatedAt.split('/').reverse().join('-'));
         return dateB.getTime() - dateA.getTime();

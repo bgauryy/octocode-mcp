@@ -20,23 +20,16 @@ import {
   createErrorResult,
 } from './utils.js';
 
-// PR-specific validation messages
 const VALIDATION_MESSAGES = {
   QUERY_TOO_LONG: 'Query too long. Maximum 256 characters allowed.',
   MISSING_PARAMS:
     'At least one valid search parameter, filter, or PR number is required.',
 } as const;
 
-/**
- * Check if a query has a valid query string that exceeds the length limit
- */
 function hasQueryLengthError(query: GitHubPullRequestSearchQuery): boolean {
   return Boolean(query?.query && String(query.query).length > 256);
 }
 
-/**
- * Check if a query has at least one valid search parameter
- */
 function hasValidSearchParams(query: GitHubPullRequestSearchQuery): boolean {
   return Boolean(
     query?.query?.trim() ||
@@ -48,9 +41,6 @@ function hasValidSearchParams(query: GitHubPullRequestSearchQuery): boolean {
   );
 }
 
-/**
- * Add validation error to query
- */
 function addValidationError(
   query: GitHubPullRequestSearchQuery,
   error: string
@@ -89,16 +79,14 @@ export function registerSearchGitHubPullRequestsTool(
       ): Promise<CallToolResult> => {
         let queries = args.queries || [];
 
-        // Invoke callback if provided
         if (callback) {
           try {
             await callback(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, queries);
           } catch {
-            // Silently ignore callback errors
+            // ignore callback errors
           }
         }
 
-        // Validate query length
         const longQueryIndex = queries.findIndex(hasQueryLengthError);
         if (longQueryIndex !== -1) {
           queries = queries.map((q, i) =>
@@ -108,7 +96,6 @@ export function registerSearchGitHubPullRequestsTool(
           );
         }
 
-        // Validate at least one query has valid parameters
         if (queries.length > 0 && !queries.some(hasValidSearchParams)) {
           queries = queries.map((q, i) =>
             i === 0

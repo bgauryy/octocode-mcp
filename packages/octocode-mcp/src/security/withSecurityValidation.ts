@@ -6,10 +6,6 @@ import { logToolCall } from '../session.js';
 import { isLoggingEnabled } from '../serverConfig.js';
 import type { UserContext } from '../types.js';
 
-/**
- * Security validation decorator
- * Provides input sanitization and basic access controls
- */
 export function withSecurityValidation<T extends Record<string, unknown>>(
   toolName: string,
   toolHandler: (
@@ -79,10 +75,6 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
   };
 }
 
-/**
- * Basic security validation
- * For tools that don't need user context
- */
 export function withBasicSecurityValidation<T extends Record<string, unknown>>(
   toolHandler: (sanitizedArgs: T) => Promise<CallToolResult>
 ): (args: unknown) => Promise<CallToolResult> {
@@ -113,30 +105,6 @@ export function withBasicSecurityValidation<T extends Record<string, unknown>>(
   };
 }
 
-/**
- * Extracts research-related fields from tool parameters for logging purposes.
- *
- * Supports both bulk operations (queries array) and single operations (direct params).
- * Consolidates research fields from multiple queries, prioritizing non-empty values.
- *
- * @param params - The tool parameters containing research information
- * @returns Object with mainResearchGoal, researchGoal, and reasoning fields
- *
- * @example
- * // Single query
- * extractResearchFields({ queries: [{ mainResearchGoal: "Find auth", reasoning: "Security" }] })
- * // Returns: { mainResearchGoal: "Find auth", reasoning: "Security" }
- *
- * @example
- * // Multiple queries - consolidates unique values
- * extractResearchFields({
- *   queries: [
- *     { mainResearchGoal: "Auth", researchGoal: "Find login" },
- *     { mainResearchGoal: "Auth", researchGoal: "Find logout" }
- *   ]
- * })
- * // Returns: { mainResearchGoal: "Auth", researchGoal: "Find login; Find logout" }
- */
 export function extractResearchFields(params: Record<string, unknown>): {
   mainResearchGoal?: string;
   researchGoal?: string;

@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { RequestError } from 'octokit';
-import {
-  handleGitHubAPIError,
-  generateFileAccessHints,
-} from '../../src/github/errors.js';
+import { handleGitHubAPIError } from '../../src/github/errors.js';
 
 describe('GitHub Error Handling', () => {
   describe('handleGitHubAPIError', () => {
@@ -353,85 +350,5 @@ describe('GitHub Error Handling', () => {
     });
   });
 
-  describe('generateFileAccessHints', () => {
-    it('should generate hints for 404 errors with default branch suggestion', () => {
-      const hints = generateFileAccessHints(
-        'owner',
-        'repo',
-        'src/file.js',
-        'feature-branch',
-        'main',
-        'File not found (404)'
-      );
-
-      expect(hints).toEqual([
-        'Try the default branch "main" instead of "feature-branch"',
-        'Use githubViewRepoStructure to verify the file path "src/file.js" exists in owner/repo',
-        'Use githubSearchCode to find similar files if "src/file.js" has changed or moved',
-        'Try common branches: master, develop',
-      ]);
-    });
-
-    it('should generate hints for 404 errors without default branch', () => {
-      const hints = generateFileAccessHints(
-        'owner',
-        'repo',
-        'src/file.js',
-        'main',
-        null,
-        'File not found (404)'
-      );
-
-      expect(hints).toEqual([
-        'Use githubViewRepoStructure to verify the file path "src/file.js" exists in owner/repo',
-        'Use githubSearchCode to find similar files if "src/file.js" has changed or moved',
-        'Try common branches: master, develop',
-      ]);
-    });
-
-    it('should generate hints for 403 permission errors', () => {
-      const hints = generateFileAccessHints(
-        'owner',
-        'private-repo',
-        'src/file.js',
-        'main',
-        'main',
-        'Access denied (403)'
-      );
-
-      expect(hints).toEqual([
-        'Repository owner/private-repo may be private - ensure GITHUB_TOKEN is set',
-        'Check if you have access permissions to this repository',
-      ]);
-    });
-
-    it('should generate hints for rate limit errors', () => {
-      const hints = generateFileAccessHints(
-        'owner',
-        'repo',
-        'src/file.js',
-        'main',
-        'main',
-        'GitHub API rate limit exceeded'
-      );
-
-      expect(hints).toEqual([
-        'GitHub API rate limit exceeded - wait before retrying',
-        'Set GITHUB_TOKEN environment variable for higher rate limits',
-      ]);
-    });
-
-    it('should return empty hints for unknown errors', () => {
-      const hints = generateFileAccessHints(
-        'owner',
-        'repo',
-        'src/file.js',
-        'main',
-        'main',
-        'Unknown error occurred'
-      );
-
-      expect(hints).toEqual([]);
-    });
-  });
+  // generateFileAccessHints tests removed: function no longer part of API
 });

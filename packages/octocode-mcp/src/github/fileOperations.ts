@@ -19,10 +19,6 @@ import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import type { UserContext } from '../types.js';
 import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 
-/**
- * Fetch GitHub file content using Octokit API with proper TypeScript types and caching
- * Token management is handled internally by the GitHub client
- */
 export async function fetchGitHubFileContentAPI(
   params: FileContentQuery,
   authInfo?: AuthInfo,
@@ -59,10 +55,6 @@ export async function fetchGitHubFileContentAPI(
   return result;
 }
 
-/**
- * Internal implementation of fetchGitHubFileContentAPI without caching
- * Token management is handled internally by the GitHub client
- */
 async function fetchGitHubFileContentAPIInternal(
   params: FileContentQuery,
   authInfo?: AuthInfo
@@ -186,9 +178,6 @@ async function fetchGitHubFileContentAPIInternal(
   }
 }
 
-/**
- * Process file content from API with similar functionality to CLI implementation
- */
 async function processFileContentAPI(
   decodedContent: string,
   owner: string,
@@ -243,7 +232,7 @@ async function processFileContentAPI(
 
     for (let i = 0; i < lines.length; i++) {
       if (lines[i]?.includes(matchString)) {
-        matchingLines.push(i + 1); // Convert to 1-based line numbers
+        matchingLines.push(i + 1);
       }
     }
 
@@ -338,9 +327,6 @@ async function processFileContentAPI(
   } as ContentResult;
 }
 
-/**
- * View GitHub repository structure using Octokit API with caching
- */
 export async function viewGitHubRepositoryStructureAPI(
   params: GitHubViewRepoStructureQuery,
   authInfo?: AuthInfo,
@@ -367,10 +353,6 @@ export async function viewGitHubRepositoryStructureAPI(
   return result;
 }
 
-/**
- * Internal implementation of viewGitHubRepositoryStructureAPI without caching
- * Token management is handled internally by the GitHub client
- */
 async function viewGitHubRepositoryStructureAPIInternal(
   params: GitHubViewRepoStructureQuery,
   authInfo?: AuthInfo
@@ -491,7 +473,6 @@ async function viewGitHubRepositoryStructureAPIInternal(
         depth
       );
 
-      // Combine and deduplicate
       const combinedItems = [...apiItems, ...recursiveItems];
       allItems = combinedItems.filter(
         (item, index, array) =>
@@ -499,22 +480,16 @@ async function viewGitHubRepositoryStructureAPIInternal(
       );
     }
 
-    // Apply filtering using centralized filtering logic from fileFilters.ts
     const filteredItems = allItems.filter(item => {
-      // For directories, use shouldIgnoreDir function
       if (item.type === 'dir') {
         return !shouldIgnoreDir(item.name);
       }
-
-      // For files, use shouldIgnoreFileByPath function
       return !shouldIgnoreFile(item.path);
     });
 
-    // Limit items for performance
     const itemLimit = Math.min(200, 50 * depth);
     const limitedItems = filteredItems.slice(0, itemLimit);
 
-    // Sort items: directories first, then by depth, then alphabetically
     limitedItems.sort((a, b) => {
       if (a.type !== b.type) {
         return a.type === 'dir' ? -1 : 1;
@@ -530,7 +505,6 @@ async function viewGitHubRepositoryStructureAPIInternal(
       return a.path.localeCompare(b.path);
     });
 
-    // Create response structure with absolute paths
     const files = limitedItems
       .filter(item => item.type === 'file')
       .map(item => ({
@@ -658,7 +632,6 @@ async function fetchDirectoryContentsRecursivelyAPI(
 
     return allItems;
   } catch (error) {
-    // Return empty array on error to allow partial results
     return [];
   }
 }

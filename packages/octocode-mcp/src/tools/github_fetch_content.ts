@@ -11,8 +11,6 @@ import { fetchGitHubFileContentAPI } from '../github/fileOperations.js';
 import { TOOL_NAMES } from '../constants.js';
 import { FileContentBulkQuerySchema } from '../scheme/github_fetch_content.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
-import { isSamplingEnabled } from '../serverConfig.js';
-import { SamplingUtils, performSampling } from '../sampling.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { DESCRIPTIONS } from './descriptions.js';
 import {
@@ -49,28 +47,21 @@ export function registerFetchGitHubFileContentTool(
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
-        // Invoke callback if provided
         if (callback) {
           try {
             await callback(TOOL_NAMES.GITHUB_FETCH_CONTENT, queries);
           } catch {
-            // Silently ignore callback errors
+            // ignore callback errors
           }
         }
 
-        return fetchMultipleGitHubFileContents(
-          server,
-          queries,
-          authInfo,
-          userContext
-        );
+        return fetchMultipleGitHubFileContents(queries, authInfo, userContext);
       }
     )
   );
 }
 
 async function fetchMultipleGitHubFileContents(
-  server: McpServer,
   queries: FileContentQuery[],
   authInfo?: AuthInfo,
   userContext?: UserContext
@@ -92,11 +83,7 @@ async function fetchMultipleGitHubFileContents(
 
         const result = 'data' in apiResult ? apiResult.data : apiResult;
 
-        const resultWithSampling = await addSamplingIfEnabled(
-          server,
-          query,
-          result as Record<string, unknown>
-        );
+        const resultWithSampling = result as Record<string, unknown>;
 
         const hasContent = hasValidContent(result);
 
@@ -167,64 +154,4 @@ function hasValidContent(result: unknown): boolean {
       result.content &&
       String(result.content).length > 0
   );
-}
-
-/**
- * Create sampling prompt for code file analysis
- */
-function createCodeAnalysisPrompt(query: FileContentQuery): string {
-  return `What does this ${query.path} code file do? Describe its main functionality, key components, and purpose in simple terms.
-which research path can I take to research more about this file?
-what is the best way to use this file?
-Is something missing from this file to understand it better?`;
-}
-
-/**
- * Create context for sampling request
- */
-function createSamplingContext(
-  query: FileContentQuery,
-  content: string
-): string {
-  return `File: ${query.owner}/${query.repo}/${query.path}\n\nCode:\n${content}`;
-}
-
-/**
- * Add AI sampling explanation to result if sampling is enabled
- */
-async function addSamplingIfEnabled(
-  server: McpServer,
-  query: FileContentQuery,
-  result: unknown
-) {
-  if (!isSamplingEnabled() || !hasValidContent(result)) {
-    return result as Record<string, unknown>;
-  }
-
-  const resultObj = result as Record<string, unknown>;
-
-  try {
-    const samplingRequest = SamplingUtils.createQASamplingRequest(
-      createCodeAnalysisPrompt(query),
-      createSamplingContext(query, String(resultObj.content)),
-      { maxTokens: 2000, temperature: 0.3 }
-    );
-
-    const samplingResponse = await performSampling(server, samplingRequest);
-
-    return {
-      ...resultObj,
-      sampling: {
-        codeExplanation: samplingResponse.content,
-        path: String(query.path),
-        repo: `${String(query.owner)}/${String(query.repo)}`,
-        usage: samplingResponse.usage,
-        stopReason: samplingResponse.stopReason,
-      },
-      _samplingRequest: samplingRequest,
-    };
-  } catch (_error) {
-    // Silently ignore sampling errors to avoid breaking the main flow
-    return resultObj;
-  }
 }

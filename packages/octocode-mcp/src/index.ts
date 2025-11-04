@@ -3,15 +3,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { registerPrompts } from './prompts/prompts.js';
 //import { registerResources } from './resources.js';
-import { registerSampling } from './sampling.js';
 import { clearAllCache } from './utils/cache.js';
 import { registerTools } from './tools/toolsManager.js';
-import {
-  isBetaEnabled,
-  initialize,
-  cleanup,
-  getGitHubToken,
-} from './serverConfig.js';
+import { initialize, cleanup, getGitHubToken } from './serverConfig.js';
 import { createLogger, LoggerFactory } from './utils/logger.js';
 import {
   initializeSession,
@@ -42,7 +36,6 @@ async function startServer() {
         resources: {},
         tools: {},
         logging: {},
-        ...(isBetaEnabled() && { sampling: {} }),
       },
     });
     logger = createLogger(server, 'server');
@@ -55,11 +48,6 @@ async function startServer() {
 
     //registerResources(server);
     await logger.info('Resources ready');
-
-    if (isBetaEnabled()) {
-      registerSampling(server);
-      await logger.info('Sampling ready (BETA)');
-    }
 
     const transport = new StdioServerTransport();
     await server.connect(transport);

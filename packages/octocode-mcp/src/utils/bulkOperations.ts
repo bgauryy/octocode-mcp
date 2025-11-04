@@ -1,15 +1,3 @@
-/**
- * Bulk Operations Utility
- *
- * This module provides utilities for processing and formatting bulk query operations.
- *
- * ## Public API
- * - `executeBulkOperation()` - Primary function for tools to process bulk queries
- * - `QueryStatus` - Type for query status ('hasResults' | 'empty' | 'error')
- *
- * @module bulkOperations
- */
-
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeWithErrorIsolation } from './promiseUtils.js';
 import { createResponseFormat } from '../responses.js';
@@ -23,27 +11,6 @@ import type {
   PromiseResult,
 } from '../types.js';
 
-// ============================================================================
-// EXPORTED FUNCTIONS
-// ============================================================================
-
-/**
- * Execute bulk queries and format the response in a single operation.
- *
- * @param queries - Array of query objects to process
- * @param processor - Async function that processes each query, must return object with status field
- * @param config - Configuration for response formatting (toolName, keysPriority)
- * @returns Formatted MCP CallToolResult ready to send to client
- *
- * @example
- * return executeBulkOperation(queries, async (query) => {
- *   const result = await searchGitHubCodeAPI(query);
- *   return { status: 'hasResults', data: result };
- * }, {
- *   toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
- *   keysPriority: ['files', 'error']
- * });
- */
 export async function executeBulkOperation<
   TQuery extends object,
   TData = Record<string, unknown>,
@@ -63,14 +30,6 @@ export async function executeBulkOperation<
   return createBulkResponse<TQuery, TData, R>(config, results, errors, queries);
 }
 
-// ============================================================================
-// INTERNAL FUNCTIONS
-// ============================================================================
-
-/**
- * Format bulk query results into an MCP CallToolResult.
- * Internal function used by executeBulkOperation().
- */
 function createBulkResponse<
   TQuery extends object,
   TData = Record<string, unknown>,
@@ -114,7 +73,6 @@ function createBulkResponse<
   let emptyCount = 0;
   let errorCount = 0;
 
-  // Collect statuses and hints from all results
   let hasAnyHasResults = false;
   let hasAnyEmpty = false;
   let hasAnyError = false;
@@ -123,11 +81,9 @@ function createBulkResponse<
   const errorHintsSet = new Set<string>();
 
   results.forEach(r => {
-    // Use status directly from tool result
     const status = r.result.status;
     const toolData = extractToolData(r.result);
 
-    // Track status types and collect any custom hints from results
     const hintsArray = r.result.hints;
     if (status === 'hasResults') {
       hasAnyHasResults = true;
