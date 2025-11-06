@@ -14,7 +14,7 @@ import {
 } from './session.js';
 import { version, name } from '../package.json';
 
-const INSTRUCTIONS = `Purpose: Understand code and flows using Github research
+const INSTRUCTIONS = `Purpose: Understand and discover code and flows using Github research
 
 AVAILABLE TOOLS:
 
@@ -30,12 +30,18 @@ Phase 2: EXPLORE → githubViewRepoStructure (understand organization)
 Phase 3: SEARCH → githubSearchCode (locate specific code)
 Phase 4: ANALYZE → githubGetFileContent (read implementations)
 
+BASIC FLOW:
+- Use the available tools in alignment with your research goal
+- The workflow is flexible. Choose the most appropriate tool based on your research goals and the current context
+- Let the researchGoal and your reasoning direct each query
+- Analyze results, context and hints before planning your next action
+- For complex problems, request clarification from the user when needed
+
 KEY PRINCIPLES:
-- All tools support bulk operations (multiple queries in parallel)
-- Always scope searches with owner/repo when possible to avoid rate limits
-- Start with fast discovery (path search, structure view) before detailed analysis
-- Use pattern matching for token efficiency (matchString vs fullContent)
-- If required or unsure -> ask user what to do or more guidance
+- All tools support bulk operations (multiple queries per call 1-3)
+- Always restrict searches with owner/repo scoping to conserve rate limits
+- Work efficiently to minimize rate limit usage; explore alternatives as necessary
+- After each step, reflect on the outcome and plan your next action thoughtfully
 `;
 
 const SERVER_CONFIG: Implementation = {
