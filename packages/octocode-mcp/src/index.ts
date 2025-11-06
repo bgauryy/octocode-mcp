@@ -14,6 +14,30 @@ import {
 } from './session.js';
 import { version, name } from '../package.json';
 
+const INSTRUCTIONS = `Purpose: Understand code and flows using Github research
+
+AVAILABLE TOOLS:
+
+1. githubSearchRepositories - DISCOVER REPOSITORIES
+2. githubSearchCode - FIND CODE PATTERNS  
+3. githubViewRepoStructure - EXPLORE DIRECTORY STRUCTURE
+4. githubGetFileContent - READ FILE CONTENTS
+5. githubSearchPullRequests - ANALYZE PULL REQUESTS
+
+RECOMMENDED WORKFLOW (Progressive Research):
+Phase 1: DISCOVER → githubSearchRepositories (find relevant repos)
+Phase 2: EXPLORE → githubViewRepoStructure (understand organization)  
+Phase 3: SEARCH → githubSearchCode (locate specific code)
+Phase 4: ANALYZE → githubGetFileContent (read implementations)
+
+KEY PRINCIPLES:
+- All tools support bulk operations (multiple queries in parallel)
+- Always scope searches with owner/repo when possible to avoid rate limits
+- Start with fast discovery (path search, structure view) before detailed analysis
+- Use pattern matching for token efficiency (matchString vs fullContent)
+- If required or unsure -> ask user what to do or more guidance
+`;
+
 const SERVER_CONFIG: Implementation = {
   name: `${name}_${version}`,
   title: 'Octocode MCP',
@@ -37,6 +61,7 @@ async function startServer() {
         tools: {},
         logging: {},
       },
+      instructions: INSTRUCTIONS,
     });
     logger = createLogger(server, 'server');
     await logger.info('Server starting', { sessionId: session.getSessionId() });
