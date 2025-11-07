@@ -13,6 +13,10 @@
 
 </div>
 
+<a href="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp/badge" alt="Octocode MCP server" />
+</a>
+
 ## 🌐 For More Details - [octocode.ai](https://octocode.ai)
 ## 📚 For Technical Details - [Technical Summary](./docs/summary.md)
 ## 🐳 For Docker Setup - [Docker Guide](./docker/README.Docker.md)
