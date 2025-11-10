@@ -8,13 +8,12 @@
     "url": "https://github.com/bgauryy/octocode-mcp",
     "source": "github"
   },
-  "version": "7.0.8",
+  "version": "7.0.9",
   "packages": [
     {
       "registryType": "npm",
-      "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "octocode-mcp",
-      "version": "7.0.8",
+      "version": "7.0.9",
       "transport": {
         "type": "stdio"
       },
