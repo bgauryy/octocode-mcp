@@ -847,7 +847,7 @@ Status: empty
 
 ## License
 
-MIT License - See LICENSE.md for details
+MIT License - See LICENSE for details
 
 ---
 

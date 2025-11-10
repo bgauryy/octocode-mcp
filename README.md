@@ -868,4 +868,4 @@ If Octocode helps your AI development workflow:
 
 ## License
 
-MIT - See [LICENSE](./LICENSE.md) for details.
+MIT - See [LICENSE](./LICENSE) for details.

@@ -381,4 +381,4 @@ This package is part of the [Octocode MCP](https://github.com/bgauryy/octocode-m
 
 ## 📄 License
 
-MIT - See [LICENSE](../../LICENSE.md) for details.
+MIT - See [LICENSE](../../LICENSE) for details.
