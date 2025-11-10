@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
   "name": "io.github.bgauryy/octocode-mcp",
   "title": "Octocode MCP - AI Context Platform",
-  "description": "Agentic code research platform for AI assistants. Search, analyze, and extract insights from any GitHub repository with semantic code discovery, progressive research workflows, and enterprise-grade security. Bridge the gap between AI and real-world production code.",
+  "description": "AI code research platform. Search, analyze, and extract insights from any GitHub repository.",
   "status": "active",
   "repository": {
     "url": "https://github.com/bgauryy/octocode-mcp",
