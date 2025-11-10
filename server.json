@@ -1,0 +1,32 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.bgauryy/octocode-mcp",
+  "title": "Octocode MCP - AI Context Platform",
+  "description": "Agentic code research platform for AI assistants. Search, analyze, and extract insights from any GitHub repository with semantic code discovery, progressive research workflows, and enterprise-grade security. Bridge the gap between AI and real-world production code.",
+  "status": "active",
+  "repository": {
+    "url": "https://github.com/bgauryy/octocode-mcp",
+    "source": "github"
+  },
+  "version": "7.0.8",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "octocode-mcp",
+      "version": "7.0.8",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "GITHUB_TOKEN",
+          "description": "GitHub Personal Access Token. Optional - authenticate via GitHub CLI (gh auth login) for automatic token management, or set this token manually for CI/CD environments.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
+
