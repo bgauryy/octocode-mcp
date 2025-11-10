@@ -1,0 +1,66 @@
+name: Publish to MCP Registry
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # For OIDC
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "18"
+          registry-url: 'https://registry.npmjs.org'
+
+      # Enable Corepack for Yarn support
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Lint code
+        run: yarn lint
+
+      - name: Build packages
+        run: yarn build
+
+      - name: Run tests
+        run: yarn test
+
+      # Sync server.json version with git tag before publishing
+      - name: Sync server.json version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "📝 Syncing server.json version to $VERSION"
+          cd packages/octocode-mcp
+          jq --arg v "$VERSION" '.version = $v | .packages[0].version = $v' server.json > tmp && mv tmp server.json
+          cat server.json | jq '.version, .packages[0].version'
+
+      - name: Publish to npm
+        run: |
+          cd packages/octocode-mcp
+          echo "🚀 Publishing octocode-mcp to npm..."
+          yarn npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # MCP publishing (works for all package types)
+      - name: Download MCP Publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/download/latest/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Publish to MCP Registry
+        run: |
+          cd packages/octocode-mcp
+          echo "🚀 Publishing to MCP Registry..."
+          ../../mcp-publisher login github-oidc
+          ../../mcp-publisher publish
