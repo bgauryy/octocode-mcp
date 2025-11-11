@@ -60,6 +60,7 @@ describe('GitHub Client', () => {
     // Setup default mocks
     mockGetServerConfig.mockReturnValue({
       version: '1.0.0',
+      githubApiUrl: 'https://api.github.com',
       timeout: 30000,
       enableLogging: false,
       betaEnabled: false,
@@ -156,6 +157,7 @@ describe('GitHub Client', () => {
       mockGetGitHubToken.mockResolvedValue('test-token');
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
         timeout: 60000,
         enableLogging: false,
         betaEnabled: false,
@@ -168,6 +170,27 @@ describe('GitHub Client', () => {
       expect(mockOctokit).toHaveBeenCalledWith(
         expect.objectContaining({
           request: { timeout: 60000 },
+        })
+      );
+    });
+
+    it('should use custom GitHub API URL from config', async () => {
+      mockGetGitHubToken.mockResolvedValue('test-token');
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://github.enterprise.com/api/v3',
+        timeout: 30000,
+        enableLogging: false,
+        betaEnabled: false,
+        maxRetries: 3,
+        loggingEnabled: true,
+      });
+
+      await getOctokit();
+
+      expect(mockOctokit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: 'https://github.enterprise.com/api/v3',
         })
       );
     });

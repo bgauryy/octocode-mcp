@@ -187,6 +187,7 @@ describe('Index Module', () => {
     mockCleanup.mockImplementation(() => {});
     mockGetServerConfig.mockReturnValue({
       version: '4.0.5',
+      githubApiUrl: 'https://api.github.com',
       enableTools: [],
       disableTools: [],
       enableLogging: false,
