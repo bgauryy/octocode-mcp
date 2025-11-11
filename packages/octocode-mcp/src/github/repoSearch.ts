@@ -3,11 +3,7 @@ import type {
   RepoSearchResultItem,
   GitHubAPIResponse,
 } from './githubAPI';
-import type {
-  GitHubReposSearchQuery,
-  SimplifiedRepository,
-  UserContext,
-} from '../types';
+import type { GitHubReposSearchQuery, SimplifiedRepository } from '../types';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildRepoSearchQuery } from './queryBuilders';
@@ -17,18 +13,14 @@ import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 export async function searchGitHubReposAPI(
   params: GitHubReposSearchQuery,
   authInfo?: AuthInfo,
-  userContext?: UserContext
+  sessionId?: string
 ): Promise<
   GitHubAPIResponse<{
     repositories: SimplifiedRepository[];
   }>
 > {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
-  const cacheKey = generateCacheKey(
-    'gh-api-repos',
-    params,
-    userContext?.sessionId
-  );
+  const cacheKey = generateCacheKey('gh-api-repos', params, sessionId);
 
   const result = await withDataCache<
     GitHubAPIResponse<{

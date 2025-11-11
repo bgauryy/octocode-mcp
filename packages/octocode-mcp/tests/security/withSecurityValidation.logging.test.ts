@@ -238,53 +238,275 @@ describe('withSecurityValidation logging', () => {
     );
   });
 
-  it('should consolidate research fields from multiple queries', async () => {
-    const mockHandler = vi.fn(async () => ({
-      isError: false,
-      content: [{ type: 'text' as const, text: 'success' }],
-    }));
+  describe('Bulk operations - individual query logging', () => {
+    it('should log each query individually in bulk operations', async () => {
+      const mockHandler = vi.fn(async () => ({
+        isError: false,
+        content: [{ type: 'text' as const, text: 'success' }],
+      }));
 
-    const wrappedHandler = withSecurityValidation('test_tool', mockHandler);
+      const wrappedHandler = withSecurityValidation('test_tool', mockHandler);
 
-    const args = {
-      queries: [
-        {
-          owner: 'owner1',
-          repo: 'repo1',
-          mainResearchGoal: 'Authentication',
-          researchGoal: 'Find login',
-          reasoning: 'Security audit',
-        },
-        {
-          owner: 'owner2',
-          repo: 'repo2',
-          mainResearchGoal: 'Authentication',
-          researchGoal: 'Find logout',
-          reasoning: 'Security audit',
-        },
-      ],
-    };
+      const args = {
+        queries: [
+          {
+            owner: 'owner1',
+            repo: 'repo1',
+            mainResearchGoal: 'Authentication',
+            researchGoal: 'Find login',
+            reasoning: 'Security audit',
+          },
+          {
+            owner: 'owner2',
+            repo: 'repo2',
+            mainResearchGoal: 'Authorization',
+            researchGoal: 'Find logout',
+            reasoning: 'Access control',
+          },
+        ],
+      };
 
-    // Mock the sanitizer to return our test args
-    const { ContentSanitizer } = await import(
-      '../../src/security/contentSanitizer.js'
-    );
-    vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
-      isValid: true,
-      sanitizedParams: args,
-      warnings: [],
-      hasSecrets: false,
+      // Mock the sanitizer to return our test args
+      const { ContentSanitizer } = await import(
+        '../../src/security/contentSanitizer.js'
+      );
+      vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
+        isValid: true,
+        sanitizedParams: args,
+        warnings: [],
+        hasSecrets: false,
+      });
+
+      await wrappedHandler(args, {});
+
+      // Verify logToolCall was called twice (once per query)
+      expect(mockLogToolCall).toHaveBeenCalledTimes(2);
+
+      // Verify first query was logged individually
+      expect(mockLogToolCall).toHaveBeenNthCalledWith(
+        1,
+        'test_tool',
+        ['owner1/repo1'],
+        'Authentication',
+        'Find login',
+        'Security audit'
+      );
+
+      // Verify second query was logged individually
+      expect(mockLogToolCall).toHaveBeenNthCalledWith(
+        2,
+        'test_tool',
+        ['owner2/repo2'],
+        'Authorization',
+        'Find logout',
+        'Access control'
+      );
     });
 
-    await wrappedHandler(args, {});
+    it('should log each query with its own repos in bulk operations', async () => {
+      const mockHandler = vi.fn(async () => ({
+        isError: false,
+        content: [{ type: 'text' as const, text: 'success' }],
+      }));
 
-    expect(mockLogToolCall).toHaveBeenCalledWith(
-      'test_tool',
-      ['owner1/repo1', 'owner2/repo2'],
-      'Authentication',
-      'Find login; Find logout',
-      'Security audit'
-    );
+      const wrappedHandler = withSecurityValidation('test_tool', mockHandler);
+
+      const args = {
+        queries: [
+          {
+            repository: 'facebook/react',
+            mainResearchGoal: 'React hooks',
+          },
+          {
+            owner: 'microsoft',
+            repo: 'vscode',
+            mainResearchGoal: 'VS Code API',
+          },
+          {
+            owner: 'vercel',
+            mainResearchGoal: 'Vercel tools',
+          },
+        ],
+      };
+
+      const { ContentSanitizer } = await import(
+        '../../src/security/contentSanitizer.js'
+      );
+      vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
+        isValid: true,
+        sanitizedParams: args,
+        warnings: [],
+        hasSecrets: false,
+      });
+
+      await wrappedHandler(args, {});
+
+      // Verify logToolCall was called 3 times (once per query)
+      expect(mockLogToolCall).toHaveBeenCalledTimes(3);
+
+      // Verify each query logged with its specific repo
+      expect(mockLogToolCall).toHaveBeenNthCalledWith(
+        1,
+        'test_tool',
+        ['facebook/react'],
+        'React hooks',
+        undefined,
+        undefined
+      );
+
+      expect(mockLogToolCall).toHaveBeenNthCalledWith(
+        2,
+        'test_tool',
+        ['microsoft/vscode'],
+        'VS Code API',
+        undefined,
+        undefined
+      );
+
+      expect(mockLogToolCall).toHaveBeenNthCalledWith(
+        3,
+        'test_tool',
+        ['vercel'],
+        'Vercel tools',
+        undefined,
+        undefined
+      );
+    });
+
+    it('should skip logging queries without repos in bulk operations', async () => {
+      const mockHandler = vi.fn(async () => ({
+        isError: false,
+        content: [{ type: 'text' as const, text: 'success' }],
+      }));
+
+      const wrappedHandler = withSecurityValidation('test_tool', mockHandler);
+
+      const args = {
+        queries: [
+          {
+            owner: 'owner1',
+            repo: 'repo1',
+            keywordsToSearch: ['test'],
+          },
+          {
+            keywordsToSearch: ['test2'],
+            // No repo info
+          },
+          {
+            owner: 'owner3',
+            repo: 'repo3',
+            keywordsToSearch: ['test3'],
+          },
+        ],
+      };
+
+      const { ContentSanitizer } = await import(
+        '../../src/security/contentSanitizer.js'
+      );
+      vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
+        isValid: true,
+        sanitizedParams: args,
+        warnings: [],
+        hasSecrets: false,
+      });
+
+      await wrappedHandler(args, {});
+
+      // Only queries with repos should be logged (2 out of 3)
+      expect(mockLogToolCall).toHaveBeenCalledTimes(2);
+
+      expect(mockLogToolCall).toHaveBeenNthCalledWith(
+        1,
+        'test_tool',
+        ['owner1/repo1'],
+        undefined,
+        undefined,
+        undefined
+      );
+
+      expect(mockLogToolCall).toHaveBeenNthCalledWith(
+        2,
+        'test_tool',
+        ['owner3/repo3'],
+        undefined,
+        undefined,
+        undefined
+      );
+    });
+
+    it('should handle bulk operations with mixed research fields', async () => {
+      const mockHandler = vi.fn(async () => ({
+        isError: false,
+        content: [{ type: 'text' as const, text: 'success' }],
+      }));
+
+      const wrappedHandler = withSecurityValidation('test_tool', mockHandler);
+
+      const args = {
+        queries: [
+          {
+            owner: 'owner1',
+            repo: 'repo1',
+            mainResearchGoal: 'Goal 1',
+            researchGoal: 'Subgoal 1',
+            reasoning: 'Reason 1',
+          },
+          {
+            owner: 'owner2',
+            repo: 'repo2',
+            mainResearchGoal: 'Goal 2',
+            // Missing researchGoal and reasoning
+          },
+          {
+            owner: 'owner3',
+            repo: 'repo3',
+            // Only reasoning, no goals
+            reasoning: 'Reason 3',
+          },
+        ],
+      };
+
+      const { ContentSanitizer } = await import(
+        '../../src/security/contentSanitizer.js'
+      );
+      vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
+        isValid: true,
+        sanitizedParams: args,
+        warnings: [],
+        hasSecrets: false,
+      });
+
+      await wrappedHandler(args, {});
+
+      expect(mockLogToolCall).toHaveBeenCalledTimes(3);
+
+      expect(mockLogToolCall).toHaveBeenNthCalledWith(
+        1,
+        'test_tool',
+        ['owner1/repo1'],
+        'Goal 1',
+        'Subgoal 1',
+        'Reason 1'
+      );
+
+      expect(mockLogToolCall).toHaveBeenNthCalledWith(
+        2,
+        'test_tool',
+        ['owner2/repo2'],
+        'Goal 2',
+        undefined,
+        undefined
+      );
+
+      expect(mockLogToolCall).toHaveBeenNthCalledWith(
+        3,
+        'test_tool',
+        ['owner3/repo3'],
+        undefined,
+        undefined,
+        'Reason 3'
+      );
+    });
   });
 
   it('should log without research fields when none are provided', async () => {

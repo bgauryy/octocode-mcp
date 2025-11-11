@@ -2,7 +2,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
 import type {
-  UserContext,
   ToolInvocationCallback,
   GitHubViewRepoStructureQuery,
   RepoStructureResult,
@@ -44,7 +43,7 @@ export function registerViewGitHubRepoStructureTool(
           queries: GitHubViewRepoStructureQuery[];
         },
         authInfo,
-        userContext
+        sessionId
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
@@ -59,7 +58,7 @@ export function registerViewGitHubRepoStructureTool(
         return exploreMultipleRepositoryStructures(
           queries,
           authInfo,
-          userContext
+          sessionId
         );
       }
     )
@@ -136,7 +135,7 @@ function createEmptyStructureResult(
 async function exploreMultipleRepositoryStructures(
   queries: GitHubViewRepoStructureQuery[],
   authInfo?: AuthInfo,
-  userContext?: UserContext
+  sessionId?: string
 ): Promise<CallToolResult> {
   return executeBulkOperation(
     queries,
@@ -147,7 +146,7 @@ async function exploreMultipleRepositoryStructures(
         const apiResult = await viewGitHubRepositoryStructureAPI(
           apiRequest,
           authInfo,
-          userContext
+          sessionId
         );
 
         const apiError = handleApiError(apiResult, query);

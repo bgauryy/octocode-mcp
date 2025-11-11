@@ -1,11 +1,11 @@
 /**
- * Comprehensive tests to verify userContext and authInfo propagation
+ * Comprehensive tests to verify sessionId and authInfo propagation
  * from Tools → GitHub API layer for ALL tools
  *
  * This test suite ensures that:
- * 1. All tools correctly receive userContext from withSecurityValidation
- * 2. All tools correctly pass userContext (or authInfo) to GitHub APIs
- * 3. All GitHub APIs properly receive and use userContext for caching
+ * 1. All tools correctly receive sessionId from withSecurityValidation
+ * 2. All tools correctly pass sessionId to GitHub APIs
+ * 3. All GitHub APIs properly receive and use sessionId for caching
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -60,7 +60,7 @@ import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view
 import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests.js';
 import { TOOL_NAMES } from '../../src/constants.js';
 
-describe('UserContext and AuthInfo Propagation - ALL TOOLS', () => {
+describe('SessionId and AuthInfo Propagation - ALL TOOLS', () => {
   let mockServer: MockMcpServer;
 
   beforeEach(() => {
@@ -74,7 +74,7 @@ describe('UserContext and AuthInfo Propagation - ALL TOOLS', () => {
   });
 
   describe('1. github_search_code → searchGitHubCodeAPI', () => {
-    it('should propagate authInfo and userContext to searchGitHubCodeAPI', async () => {
+    it('should propagate authInfo and sessionId to searchGitHubCodeAPI', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValue({
         data: { items: [], total_count: 0 },
         status: 200,
@@ -91,13 +91,13 @@ describe('UserContext and AuthInfo Propagation - ALL TOOLS', () => {
       expect(mockSearchGitHubCodeAPI).toHaveBeenCalledWith(
         expect.objectContaining({ keywordsToSearch: ['test'] }),
         undefined, // authInfo is passed (as undefined in mock environment)
-        expect.objectContaining({ sessionId: undefined }) // userContext is passed
+        undefined // sessionId is passed (as undefined in mock environment)
       );
     });
   });
 
   describe('2. github_fetch_content → fetchGitHubFileContentAPI', () => {
-    it('should propagate authInfo and userContext to fetchGitHubFileContentAPI', async () => {
+    it('should propagate authInfo and sessionId to fetchGitHubFileContentAPI', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
           owner: 'test',
@@ -123,13 +123,13 @@ describe('UserContext and AuthInfo Propagation - ALL TOOLS', () => {
           path: 'test.js',
         }),
         undefined, // authInfo is passed (as undefined in mock environment)
-        expect.objectContaining({ sessionId: undefined }) // userContext is passed
+        undefined // sessionId is passed (as undefined in mock environment)
       );
     });
   });
 
   describe('3. github_search_repos → searchGitHubReposAPI', () => {
-    it('should propagate authInfo and userContext to searchGitHubReposAPI', async () => {
+    it('should propagate authInfo and sessionId to searchGitHubReposAPI', async () => {
       mockSearchGitHubReposAPI.mockResolvedValue({
         data: { repositories: [] },
         status: 200,
@@ -146,13 +146,13 @@ describe('UserContext and AuthInfo Propagation - ALL TOOLS', () => {
       expect(mockSearchGitHubReposAPI).toHaveBeenCalledWith(
         expect.objectContaining({ keywordsToSearch: ['react'] }),
         undefined, // authInfo is passed (as undefined in mock environment)
-        expect.objectContaining({ sessionId: undefined }) // userContext is passed
+        undefined // sessionId is passed (as undefined in mock environment)
       );
     });
   });
 
   describe('4. github_view_repo_structure → viewGitHubRepositoryStructureAPI', () => {
-    it('should propagate authInfo and userContext to viewGitHubRepositoryStructureAPI', async () => {
+    it('should propagate authInfo and sessionId to viewGitHubRepositoryStructureAPI', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
         owner: 'test',
         repo: 'repo',
@@ -177,13 +177,13 @@ describe('UserContext and AuthInfo Propagation - ALL TOOLS', () => {
           branch: 'main',
         }),
         undefined, // authInfo is passed (as undefined in mock environment)
-        expect.objectContaining({ sessionId: undefined }) // userContext is passed
+        undefined // sessionId is passed (as undefined in mock environment)
       );
     });
   });
 
   describe('5. github_search_pull_requests → searchGitHubPullRequestsAPI', () => {
-    it('should propagate authInfo and userContext to searchGitHubPullRequestsAPI', async () => {
+    it('should propagate authInfo and sessionId to searchGitHubPullRequestsAPI', async () => {
       mockSearchGitHubPullRequestsAPI.mockResolvedValue({
         pull_requests: [],
         total_count: 0,
@@ -200,7 +200,7 @@ describe('UserContext and AuthInfo Propagation - ALL TOOLS', () => {
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
         expect.objectContaining({ owner: 'test', repo: 'repo' }),
         undefined, // authInfo is passed (as undefined in mock environment)
-        expect.objectContaining({ sessionId: undefined }) // userContext is passed
+        undefined // sessionId is passed (as undefined in mock environment)
       );
     });
   });

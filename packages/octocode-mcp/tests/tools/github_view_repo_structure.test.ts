@@ -99,7 +99,7 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(responseText).not.toMatch(/^hints:/m);
   });
 
-  it('should pass authInfo and userContext to GitHub API', async () => {
+  it('should pass authInfo and sessionId to GitHub API', async () => {
     // Mock successful API response
     mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
       files: [
@@ -139,20 +139,15 @@ describe('GitHub View Repository Structure Tool', () => {
       }
     );
 
-    // Verify the API was called with authInfo and userContext
+    // Verify the API was called with authInfo and sessionId
     expect(mockViewGitHubRepositoryStructureAPI).toHaveBeenCalledTimes(1);
     const apiCall = mockViewGitHubRepositoryStructureAPI.mock.calls[0];
 
-    // Should be called with (apiRequest, authInfo, userContext)
+    // Should be called with (apiRequest, authInfo, sessionId)
     expect(apiCall).toBeDefined();
     expect(apiCall).toHaveLength(3);
     expect(apiCall?.[1]).toEqual({ token: 'mock-test-token' }); // authInfo
-    expect(apiCall?.[2]).toEqual({
-      userId: 'anonymous',
-      userLogin: 'anonymous',
-      isEnterpriseMode: false,
-      sessionId: 'test-session-id',
-    }); // userContext
+    expect(apiCall?.[2]).toBe('test-session-id'); // sessionId
   });
 
   it('should handle API errors', async () => {

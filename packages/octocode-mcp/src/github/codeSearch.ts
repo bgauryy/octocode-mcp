@@ -14,18 +14,13 @@ import { buildCodeSearchQuery } from './queryBuilders';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { shouldIgnoreFile } from '../utils/fileFilters';
-import type { UserContext } from '../types.js';
 
 export async function searchGitHubCodeAPI(
   params: GitHubCodeSearchQuery,
   authInfo?: AuthInfo,
-  userContext?: UserContext
+  sessionId?: string
 ): Promise<GitHubAPIResponse<OptimizedCodeSearchResult>> {
-  const cacheKey = generateCacheKey(
-    'gh-api-code',
-    params,
-    userContext?.sessionId
-  );
+  const cacheKey = generateCacheKey('gh-api-code', params, sessionId);
 
   const result = await withDataCache<
     GitHubAPIResponse<OptimizedCodeSearchResult>
