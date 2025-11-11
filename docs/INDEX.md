@@ -303,7 +303,7 @@ Important topics:
 #### Installation
 ```bash
 npm install octocode-mcp
-# Set GITHUB_TOKEN in .env
+# Set GITHUB_TOKEN in .env (optionally GITHUB_API_URL for Enterprise)
 octocode-mcp
 ```
 

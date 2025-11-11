@@ -148,10 +148,12 @@ The server checks for authentication in this order:
 1. **GitHub CLI** (via `gh auth token`)
    - Automatic, secure, recommended
    - No manual token management needed
+   - Uses GitHub's native authentication
 
 2. **GITHUB_TOKEN environment variable**
    - Explicit token setting
    - Good for CI/CD and automation
+   - Also recognizes `GH_TOKEN` (GitHub standard variable)
 
 If no authentication is found, the server will start but with **limited functionality** (unauthenticated rate limits apply).
 
@@ -436,8 +438,10 @@ gh api rate_limit
 
 ### Environment Variables
 ```bash
-# Primary token source
+# Primary token source (choose one)
 export GITHUB_TOKEN="ghp_xxxx..."
+# or
+export GH_TOKEN="ghp_xxxx..."
 
 # Verify
 echo $GITHUB_TOKEN
@@ -451,7 +455,8 @@ echo $GITHUB_TOKEN
       "command": "npx",
       "args": ["octocode-mcp@latest"],
       "env": {
-        "GITHUB_TOKEN": "ghp_xxxx..."
+        "GITHUB_TOKEN": "ghp_xxxx...",
+        "GITHUB_API_URL": "https://api.github.com"  // Optional: For GitHub Enterprise
       }
     }
   }

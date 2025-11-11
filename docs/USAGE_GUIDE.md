@@ -204,6 +204,9 @@ gh auth login
 # Alternative: Environment variable
 export GITHUB_TOKEN=your_token_here
 
+# GitHub Enterprise Server (optional)
+export GITHUB_API_URL=https://github.company.com/api/v3
+
 # Disable specific default tools (if needed)
 export DISABLE_TOOLS="githubSearchPullRequests"
 

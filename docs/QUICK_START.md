@@ -25,7 +25,11 @@ Create a GitHub Personal Access Token:
 Create `.env` file:
 
 ```bash
+# Required
 GITHUB_TOKEN=ghp_your_token_here
+
+# Optional - For GitHub Enterprise
+GITHUB_API_URL=https://github.company.com/api/v3  # Default: https://api.github.com
 ```
 
 ## 3. Run the Server
@@ -271,7 +275,12 @@ Status: empty
 ### Enable Logging
 
 ```bash
+# Enable logging via environment variable
 ENABLE_LOGGING=true octocode-mcp
+
+# Or set in .env file
+# ENABLE_LOGGING=true
+# LOG=true
 ```
 
 ### Use MCP Inspector

@@ -482,6 +482,35 @@ If you see Octocode tools being used, you're all set! 🎉
 
 ---
 
+## GitHub Enterprise Support
+
+Octocode MCP supports GitHub Enterprise Server instances with custom API URLs.
+
+### Configuration
+
+Add the `GITHUB_API_URL` environment variable to your MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp@latest"],
+      "env": {
+        "GITHUB_TOKEN": "your_token",
+        "GITHUB_API_URL": "https://github.company.com/api/v3"
+      }
+    }
+  }
+}
+```
+
+**Default:** If not specified, defaults to `https://api.github.com` (public GitHub).
+
+**Note:** Ensure your GitHub Enterprise token has the same scopes as documented in the [Authentication Guide](./docs/AUTHENTICATION.md).
+
+---
+
 ## More Examples
 
 ### Additional Demonstrations

@@ -453,13 +453,13 @@ yarn add octocode-mcp
 Set up environment variables:
 
 ```bash
-# Required
-GITHUB_TOKEN=ghp_your_token_here
+# Required (choose one or both)
+GITHUB_TOKEN=ghp_your_token_here  # Personal Access Token or GH_TOKEN
 
 # Optional
-WORKSPACE_ROOT=/path/to/workspace
+GITHUB_API_URL=https://api.github.com  # For GitHub Enterprise: https://github.company.com/api/v3
 ENABLE_LOGGING=true
-BETA_ENABLED=false  # Enable experimental features
+BETA=true  # Enable experimental features
 ```
 
 ### Run Server
@@ -760,21 +760,38 @@ interface ToolCallData {
 
 ### Environment Variables
 
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `GITHUB_TOKEN` | Yes* | - | GitHub Personal Access Token. Also recognizes `GH_TOKEN` |
+| `GITHUB_API_URL` | No | `https://api.github.com` | GitHub API endpoint. Use for GitHub Enterprise Server |
+| `ENABLE_LOGGING` | No | `false` | Enable detailed request/response logging |
+| `BETA` | No | `false` | Enable experimental beta features |
+| `REQUEST_TIMEOUT` | No | `30000` | Request timeout in milliseconds (min: 30000) |
+| `MAX_RETRIES` | No | `3` | Maximum retry attempts for failed requests (0-10) |
+| `LOG` | No | `true` | Global logging enable/disable flag |
+| `TOOLS_TO_RUN` | No | All tools | Comma-separated list of specific tools to run |
+| `ENABLE_TOOLS` | No | All tools | Comma-separated list of tools to enable |
+| `DISABLE_TOOLS` | No | None | Comma-separated list of tools to disable |
+
+*Not strictly required if using GitHub CLI authentication (`gh auth login`)
+
+**Example Configuration:**
+
 ```bash
-# Required
+# Authentication (GitHub CLI recommended, or set token)
 GITHUB_TOKEN=ghp_your_token_here
 
-# Optional - Server Configuration
-WORKSPACE_ROOT=/path/to/workspace
+# GitHub Enterprise Server (optional)
+GITHUB_API_URL=https://github.company.com/api/v3
+
+# Server Configuration
 ENABLE_LOGGING=true
-BETA_ENABLED=false
-TIMEOUT=30000
+BETA=false
+REQUEST_TIMEOUT=30000
 MAX_RETRIES=3
 
-# Optional - Tool Configuration
-TOOLS_TO_RUN=githubSearchCode,githubSearchRepositories
-ENABLE_TOOLS=githubSearchCode,githubGetFileContent
-DISABLE_TOOLS=githubSearchPullRequests
+# Tool Configuration (optional)
+ENABLE_TOOLS=githubSearchCode,githubGetFileContent,githubSearchRepositories
 ```
 
 ### Server Configuration
@@ -782,14 +799,15 @@ DISABLE_TOOLS=githubSearchPullRequests
 ```typescript
 interface ServerConfig {
   version: string;
-  toolsToRun?: string[];
-  enableTools?: string[];
-  disableTools?: string[];
-  enableLogging: boolean;
-  betaEnabled: boolean;
-  timeout: number;
-  maxRetries: number;
-  loggingEnabled: boolean;
+  githubApiUrl: string;        // GitHub API URL (default: https://api.github.com)
+  toolsToRun?: string[];       // Specific tools to run (optional)
+  enableTools?: string[];      // Tools to enable (optional)
+  disableTools?: string[];     // Tools to disable (optional)
+  enableLogging: boolean;      // Enable detailed logging
+  betaEnabled: boolean;        // Enable beta/experimental features
+  timeout: number;             // Request timeout in milliseconds
+  maxRetries: number;          // Maximum retry attempts
+  loggingEnabled: boolean;     // Global logging flag
 }
 ```
 

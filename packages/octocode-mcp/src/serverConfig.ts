@@ -43,6 +43,7 @@ export async function initialize(): Promise<void> {
 
     config = {
       version: version,
+      githubApiUrl: process.env.GITHUB_API_URL || 'https://api.github.com',
       toolsToRun: parseStringArray(process.env.TOOLS_TO_RUN),
       enableTools: parseStringArray(process.env.ENABLE_TOOLS),
       disableTools: parseStringArray(process.env.DISABLE_TOOLS),

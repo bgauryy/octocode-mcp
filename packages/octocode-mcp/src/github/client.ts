@@ -33,8 +33,8 @@ export async function getOctokit(
 ): Promise<InstanceType<typeof OctokitWithThrottling>> {
   if (!octokitInstance || authInfo) {
     const token = authInfo?.token || (await getGitHubToken());
-    const baseUrl = 'https://api.github.com';
     const config = getServerConfig();
+    const baseUrl = config.githubApiUrl;
 
     const options: OctokitOptions & {
       throttle: ReturnType<typeof createThrottleOptions>;
