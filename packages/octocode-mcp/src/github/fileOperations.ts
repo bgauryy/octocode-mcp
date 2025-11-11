@@ -16,13 +16,12 @@ import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import type { UserContext } from '../types.js';
 import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 
 export async function fetchGitHubFileContentAPI(
   params: FileContentQuery,
   authInfo?: AuthInfo,
-  userContext?: UserContext
+  sessionId?: string
 ): Promise<GitHubAPIResponse<ContentResult>> {
   const cacheKey = generateCacheKey(
     'gh-api-file-content',
@@ -38,7 +37,7 @@ export async function fetchGitHubFileContentAPI(
       minified: params.minified,
       matchStringContextLines: params.matchStringContextLines,
     },
-    userContext?.sessionId
+    sessionId
   );
 
   const result = await withDataCache<GitHubAPIResponse<ContentResult>>(
@@ -330,13 +329,9 @@ async function processFileContentAPI(
 export async function viewGitHubRepositoryStructureAPI(
   params: GitHubViewRepoStructureQuery,
   authInfo?: AuthInfo,
-  userContext?: UserContext
+  sessionId?: string
 ): Promise<GitHubRepositoryStructureResult | GitHubRepositoryStructureError> {
-  const cacheKey = generateCacheKey(
-    'gh-repo-structure-api',
-    params,
-    userContext?.sessionId
-  );
+  const cacheKey = generateCacheKey('gh-repo-structure-api', params, sessionId);
 
   const result = await withDataCache<
     GitHubRepositoryStructureResult | GitHubRepositoryStructureError

@@ -2,7 +2,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
 import type {
-  UserContext,
   ToolInvocationCallback,
   GitHubCodeSearchQuery,
   SearchResult,
@@ -44,7 +43,7 @@ export function registerGitHubSearchCodeTool(
           queries: GitHubCodeSearchQuery[];
         },
         authInfo,
-        userContext
+        sessionId
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
@@ -56,7 +55,7 @@ export function registerGitHubSearchCodeTool(
           }
         }
 
-        return searchMultipleGitHubCode(queries, authInfo, userContext);
+        return searchMultipleGitHubCode(queries, authInfo, sessionId);
       }
     )
   );
@@ -87,17 +86,13 @@ function getNameWithOwner(apiResult: {
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
   authInfo?: AuthInfo,
-  userContext?: UserContext
+  sessionId?: string
 ): Promise<CallToolResult> {
   return executeBulkOperation(
     queries,
     async (query: GitHubCodeSearchQuery, _index: number) => {
       try {
-        const apiResult = await searchGitHubCodeAPI(
-          query,
-          authInfo,
-          userContext
-        );
+        const apiResult = await searchGitHubCodeAPI(query, authInfo, sessionId);
 
         const apiError = handleApiError(apiResult, query);
         if (apiError) return apiError;

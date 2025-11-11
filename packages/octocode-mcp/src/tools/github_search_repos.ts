@@ -2,7 +2,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
 import type {
-  UserContext,
   ToolInvocationCallback,
   GitHubReposSearchQuery,
   SimplifiedRepository,
@@ -44,7 +43,7 @@ export function registerSearchGitHubReposTool(
           queries: GitHubReposSearchQuery[];
         },
         authInfo,
-        userContext
+        sessionId
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
@@ -56,7 +55,7 @@ export function registerSearchGitHubReposTool(
           }
         }
 
-        return searchMultipleGitHubRepos(queries, authInfo, userContext);
+        return searchMultipleGitHubRepos(queries, authInfo, sessionId);
       }
     )
   );
@@ -122,7 +121,7 @@ function expandQueriesWithBothSearchTypes(
 async function searchMultipleGitHubRepos(
   queries: GitHubReposSearchQuery[],
   authInfo?: AuthInfo,
-  userContext?: UserContext
+  sessionId?: string
 ): Promise<CallToolResult> {
   const expandedQueries = expandQueriesWithBothSearchTypes(queries);
 
@@ -133,7 +132,7 @@ async function searchMultipleGitHubRepos(
         const apiResult = await searchGitHubReposAPI(
           query,
           authInfo,
-          userContext
+          sessionId
         );
 
         const apiError = handleApiError(apiResult, query);

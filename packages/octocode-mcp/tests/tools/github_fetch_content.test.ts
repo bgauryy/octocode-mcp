@@ -122,7 +122,7 @@ describe('GitHub Fetch Content Tool', () => {
       expect(responseText).not.toMatch(/^hints:/m);
     });
 
-    it('should pass authInfo and userContext to GitHub API', async () => {
+    it('should pass authInfo and sessionId to GitHub API', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
           path: 'test.js',
@@ -158,13 +158,7 @@ describe('GitHub Fetch Content Tool', () => {
           branch: 'main',
         }),
         undefined, // authInfo
-        expect.objectContaining({
-          // userContext
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: undefined,
-        }),
+        undefined, // sessionId
       ]);
     });
 
@@ -412,13 +406,7 @@ End of file.`;
           matchString: undefined,
         }),
         undefined, // authInfo
-        expect.objectContaining({
-          // userContext
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: undefined,
-        })
+        undefined // sessionId
       );
     });
 
@@ -464,13 +452,7 @@ End of file.`;
           matchString: undefined,
         }),
         undefined, // authInfo
-        expect.objectContaining({
-          // userContext
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: undefined,
-        })
+        undefined // sessionId
       );
     });
   });
@@ -531,13 +513,7 @@ End of file.`;
           matchString: undefined,
         }),
         undefined, // authInfo
-        expect.objectContaining({
-          // userContext
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: undefined,
-        })
+        undefined // sessionId
       );
     });
 
@@ -599,13 +575,7 @@ End of file.`;
           endLine: undefined,
         }),
         undefined, // authInfo
-        expect.objectContaining({
-          // userContext
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: undefined,
-        })
+        undefined // sessionId
       );
     });
 
@@ -649,13 +619,7 @@ End of file.`;
           matchStringContextLines: 5, // Default value
         }),
         undefined, // authInfo
-        expect.objectContaining({
-          // userContext
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: undefined,
-        })
+        undefined // sessionId
       );
     });
   });
@@ -710,13 +674,7 @@ End of file.`;
           minified: true,
         }),
         undefined, // authInfo
-        expect.objectContaining({
-          // userContext
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: undefined,
-        })
+        undefined // sessionId
       );
     });
 
@@ -766,13 +724,7 @@ End of file.`;
           minified: false,
         }),
         undefined, // authInfo
-        expect.objectContaining({
-          // userContext
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: undefined,
-        })
+        undefined // sessionId
       );
     });
 
@@ -873,13 +825,7 @@ End of file.`;
           sanitize: true,
         }),
         undefined, // authInfo
-        expect.objectContaining({
-          // userContext
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: undefined,
-        })
+        undefined // sessionId
       );
     });
 
@@ -919,13 +865,7 @@ End of file.`;
           sanitize: false,
         }),
         undefined, // authInfo
-        expect.objectContaining({
-          // userContext
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: undefined,
-        })
+        undefined // sessionId
       );
     });
   });
@@ -976,13 +916,7 @@ End of file.`;
           branch: 'feature-branch',
         }),
         undefined, // authInfo
-        expect.objectContaining({
-          // userContext
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: undefined,
-        })
+        undefined // sessionId
       );
     });
 
@@ -1021,13 +955,7 @@ End of file.`;
           branch: undefined,
         }),
         undefined, // authInfo
-        expect.objectContaining({
-          // userContext
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: undefined,
-        })
+        undefined // sessionId
       );
     });
   });
@@ -1143,13 +1071,7 @@ End of file.`;
           endLine: 6,
         }),
         undefined, // authInfo
-        expect.objectContaining({
-          // userContext
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: undefined,
-        })
+        undefined // sessionId
       );
     });
 
@@ -1193,13 +1115,7 @@ End of file.`;
           sanitize: false,
         }),
         undefined, // authInfo
-        expect.objectContaining({
-          // userContext
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: undefined,
-        })
+        undefined // sessionId
       );
     });
   });

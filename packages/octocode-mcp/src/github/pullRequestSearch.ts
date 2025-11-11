@@ -16,19 +16,14 @@ import {
 } from './queryBuilders';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import type { UserContext } from '../types.js';
 
 export async function searchGitHubPullRequestsAPI(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
-  userContext?: UserContext
+  sessionId?: string
 ): Promise<PullRequestSearchResult> {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
-  const cacheKey = generateCacheKey(
-    'gh-api-prs',
-    params,
-    userContext?.sessionId
-  );
+  const cacheKey = generateCacheKey('gh-api-prs', params, sessionId);
 
   const result = await withDataCache<PullRequestSearchResult>(
     cacheKey,
@@ -36,7 +31,7 @@ export async function searchGitHubPullRequestsAPI(
       return await searchGitHubPullRequestsAPIInternal(
         params,
         authInfo,
-        userContext?.sessionId
+        sessionId
       );
     },
     {
@@ -515,7 +510,7 @@ export async function transformPullRequestItemFromREST(
 export async function fetchGitHubPullRequestByNumberAPI(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
-  userContext?: UserContext
+  sessionId?: string
 ): Promise<PullRequestSearchResult> {
   const cacheKey = generateCacheKey(
     'gh-api-prs',
@@ -526,7 +521,7 @@ export async function fetchGitHubPullRequestByNumberAPI(
       withContent: params.withContent,
       withComments: params.withComments,
     },
-    userContext?.sessionId
+    sessionId
   );
 
   const result = await withDataCache<PullRequestSearchResult>(

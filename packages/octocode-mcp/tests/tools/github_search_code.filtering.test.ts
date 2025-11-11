@@ -40,7 +40,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
   let toolHandler: (
     args: unknown,
     authInfo: unknown,
-    userContext: unknown
+    sessionId: unknown
   ) => Promise<unknown>;
 
   beforeEach(() => {
