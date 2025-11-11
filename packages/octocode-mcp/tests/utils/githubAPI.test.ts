@@ -293,7 +293,6 @@ describe('GitHub API Utils', () => {
           status: 403,
           url: 'https://api.github.com/search/code',
           data: {},
-          retryCount: 0,
         } as unknown as Record<string, unknown>,
       });
 
@@ -766,7 +765,6 @@ describe('GitHub API Utils', () => {
             status: 403,
             url: 'https://api.github.com/search/repositories',
             data: {},
-            retryCount: 0,
           } as unknown as Record<string, unknown>,
         });
 
