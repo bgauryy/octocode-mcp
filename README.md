@@ -11,6 +11,10 @@
   [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bgauryy/octocode-mcp)
   [![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/bgauryy/octocode-mcp)](https://archestra.ai/mcp-catalog/bgauryy__octocode-mcp)
 
+  **[Website](https://octocode.ai)** – Official site
+  
+  **[YouTube Channel](https://www.youtube.com/@Octocode-ai)** – Video tutorials and examples
+
 </div>
 
 ---
@@ -482,6 +486,35 @@ If you see Octocode tools being used, you're all set! 🎉
 
 ---
 
+## GitHub Enterprise Support
+
+Octocode MCP supports GitHub Enterprise Server instances with custom API URLs.
+
+### Configuration
+
+Add the `GITHUB_API_URL` environment variable to your MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp@latest"],
+      "env": {
+        "GITHUB_TOKEN": "your_token",
+        "GITHUB_API_URL": "https://github.company.com/api/v3"
+      }
+    }
+  }
+}
+```
+
+**Default:** If not specified, defaults to `https://api.github.com` (public GitHub).
+
+**Note:** Ensure your GitHub Enterprise token has the same scopes as documented in the [Authentication Guide](./docs/AUTH_GUIDE.md).
+
+---
+
 ## More Examples
 
 ### Additional Demonstrations
@@ -552,12 +585,6 @@ Search for specific code patterns, functions, or implementations across millions
 • Locate functions: "Find error handling patterns in Express apps"
 ```
 
-**Best Practices**:
-- Start with path search for discovery, then use content search for details
-- Specify `owner`/`repo` to avoid rate limits
-- Use `extension` filter for specific file types
-- Set `limit=5-10` for focused results
-
 ---
 
 ### 📚 githubSearchRepositories
@@ -579,12 +606,6 @@ Your starting point for repository discovery - find the right projects to analyz
 • Organization research: "List all repos from microsoft with topic 'ai'"
 ```
 
-**Best Practices**:
-- Use `topicsToSearch` for curated, high-quality results
-- Apply `stars=">1000"` filter for production-ready code
-- Sort by `stars` for popular repos, `updated` for maintained projects
-- Start broad, then narrow with specific filters
-
 ---
 
 ### 🗂️ githubViewRepoStructure
@@ -605,12 +626,6 @@ Understand how a project is organized before diving into specific files.
 • Find entry points: "Explore src/ directory in a monorepo"
 • Understand architecture: "Navigate to the API implementation folder"
 ```
-
-**Best Practices**:
-- Start with `depth=1` at root for overview
-- Use `depth=2` for specific directories when you know the structure
-- Navigate progressively: root → interesting folder → specific subfolder
-- Use before reading files to understand project organization
 
 ---
 
@@ -634,12 +649,6 @@ Retrieve specific content from files efficiently - full files or targeted sectio
 • Analyze specific code: "Read lines 100-150 from the API handler"
 ```
 
-**Best Practices**:
-- Use `matchString` with context lines for targeted reads (85% token savings)
-- Use `startLine`/`endLine` for known locations
-- Only use `fullContent=true` for small files or when you need everything
-- Set `minified=false` for config files (JSON, YAML) to preserve formatting
-
 ---
 
 ### 🔀 githubSearchPullRequests
@@ -662,13 +671,6 @@ Understand how code evolved, why decisions were made, and learn from production 
 • Track implementations: "See how feature X was implemented with diffs"
 • Expert contributions: "Find PRs by @author in the last 6 months"
 ```
-
-**Best Practices**:
-- Use `prNumber` for direct access when you know the PR
-- Filter `state="closed"` + `merged=true` for production code
-- Set `withContent=true` only when you need to see code changes (expensive)
-- Set `withComments=true` to understand context and decisions
-- Use `limit=3-5` for focused analysis
 
 ---
 
@@ -811,12 +813,9 @@ Octocode MCP provides intelligent prompt commands that enhance your research wor
 
 | Resource | Description | Link |
 |----------|-------------|------|
-| **Official Website** | Interactive tutorials, demos, community | [octocode.ai](https://octocode.ai) |
-| **Usage Guide** | 20+ real-world examples and best practices | [USAGE_GUIDE.md](./docs/USAGE_GUIDE.md) |
-| **Authentication Guide** | Setup instructions and troubleshooting | [AUTHENTICATION.md](./docs/AUTHENTICATION.md) |
-| **Tool Schemas** | Complete API reference for all tools | [TOOL_SCHEMAS.md](./docs/TOOL_SCHEMAS.md) |
-| **Architecture** | System design, performance, internals | [SUMMMARY.md](./docs/SUMMMARY.md) |
-| **YouTube Channel** | Video tutorials and demonstrations | [Octocode on YouTube](https://www.youtube.com/@Octocode-ai) |
+| **Configuration Guide** | Environment variables and server configuration | [CONFIGURATION.md](./docs/CONFIGURATION.md) |
+| **Authentication Guide** | Setup instructions and troubleshooting | [AUTH_GUIDE.md](./docs/AUTH_GUIDE.md) |
+
 
 
 ---
@@ -827,8 +826,6 @@ Octocode MCP provides intelligent prompt commands that enhance your research wor
 
 - **GitHub Discussions**: [Ask questions, share ideas](https://github.com/bgauryy/octocode-mcp/discussions)
 - **GitHub Issues**: [Report bugs, request features](https://github.com/bgauryy/octocode-mcp/issues)
-- **Documentation**: [Complete guides and references](https://octocode.ai)
-- **YouTube**: [Video tutorials and examples](https://www.youtube.com/@Octocode-ai)
 
 ### Show Your Support
 
@@ -836,33 +833,6 @@ If Octocode helps your AI development workflow:
 
 - **Star the repository** on [GitHub](https://github.com/bgauryy/octocode-mcp)
 - **Share on social media** with #OctocodeMCP
-- **Write about your experience** on your blog
-- **Create tutorials** and share with the community
-- **Contribute** improvements and bug fixes
-
----
-
-<div align="center">
-
-## Recognition
-
-<a href="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp/badge" alt="Octocode MCP on Glama" />
-</a>
-
----
-
-**Built with care for developers by developers**
-
-[Website](https://octocode.ai) • [GitHub](https://github.com/bgauryy/octocode-mcp) • [NPM](https://www.npmjs.com/package/octocode-mcp)
-
----
-
-*Octocode MCP is an official MCP Community Server*
-
-[![MCP Community](https://img.shields.io/badge/Model_Context_Protocol-Official_Community_Server-blue?style=for-the-badge)](https://github.com/modelcontextprotocol/servers)
-
-</div>
 
 ---
 

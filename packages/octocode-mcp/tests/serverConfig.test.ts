@@ -94,6 +94,25 @@ describe('ServerConfig - Simplified Version', () => {
 
       expect(config1).toBe(config2); // Same reference
     });
+
+    it('should use default GitHub API URL', async () => {
+      mockGetGithubCLIToken.mockResolvedValue(null);
+
+      await initialize();
+      const config = getServerConfig();
+
+      expect(config.githubApiUrl).toBe('https://api.github.com');
+    });
+
+    it('should use custom GitHub API URL from environment', async () => {
+      process.env.GITHUB_API_URL = 'https://github.company.com/api/v3';
+      mockGetGithubCLIToken.mockResolvedValue(null);
+
+      await initialize();
+      const config = getServerConfig();
+
+      expect(config.githubApiUrl).toBe('https://github.company.com/api/v3');
+    });
   });
 
   describe('Token Resolution', () => {

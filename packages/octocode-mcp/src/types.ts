@@ -521,6 +521,7 @@ export interface UserContext {
 /** Server configuration and feature flags */
 export interface ServerConfig {
   version: string;
+  githubApiUrl: string;
   toolsToRun?: string[];
   enableTools?: string[];
   disableTools?: string[];

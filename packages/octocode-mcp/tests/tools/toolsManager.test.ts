@@ -65,6 +65,7 @@ describe('ToolsManager', () => {
     it('should register only default tools', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -91,6 +92,7 @@ describe('ToolsManager', () => {
     it('should register only specified tools when TOOLS_TO_RUN is set', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
         toolsToRun: [
           TOOL_NAMES.GITHUB_SEARCH_CODE,
           TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
@@ -120,6 +122,7 @@ describe('ToolsManager', () => {
     it('should handle non-existent tools in TOOLS_TO_RUN gracefully', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
         toolsToRun: [
           TOOL_NAMES.GITHUB_SEARCH_CODE,
           'nonExistentTool',
@@ -145,6 +148,7 @@ describe('ToolsManager', () => {
     it('should register no tools if TOOLS_TO_RUN contains only non-existent tools', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
         toolsToRun: ['nonExistentTool1', 'nonExistentTool2'],
         enableLogging: false,
         betaEnabled: false,
@@ -169,6 +173,7 @@ describe('ToolsManager', () => {
     it('should warn when TOOLS_TO_RUN is used with ENABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
         toolsToRun: [TOOL_NAMES.GITHUB_SEARCH_CODE],
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         enableLogging: false,
@@ -192,6 +197,7 @@ describe('ToolsManager', () => {
     it('should warn when TOOLS_TO_RUN is used with DISABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
         toolsToRun: [TOOL_NAMES.GITHUB_SEARCH_CODE],
         disableTools: [TOOL_NAMES.GITHUB_FETCH_CONTENT],
         enableLogging: false,
@@ -211,6 +217,7 @@ describe('ToolsManager', () => {
     it('should warn when TOOLS_TO_RUN is used with both ENABLE_TOOLS and DISABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
         toolsToRun: [TOOL_NAMES.GITHUB_SEARCH_CODE],
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         disableTools: [TOOL_NAMES.GITHUB_FETCH_CONTENT],
@@ -233,6 +240,7 @@ describe('ToolsManager', () => {
     it('should register all default tools with ENABLE_TOOLS (no-op for already default tools)', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         enableLogging: false,
         betaEnabled: false,
@@ -258,6 +266,7 @@ describe('ToolsManager', () => {
     it('should remove default tools with DISABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
         disableTools: [
           TOOL_NAMES.GITHUB_SEARCH_CODE,
           TOOL_NAMES.GITHUB_FETCH_CONTENT,
@@ -288,6 +297,7 @@ describe('ToolsManager', () => {
     it('should handle both ENABLE_TOOLS and DISABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         disableTools: [TOOL_NAMES.GITHUB_SEARCH_CODE],
         enableLogging: false,
@@ -316,6 +326,7 @@ describe('ToolsManager', () => {
     it('should handle disabling enabled tools (DISABLE_TOOLS takes precedence)', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         disableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS], // Same tool in both lists
         enableLogging: false,
@@ -340,6 +351,7 @@ describe('ToolsManager', () => {
     it('should handle tool registration failures gracefully', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -362,6 +374,7 @@ describe('ToolsManager', () => {
     it('should continue registering tools after failures', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
