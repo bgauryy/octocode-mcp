@@ -11,7 +11,6 @@ describe('GitHub Error Handling', () => {
           headers: {},
           data: {},
           url: 'https://api.github.com',
-          retryCount: 0,
         },
         request: {
           method: 'GET',
@@ -41,7 +40,6 @@ describe('GitHub Error Handling', () => {
           },
           data: {},
           url: 'https://api.github.com',
-          retryCount: 0,
         },
         request: {
           method: 'GET',
@@ -76,7 +74,6 @@ describe('GitHub Error Handling', () => {
           },
           data: {},
           url: 'https://api.github.com',
-          retryCount: 0,
         },
         request: {
           method: 'GET',
@@ -112,7 +109,6 @@ describe('GitHub Error Handling', () => {
             },
             data: {},
             url: 'https://api.github.com',
-            retryCount: 0,
           },
           request: {
             method: 'GET',
@@ -144,7 +140,6 @@ describe('GitHub Error Handling', () => {
             headers: {},
             data: {},
             url: 'https://api.github.com',
-            retryCount: 0,
           },
           request: {
             method: 'GET',
@@ -184,7 +179,6 @@ describe('GitHub Error Handling', () => {
             ],
           },
           url: 'https://api.github.com/graphql',
-          retryCount: 0,
         },
         request: {
           method: 'POST',
@@ -223,7 +217,6 @@ describe('GitHub Error Handling', () => {
           },
           data: {},
           url: 'https://api.github.com',
-          retryCount: 0,
         },
         request: {
           method: 'GET',
@@ -250,7 +243,6 @@ describe('GitHub Error Handling', () => {
           headers: {},
           data: {},
           url: 'https://api.github.com',
-          retryCount: 0,
         },
         request: {
           method: 'GET',
@@ -275,7 +267,6 @@ describe('GitHub Error Handling', () => {
           headers: {},
           data: {},
           url: 'https://api.github.com',
-          retryCount: 0,
         },
         request: {
           method: 'GET',
