@@ -509,12 +509,7 @@ describe('GitHub Repository Search', () => {
         keywordsToSearch: ['test'],
       };
 
-      await searchGitHubReposAPI(params, undefined, {
-        userId: 'test-user-id',
-        userLogin: 'test-user',
-        isEnterpriseMode: false,
-        sessionId: 'test-session',
-      });
+      await searchGitHubReposAPI(params, undefined, 'test-session');
 
       expect(mockWithDataCache).toHaveBeenCalled();
     });

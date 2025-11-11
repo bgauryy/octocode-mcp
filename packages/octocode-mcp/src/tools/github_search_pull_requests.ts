@@ -2,7 +2,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
 import type {
-  UserContext,
   ToolInvocationCallback,
   GitHubPullRequestSearchQuery,
   PullRequestSearchResult,
@@ -75,7 +74,7 @@ export function registerSearchGitHubPullRequestsTool(
           queries: GitHubPullRequestSearchQuery[];
         },
         authInfo,
-        userContext
+        sessionId
       ): Promise<CallToolResult> => {
         let queries = args.queries || [];
 
@@ -104,7 +103,7 @@ export function registerSearchGitHubPullRequestsTool(
           );
         }
 
-        return searchMultipleGitHubPullRequests(queries, authInfo, userContext);
+        return searchMultipleGitHubPullRequests(queries, authInfo, sessionId);
       }
     )
   );
@@ -116,7 +115,7 @@ export function registerSearchGitHubPullRequestsTool(
 async function searchMultipleGitHubPullRequests(
   queries: GitHubPullRequestSearchQuery[],
   authInfo?: AuthInfo,
-  userContext?: UserContext
+  sessionId?: string
 ): Promise<CallToolResult> {
   return executeBulkOperation(
     queries,
@@ -131,7 +130,7 @@ async function searchMultipleGitHubPullRequests(
         const apiResult = await searchGitHubPullRequestsAPI(
           query,
           authInfo,
-          userContext
+          sessionId
         );
 
         const apiError = handleApiError(apiResult, query);

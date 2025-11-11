@@ -2,7 +2,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
 import type {
-  UserContext,
   ToolInvocationCallback,
   FileContentQuery,
   ContentResult,
@@ -43,7 +42,7 @@ export function registerFetchGitHubFileContentTool(
           queries: FileContentQuery[];
         },
         authInfo,
-        userContext
+        sessionId
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
@@ -55,7 +54,7 @@ export function registerFetchGitHubFileContentTool(
           }
         }
 
-        return fetchMultipleGitHubFileContents(queries, authInfo, userContext);
+        return fetchMultipleGitHubFileContents(queries, authInfo, sessionId);
       }
     )
   );
@@ -64,7 +63,7 @@ export function registerFetchGitHubFileContentTool(
 async function fetchMultipleGitHubFileContents(
   queries: FileContentQuery[],
   authInfo?: AuthInfo,
-  userContext?: UserContext
+  sessionId?: string
 ): Promise<CallToolResult> {
   return executeBulkOperation(
     queries,
@@ -74,7 +73,7 @@ async function fetchMultipleGitHubFileContents(
         const apiResult = await fetchGitHubFileContentAPI(
           apiRequest,
           authInfo,
-          userContext
+          sessionId
         );
 
         // Check if API returned an error (using handleApiError for consistency)

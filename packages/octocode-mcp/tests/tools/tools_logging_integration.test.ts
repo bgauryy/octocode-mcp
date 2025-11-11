@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TOOL_NAMES } from '../../src/constants.js';
 
 // Mock the session logging
-const mockLogToolCall = vi.hoisted(() => vi.fn());
+const mockLogToolCall = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('../../src/session.js', () => ({
   logToolCall: mockLogToolCall,
   initializeSession: vi.fn(() => ({
@@ -138,7 +138,7 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
       );
     });
 
-    it('should log first query when multiple queries provided', async () => {
+    it('should log each query individually when multiple queries provided', async () => {
       registerFetchGitHubFileContentTool(mockServer.server);
 
       const args = {
@@ -162,9 +162,20 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       await mockServer.callTool(TOOL_NAMES.GITHUB_FETCH_CONTENT, args);
 
-      expect(mockLogToolCall).toHaveBeenCalledWith(
+      // Bulk operations now log each query individually
+      expect(mockLogToolCall).toHaveBeenCalledTimes(2);
+      expect(mockLogToolCall).toHaveBeenNthCalledWith(
+        1,
         TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        ['microsoft/typescript', 'facebook/react'],
+        ['microsoft/typescript'],
+        undefined,
+        undefined,
+        undefined
+      );
+      expect(mockLogToolCall).toHaveBeenNthCalledWith(
+        2,
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        ['facebook/react'],
         undefined,
         undefined,
         undefined
@@ -225,7 +236,7 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
       );
     });
 
-    it('should log first query when exploring multiple repos', async () => {
+    it('should log each query individually when exploring multiple repos', async () => {
       registerViewGitHubRepoStructureTool(mockServer.server);
 
       const args = {
@@ -249,9 +260,20 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       await mockServer.callTool(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, args);
 
-      expect(mockLogToolCall).toHaveBeenCalledWith(
+      // Bulk operations now log each query individually
+      expect(mockLogToolCall).toHaveBeenCalledTimes(2);
+      expect(mockLogToolCall).toHaveBeenNthCalledWith(
+        1,
         TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        ['angular/angular', 'sveltejs/svelte'],
+        ['angular/angular'],
+        undefined,
+        undefined,
+        undefined
+      );
+      expect(mockLogToolCall).toHaveBeenNthCalledWith(
+        2,
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        ['sveltejs/svelte'],
         undefined,
         undefined,
         undefined

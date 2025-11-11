@@ -3,15 +3,14 @@ import { createResult } from '../responses.js';
 import { ContentSanitizer } from './contentSanitizer.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { logToolCall } from '../session.js';
-import { isLoggingEnabled } from '../serverConfig.js';
-import type { UserContext } from '../types.js';
+import { isLoggingEnabled as isSessionEnabled } from '../serverConfig.js';
 
 export function withSecurityValidation<T extends Record<string, unknown>>(
   toolName: string,
   toolHandler: (
     sanitizedArgs: T,
     authInfo?: AuthInfo,
-    userContext?: UserContext
+    sessionId?: string
   ) => Promise<CallToolResult>
 ): (
   args: unknown,
@@ -37,32 +36,13 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
         string,
         unknown
       >;
-      if (isLoggingEnabled()) {
-        const repos = extractRepoOwnerFromParams(sanitizedParams);
-        if (repos.length > 0) {
-          const { mainResearchGoal, researchGoal, reasoning } =
-            extractResearchFields(sanitizedParams);
-          logToolCall(
-            toolName,
-            repos,
-            mainResearchGoal,
-            researchGoal,
-            reasoning
-          ).catch(() => {
-            // Ignore
-          });
-        }
+      if (isSessionEnabled()) {
+        handleBulk(toolName, sanitizedParams);
       }
-      const userContext: UserContext = {
-        userId: 'anonymous',
-        userLogin: 'anonymous',
-        isEnterpriseMode: false,
-        sessionId,
-      };
       return await toolHandler(
         validation.sanitizedParams as T,
         authInfo,
-        userContext
+        sessionId
       );
     } catch (error) {
       return createResult({
@@ -102,6 +82,102 @@ export function withBasicSecurityValidation<T extends Record<string, unknown>>(
         isError: true,
       });
     }
+  };
+}
+
+function handleBulk(toolName: string, params: Record<string, unknown>): void {
+  const queries = getQueriesArray(params);
+
+  if (queries) {
+    // Bulk operation: log each query individually
+    for (const query of queries) {
+      handleQuery(toolName, query as Record<string, unknown>);
+    }
+  } else {
+    // Single operation: log once
+    logSingleOperation(toolName, params);
+  }
+}
+
+/**
+ * Logs a single query with its specific repos and research fields.
+ */
+function handleQuery(toolName: string, query: Record<string, unknown>): void {
+  const repos = extractRepoOwnerFromSingleQuery(query);
+  if (repos.length === 0) {
+    return;
+  }
+
+  const researchFields = extractResearchFieldsFromSingleQuery(query);
+  logToolCall(
+    toolName,
+    repos,
+    researchFields.mainResearchGoal,
+    researchFields.researchGoal,
+    researchFields.reasoning
+  ).catch(() => {
+    // Ignore logging errors
+  });
+}
+
+/**
+ * Logs a single operation with aggregated repos and research fields.
+ */
+function logSingleOperation(
+  toolName: string,
+  params: Record<string, unknown>
+): void {
+  const repos = extractRepoOwnerFromParams(params);
+  if (repos.length === 0) {
+    return;
+  }
+
+  const researchFields = extractResearchFields(params);
+  logToolCall(
+    toolName,
+    repos,
+    researchFields.mainResearchGoal,
+    researchFields.researchGoal,
+    researchFields.reasoning
+  ).catch(() => {
+    // Ignore logging errors
+  });
+}
+
+/**
+ * Extracts the queries array from parameters if it exists and is valid.
+ * Returns undefined for single operations.
+ */
+function getQueriesArray(
+  params: Record<string, unknown>
+): Array<Record<string, unknown>> | undefined {
+  const queries = params.queries;
+  if (queries && Array.isArray(queries) && queries.length > 0) {
+    return queries as Array<Record<string, unknown>>;
+  }
+  return undefined;
+}
+
+/**
+ * Extracts research fields from a single query object.
+ * Used for logging individual queries in bulk operations.
+ */
+export function extractResearchFieldsFromSingleQuery(
+  query: Record<string, unknown>
+): {
+  mainResearchGoal?: string;
+  researchGoal?: string;
+  reasoning?: string;
+} {
+  return {
+    ...(typeof query.mainResearchGoal === 'string' &&
+      query.mainResearchGoal && {
+        mainResearchGoal: query.mainResearchGoal,
+      }),
+    ...(typeof query.researchGoal === 'string' &&
+      query.researchGoal && { researchGoal: query.researchGoal }),
+    ...(typeof query.reasoning === 'string' &&
+      query.reasoning && { reasoning: query.reasoning }),
   };
 }
 
@@ -149,6 +225,57 @@ export function extractResearchFields(params: Record<string, unknown>): {
       reasoning: Array.from(reasonings).join('; '),
     }),
   };
+}
+
+/**
+ * Extracts repository identifiers from a single query object.
+ * Used for logging individual queries in bulk operations.
+ *
+ * Supports multiple parameter formats:
+ * - Combined repository field: `repository: "owner/repo"`
+ * - Separate owner/repo fields: `owner: "owner", repo: "repo"`
+ * - Owner only: `owner: "owner"` (for tools like github_search_repos)
+ *
+ * @param query - A single query object containing repository information
+ * @returns Array of repository identifiers (typically one, but can be multiple for some tools)
+ *
+ * @example
+ * extractRepoOwnerFromSingleQuery({ repository: "facebook/react" })
+ * // Returns: ["facebook/react"]
+ *
+ * @example
+ * extractRepoOwnerFromSingleQuery({ owner: "microsoft", repo: "vscode" })
+ * // Returns: ["microsoft/vscode"]
+ *
+ * @example
+ * extractRepoOwnerFromSingleQuery({ owner: "vercel" })
+ * // Returns: ["vercel"]
+ */
+export function extractRepoOwnerFromSingleQuery(
+  query: Record<string, unknown>
+): string[] {
+  const repos: string[] = [];
+
+  // Check for combined repository field first
+  const repository =
+    typeof query.repository === 'string' ? query.repository : undefined;
+
+  if (repository && repository.includes('/')) {
+    repos.push(repository);
+  } else {
+    // Fall back to separate owner/repo fields
+    const repo = typeof query.repo === 'string' ? query.repo : undefined;
+    const owner = typeof query.owner === 'string' ? query.owner : undefined;
+
+    if (owner && repo) {
+      repos.push(`${owner}/${repo}`);
+    } else if (owner) {
+      // Support tools with only owner field (e.g., github_search_repos)
+      repos.push(owner);
+    }
+  }
+
+  return repos;
 }
 
 /**

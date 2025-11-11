@@ -212,9 +212,20 @@ describe('withSecurityValidation - Additional Coverage', () => {
         { sessionId: 'test-session' }
       );
 
-      expect(session.logToolCall).toHaveBeenCalledWith(
+      // Bulk operations now log each query individually
+      expect(session.logToolCall).toHaveBeenCalledTimes(2);
+      expect(session.logToolCall).toHaveBeenNthCalledWith(
+        1,
         TOOL_NAMES.GITHUB_SEARCH_CODE,
-        ['facebook/react', 'microsoft/vscode'],
+        ['facebook/react'],
+        undefined,
+        undefined,
+        undefined
+      );
+      expect(session.logToolCall).toHaveBeenNthCalledWith(
+        2,
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        ['microsoft/vscode'],
         undefined,
         undefined,
         undefined
@@ -329,8 +340,8 @@ describe('withSecurityValidation - Additional Coverage', () => {
     });
   });
 
-  describe('withSecurityValidation - UserContext Creation', () => {
-    it('should create userContext with sessionId', async () => {
+  describe('withSecurityValidation - SessionId Propagation', () => {
+    it('should pass sessionId to handler', async () => {
       const mockHandler = vi.fn().mockResolvedValue(
         createResult({
           data: { success: true },
@@ -356,16 +367,11 @@ describe('withSecurityValidation - Additional Coverage', () => {
       expect(mockHandler).toHaveBeenCalledWith(
         { query: 'test' },
         undefined,
-        expect.objectContaining({
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: 'session-123',
-        })
+        'session-123'
       );
     });
 
-    it('should pass authInfo to handler', async () => {
+    it('should pass authInfo and sessionId to handler', async () => {
       const mockHandler = vi.fn().mockResolvedValue(
         createResult({
           data: { success: true },
@@ -390,15 +396,15 @@ describe('withSecurityValidation - Additional Coverage', () => {
         token: 'test-token',
       } as unknown as AuthInfo;
 
-      await wrappedHandler({ query: 'test' }, { authInfo: mockAuthInfo });
+      await wrappedHandler(
+        { query: 'test' },
+        { authInfo: mockAuthInfo, sessionId: 'session-456' }
+      );
 
       expect(mockHandler).toHaveBeenCalledWith(
         { query: 'test' },
         mockAuthInfo,
-        expect.objectContaining({
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-        })
+        'session-456'
       );
     });
 
@@ -428,10 +434,7 @@ describe('withSecurityValidation - Additional Coverage', () => {
       expect(mockHandler).toHaveBeenCalledWith(
         { query: 'test' },
         undefined,
-        expect.objectContaining({
-          userId: 'anonymous',
-          sessionId: undefined,
-        })
+        undefined
       );
     });
   });
@@ -559,9 +562,20 @@ describe('withSecurityValidation - Additional Coverage', () => {
         { sessionId: 'test' }
       );
 
-      expect(session.logToolCall).toHaveBeenCalledWith(
+      // Bulk operations now log each query individually
+      expect(session.logToolCall).toHaveBeenCalledTimes(2);
+      expect(session.logToolCall).toHaveBeenNthCalledWith(
+        1,
         'test-tool',
-        ['facebook/react', 'microsoft/vscode'],
+        ['facebook/react'],
+        undefined,
+        undefined,
+        undefined
+      );
+      expect(session.logToolCall).toHaveBeenNthCalledWith(
+        2,
+        'test-tool',
+        ['microsoft/vscode'],
         undefined,
         undefined,
         undefined
@@ -600,9 +614,20 @@ describe('withSecurityValidation - Additional Coverage', () => {
         { sessionId: 'test' }
       );
 
-      expect(session.logToolCall).toHaveBeenCalledWith(
+      // Bulk operations now log each query individually
+      expect(session.logToolCall).toHaveBeenCalledTimes(2);
+      expect(session.logToolCall).toHaveBeenNthCalledWith(
+        1,
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-        ['facebook', 'microsoft'],
+        ['facebook'],
+        undefined,
+        undefined,
+        undefined
+      );
+      expect(session.logToolCall).toHaveBeenNthCalledWith(
+        2,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        ['microsoft'],
         undefined,
         undefined,
         undefined

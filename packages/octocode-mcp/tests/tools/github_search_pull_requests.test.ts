@@ -166,16 +166,11 @@ describe('GitHub Search Pull Requests Tool', () => {
         expect.objectContaining({
           token: 'mock-test-token',
         }),
-        expect.objectContaining({
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: 'test-session-id',
-        })
+        'test-session-id' // sessionId
       );
     });
 
-    it('should pass authInfo and userContext to GitHub API', async () => {
+    it('should pass authInfo and sessionId to GitHub API', async () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
@@ -195,22 +190,17 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(result.isError).toBe(false);
 
-      // Verify the API was called with authInfo and userContext
+      // Verify the API was called with authInfo and sessionId
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledTimes(1);
       const apiCall = mockSearchGitHubPullRequestsAPI.mock.calls[0];
 
-      // Should be called with (queryArgs, authInfo, userContext)
+      // Should be called with (queryArgs, authInfo, sessionId)
       expect(apiCall).toBeDefined();
       expect(apiCall).toHaveLength(3);
       expect(apiCall?.[1]).toEqual(
         expect.objectContaining({ token: 'mock-test-token' })
       ); // authInfo
-      expect(apiCall?.[2]).toEqual({
-        userId: 'anonymous',
-        userLogin: 'anonymous',
-        isEnterpriseMode: false,
-        sessionId: 'test-session-id',
-      }); // userContext
+      expect(apiCall?.[2]).toBe('test-session-id'); // sessionId
     });
 
     it('should handle empty queries array gracefully', async () => {
@@ -277,12 +267,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         expect.objectContaining({
           token: 'mock-test-token',
         }),
-        expect.objectContaining({
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: 'test-session-id',
-        })
+        'test-session-id' // sessionId
       );
     });
 
@@ -347,12 +332,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         expect.objectContaining({
           token: 'mock-test-token',
         }),
-        expect.objectContaining({
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: 'test-session-id',
-        })
+        'test-session-id' // sessionId
       );
     });
 
@@ -384,12 +364,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         expect.objectContaining({
           token: 'mock-test-token',
         }),
-        expect.objectContaining({
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: 'test-session-id',
-        })
+        'test-session-id' // sessionId
       );
     });
 
@@ -421,12 +396,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         expect.objectContaining({
           token: 'mock-test-token',
         }),
-        expect.objectContaining({
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: 'test-session-id',
-        })
+        'test-session-id' // sessionId
       );
     });
 
@@ -460,12 +430,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         expect.objectContaining({
           token: 'mock-test-token',
         }),
-        expect.objectContaining({
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: 'test-session-id',
-        })
+        'test-session-id' // sessionId
       );
     });
 
@@ -501,12 +466,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         expect.objectContaining({
           token: 'mock-test-token',
         }),
-        expect.objectContaining({
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: 'test-session-id',
-        })
+        'test-session-id' // sessionId
       );
     });
 
@@ -542,12 +502,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         expect.objectContaining({
           token: 'mock-test-token',
         }),
-        expect.objectContaining({
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: 'test-session-id',
-        })
+        'test-session-id' // sessionId
       );
     });
 
@@ -581,12 +536,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         expect.objectContaining({
           token: 'mock-test-token',
         }),
-        expect.objectContaining({
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: 'test-session-id',
-        })
+        'test-session-id' // sessionId
       );
     });
   });
@@ -617,12 +567,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         expect.objectContaining({
           token: 'mock-test-token',
         }),
-        expect.objectContaining({
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: 'test-session-id',
-        })
+        'test-session-id' // sessionId
       );
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenNthCalledWith(
         2,
@@ -630,12 +575,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         expect.objectContaining({
           token: 'mock-test-token',
         }),
-        expect.objectContaining({
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: 'test-session-id',
-        })
+        'test-session-id' // sessionId
       );
     });
 
@@ -897,12 +837,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         expect.objectContaining({
           token: 'mock-test-token',
         }),
-        expect.objectContaining({
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-          isEnterpriseMode: false,
-          sessionId: 'test-session-id',
-        })
+        'test-session-id' // sessionId
       );
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
