@@ -53,7 +53,7 @@
     "node-cache": "^5.1.2",
     "node-fetch": "^3.3.2",
     "octocode-utils": "^5.0.0",
-    "octokit": "^5.0.3",
+    "octokit": "^5.0.5",
     "uuid": "^13.0.0",
     "zod": "^3.25.26"
   },
