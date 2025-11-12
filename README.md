@@ -1,15 +1,19 @@
 <div align="center">
   <img src="https://github.com/bgauryy/octocode-mcp/raw/main/packages/octocode-mcp/assets/logo_white.png" width="400px" alt="Octocode Logo">
 
-  # Octocode MCP
+  [![GitHub Stats](https://github-readme-stats.vercel.app/api/pin/?username=bgauryy&repo=octocode-mcp&theme=dark&hide_border=true&show_icons=true)](https://github.com/bgauryy/octocode-mcp)
 
-  **Intelligent Code Context for AI Systems**
 
   A Model Context Protocol (MCP) server enabling AI assistants to search, analyze, and extract insights from millions of GitHub repositories with enterprise-grade security and token efficiency.
 
   [![MCP Community Server](https://img.shields.io/badge/Model_Context_Protocol-Official_Community_Server-blue?style=flat-square)](https://github.com/modelcontextprotocol/servers)
   [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bgauryy/octocode-mcp)
   [![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/bgauryy/octocode-mcp)](https://archestra.ai/mcp-catalog/bgauryy__octocode-mcp)
+
+  <a href="https://www.npmjs.com/package/octocode-mcp"><img alt="npm version" src="https://img.shields.io/npm/v/octocode-mcp?label=npm&color=cb3837"></a>
+  <a href="https://www.npmjs.com/package/octocode-mcp"><img alt="npm downloads" src="https://img.shields.io/npm/dm/octocode-mcp?color=cb3837"></a>
+  <a href="https://github.com/bgauryy/octocode-mcp"><img alt="GitHub stars" src="https://img.shields.io/github/stars/bgauryy/octocode-mcp?style=social"></a>
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green"></a>
 
   **[Website](https://octocode.ai)** – Official site
   
@@ -23,20 +27,16 @@
 
 - [See It In Action](#see-it-in-action)
 - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Platform-Specific Setup](#platform-specific-setup)
 - [More Examples](#more-examples)
 - [Overview](#overview)
-- [Architecture](#architecture)
-  - [Octocode MCP Server](#octocode-mcp-server)
-- [Features](#features)
+- [Tools](#tools)
 - [Commands](#commands)
   - [/research - Expert Code Research Agent](#research---expert-code-research-agent)
   - [/kudos - Repository Appreciation](#kudos---repository-appreciation)
   - [/use - Quick Reference Guide](#use---quick-reference-guide)
 - [Documentation](#documentation)
+- [Project Stats](#project-stats)
 - [Community](#community)
-- [Recognition](#recognition)
 - [License](#license)
 
 ---
