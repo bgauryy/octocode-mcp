@@ -8,7 +8,10 @@
  *
  * Combinations tested:
  * 1. hasResults only
- * 2. empty only
+ */
+
+import { getTextContent } from '../utils/testHelpers.js';
+/* 2. empty only
  * 3. failed only
  * 4. hasResults + empty
  * 5. hasResults + failed
@@ -158,7 +161,7 @@ describe('Response Structure - All Tools', () => {
         ],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
@@ -186,7 +189,7 @@ describe('Response Structure - All Tools', () => {
         ],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "empty"');
@@ -210,7 +213,7 @@ describe('Response Structure - All Tools', () => {
         ],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "error"');
@@ -250,7 +253,7 @@ describe('Response Structure - All Tools', () => {
         ],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
@@ -284,7 +287,7 @@ describe('Response Structure - All Tools', () => {
         ],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
@@ -312,7 +315,7 @@ describe('Response Structure - All Tools', () => {
         ],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).not.toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
@@ -354,7 +357,7 @@ describe('Response Structure - All Tools', () => {
         ],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
@@ -394,7 +397,7 @@ describe('Response Structure - All Tools', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
@@ -421,7 +424,7 @@ describe('Response Structure - All Tools', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).not.toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
@@ -466,7 +469,7 @@ describe('Response Structure - All Tools', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
@@ -508,7 +511,7 @@ describe('Response Structure - All Tools', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
@@ -535,7 +538,7 @@ describe('Response Structure - All Tools', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).not.toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
@@ -581,7 +584,7 @@ describe('Response Structure - All Tools', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
@@ -612,7 +615,7 @@ describe('Response Structure - All Tools', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
@@ -637,7 +640,7 @@ describe('Response Structure - All Tools', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).not.toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
@@ -669,7 +672,7 @@ describe('Response Structure - All Tools', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
@@ -706,7 +709,7 @@ describe('Response Structure - All Tools', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
@@ -737,7 +740,7 @@ describe('Response Structure - All Tools', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).not.toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
@@ -792,7 +795,7 @@ describe('Response Structure - All Tools', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
@@ -840,7 +843,7 @@ describe('Response Structure - All Tools', () => {
         ],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
@@ -873,7 +876,7 @@ describe('Response Structure - All Tools', () => {
         queries: [{ keywordsToSearch: ['found'], reasoning: 'Will succeed' }],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');

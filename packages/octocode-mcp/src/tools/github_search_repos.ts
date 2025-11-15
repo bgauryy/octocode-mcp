@@ -27,7 +27,7 @@ export function registerSearchGitHubReposTool(
     TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES],
-      inputSchema: GitHubReposSearchQuerySchema.shape,
+      inputSchema: GitHubReposSearchQuerySchema,
       annotations: {
         title: 'GitHub Repository Search',
         readOnlyHint: true,

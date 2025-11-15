@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { executeBulkOperation } from '../../src/utils/bulkOperations';
 import type { QueryStatus } from '../../src/types';
 import { ToolName, TOOL_NAMES } from '../../src/constants';
+import { getTextContent } from './testHelpers.js';
 
 describe('executeBulkOperation', () => {
   describe('Single query scenarios', () => {
@@ -22,7 +23,7 @@ describe('executeBulkOperation', () => {
       expect(processor).toHaveBeenCalledTimes(1);
       expect(processor).toHaveBeenCalledWith(queries[0], 0);
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 1 results');
       expect(responseText).toContain('1 hasResults');
       expect(responseText).toContain('status: "hasResults"');
@@ -43,7 +44,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 1 results');
       expect(responseText).toContain('1 empty');
       expect(responseText).toContain('status: "empty"');
@@ -63,7 +64,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "Rate limit exceeded"');
@@ -79,7 +80,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "API error"');
@@ -108,7 +109,7 @@ describe('executeBulkOperation', () => {
       expect(result.isError).toBe(false);
       expect(processor).toHaveBeenCalledTimes(3);
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 3 results');
       expect(responseText).toContain('3 hasResults');
       expect(responseText).not.toContain('empty');
@@ -134,7 +135,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 2 results');
       expect(responseText).toContain('2 empty');
       expect(responseText).not.toContain('hasResults');
@@ -155,7 +156,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 3 results');
       expect(responseText).toContain('3 failed');
       expect(responseText).not.toContain('hasResults');
@@ -172,7 +173,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 2 results');
       expect(responseText).toContain('2 failed');
       expect(responseText).toContain('error: "Network timeout"');
@@ -202,7 +203,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 3 results');
       expect(responseText).toContain('2 hasResults');
       expect(responseText).toContain('1 empty');
@@ -239,7 +240,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 3 results');
       expect(responseText).toContain('2 hasResults');
       expect(responseText).toContain('1 failed');
@@ -273,7 +274,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 4 results');
       expect(responseText).toContain('2 empty');
       expect(responseText).toContain('2 failed');
@@ -316,7 +317,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 4 results');
       expect(responseText).toContain('1 hasResults');
       expect(responseText).toContain('1 empty');
@@ -352,7 +353,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 6 results');
       expect(responseText).toContain('2 hasResults');
       expect(responseText).toContain('2 empty');
@@ -377,7 +378,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain(
         'researchGoal: "Find LangGraph implementations"'
       );
@@ -399,7 +400,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain(
         'reasoning: "Looking for AI agent patterns"'
       );
@@ -421,7 +422,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('- "Check documentation"');
       expect(responseText).toContain('- "Review examples"');
     });
@@ -444,7 +445,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('researchGoal: "Find implementations"');
       expect(responseText).toContain('reasoning: "Looking for patterns"');
       expect(responseText).toContain('- "Suggestion 1"');
@@ -470,7 +471,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       // Result fields should appear at result level
       expect(responseText).toContain('reasoning: "Result reasoning"');
       expect(responseText).toContain('researchGoal: "Result goal"');
@@ -496,7 +497,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('- "Result suggestion 1"');
       expect(responseText).toContain('- "Query suggestion 1"');
       expect(responseText).toContain('- "Query suggestion 2"');
@@ -517,7 +518,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('researchGoal: "Test goal"');
       expect(responseText).toContain('reasoning: "Test reasoning"');
@@ -538,7 +539,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).toContain('Custom hint 1');
       expect(responseText).toContain('Custom hint 2');
@@ -556,7 +557,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('emptyStatusHints:');
       expect(responseText).toContain('Try broadening search');
       expect(responseText).toContain('Check spelling');
@@ -574,7 +575,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain('Wait before retrying');
       expect(responseText).toContain('Use authentication');
@@ -592,7 +593,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       const hintMatches = (responseText.match(/Same hint for all/g) || [])
         .length;
       expect(hintMatches).toBe(1);
@@ -626,7 +627,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).toContain('emptyStatusHints:');
       const successHintMatches = (responseText.match(/Success hint/g) || [])
@@ -651,7 +652,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('pull_requests:');
       expect(responseText).toContain('number: 123');
       expect(responseText).toContain('title: "Test PR"');
@@ -676,7 +677,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       // Metadata fields should appear at result level, not in data section
       expect(responseText).toContain('researchGoal: "Test goal"');
       expect(responseText).toContain('reasoning: "Test reasoning"');
@@ -709,7 +710,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('path: "src/index.ts"');
       expect(responseText).toContain('line: 10');
       expect(responseText).toContain('content: "match1"');
@@ -736,7 +737,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('owner: "testowner"');
       expect(responseText).toContain('repo: "testrepo"');
       expect(responseText).toContain('files:');
@@ -763,7 +764,7 @@ describe('executeBulkOperation', () => {
         });
 
         expect(result.isError).toBe(false);
-        const responseText = result.content[0]?.text as string;
+        const responseText = getTextContent(result.content);
         expect(responseText).toContain('Bulk response with 1 results');
       }
     });
@@ -780,7 +781,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('files:');
       expect(responseText).toContain('path: "test.ts"');
     });
@@ -798,7 +799,7 @@ describe('executeBulkOperation', () => {
       expect(result.isError).toBe(false);
       expect(processor).not.toHaveBeenCalled();
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 0 results');
     });
   });
@@ -834,7 +835,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain(
         'error: "Specific error: Repository not found"'
       );
@@ -850,7 +851,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain(
         'error: "Network error: Connection refused"'
       );
@@ -868,7 +869,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('error: "Error for q1"');
       expect(responseText).toContain('error: "Error for q2"');
       expect(responseText).toContain('error: "Error for q3"');
@@ -894,7 +895,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       // Invalid types should be included in the query section as-is
       expect(responseText).toContain('researchGoal: 123');
       // But should not appear at the result level since they're not strings
@@ -921,7 +922,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       // Invalid types should be included in the query section
       expect(responseText).toContain('nested:');
       // But should not appear at the result level since they're not strings
@@ -956,7 +957,7 @@ describe('executeBulkOperation', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       // Invalid types should be included in the query section
       expect(responseText).toContain('researchSuggestions: "not an array"');
     });

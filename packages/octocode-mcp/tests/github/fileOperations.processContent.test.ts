@@ -20,6 +20,7 @@ function createRequestError(message: string, status: number) {
       url: 'https://api.github.com/test',
       headers: {},
       data: {},
+      retryCount: 0,
     },
   });
 }

@@ -3,6 +3,7 @@ import {
   createMockMcpServer,
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
+import { getTextContent } from '../utils/testHelpers.js';
 
 const mockSearchGitHubReposAPI = vi.hoisted(() => vi.fn());
 
@@ -75,7 +76,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
@@ -117,7 +118,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "hasResults"');
@@ -152,7 +153,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('repository: "nodejs/node"');
       expect(responseText).toContain('stars: 95000');
@@ -185,7 +186,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
@@ -215,7 +216,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "empty"');
@@ -242,7 +243,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
@@ -269,7 +270,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "error"');
@@ -297,7 +298,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('errorStatusHints:');
@@ -367,7 +368,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('3 hasResults');
@@ -393,7 +394,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('3 empty');
@@ -423,7 +424,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('2 failed');
@@ -460,7 +461,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('1 hasResults');
@@ -501,7 +502,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('1 hasResults');
@@ -529,7 +530,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('1 empty');
@@ -572,7 +573,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('1 hasResults');
@@ -613,7 +614,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('researchGoal: "Find testing frameworks"');
     });
@@ -636,7 +637,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(responseText).toContain(
         'reasoning: "Searching for popular repos"'
@@ -665,7 +666,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('researchSuggestions:');
       expect(responseText).toContain('- "Try different keywords"');
@@ -682,7 +683,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
@@ -735,7 +736,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       // Should have 2 results (query was split into topics and keywords)
@@ -780,7 +781,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "hasResults"');
@@ -818,7 +819,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "empty"');
@@ -852,7 +853,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "empty"');
@@ -891,7 +892,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "hasResults"');

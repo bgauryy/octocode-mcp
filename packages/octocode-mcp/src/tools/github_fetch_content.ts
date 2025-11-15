@@ -26,7 +26,7 @@ export function registerFetchGitHubFileContentTool(
     TOOL_NAMES.GITHUB_FETCH_CONTENT,
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_FETCH_CONTENT],
-      inputSchema: FileContentBulkQuerySchema.shape,
+      inputSchema: FileContentBulkQuerySchema,
       annotations: {
         title: 'GitHub File Content Fetch',
         readOnlyHint: true,

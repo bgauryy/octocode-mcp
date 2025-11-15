@@ -58,7 +58,7 @@ export function registerSearchGitHubPullRequestsTool(
     TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
-      inputSchema: GitHubPullRequestSearchBulkQuerySchema.shape,
+      inputSchema: GitHubPullRequestSearchBulkQuerySchema,
       annotations: {
         title: 'GitHub Pull Request Search',
         readOnlyHint: true,
