@@ -42,6 +42,7 @@
   - [/kudos - Repository Appreciation](#kudos---repository-appreciation)
   - [/use - Quick Reference Guide](#use---quick-reference-guide)
 - [Documentation](#documentation)
+- [Project Stats](#project-stats)
 - [Community](#community)
 - [License](#license)
 
