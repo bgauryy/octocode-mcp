@@ -98,7 +98,12 @@ export function parseResultJson<T = unknown>(result: CallToolResult): T {
     throw new Error('Cannot parse error result');
   }
 
-  const text = result.content[0].text;
+  const firstContent = result.content[0];
+  if (firstContent.type !== 'text') {
+    throw new Error('Content is not text type');
+  }
+
+  const text = firstContent.text;
   if (typeof text !== 'string') {
     throw new Error('Result content is not a string');
   }

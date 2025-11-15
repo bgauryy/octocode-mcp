@@ -7,6 +7,7 @@ import {
   createMockMcpServer,
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
+import { getTextContent } from '../utils/testHelpers.js';
 
 const mockSearchGitHubCodeAPI = vi.hoisted(() => vi.fn());
 const mockSearchGitHubReposAPI = vi.hoisted(() => vi.fn());
@@ -88,7 +89,7 @@ describe('Empty Arrays Removal in Responses', () => {
         { authInfo: { token: 'mock-token' } }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
@@ -126,7 +127,7 @@ describe('Empty Arrays Removal in Responses', () => {
         { authInfo: { token: 'mock-token' } }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Should not contain "repositories: []"
       expect(responseText).not.toMatch(/repositories:\s*\[\]/);
@@ -163,7 +164,7 @@ describe('Empty Arrays Removal in Responses', () => {
         { authInfo: { token: 'mock-token' } }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Should not contain "files: []" or "folders: []"
       expect(responseText).not.toMatch(/files:\s*\[\]/);
@@ -206,7 +207,7 @@ describe('Empty Arrays Removal in Responses', () => {
         { authInfo: { token: 'mock-token' } }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Should not have empty arrays anywhere
       expect(responseText).not.toMatch(/:\s*\[\]\s*$/m);
@@ -247,7 +248,7 @@ describe('Empty Arrays Removal in Responses', () => {
         { authInfo: { token: 'mock-token' } }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Should not contain any empty array syntax
       expect(responseText).not.toMatch(/:\s*\[\]\s*/);
@@ -281,7 +282,7 @@ describe('Empty Arrays Removal in Responses', () => {
         { authInfo: { token: 'mock-token' } }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');

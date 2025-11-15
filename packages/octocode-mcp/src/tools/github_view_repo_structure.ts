@@ -27,7 +27,7 @@ export function registerViewGitHubRepoStructureTool(
     TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE],
-      inputSchema: GitHubViewRepoStructureBulkQuerySchema.shape,
+      inputSchema: GitHubViewRepoStructureBulkQuerySchema,
       annotations: {
         title: 'GitHub Repository Structure Explorer',
         readOnlyHint: true,

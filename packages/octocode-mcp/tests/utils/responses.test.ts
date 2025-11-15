@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createResult } from '../../src/responses';
 import { jsonToYamlString } from 'octocode-utils';
+import { getTextContent } from './testHelpers.js';
 
 // Mock the isBetaEnabled function
 vi.mock('../../src/serverConfig', () => ({
@@ -13,7 +14,7 @@ describe('Response Utilities', () => {
       const data = { message: 'Hello' };
       const result = createResult({ data });
 
-      const yaml = result.content[0]!.text as string;
+      const yaml = getTextContent(result.content);
       // Empty hints array is removed
       const expectedYaml = `data:\n  message: "Hello"\n`;
 
@@ -37,7 +38,7 @@ describe('Response Utilities', () => {
         isError: true,
       });
 
-      const yaml = result.content[0]!.text as string;
+      const yaml = getTextContent(result.content);
       // Empty hints array is removed
       const expectedYaml = `data:\n  error: "Something went wrong"\n`;
 
@@ -60,7 +61,7 @@ describe('Response Utilities', () => {
         isError: true,
       });
 
-      const yaml = result.content[0]!.text as string;
+      const yaml = getTextContent(result.content);
       // Empty hints array is removed
       const expectedYaml = `data:\n  error: "Not found"\n`;
 
@@ -84,7 +85,7 @@ describe('Response Utilities', () => {
         isError: true,
       });
 
-      const yaml = result.content[0]!.text as string;
+      const yaml = getTextContent(result.content);
       // Empty hints array is removed
       const expectedYaml = `data:\n  error: "Test error"\n`;
 
@@ -105,7 +106,7 @@ describe('Response Utilities', () => {
       const data = { test: 'value' };
       const result = createResult({ data });
 
-      const yaml = result.content[0]!.text as string;
+      const yaml = getTextContent(result.content);
       // Empty hints array is removed
       const expectedYaml = `data:\n  test: "value"\n`;
       expect(yaml).toEqual(expectedYaml);
@@ -159,7 +160,7 @@ describe('Response Utilities', () => {
       };
 
       const result = createResult({ data: dirtyData });
-      const yaml = result.content[0]!.text as string;
+      const yaml = getTextContent(result.content);
 
       // Empty arrays are now removed during cleaning
       const expectedYaml =
@@ -176,7 +177,7 @@ describe('Response Utilities', () => {
       };
 
       const result = createResult({ data });
-      const yaml = result.content[0]!.text as string;
+      const yaml = getTextContent(result.content);
 
       // Empty arrays are now removed (including hints and results)
       const expectedYaml = `data:\n  validData: "test"\n`;
@@ -199,7 +200,7 @@ describe('Response Utilities', () => {
       };
 
       const result = createResult({ data });
-      const yaml = result.content[0]!.text as string;
+      const yaml = getTextContent(result.content);
 
       // Empty hints array is removed
       const expectedYaml = `data:\n  level1:\n    level2:\n      level3:\n        valid: "keep"\n`;

@@ -3,6 +3,7 @@ import { createMockMcpServer } from '../fixtures/mcp-fixtures.js';
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
 import { TOOL_NAMES } from '../../src/constants.js';
 import type { GitHubReposSearchQuery } from '../../src/types.js';
+import { getTextContent } from '../utils/testHelpers.js';
 
 // Mock the searchGitHubReposAPI to capture the actual queries being made
 vi.mock('../../src/github/repoSearch.js', () => ({
@@ -563,7 +564,7 @@ describe('GitHub Search Repositories Query Splitting', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result).toEqual({
         isError: false,

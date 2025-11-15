@@ -3,6 +3,7 @@ import {
   createMockMcpServer,
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
+import { getTextContent } from '../utils/testHelpers.js';
 
 // Use vi.hoisted to ensure mocks are available during module initialization
 const mockSearchGitHubCodeAPI = vi.hoisted(() => vi.fn());
@@ -77,7 +78,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('1 hasResults');
@@ -117,7 +118,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('owner: "facebook"');
       expect(responseText).toContain('repo: "react"');
@@ -146,7 +147,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('text_matches:');
       expect(responseText).toContain('function test1() {}');
@@ -175,7 +176,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('1 empty');
@@ -212,7 +213,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('emptyStatusHints:');
       // When empty, the tool returns owner/repo in data but files are filtered out
@@ -233,7 +234,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('1 failed');
@@ -250,7 +251,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('1 failed');
@@ -277,7 +278,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain(
@@ -342,7 +343,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 3 results');
       expect(responseText).toContain('3 hasResults');
       expect(responseText).not.toContain('empty');
@@ -364,7 +365,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 2 results');
       expect(responseText).toContain('2 empty');
       expect(responseText).not.toContain('hasResults');
@@ -384,7 +385,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 3 results');
       expect(responseText).toContain('3 failed');
       expect(responseText).not.toContain('hasResults');
@@ -436,7 +437,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 3 results');
       expect(responseText).toContain('2 hasResults');
       expect(responseText).toContain('1 empty');
@@ -487,7 +488,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 3 results');
       expect(responseText).toContain('2 hasResults');
       expect(responseText).toContain('1 failed');
@@ -522,7 +523,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 4 results');
       expect(responseText).toContain('2 empty');
       expect(responseText).toContain('2 failed');
@@ -566,7 +567,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 4 results');
       expect(responseText).toContain('1 hasResults');
       expect(responseText).toContain('1 empty');
@@ -603,7 +604,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('researchGoal: "Find testing patterns"');
     });
@@ -624,7 +625,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('reasoning: "Looking for best practices"');
     });
@@ -645,7 +646,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('researchSuggestions:');
       expect(responseText).toContain('- "Try different keywords"');
@@ -660,7 +661,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 0 results');
     });
 
@@ -671,7 +672,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 0 results');
     });
   });

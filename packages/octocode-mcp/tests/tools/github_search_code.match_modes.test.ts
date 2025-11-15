@@ -18,7 +18,10 @@
  * - This makes sense: you're finding files by name, not searching their content!
  *
  * Test Results from Actual Octocode MCP Server (Verified):
- * ✅ match='file' searches IN file content and returns paths WITH text_matches
+ */
+
+import { getTextContent } from '../utils/testHelpers.js';
+/* ✅ match='file' searches IN file content and returns paths WITH text_matches
  * ✅ match='path' searches in filenames/directories and returns ONLY paths (no text_matches)
  * ✅ Multiple paths are returned when match='path' finds multiple matches
  * ✅ Both modes work correctly in bulk operations
@@ -126,7 +129,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Verify response structure
       expect(responseText).toContain('status: "hasResults"');
@@ -191,7 +194,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
         ],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Verify it searches IN content
       expect(responseText).toContain('status: "hasResults"');
@@ -226,7 +229,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
         queries: [{ keywordsToSearch: ['keyword'], match: 'file' }],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('text_matches:');
@@ -283,7 +286,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       });
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Verify response structure
       expect(responseText).toContain('status: "hasResults"');
@@ -349,7 +352,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
         queries: [{ keywordsToSearch: ['test'], match: 'path' }],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Verify it searches in path/filenames (keyword "test" is in the filenames)
       expect(responseText).toContain('status: "hasResults"');
@@ -399,7 +402,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
         queries: [{ keywordsToSearch: ['config'], match: 'path' }],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Verify multiple files in "config" directories are found
       expect(responseText).toContain('src/config/database.ts');
@@ -477,7 +480,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
         ],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Verify bulk response
       expect(responseText).toContain('Bulk response with 2 results');
@@ -548,7 +551,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
         ],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Both should have files array, but only file search has text_matches
       expect(responseText).toContain('files:');
@@ -606,7 +609,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
           }
         );
 
-        const responseText = result.content[0]?.text as string;
+        const responseText = getTextContent(result.content);
 
         // All modes return status, match type, files array, and paths
         expect(responseText).toContain('status: "hasResults"');
@@ -646,7 +649,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
         queries: [{ keywordsToSearch: ['test'], match: 'file' }],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Files with empty matches are still included in results
       expect(responseText).toContain('status: "hasResults"');
@@ -676,7 +679,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
         ],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('match: "file"');
@@ -701,7 +704,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
         ],
       });
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('match: "path"');
