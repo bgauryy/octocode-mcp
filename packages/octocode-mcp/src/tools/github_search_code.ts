@@ -27,7 +27,7 @@ export function registerGitHubSearchCodeTool(
     TOOL_NAMES.GITHUB_SEARCH_CODE,
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_CODE],
-      inputSchema: GitHubCodeSearchBulkQuerySchema.shape,
+      inputSchema: GitHubCodeSearchBulkQuerySchema,
       annotations: {
         title: 'GitHub Code Search',
         readOnlyHint: true,

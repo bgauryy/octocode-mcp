@@ -5,6 +5,7 @@ import {
   parseResultJson,
 } from './mcp-fixtures.js';
 import type { MockMcpServer } from './mcp-fixtures.js';
+import { getTextContent } from '../utils/testHelpers.js';
 
 describe('MCP Test Fixtures', () => {
   let mockServer: MockMcpServer;
@@ -67,7 +68,9 @@ describe('MCP Test Fixtures', () => {
       expect(result.isError).toEqual(false);
       expect(result.content.length).toEqual(1);
       expect(result.content[0]?.type).toEqual('text');
-      expect(result.content[0]?.text).toEqual(JSON.stringify(data, null, 2));
+      expect(getTextContent(result.content)).toEqual(
+        JSON.stringify(data, null, 2)
+      );
     });
 
     it('should create error result with string message', () => {
@@ -77,7 +80,7 @@ describe('MCP Test Fixtures', () => {
       expect(result.isError).toEqual(true);
       expect(result.content.length).toEqual(1);
       expect(result.content[0]?.type).toEqual('text');
-      expect(result.content[0]?.text).toEqual(errorMessage);
+      expect(getTextContent(result.content)).toEqual(errorMessage);
     });
   });
 

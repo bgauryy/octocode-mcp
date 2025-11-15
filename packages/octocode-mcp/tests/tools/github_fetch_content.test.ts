@@ -3,6 +3,7 @@ import {
   createMockMcpServer,
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
+import { getTextContent } from '../utils/testHelpers.js';
 
 const mockFetchGitHubFileContentAPI = vi.hoisted(() => vi.fn());
 
@@ -103,7 +104,7 @@ describe('GitHub Fetch Content Tool', () => {
       expect(result.content).toHaveLength(1);
       expect(result.content[0]?.type).toBe('text');
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('query:');
@@ -208,7 +209,7 @@ describe('GitHub Fetch Content Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('2 hasResults');
@@ -250,7 +251,7 @@ describe('GitHub Fetch Content Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('1 failed');
@@ -288,7 +289,7 @@ describe('GitHub Fetch Content Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('1 failed');
@@ -329,7 +330,7 @@ describe('GitHub Fetch Content Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain(
@@ -387,7 +388,7 @@ End of file.`;
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
@@ -491,7 +492,7 @@ End of file.`;
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
@@ -552,7 +553,7 @@ End of file.`;
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
@@ -656,7 +657,7 @@ End of file.`;
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
@@ -707,7 +708,7 @@ End of file.`;
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
@@ -759,7 +760,7 @@ End of file.`;
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
@@ -808,7 +809,7 @@ End of file.`;
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
@@ -900,7 +901,7 @@ End of file.`;
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
@@ -1009,7 +1010,7 @@ End of file.`;
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('1 hasResults, 2 failed');
@@ -1131,7 +1132,7 @@ End of file.`;
 
       // Empty arrays now return 0 results instead of error
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('Bulk response with 0 results');
       expect(responseText).toContain('results:');
@@ -1145,7 +1146,7 @@ End of file.`;
 
       // Missing parameter now returns 0 results instead of error
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('Bulk response with 0 results');
       expect(responseText).toContain('results:');

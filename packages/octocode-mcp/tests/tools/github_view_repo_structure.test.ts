@@ -3,6 +3,7 @@ import {
   createMockMcpServer,
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
+import { getTextContent } from '../utils/testHelpers.js';
 
 const mockViewGitHubRepositoryStructureAPI = vi.hoisted(() => vi.fn());
 
@@ -82,7 +83,7 @@ describe('GitHub View Repository Structure Tool', () => {
     );
 
     expect(result.isError).toBe(false);
-    const responseText = result.content[0]?.text as string;
+    const responseText = getTextContent(result.content);
     expect(responseText).toContain('instructions:');
     expect(responseText).toContain('results:');
     expect(responseText).toContain('1 hasResults');
@@ -172,7 +173,7 @@ describe('GitHub View Repository Structure Tool', () => {
     );
 
     // With bulk operations, errors are handled gracefully and returned as data with hints
-    const responseText = result.content[0]?.text as string;
+    const responseText = getTextContent(result.content);
 
     expect(result.isError).toBe(false);
     expect(responseText).toContain('instructions:');
@@ -212,7 +213,7 @@ describe('GitHub View Repository Structure Tool', () => {
       }
     );
 
-    const responseText = result.content[0]?.text as string;
+    const responseText = getTextContent(result.content);
     expect(result.isError).toBe(false);
     expect(responseText).toContain('status: "error"');
     expect(responseText).toContain('errorStatusHints:');
@@ -238,7 +239,7 @@ describe('GitHub View Repository Structure Tool', () => {
     );
 
     expect(result.isError).toBe(false);
-    const responseText = result.content[0]?.text as string;
+    const responseText = getTextContent(result.content);
     expect(responseText).toContain('instructions:');
     expect(responseText).toContain('results:');
     expect(responseText).toContain('1 hasResults');
@@ -291,7 +292,7 @@ describe('GitHub View Repository Structure Tool', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
@@ -350,7 +351,7 @@ describe('GitHub View Repository Structure Tool', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
@@ -395,7 +396,7 @@ describe('GitHub View Repository Structure Tool', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
@@ -448,7 +449,7 @@ describe('GitHub View Repository Structure Tool', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
@@ -514,7 +515,7 @@ describe('GitHub View Repository Structure Tool', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
@@ -581,7 +582,7 @@ describe('GitHub View Repository Structure Tool', () => {
         }
       );
 
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');

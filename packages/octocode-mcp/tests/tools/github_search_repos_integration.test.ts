@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createMockMcpServer } from '../fixtures/mcp-fixtures.js';
 import { TOOL_NAMES } from '../../src/constants.js';
+import { getTextContent } from '../utils/testHelpers.js';
 
 // Mock the GitHub API to avoid real network calls
 const mockSearchGitHubReposAPI = vi.hoisted(() => vi.fn());
@@ -69,7 +70,7 @@ describe('GitHub Search Repositories Response Structure Test', () => {
       }
     );
 
-    const responseText = result.content[0]?.text as string;
+    const responseText = getTextContent(result.content);
 
     expect(result).toEqual({
       isError: false,

@@ -3,6 +3,7 @@ import {
   createMockMcpServer,
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
+import { getTextContent } from '../utils/testHelpers.js';
 
 // Use vi.hoisted to ensure mocks are available during module initialization
 const mockSearchGitHubPullRequestsAPI = vi.hoisted(() => vi.fn());
@@ -147,12 +148,13 @@ describe('GitHub Search Pull Requests Tool', () => {
         }
       );
 
+      const responseText = getTextContent(result.content);
       expect(result).toEqual({
         isError: false,
         content: [
           {
             type: 'text',
-            text: result.content[0]?.text as string,
+            text: responseText,
           },
         ],
       });
@@ -217,7 +219,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       // Empty arrays now return 0 results instead of error
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('Bulk response with 0 results');
@@ -236,7 +238,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       // Missing parameter now returns 0 results instead of error
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('Bulk response with 0 results');
@@ -290,7 +292,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       // Validation errors now go through bulkOperations flow, so isError is false
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
@@ -602,7 +604,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       // New bulk structure
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
@@ -631,7 +633,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       );
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('error:');
@@ -656,7 +658,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       );
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('error:');
@@ -689,7 +691,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain(
@@ -723,7 +725,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Check that the token was sanitized
       expect(responseText).toContain('instructions:');
@@ -752,7 +754,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Check that the API key was sanitized
       expect(responseText).toContain('instructions:');
@@ -781,7 +783,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
 
       // Check that clean content is preserved
       expect(responseText).toContain('instructions:');
@@ -840,7 +842,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         'test-session-id' // sessionId
       );
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('Test PR');
@@ -879,7 +881,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       );
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
-      const responseText = result.content[0]?.text as string;
+      const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('error:');
