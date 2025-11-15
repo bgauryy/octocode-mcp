@@ -1,8 +1,6 @@
 <div align="center">
   <img src="https://github.com/bgauryy/octocode-mcp/raw/main/packages/octocode-mcp/assets/logo_white.png" width="400px" alt="Octocode Logo">
 
-  [![GitHub Stats](https://github-readme-stats.vercel.app/api/pin/?username=bgauryy&repo=octocode-mcp&theme=dark&hide_border=true&show_icons=true)](https://github.com/bgauryy/octocode-mcp)
-
 
   A Model Context Protocol (MCP) server enabling AI assistants to search, analyze, and extract insights from millions of GitHub repositories with enterprise-grade security and token efficiency.
 
@@ -12,12 +10,21 @@
 
   <a href="https://www.npmjs.com/package/octocode-mcp"><img alt="npm version" src="https://img.shields.io/npm/v/octocode-mcp?label=npm&color=cb3837"></a>
   <a href="https://www.npmjs.com/package/octocode-mcp"><img alt="npm downloads" src="https://img.shields.io/npm/dm/octocode-mcp?color=cb3837"></a>
-  <a href="https://github.com/bgauryy/octocode-mcp"><img alt="GitHub stars" src="https://img.shields.io/github/stars/bgauryy/octocode-mcp?style=social"></a>
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green"></a>
 
-  **[Website](https://octocode.ai)** – Official site
-  
-  **[YouTube Channel](https://www.youtube.com/@Octocode-ai)** – Video tutorials and examples
+  <a href="https://octocode.ai"><img src="https://img.shields.io/badge/Website-007ACC?style=for-the-badge&logo=link&logoColor=white" alt="Website"></a>
+  <a href="https://www.youtube.com/@Octocode-ai"><img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube Channel"></a>
+
+</div>
+
+---
+
+<div align="center">
+
+### ✨ Featured On
+
+[![MCP Official Servers](https://img.shields.io/badge/MCP-Official%20Community%20Server-007ACC?style=for-the-badge&logo=github&logoColor=white)](https://github.com/modelcontextprotocol/servers)
+[![Awesome MCP Servers](https://img.shields.io/badge/Awesome-MCP%20Servers-FF6B6B?style=for-the-badge&logo=github&logoColor=white)](https://github.com/punkpeye/awesome-mcp-servers)
 
 </div>
 
@@ -35,7 +42,6 @@
   - [/kudos - Repository Appreciation](#kudos---repository-appreciation)
   - [/use - Quick Reference Guide](#use---quick-reference-guide)
 - [Documentation](#documentation)
-- [Project Stats](#project-stats)
 - [Community](#community)
 - [License](#license)
 
