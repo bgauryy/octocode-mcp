@@ -11,6 +11,20 @@
   [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bgauryy/octocode-mcp)
   [![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/bgauryy/octocode-mcp)](https://archestra.ai/mcp-catalog/bgauryy__octocode-mcp)
 
+  <a href="https://octocode.ai"><img src="https://img.shields.io/badge/Website-007ACC?style=for-the-badge&logo=link&logoColor=white" alt="Website"></a>
+  <a href="https://www.youtube.com/@Octocode-ai"><img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube Channel"></a>
+
+</div>
+
+---
+
+<div align="center">
+
+### ✨ Featured On
+
+[![MCP Official Servers](https://img.shields.io/badge/MCP-Official%20Community%20Server-007ACC?style=for-the-badge&logo=github&logoColor=white)](https://github.com/modelcontextprotocol/servers)
+[![Awesome MCP Servers](https://img.shields.io/badge/Awesome-MCP%20Servers-FF6B6B?style=for-the-badge&logo=github&logoColor=white)](https://github.com/punkpeye/awesome-mcp-servers)
+
 </div>
 
 ---
@@ -19,20 +33,15 @@
 
 - [See It In Action](#see-it-in-action)
 - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Platform-Specific Setup](#platform-specific-setup)
 - [More Examples](#more-examples)
 - [Overview](#overview)
-- [Architecture](#architecture)
-  - [Octocode MCP Server](#octocode-mcp-server)
-- [Features](#features)
+- [Tools](#tools)
 - [Commands](#commands)
   - [/research - Expert Code Research Agent](#research---expert-code-research-agent)
   - [/kudos - Repository Appreciation](#kudos---repository-appreciation)
   - [/use - Quick Reference Guide](#use---quick-reference-guide)
 - [Documentation](#documentation)
 - [Community](#community)
-- [Recognition](#recognition)
 - [License](#license)
 
 ---
@@ -835,30 +844,6 @@ If Octocode helps your AI development workflow:
 - **Write about your experience** on your blog
 - **Create tutorials** and share with the community
 - **Contribute** improvements and bug fixes
-
----
-
-<div align="center">
-
-## Recognition
-
-<a href="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp/badge" alt="Octocode MCP on Glama" />
-</a>
-
----
-
-**Built with care for developers by developers**
-
-[Website](https://octocode.ai) • [GitHub](https://github.com/bgauryy/octocode-mcp) • [NPM](https://www.npmjs.com/package/octocode-mcp)
-
----
-
-*Octocode MCP is an official MCP Community Server*
-
-[![MCP Community](https://img.shields.io/badge/Model_Context_Protocol-Official_Community_Server-blue?style=for-the-badge)](https://github.com/modelcontextprotocol/servers)
-
-</div>
 
 ---
 
