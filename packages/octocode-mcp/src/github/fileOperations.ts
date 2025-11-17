@@ -69,7 +69,36 @@ async function fetchGitHubFileContentAPIInternal(
       ...(branch && { ref: branch }),
     };
 
-    const result = await octokit.rest.repos.getContent(contentParams);
+    let result;
+    try {
+      result = await octokit.rest.repos.getContent(contentParams);
+    } catch (error: unknown) {
+      // Handle 404 errors with smart fallback/hints
+      if (error instanceof RequestError && error.status === 404 && branch) {
+        // Silent fallback: main -> master OR master -> main
+        if (branch === 'main' || branch === 'master') {
+          const fallbackBranch = branch === 'main' ? 'master' : 'main';
+          try {
+            result = await octokit.rest.repos.getContent({
+              ...contentParams,
+              ref: fallbackBranch,
+            });
+          } catch {
+            // If fallback fails, throw the original error
+            throw error;
+          }
+        } else {
+          // For specific branches (not main/master), add helpful hint
+          const apiError = handleGitHubAPIError(error);
+          return {
+            ...apiError,
+            scopesSuggestion: `Branch '${branch}' not found. Ask user: Do you want to get the file from the default branch instead?`,
+          };
+        }
+      } else {
+        throw error;
+      }
+    }
 
     const data = result.data;
 
