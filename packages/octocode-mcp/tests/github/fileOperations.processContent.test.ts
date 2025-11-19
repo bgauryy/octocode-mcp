@@ -826,6 +826,5 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
         expect(result.branch).toBe('master');
       }
     });
-
   });
 });

@@ -351,7 +351,6 @@ describe('Cache Collision Resistance Tests', () => {
       const q3 = sortedTimings[Math.floor(timings.length * 0.75)]!;
       expect(q3 - q1 < avg * 2).toBe(true);
     });
-
   });
 
   describe('Cryptographic Hash Properties', () => {

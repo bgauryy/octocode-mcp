@@ -177,50 +177,6 @@ describe('ContentSanitizer', () => {
       });
     });
 
-    describe('Security Validation for Arrays', () => {
-      it.skip('should detect malicious content in array elements', () => {
-        const params = {
-          owner: ['microsoft', 'rm -rf /'],
-          keywordsToSearch: ['useState', 'eval(malicious_code)'],
-        };
-
-        const result = ContentSanitizer.validateInputParameters(params);
-
-        expect(result).toEqual({
-          isValid: false,
-          warnings: [
-            "Potentially malicious content in parameter 'owner' array element",
-            "Potentially malicious content in parameter 'keywordsToSearch' array element",
-          ],
-          sanitizedParams: {
-            owner: ['microsoft', 'rm -rf /'],
-            keywordsToSearch: ['useState', 'eval(malicious_code)'],
-          },
-        });
-      });
-
-      it.skip('should handle mixed safe and unsafe array elements', () => {
-        const params = {
-          owner: ['microsoft', 'facebook', 'rm -rf /'],
-          keywordsToSearch: ['useState', 'useEffect', 'eval(code)'],
-        };
-
-        const result = ContentSanitizer.validateInputParameters(params);
-
-        expect(result).toEqual({
-          isValid: false,
-          warnings: [
-            "Potentially malicious content in parameter 'owner' array element",
-            "Potentially malicious content in parameter 'keywordsToSearch' array element",
-          ],
-          sanitizedParams: {
-            owner: ['microsoft', 'facebook', 'rm -rf /'],
-            keywordsToSearch: ['useState', 'useEffect', 'eval(code)'],
-          },
-        });
-      });
-    });
-
     describe('Non-Array Parameter Handling (Regression Tests)', () => {
       it('should still handle string parameters correctly', () => {
         const params = {
@@ -484,21 +440,6 @@ describe('ContentSanitizer', () => {
           isMalicious: false,
           secretsDetected: ['openaiApiKey'],
           warnings: ['openaiApiKey'],
-        });
-      });
-
-      it.skip('should sanitize Anthropic API keys', () => {
-        const content =
-          'Anthropic key: sk-ant-api03-12345678901234567890123456789012345678901234567890123456789012345678901234567890123AA';
-        const result = ContentSanitizer.sanitizeContent(content);
-
-        expect(result).toEqual({
-          content: 'Anthropic key: [REDACTED-ANTHROPICAPIKEY]',
-          hasPromptInjection: false,
-          hasSecrets: true,
-          isMalicious: false,
-          secretsDetected: ['anthropicApiKey'],
-          warnings: ['anthropicApiKey'],
         });
       });
 
