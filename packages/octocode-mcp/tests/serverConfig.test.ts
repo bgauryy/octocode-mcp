@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import {
   initialize,
@@ -23,7 +23,7 @@ function createMockProcess() {
   mockProcess.stdout = new EventEmitter();
   mockProcess.stderr = new EventEmitter();
   mockProcess.kill = vi.fn();
-  return mockProcess;
+  return mockProcess as unknown as ChildProcess;
 }
 
 // Helper function to mock spawn with success
@@ -31,7 +31,7 @@ function mockSpawnSuccess(token: string) {
   const mockProcess = createMockProcess();
   vi.mocked(spawn).mockReturnValue(mockProcess);
   setTimeout(() => {
-    mockProcess.stdout.emit('data', token + '\n');
+    mockProcess.stdout!.emit('data', token + '\n');
     mockProcess.emit('close', 0);
   }, 10);
   return mockProcess;

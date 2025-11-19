@@ -112,20 +112,6 @@ import { searchGitHubPullRequestsAPI } from '../../src/github/pullRequestSearch.
 import type { GitHubCodeSearchQuery } from '../../src/types.js';
 import { initialize, cleanup } from '../../src/serverConfig.js';
 
-// Helper function to create properly formatted test parameters
-function createTestParams(overrides: Record<string, unknown> = {}) {
-  return {
-    owner: 'test',
-    repo: 'repo',
-    path: 'test.txt',
-    fullContent: false,
-    minified: false,
-    sanitize: true,
-    matchStringContextLines: 5,
-    ...overrides,
-  };
-}
-
 describe('GitHub API Utils', () => {
   beforeEach(async () => {
     // Clear all mocks
