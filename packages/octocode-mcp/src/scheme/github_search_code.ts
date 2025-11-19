@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
-import { GITHUB_SEARCH_CODE } from './schemDescriptions';
-import { TOOL_NAMES } from '../constants';
+import { GITHUB_SEARCH_CODE, TOOL_NAMES } from '../tools/toolMetadata';
 
 export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
   keywordsToSearch: z

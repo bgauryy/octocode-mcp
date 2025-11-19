@@ -7,11 +7,10 @@ import type {
   ContentResult,
 } from '../types.js';
 import { fetchGitHubFileContentAPI } from '../github/fileOperations.js';
-import { TOOL_NAMES } from '../constants.js';
+import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
 import { FileContentBulkQuerySchema } from '../scheme/github_fetch_content.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import { DESCRIPTIONS } from './descriptions.js';
 import {
   handleCatchError,
   createSuccessResult,

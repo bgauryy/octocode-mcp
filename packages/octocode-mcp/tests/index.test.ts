@@ -35,7 +35,7 @@ import {
 } from '../src/serverConfig.js';
 import { registerTools } from '../src/tools/toolsManager.js';
 import { getGitHubToken } from '../src/serverConfig.js';
-import { TOOL_NAMES } from '../src/constants.js';
+import { TOOL_NAMES } from '../src/tools/toolMetadata.js';
 
 // Mock implementations
 const mockMcpServer = {

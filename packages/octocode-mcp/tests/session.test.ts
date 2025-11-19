@@ -7,7 +7,7 @@ import {
   logSessionError,
   resetSessionManager,
 } from '../src/session.js';
-import { TOOL_NAMES } from '../src/constants.js';
+import { TOOL_NAMES } from '../src/tools/toolMetadata.js';
 
 // Mock axios
 const mockPost = vi.hoisted(() => vi.fn());

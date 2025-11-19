@@ -2,7 +2,7 @@ import {
   McpServer,
   RegisteredTool,
 } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { TOOL_NAMES } from '../constants.js';
+import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
 import { ToolInvocationCallback } from '../types.js';
 import { registerGitHubSearchCodeTool } from './github_search_code.js';
 import { registerFetchGitHubFileContentTool } from './github_fetch_content.js';
@@ -18,9 +18,15 @@ export interface ToolConfig {
   fn: (server: McpServer, callback?: ToolInvocationCallback) => RegisteredTool;
 }
 
+// Helper to safely get description from toolMetadata.ts
+// The Proxy always returns a string (either cached or placeholder)
+const getDescription = (toolName: string): string => {
+  return DESCRIPTIONS[toolName] ?? '';
+};
+
 export const GITHUB_SEARCH_CODE: ToolConfig = {
   name: TOOL_NAMES.GITHUB_SEARCH_CODE,
-  description: 'Search code across GitHub repositories',
+  description: getDescription(TOOL_NAMES.GITHUB_SEARCH_CODE),
   isDefault: true,
   type: 'search',
   fn: registerGitHubSearchCodeTool,
@@ -28,7 +34,7 @@ export const GITHUB_SEARCH_CODE: ToolConfig = {
 
 export const GITHUB_FETCH_CONTENT: ToolConfig = {
   name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
-  description: 'Fetch file content from GitHub repositories',
+  description: getDescription(TOOL_NAMES.GITHUB_FETCH_CONTENT),
   isDefault: true,
   type: 'content',
   fn: registerFetchGitHubFileContentTool,
@@ -36,7 +42,7 @@ export const GITHUB_FETCH_CONTENT: ToolConfig = {
 
 export const GITHUB_VIEW_REPO_STRUCTURE: ToolConfig = {
   name: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-  description: 'View GitHub repository structure and navigation',
+  description: getDescription(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE),
   isDefault: true,
   type: 'content',
   fn: registerViewGitHubRepoStructureTool,
@@ -44,7 +50,7 @@ export const GITHUB_VIEW_REPO_STRUCTURE: ToolConfig = {
 
 export const GITHUB_SEARCH_REPOSITORIES: ToolConfig = {
   name: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-  description: 'Search and discover GitHub repositories',
+  description: getDescription(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES),
   isDefault: true,
   type: 'search',
   fn: registerSearchGitHubReposTool,
@@ -52,7 +58,7 @@ export const GITHUB_SEARCH_REPOSITORIES: ToolConfig = {
 
 export const GITHUB_SEARCH_PULL_REQUESTS: ToolConfig = {
   name: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-  description: 'Search GitHub pull requests and code reviews',
+  description: getDescription(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS),
   isDefault: true,
   type: 'history',
   fn: registerSearchGitHubPullRequestsTool,

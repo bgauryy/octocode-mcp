@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createMockMcpServer } from '../fixtures/mcp-fixtures.js';
-import { TOOL_NAMES } from '../../src/constants.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 import { getTextContent } from '../utils/testHelpers.js';
 
 // Mock the GitHub API to avoid real network calls

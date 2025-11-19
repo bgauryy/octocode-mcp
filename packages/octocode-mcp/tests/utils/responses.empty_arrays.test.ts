@@ -39,7 +39,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code.js';
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
-import { TOOL_NAMES } from '../../src/constants.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 
 describe('Empty Arrays Removal in Responses', () => {
   let mockServer: MockMcpServer;

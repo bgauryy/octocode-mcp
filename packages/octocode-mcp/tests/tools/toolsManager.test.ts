@@ -34,7 +34,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 
 import { DEFAULT_TOOLS } from '../../src/tools/toolConfig.js';
 import { getServerConfig } from '../../src/serverConfig.js';
-import { TOOL_NAMES } from '../../src/constants.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 
 const mockGetServerConfig = vi.mocked(getServerConfig);
 

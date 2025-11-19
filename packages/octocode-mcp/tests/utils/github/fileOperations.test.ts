@@ -1065,4 +1065,267 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       }
     });
   });
+
+  describe('Branch fallback (main/master)', () => {
+    beforeEach(() => {
+      mockContentSanitizer.sanitizeContent.mockImplementation(
+        (content: string) => ({
+          content,
+          hasSecrets: false,
+          hasPromptInjection: false,
+          isMalicious: false,
+          warnings: [],
+          secretsDetected: [],
+        })
+      );
+    });
+
+    it('should fallback from main to master when main branch returns 404', async () => {
+      const { RequestError } = await import('octokit');
+      const notFoundError = new RequestError('Not Found', 404, {
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/repos/test/repo/contents/test.txt',
+          headers: {},
+        },
+      });
+
+      // First call fails (main branch)
+      // Second call succeeds (master branch)
+      mockOctokit.rest.repos.getContent
+        .mockRejectedValueOnce(notFoundError)
+        .mockResolvedValueOnce({
+          data: {
+            type: 'file',
+            content: Buffer.from('fallback content from master').toString(
+              'base64'
+            ),
+            size: 28,
+            sha: 'abc123',
+          },
+        });
+
+      const params = createTestParams({ branch: 'main', minified: false });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(200);
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(2);
+      // First call with main
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenNthCalledWith(1, {
+        owner: 'test',
+        repo: 'repo',
+        path: 'test.txt',
+        ref: 'main',
+      });
+      // Second call with master
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenNthCalledWith(2, {
+        owner: 'test',
+        repo: 'repo',
+        path: 'test.txt',
+        ref: 'master',
+      });
+      if ('data' in result) {
+        expect(result.data.content).toBe('fallback content from master');
+      }
+    });
+
+    it('should fallback from master to main when master branch returns 404', async () => {
+      const { RequestError } = await import('octokit');
+      const notFoundError = new RequestError('Not Found', 404, {
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/repos/test/repo/contents/test.txt',
+          headers: {},
+        },
+      });
+
+      // First call fails (master branch)
+      // Second call succeeds (main branch)
+      mockOctokit.rest.repos.getContent
+        .mockRejectedValueOnce(notFoundError)
+        .mockResolvedValueOnce({
+          data: {
+            type: 'file',
+            content: Buffer.from('fallback content from main').toString(
+              'base64'
+            ),
+            size: 26,
+            sha: 'xyz789',
+          },
+        });
+
+      const params = createTestParams({ branch: 'master', minified: false });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(200);
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(2);
+      // First call with master
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenNthCalledWith(1, {
+        owner: 'test',
+        repo: 'repo',
+        path: 'test.txt',
+        ref: 'master',
+      });
+      // Second call with main
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenNthCalledWith(2, {
+        owner: 'test',
+        repo: 'repo',
+        path: 'test.txt',
+        ref: 'main',
+      });
+      if ('data' in result) {
+        expect(result.data.content).toBe('fallback content from main');
+      }
+    });
+
+    it('should not fallback if branch is not main or master', async () => {
+      const { RequestError } = await import('octokit');
+      const notFoundError = new RequestError('Not Found', 404, {
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/repos/test/repo/contents/test.txt',
+          headers: {},
+        },
+      });
+
+      mockOctokit.rest.repos.getContent.mockRejectedValueOnce(notFoundError);
+
+      const params = createTestParams({ branch: 'feature', minified: false });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(404);
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(1);
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledWith({
+        owner: 'test',
+        repo: 'repo',
+        path: 'test.txt',
+        ref: 'feature',
+      });
+      // Check for helpful hint
+      if ('scopesSuggestion' in result) {
+        expect(result.scopesSuggestion).toContain('feature');
+        expect(result.scopesSuggestion).toContain(
+          'Ask user: Do you want to get the file from the default branch instead?'
+        );
+      }
+    });
+
+    it('should return 404 when both main and master fail', async () => {
+      const { RequestError } = await import('octokit');
+      const notFoundError = new RequestError('Not Found', 404, {
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/repos/test/repo/contents/test.txt',
+          headers: {},
+        },
+      });
+
+      // Both calls fail
+      mockOctokit.rest.repos.getContent
+        .mockRejectedValueOnce(notFoundError)
+        .mockRejectedValueOnce(notFoundError);
+
+      const params = createTestParams({ branch: 'main', minified: false });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(404);
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(2);
+    });
+
+    it('should not fallback on non-404 errors', async () => {
+      const { RequestError } = await import('octokit');
+      const forbiddenError = new RequestError('Forbidden', 403, {
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/repos/test/repo/contents/test.txt',
+          headers: {},
+        },
+      });
+
+      mockOctokit.rest.repos.getContent.mockRejectedValueOnce(forbiddenError);
+
+      const params = createTestParams({ branch: 'main', minified: false });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(403);
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not fallback when no branch is specified', async () => {
+      const { RequestError } = await import('octokit');
+      const notFoundError = new RequestError('Not Found', 404, {
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/repos/test/repo/contents/test.txt',
+          headers: {},
+        },
+      });
+
+      mockOctokit.rest.repos.getContent.mockRejectedValueOnce(notFoundError);
+
+      const params = createTestParams({ minified: false });
+      // Don't set branch, so it uses default
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(404);
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(1);
+    });
+
+    it('should include helpful hint for specific branch 404 errors', async () => {
+      const { RequestError } = await import('octokit');
+      const notFoundError = new RequestError('Not Found', 404, {
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/repos/test/repo/contents/test.txt',
+          headers: {},
+        },
+      });
+
+      mockOctokit.rest.repos.getContent.mockRejectedValueOnce(notFoundError);
+
+      const params = createTestParams({ branch: 'develop', minified: false });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(404);
+      expect('scopesSuggestion' in result).toBe(true);
+      if ('scopesSuggestion' in result) {
+        expect(result.scopesSuggestion).toBe(
+          "Branch 'develop' not found. Ask user: Do you want to get the file from the default branch instead?"
+        );
+      }
+    });
+
+    it('should not include hint when main/master fallback fails', async () => {
+      const { RequestError } = await import('octokit');
+      const notFoundError = new RequestError('Not Found', 404, {
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/repos/test/repo/contents/test.txt',
+          headers: {},
+        },
+      });
+
+      // Both main and master fail
+      mockOctokit.rest.repos.getContent
+        .mockRejectedValueOnce(notFoundError)
+        .mockRejectedValueOnce(notFoundError);
+
+      const params = createTestParams({ branch: 'main', minified: false });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(404);
+      // Should not have the "Ask user" hint since we tried fallback
+      if ('scopesSuggestion' in result) {
+        expect(result.scopesSuggestion).not.toContain('Ask user');
+      }
+    });
+  });
 });

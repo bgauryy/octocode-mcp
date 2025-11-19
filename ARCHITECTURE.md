@@ -1,7 +1,7 @@
 # Architecture
 > High-level architecture of Octocode-MCP - A Model Context Protocol server for advanced GitHub repository analysis and code discovery
 
-**Last Updated:** 2025-11-04  
+**Last Updated:** 2025-11-18  
 **Version:** 7.0.7  
 **Status:** Current
 
@@ -61,10 +61,14 @@ Main MCP server package with all core functionality.
 
 ---
 
-#### **`tools/`** (10 files)
+#### **`tools/`** (9 files)
 **Purpose**: MCP tool implementations - the public API for AI assistants
 
 **Key Files**:
+- `toolMetadata.ts` - **Single source of truth** for all metadata (851 lines)
+  - Tool names, descriptions, schema descriptions, hints
+  - Structured format: PURPOSE → WORKFLOW → STRATEGY → EXAMPLES → GUARDS
+  - Backward-compatible Proxy exports
 - `github_search_code.ts` - Search code across GitHub repositories
 - `github_search_repos.ts` - Discover and search repositories  
 - `github_fetch_content.ts` - Retrieve file content (full/partial/matchString)
@@ -73,6 +77,8 @@ Main MCP server package with all core functionality.
 
 **Pattern** (all tools follow this):
 ```typescript
+import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
+
 // 1. Register tool with MCP server
 export function registerToolName(server: McpServer) {
   server.registerTool(TOOL_NAMES.TOOL_NAME, {
@@ -102,9 +108,8 @@ async function processQuery(query) {
 
 **Supporting Files**:
 - `toolsManager.ts` - Centralized registration logic
-- `toolConfig.ts` - Tool metadata (name, default status, registration function)
-- `descriptions.ts` - Tool descriptions for AI assistants
-- `hints.ts` - Contextual guidance based on query results (hasResults/empty/error)
+- `toolConfig.ts` - Tool configuration (name, type, default status, registration function)
+- `toolMetadata.ts` - **Single source of truth** for all tool metadata (names, descriptions, schema descriptions, hints)
 - `utils.ts` - Shared formatters (createSuccessResult, handleApiError, handleCatchError)
 
 ---
@@ -158,42 +163,44 @@ async function processQuery(query) {
 
 ---
 
-#### **`scheme/`** (7 files)
+#### **`scheme/`** (6 files)
 **Purpose**: Zod schemas for runtime validation and type inference
 
 **Key Files**:
-- `baseSchema.ts` - Shared base query fields (mainResearchGoal, researchGoal, reasoning)
+- `baseSchema.ts` - Shared base query fields and bulk query schema factory (sources descriptions from `toolMetadata.ts`)
 - `github_search_code.ts` - Code search query validation
 - `github_search_repos.ts` - Repository search query validation
 - `github_fetch_content.ts` - File content query validation (mode, lineStart, lineEnd, matchString)
 - `github_view_repo_structure.ts` - Repository structure query validation
 - `github_search_pull_requests.ts` - Pull request query validation
-- `schemDescriptions.ts` - Field descriptions for schema documentation
 
 **Pattern**:
 ```typescript
-export const ToolQuerySchema = z.object({
+import { z } from 'zod';
+import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema.js';
+
+export const ToolQuerySchema = BaseQuerySchema.extend({
   // Required fields
   keyField: z.string(),
   
   // Optional fields with validation
   limit: z.number().min(1).max(100).optional(),
-  
-  // Research context (from baseSchema)
-  ...baseSchema.shape
 });
 
-export const ToolBulkQuerySchema = z.object({
-  queries: z.array(ToolQuerySchema).min(1).max(5)
-});
+// Create bulk query schema using factory (includes description from toolMetadata)
+export const ToolBulkQuerySchema = createBulkQuerySchema(
+  'toolName',
+  ToolQuerySchema
+);
 ```
 
 **API Boundary**: All tool inputs validated with corresponding `BulkQuerySchema` before processing.
 
 **Invariants**:
-- All queries must extend `baseSchema` for research context
-- Bulk queries limited to 1-5 queries per request
+- All queries must extend `BaseQuerySchema` for research context (mainResearchGoal, researchGoal, reasoning)
+- Bulk queries limited to 1-3 queries per request (via `createBulkQuerySchema` factory)
 - All numeric limits must have reasonable min/max bounds
+- Schema descriptions sourced from `toolMetadata.ts` for consistency
 
 ---
 
@@ -241,7 +248,6 @@ export const ToolBulkQuerySchema = z.object({
 ---
 
 #### **Core Files**
-- `constants.ts` - Tool name constants
 - `types.ts` - TypeScript type definitions (15KB, 500+ lines)
 - `responses.ts` - Response formatting utilities
 - `serverConfig.ts` - Server configuration management
@@ -523,6 +529,32 @@ All tools follow this structure:
 **Consequences**:
 - **PROS**: Faster convergence to relevant code, fewer tool calls needed, educational for users
 - **CONS**: Hint maintenance burden, can be verbose, sometimes redundant
+
+---
+
+### **ADR-007: Single Source of Truth for Tool Metadata**
+**Date**: 2024-11 | **Status**: Accepted
+
+**Context**: Tool metadata (names, descriptions, schema descriptions, hints) was scattered across multiple files (`constants.ts`, `descriptions.ts`, `hints.ts`, `schemDescriptions.ts`). Adding or updating tools required changes in 4-5 files, increasing maintenance burden and risk of inconsistencies.
+
+**Alternatives**:
+1. **Status quo** - Separate files per concern - Simple but high maintenance, easy to miss updates
+2. **JSON/YAML external config** - Non-code configuration - Loses TypeScript type safety, harder to refactor
+3. **Single TypeScript file with structured data** - Chosen approach
+
+**Decision**: Consolidate all tool metadata into `src/tools/toolMetadata.ts` with a single `METADATA_JSON` object containing:
+- Tool names and IDs
+- Tool descriptions (with structured format: PURPOSE, WORKFLOW, STRATEGY, EXAMPLES, GUARDS)
+- Schema parameter descriptions
+- Hints for hasResults/empty states
+- Base schema descriptions
+- Generic error hints
+
+Export Proxy objects for backward compatibility with existing code.
+
+**Consequences**:
+- **PROS**: Single file to update when adding/modifying tools, enforces consistent description format, easier to review all tool documentation at once, TypeScript type safety maintained, backward compatible via Proxies
+- **CONS**: Single large file (~850 lines), potential merge conflicts in multi-developer scenarios, requires discipline to maintain structure
 
 ---
 
@@ -1092,7 +1124,7 @@ export async function newGitHubOperation(
 ```typescript
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
-import { TOOL_NAMES } from '../constants.js';
+import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
 import { NewToolBulkQuerySchema } from '../scheme/new_tool.js';
 import { newGitHubOperation } from '../github/newOperation.js';
 
@@ -1143,57 +1175,84 @@ export function registerNewTool(
 }
 ```
 
-**4. Register Tool** (`src/constants.ts`):
+**4. Add Tool Metadata** (`src/tools/toolMetadata.ts`):
 ```typescript
-export const TOOL_NAMES = {
+// Add to METADATA_JSON.toolNames
+toolNames: {
   // ... existing tools
   NEW_TOOL: 'newToolName',
-} as const;
+},
+
+// Add to METADATA_JSON.tools
+tools: {
+  // ... existing tools
+  newToolName: {
+    name: 'newToolName',
+    description: `TOOL CATEGORY - Brief summary
+
+PARAMS: See schema for parameter details
+
+PURPOSE: What this tool does
+
+USE_WHEN: When to use | Typical scenarios
+AVOID: When NOT to use
+
+WORKFLOW:
+  Step 1: ...
+  Step 2: ...
+
+STRATEGY:
+  - Approach 1: ...
+  - Approach 2: ...
+
+EXAMPLES:
+  example1  # Comment
+  example2  # Comment
+
+GUARDS:
+  condition? - action`,
+    schema: {
+      param1: 'Description of parameter 1',
+      param2: 'Description of parameter 2',
+      // Include base schema fields
+      mainResearchGoal: 'Main research objective...',
+      researchGoal: 'Specific information this query seeks',
+      reasoning: 'Why this query helps achieve the goal',
+    },
+    hints: {
+      hasResults: [
+        'What to do when results found...',
+        'Next steps with results...',
+      ],
+      empty: [
+        'What to try when no results...',
+        'Alternative approaches...',
+      ],
+    },
+  },
+}
 ```
 
 **5. Add to Tool Config** (`src/tools/toolConfig.ts`):
 ```typescript
 import { registerNewTool } from './new_tool.js';
+import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
+
+export const NEW_TOOL: ToolConfig = {
+  name: TOOL_NAMES.NEW_TOOL,
+  description: DESCRIPTIONS[TOOL_NAMES.NEW_TOOL],
+  isDefault: true,
+  type: 'search', // or 'content', 'history', 'debug'
+  fn: registerNewTool,
+};
 
 export const DEFAULT_TOOLS: ToolConfig[] = [
   // ... existing tools
-  {
-    name: TOOL_NAMES.NEW_TOOL,
-    isDefault: true,
-    fn: registerNewTool
-  }
+  NEW_TOOL,
 ];
 ```
 
-**6. Add Description & Hints** (`src/tools/descriptions.ts`, `src/tools/hints.ts`):
-```typescript
-// descriptions.ts
-export const DESCRIPTIONS = {
-  // ...
-  [TOOL_NAMES.NEW_TOOL]: 'Concise description for AI assistants...'
-};
-
-// hints.ts
-export const TOOL_HINTS = {
-  // ...
-  NEW_TOOL: {
-    hasResults: [
-      'Review results and consider...',
-      'Next steps: ...'
-    ],
-    empty: [
-      'No results found. Try...',
-      'Consider broader search...'
-    ],
-    error: [
-      'Check authentication...',
-      'Verify parameters...'
-    ]
-  }
-};
-```
-
-**7. Add Tests** (`tests/tools/new_tool.test.ts`):
+**6. Add Tests** (`tests/tools/new_tool.test.ts`):
 ```typescript
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { newGitHubOperation } from '../../src/github/newOperation.js';
@@ -1224,7 +1283,7 @@ describe('NewTool', () => {
 });
 ```
 
-**8. Update Documentation**:
+**7. Update Documentation**:
 - Add tool description to README
 - Update this ARCHITECTURE.md if significant pattern changes
 
@@ -1250,16 +1309,20 @@ describe('NewTool', () => {
 - **New validation pattern** → `src/security/regexes.ts` (add to `allRegexPatterns`)
 - **New cache TTL** → `src/utils/cache.ts` (`CACHE_TTL_CONFIG`)
 - **New file type minification** → `octocode-utils/src/minifier.ts` (`MINIFY_CONFIG.fileTypes`)
+- **New tool metadata** → `src/tools/toolMetadata.ts` (add to `METADATA_JSON.tools`)
 - **New tool** → Follow "Adding a New Tool" guide above
 
 ---
 
 ## Maintenance
 
-**Last Updated**: 2025-11-04  
+**Last Updated**: 2025-11-18  
 **Version**: 7.0.7  
 **Review Schedule**: Quarterly or after major changes  
 **Document Owner**: Guy Bary (bgauryy@gmail.com)
+
+**Recent Updates**:
+- 2025-11-18: Updated for metadata consolidation refactoring (ADR-007) - consolidated tool names, descriptions, hints, and schema descriptions into single `toolMetadata.ts` file
 
 **Review Checklist**:
 - [ ] Verify all file paths are current

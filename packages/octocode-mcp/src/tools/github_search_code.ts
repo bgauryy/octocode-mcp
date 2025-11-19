@@ -6,12 +6,11 @@ import type {
   GitHubCodeSearchQuery,
   SearchResult,
 } from '../types.js';
-import { TOOL_NAMES } from '../constants.js';
+import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
 import { GitHubCodeSearchBulkQuerySchema } from '../scheme/github_search_code.js';
 import { searchGitHubCodeAPI } from '../github/codeSearch.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { DESCRIPTIONS } from './descriptions.js';
 import { shouldIgnoreFile } from '../utils/fileFilters.js';
 import {
   handleApiError,
