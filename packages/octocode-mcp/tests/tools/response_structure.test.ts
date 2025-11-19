@@ -102,7 +102,7 @@ import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
 import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests.js';
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
-import { TOOL_NAMES } from '../../src/constants.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 
 describe('Response Structure - All Tools', () => {
   let mockServer: MockMcpServer;

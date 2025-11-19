@@ -7,7 +7,7 @@ import { ContentSanitizer } from '../../src/security/contentSanitizer.js';
 import { createResult } from '../../src/responses.js';
 import * as session from '../../src/session.js';
 import * as serverConfig from '../../src/serverConfig.js';
-import { TOOL_NAMES } from '../../src/constants.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 // Mock dependencies

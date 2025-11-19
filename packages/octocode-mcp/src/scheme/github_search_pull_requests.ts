@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
-import { GITHUB_SEARCH_PULL_REQUESTS } from './schemDescriptions';
-import { TOOL_NAMES } from '../constants';
+import { GITHUB_SEARCH_PULL_REQUESTS, TOOL_NAMES } from '../tools/toolMetadata';
 
 export const PRMatchScopeSchema = z
   .array(z.enum(['title', 'body', 'comments']))

@@ -8,11 +8,10 @@ import type {
   RepoSearchResult,
 } from '../types.js';
 import { searchGitHubReposAPI } from '../github/repoSearch.js';
-import { TOOL_NAMES } from '../constants.js';
+import { TOOL_NAMES, DESCRIPTIONS, getDynamicHints } from './toolMetadata.js';
 import { GitHubReposSearchQuerySchema } from '../scheme/github_search_repos.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import { DESCRIPTIONS } from './descriptions.js';
 import {
   handleApiError,
   handleCatchError,
@@ -177,28 +176,19 @@ function generateSearchSpecificHints(
   const hasKeywords = hasValidKeywords(query);
 
   if (hasTopics && hasResults) {
-    // Topic search with results - encourage exploration but verify relevance
     hints.push(
-      "CRITICAL: Verify each repository's relevance to your researchGoal - topic results are broad categories"
-    );
-    hints.push(
-      'Topic search found curated repositories - excellent for exploration and discovery'
-    );
-    hints.push(
-      'Explore related topics to discover more repositories in similar categories'
+      ...getDynamicHints(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        'topicsHasResults'
+      )
     );
   } else if (hasTopics && !hasResults) {
-    // Topic search with no results - suggest alternatives
     hints.push(
-      'No results for topic search - try related or broader topics for exploration'
-    );
-    hints.push(
-      'Consider switching to keywordsToSearch for broader coverage of name/description/readme'
+      ...getDynamicHints(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, 'topicsEmpty')
     );
   } else if (hasKeywords && !hasResults && !hasTopics) {
-    // Keywords search with no results - suggest topics
     hints.push(
-      'No results with keywords - try topicsToSearch for more precise, curated exploration'
+      ...getDynamicHints(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, 'keywordsEmpty')
     );
   }
 

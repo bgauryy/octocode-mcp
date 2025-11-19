@@ -38,7 +38,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 
 // Import after mocking
 import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests.js';
-import { TOOL_NAMES } from '../../src/constants.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 
 // Helper function to create standard mock response
 function createMockPRResponse(overrides: Record<string, unknown> = {}) {

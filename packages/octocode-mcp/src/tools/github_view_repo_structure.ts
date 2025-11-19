@@ -7,11 +7,10 @@ import type {
   RepoStructureResult,
 } from '../types.js';
 import { viewGitHubRepositoryStructureAPI } from '../github/fileOperations.js';
-import { TOOL_NAMES } from '../constants.js';
+import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
 import { GitHubViewRepoStructureBulkQuerySchema } from '../scheme/github_view_repo_structure.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import { DESCRIPTIONS } from './descriptions.js';
 import { shouldIgnoreFile, shouldIgnoreDir } from '../utils/fileFilters.js';
 import {
   handleApiError,

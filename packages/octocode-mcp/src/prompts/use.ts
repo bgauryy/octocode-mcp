@@ -1,33 +1,39 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { logPromptCall } from '../session.js';
+import { TOOL_NAMES } from '../tools/toolMetadata.js';
+import content from '../tools/content.json';
 
 export const PROMPT_NAME = 'use';
 
 export function registerUsePrompt(server: McpServer): void {
+  const promptData = content.prompts.use;
+
   server.registerPrompt(
     PROMPT_NAME,
     {
-      description: 'Show simple guide on using Octocode MCP tools',
+      description: promptData.description,
       argsSchema: z.object({}).shape,
     },
     async () => {
       await logPromptCall(PROMPT_NAME);
 
-      const useMessage = `Use Octocode MCP for:
-
-**Code Discovery:** Search repositories, explore structures, find implementation patterns
-**Deep Analysis:** Read files, analyze PRs with diffs, track commit history
-**Research Workflow:** Start broad → narrow focus → deep dive → cross-validate
-
-**Key Practices:**
-- Use bulk queries for parallel operations (faster)
-- Apply progressive refinement (broad → specific)
-- Leverage partial file access for efficiency
-- Always start with search before reading files
-
-Available: \`githubSearchCode\`, \`githubGetFileContent\`, \`githubSearchRepositories\`, \`githubViewRepoStructure\`, \`githubSearchPullRequests\`
-`;
+      // Replace tool name placeholders with actual tool names
+      const useMessage = promptData.content
+        .replace(/\bgithubSearchCode\b/g, TOOL_NAMES.GITHUB_SEARCH_CODE)
+        .replace(/\bgithubGetFileContent\b/g, TOOL_NAMES.GITHUB_FETCH_CONTENT)
+        .replace(
+          /\bgithubSearchRepositories\b/g,
+          TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES
+        )
+        .replace(
+          /\bgithubViewRepoStructure\b/g,
+          TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE
+        )
+        .replace(
+          /\bgithubSearchPullRequests\b/g,
+          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
+        );
 
       return {
         messages: [

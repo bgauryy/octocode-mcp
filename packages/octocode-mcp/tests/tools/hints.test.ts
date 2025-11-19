@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
-  getToolHints,
-  getGenericErrorHints,
+  getToolHintsSync as getToolHints,
+  getGenericErrorHintsSync as getGenericErrorHints,
   TOOL_HINTS,
   GENERIC_ERROR_HINTS,
-} from '../../src/tools/hints';
-import { TOOL_NAMES } from '../../src/constants';
+  TOOL_NAMES,
+} from '../../src/tools/toolMetadata';
 
 describe('Hints Module', () => {
   describe('TOOL_HINTS', () => {
@@ -19,9 +19,10 @@ describe('Hints Module', () => {
       ];
 
       supportedTools.forEach(toolName => {
-        expect(TOOL_HINTS[toolName]).toBeDefined();
-        expect(TOOL_HINTS[toolName].hasResults).toBeDefined();
-        expect(TOOL_HINTS[toolName].empty).toBeDefined();
+        const hints = TOOL_HINTS[toolName];
+        expect(hints).toBeDefined();
+        expect(hints!.hasResults).toBeDefined();
+        expect(hints!.empty).toBeDefined();
       });
     });
 
@@ -58,7 +59,7 @@ describe('Hints Module', () => {
 
     describe('GITHUB_SEARCH_CODE hints', () => {
       it('should have appropriate hasResults hints', () => {
-        const hints = TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_CODE].hasResults;
+        const hints = TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_CODE]!.hasResults;
 
         expect(hints).toBeDefined();
         expect(hints.length).toBeGreaterThan(0);
@@ -69,7 +70,7 @@ describe('Hints Module', () => {
       });
 
       it('should have appropriate empty hints', () => {
-        const hints = TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_CODE].empty;
+        const hints = TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_CODE]!.empty;
 
         expect(hints).toBeDefined();
         expect(hints.length).toBeGreaterThan(0);
@@ -83,7 +84,7 @@ describe('Hints Module', () => {
     describe('GITHUB_SEARCH_REPOSITORIES hints', () => {
       it('should have appropriate hasResults hints', () => {
         const hints =
-          TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES].hasResults;
+          TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]!.hasResults;
 
         expect(hints).toBeDefined();
         expect(hints.length).toBeGreaterThan(0);
@@ -94,7 +95,7 @@ describe('Hints Module', () => {
       });
 
       it('should have appropriate empty hints', () => {
-        const hints = TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES].empty;
+        const hints = TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]!.empty;
 
         expect(hints).toBeDefined();
         expect(hints.length).toBeGreaterThan(0);
@@ -108,7 +109,7 @@ describe('Hints Module', () => {
     describe('GITHUB_VIEW_REPO_STRUCTURE hints', () => {
       it('should have appropriate hasResults hints', () => {
         const hints =
-          TOOL_HINTS[TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE].hasResults;
+          TOOL_HINTS[TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]!.hasResults;
 
         expect(hints).toBeDefined();
         expect(hints.length).toBeGreaterThan(0);
@@ -119,7 +120,7 @@ describe('Hints Module', () => {
       });
 
       it('should have appropriate empty hints', () => {
-        const hints = TOOL_HINTS[TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE].empty;
+        const hints = TOOL_HINTS[TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]!.empty;
 
         expect(hints).toBeDefined();
         expect(hints.length).toBeGreaterThan(0);
@@ -132,7 +133,7 @@ describe('Hints Module', () => {
 
     describe('GITHUB_FETCH_CONTENT hints', () => {
       it('should have appropriate hasResults hints', () => {
-        const hints = TOOL_HINTS[TOOL_NAMES.GITHUB_FETCH_CONTENT].hasResults;
+        const hints = TOOL_HINTS[TOOL_NAMES.GITHUB_FETCH_CONTENT]!.hasResults;
 
         expect(hints).toBeDefined();
         expect(hints.length).toBeGreaterThan(0);
@@ -143,7 +144,7 @@ describe('Hints Module', () => {
       });
 
       it('should have appropriate empty hints', () => {
-        const hints = TOOL_HINTS[TOOL_NAMES.GITHUB_FETCH_CONTENT].empty;
+        const hints = TOOL_HINTS[TOOL_NAMES.GITHUB_FETCH_CONTENT]!.empty;
 
         expect(hints).toBeDefined();
         expect(hints.length).toBeGreaterThan(0);
@@ -157,7 +158,7 @@ describe('Hints Module', () => {
     describe('GITHUB_SEARCH_PULL_REQUESTS hints', () => {
       it('should have appropriate hasResults hints', () => {
         const hints =
-          TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS].hasResults;
+          TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]!.hasResults;
 
         expect(hints).toBeDefined();
         expect(hints.length).toBeGreaterThan(0);
@@ -168,7 +169,7 @@ describe('Hints Module', () => {
       });
 
       it('should have appropriate empty hints', () => {
-        const hints = TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS].empty;
+        const hints = TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]!.empty;
 
         expect(hints).toBeDefined();
         expect(hints.length).toBeGreaterThan(0);
@@ -242,7 +243,7 @@ describe('Hints Module', () => {
       // Should include base hints + tool-specific hints
       const expectedHints = [
         ...TOOL_HINTS.base.hasResults,
-        ...TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_CODE].hasResults,
+        ...TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_CODE]!.hasResults,
       ];
       expect(hints).toEqual(expectedHints);
     });
@@ -256,7 +257,7 @@ describe('Hints Module', () => {
       // Should include base hints + tool-specific hints
       const expectedHints = [
         ...TOOL_HINTS.base.empty,
-        ...TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_CODE].empty,
+        ...TOOL_HINTS[TOOL_NAMES.GITHUB_SEARCH_CODE]!.empty,
       ];
       expect(hints).toEqual(expectedHints);
     });

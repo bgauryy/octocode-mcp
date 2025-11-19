@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockMcpServer } from '../fixtures/mcp-fixtures.js';
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
-import { TOOL_NAMES } from '../../src/constants.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 import type { GitHubReposSearchQuery } from '../../src/types.js';
 import { getTextContent } from '../utils/testHelpers.js';
 
