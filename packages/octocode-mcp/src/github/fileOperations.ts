@@ -17,6 +17,7 @@ import { handleGitHubAPIError } from './errors';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
+import { TOOL_NAMES } from '../tools/toolMetadata.js';
 
 export async function fetchGitHubFileContentAPI(
   params: FileContentQuery,
@@ -104,8 +105,7 @@ async function fetchGitHubFileContentAPIInternal(
 
     if (Array.isArray(data)) {
       return {
-        error:
-          'Path is a directory. Use githubViewRepoStructure to list directory contents',
+        error: `Path is a directory. Use ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to list directory contents`,
         type: 'unknown' as const,
         status: 400,
       };
@@ -120,7 +120,7 @@ async function fetchGitHubFileContentAPIInternal(
         const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
 
         return {
-          error: `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use githubSearchCode to search within the file or use startLine/endLine parameters to get specific sections`,
+          error: `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use ${TOOL_NAMES.GITHUB_SEARCH_CODE} to search within the file or use startLine/endLine parameters to get specific sections`,
           type: 'unknown' as const,
           status: 413,
         };

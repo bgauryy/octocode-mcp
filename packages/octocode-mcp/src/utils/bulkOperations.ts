@@ -4,6 +4,7 @@ import { createResponseFormat } from '../responses.js';
 import {
   getGenericErrorHintsSync,
   getToolHintsSync,
+  getBulkOperationsInstructions,
 } from '../tools/toolMetadata.js';
 import type {
   ProcessedBulkResult,
@@ -168,23 +169,21 @@ function createBulkResponse<
   if (emptyCount > 0) counts.push(`${emptyCount} empty`);
   if (errorCount > 0) counts.push(`${errorCount} failed`);
 
-  // Generate instructions string
+  // Generate instructions string from content.json
+  const bulkInstructions = getBulkOperationsInstructions();
   const instructionsParts = [
-    `Bulk response with ${flatQueries.length} results: ${counts.join(', ')}.`,
-    'Each result includes the original query, status, and data.',
+    bulkInstructions.base
+      .replace('{count}', String(flatQueries.length))
+      .replace('{counts}', counts.join(', ')),
   ];
   if (hasResultsCount > 0) {
-    instructionsParts.push(
-      'Review hasResultsStatusHints for guidance on results with data.'
-    );
+    instructionsParts.push(bulkInstructions.hasResults);
   }
   if (emptyCount > 0) {
-    instructionsParts.push('Review emptyStatusHints for no-results scenarios.');
+    instructionsParts.push(bulkInstructions.empty);
   }
   if (errorCount > 0) {
-    instructionsParts.push(
-      'Review errorStatusHints for error recovery strategies.'
-    );
+    instructionsParts.push(bulkInstructions.error);
   }
   const instructions = instructionsParts.join('\n');
 

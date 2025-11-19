@@ -1,15 +1,3 @@
-/**
- * Centralized Tool Metadata
- *
- * Single source of truth for ALL tool-related content:
- * - Tool names and IDs
- * - Tool descriptions
- * - Schema parameter descriptions
- * - Hints for hasResults and empty states
- * - Generic error hints
- * - Base schema descriptions
- */
-
 import content from './content.json';
 
 export interface ToolMetadata {
@@ -23,6 +11,7 @@ export interface ToolMetadata {
 }
 
 export interface CompleteMetadata {
+  instructions: string;
   toolNames: {
     GITHUB_FETCH_CONTENT: 'githubGetFileContent';
     GITHUB_SEARCH_CODE: 'githubSearchCode';
@@ -44,11 +33,8 @@ export interface CompleteMetadata {
   genericErrorHints: readonly string[];
 }
 
-/**
- * Complete JSON structure containing ALL metadata
- * This is the single source of truth for everything
- */
 const METADATA_JSON: CompleteMetadata = {
+  instructions: content.instructions,
   toolNames: content.toolNames as unknown as CompleteMetadata['toolNames'],
   baseSchema: {
     mainResearchGoal: content.baseSchema.mainResearchGoal,
@@ -62,78 +48,34 @@ const METADATA_JSON: CompleteMetadata = {
   genericErrorHints: content.genericErrorHints,
 };
 
-/**
- * Export tool names from the JSON
- */
+export const INSTRUCTIONS = METADATA_JSON.instructions;
 export const TOOL_NAMES = METADATA_JSON.toolNames;
 export type ToolName = (typeof TOOL_NAMES)[keyof typeof TOOL_NAMES];
-
-/**
- * Export base schema from the JSON
- */
 export const BASE_SCHEMA = METADATA_JSON.baseSchema;
-
-/**
- * Export generic error hints from the JSON
- */
 export const GENERIC_ERROR_HINTS: readonly string[] =
   METADATA_JSON.genericErrorHints;
-
-/**
- * Get complete metadata
- * @returns Complete metadata structure
- */
 export async function getCompleteMetadata(): Promise<CompleteMetadata> {
   return METADATA_JSON;
 }
-
-/**
- * Get all tool metadata
- * @returns Tool metadata only
- */
 export async function getToolsMetadata(): Promise<
   Record<string, ToolMetadata>
 > {
   return METADATA_JSON.tools;
 }
-
-/**
- * Get metadata for a specific tool
- * @param toolName - The name of the tool
- * @returns Tool metadata or undefined if not found
- */
 export async function getToolMetadata(
   toolName: string
 ): Promise<ToolMetadata | undefined> {
   return METADATA_JSON.tools[toolName];
 }
-
-/**
- * Get tool description
- * @param toolName - The name of the tool
- * @returns Tool description or empty string if not found
- */
 export async function getToolDescription(toolName: string): Promise<string> {
   return METADATA_JSON.tools[toolName]?.description ?? '';
 }
-
-/**
- * Get tool schema descriptions
- * @param toolName - The name of the tool
- * @returns Schema descriptions or empty object if not found
- */
 export async function getToolSchema(
   toolName: string
 ): Promise<Record<string, string>> {
   return METADATA_JSON.tools[toolName]?.schema ?? {};
 }
 
-/**
- * Get tool hints (async version)
- * @param toolName - The name of the tool
- * @param resultType - The result type ('hasResults' or 'empty')
- * @returns Tool hints or empty array if not found
- */
 export async function getToolHints(
   toolName: string,
   resultType: 'hasResults' | 'empty'
@@ -141,18 +83,10 @@ export async function getToolHints(
   return METADATA_JSON.tools[toolName]?.hints[resultType] ?? [];
 }
 
-/**
- * Get tool hints synchronously
- * Returns combined base + tool-specific hints
- * @param toolName - The name of the tool
- * @param resultType - The result type ('hasResults' or 'empty')
- * @returns Tool hints or empty array if not found
- */
 export function getToolHintsSync(
   toolName: string,
   resultType: 'hasResults' | 'empty'
 ): readonly string[] {
-  // Return empty array if tool doesn't exist
   if (!METADATA_JSON.tools[toolName]) {
     return [];
   }
@@ -161,26 +95,14 @@ export function getToolHintsSync(
   return [...baseHints, ...toolHints];
 }
 
-/**
- * Get generic error hints
- * @returns Generic error hints
- */
 export async function getGenericErrorHints(): Promise<readonly string[]> {
   return METADATA_JSON.genericErrorHints;
 }
 
-/**
- * Get generic error hints synchronously
- * @returns Generic error hints
- */
 export function getGenericErrorHintsSync(): readonly string[] {
   return METADATA_JSON.genericErrorHints;
 }
 
-/**
- * Get base hints that are common to all tools
- * @returns Base hints
- */
 export async function getBaseHints(): Promise<{
   hasResults: readonly string[];
   empty: readonly string[];
@@ -188,9 +110,52 @@ export async function getBaseHints(): Promise<{
   return METADATA_JSON.baseHints;
 }
 
-/**
- * Legacy exports for backward compatibility
- */
+export function getDynamicHints(
+  toolName: string,
+  hintType: 'topicsHasResults' | 'topicsEmpty' | 'keywordsEmpty'
+): readonly string[] {
+  const tool = (content.tools as Record<string, unknown>)[toolName] as
+    | {
+        hints?: {
+          dynamic?: {
+            topicsHasResults?: string[];
+            topicsEmpty?: string[];
+            keywordsEmpty?: string[];
+          };
+        };
+      }
+    | undefined;
+  return tool?.hints?.dynamic?.[hintType] ?? [];
+}
+
+export function getBulkOperationsInstructions(): {
+  base: string;
+  hasResults: string;
+  empty: string;
+  error: string;
+} {
+  return (
+    (
+      content as typeof content & {
+        bulkOperations?: {
+          instructions?: {
+            base?: string;
+            hasResults?: string;
+            empty?: string;
+            error?: string;
+          };
+        };
+      }
+    ).bulkOperations?.instructions ?? {
+      base: 'Bulk response with {count} results: {counts}. Each result includes the original query, status, and data.',
+      hasResults:
+        'Review hasResultsStatusHints for guidance on results with data.',
+      empty: 'Review emptyStatusHints for no-results scenarios.',
+      error: 'Review errorStatusHints for error recovery strategies.',
+    }
+  );
+}
+
 export const DESCRIPTIONS = new Proxy({} as Record<string, string>, {
   get(_target, prop: string) {
     return METADATA_JSON.tools[prop]?.description ?? '';
@@ -235,12 +200,6 @@ export const TOOL_HINTS = new Proxy(
   }
 );
 
-/**
- * Helper exports for schema definitions
- * These provide convenient access to schema descriptions in a nested structure
- */
-
-// Helper function to extract nested schema structure from flat schema
 function createSchemaHelper(toolName: string) {
   const schema = METADATA_JSON.tools[toolName]?.schema ?? {};
   return new Proxy(
