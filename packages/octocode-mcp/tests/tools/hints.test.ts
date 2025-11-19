@@ -192,37 +192,41 @@ describe('Hints Module', () => {
     });
 
     it('should include authentication hint', () => {
-      expect(GENERIC_ERROR_HINTS.some(h => h.includes('authentication'))).toBe(
-        true
-      );
+      expect(
+        [...GENERIC_ERROR_HINTS].some(h => h.includes('authentication'))
+      ).toBe(true);
     });
 
     it('should include network connectivity hint', () => {
       expect(
-        GENERIC_ERROR_HINTS.some(h => h.includes('network connectivity'))
+        [...GENERIC_ERROR_HINTS].some(h => h.includes('network connectivity'))
       ).toBe(true);
     });
 
     it('should include rate limits hint', () => {
-      expect(GENERIC_ERROR_HINTS.some(h => h.includes('rate limits'))).toBe(
-        true
-      );
+      expect(
+        [...GENERIC_ERROR_HINTS].some(h => h.includes('rate limits'))
+      ).toBe(true);
     });
 
     it('should include input validation hint', () => {
       expect(
-        GENERIC_ERROR_HINTS.some(h => h.includes('Validate input parameters'))
+        [...GENERIC_ERROR_HINTS].some(h =>
+          h.includes('Validate input parameters')
+        )
       ).toBe(true);
     });
 
     it('should include repository visibility hint', () => {
       expect(
-        GENERIC_ERROR_HINTS.some(h => h.includes('repository visibility'))
+        [...GENERIC_ERROR_HINTS].some(h => h.includes('repository visibility'))
       ).toBe(true);
     });
 
     it('should include retry hint', () => {
-      expect(GENERIC_ERROR_HINTS.some(h => h.includes('Retry'))).toBe(true);
+      expect([...GENERIC_ERROR_HINTS].some(h => h.includes('Retry'))).toBe(
+        true
+      );
     });
 
     it('should have string hints (not empty strings)', () => {
@@ -321,7 +325,7 @@ describe('Hints Module', () => {
       expect(hints).toBeDefined();
       expect(Array.isArray(hints)).toBe(true);
       expect(hints.length).toBeGreaterThan(0);
-      expect(hints).toEqual(GENERIC_ERROR_HINTS);
+      expect(hints).toEqual([...GENERIC_ERROR_HINTS]);
     });
 
     it('should return array-like readonly result', () => {

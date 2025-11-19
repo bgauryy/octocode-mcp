@@ -9,6 +9,7 @@ export default defineConfig({
     hookTimeout: 1000, // 1 second for hooks
     teardownTimeout: 1000, // 1 second for teardown
     dangerouslyIgnoreUnhandledErrors: true, // Ignore unhandled errors from test mocks
+    setupFiles: ['./tests/setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

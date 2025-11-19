@@ -50,7 +50,7 @@ export function registerSearchGitHubReposTool(
           try {
             await callback(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, queries);
           } catch {
-            // ignore callback errors
+            // ignore
           }
         }
 
@@ -94,7 +94,6 @@ function expandQueriesWithBothSearchTypes(
     const hasKeywords = hasValidKeywords(query);
 
     if (hasTopics && hasKeywords) {
-      // Split into two separate queries for better search optimization
       const { topicsToSearch, keywordsToSearch, ...baseQuery } = query;
 
       expandedQueries.push(

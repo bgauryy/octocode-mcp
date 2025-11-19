@@ -132,8 +132,8 @@ export async function withDataCache<T>(
       cache.set(cacheKey, result, ttl);
       cacheStats.sets++;
       cacheStats.totalKeys = cache.keys().length;
-    } catch (_e) {
-      // ignore cache write errors
+    } catch {
+      // ignore
     }
   }
 

@@ -269,41 +269,29 @@ class PullRequestSearchQueryBuilder extends BaseQueryBuilder {
 
 function mapLanguageToGitHub(language: string): string {
   const languageMap: Record<string, string> = {
-    // JavaScript family
     js: 'JavaScript',
     jsx: 'JavaScript',
     javascript: 'JavaScript',
     mjs: 'JavaScript',
     cjs: 'JavaScript',
-
-    // TypeScript family
     ts: 'TypeScript',
     tsx: 'TypeScript',
-
-    // Python family
     py: 'Python',
     py3: 'Python',
-
-    // Java family
     java: 'Java',
     kt: 'Kotlin',
     scala: 'Scala',
-
-    // C family
     c: 'C',
     cpp: 'C++',
     cc: 'C++',
     cxx: 'C++',
     cs: 'C#',
 
-    // Web technologies
     html: 'HTML',
     css: 'CSS',
     scss: 'SCSS',
     sass: 'Sass',
     less: 'Less',
-
-    // Other common languages
     go: 'Go',
     rs: 'Rust',
     rb: 'Ruby',
@@ -317,20 +305,14 @@ function mapLanguageToGitHub(language: string): string {
     fish: 'Shell',
     ps1: 'PowerShell',
     psm1: 'PowerShell',
-
-    // Data formats
     json: 'JSON',
     xml: 'XML',
     yaml: 'YAML',
     yml: 'YAML',
     toml: 'TOML',
     ini: 'INI',
-
-    // Documentation
     md: 'Markdown',
     rst: 'reStructuredText',
-
-    // Configuration
     conf: 'Configuration',
     config: 'Configuration',
   };
@@ -397,7 +379,6 @@ export function shouldUseSearchForPRs(
     params['no-label'] !== undefined ||
     params['no-milestone'] !== undefined ||
     params['no-project'] !== undefined ||
-    // archived and fork parameters removed - always optimized to exclude archived repositories and forks for better quality
     params.created !== undefined ||
     params.updated !== undefined ||
     params['merged-at'] !== undefined ||

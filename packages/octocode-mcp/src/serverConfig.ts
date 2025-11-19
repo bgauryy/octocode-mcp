@@ -2,7 +2,6 @@ import { getGithubCLIToken } from './utils/exec.js';
 import { version } from '../package.json';
 import type { ServerConfig } from './types.js';
 
-// Simple module state
 let config: ServerConfig | null = null;
 let cachedToken: string | null = null;
 let initializationPromise: Promise<void> | null = null;
@@ -118,5 +117,4 @@ export function clearCachedToken(): void {
   cachedToken = null;
 }
 
-// Export for testing
 export { parseStringArray };

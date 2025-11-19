@@ -7,10 +7,8 @@ import { getServerConfig } from '../serverConfig.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { version } from '../../package.json';
 
-// Create Octokit class with throttling plugin
 export const OctokitWithThrottling = Octokit.plugin(throttling);
 
-// Octokit instance management
 let octokitInstance: InstanceType<typeof OctokitWithThrottling> | null = null;
 
 const createThrottleOptions = () => ({
@@ -55,7 +53,6 @@ export function clearCachedToken(): void {
   octokitInstance = null;
 }
 
-// Simple in-memory cache for default branch results
 const defaultBranchCache = new Map<string, string>();
 
 export async function getDefaultBranch(
@@ -82,5 +79,3 @@ export async function getDefaultBranch(
     return null;
   }
 }
-
-// No cleanup needed for simplified token management

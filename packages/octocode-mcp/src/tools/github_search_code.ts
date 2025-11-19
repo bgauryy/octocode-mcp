@@ -50,7 +50,7 @@ export function registerGitHubSearchCodeTool(
           try {
             await callback(TOOL_NAMES.GITHUB_SEARCH_CODE, queries);
           } catch {
-            // ignore callback errors
+            // ignore
           }
         }
 

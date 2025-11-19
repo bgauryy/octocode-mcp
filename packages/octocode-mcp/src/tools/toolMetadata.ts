@@ -1,5 +1,5 @@
-import content from './content.json';
-
+import { version } from '../../package.json';
+import { fetchWithRetries } from '../utils/fetchWithRetries.js';
 export interface ToolMetadata {
   name: string;
   description: string;
@@ -12,6 +12,13 @@ export interface ToolMetadata {
 
 export interface CompleteMetadata {
   instructions: string;
+  prompts: {
+    research: { name: string; description: string; content: string };
+    kudos: { name: string; description: string; content: string };
+    use: { name: string; description: string; content: string };
+    // Allow future prompt entries without breaking the type
+    [key: string]: { name: string; description: string; content: string };
+  };
   toolNames: {
     GITHUB_FETCH_CONTENT: 'githubGetFileContent';
     GITHUB_SEARCH_CODE: 'githubSearchCode';
@@ -33,61 +40,247 @@ export interface CompleteMetadata {
   genericErrorHints: readonly string[];
 }
 
-const METADATA_JSON: CompleteMetadata = {
-  instructions: content.instructions,
-  toolNames: content.toolNames as unknown as CompleteMetadata['toolNames'],
-  baseSchema: {
-    mainResearchGoal: content.baseSchema.mainResearchGoal,
-    researchGoal: content.baseSchema.researchGoal,
-    reasoning: content.baseSchema.reasoning,
-    bulkQuery: (toolName: string) =>
-      content.baseSchema.bulkQueryTemplate.replace('{toolName}', toolName),
-  },
-  tools: content.tools as unknown as Record<string, ToolMetadata>,
-  baseHints: content.baseHints,
-  genericErrorHints: content.genericErrorHints,
+let METADATA_JSON: CompleteMetadata | null = null;
+let initializationPromise: Promise<void> | null = null;
+
+type ToolNamesValue =
+  CompleteMetadata['toolNames'][keyof CompleteMetadata['toolNames']];
+type ToolNamesMap = Record<string, ToolNamesValue>;
+
+const STATIC_TOOL_NAMES: ToolNamesMap = {
+  GITHUB_FETCH_CONTENT: 'githubGetFileContent',
+  GITHUB_SEARCH_CODE: 'githubSearchCode',
+  GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
+  GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
+  GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
 };
 
-export const INSTRUCTIONS = METADATA_JSON.instructions;
-export const TOOL_NAMES = METADATA_JSON.toolNames;
-export type ToolName = (typeof TOOL_NAMES)[keyof typeof TOOL_NAMES];
-export const BASE_SCHEMA = METADATA_JSON.baseSchema;
-export const GENERIC_ERROR_HINTS: readonly string[] =
-  METADATA_JSON.genericErrorHints;
-export async function getCompleteMetadata(): Promise<CompleteMetadata> {
+function getMeta(): CompleteMetadata {
+  if (!METADATA_JSON) {
+    throw new Error(
+      'Tool metadata not initialized. Call and await initializeToolMetadata() before using tool metadata.'
+    );
+  }
   return METADATA_JSON;
+}
+
+function deepFreeze<T>(obj: T): T {
+  if (obj && typeof obj === 'object') {
+    Object.freeze(obj);
+    // eslint-disable-next-line @typescript-eslint/ban-types
+    Object.getOwnPropertyNames(obj as object).forEach(prop => {
+      const value = (obj as unknown as Record<string, unknown>)[prop];
+      if (
+        value !== null &&
+        (typeof value === 'object' || typeof value === 'function') &&
+        !Object.isFrozen(value)
+      ) {
+        deepFreeze(value);
+      }
+    });
+  }
+  return obj;
+}
+
+export async function initializeToolMetadata(): Promise<void> {
+  if (METADATA_JSON) {
+    return;
+  }
+  if (initializationPromise) {
+    return initializationPromise;
+  }
+  type RawBaseSchema = {
+    mainResearchGoal: string;
+    researchGoal: string;
+    reasoning: string;
+    bulkQueryTemplate: string;
+  };
+  type RawCompleteMetadata = {
+    instructions: string;
+    prompts: CompleteMetadata['prompts'];
+    toolNames: CompleteMetadata['toolNames'];
+    baseSchema: RawBaseSchema;
+    tools: Record<string, ToolMetadata>;
+    baseHints: CompleteMetadata['baseHints'];
+    genericErrorHints: readonly string[];
+    bulkOperations?: {
+      instructions?: {
+        base?: string;
+        hasResults?: string;
+        empty?: string;
+        error?: string;
+      };
+    };
+  };
+
+  initializationPromise = (async () => {
+    const METADATA_URL = 'https://octocodeai.com/api/mcpContent';
+
+    const data = (await fetchWithRetries(METADATA_URL, {
+      maxRetries: 3,
+      headers: {
+        'User-Agent': `Octocode-MCP/${version}`,
+      },
+    })) as unknown;
+
+    if (
+      typeof data !== 'object' ||
+      data === null ||
+      typeof (data as Record<string, unknown>).instructions !== 'string' ||
+      typeof (data as Record<string, unknown>).toolNames !== 'object' ||
+      typeof (data as Record<string, unknown>).tools !== 'object' ||
+      typeof (data as Record<string, unknown>).baseSchema !== 'object' ||
+      typeof (data as Record<string, unknown>).baseHints !== 'object' ||
+      !Array.isArray(
+        (data as Record<string, unknown>).genericErrorHints as unknown[]
+      ) ||
+      typeof (data as Record<string, unknown>).prompts !== 'object'
+    ) {
+      throw new Error('Invalid tool metadata format from remote source.');
+    }
+
+    const raw = data as RawCompleteMetadata;
+    const toolNames = raw.toolNames;
+    const baseSchema = raw.baseSchema;
+
+    const complete: CompleteMetadata = {
+      instructions: raw.instructions,
+      prompts: raw.prompts,
+      toolNames,
+      baseSchema: {
+        mainResearchGoal: baseSchema.mainResearchGoal,
+        researchGoal: baseSchema.researchGoal,
+        reasoning: baseSchema.reasoning,
+        bulkQuery: (toolName: string) =>
+          baseSchema.bulkQueryTemplate.replace('{toolName}', toolName),
+      },
+      tools: raw.tools,
+      baseHints: raw.baseHints,
+      genericErrorHints: raw.genericErrorHints,
+    };
+
+    METADATA_JSON = deepFreeze(complete);
+  })();
+  await initializationPromise;
+}
+
+export async function loadToolContent(): Promise<CompleteMetadata> {
+  if (!METADATA_JSON) {
+    await initializeToolMetadata();
+  }
+  return getMeta();
+}
+
+export function getInstructionsSync(): string {
+  return getMeta().instructions;
+}
+
+export function getPromptsSync(): CompleteMetadata['prompts'] {
+  return getMeta().prompts;
+}
+
+export const TOOL_NAMES = new Proxy({} as CompleteMetadata['toolNames'], {
+  get(_target, prop: string) {
+    if (METADATA_JSON) {
+      return (METADATA_JSON.toolNames as ToolNamesMap)[prop as string];
+    }
+    return STATIC_TOOL_NAMES[prop as string as keyof typeof STATIC_TOOL_NAMES];
+  },
+  ownKeys() {
+    return METADATA_JSON
+      ? Object.keys(METADATA_JSON.toolNames)
+      : Object.keys(STATIC_TOOL_NAMES);
+  },
+  getOwnPropertyDescriptor(_target, prop) {
+    if (METADATA_JSON) {
+      if (prop in METADATA_JSON.toolNames) {
+        return {
+          enumerable: true,
+          configurable: true,
+          value: (METADATA_JSON.toolNames as ToolNamesMap)[prop as string],
+        };
+      }
+      return undefined;
+    }
+    if (prop in STATIC_TOOL_NAMES) {
+      return {
+        enumerable: true,
+        configurable: true,
+        value: STATIC_TOOL_NAMES[prop as keyof typeof STATIC_TOOL_NAMES],
+      };
+    }
+    return undefined;
+  },
+}) as CompleteMetadata['toolNames'];
+
+export type ToolName = (typeof TOOL_NAMES)[keyof typeof TOOL_NAMES];
+
+export const BASE_SCHEMA = new Proxy({} as CompleteMetadata['baseSchema'], {
+  get(_target, prop: string) {
+    if (METADATA_JSON) {
+      return (METADATA_JSON.baseSchema as Record<string, unknown>)[
+        prop as string
+      ] as CompleteMetadata['baseSchema'][keyof CompleteMetadata['baseSchema']];
+    }
+    if (prop === 'bulkQuery') {
+      return (toolName: string) =>
+        `Research queries for ${toolName} (1-3 queries per call for optimal resource management). Review schema before use for optimal results`;
+    }
+    return '';
+  },
+}) as CompleteMetadata['baseSchema'];
+
+export const GENERIC_ERROR_HINTS: readonly string[] = new Proxy(
+  [] as unknown as readonly string[],
+  {
+    get(_t, prop: string | symbol) {
+      if (METADATA_JSON) {
+        const target = METADATA_JSON.genericErrorHints as unknown as Record<
+          string | symbol,
+          unknown
+        >;
+        return target[prop];
+      }
+      const fallback: unknown[] = [];
+      return (fallback as unknown as Record<string | symbol, unknown>)[prop];
+    },
+  }
+) as readonly string[];
+
+export async function getCompleteMetadata(): Promise<CompleteMetadata> {
+  return getMeta();
 }
 export async function getToolsMetadata(): Promise<
   Record<string, ToolMetadata>
 > {
-  return METADATA_JSON.tools;
+  return getMeta().tools;
 }
 export async function getToolMetadata(
   toolName: string
 ): Promise<ToolMetadata | undefined> {
-  return METADATA_JSON.tools[toolName];
+  return getMeta().tools[toolName];
 }
 export async function getToolDescription(toolName: string): Promise<string> {
-  return METADATA_JSON.tools[toolName]?.description ?? '';
+  return getMeta().tools[toolName]?.description ?? '';
 }
 export async function getToolSchema(
   toolName: string
 ): Promise<Record<string, string>> {
-  return METADATA_JSON.tools[toolName]?.schema ?? {};
+  return getMeta().tools[toolName]?.schema ?? {};
 }
 
 export async function getToolHints(
   toolName: string,
   resultType: 'hasResults' | 'empty'
 ): Promise<readonly string[]> {
-  return METADATA_JSON.tools[toolName]?.hints[resultType] ?? [];
+  return getMeta().tools[toolName]?.hints[resultType] ?? [];
 }
 
 export function getToolHintsSync(
   toolName: string,
   resultType: 'hasResults' | 'empty'
 ): readonly string[] {
-  if (!METADATA_JSON.tools[toolName]) {
+  if (!METADATA_JSON || !METADATA_JSON.tools[toolName]) {
     return [];
   }
   const baseHints = METADATA_JSON.baseHints[resultType] ?? [];
@@ -96,25 +289,25 @@ export function getToolHintsSync(
 }
 
 export async function getGenericErrorHints(): Promise<readonly string[]> {
-  return METADATA_JSON.genericErrorHints;
+  return getMeta().genericErrorHints;
 }
 
 export function getGenericErrorHintsSync(): readonly string[] {
-  return METADATA_JSON.genericErrorHints;
+  return getMeta().genericErrorHints;
 }
 
 export async function getBaseHints(): Promise<{
   hasResults: readonly string[];
   empty: readonly string[];
 }> {
-  return METADATA_JSON.baseHints;
+  return getMeta().baseHints;
 }
 
 export function getDynamicHints(
   toolName: string,
   hintType: 'topicsHasResults' | 'topicsEmpty' | 'keywordsEmpty'
 ): readonly string[] {
-  const tool = (content.tools as Record<string, unknown>)[toolName] as
+  const tool = (getMeta().tools as Record<string, unknown>)[toolName] as
     | {
         hints?: {
           dynamic?: {
@@ -134,31 +327,37 @@ export function getBulkOperationsInstructions(): {
   empty: string;
   error: string;
 } {
-  return (
-    (
-      content as typeof content & {
-        bulkOperations?: {
-          instructions?: {
-            base?: string;
-            hasResults?: string;
-            empty?: string;
-            error?: string;
-          };
-        };
-      }
-    ).bulkOperations?.instructions ?? {
-      base: 'Bulk response with {count} results: {counts}. Each result includes the original query, status, and data.',
-      hasResults:
-        'Review hasResultsStatusHints for guidance on results with data.',
-      empty: 'Review emptyStatusHints for no-results scenarios.',
-      error: 'Review errorStatusHints for error recovery strategies.',
-    }
-  );
+  const meta = getMeta() as unknown as {
+    bulkOperations?: {
+      instructions?: {
+        base?: string;
+        hasResults?: string;
+        empty?: string;
+        error?: string;
+      };
+    };
+  } & CompleteMetadata;
+
+  const defaults = {
+    base: 'Bulk response with {count} results: {counts}. Each result includes the original query, status, and data.',
+    hasResults:
+      'Review hasResultsStatusHints for guidance on results with data.',
+    empty: 'Review emptyStatusHints for no-results scenarios.',
+    error: 'Review errorStatusHints for error recovery strategies.',
+  };
+
+  const instr = meta.bulkOperations?.instructions;
+  return {
+    base: instr?.base ?? defaults.base,
+    hasResults: instr?.hasResults ?? defaults.hasResults,
+    empty: instr?.empty ?? defaults.empty,
+    error: instr?.error ?? defaults.error,
+  };
 }
 
 export const DESCRIPTIONS = new Proxy({} as Record<string, string>, {
   get(_target, prop: string) {
-    return METADATA_JSON.tools[prop]?.description ?? '';
+    return METADATA_JSON?.tools[prop]?.description ?? '';
   },
 });
 
@@ -172,15 +371,31 @@ export const TOOL_HINTS = new Proxy(
       _target,
       prop: string
     ): { hasResults: readonly string[]; empty: readonly string[] } {
+      if (!METADATA_JSON) {
+        if (prop === 'base') {
+          return { hasResults: [], empty: [] };
+        }
+        return { hasResults: [], empty: [] };
+      }
       if (prop === 'base') {
         return METADATA_JSON.baseHints;
       }
       return METADATA_JSON.tools[prop]?.hints ?? { hasResults: [], empty: [] };
     },
     ownKeys() {
-      return ['base', ...Object.keys(METADATA_JSON.tools)];
+      return ['base', ...Object.keys(METADATA_JSON?.tools ?? {})];
     },
     getOwnPropertyDescriptor(_target, prop) {
+      if (!METADATA_JSON) {
+        if (prop === 'base') {
+          return {
+            enumerable: true,
+            configurable: true,
+            value: { hasResults: [], empty: [] },
+          };
+        }
+        return undefined;
+      }
       if (prop === 'base' || METADATA_JSON.tools[prop as string]) {
         const value =
           prop === 'base'
@@ -201,7 +416,6 @@ export const TOOL_HINTS = new Proxy(
 );
 
 function createSchemaHelper(toolName: string) {
-  const schema = METADATA_JSON.tools[toolName]?.schema ?? {};
   return new Proxy(
     {},
     {
@@ -210,6 +424,8 @@ function createSchemaHelper(toolName: string) {
           {},
           {
             get(_target2, field: string): string {
+              if (!METADATA_JSON) return '';
+              const schema = METADATA_JSON.tools[toolName]?.schema ?? {};
               return schema[field] ?? '';
             },
           }

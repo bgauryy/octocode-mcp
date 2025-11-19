@@ -1,11 +1,14 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { logPromptCall } from '../session.js';
-import content from '../tools/content.json';
+import type { CompleteMetadata } from '../tools/toolMetadata.js';
 
 export const PROMPT_NAME = 'kudos';
 
-export function registerKudosPrompt(server: McpServer): void {
+export function registerKudosPrompt(
+  server: McpServer,
+  content: CompleteMetadata
+): void {
   const promptData = content.prompts.kudos;
 
   server.registerPrompt(

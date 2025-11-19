@@ -22,7 +22,6 @@ export async function searchGitHubPullRequestsAPI(
   authInfo?: AuthInfo,
   sessionId?: string
 ): Promise<PullRequestSearchResult> {
-  // Generate cache key based on search parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey('gh-api-prs', params, sessionId);
 
   const result = await withDataCache<PullRequestSearchResult>(
@@ -35,7 +34,6 @@ export async function searchGitHubPullRequestsAPI(
       );
     },
     {
-      // Only cache successful responses
       shouldCache: (value: PullRequestSearchResult) => !value.error,
     }
   );
@@ -49,7 +47,6 @@ async function searchGitHubPullRequestsAPIInternal(
   _sessionId?: string
 ): Promise<PullRequestSearchResult> {
   try {
-    // If prNumber is provided with owner/repo, fetch specific PR by number
     if (
       params.prNumber &&
       params.owner &&
@@ -62,7 +59,6 @@ async function searchGitHubPullRequestsAPIInternal(
 
     const octokit = await getOctokit(authInfo);
 
-    // Decide between search and list based on filters
     const shouldUseSearch = shouldUseSearchForPRs(params);
 
     if (
@@ -542,12 +538,28 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo
 ): Promise<PullRequestSearchResult> {
+  const { owner, repo, prNumber } = params;
+
+  if (!owner || !repo || !prNumber) {
+    return {
+      pull_requests: [],
+      total_count: 0,
+      error: 'Owner, repo, and prNumber are required parameters',
+      hints: ['Provide owner, repo, and prNumber'],
+    };
+  }
+
+  if (Array.isArray(owner) || Array.isArray(repo)) {
+    return {
+      pull_requests: [],
+      total_count: 0,
+      error: 'Owner and repo must be single values',
+      hints: ['Do not use array for owner or repo when fetching by number'],
+    };
+  }
+
   try {
     const octokit = await getOctokit(authInfo);
-
-    const owner = params.owner as string;
-    const repo = params.repo as string;
-    const prNumber = params.prNumber!;
 
     // Use REST API to get specific PR by number
     const result = await octokit.rest.pulls.get({
@@ -558,14 +570,11 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
 
     const pr = result.data;
 
-    // Transform to our expected format
     const transformedPR: GitHubPullRequestItem =
       await transformPullRequestItemFromREST(pr, params, octokit, authInfo);
 
-    // Get owner/repo from params
     const repoFullName = `${params.owner}/${params.repo}`;
 
-    // Transform to expected GitHub API format
     const formattedPR = {
       id: 0,
       number: transformedPR.number,
@@ -630,9 +639,6 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
-    const owner = params.owner as string;
-    const repo = params.repo as string;
-    const prNumber = params.prNumber!;
 
     return {
       pull_requests: [],

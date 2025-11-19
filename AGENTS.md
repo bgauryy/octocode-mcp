@@ -15,21 +15,22 @@ Before starting any task:
 
 ## Operating Mode
 
-**Default:** Auto-approve for source code and tests | Ask for configuration changes
+**Default:** High Autonomy - Auto-approve most changes | Protect Secrets
 
 | Action | Approval | Notes |
 |--------|----------|-------|
 | Edit `packages/*/src/` | Auto | Source code - follow patterns |
 | Edit `packages/*/tests/` | Auto | Tests - keep them passing |
-| Edit config files | Ask first | No direct writes without approval |
+| Edit config files | Auto | Maintain validity, no breaking changes |
 | Edit `docs/` | Auto | Documentation updates allowed |
-| Install dependencies | Ask first | Requires explicit approval |
-| Edit `.github/workflows/` | Ask first | CI/CD configuration |
-| Edit root `package.json` | Ask first | Monorepo configuration |
-| Database operations | Manual only | Never auto-execute |
-| Create summary docs | Ask first | Only if explicitly requested |
+| Install dependencies | Auto | Use `yarn` workspace commands |
+| Edit `.github/workflows/` | Auto | CI/CD configuration |
+| Edit root `package.json` | Auto | Monorepo configuration |
+| Database operations | Manual | Never auto-execute |
+| Edit Secrets/Env | NEVER | Ask user to handle credentials |
+| Create summary docs | Ask | Only if explicitly requested |
 
-**Override:** Add `# agent: auto-approve` in task description for exceptions.
+**Override:** Add `# agent: manual-approval` in task description for strict oversight.
 
 ## Project Overview
 
@@ -60,7 +61,7 @@ octocode-mcp/                    # Root monorepo
 │       ├── src/                # FULL ACCESS - Utility source
 │       └── tests/              # FULL ACCESS - Utility tests
 ├── docs/                        # EDIT - Documentation
-├── .github/                     # ASK - CI/CD workflows
+├── .github/                     # EDIT - CI/CD workflows
 ├── node_modules/               # NEVER - Dependencies
 └── coverage/                    # NEVER - Test coverage reports
 ```
@@ -71,17 +72,17 @@ octocode-mcp/                    # Root monorepo
 |------|--------------|-------------|
 | `packages/*/src/` | FULL | Source code - edit freely |
 | `packages/*/tests/` | FULL | Tests - always keep passing |
-| `docs/` | EDIT | Documentation (but ask before creating summaries) |
+| `docs/` | EDIT | Documentation |
 | `packages/*/dist/` | NEVER | Build artifacts |
 | `node_modules/` | NEVER | Dependencies |
 | `coverage/` | NEVER | Test coverage reports |
 | `.env*`, `secrets/` | NEVER | Secrets and credentials |
 | `mcp.sqlite` | NEVER | Session database |
-| `.github/workflows/` | ASK | CI/CD configuration |
-| `package.json` (root) | ASK | Monorepo configuration |
-| `*.config.*` | ASK | Build/test/lint configurations |
+| `.github/workflows/` | EDIT | CI/CD configuration |
+| `package.json` (root) | EDIT | Monorepo configuration |
+| `*.config.*` | EDIT | Build/test/lint configurations |
 
-**Legend:** FULL = Allowed, EDIT = Modify with care, ASK = Requires approval, NEVER = Forbidden
+**Legend:** FULL = Allowed, EDIT = Modify with care, NEVER = Forbidden
 
 ## Core Principles
 
@@ -415,22 +416,13 @@ These files are auto-generated and will be overwritten:
 - `_docs/`, `_scripts/` - Ignored build artifacts
 - `.yarn/install-state.gz` - Yarn state
 
-### Configuration (Requires Approval)
-- `package.json` (root) - Monorepo configuration
-- `.github/workflows/*.yml` - CI/CD configuration
-- `tsconfig.json`, `tsconfig.build.json` - TypeScript configuration
-- `vitest.config.ts` - Test configuration
-- `rollup.config.js` - Build configuration
-- `.eslintrc.json` - Linting rules
-- `.prettierrc.json` - Formatting rules
-
 ### Sensitive Files
 - `.env*` - Environment variables
 - `mcp.sqlite` - Session database
 - `*.dxt` - Desktop extension packages
 - `.cursor/`, `.context/` - IDE-specific files
 
-**Rule:** If you need to modify any of these, ask for explicit approval first.
+**Rule:** Do not read or modify these files unless explicitly asked.
 
 ## What NOT to Do
 
@@ -524,7 +516,7 @@ Code Change → Lint → Format → Type Check → Tests → Commit
 
 ---
 
-**Last Updated:** November 4, 2025  
+**Last Updated:** November 19, 2025  
 **Monorepo Version:** 1.0.0  
-**Main Package:** octocode-mcp v7.0.7  
+**Main Package:** octocode-mcp v7.0.12  
 **Questions:** https://github.com/bgauryy/octocode-mcp/issues
