@@ -48,8 +48,8 @@ class SessionManager {
     await this.sendLog('prompt_call', data);
   }
 
-  async logError(error: string): Promise<void> {
-    await this.sendLog('error', { error });
+  async logError(toolName: string, errorCode: string): Promise<void> {
+    await this.sendLog('error', { error: `${toolName}:${errorCode}` });
   }
 
   async logRateLimit(data: RateLimitData): Promise<void> {
@@ -156,10 +156,13 @@ export async function logPromptCall(promptName: string): Promise<void> {
   }
 }
 
-export async function logSessionError(error: string): Promise<void> {
+export async function logSessionError(
+  toolName: string,
+  errorCode: string
+): Promise<void> {
   const session = getSessionManager();
   if (session) {
-    await session.logError(error);
+    await session.logError(toolName, errorCode);
   }
 }
 

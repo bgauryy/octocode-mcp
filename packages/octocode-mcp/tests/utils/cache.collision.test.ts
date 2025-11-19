@@ -352,43 +352,6 @@ describe('Cache Collision Resistance Tests', () => {
       expect(q3 - q1 < avg * 2).toBe(true);
     });
 
-    it.skip('should not leak information through hash comparison timing', () => {
-      // Skip this test in CI environments or when timing is unreliable
-      if (process.env.CI || process.env.GITHUB_ACTIONS) {
-        // This test is inherently flaky in CI environments due to system load variations
-        return;
-      }
-
-      const baseKey = generateCacheKey('timing', { secret: 'sensitive' });
-      const baseHash = extractHash(baseKey);
-
-      // Generate keys with similar prefixes to test timing consistency
-      const similarKeys = Array.from({ length: 100 }, (_, i) =>
-        generateCacheKey('timing', { secret: `sensitive${i}` })
-      );
-
-      const timings: number[] = [];
-
-      for (const key of similarKeys) {
-        const hash = extractHash(key);
-        const start = process.hrtime.bigint();
-
-        // Simulate hash comparison (though we don't expose direct comparison)
-        const isEqual = hash === baseHash;
-
-        const end = process.hrtime.bigint();
-        timings.push(Number(end - start) / 1_000_000);
-
-        expect(isEqual).toBe(false); // All should be different
-      }
-
-      const avg = timings.reduce((a, b) => a + b, 0) / timings.length;
-      const maxTiming = Math.max(...timings);
-      const minTiming = Math.min(...timings);
-
-      const tolerance = Math.max(avg * 3, 0.005);
-      expect(maxTiming - minTiming < tolerance).toBe(true);
-    });
   });
 
   describe('Cryptographic Hash Properties', () => {

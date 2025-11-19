@@ -1,11 +1,17 @@
 import type { PromiseResult, PromiseExecutionOptions } from '../types.js';
+import { VALIDATION_ERRORS, PROMISE_ERRORS } from '../errorCodes.js';
+import { logSessionError } from '../session.js';
 
 export async function executeWithErrorIsolation<T>(
   promises: Array<() => Promise<T>>,
   options: PromiseExecutionOptions = {}
 ): Promise<PromiseResult<T>[]> {
   if (!Array.isArray(promises)) {
-    throw new Error('promises must be an array');
+    logSessionError(
+      'promiseUtils',
+      VALIDATION_ERRORS.PROMISES_NOT_ARRAY.code
+    ).catch(() => {});
+    throw new Error(VALIDATION_ERRORS.PROMISES_NOT_ARRAY.message);
   }
 
   if (promises.length === 0) {
@@ -15,19 +21,32 @@ export async function executeWithErrorIsolation<T>(
   const { timeout = 30000, concurrency = promises.length, onError } = options;
 
   if (timeout <= 0) {
-    throw new Error('timeout must be positive');
+    logSessionError(
+      'promiseUtils',
+      VALIDATION_ERRORS.TIMEOUT_NOT_POSITIVE.code
+    ).catch(() => {});
+    throw new Error(VALIDATION_ERRORS.TIMEOUT_NOT_POSITIVE.message);
   }
   if (concurrency <= 0) {
-    throw new Error('concurrency must be positive');
+    logSessionError(
+      'promiseUtils',
+      VALIDATION_ERRORS.CONCURRENCY_NOT_POSITIVE.code
+    ).catch(() => {});
+    throw new Error(VALIDATION_ERRORS.CONCURRENCY_NOT_POSITIVE.message);
   }
 
   const validPromises = promises.map((promiseFn, index) =>
     typeof promiseFn === 'function'
       ? promiseFn
-      : () =>
-          Promise.reject(
-            new Error(`Promise function at index ${index} is not a function`)
-          )
+      : () => {
+          logSessionError(
+            'promiseUtils',
+            PROMISE_ERRORS.NOT_A_FUNCTION.code
+          ).catch(() => {});
+          return Promise.reject(
+            new Error(PROMISE_ERRORS.NOT_A_FUNCTION.message(index))
+          );
+        }
   );
 
   if (concurrency < validPromises.length) {
@@ -79,7 +98,10 @@ async function createIsolatedPromise<T>(
   try {
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
-        reject(new Error(`Promise ${index} timed out after ${timeout}ms`));
+        logSessionError('promiseUtils', PROMISE_ERRORS.TIMEOUT.code).catch(
+          () => {}
+        );
+        reject(new Error(PROMISE_ERRORS.TIMEOUT.message(index, timeout)));
       }, timeout);
     });
 
@@ -128,9 +150,13 @@ async function executeWithConcurrencyLimit<T>(
       const promiseFn = promiseFns[currentIndex];
 
       if (!promiseFn) {
+        logSessionError(
+          'promiseUtils',
+          PROMISE_ERRORS.FUNCTION_UNDEFINED.code
+        ).catch(() => {});
         results[currentIndex] = {
           success: false,
-          error: new Error('Promise function is undefined'),
+          error: new Error(PROMISE_ERRORS.FUNCTION_UNDEFINED.message),
           index: currentIndex,
         };
         continue;

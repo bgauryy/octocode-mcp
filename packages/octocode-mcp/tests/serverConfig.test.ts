@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { spawn } from 'child_process';
+import { EventEmitter } from 'events';
 import {
   initialize,
   cleanup,
@@ -11,14 +13,39 @@ import {
   isLoggingEnabled,
 } from '../src/serverConfig.js';
 
-// Mock dependencies
-vi.mock('../src/utils/exec.js', () => ({
-  getGithubCLIToken: vi.fn(),
-}));
+// Helper function to create mock process
+function createMockProcess() {
+  const mockProcess = new EventEmitter() as EventEmitter & {
+    stdout: EventEmitter;
+    stderr: EventEmitter;
+    kill: ReturnType<typeof vi.fn>;
+  };
+  mockProcess.stdout = new EventEmitter();
+  mockProcess.stderr = new EventEmitter();
+  mockProcess.kill = vi.fn();
+  return mockProcess;
+}
 
-import { getGithubCLIToken } from '../src/utils/exec.js';
+// Helper function to mock spawn with success
+function mockSpawnSuccess(token: string) {
+  const mockProcess = createMockProcess();
+  vi.mocked(spawn).mockReturnValue(mockProcess);
+  setTimeout(() => {
+    mockProcess.stdout.emit('data', token + '\n');
+    mockProcess.emit('close', 0);
+  }, 10);
+  return mockProcess;
+}
 
-const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
+// Helper function to mock spawn with failure
+function mockSpawnFailure() {
+  const mockProcess = createMockProcess();
+  vi.mocked(spawn).mockReturnValue(mockProcess);
+  setTimeout(() => {
+    mockProcess.emit('close', 1);
+  }, 10);
+  return mockProcess;
+}
 
 describe('ServerConfig - Simplified Version', () => {
   const originalEnv = process.env;
@@ -39,6 +66,12 @@ describe('ServerConfig - Simplified Version', () => {
     delete process.env.ENABLE_TOOLS;
     delete process.env.DISABLE_TOOLS;
     delete process.env.LOG;
+    delete process.env.TEST_GITHUB_TOKEN;
+  });
+
+  afterEach(() => {
+    // Ensure cache is cleared between tests
+    clearCachedToken();
   });
 
   afterEach(() => {
@@ -49,8 +82,6 @@ describe('ServerConfig - Simplified Version', () => {
 
   describe('Configuration Initialization', () => {
     it('should initialize with default config', async () => {
-      mockGetGithubCLIToken.mockResolvedValue(null);
-
       await initialize();
       const config = getServerConfig();
 
@@ -66,7 +97,6 @@ describe('ServerConfig - Simplified Version', () => {
       process.env.ENABLE_LOGGING = 'true';
       process.env.REQUEST_TIMEOUT = '60000';
       process.env.MAX_RETRIES = '5';
-      mockGetGithubCLIToken.mockResolvedValue(null);
 
       await initialize();
       const config = getServerConfig();
@@ -84,8 +114,6 @@ describe('ServerConfig - Simplified Version', () => {
     });
 
     it('should not re-initialize when already initialized', async () => {
-      mockGetGithubCLIToken.mockResolvedValue(null);
-
       await initialize();
       const config1 = getServerConfig();
 
@@ -96,8 +124,6 @@ describe('ServerConfig - Simplified Version', () => {
     });
 
     it('should use default GitHub API URL', async () => {
-      mockGetGithubCLIToken.mockResolvedValue(null);
-
       await initialize();
       const config = getServerConfig();
 
@@ -106,7 +132,6 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should use custom GitHub API URL from environment', async () => {
       process.env.GITHUB_API_URL = 'https://github.company.com/api/v3';
-      mockGetGithubCLIToken.mockResolvedValue(null);
 
       await initialize();
       const config = getServerConfig();
@@ -117,56 +142,58 @@ describe('ServerConfig - Simplified Version', () => {
 
   describe('Token Resolution', () => {
     it('should get token from GitHub CLI first', async () => {
-      process.env.GITHUB_TOKEN = 'env-token';
-      mockGetGithubCLIToken.mockResolvedValue('cli-token');
+      delete process.env.GITHUB_TOKEN;
+      clearCachedToken();
+      cleanup();
 
+      mockSpawnSuccess('cli-token');
       const token = await getGitHubToken();
 
       expect(token).toBe('cli-token');
-      expect(mockGetGithubCLIToken).toHaveBeenCalled();
     });
 
     it('should fall back to GITHUB_TOKEN env var', async () => {
       process.env.GITHUB_TOKEN = 'env-github-token';
-      mockGetGithubCLIToken.mockResolvedValue(null);
+      clearCachedToken();
 
+      mockSpawnFailure();
       const token = await getGitHubToken();
 
       expect(token).toBe('env-github-token');
     });
 
     it('should return null when no token found', async () => {
-      mockGetGithubCLIToken.mockResolvedValue(null);
+      delete process.env.GITHUB_TOKEN;
+      clearCachedToken();
 
+      mockSpawnFailure();
       const token = await getGitHubToken();
-
       expect(token).toBeNull();
     });
 
     it('should cache token after first retrieval', async () => {
-      mockGetGithubCLIToken.mockResolvedValue('cached-token');
+      delete process.env.GITHUB_TOKEN;
+      clearCachedToken();
 
+      mockSpawnSuccess('cached-token');
       const token1 = await getGitHubToken();
       expect(token1).toBe('cached-token');
 
-      // Clear mock to verify caching
-      mockGetGithubCLIToken.mockClear();
-
+      // Token should be cached now
       const token2 = await getGitHubToken();
       expect(token2).toBe('cached-token');
-      expect(mockGetGithubCLIToken).not.toHaveBeenCalled();
     });
 
     it('should clear cache properly', async () => {
-      mockGetGithubCLIToken.mockResolvedValue('initial-token');
+      delete process.env.GITHUB_TOKEN;
+      clearCachedToken();
 
-      // Cache a token
+      mockSpawnSuccess('initial-token');
       await getGitHubToken();
 
-      // Clear cache and change mock
+      // Clear cache and get new token
       clearCachedToken();
-      mockGetGithubCLIToken.mockResolvedValue('new-token');
-
+      mockSpawnSuccess('new-token');
       const token = await getGitHubToken();
       expect(token).toBe('new-token');
     });
@@ -175,7 +202,8 @@ describe('ServerConfig - Simplified Version', () => {
   describe('getToken with Error Throwing', () => {
     it('should return token when available', async () => {
       process.env.GITHUB_TOKEN = 'available-token';
-      mockGetGithubCLIToken.mockResolvedValue(null);
+      clearCachedToken();
+      mockSpawnFailure();
 
       const token = await getToken();
 
@@ -183,7 +211,9 @@ describe('ServerConfig - Simplified Version', () => {
     });
 
     it('should throw when no token available', async () => {
-      mockGetGithubCLIToken.mockResolvedValue(null);
+      delete process.env.GITHUB_TOKEN;
+      clearCachedToken();
+      mockSpawnFailure();
 
       await expect(getToken()).rejects.toThrow(
         'No GitHub token found. Please authenticate with GitHub CLI (gh auth login) or set GITHUB_TOKEN/GH_TOKEN environment variable'
@@ -194,7 +224,7 @@ describe('ServerConfig - Simplified Version', () => {
   describe('Beta Features', () => {
     it('should detect beta features correctly', async () => {
       process.env.BETA = '1';
-      mockGetGithubCLIToken.mockResolvedValue(null);
+      mockSpawnFailure();
 
       await initialize();
 
@@ -203,7 +233,7 @@ describe('ServerConfig - Simplified Version', () => {
     });
 
     it('should handle disabled beta features', async () => {
-      mockGetGithubCLIToken.mockResolvedValue(null);
+      mockSpawnFailure();
 
       await initialize();
 
@@ -224,7 +254,7 @@ describe('ServerConfig - Simplified Version', () => {
       for (const testCase of testCases) {
         cleanup();
         process.env.BETA = testCase.value;
-        mockGetGithubCLIToken.mockResolvedValue(null);
+        mockSpawnFailure();
 
         await initialize();
 
@@ -236,8 +266,8 @@ describe('ServerConfig - Simplified Version', () => {
 
   describe('Logging Configuration', () => {
     it('should enable logging by default when LOG is not set', async () => {
-      mockGetGithubCLIToken.mockResolvedValue(null);
       delete process.env.LOG;
+      mockSpawnFailure();
 
       await initialize();
 
@@ -246,8 +276,8 @@ describe('ServerConfig - Simplified Version', () => {
     });
 
     it('should enable logging when LOG is set to true', async () => {
-      mockGetGithubCLIToken.mockResolvedValue(null);
       process.env.LOG = 'true';
+      mockSpawnFailure();
 
       await initialize();
 
@@ -256,8 +286,8 @@ describe('ServerConfig - Simplified Version', () => {
     });
 
     it('should disable logging when LOG is set to false', async () => {
-      mockGetGithubCLIToken.mockResolvedValue(null);
       process.env.LOG = 'false';
+      mockSpawnFailure();
 
       await initialize();
 
@@ -290,7 +320,7 @@ describe('ServerConfig - Simplified Version', () => {
         } else {
           process.env.LOG = testCase.value;
         }
-        mockGetGithubCLIToken.mockResolvedValue(null);
+        mockSpawnFailure();
 
         await initialize();
 
@@ -302,8 +332,9 @@ describe('ServerConfig - Simplified Version', () => {
 
   describe('Error Handling', () => {
     it('should handle GitHub CLI errors gracefully', async () => {
-      mockGetGithubCLIToken.mockRejectedValue(new Error('CLI error'));
       process.env.GITHUB_TOKEN = 'fallback-token';
+      clearCachedToken();
+      mockSpawnFailure();
 
       const token = await getGitHubToken();
 
@@ -311,16 +342,19 @@ describe('ServerConfig - Simplified Version', () => {
     });
 
     it('should handle empty string tokens correctly', async () => {
-      mockGetGithubCLIToken.mockResolvedValue('');
-      process.env.GITHUB_TOKEN = '';
+      delete process.env.GITHUB_TOKEN;
+      clearCachedToken();
 
+      mockSpawnSuccess('   \n  ');
       const token = await getGitHubToken();
       expect(token).toBeNull();
     });
 
     it('should handle whitespace-only tokens', async () => {
-      mockGetGithubCLIToken.mockResolvedValue('   ');
+      delete process.env.GITHUB_TOKEN;
+      clearCachedToken();
 
+      mockSpawnSuccess('   \n\t  ');
       const token = await getGitHubToken();
       expect(token).toBeNull(); // Trimmed to empty
     });
@@ -329,7 +363,7 @@ describe('ServerConfig - Simplified Version', () => {
   describe('Cleanup and State Management', () => {
     it('should reset state properly', async () => {
       process.env.GITHUB_TOKEN = 'test-token';
-      mockGetGithubCLIToken.mockResolvedValue(null);
+      mockSpawnFailure();
 
       await initialize();
       const config = getServerConfig();
@@ -359,7 +393,7 @@ describe('ServerConfig - Simplified Version', () => {
       process.env.ENABLE_TOOLS = 'tool1,tool2,tool3';
       process.env.DISABLE_TOOLS = 'tool4, tool5 , tool6';
       process.env.TOOLS_TO_RUN = 'onlyTool1, onlyTool2';
-      mockGetGithubCLIToken.mockResolvedValue(null);
+      mockSpawnFailure();
 
       await initialize();
       const config = getServerConfig();
@@ -373,7 +407,7 @@ describe('ServerConfig - Simplified Version', () => {
       process.env.ENABLE_TOOLS = '';
       process.env.DISABLE_TOOLS = '   ';
       process.env.TOOLS_TO_RUN = '';
-      mockGetGithubCLIToken.mockResolvedValue(null);
+      mockSpawnFailure();
 
       await initialize();
       const config = getServerConfig();
@@ -386,7 +420,7 @@ describe('ServerConfig - Simplified Version', () => {
     it('should parse toolsToRun correctly', async () => {
       process.env.TOOLS_TO_RUN =
         'github_search_code,github_search_pull_requests , github_fetch_content';
-      mockGetGithubCLIToken.mockResolvedValue(null);
+      mockSpawnFailure();
 
       await initialize();
       const config = getServerConfig();
@@ -400,7 +434,7 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should handle toolsToRun with single tool', async () => {
       process.env.TOOLS_TO_RUN = 'github_search_code';
-      mockGetGithubCLIToken.mockResolvedValue(null);
+      mockSpawnFailure();
 
       await initialize();
       const config = getServerConfig();
@@ -410,7 +444,7 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should filter out empty strings from toolsToRun', async () => {
       process.env.TOOLS_TO_RUN = 'tool1,,tool2, ,tool3';
-      mockGetGithubCLIToken.mockResolvedValue(null);
+      mockSpawnFailure();
 
       await initialize();
       const config = getServerConfig();
@@ -421,7 +455,7 @@ describe('ServerConfig - Simplified Version', () => {
     it('should handle malformed numbers gracefully', async () => {
       process.env.REQUEST_TIMEOUT = 'not-a-number';
       process.env.MAX_RETRIES = '-5';
-      mockGetGithubCLIToken.mockResolvedValue(null);
+      mockSpawnFailure();
 
       await initialize();
       const config = getServerConfig();

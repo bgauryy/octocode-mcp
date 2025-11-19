@@ -13,6 +13,7 @@ import {
 import { loadToolContent } from './tools/toolMetadata.js';
 import { registerTools } from './tools/toolsManager.js';
 import { version, name } from '../package.json';
+import { STARTUP_ERRORS } from './errorCodes.js';
 
 const SERVER_CONFIG: Implementation = {
   name: `${name}_${version}`,
@@ -122,7 +123,9 @@ async function startServer() {
       if (logger) {
         logger.error('Uncaught exception', { error: error.message });
       }
-      logSessionError(`Uncaught exception: ${error.message}`).catch(() => {});
+      logSessionError('startup', STARTUP_ERRORS.UNCAUGHT_EXCEPTION.code).catch(
+        () => {}
+      );
       gracefulShutdown('UNCAUGHT_EXCEPTION');
     });
 
@@ -130,7 +133,9 @@ async function startServer() {
       if (logger) {
         logger.error('Unhandled rejection', { reason: String(reason) });
       }
-      logSessionError(`Unhandled rejection: ${String(reason)}`).catch(() => {});
+      logSessionError('startup', STARTUP_ERRORS.UNHANDLED_REJECTION.code).catch(
+        () => {}
+      );
       gracefulShutdown('UNHANDLED_REJECTION');
     });
 
@@ -139,7 +144,7 @@ async function startServer() {
     if (logger) {
       await logger.error('Startup failed', { error: String(startupError) });
     }
-    logSessionError(`Startup failed: ${String(startupError)}`).catch(() => {});
+    await logSessionError('startup', STARTUP_ERRORS.STARTUP_FAILED.code);
     process.exit(1);
   }
 }
@@ -164,7 +169,8 @@ export async function registerAllTools(
   await logger.info('Tools registered', { count: successCount });
 
   if (successCount === 0) {
-    const error = new Error('No tools were successfully registered');
+    await logSessionError('startup', STARTUP_ERRORS.NO_TOOLS_REGISTERED.code);
+    const error = new Error(STARTUP_ERRORS.NO_TOOLS_REGISTERED.message);
     await logger.error('Tool registration failed');
     throw error;
   }

@@ -1,4 +1,10 @@
+// Must mock before any imports that use these modules
+vi.mock('../src/utils/exec.js', () => ({
+  getGithubCLIToken: vi.fn(() => Promise.resolve('mock-token')),
+}));
+
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import axios from 'axios';
 import {
   initializeSession,
   getSessionManager,
@@ -7,26 +13,19 @@ import {
   logSessionError,
   resetSessionManager,
 } from '../src/session.js';
+import { initialize, cleanup } from '../src/serverConfig.js';
 import { TOOL_NAMES } from '../src/tools/toolMetadata.js';
 
-// Mock axios
-const mockPost = vi.hoisted(() => vi.fn());
-vi.mock('axios', () => ({
-  default: {
-    post: mockPost,
-  },
-}));
-
-// Mock serverConfig to enable logging by default
-vi.mock('../src/serverConfig.js', () => ({
-  isLoggingEnabled: vi.fn(() => true),
-}));
+// Set LOG environment variable to enable logging
+process.env.LOG = 'true';
 
 describe('Session Management', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Reset session manager
     resetSessionManager();
+    // Clean up server config
+    cleanup();
   });
 
   afterEach(() => {
@@ -61,15 +60,22 @@ describe('Session Management', () => {
   });
 
   describe('Session Logging', () => {
-    beforeEach(() => {
-      mockPost.mockResolvedValue({ data: 'ok' });
+    beforeEach(async () => {
+      // Set environment variable to enable logging
+      process.env.LOG = 'true';
+      process.env.GITHUB_TOKEN = 'mock-token';
+      // Initialize config and session for logging tests
+      await initialize();
+      initializeSession();
+      // Mock axios.post AFTER initialization
+      vi.mocked(axios.post).mockResolvedValue({ data: 'ok' });
     });
 
     it('should log session initialization', async () => {
       const session = initializeSession();
       await logSessionInit();
 
-      expect(mockPost).toHaveBeenCalledWith(
+      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
         expect.objectContaining({
           sessionId: session.getSessionId(),
@@ -93,7 +99,7 @@ describe('Session Management', () => {
       const session = initializeSession();
       await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, []);
 
-      expect(mockPost).toHaveBeenCalledWith(
+      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
         expect.objectContaining({
           sessionId: session.getSessionId(),
@@ -117,7 +123,7 @@ describe('Session Management', () => {
       const session = initializeSession();
       await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, ['my-owner/my-repo']);
 
-      expect(mockPost).toHaveBeenCalledWith(
+      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
         expect.objectContaining({
           sessionId: session.getSessionId(),
@@ -150,7 +156,7 @@ describe('Session Management', () => {
         'Need to understand auth flow'
       );
 
-      expect(mockPost).toHaveBeenCalledWith(
+      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
         expect.objectContaining({
           sessionId: session.getSessionId(),
@@ -186,7 +192,7 @@ describe('Session Management', () => {
         'Need to understand auth flow'
       );
 
-      expect(mockPost).toHaveBeenCalledWith(
+      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
         expect.objectContaining({
           sessionId: session.getSessionId(),
@@ -221,7 +227,7 @@ describe('Session Management', () => {
         undefined
       );
 
-      expect(mockPost).toHaveBeenCalledWith(
+      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
         expect.objectContaining({
           sessionId: session.getSessionId(),
@@ -246,14 +252,14 @@ describe('Session Management', () => {
 
     it('should log errors', async () => {
       const session = initializeSession();
-      await logSessionError('Test error message');
+      await logSessionError('test', 'TEST_ERROR');
 
-      expect(mockPost).toHaveBeenCalledWith(
+      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'error',
-          data: { error: 'Test error message' },
+          data: { error: 'test:TEST_ERROR' },
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
@@ -269,13 +275,13 @@ describe('Session Management', () => {
     });
 
     it('should handle logging failures gracefully', async () => {
-      mockPost.mockRejectedValue(new Error('Network error'));
+      vi.mocked(axios.post).mockRejectedValue(new Error('Network error'));
 
       initializeSession();
 
       const result1 = await logSessionInit();
       const result2 = await logToolCall('test_tool', []);
-      const result3 = await logSessionError('test error');
+      const result3 = await logSessionError('test', 'TEST_ERROR');
 
       expect(result1).toEqual(undefined);
       expect(result2).toEqual(undefined);
@@ -283,21 +289,31 @@ describe('Session Management', () => {
     });
 
     it('should not log if session is not initialized', async () => {
-      // Don't initialize session
+      // Reset session manager to ensure no session is initialized
+      resetSessionManager();
       await logSessionInit();
       await logToolCall('test_tool', []);
-      await logSessionError('test error');
+      await logSessionError('test', 'TEST_ERROR');
 
-      expect(mockPost).not.toHaveBeenCalled();
+      expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
     });
   });
 
   describe('Session Data Structure', () => {
+    beforeEach(async () => {
+      vi.mocked(axios.post).mockResolvedValue({ data: 'ok' });
+      // Set environment variable to enable logging
+      process.env.LOG = 'true';
+      process.env.GITHUB_TOKEN = 'mock-token';
+      // Initialize config and session for logging tests
+      await initialize();
+      initializeSession();
+    });
     it('should create proper session data structure for init', async () => {
       const session = initializeSession();
       await session.logInit();
 
-      const call = mockPost.mock.calls[0];
+      const call = vi.mocked(axios.post).mock.calls[0];
       const payload = call?.[1];
 
       expect(payload).toEqual({
@@ -315,7 +331,7 @@ describe('Session Management', () => {
       const session = initializeSession();
       await session.logToolCall(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, []);
 
-      const call = mockPost.mock.calls[0];
+      const call = vi.mocked(axios.post).mock.calls[0];
       const payload = call?.[1];
 
       expect(payload).toEqual({
@@ -335,7 +351,7 @@ describe('Session Management', () => {
         'test-owner/test-repo',
       ]);
 
-      const call = mockPost.mock.calls[0];
+      const call = vi.mocked(axios.post).mock.calls[0];
       const payload = call?.[1];
 
       expect(payload).toEqual({
@@ -362,7 +378,7 @@ describe('Session Management', () => {
         'Reasoning text'
       );
 
-      const call = mockPost.mock.calls[0];
+      const call = vi.mocked(axios.post).mock.calls[0];
       const payload = call?.[1];
 
       expect(payload).toEqual({
@@ -390,7 +406,7 @@ describe('Session Management', () => {
         'Main goal only'
       );
 
-      const call = mockPost.mock.calls[0];
+      const call = vi.mocked(axios.post).mock.calls[0];
       const payload = call?.[1];
 
       expect(payload).toEqual({
@@ -410,15 +426,15 @@ describe('Session Management', () => {
 
     it('should create proper session data structure for errors', async () => {
       const session = initializeSession();
-      await session.logError('Connection failed');
+      await session.logError('test', 'CONNECTION_FAILED');
 
-      const call = mockPost.mock.calls[0];
+      const call = vi.mocked(axios.post).mock.calls[0];
       const payload = call?.[1];
 
       expect(payload).toEqual({
         sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
         intent: 'error',
-        data: { error: 'Connection failed' },
+        data: { error: 'test:CONNECTION_FAILED' },
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
         ),

@@ -1,5 +1,7 @@
 import { version } from '../../package.json';
 import { fetchWithRetries } from '../utils/fetchWithRetries.js';
+import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
+import { logSessionError } from '../session.js';
 export interface ToolMetadata {
   name: string;
   description: string;
@@ -57,6 +59,10 @@ const STATIC_TOOL_NAMES: ToolNamesMap = {
 
 function getMeta(): CompleteMetadata {
   if (!METADATA_JSON) {
+    logSessionError(
+      'toolMetadata',
+      TOOL_METADATA_ERRORS.INVALID_FORMAT.code
+    ).catch(() => {});
     throw new Error(
       'Tool metadata not initialized. Call and await initializeToolMetadata() before using tool metadata.'
     );
@@ -136,7 +142,11 @@ export async function initializeToolMetadata(): Promise<void> {
       ) ||
       typeof (data as Record<string, unknown>).prompts !== 'object'
     ) {
-      throw new Error('Invalid tool metadata format from remote source.');
+      await logSessionError(
+        'toolMetadata',
+        TOOL_METADATA_ERRORS.INVALID_API_RESPONSE.code
+      );
+      throw new Error(TOOL_METADATA_ERRORS.INVALID_FORMAT.message);
     }
 
     const raw = data as RawCompleteMetadata;
