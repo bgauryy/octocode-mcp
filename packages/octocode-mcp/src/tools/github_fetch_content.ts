@@ -49,7 +49,7 @@ export function registerFetchGitHubFileContentTool(
           try {
             await callback(TOOL_NAMES.GITHUB_FETCH_CONTENT, queries);
           } catch {
-            // ignore callback errors
+            // ignore
           }
         }
 
@@ -75,7 +75,6 @@ async function fetchMultipleGitHubFileContents(
           sessionId
         );
 
-        // Check if API returned an error (using handleApiError for consistency)
         const apiError = handleApiError(apiResult, query);
         if (apiError) return apiError;
 
@@ -130,7 +129,6 @@ function buildApiRequest(query: FileContentQuery) {
     path: String(query.path),
     branch: query.branch ? String(query.branch) : undefined,
     fullContent,
-    // Only include partial content parameters when not fetching full content
     startLine: fullContent ? undefined : query.startLine,
     endLine: fullContent ? undefined : query.endLine,
     matchString:

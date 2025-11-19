@@ -420,16 +420,6 @@ export interface CacheStats {
   lastReset: Date;
 }
 
-// ─── Command Execution (exec.ts) ────────────────────────────────────────────
-
-/** Options for command execution */
-export type ExecOptions = {
-  timeout?: number;
-  cwd?: string;
-  env?: Record<string, string>;
-  cache?: boolean;
-};
-
 // ─── Promise Utilities (promiseUtils.ts) ────────────────────────────────────
 
 /** Result of a promise with error isolation */

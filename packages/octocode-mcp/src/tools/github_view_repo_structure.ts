@@ -50,7 +50,7 @@ export function registerViewGitHubRepoStructureTool(
           try {
             await callback(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, queries);
           } catch {
-            // ignore callback errors
+            // ignore
           }
         }
 

@@ -1,8 +1,8 @@
 # Architecture
 > High-level architecture of Octocode-MCP - A Model Context Protocol server for advanced GitHub repository analysis and code discovery
 
-**Last Updated:** 2025-11-18  
-**Version:** 7.0.7  
+**Last Updated:** 2025-11-19  
+**Version:** 7.0.12  
 **Status:** Current
 
 ---
@@ -204,7 +204,7 @@ export const ToolBulkQuerySchema = createBulkQuerySchema(
 
 ---
 
-#### **`utils/`** (6 files)
+#### **`utils/`** (7 files)
 **Purpose**: Core infrastructure utilities
 
 **Key Files**:
@@ -214,7 +214,7 @@ export const ToolBulkQuerySchema = createBulkQuerySchema(
   - `createBulkResponse()` - Formats unified response with hints per status
 - `cache.ts` - In-memory caching with NodeCache
   - `withDataCache()` - Generic cache wrapper
-  - TTL configuration per API type (code: 3600s, repos: 7200s, PRs: 1800s)
+  - `TTL` configuration per API type (code: 3600s, repos: 7200s, PRs: 1800s)
   - 1000 key limit, SHA-256 hash-based keys
 - `logger.ts` - Structured logging via MCP protocol
   - `Logger` class with info/error/warning methods
@@ -225,6 +225,8 @@ export const ToolBulkQuerySchema = createBulkQuerySchema(
   - `shouldIgnoreFile()` - Filters node_modules, .git, dist, etc.
 - `promiseUtils.ts` - Advanced promise utilities
   - `executeWithErrorIsolation()` - Parallel execution with timeout and error handling
+- `fetchWithRetries.ts` - HTTP fetch with exponential backoff
+  - `fetchWithRetries()` - Retries on 5xx/429 errors
 
 **API Boundary**: Used by all layers. Caching is transparent via `withDataCache`. Bulk operations provide consistent parallel processing.
 
@@ -1316,12 +1318,13 @@ describe('NewTool', () => {
 
 ## Maintenance
 
-**Last Updated**: 2025-11-18  
-**Version**: 7.0.7  
+**Last Updated:** 2025-11-19  
+**Version:** 7.0.12  
 **Review Schedule**: Quarterly or after major changes  
 **Document Owner**: Guy Bary (bgauryy@gmail.com)
 
 **Recent Updates**:
+- 2025-11-19: Updated version and added `fetchWithRetries` documentation
 - 2025-11-18: Updated for metadata consolidation refactoring (ADR-007) - consolidated tool names, descriptions, hints, and schema descriptions into single `toolMetadata.ts` file
 
 **Review Checklist**:
@@ -1332,10 +1335,3 @@ describe('NewTool', () => {
 - [ ] Update statistics (file counts, tool counts)
 - [ ] Review constraints (still valid?)
 - [ ] Update dependency versions
-
-**Questions/Feedback**: https://github.com/bgauryy/octocode-mcp/issues
-
----
-
-**Status**: ✅ Current - Reflects codebase as of v7.0.7
-

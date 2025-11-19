@@ -1,4 +1,15 @@
-import { beforeEach, vi } from 'vitest';
+import { beforeEach, afterAll, vi } from 'vitest';
+import { initializeToolMetadata } from '../src/tools/toolMetadata';
+import content from '../src/tools/content.json';
+
+// Mock global fetch for metadata loading - MUST be done before any imports that use metadata
+global.fetch = vi.fn().mockResolvedValue({
+  ok: true,
+  json: async () => content,
+});
+
+// Initialize tool metadata for all tests - using top-level await to ensure it runs before test file imports
+await initializeToolMetadata();
 
 // Mock console methods to avoid noise during tests
 beforeEach(() => {
@@ -8,6 +19,10 @@ beforeEach(() => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
   }
+});
+
+afterAll(() => {
+  vi.restoreAllMocks();
 });
 
 // Global test environment setup

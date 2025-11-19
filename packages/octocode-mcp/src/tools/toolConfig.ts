@@ -18,8 +18,6 @@ export interface ToolConfig {
   fn: (server: McpServer, callback?: ToolInvocationCallback) => RegisteredTool;
 }
 
-// Helper to safely get description from toolMetadata.ts
-// The Proxy always returns a string (either cached or placeholder)
 const getDescription = (toolName: string): string => {
   return DESCRIPTIONS[toolName] ?? '';
 };

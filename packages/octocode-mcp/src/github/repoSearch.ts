@@ -19,7 +19,6 @@ export async function searchGitHubReposAPI(
     repositories: SimplifiedRepository[];
   }>
 > {
-  // Generate cache key based on search parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey('gh-api-repos', params, sessionId);
 
   const result = await withDataCache<
@@ -32,7 +31,6 @@ export async function searchGitHubReposAPI(
       return await searchGitHubReposAPIInternal(params, authInfo);
     },
     {
-      // Only cache successful responses
       shouldCache: value =>
         'data' in value && !(value as { error?: unknown }).error,
     }

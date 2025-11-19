@@ -2,9 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { registerPrompts } from './prompts/prompts.js';
-//import { registerResources } from './resources.js';
 import { clearAllCache } from './utils/cache.js';
-import { registerTools } from './tools/toolsManager.js';
 import { initialize, cleanup, getGitHubToken } from './serverConfig.js';
 import { createLogger, LoggerFactory } from './utils/logger.js';
 import {
@@ -12,7 +10,8 @@ import {
   logSessionInit,
   logSessionError,
 } from './session.js';
-import { INSTRUCTIONS } from './tools/toolMetadata.js';
+import { loadToolContent } from './tools/toolMetadata.js';
+import { registerTools } from './tools/toolsManager.js';
 import { version, name } from '../package.json';
 
 const SERVER_CONFIG: Implementation = {
@@ -28,6 +27,7 @@ async function startServer() {
 
   try {
     await initialize();
+    const content = await loadToolContent();
 
     const session = initializeSession();
 
@@ -38,17 +38,15 @@ async function startServer() {
         tools: {},
         logging: {},
       },
-      instructions: INSTRUCTIONS,
+      instructions: content.instructions,
     });
     logger = createLogger(server, 'server');
     await logger.info('Server starting', { sessionId: session.getSessionId() });
 
-    await registerAllTools(server);
+    await registerAllTools(server, content);
 
-    registerPrompts(server);
+    registerPrompts(server, content);
     await logger.info('Prompts ready');
-
-    //registerResources(server);
     await logger.info('Resources ready');
 
     const transport = new StdioServerTransport();
@@ -58,10 +56,7 @@ async function startServer() {
       sessionId: session.getSessionId(),
     });
 
-    // Log session initialization (fire-and-forget)
-    logSessionInit().catch(() => {
-      // Silently ignore logging errors to avoid breaking MCP protocol
-    });
+    logSessionInit().catch(() => {});
 
     process.stdout.uncork();
     process.stderr.uncork();
@@ -78,13 +73,11 @@ async function startServer() {
           await logger.info('Shutting down', { signal });
         }
 
-        // Clear any existing shutdown timeout
         if (shutdownTimeout) {
           clearTimeout(shutdownTimeout);
           shutdownTimeout = null;
         }
 
-        // Set a new shutdown timeout
         shutdownTimeout = setTimeout(() => {
           process.exit(1);
         }, 5000);
@@ -95,10 +88,9 @@ async function startServer() {
         try {
           await server.close();
         } catch {
-          //ignore
+          // ignore
         }
 
-        // Clear the timeout since we completed successfully
         if (shutdownTimeout) {
           clearTimeout(shutdownTimeout);
           shutdownTimeout = null;
@@ -110,7 +102,6 @@ async function startServer() {
 
         process.exit(0);
       } catch {
-        // Clear timeout on error
         if (shutdownTimeout) {
           clearTimeout(shutdownTimeout);
           shutdownTimeout = null;
@@ -131,9 +122,7 @@ async function startServer() {
       if (logger) {
         logger.error('Uncaught exception', { error: error.message });
       }
-      logSessionError(`Uncaught exception: ${error.message}`).catch(() => {
-        // Silently ignore logging errors to avoid breaking shutdown
-      });
+      logSessionError(`Uncaught exception: ${error.message}`).catch(() => {});
       gracefulShutdown('UNCAUGHT_EXCEPTION');
     });
 
@@ -141,29 +130,26 @@ async function startServer() {
       if (logger) {
         logger.error('Unhandled rejection', { reason: String(reason) });
       }
-      logSessionError(`Unhandled rejection: ${String(reason)}`).catch(() => {
-        // Silently ignore logging errors to avoid breaking shutdown
-      });
+      logSessionError(`Unhandled rejection: ${String(reason)}`).catch(() => {});
       gracefulShutdown('UNHANDLED_REJECTION');
     });
 
-    // Keep process alive
     process.stdin.resume();
   } catch (startupError) {
     if (logger) {
       await logger.error('Startup failed', { error: String(startupError) });
     }
-    logSessionError(`Startup failed: ${String(startupError)}`).catch(() => {
-      // Silently ignore logging errors to avoid breaking shutdown
-    });
+    logSessionError(`Startup failed: ${String(startupError)}`).catch(() => {});
     process.exit(1);
   }
 }
 
-export async function registerAllTools(server: McpServer) {
+export async function registerAllTools(
+  server: McpServer,
+  _content: import('./tools/toolMetadata.js').CompleteMetadata
+) {
   const logger = LoggerFactory.getLogger(server, 'tools');
 
-  // Ensure token is available (simple check)
   const token = await getGitHubToken();
   if (!token) {
     await logger.warning('No GitHub token - limited functionality');
