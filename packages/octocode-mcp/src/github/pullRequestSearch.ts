@@ -4,6 +4,9 @@ import {
   GitHubPullRequestItem,
 } from './githubAPI';
 import type { PullRequestSearchResult } from '../types';
+import { SEARCH_ERRORS } from '../errorCodes.js';
+import { logSessionError } from '../session.js';
+import { TOOL_NAMES } from '../tools/toolMetadata.js';
 
 // GitHub API types for pull request files
 type DiffEntry = components['schemas']['diff-entry'];
@@ -75,10 +78,14 @@ async function searchGitHubPullRequestsAPIInternal(
     const searchQuery = buildPullRequestSearchQuery(params);
 
     if (!searchQuery) {
+      await logSessionError(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        SEARCH_ERRORS.NO_VALID_PARAMETERS.code
+      );
       return {
         pull_requests: [],
         total_count: 0,
-        error: 'No valid search parameters provided',
+        error: SEARCH_ERRORS.NO_VALID_PARAMETERS.message,
         hints: ['Provide search query or filters like owner/repo'],
       };
     }
@@ -177,10 +184,14 @@ async function searchGitHubPullRequestsAPIInternal(
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
+    await logSessionError(
+      TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+      SEARCH_ERRORS.PULL_REQUEST_SEARCH_FAILED.code
+    );
     return {
       pull_requests: [],
       total_count: 0,
-      error: `Pull request search failed: ${apiError.error}`,
+      error: SEARCH_ERRORS.PULL_REQUEST_SEARCH_FAILED.message(apiError.error),
       hints: [`Verify authentication and search parameters`],
     };
   }
@@ -273,10 +284,14 @@ async function searchPullRequestsWithREST(
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
+    await logSessionError(
+      TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+      SEARCH_ERRORS.PULL_REQUEST_LIST_FAILED.code
+    );
     return {
       pull_requests: [],
       total_count: 0,
-      error: `Pull request list failed: ${apiError.error}`,
+      error: SEARCH_ERRORS.PULL_REQUEST_LIST_FAILED.message(apiError.error),
       hints: [`Verify repository access and authentication`],
     };
   }
@@ -541,19 +556,27 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
   const { owner, repo, prNumber } = params;
 
   if (!owner || !repo || !prNumber) {
+    await logSessionError(
+      TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+      SEARCH_ERRORS.PR_REQUIRED_PARAMS.code
+    );
     return {
       pull_requests: [],
       total_count: 0,
-      error: 'Owner, repo, and prNumber are required parameters',
+      error: SEARCH_ERRORS.PR_REQUIRED_PARAMS.message,
       hints: ['Provide owner, repo, and prNumber'],
     };
   }
 
   if (Array.isArray(owner) || Array.isArray(repo)) {
+    await logSessionError(
+      TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+      SEARCH_ERRORS.PR_SINGLE_VALUES.code
+    );
     return {
       pull_requests: [],
       total_count: 0,
-      error: 'Owner and repo must be single values',
+      error: SEARCH_ERRORS.PR_SINGLE_VALUES.message,
       hints: ['Do not use array for owner or repo when fetching by number'],
     };
   }
@@ -640,10 +663,17 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
 
+    await logSessionError(
+      TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+      SEARCH_ERRORS.PULL_REQUEST_FETCH_FAILED.code
+    );
     return {
       pull_requests: [],
       total_count: 0,
-      error: `Failed to fetch pull request #${prNumber}: ${apiError.error}`,
+      error: SEARCH_ERRORS.PULL_REQUEST_FETCH_FAILED.message(
+        prNumber,
+        apiError.error
+      ),
       hints: [
         `Verify that pull request #${prNumber} exists in ${owner}/${repo}`,
         'Check if you have access to this repository',

@@ -9,6 +9,9 @@ import { handleGitHubAPIError } from './errors';
 import { buildRepoSearchQuery } from './queryBuilders';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+import { SEARCH_ERRORS } from '../errorCodes.js';
+import { logSessionError } from '../session.js';
+import { TOOL_NAMES } from '../tools/toolMetadata.js';
 
 export async function searchGitHubReposAPI(
   params: GitHubReposSearchQuery,
@@ -52,9 +55,12 @@ async function searchGitHubReposAPIInternal(
     const query = buildRepoSearchQuery(params);
 
     if (!query.trim()) {
+      await logSessionError(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        SEARCH_ERRORS.QUERY_EMPTY.code
+      );
       return {
-        error:
-          'Search query cannot be empty. Provide keywordsToSearch or filters.',
+        error: SEARCH_ERRORS.QUERY_EMPTY.message,
         type: 'http',
         status: 400,
       };

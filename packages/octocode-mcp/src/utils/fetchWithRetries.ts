@@ -2,6 +2,9 @@
  * Fetch with retry mechanism and exponential backoff
  */
 
+import { FETCH_ERRORS } from '../errorCodes.js';
+import { logSessionError } from '../session.js';
+
 interface ExtendedError extends Error {
   status?: number;
   headers?: Headers;
@@ -65,7 +68,11 @@ export async function fetchWithRetries(
 
   const f = (globalThis as unknown as { fetch?: typeof fetch }).fetch;
   if (!f) {
-    throw new Error('Global fetch is not available in this environment.');
+    logSessionError(
+      'fetchWithRetries',
+      FETCH_ERRORS.FETCH_NOT_AVAILABLE.code
+    ).catch(() => {});
+    throw new Error(FETCH_ERRORS.FETCH_NOT_AVAILABLE.message);
   }
 
   let lastError: Error | undefined;
@@ -80,8 +87,12 @@ export async function fetchWithRetries(
       });
 
       if (!res.ok) {
+        logSessionError(
+          'fetchWithRetries',
+          FETCH_ERRORS.FETCH_HTTP_ERROR.code
+        ).catch(() => {});
         const error = new Error(
-          `Failed to fetch (${res.status} ${res.statusText})`
+          FETCH_ERRORS.FETCH_HTTP_ERROR.message(res.status, res.statusText)
         ) as ExtendedError;
 
         // Attach status and headers for retry logic
@@ -136,7 +147,14 @@ export async function fetchWithRetries(
     }
   }
 
+  await logSessionError(
+    'fetchWithRetries',
+    FETCH_ERRORS.FETCH_FAILED_AFTER_RETRIES.code
+  );
   throw new Error(
-    `Failed to fetch after ${maxAttempts} attempts: ${lastError?.message}`
+    FETCH_ERRORS.FETCH_FAILED_AFTER_RETRIES.message(
+      maxAttempts,
+      lastError?.message || ''
+    )
   );
 }

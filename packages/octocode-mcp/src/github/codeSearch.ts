@@ -14,6 +14,9 @@ import { buildCodeSearchQuery } from './queryBuilders';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { shouldIgnoreFile } from '../utils/fileFilters';
+import { SEARCH_ERRORS } from '../errorCodes.js';
+import { logSessionError } from '../session.js';
+import { TOOL_NAMES } from '../tools/toolMetadata.js';
 
 export async function searchGitHubCodeAPI(
   params: GitHubCodeSearchQuery,
@@ -50,8 +53,12 @@ async function searchGitHubCodeAPIInternal(
       params.keywordsToSearch.length > 0 &&
       !params.keywordsToSearch.some(term => term && term.trim())
     ) {
+      await logSessionError(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        SEARCH_ERRORS.QUERY_EMPTY.code
+      );
       return {
-        error: 'Search query cannot be empty',
+        error: SEARCH_ERRORS.QUERY_EMPTY.message,
         type: 'http',
         status: 400,
       };
@@ -60,8 +67,12 @@ async function searchGitHubCodeAPIInternal(
     const query = buildCodeSearchQuery(params);
 
     if (!query.trim()) {
+      await logSessionError(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        SEARCH_ERRORS.QUERY_EMPTY.code
+      );
       return {
-        error: 'Search query cannot be empty',
+        error: SEARCH_ERRORS.QUERY_EMPTY.message,
         type: 'http',
         status: 400,
       };

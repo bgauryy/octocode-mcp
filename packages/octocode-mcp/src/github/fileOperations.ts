@@ -18,6 +18,8 @@ import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
+import { FILE_OPERATION_ERRORS, REPOSITORY_ERRORS } from '../errorCodes.js';
+import { logSessionError } from '../session.js';
 
 export async function fetchGitHubFileContentAPI(
   params: FileContentQuery,
@@ -100,8 +102,14 @@ async function fetchGitHubFileContentAPIInternal(
     const data = result.data;
 
     if (Array.isArray(data)) {
+      await logSessionError(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        FILE_OPERATION_ERRORS.PATH_IS_DIRECTORY.code
+      );
       return {
-        error: `Path is a directory. Use ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to list directory contents`,
+        error: FILE_OPERATION_ERRORS.PATH_IS_DIRECTORY.message(
+          TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE
+        ),
         type: 'unknown' as const,
         status: 400,
       };
@@ -115,16 +123,28 @@ async function fetchGitHubFileContentAPIInternal(
         const fileSizeKB = Math.round(fileSize / 1024);
         const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
 
+        await logSessionError(
+          TOOL_NAMES.GITHUB_FETCH_CONTENT,
+          FILE_OPERATION_ERRORS.FILE_TOO_LARGE.code
+        );
         return {
-          error: `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use ${TOOL_NAMES.GITHUB_SEARCH_CODE} to search within the file or use startLine/endLine parameters to get specific sections`,
+          error: FILE_OPERATION_ERRORS.FILE_TOO_LARGE.message(
+            fileSizeKB,
+            maxSizeKB,
+            TOOL_NAMES.GITHUB_SEARCH_CODE
+          ),
           type: 'unknown' as const,
           status: 413,
         };
       }
 
       if (!data.content) {
+        await logSessionError(
+          TOOL_NAMES.GITHUB_FETCH_CONTENT,
+          FILE_OPERATION_ERRORS.FILE_EMPTY.code
+        );
         return {
-          error: 'File is empty - no content to display',
+          error: FILE_OPERATION_ERRORS.FILE_EMPTY.message,
           type: 'unknown' as const,
           status: 404,
         };
@@ -133,8 +153,12 @@ async function fetchGitHubFileContentAPIInternal(
       const base64Content = data.content.replace(/\s/g, '');
 
       if (!base64Content) {
+        await logSessionError(
+          TOOL_NAMES.GITHUB_FETCH_CONTENT,
+          FILE_OPERATION_ERRORS.FILE_EMPTY.code
+        );
         return {
-          error: 'File is empty - no content to display',
+          error: FILE_OPERATION_ERRORS.FILE_EMPTY.message,
           type: 'unknown' as const,
           status: 404,
         };
@@ -145,9 +169,12 @@ async function fetchGitHubFileContentAPIInternal(
         const buffer = Buffer.from(base64Content, 'base64');
 
         if (buffer.indexOf(0) !== -1) {
+          await logSessionError(
+            TOOL_NAMES.GITHUB_FETCH_CONTENT,
+            FILE_OPERATION_ERRORS.BINARY_FILE.code
+          );
           return {
-            error:
-              'Binary file detected. Cannot display as text - download directly from GitHub',
+            error: FILE_OPERATION_ERRORS.BINARY_FILE.message,
             type: 'unknown' as const,
             status: 415,
           };
@@ -155,9 +182,12 @@ async function fetchGitHubFileContentAPIInternal(
 
         decodedContent = buffer.toString('utf-8');
       } catch (decodeError) {
+        await logSessionError(
+          TOOL_NAMES.GITHUB_FETCH_CONTENT,
+          FILE_OPERATION_ERRORS.DECODE_FAILED.code
+        );
         return {
-          error:
-            'Failed to decode file. Encoding may not be supported (expected UTF-8)',
+          error: FILE_OPERATION_ERRORS.DECODE_FAILED.message,
           type: 'unknown' as const,
           status: 422,
         };
@@ -191,8 +221,12 @@ async function fetchGitHubFileContentAPIInternal(
       }
     }
 
+    await logSessionError(
+      TOOL_NAMES.GITHUB_FETCH_CONTENT,
+      FILE_OPERATION_ERRORS.UNSUPPORTED_TYPE.code
+    );
     return {
-      error: `Unsupported file type: ${data.type}`,
+      error: FILE_OPERATION_ERRORS.UNSUPPORTED_TYPE.message(data.type),
       type: 'unknown' as const,
       status: 415,
     };
@@ -261,10 +295,15 @@ async function processFileContentAPI(
     }
 
     if (matchingLines.length === 0) {
+      await logSessionError(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        FILE_OPERATION_ERRORS.MATCH_STRING_NOT_FOUND.code
+      );
       return {
-        error: `Match string "${matchString}" not found in file. The file may have changed since the search was performed.`,
+        error:
+          FILE_OPERATION_ERRORS.MATCH_STRING_NOT_FOUND.message(matchString),
         hints: [
-          `Match string "${matchString}" not found in file. The file may have changed since the search was performed.`,
+          FILE_OPERATION_ERRORS.MATCH_STRING_NOT_FOUND.message(matchString),
         ],
       };
     }
@@ -400,8 +439,16 @@ async function viewGitHubRepositoryStructureAPIInternal(
           defaultBranch = repoInfo.data.default_branch || 'main';
         } catch (repoError) {
           const apiError = handleGitHubAPIError(repoError);
+          await logSessionError(
+            TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+            REPOSITORY_ERRORS.NOT_FOUND.code
+          );
           return {
-            error: `Repository "${owner}/${repo}" not found or not accessible: ${apiError.error}`,
+            error: REPOSITORY_ERRORS.NOT_FOUND.message(
+              owner,
+              repo,
+              apiError.error
+            ),
             status: apiError.status,
           };
         }
@@ -439,8 +486,16 @@ async function viewGitHubRepositoryStructureAPIInternal(
 
             if (!foundBranch) {
               const apiError = handleGitHubAPIError(error);
+              await logSessionError(
+                TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+                REPOSITORY_ERRORS.PATH_NOT_FOUND_ANY_BRANCH.code
+              );
               return {
-                error: `Path "${cleanPath}" not found in repository "${owner}/${repo}" on any common branch`,
+                error: REPOSITORY_ERRORS.PATH_NOT_FOUND_ANY_BRANCH.message(
+                  cleanPath,
+                  owner,
+                  repo
+                ),
                 status: apiError.status,
                 triedBranches: [branch, defaultBranch, ...commonBranches],
                 defaultBranch,
@@ -449,15 +504,32 @@ async function viewGitHubRepositoryStructureAPIInternal(
           }
         } else {
           const apiError = handleGitHubAPIError(error);
+          await logSessionError(
+            TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+            REPOSITORY_ERRORS.PATH_NOT_FOUND.code
+          );
           return {
-            error: `Path "${cleanPath}" not found in repository "${owner}/${repo}" on branch "${branch}"`,
+            error: REPOSITORY_ERRORS.PATH_NOT_FOUND.message(
+              cleanPath,
+              owner,
+              repo,
+              branch
+            ),
             status: apiError.status,
           };
         }
       } else {
         const apiError = handleGitHubAPIError(error);
+        await logSessionError(
+          TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+          REPOSITORY_ERRORS.ACCESS_FAILED.code
+        );
         return {
-          error: `Failed to access repository "${owner}/${repo}": ${apiError.error}`,
+          error: REPOSITORY_ERRORS.ACCESS_FAILED.message(
+            owner,
+            repo,
+            apiError.error
+          ),
           status: apiError.status,
           rateLimitRemaining: apiError.rateLimitRemaining,
           rateLimitReset: apiError.rateLimitReset,
@@ -561,8 +633,12 @@ async function viewGitHubRepositoryStructureAPIInternal(
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
+    await logSessionError(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      REPOSITORY_ERRORS.STRUCTURE_EXPLORATION_FAILED.code
+    );
     return {
-      error: `API request failed: ${apiError.error}`,
+      error: REPOSITORY_ERRORS.STRUCTURE_EXPLORATION_FAILED.message,
       status: apiError.status,
       rateLimitRemaining: apiError.rateLimitRemaining,
       rateLimitReset: apiError.rateLimitReset,

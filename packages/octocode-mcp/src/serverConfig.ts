@@ -1,6 +1,7 @@
 import { getGithubCLIToken } from './utils/exec.js';
 import { version } from '../package.json';
 import type { ServerConfig } from './types.js';
+import { CONFIG_ERRORS } from './errorCodes.js';
 
 let config: ServerConfig | null = null;
 let cachedToken: string | null = null;
@@ -75,9 +76,9 @@ export function cleanup(): void {
 
 export function getServerConfig(): ServerConfig {
   if (!config) {
-    throw new Error(
-      'Configuration not initialized. Call initialize() and await its completion before calling getServerConfig().'
-    );
+    // NOTE: Cannot call logSessionError here as it would create circular dependency
+    // getServerConfig -> logSessionError -> sendLog -> isLoggingEnabled -> getServerConfig
+    throw new Error(CONFIG_ERRORS.NOT_INITIALIZED.message);
   }
   return config;
 }
@@ -94,9 +95,7 @@ export async function getGitHubToken(): Promise<string | null> {
 export async function getToken(): Promise<string> {
   const token = await getGitHubToken();
   if (!token) {
-    throw new Error(
-      'No GitHub token found. Please authenticate with GitHub CLI (gh auth login) or set GITHUB_TOKEN/GH_TOKEN environment variable'
-    );
+    throw new Error(CONFIG_ERRORS.NO_GITHUB_TOKEN.message);
   }
   return token;
 }
@@ -110,7 +109,7 @@ export function isSamplingEnabled(): boolean {
 }
 
 export function isLoggingEnabled(): boolean {
-  return getServerConfig().loggingEnabled;
+  return config?.loggingEnabled ?? false;
 }
 
 export function clearCachedToken(): void {

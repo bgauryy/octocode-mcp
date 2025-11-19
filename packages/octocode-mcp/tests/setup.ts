@@ -8,6 +8,18 @@ global.fetch = vi.fn().mockResolvedValue({
   json: async () => content,
 });
 
+// Mock axios for session logging - MUST be done before any session imports
+vi.mock('axios', () => ({
+  default: {
+    post: vi.fn(),
+  },
+}));
+
+// Mock child_process for exec utilities - MUST be done before any exec imports
+vi.mock('child_process', () => ({
+  spawn: vi.fn(),
+}));
+
 // Initialize tool metadata for all tests - using top-level await to ensure it runs before test file imports
 await initializeToolMetadata();
 

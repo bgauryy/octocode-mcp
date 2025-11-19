@@ -34,6 +34,12 @@
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
   "mcpName": "io.github.bgauryy/octocode-mcp",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "bin": {
     "octocode-mcp": "dist/index.js",
     "octocode-mcp-beta": "dist/index.js"

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { spawn, ChildProcess } from 'child_process';
+import { ChildProcess } from 'child_process';
+import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
-import { getGithubCLIToken, parseExecResult } from '../../src/utils/exec';
 
-// Mock child_process
-vi.mock('child_process');
-const mockSpawn = vi.mocked(spawn);
+// child_process is mocked in setup.ts
+
+import { getGithubCLIToken, parseExecResult } from '../../src/utils/exec';
 
 // Mock process for testing
 class MockChildProcess extends EventEmitter {
@@ -158,8 +158,10 @@ data:
     let mockProcess: MockChildProcess;
 
     beforeEach(() => {
+      vi.clearAllMocks();
+      vi.resetModules();
       mockProcess = new MockChildProcess();
-      mockSpawn.mockReturnValue(mockProcess as unknown as ChildProcess);
+      vi.mocked(spawn).mockReturnValue(mockProcess as unknown as ChildProcess);
     });
 
     it('should return token on successful auth', async () => {
@@ -171,7 +173,7 @@ data:
       const result = await promise;
 
       expect(result).toBe('ghp_1234567890abcdef1234567890abcdef12345678');
-      expect(mockSpawn).toHaveBeenCalledWith(
+      expect(vi.mocked(spawn)).toHaveBeenCalledWith(
         'gh',
         ['auth', 'token'],
         expect.objectContaining({
@@ -205,8 +207,8 @@ data:
       const promise = getGithubCLIToken();
       mockProcess.simulateTimeout();
 
-      // Fast-forward past timeout
-      vi.advanceTimersByTime(10000);
+      // Fast-forward past timeout (10 seconds)
+      await vi.advanceTimersByTimeAsync(10000);
 
       const result = await promise;
 
@@ -254,7 +256,7 @@ data:
 
       await promise;
 
-      const spawnCall = mockSpawn.mock.calls[0];
+      const spawnCall = vi.mocked(spawn).mock.calls[0];
       const spawnOptions = spawnCall?.[2];
 
       expect(spawnOptions?.env?.NODE_OPTIONS).toBeUndefined();
