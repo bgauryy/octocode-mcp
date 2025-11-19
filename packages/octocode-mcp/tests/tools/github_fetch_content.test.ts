@@ -36,7 +36,7 @@ vi.mock('../../src/sampling.js', () => ({
 }));
 
 import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch_content.js';
-import { TOOL_NAMES } from '../../src/constants.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 
 describe('GitHub Fetch Content Tool', () => {
   let mockServer: MockMcpServer;

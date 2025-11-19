@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
-import { GITHUB_FETCH_CONTENT } from './schemDescriptions';
-import { TOOL_NAMES } from '../constants';
+import { GITHUB_FETCH_CONTENT, TOOL_NAMES } from '../tools/toolMetadata';
 
 export const FileContentQuerySchema = BaseQuerySchema.extend({
   owner: z.string().min(1).max(200).describe(GITHUB_FETCH_CONTENT.scope.owner),
@@ -69,8 +68,7 @@ export const FileContentQuerySchema = BaseQuerySchema.extend({
     return true;
   },
   {
-    message:
-      'PARAMETER CONFLICT: Cannot use fullContent with startLine/endLine/matchString. Choose either: (1) fullContent=true for entire file, (2) startLine+endLine for line range, or (3) matchString for pattern-based extraction. Hint: For large files, prefer matchString (most efficient) over fullContent.',
+    message: GITHUB_FETCH_CONTENT.validation.parameterConflict,
   }
 );
 

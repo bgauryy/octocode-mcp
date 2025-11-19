@@ -1,6 +1,6 @@
 import type { GitHubAPIError } from '../github/githubAPI';
 import type { ToolErrorResult, ToolSuccessResult } from '../types.js';
-import { TOOL_NAMES } from '../constants.js';
+import { TOOL_NAMES } from './toolMetadata.js';
 
 function extractApiErrorHints(apiError: GitHubAPIError): string[] {
   const hints: string[] = [];

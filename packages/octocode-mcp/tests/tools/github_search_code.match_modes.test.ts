@@ -53,7 +53,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 }));
 
 import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code.js';
-import { TOOL_NAMES } from '../../src/constants.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 
 describe('GitHub Search Code - match Parameter Modes', () => {
   let mockServer: MockMcpServer;

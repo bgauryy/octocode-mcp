@@ -1,20 +1,13 @@
 import { z } from 'zod';
+import { BASE_SCHEMA } from '../tools/toolMetadata.js';
 
 export const BaseQuerySchema = z.object({
   mainResearchGoal: z
     .string()
     .optional()
-    .describe(
-      'Main research objective (multiple queries can share the same main goal for semantic grouping and session tracking)'
-    ),
-  researchGoal: z
-    .string()
-    .optional()
-    .describe('Specific information this query seeks'),
-  reasoning: z
-    .string()
-    .optional()
-    .describe('Why this query helps achieve the goal'),
+    .describe(BASE_SCHEMA.mainResearchGoal),
+  researchGoal: z.string().optional().describe(BASE_SCHEMA.researchGoal),
+  reasoning: z.string().optional().describe(BASE_SCHEMA.reasoning),
 });
 
 export function createBulkQuerySchema<T extends z.ZodTypeAny>(
@@ -26,8 +19,6 @@ export function createBulkQuerySchema<T extends z.ZodTypeAny>(
       .array(singleQuerySchema)
       .min(1)
       .max(3)
-      .describe(
-        `Research queries for ${toolName} (1-3 queries per call for optimal resource management). Review schema before use for optimal results`
-      ),
+      .describe(BASE_SCHEMA.bulkQuery(toolName)),
   });
 }

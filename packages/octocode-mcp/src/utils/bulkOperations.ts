@@ -1,7 +1,10 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeWithErrorIsolation } from './promiseUtils.js';
 import { createResponseFormat } from '../responses.js';
-import { getGenericErrorHints, getToolHints } from '../tools/hints.js';
+import {
+  getGenericErrorHintsSync,
+  getToolHintsSync,
+} from '../tools/toolMetadata.js';
 import type {
   ProcessedBulkResult,
   FlatQueryResult,
@@ -144,30 +147,20 @@ function createBulkResponse<
   const hasResultsHints = hasAnyHasResults
     ? hasResultsHintsSet.size > 0
       ? [...hasResultsHintsSet]
-      : [
-          ...getToolHints(
-            config.toolName as Parameters<typeof getToolHints>[0],
-            'hasResults'
-          ),
-        ]
+      : [...getToolHintsSync(config.toolName, 'hasResults')]
     : [];
 
   const emptyHints = hasAnyEmpty
     ? emptyHintsSet.size > 0
       ? [...emptyHintsSet]
-      : [
-          ...getToolHints(
-            config.toolName as Parameters<typeof getToolHints>[0],
-            'empty'
-          ),
-        ]
+      : [...getToolHintsSync(config.toolName, 'empty')]
     : [];
 
   // For errors: use custom hints if available, otherwise generic hints
   const errorHints = hasAnyError
     ? errorHintsSet.size > 0
       ? [...errorHintsSet]
-      : [...getGenericErrorHints()]
+      : [...getGenericErrorHintsSync()]
     : [];
 
   const counts = [];

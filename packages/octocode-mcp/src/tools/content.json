@@ -1,0 +1,219 @@
+{
+  "toolNames": {
+    "GITHUB_FETCH_CONTENT": "githubGetFileContent",
+    "GITHUB_SEARCH_CODE": "githubSearchCode",
+    "GITHUB_SEARCH_PULL_REQUESTS": "githubSearchPullRequests",
+    "GITHUB_SEARCH_REPOSITORIES": "githubSearchRepositories",
+    "GITHUB_VIEW_REPO_STRUCTURE": "githubViewRepoStructure"
+  },
+  "baseSchema": {
+    "mainResearchGoal": "Main research objective (multiple queries can share the same main goal for semantic grouping and session tracking)",
+    "researchGoal": "Specific information this query seeks",
+    "reasoning": "Why this query helps achieve the goal",
+    "bulkQueryTemplate": "Research queries for {toolName} (1-3 queries per call for optimal resource management). Review schema before use for optimal results"
+  },
+  "tools": {
+    "githubGetFileContent": {
+      "name": "githubGetFileContent",
+      "description": "FILE READER - Read file contents with smart extraction\n\nPARAMS: See schema for parameter details\n\nPURPOSE: Read file contents using patterns, line ranges, or full file mode\n\nUSE_WHEN: Have file path | After githubSearchCode/githubViewRepoStructure discovery\nAVOID: Unknown location - search first\n\nWORKFLOW:\n  Step 1: Discovery (githubSearchCode/githubViewRepoStructure)\n  Step 2: Read (matchString or line range)\n  Step 3: Explore related patterns\n\nSTRATEGY (choose based on what you know):\n  - matchString: Know function/class/pattern name → start here [most efficient]\n  - startLine + endLine: Know location from prior search → precise extraction\n  - fullContent: Need entire file → use ONLY for small files (<500KB)\n\nOPTIMIZATION:\n  - Start lean: Single matchString query first\n  - If related context needed: Bulk queries for multiple files (e.g., auth.ts + user.ts + session.ts in parallel)\n\nGOTCHAS:\n  - minified=true breaks JSON/YAML formatting → use minified=false for config files\n  - matchString returns empty if no matches → try broader pattern or use fullContent\n  - Files >500KB: MUST use matchString or line ranges, fullContent will truncate\n\nNEXT_STEP:\n  hasResults → githubSearchCode for related patterns\n  empty → githubSearchCode/githubViewRepoStructure to locate file\n\nEXAMPLES:\n  matchString=\"validateUser\", matchStringContextLines=20  # BEST: targeted read\n  startLine=1, endLine=100  # Line range\n  fullContent=true  # Full file\n  queries=[{path:\"a.ts\",matchString:\"fn1\"},{path:\"b.ts\",matchString:\"fn2\"}]  # Bulk\n  path=\"config.json\", fullContent=true, minified=false  # Config file, keep formatting\n\nGUARDS:\n  config? - minified=false | know pattern? - matchString | large file? - use line range | efficiency? - prefer startLine/endLine over fullContent, justify range in reasoning",
+      "schema": {
+        "owner": "repo owner (e.g., \"bgauryy\")",
+        "repo": "repo name (e.g., \"octocode-mcp\")",
+        "branch": "Branch, tag, or SHA (optional; defaults to repository default branch)",
+        "path": "Full file path from repository root",
+        "minified": "Minify content for token efficiency",
+        "sanitize": "Redact secrets and sensitive data",
+        "startLine": "Start line number for partial read (requires endLine)",
+        "endLine": "End line number for partial read (requires startLine)",
+        "fullContent": "Return entire file content (token expensive for large files)",
+        "matchString": "Search pattern to extract matching sections with context",
+        "matchStringContextLines": "Lines of context around matchString matches (max: 50)",
+        "parameterConflict": "PARAMETER CONFLICT: Cannot use fullContent with startLine/endLine/matchString. Choose either: (1) fullContent=true for entire file, (2) startLine+endLine for line range, or (3) matchString for pattern-based extraction. Hint: For large files, prefer matchString (most efficient) over fullContent.",
+        "mainResearchGoal": "Main research objective (multiple queries can share the same main goal for semantic grouping and session tracking)",
+        "researchGoal": "Specific information this query seeks",
+        "reasoning": "Why this query helps achieve the goal"
+      },
+      "hints": {
+        "hasResults": [
+          "Follow code flow: trace imports/dependencies with SEARCH_CODE, then fetch related files with matchString",
+          "Large file result? Use matchString with specific function/class names to reduce tokens and get focused context",
+          "Check if context is sufficient: do you understand the implementation? If not, widen matchStringContextLines or fetch related files"
+        ],
+        "empty": [
+          "Path invalid? Verify with VIEW_REPO_STRUCTURE or SEARCH_CODE match=\"path\" first",
+          "Branch not found? Omit branch parameter to auto-detect default, or try main/master/develop",
+          "Check path format: no leading slash, use exact case (e.g., \"src/api/auth.ts\" not \"/Src/API/auth.ts\")"
+        ]
+      }
+    },
+    "githubSearchCode": {
+      "name": "githubSearchCode",
+      "description": "CODE SEARCH - Search file content or filenames/paths\n\nPARAMS: See schema for parameter details\n\nPURPOSE: Search file contents for code patterns or search file/directory names\n\nUSE_WHEN: Know patterns | Need discovery\nAVOID: Broad terms | No owner/repo (rate limits)\n\nWORKFLOW:\n  Step 1: Discovery (match=\"path\") - Find files [fastest, most token efficient]\n  Step 2: (Optional) Use githubViewRepoStructure to understand structure when exploring unfamiliar repos\n  Step 3: Detailed (match=\"file\", limit=5) - Get matches with context\n  Step 4: Read (githubGetFileContent matchString) - Full content\n\nSTRATEGY:\n  - match=\"path\": Fast discovery, returns paths only\n  - match=\"file\": Detailed search, returns text_matches[] with context\n  - Always scope: owner/repo to avoid rate limits\n\nOPTIMIZATION:\n  - Start lean: Know exact term? → Single specific query (e.g., \"authenticate\")\n  - Uncertain about terms? → Bulk query with variants upfront (e.g., [{keywordsToSearch:[\"auth\"]}, {keywordsToSearch:[\"authenticate\"]}, {keywordsToSearch:[\"credential\"]}])\n  - Semantic variants: \"auth\"→\"authorization\"/\"authenticate\"/\"credential\", \"config\"→\"configuration\"/\"settings\"/\"options\"\n\nGOTCHAS:\n  - match=\"file\" without limit = token explosion\n  - No owner/repo = rate limits\n  - text_matches show exact locations → copy match text into githubGetFileContent matchString for precise extraction\n\nNEXT_STEP:\n  hasResults → githubGetFileContent matchString for full context\n  empty → githubViewRepoStructure or broaden search\n\nEXAMPLES:\n  match=\"path\", keywordsToSearch=[\"auth\"]  # Fast: find files with \"auth\" in path\n  owner=\"facebook\", repo=\"react\", keywordsToSearch=[\"useState\"]  # Content search\n  path=\"src/api\", extension=\"ts\", keywordsToSearch=[\"export\", \"function\"]  # Precise\n  queries=[{keywordsToSearch:[\"termExample\"],match:\"path\"},{keywordsToSearch:[\"patternExample\"],match:\"file\",limit:5}]  # Bulk: combine discovery + detailed search\n  keywordsToSearch=[\"validateUser\"], match=\"file\", limit=5  # Detailed matches\n\nGUARDS:\n  discovery? - match=\"path\" | many results? - limit=5-10 | no scope? - add owner/repo",
+      "schema": {
+        "keywordsToSearch": "Search terms applied with AND logic. Behavior depends on match parameter: match=\"file\" searches file content and returns text_matches[], match=\"path\" searches file/directory names only",
+        "owner": "repo owner (e.g., \"bgauryy\")",
+        "repo": "repo name (e.g., \"octocode-mcp\")",
+        "extension": "File extension without dot (e.g., ts, js, py)",
+        "stars": "Stars filter with comparison operators (e.g., \">500\", \"100..500\", \"<50\")",
+        "filename": "Filename pattern for case-insensitive substring matching",
+        "path": "Directory path to limit search scope (e.g., \"src/components\")",
+        "match": "Search mode: \"file\" (searches content, default) or \"path\" (searches filenames/directories)",
+        "limit": "Maximum results to return",
+        "minify": "Minify results for token efficiency",
+        "sanitize": "Redact secrets and sensitive data",
+        "mainResearchGoal": "Main research objective (multiple queries can share the same main goal for semantic grouping and session tracking)",
+        "researchGoal": "Specific information this query seeks",
+        "reasoning": "Why this query helps achieve the goal"
+      },
+      "hints": {
+        "hasResults": [
+          "Extract text_matches locations and copy exact match text into FETCH_CONTENT matchString for full context",
+          "Found implementation? Follow imports/dependencies with new searches to understand flow",
+          "Multiple matches? Compare patterns across files to identify common approaches"
+        ],
+        "empty": [
+          "Current match mode not working? Try the opposite (file↔path) and compare",
+          "Scoped search failed? Drop owner/repo to discover cross-repo patterns, then narrow down",
+          "Apply semantic variants from your domain: expand abbreviations, try synonyms, related terms"
+        ]
+      }
+    },
+    "githubSearchRepositories": {
+      "name": "githubSearchRepositories",
+      "description": "REPOSITORY SEARCH - Search repos by keywords/topics\n\nPARAMS: See schema for parameter details\n\nPURPOSE: Discover GitHub repositories. Gateway for codebase exploration.\n\nUSE_WHEN: Starting research | Finding projects/libraries\nAVOID: Know repo name - go to githubViewRepoStructure | Need code patterns - use githubSearchCode\n\nWORKFLOW:\n  Step 1: Discover (topicsToSearch or keywordsToSearch)\n  Step 2: Explore (githubViewRepoStructure)\n  Step 3: Search (githubSearchCode)\n  Step 4: Read (githubGetFileContent)\n\nSTRATEGY:\n  - topicsToSearch: Most precise for curated topic tags\n  - keywordsToSearch: Flexible search across name/desc/README\n  - Always add stars filter for quality (e.g., stars=\">1000\")\n\nOPTIMIZATION:\n  - Start lean: Know exact topic? → topicsToSearch with stars filter (e.g., topicsToSearch=[\"typescript\"], stars=\">1000\")\n  - Uncertain? → Bulk with variants: topics + keywords in parallel (e.g., [{topicsToSearch:[\"cli\"]}, {keywordsToSearch:[\"command-line\"]}])\n  - Semantic variants: \"auth\"→\"authentication\"/\"oauth\", \"ai\"→\"machine-learning\"/\"llm\"\n  - Quality: stars=\">1000\" for production-ready, sort=\"stars\" for popularity\n\nGOTCHAS:\n  - topicsToSearch: use popular topics (e.g., \"mcp\", \"react\", \"nextjs\", \"langchain\") for best results\n  - size filter uses KB not MB (\"1000\" = 1MB)\n  - No filters = generic, low-quality results\n\nNEXT_STEP:\n  hasResults → githubViewRepoStructure or githubSearchCode\n  empty → Try semantic variants or broaden stars filter\n\nEXAMPLES:\n  topicsToSearch=[\"typescript\", \"cli\"], stars=\">1000\"  # BEST: curated quality repos\n  keywordsToSearch=[\"authentication\", \"jwt\"], stars=\">500\"  # Keyword search with quality\n  owner=\"facebook\", sort=\"stars\", limit=10  # Org's popular repos\n  keywordsToSearch=[\"react\"], match=[\"name\"], stars=\">1000\"  # Name-only search\n  created=\">=2024-01-01\", sort=\"updated\", limit=5  # Recent active projects\n  queries=[{topicsToSearch:[\"mcp\"]},{keywordsToSearch:[\"mcp\"]}]  # Bulk parallel\n\nGUARDS:\n  discovery? - topicsToSearch+stars | quality? - stars=\">1000\" | maintained? - updated filter",
+      "schema": {
+        "keywordsToSearch": "Keywords applied with AND logic across repository name, description, and README",
+        "topicsToSearch": "Exact GitHub topic tags for curated search (e.g., [\"typescript\", \"cli\"])",
+        "owner": "repo owner (e.g., \"bgauryy\")",
+        "stars": "Stars filter with comparison operators (e.g., \">500\", \"100..500\", \"<50\")",
+        "size": "Repository size in KB with comparison operators (e.g., \">1000\", \"<500\")",
+        "created": "Creation date filter (format: \">=YYYY-MM-DD\" or \"YYYY-MM-DD..YYYY-MM-DD\")",
+        "updated": "Last update date filter (format: \">=YYYY-MM-DD\")",
+        "match": "Fields to search (OR logic): [\"name\"|\"description\"|\"readme\"]. Default: all fields",
+        "sort": "Sort by: stars | forks | updated | best-match",
+        "limit": "Maximum repositories to return",
+        "mainResearchGoal": "Main research objective (multiple queries can share the same main goal for semantic grouping and session tracking)",
+        "researchGoal": "Specific information this query seeks",
+        "reasoning": "Why this query helps achieve the goal"
+      },
+      "hints": {
+        "hasResults": [
+          "Validate relevance: fetch README with FETCH_CONTENT to confirm repo matches researchGoal",
+          "Quality check: stars + last_update + topics should align with your requirements",
+          "Map architecture: use VIEW_REPO_STRUCTURE to understand layout, then SEARCH_CODE for implementations",
+          "Multiple repos found? Compare patterns/dependencies/approaches and document key differences"
+        ],
+        "empty": [
+          "Filters too strict? Test one at a time: relax stars, then size, then dates to find blocking constraint",
+          "Topics not matching? Try keywords search or vice versa - test both approaches",
+          "Expand search terms with domain synonyms (e.g., \"server\"→\"provider\"/\"backend\", \"plugin\"→\"extension\"/\"addon\")",
+          "Try name-only search: match=[\"name\"] can find repos when description search fails"
+        ]
+      }
+    },
+    "githubViewRepoStructure": {
+      "name": "githubViewRepoStructure",
+      "description": "DIRECTORY EXPLORER - Understand codebase organization\n\nPARAMS: See schema for parameter details\n\nPURPOSE: Display directory structure with file sizes\n\nUSE_WHEN: New codebase | Need structure overview\nAVOID: Know filename - use githubSearchCode | Need content - use githubGetFileContent\n\nWORKFLOW:\n  Step 1: Overview (depth=1, path=\"\")\n  Step 2: Drill down (depth=2, path=\"src\")\n  Step 3: Search (githubSearchCode)\n  Step 4: Read (githubGetFileContent)\n\nSTRATEGY:\n  - depth=1: Fast overview, see immediate files/folders\n  - depth=2: Deeper view, includes subdirectories (slower)\n  - path=\"\": Start at root, then drill into specific dirs\n\nOPTIMIZATION:\n  - Start lean: depth=1 for overview, only go depth=2 if structure unclear\n  - Bulk queries: Explore key directories in parallel (e.g., [{path:\"src\"}, {path:\"tests\"}, {path:\"docs\"}])\n  - Use for discovery, then githubSearchCode for content\n\nGOTCHAS:\n  - depth=2 on dirs with >50 subdirs = slow, stick to depth=1\n  - path format: \"src/api\" NOT \"/src/api\" (no leading slash)\n  - Returns files[] and folders[], no content\n  - Dirs with >100 items: result truncates at 100 → use githubSearchCode with path filter instead\n\nNEXT_STEP:\n  hasResults → githubSearchCode or githubGetFileContent\n  empty → Check parent or verify repo\n\nEXAMPLES:\n  owner=\"facebook\", repo=\"react\", branch=\"main\", path=\"\", depth=1  # Root overview\n  owner=\"facebook\", repo=\"react\", branch=\"main\", path=\"src\", depth=2  # Deep dive\n  queries=[{owner:\"facebook\",repo:\"react\",branch:\"main\",path:\"\"},{owner:\"facebook\",repo:\"react\",branch:\"main\",path:\"src\"}]  # Bulk\n  owner=\"facebook\", repo=\"react\", branch=\"main\", path=\"packages/react-dom\", depth=1  # Monorepo\n\nGUARDS:\n  new? - depth=1, path=\"\" | large? - depth=1 first | monorepo? - explore each package",
+      "schema": {
+        "owner": "repo owner (e.g., \"bgauryy\")",
+        "repo": "repo name (e.g., \"octocode-mcp\")",
+        "branch": "Branch/tag/SHA",
+        "path": "Directory path to explore (empty string or omit for root directory)",
+        "depth": "Exploration depth: 1 (current directory only) or 2 (includes subdirectories). Default: 1",
+        "mainResearchGoal": "Main research objective (multiple queries can share the same main goal for semantic grouping and session tracking)",
+        "researchGoal": "Specific information this query seeks",
+        "reasoning": "Why this query helps achieve the goal"
+      },
+      "hints": {
+        "hasResults": [
+          "Identified key directories? Convert paths to SEARCH_CODE queries with path+extension filters for targeted search",
+          "Document structure insight: note entry points, config locations, implementation directories, test organization",
+          "Large codebase? Prioritize directories by name relevance to researchGoal (e.g., \"auth\" dir for authentication research)"
+        ],
+        "empty": [
+          "Path not found? Start at root (path=\"\", depth=1) to see top-level structure",
+          "Monorepo? Check common patterns: packages/, apps/, libs/, modules/, workspaces/",
+          "Verify repo exists: use SEARCH_CODE match=\"path\" to confirm repository accessibility"
+        ]
+      }
+    },
+    "githubSearchPullRequests": {
+      "name": "githubSearchPullRequests",
+      "description": "PR SEARCH - Search or fetch PRs\n\nPARAMS: See schema for parameter details\n\nPURPOSE: Get PRs with metadata, discussions, and diffs\n\nUSE_WHEN: PR context | Implementation research | Review merged changes\nAVOID: Current code → githubGetFileContent | Code patterns → githubSearchCode\n\nWORKFLOW:\n  Step 1: Discover (prNumber or filters)\n  Step 2: Analyze (withComments/withContent)\n  Step 3: Compare (githubGetFileContent for current)\n\nSTRATEGY:\n  - prNumber: Direct fetch [fastest] when you know PR number\n  - Search: Filter by state/author/labels/dates for discovery\n  - withContent/withComments: Start without them, add only when needed\n  - limit: Use 3 for initial scan, 5-10 for comprehensive review\n\nOPTIMIZATION:\n  - Start lean: Know PR number? → prNumber (fastest, most direct)\n  - Searching? → Start with limit=3, no withContent/withComments\n  - Need details? → Sequential: analyze metadata first, then fetch with withContent=true if relevant\n  - Multiple PRs: Bulk queries (e.g., [{prNumber:123}, {prNumber:456}, {prNumber:789}])\n\nGOTCHAS:\n  - merged=true needs state=\"closed\"\n  - prNumber ignores other filters\n  - label accepts string or array for OR matching\n\nNEXT_STEP:\n  hasResults → githubGetFileContent for current | githubSearchCode for patterns\n  empty → Broaden filters or change state\n\nEXAMPLES:\n  prNumber=123  # FASTEST\n  state=\"open\", limit=5  # Recent\n  state=\"closed\", merged=true, withContent=true  # Implementation research\n  author=\"username\", state=\"closed\", merged=true  # Expert contributions\n  query=\"auth\", match=[\"title\",\"body\"], limit=3  # Text search\n  queries=[{prNumber:123},{prNumber:456}]  # Bulk\n\nGUARDS:\n  implementation? - withContent=true | discussion? - withComments=true | production? - merged=true",
+      "schema": {
+        "query": "Free-text search query across PR title, body, and comments",
+        "prNumber": "Direct PR number for fetching specific PR",
+        "owner": "repo owner (e.g., \"bgauryy\")",
+        "repo": "repo name (e.g., \"octocode-mcp\")",
+        "state": "State filter: \"open\" or \"closed\"",
+        "assignee": "Assigned user",
+        "author": "Creator/author of the content",
+        "commenter": "User who commented",
+        "involves": "User involved in any way",
+        "mentions": "Mentions @user",
+        "review-requested": "User requested as reviewer",
+        "reviewed-by": "User who reviewed the PR",
+        "label": "Label filter (string or array, OR logic)",
+        "no-label": "No labels",
+        "no-milestone": "No milestone",
+        "no-project": "Not in a project",
+        "no-assignee": "No assignee",
+        "head": "Source branch",
+        "base": "Target branch",
+        "created": "Creation date filter (format: \">=YYYY-MM-DD\" or \"YYYY-MM-DD..YYYY-MM-DD\")",
+        "updated": "Last update date filter (format: \">=YYYY-MM-DD\")",
+        "closed": "Closed date filter (format: \">=YYYY-MM-DD\")",
+        "merged-at": "Merged date filter (format: \">=YYYY-MM-DD\")",
+        "comments": "Comment count filter with comparison operators (e.g., \">5\", \"10..20\")",
+        "reactions": "Reaction count filter with comparison operators",
+        "interactions": "Combined comments and reactions count filter",
+        "merged": "Merged status (boolean). Requires state=\"closed\"",
+        "draft": "Draft status (boolean)",
+        "match": "Fields to search (OR logic): [\"title\"|\"body\"|\"comments\"]. Default: all fields",
+        "sort": "Sort by: created | updated | best-match",
+        "order": "Order: desc (default) | asc",
+        "limit": "Maximum PRs to return",
+        "withComments": "Include comment threads and discussions (token expensive)",
+        "withContent": "Include code diffs and file changes (very token expensive)",
+        "mainResearchGoal": "Main research objective (multiple queries can share the same main goal for semantic grouping and session tracking)",
+        "researchGoal": "Specific information this query seeks",
+        "reasoning": "Why this query helps achieve the goal"
+      },
+      "hints": {
+        "hasResults": [
+          "Extract implementation insights: examine discussions for rationale, diffs for patterns, review comments for gotchas",
+          "Need code details? Extract changed files/functions and search with SEARCH_CODE or fetch with FETCH_CONTENT",
+          "Token budget tight? Start without withContent/withComments, add only if discussions/diffs are critical",
+          "Multiple PRs? Identify common patterns: same authors, related issues, similar file changes"
+        ],
+        "empty": [
+          "Search too narrow? Remove constraints progressively: state, then labels, then author, then merged",
+          "Date range limiting results? Widen time window or remove date filters entirely",
+          "Try different search angles: switch from query to author/label filters or vice versa",
+          "Branch-specific work? Add head/base branch filters to find workstream PRs"
+        ]
+      }
+    }
+  },
+  "baseHints": {
+    "hasResults": [
+      "Validate results against researchGoal: do findings answer your question? If partial, identify gaps and continue",
+      "Check result quality: verify dates, stars, last activity to ensure code is maintained and relevant",
+      "Include referenced GitHub URLs in output for user navigation",
+      "Got sufficient examples (3+)? Consider stopping to avoid over-research and token waste"
+    ],
+    "empty": [
+      "No results: Are keywords too specific? Try broader terms or related concepts from domain",
+      "Test filters individually: remove one constraint at a time to identify what blocks results",
+      "Split complex searches: separate concerns into multiple simpler queries"
+    ]
+  },
+  "genericErrorHints": [
+    "Check authentication token validity and required scopes",
+    "Verify network connectivity and GitHub API status",
+    "Review rate limits and retry after cooldown if exceeded",
+    "Validate input parameters (owner, repo, path, branch) for correctness",
+    "Check repository visibility (public vs private) and access permissions",
+    "Retry the operation after a brief delay for transient errors"
+  ]
+}

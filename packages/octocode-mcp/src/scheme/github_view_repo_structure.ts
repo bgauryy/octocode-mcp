@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
-import { GITHUB_VIEW_REPO_STRUCTURE } from './schemDescriptions';
-import { TOOL_NAMES } from '../constants';
+import { GITHUB_VIEW_REPO_STRUCTURE, TOOL_NAMES } from '../tools/toolMetadata';
 
 export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
   owner: z

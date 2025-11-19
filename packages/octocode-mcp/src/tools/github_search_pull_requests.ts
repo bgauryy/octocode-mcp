@@ -7,10 +7,9 @@ import type {
   PullRequestSearchResult,
 } from '../types.js';
 import { searchGitHubPullRequestsAPI } from '../github/pullRequestSearch.js';
-import { TOOL_NAMES } from '../constants.js';
+import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
 import { GitHubPullRequestSearchBulkQuerySchema } from '../scheme/github_search_pull_requests.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import { DESCRIPTIONS } from './descriptions.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import {
   handleApiError,
