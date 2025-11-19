@@ -74,9 +74,7 @@ async function fetchGitHubFileContentAPIInternal(
     try {
       result = await octokit.rest.repos.getContent(contentParams);
     } catch (error: unknown) {
-      // Handle 404 errors with smart fallback/hints
       if (error instanceof RequestError && error.status === 404 && branch) {
-        // Silent fallback: main -> master OR master -> main
         if (branch === 'main' || branch === 'master') {
           const fallbackBranch = branch === 'main' ? 'master' : 'main';
           try {
@@ -85,11 +83,9 @@ async function fetchGitHubFileContentAPIInternal(
               ref: fallbackBranch,
             });
           } catch {
-            // If fallback fails, throw the original error
             throw error;
           }
         } else {
-          // For specific branches (not main/master), add helpful hint
           const apiError = handleGitHubAPIError(error);
           return {
             ...apiError,
@@ -437,7 +433,7 @@ async function viewGitHubRepositoryStructureAPIInternal(
                 workingBranch = tryBranch;
                 break;
               } catch {
-                //ignore
+                // ignore
               }
             }
 
@@ -587,7 +583,6 @@ async function fetchDirectoryContentsRecursivelyAPI(
   maxDepth: number,
   visitedPaths: Set<string> = new Set()
 ): Promise<GitHubApiFileItem[]> {
-  // Prevent infinite loops and respect depth limits
   if (currentDepth > maxDepth || visitedPaths.has(path)) {
     return [];
   }
@@ -623,7 +618,6 @@ async function fetchDirectoryContentsRecursivelyAPI(
     if (currentDepth < maxDepth) {
       const directories = apiItems.filter(item => item.type === 'dir');
 
-      // Limit concurrent requests to avoid rate limits
       const concurrencyLimit = 3;
       for (let i = 0; i < directories.length; i += concurrencyLimit) {
         const batch = directories.slice(i, i + concurrencyLimit);
@@ -641,8 +635,7 @@ async function fetchDirectoryContentsRecursivelyAPI(
               new Set(visitedPaths) // Pass a copy to avoid shared state issues
             );
             return subItems;
-          } catch (error) {
-            // Silently fail on individual directory errors
+          } catch {
             return [];
           }
         });

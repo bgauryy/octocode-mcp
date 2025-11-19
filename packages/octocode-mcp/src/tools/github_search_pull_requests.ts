@@ -81,7 +81,7 @@ export function registerSearchGitHubPullRequestsTool(
           try {
             await callback(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, queries);
           } catch {
-            // ignore callback errors
+            // ignore
           }
         }
 

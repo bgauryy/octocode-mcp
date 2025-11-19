@@ -89,12 +89,10 @@ function handleBulk(toolName: string, params: Record<string, unknown>): void {
   const queries = getQueriesArray(params);
 
   if (queries) {
-    // Bulk operation: log each query individually
     for (const query of queries) {
       handleQuery(toolName, query as Record<string, unknown>);
     }
   } else {
-    // Single operation: log once
     logSingleOperation(toolName, params);
   }
 }
@@ -115,9 +113,7 @@ function handleQuery(toolName: string, query: Record<string, unknown>): void {
     researchFields.mainResearchGoal,
     researchFields.researchGoal,
     researchFields.reasoning
-  ).catch(() => {
-    // Ignore logging errors
-  });
+  ).catch(() => {});
 }
 
 /**
@@ -139,9 +135,7 @@ function logSingleOperation(
     researchFields.mainResearchGoal,
     researchFields.researchGoal,
     researchFields.reasoning
-  ).catch(() => {
-    // Ignore logging errors
-  });
+  ).catch(() => {});
 }
 
 /**
@@ -202,7 +196,6 @@ export function extractResearchFields(params: Record<string, unknown>): {
     }
   };
 
-  // Check for queries array (bulk operations)
   if (
     params.queries &&
     Array.isArray(params.queries) &&
@@ -256,21 +249,18 @@ export function extractRepoOwnerFromSingleQuery(
 ): string[] {
   const repos: string[] = [];
 
-  // Check for combined repository field first
   const repository =
     typeof query.repository === 'string' ? query.repository : undefined;
 
   if (repository && repository.includes('/')) {
     repos.push(repository);
   } else {
-    // Fall back to separate owner/repo fields
     const repo = typeof query.repo === 'string' ? query.repo : undefined;
     const owner = typeof query.owner === 'string' ? query.owner : undefined;
 
     if (owner && repo) {
       repos.push(`${owner}/${repo}`);
     } else if (owner) {
-      // Support tools with only owner field (e.g., github_search_repos)
       repos.push(owner);
     }
   }
@@ -339,7 +329,6 @@ export function extractRepoOwnerFromParams(
       if (repository && repository.includes('/')) {
         repoOwnerSet.add(repository);
       } else {
-        // Fall back to separate owner/repo fields
         const repo =
           typeof queryObj.repo === 'string' ? queryObj.repo : undefined;
         const owner =
@@ -348,7 +337,6 @@ export function extractRepoOwnerFromParams(
         if (owner && repo) {
           repoOwnerSet.add(`${owner}/${repo}`);
         } else if (owner) {
-          // Support tools with only owner field (e.g., github_search_repos)
           repoOwnerSet.add(owner);
         }
       }
@@ -360,14 +348,12 @@ export function extractRepoOwnerFromParams(
     if (repository && repository.includes('/')) {
       repoOwnerSet.add(repository);
     } else {
-      // Fall back to separate owner/repo fields
       const repo = typeof params.repo === 'string' ? params.repo : undefined;
       const owner = typeof params.owner === 'string' ? params.owner : undefined;
 
       if (owner && repo) {
         repoOwnerSet.add(`${owner}/${repo}`);
       } else if (owner) {
-        // Support tools with only owner field (e.g., github_search_repos)
         repoOwnerSet.add(owner);
       }
     }

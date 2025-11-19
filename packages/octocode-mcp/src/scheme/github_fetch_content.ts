@@ -51,14 +51,12 @@ export const FileContentQuerySchema = BaseQuerySchema.extend({
     .describe(GITHUB_FETCH_CONTENT.range.matchStringContextLines),
 }).refine(
   data => {
-    // When fullContent is true, other range parameters should not be used
     if (
       data.fullContent &&
       (data.startLine || data.endLine || data.matchString)
     ) {
       return false;
     }
-    // When using line ranges, both startLine and endLine must be provided together
     if (
       (data.startLine && !data.endLine) ||
       (!data.startLine && data.endLine)

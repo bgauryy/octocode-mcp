@@ -588,6 +588,29 @@ describe('Pull Request Search', () => {
         'Verify that pull request #999 exists in test/repo'
       );
     });
+
+    it('should return error when prNumber is missing', async () => {
+      const result = await fetchGitHubPullRequestByNumberAPI({
+        owner: 'test',
+        repo: 'repo',
+      });
+
+      expect(result.error).toContain(
+        'Owner, repo, and prNumber are required parameters'
+      );
+      expect(result.pull_requests).toHaveLength(0);
+    });
+
+    it('should return error when owner or repo are arrays', async () => {
+      const result = await fetchGitHubPullRequestByNumberAPI({
+        owner: ['test'],
+        repo: 'repo',
+        prNumber: 123,
+      });
+
+      expect(result.error).toContain('Owner and repo must be single values');
+      expect(result.pull_requests).toHaveLength(0);
+    });
   });
 
   describe('transformPullRequestItemFromREST', () => {

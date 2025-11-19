@@ -2,11 +2,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { logPromptCall } from '../session.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
-import content from '../tools/content.json';
+import type { CompleteMetadata } from '../tools/toolMetadata.js';
 
 export const PROMPT_NAME = 'research';
 
-export function registerResearchPrompt(server: McpServer): void {
+export function registerResearchPrompt(
+  server: McpServer,
+  content: CompleteMetadata
+): void {
   const promptData = content.prompts.research;
 
   server.registerPrompt(
@@ -18,7 +21,6 @@ export function registerResearchPrompt(server: McpServer): void {
     async () => {
       await logPromptCall(PROMPT_NAME);
 
-      // Replace tool name placeholders with actual tool names from content.json
       const promptText = promptData.content
         .replace(
           /\bgithubSearchRepositories\b/g,

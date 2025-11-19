@@ -144,7 +144,6 @@ function createBulkResponse<
     errorCount++;
   });
 
-  // Generate hints: prefer custom hints from results, fall back to tool-based hints
   const hasResultsHints = hasAnyHasResults
     ? hasResultsHintsSet.size > 0
       ? [...hasResultsHintsSet]
@@ -157,7 +156,6 @@ function createBulkResponse<
       : [...getToolHintsSync(config.toolName, 'empty')]
     : [];
 
-  // For errors: use custom hints if available, otherwise generic hints
   const errorHints = hasAnyError
     ? errorHintsSet.size > 0
       ? [...errorHintsSet]
@@ -169,7 +167,6 @@ function createBulkResponse<
   if (emptyCount > 0) counts.push(`${emptyCount} empty`);
   if (errorCount > 0) counts.push(`${errorCount} failed`);
 
-  // Generate instructions string from content.json
   const bulkInstructions = getBulkOperationsInstructions();
   const instructionsParts = [
     bulkInstructions.base
