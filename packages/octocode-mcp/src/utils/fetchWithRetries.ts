@@ -57,7 +57,7 @@ export async function fetchWithRetries(
   options: FetchWithRetriesOptions = {}
 ): Promise<unknown> {
   const {
-    maxRetries = 3,
+    maxRetries = 10,
     initialDelayMs = 1000,
     headers = {},
     method = 'GET',
