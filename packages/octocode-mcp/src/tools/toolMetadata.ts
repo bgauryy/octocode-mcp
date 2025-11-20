@@ -16,7 +16,7 @@ export interface CompleteMetadata {
   instructions: string;
   prompts: {
     research: { name: string; description: string; content: string };
-    kudos: { name: string; description: string; content: string };
+    reviewSecurity: { name: string; description: string; content: string };
     use: { name: string; description: string; content: string };
     // Allow future prompt entries without breaking the type
     [key: string]: { name: string; description: string; content: string };
@@ -277,6 +277,14 @@ export async function getToolSchema(
   toolName: string
 ): Promise<Record<string, string>> {
   return getMeta().tools[toolName]?.schema ?? {};
+}
+
+export function isToolAvailableSync(toolName: string): boolean {
+  if (!METADATA_JSON) {
+    return false;
+  }
+  const tools = METADATA_JSON.tools ?? {};
+  return Object.prototype.hasOwnProperty.call(tools, toolName);
 }
 
 export async function getToolHints(
