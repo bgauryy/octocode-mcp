@@ -181,7 +181,6 @@ describe('review_security prompt', () => {
       expect(logPromptCall).toHaveBeenCalledTimes(1);
     });
 
-
     it('should handle different repo URLs', async () => {
       registerSecurityReviewPrompt(mockServer, mockContent);
 
@@ -233,7 +232,6 @@ describe('review_security prompt', () => {
       expect(result).toBeDefined();
     });
   });
-
 
   describe('Integration', () => {
     it('should work with server that expects specific prompt format', async () => {
