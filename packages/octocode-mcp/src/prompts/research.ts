@@ -1,7 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { logPromptCall } from '../session.js';
-import { TOOL_NAMES } from '../tools/toolMetadata.js';
 import type { CompleteMetadata } from '../tools/toolMetadata.js';
 
 export const PROMPT_NAME = 'research';
@@ -20,38 +19,13 @@ export function registerResearchPrompt(
     },
     async () => {
       await logPromptCall(PROMPT_NAME);
-
-      const promptText = promptData.content
-        .replace(
-          /\bgithubSearchRepositories\b/g,
-          TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES
-        )
-        .replace(
-          /\bgithubViewRepoStructure\b/g,
-          TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE
-        )
-        .replace(/\bgithubSearchCode\b/g, TOOL_NAMES.GITHUB_SEARCH_CODE)
-        .replace(/\bgithubGetFileContent\b/g, TOOL_NAMES.GITHUB_FETCH_CONTENT)
-        .replace(
-          /\bgithubSearchPullRequests\b/g,
-          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
-        );
-
-      const prompt = `
-      # SYSTEM PROMPT:
-      ${promptText}
-
-      -----
-
-      # User Query:`;
-
       return {
         messages: [
           {
-            role: 'user' as const,
+            role: 'user',
             content: {
-              type: 'text' as const,
-              text: prompt,
+              type: 'text',
+              text: promptData.content,
             },
           },
         ],

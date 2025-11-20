@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { DEFAULT_TOOLS } from './toolConfig.js';
 import { getServerConfig } from '../serverConfig.js';
 import { ToolInvocationCallback } from '../types.js';
+import { isToolAvailableSync } from './toolMetadata.js';
 
 export function registerTools(
   server: McpServer,
@@ -31,6 +32,20 @@ export function registerTools(
     try {
       let shouldRegisterTool = false;
       let reason = '';
+      let isAvailableInMetadata = false;
+
+      // Check metadata availability first (with error handling)
+      try {
+        isAvailableInMetadata = isToolAvailableSync(tool.name);
+      } catch {
+        // If metadata check fails, treat as unavailable
+        isAvailableInMetadata = false;
+      }
+
+      // Skip silently if tool is missing from remote metadata
+      if (!isAvailableInMetadata) {
+        continue;
+      }
 
       if (toolsToRun.length > 0) {
         shouldRegisterTool = toolsToRun.includes(tool.name);
