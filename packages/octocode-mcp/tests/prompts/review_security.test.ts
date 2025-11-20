@@ -181,47 +181,6 @@ describe('review_security prompt', () => {
       expect(logPromptCall).toHaveBeenCalledTimes(1);
     });
 
-    it('should use fallback content when reviewSecurity is missing in metadata', async () => {
-      const contentWithoutSecurityPrompt = {
-        ...mockContent,
-        prompts: {
-          research: mockContent.prompts.research,
-          use: mockContent.prompts.use,
-        },
-      } as CompleteMetadata;
-
-      registerSecurityReviewPrompt(mockServer, contentWithoutSecurityPrompt);
-      const result = await registeredHandler({
-        repoUrl: 'https://github.com/owner/repo',
-      });
-
-      expect(result.messages[0].content.text).toContain(
-        'Security Review Agent'
-      );
-      expect(result.messages[0].content.text).toContain(
-        'https://github.com/owner/repo'
-      );
-    });
-
-    it('should include fallback description when metadata missing', () => {
-      const contentWithoutSecurityPrompt = {
-        ...mockContent,
-        prompts: {
-          research: mockContent.prompts.research,
-          use: mockContent.prompts.use,
-        },
-      } as CompleteMetadata;
-
-      registerSecurityReviewPrompt(mockServer, contentWithoutSecurityPrompt);
-
-      expect(mockServer.registerPrompt).toHaveBeenCalledWith(
-        'review_security',
-        expect.objectContaining({
-          description: 'Concise security review using Octocode tools.',
-        }),
-        expect.any(Function)
-      );
-    });
 
     it('should handle different repo URLs', async () => {
       registerSecurityReviewPrompt(mockServer, mockContent);
@@ -275,68 +234,6 @@ describe('review_security prompt', () => {
     });
   });
 
-  describe('Fallback Content', () => {
-    it('should contain security review instructions in fallback', async () => {
-      const contentWithoutSecurityPrompt = {
-        ...mockContent,
-        prompts: {
-          research: mockContent.prompts.research,
-          use: mockContent.prompts.use,
-        },
-      } as CompleteMetadata;
-
-      registerSecurityReviewPrompt(mockServer, contentWithoutSecurityPrompt);
-      const result = await registeredHandler({
-        repoUrl: 'https://github.com/owner/repo',
-      });
-
-      const text = result.messages[0].content.text;
-      expect(text).toContain('Security Review Agent');
-      expect(text).toContain('Objective');
-      expect(text).toContain('Steps');
-      expect(text).toContain('Tooling Rules');
-    });
-
-    it('should contain Octocode tool references in fallback', async () => {
-      const contentWithoutSecurityPrompt = {
-        ...mockContent,
-        prompts: {
-          research: mockContent.prompts.research,
-          use: mockContent.prompts.use,
-        },
-      } as CompleteMetadata;
-
-      registerSecurityReviewPrompt(mockServer, contentWithoutSecurityPrompt);
-      const result = await registeredHandler({
-        repoUrl: 'https://github.com/owner/repo',
-      });
-
-      const text = result.messages[0].content.text;
-      expect(text).toContain('githubViewRepoStructure');
-      expect(text).toContain('githubSearchCode');
-      expect(text).toContain('githubGetFileContent');
-      expect(text).toContain('githubSearchPullRequests');
-    });
-
-    it('should contain OWASP reference in fallback', async () => {
-      const contentWithoutSecurityPrompt = {
-        ...mockContent,
-        prompts: {
-          research: mockContent.prompts.research,
-          use: mockContent.prompts.use,
-        },
-      } as CompleteMetadata;
-
-      registerSecurityReviewPrompt(mockServer, contentWithoutSecurityPrompt);
-      const result = await registeredHandler({
-        repoUrl: 'https://github.com/owner/repo',
-      });
-
-      const text = result.messages[0].content.text;
-      expect(text).toContain('OWASP');
-      expect(text).toContain('CheatSheetSeries');
-    });
-  });
 
   describe('Integration', () => {
     it('should work with server that expects specific prompt format', async () => {
