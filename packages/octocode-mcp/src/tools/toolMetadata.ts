@@ -279,6 +279,14 @@ export async function getToolSchema(
   return getMeta().tools[toolName]?.schema ?? {};
 }
 
+export function isToolAvailableSync(toolName: string): boolean {
+  if (!METADATA_JSON) {
+    return false;
+  }
+  const tools = METADATA_JSON.tools ?? {};
+  return Object.prototype.hasOwnProperty.call(tools, toolName);
+}
+
 export async function getToolHints(
   toolName: string,
   resultType: 'hasResults' | 'empty'
