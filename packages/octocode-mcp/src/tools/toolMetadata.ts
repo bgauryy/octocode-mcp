@@ -16,7 +16,7 @@ export interface CompleteMetadata {
   instructions: string;
   prompts: {
     research: { name: string; description: string; content: string };
-    kudos: { name: string; description: string; content: string };
+    reviewSecurity: { name: string; description: string; content: string };
     use: { name: string; description: string; content: string };
     // Allow future prompt entries without breaking the type
     [key: string]: { name: string; description: string; content: string };

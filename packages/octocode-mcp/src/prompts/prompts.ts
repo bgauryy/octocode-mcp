@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerResearchPrompt } from './research.js';
-import { registerKudosPrompt } from './kudos.js';
 import { registerUsePrompt } from './use.js';
+import { registerSecurityReviewPrompt } from './review_security.js';
 import type { CompleteMetadata } from '../tools/toolMetadata.js';
 
 /**
@@ -13,6 +13,6 @@ export function registerPrompts(
   content: CompleteMetadata
 ): void {
   registerResearchPrompt(server, content);
-  registerKudosPrompt(server, content);
   registerUsePrompt(server, content);
+  registerSecurityReviewPrompt(server, content);
 }
