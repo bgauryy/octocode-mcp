@@ -2,6 +2,7 @@ import { getGithubCLIToken } from './utils/exec.js';
 import { version } from '../package.json';
 import type { ServerConfig } from './types.js';
 import { CONFIG_ERRORS } from './errorCodes.js';
+import { maskSensitiveData } from './security/mask.js';
 
 let config: ServerConfig | null = null;
 let cachedToken: string | null = null;
@@ -21,8 +22,12 @@ async function resolveGitHubToken(): Promise<string | null> {
     if (cliToken?.trim()) {
       return cliToken.trim();
     }
-  } catch {
-    // ignore
+  } catch (error) {
+    // Mask any potential token exposure in error messages
+    if (error instanceof Error && error.message) {
+      error.message = maskSensitiveData(error.message);
+    }
+    // ignore error and continue
   }
   if (process.env.GITHUB_TOKEN) {
     return process.env.GITHUB_TOKEN;
@@ -78,7 +83,11 @@ export function getServerConfig(): ServerConfig {
   if (!config) {
     // NOTE: Cannot call logSessionError here as it would create circular dependency
     // getServerConfig -> logSessionError -> sendLog -> isLoggingEnabled -> getServerConfig
-    throw new Error(CONFIG_ERRORS.NOT_INITIALIZED.message);
+    // Mask any sensitive data in error message before throwing
+    const sanitizedMessage = maskSensitiveData(
+      CONFIG_ERRORS.NOT_INITIALIZED.message
+    );
+    throw new Error(sanitizedMessage);
   }
   return config;
 }
@@ -95,7 +104,11 @@ export async function getGitHubToken(): Promise<string | null> {
 export async function getToken(): Promise<string> {
   const token = await getGitHubToken();
   if (!token) {
-    throw new Error(CONFIG_ERRORS.NO_GITHUB_TOKEN.message);
+    // Mask any sensitive data in error message before throwing
+    const sanitizedMessage = maskSensitiveData(
+      CONFIG_ERRORS.NO_GITHUB_TOKEN.message
+    );
+    throw new Error(sanitizedMessage);
   }
   return token;
 }
