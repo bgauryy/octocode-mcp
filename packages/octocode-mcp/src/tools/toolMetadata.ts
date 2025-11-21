@@ -2,6 +2,22 @@ import { version } from '../../package.json';
 import { fetchWithRetries } from '../utils/fetchWithRetries.js';
 import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
+
+// --- Core Metadata Types ---
+
+export interface PromptArgument {
+  name: string;
+  description: string;
+  required?: boolean;
+}
+
+export interface PromptMetadata {
+  name: string;
+  description: string;
+  content: string;
+  args?: PromptArgument[];
+}
+
 export interface ToolMetadata {
   name: string;
   description: string;
@@ -14,13 +30,7 @@ export interface ToolMetadata {
 
 export interface CompleteMetadata {
   instructions: string;
-  prompts: {
-    research: { name: string; description: string; content: string };
-    reviewSecurity: { name: string; description: string; content: string };
-    use: { name: string; description: string; content: string };
-    // Allow future prompt entries without breaking the type
-    [key: string]: { name: string; description: string; content: string };
-  };
+  prompts: Record<string, PromptMetadata>;
   toolNames: {
     GITHUB_FETCH_CONTENT: 'githubGetFileContent';
     GITHUB_SEARCH_CODE: 'githubSearchCode';
@@ -42,12 +52,48 @@ export interface CompleteMetadata {
   genericErrorHints: readonly string[];
 }
 
-let METADATA_JSON: CompleteMetadata | null = null;
-let initializationPromise: Promise<void> | null = null;
+// --- Helper Types ---
 
 type ToolNamesValue =
   CompleteMetadata['toolNames'][keyof CompleteMetadata['toolNames']];
+
 type ToolNamesMap = Record<string, ToolNamesValue>;
+
+export type ToolName = ToolNamesValue;
+
+// --- Internal Data Types ---
+
+type RawBaseSchema = {
+  mainResearchGoal: string;
+  researchGoal: string;
+  reasoning: string;
+  bulkQueryTemplate: string;
+};
+
+type RawCompleteMetadata = {
+  instructions: string;
+  prompts: CompleteMetadata['prompts'];
+  toolNames: CompleteMetadata['toolNames'];
+  baseSchema: RawBaseSchema;
+  tools: Record<string, ToolMetadata>;
+  baseHints: CompleteMetadata['baseHints'];
+  genericErrorHints: readonly string[];
+  bulkOperations?: {
+    instructions?: {
+      base?: string;
+      hasResults?: string;
+      empty?: string;
+      error?: string;
+    };
+  };
+};
+
+// --- State ---
+
+let METADATA_JSON: CompleteMetadata | null = null;
+let initializationPromise: Promise<void> | null = null;
+
+// --- Constants ---
 
 const STATIC_TOOL_NAMES: ToolNamesMap = {
   GITHUB_FETCH_CONTENT: 'githubGetFileContent',
@@ -56,6 +102,8 @@ const STATIC_TOOL_NAMES: ToolNamesMap = {
   GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
   GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
 };
+
+// --- Helper Functions ---
 
 function getMeta(): CompleteMetadata {
   if (!METADATA_JSON) {
@@ -88,6 +136,8 @@ function deepFreeze<T>(obj: T): T {
   return obj;
 }
 
+// --- Initialization ---
+
 export async function initializeToolMetadata(): Promise<void> {
   if (METADATA_JSON) {
     return;
@@ -95,29 +145,6 @@ export async function initializeToolMetadata(): Promise<void> {
   if (initializationPromise) {
     return initializationPromise;
   }
-  type RawBaseSchema = {
-    mainResearchGoal: string;
-    researchGoal: string;
-    reasoning: string;
-    bulkQueryTemplate: string;
-  };
-  type RawCompleteMetadata = {
-    instructions: string;
-    prompts: CompleteMetadata['prompts'];
-    toolNames: CompleteMetadata['toolNames'];
-    baseSchema: RawBaseSchema;
-    tools: Record<string, ToolMetadata>;
-    baseHints: CompleteMetadata['baseHints'];
-    genericErrorHints: readonly string[];
-    bulkOperations?: {
-      instructions?: {
-        base?: string;
-        hasResults?: string;
-        empty?: string;
-        error?: string;
-      };
-    };
-  };
 
   initializationPromise = (async () => {
     const METADATA_URL = 'https://octocodeai.com/api/mcpContent';
@@ -181,6 +208,8 @@ export async function loadToolContent(): Promise<CompleteMetadata> {
   return getMeta();
 }
 
+// --- Accessors ---
+
 export function getInstructionsSync(): string {
   return getMeta().instructions;
 }
@@ -222,8 +251,6 @@ export const TOOL_NAMES = new Proxy({} as CompleteMetadata['toolNames'], {
     return undefined;
   },
 }) as CompleteMetadata['toolNames'];
-
-export type ToolName = (typeof TOOL_NAMES)[keyof typeof TOOL_NAMES];
 
 export const BASE_SCHEMA = new Proxy({} as CompleteMetadata['baseSchema'], {
   get(_target, prop: string) {
@@ -513,6 +540,7 @@ export const GITHUB_SEARCH_REPOS = createSchemaHelper(
   };
   scope: {
     owner: string;
+    repo: string;
   };
   filters: {
     stars: string;

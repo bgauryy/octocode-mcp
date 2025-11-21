@@ -1,53 +1,80 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { registerResearchPrompt } from './research.js';
-import { registerUsePrompt } from './use.js';
-import { registerSecurityReviewPrompt } from './review_security.js';
+import { z } from 'zod';
+import { logPromptCall } from '../session.js';
 import type { CompleteMetadata } from '../tools/toolMetadata.js';
 
 /**
  * Register all prompts with the MCP server
- * Each prompt is defined in its own file under the prompts directory
+ * Iterates over the prompts defined in the metadata and registers them dynamically
  */
 export function registerPrompts(
   server: McpServer,
   content: CompleteMetadata
 ): void {
-  const hasResearch =
-    !!content?.prompts?.research &&
-    typeof content.prompts.research.name === 'string' &&
-    content.prompts.research.name.trim().length > 0 &&
-    typeof content.prompts.research.description === 'string' &&
-    content.prompts.research.description.trim().length > 0 &&
-    typeof content.prompts.research.content === 'string' &&
-    content.prompts.research.content.trim().length > 0;
+  const prompts = content.prompts;
 
-  if (hasResearch) {
-    registerResearchPrompt(server, content);
+  if (!prompts) {
+    return;
   }
 
-  const hasUse =
-    !!content?.prompts?.use &&
-    typeof content.prompts.use.name === 'string' &&
-    content.prompts.use.name.trim().length > 0 &&
-    typeof content.prompts.use.description === 'string' &&
-    content.prompts.use.description.trim().length > 0 &&
-    typeof content.prompts.use.content === 'string' &&
-    content.prompts.use.content.trim().length > 0;
+  for (const prompt of Object.values(prompts)) {
+    // Validate required fields
+    if (
+      !prompt ||
+      typeof prompt.name !== 'string' ||
+      prompt.name.trim().length === 0 ||
+      typeof prompt.description !== 'string' ||
+      prompt.description.trim().length === 0 ||
+      typeof prompt.content !== 'string' ||
+      prompt.content.trim().length === 0
+    ) {
+      continue;
+    }
 
-  if (hasUse) {
-    registerUsePrompt(server, content);
-  }
+    // Create Zod schema for validation (as requested)
+    const argsShape: Record<string, z.ZodTypeAny> = {};
+    if (prompt.args) {
+      for (const arg of prompt.args) {
+        let schema: z.ZodTypeAny = z.string().describe(arg.description);
+        if (!arg.required) {
+          schema = schema.optional();
+        }
+        argsShape[arg.name] = schema;
+      }
+    }
 
-  const hasSecurityReview =
-    !!content?.prompts?.reviewSecurity &&
-    typeof content.prompts.reviewSecurity.name === 'string' &&
-    content.prompts.reviewSecurity.name.trim().length > 0 &&
-    typeof content.prompts.reviewSecurity.description === 'string' &&
-    content.prompts.reviewSecurity.description.trim().length > 0 &&
-    typeof content.prompts.reviewSecurity.content === 'string' &&
-    content.prompts.reviewSecurity.content.trim().length > 0;
+    server.registerPrompt(
+      prompt.name,
+      {
+        description: prompt.description,
+        argsSchema: argsShape,
+      },
+      async incomingArgs => {
+        await logPromptCall(prompt.name);
 
-  if (hasSecurityReview) {
-    registerSecurityReviewPrompt(server, content);
+        let text = prompt.content;
+
+        // Replace placeholders if arguments are provided
+        if (incomingArgs && Object.keys(incomingArgs).length > 0) {
+          for (const [key, value] of Object.entries(incomingArgs)) {
+            if (value !== undefined && value !== null) {
+              text = text.replace(new RegExp(`{{${key}}}`, 'g'), String(value));
+            }
+          }
+        }
+
+        return {
+          messages: [
+            {
+              role: 'user',
+              content: {
+                type: 'text',
+                text,
+              },
+            },
+          ],
+        };
+      }
+    );
   }
 }
