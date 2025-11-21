@@ -2,750 +2,220 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerPrompts } from '../../src/prompts/prompts.js';
 import type { CompleteMetadata } from '../../src/tools/toolMetadata.js';
-
-// Mock the individual prompt registration functions
-vi.mock('../../src/prompts/research.js', () => ({
-  registerResearchPrompt: vi.fn(),
-}));
-
-vi.mock('../../src/prompts/use.js', () => ({
-  registerUsePrompt: vi.fn(),
-}));
-
-vi.mock('../../src/prompts/review_security.js', () => ({
-  registerSecurityReviewPrompt: vi.fn(),
-}));
-
-import { registerResearchPrompt } from '../../src/prompts/research.js';
-import { registerUsePrompt } from '../../src/prompts/use.js';
-import { registerSecurityReviewPrompt } from '../../src/prompts/review_security.js';
+import type { GetPromptResult } from '@modelcontextprotocol/sdk/types.js';
+import { z } from 'zod';
 
 describe('Prompts Registration', () => {
   let mockServer: McpServer;
+  let registerPromptSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockServer = {} as McpServer;
+    registerPromptSpy = vi.fn();
+    mockServer = {
+      registerPrompt: registerPromptSpy,
+    } as unknown as McpServer;
   });
 
-  describe('Full Metadata - All Prompts Present', () => {
-    it('should register all prompts when all metadata is complete', () => {
-      const fullMetadata: CompleteMetadata = {
-        instructions: 'Test instructions',
+  const baseMetadata: CompleteMetadata = {
+    instructions: 'Test instructions',
+    prompts: {},
+    toolNames: {
+      GITHUB_FETCH_CONTENT: 'githubGetFileContent',
+      GITHUB_SEARCH_CODE: 'githubSearchCode',
+      GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
+      GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
+      GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
+    },
+    baseSchema: {
+      mainResearchGoal: '',
+      researchGoal: '',
+      reasoning: '',
+      bulkQuery: () => '',
+    },
+    tools: {},
+    baseHints: { hasResults: [], empty: [] },
+    genericErrorHints: [],
+  };
+
+  describe('Dynamic Registration', () => {
+    it('should register all valid prompts', () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
         prompts: {
           research: {
             name: 'Research',
             description: 'Research prompt description',
             content: 'Research prompt content',
+            args: [
+              { name: 'repo', description: 'Repository URL', required: true },
+            ],
           },
           use: {
             name: 'Use',
             description: 'Use prompt description',
             content: 'Use prompt content',
           },
-          reviewSecurity: {
-            name: 'Security Review',
-            description: 'Security review description',
-            content: 'Security review content',
-          },
         },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-        },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
       };
 
-      registerPrompts(mockServer, fullMetadata);
+      registerPrompts(mockServer, metadata);
 
-      expect(registerResearchPrompt).toHaveBeenCalledWith(
-        mockServer,
-        fullMetadata
+      expect(registerPromptSpy).toHaveBeenCalledTimes(2);
+
+      // Check Research prompt
+      const researchCall = registerPromptSpy.mock.calls.find(
+        (call: unknown[]) => call[0] === 'Research'
       );
-      expect(registerUsePrompt).toHaveBeenCalledWith(mockServer, fullMetadata);
-      expect(registerSecurityReviewPrompt).toHaveBeenCalledWith(
-        mockServer,
-        fullMetadata
+
+      if (!researchCall) throw new Error('Research call not found');
+
+      const researchOpts = researchCall[1] as {
+        description: string;
+        argsSchema: Record<string, z.ZodTypeAny>;
+      };
+      expect(researchOpts.description).toBe('Research prompt description');
+      expect(researchOpts.argsSchema).toBeDefined();
+      expect(researchOpts.argsSchema.repo).toBeDefined();
+
+      // Check Use prompt
+      const useCall = registerPromptSpy.mock.calls.find(
+        (call: unknown[]) => call[0] === 'Use'
       );
-    });
-  });
 
-  describe('Missing Content Field', () => {
-    it('should not register research prompt when content is missing', () => {
-      const metadata: CompleteMetadata = {
-        instructions: 'Test instructions',
-        prompts: {
-          research: {
-            name: 'Research',
-            description: 'Research prompt description',
-            content: '', // Empty content
-          },
-          use: {
-            name: 'Use',
-            description: 'Use prompt description',
-            content: 'Use prompt content',
-          },
-          reviewSecurity: {
-            name: 'Security Review',
-            description: 'Security review description',
-            content: 'Security review content',
-          },
-        },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-        },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
+      if (!useCall) throw new Error('Use call not found');
+
+      const useOpts = useCall[1] as {
+        description: string;
+        argsSchema: Record<string, z.ZodTypeAny>;
       };
-
-      registerPrompts(mockServer, metadata);
-
-      expect(registerResearchPrompt).not.toHaveBeenCalled();
-      expect(registerUsePrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerSecurityReviewPrompt).toHaveBeenCalledWith(
-        mockServer,
-        metadata
-      );
+      expect(useOpts.description).toBe('Use prompt description');
+      expect(Object.keys(useOpts.argsSchema).length).toBe(0);
     });
 
-    it('should not register use prompt when content is missing', () => {
+    it('should skip prompts with missing name', () => {
       const metadata: CompleteMetadata = {
-        instructions: 'Test instructions',
+        ...baseMetadata,
         prompts: {
-          research: {
-            name: 'Research',
-            description: 'Research prompt description',
-            content: 'Research prompt content',
-          },
-          use: {
-            name: 'Use',
-            description: 'Use prompt description',
-            content: '', // Empty content
-          },
-          reviewSecurity: {
-            name: 'Security Review',
-            description: 'Security review description',
-            content: 'Security review content',
-          },
-        },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-        },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-      };
-
-      registerPrompts(mockServer, metadata);
-
-      expect(registerResearchPrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerUsePrompt).not.toHaveBeenCalled();
-      expect(registerSecurityReviewPrompt).toHaveBeenCalledWith(
-        mockServer,
-        metadata
-      );
-    });
-
-    it('should not register reviewSecurity prompt when content is missing', () => {
-      const metadata: CompleteMetadata = {
-        instructions: 'Test instructions',
-        prompts: {
-          research: {
-            name: 'Research',
-            description: 'Research prompt description',
-            content: 'Research prompt content',
-          },
-          use: {
-            name: 'Use',
-            description: 'Use prompt description',
-            content: 'Use prompt content',
-          },
-          reviewSecurity: {
-            name: 'Security Review',
-            description: 'Security review description',
-            content: '', // Empty content
-          },
-        },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-        },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-      };
-
-      registerPrompts(mockServer, metadata);
-
-      expect(registerResearchPrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerUsePrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerSecurityReviewPrompt).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Missing Description Field', () => {
-    it('should not register research prompt when description is missing', () => {
-      const metadata: CompleteMetadata = {
-        instructions: 'Test instructions',
-        prompts: {
-          research: {
-            name: 'Research',
-            description: '', // Empty description
-            content: 'Research prompt content',
-          },
-          use: {
-            name: 'Use',
-            description: 'Use prompt description',
-            content: 'Use prompt content',
-          },
-          reviewSecurity: {
-            name: 'Security Review',
-            description: 'Security review description',
-            content: 'Security review content',
-          },
-        },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-        },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-      };
-
-      registerPrompts(mockServer, metadata);
-
-      expect(registerResearchPrompt).not.toHaveBeenCalled();
-      expect(registerUsePrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerSecurityReviewPrompt).toHaveBeenCalledWith(
-        mockServer,
-        metadata
-      );
-    });
-
-    it('should not register use prompt when description is missing', () => {
-      const metadata: CompleteMetadata = {
-        instructions: 'Test instructions',
-        prompts: {
-          research: {
-            name: 'Research',
-            description: 'Research prompt description',
-            content: 'Research prompt content',
-          },
-          use: {
-            name: 'Use',
-            description: '', // Empty description
-            content: 'Use prompt content',
-          },
-          reviewSecurity: {
-            name: 'Security Review',
-            description: 'Security review description',
-            content: 'Security review content',
-          },
-        },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-        },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-      };
-
-      registerPrompts(mockServer, metadata);
-
-      expect(registerResearchPrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerUsePrompt).not.toHaveBeenCalled();
-      expect(registerSecurityReviewPrompt).toHaveBeenCalledWith(
-        mockServer,
-        metadata
-      );
-    });
-
-    it('should not register reviewSecurity prompt when description is missing', () => {
-      const metadata: CompleteMetadata = {
-        instructions: 'Test instructions',
-        prompts: {
-          research: {
-            name: 'Research',
-            description: 'Research prompt description',
-            content: 'Research prompt content',
-          },
-          use: {
-            name: 'Use',
-            description: 'Use prompt description',
-            content: 'Use prompt content',
-          },
-          reviewSecurity: {
-            name: 'Security Review',
-            description: '', // Empty description
-            content: 'Security review content',
-          },
-        },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-        },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-      };
-
-      registerPrompts(mockServer, metadata);
-
-      expect(registerResearchPrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerUsePrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerSecurityReviewPrompt).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Missing Name Field', () => {
-    it('should not register research prompt when name is missing', () => {
-      const metadata: CompleteMetadata = {
-        instructions: 'Test instructions',
-        prompts: {
-          research: {
-            name: '', // Empty name
-            description: 'Research prompt description',
-            content: 'Research prompt content',
-          },
-          use: {
-            name: 'Use',
-            description: 'Use prompt description',
-            content: 'Use prompt content',
-          },
-          reviewSecurity: {
-            name: 'Security Review',
-            description: 'Security review description',
-            content: 'Security review content',
-          },
-        },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-        },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-      };
-
-      registerPrompts(mockServer, metadata);
-
-      expect(registerResearchPrompt).not.toHaveBeenCalled();
-      expect(registerUsePrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerSecurityReviewPrompt).toHaveBeenCalledWith(
-        mockServer,
-        metadata
-      );
-    });
-
-    it('should not register use prompt when name is missing', () => {
-      const metadata: CompleteMetadata = {
-        instructions: 'Test instructions',
-        prompts: {
-          research: {
-            name: 'Research',
-            description: 'Research prompt description',
-            content: 'Research prompt content',
-          },
-          use: {
-            name: '', // Empty name
-            description: 'Use prompt description',
-            content: 'Use prompt content',
-          },
-          reviewSecurity: {
-            name: 'Security Review',
-            description: 'Security review description',
-            content: 'Security review content',
-          },
-        },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-        },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-      };
-
-      registerPrompts(mockServer, metadata);
-
-      expect(registerResearchPrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerUsePrompt).not.toHaveBeenCalled();
-      expect(registerSecurityReviewPrompt).toHaveBeenCalledWith(
-        mockServer,
-        metadata
-      );
-    });
-
-    it('should not register reviewSecurity prompt when name is missing', () => {
-      const metadata: CompleteMetadata = {
-        instructions: 'Test instructions',
-        prompts: {
-          research: {
-            name: 'Research',
-            description: 'Research prompt description',
-            content: 'Research prompt content',
-          },
-          use: {
-            name: 'Use',
-            description: 'Use prompt description',
-            content: 'Use prompt content',
-          },
-          reviewSecurity: {
-            name: '', // Empty name
-            description: 'Security review description',
-            content: 'Security review content',
-          },
-        },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-        },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-      };
-
-      registerPrompts(mockServer, metadata);
-
-      expect(registerResearchPrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerUsePrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerSecurityReviewPrompt).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Multiple Missing Fields', () => {
-    it('should not register any prompts when all have missing content', () => {
-      const metadata: CompleteMetadata = {
-        instructions: 'Test instructions',
-        prompts: {
-          research: {
-            name: 'Research',
-            description: 'Research prompt description',
-            content: '', // Empty
-          },
-          use: {
-            name: 'Use',
-            description: 'Use prompt description',
-            content: '', // Empty
-          },
-          reviewSecurity: {
-            name: 'Security Review',
-            description: 'Security review description',
-            content: '', // Empty
-          },
-        },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-        },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-      };
-
-      registerPrompts(mockServer, metadata);
-
-      expect(registerResearchPrompt).not.toHaveBeenCalled();
-      expect(registerUsePrompt).not.toHaveBeenCalled();
-      expect(registerSecurityReviewPrompt).not.toHaveBeenCalled();
-    });
-
-    it('should not register prompts when content and description are both missing', () => {
-      const metadata: CompleteMetadata = {
-        instructions: 'Test instructions',
-        prompts: {
-          research: {
-            name: 'Research',
-            description: '', // Empty
-            content: '', // Empty
-          },
-          use: {
-            name: 'Use',
-            description: 'Use prompt description',
-            content: 'Use prompt content',
-          },
-          reviewSecurity: {
-            name: 'Security Review',
-            description: 'Security review description',
-            content: 'Security review content',
-          },
-        },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-        },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-      };
-
-      registerPrompts(mockServer, metadata);
-
-      expect(registerResearchPrompt).not.toHaveBeenCalled();
-      expect(registerUsePrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerSecurityReviewPrompt).toHaveBeenCalledWith(
-        mockServer,
-        metadata
-      );
-    });
-
-    it('should not register prompts when all fields are missing', () => {
-      const metadata: CompleteMetadata = {
-        instructions: 'Test instructions',
-        prompts: {
-          research: {
-            name: '', // Empty
-            description: '', // Empty
-            content: '', // Empty
-          },
-          use: {
-            name: 'Use',
-            description: 'Use prompt description',
-            content: 'Use prompt content',
-          },
-          reviewSecurity: {
-            name: 'Security Review',
-            description: 'Security review description',
-            content: 'Security review content',
-          },
-        },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-        },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-      };
-
-      registerPrompts(mockServer, metadata);
-
-      expect(registerResearchPrompt).not.toHaveBeenCalled();
-      expect(registerUsePrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerSecurityReviewPrompt).toHaveBeenCalledWith(
-        mockServer,
-        metadata
-      );
-    });
-  });
-
-  describe('Missing Prompt Entries', () => {
-    it('should not register research prompt when entry is undefined', () => {
-      const metadata = {
-        instructions: 'Test instructions',
-        prompts: {
-          // research is missing entirely
-          research: {
+          invalid: {
             name: '',
-            description: '',
-            content: '',
+            description: 'Desc',
+            content: 'Content',
           },
-          use: {
-            name: 'Use',
-            description: 'Use prompt description',
-            content: 'Use prompt content',
-          },
-          reviewSecurity: {
-            name: 'Security Review',
-            description: 'Security review description',
-            content: 'Security review content',
+          valid: {
+            name: 'Valid',
+            description: 'Desc',
+            content: 'Content',
           },
         },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-        },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-      } as CompleteMetadata;
+      };
 
       registerPrompts(mockServer, metadata);
 
-      expect(registerResearchPrompt).not.toHaveBeenCalled();
-      expect(registerUsePrompt).toHaveBeenCalledWith(mockServer, metadata);
-      expect(registerSecurityReviewPrompt).toHaveBeenCalledWith(
-        mockServer,
-        metadata
+      expect(registerPromptSpy).toHaveBeenCalledTimes(1);
+      expect(registerPromptSpy).toHaveBeenCalledWith(
+        'Valid',
+        expect.any(Object),
+        expect.any(Function)
       );
     });
 
-    it('should not register any prompts when prompts object is empty', () => {
-      const metadata = {
-        instructions: 'Test instructions',
+    it('should skip prompts with missing description', () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
         prompts: {
-          research: {
-            name: '',
+          invalid: {
+            name: 'Invalid',
             description: '',
-            content: '',
+            content: 'Content',
           },
-          use: {
-            name: '',
-            description: '',
-            content: '',
-          },
-          reviewSecurity: {
-            name: '',
-            description: '',
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+      expect(registerPromptSpy).not.toHaveBeenCalled();
+    });
+
+    it('should skip prompts with missing content', () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          invalid: {
+            name: 'Invalid',
+            description: 'Desc',
             content: '',
           },
         },
-        toolNames: {
-          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-          GITHUB_SEARCH_CODE: 'githubSearchCode',
-          GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-          GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-          GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
+      };
+
+      registerPrompts(mockServer, metadata);
+      expect(registerPromptSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Handler Logic', () => {
+    it('should replace arguments in content', async () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          test: {
+            name: 'Test',
+            description: 'Test description',
+            content: 'Hello {{name}}!',
+            args: [{ name: 'name', description: 'Your name' }],
+          },
         },
-        baseSchema: {
-          mainResearchGoal: '',
-          researchGoal: '',
-          reasoning: '',
-          bulkQuery: () => '',
-        },
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-      } as CompleteMetadata;
+      };
 
       registerPrompts(mockServer, metadata);
 
-      expect(registerResearchPrompt).not.toHaveBeenCalled();
-      expect(registerUsePrompt).not.toHaveBeenCalled();
-      expect(registerSecurityReviewPrompt).not.toHaveBeenCalled();
+      const calls = registerPromptSpy.mock.calls;
+      if (!calls || !calls[0]) throw new Error('No calls found');
+
+      const handler = calls[0][2] as (
+        args: Record<string, unknown>
+      ) => Promise<GetPromptResult>;
+      const result = await handler({ name: 'World' });
+
+      const message = result.messages[0];
+      if (!message) throw new Error('No message returned');
+
+      if (message.content.type !== 'text') {
+        throw new Error('Expected text content');
+      }
+      expect(message.content.text).toBe('Hello World!');
+    });
+
+    it('should handle missing arguments gracefully', async () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          test: {
+            name: 'Test',
+            description: 'Test description',
+            content: 'Hello {{name}}!',
+            args: [{ name: 'name', description: 'Your name' }],
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      const calls = registerPromptSpy.mock.calls;
+      if (!calls || !calls[0]) throw new Error('No calls found');
+
+      const handler = calls[0][2] as (
+        args: Record<string, unknown>
+      ) => Promise<GetPromptResult>;
+      const result = await handler({}); // No args provided
+
+      const message = result.messages[0];
+      if (!message) throw new Error('No message returned');
+
+      if (message.content.type !== 'text') {
+        throw new Error('Expected text content');
+      }
+      expect(message.content.text).toBe('Hello {{name}}!');
     });
   });
 });
