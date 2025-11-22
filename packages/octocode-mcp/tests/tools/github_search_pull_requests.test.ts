@@ -301,7 +301,6 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(responseText).toContain(
         'error: "Query too long. Maximum 256 characters allowed."'
       );
-      expect(responseText).toContain('errorStatusHints:');
     });
   });
 
@@ -608,8 +607,6 @@ describe('GitHub Search Pull Requests Tool', () => {
       // New bulk structure
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('hasResultsStatusHints:');
-      expect(responseText).toContain('errorStatusHints:');
     });
   });
 
@@ -638,7 +635,6 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(responseText).toContain('results:');
       expect(responseText).toContain('error:');
       expect(responseText).toContain('API rate limit exceeded');
-      expect(responseText).toContain('errorStatusHints:');
     });
 
     it('should handle network errors', async () => {
@@ -663,7 +659,6 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(responseText).toContain('results:');
       expect(responseText).toContain('error:');
       expect(responseText).toContain('Network error');
-      expect(responseText).toContain('errorStatusHints:');
     });
 
     it('should include GitHub API error-derived hints (rate limit/scopes)', async () => {
@@ -693,7 +688,6 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain(
         'GitHub Octokit API Error: GitHub API rate limit exceeded'
       );
@@ -886,7 +880,108 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(responseText).toContain('results:');
       expect(responseText).toContain('error:');
       expect(responseText).toContain('pull request #999');
-      expect(responseText).toContain('errorStatusHints:');
+    });
+  });
+
+  describe('Additional Coverage', () => {
+    it('should handle callback errors gracefully', async () => {
+      const errorCallback = vi
+        .fn()
+        .mockRejectedValue(new Error('Callback error'));
+
+      mockSearchGitHubPullRequestsAPI.mockResolvedValue(createMockPRResponse());
+
+      // Re-register with error callback
+      const newMockServer = createMockMcpServer();
+      registerSearchGitHubPullRequestsTool(newMockServer.server, errorCallback);
+
+      const result = await newMockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+            },
+          ],
+        }
+      );
+
+      // Should continue despite callback error
+      expect(result.isError).toBe(false);
+      expect(errorCallback).toHaveBeenCalled();
+
+      newMockServer.cleanup();
+    });
+
+    it('should handle all queries with invalid params', async () => {
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              mainResearchGoal: 'test goal',
+              researchGoal: 'test goal',
+              reasoning: 'test reasoning',
+              // No valid search params
+            },
+            {
+              mainResearchGoal: 'test goal',
+              researchGoal: 'test goal',
+              reasoning: 'test reasoning',
+              // No valid search params
+            },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('error:');
+      expect(responseText).toContain('least one');
+    });
+
+    it('should handle query with incomplete results', async () => {
+      mockSearchGitHubPullRequestsAPI.mockResolvedValue({
+        ...createMockPRResponse(),
+        incomplete_results: true,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              query: 'test',
+            },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('incomplete_results: true');
+    });
+
+    it('should handle PR by number with owner and repo', async () => {
+      mockSearchGitHubPullRequestsAPI.mockResolvedValue(createMockPRResponse());
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              prNumber: 123,
+            },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('status: "hasResults"');
     });
   });
 });

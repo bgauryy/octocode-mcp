@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { executeWithErrorIsolation } from '../../src/utils/promiseUtils';
 import type { PromiseExecutionOptions } from '../../src/types';
+import { VALIDATION_ERRORS, PROMISE_ERRORS } from '../../src/errorCodes';
+import { logSessionError } from '../../src/session';
+
+// Mock logSessionError
+vi.mock('../../src/session.js', () => ({
+  logSessionError: vi.fn(() => Promise.resolve()),
+}));
 
 describe('promiseUtils', () => {
   beforeEach(() => {
@@ -179,6 +186,59 @@ describe('promiseUtils', () => {
       expect(results[3]?.error?.message).toBe('[object Object]');
     });
 
+    describe('Validation Errors', () => {
+      it('should throw if promises argument is not an array', async () => {
+        // @ts-expect-error - Testing runtime validation
+        await expect(executeWithErrorIsolation('not-array')).rejects.toThrow(
+          VALIDATION_ERRORS.PROMISES_NOT_ARRAY.message
+        );
+        expect(logSessionError).toHaveBeenCalledWith(
+          'promiseUtils',
+          VALIDATION_ERRORS.PROMISES_NOT_ARRAY.code
+        );
+      });
+
+      it('should throw if timeout is not positive', async () => {
+        const promises = [() => Promise.resolve(1)];
+        await expect(
+          executeWithErrorIsolation(promises, { timeout: 0 })
+        ).rejects.toThrow(VALIDATION_ERRORS.TIMEOUT_NOT_POSITIVE.message);
+        expect(logSessionError).toHaveBeenCalledWith(
+          'promiseUtils',
+          VALIDATION_ERRORS.TIMEOUT_NOT_POSITIVE.code
+        );
+      });
+
+      it('should throw if concurrency is not positive', async () => {
+        const promises = [() => Promise.resolve(1)];
+        await expect(
+          executeWithErrorIsolation(promises, { concurrency: 0 })
+        ).rejects.toThrow(VALIDATION_ERRORS.CONCURRENCY_NOT_POSITIVE.message);
+        expect(logSessionError).toHaveBeenCalledWith(
+          'promiseUtils',
+          VALIDATION_ERRORS.CONCURRENCY_NOT_POSITIVE.code
+        );
+      });
+
+      it('should handle non-function elements in promises array', async () => {
+        const promises = [() => Promise.resolve(1), 'not-a-function'];
+
+        // @ts-expect-error - Testing runtime validation
+        const results = await executeWithErrorIsolation(promises);
+
+        expect(results).toHaveLength(2);
+        expect(results[0]?.success).toBe(true);
+        expect(results[1]?.success).toBe(false);
+        expect(results[1]?.error?.message).toContain(
+          'Promise function at index 1 is not a function'
+        );
+        expect(logSessionError).toHaveBeenCalledWith(
+          'promiseUtils',
+          PROMISE_ERRORS.NOT_A_FUNCTION.code
+        );
+      });
+    });
+
     describe('Concurrency Limiting', () => {
       it('should handle concurrency limiting', async () => {
         vi.useFakeTimers();
@@ -261,6 +321,88 @@ describe('promiseUtils', () => {
           vi.useRealTimers();
         }
       });
+
+      it('should handle undefined promise function in executeWithConcurrencyLimit', async () => {
+        // This simulates a sparse array or undefined item passed to executeWithConcurrencyLimit
+        // Although executeWithErrorIsolation filters/wraps them, we can mock executeWithErrorIsolation's internals
+        // or construct a case where validPromises has holes if that was possible,
+        // but actually executeWithErrorIsolation maps them to wrappers.
+        // However, the executeWithConcurrencyLimit function checks for undefined promiseFn.
+
+        // To test lines 152-162 in executeWithConcurrencyLimit, we need to pass an array with holes
+        // or undefined values directly to it, but it's not exported.
+        // However, we can trigger the wrapping logic in executeWithErrorIsolation which handles non-functions.
+        // But wait, executeWithErrorIsolation replaces non-functions with a rejection wrapper (lines 38-50).
+        // So executeWithConcurrencyLimit (called on line 53) receives valid wrappers.
+
+        // If we want to hit the check inside executeWithConcurrencyLimit (lines 152-162),
+        // we would need validPromises to contain undefined.
+        // But the map on line 38 ensures it returns a function.
+        // So that code might be unreachable via executeWithErrorIsolation public API unless the array is sparse?
+
+        // Let's try a sparse array.
+        const promises = new Array(3);
+        promises[0] = () => Promise.resolve(1);
+        // index 1 is empty
+        promises[2] = () => Promise.resolve(3);
+
+        // When map is called on a sparse array, it skips empty slots!
+        // validPromises will also be sparse.
+
+        const results = await executeWithErrorIsolation(promises, {
+          concurrency: 2,
+        });
+
+        expect(results).toHaveLength(3);
+        expect(results[0]?.success).toBe(true);
+
+        // Index 1 should be handled by the "undefined" check in executeWithConcurrencyLimit
+        // OR if it's sparse, map might preserve sparsity.
+        // Let's see.
+
+        // If executeWithConcurrencyLimit iterates with index < promiseFns.length, it accesses index 1.
+        // If validPromises is sparse, validPromises[1] is undefined.
+        // So the check inside executeWithConcurrencyLimit (if (!promiseFn)) should trigger.
+
+        expect(results[1]?.success).toBe(false);
+        expect(results[1]?.error?.message).toContain(
+          PROMISE_ERRORS.FUNCTION_UNDEFINED.message
+        );
+
+        expect(results[2]?.success).toBe(true);
+      });
+
+      it('should handle timeout with concurrency limit', async () => {
+        vi.useFakeTimers();
+
+        try {
+          const promises = Array.from(
+            { length: 5 },
+            (_, i) => () =>
+              new Promise(resolve => {
+                setTimeout(() => resolve(`result${i}`), i * 500);
+              })
+          );
+
+          const options: PromiseExecutionOptions = {
+            concurrency: 2,
+            timeout: 1000,
+          };
+          const resultPromise = executeWithErrorIsolation(promises, options);
+
+          vi.advanceTimersByTime(1500);
+          await vi.runAllTimersAsync();
+
+          const results = await resultPromise;
+
+          expect(results).toHaveLength(5);
+          // First few should succeed, later ones should timeout
+          expect(results[0]?.success).toBe(true);
+          expect(results[4]?.success).toBe(false);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
     });
 
     it('should handle default options', async () => {
@@ -274,6 +416,93 @@ describe('promiseUtils', () => {
         data: 'test',
         index: 0,
       });
+    });
+
+    it('should handle non-Error rejection reasons from allSettled', async () => {
+      const promises = [
+        () => Promise.reject('string error'),
+        () => Promise.reject(123),
+        () => Promise.reject(null),
+      ];
+
+      const results = await executeWithErrorIsolation(promises);
+
+      expect(results).toHaveLength(3);
+      expect(results[0]?.success).toBe(false);
+      expect(results[0]?.error?.message).toBe('string error');
+      expect(results[1]?.success).toBe(false);
+      expect(results[1]?.error?.message).toBe('123');
+      expect(results[2]?.success).toBe(false);
+      expect(results[2]?.error?.message).toBe('null');
+    });
+
+    it('should handle errors in concurrency limit path', async () => {
+      const promises = Array.from({ length: 10 }, (_, i) =>
+        i % 2 === 0
+          ? () => Promise.resolve(`success-${i}`)
+          : () => Promise.reject(new Error(`error-${i}`))
+      );
+
+      const options: PromiseExecutionOptions = {
+        concurrency: 2,
+        timeout: 5000,
+      };
+
+      const results = await executeWithErrorIsolation(promises, options);
+
+      expect(results).toHaveLength(10);
+      expect(results[0]?.success).toBe(true);
+      expect(results[1]?.success).toBe(false);
+      expect(results[1]?.error?.message).toBe('error-1');
+    });
+
+    it('should handle undefined/null promise functions with concurrency', async () => {
+      const promises: Array<(() => Promise<string>) | undefined> = [
+        () => Promise.resolve('success-0'),
+        undefined,
+        () => Promise.resolve('success-2'),
+        null as unknown as undefined,
+        () => Promise.resolve('success-4'),
+      ];
+
+      const options: PromiseExecutionOptions = {
+        concurrency: 2,
+        timeout: 5000,
+      };
+
+      const results = await executeWithErrorIsolation(
+        promises as Array<() => Promise<string>>,
+        options
+      );
+
+      expect(results).toHaveLength(5);
+      expect(results[0]?.success).toBe(true);
+      expect(results[1]?.success).toBe(false);
+      expect(results[1]?.error?.message).toContain('not a function');
+      expect(results[2]?.success).toBe(true);
+      expect(results[3]?.success).toBe(false);
+      expect(results[4]?.success).toBe(true);
+    });
+
+    it('should handle onError callback being called', async () => {
+      const errorCallback = vi.fn();
+      const promises = [
+        () => Promise.resolve('success'),
+        () => Promise.reject(new Error('test error')),
+        () => Promise.resolve('success2'),
+      ];
+
+      const options: PromiseExecutionOptions = {
+        timeout: 5000,
+        onError: errorCallback,
+      };
+
+      const results = await executeWithErrorIsolation(promises, options);
+
+      expect(results).toHaveLength(3);
+      expect(results[1]?.success).toBe(false);
+      expect(errorCallback).toHaveBeenCalledTimes(1);
+      expect(errorCallback).toHaveBeenCalledWith(expect.any(Error), 1);
     });
   });
 });

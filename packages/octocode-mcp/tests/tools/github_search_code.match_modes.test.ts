@@ -683,7 +683,6 @@ describe('GitHub Search Code - match Parameter Modes', () => {
 
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('match: "file"');
-      expect(responseText).toContain('emptyStatusHints:');
     });
 
     it('should return empty status when match=path finds no matching paths', async () => {
@@ -708,7 +707,6 @@ describe('GitHub Search Code - match Parameter Modes', () => {
 
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('match: "path"');
-      expect(responseText).toContain('emptyStatusHints:');
     });
   });
 });

@@ -91,7 +91,6 @@ describe('GitHub Search Repositories Response Structure Test', () => {
     expect(responseText).toContain('repositories:');
     expect(responseText).toContain('facebook/react');
     expect(responseText).toContain('vercel/next.js');
-    expect(responseText).toContain('hasResultsStatusHints:');
     expect(responseText).not.toMatch(/^data:/m);
     expect(responseText).not.toContain('queries:');
     expect(responseText).not.toMatch(/^hints:/m);

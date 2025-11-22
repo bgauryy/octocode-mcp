@@ -117,7 +117,7 @@ export async function fetchWithRetries(
       const extendedError = error as ExtendedError;
 
       // Check if explicitly marked as not retryable
-      if (extendedError.retryable === false) {
+      if (extendedError && extendedError.retryable === false) {
         throw error;
       }
 
@@ -131,6 +131,7 @@ export async function fetchWithRetries(
 
       // Check Retry-After header if available
       if (
+        extendedError &&
         extendedError.headers &&
         typeof extendedError.headers.get === 'function'
       ) {

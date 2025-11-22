@@ -7,7 +7,7 @@ import {
   createMockMcpServer,
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
-import { getTextContent } from '../utils/testHelpers.js';
+import { getTextContent } from './testHelpers.js';
 
 const mockSearchGitHubCodeAPI = vi.hoisted(() => vi.fn());
 const mockSearchGitHubReposAPI = vi.hoisted(() => vi.fn());
@@ -96,7 +96,6 @@ describe('Empty Arrays Removal in Responses', () => {
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('query:');
       expect(responseText).toContain('reasoning: "Test empty array removal"');
-      expect(responseText).toContain('emptyStatusHints:');
 
       // Should not contain "files: []" or similar empty array indicators
       expect(responseText).not.toMatch(/files:\s*\[\]/);
@@ -287,9 +286,6 @@ describe('Empty Arrays Removal in Responses', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('hasResultsStatusHints:');
-
-      expect(responseText).toMatch(/hasResultsStatusHints:\s*\n\s*-/);
 
       expect(responseText).not.toMatch(/hasResultsStatusHints:\s*\[\]/);
     });

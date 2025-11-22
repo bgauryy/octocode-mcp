@@ -63,14 +63,6 @@ abstract class BaseQueryBuilder {
     return this;
   }
 
-  addLanguageFilter(language?: string | null | undefined): this {
-    if (language && language !== null) {
-      const mappedLanguage = mapLanguageToGitHub(language);
-      this.queryParts.push(`language:${mappedLanguage}`);
-    }
-    return this;
-  }
-
   addArrayFilter(
     values: string | string[] | null | undefined,
     prefix: string,
@@ -265,59 +257,6 @@ class PullRequestSearchQueryBuilder extends BaseQueryBuilder {
     this.queryParts.push('archived:false');
     return this;
   }
-}
-
-function mapLanguageToGitHub(language: string): string {
-  const languageMap: Record<string, string> = {
-    js: 'JavaScript',
-    jsx: 'JavaScript',
-    javascript: 'JavaScript',
-    mjs: 'JavaScript',
-    cjs: 'JavaScript',
-    ts: 'TypeScript',
-    tsx: 'TypeScript',
-    py: 'Python',
-    py3: 'Python',
-    java: 'Java',
-    kt: 'Kotlin',
-    scala: 'Scala',
-    c: 'C',
-    cpp: 'C++',
-    cc: 'C++',
-    cxx: 'C++',
-    cs: 'C#',
-
-    html: 'HTML',
-    css: 'CSS',
-    scss: 'SCSS',
-    sass: 'Sass',
-    less: 'Less',
-    go: 'Go',
-    rs: 'Rust',
-    rb: 'Ruby',
-    php: 'PHP',
-    swift: 'Swift',
-    r: 'R',
-    sql: 'SQL',
-    sh: 'Shell',
-    bash: 'Shell',
-    zsh: 'Shell',
-    fish: 'Shell',
-    ps1: 'PowerShell',
-    psm1: 'PowerShell',
-    json: 'JSON',
-    xml: 'XML',
-    yaml: 'YAML',
-    yml: 'YAML',
-    toml: 'TOML',
-    ini: 'INI',
-    md: 'Markdown',
-    rst: 'reStructuredText',
-    conf: 'Configuration',
-    config: 'Configuration',
-  };
-
-  return languageMap[language.toLowerCase()] || language;
 }
 
 export function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {

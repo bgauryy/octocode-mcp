@@ -210,14 +210,6 @@ export async function loadToolContent(): Promise<CompleteMetadata> {
 
 // --- Accessors ---
 
-export function getInstructionsSync(): string {
-  return getMeta().instructions;
-}
-
-export function getPromptsSync(): CompleteMetadata['prompts'] {
-  return getMeta().prompts;
-}
-
 export const TOOL_NAMES = new Proxy({} as CompleteMetadata['toolNames'], {
   get(_target, prop: string) {
     if (METADATA_JSON) {
@@ -284,41 +276,12 @@ export const GENERIC_ERROR_HINTS: readonly string[] = new Proxy(
   }
 ) as readonly string[];
 
-export async function getCompleteMetadata(): Promise<CompleteMetadata> {
-  return getMeta();
-}
-export async function getToolsMetadata(): Promise<
-  Record<string, ToolMetadata>
-> {
-  return getMeta().tools;
-}
-export async function getToolMetadata(
-  toolName: string
-): Promise<ToolMetadata | undefined> {
-  return getMeta().tools[toolName];
-}
-export async function getToolDescription(toolName: string): Promise<string> {
-  return getMeta().tools[toolName]?.description ?? '';
-}
-export async function getToolSchema(
-  toolName: string
-): Promise<Record<string, string>> {
-  return getMeta().tools[toolName]?.schema ?? {};
-}
-
 export function isToolAvailableSync(toolName: string): boolean {
   if (!METADATA_JSON) {
     return false;
   }
   const tools = METADATA_JSON.tools ?? {};
   return Object.prototype.hasOwnProperty.call(tools, toolName);
-}
-
-export async function getToolHints(
-  toolName: string,
-  resultType: 'hasResults' | 'empty'
-): Promise<readonly string[]> {
-  return getMeta().tools[toolName]?.hints[resultType] ?? [];
 }
 
 export function getToolHintsSync(
@@ -333,19 +296,8 @@ export function getToolHintsSync(
   return [...baseHints, ...toolHints];
 }
 
-export async function getGenericErrorHints(): Promise<readonly string[]> {
-  return getMeta().genericErrorHints;
-}
-
 export function getGenericErrorHintsSync(): readonly string[] {
   return getMeta().genericErrorHints;
-}
-
-export async function getBaseHints(): Promise<{
-  hasResults: readonly string[];
-  empty: readonly string[];
-}> {
-  return getMeta().baseHints;
 }
 
 export function getDynamicHints(

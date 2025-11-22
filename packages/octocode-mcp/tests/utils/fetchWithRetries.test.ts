@@ -315,4 +315,90 @@ describe('fetchWithRetries', () => {
 
     expect(result).toBeNull();
   });
+
+  it('should handle Retry-After header with valid seconds', async () => {
+    const mockData = { success: true };
+    const headers = new Headers();
+    headers.set('Retry-After', '2');
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockData,
+      });
+
+    (globalThis as { fetch?: typeof fetch }).fetch = mockFetch;
+
+    const promise = fetchWithRetries('https://example.com/data', {
+      maxRetries: 1,
+    });
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result).toEqual(mockData);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('should handle Retry-After header with invalid value (NaN)', async () => {
+    const mockData = { success: true };
+    const headers = new Headers();
+    headers.set('Retry-After', 'invalid-number');
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockData,
+      });
+
+    (globalThis as { fetch?: typeof fetch }).fetch = mockFetch;
+
+    const promise = fetchWithRetries('https://example.com/data', {
+      maxRetries: 1,
+      initialDelayMs: 100,
+    });
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result).toEqual(mockData);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('should handle lastError assignment in retry loop', async () => {
+    const mockFetch = vi.fn().mockRejectedValue(new Error('Network error'));
+
+    (globalThis as { fetch?: typeof fetch }).fetch = mockFetch;
+
+    const promise = fetchWithRetries('https://example.com/data', {
+      maxRetries: 2,
+      initialDelayMs: 10,
+    });
+
+    // Create a combined promise that handles both timer and rejection
+    const testPromise = Promise.all([
+      vi.runAllTimersAsync(),
+      promise.catch(e => e),
+    ]);
+
+    const [, error] = await testPromise;
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(
+      /Failed to fetch after 3 attempts/
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
 });

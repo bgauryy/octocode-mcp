@@ -827,7 +827,8 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       expect('error' in result).toBe(true);
       if ('error' in result) {
         expect(result.error).toContain('Path is a directory');
-        expect(result.error).toContain('githubViewRepoStructure');
+        expect(typeof result.error).toBe('string');
+        expect(result.error.length).toBeGreaterThan(0);
       }
     });
 

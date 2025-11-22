@@ -505,6 +505,26 @@ describe('Index Module', () => {
       expect(exitCalled).toBe(true);
       expect(exitCode).toBe(1);
     });
+
+    it('should handle initialization errors', async () => {
+      mockInitialize.mockRejectedValue(new Error('Init failed'));
+
+      let exitCalled = false;
+      processExitSpy.mockImplementation(() => {
+        exitCalled = true;
+        return undefined as never;
+      });
+
+      try {
+        await import('../src/index.js');
+        await waitForAsyncOperations();
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        // Ignore
+      }
+
+      expect(exitCalled).toBe(true);
+    });
   });
 
   // Signal handling tests removed - they depend on complex startup mocking
@@ -520,6 +540,63 @@ describe('Index Module', () => {
       expect(TOOL_NAMES.GITHUB_FETCH_CONTENT).toBe(
         TOOL_NAMES.GITHUB_FETCH_CONTENT
       );
+    });
+  });
+
+  describe('registerAllTools', () => {
+    it('should handle missing GitHub token with warning', async () => {
+      mockGetGitHubToken.mockResolvedValue(null);
+      const { registerAllTools } = await import('../src/index.js');
+
+      const mockContent = {
+        instructions: 'test',
+        prompts: {},
+        toolNames: TOOL_NAMES,
+        baseSchema: {
+          mainResearchGoal: '',
+          researchGoal: '',
+          reasoning: '',
+          bulkQuery: () => '',
+        },
+        tools: {},
+        baseHints: { hasResults: [], empty: [] },
+        genericErrorHints: [],
+      };
+
+      await registerAllTools(
+        mockMcpServer as unknown as McpServer,
+        mockContent
+      );
+
+      // Should still register tools but log warning
+      expect(mockRegisterTools).toHaveBeenCalled();
+    });
+
+    it('should handle GitHub token available', async () => {
+      mockGetGitHubToken.mockResolvedValue('test-token');
+      const { registerAllTools } = await import('../src/index.js');
+
+      const mockContent = {
+        instructions: 'test',
+        prompts: {},
+        toolNames: TOOL_NAMES,
+        baseSchema: {
+          mainResearchGoal: '',
+          researchGoal: '',
+          reasoning: '',
+          bulkQuery: () => '',
+        },
+        tools: {},
+        baseHints: { hasResults: [], empty: [] },
+        genericErrorHints: [],
+      };
+
+      await registerAllTools(
+        mockMcpServer as unknown as McpServer,
+        mockContent
+      );
+
+      expect(mockRegisterTools).toHaveBeenCalled();
     });
   });
 
