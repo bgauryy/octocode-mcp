@@ -37,7 +37,7 @@ Before starting any task:
 **Octocode-MCP** is a Model Context Protocol (MCP) server that provides AI assistants with advanced GitHub repository analysis, code discovery, and npm package exploration capabilities.
 
 - **Type:** MCP Server / Developer Tools
-- **Language:** TypeScript (Node.js >= 18.12.0)
+- **Language:** TypeScript (Node.js >= 20.0.0)
 - **Package Manager:** Yarn (workspaces/monorepo)
 - **Architecture:** Research-driven, progressive refinement, security-first
 - **Key Focus:** Clean architecture, token efficiency, bulk operations
@@ -115,7 +115,7 @@ yarn test                    # Run all tests to verify
 ```
 
 ### Required Tools
-- Node.js >= 18.12.0
+- Node.js >= 20.0.0
 - Yarn (Corepack enabled)
 - Git
 
