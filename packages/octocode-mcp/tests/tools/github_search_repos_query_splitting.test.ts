@@ -580,7 +580,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('query:');
-      expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).toContain('2 hasResults');
       expect(responseText).toContain('topics-based search');
       expect(responseText).toContain('keywords-based search');

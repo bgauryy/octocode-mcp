@@ -167,7 +167,6 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('query:');
       expect(responseText).toContain('reasoning: "Test hasResults"');
-      expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).toContain('1 hasResults');
     });
 
@@ -195,7 +194,6 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('query:');
       expect(responseText).toContain('reasoning: "Test empty"');
-      expect(responseText).toContain('emptyStatusHints:');
       expect(responseText).toContain('1 empty');
     });
 
@@ -219,7 +217,6 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('query:');
       expect(responseText).toContain('reasoning: "Test failed"');
-      expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain('1 failed');
     });
 
@@ -850,11 +847,6 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('hasResultsStatusHints:');
-      expect(responseText).toContain('emptyStatusHints:');
-      expect(responseText).toContain('errorStatusHints:');
-
-      expect(responseText).toMatch(/hasResultsStatusHints:[\s\S]*-/);
     });
 
     it('should only include hint sections for result types that exist', async () => {

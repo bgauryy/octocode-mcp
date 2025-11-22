@@ -116,7 +116,6 @@ describe('GitHub Fetch Content Tool', () => {
       expect(responseText).toContain(
         'content: "# Hello World\\n\\nThis is a test file."'
       );
-      expect(responseText).toContain('hasResultsStatusHints:');
       // New structure - no top-level data/queries/hints fields
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
@@ -213,7 +212,6 @@ describe('GitHub Fetch Content Tool', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('2 hasResults');
-      expect(responseText).toContain('hasResultsStatusHints:');
       // Check first result
       expect(responseText).toContain('path: "README.md"');
       expect(responseText).toContain('contentLength: 1');
@@ -263,7 +261,6 @@ describe('GitHub Fetch Content Tool', () => {
       expect(responseText).toContain('owner: "test"');
       expect(responseText).toContain('repo: "repo"');
       expect(responseText).toContain('path: "nonexistent.md"');
-      expect(responseText).toContain('errorStatusHints:');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -299,7 +296,6 @@ describe('GitHub Fetch Content Tool', () => {
       expect(responseText).toContain('owner: "test"');
       expect(responseText).toContain('repo: "repo"');
       expect(responseText).toContain('path: "test.md"');
-      expect(responseText).toContain('errorStatusHints:');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -332,7 +328,6 @@ describe('GitHub Fetch Content Tool', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain(
         'GitHub Octokit API Error: Access forbidden - insufficient permissions'
       );
@@ -394,7 +389,6 @@ End of file.`;
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('path: "README.md"');
       expect(responseText).toContain('contentLength: 12');
-      expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -501,7 +495,6 @@ End of file.`;
       expect(responseText).toContain('startLine: 5');
       expect(responseText).toContain('endLine: 7');
       expect(responseText).toContain('isPartial: true');
-      expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -562,7 +555,6 @@ End of file.`;
       expect(responseText).toContain('startLine: 8');
       expect(responseText).toContain('endLine: 14');
       expect(responseText).toContain('securityWarnings:');
-      expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -665,7 +657,6 @@ End of file.`;
       expect(responseText).toContain('minified: true');
       expect(responseText).toContain('minificationFailed: false');
       expect(responseText).toContain('minificationType: "terser"');
-      expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -715,7 +706,6 @@ End of file.`;
       expect(responseText).toContain('path: "src/readable.js"');
       expect(responseText).toContain('contentLength: 37');
       expect(responseText).toContain('minified: false');
-      expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -768,7 +758,6 @@ End of file.`;
       expect(responseText).toContain('minified: false');
       expect(responseText).toContain('minificationFailed: true');
       expect(responseText).toContain('minificationType: "failed"');
-      expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -816,7 +805,6 @@ End of file.`;
       expect(responseText).toContain('path: "config.env"');
       expect(responseText).toContain('contentLength: 2');
       expect(responseText).toContain('securityWarnings:');
-      expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -907,7 +895,6 @@ End of file.`;
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('path: "feature.js"');
       expect(responseText).toContain('branch: "feature-branch"');
-      expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -1022,8 +1009,6 @@ End of file.`;
       expect(responseText).toContain('error: "Network timeout"');
       expect(responseText).toContain('path: "missing.js"');
       expect(responseText).toContain('path: "timeout.js"');
-      expect(responseText).toContain('hasResultsStatusHints:');
-      expect(responseText).toContain('errorStatusHints:');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);

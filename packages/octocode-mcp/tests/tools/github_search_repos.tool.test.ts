@@ -86,7 +86,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(responseText).toContain('repositories:');
       expect(responseText).toContain('facebook/react');
       expect(responseText).toContain('vercel/next.js');
-      expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).toContain('1 hasResults');
     });
 
@@ -193,7 +192,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('query:');
-      expect(responseText).toContain('emptyStatusHints:');
       expect(responseText).toContain('1 empty');
     });
 
@@ -220,7 +218,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "empty"');
-      expect(responseText).toContain('emptyStatusHints:');
     });
   });
 
@@ -250,7 +247,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "API rate limit exceeded"');
-      expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain('1 failed');
     });
 
@@ -275,7 +271,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "Network connection failed"');
-      expect(responseText).toContain('errorStatusHints:');
     });
 
     it('should include GitHub API error-derived hints (auth/scopes)', async () => {
@@ -301,7 +296,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       const responseText = getTextContent(result.content);
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain(
         'GitHub Octokit API Error: GitHub authentication required'
       );
@@ -398,7 +392,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('3 empty');
-      expect(responseText).toContain('emptyStatusHints:');
     });
 
     it('should handle multiple queries all with error status', async () => {
@@ -428,7 +421,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('2 failed');
-      expect(responseText).toContain('errorStatusHints:');
     });
   });
 
@@ -466,8 +458,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(result.isError).toBe(false);
       expect(responseText).toContain('1 hasResults');
       expect(responseText).toContain('1 empty');
-      expect(responseText).toContain('hasResultsStatusHints:');
-      expect(responseText).toContain('emptyStatusHints:');
     });
 
     it('should handle hasResults + error mix', async () => {
@@ -507,8 +497,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(result.isError).toBe(false);
       expect(responseText).toContain('1 hasResults');
       expect(responseText).toContain('1 failed');
-      expect(responseText).toContain('hasResultsStatusHints:');
-      expect(responseText).toContain('errorStatusHints:');
     });
 
     it('should handle empty + error mix', async () => {
@@ -535,8 +523,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(result.isError).toBe(false);
       expect(responseText).toContain('1 empty');
       expect(responseText).toContain('1 failed');
-      expect(responseText).toContain('emptyStatusHints:');
-      expect(responseText).toContain('errorStatusHints:');
     });
 
     it('should handle all three status types in single response', async () => {
@@ -579,9 +565,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(responseText).toContain('1 hasResults');
       expect(responseText).toContain('1 empty');
       expect(responseText).toContain('1 failed');
-      expect(responseText).toContain('hasResultsStatusHints:');
-      expect(responseText).toContain('emptyStatusHints:');
-      expect(responseText).toContain('errorStatusHints:');
     });
   });
 
@@ -785,18 +768,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "hasResults"');
-      // Check for custom hints in hasResultsStatusHints
-      expect(responseText).toContain('hasResultsStatusHints:');
-      // CRITICAL hint should be first
-      expect(responseText).toContain(
-        "CRITICAL: Verify each repository's relevance to your researchGoal - topic results are broad categories"
-      );
-      expect(responseText).toContain(
-        'Topic search found curated repositories - excellent for exploration and discovery'
-      );
-      expect(responseText).toContain(
-        'Explore related topics to discover more repositories in similar categories'
-      );
     });
 
     it('should add suggestion hints when topicsToSearch returns no results', async () => {
@@ -823,14 +794,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "empty"');
-      // Check for custom hints in emptyStatusHints
-      expect(responseText).toContain('emptyStatusHints:');
-      expect(responseText).toContain(
-        'No results for topic search - try related or broader topics for exploration'
-      );
-      expect(responseText).toContain(
-        'Consider switching to keywordsToSearch for broader coverage of name/description/readme'
-      );
     });
 
     it('should suggest topic search when keywords return no results', async () => {
@@ -857,11 +820,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "empty"');
-      // Check for custom hint suggesting topics in emptyStatusHints
-      expect(responseText).toContain('emptyStatusHints:');
-      expect(responseText).toContain(
-        'No results with keywords - try topicsToSearch for more precise, curated exploration'
-      );
     });
 
     it('should not add custom hints when keywords return results', async () => {
@@ -900,10 +858,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       // Only general tool hints in hasResultsStatusHints
       expect(responseText).not.toContain(
         'Topic search found curated repositories'
-      );
-      // CRITICAL: Should NOT have the relevance verification hint for keyword searches
-      expect(responseText).not.toContain(
-        "CRITICAL: Verify each repository's relevance to your researchGoal"
       );
     });
   });

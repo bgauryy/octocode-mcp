@@ -233,6 +233,36 @@ describe('Query Builders', () => {
       const query = buildRepoSearchQuery(params);
       expect(query).toBe('active pushed:>2023-01-01 is:not-archived');
     });
+
+    it('should build query with readme match filter', () => {
+      const params = {
+        keywordsToSearch: ['awesome'],
+        match: ['readme'],
+      } as Parameters<typeof buildRepoSearchQuery>[0];
+
+      const query = buildRepoSearchQuery(params);
+      expect(query).toBe('awesome in:readme is:not-archived');
+    });
+
+    it('should build query with single readme match', () => {
+      const params = {
+        keywordsToSearch: ['awesome'],
+        match: ['readme'],
+      } as Parameters<typeof buildRepoSearchQuery>[0];
+
+      const query = buildRepoSearchQuery(params);
+      expect(query).toBe('awesome in:readme is:not-archived');
+    });
+
+    it('should build query with created date filter', () => {
+      const params = {
+        keywordsToSearch: ['repo'],
+        created: '>2023-01-01',
+      };
+
+      const query = buildRepoSearchQuery(params);
+      expect(query).toBe('repo created:>2023-01-01 is:not-archived');
+    });
   });
 
   describe('buildPullRequestSearchQuery', () => {
@@ -317,6 +347,43 @@ describe('Query Builders', () => {
       expect(query).toBe(
         'is:pr no:assignee no:label no:milestone no:project archived:false'
       );
+    });
+
+    it('should build query with all date filters', () => {
+      const params = {
+        created: '>2023-01-01',
+        updated: '2023-01-01..2023-12-31',
+        'author-date': '>2023-01-01',
+        'committer-date': '>2023-01-01',
+        'merged-at': '>2023-06-01',
+        closed: '<2023-12-31',
+      };
+
+      const query = buildPullRequestSearchQuery(params);
+      expect(query).toContain('created:>2023-01-01');
+      expect(query).toContain('updated:2023-01-01..2023-12-31');
+      expect(query).toContain('author-date:>2023-01-01');
+      expect(query).toContain('committer-date:>2023-01-01');
+      expect(query).toContain('merged:>2023-06-01');
+      expect(query).toContain('closed:<2023-12-31');
+    });
+
+    it('should build query with involves user filter', () => {
+      const params = {
+        involves: 'alice',
+      };
+
+      const query = buildPullRequestSearchQuery(params);
+      expect(query).toBe('is:pr involves:alice archived:false');
+    });
+
+    it('should build query with review-requested filter', () => {
+      const params = {
+        'review-requested': 'bob',
+      };
+
+      const query = buildPullRequestSearchQuery(params);
+      expect(query).toBe('is:pr review-requested:bob archived:false');
     });
   });
 
