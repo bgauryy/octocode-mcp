@@ -167,8 +167,3 @@ export function getCacheStats(): CacheStats & {
     cacheSize: cache.keys().length,
   };
 }
-
-/**
- * Perform periodic cleanup (simplified - NodeCache handles this automatically)
- */
-export function performPeriodicCleanup(): void {}

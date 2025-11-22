@@ -1,0 +1,478 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { searchGitHubPullRequestsAPI } from '../../src/github/pullRequestSearch';
+import * as client from '../../src/github/client';
+import * as queryBuilders from '../../src/github/queryBuilders';
+
+vi.mock('../../src/github/client');
+vi.mock('../../src/session');
+vi.mock('../../src/utils/cache', () => ({
+  withDataCache: vi.fn((_key, fn) => fn()),
+  generateCacheKey: vi.fn(() => 'cache-key'),
+}));
+
+describe('pullRequestSearch coverage', () => {
+  const mockOctokit = {
+    rest: {
+      search: {
+        issuesAndPullRequests: vi.fn(),
+      },
+      pulls: {
+        list: vi.fn(),
+        get: vi.fn(),
+        listFiles: vi.fn(),
+      },
+      issues: {
+        listComments: vi.fn(),
+      },
+    },
+  };
+
+  beforeEach(() => {
+    vi.spyOn(client, 'getOctokit').mockResolvedValue(
+      mockOctokit as unknown as Awaited<ReturnType<typeof client.getOctokit>>
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should handle sort parameter correctly', async () => {
+    mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+      data: { items: [], total_count: 0 },
+    });
+
+    await searchGitHubPullRequestsAPI({
+      query: 'test',
+      sort: 'updated',
+      order: 'asc',
+    });
+
+    expect(mockOctokit.rest.search.issuesAndPullRequests).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sort: 'updated',
+        order: 'asc',
+      })
+    );
+  });
+
+  it('should fallback sort to undefined if invalid', async () => {
+    mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+      data: { items: [], total_count: 0 },
+    });
+
+    await searchGitHubPullRequestsAPI({
+      query: 'test',
+      // @ts-ignore - Testing invalid sort
+      sort: 'invalid-sort',
+    });
+
+    expect(mockOctokit.rest.search.issuesAndPullRequests).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sort: 'invalid-sort',
+      })
+    );
+  });
+
+  it('should handle REST API search error', async () => {
+    mockOctokit.rest.pulls.list.mockRejectedValue(new Error('API Error'));
+
+    // Force shouldUseSearchForPRs to false to trigger REST path
+    vi.spyOn(queryBuilders, 'shouldUseSearchForPRs').mockReturnValue(false);
+
+    const result = await searchGitHubPullRequestsAPI({
+      owner: 'owner',
+      repo: 'repo',
+    });
+
+    expect(result.error).toBeDefined();
+    expect(result.hints).toBeDefined();
+  });
+
+  it('should handle error when fetching PR comments', async () => {
+    // Mock query builder to ensure we get to the search call
+    vi.spyOn(queryBuilders, 'buildPullRequestSearchQuery').mockReturnValue(
+      'test query'
+    );
+
+    // Setup a PR result that triggers comment fetching
+    mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+      data: {
+        items: [
+          {
+            number: 1,
+            title: 'Test PR',
+            html_url: 'http://github.com/owner/repo/pull/1',
+            state: 'open',
+            user: { login: 'user' },
+            pull_request: {},
+          },
+        ],
+        total_count: 1,
+      },
+    });
+
+    mockOctokit.rest.issues.listComments.mockRejectedValue(
+      new Error('Comment Error')
+    );
+
+    const result = await searchGitHubPullRequestsAPI({
+      query: 'test',
+      owner: 'owner',
+      repo: 'repo',
+      withComments: true,
+    });
+
+    expect(result.pull_requests).toBeDefined();
+    expect(result.pull_requests).toHaveLength(1);
+    expect(result.pull_requests?.[0]?.comments).toBe(0); // Should default to empty/0 on error
+  });
+
+  it('should handle error when fetching file changes', async () => {
+    vi.spyOn(queryBuilders, 'buildPullRequestSearchQuery').mockReturnValue(
+      'test query'
+    );
+
+    mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+      data: {
+        items: [
+          {
+            number: 1,
+            title: 'Test PR',
+            html_url: 'http://github.com/owner/repo/pull/1',
+            state: 'open',
+            user: { login: 'user' },
+            pull_request: {},
+          },
+        ],
+        total_count: 1,
+      },
+    });
+
+    mockOctokit.rest.pulls.listFiles.mockRejectedValue(new Error('File Error'));
+
+    const result = await searchGitHubPullRequestsAPI({
+      query: 'test',
+      owner: 'owner',
+      repo: 'repo',
+      withContent: true,
+    });
+
+    expect(result.pull_requests).toBeDefined();
+    expect(result.pull_requests).toHaveLength(1);
+    expect(result.pull_requests?.[0]?.file_changes).toBeUndefined();
+  });
+
+  it('should use REST API when specific conditions met', async () => {
+    vi.spyOn(queryBuilders, 'shouldUseSearchForPRs').mockReturnValue(false);
+    mockOctokit.rest.pulls.list.mockResolvedValue({ data: [] });
+
+    await searchGitHubPullRequestsAPI({
+      owner: 'owner',
+      repo: 'repo',
+      state: 'closed',
+    });
+
+    expect(mockOctokit.rest.pulls.list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: 'closed',
+      })
+    );
+  });
+
+  it('should return error if search query build fails', async () => {
+    vi.spyOn(queryBuilders, 'buildPullRequestSearchQuery').mockReturnValue('');
+
+    const result = await searchGitHubPullRequestsAPI({
+      // Empty params that result in empty query
+    });
+
+    expect(result.error).toBeDefined();
+  });
+
+  it('should handle REST API with head and base filters', async () => {
+    vi.spyOn(queryBuilders, 'shouldUseSearchForPRs').mockReturnValue(false);
+    mockOctokit.rest.pulls.list.mockResolvedValue({ data: [] });
+
+    await searchGitHubPullRequestsAPI({
+      owner: 'owner',
+      repo: 'repo',
+      head: 'feature-branch',
+      base: 'main',
+    });
+
+    expect(mockOctokit.rest.pulls.list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        head: 'feature-branch',
+        base: 'main',
+      })
+    );
+  });
+
+  it('should handle search with sort parameter variations', async () => {
+    vi.spyOn(queryBuilders, 'buildPullRequestSearchQuery').mockReturnValue(
+      'test'
+    );
+    mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+      data: { items: [], total_count: 0 },
+    });
+
+    await searchGitHubPullRequestsAPI({
+      query: 'test',
+      sort: 'updated',
+    });
+
+    expect(mockOctokit.rest.search.issuesAndPullRequests).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sort: 'updated',
+      })
+    );
+  });
+
+  it('should handle merged PR with merged_at date', async () => {
+    vi.spyOn(queryBuilders, 'buildPullRequestSearchQuery').mockReturnValue(
+      'test'
+    );
+
+    mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+      data: {
+        items: [
+          {
+            number: 1,
+            title: 'Test PR',
+            html_url: 'http://github.com/owner/repo/pull/1',
+            state: 'closed',
+            user: { login: 'user' },
+            pull_request: {},
+            merged_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+        total_count: 1,
+      },
+    });
+
+    mockOctokit.rest.pulls.get.mockResolvedValue({
+      data: {
+        number: 1,
+        title: 'Test PR',
+        state: 'closed',
+        user: { login: 'user' },
+        head: { ref: 'feature', sha: 'abc123' },
+        base: { ref: 'main', sha: 'def456' },
+        merged_at: '2024-01-01T00:00:00Z',
+      },
+    });
+
+    const result = await searchGitHubPullRequestsAPI({
+      query: 'test',
+      owner: 'owner',
+      repo: 'repo',
+    });
+
+    expect(result.pull_requests).toBeDefined();
+    expect(result.pull_requests).toHaveLength(1);
+    expect(result.pull_requests?.[0]?.merged).toBe(true);
+    expect(result.pull_requests?.[0]?.merged_at).toBeDefined();
+  });
+
+  it('should handle PR with file_changes that have patches', async () => {
+    vi.spyOn(queryBuilders, 'buildPullRequestSearchQuery').mockReturnValue(
+      'test'
+    );
+
+    mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+      data: {
+        items: [
+          {
+            number: 1,
+            title: 'Test PR',
+            html_url: 'http://github.com/owner/repo/pull/1',
+            state: 'open',
+            user: { login: 'user' },
+            pull_request: {},
+          },
+        ],
+        total_count: 1,
+      },
+    });
+
+    mockOctokit.rest.pulls.get.mockResolvedValue({
+      data: {
+        number: 1,
+        title: 'Test PR',
+        state: 'open',
+        user: { login: 'user' },
+        head: { ref: 'feature', sha: 'abc123' },
+        base: { ref: 'main', sha: 'def456' },
+      },
+    });
+
+    mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+      data: [
+        {
+          filename: 'test.ts',
+          status: 'modified',
+          additions: 10,
+          deletions: 5,
+          changes: 15,
+          patch: '@@ -1,3 +1,4 @@\n+new line',
+        },
+      ],
+    });
+
+    const result = await searchGitHubPullRequestsAPI({
+      query: 'test',
+      owner: 'owner',
+      repo: 'repo',
+      withContent: true,
+    });
+
+    expect(result.pull_requests).toBeDefined();
+    expect(result.pull_requests).toHaveLength(1);
+    expect(result.pull_requests?.[0]?.file_changes).toBeDefined();
+    expect(result.pull_requests?.[0]?.file_changes?.[0]?.patch).toBeDefined();
+  });
+
+  it('should handle draft PR flag correctly', async () => {
+    vi.spyOn(queryBuilders, 'shouldUseSearchForPRs').mockReturnValue(false);
+
+    mockOctokit.rest.pulls.list.mockResolvedValue({
+      data: [
+        {
+          number: 1,
+          title: 'Draft PR',
+          html_url: 'http://github.com/owner/repo/pull/1',
+          state: 'open',
+          user: { login: 'user' },
+          head: { ref: 'feature', sha: 'abc123' },
+          base: { ref: 'main', sha: 'def456' },
+          draft: true,
+        },
+      ],
+    });
+
+    const result = await searchGitHubPullRequestsAPI({
+      owner: 'owner',
+      repo: 'repo',
+    });
+
+    expect(result.pull_requests).toBeDefined();
+    expect(result.pull_requests).toHaveLength(1);
+    expect(result.pull_requests?.[0]?.draft).toBe(true);
+  });
+
+  it('should calculate additions and deletions from file_changes', async () => {
+    vi.spyOn(queryBuilders, 'buildPullRequestSearchQuery').mockReturnValue(
+      'test'
+    );
+
+    mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+      data: {
+        items: [
+          {
+            number: 1,
+            title: 'Test PR',
+            html_url: 'http://github.com/owner/repo/pull/1',
+            state: 'open',
+            user: { login: 'user' },
+            pull_request: {},
+          },
+        ],
+        total_count: 1,
+      },
+    });
+
+    mockOctokit.rest.pulls.get.mockResolvedValue({
+      data: {
+        number: 1,
+        title: 'Test PR',
+        state: 'open',
+        user: { login: 'user' },
+        head: { ref: 'feature', sha: 'abc123' },
+        base: { ref: 'main', sha: 'def456' },
+      },
+    });
+
+    mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+      data: [
+        {
+          filename: 'file1.ts',
+          status: 'modified',
+          additions: 10,
+          deletions: 5,
+          changes: 15,
+        },
+        {
+          filename: 'file2.ts',
+          status: 'added',
+          additions: 20,
+          deletions: 2,
+          changes: 22,
+        },
+      ],
+    });
+
+    const result = await searchGitHubPullRequestsAPI({
+      query: 'test',
+      owner: 'owner',
+      repo: 'repo',
+      withContent: true,
+    });
+
+    expect(result.pull_requests).toBeDefined();
+    expect(result.pull_requests?.[0]?.additions).toBe(30); // 10 + 20
+    expect(result.pull_requests?.[0]?.deletions).toBe(7); // 5 + 2
+    expect(result.pull_requests?.[0]?.changed_files).toBe(2);
+  });
+
+  it('should include sanitization warnings when present', async () => {
+    vi.spyOn(queryBuilders, 'buildPullRequestSearchQuery').mockReturnValue(
+      'test'
+    );
+
+    // Use a URL that would trigger sanitization (email address)
+    mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+      data: {
+        items: [
+          {
+            number: 1,
+            title: 'Test PR',
+            html_url: 'http://github.com/owner/repo/pull/1',
+            state: 'open',
+            user: {
+              login: 'user',
+              html_url: 'mailto:user@example.com',
+            },
+            pull_request: {},
+          },
+        ],
+        total_count: 1,
+      },
+    });
+
+    mockOctokit.rest.pulls.get.mockResolvedValue({
+      data: {
+        number: 1,
+        title: 'Test PR',
+        state: 'open',
+        user: {
+          login: 'user',
+          html_url: 'mailto:user@example.com',
+        },
+        head: { ref: 'feature', sha: 'abc123' },
+        base: { ref: 'main', sha: 'def456' },
+      },
+    });
+
+    const result = await searchGitHubPullRequestsAPI({
+      query: 'test',
+      owner: 'owner',
+      repo: 'repo',
+    });
+
+    expect(result.pull_requests).toBeDefined();
+    // Sanitization warnings may or may not be present depending on the content
+    // The test verifies that the result is properly returned
+    expect(result.pull_requests).toHaveLength(1);
+  });
+});

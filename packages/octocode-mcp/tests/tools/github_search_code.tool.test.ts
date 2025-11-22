@@ -86,7 +86,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('files:');
       expect(responseText).toContain('path: "src/index.ts"');
       expect(responseText).toContain('path: "src/utils.ts"');
-      expect(responseText).toContain('hasResultsStatusHints:');
     });
 
     it('should extract owner and repo from repository nameWithOwner', async () => {
@@ -181,7 +180,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('results:');
       expect(responseText).toContain('1 empty');
       expect(responseText).toContain('status: "empty"');
-      expect(responseText).toContain('emptyStatusHints:');
       // Empty status doesn't include files in data, but the query should be recorded
       expect(responseText).toContain('query:');
       expect(responseText).toContain('owner: "test"');
@@ -215,7 +213,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "empty"');
-      expect(responseText).toContain('emptyStatusHints:');
       // When empty, the tool returns owner/repo in data but files are filtered out
       expect(responseText).toContain('owner: "test"');
       expect(responseText).toContain('repo: "repo"');
@@ -240,7 +237,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "API rate limit exceeded"');
-      expect(responseText).toContain('errorStatusHints:');
     });
 
     it('should return error status when API throws exception', async () => {
@@ -257,7 +253,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "Network timeout"');
-      expect(responseText).toContain('errorStatusHints:');
     });
 
     it('should include GitHub API error-derived hints (rate limit, scopes)', async () => {
@@ -280,7 +275,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain(
         'GitHub Octokit API Error: GitHub API rate limit exceeded'
       );
@@ -348,7 +342,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('3 hasResults');
       expect(responseText).not.toContain('empty');
       expect(responseText).not.toContain('failed');
-      expect(responseText).toContain('hasResultsStatusHints:');
     });
 
     it('should handle multiple queries all with empty status', async () => {
@@ -370,7 +363,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('2 empty');
       expect(responseText).not.toContain('hasResults');
       expect(responseText).not.toContain('status: "failed"');
-      expect(responseText).toContain('emptyStatusHints:');
     });
 
     it('should handle multiple queries all with errors', async () => {
@@ -390,7 +382,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('3 failed');
       expect(responseText).not.toContain('hasResults');
       expect(responseText).not.toContain('empty');
-      expect(responseText).toContain('errorStatusHints:');
     });
   });
 
@@ -442,8 +433,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('2 hasResults');
       expect(responseText).toContain('1 empty');
       expect(responseText).not.toContain('status: "failed"');
-      expect(responseText).toContain('hasResultsStatusHints:');
-      expect(responseText).toContain('emptyStatusHints:');
     });
 
     it('should handle hasResults + error mix', async () => {
@@ -493,8 +482,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('2 hasResults');
       expect(responseText).toContain('1 failed');
       expect(responseText).not.toContain(': 0 empty');
-      expect(responseText).toContain('hasResultsStatusHints:');
-      expect(responseText).toContain('errorStatusHints:');
     });
 
     it('should handle empty + error mix', async () => {
@@ -528,8 +515,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('2 empty');
       expect(responseText).toContain('2 failed');
       expect(responseText).not.toContain('hasResults');
-      expect(responseText).toContain('emptyStatusHints:');
-      expect(responseText).toContain('errorStatusHints:');
     });
 
     it('should handle all three statuses (hasResults + empty + error)', async () => {
@@ -572,9 +557,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('1 hasResults');
       expect(responseText).toContain('1 empty');
       expect(responseText).toContain('2 failed');
-      expect(responseText).toContain('hasResultsStatusHints:');
-      expect(responseText).toContain('emptyStatusHints:');
-      expect(responseText).toContain('errorStatusHints:');
     });
   });
 

@@ -763,6 +763,232 @@ describe('ContentSanitizer', () => {
     });
   });
 
+  describe('Error Handling', () => {
+    it('should handle regex errors gracefully in detectSecrets', () => {
+      // Create content that would normally match but we'll mock an error
+      const content = 'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456';
+
+      // We can't easily force a regex error in the current implementation,
+      // but we can test the fallback behavior
+      const result = ContentSanitizer.sanitizeContent(content);
+
+      // Should still process the content
+      expect(result).toBeDefined();
+      expect(result.content).toBeDefined();
+    });
+
+    it('should handle null params in validateInputParameters', () => {
+      const result = ContentSanitizer.validateInputParameters(
+        null as unknown as Record<string, unknown>
+      );
+
+      expect(result.isValid).toBe(false);
+      expect(result.warnings).toContain(
+        'Invalid parameters: must be an object'
+      );
+      expect(result.sanitizedParams).toEqual({});
+    });
+
+    it('should handle undefined params in validateInputParameters', () => {
+      const result = ContentSanitizer.validateInputParameters(
+        undefined as unknown as Record<string, unknown>
+      );
+
+      expect(result.isValid).toBe(false);
+      expect(result.warnings).toContain(
+        'Invalid parameters: must be an object'
+      );
+      expect(result.sanitizedParams).toEqual({});
+    });
+
+    it('should handle non-object params in validateInputParameters', () => {
+      const result = ContentSanitizer.validateInputParameters(
+        'not an object' as unknown as Record<string, unknown>
+      );
+
+      expect(result.isValid).toBe(false);
+      expect(result.warnings).toContain(
+        'Invalid parameters: must be an object'
+      );
+    });
+
+    it('should reject invalid parameter keys (empty string)', () => {
+      const params = {
+        '': 'value',
+        validKey: 'validValue',
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(false);
+      expect(result.warnings.length).toBeGreaterThan(0);
+      expect(
+        result.warnings.some(w => w.includes('Invalid parameter key'))
+      ).toBe(true);
+      expect(result.sanitizedParams['']).toBeUndefined();
+      expect(result.sanitizedParams.validKey).toBe('validValue');
+    });
+
+    it('should reject invalid parameter keys (whitespace only)', () => {
+      const params = {
+        '   ': 'value',
+        validKey: 'validValue',
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(false);
+      expect(
+        result.warnings.some(w => w.includes('Invalid parameter key'))
+      ).toBe(true);
+    });
+
+    it('should truncate excessively long strings', () => {
+      const longString = 'a'.repeat(15000);
+      const params = {
+        longValue: longString,
+        normalValue: 'normal',
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(true);
+      expect((result.sanitizedParams.longValue as string).length).toBe(10000);
+      expect(result.warnings).toContain(
+        'Parameter longValue exceeds maximum length (10,000 characters)'
+      );
+      expect(result.sanitizedParams.normalValue).toBe('normal');
+    });
+
+    it('should handle string at exactly 10000 characters', () => {
+      const exactString = 'a'.repeat(10000);
+      const params = {
+        value: exactString,
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(true);
+      expect((result.sanitizedParams.value as string).length).toBe(10000);
+      expect(result.warnings.length).toBe(0);
+    });
+
+    it('should handle string at 10001 characters (just over limit)', () => {
+      const overLimit = 'a'.repeat(10001);
+      const params = {
+        value: overLimit,
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(true);
+      expect((result.sanitizedParams.value as string).length).toBe(10000);
+      expect(result.warnings).toContain(
+        'Parameter value exceeds maximum length (10,000 characters)'
+      );
+    });
+  });
+
+  describe('Dangerous Parameter Keys', () => {
+    it('should block __proto__ key', () => {
+      // Create params with __proto__ as an actual property using Object.defineProperty
+      const params: Record<string, unknown> = { normal: 'safe' };
+      Object.defineProperty(params, '__proto__', {
+        value: 'dangerous',
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(false);
+      expect(result.warnings.length).toBeGreaterThan(0);
+      expect(
+        result.warnings.some(w =>
+          w.includes('Dangerous parameter key blocked: __proto__')
+        )
+      ).toBe(true);
+      // __proto__ should not be in sanitized params
+      expect(
+        Object.prototype.hasOwnProperty.call(
+          result.sanitizedParams,
+          '__proto__'
+        )
+      ).toBe(false);
+      expect(result.sanitizedParams.normal).toBe('safe');
+    });
+
+    it('should block constructor key', () => {
+      const params = {
+        constructor: 'dangerous',
+        normal: 'safe',
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(false);
+      expect(
+        result.warnings.some(w =>
+          w.includes('Dangerous parameter key blocked: constructor')
+        )
+      ).toBe(true);
+      expect(result.sanitizedParams.normal).toBe('safe');
+    });
+
+    it('should block prototype key', () => {
+      const params = {
+        prototype: 'dangerous',
+        normal: 'safe',
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(false);
+      expect(
+        result.warnings.some(w =>
+          w.includes('Dangerous parameter key blocked: prototype')
+        )
+      ).toBe(true);
+      expect(result.sanitizedParams.normal).toBe('safe');
+    });
+
+    it('should block all dangerous keys together', () => {
+      const params = {
+        __proto__: 'dangerous1',
+        constructor: 'dangerous2',
+        prototype: 'dangerous3',
+        normal: 'safe',
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(false);
+      // Should have warnings for dangerous keys
+      expect(result.warnings.length).toBeGreaterThan(0);
+      expect(result.sanitizedParams.normal).toBe('safe');
+      // Dangerous keys should not be in sanitized params own properties
+      expect(
+        Object.prototype.hasOwnProperty.call(
+          result.sanitizedParams,
+          '__proto__'
+        )
+      ).toBe(false);
+      expect(
+        Object.prototype.hasOwnProperty.call(
+          result.sanitizedParams,
+          'constructor'
+        )
+      ).toBe(false);
+      expect(
+        Object.prototype.hasOwnProperty.call(
+          result.sanitizedParams,
+          'prototype'
+        )
+      ).toBe(false);
+    });
+  });
+
   describe('Nested Object Validation', () => {
     it('should validate nested objects recursively', () => {
       const params = {

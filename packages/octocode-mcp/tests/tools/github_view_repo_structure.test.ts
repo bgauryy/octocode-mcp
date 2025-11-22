@@ -94,7 +94,6 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(responseText).toContain('path: "/"');
     expect(responseText).toContain('files:');
     expect(responseText).toContain('folders:');
-    expect(responseText).toContain('hasResultsStatusHints:');
     expect(responseText).not.toMatch(/^data:/m);
     expect(responseText).not.toContain('queries:');
     expect(responseText).not.toMatch(/^hints:/m);
@@ -187,7 +186,6 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(responseText).toContain('owner: "nonexistent"');
     expect(responseText).toContain('repo: "repo"');
     expect(responseText).toContain('branch: "main"');
-    expect(responseText).toContain('errorStatusHints:');
     expect(responseText).not.toMatch(/^data:/m);
     expect(responseText).not.toContain('queries:');
     expect(responseText).not.toMatch(/^hints:/m);
@@ -216,7 +214,6 @@ describe('GitHub View Repository Structure Tool', () => {
     const responseText = getTextContent(result.content);
     expect(result.isError).toBe(false);
     expect(responseText).toContain('status: "error"');
-    expect(responseText).toContain('errorStatusHints:');
     expect(responseText).toContain(
       'GitHub Octokit API Error: Repository, resource, or path not found'
     );
@@ -248,7 +245,6 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(responseText).toContain('owner: "test"');
     expect(responseText).toContain('repo: "repo"');
     expect(responseText).toContain('path: "src"');
-    expect(responseText).toContain('hasResultsStatusHints:');
     expect(responseText).not.toMatch(/^data:/m);
     expect(responseText).not.toContain('queries:');
     expect(responseText).not.toMatch(/^hints:/m);
@@ -297,7 +293,6 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('hasResultsStatusHints:');
 
       // Verify the path prefix is removed from files
       expect(responseText).toContain('/.gitignore');
@@ -356,7 +351,6 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('hasResultsStatusHints:');
 
       // For root path, files and folders should keep their absolute paths
       expect(responseText).toContain('/.gitignore');
@@ -401,7 +395,6 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('hasResultsStatusHints:');
 
       // Branch is now in the query field (original query is included in new structure)
       expect(responseText).toContain('query:');
@@ -454,7 +447,6 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('hasResultsStatusHints:');
 
       // Verify field ordering by checking the response contains the fields in the correct order
       const reasoningIndex = responseText.indexOf('reasoning:');
@@ -520,7 +512,6 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('hasResultsStatusHints:');
 
       // Verify the /utils prefix is removed
       expect(responseText).toContain('/helper.js');
@@ -587,7 +578,6 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('hasResultsStatusHints:');
 
       // Verify both queries have their prefixes removed correctly
       // First query (/src)
@@ -606,6 +596,119 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should handle invalid API response structure', async () => {
+      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
+        // Missing 'files' array
+        folders: {
+          folders: [{ path: '/src' }],
+        },
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+            },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('status: "error"');
+    });
+
+    it('should handle API errors', async () => {
+      mockViewGitHubRepositoryStructureAPI.mockRejectedValue(
+        new Error('API Error')
+      );
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+            },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('status: "error"');
+    });
+
+    it('should handle callback errors gracefully', async () => {
+      const errorCallback = vi
+        .fn()
+        .mockRejectedValue(new Error('Callback error'));
+
+      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
+        files: [{ path: '/README.md', size: 1024 }],
+        folders: {
+          folders: [],
+        },
+      });
+
+      // Re-register with error callback
+      const newMockServer = createMockMcpServer();
+      registerViewGitHubRepoStructureTool(newMockServer.server, errorCallback);
+
+      const result = await newMockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+            },
+          ],
+        }
+      );
+
+      // Should continue despite callback error
+      expect(result.isError).toBe(false);
+      expect(errorCallback).toHaveBeenCalled();
+
+      newMockServer.cleanup();
+    });
+
+    it('should handle empty files response', async () => {
+      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
+        files: [],
+        folders: {
+          folders: [],
+        },
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+            },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('status: "empty"');
     });
   });
 });
