@@ -54,11 +54,11 @@ export function registerPrompts(
 
         let text = prompt.content;
 
-        // Replace placeholders if arguments are provided
         if (incomingArgs && Object.keys(incomingArgs).length > 0) {
+          text += '\n\nUse Input\n\n';
           for (const [key, value] of Object.entries(incomingArgs)) {
             if (value !== undefined && value !== null) {
-              text = text.replace(new RegExp(`{{${key}}}`, 'g'), String(value));
+              text += `${key}: ${String(value)}\n`;
             }
           }
         }
