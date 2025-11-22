@@ -9,7 +9,7 @@ _scripts
 *.dxt
 
 coverage
-
+.octocode
 .env
 .cursor
 .context

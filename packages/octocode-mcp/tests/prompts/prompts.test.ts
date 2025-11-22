@@ -154,14 +154,14 @@ describe('Prompts Registration', () => {
   });
 
   describe('Handler Logic', () => {
-    it('should replace arguments in content', async () => {
+    it('should append arguments to content', async () => {
       const metadata: CompleteMetadata = {
         ...baseMetadata,
         prompts: {
           test: {
             name: 'Test',
             description: 'Test description',
-            content: 'Hello {{name}}!',
+            content: 'Hello there!',
             args: [{ name: 'name', description: 'Your name' }],
           },
         },
@@ -183,17 +183,56 @@ describe('Prompts Registration', () => {
       if (message.content.type !== 'text') {
         throw new Error('Expected text content');
       }
-      expect(message.content.text).toBe('Hello World!');
+      expect(message.content.text).toBe(
+        'Hello there!\n\nUse Input\n\nname: World\n'
+      );
     });
 
-    it('should handle missing arguments gracefully', async () => {
+    it('should append multiple arguments to content', async () => {
       const metadata: CompleteMetadata = {
         ...baseMetadata,
         prompts: {
           test: {
             name: 'Test',
             description: 'Test description',
-            content: 'Hello {{name}}!',
+            content: 'Research the repository',
+            args: [
+              { name: 'repo', description: 'Repository name', required: true },
+              { name: 'branch', description: 'Branch name' },
+            ],
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      const calls = registerPromptSpy.mock.calls;
+      if (!calls || !calls[0]) throw new Error('No calls found');
+
+      const handler = calls[0][2] as (
+        args: Record<string, unknown>
+      ) => Promise<GetPromptResult>;
+      const result = await handler({ repo: 'octocode-mcp', branch: 'main' });
+
+      const message = result.messages[0];
+      if (!message) throw new Error('No message returned');
+
+      if (message.content.type !== 'text') {
+        throw new Error('Expected text content');
+      }
+      expect(message.content.text).toBe(
+        'Research the repository\n\nUse Input\n\nrepo: octocode-mcp\nbranch: main\n'
+      );
+    });
+
+    it('should not append when no arguments provided', async () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          test: {
+            name: 'Test',
+            description: 'Test description',
+            content: 'Hello there!',
             args: [{ name: 'name', description: 'Your name' }],
           },
         },
@@ -215,7 +254,51 @@ describe('Prompts Registration', () => {
       if (message.content.type !== 'text') {
         throw new Error('Expected text content');
       }
-      expect(message.content.text).toBe('Hello {{name}}!');
+      expect(message.content.text).toBe('Hello there!');
+    });
+
+    it('should skip undefined and null arguments', async () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          test: {
+            name: 'Test',
+            description: 'Test description',
+            content: 'Process data',
+            args: [
+              {
+                name: 'required',
+                description: 'Required field',
+                required: true,
+              },
+              { name: 'optional', description: 'Optional field' },
+            ],
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      const calls = registerPromptSpy.mock.calls;
+      if (!calls || !calls[0]) throw new Error('No calls found');
+
+      const handler = calls[0][2] as (
+        args: Record<string, unknown>
+      ) => Promise<GetPromptResult>;
+      const result = await handler({
+        required: 'value',
+        optional: undefined,
+      });
+
+      const message = result.messages[0];
+      if (!message) throw new Error('No message returned');
+
+      if (message.content.type !== 'text') {
+        throw new Error('Expected text content');
+      }
+      expect(message.content.text).toBe(
+        'Process data\n\nUse Input\n\nrequired: value\n'
+      );
     });
   });
 });
