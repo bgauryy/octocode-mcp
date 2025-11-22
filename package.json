@@ -33,7 +33,8 @@
   "private": true,
   "scripts": {
     "build": "yarn workspaces foreach -Apt run build",
-    "test": "yarn workspaces foreach -Apt run test"
+    "test": "yarn workspaces foreach -Apt run test",
+    "lint": "yarn workspaces foreach -Apt run lint"
   },
   "workspaces": [
     "packages/*"
