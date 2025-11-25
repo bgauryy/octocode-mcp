@@ -36,10 +36,7 @@ import type {
   FetchContentResult,
   SearchContentResult,
 } from '../types.js';
-import { registerArchitecturePrompt } from '../prompts/architecture.js';
-import { registerAgentsPrompt } from '../prompts/agents.js';
-import { registerLocalResearchPrompt } from '../prompts/research_local_explorer.js';
-import { registerAnalyzeMinifiedJsPrompt } from '../prompts/analyze_minified_js.js';
+import { registerLocalResearchPrompt } from '../prompts/local_explorer.js';
 
 /**
  * Registers all tools with the MCP server
@@ -114,8 +111,5 @@ export function registerTools(server: McpServer): void {
  * Registers all prompts with the MCP server
  */
 export function registerPrompts(server: McpServer): void {
-  registerArchitecturePrompt(server);
-  registerAgentsPrompt(server);
   registerLocalResearchPrompt(server);
-  registerAnalyzeMinifiedJsPrompt(server);
 }

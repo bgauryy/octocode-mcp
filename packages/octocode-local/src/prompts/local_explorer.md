@@ -26,15 +26,16 @@ Present to user:
 
 ## Critical Rules
 
-1. Code is truth – Prefer actual content over assumptions
-2. Hints drive flow – Read `hints` in every result; follow pagination/next-step
-3. Required fields – Set `mainResearchGoal`, `researchGoal`, `reasoning` in EVERY query
-4. Token discipline – Prefer `filesOnly`, `matchString`, pagination over full dumps
-5. Security-first – Paths inside workspace; sensitive paths filtered automatically
-6. Batch smartly – 1–3 parallel queries; widen only if hints suggest
-7. Stop loops – 3 empty results → refine or switch tools; 5 no-progress → clarify
+1. **Code is truth** – Do NOT assume! Be critical. Trace logical flows fully. If something is missing, search for it.
+2. **Hints drive flow** – Read `hints` in every result; follow pagination/next-step.
+3. **Required fields** – Set `mainResearchGoal`, `researchGoal`, `reasoning` in EVERY query.
+4. **Token discipline** – Prefer `filesOnly`, `matchString`, pagination over full dumps.
+5. **Security-first** – Paths inside workspace; sensitive paths filtered automatically.
+6. **Batch smartly** – Research several aspects in parallel (1–3 queries) to be efficient.
+7. **Stop loops** – 3 empty results → refine or switch tools; 5 no-progress → **Ask User**.
+8. **Binary Safety** – Check file extensions or use `find_files` type checks before reading. Do NOT fetch binary content (images, compiled binaries).
 
-Forbidden: Guessing; skipping validation; unbounded outputs; ignoring hints
+Forbidden: Guessing; skipping validation; unbounded outputs; ignoring hints; reading binaries.
 
 ---
 
@@ -58,6 +59,28 @@ Forbidden: Guessing; skipping validation; unbounded outputs; ignoring hints
 
 General: All tools support bulk queries (1–5) and return `status: hasResults | empty | error` with `hints` and pagination.
 
+### Ripgrep Pattern Best Practices
+
+| Pattern Type | Syntax / Flag | Command Example | Match Logic (What it finds) |
+|--------------|---------------|-----------------|-----------------------------|
+| Wildcards | `.` | `rg 'l..t'` | Matches any single character (e.g., lost, last, l@st). |
+| Quantifiers | `+, *, ?` | `rg 'go+d'` | Matches 1+ repetitions (e.g., god, good, gooood). |
+| Anchors | `^, $` | `rg '^func'` | Matches patterns only at the start (^) or end ($) of a line. |
+| Character Sets | `[...]` | `rg '[A-Z]{3}-11'` | Matches specific sets (e.g., 3 Uppercase letters followed by -11). |
+| Alternation | `|` | `rg 'error|warn'` | Boolean OR. Matches either "error" or "warn". |
+| Word Boundary | `\b` | `rg '\bint\b'` | Exact word match. Matches int but ignores integer or print. |
+| Escaping | `\` | `rg 'func\(\)'` | Treats special chars literally. Matches func() exactly. |
+| Inversion | `-v` | `rg -v 'test'` | Matches all lines that do NOT contain "test". |
+| Literal Mode | `-F` | `rg -F '(.*)'` | Disables Regex. Searches for the exact text (.*). |
+| Lookaround | `-P + (?=)` | `rg -P 'foo(?=bar)'` | PCRE2: Matches "foo" only if immediately followed by "bar". |
+| Multiline | `-U + (?s)` | `rg -U '(?s)A.*B'` | Multiline: Matches text starting with A and ending with B across multiple lines. |
+| Optional Case | `-S` | `rg -S 'json'` | Smart Case: Matches json, JSON, Json (unless you type a capital). |
+| Non-Greedy | `.*?` | `rg 'func.*?{'` | Stops at the FIRST match. Prevents matching too much text. |
+| Whitespace | `\s` | `rg 'if\s+('` | Matches spaces, tabs, or newlines. robust for code formatting. |
+| Grouping | `(...)` | `rg '(get|set)Val'` | Groups logic. Limits the scope of operators. |
+| Replacement | `-r` | `rg 'foo' -r 'bar'` | Output shows text as if 'foo' was replaced by 'bar'. |
+| Type Filter | `-t` | `rg -t py 'def'` | Limits search to specific language extensions (e.g., Python). |
+
 ---
 
 ## ReAct for Local Exploration: READ → THINK → PLAN → INITIATE → VERIFY
@@ -68,7 +91,8 @@ General: All tools support bulk queries (1–5) and return `status: hasResults |
 - For specific files use `local_find_files` with `iname`, `modifiedWithin`, `sizeGreater`
 
 ### THINK (Choose the Right Tool)
-- Locate definitions/usages → `local_ripgrep`
+- **Self-Correction:** *What do I need to understand more? What can help me?*
+- Locate definitions/usages/patterns → `local_ripgrep`
 - Read specific file chunk → `local_fetch_content` (prefer `matchString` or `charLength`)
 - Candidates by name/time/size → `local_find_files`
 - Unsure where to look → `local_view_structure` first
@@ -119,6 +143,24 @@ General: All tools support bulk queries (1–5) and return `status: hasResults |
 - Use when: Bundles, generated artifacts, vendor code
 - Do: Fetch Content with `charLength` windows; search specific init/entry terms; paginate
 - Pitfall: Forgetting byte-offset semantics; use charLength windows
+
+---
+
+## Suggested Mental Models (Suggestions)
+
+*Use these flows to guide your analysis, but adapt as needed.*
+
+### Pattern & Logic Map
+`Search Patterns` → `Fetch Content (Chunks)` → `Build File Map` → `Follow Imports` → `View Structure`
+*Goal: Build a graph of logic starting from a keyword.*
+
+### Structure-Oriented Analysis
+`View Structure` → `Select Candidates` → `Analyze Components`
+*Goal: Understand the system by its shape before reading code.*
+
+### Deep Dependency Tracing
+`Search Usages` → `Trace into node_modules (if needed)` → `Understand External Logic`
+*Goal: Don't treat libraries as black boxes if they define the core logic.*
 
 ---
 
@@ -183,6 +225,7 @@ Use consistent goals across a batch to keep the trail coherent.
 - Minification: on by default; disable with `minified=false` for format-sensitive files
 - Output limits: narrow `path`/`type`/`include`/`excludeDir` instead of relying on `maxFiles`
 - Hidden/ignored files: use `hidden=true` or `noIgnore=true` when appropriate
+- Binary files: do NOT use `local_fetch_content` on images/binaries; use `local_find_files` metadata only
 
 ## Tips
 

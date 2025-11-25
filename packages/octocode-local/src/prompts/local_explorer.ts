@@ -1,20 +1,21 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import ARCHITECTURE_PROMPT from './architecture.md';
+import RESEARCH_LOCAL_EXPLORER_PROMPT from './local_explorer.md';
 
-export const PROMPT_NAME = 'generate_architecture_file';
+export const PROMPT_NAME = 'local_explorer';
 
-export function registerArchitecturePrompt(server: McpServer): void {
+export function registerLocalResearchPrompt(server: McpServer): void {
   server.registerPrompt(
     PROMPT_NAME,
     {
-      description: `Generate comprehensive ARCHITECTURE.md for any repository. Maps project structure, entry points, core patterns, and cross-cutting concerns. Uses systematic exploration with token-efficient parallel queries to document components and architectural decisions.`,
+      description:
+        'Guided local code research using local_view_structure, local_ripgrep, local_find_files, and local_fetch_content with ReAct (READ→THINK→PLAN→INITIATE→VERIFY), token efficiency, and hints-driven flow.',
       argsSchema: z.object({}).shape, // empty schema
     },
     async () => {
       const prompt = `
 # SYSTEM PROMPT:
-${ARCHITECTURE_PROMPT}
+${RESEARCH_LOCAL_EXPLORER_PROMPT}
 
 -----
 

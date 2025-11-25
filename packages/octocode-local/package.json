@@ -1,6 +1,6 @@
 {
   "name": "@octocode/local",
-  "version": "1.1.6",
+  "version": "1.0.0",
   "description": "MCP server for local file system research using Linux commands",
   "type": "module",
   "main": "dist/index.js",

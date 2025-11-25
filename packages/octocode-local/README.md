@@ -1,10 +1,10 @@
-# local-explorer-mcp
+# @octocode/local
 
-> Local codebase research using ripgrep, find, and ls  
+> Fast local codebase search using ripgrep, find, and ls  
 > **[BETA]** - Efficient AI-powered search using only local files, no indexing required
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/bgauryy/local-explorer-mcp/main/assets/logo.png" alt="local-explorer-mcp" width="150" />
+  <img src="https://raw.githubusercontent.com/bgauryy/local-explorer-mcp/main/assets/logo.png" alt="@octocode/local" width="150" />
 </p>
 
 An MCP server that provides AI assistants with native Unix tools for local code exploration. Built on ripgrep for pattern search, find for file metadata queries, and ls for directory traversal. **No local or cloud indexing required** - direct filesystem access for efficient, real-time search.
@@ -38,7 +38,7 @@ Most AI tools use stateless queries that either load too much context or miss im
 <summary>Claude Code</summary>
 
 ```bash
-claude mcp add local-explorer-mcp npx local-explorer-mcp@latest
+claude mcp add octocode-local npx @octocode/local@latest
 ```
 
 </details>
@@ -51,12 +51,9 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "local-explorer-mcp": {
+    "octocode-local": {
       "command": "npx",
-      "args": ["local-explorer-mcp@latest"],
-      "env": {
-        "WORKSPACE_ROOT": "/path/to/your/project"
-      }
+      "args": ["@octocode/local@latest"]
     }
   }
 }
@@ -67,21 +64,14 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 <details>
 <summary>Cursor</summary>
 
-#### Click to install:
-
-[<img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor">](https://cursor.com/en/install-mcp?name=local-explorer-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJsb2NhbC1leHBsb3Jlci1tY3BAbGF0ZXN0Il19)
-
-Or manually edit your Cursor MCP settings and add:
+Manually edit your Cursor MCP settings and add:
 
 ```json
 {
   "mcpServers": {
-    "local-explorer-mcp": {
+    "octocode-local": {
       "command": "npx",
-      "args": ["local-explorer-mcp@latest"],
-      "env": {
-        "WORKSPACE_ROOT": "${workspaceFolder}"
-      }
+      "args": ["@octocode/local@latest"]
     }
   }
 }
@@ -102,10 +92,7 @@ Codebase analysis workflows using coordinated tool execution:
 
 | Prompt | What It Does | Output |
 |--------|--------------|--------|
-| **`generate_agents_markdown`** | Searches config files, git hooks, and documentation patterns to extract project conventions | AGENTS.md file with AI guidelines from codebase |
-| **`generate_architecture_markdown`** | Maps system architecture via file discovery, dependency analysis, and pattern recognition | ARCHITECTURE.md technical documentation |
-| **`research_local_explorer`** | Interactive workflow: structure discovery → context search → targeted extraction → verification | Iterative codebase exploration |
-| **`analyze_minified_js`** (BETA) | Analyzes large/obfuscated JavaScript using pattern extraction and incremental parsing | Navigate complex JS bundles efficiently |
+| **`local_explorer`** | Interactive workflow: structure discovery → context search → targeted extraction → verification | Iterative codebase exploration |
 
 ---
 
@@ -171,6 +158,11 @@ Tool combinations for typical codebase research tasks:
 - Build artifacts: `dist/`, `build/`
 - Version control: `.git/`
 
+**Execution Control:**
+- **Checks only on running path:** Operations are strictly scoped to the workspace root
+- **Can't reach other parts:** Complete isolation from the rest of the filesystem
+- **Limited commands:** Only specific, safe binaries (`rg`, `find`, `ls`) are allowed
+
 ---
 
 ## Performance
@@ -213,4 +205,4 @@ MIT License - see [LICENSE.md](LICENSE.md)
 
 ---
 
-**npm:** [local-explorer-mcp](https://www.npmjs.com/package/local-explorer-mcp)
+**npm:** [@octocode/local](https://www.npmjs.com/package/@octocode/local)
