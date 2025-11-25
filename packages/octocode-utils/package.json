@@ -19,23 +19,16 @@
   },
   "devDependencies": {
     "@microsoft/tiktokenizer": "^1.0.10",
-    "@rollup/plugin-node-resolve": "^16.0.1",
-    "@rollup/plugin-typescript": "^12.1.2",
     "@types/clean-css": "^4.2.11",
     "@types/html-minifier-terser": "^7.0.2",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^22.15.29",
-    "@typescript-eslint/eslint-plugin": "^6.21.0",
-    "@typescript-eslint/parser": "^6.21.0",
     "eslint": "^8.57.0",
-    "eslint-config-prettier": "^10.1.5",
-    "eslint-plugin-prettier": "^5.4.1",
     "prettier": "^3.5.3",
     "rollup": "^4.46.2",
     "rollup-plugin-dts": "^6.0.0",
     "tsx": "^4.20.4",
     "typescript": "^5.9.2",
-    "vitest": "^4.0.4"
+    "vitest": "^4.0.13"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -75,6 +68,7 @@
     "lint": "eslint src/**/*.ts tests/**/*.ts",
     "lint:fix": "eslint src/**/*.ts tests/**/*.ts --fix",
     "test": "vitest run",
+    "test:quiet": "vitest run --reporter=dot --silent",
     "test:coverage": "vitest --coverage",
     "test:watch": "vitest --watch"
   },

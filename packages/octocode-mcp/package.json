@@ -60,20 +60,11 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@rollup/plugin-commonjs": "^28.0.3",
-    "@rollup/plugin-json": "^6.1.0",
-    "@rollup/plugin-node-resolve": "^16.0.1",
-    "@rollup/plugin-terser": "^0.4.4",
-    "@rollup/plugin-typescript": "^12.1.2",
     "@types/express": "^5",
-    "@types/node": "^22.15.29",
     "eslint": "^8.57.0",
-    "eslint-config-prettier": "^10.1.5",
-    "eslint-plugin-prettier": "^5.4.1",
     "prettier": "^3.5.3",
     "rollup": "^4.46.2",
     "rollup-plugin-string": "^3.0.0",
-    "typescript": "^5.9.2",
     "vitest": "^4.0.13"
   },
   "engines": {
@@ -104,6 +95,7 @@
     "prepack": "yarn build",
     "prepublishOnly": "yarn lint && yarn test && rollup -c",
     "test": "vitest run --coverage",
+    "test:quiet": "vitest run --reporter=dot --silent",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
     "test:watch": "vitest --watch"
