@@ -4,7 +4,9 @@
   "description": "MCP server for local file system research using Linux commands",
   "type": "module",
   "main": "dist/index.js",
-  "bin": "dist/index.js",
+  "bin": {
+    "local": "dist/index.js"
+  },
   "files": [
     "dist/index.js",
     "manifest.json",
