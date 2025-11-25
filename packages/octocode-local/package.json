@@ -8,11 +8,7 @@
     "local": "dist/index.js"
   },
   "files": [
-    "dist/index.js",
-    "manifest.json",
-    "LICENSE.md",
-    "README.md",
-    "assets/"
+    "dist/index.js"
   ],
   "scripts": {
     "build": "yarn lint && yarn clean && rollup -c",
