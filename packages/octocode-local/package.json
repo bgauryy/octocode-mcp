@@ -1,5 +1,5 @@
 {
-  "name": "@octocode/local",
+  "name": "@octocodeai/local",
   "version": "1.0.0",
   "description": "MCP server for local file system research using Linux commands",
   "type": "module",
