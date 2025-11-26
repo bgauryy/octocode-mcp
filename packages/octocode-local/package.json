@@ -1,5 +1,5 @@
 {
-  "name": "@octocodeai/local",
+  "name": "octocode-mcp-local",
   "version": "1.0.0",
   "description": "MCP server for local file system research using Linux commands",
   "type": "module",
@@ -9,7 +9,7 @@
   },
   "files": [
     "dist/index.js",
-    "LICENSE.md"
+    "LICENSE"
   ],
   "scripts": {
     "build": "yarn lint && yarn clean && rollup -c",
@@ -39,8 +39,15 @@
     "ai-assistant",
     "codebase-explorer"
   ],
-  "author": "Octocode Team",
-  "license": "MIT",
+  "author": "Guy Bary <bgauryy@octocodeai.com>",
+  "homepage": "https://octocode.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bgauryy/octocode-mcp.git",
+    "directory": "packages/octocode-local"
+  },
+  "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
+  "license": "PolyForm-Small-Business-1.0.0",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.18.1",
     "octocode-utils": "^5.0.0",

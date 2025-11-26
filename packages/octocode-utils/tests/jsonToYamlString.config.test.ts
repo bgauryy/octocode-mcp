@@ -1,27 +1,17 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { createByEncoderName } from '@microsoft/tiktokenizer';
 import {
   jsonToYamlString,
   YamlConversionConfig,
 } from '../src/jsonToYamlString';
-
-let tiktoken: { encode: (text: string) => number[] };
+import {
+  getTokenizer,
+  countTokens,
+  calculateTokenSavingsPercentage,
+} from './helpers/tokenizer';
 
 beforeAll(async () => {
-  tiktoken = await createByEncoderName('cl100k_base'); // For GPT-4
+  await getTokenizer();
 });
-
-function countTokens(text: string): number {
-  const tokens = tiktoken.encode(text);
-  return tokens.length;
-}
-
-function calculateTokenSavingsPercentage(
-  jsonTokens: number,
-  yamlTokens: number
-): number {
-  return Math.round(((jsonTokens - yamlTokens) / jsonTokens) * 100 * 100) / 100;
-}
 
 describe('jsonToYamlString Configuration Options', () => {
   const testData = {
