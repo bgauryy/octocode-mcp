@@ -797,10 +797,10 @@ Comprehensive security analysis of a repository. Identifies vulnerabilities, rev
 
 ## Local Research
 
-**@octocode/local** brings the power of Octocode's research capabilities to your local filesystem.
+**octocode-mcp-local** brings the power of Octocode's research capabilities to your local filesystem.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/bgauryy/local-explorer-mcp/main/assets/logo.png" alt="@octocode/local" width="100" />
+  <img src="https://raw.githubusercontent.com/bgauryy/local-explorer-mcp/main/assets/logo.png" alt="octocode-mcp-local" width="100" />
 </p>
 
 An MCP server that provides AI assistants with native Unix tools for local code exploration. Built on ripgrep for pattern search, find for file metadata queries, and ls for directory traversal.
@@ -819,7 +819,7 @@ An MCP server that provides AI assistants with native Unix tools for local code 
     "octocode-local": {
       "command": "npx",
       "args": [
-        "@octocode/local@latest"
+        "octocode-mcp-local"
       ]
     }
   }
