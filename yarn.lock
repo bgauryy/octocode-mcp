@@ -702,9 +702,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@octocode/local@workspace:packages/octocode-local":
+"@octocodeai/local@workspace:packages/octocode-local":
   version: 0.0.0-use.local
-  resolution: "@octocode/local@workspace:packages/octocode-local"
+  resolution: "@octocodeai/local@workspace:packages/octocode-local"
   dependencies:
     "@anthropic-ai/claude-code": "npm:^2.0.25"
     "@babel/generator": "npm:^7.28.3"
