@@ -15,6 +15,11 @@
   <a href="https://octocode.ai"><img src="https://img.shields.io/badge/Website-007ACC?style=for-the-badge&logo=link&logoColor=white" alt="Website"></a>
   <a href="https://www.youtube.com/@Octocode-ai"><img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube Channel"></a>
 
+  <br />
+  <br />
+
+  <a href="https://cursor.com/en/install-mcp?name=octocode&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJvY3RvY29kZS1tY3BAbGF0ZXN0Il19"><img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor" width="180px"></a>
+
 </div>
 
 ---
@@ -812,6 +817,7 @@ An MCP server that provides AI assistants with native Unix tools for local code 
 
 ### Quick Install
 
+[<img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor">](https://cursor.com/en/install-mcp?name=octocode-local&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJvY3RvY29kZS1tY3AtbG9jYWxAbGF0ZXN0Il19)
 
 ```js
 {
@@ -819,7 +825,7 @@ An MCP server that provides AI assistants with native Unix tools for local code 
     "octocode-local": {
       "command": "npx",
       "args": [
-        "octocode-mcp-local"
+        "octocode-mcp-local@latest"
       ]
     }
   }
