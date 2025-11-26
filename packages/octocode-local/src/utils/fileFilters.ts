@@ -38,6 +38,7 @@ export function filterFiles(
 export function matchesPattern(filePath: string, pattern: string): boolean {
   // Simple glob pattern matching
   const regexPattern = pattern
+    .replace(/\\/g, '\\\\')
     .replace(/\./g, '\\.')
     .replace(/\*/g, '.*')
     .replace(/\?/g, '.');
