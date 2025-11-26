@@ -244,16 +244,6 @@
       "name": "{{name}}_value",
       "description": "{{description}}_value",
       "content": "{{content}}_value"
-    },
-    "kudos": {
-      "name": "{{name}}_value",
-      "description": "{{description}}_value",
-      "content": "{{content}}_value"
-    },
-    "use": {
-      "name": "{{name}}_value",
-      "description": "{{description}}_value",
-      "content": "{{content}}_value"
     }
   }
 }

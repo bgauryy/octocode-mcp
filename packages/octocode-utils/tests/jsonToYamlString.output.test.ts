@@ -1,26 +1,14 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { createByEncoderName } from '@microsoft/tiktokenizer';
 import { jsonToYamlString } from '../src/jsonToYamlString';
-
-let tiktoken: { encode: (text: string) => number[] };
+import {
+  getTokenizer,
+  countTokens,
+  calculateTokenSavingsPercentage,
+} from './helpers/tokenizer';
 
 beforeAll(async () => {
-  // GPT-4 uses cl100k_base, GPT-4o uses o200k_base
-  tiktoken = await createByEncoderName('cl100k_base'); // For GPT-4
-  // tiktoken = await createByEncoderName('o200k_base'); // For GPT-4o
+  await getTokenizer();
 });
-
-function countTokens(text: string): number {
-  const tokens = tiktoken.encode(text);
-  return tokens.length;
-}
-
-function calculateTokenSavingsPercentage(
-  jsonTokens: number,
-  yamlTokens: number
-): number {
-  return Math.round(((jsonTokens - yamlTokens) / jsonTokens) * 100 * 100) / 100;
-}
 
 describe('jsonToYamlString (simple expected-YAML cases)', () => {
   it('simple object', () => {

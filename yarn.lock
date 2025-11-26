@@ -702,29 +702,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@octocodeai/local@workspace:packages/octocode-local":
-  version: 0.0.0-use.local
-  resolution: "@octocodeai/local@workspace:packages/octocode-local"
-  dependencies:
-    "@anthropic-ai/claude-code": "npm:^2.0.25"
-    "@babel/generator": "npm:^7.28.3"
-    "@babel/parser": "npm:^7.28.4"
-    "@babel/traverse": "npm:^7.28.4"
-    "@babel/types": "npm:^7.28.4"
-    "@modelcontextprotocol/sdk": "npm:^1.18.1"
-    eslint: "npm:^8.57.0"
-    javascript-obfuscator: "npm:^4.1.1"
-    octocode-utils: "npm:^5.0.0"
-    prettier: "npm:^3.5.3"
-    rollup: "npm:^4.46.2"
-    rollup-plugin-obfuscator: "npm:^1.1.0"
-    vitest: "npm:^4.0.13"
-    zod: "npm:^3.25.26"
-  bin:
-    local: dist/index.js
-  languageName: unknown
-  linkType: soft
-
 "@octokit/app@npm:^16.1.2":
   version: 16.1.2
   resolution: "@octokit/app@npm:16.1.2"
@@ -4128,6 +4105,29 @@ __metadata:
   languageName: node
   linkType: hard
 
+"octocode-mcp-local@workspace:packages/octocode-local":
+  version: 0.0.0-use.local
+  resolution: "octocode-mcp-local@workspace:packages/octocode-local"
+  dependencies:
+    "@anthropic-ai/claude-code": "npm:^2.0.25"
+    "@babel/generator": "npm:^7.28.3"
+    "@babel/parser": "npm:^7.28.4"
+    "@babel/traverse": "npm:^7.28.4"
+    "@babel/types": "npm:^7.28.4"
+    "@modelcontextprotocol/sdk": "npm:^1.18.1"
+    eslint: "npm:^8.57.0"
+    javascript-obfuscator: "npm:^4.1.1"
+    octocode-utils: "npm:^5.0.0"
+    prettier: "npm:^3.5.3"
+    rollup: "npm:^4.46.2"
+    rollup-plugin-obfuscator: "npm:^1.1.0"
+    vitest: "npm:^4.0.13"
+    zod: "npm:^3.25.26"
+  bin:
+    local: dist/index.js
+  languageName: unknown
+  linkType: soft
+
 "octocode-mcp@workspace:packages/octocode-mcp":
   version: 0.0.0-use.local
   resolution: "octocode-mcp@workspace:packages/octocode-mcp"
@@ -4183,7 +4183,19 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"octocode-utils@npm:^5.0.0, octocode-utils@workspace:packages/octocode-utils":
+"octocode-utils@npm:^5.0.0, octocode-utils@npm:latest":
+  version: 5.0.0
+  resolution: "octocode-utils@npm:5.0.0"
+  dependencies:
+    clean-css: "npm:^5.3.0"
+    html-minifier-terser: "npm:^7.2.0"
+    js-yaml: "npm:^4.1.0"
+    terser: "npm:^5.19.0"
+  checksum: 10c0/1f4d011bd093ad744e7ad1a1063e1c215255d5a10eb0f5f7a206680796ec2df521d8be39975e9952daa73ff7265e46d2d816160f56d2f7125fb7315561426845
+  languageName: node
+  linkType: hard
+
+"octocode-utils@workspace:packages/octocode-utils":
   version: 0.0.0-use.local
   resolution: "octocode-utils@workspace:packages/octocode-utils"
   dependencies:
@@ -4204,18 +4216,6 @@ __metadata:
     vitest: "npm:^4.0.13"
   languageName: unknown
   linkType: soft
-
-"octocode-utils@npm:latest":
-  version: 5.0.0
-  resolution: "octocode-utils@npm:5.0.0"
-  dependencies:
-    clean-css: "npm:^5.3.0"
-    html-minifier-terser: "npm:^7.2.0"
-    js-yaml: "npm:^4.1.0"
-    terser: "npm:^5.19.0"
-  checksum: 10c0/1f4d011bd093ad744e7ad1a1063e1c215255d5a10eb0f5f7a206680796ec2df521d8be39975e9952daa73ff7265e46d2d816160f56d2f7125fb7315561426845
-  languageName: node
-  linkType: hard
 
 "octokit@npm:^5.0.5":
   version: 5.0.5

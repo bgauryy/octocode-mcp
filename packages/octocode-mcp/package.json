@@ -1,6 +1,6 @@
 {
   "name": "octocode-mcp",
-  "version": "7.0.17",
+  "version": "8.0.0",
   "description": "Model Context Protocol (MCP) server for advanced GitHub repository analysis and code discovery. Provides AI assistants with powerful tools to search, analyze, and understand codebases across GitHub.",
   "keywords": [
     "mcp",
@@ -25,14 +25,14 @@
     "dxt",
     "desktop-extension"
   ],
-  "author": "Guy Bary <bgauryy@gmail.com>",
+  "author": "Guy Bary <bgauryy@octocodeai.com>",
   "homepage": "https://octocode.ai",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bgauryy/octocode-mcp.git"
   },
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
-  "license": "MIT",
+  "license": "PolyForm-Small-Business-1.0.0",
   "mcpName": "io.github.bgauryy/octocode-mcp",
   "exports": {
     ".": {
