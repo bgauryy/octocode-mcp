@@ -112,10 +112,14 @@ function minifyCSS(content: string): string {
  * Minifies HTML/XML content
  */
 function minifyHTML(content: string): string {
+  // Repeat removal of HTML comments until none remain
+  let previous;
+  do {
+    previous = content;
+    content = content.replace(/<!--[^>]*-->/g, '');
+  } while (content !== previous);
   return (
     content
-      // Remove HTML comments
-      .replace(/<!--[^>]*-->/g, '')
       // Remove extra whitespace between tags
       .replace(/>\s+</g, '><')
       // Remove extra whitespace
