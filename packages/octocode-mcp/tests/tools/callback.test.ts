@@ -39,7 +39,7 @@ vi.mock('../../src/github/pullRequestSearch.js', () => ({
 vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn().mockReturnValue({
     version: '1.0.0',
-    enableLogging: false,
+    enableLogging: true,
     betaEnabled: false,
     timeout: 30000,
     maxRetries: 3,

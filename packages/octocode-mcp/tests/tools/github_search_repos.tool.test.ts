@@ -16,7 +16,7 @@ vi.mock('../../src/serverConfig.js', () => ({
   getGitHubToken: vi.fn(() => Promise.resolve('mock-token')),
   getServerConfig: vi.fn(() => ({
     version: '1.0.0',
-    enableLogging: false,
+    enableLogging: true,
     betaEnabled: false,
     timeout: 30000,
     maxRetries: 3,

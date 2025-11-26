@@ -1,0 +1,25 @@
+{
+  "name": "local-explorer-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for local file system research",
+  "type": "mcp-server",
+  "entrypoint": "dist/index.js",
+  "author": "Octocode Team",
+  "license": "MIT",
+  "capabilities": {
+    "tools": [
+      "local_ripgrep",
+      "local_view_structure",
+      "local_find_files",
+      "local_fetch_content"
+    ]
+  },
+  "keywords": [
+    "mcp",
+    "file-system",
+    "grep",
+    "find",
+    "ls",
+    "local-explorer"
+  ]
+}

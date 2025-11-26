@@ -50,7 +50,7 @@ describe('GitHub Fetch Content Tool', () => {
       version: '4.0.5',
       enableTools: [],
       disableTools: [],
-      enableLogging: false,
+      enableLogging: true,
       betaEnabled: false,
       timeout: 30000,
       maxRetries: 3,

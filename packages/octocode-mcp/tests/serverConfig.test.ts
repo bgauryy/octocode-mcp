@@ -61,7 +61,6 @@ describe('ServerConfig - Simplified Version', () => {
     delete process.env.GH_TOKEN;
     delete process.env.Authorization;
     delete process.env.BETA;
-    delete process.env.ENABLE_LOGGING;
     delete process.env.TOOLS_TO_RUN;
     delete process.env.ENABLE_TOOLS;
     delete process.env.DISABLE_TOOLS;
@@ -88,13 +87,12 @@ describe('ServerConfig - Simplified Version', () => {
       expect(typeof config.version).toEqual('string');
       expect(config.timeout).toEqual(30000);
       expect(config.maxRetries).toEqual(3);
-      expect(config.enableLogging).toEqual(false);
+      expect(config.enableLogging).toEqual(true);
       expect(config.betaEnabled).toEqual(false);
     });
 
     it('should initialize with environment variables', async () => {
       process.env.BETA = '1';
-      process.env.ENABLE_LOGGING = 'true';
       process.env.REQUEST_TIMEOUT = '60000';
       process.env.MAX_RETRIES = '5';
 
@@ -105,6 +103,15 @@ describe('ServerConfig - Simplified Version', () => {
       expect(config.enableLogging).toBe(true);
       expect(config.timeout).toBe(60000);
       expect(config.maxRetries).toBe(5);
+    });
+
+    it('should disable enableLogging when LOG is false', async () => {
+      process.env.LOG = 'false';
+
+      await initialize();
+      const config = getServerConfig();
+
+      expect(config.enableLogging).toBe(false);
     });
 
     it('should throw when accessing config before initialization', () => {
