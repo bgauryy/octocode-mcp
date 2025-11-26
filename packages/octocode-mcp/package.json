@@ -65,6 +65,7 @@
     "prettier": "^3.5.3",
     "rollup": "^4.46.2",
     "rollup-plugin-string": "^3.0.0",
+    "typescript": "^5.9.2",
     "vitest": "^4.0.13"
   },
   "engines": {

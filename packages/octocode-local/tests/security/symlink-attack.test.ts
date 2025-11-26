@@ -8,7 +8,8 @@ import fs from 'fs';
 import path from 'path';
 
 describe('🔴 SYMLINK ATTACKS', () => {
-  const workspace = '/Users/guybary/path_validator_symlink_test';
+  // Use project directory to avoid macOS /private/ path being blocked by ignored patterns
+  const workspace = path.join(__dirname, '.tmp_symlink_test');
   let validator: PathValidator;
 
   beforeAll(() => {
