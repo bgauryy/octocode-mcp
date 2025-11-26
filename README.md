@@ -827,6 +827,42 @@ Octocode MCP provides intelligent prompt commands that enhance your research wor
 
 ---
 
+## Local Research
+
+**@octocode/local** brings the power of Octocode's research capabilities to your local filesystem.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/bgauryy/local-explorer-mcp/main/assets/logo.png" alt="@octocode/local" width="100" />
+</p>
+
+An MCP server that provides AI assistants with native Unix tools for local code exploration. Built on ripgrep for pattern search, find for file metadata queries, and ls for directory traversal.
+
+- **Fast Pattern Search**: Uses `ripgrep` for high-performance regex searching
+- **Smart Navigation**: Directory structure analysis and file discovery
+- **Secure Access**: Strictly scoped to your workspace with automatic secrets filtering
+- **No Indexing**: Direct filesystem access for real-time results
+
+### Quick Install
+
+
+```js
+{
+  "mcpServers": {
+    "octocode-local": {
+      "command": "npx",
+      "args": [
+        "@octocode/local@latest"
+      ]
+    }
+  }
+}
+```
+
+
+👉 **[Get Started with Octocode Local](./packages/octocode-local/README.md)**
+
+---
+
 ## Community
 
 ### Get Support

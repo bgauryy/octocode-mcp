@@ -52,7 +52,10 @@ export async function initialize(): Promise<void> {
       toolsToRun: parseStringArray(process.env.TOOLS_TO_RUN),
       enableTools: parseStringArray(process.env.ENABLE_TOOLS),
       disableTools: parseStringArray(process.env.DISABLE_TOOLS),
-      enableLogging: process.env.ENABLE_LOGGING === 'true',
+      enableLogging:
+        process.env.LOG === undefined ||
+        process.env.LOG === null ||
+        process.env.LOG?.toLowerCase() !== 'false',
       betaEnabled:
         process.env.BETA === '1' || process.env.BETA?.toLowerCase() === 'true',
       timeout: Math.max(
