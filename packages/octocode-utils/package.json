@@ -1,6 +1,6 @@
 {
   "name": "octocode-utils",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "description": "Shared utilities for Octocode MCP packages",
   "keywords": [
     "mcp",
@@ -9,8 +9,15 @@
     "llm",
     "utilities"
   ],
-  "author": "Octocode",
-  "license": "MIT",
+  "author": "Guy Bary <bgauryy@octocodeai.com>",
+  "homepage": "https://octocode.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bgauryy/octocode-mcp.git",
+    "directory": "packages/octocode-utils"
+  },
+  "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
+  "license": "PolyForm-Small-Business-1.0.0",
   "dependencies": {
     "clean-css": "^5.3.0",
     "html-minifier-terser": "^7.2.0",
@@ -53,7 +60,8 @@
   "files": [
     "dist",
     "src",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "main": "dist/index.js",
   "module": "dist/index.mjs",

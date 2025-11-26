@@ -7,7 +7,7 @@
   "long_description": "A comprehensive MCP server that provides GitHub code search, repository exploration, commit history, pull requests, issues, and npm package search capabilities. This extension enables AI assistants to efficiently search and analyze code across GitHub repositories and npm packages with advanced filtering and content retrieval features.",
   "author": {
     "name": "Guy Bary",
-    "email": "bgauryy@gmail.com",
+    "email": "bgauryy@octocodeai.com",
     "url": "https://octocode.ai"
   },
   "repository": {
