@@ -1,7 +1,6 @@
-# @octocode/local
+# octocode-mcp-local
 
-> Fast local codebase search using ripgrep, find, and ls  
-> **[BETA]** - Efficient AI-powered search using only local files, no indexing required
+> Fast local codebase search using ripgrep, find, and ls, leveraging research flow  
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/bgauryy/local-explorer-mcp/main/assets/logo.png" alt="@octocode/local" width="150" />
