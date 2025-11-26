@@ -86,13 +86,26 @@ Manually edit your Cursor MCP settings and add:
 
 ---
 
-## Built-in Research Prompts
+## Commands
 
-Codebase analysis workflows using coordinated tool execution:
+### `/local_explorer` - Local Codebase Research Agent
 
-| Prompt | What It Does | Output |
-|--------|--------------|--------|
-| **`local_explorer`** | Interactive workflow: structure discovery → context search → targeted extraction → verification | Iterative codebase exploration |
+Expert local code research prompt that orchestrates all four MCP tools for comprehensive codebase analysis. Uses a ReAct workflow (READ → THINK → PLAN → INITIATE → VERIFY) with hints-driven navigation and token efficiency.
+
+**When to use**:
+- **Understanding unfamiliar codebases**: Explore structure, find entry points, trace code flows
+- **Deep code investigation**: Search patterns, follow imports, map dependencies
+- **Bug hunting**: Find recent changes, trace error paths, identify root causes
+- **Refactoring preparation**: Locate all usages, understand impact, verify safety
+- **Feature mapping**: Trace implementation across files, build dependency graphs
+
+**Usage Examples**:
+```
+/local_explorer How is authentication implemented in this project?
+/local_explorer Find all API endpoints and their handlers
+/local_explorer Check from my node_modules for implementaion details for my imported dependency
+/local_explorer Trace the data flow from user input to database
+```
 
 ---
 

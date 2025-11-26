@@ -38,9 +38,10 @@
 - [Overview](#overview)
 - [Tools](#tools)
 - [Commands](#commands)
-  - [/research - Expert Code Research Agent](#research---expert-code-research-agent)
-  - [/kudos - Repository Appreciation](#kudos---repository-appreciation)
-  - [/use - Quick Reference Guide](#use---quick-reference-guide)
+  - [/research - Expert Code & Product Research](#research---expert-code--product-research)
+  - [/plan - Research, Plan & Implement Complex Tasks](#plan---research-plan--implement-complex-tasks)
+  - [/review_pull_request - Comprehensive PR Review](#review_pull_request---comprehensive-pr-review)
+  - [/review_security - Security Audit](#review_security---security-audit)
 - [Documentation](#documentation)
 - [Project Stats](#project-stats)
 - [Community](#community)
@@ -690,127 +691,94 @@ Understand how code evolved, why decisions were made, and learn from production 
 
 Octocode MCP provides intelligent prompt commands that enhance your research workflow:
 
-### `/research` - Expert Code Research Agent
+### `/research` - Expert Code & Product Research
 
-**Purpose**: Systematic code research using decision-tree workflows
+Powerful research prompt leveraging Octocode's full capabilities for deep code discovery, documentation analysis, pattern identification, and bug investigation. Orchestrates parallel bulk queries with staged analysis to uncover insights fast.
 
 **When to use**:
 - **Understanding repository workflows**: Discover how repositories work, trace specific flows through codebases, and understand technical implementations
-- **Cross-repository flow analysis**: Understand complex flows that span multiple repositories, trace data flows across microservices, or analyze how different repos interact
-- **Technical flow investigation**: Deep-dive into technical flows within or across repositories (even cross-repo dependencies and integrations)
-- **Real-world code examples**: Learn from actual production code implementations, not just documentation or tutorials
+- **Cross-repository flow analysis**: Understand complex flows that span multiple repositories, trace data flows across microservices
 - **Deep technical investigations**: Trace code flows, understand complex implementations, analyze architecture decisions
-- **Answering team questions**: Quickly research Slack/Jira questions about features, APIs, or behavior with code-backed answers
 - **Bug investigation**: Find root causes by analyzing code, commit history, and related PRs
-- **Organization features**: Understand how features work across your private/public repositories
 - **Pattern discovery**: Compare implementations across multiple repos to find best practices
 - **Documentation validation**: Verify docs match actual code behavior
 
-**What it does**:
-- Provides systematic guidance through research stages (discovery → exploration → analysis → synthesis)
-- Executes multiple queries in parallel for faster results
-- Shows transparent reasoning at each step
-- Adapts to different research types: code implementation, documentation validation, pattern comparison, or bug investigation
-
-**Usage Examples** (by research type):
-
-**Technical Research** (code-first, understanding implementations):
+**Usage Examples**:
 ```
 /research How does React's useState hook work internally?
-/research How to build a LangChain application with Express backend and Next.js frontend?
-```
-
-**Product Research** (docs + code validation):
-```
-/research What are the rate limiting features in our API according to docs and actual code?
-/research How does authentication work in NextAuth.js? Verify docs against implementation
-```
-
-**Pattern Analysis** (comparing multiple implementations):
-```
 /research Compare state management approaches: Redux vs Zustand vs Jotai
-/research How do popular repos handle WebSocket reconnection logic?
-```
-
-**Bug Investigation** (root cause analysis):
-```
 /research Why is the payment webhook failing? Trace the error through payment-service
-/research User reports slow dashboard loading - investigate performance issues in myorg/frontend
-```
-
-**Key Features**:
-- Progressive refinement (broad → specific → deep dive)
-- Code-as-truth validation (verifies docs against actual implementation)
-- Cross-repository pattern analysis (public & private repos)
-- Comprehensive synthesis with Mermaid diagrams and cited references
-- Perfect for answering technical questions from Slack/Jira with code evidence
-
----
-
-### `/kudos` - Repository Appreciation
-
-**Purpose**: List and appreciate all GitHub repositories used in your research session
-
-**When to use**:
-- End of a research session to see what repos helped you
-- Finding repositories to star and support
-
-**What it does**:
-- Analyzes conversation history
-- Identifies all GitHub repositories explored via Octocode tools
-- Creates formatted list with links and usage notes
-- Reminds you to show appreciation to maintainers
-
-**Usage**:
-```
-/kudos
-```
-
-**Output Example**:
-```markdown
-# Repositories Used in This Research
-
-## ⭐ Repositories Explored
-
-1. **facebook/react** — https://github.com/facebook/react
-   Searched for hooks implementation and internals
-
-2. **vercel/next.js** — https://github.com/vercel/next.js
-   Explored routing architecture
 ```
 
 ---
 
-### `/use` - Quick Reference Guide
+### `/plan` - Research, Plan & Implement Complex Tasks
 
-**Purpose**: Simple reminder of Octocode MCP capabilities and best practices
+Your AI architect for tackling complex development work. Breaks down ambitious tasks into actionable steps, researches existing patterns and implementations, then guides you through execution—all powered by Octocode's deep codebase intelligence.
 
 **When to use**:
-- Quick refresher on available tools
-- Learning key practices for efficient research
-- Getting started with Octocode
+- **Building new features**: Research patterns, plan architecture, then implement
+- **Complex refactoring**: Understand current state, plan migration path, execute safely
+- **Learning new technologies**: Research best practices, create learning plan, build incrementally
+- **System design**: Explore existing implementations, design your approach, validate decisions
 
-**What it covers**:
-- **Code Discovery**: Search repositories, explore structures, find patterns
-- **Deep Analysis**: Read files, analyze PRs with diffs, track commits
-- **Research Workflow**: Progressive refinement methodology
-- **Key Practices**: Bulk queries, partial file access, search-first approach
+**Usage Examples**:
+```
+/plan Build a real-time chat application with WebSocket support
+/plan Migrate our authentication from JWT to OAuth2
+/plan Implement a plugin system for our CLI tool
+```
+
+---
+
+### `/review_pull_request` - Comprehensive PR Review
+
+**Args:** `prUrl` (required) - GitHub Pull Request URL (e.g., https://github.com/owner/repo/pull/123)
+
+Expert-level PR review with a Defects-First mindset. Dives deep into code changes, spots bugs before they ship, flags complexity risks, and delivers actionable feedback that elevates code quality.
+
+**What it analyzes**:
+- **Defects & Bugs**: Logic errors, edge cases, race conditions, null handling
+- **Security Issues**: Injection vulnerabilities, auth bypasses, data exposure
+- **Performance**: N+1 queries, memory leaks, inefficient algorithms
+- **Code Quality**: Complexity, maintainability, test coverage gaps
+- **Best Practices**: Design patterns, error handling, documentation
 
 **Usage**:
 ```
-/use
+/review_pull_request prUrl: https://github.com/facebook/react/pull/12345
+```
+
+---
+
+### `/review_security` - Security Audit
+
+**Args:** `repoUrl` (required) - GitHub repository URL (e.g., https://github.com/owner/repo)
+
+Comprehensive security analysis of a repository. Identifies vulnerabilities, reviews authentication/authorization patterns, checks for secrets exposure, and provides remediation guidance.
+
+**What it analyzes**:
+- **Authentication & Authorization**: Auth flows, session management, access controls
+- **Input Validation**: Injection points, sanitization, boundary checks
+- **Secrets Management**: Hardcoded credentials, API keys, configuration security
+- **Dependencies**: Known vulnerabilities, outdated packages, supply chain risks
+- **Data Protection**: Encryption, PII handling, data flow security
+
+**Usage**:
+```
+/review_security repoUrl: https://github.com/your-org/your-repo
 ```
 
 ---
 
 ### Tips for Using Commands
 
-1. **Start with `/use`** if you're new to Octocode MCP
-2. **Use `/research` for all code research** - This is the recommended way to use Octocode for any research task, providing structured guidance and optimal tool usage
-3. **Run `/kudos`** at the end of sessions to document sources and show appreciation
-4. Commands work in any MCP-compatible client (Claude, Cursor, etc.)
+1. **Use `/research` for code exploration** - Deep dive into how things work
+2. **Use `/plan` for building** - Research, plan, then implement complex features
+3. **Use `/review_pull_request`** before merging PRs for thorough code review
+4. **Use `/review_security`** for security audits of repositories
 
-> **💡 Pro Tip**: For any code research, start with `/research` in Octocode MCP. This command intelligently orchestrates all tools for you, optimizing your workflow, depth of analysis, and research quality.
+> **💡 Pro Tip**: Combine `/research` and `/plan` for maximum effectiveness—research existing patterns first, then plan your implementation with confidence.
 
 ---
 
