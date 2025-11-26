@@ -1,11 +1,11 @@
 {
   "name": "octocode-mcp-local",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server for local file system research using Linux commands",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "local": "dist/index.js"
+    "octocode-mcp-local": "dist/index.js"
   },
   "files": [
     "dist/index.js",
