@@ -4,7 +4,6 @@ import { createResponseFormat } from '../responses.js';
 import {
   getGenericErrorHintsSync,
   getToolHintsSync,
-  getBulkOperationsInstructions,
 } from '../tools/toolMetadata.js';
 import type {
   ProcessedBulkResult,
@@ -163,27 +162,12 @@ function createBulkResponse<
       : [...getGenericErrorHintsSync()]
     : [];
 
-  const counts = [];
-  if (hasResultsCount > 0) counts.push(`${hasResultsCount} hasResults`);
-  if (emptyCount > 0) counts.push(`${emptyCount} empty`);
-  if (errorCount > 0) counts.push(`${errorCount} failed`);
-
-  const bulkInstructions = getBulkOperationsInstructions();
-  const instructionsParts = [
-    bulkInstructions.base
-      .replace('{count}', String(flatQueries.length))
-      .replace('{counts}', counts.join(', ')),
-  ];
-  if (hasResultsCount > 0) {
-    instructionsParts.push(bulkInstructions.hasResults);
-  }
-  if (emptyCount > 0) {
-    instructionsParts.push(bulkInstructions.empty);
-  }
-  if (errorCount > 0) {
-    instructionsParts.push(bulkInstructions.error);
-  }
-  const instructions = instructionsParts.join('\n');
+  const instructions = generateBulkInstructions(
+    flatQueries.length,
+    hasResultsCount,
+    emptyCount,
+    errorCount
+  );
 
   const responseData: ToolResponse = {
     instructions,
@@ -312,4 +296,36 @@ function safeExtractString<T extends object>(
 ): string | undefined {
   const value = (obj as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+function generateBulkInstructions(
+  total: number,
+  hasResultsCount: number,
+  emptyCount: number,
+  errorCount: number
+): string {
+  const counts = [];
+  if (hasResultsCount > 0) counts.push(`${hasResultsCount} hasResults`);
+  if (emptyCount > 0) counts.push(`${emptyCount} empty`);
+  if (errorCount > 0) counts.push(`${errorCount} failed`);
+
+  const instructionsParts = [
+    `Bulk response with ${total} results: ${counts.join(', ')}. Each result includes the status, data, and research details.`,
+  ];
+
+  if (hasResultsCount > 0) {
+    instructionsParts.push(
+      'Review hasResultsStatusHints for guidance on results with data.'
+    );
+  }
+  if (emptyCount > 0) {
+    instructionsParts.push('Review emptyStatusHints for no-results scenarios.');
+  }
+  if (errorCount > 0) {
+    instructionsParts.push(
+      'Review errorStatusHints for error recovery strategies.'
+    );
+  }
+
+  return instructionsParts.join('\n');
 }
