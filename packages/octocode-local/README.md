@@ -3,7 +3,10 @@
 > Fast local codebase search using ripgrep, find, and ls, leveraging research flow  
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/bgauryy/local-explorer-mcp/main/assets/logo.png" alt="octocode-mcp-local" width="150" />
+  <img src="./assets/logo.png" alt="octocode-mcp-local" width="150" />
+  <br />
+  <br />
+  <a href="https://cursor.com/en/install-mcp?name=octocode-local&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJvY3RvY29kZS1tY3AtbG9jYWxAbGF0ZXN0Il19"><img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor" width="180px"></a>
 </p>
 
 An MCP server that provides AI assistants with native Unix tools for local code exploration. Built on ripgrep for pattern search, find for file metadata queries, and ls for directory traversal. **No local or cloud indexing required** - direct filesystem access for efficient, real-time search.
@@ -43,7 +46,7 @@ First, install the Octocode Local MCP server with your client.
     "octocode-local": {
       "command": "npx",
       "args": [
-        "octocode-mcp-local"
+        "octocode-mcp-local@latest"
       ]
     }
   }
@@ -60,7 +63,7 @@ Add via the Amp VS Code extension settings screen or by updating your settings.j
   "octocode-local": {
     "command": "npx",
     "args": [
-      "octocode-mcp-local"
+      "octocode-mcp-local@latest"
     ]
   }
 }
@@ -71,7 +74,7 @@ Add via the Amp VS Code extension settings screen or by updating your settings.j
 Add via the `amp mcp add` command below:
 
 ```bash
-amp mcp add octocode-local -- npx octocode-mcp-local
+amp mcp add octocode-local -- npx octocode-mcp-local@latest
 ```
 
 </details>
@@ -82,7 +85,7 @@ amp mcp add octocode-local -- npx octocode-mcp-local
 Use the Claude Code CLI to add the Octocode Local MCP server:
 
 ```bash
-claude mcp add octocode-local npx octocode-mcp-local
+claude mcp add octocode-local npx octocode-mcp-local@latest
 ```
 
 </details>
@@ -99,7 +102,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "octocode-local": {
       "command": "npx",
-      "args": ["octocode-mcp-local"]
+      "args": ["octocode-mcp-local@latest"]
     }
   }
 }
@@ -113,7 +116,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 Use the Codex CLI to add the Octocode Local MCP server:
 
 ```bash
-codex mcp add octocode-local npx "octocode-mcp-local"
+codex mcp add octocode-local npx "octocode-mcp-local@latest"
 ```
 
 Alternatively, create or edit the configuration file `~/.codex/config.toml` and add:
@@ -121,7 +124,7 @@ Alternatively, create or edit the configuration file `~/.codex/config.toml` and 
 ```toml
 [mcp_servers.octocode-local]
 command = "npx"
-args = ["octocode-mcp-local"]
+args = ["octocode-mcp-local@latest"]
 ```
 
 For more information, see the [Codex MCP documentation](https://github.com/openai/codex/blob/main/codex-rs/config.md#mcp_servers).
@@ -131,7 +134,7 @@ For more information, see the [Codex MCP documentation](https://github.com/opena
 <details>
 <summary>Cursor</summary>
 
-Go to `Cursor Settings` -> `MCP` -> `Add new MCP Server`. Name to your liking, use `command` type with the command `npx octocode-mcp-local`. You can also verify config or add command like arguments via clicking `Edit`.
+Go to `Cursor Settings` -> `MCP` -> `Add new MCP Server`. Name to your liking, use `command` type with the command `npx octocode-mcp-local@latest`. You can also verify config or add command like arguments via clicking `Edit`.
 
 #### Project-Specific Configuration
 
@@ -142,7 +145,7 @@ Create `.cursor/mcp.json` in your project root:
   "mcpServers": {
     "octocode-local": {
       "command": "npx",
-      "args": ["octocode-mcp-local"]
+      "args": ["octocode-mcp-local@latest"]
     }
   }
 }
@@ -161,7 +164,7 @@ Add via the Cline VS Code extension settings or by updating your `cline_mcp_sett
     "octocode-local": {
       "command": "npx",
       "args": [
-        "octocode-mcp-local"
+        "octocode-mcp-local@latest"
       ]
     }
   }
@@ -180,7 +183,7 @@ Follow the MCP install [guide](https://github.com/google-gemini/gemini-cli/blob/
 <details>
 <summary>Goose</summary>
 
-Go to `Advanced settings` -> `Extensions` -> `Add custom extension`. Name to your liking, use type `STDIO`, and set the `command` to `npx octocode-mcp-local`. Click "Add Extension".
+Go to `Advanced settings` -> `Extensions` -> `Add custom extension`. Name to your liking, use type `STDIO`, and set the `command` to `npx octocode-mcp-local@latest`. Click "Add Extension".
 
 </details>
 
@@ -195,7 +198,7 @@ Follow the MCP Servers [documentation](https://kiro.dev/docs/mcp/). For example 
     "octocode-local": {
       "command": "npx",
       "args": [
-        "octocode-mcp-local"
+        "octocode-mcp-local@latest"
       ]
     }
   }
@@ -224,7 +227,7 @@ Follow the MCP Servers [documentation](https://opencode.ai/docs/mcp-servers/). F
       "type": "local",
       "command": [
         "npx",
-        "octocode-mcp-local"
+        "octocode-mcp-local@latest"
       ],
       "enabled": true
     }
@@ -250,7 +253,7 @@ Follow the MCP install [guide](https://code.visualstudio.com/docs/copilot/chat/m
 
 ```bash
 # For VS Code
-code --add-mcp '{"name":"octocode-local","command":"npx","args":["octocode-mcp-local"]}'
+code --add-mcp '{"name":"octocode-local","command":"npx","args":["octocode-mcp-local@latest"]}'
 ```
 
 After installation, the Octocode Local MCP server will be available for use with your GitHub Copilot agent in VS Code.
@@ -270,7 +273,7 @@ Alternatively, use the slash command `/add-mcp` in the Warp prompt and paste the
     "octocode-local": {
       "command": "npx",
       "args": [
-        "octocode-mcp-local"
+        "octocode-mcp-local@latest"
       ]
     }
   }
