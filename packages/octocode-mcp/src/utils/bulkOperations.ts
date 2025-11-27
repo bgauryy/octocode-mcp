@@ -59,7 +59,6 @@ function createBulkResponse<
     'errorStatusHints',
   ];
   const resultFields = [
-    'query',
     'status',
     'data',
     'mainResearchGoal',
@@ -71,7 +70,7 @@ function createBulkResponse<
     ...new Set([...standardFields, ...(config.keysPriority || [])]),
   ];
 
-  const flatQueries: FlatQueryResult<TQuery>[] = [];
+  const flatQueries: FlatQueryResult[] = [];
 
   let hasResultsCount = 0;
   let emptyCount = 0;
@@ -106,13 +105,15 @@ function createBulkResponse<
       }
     }
 
-    const flatQuery: FlatQueryResult<TQuery> = {
-      query: r.originalQuery,
+    const flatQuery: FlatQueryResult = {
       status,
       data:
         status === 'error' && r.result.error
           ? { error: r.result.error }
           : toolData,
+      mainResearchGoal:
+        r.result.mainResearchGoal ||
+        safeExtractString(r.originalQuery, 'mainResearchGoal'),
       researchGoal:
         r.result.researchGoal ||
         safeExtractString(r.originalQuery, 'researchGoal'),
@@ -134,9 +135,9 @@ function createBulkResponse<
     hasAnyError = true;
 
     flatQueries.push({
-      query: originalQuery,
       status: 'error',
       data: { error: err.error },
+      mainResearchGoal: safeExtractString(originalQuery, 'mainResearchGoal'),
       researchGoal: safeExtractString(originalQuery, 'researchGoal'),
       reasoning: safeExtractString(originalQuery, 'reasoning'),
     });
@@ -286,6 +287,7 @@ function extractToolData<TData = Record<string, unknown>, TQuery = object>(
   result: ProcessedBulkResult<TData, TQuery>
 ): Record<string, unknown> {
   const excludedKeys = new Set([
+    'mainResearchGoal',
     'researchGoal',
     'reasoning',
     'error',

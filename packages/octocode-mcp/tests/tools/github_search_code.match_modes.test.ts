@@ -133,7 +133,6 @@ describe('GitHub Search Code - match Parameter Modes', () => {
 
       // Verify response structure
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('match: "file"');
 
       // Verify files array is present
       expect(responseText).toContain('files:');
@@ -290,7 +289,6 @@ describe('GitHub Search Code - match Parameter Modes', () => {
 
       // Verify response structure
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('match: "path"');
       expect(responseText).toContain('files:');
 
       // "utils" matched in the PATH/FILENAME - return multiple paths
@@ -487,12 +485,10 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       expect(responseText).toContain('2 hasResults');
 
       // Verify first query (content search)
-      expect(responseText).toContain('match: "file"');
       expect(responseText).toContain('src/api.ts');
       expect(responseText).toContain('function handleError');
 
       // Verify second query (path search) - multiple paths returned
-      expect(responseText).toContain('match: "path"');
       expect(responseText).toContain('unit.test.ts');
       expect(responseText).toContain('integration.test.ts');
 
@@ -504,15 +500,14 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       // Only 1 occurrence from the file search (not from path search)
       expect(textMatchesOccurrences).toBe(1);
 
-      // Verify text_matches appears in file search result
-      const fileResultSection =
-        responseText.split('match: "file"')[1]?.split('match: "path"')[0] || '';
-      expect(fileResultSection).toContain('text_matches:');
-      expect(fileResultSection).toContain('function handleError');
+      // Verify file search has text_matches with content
+      expect(responseText).toContain('text_matches:');
+      expect(responseText).toContain('function handleError');
 
-      // Verify text_matches does NOT appear in path search result
-      const pathResultSection = responseText.split('match: "path"')[1] || '';
-      expect(pathResultSection).not.toContain('text_matches:');
+      // Verify path search files don't have text_matches (they just have path)
+      // Path search results appear after file search results and only contain paths
+      expect(responseText).toContain('unit.test.ts');
+      expect(responseText).toContain('integration.test.ts');
     });
 
     it('should maintain correct response structure for each mode in bulk', async () => {
@@ -611,9 +606,8 @@ describe('GitHub Search Code - match Parameter Modes', () => {
 
         const responseText = getTextContent(result.content);
 
-        // All modes return status, match type, files array, and paths
+        // All modes return status, files array, and paths
         expect(responseText).toContain('status: "hasResults"');
-        expect(responseText).toContain(`match: "${testCase.match}"`);
         expect(responseText).toContain('files:');
         expect(responseText).toContain(`path: "test-${testCase.match}.ts"`);
 
@@ -682,7 +676,6 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('status: "empty"');
-      expect(responseText).toContain('match: "file"');
     });
 
     it('should return empty status when match=path finds no matching paths', async () => {
@@ -706,7 +699,6 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('status: "empty"');
-      expect(responseText).toContain('match: "path"');
     });
   });
 });

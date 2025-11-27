@@ -388,8 +388,7 @@ export interface ProcessedBulkResult<
 }
 
 /** Flattened query result for bulk operations */
-export interface FlatQueryResult<TQuery = object> {
-  query: TQuery;
+export interface FlatQueryResult {
   status: QueryStatus;
   data: Record<string, unknown>;
   mainResearchGoal?: string;

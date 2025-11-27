@@ -165,7 +165,6 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('query:');
       expect(responseText).toContain('reasoning: "Test hasResults"');
       expect(responseText).toContain('1 hasResults');
     });
@@ -192,7 +191,6 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "empty"');
-      expect(responseText).toContain('query:');
       expect(responseText).toContain('reasoning: "Test empty"');
       expect(responseText).toContain('1 empty');
     });
@@ -215,7 +213,6 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('query:');
       expect(responseText).toContain('reasoning: "Test failed"');
       expect(responseText).toContain('1 failed');
     });

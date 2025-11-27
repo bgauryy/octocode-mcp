@@ -180,10 +180,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('results:');
       expect(responseText).toContain('1 empty');
       expect(responseText).toContain('status: "empty"');
-      // Empty status doesn't include files in data, but the query should be recorded
-      expect(responseText).toContain('query:');
-      expect(responseText).toContain('owner: "test"');
-      expect(responseText).toContain('repo: "repo"');
+      // Empty status with no items doesn't have owner/repo (no items to extract from)
     });
 
     it('should return empty when all files are filtered by shouldIgnoreFile', async () => {
@@ -612,7 +609,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('reasoning: "Looking for best practices"');
     });
 
-    it('should propagate researchSuggestions from query', async () => {
+    it('should handle query with researchSuggestions gracefully', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValue({
         error: 'Not found',
         status: 404,
@@ -630,9 +627,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('researchSuggestions:');
-      expect(responseText).toContain('- "Try different keywords"');
-      expect(responseText).toContain('- "Check spelling"');
+      // researchSuggestions is no longer echoed from query (query field removed)
     });
   });
 

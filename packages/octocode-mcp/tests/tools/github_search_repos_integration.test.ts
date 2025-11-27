@@ -87,7 +87,6 @@ describe('GitHub Search Repositories Response Structure Test', () => {
     expect(responseText).toContain('1 hasResults');
     expect(responseText).toContain('reasoning: "Testing response structure"');
     expect(responseText).toContain('status: "hasResults"');
-    expect(responseText).toContain('query:');
     expect(responseText).toContain('repositories:');
     expect(responseText).toContain('facebook/react');
     expect(responseText).toContain('vercel/next.js');
