@@ -76,8 +76,8 @@
     "lint": "eslint src/**/*.ts tests/**/*.ts",
     "lint:fix": "eslint src/**/*.ts tests/**/*.ts --fix",
     "test": "vitest run",
-    "test:quiet": "vitest run --reporter=dot --silent",
     "test:coverage": "vitest --coverage",
+    "test:quiet": "vitest run --reporter=dot --silent",
     "test:watch": "vitest --watch"
   },
   "type": "module",

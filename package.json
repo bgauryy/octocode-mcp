@@ -4,10 +4,7 @@
   "description": "Monorepo for Octocode MCP and related packages - Model Context Protocol server for advanced GitHub repository analysis and code discovery.",
   "author": "Guy Bary <bgauryy@octocodeai.com>",
   "homepage": "https://octocode.ai",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/bgauryy/octocode-mcp.git"
-  },
+  "repository": "bgauryy/octocode-mcp.git",
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "PolyForm-Small-Business-1.0.0",
   "devDependencies": {
@@ -37,9 +34,13 @@
   "private": true,
   "scripts": {
     "build": "yarn workspaces foreach -Apt run build",
+    "lint": "yarn workspaces foreach -Apt run lint",
+    "syncpack:fix": "syncpack fix",
+    "syncpack:format": "syncpack format",
+    "syncpack:lint": "syncpack lint",
+    "syncpack:list": "syncpack list",
     "test": "yarn workspaces foreach -Apt run test",
-    "test:quiet": "yarn workspaces foreach -Apt run test:quiet",
-    "lint": "yarn workspaces foreach -Apt run lint"
+    "test:quiet": "yarn workspaces foreach -Apt run test:quiet"
   },
   "workspaces": [
     "packages/*"

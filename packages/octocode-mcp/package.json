@@ -27,19 +27,9 @@
   ],
   "author": "Guy Bary <bgauryy@octocodeai.com>",
   "homepage": "https://octocode.ai",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/bgauryy/octocode-mcp.git"
-  },
+  "repository": "bgauryy/octocode-mcp.git",
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "PolyForm-Small-Business-1.0.0",
-  "mcpName": "io.github.bgauryy/octocode-mcp",
-  "exports": {
-    ".": {
-      "types": "./dist/src/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
   "bin": {
     "octocode-mcp": "dist/index.js",
     "octocode-mcp-beta": "dist/index.js"
@@ -54,6 +44,7 @@
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "node-cache": "^5.1.2",
+    "octocode-utils": "^6.0.0",
     "octokit": "^5.0.5",
     "uuid": "^13.0.0",
     "zod": "^3.23.8"
@@ -61,7 +52,6 @@
   "devDependencies": {
     "@types/express": "^5",
     "eslint": "^8.57.0",
-    "octocode-utils": "^6.0.0",
     "prettier": "^3.5.3",
     "rollup": "^4.46.2",
     "rollup-plugin-string": "^3.0.0",
@@ -71,6 +61,12 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "files": [
     "dist/index.js",
     "dist/**/*.d.ts",
@@ -79,12 +75,17 @@
     "LICENSE"
   ],
   "main": "dist/index.js",
-  "types": "dist/src/index.d.ts",
+  "mcp": {
+    "type": "stdio",
+    "command": "octocode-mcp",
+    "args": []
+  },
+  "mcpName": "io.github.bgauryy/octocode-mcp",
   "scripts": {
     "build": "yarn lint && yarn clean && tsc -p tsconfig.build.json && rollup -c",
     "build:dev": "yarn clean && rollup -c",
-    "clean": "rm -rf dist/",
     "build:watch": "rollup -c --watch",
+    "clean": "rm -rf dist/",
     "debug": "npx @modelcontextprotocol/inspector node dist/index.js",
     "dxt:pack": "yarn build && dxt pack . octocode-mcp.dxt",
     "dxt:release": "yarn build && dxt pack . octocode-mcp.dxt && dxt sign octocode-mcp.dxt --self-signed && dxt verify octocode-mcp.dxt",
@@ -96,15 +97,11 @@
     "prepack": "yarn build",
     "prepublishOnly": "yarn lint && yarn test && rollup -c",
     "test": "vitest run --coverage",
-    "test:quiet": "vitest run --reporter=dot --silent",
     "test:coverage": "vitest run --coverage",
+    "test:quiet": "vitest run --reporter=dot --silent",
     "test:ui": "vitest --ui",
     "test:watch": "vitest --watch"
   },
   "type": "module",
-  "mcp": {
-    "type": "stdio",
-    "command": "octocode-mcp",
-    "args": []
-  }
+  "types": "dist/src/index.d.ts"
 }
