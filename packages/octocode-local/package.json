@@ -5,11 +5,12 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "octocode-mcp-local": "dist/index.js"
+    "octocode-local": "dist/index.js"
   },
   "files": [
     "dist/index.js",
-    "LICENSE"
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "build": "yarn lint && yarn clean && rollup -c",
@@ -17,6 +18,7 @@
     "build:watch": "rollup -c --watch",
     "clean": "rm -rf dist/",
     "debug": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "prepublishOnly": "yarn test && yarn build",
     "test": "vitest run",
     "test:quiet": "vitest run --reporter=dot --silent",
     "test:watch": "vitest --watch",
@@ -50,7 +52,6 @@
   "license": "PolyForm-Small-Business-1.0.0",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.18.1",
-    "octocode-utils": "^5.0.0",
     "zod": "^3.25.26"
   },
   "devDependencies": {
@@ -61,6 +62,7 @@
     "@babel/types": "^7.28.4",
     "eslint": "^8.57.0",
     "javascript-obfuscator": "^4.1.1",
+    "octocode-utils": "^6.0.0",
     "prettier": "^3.5.3",
     "rollup": "^4.46.2",
     "rollup-plugin-obfuscator": "^1.1.0",
