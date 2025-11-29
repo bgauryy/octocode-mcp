@@ -260,7 +260,12 @@ export interface GitHubPullRequestSearchQuery {
   order?: 'asc' | 'desc';
   limit?: number;
   withComments?: boolean;
-  withContent?: boolean;
+  type?: 'metadata' | 'fullContent' | 'partialContent';
+  partialContentMetadata?: {
+    file: string;
+    additions?: number[];
+    deletions?: number[];
+  }[];
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -336,8 +341,22 @@ export interface PullRequestInfo {
     status: string;
     additions: number;
     deletions: number;
-    changes: number;
+    changes?: number;
     patch?: string;
+  }>;
+  commit_details?: Array<{
+    sha: string;
+    message: string;
+    author: string;
+    date: string;
+    files: Array<{
+      filename: string;
+      status: string;
+      additions: number;
+      deletions: number;
+      changes?: number;
+      patch?: string;
+    }>;
   }>;
 }
 

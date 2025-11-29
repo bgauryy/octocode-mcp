@@ -10,6 +10,25 @@ export type IssueSearchResultItem =
   components['schemas']['issue-search-result-item'];
 export type DiffEntry = components['schemas']['diff-entry'];
 
+/** Commit file change information */
+export interface CommitFileInfo {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  changes?: number;
+  patch?: string;
+}
+
+/** Commit information with file changes */
+export interface CommitInfo {
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+  files: CommitFileInfo[];
+}
+
 export type GetContentParameters =
   RestEndpointMethodTypes['repos']['getContent']['parameters'];
 export type GetRepoResponse =
@@ -117,6 +136,7 @@ export type GitHubPullRequestItem = Pick<
     total_count: number;
     files: DiffEntry[];
   };
+  commits?: CommitInfo[];
   _sanitization_warnings?: string[];
 };
 
@@ -154,7 +174,12 @@ export interface GitHubPullRequestsSearchParams {
   order?: 'asc' | 'desc';
   limit?: number;
   withComments?: boolean;
-  withContent?: boolean;
+  type?: 'metadata' | 'fullContent' | 'partialContent';
+  partialContentMetadata?: {
+    file: string;
+    additions?: number[];
+    deletions?: number[];
+  }[];
   exhaustive?: boolean;
   maxPages?: number;
   pageSize?: number;

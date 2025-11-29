@@ -2,11 +2,13 @@ import type { components } from '@octokit/openapi-types';
 import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
+  CommitInfo,
 } from './githubAPI';
 import type { PullRequestSearchResult } from '../types';
 import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
+import { filterPatch } from '../utils/diffParser.js';
 
 // GitHub API types for pull request files
 type DiffEntry = components['schemas']['diff-entry'];
@@ -157,7 +159,7 @@ async function searchGitHubPullRequestsAPIInternal(
       body: pr.body,
       comments: pr.comments?.length || 0,
       review_comments: 0,
-      commits: 0,
+      commits: pr.commits?.length || 0,
       additions:
         pr.file_changes?.files.reduce((sum, file) => sum + file.additions, 0) ||
         0,
@@ -171,9 +173,11 @@ async function searchGitHubPullRequestsAPIInternal(
           status: file.status,
           additions: file.additions,
           deletions: file.deletions,
-          changes: file.changes,
           patch: file.patch,
         })),
+      }),
+      ...(pr.commits && {
+        commit_details: pr.commits,
       }),
     }));
 
@@ -257,7 +261,7 @@ async function searchPullRequestsWithREST(
       body: pr.body,
       comments: pr.comments?.length || 0,
       review_comments: 0,
-      commits: 0,
+      commits: pr.commits?.length || 0,
       additions:
         pr.file_changes?.files.reduce((sum, file) => sum + file.additions, 0) ||
         0,
@@ -271,9 +275,11 @@ async function searchPullRequestsWithREST(
           status: file.status,
           additions: file.additions,
           deletions: file.deletions,
-          changes: file.changes,
           patch: file.patch,
         })),
+      }),
+      ...(pr.commits && {
+        commit_details: pr.commits,
       }),
     }));
 
@@ -406,7 +412,11 @@ async function transformPullRequestItem(
     result._sanitization_warnings = Array.from(sanitizationWarnings);
   }
 
-  if (params.withContent || item.pull_request) {
+  const type = params.type || 'metadata';
+  const shouldFetchContent =
+    type === 'fullContent' || type === 'partialContent' || type === 'metadata';
+
+  if (shouldFetchContent || item.pull_request) {
     try {
       const { owner, repo } = normalizeOwnerRepo(params);
 
@@ -424,13 +434,42 @@ async function transformPullRequestItem(
           result.base_sha = prDetails.data.base?.sha;
           result.draft = prDetails.data.draft ?? false;
 
-          if (params.withContent) {
+          if (shouldFetchContent) {
             const fileChanges = await fetchPRFileChangesAPI(
               owner,
               repo,
               item.number as number
             );
+
             if (fileChanges) {
+              if (type === 'metadata') {
+                fileChanges.files = fileChanges.files.map(file => ({
+                  ...file,
+                  patch: undefined,
+                }));
+              } else if (type === 'partialContent') {
+                const metadataMap = new Map(
+                  params.partialContentMetadata?.map(m => [m.file, m]) || []
+                );
+
+                fileChanges.files = fileChanges.files
+                  .filter(file => metadataMap.has(file.filename))
+                  .map(file => {
+                    const meta = metadataMap.get(file.filename);
+                    return {
+                      ...file,
+                      patch: file.patch
+                        ? filterPatch(
+                            file.patch,
+                            meta?.additions,
+                            meta?.deletions
+                          )
+                        : undefined,
+                    };
+                  });
+              }
+              // fullContent: keep as is
+
               result.file_changes = fileChanges;
             }
           }
@@ -453,6 +492,24 @@ async function transformPullRequestItem(
     }
   }
 
+  // Always fetch commits breakdown
+  try {
+    const { owner, repo } = normalizeOwnerRepo(params);
+    if (owner && repo) {
+      const commits = await fetchPRCommitsWithFiles(
+        owner,
+        repo,
+        item.number as number,
+        params
+      );
+      if (commits) {
+        result.commits = commits;
+      }
+    }
+  } catch (e) {
+    void e;
+  }
+
   return result;
 }
 
@@ -464,21 +521,181 @@ async function fetchPRFileChangesAPI(
 ): Promise<{ total_count: number; files: DiffEntry[] } | null> {
   try {
     const octokit = await getOctokit(authInfo);
-    const result = await octokit.rest.pulls.listFiles({
+    const allFiles: DiffEntry[] = [];
+    let page = 1;
+    let keepFetching = true;
+
+    do {
+      const result = await octokit.rest.pulls.listFiles({
+        owner,
+        repo,
+        pull_number: prNumber,
+        per_page: 100,
+        page: page,
+      });
+
+      allFiles.push(...result.data);
+      keepFetching = result.data.length === 100;
+      page++;
+    } while (keepFetching);
+
+    return {
+      total_count: allFiles.length,
+      files: allFiles,
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+interface CommitListItem {
+  sha: string;
+  commit: {
+    message: string;
+    author: {
+      name: string;
+      date: string;
+    } | null;
+  };
+}
+
+interface CommitFileItem {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;
+}
+
+async function fetchPRCommitsAPI(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  authInfo?: AuthInfo
+): Promise<CommitListItem[] | null> {
+  try {
+    const octokit = await getOctokit(authInfo);
+    const result = await octokit.rest.pulls.listCommits({
       owner,
       repo,
       pull_number: prNumber,
     });
 
-    const files: DiffEntry[] = result.data;
-
-    return {
-      total_count: files.length,
-      files,
-    };
+    return result.data as CommitListItem[];
   } catch (error) {
     return null;
   }
+}
+
+async function fetchCommitFilesAPI(
+  owner: string,
+  repo: string,
+  sha: string,
+  authInfo?: AuthInfo
+): Promise<CommitFileItem[] | null> {
+  try {
+    const octokit = await getOctokit(authInfo);
+    const result = await octokit.rest.repos.getCommit({
+      owner,
+      repo,
+      ref: sha,
+    });
+
+    return (result.data.files || []) as CommitFileItem[];
+  } catch (error) {
+    return null;
+  }
+}
+
+async function fetchPRCommitsWithFiles(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  params: GitHubPullRequestsSearchParams,
+  authInfo?: AuthInfo
+): Promise<CommitInfo[] | null> {
+  const commits = await fetchPRCommitsAPI(owner, repo, prNumber, authInfo);
+  if (!commits) return null;
+
+  const type = params.type || 'metadata';
+  const metadataMap = new Map(
+    params.partialContentMetadata?.map(m => [m.file, m]) || []
+  );
+
+  // Sort commits by date descending (most recent first)
+  const sortedCommits = [...commits].sort((a, b) => {
+    const dateA = a.commit.author?.date
+      ? new Date(a.commit.author.date).getTime()
+      : 0;
+    const dateB = b.commit.author?.date
+      ? new Date(b.commit.author.date).getTime()
+      : 0;
+    return dateB - dateA;
+  });
+
+  const commitInfos: CommitInfo[] = await Promise.all(
+    sortedCommits.map(async commit => {
+      const files = await fetchCommitFilesAPI(
+        owner,
+        repo,
+        commit.sha,
+        authInfo
+      );
+
+      let processedFiles: CommitInfo['files'] = [];
+
+      if (files) {
+        if (type === 'metadata') {
+          // Strip patch content for metadata mode
+          processedFiles = files.map(f => ({
+            filename: f.filename,
+            status: f.status,
+            additions: f.additions,
+            deletions: f.deletions,
+            patch: undefined,
+          }));
+        } else if (type === 'partialContent') {
+          // Filter files and apply line filtering
+          processedFiles = files
+            .filter(f => metadataMap.has(f.filename))
+            .map(f => {
+              const meta = metadataMap.get(f.filename);
+              return {
+                filename: f.filename,
+                status: f.status,
+                additions: f.additions,
+                deletions: f.deletions,
+                patch: f.patch
+                  ? filterPatch(f.patch, meta?.additions, meta?.deletions)
+                  : undefined,
+              };
+            });
+        } else {
+          // fullContent - keep everything
+          processedFiles = files.map(f => ({
+            filename: f.filename,
+            status: f.status,
+            additions: f.additions,
+            deletions: f.deletions,
+            patch: f.patch,
+          }));
+        }
+      }
+
+      return {
+        sha: commit.sha,
+        message: commit.commit.message,
+        author: commit.commit.author?.name || 'unknown',
+        date: commit.commit.author?.date
+          ? new Date(commit.commit.author.date).toLocaleDateString('en-GB')
+          : '',
+        files: processedFiles,
+      };
+    })
+  );
+
+  return commitInfos;
 }
 
 export async function transformPullRequestItemFromREST(
@@ -494,7 +711,11 @@ export async function transformPullRequestItemFromREST(
     result._sanitization_warnings = Array.from(sanitizationWarnings);
   }
 
-  if (params.withContent) {
+  const type = params.type || 'metadata';
+  const shouldFetchContent =
+    type === 'fullContent' || type === 'partialContent' || type === 'metadata';
+
+  if (shouldFetchContent) {
     const fileChanges = await fetchPRFileChangesAPI(
       params.owner as string,
       params.repo as string,
@@ -502,6 +723,28 @@ export async function transformPullRequestItemFromREST(
       authInfo
     );
     if (fileChanges) {
+      if (type === 'metadata') {
+        fileChanges.files = fileChanges.files.map(file => ({
+          ...file,
+          patch: undefined,
+        }));
+      } else if (type === 'partialContent') {
+        const metadataMap = new Map(
+          params.partialContentMetadata?.map(m => [m.file, m]) || []
+        );
+
+        fileChanges.files = fileChanges.files
+          .filter(file => metadataMap.has(file.filename))
+          .map(file => {
+            const meta = metadataMap.get(file.filename);
+            return {
+              ...file,
+              patch: file.patch
+                ? filterPatch(file.patch, meta?.additions, meta?.deletions)
+                : undefined,
+            };
+          });
+      }
       result.file_changes = fileChanges;
     }
   }
@@ -513,6 +756,22 @@ export async function transformPullRequestItemFromREST(
       params.repo as string,
       item.number as number
     );
+  }
+
+  // Always fetch commits breakdown
+  try {
+    const commits = await fetchPRCommitsWithFiles(
+      params.owner as string,
+      params.repo as string,
+      item.number as number,
+      params,
+      authInfo
+    );
+    if (commits) {
+      result.commits = commits;
+    }
+  } catch (e) {
+    void e;
   }
 
   return result;
@@ -529,7 +788,8 @@ export async function fetchGitHubPullRequestByNumberAPI(
       owner: params.owner,
       repo: params.repo,
       prNumber: params.prNumber,
-      withContent: params.withContent,
+      type: params.type,
+      partialContentMetadata: params.partialContentMetadata,
       withComments: params.withComments,
     },
     sessionId
@@ -630,7 +890,7 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
       body: transformedPR.body,
       comments: transformedPR.comments?.length || 0,
       review_comments: 0,
-      commits: 0,
+      commits: transformedPR.commits?.length || 0,
       additions:
         transformedPR.file_changes?.files.reduce(
           (sum, file) => sum + file.additions,
@@ -649,9 +909,12 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
           status: file.status,
           additions: file.additions,
           deletions: file.deletions,
-          changes: file.changes,
           patch: file.patch,
         })),
+      }),
+      // Include commits breakdown
+      ...(transformedPR.commits && {
+        commit_details: transformedPR.commits,
       }),
     };
 

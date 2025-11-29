@@ -155,7 +155,7 @@ describe('pullRequestSearch coverage', () => {
       query: 'test',
       owner: 'owner',
       repo: 'repo',
-      withContent: true,
+      type: 'fullContent',
     });
 
     expect(result.pull_requests).toBeDefined();
@@ -324,7 +324,7 @@ describe('pullRequestSearch coverage', () => {
       query: 'test',
       owner: 'owner',
       repo: 'repo',
-      withContent: true,
+      type: 'fullContent',
     });
 
     expect(result.pull_requests).toBeDefined();
@@ -416,7 +416,7 @@ describe('pullRequestSearch coverage', () => {
       query: 'test',
       owner: 'owner',
       repo: 'repo',
-      withContent: true,
+      type: 'fullContent',
     });
 
     expect(result.pull_requests).toBeDefined();

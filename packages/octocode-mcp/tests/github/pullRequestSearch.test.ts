@@ -257,7 +257,7 @@ describe('Pull Request Search', () => {
       expect(result.pull_requests).toHaveLength(0);
     });
 
-    it('should fetch file changes when withContent is true', async () => {
+    it('should fetch file changes when type is fullContent', async () => {
       const mockPR = {
         number: 123,
         title: 'Test PR',
@@ -292,7 +292,7 @@ describe('Pull Request Search', () => {
         owner: 'test',
         repo: 'repo',
         prNumber: 123,
-        withContent: true,
+        type: 'fullContent',
       });
 
       expect(result.pull_requests).toHaveLength(1);
@@ -300,6 +300,8 @@ describe('Pull Request Search', () => {
         owner: 'test',
         repo: 'repo',
         pull_number: 123,
+        per_page: 100,
+        page: 1,
       });
     });
 
@@ -645,7 +647,7 @@ describe('Pull Request Search', () => {
       expect(result.labels).toEqual(['bug', 'enhancement']);
     });
 
-    it('should fetch file changes when withContent is true', async () => {
+    it('should fetch file changes when type is fullContent', async () => {
       const mockItem = {
         number: 790,
         title: 'With Content',
@@ -677,7 +679,7 @@ describe('Pull Request Search', () => {
 
       const result = await transformPullRequestItemFromREST(
         mockItem,
-        { owner: 'test', repo: 'repo', withContent: true },
+        { owner: 'test', repo: 'repo', type: 'fullContent' },
         mockOctokit
       );
 
@@ -785,7 +787,7 @@ describe('Pull Request Search', () => {
 
       const result = await transformPullRequestItemFromREST(
         mockItem,
-        { owner: 'test', repo: 'repo', withContent: true },
+        { owner: 'test', repo: 'repo', type: 'fullContent' },
         mockOctokit
       );
 

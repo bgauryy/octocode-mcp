@@ -156,11 +156,25 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .default(false)
     .optional()
     .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.withComments),
-  withContent: z
-    .boolean()
-    .default(false)
+  type: z
+    .enum(['metadata', 'fullContent', 'partialContent'])
+    .default('metadata')
     .optional()
-    .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.withContent),
+    .describe(
+      'Type of content to return: metadata (file list), fullContent (all changes), partialContent (specific files - REQUIRES "partialContentMetadata")'
+    ),
+  partialContentMetadata: z
+    .array(
+      z.object({
+        file: z.string(),
+        additions: z.array(z.number()).optional(),
+        deletions: z.array(z.number()).optional(),
+      })
+    )
+    .optional()
+    .describe(
+      'Specific files and line ranges to retrieve for partialContent type'
+    ),
 });
 
 export const GitHubPullRequestSearchBulkQuerySchema = createBulkQuerySchema(

@@ -514,7 +514,8 @@ export const GITHUB_SEARCH_PULL_REQUESTS = createSchemaHelper(
   };
   outputShaping: {
     withComments: string;
-    withContent: string;
+    type: string;
+    partialContentMetadata: string;
   };
 };
 
