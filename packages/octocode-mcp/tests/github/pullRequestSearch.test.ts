@@ -10,8 +10,13 @@ const mockWithDataCache = vi.hoisted(() => vi.fn());
 const mockContentSanitizer = vi.hoisted(() => ({
   sanitizeContent: vi.fn(),
 }));
+const mockLogSessionError = vi.hoisted(() => vi.fn());
 
 // Set up mocks
+vi.mock('../../src/session.js', () => ({
+  logSessionError: mockLogSessionError,
+}));
+
 vi.mock('../../src/github/client.js', () => ({
   getOctokit: mockGetOctokit,
   OctokitWithThrottling: class MockOctokit {},
@@ -50,8 +55,10 @@ describe('Pull Request Search', () => {
         list: ReturnType<typeof vi.fn>;
         get: ReturnType<typeof vi.fn>;
         listFiles: ReturnType<typeof vi.fn>;
+        listCommits: ReturnType<typeof vi.fn>;
       };
       issues: { listComments: ReturnType<typeof vi.fn> };
+      repos: { getCommit: ReturnType<typeof vi.fn> };
     };
   };
 
@@ -66,13 +73,16 @@ describe('Pull Request Search', () => {
           list: vi.fn(),
           get: vi.fn(),
           listFiles: vi.fn(),
+          listCommits: vi.fn(),
         },
         issues: { listComments: vi.fn() },
+        repos: { getCommit: vi.fn() },
       },
     };
     mockGetOctokit.mockResolvedValue(mockOctokit);
 
     // Setup default cache behavior - execute the operation directly
+    mockGenerateCacheKey.mockReturnValue('test-cache-key');
     mockWithDataCache.mockImplementation(
       async (_cacheKey: string, operation: () => Promise<unknown>) => {
         return await operation();
@@ -98,6 +108,7 @@ describe('Pull Request Search', () => {
       'repo:test/test is:pr state:open'
     );
     mockShouldUseSearchForPRs.mockReturnValue(false);
+    mockLogSessionError.mockClear();
   });
 
   afterEach(() => {
@@ -229,6 +240,104 @@ describe('Pull Request Search', () => {
       expect(result.pull_requests).toHaveLength(1);
       expect(result.total_count).toBe(1);
       expect(mockOctokit.rest.search.issuesAndPullRequests).toHaveBeenCalled();
+    });
+
+    it('should fetch commits when withCommits is true (Search API)', async () => {
+      mockShouldUseSearchForPRs.mockReturnValue(true);
+      mockBuildPullRequestSearchQuery.mockReturnValue('repo:test/repo is:pr');
+
+      const mockSearchResult = {
+        total_count: 1,
+        incomplete_results: false,
+        items: [
+          {
+            number: 123,
+            title: 'PR with commits',
+            state: 'open',
+            user: { login: 'user1' },
+            labels: [],
+            created_at: '2023-01-01T00:00:00Z',
+            updated_at: '2023-01-02T00:00:00Z',
+            html_url: 'https://github.com/test/repo/pull/123',
+            pull_request: {},
+            body: 'body',
+          },
+        ],
+      };
+
+      mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+        data: mockSearchResult,
+      });
+
+      mockOctokit.rest.pulls.get.mockResolvedValue({
+        data: { head: {}, base: {}, draft: false },
+      });
+
+      const mockCommits = [
+        {
+          sha: 'sha1',
+          commit: {
+            message: 'commit 1',
+            author: { date: '2023-01-01T00:00:00Z', name: 'User' },
+          },
+        },
+      ];
+
+      mockOctokit.rest.pulls.listCommits = vi
+        .fn()
+        .mockResolvedValue({ data: mockCommits });
+      mockOctokit.rest.repos.getCommit.mockResolvedValue({
+        data: { files: [] },
+      });
+
+      const result = await searchGitHubPullRequestsAPI({
+        owner: 'test',
+        repo: 'repo',
+        withCommits: true,
+      });
+
+      expect(result.pull_requests?.[0]?.commit_details).toBeDefined();
+      expect(result.pull_requests?.[0]?.commit_details).toHaveLength(1);
+    });
+
+    it('should handle commit fetch API error gracefully (Search API)', async () => {
+      mockShouldUseSearchForPRs.mockReturnValue(true);
+      mockBuildPullRequestSearchQuery.mockReturnValue('repo:test/repo is:pr');
+
+      const mockSearchResult = {
+        total_count: 1,
+        items: [
+          {
+            number: 123,
+            title: 'PR commit error',
+            state: 'open',
+            user: { login: 'user1' },
+            html_url: 'url',
+            pull_request: {},
+          },
+        ],
+      };
+
+      mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+        data: mockSearchResult,
+      });
+      mockOctokit.rest.pulls.get.mockResolvedValue({ data: {} });
+
+      // Simulate API error in listCommits
+      mockOctokit.rest.pulls.listCommits = vi
+        .fn()
+        .mockRejectedValue(new Error('API Error'));
+
+      const result = await searchGitHubPullRequestsAPI({
+        owner: 'test',
+        repo: 'repo',
+        withCommits: true,
+      });
+
+      // Should succeed but without commit_details
+      expect(result.pull_requests?.[0]?.commit_details).toBeUndefined();
+      // And no session error logged because it's swallowed by fetchPRCommitsAPI returning null
+      expect(mockLogSessionError).not.toHaveBeenCalled();
     });
 
     it('should return error when no valid search parameters provided', async () => {
@@ -613,6 +722,31 @@ describe('Pull Request Search', () => {
       expect(result.error).toContain('Owner and repo must be single values');
       expect(result.pull_requests).toHaveLength(0);
     });
+    it('should configure caching correctly', async () => {
+      const mockPR = { number: 456, state: 'open' };
+      mockOctokit.rest.pulls.get.mockResolvedValue({ data: mockPR });
+
+      await fetchGitHubPullRequestByNumberAPI({
+        owner: 'test',
+        repo: 'repo',
+        prNumber: 456,
+      });
+
+      expect(mockWithDataCache).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Function),
+        expect.objectContaining({
+          shouldCache: expect.any(Function),
+        })
+      );
+
+      // Verify the shouldCache predicate
+      const cacheOptions = mockWithDataCache.mock.calls[0]?.[2] as
+        | { shouldCache: (data: unknown) => boolean }
+        | undefined;
+      expect(cacheOptions?.shouldCache({ error: 'Some error' })).toBe(false);
+      expect(cacheOptions?.shouldCache({ pull_requests: [] })).toBe(true);
+    });
   });
 
   describe('transformPullRequestItemFromREST', () => {
@@ -826,6 +960,180 @@ describe('Pull Request Search', () => {
       // Should complete with empty comments array
       expect(result.number).toBe(794);
       expect(result.comments).toEqual([]);
+    });
+
+    it('should fetch commits when withCommits is true', async () => {
+      const mockItem = {
+        number: 795,
+        title: 'With Commits',
+        state: 'open',
+        draft: false,
+        user: { login: 'testuser' },
+        labels: [],
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-02T00:00:00Z',
+        closed_at: null,
+        html_url: 'https://github.com/test/repo/pull/795',
+        head: { ref: 'feature', sha: 'abc123' },
+        base: { ref: 'main', sha: 'def456' },
+        body: 'Test body',
+      };
+
+      const mockCommits = [
+        {
+          sha: 'commit1',
+          commit: {
+            message: 'feat: add feature',
+            author: { name: 'Author', date: '2023-01-01T00:00:00Z' },
+          },
+        },
+      ];
+
+      const mockCommitFiles = [
+        {
+          filename: 'src/feature.ts',
+          status: 'added',
+          additions: 50,
+          deletions: 0,
+          changes: 50,
+        },
+      ];
+
+      mockOctokit.rest.pulls.listCommits = vi
+        .fn()
+        .mockResolvedValue({ data: mockCommits });
+      mockOctokit.rest.repos.getCommit.mockResolvedValue({
+        data: { files: mockCommitFiles },
+      });
+
+      const result = await transformPullRequestItemFromREST(
+        mockItem,
+        { owner: 'test', repo: 'repo', withCommits: true },
+        mockOctokit
+      );
+
+      expect(result.commits).toBeDefined();
+      expect(result.commits).toHaveLength(1);
+      expect(mockOctokit.rest.pulls.listCommits).toHaveBeenCalledWith({
+        owner: 'test',
+        repo: 'repo',
+        pull_number: 795,
+      });
+      expect(mockOctokit.rest.repos.getCommit).toHaveBeenCalledWith({
+        owner: 'test',
+        repo: 'repo',
+        ref: 'commit1',
+      });
+    });
+
+    it('should NOT fetch commits when withCommits is false/undefined', async () => {
+      const mockItem = {
+        number: 796,
+        title: 'Without Commits',
+        state: 'open',
+        draft: false,
+        user: { login: 'testuser' },
+        labels: [],
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-02T00:00:00Z',
+        closed_at: null,
+        html_url: 'https://github.com/test/repo/pull/796',
+        head: { ref: 'feature', sha: 'abc123' },
+        base: { ref: 'main', sha: 'def456' },
+        body: 'Test body',
+      };
+
+      // Mock listCommits to throw if called (or spy on it)
+      mockOctokit.rest.pulls.listCommits = vi.fn();
+
+      const result = await transformPullRequestItemFromREST(
+        mockItem,
+        { owner: 'test', repo: 'repo' }, // withCommits undefined
+        mockOctokit
+      );
+
+      expect(result.commits).toBeUndefined();
+      expect(mockOctokit.rest.pulls.listCommits).not.toHaveBeenCalled();
+    });
+
+    it('should handle error when fetching commits gracefully', async () => {
+      const mockItem = {
+        number: 797,
+        title: 'Commit Error',
+        state: 'open',
+        user: { login: 'testuser' },
+        html_url: 'url',
+      };
+
+      // Mock listCommits to return invalid data to cause a runtime error in processing
+      // This will bypass the internal try/catch in fetchPRCommitsAPI (which only catches API errors)
+      // and cause fetchPRCommitsWithFiles to throw when trying to sort/map
+      mockOctokit.rest.pulls.listCommits = vi.fn().mockResolvedValue({
+        data: 'not-an-array', // This will cause .sort() or iteration to fail
+      });
+
+      const result = await transformPullRequestItemFromREST(
+        mockItem,
+        { owner: 'test', repo: 'repo', withCommits: true },
+        mockOctokit
+      );
+
+      expect(result.commits).toBeUndefined();
+      expect(mockLogSessionError).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.stringContaining('TypeError')
+      );
+    });
+
+    it('should sort commits by date descending, handling missing dates', async () => {
+      const mockItem = { number: 798, title: 'Sort Test', state: 'open' };
+
+      const mockCommits = [
+        {
+          sha: 'sha1',
+          commit: {
+            message: 'old',
+            author: { date: '2023-01-01T00:00:00Z', name: 'User' },
+          },
+        },
+        {
+          sha: 'sha2',
+          commit: {
+            message: 'new',
+            author: { date: '2023-01-02T00:00:00Z', name: 'User' },
+          },
+        },
+        {
+          sha: 'sha3',
+          commit: {
+            message: 'nodate',
+            author: null, // No date case
+          },
+        },
+      ];
+
+      // sha2 (new) -> sha1 (old) -> sha3 (no date = 0)
+
+      mockOctokit.rest.pulls.listCommits = vi
+        .fn()
+        .mockResolvedValue({ data: mockCommits });
+      mockOctokit.rest.repos.getCommit.mockResolvedValue({
+        data: { files: [] },
+      });
+
+      const result = await transformPullRequestItemFromREST(
+        mockItem,
+        { owner: 'test', repo: 'repo', withCommits: true },
+        mockOctokit
+      );
+
+      expect(result.commits).toBeDefined();
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      expect(result.commits![0]!.sha).toBe('sha2');
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      expect(result.commits![1]!.sha).toBe('sha1');
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      expect(result.commits![2]!.sha).toBe('sha3');
     });
   });
 });

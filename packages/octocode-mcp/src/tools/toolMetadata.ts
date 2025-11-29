@@ -1,4 +1,3 @@
-import { version } from '../../package.json';
 import { fetchWithRetries } from '../utils/fetchWithRetries.js';
 import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
@@ -143,9 +142,7 @@ export async function initializeToolMetadata(): Promise<void> {
 
     const data = (await fetchWithRetries(METADATA_URL, {
       maxRetries: 3,
-      headers: {
-        'User-Agent': `Octocode-MCP/${version}`,
-      },
+      includeVersion: true,
     })) as unknown;
 
     if (
@@ -514,6 +511,7 @@ export const GITHUB_SEARCH_PULL_REQUESTS = createSchemaHelper(
   };
   outputShaping: {
     withComments: string;
+    withCommits: string;
     type: string;
     partialContentMetadata: string;
   };

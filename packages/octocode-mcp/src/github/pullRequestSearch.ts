@@ -1,8 +1,9 @@
-import type { components } from '@octokit/openapi-types';
 import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
   CommitInfo,
+  DiffEntry,
+  CommitFileItem,
 } from './githubAPI';
 import type { PullRequestSearchResult } from '../types';
 import { SEARCH_ERRORS } from '../errorCodes.js';
@@ -11,7 +12,6 @@ import { TOOL_NAMES } from '../tools/toolMetadata.js';
 import { filterPatch } from '../utils/diffParser.js';
 
 // GitHub API types for pull request files
-type DiffEntry = components['schemas']['diff-entry'];
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
@@ -400,6 +400,37 @@ function normalizeOwnerRepo(params: GitHubPullRequestsSearchParams): {
   return { owner, repo };
 }
 
+function applyPartialContentFilter(
+  files: (DiffEntry | CommitFileItem)[],
+  params: GitHubPullRequestsSearchParams
+): (DiffEntry | CommitFileItem)[] {
+  const type = params.type || 'metadata';
+  const metadataMap = new Map(
+    params.partialContentMetadata?.map(m => [m.file, m]) || []
+  );
+
+  if (type === 'metadata') {
+    return files.map(file => ({
+      ...file,
+      patch: undefined,
+    }));
+  } else if (type === 'partialContent') {
+    return files
+      .filter(file => metadataMap.has(file.filename))
+      .map(file => {
+        const meta = metadataMap.get(file.filename);
+        return {
+          ...file,
+          patch: file.patch
+            ? filterPatch(file.patch, meta?.additions, meta?.deletions)
+            : undefined,
+        };
+      });
+  }
+  // fullContent: keep as is
+  return files;
+}
+
 async function transformPullRequestItem(
   item: Record<string, unknown>,
   params: GitHubPullRequestsSearchParams,
@@ -442,33 +473,10 @@ async function transformPullRequestItem(
             );
 
             if (fileChanges) {
-              if (type === 'metadata') {
-                fileChanges.files = fileChanges.files.map(file => ({
-                  ...file,
-                  patch: undefined,
-                }));
-              } else if (type === 'partialContent') {
-                const metadataMap = new Map(
-                  params.partialContentMetadata?.map(m => [m.file, m]) || []
-                );
-
-                fileChanges.files = fileChanges.files
-                  .filter(file => metadataMap.has(file.filename))
-                  .map(file => {
-                    const meta = metadataMap.get(file.filename);
-                    return {
-                      ...file,
-                      patch: file.patch
-                        ? filterPatch(
-                            file.patch,
-                            meta?.additions,
-                            meta?.deletions
-                          )
-                        : undefined,
-                    };
-                  });
-              }
-              // fullContent: keep as is
+              fileChanges.files = applyPartialContentFilter(
+                fileChanges.files,
+                params
+              ) as DiffEntry[];
 
               result.file_changes = fileChanges;
             }
@@ -476,7 +484,7 @@ async function transformPullRequestItem(
         }
       }
     } catch (e) {
-      void e;
+      logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(e));
     }
   }
 
@@ -492,22 +500,24 @@ async function transformPullRequestItem(
     }
   }
 
-  // Always fetch commits breakdown
-  try {
-    const { owner, repo } = normalizeOwnerRepo(params);
-    if (owner && repo) {
-      const commits = await fetchPRCommitsWithFiles(
-        owner,
-        repo,
-        item.number as number,
-        params
-      );
-      if (commits) {
-        result.commits = commits;
+  // Fetch commits only if requested
+  if (params.withCommits) {
+    try {
+      const { owner, repo } = normalizeOwnerRepo(params);
+      if (owner && repo) {
+        const commits = await fetchPRCommitsWithFiles(
+          owner,
+          repo,
+          item.number as number,
+          params
+        );
+        if (commits) {
+          result.commits = commits;
+        }
       }
+    } catch (e) {
+      logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(e));
     }
-  } catch (e) {
-    void e;
   }
 
   return result;
@@ -557,15 +567,6 @@ interface CommitListItem {
       date: string;
     } | null;
   };
-}
-
-interface CommitFileItem {
-  filename: string;
-  status: string;
-  additions: number;
-  deletions: number;
-  changes: number;
-  patch?: string;
 }
 
 async function fetchPRCommitsAPI(
@@ -618,11 +619,6 @@ async function fetchPRCommitsWithFiles(
   const commits = await fetchPRCommitsAPI(owner, repo, prNumber, authInfo);
   if (!commits) return null;
 
-  const type = params.type || 'metadata';
-  const metadataMap = new Map(
-    params.partialContentMetadata?.map(m => [m.file, m]) || []
-  );
-
   // Sort commits by date descending (most recent first)
   const sortedCommits = [...commits].sort((a, b) => {
     const dateA = a.commit.author?.date
@@ -646,41 +642,10 @@ async function fetchPRCommitsWithFiles(
       let processedFiles: CommitInfo['files'] = [];
 
       if (files) {
-        if (type === 'metadata') {
-          // Strip patch content for metadata mode
-          processedFiles = files.map(f => ({
-            filename: f.filename,
-            status: f.status,
-            additions: f.additions,
-            deletions: f.deletions,
-            patch: undefined,
-          }));
-        } else if (type === 'partialContent') {
-          // Filter files and apply line filtering
-          processedFiles = files
-            .filter(f => metadataMap.has(f.filename))
-            .map(f => {
-              const meta = metadataMap.get(f.filename);
-              return {
-                filename: f.filename,
-                status: f.status,
-                additions: f.additions,
-                deletions: f.deletions,
-                patch: f.patch
-                  ? filterPatch(f.patch, meta?.additions, meta?.deletions)
-                  : undefined,
-              };
-            });
-        } else {
-          // fullContent - keep everything
-          processedFiles = files.map(f => ({
-            filename: f.filename,
-            status: f.status,
-            additions: f.additions,
-            deletions: f.deletions,
-            patch: f.patch,
-          }));
-        }
+        processedFiles = applyPartialContentFilter(
+          files,
+          params
+        ) as CommitFileItem[];
       }
 
       return {
@@ -723,28 +688,10 @@ export async function transformPullRequestItemFromREST(
       authInfo
     );
     if (fileChanges) {
-      if (type === 'metadata') {
-        fileChanges.files = fileChanges.files.map(file => ({
-          ...file,
-          patch: undefined,
-        }));
-      } else if (type === 'partialContent') {
-        const metadataMap = new Map(
-          params.partialContentMetadata?.map(m => [m.file, m]) || []
-        );
-
-        fileChanges.files = fileChanges.files
-          .filter(file => metadataMap.has(file.filename))
-          .map(file => {
-            const meta = metadataMap.get(file.filename);
-            return {
-              ...file,
-              patch: file.patch
-                ? filterPatch(file.patch, meta?.additions, meta?.deletions)
-                : undefined,
-            };
-          });
-      }
+      fileChanges.files = applyPartialContentFilter(
+        fileChanges.files,
+        params
+      ) as DiffEntry[];
       result.file_changes = fileChanges;
     }
   }
@@ -758,20 +705,22 @@ export async function transformPullRequestItemFromREST(
     );
   }
 
-  // Always fetch commits breakdown
-  try {
-    const commits = await fetchPRCommitsWithFiles(
-      params.owner as string,
-      params.repo as string,
-      item.number as number,
-      params,
-      authInfo
-    );
-    if (commits) {
-      result.commits = commits;
+  // Fetch commits only if requested
+  if (params.withCommits) {
+    try {
+      const commits = await fetchPRCommitsWithFiles(
+        params.owner as string,
+        params.repo as string,
+        item.number as number,
+        params,
+        authInfo
+      );
+      if (commits) {
+        result.commits = commits;
+      }
+    } catch (e) {
+      logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(e));
     }
-  } catch (e) {
-    void e;
   }
 
   return result;

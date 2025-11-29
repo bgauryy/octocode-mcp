@@ -10,6 +10,15 @@ export type IssueSearchResultItem =
   components['schemas']['issue-search-result-item'];
 export type DiffEntry = components['schemas']['diff-entry'];
 
+export interface CommitFileItem {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;
+}
+
 /** Commit file change information */
 export interface CommitFileInfo {
   filename: string;
@@ -174,6 +183,7 @@ export interface GitHubPullRequestsSearchParams {
   order?: 'asc' | 'desc';
   limit?: number;
   withComments?: boolean;
+  withCommits?: boolean;
   type?: 'metadata' | 'fullContent' | 'partialContent';
   partialContentMetadata?: {
     file: string;

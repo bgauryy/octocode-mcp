@@ -260,6 +260,7 @@ export interface GitHubPullRequestSearchQuery {
   order?: 'asc' | 'desc';
   limit?: number;
   withComments?: boolean;
+  withCommits?: boolean;
   type?: 'metadata' | 'fullContent' | 'partialContent';
   partialContentMetadata?: {
     file: string;

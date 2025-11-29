@@ -2,6 +2,7 @@
  * Fetch with retry mechanism and exponential backoff
  */
 
+import { version } from '../../package.json';
 import { FETCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
@@ -31,6 +32,11 @@ export interface FetchWithRetriesOptions {
    * @default 'GET'
    */
   method?: string;
+  /**
+   * Whether to include the package version as a query parameter
+   * @default false
+   */
+  includeVersion?: boolean;
 }
 
 /**
@@ -64,7 +70,21 @@ export async function fetchWithRetries(
     initialDelayMs = 1000,
     headers = {},
     method = 'GET',
+    includeVersion = false,
   } = options;
+
+  // Append version query parameter if requested
+  let finalUrl = url;
+  if (includeVersion) {
+    const separator = url.includes('?') ? '&' : '?';
+    finalUrl = `${url}${separator}version=${encodeURIComponent(version)}`;
+  }
+
+  // Merge default User-Agent with custom headers (custom headers take precedence)
+  const finalHeaders: Record<string, string> = {
+    'User-Agent': `Octocode-MCP/${version}`,
+    ...headers,
+  };
 
   const f = (globalThis as unknown as { fetch?: typeof fetch }).fetch;
   if (!f) {
@@ -81,9 +101,9 @@ export async function fetchWithRetries(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const res = await f(url, {
+      const res = await f(finalUrl, {
         method,
-        headers,
+        headers: finalHeaders,
       });
 
       if (!res.ok) {
