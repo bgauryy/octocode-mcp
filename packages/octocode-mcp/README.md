@@ -666,7 +666,7 @@ Understand how code evolved, why decisions were made, and learn from production 
 **Key Features**:
 - **PR Discovery**: Search by state, author, labels, dates
 - **Direct Access**: Fetch specific PR by number (10x faster)
-- **Code Diffs**: Include full diff content to see what changed
+- **Code Diffs**: Include full diff content or targeted file patches (smart token management)
 - **Discussions**: Access comment threads and review discussions
 - **Merged Code**: Filter for production-ready, merged changes
 

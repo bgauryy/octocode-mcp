@@ -82,7 +82,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('query:');
       expect(responseText).toContain('repositories:');
       expect(responseText).toContain('facebook/react');
       expect(responseText).toContain('vercel/next.js');
@@ -191,7 +190,6 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "empty"');
-      expect(responseText).toContain('query:');
       expect(responseText).toContain('1 empty');
     });
 
@@ -627,7 +625,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       );
     });
 
-    it('should propagate researchSuggestions from query to result', async () => {
+    it('should handle query with researchSuggestions gracefully', async () => {
       mockSearchGitHubReposAPI.mockResolvedValue({
         error: 'API error',
         type: 'api',
@@ -651,9 +649,8 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
 
       const responseText = getTextContent(result.content);
 
-      expect(responseText).toContain('researchSuggestions:');
-      expect(responseText).toContain('- "Try different keywords"');
-      expect(responseText).toContain('- "Check API status"');
+      expect(responseText).toContain('status: "error"');
+      // researchSuggestions is no longer echoed from query (query field removed)
     });
   });
 

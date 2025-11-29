@@ -108,6 +108,7 @@ function hasError(value: unknown): value is ErrorObject {
 export function handleApiError(
   apiResult: unknown,
   query: {
+    mainResearchGoal?: string;
     researchGoal?: string;
     reasoning?: string;
   }
@@ -145,6 +146,7 @@ export function handleApiError(
 export function handleCatchError(
   error: unknown,
   query: {
+    mainResearchGoal?: string;
     researchGoal?: string;
     reasoning?: string;
   },

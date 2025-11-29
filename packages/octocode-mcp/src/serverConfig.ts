@@ -17,6 +17,12 @@ function parseStringArray(value?: string): string[] | undefined {
 }
 
 async function resolveGitHubToken(): Promise<string | null> {
+  // Priority 1: Explicit GITHUB_TOKEN environment variable
+  if (process.env.GITHUB_TOKEN) {
+    return process.env.GITHUB_TOKEN;
+  }
+
+  // Priority 2: GitHub CLI token (fallback for convenience)
   try {
     const cliToken = await getGithubCLIToken();
     if (cliToken?.trim()) {
@@ -29,9 +35,7 @@ async function resolveGitHubToken(): Promise<string | null> {
     }
     // ignore error and continue
   }
-  if (process.env.GITHUB_TOKEN) {
-    return process.env.GITHUB_TOKEN;
-  }
+
   return null;
 }
 

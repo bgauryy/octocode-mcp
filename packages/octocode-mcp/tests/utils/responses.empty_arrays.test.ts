@@ -94,7 +94,6 @@ describe('Empty Arrays Removal in Responses', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "empty"');
-      expect(responseText).toContain('query:');
       expect(responseText).toContain('reasoning: "Test empty array removal"');
 
       // Should not contain "files: []" or similar empty array indicators

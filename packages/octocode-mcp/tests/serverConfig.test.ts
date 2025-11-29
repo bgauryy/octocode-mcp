@@ -148,7 +148,19 @@ describe('ServerConfig - Simplified Version', () => {
   });
 
   describe('Token Resolution', () => {
-    it('should get token from GitHub CLI first', async () => {
+    it('should prioritize GITHUB_TOKEN env var over CLI token', async () => {
+      process.env.GITHUB_TOKEN = 'env-github-token';
+      clearCachedToken();
+      cleanup();
+
+      mockSpawnSuccess('cli-token');
+      const token = await getGitHubToken();
+
+      // GITHUB_TOKEN takes priority even when CLI token is available
+      expect(token).toBe('env-github-token');
+    });
+
+    it('should fall back to CLI token when GITHUB_TOKEN is not set', async () => {
       delete process.env.GITHUB_TOKEN;
       clearCachedToken();
       cleanup();
@@ -157,16 +169,6 @@ describe('ServerConfig - Simplified Version', () => {
       const token = await getGitHubToken();
 
       expect(token).toBe('cli-token');
-    });
-
-    it('should fall back to GITHUB_TOKEN env var', async () => {
-      process.env.GITHUB_TOKEN = 'env-github-token';
-      clearCachedToken();
-
-      mockSpawnFailure();
-      const token = await getGitHubToken();
-
-      expect(token).toBe('env-github-token');
     });
 
     it('should return null when no token found', async () => {
