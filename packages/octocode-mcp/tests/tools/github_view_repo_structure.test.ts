@@ -88,7 +88,6 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(responseText).toContain('results:');
     expect(responseText).toContain('1 hasResults');
     expect(responseText).toContain('status: "hasResults"');
-    expect(responseText).toContain('query:');
     expect(responseText).toContain('owner: "test"');
     expect(responseText).toContain('repo: "repo"');
     expect(responseText).toContain('path: "/"');
@@ -182,11 +181,7 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(responseText).toContain(
       'error: "Repository not found or access denied"'
     );
-    expect(responseText).toContain('query:');
-    expect(responseText).toContain('owner: "nonexistent"');
-    expect(responseText).toContain('repo: "repo"');
-    expect(responseText).toContain('branch: "main"');
-    expect(responseText).not.toMatch(/^data:/m);
+    // Query fields (owner, repo, branch) are no longer echoed in response
     expect(responseText).not.toContain('queries:');
     expect(responseText).not.toMatch(/^hints:/m);
   });
@@ -241,7 +236,6 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(responseText).toContain('results:');
     expect(responseText).toContain('1 hasResults');
     expect(responseText).toContain('status: "hasResults"');
-    expect(responseText).toContain('query:');
     expect(responseText).toContain('owner: "test"');
     expect(responseText).toContain('repo: "repo"');
     expect(responseText).toContain('path: "src"');
@@ -396,14 +390,8 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
 
-      // Branch is now in the query field (original query is included in new structure)
-      expect(responseText).toContain('query:');
-      expect(responseText).toContain('branch: "main"');
-      // But branch should NOT be in the data field
-      const dataMatch = responseText.match(/data:\s*\n([\s\S]*?)(?=\n\w+:|$)/);
-      if (dataMatch && dataMatch[1]) {
-        expect(dataMatch[1]).not.toContain('branch:');
-      }
+      // Branch should NOT be in the response data (it was only in query)
+      expect(responseText).not.toContain('branch:');
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('owner: "test"');
       expect(responseText).toContain('path: "/"');
@@ -448,8 +436,9 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
 
-      // Verify field ordering by checking the response contains the fields in the correct order
-      const reasoningIndex = responseText.indexOf('reasoning:');
+      // Verify key fields exist in the response
+      const statusIndex = responseText.indexOf('status:');
+      const dataIndex = responseText.indexOf('data:');
       const ownerIndex = responseText.indexOf('owner:');
       const repoIndex = responseText.indexOf('repo:');
       const pathIndex = responseText.indexOf('path:');
@@ -457,15 +446,16 @@ describe('GitHub View Repository Structure Tool', () => {
       const foldersIndex = responseText.indexOf('folders:');
 
       // Verify all fields exist (must be found, not -1)
-      expect(reasoningIndex).not.toEqual(-1);
+      expect(statusIndex).not.toEqual(-1);
+      expect(dataIndex).not.toEqual(-1);
       expect(ownerIndex).not.toEqual(-1);
       expect(repoIndex).not.toEqual(-1);
       expect(pathIndex).not.toEqual(-1);
       expect(filesIndex).not.toEqual(-1);
       expect(foldersIndex).not.toEqual(-1);
 
-      // Verify strict field ordering: reasoning < owner < repo < path < files < folders
-      expect(reasoningIndex < ownerIndex).toEqual(true);
+      // Verify field ordering: status < data < owner < repo < path < files < folders
+      expect(statusIndex < dataIndex).toEqual(true);
       expect(ownerIndex < repoIndex).toEqual(true);
       expect(repoIndex < pathIndex).toEqual(true);
       expect(pathIndex < filesIndex).toEqual(true);

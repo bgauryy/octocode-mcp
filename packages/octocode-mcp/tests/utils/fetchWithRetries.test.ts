@@ -263,7 +263,9 @@ describe('fetchWithRetries', () => {
 
     expect(mockFetch).toHaveBeenCalledWith('https://example.com/data', {
       method: 'POST',
-      headers: {},
+      headers: expect.objectContaining({
+        'User-Agent': expect.stringMatching(/^Octocode-MCP\//),
+      }),
     });
   });
 
@@ -400,5 +402,118 @@ describe('fetchWithRetries', () => {
       /Failed to fetch after 3 attempts/
     );
     expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('should include default User-Agent header', async () => {
+    const mockData = { success: true };
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockData,
+    });
+
+    (globalThis as { fetch?: typeof fetch }).fetch = mockFetch;
+
+    const promise = fetchWithRetries('https://example.com/data');
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(mockFetch).toHaveBeenCalledWith('https://example.com/data', {
+      method: 'GET',
+      headers: expect.objectContaining({
+        'User-Agent': expect.stringMatching(/^Octocode-MCP\/\d+\.\d+\.\d+$/),
+      }),
+    });
+  });
+
+  it('should allow custom User-Agent to override default', async () => {
+    const mockData = { success: true };
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockData,
+    });
+
+    (globalThis as { fetch?: typeof fetch }).fetch = mockFetch;
+
+    const promise = fetchWithRetries('https://example.com/data', {
+      headers: {
+        'User-Agent': 'CustomApp/2.0',
+      },
+    });
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(mockFetch).toHaveBeenCalledWith('https://example.com/data', {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'CustomApp/2.0',
+      },
+    });
+  });
+
+  it('should append version query parameter when includeVersion is true', async () => {
+    const mockData = { success: true };
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockData,
+    });
+
+    (globalThis as { fetch?: typeof fetch }).fetch = mockFetch;
+
+    const promise = fetchWithRetries('https://example.com/data', {
+      includeVersion: true,
+    });
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^https:\/\/example\.com\/data\?version=\d+\.\d+\.\d+$/
+      ),
+      expect.any(Object)
+    );
+  });
+
+  it('should append version with & when URL already has query params', async () => {
+    const mockData = { success: true };
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockData,
+    });
+
+    (globalThis as { fetch?: typeof fetch }).fetch = mockFetch;
+
+    const promise = fetchWithRetries('https://example.com/data?foo=bar', {
+      includeVersion: true,
+    });
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^https:\/\/example\.com\/data\?foo=bar&version=\d+\.\d+\.\d+$/
+      ),
+      expect.any(Object)
+    );
+  });
+
+  it('should not append version query parameter when includeVersion is false', async () => {
+    const mockData = { success: true };
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockData,
+    });
+
+    (globalThis as { fetch?: typeof fetch }).fetch = mockFetch;
+
+    const promise = fetchWithRetries('https://example.com/data', {
+      includeVersion: false,
+    });
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://example.com/data',
+      expect.any(Object)
+    );
   });
 });

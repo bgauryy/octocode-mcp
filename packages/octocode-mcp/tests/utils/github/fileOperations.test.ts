@@ -75,6 +75,9 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         owner: 'test',
         repo: 'repo',
         path: 'test.js',
+        mainResearchGoal: 'Test research goal',
+        researchGoal: 'Testing schema defaults',
+        reasoning: 'Unit test for schema',
       };
 
       const parsed = FileContentQuerySchema.parse(minimalInput);

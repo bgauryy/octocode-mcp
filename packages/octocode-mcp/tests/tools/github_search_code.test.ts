@@ -34,11 +34,19 @@ import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
 
 describe('GitHubCodeSearchQuerySchema', () => {
   describe('new qualifiers validation', () => {
+    // Helper to add required research fields to queries
+    const withResearchFields = <T extends object>(query: T) => ({
+      ...query,
+      mainResearchGoal: 'Test research goal',
+      researchGoal: 'Testing schema validation',
+      reasoning: 'Unit test for schema',
+    });
+
     it('should validate owner qualifier', () => {
-      const validOwnerQuery = {
+      const validOwnerQuery = withResearchFields({
         keywordsToSearch: ['function'],
         owner: 'octocat',
-      };
+      });
 
       const result = GitHubCodeSearchQuerySchema.safeParse(validOwnerQuery);
       expect(result.success).toBe(true);
@@ -48,10 +56,10 @@ describe('GitHubCodeSearchQuerySchema', () => {
     });
 
     it('should validate owner qualifier with organization name', () => {
-      const validOrgOwnerQuery = {
+      const validOrgOwnerQuery = withResearchFields({
         keywordsToSearch: ['function'],
         owner: 'wix-private',
-      };
+      });
 
       const result = GitHubCodeSearchQuerySchema.safeParse(validOrgOwnerQuery);
       expect(result.success).toBe(true);
@@ -61,10 +69,10 @@ describe('GitHubCodeSearchQuerySchema', () => {
     });
 
     it('should validate path qualifier', () => {
-      const pathQuery = {
+      const pathQuery = withResearchFields({
         keywordsToSearch: ['function'],
         path: 'src/components',
-      };
+      });
 
       const result = GitHubCodeSearchQuerySchema.safeParse(pathQuery);
       expect(result.success).toBe(true);
@@ -74,7 +82,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
     });
 
     it('should validate complex query with all qualifiers', () => {
-      const complexQuery = {
+      const complexQuery = withResearchFields({
         keywordsToSearch: ['function', 'component'],
         owner: 'facebook',
         repo: 'react',
@@ -83,7 +91,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
         extension: 'js',
         match: 'file',
         limit: 10,
-      };
+      });
 
       const result = GitHubCodeSearchQuerySchema.safeParse(complexQuery);
       expect(result.success).toBe(true);
@@ -99,10 +107,10 @@ describe('GitHubCodeSearchQuerySchema', () => {
     });
 
     it('should reject array values for owner (simplified schema)', () => {
-      const arrayOwnerQuery = {
+      const arrayOwnerQuery = withResearchFields({
         keywordsToSearch: ['function'],
         owner: ['facebook', 'microsoft'],
-      };
+      });
 
       const result = GitHubCodeSearchQuerySchema.safeParse(arrayOwnerQuery);
       expect(result.success).toBe(false);
@@ -115,9 +123,9 @@ describe('GitHubCodeSearchQuerySchema', () => {
     });
 
     it('should maintain backward compatibility with existing fields', () => {
-      const basicQuery = {
+      const basicQuery = withResearchFields({
         keywordsToSearch: ['function'],
-      };
+      });
 
       const result = GitHubCodeSearchQuerySchema.safeParse(basicQuery);
       expect(result.success).toBe(true);

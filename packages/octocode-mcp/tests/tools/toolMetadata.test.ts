@@ -5,7 +5,6 @@ import {
   getToolHintsSync,
   getGenericErrorHintsSync,
   getDynamicHints,
-  getBulkOperationsInstructions,
   isToolAvailableSync,
   TOOL_NAMES,
   BASE_SCHEMA,
@@ -379,31 +378,6 @@ describe('toolMetadata', () => {
     });
   });
 
-  describe('getBulkOperationsInstructions', () => {
-    it('should return bulk operations instructions', async () => {
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
-      await initializeToolMetadata();
-
-      const instructions = getBulkOperationsInstructions();
-      expect(instructions.base).toContain('Bulk response');
-      expect(typeof instructions.hasResults).toBe('string');
-      expect(typeof instructions.empty).toBe('string');
-      expect(typeof instructions.error).toBe('string');
-    });
-
-    it('should return default instructions when missing', async () => {
-      const metadataWithoutBulk = { ...mockMetadata };
-      delete (metadataWithoutBulk as { bulkOperations?: unknown })
-        .bulkOperations;
-      mockFetchWithRetries.mockResolvedValueOnce(metadataWithoutBulk);
-      await initializeToolMetadata();
-
-      const instructions = getBulkOperationsInstructions();
-      expect(instructions.base).toContain('Bulk response');
-      expect(instructions.hasResults).toContain('hasResultsStatusHints');
-    });
-  });
-
   describe('DESCRIPTIONS proxy', () => {
     it('should return description for existing tool', async () => {
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
@@ -540,17 +514,6 @@ describe('toolMetadata', () => {
 
       const hints = getDynamicHints('githubSearchCode', 'topicsHasResults');
       expect(hints).toEqual([]);
-    });
-
-    it('should handle getBulkOperationsInstructions with default values', async () => {
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
-      await initializeToolMetadata();
-
-      const instructions = getBulkOperationsInstructions();
-      expect(instructions.base).toBeDefined();
-      expect(instructions.hasResults).toBeDefined();
-      expect(instructions.empty).toBeDefined();
-      expect(instructions.error).toBeDefined();
     });
   });
 

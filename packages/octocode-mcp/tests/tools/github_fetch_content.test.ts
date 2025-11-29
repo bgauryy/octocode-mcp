@@ -107,9 +107,7 @@ describe('GitHub Fetch Content Tool', () => {
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('query:');
-      expect(responseText).toContain('owner: "test"');
-      expect(responseText).toContain('repo: "repo"');
+      expect(responseText).toContain('repository: "test/repo"');
       expect(responseText).toContain('path: "README.md"');
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('contentLength: 35');
@@ -117,7 +115,6 @@ describe('GitHub Fetch Content Tool', () => {
         'content: "# Hello World\\n\\nThis is a test file."'
       );
       // New structure - no top-level data/queries/hints fields
-      expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
     });
@@ -257,11 +254,7 @@ describe('GitHub Fetch Content Tool', () => {
       expect(responseText).toContain(
         'error: "Repository, resource, or path not found"'
       );
-      expect(responseText).toContain('query:');
-      expect(responseText).toContain('owner: "test"');
-      expect(responseText).toContain('repo: "repo"');
-      expect(responseText).toContain('path: "nonexistent.md"');
-      expect(responseText).not.toMatch(/^data:/m);
+      // Query fields (owner, repo, path) are no longer echoed in response
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
     });
@@ -292,11 +285,7 @@ describe('GitHub Fetch Content Tool', () => {
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "Network error"');
-      expect(responseText).toContain('query:');
-      expect(responseText).toContain('owner: "test"');
-      expect(responseText).toContain('repo: "repo"');
-      expect(responseText).toContain('path: "test.md"');
-      expect(responseText).not.toMatch(/^data:/m);
+      // Query fields (owner, repo, path) are no longer echoed in response
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
     });
@@ -1007,9 +996,7 @@ End of file.`;
       // Error results
       expect(responseText).toContain('error: "File not found"');
       expect(responseText).toContain('error: "Network timeout"');
-      expect(responseText).toContain('path: "missing.js"');
-      expect(responseText).toContain('path: "timeout.js"');
-      expect(responseText).not.toMatch(/^data:/m);
+      // Error results don't have path in data (query field was removed)
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
     });

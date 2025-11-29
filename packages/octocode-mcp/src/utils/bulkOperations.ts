@@ -4,7 +4,6 @@ import { createResponseFormat } from '../responses.js';
 import {
   getGenericErrorHintsSync,
   getToolHintsSync,
-  getBulkOperationsInstructions,
 } from '../tools/toolMetadata.js';
 import type {
   ProcessedBulkResult,
@@ -59,7 +58,6 @@ function createBulkResponse<
     'errorStatusHints',
   ];
   const resultFields = [
-    'query',
     'status',
     'data',
     'mainResearchGoal',
@@ -71,7 +69,7 @@ function createBulkResponse<
     ...new Set([...standardFields, ...(config.keysPriority || [])]),
   ];
 
-  const flatQueries: FlatQueryResult<TQuery>[] = [];
+  const flatQueries: FlatQueryResult[] = [];
 
   let hasResultsCount = 0;
   let emptyCount = 0;
@@ -106,13 +104,15 @@ function createBulkResponse<
       }
     }
 
-    const flatQuery: FlatQueryResult<TQuery> = {
-      query: r.originalQuery,
+    const flatQuery: FlatQueryResult = {
       status,
       data:
         status === 'error' && r.result.error
           ? { error: r.result.error }
           : toolData,
+      mainResearchGoal:
+        r.result.mainResearchGoal ||
+        safeExtractString(r.originalQuery, 'mainResearchGoal'),
       researchGoal:
         r.result.researchGoal ||
         safeExtractString(r.originalQuery, 'researchGoal'),
@@ -134,9 +134,9 @@ function createBulkResponse<
     hasAnyError = true;
 
     flatQueries.push({
-      query: originalQuery,
       status: 'error',
       data: { error: err.error },
+      mainResearchGoal: safeExtractString(originalQuery, 'mainResearchGoal'),
       researchGoal: safeExtractString(originalQuery, 'researchGoal'),
       reasoning: safeExtractString(originalQuery, 'reasoning'),
     });
@@ -162,27 +162,12 @@ function createBulkResponse<
       : [...getGenericErrorHintsSync()]
     : [];
 
-  const counts = [];
-  if (hasResultsCount > 0) counts.push(`${hasResultsCount} hasResults`);
-  if (emptyCount > 0) counts.push(`${emptyCount} empty`);
-  if (errorCount > 0) counts.push(`${errorCount} failed`);
-
-  const bulkInstructions = getBulkOperationsInstructions();
-  const instructionsParts = [
-    bulkInstructions.base
-      .replace('{count}', String(flatQueries.length))
-      .replace('{counts}', counts.join(', ')),
-  ];
-  if (hasResultsCount > 0) {
-    instructionsParts.push(bulkInstructions.hasResults);
-  }
-  if (emptyCount > 0) {
-    instructionsParts.push(bulkInstructions.empty);
-  }
-  if (errorCount > 0) {
-    instructionsParts.push(bulkInstructions.error);
-  }
-  const instructions = instructionsParts.join('\n');
+  const instructions = generateBulkInstructions(
+    flatQueries.length,
+    hasResultsCount,
+    emptyCount,
+    errorCount
+  );
 
   const responseData: ToolResponse = {
     instructions,
@@ -286,6 +271,7 @@ function extractToolData<TData = Record<string, unknown>, TQuery = object>(
   result: ProcessedBulkResult<TData, TQuery>
 ): Record<string, unknown> {
   const excludedKeys = new Set([
+    'mainResearchGoal',
     'researchGoal',
     'reasoning',
     'error',
@@ -310,4 +296,36 @@ function safeExtractString<T extends object>(
 ): string | undefined {
   const value = (obj as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+function generateBulkInstructions(
+  total: number,
+  hasResultsCount: number,
+  emptyCount: number,
+  errorCount: number
+): string {
+  const counts = [];
+  if (hasResultsCount > 0) counts.push(`${hasResultsCount} hasResults`);
+  if (emptyCount > 0) counts.push(`${emptyCount} empty`);
+  if (errorCount > 0) counts.push(`${errorCount} failed`);
+
+  const instructionsParts = [
+    `Bulk response with ${total} results: ${counts.join(', ')}. Each result includes the status, data, and research details.`,
+  ];
+
+  if (hasResultsCount > 0) {
+    instructionsParts.push(
+      'Review hasResultsStatusHints for guidance on results with data.'
+    );
+  }
+  if (emptyCount > 0) {
+    instructionsParts.push('Review emptyStatusHints for no-results scenarios.');
+  }
+  if (errorCount > 0) {
+    instructionsParts.push(
+      'Review errorStatusHints for error recovery strategies.'
+    );
+  }
+
+  return instructionsParts.join('\n');
 }

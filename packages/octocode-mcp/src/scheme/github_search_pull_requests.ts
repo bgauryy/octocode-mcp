@@ -156,11 +156,26 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .default(false)
     .optional()
     .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.withComments),
-  withContent: z
+  withCommits: z
     .boolean()
     .default(false)
     .optional()
-    .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.withContent),
+    .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.withCommits),
+  type: z
+    .enum(['metadata', 'fullContent', 'partialContent'])
+    .default('metadata')
+    .optional()
+    .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.type),
+  partialContentMetadata: z
+    .array(
+      z.object({
+        file: z.string(),
+        additions: z.array(z.number()).optional(),
+        deletions: z.array(z.number()).optional(),
+      })
+    )
+    .optional()
+    .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.partialContentMetadata),
 });
 
 export const GitHubPullRequestSearchBulkQuerySchema = createBulkQuerySchema(

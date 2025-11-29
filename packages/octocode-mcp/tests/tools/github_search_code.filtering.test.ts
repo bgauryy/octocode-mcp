@@ -149,7 +149,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       expect(resultText).toContain('instructions:');
       expect(resultText).toContain('results:');
       expect(resultText).toContain('status: "hasResults"');
-      expect(resultText).toContain('query:');
       expect(resultText).toContain('1 hasResults');
     });
 
@@ -210,7 +209,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       expect(resultText).toContain('instructions:');
       expect(resultText).toContain('results:');
       expect(resultText).toContain('status: "empty"');
-      expect(resultText).toContain('query:');
       expect(resultText).toContain('1 empty');
     });
 
@@ -280,7 +278,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       expect(resultText).toContain('instructions:');
       expect(resultText).toContain('results:');
       expect(resultText).toContain('status: "hasResults"');
-      expect(resultText).toContain('query:');
       expect(resultText).toContain('1 hasResults');
     });
 
@@ -359,7 +356,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       expect(resultText).toContain('instructions:');
       expect(resultText).toContain('results:');
       expect(resultText).toContain('status: "hasResults"');
-      expect(resultText).toContain('query:');
       expect(resultText).toContain('1 hasResults');
     });
 
@@ -446,7 +442,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       expect(resultText).toContain('instructions:');
       expect(resultText).toContain('results:');
       expect(resultText).toContain('status: "hasResults"');
-      expect(resultText).toContain('query:');
       expect(resultText).toContain('2 hasResults');
       expect(resultText).toContain('src/component.js');
       expect(resultText).toContain('src/utils.ts');

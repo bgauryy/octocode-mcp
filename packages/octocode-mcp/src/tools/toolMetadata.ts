@@ -1,4 +1,3 @@
-import { version } from '../../package.json';
 import { fetchWithRetries } from '../utils/fetchWithRetries.js';
 import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
@@ -78,14 +77,6 @@ type RawCompleteMetadata = {
   tools: Record<string, ToolMetadata>;
   baseHints: CompleteMetadata['baseHints'];
   genericErrorHints: readonly string[];
-  bulkOperations?: {
-    instructions?: {
-      base?: string;
-      hasResults?: string;
-      empty?: string;
-      error?: string;
-    };
-  };
 };
 
 // --- State ---
@@ -151,9 +142,7 @@ export async function initializeToolMetadata(): Promise<void> {
 
     const data = (await fetchWithRetries(METADATA_URL, {
       maxRetries: 3,
-      headers: {
-        'User-Agent': `Octocode-MCP/${version}`,
-      },
+      includeVersion: true,
     })) as unknown;
 
     if (
@@ -316,40 +305,6 @@ export function getDynamicHints(
       }
     | undefined;
   return tool?.hints?.dynamic?.[hintType] ?? [];
-}
-
-export function getBulkOperationsInstructions(): {
-  base: string;
-  hasResults: string;
-  empty: string;
-  error: string;
-} {
-  const meta = getMeta() as unknown as {
-    bulkOperations?: {
-      instructions?: {
-        base?: string;
-        hasResults?: string;
-        empty?: string;
-        error?: string;
-      };
-    };
-  } & CompleteMetadata;
-
-  const defaults = {
-    base: 'Bulk response with {count} results: {counts}. Each result includes the original query, status, and data.',
-    hasResults:
-      'Review hasResultsStatusHints for guidance on results with data.',
-    empty: 'Review emptyStatusHints for no-results scenarios.',
-    error: 'Review errorStatusHints for error recovery strategies.',
-  };
-
-  const instr = meta.bulkOperations?.instructions;
-  return {
-    base: instr?.base ?? defaults.base,
-    hasResults: instr?.hasResults ?? defaults.hasResults,
-    empty: instr?.empty ?? defaults.empty,
-    error: instr?.error ?? defaults.error,
-  };
 }
 
 export const DESCRIPTIONS = new Proxy({} as Record<string, string>, {
@@ -556,7 +511,9 @@ export const GITHUB_SEARCH_PULL_REQUESTS = createSchemaHelper(
   };
   outputShaping: {
     withComments: string;
-    withContent: string;
+    withCommits: string;
+    type: string;
+    partialContentMetadata: string;
   };
 };
 

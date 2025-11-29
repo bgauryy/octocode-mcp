@@ -33,7 +33,6 @@ export function createResponseFormat(
       'hasResultsStatusHints',
       'emptyStatusHints',
       'errorStatusHints',
-      'query',
       'status',
       'data',
       'mainResearchGoal',

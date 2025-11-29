@@ -406,34 +406,13 @@ describe('executeBulkOperation', () => {
       );
     });
 
-    it('should propagate researchSuggestions from query when not in result', async () => {
+    it('should propagate all research fields from query when not in result', async () => {
       const queries = [
         {
           id: 'q1',
-          researchSuggestions: ['Check documentation', 'Review examples'],
-        },
-      ];
-      const processor = vi.fn().mockResolvedValue({
-        status: 'hasResults' as const,
-        files: [{ path: 'test.py' }],
-      });
-
-      const result = await executeBulkOperation(queries, processor, {
-        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-      });
-
-      const responseText = getTextContent(result.content);
-      expect(responseText).toContain('- "Check documentation"');
-      expect(responseText).toContain('- "Review examples"');
-    });
-
-    it('should propagate all research fields from query', async () => {
-      const queries = [
-        {
-          id: 'q1',
+          mainResearchGoal: 'Understand API patterns',
           researchGoal: 'Find implementations',
           reasoning: 'Looking for patterns',
-          researchSuggestions: ['Suggestion 1', 'Suggestion 2'],
         },
       ];
       const processor = vi.fn().mockResolvedValue({
@@ -446,22 +425,25 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
+      expect(responseText).toContain(
+        'mainResearchGoal: "Understand API patterns"'
+      );
       expect(responseText).toContain('researchGoal: "Find implementations"');
       expect(responseText).toContain('reasoning: "Looking for patterns"');
-      expect(responseText).toContain('- "Suggestion 1"');
-      expect(responseText).toContain('- "Suggestion 2"');
     });
 
     it('should prefer result fields over query fields when both exist', async () => {
       const queries = [
         {
           id: 'q1',
+          mainResearchGoal: 'Query main goal',
           reasoning: 'Query reasoning',
           researchGoal: 'Query goal',
         },
       ];
       const processor = vi.fn().mockResolvedValue({
         status: 'hasResults' as const,
+        mainResearchGoal: 'Result main goal',
         reasoning: 'Result reasoning',
         researchGoal: 'Result goal',
         data: { test: true },
@@ -472,44 +454,23 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      // Result fields should appear at result level
+      // Result fields should appear (preferred over query fields)
+      expect(responseText).toContain('mainResearchGoal: "Result main goal"');
       expect(responseText).toContain('reasoning: "Result reasoning"');
       expect(responseText).toContain('researchGoal: "Result goal"');
-      // Query fields appear in the query section, which is expected behavior
-      expect(responseText).toContain('reasoning: "Query reasoning"');
-      expect(responseText).toContain('researchGoal: "Query goal"');
-    });
-
-    it('should merge researchSuggestions from both query and result', async () => {
-      const queries = [
-        {
-          id: 'q1',
-          researchSuggestions: ['Query suggestion 1', 'Query suggestion 2'],
-        },
-      ];
-      const processor = vi.fn().mockResolvedValue({
-        status: 'hasResults' as const,
-        researchSuggestions: ['Result suggestion 1'],
-        files: [{ path: 'test.ts' }],
-      });
-
-      const result = await executeBulkOperation(queries, processor, {
-        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-      });
-
-      const responseText = getTextContent(result.content);
-      expect(responseText).toContain('- "Result suggestion 1"');
-      expect(responseText).toContain('- "Query suggestion 1"');
-      expect(responseText).toContain('- "Query suggestion 2"');
+      // Query fields should NOT appear (result takes precedence)
+      expect(responseText).not.toContain('Query main goal');
+      expect(responseText).not.toContain('Query reasoning');
+      expect(responseText).not.toContain('Query goal');
     });
 
     it('should handle research fields in error scenarios', async () => {
       const queries = [
         {
           id: 'q1',
+          mainResearchGoal: 'Test main goal',
           researchGoal: 'Test goal',
           reasoning: 'Test reasoning',
-          researchSuggestions: ['Suggestion'],
         },
       ];
       const processor = vi.fn().mockRejectedValue(new Error('Failed'));
@@ -520,9 +481,9 @@ describe('executeBulkOperation', () => {
 
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('mainResearchGoal: "Test main goal"');
       expect(responseText).toContain('researchGoal: "Test goal"');
       expect(responseText).toContain('reasoning: "Test reasoning"');
-      expect(responseText).toContain('- "Suggestion"');
     });
   });
 
@@ -894,14 +855,12 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
+      // Invalid type should not cause error - processing continues
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      // Invalid types should be included in the query section as-is
-      expect(responseText).toContain('researchGoal: 123');
-      // But should not appear at the result level since they're not strings
-      const resultsSection = responseText.split('results:')[1] || '';
-      const querySection = resultsSection.split('query:')[0] || '';
-      expect(querySection).not.toContain('researchGoal: 123');
+      expect(responseText).toContain('status: "hasResults"');
+      // Non-string researchGoal should NOT appear in result (filtered out)
+      expect(responseText).not.toContain('researchGoal: 123');
     });
 
     it('should handle queries with non-string reasoning gracefully', async () => {
@@ -921,22 +880,12 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
+      // Invalid type should not cause error - processing continues
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      // Invalid types should be included in the query section
-      expect(responseText).toContain('nested:');
-      // But should not appear at the result level since they're not strings
-      const lines = responseText.split('\n');
-      let foundResultReasoning = false;
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (!line) continue;
-        if (line.includes('query:')) break; // Stop at query section
-        if (line.includes('reasoning:') && !line.includes('nested')) {
-          foundResultReasoning = true;
-        }
-      }
-      expect(foundResultReasoning).toBe(false);
+      expect(responseText).toContain('status: "hasResults"');
+      // Non-string reasoning should NOT appear in result (filtered out)
+      expect(responseText).not.toContain('reasoning:');
     });
 
     it('should handle queries with non-array researchSuggestions gracefully', async () => {
@@ -956,10 +905,10 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
+      // Invalid type should not cause error - processing continues
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      // Invalid types should be included in the query section
-      expect(responseText).toContain('researchSuggestions: "not an array"');
+      expect(responseText).toContain('status: "hasResults"');
     });
   });
 
