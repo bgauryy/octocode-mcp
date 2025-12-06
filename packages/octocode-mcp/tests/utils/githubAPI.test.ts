@@ -135,8 +135,7 @@ describe('GitHub API Utils', () => {
       content: content, // Return the content as-is for most tests
       warnings: [],
       hasSecrets: false,
-      hasPromptInjection: false,
-      isMalicious: false,
+
       secretsDetected: [],
     }));
     mockminifyContent.mockResolvedValue({

@@ -8,11 +8,12 @@ import type { ToolInvocationCallback } from '../types.js';
 import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
 import { PackageSearchBulkQuerySchema } from '../scheme/package_search.js';
 import type { PackageSearchQuery } from '../scheme/package_search.js';
-import { searchPackage } from '../utils/package.js';
+import { searchPackage, checkNpmDeprecation } from '../utils/package.js';
 import type {
   PackageSearchAPIResult,
   PackageSearchError,
   PackageResult,
+  DeprecationInfo,
 } from '../utils/package.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import {
@@ -96,8 +97,15 @@ async function searchPackages(
         };
 
         const hasContent = result.packages.length > 0;
+
+        // Check deprecation for npm packages (only for first package to avoid too many API calls)
+        let deprecationInfo: DeprecationInfo | null = null;
+        if (hasContent && result.ecosystem === 'npm' && result.packages[0]) {
+          deprecationInfo = await checkNpmDeprecation(result.packages[0].name);
+        }
+
         const customHints = hasContent
-          ? generateSuccessHints(result)
+          ? generateSuccessHints(result, deprecationInfo)
           : generateEmptyHints(query);
 
         return createSuccessResult(
@@ -118,41 +126,96 @@ async function searchPackages(
   );
 }
 
-function generateSuccessHints(result: {
-  packages: PackageResult[];
-  ecosystem: 'npm' | 'python';
-}): string[] {
+function generateSuccessHints(
+  result: {
+    packages: PackageResult[];
+    ecosystem: 'npm' | 'python';
+  },
+  deprecationInfo?: DeprecationInfo | null
+): string[] {
   const hints: string[] = [];
+  const pkg = result.packages[0];
 
-  // Check for repository links
-  const hasRepoLinks = result.packages.some(pkg => pkg.repository);
-  if (hasRepoLinks) {
-    hints.push(
-      'Use repository URLs with GitHub tools for deeper code analysis'
-    );
+  // Deprecation warning (highest priority)
+  if (deprecationInfo?.deprecated) {
+    const msg = deprecationInfo.message || 'This package is deprecated';
+    hints.push(`DEPRECATED: ${pkg?.name} - ${msg}`);
   }
 
-  // Ecosystem-specific hints
-  if (result.ecosystem === 'npm') {
-    hints.push('Check package.json for dependency compatibility');
-  } else {
-    hints.push('Check requirements.txt or pyproject.toml for compatibility');
+  // GitHub tool integration hint - extract owner/repo from URL
+  if (pkg?.repository?.includes('github.com')) {
+    const match = pkg.repository.match(/github\.com\/([^/]+)\/([^/]+)/);
+    if (match && match[1] && match[2]) {
+      const owner = match[1];
+      const repo = match[2];
+      const cleanRepo = repo.replace(/\.git$/, '').replace(/\/$/, '');
+      hints.push(
+        `Explore: githubViewRepoStructure(owner="${owner}", repo="${cleanRepo}")`
+      );
+    }
   }
+
+  // Install command hint
+  hints.push(
+    result.ecosystem === 'npm'
+      ? `Install: npm install ${pkg?.name || 'package'}`
+      : `Install: pip install ${pkg?.name || 'package'}`
+  );
 
   return hints;
 }
 
 function generateEmptyHints(query: PackageSearchQuery): string[] {
   const hints: string[] = [];
+  const name = query.name;
 
-  hints.push(`No ${query.ecosystem} packages found matching '${query.name}'`);
-  hints.push('Try alternative package names or broader search terms');
+  hints.push(`No ${query.ecosystem} packages found for '${name}'`);
 
-  if (query.ecosystem === 'npm') {
-    hints.push('Visit https://npmjs.com to browse packages');
-  } else {
-    hints.push('Visit https://pypi.org to browse packages');
+  // Generate name variations
+  const variations = generateNameVariations(name, query.ecosystem);
+  if (variations.length > 0) {
+    hints.push(`Try: ${variations.join(', ')}`);
   }
 
+  // Browse link
+  const browseUrl =
+    query.ecosystem === 'npm'
+      ? `https://npmjs.com/search?q=${encodeURIComponent(name)}`
+      : `https://pypi.org/search/?q=${encodeURIComponent(name)}`;
+  hints.push(`Browse: ${browseUrl}`);
+
   return hints;
+}
+
+function generateNameVariations(
+  name: string,
+  ecosystem: 'npm' | 'python'
+): string[] {
+  const variations: string[] = [];
+
+  // Convert hyphens to underscores and vice versa
+  if (name.includes('-')) {
+    variations.push(name.replace(/-/g, '_'));
+    variations.push(name.replace(/-/g, ''));
+  }
+  if (name.includes('_')) {
+    variations.push(name.replace(/_/g, '-'));
+  }
+
+  // Extract unscoped name from @scope/name packages
+  if (name.startsWith('@')) {
+    const unscoped = name.split('/').pop();
+    if (unscoped) variations.push(unscoped);
+  }
+
+  // Ecosystem-specific variations
+  if (ecosystem === 'npm' && !name.endsWith('js')) {
+    variations.push(name + 'js');
+  }
+  if (ecosystem === 'python' && !name.startsWith('py')) {
+    variations.push('py' + name);
+  }
+
+  // Return unique variations, excluding original name, limited to 3
+  return [...new Set(variations)].filter(v => v !== name).slice(0, 3);
 }

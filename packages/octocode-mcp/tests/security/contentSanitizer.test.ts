@@ -349,9 +349,9 @@ describe('ContentSanitizer', () => {
 
         expect(result).toEqual({
           content: 'Using token [REDACTED-GITHUBTOKENS] in CI',
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: ['githubTokens'],
           warnings: ['githubTokens'],
         });
@@ -364,9 +364,9 @@ describe('ContentSanitizer', () => {
 
         expect(result).toEqual({
           content: 'OAuth token: [REDACTED-GITHUBTOKENS]',
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: ['githubTokens'],
           warnings: ['githubTokens'],
         });
@@ -379,9 +379,9 @@ describe('ContentSanitizer', () => {
 
         expect(result).toEqual({
           content: 'Installation token: [REDACTED-GITHUBTOKENS]',
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: ['githubTokens'],
           warnings: ['githubTokens'],
         });
@@ -394,9 +394,9 @@ describe('ContentSanitizer', () => {
 
         expect(result).toEqual({
           content: 'Refresh token: [REDACTED-GITHUBTOKENS]',
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: ['githubTokens'],
           warnings: ['githubTokens'],
         });
@@ -418,9 +418,9 @@ describe('ContentSanitizer', () => {
             oauth: "[REDACTED-GITHUBTOKENS]"
           };
         `,
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: ['githubTokens'],
           warnings: ['githubTokens'],
         });
@@ -435,9 +435,9 @@ describe('ContentSanitizer', () => {
 
         expect(result).toEqual({
           content: 'OpenAI key: [REDACTED-OPENAIAPIKEY]',
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: ['openaiApiKey'],
           warnings: ['openaiApiKey'],
         });
@@ -450,9 +450,9 @@ describe('ContentSanitizer', () => {
 
         expect(result).toEqual({
           content: 'Groq key: [REDACTED-GROQAPIKEY]',
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: ['groqApiKey'],
           warnings: ['groqApiKey'],
         });
@@ -464,9 +464,9 @@ describe('ContentSanitizer', () => {
 
         expect(result).toEqual({
           content: 'Organization: [REDACTED-OPENAIORGID]',
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: ['openaiOrgId'],
           warnings: ['openaiOrgId'],
         });
@@ -480,9 +480,9 @@ describe('ContentSanitizer', () => {
 
         expect(result).toEqual({
           content: 'AWS_ACCESS_KEY_ID=[REDACTED-AWSACCESSKEYID]',
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: ['awsAccessKeyId'],
           warnings: ['awsAccessKeyId'],
         });
@@ -495,9 +495,9 @@ describe('ContentSanitizer', () => {
 
         expect(result).toEqual({
           content: '[REDACTED-AWSSECRETACCESSKEY]',
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: ['awsSecretAccessKey'],
           warnings: ['awsSecretAccessKey'],
         });
@@ -511,9 +511,9 @@ describe('ContentSanitizer', () => {
 
         expect(result).toEqual({
           content: '[REDACTED-POSTGRESQLCONNECTIONSTRING]',
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: ['postgresqlConnectionString'],
           warnings: ['postgresqlConnectionString'],
         });
@@ -526,9 +526,9 @@ describe('ContentSanitizer', () => {
 
         expect(result).toEqual({
           content: '[REDACTED-MONGODBCONNECTIONSTRING]',
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: ['mongodbConnectionString'],
           warnings: ['mongodbConnectionString'],
         });
@@ -548,9 +548,9 @@ describe('ContentSanitizer', () => {
           content: `
           [REDACTED-RSAPRIVATEKEY]
         `,
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: ['rsaPrivateKey'],
           warnings: ['rsaPrivateKey'],
         });
@@ -568,9 +568,9 @@ describe('ContentSanitizer', () => {
           content: `
           [REDACTED-OPENSSHPRIVATEKEY]
         `,
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: ['opensshPrivateKey'],
           warnings: ['opensshPrivateKey'],
         });
@@ -596,9 +596,9 @@ describe('ContentSanitizer', () => {
           AWS_ACCESS_KEY_ID=[REDACTED-AWSACCESSKEYID]
           DATABASE_URL=[REDACTED-POSTGRESQLCONNECTIONSTRING]
         `,
-          hasPromptInjection: false,
+
           hasSecrets: true,
-          isMalicious: false,
+
           secretsDetected: [
             'openaiApiKey',
             'awsAccessKeyId',
@@ -634,9 +634,9 @@ describe('ContentSanitizer', () => {
             timeout: 5000
           };
         `,
-          hasPromptInjection: false,
+
           hasSecrets: false,
-          isMalicious: false,
+
           secretsDetected: [],
           warnings: [],
         });
@@ -650,9 +650,9 @@ describe('ContentSanitizer', () => {
         expect(result).toEqual({
           content:
             'Visit https://github.com/user/repo and check the README.md file',
-          hasPromptInjection: false,
+
           hasSecrets: false,
-          isMalicious: false,
+
           secretsDetected: [],
           warnings: [],
         });
@@ -665,9 +665,9 @@ describe('ContentSanitizer', () => {
 
         expect(result).toEqual({
           content: '',
-          hasPromptInjection: false,
+
           hasSecrets: false,
-          isMalicious: false,
+
           secretsDetected: [],
           warnings: [],
         });
@@ -679,9 +679,9 @@ describe('ContentSanitizer', () => {
 
         expect(result).toEqual({
           content: '   \n\t  \n  ',
-          hasPromptInjection: false,
+
           hasSecrets: false,
-          isMalicious: false,
+
           secretsDetected: [],
           warnings: [],
         });
@@ -693,9 +693,9 @@ describe('ContentSanitizer', () => {
 
         expect(result).toEqual({
           content: 'This looks like ghp_ but is not a complete token',
-          hasPromptInjection: false,
+
           hasSecrets: false,
-          isMalicious: false,
+
           secretsDetected: [],
           warnings: [],
         });

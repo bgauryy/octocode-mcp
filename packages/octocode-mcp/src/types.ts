@@ -541,8 +541,6 @@ export interface SanitizationResult {
   hasSecrets: boolean;
   secretsDetected: string[];
   warnings: string[]; // Alias for secretsDetected
-  hasPromptInjection?: boolean;
-  isMalicious?: boolean;
 }
 
 /** Result of parameter validation */

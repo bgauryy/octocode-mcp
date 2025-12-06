@@ -1,10 +1,5 @@
 // Core client and utilities
-export {
-  getOctokit,
-  OctokitWithThrottling,
-  getDefaultBranch,
-  clearCachedToken,
-} from './client';
+export { getOctokit, OctokitWithThrottling, clearCachedToken } from './client';
 export { handleGitHubAPIError } from './errors';
 
 // Export enhanced/custom types and utilities
@@ -16,7 +11,6 @@ export type {
   OptimizedCodeSearchResult,
   GitHubPullRequestItem,
   GitHubPullRequestsSearchParams,
-  RepositoryReference,
   GetContentParameters,
   GetRepoResponse,
   isGitHubAPIError,

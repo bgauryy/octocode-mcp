@@ -1,39 +1,4 @@
 import { spawn } from 'child_process';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../responses.js';
-
-export function parseExecResult(
-  stdout: string,
-  stderr: string,
-  error?: Error | null,
-  exitCode?: number
-): CallToolResult {
-  if (error) {
-    return createResult({
-      data: { error: true },
-      instructions: `Command failed: ${error.message}`,
-      isError: true,
-    });
-  }
-
-  if (stderr && stderr.trim() && exitCode !== 0) {
-    return createResult({
-      data: { error: true },
-      instructions: `Command error: ${stderr.trim()}`,
-      isError: true,
-    });
-  }
-
-  const instructions =
-    stderr && stderr.trim() && exitCode === 0
-      ? `Warning: ${stderr.trim()}`
-      : undefined;
-
-  return createResult({
-    data: stdout,
-    instructions,
-  });
-}
 
 export async function getGithubCLIToken(): Promise<string | null> {
   return new Promise(resolve => {
@@ -89,7 +54,7 @@ const ALLOWED_NPM_COMMANDS = [
   'whoami',
 ] as const;
 
-export type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
+type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
 
 type NpmExecOptions = {
   timeout?: number;
@@ -97,7 +62,7 @@ type NpmExecOptions = {
   env?: Record<string, string>;
 };
 
-export interface NpmExecResult {
+interface NpmExecResult {
   stdout: string;
   stderr: string;
   error?: Error;

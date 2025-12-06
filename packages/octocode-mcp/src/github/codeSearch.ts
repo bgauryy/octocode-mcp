@@ -163,16 +163,6 @@ async function transformToOptimizedFormat(
                 `Secrets detected in ${item.path}: ${sanitizationResult.secretsDetected.join(', ')}`
               );
             }
-            if (sanitizationResult.hasPromptInjection) {
-              allSecurityWarningsSet.add(
-                `Prompt injection detected in ${item.path}`
-              );
-            }
-            if (sanitizationResult.isMalicious) {
-              allSecurityWarningsSet.add(
-                `Malicious content detected in ${item.path}`
-              );
-            }
             if (sanitizationResult.warnings.length > 0) {
               sanitizationResult.warnings.forEach(w =>
                 allSecurityWarningsSet.add(`${item.path}: ${w}`)

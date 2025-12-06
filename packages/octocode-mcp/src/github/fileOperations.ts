@@ -258,16 +258,6 @@ async function processFileContentAPI(
       `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
     );
   }
-  if (sanitizationResult.hasPromptInjection) {
-    securityWarningsSet.add(
-      'Potential prompt injection detected and sanitized'
-    );
-  }
-  if (sanitizationResult.isMalicious) {
-    securityWarningsSet.add(
-      'Potentially malicious content detected and sanitized'
-    );
-  }
   if (sanitizationResult.warnings.length > 0) {
     sanitizationResult.warnings.forEach(warning =>
       securityWarningsSet.add(warning)

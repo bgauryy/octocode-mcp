@@ -7,7 +7,6 @@ import { EventEmitter } from 'events';
 
 import {
   getGithubCLIToken,
-  parseExecResult,
   executeNpmCommand,
   checkNpmAvailability,
 } from '../../src/utils/exec';
@@ -74,89 +73,6 @@ describe('exec utilities', () => {
 
   afterEach(() => {
     vi.clearAllTimers();
-  });
-
-  describe('parseExecResult', () => {
-    it('should handle successful execution', () => {
-      const result = parseExecResult('success output', '');
-
-      expect(result).toEqual({
-        isError: false,
-        content: [
-          {
-            type: 'text',
-            text: `data: "success output"\n`,
-          },
-        ],
-      });
-    });
-
-    it('should handle error with Error object', () => {
-      const error = new Error('Command failed');
-      const result = parseExecResult('', 'error output', error);
-
-      expect(result).toEqual({
-        isError: true,
-        content: [
-          {
-            type: 'text',
-            text: `instructions: "Command failed: Command failed"
-data:
-  error: true
-`,
-          },
-        ],
-      });
-    });
-
-    it('should handle stderr without error object', () => {
-      const result = parseExecResult('', 'error in stderr');
-
-      expect(result).toEqual({
-        isError: true,
-        content: [
-          {
-            type: 'text',
-            text: `instructions: "Command error: error in stderr"
-data:
-  error: true
-`,
-          },
-        ],
-      });
-    });
-
-    it('should handle empty stderr', () => {
-      const result = parseExecResult('output', '   ');
-
-      expect(result).toEqual({
-        isError: false,
-        content: [
-          {
-            type: 'text',
-            text: `data: "output"\n`,
-          },
-        ],
-      });
-    });
-
-    it('should prioritize Error object over stderr', () => {
-      const error = new Error('Main error');
-      const result = parseExecResult('', 'stderr message', error);
-
-      expect(result).toEqual({
-        isError: true,
-        content: [
-          {
-            type: 'text',
-            text: `instructions: "Command failed: Main error"
-data:
-  error: true
-`,
-          },
-        ],
-      });
-    });
   });
 
   describe('getGithubCLIToken', () => {
