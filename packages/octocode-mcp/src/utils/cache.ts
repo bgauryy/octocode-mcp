@@ -27,6 +27,8 @@ export const CACHE_TTL_CONFIG = {
   'gh-api-file-content': 3600,
   'gh-repo-structure-api': 7200,
   'github-user': 900,
+  'npm-search': 14400, // 4 hours
+  'pypi-search': 14400, // 4 hours
   default: 86400,
 } as const;
 

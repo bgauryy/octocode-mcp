@@ -223,6 +223,43 @@ export interface RepoStructureResult
   extends BaseToolResult<GitHubViewRepoStructureQuery>,
     RepoStructureResultData {}
 
+// ─── Package Search (package_search) ────────────────────────────────────────
+
+/** Query parameters for searching packages */
+export interface PackageSearchQuery {
+  name: string;
+  ecosystem: 'npm' | 'python';
+  searchLimit?: number;
+  npmFetchMetadata?: boolean;
+  mainResearchGoal?: string;
+  researchGoal?: string;
+  reasoning?: string;
+}
+
+/** Individual package in search results */
+export interface PackageInfo {
+  name: string;
+  version: string;
+  description: string | null;
+  keywords: string[];
+  repository: string | null;
+  license?: string;
+  homepage?: string;
+  author?: string;
+}
+
+/** Package search result data */
+export interface PackageSearchResultData {
+  packages: PackageInfo[];
+  ecosystem: 'npm' | 'python';
+  totalFound: number;
+}
+
+/** Complete package search result */
+export interface PackageSearchResult
+  extends BaseToolResult<PackageSearchQuery>,
+    PackageSearchResultData {}
+
 // ─── Pull Requests (github_search_pull_requests) ────────────────────────────
 
 /** Query parameters for searching pull requests */
