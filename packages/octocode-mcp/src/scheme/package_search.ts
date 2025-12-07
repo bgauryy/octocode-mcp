@@ -35,9 +35,7 @@ const PythonPackageQuerySchema = BaseQuerySchema.extend({
     .boolean()
     .optional()
     .default(false)
-    .describe(
-      'Fetch full metadata (version, description, keywords, author, license)'
-    ),
+    .describe(PACKAGE_SEARCH.options.pythonFetchMetadata),
 });
 
 // Combined Package Search Query Schema (union of NPM and Python)

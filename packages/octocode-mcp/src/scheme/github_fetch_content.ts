@@ -53,9 +53,7 @@ export const FileContentQuerySchema = BaseQuerySchema.extend({
     .boolean()
     .optional()
     .default(false)
-    .describe(
-      'Fetch last modification timestamp via commits API (extra API call). Useful for sensitive files to verify data freshness and detect recent changes.'
-    ),
+    .describe(GITHUB_FETCH_CONTENT.processing.addTimestamp),
 }).refine(
   data => {
     if (

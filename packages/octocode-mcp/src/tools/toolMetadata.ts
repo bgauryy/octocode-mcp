@@ -542,5 +542,6 @@ export const PACKAGE_SEARCH = createSchemaHelper(TOOL_NAMES.PACKAGE_SEARCH) as {
   options: {
     searchLimit: string;
     npmFetchMetadata: string;
+    pythonFetchMetadata: string;
   };
 };
