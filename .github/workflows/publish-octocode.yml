@@ -1,0 +1,208 @@
+name: Publish octocode-mcp to npm
+
+on:
+  push:
+    branches:
+      - 'publish-octocode'
+      - 'publish-octocode-*'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Lint code
+        run: yarn lint
+
+      - name: Build packages
+        run: yarn build
+
+      - name: Run tests
+        run: yarn test
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build packages
+        run: yarn build
+
+      - name: Publish octocode-mcp to npm
+        id: publish-package
+        working-directory: packages/octocode-mcp
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          
+          echo "🚀 Publishing package: $PACKAGE_NAME@$PACKAGE_VERSION"
+          
+          # Check if this version already exists on npm
+          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>/dev/null; then
+            echo "❌ Version $PACKAGE_VERSION already exists on npm!"
+            echo "❌ Please bump the version in package.json before publishing."
+            exit 1
+          fi
+          echo "✅ npm version $PACKAGE_VERSION does not exist, proceeding..."
+          
+          # Setup npmrc for authentication
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
+          echo "registry=https://registry.npmjs.org/" >> .npmrc
+          echo "always-auth=true" >> .npmrc
+          
+          # Configure Yarn for npm registry
+          yarn config set npmRegistryServer "https://registry.npmjs.org"
+          yarn config set npmAlwaysAuth true
+          yarn config set npmAuthToken "${NODE_AUTH_TOKEN}"
+          
+          # Publish to npm with latest tag
+          echo "🚀 Publishing $PACKAGE_NAME@$PACKAGE_VERSION to npm with 'latest' tag..."
+          yarn npm publish --access public --tag latest
+          
+          echo "✅ Successfully published $PACKAGE_NAME@$PACKAGE_VERSION to npm"
+          echo "📥 Users can install with: npm install $PACKAGE_NAME"
+          
+          # Set outputs for notification
+          echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+          echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+          echo "published=true" >> $GITHUB_OUTPUT
+          
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  notify-discord:
+    needs: [verify, publish]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Send Discord notification
+        continue-on-error: true
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          # Check if Discord webhook is configured
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "ℹ️ DISCORD_WEBHOOK not configured, skipping notification"
+            exit 0
+          fi
+
+          # Determine overall status and color
+          VERIFY_RESULT="${{ needs.verify.result }}"
+          PUBLISH_RESULT="${{ needs.publish.result }}"
+          
+          if [ "$VERIFY_RESULT" == "failure" ] || [ "$PUBLISH_RESULT" == "failure" ]; then
+            STATUS="❌ **Failed**"
+            COLOR=15158332  # Red
+            if [ "$VERIFY_RESULT" == "failure" ]; then
+              DESCRIPTION="Build or test verification failed"
+            else
+              DESCRIPTION="Package publishing failed"
+            fi
+          else
+            STATUS="🚀 **octocode-mcp Published**"
+            COLOR=3066993   # Green
+            DESCRIPTION="Successfully published octocode-mcp to npm"
+          fi
+
+          # Get commit info
+          COMMIT_SHA="${{ github.sha }}"
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          AUTHOR="${{ github.event.head_commit.author.name }}"
+          
+          # Escape JSON special characters
+          COMMIT_MSG_ESCAPED=$(echo "$COMMIT_MSG" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | tr '\n' ' ' | tr '\r' ' ')
+          AUTHOR_ESCAPED=$(echo "$AUTHOR" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
+          
+          # Create fields
+          BASE_FIELDS='[
+            {
+              "name": "Status",
+              "value": "'$STATUS'",
+              "inline": true
+            },
+            {
+              "name": "Package",
+              "value": "octocode-mcp",
+              "inline": true
+            },
+            {
+              "name": "Author",
+              "value": "'$AUTHOR_ESCAPED'",
+              "inline": true
+            },
+            {
+              "name": "Commit",
+              "value": "[`'$SHORT_SHA'`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})",
+              "inline": true
+            },
+            {
+              "name": "Branch",
+              "value": "`${{ github.ref_name }}`",
+              "inline": true
+            },
+            {
+              "name": "Repository",
+              "value": "[View on GitHub](https://github.com/${{ github.repository }})",
+              "inline": true
+            },
+            {
+              "name": "Commit Message",
+              "value": "'$COMMIT_MSG_ESCAPED'",
+              "inline": false
+            }
+          ]'
+
+          # Create JSON payload
+          PAYLOAD=$(cat <<EOF
+          {
+            "username": "NPM Publisher",
+            "avatar_url": "https://raw.githubusercontent.com/npm/logos/master/npm%20logo/npm-logo-red.png",
+            "embeds": [{
+              "title": "📦 octocode-mcp Release",
+              "description": "$DESCRIPTION",
+              "color": $COLOR,
+              "fields": $BASE_FIELDS,
+              "footer": {
+                "text": "GitHub Actions • $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+              }
+            }]
+          }
+          EOF
+          )
+          
+          # Send Discord webhook
+          if ! curl -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "$DISCORD_WEBHOOK"; then
+            echo "⚠️ Failed to send Discord notification"
+          else
+            echo "✅ Discord notification sent successfully"
+          fi
+
