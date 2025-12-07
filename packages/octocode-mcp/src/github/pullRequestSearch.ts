@@ -121,10 +121,10 @@ async function searchGitHubPullRequestsAPIInternal(
     );
 
     const owner = Array.isArray(params.owner)
-      ? params.owner[0]
+      ? params.owner[0] || ''
       : params.owner || '';
     const repo = Array.isArray(params.repo)
-      ? params.repo[0]
+      ? params.repo[0] || ''
       : params.repo || '';
 
     const formattedPRs = transformedPRs.map(pr => ({
@@ -395,8 +395,12 @@ function normalizeOwnerRepo(params: GitHubPullRequestsSearchParams): {
   owner: string | undefined;
   repo: string | undefined;
 } {
-  const owner = Array.isArray(params.owner) ? params.owner[0] : params.owner;
-  const repo = Array.isArray(params.repo) ? params.repo[0] : params.repo;
+  const owner = Array.isArray(params.owner)
+    ? params.owner[0] || undefined
+    : params.owner;
+  const repo = Array.isArray(params.repo)
+    ? params.repo[0] || undefined
+    : params.repo;
   return { owner, repo };
 }
 

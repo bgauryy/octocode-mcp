@@ -38,7 +38,9 @@ describe('GitHub Search Repositories Response Structure Test', () => {
             description:
               'A declarative, efficient, and flexible JavaScript library for building user interfaces.',
             url: 'https://github.com/facebook/react',
+            createdAt: '15/01/2024',
             updatedAt: '15/01/2024',
+            pushedAt: '15/01/2024',
           },
           {
             owner: 'vercel',
@@ -46,7 +48,9 @@ describe('GitHub Search Repositories Response Structure Test', () => {
             stars: 100000,
             description: 'The React Framework for Production',
             url: 'https://github.com/vercel/next.js',
+            createdAt: '14/01/2024',
             updatedAt: '14/01/2024',
+            pushedAt: '14/01/2024',
           },
         ],
       },

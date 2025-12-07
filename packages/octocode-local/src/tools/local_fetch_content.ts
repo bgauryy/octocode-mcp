@@ -20,10 +20,7 @@ export async function fetchContent(
       return pathValidation.errorResult as FetchContentResult;
     }
 
-    // SECURITY: Use the sanitized path from validation (symlink-resolved, normalized)
-    // Do NOT re-resolve the path as this would bypass symlink attack protection
     const absolutePath = pathValidation.sanitizedPath;
-
     let fileStats;
     try {
       fileStats = await stat(absolutePath);
@@ -38,7 +35,6 @@ export async function fetchContent(
     }
 
     const fileSizeKB = fileStats.size / 1024;
-
     if (
       fileSizeKB > RESOURCE_LIMITS.LARGE_FILE_THRESHOLD_KB &&
       !query.charLength &&
@@ -75,7 +71,6 @@ export async function fetchContent(
 
     const lines = content.split('\n');
     const totalLines = lines.length;
-
     let resultContent: string;
     let isPartial = false;
 
@@ -92,8 +87,6 @@ export async function fetchContent(
         const contextHints = [
           `Searched ${totalLines} line${totalLines === 1 ? '' : 's'} - no matches found`,
         ];
-
-        // Add pattern-specific hints
         if (query.matchStringIsRegex) {
           contextHints.push(
             'TIP: Regex pattern may be too specific - try simplifying'
@@ -103,13 +96,11 @@ export async function fetchContent(
             'TIP: Try matchStringIsRegex=true for pattern matching (e.g., "export.*function")'
           );
         }
-
         if (query.matchStringCaseSensitive) {
           contextHints.push(
             'TIP: Case-sensitive mode active - try matchStringCaseSensitive=false'
           );
         }
-
         contextHints.push(
           'TIP: Verify file contains expected content or try simpler pattern'
         );
@@ -130,7 +121,6 @@ export async function fetchContent(
       }
 
       resultContent = result.lines.join('\n');
-
       if (
         !query.charLength &&
         resultContent.length > DEFAULTS.MAX_OUTPUT_CHARS
@@ -150,7 +140,6 @@ export async function fetchContent(
           ],
         }) as FetchContentResult;
       }
-
       isPartial = true;
     } else {
       resultContent = content;
@@ -161,12 +150,11 @@ export async function fetchContent(
       try {
         const originalLength = resultContent.length;
         const minifiedContent = minifyContent(resultContent, query.path);
-
         if (minifiedContent.length < originalLength) {
           resultContent = minifiedContent;
         }
       } catch {
-        // Keep original if minification fails
+        // Ignore minification errors
       }
     }
 
@@ -234,39 +222,63 @@ function extractMatchingLines(
   caseSensitive: boolean = false
 ): { lines: string[]; matchRanges: Array<{ start: number; end: number }> } {
   const matchingLineNumbers: number[] = [];
-
-  // Compile regex once if needed
   let regex: RegExp | null = null;
+  const TIMEOUT_MS = 2000;
+  const MAX_LINE_LENGTH_FOR_REGEX = 10000;
+  const MAX_PATTERN_LENGTH = 500;
+
   if (isRegex) {
+    if (pattern.length > MAX_PATTERN_LENGTH) {
+      throw new Error(
+        `Regex pattern too long (max ${MAX_PATTERN_LENGTH} chars)`
+      );
+    }
     try {
       const flags = caseSensitive ? '' : 'i';
       regex = new RegExp(pattern, flags);
     } catch (error) {
       throw new Error(
-        `Invalid regex pattern: ${error instanceof Error ? error.message : String(error)}`
+        `Invalid regex pattern: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
     }
   }
 
   const literalPattern = caseSensitive ? pattern : pattern.toLowerCase();
+  const startTime = Date.now();
 
-  lines.forEach((line, index) => {
-    const matches = isRegex
-      ? regex!.test(line)
-      : caseSensitive
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    if (Date.now() - startTime > TIMEOUT_MS) {
+      throw new Error(
+        'Search timeout - matching took too long (potential ReDoS)'
+      );
+    }
+
+    let matches = false;
+    if (isRegex) {
+      // Safety: truncate very long lines before regex to prevent backtracking freeze
+      const searchLine =
+        line.length > MAX_LINE_LENGTH_FOR_REGEX
+          ? line.slice(0, MAX_LINE_LENGTH_FOR_REGEX)
+          : line;
+      matches = regex!.test(searchLine);
+    } else {
+      matches = caseSensitive
         ? line.includes(pattern)
         : line.toLowerCase().includes(literalPattern);
+    }
 
     if (matches) {
       matchingLineNumbers.push(index + 1);
     }
-  });
+  }
 
   if (matchingLineNumbers.length === 0) {
     return { lines: [], matchRanges: [] };
   }
 
-  // Group consecutive matches to avoid duplicating context
   const ranges: Array<{ start: number; end: number }> = [];
   let currentRange = {
     start: Math.max(1, matchingLineNumbers[0] - contextLines),

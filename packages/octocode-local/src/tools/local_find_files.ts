@@ -2,10 +2,7 @@ import { FindCommandBuilder } from '../commands/FindCommandBuilder.js';
 import { safeExec } from '../utils/exec.js';
 import { getToolHints } from './hints.js';
 import {
-  applyPagination,
   generatePaginationHints,
-  serializeForPagination,
-  createPaginationInfo,
   type PaginationMetadata,
 } from '../utils/pagination.js';
 import {
@@ -30,7 +27,6 @@ export async function findFiles(
     const { command, args } = builder.fromQuery(query).build();
 
     const result = await safeExec(command, args);
-
     if (!result.success) {
       const toolError = ToolErrors.commandExecutionFailed(
         'find',
@@ -60,7 +56,6 @@ export async function findFiles(
       if (query.showFileLastModified && a.modified && b.modified) {
         return new Date(b.modified).getTime() - new Date(a.modified).getTime();
       }
-      // Fallback to path sorting when modified is not available
       return a.path.localeCompare(b.path);
     });
 
@@ -78,13 +73,14 @@ export async function findFiles(
       }
       return result;
     });
-    const totalFiles = filesForOutput.length;
 
+    const totalFiles = filesForOutput.length;
     const filesPerPage = query.filesPerPage || 20;
     const filePageNumber = query.filePageNumber || 1;
     const totalPages = Math.ceil(totalFiles / filesPerPage);
     const startIdx = (filePageNumber - 1) * filesPerPage;
     const endIdx = Math.min(startIdx + filesPerPage, totalFiles);
+
     const paginatedFiles = filesForOutput.slice(startIdx, endIdx);
 
     const safetyCheck = checkLargeOutputSafety(
@@ -96,6 +92,7 @@ export async function findFiles(
         detailed: query.details,
       }
     );
+
     if (safetyCheck.shouldBlock) {
       return {
         status: 'error',
@@ -111,22 +108,43 @@ export async function findFiles(
     let paginationMetadata: PaginationMetadata | null = null;
 
     if (query.charLength) {
-      const serialized = serializeForPagination(paginatedFiles, false);
-      const pagination = applyPagination(
-        serialized,
-        query.charOffset ?? 0,
-        query.charLength
-      );
-      try {
-        finalFiles = JSON.parse(pagination.paginatedContent);
-        paginationMetadata = pagination;
-      } catch {
-        finalFiles = paginatedFiles;
-        paginationMetadata = null;
+      // Respect charLength by fitting as many files as possible from the current page
+      // without breaking JSON structure.
+      const fittedFiles: FoundFile[] = [];
+      let currentSize = 2; // Starting []
+
+      for (const file of paginatedFiles) {
+        // +1 for comma (approximation)
+        const fileSize = JSON.stringify(file).length + 1;
+        if (
+          currentSize + fileSize > query.charLength &&
+          fittedFiles.length > 0
+        ) {
+          break;
+        }
+        fittedFiles.push(file);
+        currentSize += fileSize;
       }
+
+      finalFiles = fittedFiles;
+
+      // We construct metadata to reflect that we applied a char limit
+      paginationMetadata = {
+        paginatedContent: JSON.stringify(finalFiles),
+        charOffset: 0,
+        charLength: currentSize,
+        totalChars: JSON.stringify(paginatedFiles).length, // approximate for this page
+        hasMore:
+          finalFiles.length < paginatedFiles.length ||
+          filePageNumber < totalPages,
+        estimatedTokens: Math.ceil(currentSize / 4),
+        currentPage: filePageNumber,
+        totalPages: totalPages,
+      };
     }
 
     const status = totalFiles > 0 ? 'hasResults' : 'empty';
+
     const filePaginationHints = [
       `Page ${filePageNumber}/${totalPages} (showing ${finalFiles.length} of ${totalFiles})`,
       filePageNumber < totalPages
@@ -149,7 +167,14 @@ export async function findFiles(
         hasMore: filePageNumber < totalPages,
       },
       ...(paginationMetadata && {
-        charPagination: createPaginationInfo(paginationMetadata),
+        charPagination: {
+          currentPage: paginationMetadata.currentPage,
+          totalPages: paginationMetadata.totalPages,
+          charOffset: paginationMetadata.charOffset,
+          charLength: paginationMetadata.charLength,
+          totalChars: paginationMetadata.totalChars,
+          hasMore: paginationMetadata.hasMore,
+        },
       }),
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
@@ -176,16 +201,13 @@ async function getFileDetails(
   filePaths: string[],
   showModified: boolean = false
 ): Promise<FoundFile[]> {
-  // Bounded concurrency to avoid overwhelming the filesystem
   const CONCURRENCY_LIMIT = 24;
-
   const results: FoundFile[] = new Array(filePaths.length);
 
   const processAtIndex = async (index: number) => {
     const filePath = filePaths[index];
     try {
       const stats = await fs.promises.lstat(filePath);
-
       let type: 'file' | 'directory' | 'symlink' = 'file';
       if (stats.isDirectory()) type = 'directory';
       else if (stats.isSymbolicLink()) type = 'symlink';
@@ -196,9 +218,11 @@ async function getFileDetails(
         size: stats.size,
         permissions: stats.mode.toString(8).slice(-3),
       };
+
       if (showModified) {
         file.modified = stats.mtime.toISOString();
       }
+
       results[index] = file;
     } catch {
       results[index] = {
@@ -214,9 +238,9 @@ async function getFileDetails(
     nextIndex += 1;
     return current < filePaths.length ? current : -1;
   };
+
   const worker = async () => {
     for (let i = getNext(); i !== -1; i = getNext()) {
-      // eslint-disable-next-line no-await-in-loop
       await processAtIndex(i);
     }
   };
@@ -225,7 +249,7 @@ async function getFileDetails(
     { length: Math.min(CONCURRENCY_LIMIT, filePaths.length) },
     () => worker()
   );
-  await Promise.all(workers);
 
+  await Promise.all(workers);
   return results;
 }

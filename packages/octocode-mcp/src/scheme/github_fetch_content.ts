@@ -49,6 +49,11 @@ export const FileContentQuerySchema = BaseQuerySchema.extend({
     .max(50)
     .default(5)
     .describe(GITHUB_FETCH_CONTENT.range.matchStringContextLines),
+  addTimestamp: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(GITHUB_FETCH_CONTENT.processing.addTimestamp),
 }).refine(
   data => {
     if (

@@ -11,8 +11,6 @@ export class ContentSanitizer {
       hasSecrets: secretsResult.hasSecrets,
       secretsDetected: secretsResult.secretsDetected,
       warnings: secretsResult.secretsDetected, // Alias for backward compatibility
-      hasPromptInjection: false, // Default value for compatibility
-      isMalicious: false, // Default value for compatibility
     };
   }
 

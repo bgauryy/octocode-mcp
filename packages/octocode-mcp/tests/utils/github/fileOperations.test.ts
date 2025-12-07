@@ -6,8 +6,6 @@ const mockContentSanitizer = vi.hoisted(() => ({
   sanitizeContent: vi.fn().mockReturnValue({
     content: '',
     hasSecrets: false,
-    hasPromptInjection: false,
-    isMalicious: false,
     warnings: [],
     secretsDetected: [],
   }),
@@ -146,8 +144,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       (content: string) => ({
         content,
         hasSecrets: false,
-        hasPromptInjection: false,
-        isMalicious: false,
         warnings: [],
         secretsDetected: [],
       })
@@ -988,8 +984,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       mockContentSanitizer.sanitizeContent.mockReturnValue({
         content: 'test content with [REDACTED]',
         hasSecrets: true,
-        hasPromptInjection: false,
-        isMalicious: false,
         warnings: [],
         secretsDetected: ['github-token'],
       });
@@ -1004,58 +998,12 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       }
     });
 
-    it('should detect and warn about prompt injection', async () => {
-      const params = createTestParams({ sanitize: true });
-
-      mockContentSanitizer.sanitizeContent.mockReturnValue({
-        content: 'sanitized content',
-        hasSecrets: false,
-        hasPromptInjection: true,
-        isMalicious: false,
-        warnings: [],
-        secretsDetected: [],
-      });
-
-      const result = await fetchGitHubFileContentAPI(params);
-
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data.securityWarnings).toContain(
-          'Potential prompt injection detected and sanitized'
-        );
-      }
-    });
-
-    it('should detect and warn about malicious content', async () => {
-      const params = createTestParams({ sanitize: true });
-
-      mockContentSanitizer.sanitizeContent.mockReturnValue({
-        content: 'sanitized content',
-        hasSecrets: false,
-        hasPromptInjection: false,
-        isMalicious: true,
-        warnings: [],
-        secretsDetected: [],
-      });
-
-      const result = await fetchGitHubFileContentAPI(params);
-
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data.securityWarnings).toContain(
-          'Potentially malicious content detected and sanitized'
-        );
-      }
-    });
-
     it('should include custom security warnings', async () => {
       const params = createTestParams({ sanitize: true });
 
       mockContentSanitizer.sanitizeContent.mockReturnValue({
         content: 'sanitized content',
         hasSecrets: false,
-        hasPromptInjection: false,
-        isMalicious: false,
         warnings: ['Custom warning 1', 'Custom warning 2'],
         secretsDetected: [],
       });
@@ -1076,8 +1024,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         (content: string) => ({
           content,
           hasSecrets: false,
-          hasPromptInjection: false,
-          isMalicious: false,
           warnings: [],
           secretsDetected: [],
         })

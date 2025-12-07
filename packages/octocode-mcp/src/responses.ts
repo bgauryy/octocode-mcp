@@ -33,11 +33,11 @@ export function createResponseFormat(
       'hasResultsStatusHints',
       'emptyStatusHints',
       'errorStatusHints',
-      'status',
-      'data',
       'mainResearchGoal',
       'researchGoal',
       'reasoning',
+      'status',
+      'data',
     ],
   });
   const sanitizationResult = ContentSanitizer.sanitizeContent(yamlData);

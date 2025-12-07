@@ -135,8 +135,7 @@ describe('GitHub API Utils', () => {
       content: content, // Return the content as-is for most tests
       warnings: [],
       hasSecrets: false,
-      hasPromptInjection: false,
-      isMalicious: false,
+
       secretsDetected: [],
     }));
     mockminifyContent.mockResolvedValue({
@@ -640,7 +639,9 @@ describe('GitHub API Utils', () => {
                 language: 'JavaScript',
                 html_url: 'https://github.com/facebook/react',
                 forks: 15000,
+                created_at: '2013-05-24T10:00:00Z',
                 updated_at: '2023-12-01T10:00:00Z',
+                pushed_at: '2023-12-01T08:00:00Z',
                 owner: { login: 'facebook' },
               },
             ],
@@ -674,7 +675,9 @@ describe('GitHub API Utils', () => {
                 description:
                   'A declarative, efficient, and flexible JavaScript library for building user interfaces.',
                 url: 'https://github.com/facebook/react',
+                createdAt: '24/05/2013',
                 updatedAt: '01/12/2023',
+                pushedAt: '01/12/2023',
               },
             ],
           },

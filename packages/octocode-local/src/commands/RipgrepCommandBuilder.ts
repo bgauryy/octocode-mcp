@@ -167,6 +167,7 @@ export class RipgrepCommandBuilder extends BaseCommandBuilder {
       this.addFlag('--debug');
     }
 
+    this.addFlag('-e');
     this.addArg(query.pattern);
 
     this.addArg(query.path);

@@ -450,3 +450,112 @@ describe('Code Search - Security Warnings Array Creation', () => {
     }
   });
 });
+
+// Tests for security warning aggregation and handling
+describe('Code Search - Security Warning Structure', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should handle security warnings array correctly', async () => {
+    const mockResponse = {
+      data: {
+        total_count: 2,
+        items: [
+          {
+            name: 'secrets1.js',
+            path: 'src/secrets1.js',
+            repository: {
+              full_name: 'test/repo',
+              url: 'https://api.github.com/repos/test/repo',
+            },
+            text_matches: [
+              {
+                fragment: 'const API_KEY = "ghp_abc123def456ghi789jkl012";',
+                matches: [{ indices: [0, 10] }],
+              },
+            ],
+          },
+          {
+            name: 'secrets2.js',
+            path: 'src/secrets2.js',
+            repository: {
+              full_name: 'test/repo',
+              url: 'https://api.github.com/repos/test/repo',
+            },
+            text_matches: [
+              {
+                fragment: 'const TOKEN = "sk_live_abc123def456";',
+                matches: [{ indices: [0, 5] }],
+              },
+            ],
+          },
+        ],
+      },
+      headers: {},
+    };
+
+    mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+    const result = await searchGitHubCodeAPI({
+      keywordsToSearch: ['key', 'token'],
+      owner: 'test',
+      repo: 'repo',
+      sanitize: true,
+    });
+
+    if ('data' in result) {
+      // Multiple secrets across different files should create multiple warnings
+      expect(result.data.securityWarnings).toBeDefined();
+      expect(result.data.securityWarnings?.length).toBeGreaterThan(0);
+    } else {
+      expect.fail('Expected successful result');
+    }
+  });
+
+  it('should add warning for each file with secrets detected', async () => {
+    const mockResponse = {
+      data: {
+        total_count: 1,
+        items: [
+          {
+            name: 'multi-secret.js',
+            path: 'src/multi-secret.js',
+            repository: {
+              full_name: 'test/repo',
+              url: 'https://api.github.com/repos/test/repo',
+            },
+            text_matches: [
+              {
+                fragment:
+                  'const API_KEY = "ghp_abc123def456ghi789jkl012mno345pqr678";',
+                matches: [{ indices: [0, 10] }],
+              },
+            ],
+          },
+        ],
+      },
+      headers: {},
+    };
+
+    mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+    const result = await searchGitHubCodeAPI({
+      keywordsToSearch: ['API_KEY'],
+      owner: 'test',
+      repo: 'repo',
+      sanitize: true,
+    });
+
+    if ('data' in result) {
+      // Should have warnings for the detected secrets
+      expect(result.data.securityWarnings).toBeDefined();
+      const warnings = result.data.securityWarnings || [];
+      expect(warnings.some((w: string) => w.includes('multi-secret.js'))).toBe(
+        true
+      );
+    } else {
+      expect.fail('Expected successful result');
+    }
+  });
+});
