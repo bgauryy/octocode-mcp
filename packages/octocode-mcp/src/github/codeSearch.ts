@@ -48,20 +48,21 @@ async function searchGitHubCodeAPIInternal(
   try {
     const octokit = await getOctokit(authInfo);
 
-    if (
-      params.keywordsToSearch &&
-      params.keywordsToSearch.length > 0 &&
-      !params.keywordsToSearch.some(term => term && term.trim())
-    ) {
-      await logSessionError(
-        TOOL_NAMES.GITHUB_SEARCH_CODE,
-        SEARCH_ERRORS.QUERY_EMPTY.code
+    if (params.keywordsToSearch && params.keywordsToSearch.length > 0) {
+      const validTerms = params.keywordsToSearch.filter(
+        term => term && term.trim()
       );
-      return {
-        error: SEARCH_ERRORS.QUERY_EMPTY.message,
-        type: 'http',
-        status: 400,
-      };
+      if (validTerms.length === 0) {
+        await logSessionError(
+          TOOL_NAMES.GITHUB_SEARCH_CODE,
+          SEARCH_ERRORS.QUERY_EMPTY.code
+        );
+        return {
+          error: SEARCH_ERRORS.QUERY_EMPTY.message,
+          type: 'http',
+          status: 400,
+        };
+      }
     }
 
     const query = buildCodeSearchQuery(params);
@@ -163,16 +164,6 @@ async function transformToOptimizedFormat(
                 `Secrets detected in ${item.path}: ${sanitizationResult.secretsDetected.join(', ')}`
               );
             }
-            if (sanitizationResult.hasPromptInjection) {
-              allSecurityWarningsSet.add(
-                `Prompt injection detected in ${item.path}`
-              );
-            }
-            if (sanitizationResult.isMalicious) {
-              allSecurityWarningsSet.add(
-                `Malicious content detected in ${item.path}`
-              );
-            }
             if (sanitizationResult.warnings.length > 0) {
               sanitizationResult.warnings.forEach(w =>
                 allSecurityWarningsSet.add(`${item.path}: ${w}`)
@@ -243,6 +234,15 @@ async function transformToOptimizedFormat(
     result.repository = {
       name: singleRepo.full_name,
       url: singleRepo.url,
+      createdAt: singleRepo.created_at
+        ? new Date(singleRepo.created_at).toLocaleDateString('en-GB')
+        : undefined,
+      updatedAt: singleRepo.updated_at
+        ? new Date(singleRepo.updated_at).toLocaleDateString('en-GB')
+        : undefined,
+      pushedAt: singleRepo.pushed_at
+        ? new Date(singleRepo.pushed_at).toLocaleDateString('en-GB')
+        : undefined,
     };
   }
 

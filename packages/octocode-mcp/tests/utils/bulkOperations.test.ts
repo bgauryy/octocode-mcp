@@ -912,6 +912,181 @@ describe('executeBulkOperation', () => {
     });
   });
 
+  describe('Research fields priority in response', () => {
+    it('should output mainResearchGoal before status in response', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          mainResearchGoal: 'Understand authentication flow',
+        },
+      ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        data: { test: true },
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = getTextContent(result.content);
+      const mainResearchGoalIndex = responseText.indexOf('mainResearchGoal:');
+      const statusIndex = responseText.indexOf('status:');
+
+      expect(mainResearchGoalIndex).toBeGreaterThan(-1);
+      expect(statusIndex).toBeGreaterThan(-1);
+      expect(mainResearchGoalIndex).toBeLessThan(statusIndex);
+    });
+
+    it('should output researchGoal before status in response', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          researchGoal: 'Find implementations',
+        },
+      ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        data: { test: true },
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = getTextContent(result.content);
+      const researchGoalIndex = responseText.indexOf('researchGoal:');
+      const statusIndex = responseText.indexOf('status:');
+
+      expect(researchGoalIndex).toBeGreaterThan(-1);
+      expect(statusIndex).toBeGreaterThan(-1);
+      expect(researchGoalIndex).toBeLessThan(statusIndex);
+    });
+
+    it('should output reasoning before status in response', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          reasoning: 'Looking for patterns',
+        },
+      ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        data: { test: true },
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = getTextContent(result.content);
+      const reasoningIndex = responseText.indexOf('reasoning:');
+      const statusIndex = responseText.indexOf('status:');
+
+      expect(reasoningIndex).toBeGreaterThan(-1);
+      expect(statusIndex).toBeGreaterThan(-1);
+      expect(reasoningIndex).toBeLessThan(statusIndex);
+    });
+
+    it('should output all research fields before status and data', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          mainResearchGoal: 'Main goal',
+          researchGoal: 'Specific goal',
+          reasoning: 'The reasoning',
+        },
+      ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        files: [{ path: 'test.ts' }],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = getTextContent(result.content);
+      const mainResearchGoalIndex = responseText.indexOf('mainResearchGoal:');
+      const researchGoalIndex = responseText.indexOf('researchGoal:');
+      const reasoningIndex = responseText.indexOf('reasoning:');
+      const statusIndex = responseText.indexOf('status:');
+      const dataIndex = responseText.indexOf('data:');
+
+      // All research fields should exist
+      expect(mainResearchGoalIndex).toBeGreaterThan(-1);
+      expect(researchGoalIndex).toBeGreaterThan(-1);
+      expect(reasoningIndex).toBeGreaterThan(-1);
+      expect(statusIndex).toBeGreaterThan(-1);
+      expect(dataIndex).toBeGreaterThan(-1);
+
+      // Research fields should come before status
+      expect(mainResearchGoalIndex).toBeLessThan(statusIndex);
+      expect(researchGoalIndex).toBeLessThan(statusIndex);
+      expect(reasoningIndex).toBeLessThan(statusIndex);
+
+      // Status should come before data
+      expect(statusIndex).toBeLessThan(dataIndex);
+    });
+
+    it('should maintain research fields priority order in error responses', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          mainResearchGoal: 'Main goal',
+          researchGoal: 'Specific goal',
+          reasoning: 'The reasoning',
+        },
+      ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'error' as const,
+        error: 'Something went wrong',
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = getTextContent(result.content);
+      const mainResearchGoalIndex = responseText.indexOf('mainResearchGoal:');
+      const researchGoalIndex = responseText.indexOf('researchGoal:');
+      const reasoningIndex = responseText.indexOf('reasoning:');
+      const statusIndex = responseText.indexOf('status:');
+
+      // All research fields should come before status even in errors
+      expect(mainResearchGoalIndex).toBeLessThan(statusIndex);
+      expect(researchGoalIndex).toBeLessThan(statusIndex);
+      expect(reasoningIndex).toBeLessThan(statusIndex);
+    });
+
+    it('should maintain research fields priority with thrown errors', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          mainResearchGoal: 'Main goal',
+          researchGoal: 'Specific goal',
+          reasoning: 'The reasoning',
+        },
+      ];
+      const processor = vi.fn().mockRejectedValue(new Error('Network error'));
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = getTextContent(result.content);
+      const mainResearchGoalIndex = responseText.indexOf('mainResearchGoal:');
+      const researchGoalIndex = responseText.indexOf('researchGoal:');
+      const reasoningIndex = responseText.indexOf('reasoning:');
+      const statusIndex = responseText.indexOf('status:');
+
+      // All research fields should come before status even with thrown errors
+      expect(mainResearchGoalIndex).toBeLessThan(statusIndex);
+      expect(researchGoalIndex).toBeLessThan(statusIndex);
+      expect(reasoningIndex).toBeLessThan(statusIndex);
+    });
+  });
+
   describe('Parallel processing', () => {
     it('should process queries in parallel', async () => {
       const queries = [{ id: 'q1' }, { id: 'q2' }, { id: 'q3' }];

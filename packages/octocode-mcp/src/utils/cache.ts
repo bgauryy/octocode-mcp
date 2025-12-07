@@ -20,17 +20,17 @@ const cacheStats: CacheStats = {
   lastReset: new Date(),
 };
 
-export const CACHE_TTL_CONFIG = {
+const CACHE_TTL_CONFIG = {
   'gh-api-code': 3600,
   'gh-api-repos': 7200,
   'gh-api-prs': 1800,
   'gh-api-file-content': 3600,
   'gh-repo-structure-api': 7200,
   'github-user': 900,
+  'npm-search': 14400, // 4 hours
+  'pypi-search': 14400, // 4 hours
   default: 86400,
 } as const;
-
-export type CachePrefix = keyof typeof CACHE_TTL_CONFIG | string;
 
 export function generateCacheKey(
   prefix: string,

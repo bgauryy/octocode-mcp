@@ -26,6 +26,7 @@ describe('Prompts Registration', () => {
       GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
       GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
       GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
+      PACKAGE_SEARCH: 'packageSearch',
     },
     baseSchema: {
       mainResearchGoal: '',

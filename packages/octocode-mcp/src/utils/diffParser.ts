@@ -1,11 +1,11 @@
-export interface PatchLine {
+interface PatchLine {
   originalLineNumber: number | null;
   newLineNumber: number | null;
   content: string;
   type: 'context' | 'addition' | 'deletion';
 }
 
-export function parsePatch(patch: string): PatchLine[] {
+function parsePatch(patch: string): PatchLine[] {
   const lines = patch.split('\n');
   const result: PatchLine[] = [];
   let originalLine = 0;

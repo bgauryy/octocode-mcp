@@ -95,7 +95,9 @@ async function searchGitHubReposAPIInternal(
               : repo.description
             : 'No description',
           url: repo.html_url,
+          createdAt: new Date(repo.created_at).toLocaleDateString('en-GB'),
           updatedAt: new Date(repo.updated_at).toLocaleDateString('en-GB'),
+          pushedAt: new Date(repo.pushed_at).toLocaleDateString('en-GB'),
         };
       })
       .sort((a: SimplifiedRepository, b: SimplifiedRepository) => {

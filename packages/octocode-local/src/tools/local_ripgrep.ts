@@ -7,7 +7,7 @@ import {
   type RipgrepQuery,
 } from '../scheme/local_ripgrep.js';
 import { validateToolPath, createErrorResult } from '../utils/toolHelpers.js';
-import { RESOURCE_LIMITS } from '../constants.js';
+import { RESOURCE_LIMITS, DEFAULTS } from '../constants.js';
 import type {
   SearchContentResult,
   SearchStats,
@@ -17,6 +17,9 @@ import type {
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import { ERROR_CODES } from '../errors/errorCodes.js';
+import { spawn } from 'child_process';
+import { validateCommand } from '../security/commandValidator.js';
+import { validateExecutionContext } from '../security/executionContextValidator.js';
 
 export async function searchContentRipgrep(
   query: RipgrepQuery
@@ -55,55 +58,77 @@ export async function searchContentRipgrep(
     const builder = new RipgrepCommandBuilder();
     const { command, args } = builder.fromQuery(configuredQuery).build();
 
-    const result = await safeExec(command, args);
+    // Security validation
+    const cmdValidation = validateCommand(command, args);
+    if (!cmdValidation.isValid) {
+      throw new Error(`Command validation failed: ${cmdValidation.error}`);
+    }
 
-    if (!result.success || !result.stdout.trim()) {
+    const contextValidation = validateExecutionContext(configuredQuery.path);
+    if (!contextValidation.isValid) {
+      throw new Error(
+        `Execution context validation failed: ${contextValidation.error}`
+      );
+    }
+
+    // Stream execution
+    const { fileMap, warnings: streamWarnings } = await executeRipgrepStream(
+      command,
+      args,
+      configuredQuery.path
+    );
+
+    if (fileMap.size === 0) {
       return {
         status: 'empty',
         path: configuredQuery.path,
         searchEngine: 'rg',
-        warnings: [...validation.warnings, ...chunkingWarnings],
+        warnings: [
+          ...validation.warnings,
+          ...chunkingWarnings,
+          ...streamWarnings,
+        ],
         researchGoal: configuredQuery.researchGoal,
         reasoning: configuredQuery.reasoning,
         hints: getToolHints('LOCAL_RIPGREP', 'empty'),
       };
     }
 
-    const { files: parsedFiles } = parseRipgrepJson(
-      result.stdout,
+    const files: RipgrepFileMatches[] = processResults(
+      fileMap,
       configuredQuery
     );
 
-    const filesWithMetadata = await Promise.all(
-      parsedFiles.map(async (f) => {
-        const file: typeof f & { modified?: string } = { ...f };
-        if (configuredQuery.showFileLastModified) {
-          file.modified = await getFileModifiedTime(f.path);
-        }
-        return file;
-      })
-    );
+    // Add modified time if requested
+    if (configuredQuery.showFileLastModified) {
+      await Promise.all(
+        files.map(async (f) => {
+          f.modified = await getFileModifiedTime(f.path);
+        })
+      );
 
-    filesWithMetadata.sort((a, b) => {
-      if (configuredQuery.showFileLastModified && a.modified && b.modified) {
-        return new Date(b.modified).getTime() - new Date(a.modified).getTime();
-      }
-      // Fallback to path sorting when modified is not available
-      return a.path.localeCompare(b.path);
-    });
+      files.sort((a, b) => {
+        if (a.modified && b.modified) {
+          return (
+            new Date(b.modified).getTime() - new Date(a.modified).getTime()
+          );
+        }
+        return a.path.localeCompare(b.path);
+      });
+    } else {
+      files.sort((a, b) => a.path.localeCompare(b.path));
+    }
 
     // Apply maxFiles limit if specified
-    let limitedFiles = filesWithMetadata;
+    let limitedFiles = files;
     let wasLimited = false;
-    if (
-      configuredQuery.maxFiles &&
-      filesWithMetadata.length > configuredQuery.maxFiles
-    ) {
-      limitedFiles = filesWithMetadata.slice(0, configuredQuery.maxFiles);
+    if (configuredQuery.maxFiles && files.length > configuredQuery.maxFiles) {
+      limitedFiles = files.slice(0, configuredQuery.maxFiles);
       wasLimited = true;
     }
 
     const totalFiles = limitedFiles.length;
+    // Recalculate totalMatches based on limited files
     const totalMatches = limitedFiles.reduce((sum, f) => sum + f.matchCount, 0);
 
     const filesPerPage =
@@ -140,7 +165,7 @@ export async function searchContentRipgrep(
               }
             : undefined,
       };
-      if (configuredQuery.showFileLastModified && file.modified) {
+      if (file.modified) {
         result.modified = file.modified;
       }
       return result;
@@ -154,11 +179,15 @@ export async function searchContentRipgrep(
         : 'Final page',
     ];
 
-    // Add hint if files were limited
     if (wasLimited) {
       paginationHints.push(
-        `Results limited to ${configuredQuery.maxFiles} files (found ${filesWithMetadata.length} matching)`
+        `Results limited to ${configuredQuery.maxFiles} files (found ${files.length} matching)`
       );
+    }
+
+    // Add stream warnings
+    if (streamWarnings.length > 0) {
+      paginationHints.push(...streamWarnings);
     }
 
     const filesWithMoreMatches = finalFiles.filter(
@@ -190,7 +219,11 @@ export async function searchContentRipgrep(
         totalFiles,
         hasMore: filePageNumber < totalFilePages,
       },
-      warnings: [...validation.warnings, ...chunkingWarnings],
+      warnings: [
+        ...validation.warnings,
+        ...chunkingWarnings,
+        ...streamWarnings,
+      ],
       researchGoal: configuredQuery.researchGoal,
       reasoning: configuredQuery.reasoning,
       hints: [
@@ -212,11 +245,10 @@ export async function searchContentRipgrep(
         researchGoal: configuredQuery.researchGoal,
         reasoning: configuredQuery.reasoning,
         hints: [
-          'Output exceeded 10MB - your pattern matched too broadly. Think about why results exploded:',
+          'Output exceeded limits - your pattern matched too broadly.',
           'Is the pattern too generic? Make it specific to target what you actually need',
           'Searching everything? Add type filters or path restrictions to focus scope',
           'For node_modules: Target specific packages rather than searching the entire directory',
-          'Need file names only? FIND_FILES searches metadata without reading content',
           'Strategy: Start with filesOnly=true to see what matched, then narrow before reading content',
         ],
       } as SearchContentResult;
@@ -228,6 +260,247 @@ export async function searchContentRipgrep(
       configuredQuery
     ) as SearchContentResult;
   }
+}
+
+interface RawMatch {
+  lineText: string;
+  lineNumber: number;
+  absoluteOffset: number;
+  column: number;
+  matchLength: number;
+}
+
+interface FileEntry {
+  rawMatches: RawMatch[];
+  contexts: Map<number, string>;
+}
+
+async function executeRipgrepStream(
+  command: string,
+  args: string[],
+  cwd: string
+): Promise<{
+  fileMap: Map<string, FileEntry>;
+  stats: SearchStats;
+  warnings: string[];
+}> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      env: { ...process.env },
+      timeout: DEFAULTS.COMMAND_TIMEOUT,
+    });
+
+    const fileMap = new Map<string, FileEntry>();
+    let stats: SearchStats = {};
+    const warnings: string[] = [];
+
+    let buffer = '';
+    let processedBytes = 0;
+    const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB safety limit for output processing
+
+    // Safety break if too many results
+    const MAX_FILES = 2000;
+    let killed = false;
+
+    const cleanup = () => {
+      if (!killed) {
+        killed = true;
+        child.kill();
+      }
+    };
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      if (killed) return;
+
+      processedBytes += chunk.length;
+      if (processedBytes > MAX_BUFFER_SIZE) {
+        warnings.push(
+          'Search stopped early: Output size limit exceeded (10MB)'
+        );
+        cleanup();
+        return;
+      }
+
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const msg = JSON.parse(line);
+          processJsonMessage(msg, fileMap, (s) => (stats = s));
+
+          if (fileMap.size > MAX_FILES) {
+            warnings.push(
+              `Search stopped early: Too many matching files (>${MAX_FILES})`
+            );
+            cleanup();
+            break;
+          }
+        } catch {
+          // Skip unparseable lines
+        }
+      }
+    });
+
+    child.stderr.on('data', (_data) => {
+      // Ignore stderr for now, mostly progress info
+    });
+
+    child.on('error', (error) => {
+      reject(error);
+    });
+
+    child.on('close', (code) => {
+      // Process remaining buffer
+      if (buffer.trim()) {
+        try {
+          const msg = JSON.parse(buffer);
+          processJsonMessage(msg, fileMap, (s) => (stats = s));
+        } catch {
+          // Ignore invalid JSON in buffer
+        }
+      }
+
+      if (code === 0 || killed) {
+        resolve({ fileMap, stats, warnings });
+      } else {
+        // ripgrep returns 1 if no matches found, which is not an error for us
+        // but if code > 1 it might be an error
+        if (code === 1) {
+          resolve({ fileMap, stats, warnings });
+        } else {
+          reject(new Error(`ripgrep exited with code ${code}`));
+        }
+      }
+    });
+
+    // Safety timeout
+    setTimeout(() => {
+      if (!killed && child.exitCode === null) {
+        warnings.push('Search timed out');
+        cleanup();
+        // Resolve with what we have
+        resolve({ fileMap, stats, warnings });
+      }
+    }, DEFAULTS.COMMAND_TIMEOUT);
+  });
+}
+
+interface RipgrepJsonMessage {
+  type: 'match' | 'context' | 'summary' | string;
+  data: {
+    path?: { text: string };
+    lines?: { text: string };
+    line_number?: number;
+    absolute_offset?: number;
+    submatches?: Array<{ start: number; end: number }>;
+    stats?: {
+      matches: number;
+      matched_lines: number;
+      searches_with_match: number;
+      searches: number;
+      bytes_searched: number;
+      elapsed: { human: string };
+    };
+  };
+}
+
+function processJsonMessage(
+  msg: RipgrepJsonMessage,
+  fileMap: Map<string, FileEntry>,
+  updateStats: (s: SearchStats) => void
+) {
+  if (msg.type === 'match' && msg.data.path && msg.data.lines) {
+    const path = msg.data.path.text;
+    const lineText = msg.data.lines.text;
+    const lineNumber = msg.data.line_number ?? 0;
+    const absoluteOffset = msg.data.absolute_offset ?? 0;
+
+    if (!fileMap.has(path)) {
+      fileMap.set(path, { rawMatches: [], contexts: new Map() });
+    }
+    const submatches = msg.data.submatches ?? [];
+    const column = submatches.length > 0 ? submatches[0].start : 0;
+    const matchLength =
+      submatches.length > 0
+        ? submatches[0].end - submatches[0].start
+        : lineText.length;
+
+    fileMap.get(path)!.rawMatches.push({
+      lineText,
+      lineNumber,
+      absoluteOffset,
+      column,
+      matchLength,
+    });
+  } else if (msg.type === 'context' && msg.data.path && msg.data.lines) {
+    const path = msg.data.path.text;
+    const lineNumber = msg.data.line_number ?? 0;
+    const lineText = msg.data.lines.text;
+
+    if (!fileMap.has(path)) {
+      fileMap.set(path, { rawMatches: [], contexts: new Map() });
+    }
+    fileMap.get(path)!.contexts.set(lineNumber, lineText);
+  } else if (msg.type === 'summary' && msg.data.stats) {
+    updateStats({
+      matchCount: msg.data.stats.matches,
+      matchedLines: msg.data.stats.matched_lines,
+      filesMatched: msg.data.stats.searches_with_match,
+      filesSearched: msg.data.stats.searches,
+      bytesSearched: msg.data.stats.bytes_searched,
+      searchTime: msg.data.stats.elapsed.human,
+    });
+  }
+}
+
+function processResults(
+  fileMap: Map<string, FileEntry>,
+  query: RipgrepQuery
+): RipgrepFileMatches[] {
+  const before = query.contextLines ?? query.beforeContext ?? 0;
+  const after = query.contextLines ?? query.afterContext ?? 0;
+  const maxLength =
+    query.matchContentLength || RESOURCE_LIMITS.DEFAULT_MATCH_CONTENT_LENGTH;
+
+  return Array.from(fileMap.entries()).map(([path, entry]) => {
+    const matches: RipgrepMatch[] = entry.rawMatches.map((m) => {
+      const contextLines: string[] = [];
+      // prepend before-context
+      for (let i = before; i > 0; i--) {
+        const ctx = entry.contexts.get(m.lineNumber - i);
+        if (ctx) contextLines.push(ctx);
+      }
+      // current line
+      contextLines.push(m.lineText);
+      // append after-context
+      for (let i = 1; i <= after; i++) {
+        const ctx = entry.contexts.get(m.lineNumber + i);
+        if (ctx) contextLines.push(ctx);
+      }
+
+      let value = contextLines.join('\n');
+      if (value.length > maxLength) {
+        value = value.substring(0, maxLength) + '...';
+      }
+
+      return {
+        value,
+        location: { charOffset: m.absoluteOffset, charLength: m.matchLength },
+        line: m.lineNumber,
+        column: m.column,
+      };
+    });
+
+    return {
+      path,
+      matchCount: matches.length,
+      matches,
+    };
+  });
 }
 
 function _getStructuredResultSizeHints(
@@ -324,202 +597,6 @@ async function estimateDirectoryStats(dirPath: string): Promise<{
       isLarge: false,
     };
   }
-}
-
-interface RipgrepJsonMatch {
-  type: 'match';
-  data: {
-    path: { text: string };
-    lines: { text: string };
-    line_number: number;
-    absolute_offset: number;
-    submatches: Array<{
-      match: { text: string };
-      start: number;
-      end: number;
-    }>;
-  };
-}
-
-interface RipgrepJsonContext {
-  type: 'context';
-  data: {
-    path: { text: string };
-    lines: { text: string };
-    line_number: number;
-    absolute_offset: number;
-  };
-}
-
-interface RipgrepJsonBegin {
-  type: 'begin';
-  data: {
-    path: { text: string };
-  };
-}
-
-interface RipgrepJsonEnd {
-  type: 'end';
-  data: {
-    path: { text: string };
-    stats?: {
-      elapsed: { human: string };
-      searches: number;
-      searches_with_match: number;
-    };
-  };
-}
-
-interface RipgrepJsonSummary {
-  type: 'summary';
-  data: {
-    elapsed_total: { human: string };
-    stats: {
-      elapsed: { human: string };
-      searches: number;
-      searches_with_match: number;
-      bytes_searched: number;
-      bytes_printed: number;
-      matched_lines: number;
-      matches: number;
-    };
-  };
-}
-
-type RipgrepJsonMessage =
-  | RipgrepJsonMatch
-  | RipgrepJsonContext
-  | RipgrepJsonBegin
-  | RipgrepJsonEnd
-  | RipgrepJsonSummary;
-
-function parseRipgrepJson(
-  jsonOutput: string,
-  query: RipgrepQuery
-): {
-  files: RipgrepFileMatches[];
-  stats: SearchStats;
-} {
-  const lines = jsonOutput.trim().split('\n').filter(Boolean);
-  type RawMatch = {
-    lineText: string;
-    lineNumber: number;
-    absoluteOffset: number;
-    column: number;
-    matchLength: number;
-  };
-
-  const fileMap = new Map<
-    string,
-    {
-      rawMatches: RawMatch[];
-      contexts: Map<number, string>;
-    }
-  >();
-
-  let stats: SearchStats = {};
-
-  for (const line of lines) {
-    if (!line.trim()) continue;
-
-    if (!line.trim().startsWith('{')) {
-      continue;
-    }
-
-    try {
-      const msg: RipgrepJsonMessage = JSON.parse(line);
-
-      if (msg.type === 'match') {
-        const path = msg.data.path.text;
-        const lineText = msg.data.lines.text;
-        const lineNumber = msg.data.line_number;
-        const absoluteOffset = msg.data.absolute_offset;
-
-        if (!fileMap.has(path)) {
-          fileMap.set(path, { rawMatches: [], contexts: new Map() });
-        }
-        const column =
-          msg.data.submatches.length > 0 ? msg.data.submatches[0].start : 0;
-        const matchLength =
-          msg.data.submatches.length > 0
-            ? msg.data.submatches[0].end - msg.data.submatches[0].start
-            : lineText.length;
-
-        fileMap.get(path)!.rawMatches.push({
-          lineText,
-          lineNumber,
-          absoluteOffset,
-          column,
-          matchLength,
-        });
-      } else if (msg.type === 'context') {
-        const path = msg.data.path.text;
-        const lineNumber = msg.data.line_number;
-        const lineText = msg.data.lines.text;
-
-        if (!fileMap.has(path)) {
-          fileMap.set(path, { rawMatches: [], contexts: new Map() });
-        }
-        fileMap.get(path)!.contexts.set(lineNumber, lineText);
-      } else if (msg.type === 'summary') {
-        stats = {
-          matchCount: msg.data.stats.matches,
-          matchedLines: msg.data.stats.matched_lines,
-          filesMatched: msg.data.stats.searches_with_match,
-          filesSearched: msg.data.stats.searches,
-          bytesSearched: msg.data.stats.bytes_searched,
-          searchTime: msg.data.stats.elapsed.human,
-        };
-      }
-    } catch {
-      // Skip unparseable JSON lines
-    }
-  }
-
-  const before = query.contextLines ?? query.beforeContext ?? 0;
-  const after = query.contextLines ?? query.afterContext ?? 0;
-  const maxLength =
-    query.matchContentLength || RESOURCE_LIMITS.DEFAULT_MATCH_CONTENT_LENGTH;
-
-  const files: RipgrepFileMatches[] = Array.from(fileMap.entries()).map(
-    ([path, entry]) => {
-      const matches: RipgrepMatch[] = entry.rawMatches.map((m) => {
-        const contextLines: string[] = [];
-        // prepend before-context
-        for (let i = before; i > 0; i--) {
-          const ctx = entry.contexts.get(m.lineNumber - i);
-          if (ctx) contextLines.push(ctx);
-        }
-        // current line
-        contextLines.push(m.lineText);
-        // append after-context
-        for (let i = 1; i <= after; i++) {
-          const ctx = entry.contexts.get(m.lineNumber + i);
-          if (ctx) contextLines.push(ctx);
-        }
-
-        let value = contextLines.join('\n');
-        if (value.length > maxLength) {
-          value = value.substring(0, maxLength) + '...';
-        }
-
-        return {
-          value,
-          location: { charOffset: m.absoluteOffset, charLength: m.matchLength },
-          line: m.lineNumber,
-          column: m.column,
-        };
-      });
-
-      return {
-        path,
-        matchCount: matches.length,
-        matches,
-      };
-    }
-  );
-
-  return { files, stats };
 }
 
 export async function isRipgrepAvailable(): Promise<boolean> {

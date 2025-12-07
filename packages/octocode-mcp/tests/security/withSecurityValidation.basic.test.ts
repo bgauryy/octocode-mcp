@@ -24,8 +24,6 @@ vi.mock('../../src/security/contentSanitizer.js', () => ({
       hasSecrets: false,
       secretsDetected: [],
       warnings: [],
-      hasPromptInjection: false,
-      isMalicious: false,
     })),
   },
 }));

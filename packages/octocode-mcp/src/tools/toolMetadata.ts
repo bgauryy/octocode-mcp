@@ -36,6 +36,7 @@ export interface CompleteMetadata {
     GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests';
     GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories';
     GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure';
+    PACKAGE_SEARCH: 'packageSearch';
   };
   baseSchema: {
     mainResearchGoal: string;
@@ -92,6 +93,7 @@ const STATIC_TOOL_NAMES: ToolNamesMap = {
   GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
   GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
   GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
+  PACKAGE_SEARCH: 'packageSearch',
 };
 
 // --- Helper Functions ---
@@ -399,6 +401,7 @@ export const GITHUB_FETCH_CONTENT = createSchemaHelper(
   processing: {
     minified: string;
     sanitize: string;
+    addTimestamp: string;
   };
   range: {
     startLine: string;
@@ -528,5 +531,17 @@ export const GITHUB_VIEW_REPO_STRUCTURE = createSchemaHelper(
   };
   range: {
     depth: string;
+  };
+};
+
+export const PACKAGE_SEARCH = createSchemaHelper(TOOL_NAMES.PACKAGE_SEARCH) as {
+  search: {
+    ecosystem: string;
+    name: string;
+  };
+  options: {
+    searchLimit: string;
+    npmFetchMetadata: string;
+    pythonFetchMetadata: string;
   };
 };

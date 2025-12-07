@@ -1,7 +1,6 @@
 import { Octokit } from 'octokit';
 import { throttling } from '@octokit/plugin-throttling';
 import type { OctokitOptions } from '@octokit/core';
-import type { GetRepoResponse } from './githubAPI';
 import { getGitHubToken } from '../serverConfig.js';
 import { getServerConfig } from '../serverConfig.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
@@ -51,31 +50,4 @@ export async function getOctokit(
 
 export function clearCachedToken(): void {
   octokitInstance = null;
-}
-
-const defaultBranchCache = new Map<string, string>();
-
-export async function getDefaultBranch(
-  owner: string,
-  repo: string
-): Promise<string | null> {
-  const cacheKey = `${owner}/${repo}`;
-
-  if (defaultBranchCache.has(cacheKey)) {
-    return defaultBranchCache.get(cacheKey)!;
-  }
-
-  try {
-    const octokit = await getOctokit();
-    const repoInfo: GetRepoResponse = await octokit.rest.repos.get({
-      owner,
-      repo,
-    });
-    const defaultBranch = repoInfo.data.default_branch || 'main';
-
-    defaultBranchCache.set(cacheKey, defaultBranch);
-    return defaultBranch;
-  } catch (error) {
-    return null;
-  }
 }

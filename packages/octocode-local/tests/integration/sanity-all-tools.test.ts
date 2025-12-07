@@ -10,11 +10,25 @@ import { fetchContent } from '../../src/tools/local_fetch_content.js';
 import * as exec from '../../src/utils/exec.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 import type { Stats } from 'fs';
+import { EventEmitter } from 'events';
 
 // Mocks
 vi.mock('../../src/utils/exec.js', () => ({ safeExec: vi.fn() }));
 vi.mock('../../src/security/pathValidator.js', () => ({
   pathValidator: { validate: vi.fn() },
+}));
+vi.mock('../../src/security/commandValidator.js', () => ({
+  validateCommand: vi.fn().mockReturnValue({ isValid: true }),
+}));
+vi.mock('../../src/security/executionContextValidator.js', () => ({
+  validateExecutionContext: vi.fn().mockReturnValue({ isValid: true }),
+}));
+
+// Mock child_process.spawn for ripgrep
+const mockSpawn = vi.fn();
+vi.mock('child_process', () => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  spawn: (...args: any[]) => mockSpawn(...args),
 }));
 
 // Shareable fs mocks for view_structure and find_files
@@ -164,20 +178,38 @@ describe('Integration sanity: all tools', () => {
       }),
     ].join('\n');
 
-    mockSafeExec.mockResolvedValueOnce({
-      success: true,
-      code: 0,
-      stdout: rgJson,
-      stderr: '',
-    });
+    // Setup spawn mock for ripgrep (now uses streaming)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const spawnChild = new EventEmitter() as any;
+    spawnChild.stdout = new EventEmitter();
+    spawnChild.stderr = new EventEmitter();
+    spawnChild.kill = vi.fn();
+    spawnChild.exitCode = null;
+    mockSpawn.mockReturnValueOnce(spawnChild);
 
-    const rg = await searchContentRipgrep({
+    // Must setup mocks for fs.stat used by showFileLastModified
+    mockStat.mockResolvedValue({
+      size: 100,
+      mtime: new Date('2024-06-01T00:00:00.000Z'),
+    } as unknown as Awaited<ReturnType<typeof fsp.stat>>);
+
+    // Execute search and simulate spawn response
+    const rgPromise = searchContentRipgrep({
       pattern: 'match',
       path: '/workspace',
       showFileLastModified: true,
       matchesPerPage: 1,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Intentionally bypassing schema to test runtime behavior
     } as any);
+
+    // Emit data after a small delay
+    setTimeout(() => {
+      spawnChild.stdout.emit('data', Buffer.from(rgJson));
+      spawnChild.exitCode = 0;
+      spawnChild.emit('close', 0);
+    }, 10);
+
+    const rg = await rgPromise;
     expect(rg.status).toBe('hasResults');
     expect(rg.files?.[0].matchCount).toBe(2);
     expect(rg.files?.[0].matches.length).toBe(1); // paginated matches

@@ -25,27 +25,12 @@ const toCodeSearchQuery = (params: {
 
 describe('Query Builders', () => {
   describe('getOwnerQualifier', () => {
-    it('should use org: for organization-style names with hyphens', () => {
-      expect(getOwnerQualifier('my-org')).toBe('org:my-org');
-    });
-
-    it('should use org: for organization-style names with underscores', () => {
-      expect(getOwnerQualifier('my_org')).toBe('org:my_org');
-    });
-
-    it('should use org: for names containing "org"', () => {
-      expect(getOwnerQualifier('myorg')).toBe('org:myorg');
-      expect(getOwnerQualifier('Organization')).toBe('org:Organization');
-    });
-
-    it('should use user: for simple user names', () => {
+    it('should always use user: qualifier as it matches both users and orgs', () => {
+      expect(getOwnerQualifier('my-org')).toBe('user:my-org');
+      expect(getOwnerQualifier('my_org')).toBe('user:my_org');
+      expect(getOwnerQualifier('myorg')).toBe('user:myorg');
       expect(getOwnerQualifier('john')).toBe('user:john');
-      expect(getOwnerQualifier('alice123')).toBe('user:alice123');
-    });
-
-    it('should handle case insensitive org detection', () => {
-      expect(getOwnerQualifier('MyORG')).toBe('org:MyORG');
-      expect(getOwnerQualifier('orgaNization')).toBe('org:orgaNization');
+      expect(getOwnerQualifier('Organization')).toBe('user:Organization');
     });
   });
 

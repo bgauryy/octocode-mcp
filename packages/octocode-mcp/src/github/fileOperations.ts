@@ -21,6 +21,11 @@ import { TOOL_NAMES } from '../tools/toolMetadata.js';
 import { FILE_OPERATION_ERRORS, REPOSITORY_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
+interface FileTimestampInfo {
+  lastModified: string;
+  lastModifiedBy: string;
+}
+
 export async function fetchGitHubFileContentAPI(
   params: FileContentQuery,
   authInfo?: AuthInfo,
@@ -213,12 +218,27 @@ async function fetchGitHubFileContentAPIInternal(
           status: 500,
           type: 'unknown' as const,
         };
-      } else {
-        return {
-          data: result,
-          status: 200,
-        };
       }
+
+      // Fetch timestamp if requested
+      if (params.addTimestamp) {
+        const timestampInfo = await fetchFileTimestamp(
+          octokit,
+          owner,
+          repo,
+          filePath,
+          branch
+        );
+        if (timestampInfo) {
+          result.lastModified = timestampInfo.lastModified;
+          result.lastModifiedBy = timestampInfo.lastModifiedBy;
+        }
+      }
+
+      return {
+        data: result,
+        status: 200,
+      };
     }
 
     await logSessionError(
@@ -233,6 +253,47 @@ async function fetchGitHubFileContentAPIInternal(
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
     return apiError;
+  }
+}
+
+/**
+ * Fetch the last modification timestamp for a file via commits API
+ */
+async function fetchFileTimestamp(
+  octokit: InstanceType<typeof OctokitWithThrottling>,
+  owner: string,
+  repo: string,
+  path: string,
+  branch?: string
+): Promise<FileTimestampInfo | null> {
+  try {
+    const commits = await octokit.rest.repos.listCommits({
+      owner,
+      repo,
+      path,
+      per_page: 1,
+      ...(branch && { sha: branch }),
+    });
+
+    if (commits.data.length > 0) {
+      const lastCommit = commits.data[0];
+      const commitDate = lastCommit?.commit?.committer?.date;
+      const authorName =
+        lastCommit?.commit?.author?.name ||
+        lastCommit?.author?.login ||
+        'Unknown';
+
+      return {
+        lastModified: commitDate
+          ? new Date(commitDate).toLocaleDateString('en-GB')
+          : 'Unknown',
+        lastModifiedBy: authorName,
+      };
+    }
+    return null;
+  } catch {
+    // Silently fail - timestamp is optional enhancement
+    return null;
   }
 }
 
@@ -256,16 +317,6 @@ async function processFileContentAPI(
   if (sanitizationResult.hasSecrets) {
     securityWarningsSet.add(
       `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
-    );
-  }
-  if (sanitizationResult.hasPromptInjection) {
-    securityWarningsSet.add(
-      'Potential prompt injection detected and sanitized'
-    );
-  }
-  if (sanitizationResult.isMalicious) {
-    securityWarningsSet.add(
-      'Potentially malicious content detected and sanitized'
     );
   }
   if (sanitizationResult.warnings.length > 0) {

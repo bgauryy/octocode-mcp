@@ -2,15 +2,8 @@ import type { GitHubCodeSearchQuery, GitHubReposSearchQuery } from '../types';
 import { GitHubPullRequestsSearchParams } from './githubAPI';
 
 export function getOwnerQualifier(owner: string): string {
-  if (
-    owner.includes('-') ||
-    owner.includes('_') ||
-    owner.toLowerCase().includes('org')
-  ) {
-    return `org:${owner}`;
-  } else {
-    return `user:${owner}`;
-  }
+  // GitHub's 'user:' qualifier matches both users and organizations
+  return `user:${owner}`;
 }
 
 abstract class BaseQueryBuilder {

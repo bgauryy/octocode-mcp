@@ -67,12 +67,6 @@ export interface GitHubAPISuccess<T> {
 
 export type GitHubAPIResponse<T> = GitHubAPISuccess<T> | GitHubAPIError;
 
-export type RepositoryReference = {
-  owner: string;
-  repo: string;
-  ref?: string;
-};
-
 export type OptimizedCodeSearchResult = {
   items: Array<
     Pick<CodeSearchResultItem, 'path' | 'url'> & {
@@ -91,6 +85,9 @@ export type OptimizedCodeSearchResult = {
   repository?: {
     name: string;
     url: string;
+    createdAt?: string;
+    updatedAt?: string;
+    pushedAt?: string;
   };
   securityWarnings?: string[];
   minified?: boolean;

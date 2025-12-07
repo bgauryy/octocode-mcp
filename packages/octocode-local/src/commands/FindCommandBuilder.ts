@@ -70,24 +70,18 @@ export class FindCommandBuilder extends BaseCommandBuilder {
     }
 
     if (query.modifiedWithin) {
-      this.addOption(
-        '-mtime',
-        `-${this.parseTimeString(query.modifiedWithin)}`
-      );
+      const { value, unit } = this.parseTime(query.modifiedWithin);
+      this.addOption(unit === 'min' ? '-mmin' : '-mtime', `-${value}`);
     }
 
     if (query.modifiedBefore) {
-      this.addOption(
-        '-mtime',
-        `+${this.parseTimeString(query.modifiedBefore)}`
-      );
+      const { value, unit } = this.parseTime(query.modifiedBefore);
+      this.addOption(unit === 'min' ? '-mmin' : '-mtime', `+${value}`);
     }
 
     if (query.accessedWithin) {
-      this.addOption(
-        '-atime',
-        `-${this.parseTimeString(query.accessedWithin)}`
-      );
+      const { value, unit } = this.parseTime(query.accessedWithin);
+      this.addOption(unit === 'min' ? '-amin' : '-atime', `-${value}`);
     }
 
     if (query.permissions) {
@@ -172,26 +166,26 @@ export class FindCommandBuilder extends BaseCommandBuilder {
     return this;
   }
 
-  private parseTimeString(timeStr: string): number {
+  private parseTime(timeStr: string): { value: number; unit: 'min' | 'day' } {
     const match = timeStr.match(/^(\d+)([hdwm])$/);
     if (!match) {
-      return 0;
+      return { value: 0, unit: 'day' };
     }
 
     const value = parseInt(match[1], 10);
     const unit = match[2];
 
     switch (unit) {
-      case 'h':
-        return Math.round(value / 24);
-      case 'd':
-        return value;
-      case 'w':
-        return value * 7;
-      case 'm':
-        return value * 30;
+      case 'm': // minutes
+        return { value: value, unit: 'min' };
+      case 'h': // hours
+        return { value: value * 60, unit: 'min' };
+      case 'd': // days
+        return { value: value, unit: 'day' };
+      case 'w': // weeks
+        return { value: value * 7, unit: 'day' };
       default:
-        return value;
+        return { value: value, unit: 'day' };
     }
   }
 }
