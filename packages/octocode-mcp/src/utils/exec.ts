@@ -69,16 +69,8 @@ interface NpmExecResult {
   exitCode?: number;
 }
 
-/**
- * Safely escape shell arguments to prevent injection
- */
-function escapeShellArg(arg: string): string {
-  return arg
-    .replace(/[`$\\]/g, '\\$&') // Escape backticks, dollar signs, backslashes
-    .replace(/[;&|><]/g, '') // Remove shell operators
-    .replace(/\s+/g, ' ') // Normalize whitespace
-    .trim();
-}
+// Safely escape shell arguments - REMOVED as spawn handles this safely
+// function escapeShellArg(arg: string): string { ... }
 
 /**
  * Validate arguments for safety
@@ -93,26 +85,6 @@ function validateArgs(args: string[]): { valid: boolean; error?: string } {
     // Check for excessively long arguments (potential DoS)
     if (arg.length > 1000) {
       return { valid: false, error: 'Argument too long' };
-    }
-
-    // Check for suspicious patterns
-    const suspiciousPatterns = [
-      /\$\(/, // Command substitution
-      /`[^`]*`/, // Backtick command substitution
-      /\|\s*\w/, // Pipe to command
-      /;\s*\w/, // Command chaining
-      /&&\s*\w/, // AND command chaining
-      /\|\|\s*\w/, // OR command chaining
-      />\s*\/|<\s*\//, // File redirection to/from root
-    ];
-
-    for (const pattern of suspiciousPatterns) {
-      if (pattern.test(arg)) {
-        return {
-          valid: false,
-          error: `Suspicious pattern detected in argument: ${arg.substring(0, 50)}...`,
-        };
-      }
     }
   }
 
@@ -159,11 +131,8 @@ export async function executeNpmCommand(
 
   const { timeout = 30000, cwd, env } = options;
 
-  // Escape and sanitize arguments
-  const sanitizedArgs = args.map(escapeShellArg);
-
   return new Promise(resolve => {
-    const childProcess = spawn('npm', [command, ...sanitizedArgs], {
+    const childProcess = spawn('npm', [command, ...args], {
       cwd,
       env: {
         ...process.env,

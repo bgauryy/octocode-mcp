@@ -77,6 +77,20 @@ function isPackageSearchError(
   return 'error' in result;
 }
 
+function getPackageName(pkg: PackageResult): string {
+  if ('path' in pkg) {
+    return pkg.path;
+  }
+  return pkg.name;
+}
+
+function getPackageRepo(pkg: PackageResult): string | null {
+  if ('repoUrl' in pkg) {
+    return pkg.repoUrl;
+  }
+  return pkg.repository;
+}
+
 async function searchPackages(
   queries: PackageSearchQuery[]
 ): Promise<CallToolResult> {
@@ -101,7 +115,9 @@ async function searchPackages(
         // Check deprecation for npm packages (only for first package to avoid too many API calls)
         let deprecationInfo: DeprecationInfo | null = null;
         if (hasContent && result.ecosystem === 'npm' && result.packages[0]) {
-          deprecationInfo = await checkNpmDeprecation(result.packages[0].name);
+          deprecationInfo = await checkNpmDeprecation(
+            getPackageName(result.packages[0])
+          );
         }
 
         const customHints = hasContent
@@ -135,20 +151,24 @@ function generateSuccessHints(
 ): string[] {
   const hints: string[] = [];
   const pkg = result.packages[0];
+  if (!pkg) return hints;
+
+  const name = getPackageName(pkg);
+  const repo = getPackageRepo(pkg);
 
   // Deprecation warning (highest priority)
   if (deprecationInfo?.deprecated) {
     const msg = deprecationInfo.message || 'This package is deprecated';
-    hints.push(`DEPRECATED: ${pkg?.name} - ${msg}`);
+    hints.push(`DEPRECATED: ${name} - ${msg}`);
   }
 
   // GitHub tool integration hint - extract owner/repo from URL
-  if (pkg?.repository?.includes('github.com')) {
-    const match = pkg.repository.match(/github\.com\/([^/]+)\/([^/]+)/);
+  if (repo?.includes('github.com')) {
+    const match = repo.match(/github\.com\/([^/]+)\/([^/]+)/);
     if (match && match[1] && match[2]) {
       const owner = match[1];
-      const repo = match[2];
-      const cleanRepo = repo.replace(/\.git$/, '').replace(/\/$/, '');
+      const repoName = match[2];
+      const cleanRepo = repoName.replace(/\.git$/, '').replace(/\/$/, '');
       hints.push(
         `Explore: githubViewRepoStructure(owner="${owner}", repo="${cleanRepo}")`
       );
@@ -158,8 +178,8 @@ function generateSuccessHints(
   // Install command hint
   hints.push(
     result.ecosystem === 'npm'
-      ? `Install: npm install ${pkg?.name || 'package'}`
-      : `Install: pip install ${pkg?.name || 'package'}`
+      ? `Install: npm install ${name}`
+      : `Install: pip install ${name}`
   );
 
   return hints;

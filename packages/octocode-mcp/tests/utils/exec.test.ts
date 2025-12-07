@@ -245,48 +245,6 @@ describe('exec utilities', () => {
       expect(result.error?.message).toContain('too long');
     });
 
-    it('should reject command substitution patterns', async () => {
-      const result = await executeNpmCommand('search', ['$(whoami)']);
-
-      expect(result.error).toBeDefined();
-      expect(result.error?.message).toContain('Suspicious pattern');
-    });
-
-    it('should reject backtick command substitution', async () => {
-      const result = await executeNpmCommand('search', ['`whoami`']);
-
-      expect(result.error).toBeDefined();
-      expect(result.error?.message).toContain('Suspicious pattern');
-    });
-
-    it('should reject pipe patterns', async () => {
-      const result = await executeNpmCommand('search', ['axios | rm']);
-
-      expect(result.error).toBeDefined();
-      expect(result.error?.message).toContain('Suspicious pattern');
-    });
-
-    it('should reject command chaining with semicolon', async () => {
-      const result = await executeNpmCommand('search', ['axios; rm -rf']);
-
-      expect(result.error).toBeDefined();
-      expect(result.error?.message).toContain('Suspicious pattern');
-    });
-
-    it('should reject AND command chaining', async () => {
-      const result = await executeNpmCommand('search', ['axios && rm']);
-
-      expect(result.error).toBeDefined();
-      expect(result.error?.message).toContain('Suspicious pattern');
-    });
-
-    it('should reject OR command chaining', async () => {
-      const result = await executeNpmCommand('search', ['axios || rm']);
-
-      expect(result.error).toBeDefined();
-      expect(result.error?.message).toContain('Suspicious pattern');
-    });
-
     it('should handle non-zero exit code', async () => {
       const promise = executeNpmCommand('search', ['nonexistent']);
       mockProcess.simulateFailure(1, 'ERR: not found');
@@ -355,7 +313,7 @@ describe('exec utilities', () => {
       }
     });
 
-    it('should escape shell special characters in arguments', async () => {
+    it('should pass arguments without shell escaping', async () => {
       const promise = executeNpmCommand('search', ['package$name']);
       mockProcess.simulateSuccess('[]');
 
@@ -364,8 +322,8 @@ describe('exec utilities', () => {
       const spawnCall = vi.mocked(spawn).mock.calls[0];
       const args = spawnCall?.[1];
 
-      // Verify dollar sign is escaped
-      expect(args).toContain('package\\$name');
+      // Verify dollar sign is NOT escaped
+      expect(args).toContain('package$name');
     });
 
     it('should accumulate stdout from multiple data events', async () => {
