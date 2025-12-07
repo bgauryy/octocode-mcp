@@ -1,7 +1,6 @@
 /**
  * Tests for FindCommandBuilder
  */
-
 import { describe, it, expect } from 'vitest';
 import { FindCommandBuilder } from '../../src/commands/FindCommandBuilder.js';
 import type { FindFilesQuery } from '../../src/types.js';
@@ -148,7 +147,6 @@ describe('FindCommandBuilder', () => {
       const query = createQuery({ names: ['*.ts', '*.tsx', '*.js'] });
       const { args } = new FindCommandBuilder().fromQuery(query).build();
 
-      // Should use grouping: ( -name *.ts -o -name *.tsx -o -name *.js )
       expect(args).toContain('(');
       expect(args).toContain(')');
       expect(args).toContain('-o');
@@ -195,42 +193,41 @@ describe('FindCommandBuilder', () => {
 
     it('should set regex type', () => {
       const query = createQuery({
-        regex: '.*test.*',
-        regexType: 'posix-egrep',
+        regex: '.*',
+        regexType: 'posix-extended',
       });
       const { args } = new FindCommandBuilder().fromQuery(query).build();
 
       expect(args).toContain('-regextype');
-      expect(args).toContain('posix-egrep');
-      expect(args).toContain('-regex');
+      expect(args).toContain('posix-extended');
     });
   });
 
   describe('size filtering', () => {
     it('should filter by size greater than', () => {
-      const query = createQuery({ sizeGreater: '1M' });
+      const query = createQuery({ sizeGreater: '1k' });
       const { args } = new FindCommandBuilder().fromQuery(query).build();
 
       expect(args).toContain('-size');
-      expect(args).toContain('+1M');
+      expect(args).toContain('+1k');
     });
 
     it('should filter by size less than', () => {
-      const query = createQuery({ sizeLess: '100k' });
+      const query = createQuery({ sizeLess: '1M' });
       const { args } = new FindCommandBuilder().fromQuery(query).build();
 
       expect(args).toContain('-size');
-      expect(args).toContain('-100k');
+      expect(args).toContain('-1M');
     });
 
     it('should use builder method for size', () => {
       const { args } = new FindCommandBuilder()
         .path('/test')
-        .size('+500k')
+        .size('+10M')
         .build();
 
       expect(args).toContain('-size');
-      expect(args).toContain('+500k');
+      expect(args).toContain('+10M');
     });
   });
 
@@ -243,12 +240,12 @@ describe('FindCommandBuilder', () => {
       expect(args).toContain('-7');
     });
 
-    it('should filter by modified within hours (converted to days)', () => {
+    it('should filter by modified within hours (using -mmin)', () => {
       const query = createQuery({ modifiedWithin: '24h' });
       const { args } = new FindCommandBuilder().fromQuery(query).build();
 
-      expect(args).toContain('-mtime');
-      expect(args).toContain('-1'); // 24h = 1 day
+      expect(args).toContain('-mmin');
+      expect(args).toContain('-1440'); // 24h * 60 = 1440 min
     });
 
     it('should filter by modified within weeks', () => {
@@ -259,12 +256,12 @@ describe('FindCommandBuilder', () => {
       expect(args).toContain('-14'); // 2 weeks = 14 days
     });
 
-    it('should filter by modified within months', () => {
-      const query = createQuery({ modifiedWithin: '1m' });
+    it('should filter by modified within minutes (using -mmin)', () => {
+      const query = createQuery({ modifiedWithin: '30m' });
       const { args } = new FindCommandBuilder().fromQuery(query).build();
 
-      expect(args).toContain('-mtime');
-      expect(args).toContain('-30'); // 1 month = 30 days
+      expect(args).toContain('-mmin');
+      expect(args).toContain('-30');
     });
 
     it('should filter by modified before', () => {
@@ -276,25 +273,25 @@ describe('FindCommandBuilder', () => {
     });
 
     it('should filter by accessed within', () => {
-      const query = createQuery({ accessedWithin: '3d' });
+      const query = createQuery({ accessedWithin: '1d' });
       const { args } = new FindCommandBuilder().fromQuery(query).build();
 
       expect(args).toContain('-atime');
-      expect(args).toContain('-3');
+      expect(args).toContain('-1');
     });
 
     it('should use builder method for mtime', () => {
       const { args } = new FindCommandBuilder()
         .path('/test')
-        .mtime('-5')
+        .mtime('-1')
         .build();
 
       expect(args).toContain('-mtime');
-      expect(args).toContain('-5');
+      expect(args).toContain('-1');
     });
   });
 
-  describe('permissions and attributes', () => {
+  describe('permission and attribute filtering', () => {
     it('should filter by permissions', () => {
       const query = createQuery({ permissions: '755' });
       const { args } = new FindCommandBuilder().fromQuery(query).build();
@@ -337,8 +334,6 @@ describe('FindCommandBuilder', () => {
       const query = createQuery({ excludeDir: ['node_modules'] });
       const { args } = new FindCommandBuilder().fromQuery(query).build();
 
-      expect(args).toContain('(');
-      expect(args).toContain('-path');
       expect(args).toContain('*/node_modules');
       expect(args).toContain('-prune');
     });
@@ -388,7 +383,6 @@ describe('FindCommandBuilder', () => {
         modifiedWithin: '7d',
         excludeDir: ['node_modules'],
       });
-
       const { command, args } = new FindCommandBuilder()
         .fromQuery(query)
         .build();

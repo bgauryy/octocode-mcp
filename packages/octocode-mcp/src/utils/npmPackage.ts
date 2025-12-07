@@ -95,6 +95,7 @@ async function fetchPackageDetails(
     try {
       const parsed = JSON.parse(output);
       data = Array.isArray(parsed) ? parsed[0] : parsed;
+      if (!data) return null;
     } catch {
       return null;
     }

@@ -48,20 +48,21 @@ async function searchGitHubCodeAPIInternal(
   try {
     const octokit = await getOctokit(authInfo);
 
-    if (
-      params.keywordsToSearch &&
-      params.keywordsToSearch.length > 0 &&
-      !params.keywordsToSearch.some(term => term && term.trim())
-    ) {
-      await logSessionError(
-        TOOL_NAMES.GITHUB_SEARCH_CODE,
-        SEARCH_ERRORS.QUERY_EMPTY.code
+    if (params.keywordsToSearch && params.keywordsToSearch.length > 0) {
+      const validTerms = params.keywordsToSearch.filter(
+        term => term && term.trim()
       );
-      return {
-        error: SEARCH_ERRORS.QUERY_EMPTY.message,
-        type: 'http',
-        status: 400,
-      };
+      if (validTerms.length === 0) {
+        await logSessionError(
+          TOOL_NAMES.GITHUB_SEARCH_CODE,
+          SEARCH_ERRORS.QUERY_EMPTY.code
+        );
+        return {
+          error: SEARCH_ERRORS.QUERY_EMPTY.message,
+          type: 'http',
+          status: 400,
+        };
+      }
     }
 
     const query = buildCodeSearchQuery(params);
