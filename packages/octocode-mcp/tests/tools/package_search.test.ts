@@ -232,6 +232,8 @@ import {
   searchPackage,
   type PackageSearchInput,
   type NpmPackageResult,
+  type MinimalPackageResult,
+  type PythonPackageResult,
 } from '../../src/utils/package.js';
 import { registerPackageSearchTool } from '../../src/tools/package_search.js';
 
@@ -395,11 +397,11 @@ describe('searchPackage - NPM (CLI)', () => {
       expect(pkg.repoUrl).toBe('https://github.com/axios/axios');
       // version IS present now
       expect(pkg.version).toBe('1.6.0');
-      
+
       // description and keywords are REMOVED
       expect('description' in pkg).toBe(false);
       expect('keywords' in pkg).toBe(false);
-      
+
       expect(result.ecosystem).toBe('npm');
       expect(result.totalFound).toBe(1);
     }
@@ -447,14 +449,14 @@ describe('searchPackage - NPM (CLI)', () => {
       const pkg = result.packages[0] as NpmPackageResult;
       expect(pkg.path).toBe('axios');
       expect(pkg.repoUrl).toBe('https://github.com/axios/axios');
-      
+
       // fields present
       expect(pkg.version).toBe('1.6.0');
-      
+
       // Removed fields
       expect('description' in pkg).toBe(false);
       expect('keywords' in pkg).toBe(false);
-      
+
       expect(result.ecosystem).toBe('npm');
       expect(result.totalFound).toBe(1);
     }
@@ -468,14 +470,14 @@ describe('searchPackage - NPM (CLI)', () => {
         version: '4.17.21',
         description: 'Lodash modular utilities',
         keywords: ['modules', 'stdlib', 'util'],
-        links: { repository: 'git+https://github.com/lodash/lodash.git' }
+        links: { repository: 'git+https://github.com/lodash/lodash.git' },
       },
       {
         name: 'lodash-es',
         version: '4.17.21',
         description: 'Lodash exported as ES modules',
         keywords: ['es', 'modules'],
-        links: { repository: 'git+https://github.com/lodash/lodash.git' }
+        links: { repository: 'git+https://github.com/lodash/lodash.git' },
       },
     ]);
 
@@ -511,7 +513,7 @@ describe('searchPackage - NPM (CLI)', () => {
     if ('packages' in result) {
       expect(result.packages.length).toBe(2);
       expect(result.totalFound).toBe(2);
-      
+
       const pkg = result.packages[0] as NpmPackageResult;
       expect(pkg.path).toBe('lodash');
       // version IS present now
@@ -702,7 +704,7 @@ describe('searchPackage - Python', () => {
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
       expect(result.packages.length).toBe(1);
-      const pkg = result.packages[0]!;
+      const pkg = result.packages[0] as MinimalPackageResult;
       expect(pkg.name).toBe('requests');
       expect(pkg.repository).toBe('https://github.com/psf/requests');
       // By default, should NOT have these fields
@@ -748,14 +750,14 @@ describe('searchPackage - Python', () => {
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
       expect(result.packages.length).toBe(1);
-      const pkg = result.packages[0]!;
+      const pkg = result.packages[0] as PythonPackageResult;
       expect(pkg.name).toBe('requests');
       expect(pkg.repository).toBe('https://github.com/psf/requests');
       // With pythonFetchMetadata: true, should have full fields
       expect('version' in pkg).toBe(true);
       expect('description' in pkg).toBe(true);
       expect('keywords' in pkg).toBe(true);
-      expect((pkg as { version: string }).version).toBe('2.31.0');
+      expect(pkg.version).toBe('2.31.0');
       expect(result.ecosystem).toBe('python');
       expect(result.totalFound).toBe(1);
     }
@@ -791,7 +793,7 @@ describe('searchPackage - Python', () => {
 
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
-      const pkg = result.packages[0]!;
+      const pkg = result.packages[0] as MinimalPackageResult;
       expect(pkg.repository).toBe('https://github.com/numpy/numpy');
     }
   });
@@ -926,7 +928,7 @@ describe('searchPackage - Name normalization', () => {
 
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
-      const pkg = result.packages[0]!;
+      const pkg = result.packages[0] as MinimalPackageResult;
       expect(pkg.name).toBe('some_package');
     }
   });
@@ -996,7 +998,7 @@ describe('searchPackage - Python Edge Cases', () => {
 
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
-      const pkg = result.packages[0]!;
+      const pkg = result.packages[0] as MinimalPackageResult;
       expect(pkg.repository).toBe('https://github.com/test/test-pkg');
     }
   });
@@ -1029,7 +1031,7 @@ describe('searchPackage - Python Edge Cases', () => {
 
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
-      const pkg = result.packages[0]!;
+      const pkg = result.packages[0] as MinimalPackageResult;
       expect(pkg.repository).toBeNull();
     }
   });
@@ -1158,10 +1160,9 @@ describe('searchPackage - Python Edge Cases', () => {
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
       // By default (minimal), should have name and repository
-      expect(result.packages[0]!.name).toBe('test-pkg');
-      expect(result.packages[0]!.repository).toBe(
-        'https://github.com/test/test-pkg'
-      );
+      const pkg = result.packages[0] as MinimalPackageResult;
+      expect(pkg.name).toBe('test-pkg');
+      expect(pkg.repository).toBe('https://github.com/test/test-pkg');
     }
   });
 
@@ -1230,9 +1231,8 @@ describe('searchPackage - Python Edge Cases', () => {
 
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
-      expect(result.packages[0]!.repository).toBe(
-        'https://gitlab.com/test/repo'
-      );
+      const pkg = result.packages[0] as MinimalPackageResult;
+      expect(pkg.repository).toBe('https://gitlab.com/test/repo');
     }
   });
 
@@ -1265,9 +1265,8 @@ describe('searchPackage - Python Edge Cases', () => {
 
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
-      expect(result.packages[0]!.repository).toBe(
-        'https://bitbucket.org/test/repo'
-      );
+      const pkg = result.packages[0] as MinimalPackageResult;
+      expect(pkg.repository).toBe('https://bitbucket.org/test/repo');
     }
   });
 
@@ -1299,9 +1298,8 @@ describe('searchPackage - Python Edge Cases', () => {
 
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
-      expect(result.packages[0]!.repository).toBe(
-        'https://gitlab.com/test/repo'
-      );
+      const pkg = result.packages[0] as MinimalPackageResult;
+      expect(pkg.repository).toBe('https://gitlab.com/test/repo');
     }
   });
 });
@@ -1360,7 +1358,7 @@ describe('Package search response structure', () => {
       expect(pkg).toHaveProperty('path');
       expect(pkg).toHaveProperty('repoUrl');
       expect(pkg).toHaveProperty('version');
-      
+
       // Removed fields
       expect(pkg).not.toHaveProperty('description');
       expect(pkg).not.toHaveProperty('keywords');
@@ -1418,7 +1416,7 @@ describe('Package search response structure', () => {
       // So if it gets array, it takes [0].
       // So it should work!
       // And properties will be mapped.
-      
+
       expect(pkg).toHaveProperty('mainEntry'); // will be null if not in mock
     }
   });
@@ -2917,7 +2915,7 @@ describe('Task 4: pythonFetchMetadata Parameter', () => {
 
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
-      const pkg = result.packages[0]!;
+      const pkg = result.packages[0] as MinimalPackageResult;
       expect(pkg.name).toBe('requests');
       expect(pkg.repository).toBe('https://github.com/psf/requests');
       // Should NOT have full metadata fields
@@ -2962,13 +2960,13 @@ describe('Task 4: pythonFetchMetadata Parameter', () => {
 
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
-      const pkg = result.packages[0]!;
+      const pkg = result.packages[0] as PythonPackageResult;
       expect(pkg.name).toBe('requests');
       expect('version' in pkg).toBe(true);
       expect('description' in pkg).toBe(true);
       expect('author' in pkg).toBe(true);
-      expect((pkg as { version: string }).version).toBe('2.31.0');
-      expect((pkg as { author: string }).author).toBe('Kenneth Reitz');
+      expect(pkg.version).toBe('2.31.0');
+      expect(pkg.author).toBe('Kenneth Reitz');
     }
   });
 });

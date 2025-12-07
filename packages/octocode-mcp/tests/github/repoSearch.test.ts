@@ -39,14 +39,18 @@ describe('GitHub Repository Search', () => {
               stargazers_count: 50000,
               description: 'A JavaScript library for building user interfaces',
               html_url: 'https://github.com/facebook/react',
+              created_at: '2013-05-24T10:00:00Z',
               updated_at: '2024-01-15T10:30:00Z',
+              pushed_at: '2024-01-15T08:00:00Z',
             },
             {
               full_name: 'vuejs/vue',
               stargazers_count: 40000,
               description: 'Vue.js framework',
               html_url: 'https://github.com/vuejs/vue',
+              created_at: '2016-01-01T10:00:00Z',
               updated_at: '2024-01-14T08:20:00Z',
+              pushed_at: '2024-01-14T06:00:00Z',
             },
           ],
         },
@@ -71,7 +75,9 @@ describe('GitHub Repository Search', () => {
           stars: 50000,
           description: 'A JavaScript library for building user interfaces',
           url: 'https://github.com/facebook/react',
+          createdAt: expect.any(String),
           updatedAt: expect.any(String),
+          pushedAt: expect.any(String),
         });
       }
     });

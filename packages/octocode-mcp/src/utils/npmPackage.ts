@@ -13,6 +13,11 @@ interface NpmViewResult {
   main?: string;
   types?: string;
   typings?: string;
+  time?: {
+    modified?: string;
+    created?: string;
+    [version: string]: string | undefined;
+  };
 }
 
 interface NpmCliSearchResult {
@@ -49,12 +54,24 @@ function mapToResult(data: NpmViewResult): NpmPackageResult {
     }
   }
 
+  // Get last published date from time object
+  let lastPublished: string | undefined;
+  if (data.time) {
+    // Prefer the specific version's publish time, fallback to modified
+    const versionTime = data.version ? data.time[data.version] : undefined;
+    const timeStr = versionTime || data.time.modified;
+    if (timeStr) {
+      lastPublished = new Date(timeStr).toLocaleDateString('en-GB');
+    }
+  }
+
   return {
     repoUrl,
     path: data.name,
     version: data.version || 'latest',
     mainEntry: data.main || null,
     typeDefinitions: data.types || data.typings || null,
+    lastPublished,
   };
 }
 
@@ -62,6 +79,7 @@ async function fetchPackageDetails(
   packageName: string
 ): Promise<NpmPackageResult | null> {
   try {
+    // npm view --json returns all fields including 'time' with publish timestamps
     const result = await executeNpmCommand('view', [packageName, '--json']);
 
     if (result.error || result.exitCode !== 0) {

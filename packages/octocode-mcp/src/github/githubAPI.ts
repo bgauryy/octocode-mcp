@@ -85,6 +85,9 @@ export type OptimizedCodeSearchResult = {
   repository?: {
     name: string;
     url: string;
+    createdAt?: string;
+    updatedAt?: string;
+    pushedAt?: string;
   };
   securityWarnings?: string[];
   minified?: boolean;

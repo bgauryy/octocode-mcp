@@ -401,6 +401,7 @@ export const GITHUB_FETCH_CONTENT = createSchemaHelper(
   processing: {
     minified: string;
     sanitize: string;
+    addTimestamp: string;
   };
   range: {
     startLine: string;

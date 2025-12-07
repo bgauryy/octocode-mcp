@@ -1,6 +1,7 @@
 import { generateCacheKey, withDataCache } from './cache.js';
 import { searchNpmPackage, checkNpmDeprecation } from './npmPackage.js';
 import { searchPythonPackage } from './pythonPackage.js';
+import { tryInferRepoUrl } from './githubRepoFallback.js';
 
 export interface PackageSearchInput {
   ecosystem: 'npm' | 'python';
@@ -24,6 +25,7 @@ export interface NpmPackageResult {
   version: string;
   mainEntry: string | null;
   typeDefinitions: string | null;
+  lastPublished?: string;
 }
 
 export interface PythonPackageResult {
@@ -35,6 +37,7 @@ export interface PythonPackageResult {
   homepage?: string;
   author?: string;
   license?: string;
+  lastPublished?: string;
 }
 
 export type PackageResult =
@@ -77,7 +80,23 @@ export async function searchPackage(
     cacheKey,
     async () => {
       if (query.ecosystem === 'npm') {
-        return searchNpmPackage(query.name, searchLimit, fetchMetadata);
+        const result = await searchNpmPackage(
+          query.name,
+          searchLimit,
+          fetchMetadata
+        );
+
+        // Apply repo URL fallback for npm packages missing repoUrl
+        if (!('error' in result) && result.packages.length > 0) {
+          result.packages = result.packages.map(pkg => {
+            if ('repoUrl' in pkg && !pkg.repoUrl) {
+              return tryInferRepoUrl(pkg.path, pkg);
+            }
+            return pkg;
+          });
+        }
+
+        return result;
       } else {
         return searchPythonPackage(query.name, fetchMetadata);
       }

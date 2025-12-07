@@ -171,7 +171,8 @@ describe('searchNpmPackage', () => {
 
       const result = await searchNpmPackage('exact-pkg', 1, true);
       expect(result).toHaveProperty('packages');
-      const pkg = (result as PackageSearchAPIResult).packages[0] as NpmPackageResult;
+      const pkg = (result as PackageSearchAPIResult)
+        .packages[0] as NpmPackageResult;
       expect(pkg).toBeDefined();
       expect(pkg.path).toBe('exact-pkg');
       expect(pkg.repoUrl).toBe('https://github.com/user/repo');
@@ -237,7 +238,13 @@ describe('searchNpmPackage', () => {
     it('should return packages with fetched repository', async () => {
       // Mock search result
       mockExecuteNpmCommand.mockResolvedValueOnce({
-        stdout: JSON.stringify([{ name: 'found-pkg', version: '1.0.0', links: { repository: 'https://github.com/found/repo' } }]),
+        stdout: JSON.stringify([
+          {
+            name: 'found-pkg',
+            version: '1.0.0',
+            links: { repository: 'https://github.com/found/repo' },
+          },
+        ]),
         stderr: '',
         exitCode: 0,
       });
@@ -245,10 +252,10 @@ describe('searchNpmPackage', () => {
       // If fetchMetadata is true, it calls npm view
       mockExecuteNpmCommand.mockResolvedValueOnce({
         stdout: JSON.stringify({
-            name: 'found-pkg',
-            version: '1.0.0',
-            repository: { url: 'https://github.com/found/repo' },
-            main: 'index.js'
+          name: 'found-pkg',
+          version: '1.0.0',
+          repository: { url: 'https://github.com/found/repo' },
+          main: 'index.js',
         }),
         stderr: '',
         exitCode: 0,
@@ -256,26 +263,34 @@ describe('searchNpmPackage', () => {
 
       const result = await searchNpmPackage('keyword search', 1, true);
       expect(result).toHaveProperty('packages');
-      const pkg = (result as PackageSearchAPIResult).packages[0] as NpmPackageResult;
+      const pkg = (result as PackageSearchAPIResult)
+        .packages[0] as NpmPackageResult;
       expect(pkg).toBeDefined();
       expect(pkg.path).toBe('found-pkg');
       expect(pkg.repoUrl).toBe('https://github.com/found/repo');
       expect(pkg.mainEntry).toBe('index.js');
     });
-    
-    it('should use search result info when fetchMetadata is false', async () => {
-        mockExecuteNpmCommand.mockResolvedValueOnce({
-            stdout: JSON.stringify([{ name: 'found-pkg', version: '1.0.0', links: { repository: 'https://github.com/found/repo' } }]),
-            stderr: '',
-            exitCode: 0,
-        });
 
-        const result = await searchNpmPackage('keyword search', 1, false);
-        expect(result).toHaveProperty('packages');
-        const pkg = (result as PackageSearchAPIResult).packages[0] as NpmPackageResult;
-        expect(pkg.path).toBe('found-pkg');
-        expect(pkg.repoUrl).toBe('https://github.com/found/repo');
-        expect(pkg.mainEntry).toBeNull();
+    it('should use search result info when fetchMetadata is false', async () => {
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        stdout: JSON.stringify([
+          {
+            name: 'found-pkg',
+            version: '1.0.0',
+            links: { repository: 'https://github.com/found/repo' },
+          },
+        ]),
+        stderr: '',
+        exitCode: 0,
+      });
+
+      const result = await searchNpmPackage('keyword search', 1, false);
+      expect(result).toHaveProperty('packages');
+      const pkg = (result as PackageSearchAPIResult)
+        .packages[0] as NpmPackageResult;
+      expect(pkg.path).toBe('found-pkg');
+      expect(pkg.repoUrl).toBe('https://github.com/found/repo');
+      expect(pkg.mainEntry).toBeNull();
     });
   });
 });

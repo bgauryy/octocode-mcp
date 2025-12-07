@@ -49,6 +49,13 @@ export const FileContentQuerySchema = BaseQuerySchema.extend({
     .max(50)
     .default(5)
     .describe(GITHUB_FETCH_CONTENT.range.matchStringContextLines),
+  addTimestamp: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      'Fetch last modification timestamp via commits API (extra API call). Useful for sensitive files to verify data freshness and detect recent changes.'
+    ),
 }).refine(
   data => {
     if (

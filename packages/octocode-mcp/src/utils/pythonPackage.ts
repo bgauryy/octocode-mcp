@@ -116,6 +116,19 @@ export async function searchPythonPackage(
         description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
       }
 
+      // Extract last published date from releases
+      let lastPublished: string | undefined;
+      const releases = packageInfo.releases;
+      if (releases && info.version && releases[info.version]) {
+        const versionFiles = releases[info.version];
+        if (Array.isArray(versionFiles) && versionFiles.length > 0) {
+          const uploadTime = versionFiles[0]?.upload_time;
+          if (uploadTime) {
+            lastPublished = new Date(uploadTime).toLocaleDateString('en-GB');
+          }
+        }
+      }
+
       const result: PythonPackageResult = {
         name: info.name || packageName,
         version: info.version || 'latest',
@@ -125,6 +138,7 @@ export async function searchPythonPackage(
         homepage: info.home_page || undefined,
         author: info.author || undefined,
         license: info.license || undefined,
+        lastPublished,
       };
 
       return {

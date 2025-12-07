@@ -122,6 +122,7 @@ export interface FileContentQuery {
   matchStringContextLines?: number;
   minified?: boolean;
   sanitize?: boolean;
+  addTimestamp?: boolean;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -153,6 +154,8 @@ export interface ContentResultData {
   originalQuery?: FileContentQuery;
   securityWarnings?: string[];
   sampling?: SamplingInfo;
+  lastModified?: string;
+  lastModifiedBy?: string;
 }
 
 /** Complete file content result */
@@ -186,7 +189,9 @@ export interface SimplifiedRepository {
   stars: number;
   description: string;
   url: string;
+  createdAt: string;
   updatedAt: string;
+  pushedAt: string;
 }
 
 /** Repository search result */

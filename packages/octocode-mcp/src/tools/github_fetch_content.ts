@@ -109,6 +109,8 @@ async function fetchMultipleGitHubFileContents(
         'minified',
         'minificationFailed',
         'minificationType',
+        'lastModified',
+        'lastModifiedBy',
         'securityWarnings',
         'sampling',
         'error',
@@ -136,6 +138,7 @@ function buildApiRequest(query: FileContentQuery) {
     matchStringContextLines: query.matchStringContextLines ?? 5,
     minified: query.minified ?? true,
     sanitize: query.sanitize ?? true,
+    addTimestamp: query.addTimestamp ?? false,
   };
 }
 

@@ -58,11 +58,11 @@ function createBulkResponse<
     'errorStatusHints',
   ];
   const resultFields = [
-    'status',
-    'data',
     'mainResearchGoal',
     'researchGoal',
     'reasoning',
+    'status',
+    'data',
   ];
   const standardFields = [...topLevelFields, ...resultFields, 'owner', 'repo'];
   const fullKeysPriority = [
