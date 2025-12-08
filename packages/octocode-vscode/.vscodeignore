@@ -1,3 +1,4 @@
+# Source and config
 .vscode/**
 .vscode-test/**
 src/**
@@ -13,3 +14,8 @@ tsconfig.json
 .claude/**
 yarn.lock
 package-lock.json
+
+# Exclude parent directories explicitly
+../**
+../../**
+../../../**
