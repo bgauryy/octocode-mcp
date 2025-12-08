@@ -12,3 +12,4 @@ tsconfig.json
 **/*.map
 *.vsix
 .claude/**
+out/**
