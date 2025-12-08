@@ -129,11 +129,11 @@ This extension works with all major AI-powered editors and assistants:
 
 | IDE | Status | Config Location |
 |-----|--------|-----------------|
-| <img src="https://cursor.sh/favicon.ico" width="16" height="16"> **Cursor** | Native MCP | `~/.cursor/mcp.json` |
-| <img src="https://codeium.com/favicon.svg" width="16" height="16"> **Windsurf** | Native MCP | `~/.codeium/windsurf/mcp_config.json` |
-| <img src="https://raw.githubusercontent.com/VectorLogoZone/vectorlogozone/main/www/logos/traeai/traeai-icon.svg" width="16" height="16"> **Trae** | Native MCP | Platform-specific* |
-| <img src="https://raw.githubusercontent.com/kvndrsslr/sketchybar-app-font/main/svgs/:antigravity:.svg" width="16" height="16"> **Antigravity** | Native MCP | `~/.gemini/antigravity/mcp_config.json` |
-| <img src="https://code.visualstudio.com/favicon.ico" width="16" height="16"> **VS Code** | Via Claude Desktop | Platform-specific* |
+| [**Cursor**](https://cursor.sh) | Native MCP | `~/.cursor/mcp.json` |
+| [**Windsurf**](https://codeium.com/windsurf) | Native MCP | `~/.codeium/windsurf/mcp_config.json` |
+| [**Trae**](https://trae.ai) | Native MCP | Platform-specific* |
+| [**Antigravity**](https://antigravity.dev) | Native MCP | `~/.gemini/antigravity/mcp_config.json` |
+| [**VS Code**](https://code.visualstudio.com) | Via Claude Desktop | Platform-specific* |
 
 <details>
 <summary>*Platform-specific paths</summary>
@@ -147,8 +147,8 @@ This extension works with all major AI-powered editors and assistants:
 
 | Assistant | Command | Config Location |
 |-----------|---------|-----------------|
-| <img src="https://raw.githubusercontent.com/cline/cline/main/assets/icons/icon.png" width="16" height="16"> **Cline** | `Install for Cline` | VS Code globalStorage |
-| <img src="https://raw.githubusercontent.com/RooVetGit/Roo-Code/main/src/assets/icons/icon.png" width="16" height="16"> **Roo Code** | `Install for Roo Code` | VS Code globalStorage |
+| [**Cline**](https://github.com/cline/cline) | `Install for Cline` | VS Code globalStorage |
+| [**Roo Code**](https://github.com/RooVetGit/Roo-Code) | `Install for Roo Code` | VS Code globalStorage |
 
 ---
 
