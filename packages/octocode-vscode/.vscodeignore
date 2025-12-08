@@ -1,3 +1,4 @@
+# Source and config
 .vscode/**
 .vscode-test/**
 src/**
@@ -8,8 +9,13 @@ node_modules/**
 webpack.config.js
 tsconfig.json
 **/*.ts
-!out/**/*.js
 **/*.map
 *.vsix
 .claude/**
-out/**
+yarn.lock
+package-lock.json
+
+# Exclude parent directories explicitly
+../**
+../../**
+../../../**

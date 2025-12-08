@@ -1,9 +1,9 @@
 {
   "name": "octocode-mcp-vscode",
   "displayName": "Octocode MCP",
-  "publisher": "octocode",
-  "description": "Management extension for Octocode MCP Server. Enables AI assistants to search, analyze, and understand codebases across GitHub with powerful tools for code discovery, repository exploration, and PR analysis.",
-  "version": "1.0.0",
+  "publisher": "bgauryy",
+  "description": "Management extension for Octocode MCP Server. Enables AI assistants to search, analyze, and understand codebases across GitHub. Supports Cursor, Windsurf, Antigravity, Cline, Roo Code, Trae, and more.",
+  "version": "1.0.2",
   "icon": "images/icon.png",
   "engines": {
     "vscode": "^1.85.0"
@@ -34,6 +34,11 @@
     "copilot",
     "cursor",
     "windsurf",
+    "antigravity",
+    "cline",
+    "roo-code",
+    "trae",
+    "gemini",
     "octocode",
     "pull-request",
     "code-research",
@@ -60,6 +65,22 @@
       {
         "command": "octocode.installMcp",
         "title": "Octocode MCP: Install MCP Server"
+      },
+      {
+        "command": "octocode.installForCline",
+        "title": "Octocode MCP: Install for Cline"
+      },
+      {
+        "command": "octocode.installForRooCode",
+        "title": "Octocode MCP: Install for Roo Code"
+      },
+      {
+        "command": "octocode.installForTrae",
+        "title": "Octocode MCP: Install for Trae"
+      },
+      {
+        "command": "octocode.installForAll",
+        "title": "Octocode MCP: Install for All Clients"
       }
     ],
     "configuration": {
@@ -68,7 +89,7 @@
         "octocode.autoInstallMcp": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically configure Octocode MCP server in supported editors (Cursor, Windsurf)."
+          "description": "Automatically configure Octocode MCP server in supported editors (Cursor, Windsurf, Trae, Antigravity)."
         },
         "octocode.githubToken": {
           "type": "string",

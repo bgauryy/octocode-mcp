@@ -1,6 +1,6 @@
-# Octocode Extension
+# 🔍🐙 Octocode 
 
-**Intelligent Code Context for AI Systems**
+> **Use Octocode. Smart Search. Any Code.**
 
 [Octocode.ai](https://octocode.ai) • [GitHub Repository](https://github.com/bgauryy/octocode-mcp) • [Report Issues](https://github.com/bgauryy/octocode-mcp/issues)
 
@@ -8,67 +8,93 @@
 
 ## Overview
 
-Octocode for VS Code is a management extension for the **Octocode Model Context Protocol (MCP) Server**. It bridges the gap between your AI editor (Cursor, Windsurf, VS Code) and the GitHub ecosystem, enabling your AI assistant to perform deep research, code analysis, and pattern discovery across millions of repositories.
+**Transform GitHub into instant AI knowledge.**
 
-### About Model Context Protocol (MCP)
+Octocode is the leading AI-powered GitHub code intelligence platform. This extension configures the **Octocode MCP Server** as a local agent, enabling your AI assistant (Cursor, Windsurf, VS Code Copilot, Claude) to perform deep research, architectural analysis, and pattern discovery across millions of public and private repositories.
 
-The Model Context Protocol (MCP) is an open standard that enables AI models to interact with external tools and data sources. This extension automatically configures the **Octocode MCP Server** as a local agent, allowing your editor's AI to securely execute specialized GitHub research commands.
+### Requirements
+- **Node.js**: v20 or higher
+- **GitHub Account**: Authorized user
+  - [gh CLI](https://cli.github.com/) -> `gh auth login`
+   - [`GITHUB_TOKEN`](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) env param
 
-## Features
 
--   **Automated MCP Configuration**: Detects your editor environment (Cursor, Windsurf, VS Code) and injects the necessary MCP server configuration.
--   **Process Management**: Manages the lifecycle of the local `octocode-mcp` Node.js process.
--   **Token Management**: Securely handles GitHub Personal Access Tokens (PAT) for increased API rate limits.
--   **Status Monitoring**: Provides real-time server status and connection diagnostics via the VS Code status bar.
+---
 
-## Capabilities
+## Prompts Menu
 
-Once installed, your AI assistant gains access to the following MCP tools:
+Start with `/help` or `/init` to get started!
 
--   **githubSearchCode**: Semantic and exact-match code search across the entire GitHub corpus.
--   **githubSearchRepositories**: Discovery of repositories by technology, topic, or keyword.
--   **githubViewRepoStructure**: Analysis of repository architecture and file layouts.
--   **githubGetFileContent**: Context-aware file reading with smart token optimization.
--   **githubSearchPullRequests**: Historical analysis of code changes, diffs, and discussions.
--   **packageSearch**: Dependency metadata resolution for NPM and Python packages.
+### `/init`
+**Context Gathering**
+Interactive interview to establish user role, goals, and constraints. Creates `.octocode/context/context.md`.
 
-## Installation & Setup
+### `/research`
+**Code Forensics & Discovery**
+Deep code discovery, pattern analysis, and bug investigation. Uses parallel bulk queries & staged analysis to prove flows.
 
-1.  **Install the Extension**: Download "Octocode MCP" from the VS Code Marketplace.
-2.  **Restart Editor**: A full restart is required for the editor to load the new MCP configuration.
-3.  **Verification**: The status bar will show "Octocode MCP: Running".
+### `/plan`
+**Adaptive Research & Implementation**
+Research, Plan & Implement complex tasks. Breaks down tasks, finds patterns, and guides execution (Interactive/Auto).
 
-## Authentication
+### `/generate`
+**App Scaffolding**
+Research-driven stack selection and project setup. "Measure twice, cut once" approach to new projects.
 
-**[See Full Installation Guide](https://octocode.ai/#installation)**
+### `/review_pull_request`
+**PR Review** (*Args: `prUrl`*)
+Defects-First PR review. Focuses on bugs, security, complexity, and code quality.
 
-To perform searches, you need to authenticate.
+### `/review_security`
+**Security Audit** (*Args: `repoUrl`*)
+Risk assessment and vulnerability surfacing. Maps attack surface and investigates specific risks.
 
-### Option 1: GitHub CLI (Recommended)
+---
 
-If you have the [GitHub CLI](https://cli.github.com/) (`gh`) installed, simply run:
+## Tools Available
 
-```bash
-gh auth login
+All tools support bulk operations (1-3 queries).
+
+| Tool | Purpose | Key Args |
+|------|---------|----------|
+| `githubSearchRepositories` | **DISCOVER**: Find repos | `stars`, `topicsToSearch` |
+| `githubViewRepoStructure` | **EXPLORE**: Map layout | `depth`, `path` |
+| `githubSearchCode` | **SEARCH**: Find patterns | `keywordsToSearch`, `match="path"\|"file"` |
+| `githubGetFileContent` | **ANALYZE**: Read logic | `matchString`, `startLine` |
+| `githubSearchPullRequests` | **HISTORY**: PR context | `prNumber`, `state`, `diff` |
+| `packageSearch` | **DEPS**: Library meta | `query` |
+
+> **Note**: Octocode also supports NPM for smart research and dependency analysis.
+
+---
+
+## Installation Example
+
+You can configure Octocode manually in your MCP settings (Cursor, Claude, etc.) using the examples below.
+
+### Prerequisites
+
+*   **GitHub CLI**: [https://cli.github.com/](https://cli.github.com/) (Recommended)
+*   **Tokens** (only `repo` read permission is required!):
+    *   Classic Token: [https://github.com/settings/tokens/new](https://github.com/settings/tokens/new)
+    *   Fine-grained Token: [https://github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)
+
+### Mac / Linux Default (GitHub CLI)
+*Use this if you have `gh` installed and authenticated (`gh auth login`).*
+
+```json
+{
+  "octocode": {
+    "command": "npx",
+    "args": [
+      "octocode-mcp@latest"
+    ]
+  }
+}
 ```
 
-Octocode will automatically use your CLI credentials. No further configuration is needed.
-
-### Option 2: GitHub Token
-
-If you don't have the CLI, or prefer using a token, you can provide a `GITHUB_TOKEN`. You only need **`repo`** (read-only) permissions.
-
-1.  **Create Token**:
-    *   **[Classic Token](https://github.com/settings/tokens/new?scopes=repo&description=Octocode%20MCP)** (Select `repo` scope)
-    *   **[Fine-grained Token](https://github.com/settings/personal-access-tokens/new)** (Select "All repositories" and "Contents: Read")
-2.  **Configure**:
-    *   Open VS Code Settings (`Cmd+,` or `Ctrl+,`).
-    *   Search for `Octocode`.
-    *   Paste your token into `Octocode: Github Token`.
-
-### Manual Configuration
-
-If you prefer to configure the MCP server manually (e.g., in `~/.cursor/mcp.json`) and are **not** using the GitHub CLI:
+### Windows Default / With PAT
+*Use this if you need to provide a Personal Access Token directly.*
 
 ```json
 {
@@ -84,17 +110,131 @@ If you prefer to configure the MCP server manually (e.g., in `~/.cursor/mcp.json
 }
 ```
 
-## Supported Environments
+---
 
-This extension supports editors that implement the MCP client specification:
+## Troubleshooting
 
--   **Cursor**: Writes configuration to `~/.cursor/mcp.json`.
--   **Windsurf**: Writes configuration to `~/.codeium/windsurf/mcp_config.json`.
--   **VS Code**: Compatible with MCP-enabled extensions like GitHub Copilot (preview) or Claude Desktop.
+For any issues with installation or authentication, please visit:
+**[https://octocode.ai/?auth=cli#installation](https://octocode.ai/?auth=cli#installation)**
+
+For more details on features, prompts, and documentation, visit **[octocode.ai](https://octocode.ai)**.
+
+---
+
+## Supported IDEs & AI Assistants
+
+This extension works with all major AI-powered editors and assistants:
+
+### Editors (Auto-Detection)
+
+| IDE | Status | Config Location |
+|-----|--------|-----------------|
+| <img src="https://cursor.sh/favicon.ico" width="16" height="16"> **Cursor** | Native MCP | `~/.cursor/mcp.json` |
+| <img src="https://codeium.com/favicon.svg" width="16" height="16"> **Windsurf** | Native MCP | `~/.codeium/windsurf/mcp_config.json` |
+| <img src="https://raw.githubusercontent.com/VectorLogoZone/vectorlogozone/main/www/logos/traeai/traeai-icon.svg" width="16" height="16"> **Trae** | Native MCP | Platform-specific* |
+| <img src="https://raw.githubusercontent.com/kvndrsslr/sketchybar-app-font/main/svgs/:antigravity:.svg" width="16" height="16"> **Antigravity** | Native MCP | `~/.gemini/antigravity/mcp_config.json` |
+| <img src="https://code.visualstudio.com/favicon.ico" width="16" height="16"> **VS Code** | Via Claude Desktop | Platform-specific* |
+
+<details>
+<summary>*Platform-specific paths</summary>
+
+- **Trae**: macOS: `~/Library/Application Support/Trae/mcp.json` · Windows: `%APPDATA%/Trae/mcp.json` · Linux: `~/.config/Trae/mcp.json`
+- **VS Code**: Falls back to Claude Desktop config · macOS: `~/Library/Application Support/Claude/claude_desktop_config.json` · Windows: `%APPDATA%/Claude/claude_desktop_config.json` · Linux: `~/.config/Claude/claude_desktop_config.json`
+
+</details>
+
+### AI Assistants & Other Clients (Manual Install)
+
+| Assistant | Command | Config Location |
+|-----------|---------|-----------------|
+| <img src="https://raw.githubusercontent.com/cline/cline/main/assets/icons/icon.png" width="16" height="16"> **Cline** | `Install for Cline` | VS Code globalStorage |
+| <img src="https://raw.githubusercontent.com/RooVetGit/Roo-Code/main/src/assets/icons/icon.png" width="16" height="16"> **Roo Code** | `Install for Roo Code` | VS Code globalStorage |
+
+---
+
+## GitHub Token Configuration
+
+### Option 1: Via VS Code Extension (Recommended)
+
+The easiest way to configure your GitHub token:
+
+```
+1. Open VS Code Settings (Cmd/Ctrl + ,)
+2. Search for "Octocode"
+3. Enter your GitHub token in "Octocode: Github Token"
+4. Restart your editor
+```
+
+The extension automatically:
+- Detects your editor type
+- Writes the token to the correct MCP config file
+- Passes `GITHUB_TOKEN` as an environment variable to the MCP server
+
+### Option 2: Via GitHub CLI (Zero Config)
+
+If you have `gh` CLI installed and authenticated:
+
+```bash
+gh auth login
+```
+
+Octocode automatically uses your `gh` CLI credentials - no token configuration needed!
+
+### Option 3: Manual MCP Configuration
+
+Add directly to your MCP config file:
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp@latest"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here"
+      }
+    }
+  }
+}
+```
+
+### Token Permissions Required
+
+Only **read** permissions are needed:
+- `repo` (for private repos) or `public_repo` (for public only)
+- Create tokens at: [github.com/settings/tokens](https://github.com/settings/tokens/new)
+
+---
+
+## What This Extension Does
+
+This extension **automatically configures** the Octocode MCP server for your editor and AI assistants:
+
+| Feature | Description |
+|---------|-------------|
+| **Auto-Detection** | Detects your editor (Cursor, Windsurf, Antigravity, Trae) and configures the appropriate MCP settings |
+| **Multi-Client Support** | Installs MCP config for Cline, Roo Code, and more |
+| **Token Management** | Passes your `GITHUB_TOKEN` from VS Code settings to the MCP server |
+| **Status Bar** | Shows server status with click-to-toggle controls |
+| **Cross-Platform** | Works on macOS, Windows, and Linux |
+
+### Commands
+
+| Command | Action |
+|---------|--------|
+| `Octocode MCP: Install MCP Server` | Configure MCP for current editor |
+| `Octocode MCP: Install for All Clients` | Configure MCP for all supported AI assistants |
+| `Octocode MCP: Install for Cline` | Configure MCP for Cline |
+| `Octocode MCP: Install for Roo Code` | Configure MCP for Roo Code |
+| `Octocode MCP: Install for Trae` | Configure MCP for Trae |
+| `Octocode MCP: Start Server` | Start the MCP server process |
+| `Octocode MCP: Stop Server` | Stop the MCP server process |
+| `Octocode MCP: Show Status` | Show current server status and instructions |
+
+> **Note**: The extension auto-installs the MCP configuration on first activation. Restart your editor to enable it.
 
 ---
 
 <div align="center">
   <p>Powered by <a href="https://octocode.ai"><b>Octocode.ai</b></a></p>
-  <p><i>The AI Research Agent for Code</i></p>
 </div>
