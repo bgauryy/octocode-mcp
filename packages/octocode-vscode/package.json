@@ -1,0 +1,101 @@
+{
+  "name": "octocode-mcp-vscode",
+  "displayName": "Octocode MCP",
+  "publisher": "octocode",
+  "description": "Management extension for Octocode MCP Server. Enables AI assistants to search, analyze, and understand codebases across GitHub with powerful tools for code discovery, repository exploration, and PR analysis.",
+  "version": "1.0.0",
+  "icon": "images/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bgauryy/octocode-mcp"
+  },
+  "homepage": "https://octocode.ai",
+  "bugs": {
+    "url": "https://github.com/bgauryy/octocode-mcp/issues"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "github",
+    "code-search",
+    "code-analysis",
+    "repository-explorer",
+    "ai",
+    "ai-assistant",
+    "claude",
+    "copilot",
+    "cursor",
+    "windsurf",
+    "octocode",
+    "pull-request",
+    "code-research",
+    "agentic"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "octocode.startServer",
+        "title": "Octocode MCP: Start Server"
+      },
+      {
+        "command": "octocode.stopServer",
+        "title": "Octocode MCP: Stop Server"
+      },
+      {
+        "command": "octocode.showStatus",
+        "title": "Octocode MCP: Show Status"
+      },
+      {
+        "command": "octocode.installMcp",
+        "title": "Octocode MCP: Install MCP Server"
+      }
+    ],
+    "configuration": {
+      "title": "Octocode MCP",
+      "properties": {
+        "octocode.autoInstallMcp": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically configure Octocode MCP server in supported editors (Cursor, Windsurf)."
+        },
+        "octocode.githubToken": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub personal access token for increased API rate limits (optional)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "yarn esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --minify",
+    "compile": "npm run build",
+    "watch": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --watch",
+    "lint": "yarn eslint src --ext ts",
+    "package": "npx @vscode/vsce package --allow-missing-repository --no-dependencies",
+    "publish": "npx @vscode/vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "@vscode/vsce": "^2.22.0",
+    "esbuild": "^0.27.1",
+    "eslint": "^8.57.0",
+    "typescript": "^5.3.0"
+  },
+  "license": "MIT"
+}
