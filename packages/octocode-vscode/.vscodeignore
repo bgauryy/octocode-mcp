@@ -1,12 +1,15 @@
 .vscode/**
 .vscode-test/**
 src/**
-out/**
 node_modules/**
 .gitignore
 .yarnrc
+.eslintrc.json
 webpack.config.js
 tsconfig.json
 **/*.ts
+!out/**/*.js
 **/*.map
 *.vsix
+.claude/**
+out/**
