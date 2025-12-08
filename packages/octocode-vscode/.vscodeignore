@@ -8,8 +8,8 @@ node_modules/**
 webpack.config.js
 tsconfig.json
 **/*.ts
-!out/**/*.js
 **/*.map
 *.vsix
 .claude/**
-out/**
+yarn.lock
+package-lock.json
