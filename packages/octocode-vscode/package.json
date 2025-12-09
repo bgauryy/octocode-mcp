@@ -3,7 +3,7 @@
   "displayName": "Octocode MCP",
   "publisher": "bgauryy",
   "description": "Management extension for Octocode MCP Server. Enables AI assistants to search, analyze, and understand codebases across GitHub. Supports Cursor, Windsurf, Antigravity, Cline, Roo Code, Trae, and more.",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "icon": "images/icon.png",
   "engines": {
     "vscode": "^1.85.0"
