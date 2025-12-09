@@ -4,6 +4,8 @@
 
 [Octocode.ai](https://octocode.ai) • [GitHub Repository](https://github.com/bgauryy/octocode-mcp) • [Report Issues](https://github.com/bgauryy/octocode-mcp/issues)
 
+📚 **Docs, tutorials & more info:** [**octocode.ai**](https://octocode.ai/)
+
 ---
 
 ## Overview
@@ -14,10 +16,84 @@ Octocode is the leading AI-powered GitHub code intelligence platform. This exten
 
 ### Requirements
 - **Node.js**: v20 or higher
-- **GitHub Account**: Authorized user
-  - [gh CLI](https://cli.github.com/) -> `gh auth login`
-   - [`GITHUB_TOKEN`](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) env param
+---
 
+### 🔐 GitHub Authentication
+
+#### ✅ Already Done?
+
+If you have **GitHub CLI (`gh`) installed and logged in** → **You're all set!** Octocode works automatically.
+
+Check: Run `gh auth status` in terminal. If it shows your username, skip to [Prompts Menu](#prompts-menu).
+
+---
+
+#### ⭐ Default: Sign in Command
+
+The quickest way to get started - works on all platforms:
+
+| Step | What to do |
+|------|------------|
+| **1** | Press `Cmd+Shift+P` (Mac) or `Ctrl+Shift+P` (Windows) |
+| **2** | Type **`Octocode MCP: Sign in to GitHub`** → press Enter |
+| **3** | A popup shows a **code** → **Copy it** |
+| **4** | Browser opens → **Paste the code** |
+| **5** | Click **Authorize** → ✅ Done! |
+
+Token syncs automatically to all your MCP configs.
+
+---
+
+#### 🆕 Alternative Methods:
+
+| Your Situation | Best Method |
+|----------------|-------------|
+| 🍎 **macOS / Linux** | [GitHub CLI](#-github-cli) (easiest) |
+| 🏢 **Organization/Enterprise repos** | [GitHub CLI](#-github-cli) (handles SSO/SAML) |
+| 🔧 **Custom setup / CI/CD** | [Manual Token](#-manual-token) |
+
+---
+
+#### 🖥️ GitHub CLI
+
+Best for: macOS, Linux, and **organization repos** (handles SSO automatically)
+
+```bash
+# Step 1: Install gh CLI
+# macOS
+brew install gh
+
+# Or download from: https://cli.github.com/
+
+# Step 2: Login (follow the prompts)
+gh auth login
+```
+
+That's it! No token configuration needed. Octocode detects `gh` automatically.
+
+---
+
+#### 🔑 Manual Token
+
+Best for: Custom setups, CI/CD, or fine-grained permissions
+
+**Step 1:** Create a token
+- [Classic Token](https://github.com/settings/tokens/new) - simpler setup
+- [Fine-grained Token](https://github.com/settings/personal-access-tokens/new) - supports read-only
+
+**Step 2:** Add to your MCP config file:
+
+```json
+{
+  "octocode": {
+    "command": "npx",
+    "args": ["octocode-mcp@latest"],
+    "env": {
+      "GITHUB_TOKEN": "ghp_your_token_here"
+    }
+  }
+}
+```
 
 ---
 
@@ -68,50 +144,6 @@ All tools support bulk operations (1-3 queries).
 
 ---
 
-## Installation Example
-
-You can configure Octocode manually in your MCP settings (Cursor, Claude, etc.) using the examples below.
-
-### Prerequisites
-
-*   **GitHub CLI**: [https://cli.github.com/](https://cli.github.com/) (Recommended)
-*   **Tokens** (only `repo` read permission is required!):
-    *   Classic Token: [https://github.com/settings/tokens/new](https://github.com/settings/tokens/new)
-    *   Fine-grained Token: [https://github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)
-
-### Mac / Linux Default (GitHub CLI)
-*Use this if you have `gh` installed and authenticated (`gh auth login`).*
-
-```json
-{
-  "octocode": {
-    "command": "npx",
-    "args": [
-      "octocode-mcp@latest"
-    ]
-  }
-}
-```
-
-### Windows Default / With PAT
-*Use this if you need to provide a Personal Access Token directly.*
-
-```json
-{
-  "octocode": {
-    "command": "npx",
-    "args": [
-      "octocode-mcp@latest"
-    ],
-    "env": {
-      "GITHUB_TOKEN": "ghp_your_token_here"
-    }
-  }
-}
-```
-
----
-
 ## Troubleshooting
 
 For any issues with installation or authentication, please visit:
@@ -129,11 +161,11 @@ This extension works with all major AI-powered editors and assistants:
 
 | IDE | Status | Config Location |
 |-----|--------|-----------------|
-| <img src="https://cursor.sh/favicon.ico" width="16" height="16"> **Cursor** | Native MCP | `~/.cursor/mcp.json` |
-| <img src="https://codeium.com/favicon.svg" width="16" height="16"> **Windsurf** | Native MCP | `~/.codeium/windsurf/mcp_config.json` |
-| <img src="https://raw.githubusercontent.com/VectorLogoZone/vectorlogozone/main/www/logos/traeai/traeai-icon.svg" width="16" height="16"> **Trae** | Native MCP | Platform-specific* |
-| <img src="https://raw.githubusercontent.com/kvndrsslr/sketchybar-app-font/main/svgs/:antigravity:.svg" width="16" height="16"> **Antigravity** | Native MCP | `~/.gemini/antigravity/mcp_config.json` |
-| <img src="https://code.visualstudio.com/favicon.ico" width="16" height="16"> **VS Code** | Via Claude Desktop | Platform-specific* |
+| [**Cursor**](https://cursor.sh) | Native MCP | `~/.cursor/mcp.json` |
+| [**Windsurf**](https://codeium.com/windsurf) | Native MCP | `~/.codeium/windsurf/mcp_config.json` |
+| [**Trae**](https://trae.ai) | Native MCP | Platform-specific* |
+| [**Antigravity**](https://antigravity.dev) | Native MCP | `~/.gemini/antigravity/mcp_config.json` |
+| [**VS Code**](https://code.visualstudio.com) | Via Claude Desktop | Platform-specific* |
 
 <details>
 <summary>*Platform-specific paths</summary>
@@ -147,62 +179,22 @@ This extension works with all major AI-powered editors and assistants:
 
 | Assistant | Command | Config Location |
 |-----------|---------|-----------------|
-| <img src="https://raw.githubusercontent.com/cline/cline/main/assets/icons/icon.png" width="16" height="16"> **Cline** | `Install for Cline` | VS Code globalStorage |
-| <img src="https://raw.githubusercontent.com/RooVetGit/Roo-Code/main/src/assets/icons/icon.png" width="16" height="16"> **Roo Code** | `Install for Roo Code` | VS Code globalStorage |
+| [**Cline**](https://github.com/cline/cline) | `Install for Cline` | VS Code globalStorage |
+| [**Roo Code**](https://github.com/RooVetGit/Roo-Code) | `Install for Roo Code` | VS Code globalStorage |
 
 ---
 
-## GitHub Token Configuration
+## Token Permissions
 
-### Option 1: Via VS Code Extension (Recommended)
+**Via OAuth or GitHub CLI**:
+- `repo` scope is required for private repos (GitHub OAuth has no read-only scope)
+- Octocode only performs **read operations** - your repos are safe
 
-The easiest way to configure your GitHub token:
-
-```
-1. Open VS Code Settings (Cmd/Ctrl + ,)
-2. Search for "Octocode"
-3. Enter your GitHub token in "Octocode: Github Token"
-4. Restart your editor
-```
-
-The extension automatically:
-- Detects your editor type
-- Writes the token to the correct MCP config file
-- Passes `GITHUB_TOKEN` as an environment variable to the MCP server
-
-### Option 2: Via GitHub CLI (Zero Config)
-
-If you have `gh` CLI installed and authenticated:
-
-```bash
-gh auth login
-```
-
-Octocode automatically uses your `gh` CLI credentials - no token configuration needed!
-
-### Option 3: Manual MCP Configuration
-
-Add directly to your MCP config file:
-
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["octocode-mcp@latest"],
-      "env": {
-        "GITHUB_TOKEN": "ghp_your_token_here"
-      }
-    }
-  }
-}
-```
-
-### Token Permissions Required
-
-Only **read** permissions are needed:
-- `repo` (for private repos) or `public_repo` (for public only)
-- Create tokens at: [github.com/settings/tokens](https://github.com/settings/tokens/new)
+**Want True Read-Only Access?** Use a Fine-grained PAT:
+1. Create at: [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)
+2. Select repositories → All or specific repos
+3. Set permissions: `Contents: Read-only` ✓ and `Metadata: Read-only` ✓
+4. Add token manually to MCP config (see [Requirements](#requirements))
 
 ---
 
@@ -220,6 +212,18 @@ This extension **automatically configures** the Octocode MCP server for your edi
 
 ### Commands
 
+Open Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and run:
+
+#### 🔐 GitHub Authentication
+
+| Command | Action |
+|---------|--------|
+| `Octocode MCP: Sign in to GitHub` | **OAuth login** - Authenticate with GitHub (recommended) |
+| `Octocode MCP: Sign out of GitHub` | Clear GitHub token from MCP configs |
+| `Octocode MCP: Show GitHub Auth Status` | Check current authentication status |
+
+#### ⚙️ MCP Installation
+
 | Command | Action |
 |---------|--------|
 | `Octocode MCP: Install MCP Server` | Configure MCP for current editor |
@@ -227,6 +231,11 @@ This extension **automatically configures** the Octocode MCP server for your edi
 | `Octocode MCP: Install for Cline` | Configure MCP for Cline |
 | `Octocode MCP: Install for Roo Code` | Configure MCP for Roo Code |
 | `Octocode MCP: Install for Trae` | Configure MCP for Trae |
+
+#### 🚀 Server Control
+
+| Command | Action |
+|---------|--------|
 | `Octocode MCP: Start Server` | Start the MCP server process |
 | `Octocode MCP: Stop Server` | Stop the MCP server process |
 | `Octocode MCP: Show Status` | Show current server status and instructions |
