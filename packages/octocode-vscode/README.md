@@ -220,6 +220,18 @@ This extension **automatically configures** the Octocode MCP server for your edi
 
 ### Commands
 
+Open Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and run:
+
+#### 🔐 GitHub Authentication
+
+| Command | Action |
+|---------|--------|
+| `Octocode MCP: Sign in to GitHub` | **OAuth login** - Authenticate with GitHub (recommended) |
+| `Octocode MCP: Sign out of GitHub` | Clear GitHub token from MCP configs |
+| `Octocode MCP: Show GitHub Auth Status` | Check current authentication status |
+
+#### ⚙️ MCP Installation
+
 | Command | Action |
 |---------|--------|
 | `Octocode MCP: Install MCP Server` | Configure MCP for current editor |
@@ -227,6 +239,11 @@ This extension **automatically configures** the Octocode MCP server for your edi
 | `Octocode MCP: Install for Cline` | Configure MCP for Cline |
 | `Octocode MCP: Install for Roo Code` | Configure MCP for Roo Code |
 | `Octocode MCP: Install for Trae` | Configure MCP for Trae |
+
+#### 🚀 Server Control
+
+| Command | Action |
+|---------|--------|
 | `Octocode MCP: Start Server` | Start the MCP server process |
 | `Octocode MCP: Stop Server` | Stop the MCP server process |
 | `Octocode MCP: Show Status` | Show current server status and instructions |
