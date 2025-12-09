@@ -51,6 +51,19 @@
   "contributes": {
     "commands": [
       {
+        "command": "octocode.loginGitHub",
+        "title": "Octocode MCP: Sign in to GitHub",
+        "icon": "$(github)"
+      },
+      {
+        "command": "octocode.logoutGitHub",
+        "title": "Octocode MCP: Sign out of GitHub"
+      },
+      {
+        "command": "octocode.showAuthStatus",
+        "title": "Octocode MCP: Show GitHub Auth Status"
+      },
+      {
         "command": "octocode.startServer",
         "title": "Octocode MCP: Start Server"
       },
@@ -94,7 +107,7 @@
         "octocode.githubToken": {
           "type": "string",
           "default": "",
-          "description": "GitHub personal access token for increased API rate limits (optional)."
+          "description": "GitHub personal access token (optional). Prefer using 'Sign in to GitHub' command for OAuth authentication."
         }
       }
     }
