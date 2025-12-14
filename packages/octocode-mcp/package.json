@@ -47,15 +47,22 @@
     "octocode-utils": "^6.0.0",
     "octokit": "^5.0.5",
     "uuid": "^13.0.0",
-    "zod": "^3.23.8"
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/express": "^5",
+    "@types/node": "^22.15.29",
+    "@typescript-eslint/eslint-plugin": "^8.32.0",
+    "@typescript-eslint/parser": "^8.32.0",
+    "@vitest/coverage-v8": "^4.0.13",
+    "@vitest/ui": "^4.0.13",
     "eslint": "^8.57.0",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-plugin-prettier": "^5.5.4",
     "prettier": "^3.5.3",
-    "rollup": "^4.46.2",
-    "rollup-plugin-string": "^3.0.0",
-    "typescript": "^5.9.2",
+    "tslib": "^2.8.1",
+    "tsup": "^8.4.0",
+    "typescript": "^5.9.3",
     "vitest": "^4.0.13"
   },
   "engines": {
@@ -63,13 +70,11 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/src/index.d.ts",
       "import": "./dist/index.js"
     }
   },
   "files": [
     "dist/index.js",
-    "dist/**/*.d.ts",
     "manifest.json",
     "server.json",
     "LICENSE"
@@ -82,9 +87,9 @@
   },
   "mcpName": "io.github.bgauryy/octocode-mcp",
   "scripts": {
-    "build": "yarn lint && yarn clean && tsc -p tsconfig.build.json && rollup -c",
-    "build:dev": "yarn clean && rollup -c",
-    "build:watch": "rollup -c --watch",
+    "build": "yarn lint && yarn clean && tsup",
+    "build:dev": "yarn clean && tsup",
+    "build:watch": "tsup --watch",
     "clean": "rm -rf dist/",
     "debug": "npx @modelcontextprotocol/inspector node dist/index.js",
     "dxt:pack": "yarn build && dxt pack . octocode-mcp.dxt",
@@ -95,13 +100,12 @@
     "lint": "eslint src/**/*.ts tests/**/*.ts",
     "lint:fix": "eslint src/**/*.ts tests/**/*.ts --fix",
     "prepack": "yarn build",
-    "prepublishOnly": "yarn lint && yarn test && rollup -c",
+    "prepublishOnly": "yarn lint && yarn test && tsup",
     "test": "vitest run --coverage",
     "test:coverage": "vitest run --coverage",
     "test:quiet": "vitest run --reporter=dot --silent",
     "test:ui": "vitest --ui",
     "test:watch": "vitest --watch"
   },
-  "type": "module",
-  "types": "dist/src/index.d.ts"
+  "type": "module"
 }

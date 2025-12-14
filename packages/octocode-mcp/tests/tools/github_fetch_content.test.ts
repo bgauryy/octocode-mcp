@@ -394,19 +394,8 @@ End of file.`;
       );
     });
 
-    it('should ignore other parameters when fullContent=true', async () => {
-      mockFetchGitHubFileContentAPI.mockResolvedValue({
-        data: {
-          path: 'test.js',
-          repository: 'test/repo',
-          branch: 'main',
-          content: 'Full file content should be returned',
-          contentLength: 1,
-          minified: false,
-        },
-        status: 200,
-      });
-
+    it('should reject conflicting parameters when fullContent=true', async () => {
+      // fullContent=true cannot be combined with startLine/endLine/matchString
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_FETCH_CONTENT,
         {
@@ -416,28 +405,24 @@ End of file.`;
               repo: 'repo',
               path: 'test.js',
               fullContent: true,
-              startLine: 5, // Should be ignored
-              endLine: 10, // Should be ignored
-              matchString: 'function', // Should be ignored
-              id: 'ignore-params-test',
+              startLine: 5, // Conflict - should cause error
+              endLine: 10, // Conflict - should cause error
+              matchString: 'function', // Conflict - should cause error
+              id: 'conflict-params-test',
             },
           ],
         }
       );
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(false); // Tool returns success but with error status in result
 
-      // Verify API was called with fullContent=true and other params as undefined
-      expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          fullContent: true,
-          startLine: undefined,
-          endLine: undefined,
-          matchString: undefined,
-        }),
-        undefined, // authInfo
-        undefined // sessionId
-      );
+      const responseText = getTextContent(result.content);
+      // Verify the result contains an error about parameter conflict
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('parameterConflict');
+
+      // API should NOT have been called due to validation failure
+      expect(mockFetchGitHubFileContentAPI).not.toHaveBeenCalled();
     });
   });
 

@@ -64,9 +64,8 @@ function createTestParams(overrides: Record<string, unknown> = {}) {
 describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
   describe('Schema defaults and backward compatibility', () => {
     it('should have correct schema defaults for backward compatibility', async () => {
-      const { FileContentQuerySchema } = await import(
-        '../../../src/scheme/github_fetch_content.js'
-      );
+      const { FileContentQuerySchema } =
+        await import('../../../src/scheme/github_fetch_content.js');
 
       // Test minimal valid input (only required fields)
       const minimalInput = {

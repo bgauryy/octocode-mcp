@@ -335,7 +335,7 @@ describe('Index Module', () => {
         await waitForAsyncOperations();
         // Give extra time for async operations
         await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (error) {
+      } catch {
         // Ignore any errors from module loading
       }
 
@@ -396,7 +396,7 @@ describe('Index Module', () => {
         await waitForAsyncOperations();
         // Give extra time for the catch block to execute
         await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (error) {
+      } catch {
         // Ignore any errors from module loading
       }
 
@@ -462,7 +462,7 @@ describe('Index Module', () => {
         await waitForAsyncOperations();
         // Give extra time for the catch block to execute
         await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (error) {
+      } catch {
         // Ignore any errors from module loading
       }
 
@@ -498,7 +498,7 @@ describe('Index Module', () => {
         await waitForAsyncOperations();
         // Give extra time for the catch block to execute
         await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (error) {
+      } catch {
         // Ignore any errors from module loading
       }
 
@@ -519,7 +519,7 @@ describe('Index Module', () => {
         await import('../src/index.js');
         await waitForAsyncOperations();
         await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (error) {
+      } catch {
         // Ignore
       }
 
@@ -729,7 +729,7 @@ describe('Index Module', () => {
         await waitForAsyncOperations();
         // Give extra time for the catch block to execute
         await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (error) {
+      } catch {
         // Ignore any errors from module loading
       }
 

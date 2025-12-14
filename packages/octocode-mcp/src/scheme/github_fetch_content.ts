@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_FETCH_CONTENT, TOOL_NAMES } from '../tools/toolMetadata';
 
-export const FileContentQuerySchema = BaseQuerySchema.extend({
+// Base schema without refinement - keeps ZodObject type for extensibility
+const FileContentBaseSchema = BaseQuerySchema.extend({
   owner: z.string().min(1).max(200).describe(GITHUB_FETCH_CONTENT.scope.owner),
   repo: z.string().min(1).max(150).describe(GITHUB_FETCH_CONTENT.scope.repo),
   minified: z
@@ -54,26 +55,58 @@ export const FileContentQuerySchema = BaseQuerySchema.extend({
     .optional()
     .default(false)
     .describe(GITHUB_FETCH_CONTENT.processing.addTimestamp),
-}).refine(
-  data => {
+});
+
+// Validation function - can be used at runtime without affecting schema type
+export function validateFileContentQuery(
+  data: z.infer<typeof FileContentBaseSchema>
+): { valid: boolean; error?: string } {
+  if (
+    data.fullContent &&
+    (data.startLine || data.endLine || data.matchString)
+  ) {
+    return {
+      valid: false,
+      error: GITHUB_FETCH_CONTENT.validation.parameterConflict,
+    };
+  }
+  if ((data.startLine && !data.endLine) || (!data.startLine && data.endLine)) {
+    return {
+      valid: false,
+      error: GITHUB_FETCH_CONTENT.validation.parameterConflict,
+    };
+  }
+  return { valid: true };
+}
+
+// Export the base schema for use in bulk operations (keeps ZodObject type)
+export const FileContentQuerySchema = FileContentBaseSchema.superRefine(
+  (data, ctx) => {
     if (
       data.fullContent &&
       (data.startLine || data.endLine || data.matchString)
     ) {
-      return false;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: GITHUB_FETCH_CONTENT.validation.parameterConflict,
+        path: ['fullContent'],
+      });
     }
     if (
       (data.startLine && !data.endLine) ||
       (!data.startLine && data.endLine)
     ) {
-      return false;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: GITHUB_FETCH_CONTENT.validation.parameterConflict,
+        path: ['startLine'],
+      });
     }
-    return true;
-  },
-  {
-    message: GITHUB_FETCH_CONTENT.validation.parameterConflict,
   }
 );
+
+// Type export for external use
+export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
 
 export const FileContentBulkQuerySchema = createBulkQuerySchema(
   TOOL_NAMES.GITHUB_FETCH_CONTENT,
