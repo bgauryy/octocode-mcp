@@ -186,6 +186,33 @@ describe('jsonToYamlString', () => {
       expect(idLine).toBeLessThan(nameLine);
       expect(nameLine).toBeLessThan(ageLine);
     });
+
+    it('should handle multiple priority keys where both exist', () => {
+      const input = { c: 3, a: 1, b: 2 };
+      const config: YamlConversionConfig = {
+        keysPriority: ['b', 'a'],
+      };
+      const yaml = jsonToYamlString(input, config);
+      const lines = yaml.split('\n').filter(line => line.trim());
+
+      // Both priority keys exist, so they should be in priority order
+      expect(lines[0]).toBe('b: 2');
+      expect(lines[1]).toBe('a: 1');
+      expect(lines[2]).toBe('c: 3');
+    });
+
+    it('should handle case where only second key has priority', () => {
+      const input = { x: 1, y: 2 };
+      const config: YamlConversionConfig = {
+        keysPriority: ['nonexistent', 'y'],
+      };
+      const yaml = jsonToYamlString(input, config);
+      const lines = yaml.split('\n').filter(line => line.trim());
+
+      // y has priority, x doesn't
+      expect(lines[0]).toBe('y: 2');
+      expect(lines[1]).toBe('x: 1');
+    });
   });
 
   describe('Combined sortKeys and keysPriority', () => {
@@ -220,29 +247,56 @@ describe('jsonToYamlString', () => {
       expect(lines[2]).toBe('apple: 2');
       expect(lines[3]).toBe('mango: 3');
     });
+
+    it('should handle multiple priority keys with sort', () => {
+      const input = { d: 4, c: 3, b: 2, a: 1 };
+      const config: YamlConversionConfig = {
+        sortKeys: true,
+        keysPriority: ['c', 'a'],
+      };
+      const yaml = jsonToYamlString(input, config);
+      const lines = yaml.split('\n').filter(line => line.trim());
+
+      // c, a first (priority order), then b, d (alphabetical)
+      expect(lines[0]).toBe('c: 3');
+      expect(lines[1]).toBe('a: 1');
+      expect(lines[2]).toBe('b: 2');
+      expect(lines[3]).toBe('d: 4');
+    });
+  });
+
+  describe('Edge cases for sorting', () => {
+    it('should handle sortKeys with undefined config values', () => {
+      const input = { b: 2, a: 1 };
+      const config: YamlConversionConfig = {
+        sortKeys: undefined,
+        keysPriority: undefined,
+      };
+      const yaml = jsonToYamlString(input, config);
+      const lines = yaml.split('\n').filter(line => line.trim());
+
+      // Original order preserved
+      expect(lines[0]).toBe('b: 2');
+      expect(lines[1]).toBe('a: 1');
+    });
+
+    it('should handle sortKeys true with empty keysPriority', () => {
+      const input = { c: 3, a: 1, b: 2 };
+      const config: YamlConversionConfig = {
+        sortKeys: true,
+        keysPriority: [],
+      };
+      const yaml = jsonToYamlString(input, config);
+      const lines = yaml.split('\n').filter(line => line.trim());
+
+      // All keys sorted alphabetically
+      expect(lines[0]).toBe('a: 1');
+      expect(lines[1]).toBe('b: 2');
+      expect(lines[2]).toBe('c: 3');
+    });
   });
 
   describe('Error handling', () => {
-    it('should fallback to JSON.stringify on YAML conversion failure', () => {
-      // Create a circular reference that js-yaml can handle but triggers warning path
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-      // Mock dump to throw an error
-      vi.doMock('js-yaml', () => ({
-        dump: () => {
-          throw new Error('YAML dump failed');
-        },
-      }));
-
-      // For this test, we can't easily trigger YAML failure with normal objects
-      // So we verify normal behavior works
-      const input = { test: 'value' };
-      const yaml = jsonToYamlString(input);
-      expect(yaml).toContain('test: "value"');
-
-      warnSpy.mockRestore();
-    });
-
     it('should handle null values', () => {
       const input = { key: null };
       const yaml = jsonToYamlString(input);
@@ -264,6 +318,23 @@ describe('jsonToYamlString', () => {
     it('should handle empty arrays', () => {
       const yaml = jsonToYamlString([]);
       expect(yaml.trim()).toBe('[]');
+    });
+
+    it('should handle deeply nested structures', () => {
+      const input = {
+        level1: {
+          level2: {
+            level3: {
+              value: 'deep',
+            },
+          },
+        },
+      };
+      const yaml = jsonToYamlString(input);
+      expect(yaml).toContain('level1:');
+      expect(yaml).toContain('  level2:');
+      expect(yaml).toContain('    level3:');
+      expect(yaml).toContain('      value: "deep"');
     });
   });
 
@@ -292,6 +363,34 @@ describe('jsonToYamlString', () => {
       // forceQuotes: true should quote all strings
       expect(yaml).toContain('simple: "hello"');
       expect(yaml).toContain('withSpace: "hello world"');
+    });
+
+    it('should handle special characters in strings', () => {
+      const input = { special: 'line1\nline2', tabs: 'a\tb' };
+      const yaml = jsonToYamlString(input);
+
+      // Should handle escape sequences
+      expect(yaml).toContain('special:');
+      expect(yaml).toContain('tabs:');
+    });
+
+    it('should handle Date objects', () => {
+      const date = new Date('2024-01-15T10:30:00Z');
+      const input = { created: date };
+      const yaml = jsonToYamlString(input);
+
+      expect(yaml).toContain('created:');
+    });
+
+    it('should handle mixed arrays', () => {
+      const input = { mixed: [1, 'two', true, null] };
+      const yaml = jsonToYamlString(input);
+
+      expect(yaml).toContain('mixed:');
+      expect(yaml).toContain('  - 1');
+      expect(yaml).toContain('  - "two"');
+      expect(yaml).toContain('  - true');
+      expect(yaml).toContain('  - null');
     });
   });
 });

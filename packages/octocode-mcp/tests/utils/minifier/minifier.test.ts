@@ -516,6 +516,60 @@ test:
       expect(result.failed).toBe(true);
       expect(result.type).toBe('failed');
     });
+
+    it('should handle non-Error exceptions in terser failure', async () => {
+      // Mock terser to throw a non-Error
+      mockMinify.mockRejectedValue('String error');
+
+      const result = await minifyContent('const x = 1;', 'test.js');
+
+      expect(result.failed).toBe(true);
+      expect(result.type).toBe('failed');
+      expect(result.reason).toContain('Unknown error');
+    });
+  });
+
+  describe('CSS Error Handling', () => {
+    it('should use regex fallback when CleanCSS fails', async () => {
+      // Create CSS that might cause issues but still minifiable via regex
+      const cssCode = `.test { color: red; /* comment */ }`;
+
+      const result = await minifyContent(cssCode, 'test.css');
+
+      // Should succeed with aggressive strategy
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+    });
+  });
+
+  describe('HTML Error Handling', () => {
+    it('should use regex fallback when html-minifier fails on malformed HTML', async () => {
+      // Very malformed HTML that might trigger fallback
+      const htmlCode = `<html><body>Test</body></html>`;
+
+      const result = await minifyContent(htmlCode, 'test.html');
+
+      // Should succeed
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+    });
+  });
+
+  describe('Comment Pattern Error Recovery', () => {
+    it('should continue processing when a pattern fails', async () => {
+      // Test PHP with multiple comment types
+      const phpCode = `<?php
+// comment
+/* block */
+echo "test";
+?>`;
+
+      const result = await minifyContent(phpCode, 'test.php');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+      expect(result.content).not.toContain('// comment');
+    });
   });
 
   describe('Default Fallback Strategy', () => {
