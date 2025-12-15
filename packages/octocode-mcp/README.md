@@ -137,7 +137,19 @@ https://github.com/user-attachments/assets/c184d5d4-c9b6-40a1-a55a-41cb9b3ecc4f
 
 ## Installation
 
-### Prerequisites
+### Standalone Binary (No Node.js Required)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/install/install.sh | sh
+```
+
+**[Full Binary Installation Guide →](../../docs/BINARY_INSTALLATION.md)** — Manual downloads, MCP configs, troubleshooting
+
+---
+
+### npm / npx (Requires Node.js)
+
+#### Prerequisites
 
 - **Node.js** >= 18.12.0
 - **GitHub Authentication** (choose one):
@@ -787,6 +799,7 @@ Comprehensive security analysis of a repository. Identifies vulnerabilities, rev
 | Resource | Description | Link |
 |----------|-------------|------|
 | **Official Website** | Interactive tutorials, demos, community | [octocode.ai](https://octocode.ai) |
+| **Binary Installation** | Standalone binary download and setup | [BINARY_INSTALLATION.md](../../docs/BINARY_INSTALLATION.md) |
 | **Configuration Guide** | Environment variables and server configuration | [CONFIGURATION.md](../../docs/CONFIGURATION.md) |
 | **Authentication Guide** | Setup instructions and troubleshooting | [AUTH_GUIDE.md](../../docs/AUTH_GUIDE.md) |
 | **YouTube Channel** | Video tutorials and demonstrations | [Octocode on YouTube](https://www.youtube.com/@Octocode-ai) |

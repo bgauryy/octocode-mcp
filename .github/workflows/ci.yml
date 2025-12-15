@@ -1,0 +1,131 @@
+name: CI - Lint, Build & Test
+
+on:
+  pull_request:
+
+# Cancel in-progress runs for the same PR/branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Run ESLint
+        run: yarn lint
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build all packages
+        run: yarn build
+
+      - name: Verify build outputs
+        run: |
+          echo "🔍 Verifying build outputs..."
+          
+          # Check octocode-mcp
+          if [ -f "packages/octocode-mcp/dist/index.js" ]; then
+            echo "✅ packages/octocode-mcp/dist/index.js exists"
+          else
+            echo "❌ packages/octocode-mcp/dist/index.js missing"
+            exit 1
+          fi
+          
+          # Check octocode-utils
+          if [ -f "packages/octocode-utils/dist/index.js" ]; then
+            echo "✅ packages/octocode-utils/dist/index.js exists"
+          else
+            echo "❌ packages/octocode-utils/dist/index.js missing"
+            exit 1
+          fi
+          
+          echo "✅ All build outputs verified"
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build packages
+        run: yarn build
+
+      - name: Run tests with coverage
+        run: yarn test
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-reports
+          path: |
+            packages/*/coverage/
+          retention-days: 7
+
+  # Summary job that depends on all checks
+  pr-validation-complete:
+    name: PR Validation Complete
+    needs: [lint, build, test]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.build.result }}" != "success" ] || \
+             [ "${{ needs.test.result }}" != "success" ]; then
+            echo "❌ One or more CI jobs failed"
+            echo "   Lint: ${{ needs.lint.result }}"
+            echo "   Build: ${{ needs.build.result }}"
+            echo "   Test: ${{ needs.test.result }}"
+            exit 1
+          fi
+          echo "✅ All CI checks passed!"
+          echo "   Lint: ${{ needs.lint.result }}"
+          echo "   Build: ${{ needs.build.result }}"
+          echo "   Test: ${{ needs.test.result }}"
+
