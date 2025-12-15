@@ -264,10 +264,25 @@ func main() {
       );
     });
 
-    it('should fallback to basic minification for invalid JSON', async () => {
-      const invalidJson = `{
+    it('should handle JSON with comments (JSONC)', async () => {
+      const jsonWithComments = `{
   "name": "test",
   // This comment makes it invalid JSON
+  "version": "1.0.0"
+}`;
+
+      const result = await minifyContent(jsonWithComments, 'config.json');
+
+      expect(result.type).toBe('json');
+      expect(result.failed).toBe(false);
+      // Should successfully parse and minify JSONC
+      expect(result.content).toBe('{"name":"test","version":"1.0.0"}');
+    });
+
+    it('should return trimmed content for unparseable JSON', async () => {
+      const invalidJson = `{
+  "name": "test",
+  "missing_comma": true
   "version": "1.0.0"
 }`;
 
@@ -275,8 +290,23 @@ func main() {
 
       expect(result.type).toBe('json');
       expect(result.failed).toBe(false);
-      // Should fallback to basic whitespace removal
+      // Should return original content (trimmed)
       expect(result.content).toContain('"name": "test",');
+      expect(result.content).toContain('"missing_comma": true');
+    });
+
+    it('should preserve spaces within strings when parsing JSONC', async () => {
+      const jsonWithSpaces = `{
+  "key": "value   with   multiple   spaces",
+  // Comment causing invalid JSON
+  "other": "data"
+}`;
+      const result = await minifyContent(jsonWithSpaces, 'config.json');
+
+      expect(result.type).toBe('json');
+      expect(result.failed).toBe(false);
+      // Should preserve the multiple spaces inside the string
+      expect(result.content).toContain('"value   with   multiple   spaces"');
     });
   });
 

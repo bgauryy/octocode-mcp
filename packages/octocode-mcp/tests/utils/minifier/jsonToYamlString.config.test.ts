@@ -119,9 +119,29 @@ describe('jsonToYamlString Configuration Options', () => {
       expect(lines[3]).toBe('version: "1.0.0"');
     });
 
-    it('should place non-priority keys alphabetically after priority keys', () => {
+    it('should place non-priority keys in original order after priority keys by default', () => {
       const config: YamlConversionConfig = {
         keysPriority: ['id', 'name'],
+      };
+      const yaml = jsonToYamlString(testData, config);
+      const lines = yaml
+        .split('\n')
+        .filter(line => line.trim() && !line.startsWith(' '));
+
+      // First two should be priority keys
+      expect(lines[0]).toBe('id: "user-123"');
+      expect(lines[1]).toBe('name: "John Doe"');
+
+      // Remaining keys should be in original order (age before active)
+      // Original: age, type, description, active...
+      // age comes before active in original object
+      expect(lines[2]).toBe('age: 30');
+    });
+
+    it('should place non-priority keys alphabetically if sortKeys is true', () => {
+      const config: YamlConversionConfig = {
+        keysPriority: ['id', 'name'],
+        sortKeys: true,
       };
       const yaml = jsonToYamlString(testData, config);
       const lines = yaml
@@ -163,8 +183,9 @@ describe('jsonToYamlString Configuration Options', () => {
       expect(lines[0]).toBe('id: "user-123"');
       expect(lines[1]).toBe('name: "John Doe"');
 
-      // Rest should be alphabetical
-      expect(lines[2]).toBe('active: true');
+      // Rest should be in original order (default behavior)
+      // age (30) comes before active (true) in testData
+      expect(lines[2]).toBe('age: 30');
     });
 
     it('should work with nested objects', () => {
@@ -188,17 +209,20 @@ describe('jsonToYamlString Configuration Options', () => {
       const yaml = jsonToYamlString(nestedData, config);
 
       // Check that nested objects also respect priority sorting
+      // and preserve original order for non-priority keys
       expect(yaml).toContain(
         `user:
   id: "user-456"
   name: "Alice"
   type: "admin"`
       );
+      // metadata has no priority keys, so id moves to top (priority),
+      // then version, created (original order)
       expect(yaml).toContain(
         `metadata:
   id: "meta-123"
-  created: "2024-01-01"
-  version: "2.0.0"`
+  version: "2.0.0"
+  created: "2024-01-01"`
       );
     });
   });
@@ -223,7 +247,7 @@ describe('jsonToYamlString Configuration Options', () => {
       expect(lines[3]).toBe('age: 30');
     });
 
-    it('should ignore sortKeys when keysPriority is provided', () => {
+    it('should respect sortKeys when keysPriority is provided', () => {
       const config1: YamlConversionConfig = {
         sortKeys: true,
         keysPriority: ['version', 'name'],
@@ -237,8 +261,17 @@ describe('jsonToYamlString Configuration Options', () => {
       const yaml1 = jsonToYamlString(testData, config1);
       const yaml2 = jsonToYamlString(testData, config2);
 
-      // Both should produce the same result since keysPriority takes precedence
-      expect(yaml1).toBe(yaml2);
+      // They should be different because config1 sorts the rest, config2 does not
+      expect(yaml1).not.toBe(yaml2);
+
+      // Check config1 (sorted)
+      expect(yaml1).toContain('active: true'); // early alphabet
+      // Check config2 (unsorted - original order)
+      // age comes before active in original
+      const lines2 = yaml2.split('\n');
+      const ageIndex = lines2.findIndex(l => l.includes('age:'));
+      const activeIndex = lines2.findIndex(l => l.includes('active:'));
+      expect(ageIndex).toBeLessThan(activeIndex);
     });
   });
 
