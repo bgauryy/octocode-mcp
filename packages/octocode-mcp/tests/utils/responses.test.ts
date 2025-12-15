@@ -587,9 +587,13 @@ banana: "value3"
       });
 
       // Verify key structure - priority keys first, then remaining keys
-      expect(yamlResult).toContain('reasoning: "Understanding the overall structure');
+      expect(yamlResult).toContain(
+        'reasoning: "Understanding the overall structure'
+      );
       expect(yamlResult).toContain('files:');
-      expect(yamlResult).toContain('researchGoal: "Explore React repository structure');
+      expect(yamlResult).toContain(
+        'researchGoal: "Explore React repository structure'
+      );
       expect(yamlResult).toContain('owner: "facebook"');
       expect(yamlResult).toContain('repo: "react"');
       expect(yamlResult).toContain('path: "/"');
@@ -667,15 +671,23 @@ banana: "value3"
       });
 
       // Verify key structure - priority keys first, then remaining keys
-      expect(yamlResult).toContain('researchGoal: "Read the end of ReactFiberHooks.js');
-      expect(yamlResult).toContain('reasoning: "The dispatcher and hook implementations');
+      expect(yamlResult).toContain(
+        'researchGoal: "Read the end of ReactFiberHooks.js'
+      );
+      expect(yamlResult).toContain(
+        'reasoning: "The dispatcher and hook implementations'
+      );
       expect(yamlResult).toContain('researchSuggestions:');
       expect(yamlResult).toContain('owner: "facebook"');
       expect(yamlResult).toContain('repo: "react"');
-      expect(yamlResult).toContain('path: "packages/react-reconciler/src/ReactFiberHooks.js"');
+      expect(yamlResult).toContain(
+        'path: "packages/react-reconciler/src/ReactFiberHooks.js"'
+      );
       expect(yamlResult).toContain('contentLength: 3309');
       expect(yamlResult).toContain('content: "');
-      expect(yamlResult).toContain('branch: "66a390ebb815065b1e5ac7ae504dadb22989f0d4"');
+      expect(yamlResult).toContain(
+        'branch: "66a390ebb815065b1e5ac7ae504dadb22989f0d4"'
+      );
       expect(yamlResult).toContain('startLine: 3800');
       expect(yamlResult).toContain('endLine: 3900');
       expect(yamlResult).toContain('isPartial: true');
@@ -755,15 +767,23 @@ banana: "value3"
       });
 
       // Verify key structure - priority keys first, then remaining keys
-      expect(yamlResult).toContain('researchGoal: "Find the mountState function');
-      expect(yamlResult).toContain('reasoning: "The mountState function should be');
+      expect(yamlResult).toContain(
+        'researchGoal: "Find the mountState function'
+      );
+      expect(yamlResult).toContain(
+        'reasoning: "The mountState function should be'
+      );
       expect(yamlResult).toContain('researchSuggestions:');
       expect(yamlResult).toContain('owner: "facebook"');
       expect(yamlResult).toContain('repo: "react"');
-      expect(yamlResult).toContain('path: "packages/react-reconciler/src/ReactFiberHooks.js"');
+      expect(yamlResult).toContain(
+        'path: "packages/react-reconciler/src/ReactFiberHooks.js"'
+      );
       expect(yamlResult).toContain('contentLength: 1211');
       expect(yamlResult).toContain('content: "');
-      expect(yamlResult).toContain('branch: "66a390ebb815065b1e5ac7ae504dadb22989f0d4"');
+      expect(yamlResult).toContain(
+        'branch: "66a390ebb815065b1e5ac7ae504dadb22989f0d4"'
+      );
       expect(yamlResult).toContain('startLine: 1870');
       expect(yamlResult).toContain('endLine: 1910');
       expect(yamlResult).toContain('isPartial: true');
