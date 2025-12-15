@@ -1,7 +1,7 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { maskSensitiveData } from './security/mask.js';
 import { ContentSanitizer } from './security/contentSanitizer.js';
-import { jsonToYamlString } from 'octocode-utils';
+import { jsonToYamlString } from './utils/minifier/index.js';
 import type { ToolResponse } from './types.js';
 
 export function createResult(options: {

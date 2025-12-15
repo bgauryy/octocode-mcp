@@ -18,7 +18,8 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
-    "types": ["vitest/globals", "node"]
+    "types": ["vitest/globals", "node"],
+    "baseUrl": "."
   },
   "include": ["src/**/*", "tests/**/*", "src/types/**/*.d.ts"],
   "exclude": ["node_modules"],

@@ -88,7 +88,7 @@ vi.mock('../../src/security/contentSanitizer.js', () => ({
   ContentSanitizer: mockContentSanitizer,
 }));
 
-vi.mock('octocode-utils', () => ({
+vi.mock('../../src/utils/minifier/index.js', () => ({
   minifyContent: mockminifyContent,
 }));
 

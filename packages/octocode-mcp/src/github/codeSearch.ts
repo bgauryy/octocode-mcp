@@ -7,7 +7,7 @@ import type {
 } from './githubAPI';
 import { GitHubCodeSearchQuery } from '../types';
 import { ContentSanitizer } from '../security/contentSanitizer';
-import { minifyContent } from 'octocode-utils';
+import { minifyContent } from '../utils/minifier/index.js';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildCodeSearchQuery } from './queryBuilders';

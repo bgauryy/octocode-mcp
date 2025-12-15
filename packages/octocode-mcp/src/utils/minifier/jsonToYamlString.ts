@@ -31,7 +31,11 @@ export function jsonToYamlString(
           return 1;
         }
 
-        return a.localeCompare(b);
+        if (config.sortKeys) {
+          return a.localeCompare(b);
+        }
+
+        return 0;
       };
     }
 

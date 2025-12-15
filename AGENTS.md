@@ -1,123 +1,129 @@
 # AGENTS.md - Octocode Monorepo
 
-> AI agent guidance for the Octocode MCP monorepo - Model Context Protocol servers for GitHub and local file system research.
+> AI agent guidance for the Octocode MCP monorepo - Model Context Protocol server for GitHub research and VS Code extension.
 
-## Quick Start
+## Core Methodology
 
-```bash
-yarn install          # Install all dependencies
-yarn build            # Build all packages
-yarn test             # Test all packages
-yarn lint             # Lint all packages
-```
+**Follow this workflow for ALL code changes:**
 
-## Approval Policy
+1.  **Task Management**:
+    - **Review**: Analyze requirements and existing code first.
+    - **Plan**: Create a plan using the `todo` tool for any non-trivial task.
+    - **Track**: Mark tasks as in-progress/completed as you work.
 
-| Action | Approval | Notes |
-|--------|----------|-------|
-| Edit `src/`, `tests/` | ✅ Auto | Source and test files |
-| Edit `docs/` | ✅ Auto | Documentation |
-| Edit configs (`*.json`, `*.ts` configs) | ⚠️ Ask | tsconfig, vitest, rollup, eslint |
-| Add dependencies | ⚠️ Ask | Requires `yarn add` |
-| Edit `.env*`, secrets | ❌ Never | Sensitive files |
-| Edit `dist/`, `node_modules/` | ❌ Never | Generated/external |
+2.  **TDD (Test Driven Development)**:
+    - **Test**: Write a failing test case for the new feature or bug fix.
+    - **Fail**: Run the test and confirm it fails (red).
+    - **Fix**: Write the minimal code necessary to pass the test (green).
+    - **Pass**: Verify the test passes and coverage is maintained.
+    - **Refactor**: Clean up the code if needed while keeping tests passing.
 
-## Structure & Access
+3.  **ReAct Loop**:
+    - **Reason**: Analyze the current state and decide the next step.
+    - **Act**: Execute a tool call (edit file, run terminal command).
+    - **Observe**: Check the tool output (linter errors, test results, file content).
+    - **Loop**: Repeat until the objective is met.
 
-| Path | Access | Description |
-|------|--------|-------------|
-| `packages/octocode-mcp/` | FULL | GitHub MCP server |
-| `packages/octocode-local/` | FULL | Local filesystem MCP server |
-| `packages/octocode-utils/` | FULL | Shared utilities |
-| `docs/` | EDIT | Documentation |
-| `*.json`, `*.config.*` | ASK | Root configs |
-| `.env*`, `.octocode/` | NEVER | Secrets & research docs |
-| `node_modules/`, `dist/`, `coverage/` | NEVER | Generated |
+4.  **Quality Control**:
+    - Adhere to "Clean Code" principles.
+    - Add only critical comments to code
+    - Run linter (`yarn lint`) and tests (`yarn test`) after substantive changes.
+    - **Never** leave the codebase in a broken state.
 
-## Monorepo Structure
+## 📂 Repository Structure
+
+### Monorepo Layout
 
 ```
 octocode-mcp/
 ├── packages/
-│   ├── octocode-mcp/      # GitHub API MCP server
-│   ├── octocode-local/    # Local filesystem MCP server
-│   └── octocode-utils/    # Shared utilities
+│   ├── octocode-mcp/      # GitHub API MCP server (Node.js)
+│   └── octocode-vscode/   # VS Code extension
 ├── docs/                  # Configuration & auth guides
 └── package.json           # Workspace root
 ```
 
-**Inheritance Rules:**
-- Package-level AGENTS.md files override this root file
-- User prompts override all AGENTS.md files
-- When in doubt, follow the closest (most specific) AGENTS.md
+### Access & Inheritance
 
-## Commands
+- **Inheritance**: Package-level `AGENTS.md` files override this root file. User prompts override all `AGENTS.md` files.
+- **Access Control**:
+
+| Path | Access | Description |
+|------|--------|-------------|
+| `packages/octocode-mcp/` | FULL | GitHub MCP server source |
+| `packages/octocode-vscode/` | FULL | VS Code extension source |
+| `docs/` | EDIT | Documentation |
+| `*.json`, `*.config.*` | ASK | Root configurations |
+| `.env*`, `.octocode/` | NEVER | Secrets & research context |
+| `node_modules/`, `dist/`, `out/` | NEVER | Generated artifacts |
+
+## 🛡️ Safety & Permissions
+
+### Approval Policy
+
+| Action | Approval | Notes |
+|--------|----------|-------|
+| Edit `src/`, `tests/` | ✅ Auto | Standard development |
+| Edit `docs/` | ✅ Auto | Documentation updates |
+| Edit configs | ⚠️ Ask | `tsconfig`, `vitest`, `eslint`, `rollup` |
+| Add dependencies | ⚠️ Ask | Requires `yarn add` |
+| Edit Secrets | ❌ Never | `.env` files, keys |
+| Edit Generated | ❌ Never | `dist/`, `out/`, `coverage/` |
+
+### Protected Files
+
+- **Never Modify**: `.env*`, `yarn.lock` (modify via yarn), `.git/`, `dist/`, `out/`, `coverage/`.
+- **Ask Before Modifying**: `package.json`, `tsconfig*.json`, `vitest.config.ts`, `rollup.config.js`, `.eslintrc.json`.
+
+## 🛠️ Commands & Workflow
 
 | Task | Command | Scope |
 |------|---------|-------|
-| Install | `yarn install` | All packages |
-| Build all | `yarn build` | All packages |
-| Test all | `yarn test` | All packages |
-| Test quiet | `yarn test:quiet` | All packages |
-| Lint all | `yarn lint` | All packages |
+| **Install** | `yarn install` | All packages |
+| **Build** | `yarn build` | All packages |
+| **Test** | `yarn test` | All packages (coverage report) |
+| **Test (Quiet)**| `yarn test:quiet` | Minimal output |
+| **Lint** | `yarn lint` | All packages |
 
-**Per-package commands:** `cd packages/<name>` then run package-specific commands.
+**Note**: For package-specific commands, `cd packages/<name>` first.
 
-## Style Guide
+## 📏 Development Standards
 
-| Rule | Value |
-|------|-------|
-| Language | TypeScript (strict mode) |
-| Semicolons | Yes |
-| Quotes | Single |
-| Print width | 80 |
-| Tab width | 2 spaces |
-| Trailing comma | ES5 |
+### Style Guide
+
+- **Language**: TypeScript (strict mode)
+- **Formatting**:
+  - Semicolons: Yes
+  - Quotes: Single
+  - Print width: 80
+  - Tab width: 2 spaces
+  - Trailing comma: ES5
+- **Code Style**:
+  - Prefer `const`, never use `var`.
+  - Use explicit return types.
+  - No `any` types (enforced by ESLint).
+  - Use optional chaining (`?.`) and nullish coalescing (`??`).
 
 ### Naming Conventions
 
-- Functions: `camelCase`
-- Classes: `PascalCase`
-- Constants: `UPPER_SNAKE_CASE`
-- Files: `camelCase.ts` or `kebab-case.ts`
-- Test files: `<name>.test.ts`
+- **Functions**: `camelCase`
+- **Classes**: `PascalCase`
+- **Constants**: `UPPER_SNAKE_CASE`
+- **Files**: `camelCase.ts` or `kebab-case.ts`
+- **Test Files**: `<name>.test.ts`
 
-### Code Style
+### Dependencies
 
-```typescript
-// ✅ Good
-const myFunction = (param: string): void => {
-  // implementation
-};
+- **Node.js**: `octocode-mcp` >= 20.0.0
+- **VS Code**: `octocode-vscode` >= 1.85.0
+- **Shared**: `@modelcontextprotocol/sdk`, `zod`, `vitest`, `rollup`.
 
-// ❌ Avoid
-var myFunction = function(param) {
-  // implementation
-}
-```
+## 🧪 Testing Protocol
 
-- Prefer `const` over `let`, never use `var`
-- Use explicit return types
-- No `any` types (enforced by ESLint)
-- Use optional chaining (`?.`) and nullish coalescing (`??`)
+### Requirements
+- **Coverage**: 90% required across all metrics (Statements, Branches, Functions, Lines).
 
-## Testing
-
-| Command | Purpose |
-|---------|---------|
-| `yarn test` | Run all tests with coverage |
-| `yarn test:quiet` | Run tests with minimal output |
-
-### Coverage Requirements
-
-**All packages require 90% coverage:**
-- Statements: 90%
-- Branches: 90%
-- Functions: 90%
-- Lines: 90%
-
-### Test Structure
-
+### Structure
 ```
 packages/<name>/tests/
 ├── <module>.test.ts       # Unit tests
@@ -125,50 +131,16 @@ packages/<name>/tests/
 └── security/              # Security-focused tests
 ```
 
-## Dependencies
+## 📦 Package Guidelines
 
-**Node.js Requirements:**
-- `octocode-mcp`: >=20.0.0
-- `octocode-local`: >=18.0.0
-- `octocode-utils`: >=20.0.0
+1. **Security First**: Validate all inputs and paths.
+2. **Bulk Operations**: Support 1-5 items per tool call for efficiency.
+3. **Token Efficiency**: Minimize response size for LLMs.
+4. **Graceful Degradation**: Always return usable results; avoid crashing.
 
-**Key Shared Dependencies:**
-- `@modelcontextprotocol/sdk` - MCP server framework
-- `zod` - Schema validation
-- `vitest` - Test framework
-- `rollup` - Bundler
+## 🤖 Agent Compatibility
 
-## Protected Files
-
-**Never modify:**
-- `.env*`, `*.pem`, `*.key` - Secrets
-- `node_modules/` - Dependencies
-- `dist/`, `coverage/` - Build outputs
-- `yarn.lock` - Dependency lock (modify via `yarn add/remove`)
-- `.git/` - Git internals
-
-**Ask before modifying:**
-- `package.json` - Dependencies
-- `tsconfig*.json` - TypeScript config
-- `vitest.config.ts` - Test config
-- `rollup.config.js` - Build config
-- `.eslintrc.json` - Lint rules
-
-## Package Guidelines
-
-Each package follows these principles:
-
-1. **Security First** - All inputs validated, all paths checked
-2. **Bulk Operations** - Support 1-5 queries per call
-3. **Token Efficiency** - Minimize response size for LLMs
-4. **Graceful Degradation** - Always return usable results
-
-See package-specific AGENTS.md for detailed conventions.
-
-## Agent Compatibility
-
-- **Cursor**: Reads AGENTS.md automatically
-- **Claude Code**: Reads AGENTS.md as context
-- **Aider**: Add `read: AGENTS.md` in `.aider.conf.yml`
-- **Gemini CLI**: Set `"contextFileName": "AGENTS.md"` in `.gemini/settings.json`
-
+- **Cursor**: Reads `AGENTS.md` automatically.
+- **Claude Code**: Reads `AGENTS.md` as context.
+- **Aider**: Add `read: AGENTS.md` in `.aider.conf.yml`.
+- **Gemini CLI**: Set `"contextFileName": "AGENTS.md"` in `.gemini/settings.json`.

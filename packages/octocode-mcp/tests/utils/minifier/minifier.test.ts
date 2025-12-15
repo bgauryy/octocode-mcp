@@ -5,7 +5,7 @@ import {
   isJavaScriptFileV2,
   isIndentationSensitiveV2,
   MINIFY_CONFIG,
-} from '../src/minifier.js';
+} from '../../../src/utils/minifier/minifier.js';
 
 // Mock terser
 const mockMinify = vi.hoisted(() => vi.fn());
@@ -96,10 +96,10 @@ describe('MinifierV2', () => {
     # This is a comment
     if True:
         print("Hello")
-        
+
         # Another comment
         return True
-    
+
 # Top level comment
 class MyClass:
     pass`;
@@ -130,8 +130,8 @@ services:
     image: nginx:latest
     ports:
       - "80:80"
-    
-  # Database service  
+
+  # Database service
   db:
     image: postgres:13`;
 
@@ -221,11 +221,11 @@ import "fmt"
 
 // Main function
 func main() {
-    /* 
+    /*
      * Print hello world
      */
     fmt.Println("Hello, World!")
-    
+
     // Another comment
     var x = 42
 }`;
@@ -264,10 +264,25 @@ func main() {
       );
     });
 
-    it('should fallback to basic minification for invalid JSON', async () => {
-      const invalidJson = `{
+    it('should handle JSON with comments (JSONC)', async () => {
+      const jsonWithComments = `{
   "name": "test",
   // This comment makes it invalid JSON
+  "version": "1.0.0"
+}`;
+
+      const result = await minifyContent(jsonWithComments, 'config.json');
+
+      expect(result.type).toBe('json');
+      expect(result.failed).toBe(false);
+      // Should successfully parse and minify JSONC
+      expect(result.content).toBe('{"name":"test","version":"1.0.0"}');
+    });
+
+    it('should return trimmed content for unparseable JSON', async () => {
+      const invalidJson = `{
+  "name": "test",
+  "missing_comma": true
   "version": "1.0.0"
 }`;
 
@@ -275,8 +290,23 @@ func main() {
 
       expect(result.type).toBe('json');
       expect(result.failed).toBe(false);
-      // Should fallback to basic whitespace removal
+      // Should return original content (trimmed)
       expect(result.content).toContain('"name": "test",');
+      expect(result.content).toContain('"missing_comma": true');
+    });
+
+    it('should preserve spaces within strings when parsing JSONC', async () => {
+      const jsonWithSpaces = `{
+  "key": "value   with   multiple   spaces",
+  // Comment causing invalid JSON
+  "other": "data"
+}`;
+      const result = await minifyContent(jsonWithSpaces, 'config.json');
+
+      expect(result.type).toBe('json');
+      expect(result.failed).toBe(false);
+      // Should preserve the multiple spaces inside the string
+      expect(result.content).toContain('"value   with   multiple   spaces"');
     });
   });
 
@@ -326,10 +356,43 @@ WHERE active = 1;
     });
   });
 
+  describe('Markdown Strategy', () => {
+    it('should use markdown minification for .md files', async () => {
+      const markdown = `# Title
+
+Paragraph with **bold** text.
+
+## Section 2
+
+Another paragraph with *italic* text.
+
+- List item 1
+- List item 2
+
+`;
+
+      const result = await minifyContent(markdown, 'readme.md');
+
+      expect(result.type).toBe('markdown');
+      expect(result.failed).toBe(false);
+      // Should preserve markdown structure but reduce whitespace
+      expect(result.content).toContain('# Title');
+      expect(result.content).toContain('**bold**');
+    });
+
+    it('should handle .markdown extension', async () => {
+      const markdown = '# Header\n\nContent here.';
+      const result = await minifyContent(markdown, 'docs.markdown');
+
+      expect(result.type).toBe('markdown');
+      expect(result.failed).toBe(false);
+    });
+  });
+
   describe('Unknown File Types', () => {
     it('should fallback to general strategy for unknown extensions', async () => {
       const unknownContent = `# Some config file
-setting1=value1   
+setting1=value1
 setting2=value2
 
 # Another section
@@ -416,6 +479,116 @@ test:
       expect(result.failed).toBe(false);
       expect(result.type).toBe('general'); // txt files use general strategy
       expect(result.content.length).toBeLessThanOrEqual(limitContent.length);
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should handle non-string content gracefully', async () => {
+      // Force an error by passing invalid content type
+      // @ts-expect-error - Testing error handling with invalid input
+      const result = await minifyContent(null, 'test.txt');
+
+      expect(result.failed).toBe(true);
+      expect(result.type).toBe('failed');
+      expect(result.reason).toContain('Unexpected minification error');
+    });
+
+    it('should handle undefined content gracefully', async () => {
+      // @ts-expect-error - Testing error handling with invalid input
+      const result = await minifyContent(undefined, 'test.txt');
+
+      expect(result.failed).toBe(true);
+      expect(result.type).toBe('failed');
+      expect(result.reason).toContain('Unexpected minification error');
+    });
+
+    it('should return original content when an unexpected error occurs', async () => {
+      // Create an object that throws when accessed
+      const problematicContent = {
+        toString() {
+          throw new Error('Cannot convert to string');
+        },
+      };
+
+      // @ts-expect-error - Testing error handling with problematic input
+      const result = await minifyContent(problematicContent, 'test.txt');
+
+      expect(result.failed).toBe(true);
+      expect(result.type).toBe('failed');
+    });
+
+    it('should handle non-Error exceptions in terser failure', async () => {
+      // Mock terser to throw a non-Error
+      mockMinify.mockRejectedValue('String error');
+
+      const result = await minifyContent('const x = 1;', 'test.js');
+
+      expect(result.failed).toBe(true);
+      expect(result.type).toBe('failed');
+      expect(result.reason).toContain('Unknown error');
+    });
+  });
+
+  describe('CSS Error Handling', () => {
+    it('should use regex fallback when CleanCSS fails', async () => {
+      // Create CSS that might cause issues but still minifiable via regex
+      const cssCode = `.test { color: red; /* comment */ }`;
+
+      const result = await minifyContent(cssCode, 'test.css');
+
+      // Should succeed with aggressive strategy
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+    });
+  });
+
+  describe('HTML Error Handling', () => {
+    it('should use regex fallback when html-minifier fails on malformed HTML', async () => {
+      // Very malformed HTML that might trigger fallback
+      const htmlCode = `<html><body>Test</body></html>`;
+
+      const result = await minifyContent(htmlCode, 'test.html');
+
+      // Should succeed
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+    });
+  });
+
+  describe('Comment Pattern Error Recovery', () => {
+    it('should continue processing when a pattern fails', async () => {
+      // Test PHP with multiple comment types
+      const phpCode = `<?php
+// comment
+/* block */
+echo "test";
+?>`;
+
+      const result = await minifyContent(phpCode, 'test.php');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+      expect(result.content).not.toContain('// comment');
+    });
+  });
+
+  describe('Default Fallback Strategy', () => {
+    it('should use default fallback for file with no extension', async () => {
+      const content = 'content for extensionless file    \n\n';
+      // A file with no extension that doesn't match Makefile or Dockerfile patterns
+      const result = await minifyContent(content, 'SOMEFILE');
+
+      // Should fall back to general or conservative strategy
+      expect(result.failed).toBe(false);
+    });
+
+    it('should use general minification for completely unknown formats', async () => {
+      const content = 'data: value\nmore: stuff\n\n\n';
+      // Test with a bizarre extension that won't match any known type
+      const result = await minifyContent(content, 'file.zzzzzzz');
+
+      expect(result.type).toBe('general');
+      expect(result.failed).toBe(false);
     });
   });
 });

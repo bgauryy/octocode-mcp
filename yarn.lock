@@ -131,17 +131,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@babel/code-frame@npm:^7.27.1":
-  version: 7.27.1
-  resolution: "@babel/code-frame@npm:7.27.1"
-  dependencies:
-    "@babel/helper-validator-identifier": "npm:^7.27.1"
-    js-tokens: "npm:^4.0.0"
-    picocolors: "npm:^1.1.1"
-  checksum: 10c0/5dd9a18baa5fce4741ba729acc3a3272c49c25cb8736c4b18e113099520e7ef7b545a4096a26d600e4416157e63e87d66db46aa3fbf0a5f2286da2705c12da00
-  languageName: node
-  linkType: hard
-
 "@babel/helper-string-parser@npm:^7.27.1":
   version: 7.27.1
   resolution: "@babel/helper-string-parser@npm:7.27.1"
@@ -149,7 +138,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@babel/helper-validator-identifier@npm:^7.27.1, @babel/helper-validator-identifier@npm:^7.28.5":
+"@babel/helper-validator-identifier@npm:^7.28.5":
   version: 7.28.5
   resolution: "@babel/helper-validator-identifier@npm:7.28.5"
   checksum: 10c0/42aaebed91f739a41f3d80b72752d1f95fd7c72394e8e4bd7cdd88817e0774d80a432451bcba17c2c642c257c483bf1d409dd4548883429ea9493a3bc4ab0847
@@ -4014,13 +4003,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"js-tokens@npm:^4.0.0":
-  version: 4.0.0
-  resolution: "js-tokens@npm:4.0.0"
-  checksum: 10c0/e248708d377aa058eacf2037b07ded847790e6de892bbad3dac0abba2e759cb9f121b00099a65195616badcb6eca8d14d975cb3e89eb1cfda644756402c8aeed
-  languageName: node
-  linkType: hard
-
 "js-tokens@npm:^9.0.1":
   version: 9.0.1
   resolution: "js-tokens@npm:9.0.1"
@@ -4721,27 +4703,34 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "octocode-mcp@workspace:packages/octocode-mcp"
   dependencies:
+    "@microsoft/tiktokenizer": "npm:^1.0.10"
     "@modelcontextprotocol/sdk": "npm:^1.22.0"
     "@octokit/core": "npm:^7.0.6"
     "@octokit/openapi-types": "npm:^27.0.0"
     "@octokit/plugin-rest-endpoint-methods": "npm:^17.0.0"
     "@octokit/plugin-throttling": "npm:^11.0.3"
+    "@types/clean-css": "npm:^4.2.11"
     "@types/express": "npm:^5"
+    "@types/html-minifier-terser": "npm:^7.0.2"
+    "@types/js-yaml": "npm:^4.0.9"
     "@types/node": "npm:^22.15.29"
     "@typescript-eslint/eslint-plugin": "npm:^8.32.0"
     "@typescript-eslint/parser": "npm:^8.32.0"
     "@vitest/coverage-v8": "npm:^4.0.13"
     "@vitest/ui": "npm:^4.0.13"
     axios: "npm:^1.13.2"
+    clean-css: "npm:^5.3.0"
     dotenv: "npm:^17.2.3"
     eslint: "npm:^8.57.0"
     eslint-config-prettier: "npm:^10.1.5"
     eslint-plugin-prettier: "npm:^5.5.4"
     express: "npm:^5.1.0"
+    html-minifier-terser: "npm:^7.2.0"
+    js-yaml: "npm:^4.1.0"
     node-cache: "npm:^5.1.2"
-    octocode-utils: "npm:^6.0.0"
     octokit: "npm:^5.0.5"
     prettier: "npm:^3.5.3"
+    terser: "npm:^5.19.0"
     tslib: "npm:^2.8.1"
     tsup: "npm:^8.4.0"
     typescript: "npm:^5.9.3"
@@ -4775,38 +4764,6 @@ __metadata:
     rollup: "npm:^4.46.2"
     syncpack: "npm:^14.0.0-alpha.19"
     tslib: "npm:^2.8.1"
-    typescript: "npm:^5.9.2"
-    vitest: "npm:^4.0.13"
-  languageName: unknown
-  linkType: soft
-
-"octocode-utils@npm:^6.0.0, octocode-utils@workspace:packages/octocode-utils":
-  version: 0.0.0-use.local
-  resolution: "octocode-utils@workspace:packages/octocode-utils"
-  dependencies:
-    "@microsoft/tiktokenizer": "npm:^1.0.10"
-    "@rollup/plugin-node-resolve": "npm:^16.0.1"
-    "@rollup/plugin-typescript": "npm:^12.1.2"
-    "@types/clean-css": "npm:^4.2.11"
-    "@types/html-minifier-terser": "npm:^7.0.2"
-    "@types/js-yaml": "npm:^4.0.9"
-    "@types/node": "npm:^22.15.29"
-    "@typescript-eslint/eslint-plugin": "npm:^8.19.0"
-    "@typescript-eslint/parser": "npm:^8.19.0"
-    "@vitest/coverage-v8": "npm:^4.0.13"
-    "@vitest/ui": "npm:^4.0.13"
-    clean-css: "npm:^5.3.0"
-    eslint: "npm:^8.57.0"
-    eslint-config-prettier: "npm:^10.1.5"
-    eslint-plugin-prettier: "npm:^5.4.1"
-    html-minifier-terser: "npm:^7.2.0"
-    js-yaml: "npm:^4.1.0"
-    prettier: "npm:^3.5.3"
-    rollup: "npm:^4.46.2"
-    rollup-plugin-dts: "npm:^6.0.0"
-    terser: "npm:^5.19.0"
-    tslib: "npm:^2.8.1"
-    tsx: "npm:^4.20.4"
     typescript: "npm:^5.9.2"
     vitest: "npm:^4.0.13"
   languageName: unknown
@@ -5371,22 +5328,6 @@ __metadata:
   bin:
     rimraf: bin.js
   checksum: 10c0/9cb7757acb489bd83757ba1a274ab545eafd75598a9d817e0c3f8b164238dd90eba50d6b848bd4dcc5f3040912e882dc7ba71653e35af660d77b25c381d402e8
-  languageName: node
-  linkType: hard
-
-"rollup-plugin-dts@npm:^6.0.0":
-  version: 6.3.0
-  resolution: "rollup-plugin-dts@npm:6.3.0"
-  dependencies:
-    "@babel/code-frame": "npm:^7.27.1"
-    magic-string: "npm:^0.30.21"
-  peerDependencies:
-    rollup: ^3.29.4 || ^4
-    typescript: ^4.5 || ^5.0
-  dependenciesMeta:
-    "@babel/code-frame":
-      optional: true
-  checksum: 10c0/7eae726f0a15651a4705d49771cc02d2c7fb35fe107ada03cdacade5ed8bf026af066f1fc8936dde2c07da269d03dd790110589cd3b0c7062ed3bedc0f3c75ee
   languageName: node
   linkType: hard
 
@@ -6175,7 +6116,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tsx@npm:^4.20.4, tsx@npm:^4.21.0":
+"tsx@npm:^4.21.0":
   version: 4.21.0
   resolution: "tsx@npm:4.21.0"
   dependencies:

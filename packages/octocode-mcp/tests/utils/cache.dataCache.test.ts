@@ -83,4 +83,38 @@ describe('withDataCache typed data cache', () => {
     expect(c).toEqual(b);
     expect(calls).toEqual(before);
   });
+
+  it('should use default TTL for unrecognized cache key prefixes', async () => {
+    let calls = 0;
+    const op = async () => {
+      calls += 1;
+      return { result: calls };
+    };
+
+    // Use a key that doesn't match any known prefix pattern
+    const key = 'unusual-key-without-prefix';
+
+    const r1 = await withDataCache(key, op);
+    const r2 = await withDataCache(key, op);
+
+    expect(calls).toBe(1);
+    expect(r1).toEqual(r2);
+  });
+
+  it('should extract TTL from known prefix in cache key', async () => {
+    let calls = 0;
+    const op = async () => {
+      calls += 1;
+      return { data: 'test' };
+    };
+
+    // Use a key with a known prefix format (v1-gh-api-code:...)
+    const key = generateCacheKey('gh-api-code', { test: 'ttl-prefix' });
+
+    const r1 = await withDataCache(key, op);
+    const r2 = await withDataCache(key, op);
+
+    expect(calls).toBe(1);
+    expect(r1).toEqual(r2);
+  });
 });

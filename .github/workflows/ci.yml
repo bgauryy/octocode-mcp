@@ -54,7 +54,7 @@ jobs:
       - name: Verify build outputs
         run: |
           echo "🔍 Verifying build outputs..."
-          
+
           # Check octocode-mcp
           if [ -f "packages/octocode-mcp/dist/index.js" ]; then
             echo "✅ packages/octocode-mcp/dist/index.js exists"
@@ -62,15 +62,7 @@ jobs:
             echo "❌ packages/octocode-mcp/dist/index.js missing"
             exit 1
           fi
-          
-          # Check octocode-utils
-          if [ -f "packages/octocode-utils/dist/index.js" ]; then
-            echo "✅ packages/octocode-utils/dist/index.js exists"
-          else
-            echo "❌ packages/octocode-utils/dist/index.js missing"
-            exit 1
-          fi
-          
+
           echo "✅ All build outputs verified"
 
   test:
