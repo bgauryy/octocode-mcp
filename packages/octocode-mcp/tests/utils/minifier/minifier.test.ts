@@ -5,7 +5,7 @@ import {
   isJavaScriptFileV2,
   isIndentationSensitiveV2,
   MINIFY_CONFIG,
-} from '../src/minifier.js';
+} from '../../../src/utils/minifier/minifier.js';
 
 // Mock terser
 const mockMinify = vi.hoisted(() => vi.fn());
@@ -96,10 +96,10 @@ describe('MinifierV2', () => {
     # This is a comment
     if True:
         print("Hello")
-        
+
         # Another comment
         return True
-    
+
 # Top level comment
 class MyClass:
     pass`;
@@ -130,8 +130,8 @@ services:
     image: nginx:latest
     ports:
       - "80:80"
-    
-  # Database service  
+
+  # Database service
   db:
     image: postgres:13`;
 
@@ -221,11 +221,11 @@ import "fmt"
 
 // Main function
 func main() {
-    /* 
+    /*
      * Print hello world
      */
     fmt.Println("Hello, World!")
-    
+
     // Another comment
     var x = 42
 }`;
@@ -329,7 +329,7 @@ WHERE active = 1;
   describe('Unknown File Types', () => {
     it('should fallback to general strategy for unknown extensions', async () => {
       const unknownContent = `# Some config file
-setting1=value1   
+setting1=value1
 setting2=value2
 
 # Another section

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createResult } from '../../src/responses';
-import { jsonToYamlString } from 'octocode-utils';
+import { jsonToYamlString } from '../../src/utils/minifier/index.js';
 import { getTextContent } from './testHelpers.js';
 
 // Mock the isBetaEnabled function

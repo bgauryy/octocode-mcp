@@ -2,12 +2,12 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import {
   jsonToYamlString,
   YamlConversionConfig,
-} from '../src/jsonToYamlString';
+} from '../../../src/utils/minifier/jsonToYamlString.js';
 import {
   getTokenizer,
   countTokens,
   calculateTokenSavingsPercentage,
-} from './helpers/tokenizer';
+} from '../../helpers/tokenizer.js';
 
 beforeAll(async () => {
   await getTokenizer();
