@@ -57,29 +57,8 @@ const FileContentBaseSchema = BaseQuerySchema.extend({
     .describe(GITHUB_FETCH_CONTENT.processing.addTimestamp),
 });
 
-// Validation function - can be used at runtime without affecting schema type
-export function validateFileContentQuery(
-  data: z.infer<typeof FileContentBaseSchema>
-): { valid: boolean; error?: string } {
-  if (
-    data.fullContent &&
-    (data.startLine || data.endLine || data.matchString)
-  ) {
-    return {
-      valid: false,
-      error: GITHUB_FETCH_CONTENT.validation.parameterConflict,
-    };
-  }
-  if ((data.startLine && !data.endLine) || (!data.startLine && data.endLine)) {
-    return {
-      valid: false,
-      error: GITHUB_FETCH_CONTENT.validation.parameterConflict,
-    };
-  }
-  return { valid: true };
-}
-
-// Export the base schema for use in bulk operations (keeps ZodObject type)
+// Apply validation refinements while maintaining ZodObject extensibility
+// superRefine validates parameter combinations at parse time
 export const FileContentQuerySchema = FileContentBaseSchema.superRefine(
   (data, ctx) => {
     if (

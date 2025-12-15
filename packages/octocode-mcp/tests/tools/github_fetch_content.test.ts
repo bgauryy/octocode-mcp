@@ -4,6 +4,7 @@ import {
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
 import { getTextContent } from '../utils/testHelpers.js';
+import { FileContentBulkQuerySchema } from '../../src/scheme/github_fetch_content.js';
 
 const mockFetchGitHubFileContentAPI = vi.hoisted(() => vi.fn());
 
@@ -394,35 +395,37 @@ End of file.`;
       );
     });
 
-    it('should reject conflicting parameters when fullContent=true', async () => {
+    it('should reject conflicting parameters when fullContent=true via schema validation', () => {
       // fullContent=true cannot be combined with startLine/endLine/matchString
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        {
-          queries: [
-            {
-              owner: 'test',
-              repo: 'repo',
-              path: 'test.js',
-              fullContent: true,
-              startLine: 5, // Conflict - should cause error
-              endLine: 10, // Conflict - should cause error
-              matchString: 'function', // Conflict - should cause error
-              id: 'conflict-params-test',
-            },
-          ],
-        }
-      );
+      // This is validated at the Zod schema level via superRefine
+      // Note: The mock server doesn't perform actual MCP SDK schema validation,
+      // so we test the schema directly using Zod's safeParse
+      const parseResult = FileContentBulkQuerySchema.safeParse({
+        queries: [
+          {
+            mainResearchGoal: 'Test validation',
+            researchGoal: 'Test conflicting params',
+            reasoning: 'Testing',
+            owner: 'test',
+            repo: 'repo',
+            path: 'test.js',
+            fullContent: true,
+            startLine: 5, // Conflict - caught by schema validation
+            endLine: 10, // Conflict - caught by schema validation
+            matchString: 'function', // Conflict - caught by schema validation
+          },
+        ],
+      });
 
-      expect(result.isError).toBe(false); // Tool returns success but with error status in result
-
-      const responseText = getTextContent(result.content);
-      // Verify the result contains an error about parameter conflict
-      expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('parameterConflict');
-
-      // API should NOT have been called due to validation failure
-      expect(mockFetchGitHubFileContentAPI).not.toHaveBeenCalled();
+      // Schema validation should reject this input
+      expect(parseResult.success).toBe(false);
+      if (!parseResult.success) {
+        // Verify the error is about the parameter conflict
+        const errorMessages = parseResult.error.errors.map(e => e.message);
+        expect(
+          errorMessages.some(msg => msg.includes('parameterConflict'))
+        ).toBe(true);
+      }
     });
   });
 

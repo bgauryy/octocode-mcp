@@ -8,16 +8,12 @@ import type {
 } from '../types.js';
 import { fetchGitHubFileContentAPI } from '../github/fileOperations.js';
 import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
-import {
-  FileContentBulkQuerySchema,
-  validateFileContentQuery,
-} from '../scheme/github_fetch_content.js';
+import { FileContentBulkQuerySchema } from '../scheme/github_fetch_content.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import {
   handleCatchError,
   createSuccessResult,
-  createErrorResult,
   handleApiError,
 } from './utils.js';
 
@@ -71,15 +67,6 @@ async function fetchMultipleGitHubFileContents(
   return executeBulkOperation(
     queries,
     async (query: FileContentQuery, _index: number) => {
-      // Runtime validation (replaces Zod .refine() to avoid TypeScript inference issues)
-      const validation = validateFileContentQuery(query);
-      if (!validation.valid) {
-        return createErrorResult(
-          query,
-          validation.error || 'Invalid query parameters'
-        );
-      }
-
       try {
         const apiRequest = buildApiRequest(query);
         const apiResult = await fetchGitHubFileContentAPI(
