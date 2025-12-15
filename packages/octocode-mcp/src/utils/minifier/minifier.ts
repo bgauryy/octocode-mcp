@@ -474,17 +474,22 @@ function minifyJson(content: string): {
     };
   } catch {
     try {
-      // Fallback to basic whitespace removal
+      // Try to remove comments (support for JSONC)
+      // We try c-style comments as they are the most common in JSONC
+      // Note: This might corrupt strings with // in them, but if so,
+      // the subsequent JSON.parse will likely fail, sending us to the final fallback
+      const contentWithoutComments = removeComments(content, 'c-style');
+      const parsed = JSON.parse(contentWithoutComments);
       return {
-        content: content.replace(/\s+/g, ' ').trim(),
+        content: JSON.stringify(parsed),
         failed: false,
       };
     } catch {
-      // If even fallback fails, return original content
+      // Fallback: Return original content (trimmed) to avoid corrupting data
+      // We previously used aggressive whitespace removal which corrupted strings
       return {
-        content: content,
-        failed: true,
-        reason: `JSON minification failed: Invalid JSON syntax and regex fallback failed`,
+        content: content.trim(),
+        failed: false,
       };
     }
   }

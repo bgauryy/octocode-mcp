@@ -653,4 +653,57 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('Bulk response with 0 results');
     });
   });
+
+  describe('Invalid API response handling', () => {
+    it('should handle API response without data property', async () => {
+      // Mock API returning response without 'data' property
+      mockSearchGitHubCodeAPI.mockResolvedValue({
+        unexpected: 'structure',
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [{ keywordsToSearch: ['test'] }],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('status: "error"');
+      // The error message describes the actual failure
+      expect(responseText).toContain('error:');
+    });
+
+    it('should handle API response with null data', async () => {
+      mockSearchGitHubCodeAPI.mockResolvedValue({
+        data: null,
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [{ keywordsToSearch: ['test'] }],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      // When data is null, the tool handles it as an error
+      expect(responseText).toContain('status: "error"');
+    });
+
+    it('should handle API response with undefined data', async () => {
+      mockSearchGitHubCodeAPI.mockResolvedValue({
+        data: undefined,
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [{ keywordsToSearch: ['test'] }],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('status: "error"');
+      // The error can manifest as a property access error
+      expect(responseText).toContain('error:');
+    });
+  });
 });

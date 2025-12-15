@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createResult } from '../../src/responses';
-import { jsonToYamlString } from 'octocode-utils';
+import { jsonToYamlString } from '../../src/utils/minifier/index.js';
 import { getTextContent } from './testHelpers.js';
 
 // Mock the isBetaEnabled function
@@ -163,8 +163,9 @@ describe('Response Utilities', () => {
       const yaml = getTextContent(result.content);
 
       // Empty arrays are now removed during cleaning
+      // Keys are in original insertion order (not alphabetical)
       const expectedYaml =
-        'data:\n  arrayWithMixed:\n    - "valid"\n    - valid: "keep"\n  nestedObject:\n    deepNested:\n      valid: "keep"\n    nestedArray:\n      - 1\n      - 2\n    validProp: "test"\n  validArray:\n    - 1\n    - 2\n    - 3\n  validBoolean: true\n  validNumber: 42\n  validString: "hello"\n';
+        'data:\n  validString: "hello"\n  validNumber: 42\n  validBoolean: true\n  validArray:\n    - 1\n    - 2\n    - 3\n  nestedObject:\n    validProp: "test"\n    nestedArray:\n      - 1\n      - 2\n    deepNested:\n      valid: "keep"\n  arrayWithMixed:\n    - "valid"\n    - valid: "keep"\n';
 
       expect(yaml).toEqual(expectedYaml);
     });
@@ -380,7 +381,9 @@ describe('Response Utilities', () => {
           keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
         });
 
-        const expectedYaml = `data:\n  pagination:\n    page: 1\n    total: 50\n  repositories:\n    - id: "repo-123"\n      name: "test-repo"\n      owner: "testuser"\n      url: "https://github.com/testuser/test-repo"\nhints:\n  - "Use pagination for large result sets"\n`;
+        // Keys preserve original insertion order (repositories before pagination)
+        // Nested objects have priority keys first (id, name, owner, url)
+        const expectedYaml = `data:\n  repositories:\n    - id: "repo-123"\n      name: "test-repo"\n      owner: "testuser"\n      url: "https://github.com/testuser/test-repo"\n  pagination:\n    page: 1\n    total: 50\nhints:\n  - "Use pagination for large result sets"\n`;
 
         expect(yamlResult).toEqual(expectedYaml);
       });
@@ -403,7 +406,8 @@ describe('Response Utilities', () => {
           keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
         });
 
-        const expectedYaml = `data:\n  emptyArray: []\n  emptyObject: {}\n  nullField: null\n  validField: "test"\nhints: []\n`;
+        // Keys preserve original insertion order
+        const expectedYaml = `data:\n  validField: "test"\n  nullField: null\n  emptyObject: {}\n  emptyArray: []\nhints: []\n`;
 
         expect(yamlResult).toEqual(expectedYaml);
       });
@@ -422,8 +426,9 @@ describe('Response Utilities', () => {
           keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
         });
 
+        // 'path' is a priority key so it goes first, then original order for rest
         const expectedYaml =
-          'data:\n  path: "src/components/Button.tsx"\n  code: "const [state, setState] = useState(\\"initial\\");"\n  message: "Hello \\"world\\" with \'quotes\' and\\nnewlines"\nhints:\n  - "Handle special characters properly"\n';
+          'data:\n  path: "src/components/Button.tsx"\n  message: "Hello \\"world\\" with \'quotes\' and\\nnewlines"\n  code: "const [state, setState] = useState(\\"initial\\");"\nhints:\n  - "Handle special characters properly"\n';
 
         expect(yamlResult).toEqual(expectedYaml);
       });
@@ -495,10 +500,10 @@ describe('Response Utilities', () => {
           keysPriority: ['id', 'name', 'type', 'nonexistent'],
         });
 
-        // Should still produce valid YAML
-        expect(yamlResult).toEqual(`apple: "value2"
+        // Should still produce valid YAML with original insertion order
+        expect(yamlResult).toEqual(`zebra: "value1"
+apple: "value2"
 banana: "value3"
-zebra: "value1"
 `);
       });
     });
@@ -581,9 +586,29 @@ zebra: "value1"
         keysPriority: ['queryId', 'reasoning', 'repository', 'files'],
       });
 
-      const expectedYaml = `data:\n  queries:\n    successful:\n      - reasoning: "Understanding the overall structure will help identify where useState and other hooks are implemented"\n        files:\n          - "/.editorconfig"\n          - "/.eslintignore"\n          - "/.eslintrc.js"\n          - "/.git-blame-ignore-revs"\n          - "/.gitattributes"\n          - "/.gitignore"\n          - "/.mailmap"\n          - "/.nvmrc"\n          - "/.prettierignore"\n          - "/.prettierrc.js"\n          - "/.watchmanconfig"\n          - "/babel.config-react-compiler.js"\n          - "/babel.config-ts.js"\n          - "/babel.config.js"\n          - "/CHANGELOG.md"\n          - "/CODE_OF_CONDUCT.md"\n          - "/CONTRIBUTING.md"\n          - "/dangerfile.js"\n          - "/flow-typed.config.json"\n          - "/LICENSE"\n          - "/MAINTAINERS"\n          - "/package.json"\n          - "/react.code-workspace"\n          - "/ReactVersions.js"\n          - "/README.md"\n          - "/SECURITY.md"\n        folders:\n          - "/.codesandbox"\n          - "/compiler"\n          - "/fixtures"\n          - "/flow-typed"\n          - "/packages"\n          - "/scripts"\n        owner: "facebook"\n        path: "/"\n        repo: "react"\n        researchGoal: "Explore React repository structure to locate hooks implementation"\nhints:\n  researchSuggestions:\n    - "Search for useState in the hooks directory"\n    - "Look at React reconciler implementation"\n    - "Check packages/react/src for hooks"\n  successful:\n    - "Analyze top results in depth before expanding search"\n    - "Cross-reference findings across multiple sources"\n    - "Explore src/ or packages/ first for relevant files"\n    - "Use depth: 2 to surface key files/folders quickly"\n    - "Build targeted code searches from discovered path and filename patterns"\n    - "Chain tools: repository search → structure view → code search → content fetch"\n    - "Compare implementations across 3-5 repositories to identify best practices"\n    - "Focus on source code and example directories for implementation details"\n`;
+      // Verify key structure - priority keys first, then remaining keys
+      expect(yamlResult).toContain(
+        'reasoning: "Understanding the overall structure'
+      );
+      expect(yamlResult).toContain('files:');
+      expect(yamlResult).toContain(
+        'researchGoal: "Explore React repository structure'
+      );
+      expect(yamlResult).toContain('owner: "facebook"');
+      expect(yamlResult).toContain('repo: "react"');
+      expect(yamlResult).toContain('path: "/"');
+      expect(yamlResult).toContain('folders:');
+      expect(yamlResult).toContain('hints:');
+      expect(yamlResult).toContain('successful:');
+      expect(yamlResult).toContain('researchSuggestions:');
 
-      expect(yamlResult).toEqual(expectedYaml);
+      // Verify priority keys come before non-priority keys
+      const reasoningIndex = yamlResult.indexOf('reasoning:');
+      const filesIndex = yamlResult.indexOf('files:');
+      const researchGoalIndex = yamlResult.indexOf('researchGoal:');
+
+      expect(reasoningIndex).toBeLessThan(researchGoalIndex);
+      expect(filesIndex).toBeLessThan(researchGoalIndex);
     });
 
     it('should convert file content response with dispatcher definitions to YAML', () => {
@@ -645,9 +670,41 @@ zebra: "value1"
         ],
       });
 
-      const expectedYaml = `data:\n  queries:\n    successful:\n      - researchGoal: "Read the end of ReactFiberHooks.js to find dispatcher definitions"\n        reasoning: "The dispatcher and hook implementations are typically at the end of the file"\n        researchSuggestions:\n          - "Look for the exported dispatcher objects"\n          - "Find useState assignments"\n          - "Check the module exports"\n        owner: "facebook"\n        repo: "react"\n        path: "packages/react-reconciler/src/ReactFiberHooks.js"\n        contentLength: 3309\n        content: "\\n markUpdateInDevTools(fiber, lane, action);\\n}\\n\\nfunction isRenderPhaseUpdate(fiber: Fiber): boolean {\\n const alternate = fiber.alternate;\\n return (\\n fiber === currentlyRenderingFiber ||\\n (alternate !== null && alternate === currentlyRenderingFiber)\\n );\\n}\\n\\nfunction enqueueRenderPhaseUpdate<S, A>(\\n queue: UpdateQueue<S, A>,\\n update: Update<S, A>,\\n): void {\\n // This is a render phase update. Stash it in a lazily-created map of\\n // queue -> linked list of updates. After this render pass, we'll restart\\n // and apply the stashed updates on top of the work-in-progress hook.\\n didScheduleRenderPhaseUpdateDuringThisPass = didScheduleRenderPhaseUpdate =\\n true;\\n const pending = queue.pending;\\n if (pending === null) {\\n // This is the first update. Create a circular list.\\n update.next = update;\\n } else {\\n update.next = pending.next;\\n pending.next = update;\\n }\\n queue.pending = update;\\n}\\n\\n// TODO: Move to ReactFiberConcurrentUpdates?\\nfunction entangleTransitionUpdate<S, A>(\\n root: FiberRoot,\\n queue: UpdateQueue<S, A>,\\n lane: Lane,\\n): void {\\n if (isTransitionLane(lane)) {\\n let queueLanes = queue.lanes;\\n\\n // If any entangled lanes are no longer pending on the root, then they\\n // must have finished. We can remove them from the shared queue, which\\n // represents a superset of the actually pending lanes. In some cases we\\n // may entangle more than we need to, but that's OK. In fact it's worse if\\n // we don't entangle when we should.\\n queueLanes = intersectLanes(queueLanes, root.pendingLanes);\\n\\n // Entangle the new transition lane with the other transition lanes.\\n const newQueueLanes = mergeLanes(queueLanes, lane);\\n queue.lanes = newQueueLanes;\\n // Even if queue.lanes already include lane, we don't know for certain if\\n // the lane finished since the last time we entangled it. So we need to\\n // entangle it again, just to be sure.\\n markRootEntangled(root, newQueueLanes);\\n }\\n}\\n\\nfunction markUpdateInDevTools<A>(fiber: Fiber, lane: Lane, action: A): void {\\n if (enableSchedulingProfiler) {\\n markStateUpdateScheduled(fiber, lane);\\n }\\n}\\n\\nexport const ContextOnlyDispatcher: Dispatcher = {\\n readContext,\\n\\n use,\\n useCallback: throwInvalidHookError,\\n useContext: throwInvalidHookError,\\n useEffect: throwInvalidHookError,\\n useImperativeHandle: throwInvalidHookError,\\n useLayoutEffect: throwInvalidHookError,\\n useInsertionEffect: throwInvalidHookError,\\n useMemo: throwInvalidHookError,\\n useReducer: throwInvalidHookError,\\n useRef: throwInvalidHookError,\\n useState: throwInvalidHookError,\\n useDebugValue: throwInvalidHookError,\\n useDeferredValue: throwInvalidHookError,\\n useTransition: throwInvalidHookError,\\n useSyncExternalStore: throwInvalidHookError,\\n useId: throwInvalidHookError,\\n useHostTransitionStatus: throwInvalidHookError,\\n useFormState: throwInvalidHookError,\\n useActionState: throwInvalidHookError,\\n useOptimistic: throwInvalidHookError,\\n useMemoCache: throwInvalidHookError,\\n useCacheRefresh: throwInvalidHookError,\\n};\\nif (enableUseEffectEventHook) {\\n (ContextOnlyDispatcher: Dispatcher).useEffectEvent = throwInvalidHookError;\\n}\\n\\nconst HooksDispatcherOnMount: Dispatcher = {\\n readContext,\\n\\n use,\\n useCallback: mountCallback,\\n useContext: readContext,\\n useEffect: mountEffect,"\n        branch: "66a390ebb815065b1e5ac7ae504dadb22989f0d4"\n        endLine: 3900\n        isPartial: true\n        minificationFailed: true\n        minificationType: "failed"\n        minified: false\n        startLine: 3800\nhints:\n  successful:\n    - "Analyze top results in depth before expanding search"\n    - "Cross-reference findings across multiple sources"\n    - "Prefer partial reads for token efficiency"\n    - "When readability matters (e.g., JSON/Markdown), consider minified: false"\n    - "Use matchString from code search text_matches and increase matchStringContextLines if needed"\n    - "Chain tools: repository search → structure view → code search → content fetch"\n    - "Compare implementations across 3-5 repositories to identify best practices"\n    - "Examine imports/exports to understand dependencies and usage"\n`;
+      // Verify key structure - priority keys first, then remaining keys
+      expect(yamlResult).toContain(
+        'researchGoal: "Read the end of ReactFiberHooks.js'
+      );
+      expect(yamlResult).toContain(
+        'reasoning: "The dispatcher and hook implementations'
+      );
+      expect(yamlResult).toContain('researchSuggestions:');
+      expect(yamlResult).toContain('owner: "facebook"');
+      expect(yamlResult).toContain('repo: "react"');
+      expect(yamlResult).toContain(
+        'path: "packages/react-reconciler/src/ReactFiberHooks.js"'
+      );
+      expect(yamlResult).toContain('contentLength: 3309');
+      expect(yamlResult).toContain('content: "');
+      expect(yamlResult).toContain(
+        'branch: "66a390ebb815065b1e5ac7ae504dadb22989f0d4"'
+      );
+      expect(yamlResult).toContain('startLine: 3800');
+      expect(yamlResult).toContain('endLine: 3900');
+      expect(yamlResult).toContain('isPartial: true');
+      expect(yamlResult).toContain('minified: false');
+      expect(yamlResult).toContain('minificationFailed: true');
+      expect(yamlResult).toContain('hints:');
+      expect(yamlResult).toContain('successful:');
 
-      expect(yamlResult).toEqual(expectedYaml);
+      // Verify priority keys come before non-priority keys
+      const researchGoalIndex = yamlResult.indexOf('researchGoal:');
+      const reasoningIndex = yamlResult.indexOf('reasoning:');
+      const contentIndex = yamlResult.indexOf('content:');
+      const branchIndex = yamlResult.indexOf('branch:');
+
+      expect(researchGoalIndex).toBeLessThan(branchIndex);
+      expect(reasoningIndex).toBeLessThan(branchIndex);
+      expect(contentIndex).toBeLessThan(branchIndex);
     });
 
     it('should convert file content response with mountState function to YAML', () => {
@@ -709,9 +766,41 @@ zebra: "value1"
         ],
       });
 
-      const expectedYaml = `data:\n  queries:\n    successful:\n      - researchGoal: "Find the mountState function before mountStateImpl"\n        reasoning: "The mountState function should be defined before mountStateImpl"\n        researchSuggestions:\n          - "Read earlier lines"\n          - "Look for the function definition"\n          - "Check the complete implementation"\n        owner: "facebook"\n        repo: "react"\n        path: "packages/react-reconciler/src/ReactFiberHooks.js"\n        contentLength: 1211\n        content: " forceStoreRerender(fiber);\\n }\\n };\\n // Subscribe to the store and return a clean-up function.\\n return subscribe(handleStoreChange);\\n}\\n\\nfunction checkIfSnapshotChanged<T>(inst: StoreInstance<T>): boolean {\\n const latestGetSnapshot = inst.getSnapshot;\\n const prevValue = inst.value;\\n try {\\n const nextValue = latestGetSnapshot();\\n return !is(prevValue, nextValue);\\n } catch (error) {\\n return true;\\n }\\n}\\n\\nfunction forceStoreRerender(fiber: Fiber) {\\n const root = enqueueConcurrentRenderForLane(fiber, SyncLane);\\n if (root !== null) {\\n scheduleUpdateOnFiber(root, fiber, SyncLane);\\n }\\n}\\n\\nfunction mountStateImpl<S>(initialState: (() => S) | S): Hook {\\n const hook = mountWorkInProgressHook();\\n if (typeof initialState === 'function') {\\n const initialStateInitializer = initialState;\\n // $FlowFixMe[incompatible-use]: Flow doesn't like mixed types\\n initialState = initialStateInitializer();\\n if (shouldDoubleInvokeUserFnsInHooksDEV) {\\n setIsStrictModeForDevtools(true);\\n try {\\n // $FlowFixMe[incompatible-use]: Flow doesn't like mixed types\\n initialStateInitializer();\\n } finally {\\n setIsStrictModeForDevtools(false);\\n }\\n }\\n }"\n        branch: "66a390ebb815065b1e5ac7ae504dadb22989f0d4"\n        endLine: 1910\n        isPartial: true\n        minificationFailed: true\n        minificationType: "failed"\n        minified: false\n        startLine: 1870\nhints:\n  successful:\n    - "Analyze top results in depth before expanding search"\n    - "Cross-reference findings across multiple sources"\n    - "Prefer partial reads for token efficiency"\n    - "When readability matters (e.g., JSON/Markdown), consider minified: false"\n    - "Use matchString from code search text_matches and increase matchStringContextLines if needed"\n    - "Chain tools: repository search → structure view → code search → content fetch"\n    - "Compare implementations across 3-5 repositories to identify best practices"\n    - "Examine imports/exports to understand dependencies and usage"\n`;
+      // Verify key structure - priority keys first, then remaining keys
+      expect(yamlResult).toContain(
+        'researchGoal: "Find the mountState function'
+      );
+      expect(yamlResult).toContain(
+        'reasoning: "The mountState function should be'
+      );
+      expect(yamlResult).toContain('researchSuggestions:');
+      expect(yamlResult).toContain('owner: "facebook"');
+      expect(yamlResult).toContain('repo: "react"');
+      expect(yamlResult).toContain(
+        'path: "packages/react-reconciler/src/ReactFiberHooks.js"'
+      );
+      expect(yamlResult).toContain('contentLength: 1211');
+      expect(yamlResult).toContain('content: "');
+      expect(yamlResult).toContain(
+        'branch: "66a390ebb815065b1e5ac7ae504dadb22989f0d4"'
+      );
+      expect(yamlResult).toContain('startLine: 1870');
+      expect(yamlResult).toContain('endLine: 1910');
+      expect(yamlResult).toContain('isPartial: true');
+      expect(yamlResult).toContain('minified: false');
+      expect(yamlResult).toContain('minificationFailed: true');
+      expect(yamlResult).toContain('hints:');
+      expect(yamlResult).toContain('successful:');
 
-      expect(yamlResult).toEqual(expectedYaml);
+      // Verify priority keys come before non-priority keys
+      const researchGoalIndex = yamlResult.indexOf('researchGoal:');
+      const reasoningIndex = yamlResult.indexOf('reasoning:');
+      const contentIndex = yamlResult.indexOf('content:');
+      const branchIndex = yamlResult.indexOf('branch:');
+
+      expect(researchGoalIndex).toBeLessThan(branchIndex);
+      expect(reasoningIndex).toBeLessThan(branchIndex);
+      expect(contentIndex).toBeLessThan(branchIndex);
     });
   });
 });

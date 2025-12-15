@@ -548,6 +548,11 @@ describe('Index Module', () => {
       mockGetGitHubToken.mockResolvedValue(null);
       const { registerAllTools } = await import('../src/index.js');
 
+      // Mock stderr.write to prevent warning output during test
+      const stderrSpy = vi
+        .spyOn(process.stderr, 'write')
+        .mockImplementation(() => true);
+
       const mockContent = {
         instructions: 'test',
         prompts: {},
@@ -570,6 +575,12 @@ describe('Index Module', () => {
 
       // Should still register tools but log warning
       expect(mockRegisterTools).toHaveBeenCalled();
+      // Verify warning was written to stderr
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('No GitHub token available')
+      );
+
+      stderrSpy.mockRestore();
     });
 
     it('should handle GitHub token available', async () => {

@@ -158,6 +158,11 @@ describe('index.ts - Server Lifecycle', () => {
         failedTools: [],
       });
 
+      // Mock stderr.write to prevent warning output during test
+      const stderrSpy = vi
+        .spyOn(process.stderr, 'write')
+        .mockImplementation(() => true);
+
       const { loadToolContent } = await import('../src/tools/toolMetadata.js');
       const content = await loadToolContent();
 
@@ -167,6 +172,8 @@ describe('index.ts - Server Lifecycle', () => {
         'No GitHub token - limited functionality'
       );
       expect(registerTools).toHaveBeenCalled();
+
+      stderrSpy.mockRestore();
     });
 
     it('should throw error when no tools are registered', async () => {

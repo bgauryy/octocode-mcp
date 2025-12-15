@@ -5,7 +5,7 @@ import {
 } from '../../src/github/fileOperations.js';
 import { getOctokit } from '../../src/github/client.js';
 import { RequestError } from 'octokit';
-import * as octocodeUtils from 'octocode-utils';
+import * as minifierModule from '../../src/utils/minifier/index.js';
 
 // Helper to create RequestError with proper structure
 function createRequestError(message: string, status: number) {
@@ -27,7 +27,7 @@ function createRequestError(message: string, status: number) {
 
 // Mock dependencies
 vi.mock('../../src/github/client.js');
-vi.mock('octocode-utils');
+vi.mock('../../src/utils/minifier/index.js');
 
 describe('GitHub File Operations - processFileContentAPI coverage', () => {
   beforeEach(() => {
@@ -93,7 +93,7 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
       vi.mocked(getOctokit).mockResolvedValue(
         mockOctokit as unknown as ReturnType<typeof getOctokit>
       );
-      vi.mocked(octocodeUtils.minifyContent).mockResolvedValue({
+      vi.mocked(minifierModule.minifyContent).mockResolvedValue({
         content: 'minified',
         failed: false,
         type: 'general',
@@ -382,7 +382,7 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
       vi.mocked(getOctokit).mockResolvedValue(
         mockOctokit as unknown as ReturnType<typeof getOctokit>
       );
-      vi.mocked(octocodeUtils.minifyContent).mockImplementation(
+      vi.mocked(minifierModule.minifyContent).mockImplementation(
         async content => ({
           content,
           failed: false,
@@ -437,7 +437,7 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
       vi.mocked(getOctokit).mockResolvedValue(
         mockOctokit as unknown as ReturnType<typeof getOctokit>
       );
-      vi.mocked(octocodeUtils.minifyContent).mockImplementation(
+      vi.mocked(minifierModule.minifyContent).mockImplementation(
         async content => ({
           content,
           failed: false,
@@ -484,7 +484,7 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
       vi.mocked(getOctokit).mockResolvedValue(
         mockOctokit as unknown as ReturnType<typeof getOctokit>
       );
-      vi.mocked(octocodeUtils.minifyContent).mockImplementation(
+      vi.mocked(minifierModule.minifyContent).mockImplementation(
         async content => ({
           content,
           failed: false,
@@ -530,7 +530,7 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
       vi.mocked(getOctokit).mockResolvedValue(
         mockOctokit as unknown as ReturnType<typeof getOctokit>
       );
-      vi.mocked(octocodeUtils.minifyContent).mockImplementation(
+      vi.mocked(minifierModule.minifyContent).mockImplementation(
         async content => ({
           content,
           failed: false,
@@ -576,7 +576,7 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
       vi.mocked(getOctokit).mockResolvedValue(
         mockOctokit as unknown as ReturnType<typeof getOctokit>
       );
-      vi.mocked(octocodeUtils.minifyContent).mockImplementation(
+      vi.mocked(minifierModule.minifyContent).mockImplementation(
         async content => ({
           content,
           failed: false,
@@ -626,7 +626,7 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
       vi.mocked(getOctokit).mockResolvedValue(
         mockOctokit as unknown as ReturnType<typeof getOctokit>
       );
-      vi.mocked(octocodeUtils.minifyContent).mockImplementation(
+      vi.mocked(minifierModule.minifyContent).mockImplementation(
         async content => ({
           content,
           failed: false,
@@ -674,7 +674,7 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
       vi.mocked(getOctokit).mockResolvedValue(
         mockOctokit as unknown as ReturnType<typeof getOctokit>
       );
-      vi.mocked(octocodeUtils.minifyContent).mockResolvedValue({
+      vi.mocked(minifierModule.minifyContent).mockResolvedValue({
         content: fileContent, // Returns original content
         failed: true,
         type: 'terser',
@@ -733,7 +733,7 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
       }
 
       // minifyContent should not be called
-      expect(octocodeUtils.minifyContent).not.toHaveBeenCalled();
+      expect(minifierModule.minifyContent).not.toHaveBeenCalled();
     });
   });
 
