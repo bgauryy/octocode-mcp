@@ -59,9 +59,8 @@ describe('withSecurityValidation logging', () => {
     };
 
     // Mock the sanitizer to return our test args
-    const { ContentSanitizer } = await import(
-      '../../src/security/contentSanitizer.js'
-    );
+    const { ContentSanitizer } =
+      await import('../../src/security/contentSanitizer.js');
     vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
       isValid: true,
       sanitizedParams: args,
@@ -95,9 +94,8 @@ describe('withSecurityValidation logging', () => {
     };
 
     // Mock the sanitizer to return our test args
-    const { ContentSanitizer } = await import(
-      '../../src/security/contentSanitizer.js'
-    );
+    const { ContentSanitizer } =
+      await import('../../src/security/contentSanitizer.js');
     vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
       isValid: true,
       sanitizedParams: args,
@@ -133,9 +131,8 @@ describe('withSecurityValidation logging', () => {
     };
 
     // Mock the sanitizer
-    const { ContentSanitizer } = await import(
-      '../../src/security/contentSanitizer.js'
-    );
+    const { ContentSanitizer } =
+      await import('../../src/security/contentSanitizer.js');
     vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
       isValid: true,
       sanitizedParams: args,
@@ -176,9 +173,8 @@ describe('withSecurityValidation logging', () => {
     };
 
     // Mock the sanitizer to return our test args
-    const { ContentSanitizer } = await import(
-      '../../src/security/contentSanitizer.js'
-    );
+    const { ContentSanitizer } =
+      await import('../../src/security/contentSanitizer.js');
     vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
       isValid: true,
       sanitizedParams: args,
@@ -217,9 +213,8 @@ describe('withSecurityValidation logging', () => {
     };
 
     // Mock the sanitizer to return our test args
-    const { ContentSanitizer } = await import(
-      '../../src/security/contentSanitizer.js'
-    );
+    const { ContentSanitizer } =
+      await import('../../src/security/contentSanitizer.js');
     vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
       isValid: true,
       sanitizedParams: args,
@@ -267,9 +262,8 @@ describe('withSecurityValidation logging', () => {
       };
 
       // Mock the sanitizer to return our test args
-      const { ContentSanitizer } = await import(
-        '../../src/security/contentSanitizer.js'
-      );
+      const { ContentSanitizer } =
+        await import('../../src/security/contentSanitizer.js');
       vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
         isValid: true,
         sanitizedParams: args,
@@ -329,9 +323,8 @@ describe('withSecurityValidation logging', () => {
         ],
       };
 
-      const { ContentSanitizer } = await import(
-        '../../src/security/contentSanitizer.js'
-      );
+      const { ContentSanitizer } =
+        await import('../../src/security/contentSanitizer.js');
       vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
         isValid: true,
         sanitizedParams: args,
@@ -400,9 +393,8 @@ describe('withSecurityValidation logging', () => {
         ],
       };
 
-      const { ContentSanitizer } = await import(
-        '../../src/security/contentSanitizer.js'
-      );
+      const { ContentSanitizer } =
+        await import('../../src/security/contentSanitizer.js');
       vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
         isValid: true,
         sanitizedParams: args,
@@ -466,9 +458,8 @@ describe('withSecurityValidation logging', () => {
         ],
       };
 
-      const { ContentSanitizer } = await import(
-        '../../src/security/contentSanitizer.js'
-      );
+      const { ContentSanitizer } =
+        await import('../../src/security/contentSanitizer.js');
       vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
         isValid: true,
         sanitizedParams: args,
@@ -528,9 +519,8 @@ describe('withSecurityValidation logging', () => {
     };
 
     // Mock the sanitizer to return our test args
-    const { ContentSanitizer } = await import(
-      '../../src/security/contentSanitizer.js'
-    );
+    const { ContentSanitizer } =
+      await import('../../src/security/contentSanitizer.js');
     vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
       isValid: true,
       sanitizedParams: args,

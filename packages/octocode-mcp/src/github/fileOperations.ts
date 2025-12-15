@@ -186,7 +186,7 @@ async function fetchGitHubFileContentAPIInternal(
         }
 
         decodedContent = buffer.toString('utf-8');
-      } catch (decodeError) {
+      } catch {
         await logSessionError(
           TOOL_NAMES.GITHUB_FETCH_CONTENT,
           FILE_OPERATION_ERRORS.DECODE_FAILED.code
@@ -513,7 +513,7 @@ async function viewGitHubRepositoryStructureAPIInternal(
               ref: defaultBranch,
             });
             workingBranch = defaultBranch;
-          } catch (fallbackError) {
+          } catch {
             const commonBranches = ['main', 'master', 'develop'];
             let foundBranch = null;
 
@@ -775,7 +775,7 @@ async function fetchDirectoryContentsRecursivelyAPI(
     }
 
     return allItems;
-  } catch (error) {
+  } catch {
     return [];
   }
 }

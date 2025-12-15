@@ -111,7 +111,7 @@ export async function withDataCache<T>(
         cacheStats.hits++;
         return cached;
       }
-    } catch (_e) {
+    } catch {
       // ignore
     }
   }

@@ -4,6 +4,7 @@ import {
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
 import { getTextContent } from '../utils/testHelpers.js';
+import { FileContentBulkQuerySchema } from '../../src/scheme/github_fetch_content.js';
 
 const mockFetchGitHubFileContentAPI = vi.hoisted(() => vi.fn());
 
@@ -394,50 +395,37 @@ End of file.`;
       );
     });
 
-    it('should ignore other parameters when fullContent=true', async () => {
-      mockFetchGitHubFileContentAPI.mockResolvedValue({
-        data: {
-          path: 'test.js',
-          repository: 'test/repo',
-          branch: 'main',
-          content: 'Full file content should be returned',
-          contentLength: 1,
-          minified: false,
-        },
-        status: 200,
+    it('should reject conflicting parameters when fullContent=true via schema validation', () => {
+      // fullContent=true cannot be combined with startLine/endLine/matchString
+      // This is validated at the Zod schema level via superRefine
+      // Note: The mock server doesn't perform actual MCP SDK schema validation,
+      // so we test the schema directly using Zod's safeParse
+      const parseResult = FileContentBulkQuerySchema.safeParse({
+        queries: [
+          {
+            mainResearchGoal: 'Test validation',
+            researchGoal: 'Test conflicting params',
+            reasoning: 'Testing',
+            owner: 'test',
+            repo: 'repo',
+            path: 'test.js',
+            fullContent: true,
+            startLine: 5, // Conflict - caught by schema validation
+            endLine: 10, // Conflict - caught by schema validation
+            matchString: 'function', // Conflict - caught by schema validation
+          },
+        ],
       });
 
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        {
-          queries: [
-            {
-              owner: 'test',
-              repo: 'repo',
-              path: 'test.js',
-              fullContent: true,
-              startLine: 5, // Should be ignored
-              endLine: 10, // Should be ignored
-              matchString: 'function', // Should be ignored
-              id: 'ignore-params-test',
-            },
-          ],
-        }
-      );
-
-      expect(result.isError).toBe(false);
-
-      // Verify API was called with fullContent=true and other params as undefined
-      expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          fullContent: true,
-          startLine: undefined,
-          endLine: undefined,
-          matchString: undefined,
-        }),
-        undefined, // authInfo
-        undefined // sessionId
-      );
+      // Schema validation should reject this input
+      expect(parseResult.success).toBe(false);
+      if (!parseResult.success) {
+        // Verify the error is about the parameter conflict
+        const errorMessages = parseResult.error.errors.map(e => e.message);
+        expect(
+          errorMessages.some(msg => msg.includes('parameterConflict'))
+        ).toBe(true);
+      }
     });
   });
 

@@ -41,9 +41,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
 
   describe('getMeta() when METADATA_JSON is null (lines 103-107)', () => {
     it('should throw error when getGenericErrorHintsSync is called before initialization', async () => {
-      const { getGenericErrorHintsSync } = await import(
-        '../../src/tools/toolMetadata.js'
-      );
+      const { getGenericErrorHintsSync } =
+        await import('../../src/tools/toolMetadata.js');
 
       expect(() => getGenericErrorHintsSync()).toThrow(
         'Tool metadata not initialized. Call and await initializeToolMetadata() before using tool metadata.'
@@ -51,9 +50,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
     });
 
     it('should throw error when getDynamicHints is called before initialization', async () => {
-      const { getDynamicHints } = await import(
-        '../../src/tools/toolMetadata.js'
-      );
+      const { getDynamicHints } =
+        await import('../../src/tools/toolMetadata.js');
 
       expect(() => getDynamicHints('anyTool', 'topicsHasResults')).toThrow(
         'Tool metadata not initialized. Call and await initializeToolMetadata() before using tool metadata.'
@@ -88,9 +86,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
 
   describe('GENERIC_ERROR_HINTS proxy fallback (lines 264-265)', () => {
     it('should return undefined for array methods when uninitialized', async () => {
-      const { GENERIC_ERROR_HINTS } = await import(
-        '../../src/tools/toolMetadata.js'
-      );
+      const { GENERIC_ERROR_HINTS } =
+        await import('../../src/tools/toolMetadata.js');
 
       // Access the proxy before initialization - it returns an empty array fallback
       expect(GENERIC_ERROR_HINTS.length).toBe(0);
@@ -100,9 +97,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
 
   describe('isToolAvailableSync returns false when uninitialized (line 272)', () => {
     it('should return false when METADATA_JSON is null', async () => {
-      const { isToolAvailableSync } = await import(
-        '../../src/tools/toolMetadata.js'
-      );
+      const { isToolAvailableSync } =
+        await import('../../src/tools/toolMetadata.js');
 
       // Before initialization, should return false
       expect(isToolAvailableSync('githubSearchCode')).toBe(false);
@@ -201,14 +197,12 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
         genericErrorHints: [],
       };
 
-      const { fetchWithRetries } = await import(
-        '../../src/utils/fetchWithRetries.js'
-      );
+      const { fetchWithRetries } =
+        await import('../../src/utils/fetchWithRetries.js');
       vi.mocked(fetchWithRetries).mockResolvedValueOnce(mockMetadata);
 
-      const { initializeToolMetadata, TOOL_HINTS } = await import(
-        '../../src/tools/toolMetadata.js'
-      );
+      const { initializeToolMetadata, TOOL_HINTS } =
+        await import('../../src/tools/toolMetadata.js');
 
       await initializeToolMetadata();
 
@@ -264,9 +258,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
 
   describe('getToolHintsSync when uninitialized', () => {
     it('should return empty array when METADATA_JSON is null', async () => {
-      const { getToolHintsSync } = await import(
-        '../../src/tools/toolMetadata.js'
-      );
+      const { getToolHintsSync } =
+        await import('../../src/tools/toolMetadata.js');
 
       // Before initialization, should return empty array
       expect(getToolHintsSync('githubSearchCode', 'hasResults')).toEqual([]);
@@ -307,14 +300,12 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
         genericErrorHints: [],
       };
 
-      const { fetchWithRetries } = await import(
-        '../../src/utils/fetchWithRetries.js'
-      );
+      const { fetchWithRetries } =
+        await import('../../src/utils/fetchWithRetries.js');
       vi.mocked(fetchWithRetries).mockResolvedValueOnce(incompleteMetadata);
 
-      const { initializeToolMetadata, getToolHintsSync } = await import(
-        '../../src/tools/toolMetadata.js'
-      );
+      const { initializeToolMetadata, getToolHintsSync } =
+        await import('../../src/tools/toolMetadata.js');
 
       await initializeToolMetadata();
 
@@ -348,14 +339,12 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
         genericErrorHints: [],
       };
 
-      const { fetchWithRetries } = await import(
-        '../../src/utils/fetchWithRetries.js'
-      );
+      const { fetchWithRetries } =
+        await import('../../src/utils/fetchWithRetries.js');
       vi.mocked(fetchWithRetries).mockResolvedValueOnce(metadataWithNullTools);
 
-      const { initializeToolMetadata, TOOL_HINTS } = await import(
-        '../../src/tools/toolMetadata.js'
-      );
+      const { initializeToolMetadata, TOOL_HINTS } =
+        await import('../../src/tools/toolMetadata.js');
 
       await initializeToolMetadata();
 
@@ -394,16 +383,14 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
         genericErrorHints: [],
       };
 
-      const { fetchWithRetries } = await import(
-        '../../src/utils/fetchWithRetries.js'
-      );
+      const { fetchWithRetries } =
+        await import('../../src/utils/fetchWithRetries.js');
       vi.mocked(fetchWithRetries).mockResolvedValueOnce(
         metadataWithMissingHints
       );
 
-      const { initializeToolMetadata, TOOL_HINTS } = await import(
-        '../../src/tools/toolMetadata.js'
-      );
+      const { initializeToolMetadata, TOOL_HINTS } =
+        await import('../../src/tools/toolMetadata.js');
 
       await initializeToolMetadata();
 

@@ -58,15 +58,13 @@ describe('toolConfig branch coverage - getDescription fallback (line 26)', () =>
       }));
 
       // Initialize metadata first
-      const { initializeToolMetadata } = await import(
-        '../../src/tools/toolMetadata.js'
-      );
+      const { initializeToolMetadata } =
+        await import('../../src/tools/toolMetadata.js');
       await initializeToolMetadata();
 
       // Now import toolConfig which uses DESCRIPTIONS
-      const { GITHUB_SEARCH_CODE, GITHUB_FETCH_CONTENT } = await import(
-        '../../src/tools/toolConfig.js'
-      );
+      const { GITHUB_SEARCH_CODE, GITHUB_FETCH_CONTENT } =
+        await import('../../src/tools/toolConfig.js');
 
       // The description should come from the initialized DESCRIPTIONS proxy
       expect(typeof GITHUB_SEARCH_CODE.description).toBe('string');

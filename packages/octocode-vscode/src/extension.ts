@@ -176,7 +176,7 @@ function getEditorInfo(): {
         'claude_desktop_config.json'
       ),
     };
-  } catch (err) {
+  } catch {
     // Fallback if something fails in detection
     return {
       name: 'VS Code',

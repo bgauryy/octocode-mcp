@@ -31,7 +31,16 @@ const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
     .max(20)
     .optional()
     .describe(GITHUB_SEARCH_REPOS.resultLimit.limit),
-});
+}).refine(
+  data =>
+    (data.keywordsToSearch && data.keywordsToSearch.length > 0) ||
+    (data.topicsToSearch && data.topicsToSearch.length > 0),
+  {
+    message:
+      "At least one of 'keywordsToSearch' or 'topicsToSearch' is required",
+    path: ['keywordsToSearch'],
+  }
+);
 
 export const GitHubReposSearchQuerySchema = createBulkQuerySchema(
   TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,

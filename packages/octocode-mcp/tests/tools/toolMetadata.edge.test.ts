@@ -17,9 +17,8 @@ describe('toolMetadata - Final Edge Cases', () => {
 
   describe('Concurrent initialization (line 146)', () => {
     it('should handle concurrent initializeToolMetadata calls', async () => {
-      const { fetchWithRetries } = await import(
-        '../../src/utils/fetchWithRetries.js'
-      );
+      const { fetchWithRetries } =
+        await import('../../src/utils/fetchWithRetries.js');
 
       // Mock a slow response to create concurrency scenario
       vi.mocked(fetchWithRetries).mockImplementation(
@@ -50,9 +49,8 @@ describe('toolMetadata - Final Edge Cases', () => {
           })
       );
 
-      const { initializeToolMetadata } = await import(
-        '../../src/tools/toolMetadata.js'
-      );
+      const { initializeToolMetadata } =
+        await import('../../src/tools/toolMetadata.js');
 
       // Call initializeToolMetadata multiple times concurrently
       // Second call should hit line 146 (return initializationPromise)
@@ -69,9 +67,8 @@ describe('toolMetadata - Final Edge Cases', () => {
 
   describe('loadToolContent auto-initialization (line 206)', () => {
     it('should auto-initialize when metadata is null', async () => {
-      const { fetchWithRetries } = await import(
-        '../../src/utils/fetchWithRetries.js'
-      );
+      const { fetchWithRetries } =
+        await import('../../src/utils/fetchWithRetries.js');
 
       vi.mocked(fetchWithRetries).mockResolvedValue({
         toolNames: {
@@ -94,9 +91,8 @@ describe('toolMetadata - Final Edge Cases', () => {
         instructions: 'test',
       });
 
-      const { loadToolContent } = await import(
-        '../../src/tools/toolMetadata.js'
-      );
+      const { loadToolContent } =
+        await import('../../src/tools/toolMetadata.js');
 
       // This should trigger line 206 (await initializeToolMetadata())
       const content = await loadToolContent();
@@ -106,9 +102,8 @@ describe('toolMetadata - Final Edge Cases', () => {
     });
 
     it('should not reinitialize if metadata already loaded', async () => {
-      const { fetchWithRetries } = await import(
-        '../../src/utils/fetchWithRetries.js'
-      );
+      const { fetchWithRetries } =
+        await import('../../src/utils/fetchWithRetries.js');
 
       vi.mocked(fetchWithRetries).mockResolvedValue({
         toolNames: {
@@ -131,9 +126,8 @@ describe('toolMetadata - Final Edge Cases', () => {
         instructions: 'test',
       });
 
-      const { initializeToolMetadata, loadToolContent } = await import(
-        '../../src/tools/toolMetadata.js'
-      );
+      const { initializeToolMetadata, loadToolContent } =
+        await import('../../src/tools/toolMetadata.js');
 
       // Initialize first
       await initializeToolMetadata();

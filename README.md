@@ -144,7 +144,44 @@ https://github.com/user-attachments/assets/c184d5d4-c9b6-40a1-a55a-41cb9b3ecc4f
 
 ## Installation
 
-### Prerequisites
+### Standalone Binary (No Node.js Required)
+
+Download and run octocode-mcp as a standalone executable — no Node.js, npm, or dependencies needed.
+
+**One-line install:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/install/install.sh | sh
+```
+
+**Or download manually from [Releases](https://github.com/bgauryy/octocode-mcp/releases):**
+
+| Platform | Download |
+|----------|----------|
+| macOS (Apple Silicon) | [octocode-mcp-darwin-arm64](https://github.com/bgauryy/octocode-mcp/releases/latest/download/octocode-mcp-darwin-arm64) |
+| macOS (Intel) | [octocode-mcp-darwin-x64](https://github.com/bgauryy/octocode-mcp/releases/latest/download/octocode-mcp-darwin-x64) |
+| Linux (x64) | [octocode-mcp-linux-x64](https://github.com/bgauryy/octocode-mcp/releases/latest/download/octocode-mcp-linux-x64) |
+| Linux (ARM64) | [octocode-mcp-linux-arm64](https://github.com/bgauryy/octocode-mcp/releases/latest/download/octocode-mcp-linux-arm64) |
+| Linux (Alpine/musl) | [octocode-mcp-linux-x64-musl](https://github.com/bgauryy/octocode-mcp/releases/latest/download/octocode-mcp-linux-x64-musl) |
+| Windows (x64) | [octocode-mcp-windows-x64.exe](https://github.com/bgauryy/octocode-mcp/releases/latest/download/octocode-mcp-windows-x64.exe) |
+
+**Configure MCP client:**
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "/path/to/octocode-mcp"
+    }
+  }
+}
+```
+
+---
+
+### npm / npx (Requires Node.js)
+
+#### Prerequisites
 
 - **Node.js** >= 18.12.0
 - **GitHub Authentication** (choose one):

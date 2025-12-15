@@ -382,7 +382,7 @@ describe('ServerConfig - Simplified Version', () => {
       let didThrow = false;
       try {
         getServerConfig();
-      } catch (e) {
+      } catch {
         didThrow = true;
       }
       expect(didThrow).toEqual(true);
