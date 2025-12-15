@@ -475,4 +475,152 @@ describe('pullRequestSearch coverage', () => {
     // The test verifies that the result is properly returned
     expect(result.pull_requests).toHaveLength(1);
   });
+
+  it('should process PR content with secrets through sanitization (coverage)', async () => {
+    vi.spyOn(queryBuilders, 'buildPullRequestSearchQuery').mockReturnValue(
+      'test'
+    );
+
+    // Use PR title with a fake GitHub token pattern that triggers sanitization
+    // This exercises the sanitizationWarnings.size > 0 branch in createBasePRTransformation
+    const fakeGitHubToken =
+      'ghp_abcdefghijklmnopqrstuvwxyz12345678901234567890';
+
+    mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+      data: {
+        items: [
+          {
+            number: 1,
+            title: `Fix auth issue with token ${fakeGitHubToken}`,
+            html_url: 'http://github.com/owner/repo/pull/1',
+            state: 'open',
+            user: { login: 'user' },
+            pull_request: {},
+          },
+        ],
+        total_count: 1,
+      },
+    });
+
+    mockOctokit.rest.pulls.get.mockResolvedValue({
+      data: {
+        number: 1,
+        title: `Fix auth issue with token ${fakeGitHubToken}`,
+        state: 'open',
+        user: { login: 'user' },
+        head: { ref: 'feature', sha: 'abc123' },
+        base: { ref: 'main', sha: 'def456' },
+      },
+    });
+
+    const result = await searchGitHubPullRequestsAPI({
+      query: 'test',
+      owner: 'owner',
+      repo: 'repo',
+    });
+
+    expect(result.pull_requests).toBeDefined();
+    expect(result.pull_requests).toHaveLength(1);
+    // The token should be redacted in the title
+    expect(result.pull_requests?.[0]?.title).toContain('[REDACTED-');
+  });
+
+  it('should process PR body with AWS keys through sanitization (coverage)', async () => {
+    vi.spyOn(queryBuilders, 'buildPullRequestSearchQuery').mockReturnValue(
+      'test'
+    );
+
+    // AWS Access Key ID pattern: AKIA followed by exactly 16 uppercase alphanumeric characters
+    // Total 20 chars: 4 (AKIA) + 16 = 20
+    const fakeAwsKey = 'AKIAIOSFODNN7EXAMPLE';
+
+    mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+      data: {
+        items: [
+          {
+            number: 1,
+            title: 'Update config',
+            body: `Added AWS config with key ${fakeAwsKey}`,
+            html_url: 'http://github.com/owner/repo/pull/1',
+            state: 'open',
+            user: { login: 'user' },
+            pull_request: {},
+          },
+        ],
+        total_count: 1,
+      },
+    });
+
+    mockOctokit.rest.pulls.get.mockResolvedValue({
+      data: {
+        number: 1,
+        title: 'Update config',
+        body: `Added AWS config with key ${fakeAwsKey}`,
+        state: 'open',
+        user: { login: 'user' },
+        head: { ref: 'feature', sha: 'abc123' },
+        base: { ref: 'main', sha: 'def456' },
+      },
+    });
+
+    const result = await searchGitHubPullRequestsAPI({
+      query: 'test',
+      owner: 'owner',
+      repo: 'repo',
+    });
+
+    expect(result.pull_requests).toBeDefined();
+    expect(result.pull_requests).toHaveLength(1);
+    // The AWS key should be redacted in the body (AKIAIOSFODNN7EXAMPLE -> [REDACTED-AWSACCESSKEYID])
+    expect(result.pull_requests?.[0]?.body).toContain(
+      '[REDACTED-AWSACCESSKEYID]'
+    );
+  });
+
+  it('should handle clean PR content without sanitization warnings (coverage)', async () => {
+    vi.spyOn(queryBuilders, 'buildPullRequestSearchQuery').mockReturnValue(
+      'test'
+    );
+
+    mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+      data: {
+        items: [
+          {
+            number: 1,
+            title: 'Add new feature',
+            body: 'This PR adds a new exciting feature to the codebase.',
+            html_url: 'http://github.com/owner/repo/pull/1',
+            state: 'open',
+            user: { login: 'user' },
+            pull_request: {},
+          },
+        ],
+        total_count: 1,
+      },
+    });
+
+    mockOctokit.rest.pulls.get.mockResolvedValue({
+      data: {
+        number: 1,
+        title: 'Add new feature',
+        body: 'This PR adds a new exciting feature to the codebase.',
+        state: 'open',
+        user: { login: 'user' },
+        head: { ref: 'feature', sha: 'abc123' },
+        base: { ref: 'main', sha: 'def456' },
+      },
+    });
+
+    const result = await searchGitHubPullRequestsAPI({
+      query: 'test',
+      owner: 'owner',
+      repo: 'repo',
+    });
+
+    expect(result.pull_requests).toBeDefined();
+    expect(result.pull_requests).toHaveLength(1);
+    // Clean content should not contain redaction markers
+    expect(result.pull_requests?.[0]?.title).not.toContain('[REDACTED-');
+    expect(result.pull_requests?.[0]?.body).not.toContain('[REDACTED-');
+  });
 });

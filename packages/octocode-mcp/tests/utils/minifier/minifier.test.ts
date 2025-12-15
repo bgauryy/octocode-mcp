@@ -356,6 +356,39 @@ WHERE active = 1;
     });
   });
 
+  describe('Markdown Strategy', () => {
+    it('should use markdown minification for .md files', async () => {
+      const markdown = `# Title
+
+Paragraph with **bold** text.
+
+## Section 2
+
+Another paragraph with *italic* text.
+
+- List item 1
+- List item 2
+
+`;
+
+      const result = await minifyContent(markdown, 'readme.md');
+
+      expect(result.type).toBe('markdown');
+      expect(result.failed).toBe(false);
+      // Should preserve markdown structure but reduce whitespace
+      expect(result.content).toContain('# Title');
+      expect(result.content).toContain('**bold**');
+    });
+
+    it('should handle .markdown extension', async () => {
+      const markdown = '# Header\n\nContent here.';
+      const result = await minifyContent(markdown, 'docs.markdown');
+
+      expect(result.type).toBe('markdown');
+      expect(result.failed).toBe(false);
+    });
+  });
+
   describe('Unknown File Types', () => {
     it('should fallback to general strategy for unknown extensions', async () => {
       const unknownContent = `# Some config file
@@ -446,6 +479,62 @@ test:
       expect(result.failed).toBe(false);
       expect(result.type).toBe('general'); // txt files use general strategy
       expect(result.content.length).toBeLessThanOrEqual(limitContent.length);
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should handle non-string content gracefully', async () => {
+      // Force an error by passing invalid content type
+      // @ts-expect-error - Testing error handling with invalid input
+      const result = await minifyContent(null, 'test.txt');
+
+      expect(result.failed).toBe(true);
+      expect(result.type).toBe('failed');
+      expect(result.reason).toContain('Unexpected minification error');
+    });
+
+    it('should handle undefined content gracefully', async () => {
+      // @ts-expect-error - Testing error handling with invalid input
+      const result = await minifyContent(undefined, 'test.txt');
+
+      expect(result.failed).toBe(true);
+      expect(result.type).toBe('failed');
+      expect(result.reason).toContain('Unexpected minification error');
+    });
+
+    it('should return original content when an unexpected error occurs', async () => {
+      // Create an object that throws when accessed
+      const problematicContent = {
+        toString() {
+          throw new Error('Cannot convert to string');
+        },
+      };
+
+      // @ts-expect-error - Testing error handling with problematic input
+      const result = await minifyContent(problematicContent, 'test.txt');
+
+      expect(result.failed).toBe(true);
+      expect(result.type).toBe('failed');
+    });
+  });
+
+  describe('Default Fallback Strategy', () => {
+    it('should use default fallback for file with no extension', async () => {
+      const content = 'content for extensionless file    \n\n';
+      // A file with no extension that doesn't match Makefile or Dockerfile patterns
+      const result = await minifyContent(content, 'SOMEFILE');
+
+      // Should fall back to general or conservative strategy
+      expect(result.failed).toBe(false);
+    });
+
+    it('should use general minification for completely unknown formats', async () => {
+      const content = 'data: value\nmore: stuff\n\n\n';
+      // Test with a bizarre extension that won't match any known type
+      const result = await minifyContent(content, 'file.zzzzzzz');
+
+      expect(result.type).toBe('general');
+      expect(result.failed).toBe(false);
     });
   });
 });

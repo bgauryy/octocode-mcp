@@ -40,6 +40,9 @@ afterAll(() => {
 // Global test environment setup
 process.env.NODE_ENV = 'test';
 process.env.VITEST_TEST_MODE = '1';
+// Set a default GitHub token to prevent "No GitHub token available" warnings during tests
+// Tests that need to verify "no token" behavior should explicitly delete this
+process.env.GITHUB_TOKEN = 'test-token-for-vitest';
 
 // Suppress expected unhandled errors from process.exit() mocking in index tests
 // These are expected behavior when testing process termination scenarios
