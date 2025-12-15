@@ -107,8 +107,8 @@ jobs:
           retention-days: 7
 
   # Summary job that depends on all checks
-  ci-success:
-    name: CI Success
+  pr-validation-complete:
+    name: PR Validation Complete
     needs: [lint, build, test]
     runs-on: ubuntu-latest
     if: always()
