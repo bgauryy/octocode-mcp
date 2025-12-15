@@ -1,0 +1,1642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Octocode MCP - Animated Architecture Flow</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0f172a; /* Slate 900 */
+            --bg-secondary: #1e293b; /* Slate 800 */
+            --bg-tertiary: #334155; /* Slate 700 */
+            --bg-card: rgba(30, 41, 59, 0.7); /* Slate 800 with opacity */
+            
+            /* Professional Gradient Accents */
+            --accent-cyan: #06b6d4; /* Cyan 500 */
+            --accent-purple: #8b5cf6; /* Violet 500 */
+            --accent-pink: #ec4899; /* Pink 500 */
+            --accent-green: #10b981; /* Emerald 500 */
+            --accent-blue: #3b82f6; /* Blue 500 */
+            --accent-orange: #f97316; /* Orange 500 */
+            
+            --text-primary: #f8fafc; /* Slate 50 */
+            --text-secondary: #cbd5e1; /* Slate 300 */
+            --text-muted: #94a3b8; /* Slate 400 */
+            
+            --border-subtle: rgba(148, 163, 184, 0.15);
+            
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-glow-cyan: 0 0 20px rgba(6, 182, 212, 0.3);
+            --shadow-glow-green: 0 0 20px rgba(16, 185, 129, 0.3);
+            
+            --radius-md: 0.75rem;
+            --radius-lg: 1rem;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* Subtle animated background */
+        .bg-pattern {
+            position: fixed;
+            inset: 0;
+            background: 
+                radial-gradient(ellipse at 20% 20%, rgba(34, 211, 238, 0.03) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(167, 139, 250, 0.03) 0%, transparent 50%),
+                linear-gradient(rgba(34, 211, 238, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(34, 211, 238, 0.02) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 60px 60px, 60px 60px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 1600px; /* Increased max-width */
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+
+        /* Header */
+        header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .logo {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .logo-icon {
+            font-size: 2.5rem;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-cyan) 0%, var(--accent-purple) 50%, var(--accent-pink) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            margin-top: 4px;
+        }
+
+        /* Main layout - Flexbox */
+        .main-layout {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 32px;
+            align-items: start;
+        }
+
+        .diagram-section {
+            flex: 1;
+            min-width: 0; /* Prevent flex child overflow */
+        }
+
+        /* Side panel */
+        .side-panel {
+            width: 360px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        @media (max-width: 1400px) {
+            .main-layout {
+                flex-direction: column;
+            }
+            .side-panel {
+                width: 100%;
+                order: -1; /* Move controls to top on smaller screens */
+            }
+        }
+        .controls-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 12px 20px;
+            background: rgba(30, 41, 59, 0.5);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-subtle);
+            margin-bottom: 24px;
+            box-shadow: var(--shadow-md);
+        }
+
+        .controls-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.9rem; /* Larger text */
+            font-weight: 600;
+            padding: 12px 20px; /* Larger touch target */
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            white-space: nowrap;
+            box-shadow: var(--shadow-sm);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn:focus {
+            outline: 2px solid var(--accent-cyan);
+            outline-offset: 2px;
+        }
+
+        .btn:active {
+            transform: translateY(1px);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            color: var(--bg-primary);
+            box-shadow: 0 4px 12px rgba(6, 182, 212, 0.25);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            box-shadow: 0 6px 16px rgba(6, 182, 212, 0.4);
+            transform: translateY(-2px);
+            filter: brightness(1.1);
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-subtle);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--bg-secondary);
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .btn-icon {
+            padding: 12px;
+            min-width: 48px; /* Square-ish for icons */
+            font-size: 1.2rem;
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* Speed control */
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .speed-control input[type="range"] {
+            width: 80px;
+            height: 4px;
+            accent-color: var(--accent-cyan);
+            cursor: pointer;
+        }
+
+        .speed-label {
+            font-family: 'IBM Plex Mono', monospace;
+            min-width: 32px;
+        }
+
+        /* Step progress bar */
+        .progress-section {
+            margin-bottom: 20px;
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .step-counter {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.9rem;
+        }
+
+        .step-counter .current {
+            color: var(--accent-cyan);
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .phase-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .phase-indicator.request {
+            background: rgba(34, 211, 238, 0.15);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(34, 211, 238, 0.3);
+        }
+
+        .phase-indicator.process {
+            background: rgba(167, 139, 250, 0.15);
+            color: var(--accent-purple);
+            border: 1px solid rgba(167, 139, 250, 0.3);
+        }
+
+        .phase-indicator.response {
+            background: rgba(52, 211, 153, 0.15);
+            color: var(--accent-green);
+            border: 1px solid rgba(52, 211, 153, 0.3);
+        }
+
+        .phase-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse-dot 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: var(--bg-tertiary);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+
+        /* Timeline dots */
+        .timeline {
+            display: flex;
+            gap: 3px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .timeline-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--bg-tertiary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+
+        .timeline-dot:hover {
+            background: var(--accent-purple);
+            transform: scale(1.2);
+        }
+
+        .timeline-dot:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+        }
+
+        .timeline-dot.active {
+            background: var(--accent-cyan);
+            box-shadow: 0 0 12px var(--accent-cyan);
+            transform: scale(1.3);
+        }
+
+        .timeline-dot.completed {
+            background: var(--accent-green);
+        }
+
+        .timeline-dot.request-phase { border-color: rgba(34, 211, 238, 0.3); }
+        .timeline-dot.process-phase { border-color: rgba(167, 139, 250, 0.3); }
+        .timeline-dot.response-phase { border-color: rgba(52, 211, 153, 0.3); }
+
+        /* Architecture diagram */
+        .diagram-container {
+            position: relative;
+            background: rgba(15, 23, 42, 0.5); /* Darker backdrop */
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-subtle);
+            overflow-x: auto; /* Allow scrolling if needed */
+            box-shadow: inset 0 0 100px rgba(0,0,0,0.3);
+        }
+
+        .diagram {
+            position: relative;
+            width: 100%;
+            min-width: 950px; /* Reduced min-width for compact layout */
+            height: 800px; /* Reduced height */
+            padding: 40px;
+        }
+
+        /* SVG for connections */
+        .connections-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        /* Animated connection line */
+        .active-line {
+            stroke-width: 3;
+            fill: none;
+            stroke-linecap: round;
+        }
+
+        .active-line.request-flow {
+            stroke: var(--accent-cyan);
+            filter: drop-shadow(0 0 6px var(--accent-cyan));
+        }
+
+        .active-line.response-flow {
+            stroke: var(--accent-green);
+            filter: drop-shadow(0 0 6px var(--accent-green));
+        }
+
+        /* Persisted line (past steps) */
+        .persisted-line {
+            fill: none;
+            stroke-width: 2;
+            opacity: 0.5;
+            stroke-linecap: round;
+            transition: opacity 0.5s ease;
+        }
+        
+        .persisted-line.request-flow { stroke: var(--accent-cyan); }
+        .persisted-line.response-flow { stroke: var(--accent-green); }
+
+        /* Line drawing animation */
+        .line-draw {
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: draw-line 0.6s ease forwards;
+        }
+
+        @keyframes draw-line {
+            to { stroke-dashoffset: 0; }
+        }
+
+        /* Data packet */
+        .data-packet {
+            filter: drop-shadow(0 0 10px currentColor);
+        }
+
+        .data-packet.request {
+            fill: var(--accent-cyan);
+        }
+
+        .data-packet.response {
+            fill: var(--accent-green);
+        }
+
+        /* Subgraph containers */
+        .subgraph {
+            position: absolute;
+            border-radius: var(--radius-md);
+            border: 1px dashed;
+            z-index: 0;
+            transition: all 0.3s ease;
+        }
+
+        .subgraph-label {
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-secondary);
+            padding: 4px 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-radius: 6px;
+            border: 1px solid var(--border-subtle);
+            box-shadow: var(--shadow-sm);
+            white-space: nowrap;
+        }
+
+        /* Updated Layout Coordinates - Compact Mode */
+        .subgraph.server {
+            left: 260px;
+            top: 50px;
+            width: 680px;
+            height: 730px;
+            border-color: rgba(6, 182, 212, 0.2);
+            background: linear-gradient(180deg, rgba(6, 182, 212, 0.03) 0%, rgba(15, 23, 42, 0.0) 100%);
+        }
+
+        /* Adjusted positions for columns with tighter spacing */
+        .subgraph.security {
+            left: 270px;
+            top: 195px;
+            width: 180px;
+            height: 420px;
+            border-color: rgba(16, 185, 129, 0.2);
+            background: rgba(16, 185, 129, 0.02);
+        }
+
+        .subgraph.tools {
+            left: 500px;
+            top: 195px;
+            width: 180px;
+            height: 420px;
+            border-color: rgba(59, 130, 246, 0.2);
+            background: rgba(59, 130, 246, 0.02);
+        }
+
+        .subgraph.github {
+            left: 730px;
+            top: 195px;
+            width: 180px;
+            height: 420px;
+            border-color: rgba(249, 115, 22, 0.2);
+            background: rgba(249, 115, 22, 0.02);
+        }
+
+        /* Nodes */
+        .node {
+            position: absolute;
+            padding: 12px 16px;
+            border-radius: var(--radius-md);
+            background: rgba(30, 41, 59, 0.8); /* Glass effect base */
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-subtle);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            text-align: center;
+            width: 160px;
+            height: 100px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2;
+            cursor: default;
+            box-shadow: var(--shadow-md);
+        }
+
+        .node:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent-cyan);
+        }
+
+        .node.active {
+            transform: scale(1.05) translateY(-2px);
+            z-index: 10;
+        }
+
+        .node-icon {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+        }
+
+        .node-title {
+            font-weight: 600;
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            letter-spacing: 0.01em;
+        }
+
+        .node-file {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            opacity: 0.8;
+        }
+
+        /* Node type styles */
+        .node.external {
+            background: linear-gradient(135deg, rgba(167, 139, 250, 0.15), rgba(244, 114, 182, 0.15));
+            border-color: rgba(167, 139, 250, 0.3);
+        }
+
+        .node.security-type {
+            background: linear-gradient(135deg, rgba(52, 211, 153, 0.1), rgba(34, 211, 238, 0.1));
+            border-color: rgba(52, 211, 153, 0.25);
+        }
+
+        .node.tool-type {
+            background: linear-gradient(135deg, rgba(96, 165, 250, 0.1), rgba(34, 211, 238, 0.1));
+            border-color: rgba(96, 165, 250, 0.25);
+        }
+
+        .node.github-type {
+            background: linear-gradient(135deg, rgba(251, 146, 60, 0.1), rgba(244, 114, 182, 0.1));
+            border-color: rgba(251, 146, 60, 0.25);
+        }
+
+        /* Pulse animation for active node */
+        @keyframes node-pulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(34, 211, 238, 0.4); }
+            50% { box-shadow: 0 0 40px rgba(34, 211, 238, 0.6); }
+        }
+
+        .node.active.request-active {
+            animation: node-pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes node-pulse-green {
+            0%, 100% { box-shadow: 0 0 20px rgba(52, 211, 153, 0.4); }
+            50% { box-shadow: 0 0 40px rgba(52, 211, 153, 0.6); }
+        }
+
+        .node.active.response-active {
+            animation: node-pulse-green 1.5s ease-in-out infinite;
+        }
+
+        /* Side panel */
+        .side-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        /* Step info card */
+        .step-card {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-subtle);
+            overflow: hidden;
+            box-shadow: var(--shadow-md);
+        }
+
+        .step-card-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            background: rgba(15, 23, 42, 0.3);
+        }
+
+        .step-number-badge {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'IBM Plex Mono', monospace;
+            font-weight: 700;
+            font-size: 1.1rem;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .step-number-badge.request {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            color: #fff;
+        }
+
+        .step-number-badge.process {
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+            color: #fff;
+        }
+
+        .step-number-badge.response {
+            background: linear-gradient(135deg, var(--accent-green), var(--accent-cyan));
+            color: #fff;
+        }
+
+        .step-card-title {
+            flex: 1;
+        }
+
+        .step-card-title h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: var(--text-primary);
+        }
+
+        .step-card-title .from-to {
+            font-size: 0.8rem;
+            color: var(--accent-cyan);
+            font-family: 'IBM Plex Mono', monospace;
+            opacity: 0.9;
+        }
+
+        .step-card-body {
+            padding: 24px;
+        }
+
+        .step-description {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            line-height: 1.7;
+        }
+
+        .step-description code {
+            font-family: 'IBM Plex Mono', monospace;
+            background: rgba(15, 23, 42, 0.5);
+            padding: 3px 6px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            color: var(--accent-cyan);
+            border: 1px solid var(--border-subtle);
+        }
+
+        /* Legend card */
+        .legend-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border-subtle);
+            padding: 16px;
+        }
+
+        .legend-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .legend-items {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        .legend-color.external { background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink)); }
+        .legend-color.security { background: var(--accent-green); }
+        .legend-color.tools { background: var(--accent-blue); }
+        .legend-color.github { background: var(--accent-orange); }
+        .legend-color.request { background: var(--accent-cyan); }
+        .legend-color.response { background: var(--accent-green); }
+
+        /* Keyboard shortcuts */
+        .shortcuts-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border-subtle);
+            padding: 16px;
+        }
+
+        .shortcut-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            font-size: 0.8rem;
+        }
+
+        .shortcut-keys {
+            display: flex;
+            gap: 4px;
+        }
+
+        .key {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            padding: 3px 6px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            margin-top: 32px;
+            padding: 16px;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+
+        footer a {
+            color: var(--accent-cyan);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Utility classes */
+        .text-muted {
+            color: var(--text-muted);
+        }
+
+        .spacer-sm {
+            height: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-pattern"></div>
+    
+    <div class="container">
+        <header>
+            <div class="logo">
+                <span class="logo-icon">🐙</span>
+                <h1>Octocode MCP Architecture</h1>
+            </div>
+            <p class="subtitle">Interactive Request Flow Visualization</p>
+        </header>
+
+        <div class="main-layout">
+            <div class="diagram-section">
+                <!-- Controls -->
+                <div class="controls-bar">
+                    <div class="controls-group">
+                        <button class="btn btn-primary" id="playBtn" onclick="togglePlay()" aria-label="Play or pause animation">
+                            <span id="playIcon">▶</span>
+                            <span id="playText">Play</span>
+                        </button>
+                        <button class="btn btn-secondary btn-icon" onclick="prevStep()" aria-label="Previous step" title="Previous (←)">←</button>
+                        <button class="btn btn-secondary btn-icon" onclick="nextStep()" aria-label="Next step" title="Next (→)">→</button>
+                        <button class="btn btn-secondary btn-icon" onclick="resetAnimation()" aria-label="Reset animation" title="Reset (R)">↺</button>
+                    </div>
+                    <div class="speed-control">
+                        <label for="speedSlider">Speed:</label>
+                        <input type="range" id="speedSlider" min="400" max="2500" value="1200" onchange="updateSpeed()" aria-label="Animation speed">
+                        <span class="speed-label" id="speedLabel">1.2s</span>
+                    </div>
+                </div>
+
+                <!-- Progress section -->
+                <div class="progress-section">
+                    <div class="progress-header">
+                        <div class="step-counter">
+                            Step <span class="current" id="currentStep">0</span> <span class="text-muted">/ 28</span>
+                        </div>
+                        <div class="phase-indicator request" id="phaseIndicator">
+                            <span class="phase-dot"></span>
+                            <span id="phaseText">READY</span>
+                        </div>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                    </div>
+                    <div class="timeline" id="timeline" role="tablist" aria-label="Step navigation"></div>
+                </div>
+
+                <!-- Diagram -->
+                <div class="diagram-container">
+                    <div class="diagram" id="diagram">
+                        <!-- SVG for connections -->
+                        <svg class="connections-svg" id="connectionsSvg">
+                            <defs>
+                                <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" style="stop-color:var(--accent-cyan);stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:var(--accent-blue);stop-opacity:1" />
+                                </linearGradient>
+                                <linearGradient id="lineGradientGreen" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" style="stop-color:var(--accent-green);stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:var(--accent-cyan);stop-opacity:1" />
+                                </linearGradient>
+                                <filter id="glow">
+                                    <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                                    <feMerge>
+                                        <feMergeNode in="coloredBlur"/>
+                                        <feMergeNode in="SourceGraphic"/>
+                                    </feMerge>
+                                </filter>
+                            </defs>
+                        </svg>
+
+                        <!-- Subgraph containers -->
+                        <div class="subgraph server">
+                            <span class="subgraph-label">🖥️ Octocode MCP Server</span>
+                        </div>
+                        <div class="subgraph security">
+                            <span class="subgraph-label">🔐 Security</span>
+                        </div>
+                        <div class="subgraph tools">
+                            <span class="subgraph-label">🛠️ Tools</span>
+                        </div>
+                        <div class="subgraph github">
+                            <span class="subgraph-label">🐙 GitHub</span>
+                        </div>
+
+                        <!-- External Nodes (Left Column) -->
+                        <div class="node external" id="user" style="left: 40px; top: 80px;">
+                            <div class="node-icon">👤</div>
+                            <div class="node-title">User</div>
+                        </div>
+
+                        <div class="node external" id="client" style="left: 40px; top: 290px;">
+                            <div class="node-icon">💻</div>
+                            <div class="node-title">MCP Client</div>
+                            <div class="node-file">Cursor / Claude</div>
+                        </div>
+
+                        <div class="node external" id="llm" style="left: 40px; top: 500px;">
+                            <div class="node-icon">🧠</div>
+                            <div class="node-title">LLM</div>
+                            <div class="node-file">Claude / GPT</div>
+                        </div>
+
+                        <!-- Server Entry (Top Row) -->
+                        <div class="node" id="entry" style="left: 280px; top: 80px;">
+                            <div class="node-icon">🚪</div>
+                            <div class="node-title">Server Entry</div>
+                            <div class="node-file">index.ts</div>
+                        </div>
+
+                        <div class="node" id="config" style="left: 740px; top: 80px;">
+                            <div class="node-icon">⚙️</div>
+                            <div class="node-title">Config</div>
+                            <div class="node-file">serverConfig.ts</div>
+                        </div>
+
+                        <!-- Security Column (Left Inside Server) -->
+                        <div class="node security-type" id="validator" style="left: 280px; top: 220px;">
+                            <div class="node-icon">🛡️</div>
+                            <div class="node-title">Validation</div>
+                            <div class="node-file">withSecurity.ts</div>
+                        </div>
+
+                        <div class="node security-type" id="sanitizer" style="left: 280px; top: 360px;">
+                            <div class="node-icon">🧹</div>
+                            <div class="node-title">Sanitizer</div>
+                            <div class="node-file">contentSanitizer.ts</div>
+                        </div>
+
+                        <div class="node security-type" id="masking" style="left: 280px; top: 500px;">
+                            <div class="node-icon">🎭</div>
+                            <div class="node-title">Masking</div>
+                            <div class="node-file">mask.ts</div>
+                        </div>
+
+                        <!-- Tool Nodes (Middle Inside Server) -->
+                        <div class="node tool-type" id="registry" style="left: 510px; top: 220px;">
+                            <div class="node-icon">📋</div>
+                            <div class="node-title">Registry</div>
+                            <div class="node-file">toolsManager.ts</div>
+                        </div>
+
+                        <div class="node tool-type" id="router" style="left: 510px; top: 360px;">
+                            <div class="node-icon">🔀</div>
+                            <div class="node-title">Tool Config</div>
+                            <div class="node-file">toolConfig.ts</div>
+                        </div>
+
+                        <div class="node tool-type" id="handler" style="left: 510px; top: 500px;">
+                            <div class="node-icon">⚡</div>
+                            <div class="node-title">Handler</div>
+                            <div class="node-file">github_*.ts</div>
+                        </div>
+
+                        <!-- GitHub Nodes (Right Inside Server) -->
+                        <div class="node github-type" id="clientFactory" style="left: 740px; top: 220px;">
+                            <div class="node-icon">🔑</div>
+                            <div class="node-title">Octokit</div>
+                            <div class="node-file">client.ts</div>
+                        </div>
+
+                        <div class="node github-type" id="queryBuilder" style="left: 740px; top: 360px;">
+                            <div class="node-icon">🔧</div>
+                            <div class="node-title">Query Builder</div>
+                            <div class="node-file">queryBuilders.ts</div>
+                        </div>
+
+                        <div class="node github-type" id="api" style="left: 740px; top: 500px;">
+                            <div class="node-icon">🌐</div>
+                            <div class="node-title">API Wrapper</div>
+                            <div class="node-file">github/*.ts</div>
+                        </div>
+
+                        <!-- External GitHub (Bottom Right) -->
+                        <div class="node external" id="github" style="left: 740px; top: 640px;">
+                            <div class="node-icon">🐙</div>
+                            <div class="node-title">GitHub API</div>
+                            <div class="node-file">api.github.com</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Side panel -->
+            <div class="side-panel">
+                <!-- Step info card -->
+                <div class="step-card" id="stepCard">
+                    <div class="step-card-header">
+                        <div class="step-number-badge request" id="stepBadge">0</div>
+                        <div class="step-card-title">
+                            <h3 id="stepTitle">Ready to Start</h3>
+                            <div class="from-to" id="stepFromTo">—</div>
+                        </div>
+                    </div>
+                    <div class="step-card-body">
+                        <p class="step-description" id="stepDescription">
+                            Click <strong>Play</strong> or press <kbd>Space</kbd> to visualize how requests flow through the Octocode MCP architecture.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Legend -->
+                <div class="legend-card">
+                    <div class="legend-title">Legend</div>
+                    <div class="legend-items">
+                        <div class="legend-item">
+                            <div class="legend-color external"></div>
+                            <span>External (User, Client, LLM)</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color security"></div>
+                            <span>Security Layer</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color tools"></div>
+                            <span>Tool Execution</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color github"></div>
+                            <span>GitHub Integration</span>
+                        </div>
+                        <div class="spacer-sm"></div>
+                        <div class="legend-item">
+                            <div class="legend-color request"></div>
+                            <span>Request Flow →</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color response"></div>
+                            <span>Response Flow ←</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Keyboard shortcuts -->
+                <div class="shortcuts-card">
+                    <div class="legend-title">Keyboard Shortcuts</div>
+                    <div class="shortcut-item">
+                        <span>Play / Pause</span>
+                        <div class="shortcut-keys"><span class="key">Space</span></div>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>Previous Step</span>
+                        <div class="shortcut-keys"><span class="key">←</span></div>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>Next Step</span>
+                        <div class="shortcut-keys"><span class="key">→</span></div>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>Reset</span>
+                        <div class="shortcut-keys"><span class="key">R</span></div>
+                    </div>
+                    <div class="shortcut-item">
+                        <span>Jump to Step</span>
+                        <div class="shortcut-keys"><span class="key">1</span>-<span class="key">9</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            Built with 🐙 by <a href="https://octocode.ai" target="_blank" rel="noopener">Octocode MCP</a> — Model Context Protocol Server for GitHub Code Research
+        </footer>
+    </div>
+
+    <script>
+        // Flow steps definition with enhanced metadata
+        const steps = [
+            { 
+                from: null, to: null, 
+                label: "Ready", 
+                title: "Ready to Start",
+                desc: "Click <strong>Play</strong> or press <code>Space</code> to visualize how requests flow through the Octocode MCP architecture.", 
+                phase: "request",
+                fromTo: "—"
+            },
+            { 
+                from: "user", to: "client", 
+                label: "1. User Request", 
+                title: "User Sends Request",
+                desc: "The user types a question or command in their IDE (like Cursor). The MCP Client receives this input.", 
+                phase: "request",
+                fromTo: "User → MCP Client"
+            },
+            { 
+                from: "client", to: "llm", 
+                label: "2. Prompt to LLM", 
+                title: "Forward to LLM",
+                desc: "The MCP Client sends the user's prompt to the LLM (Claude, GPT, etc.) along with available tool definitions.", 
+                phase: "request",
+                fromTo: "MCP Client → LLM"
+            },
+            { 
+                from: "llm", to: "client", 
+                label: "3. Tool Call Decision", 
+                title: "LLM Decides Tool Call",
+                desc: "The LLM analyzes the request and decides to call an Octocode tool (e.g., <code>githubSearchCode</code>). Returns a tool call request.", 
+                phase: "request",
+                fromTo: "LLM → MCP Client"
+            },
+            { 
+                from: "client", to: "entry", 
+                label: "4. JSON-RPC Request", 
+                title: "Invoke MCP Server",
+                desc: "MCP Client sends a JSON-RPC request to the Octocode MCP Server. Entry point: <code>src/index.ts</code>", 
+                phase: "request",
+                fromTo: "MCP Client → Server Entry"
+            },
+            { 
+                from: "entry", to: "config", 
+                label: "5. Load Configuration", 
+                title: "Load Config & Tokens",
+                desc: "Server loads configuration from <code>serverConfig.ts</code> — GitHub tokens, API URLs, tool settings.", 
+                phase: "process",
+                fromTo: "Entry → Configuration"
+            },
+            { 
+                from: "config", to: "entry", 
+                label: "6. Config Loaded", 
+                title: "Return Configuration", 
+                desc: "Configuration is loaded and returned to the Server Entry.", 
+                phase: "process", 
+                isReturn: true,
+                fromTo: "Configuration → Entry"
+            },
+            { 
+                from: "entry", to: "registry", 
+                label: "7. Route to Tool", 
+                title: "Route to Tool Registry",
+                desc: "Request is routed to the Tool Registry (<code>toolsManager.ts</code>) based on the tool name.", 
+                phase: "process",
+                fromTo: "Entry → Tool Registry"
+            },
+            { 
+                from: "registry", to: "router", 
+                label: "8. Get Tool Definition", 
+                title: "Lookup Tool Config",
+                desc: "Registry retrieves the tool definition from <code>toolConfig.ts</code> — schema, handler function, metadata.", 
+                phase: "process",
+                fromTo: "Registry → Tool Config"
+            },
+            { 
+                from: "router", to: "validator", 
+                label: "9. Security Wrapper", 
+                title: "Apply Security Validation",
+                desc: "Tool is wrapped with <code>withSecurityValidation()</code> — the security gatekeeper for all requests.", 
+                phase: "process",
+                fromTo: "Tool Config → Validator"
+            },
+            { 
+                from: "validator", to: "sanitizer", 
+                label: "10. Validate Input", 
+                title: "Sanitize Input Parameters",
+                desc: "Input parameters are validated: prototype pollution blocked, strings truncated, arrays sliced by <code>ContentSanitizer</code>.", 
+                phase: "process",
+                fromTo: "Validator → Sanitizer"
+            },
+            { 
+                from: "sanitizer", to: "validator", 
+                label: "11. Input Validated", 
+                title: "Return Validated Input", 
+                desc: "Sanitized input is returned to the Validator.", 
+                phase: "process", 
+                isReturn: true,
+                fromTo: "Sanitizer → Validator"
+            },
+            { 
+                from: "validator", to: "handler", 
+                label: "12. Execute Handler", 
+                title: "Run Tool Handler",
+                desc: "Valid request proceeds to the Tool Handler (<code>github_*.ts</code>). The actual business logic runs here.", 
+                phase: "process",
+                fromTo: "Validator → Handler"
+            },
+            { 
+                from: "handler", to: "clientFactory", 
+                label: "13. Get Octokit Client", 
+                title: "Request GitHub Client",
+                desc: "Handler requests an authenticated Octokit client from <code>client.ts</code>.", 
+                phase: "process",
+                fromTo: "Handler → Octokit Factory"
+            },
+            { 
+                from: "clientFactory", to: "config", 
+                label: "14. Retrieve Token", 
+                title: "Get GitHub Token",
+                desc: "Client factory retrieves GitHub token from config — tries <code>gh auth token</code> first, then <code>GITHUB_TOKEN</code> env var.", 
+                phase: "process",
+                fromTo: "Octokit → Config"
+            },
+            { 
+                from: "config", to: "clientFactory", 
+                label: "15. Token Retrieved", 
+                title: "Return GitHub Token", 
+                desc: "Token is retrieved and returned to the Octokit Factory.", 
+                phase: "process", 
+                isReturn: true,
+                fromTo: "Config → Octokit"
+            },
+            { 
+                from: "clientFactory", to: "handler", 
+                label: "16. Client Ready", 
+                title: "Return Octokit Client", 
+                desc: "Authenticated Octokit client is returned to the Handler.", 
+                phase: "process", 
+                isReturn: true,
+                fromTo: "Octokit → Handler"
+            },
+            { 
+                from: "handler", to: "queryBuilder", 
+                label: "17. Build Query", 
+                title: "Construct GitHub Query",
+                desc: "Handler uses <code>queryBuilders.ts</code> to construct the GitHub API search query with filters.", 
+                phase: "process",
+                fromTo: "Handler → Query Builder"
+            },
+            { 
+                from: "queryBuilder", to: "handler", 
+                label: "18. Query Built", 
+                title: "Return Search Query", 
+                desc: "Constructed query string is returned to the Handler.", 
+                phase: "process", 
+                isReturn: true,
+                fromTo: "Query Builder → Handler"
+            },
+            { 
+                from: "handler", to: "api", 
+                label: "19. Call API Layer", 
+                title: "Invoke API Wrapper",
+                desc: "Handler calls the API wrapper (<code>github/*.ts</code>) which handles retries, rate limits, and pagination.", 
+                phase: "process",
+                fromTo: "Handler → API Wrapper"
+            },
+            { 
+                from: "api", to: "github", 
+                label: "20. HTTPS Request", 
+                title: "Call GitHub API",
+                desc: "API wrapper sends HTTPS request to <code>api.github.com</code> with authentication headers.", 
+                phase: "process",
+                fromTo: "API Wrapper → GitHub"
+            },
+            { 
+                from: "github", to: "api", 
+                label: "21. JSON Response", 
+                title: "GitHub Returns Data",
+                desc: "GitHub API returns JSON response with search results, file contents, or repository data.", 
+                phase: "response",
+                isReturn: true,
+                fromTo: "GitHub → API Wrapper"
+            },
+            { 
+                from: "api", to: "handler", 
+                label: "22. Parse Response", 
+                title: "Process API Response",
+                desc: "API wrapper parses the response, handles errors, and passes data back to the Tool Handler.", 
+                phase: "response",
+                isReturn: true,
+                fromTo: "API Wrapper → Handler"
+            },
+            { 
+                from: "handler", to: "sanitizer", 
+                label: "23. Sanitize Output", 
+                title: "Clean Response Data",
+                desc: "Handler sends response through <code>ContentSanitizer</code> to clean and format the output.", 
+                phase: "response",
+                isReturn: true,
+                fromTo: "Handler → Sanitizer"
+            },
+            { 
+                from: "sanitizer", to: "masking", 
+                label: "24. Redact Secrets", 
+                title: "Mask Sensitive Data",
+                desc: "<code>mask.ts</code> scans for and redacts secrets — API keys, tokens, passwords replaced with <code>[REDACTED]</code>.", 
+                phase: "response",
+                isReturn: true,
+                fromTo: "Sanitizer → Masking"
+            },
+            { 
+                from: "masking", to: "client", 
+                label: "25. Return Result", 
+                title: "Send JSON-RPC Response",
+                desc: "Sanitized result is returned to MCP Client as a JSON-RPC response with tool output.", 
+                phase: "response",
+                isReturn: true,
+                fromTo: "Server → MCP Client"
+            },
+            { 
+                from: "client", to: "llm", 
+                label: "26. Tool Output to LLM", 
+                title: "Forward to LLM",
+                desc: "MCP Client sends the tool output back to the LLM for processing and answer generation.", 
+                phase: "response",
+                isReturn: true,
+                fromTo: "MCP Client → LLM"
+            },
+            { 
+                from: "llm", to: "client", 
+                label: "27. Generate Answer", 
+                title: "LLM Generates Response",
+                desc: "LLM incorporates the tool results into a natural language answer for the user.", 
+                phase: "response",
+                isReturn: true,
+                fromTo: "LLM → MCP Client"
+            },
+            { 
+                from: "client", to: "user", 
+                label: "28. Display Response", 
+                title: "Show Final Answer",
+                desc: "MCP Client displays the final, enriched response to the user in their IDE. ✅ Complete!", 
+                phase: "response",
+                isReturn: true,
+                fromTo: "MCP Client → User"
+            }
+        ];
+
+        let currentStepIndex = 0;
+        let isPlaying = false;
+        let animationInterval = null;
+        let animationSpeed = 1200;
+
+        // Initialize
+        function init() {
+            initTimeline();
+            updateDisplay();
+            setupKeyboardNav();
+        }
+
+        // Timeline initialization
+        function initTimeline() {
+            const timeline = document.getElementById('timeline');
+            timeline.innerHTML = '';
+            steps.forEach((step, index) => {
+                const dot = document.createElement('button');
+                dot.className = `timeline-dot ${step.phase}-phase`;
+                dot.onclick = () => goToStep(index);
+                dot.setAttribute('role', 'tab');
+                dot.setAttribute('aria-label', `Step ${index}: ${step.label}`);
+                dot.setAttribute('tabindex', index === 0 ? '0' : '-1');
+                timeline.appendChild(dot);
+            });
+        }
+
+        // Keyboard navigation
+        function setupKeyboardNav() {
+            document.addEventListener('keydown', (e) => {
+                // Ignore if typing in an input
+                if (e.target.tagName === 'INPUT') return;
+                
+                switch(e.key) {
+                    case ' ':
+                        e.preventDefault();
+                        togglePlay();
+                        break;
+                    case 'ArrowRight':
+                        e.preventDefault();
+                        nextStep();
+                        break;
+                    case 'ArrowLeft':
+                        e.preventDefault();
+                        prevStep();
+                        break;
+                    case 'r':
+                    case 'R':
+                        resetAnimation();
+                        break;
+                    case '1': case '2': case '3': case '4': case '5':
+                    case '6': case '7': case '8': case '9':
+                        const num = parseInt(e.key);
+                        if (num <= steps.length) goToStep(num);
+                        break;
+                    case '0':
+                        goToStep(10);
+                        break;
+                }
+            });
+        }
+
+        // Get node center position
+        function getNodeCenter(nodeId) {
+            const node = document.getElementById(nodeId);
+            if (!node) return null;
+            const diagram = document.getElementById('diagram');
+            const nodeRect = node.getBoundingClientRect();
+            const diagramRect = diagram.getBoundingClientRect();
+            return {
+                x: nodeRect.left - diagramRect.left + nodeRect.width / 2,
+                y: nodeRect.top - diagramRect.top + nodeRect.height / 2
+            };
+        }
+
+        // Draw animated connection
+        function drawConnection(fromId, toId, isReturn = false) {
+            const svg = document.getElementById('connectionsSvg');
+            const from = getNodeCenter(fromId);
+            const to = getNodeCenter(toId);
+            
+            if (!from || !to) return;
+
+            // Persist previous animations
+            svg.querySelectorAll('.active-line').forEach(el => {
+                el.classList.remove('active-line', 'line-draw');
+                el.classList.add('persisted-line');
+            });
+            // Remove packets (transient)
+            svg.querySelectorAll('.data-packet').forEach(el => el.remove());
+
+            // Create curved path
+            const midX = (from.x + to.x) / 2;
+            const midY = (from.y + to.y) / 2;
+            const dx = to.x - from.x;
+            const dy = to.y - from.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            
+            // Calculate control point for curve
+            // Increased curvature factor for clearer paths in the wider layout
+            // Adjusted for new layout dimensions
+            const curvature = Math.min(60, dist * 0.2); // Dynamic curvature based on distance
+            const perpX = -dy / dist * curvature;
+            const perpY = dx / dist * curvature;
+            
+            const pathD = `M ${from.x} ${from.y} Q ${midX + perpX} ${midY + perpY} ${to.x} ${to.y}`;
+
+            // Create line
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            line.setAttribute('d', pathD);
+            line.classList.add('active-line', 'line-draw', isReturn ? 'response-flow' : 'request-flow');
+            svg.appendChild(line);
+
+            // Create data packet
+            const packet = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            packet.setAttribute('r', '6');
+            packet.classList.add('data-packet', isReturn ? 'response' : 'request');
+            
+            // Create motion path
+            const motionPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            motionPath.setAttribute('d', pathD);
+            motionPath.setAttribute('id', 'motionPath');
+            motionPath.style.display = 'none';
+            svg.appendChild(motionPath);
+            
+            packet.innerHTML = `
+                <animateMotion dur="0.6s" repeatCount="1" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1">
+                    <mpath href="#motionPath"/>
+                </animateMotion>
+            `;
+            svg.appendChild(packet);
+
+            // Cleanup
+            setTimeout(() => {
+                motionPath.remove();
+            }, 800);
+        }
+
+        // Update all display elements
+        function updateDisplay() {
+            const step = steps[currentStepIndex];
+            
+            // Update step counter
+            document.getElementById('currentStep').textContent = currentStepIndex;
+            
+            // Update progress bar
+            const progress = (currentStepIndex / (steps.length - 1)) * 100;
+            document.getElementById('progressFill').style.width = `${progress}%`;
+            
+            // Update phase indicator
+            const phaseIndicator = document.getElementById('phaseIndicator');
+            phaseIndicator.className = `phase-indicator ${step.phase}`;
+            document.getElementById('phaseText').textContent = step.phase.toUpperCase();
+            
+            // Update step card
+            const badge = document.getElementById('stepBadge');
+            badge.textContent = currentStepIndex;
+            badge.className = `step-number-badge ${step.phase}`;
+            document.getElementById('stepTitle').textContent = step.title;
+            document.getElementById('stepFromTo').textContent = step.fromTo;
+            document.getElementById('stepDescription').innerHTML = step.desc;
+            
+            // Update nodes
+            document.querySelectorAll('.node').forEach(node => {
+                node.classList.remove('active', 'completed', 'request-active', 'response-active');
+            });
+
+            if (step.to) {
+                const activeNode = document.getElementById(step.to);
+                if (activeNode) {
+                    activeNode.classList.add('active');
+                    activeNode.classList.add(step.isReturn ? 'response-active' : 'request-active');
+                }
+            }
+
+            // Mark completed nodes
+            for (let i = 1; i < currentStepIndex; i++) {
+                const prevStep = steps[i];
+                if (prevStep.to) {
+                    const node = document.getElementById(prevStep.to);
+                    if (node && !node.classList.contains('active')) {
+                        node.classList.add('completed');
+                    }
+                }
+            }
+
+            // Draw connection
+            if (step.from && step.to) {
+                drawConnection(step.from, step.to, step.isReturn);
+            }
+
+            // Update timeline
+            updateTimeline();
+        }
+
+        function updateTimeline() {
+            const dots = document.querySelectorAll('.timeline-dot');
+            dots.forEach((dot, index) => {
+                dot.classList.remove('active', 'completed');
+                dot.setAttribute('tabindex', index === currentStepIndex ? '0' : '-1');
+                if (index === currentStepIndex) {
+                    dot.classList.add('active');
+                } else if (index < currentStepIndex) {
+                    dot.classList.add('completed');
+                }
+            });
+        }
+
+        function nextStep() {
+            if (currentStepIndex < steps.length - 1) {
+                currentStepIndex++;
+                updateDisplay();
+            } else if (isPlaying) {
+                stopPlay();
+            }
+        }
+
+        function prevStep() {
+            if (currentStepIndex > 0) {
+                currentStepIndex--;
+                updateDisplay();
+            }
+        }
+
+        function goToStep(index) {
+            if (index >= 0 && index < steps.length) {
+                currentStepIndex = index;
+                updateDisplay();
+            }
+        }
+
+        function clearVisuals() {
+            // Clear SVG elements
+            const svg = document.getElementById('connectionsSvg');
+            svg.querySelectorAll('.active-line, .persisted-line, .data-packet, path:not([id])').forEach(el => el.remove());
+            
+            // Reset nodes
+            document.querySelectorAll('.node').forEach(node => {
+                node.classList.remove('active', 'completed', 'request-active', 'response-active');
+            });
+        }
+
+        function togglePlay() {
+            isPlaying ? stopPlay() : startPlay();
+        }
+
+        function startPlay() {
+            isPlaying = true;
+            document.getElementById('playIcon').textContent = '⏸';
+            document.getElementById('playText').textContent = 'Pause';
+            
+            if (currentStepIndex >= steps.length - 1) {
+                currentStepIndex = 0;
+            }
+
+            // Clear if starting from beginning
+            if (currentStepIndex === 0) {
+                clearVisuals();
+                updateDisplay();
+            }
+            
+            // Start immediately then continue at interval
+            setTimeout(() => {
+                if (isPlaying && currentStepIndex < steps.length - 1) {
+                    nextStep();
+                }
+            }, 100);
+            
+            animationInterval = setInterval(() => {
+                if (currentStepIndex < steps.length - 1) {
+                    nextStep();
+                } else {
+                    stopPlay();
+                }
+            }, animationSpeed);
+        }
+
+        function stopPlay() {
+            isPlaying = false;
+            document.getElementById('playIcon').textContent = '▶';
+            document.getElementById('playText').textContent = 'Play';
+            if (animationInterval) {
+                clearInterval(animationInterval);
+                animationInterval = null;
+            }
+        }
+
+        function resetAnimation() {
+            stopPlay();
+            currentStepIndex = 0;
+            clearVisuals();
+            updateDisplay();
+        }
+
+        function updateSpeed() {
+            const slider = document.getElementById('speedSlider');
+            animationSpeed = parseInt(slider.value);
+            document.getElementById('speedLabel').textContent = (animationSpeed / 1000).toFixed(1) + 's';
+            
+            if (isPlaying) {
+                stopPlay();
+                startPlay();
+            }
+        }
+
+        // Initialize on load
+        window.addEventListener('DOMContentLoaded', init);
+        window.addEventListener('resize', () => {
+            if (currentStepIndex > 0) updateDisplay();
+        });
+    </script>
+</body>
+</html>
