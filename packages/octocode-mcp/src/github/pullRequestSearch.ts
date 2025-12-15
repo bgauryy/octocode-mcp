@@ -386,7 +386,7 @@ async function fetchPRComments(
         'en-GB'
       ),
     }));
-  } catch (e) {
+  } catch {
     return [];
   }
 }
@@ -557,7 +557,7 @@ async function fetchPRFileChangesAPI(
       total_count: allFiles.length,
       files: allFiles,
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -588,7 +588,7 @@ async function fetchPRCommitsAPI(
     });
 
     return result.data as CommitListItem[];
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -608,7 +608,7 @@ async function fetchCommitFilesAPI(
     });
 
     return (result.data.files || []) as CommitFileItem[];
-  } catch (error) {
+  } catch {
     return null;
   }
 }

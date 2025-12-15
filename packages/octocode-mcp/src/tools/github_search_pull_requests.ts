@@ -31,11 +31,11 @@ function hasQueryLengthError(query: GitHubPullRequestSearchQuery): boolean {
 function hasValidSearchParams(query: GitHubPullRequestSearchQuery): boolean {
   return Boolean(
     query?.query?.trim() ||
-      query?.owner ||
-      query?.repo ||
-      query?.author ||
-      query?.assignee ||
-      (query?.prNumber && query?.owner && query?.repo)
+    query?.owner ||
+    query?.repo ||
+    query?.author ||
+    query?.assignee ||
+    (query?.prNumber && query?.owner && query?.repo)
   );
 }
 

@@ -148,9 +148,9 @@ function buildApiRequest(query: FileContentQuery) {
 function hasValidContent(result: unknown): boolean {
   return Boolean(
     result &&
-      typeof result === 'object' &&
-      'content' in result &&
-      result.content &&
-      String(result.content).length > 0
+    typeof result === 'object' &&
+    'content' in result &&
+    result.content &&
+    String(result.content).length > 0
   );
 }

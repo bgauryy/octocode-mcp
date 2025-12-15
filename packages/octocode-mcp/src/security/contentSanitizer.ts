@@ -36,7 +36,7 @@ export class ContentSanitizer {
           );
         }
       }
-    } catch (error) {
+    } catch {
       // Return original content if there's an error
       return {
         hasSecrets: false,

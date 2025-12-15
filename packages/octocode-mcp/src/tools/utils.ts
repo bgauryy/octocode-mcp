@@ -54,7 +54,7 @@ export function createErrorResult(
   return result;
 }
 
-export function createSuccessResult<T>(
+export function createSuccessResult<T extends Record<string, unknown>>(
   query: {
     mainResearchGoal?: string;
     researchGoal?: string;
@@ -64,7 +64,7 @@ export function createSuccessResult<T>(
   hasContent: boolean,
   _toolName: keyof typeof TOOL_NAMES,
   customHints?: string[]
-): ToolSuccessResult<T extends Record<string, unknown> ? T : never> & T {
+): ToolSuccessResult<T> & T {
   const status = hasContent ? ('hasResults' as const) : ('empty' as const);
 
   const result: Record<string, unknown> = {
@@ -79,10 +79,7 @@ export function createSuccessResult<T>(
     result.hints = customHints;
   }
 
-  return result as ToolSuccessResult<
-    T extends Record<string, unknown> ? T : never
-  > &
-    T;
+  return result as ToolSuccessResult<T> & T;
 }
 
 interface ErrorObject {

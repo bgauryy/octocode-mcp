@@ -114,7 +114,6 @@ function getMeta(): CompleteMetadata {
 function deepFreeze<T>(obj: T): T {
   if (obj && typeof obj === 'object') {
     Object.freeze(obj);
-    // eslint-disable-next-line @typescript-eslint/ban-types
     Object.getOwnPropertyNames(obj as object).forEach(prop => {
       const value = (obj as unknown as Record<string, unknown>)[prop];
       if (

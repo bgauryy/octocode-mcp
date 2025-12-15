@@ -308,7 +308,7 @@ function removeComments(
         for (const pattern of patterns) {
           try {
             result = result.replace(pattern, '');
-          } catch (patternError) {
+          } catch {
             // Continue with other patterns if one fails
             continue;
           }
@@ -317,7 +317,7 @@ function removeComments(
     }
 
     return result;
-  } catch (error: unknown) {
+  } catch {
     // Return original content if comment removal fails
     return content;
   }
@@ -342,7 +342,7 @@ function minifyConservative(
       .trim();
 
     return result;
-  } catch (error: unknown) {
+  } catch {
     // Return original content if conservative minification fails
     return content;
   }
@@ -369,7 +369,7 @@ async function minifyCSS(
       content: result.styles,
       failed: false,
     };
-  } catch (error: unknown) {
+  } catch {
     try {
       // Fallback to regex-based minification
       let result = content;
@@ -383,7 +383,7 @@ async function minifyCSS(
         content: result,
         failed: false, // Don't mark as failed since we have fallback
       };
-    } catch (fallbackError: unknown) {
+    } catch {
       // If even fallback fails, return original content
       return {
         content: content,
@@ -413,7 +413,7 @@ async function minifyHTML(
       content: result,
       failed: false,
     };
-  } catch (error: unknown) {
+  } catch {
     try {
       // Fallback to regex-based minification
       let result = content;
@@ -424,7 +424,7 @@ async function minifyHTML(
         content: result,
         failed: false, // Don't mark as failed since we have fallback
       };
-    } catch (fallbackError: unknown) {
+    } catch {
       // If even fallback fails, return original content
       return {
         content: content,
@@ -455,7 +455,7 @@ function minifyAggressive(
       .trim();
 
     return result;
-  } catch (error: unknown) {
+  } catch {
     // Return original content if aggressive minification fails
     return content;
   }
@@ -472,14 +472,14 @@ function minifyJson(content: string): {
       content: JSON.stringify(parsed),
       failed: false,
     };
-  } catch (parseError: unknown) {
+  } catch {
     try {
       // Fallback to basic whitespace removal
       return {
         content: content.replace(/\s+/g, ' ').trim(),
         failed: false,
       };
-    } catch (fallbackError: unknown) {
+    } catch {
       // If even fallback fails, return original content
       return {
         content: content,
@@ -504,7 +504,7 @@ function minifyGeneral(content: string): string {
       .trim();
 
     return result;
-  } catch (error: unknown) {
+  } catch {
     // Return original content if general minification fails
     return content;
   }
@@ -552,7 +552,7 @@ function minifyMarkdown(content: string): string {
     result = result.trim();
 
     return result;
-  } catch (error: unknown) {
+  } catch {
     // Return original content if markdown minification fails
     return content;
   }

@@ -25,8 +25,9 @@ export interface ToolErrorResult extends ToolResult {
   error: string | GitHubAPIError;
 }
 
-export interface ToolSuccessResult<T = Record<string, unknown>>
-  extends ToolResult {
+export interface ToolSuccessResult<
+  T = Record<string, unknown>,
+> extends ToolResult {
   status: 'hasResults' | 'empty';
   data?: T;
 }
@@ -160,8 +161,7 @@ export interface ContentResultData {
 
 /** Complete file content result */
 export interface ContentResult
-  extends BaseToolResult<FileContentQuery>,
-    ContentResultData {}
+  extends BaseToolResult<FileContentQuery>, ContentResultData {}
 
 // ─── Repository Search (github_search_repos) ────────────────────────────────
 
@@ -195,8 +195,7 @@ export interface SimplifiedRepository {
 }
 
 /** Repository search result */
-export interface RepoSearchResult
-  extends BaseToolResult<GitHubReposSearchQuery> {
+export interface RepoSearchResult extends BaseToolResult<GitHubReposSearchQuery> {
   repositories: SimplifiedRepository[];
 }
 
@@ -225,7 +224,8 @@ export interface RepoStructureResultData {
 
 /** Complete repository structure result */
 export interface RepoStructureResult
-  extends BaseToolResult<GitHubViewRepoStructureQuery>,
+  extends
+    BaseToolResult<GitHubViewRepoStructureQuery>,
     RepoStructureResultData {}
 
 // ─── Package Search (package_search) ────────────────────────────────────────
@@ -262,8 +262,7 @@ export interface PackageSearchResultData {
 
 /** Complete package search result */
 export interface PackageSearchResult
-  extends BaseToolResult<PackageSearchQuery>,
-    PackageSearchResultData {}
+  extends BaseToolResult<PackageSearchQuery>, PackageSearchResultData {}
 
 // ─── Pull Requests (github_search_pull_requests) ────────────────────────────
 
@@ -412,7 +411,8 @@ export interface PullRequestSearchResultData {
 
 /** Complete pull request search result */
 export interface PullRequestSearchResult
-  extends BaseToolResult<GitHubPullRequestSearchQuery>,
+  extends
+    BaseToolResult<GitHubPullRequestSearchQuery>,
     PullRequestSearchResultData {}
 
 // ============================================================================

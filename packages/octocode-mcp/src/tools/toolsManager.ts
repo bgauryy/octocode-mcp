@@ -75,7 +75,7 @@ export function registerTools(
       } else if (reason) {
         process.stderr.write(`Tool ${tool.name} ${reason}\n`);
       }
-    } catch (error) {
+    } catch {
       failedTools.push(tool.name);
     }
   }

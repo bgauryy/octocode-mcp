@@ -63,9 +63,9 @@ export function registerSearchGitHubReposTool(
 function hasValidTopics(query: GitHubReposSearchQuery): boolean {
   return Boolean(
     query.topicsToSearch &&
-      (Array.isArray(query.topicsToSearch)
-        ? query.topicsToSearch.length > 0
-        : query.topicsToSearch)
+    (Array.isArray(query.topicsToSearch)
+      ? query.topicsToSearch.length > 0
+      : query.topicsToSearch)
   );
 }
 
