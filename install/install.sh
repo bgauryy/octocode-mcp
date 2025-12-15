@@ -31,7 +31,13 @@ has() { command -v "$1" 1>/dev/null 2>&1; }
 detect_platform() {
   platform="$(uname -s | tr '[:upper:]' '[:lower:]')"
   case "${platform}" in
-    linux) platform="linux" ;;
+    linux)
+      if [ -f /etc/alpine-release ] || ldd --version 2>&1 | grep -q 'musl'; then
+        platform="linux-musl"
+      else
+        platform="linux"
+      fi
+      ;;
     darwin) platform="darwin" ;;
     msys_nt*|cygwin_nt*|mingw*) platform="windows" ;;
     *)
@@ -122,6 +128,9 @@ main() {
   if [ "$platform" = "windows" ]; then
     binary_file="${BINARY_NAME}-${platform}-${arch}.exe"
     final_name="${BINARY_NAME}.exe"
+  elif [ "$platform" = "linux-musl" ]; then
+    binary_file="${BINARY_NAME}-linux-${arch}-musl"
+    final_name="${BINARY_NAME}"
   else
     binary_file="${BINARY_NAME}-${platform}-${arch}"
     final_name="${BINARY_NAME}"

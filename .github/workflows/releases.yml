@@ -66,16 +66,23 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable Corepack
+        run: corepack enable
+
       - name: Install dependencies
-        run: bun install
-        working-directory: packages/octocode-mcp
+        run: yarn install --immutable
+        working-directory: .
 
       - name: Build binary
         run: |
           bun build ./src/index.ts \
             --compile \
             --minify \
-            --sourcemap \
             --target=${{ matrix.target }} \
             --outfile ${{ matrix.artifact }}
         working-directory: packages/octocode-mcp
@@ -86,12 +93,22 @@ jobs:
           file ${{ matrix.artifact }} || true
         working-directory: packages/octocode-mcp
 
+      - name: Test binary execution
+        run: |
+          if [[ "${{ matrix.name }}" == *"windows"* ]]; then
+            echo "⏭️  Skipping execution test for Windows binary on Linux"
+          else
+            echo "🧪 Testing binary execution..."
+            ./${{ matrix.artifact }} --version || echo "⚠️  Warning: Binary version check failed"
+          fi
+        working-directory: packages/octocode-mcp
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
           path: packages/octocode-mcp/${{ matrix.artifact }}
-          retention-days: 1
+          retention-days: 7
 
   build-source:
     name: Build JS Source
@@ -119,7 +136,7 @@ jobs:
         with:
           name: octocode-mcp-index.js
           path: packages/octocode-mcp/dist/index.js
-          retention-days: 1
+          retention-days: 7  # Keep for a week to allow for workflow retries
 
   upload-to-release:
     name: Upload to Release
@@ -211,7 +228,7 @@ jobs:
           UPLOAD_RESULT="${{ needs.upload-to-release.result }}"
           CHECKSUM_RESULT="${{ needs.create-checksums.result }}"
 
-          if [ "$BUILD_RESULT" == "failure" ] || [ "$UPLOAD_RESULT" == "failure" ] || [ "$CHECKSUM_RESULT" == "failure" ]; then
+          if [ "$BUILD_RESULT" = "failure" ] || [ "$UPLOAD_RESULT" = "failure" ] || [ "$CHECKSUM_RESULT" = "failure" ]; then
             STATUS="❌ **Binary Release Failed**"
             COLOR=15158332
             DESCRIPTION="Failed to build or upload binaries"
@@ -228,17 +245,22 @@ jobs:
             TAG="${{ github.event.release.tag_name }}"
           fi
 
+          # Escape JSON special characters to prevent injection
+          STATUS_ESCAPED=$(echo "$STATUS" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
+          DESCRIPTION_ESCAPED=$(echo "$DESCRIPTION" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
+          TAG_ESCAPED=$(echo "$TAG" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
+
           PAYLOAD=$(cat <<EOF
           {
             "username": "GitHub Releases",
             "avatar_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
             "embeds": [{
               "title": "📦 Octocode MCP Binary Release",
-              "description": "$DESCRIPTION",
+              "description": "$DESCRIPTION_ESCAPED",
               "color": $COLOR,
               "fields": [
-                {"name": "Status", "value": "$STATUS", "inline": true},
-                {"name": "Tag", "value": "\`$TAG\`", "inline": true},
+                {"name": "Status", "value": "$STATUS_ESCAPED", "inline": true},
+                {"name": "Tag", "value": "\`$TAG_ESCAPED\`", "inline": true},
                 {"name": "Platforms", "value": "Linux x64, Linux ARM64, Alpine, macOS ARM64, macOS x64, Windows", "inline": false},
                 {"name": "Download", "value": "[View Release](https://github.com/${{ github.repository }}/releases/tag/$TAG)", "inline": false}
               ],

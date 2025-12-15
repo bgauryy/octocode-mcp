@@ -124,11 +124,16 @@ For environments where you can't persist files, download and run in a single com
   "mcpServers": {
     "octocode": {
       "command": "bash",
-      "args": ["-c", "curl -fsSL \"https://github.com/bgauryy/octocode-mcp/releases/latest/download/octocode-mcp-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')\" -o /tmp/octocode-mcp && chmod +x /tmp/octocode-mcp && /tmp/octocode-mcp"]
+      "args": [
+        "-c",
+        "curl -fsSL \"https://github.com/bgauryy/octocode-mcp/releases/latest/download/octocode-mcp-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')\" -o /tmp/octocode-mcp && chmod +x /tmp/octocode-mcp && /tmp/octocode-mcp"
+      ]
     }
   }
 }
 ```
+
+> **Note**: This one-liner works for macOS and standard Linux (glibc). For Alpine Linux (musl), please use the [manual download](#manual-download) method to get the correct `linux-x64-musl` binary.
 
 ---
 
