@@ -1,7 +1,4 @@
-import {
-  McpServer,
-  RegisteredTool,
-} from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
 import type {
@@ -24,7 +21,7 @@ import {
 export function registerGitHubSearchCodeTool(
   server: McpServer,
   callback?: ToolInvocationCallback
-): RegisteredTool {
+) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_CODE,
     {
@@ -52,8 +49,9 @@ export function registerGitHubSearchCodeTool(
         if (callback) {
           try {
             await callback(TOOL_NAMES.GITHUB_SEARCH_CODE, queries);
-            // eslint-disable-next-line no-empty
-          } catch {}
+          } catch {
+            // ignore
+          }
         }
 
         return searchMultipleGitHubCode(queries, authInfo, sessionId);
@@ -76,73 +74,31 @@ async function searchMultipleGitHubCode(
         const apiError = handleApiError(apiResult, query);
         if (apiError) return apiError;
 
-        if (!('data' in apiResult) || !apiResult.data) {
+        if (!('data' in apiResult)) {
           return handleCatchError(
             new Error('Invalid API response structure'),
             query
           );
         }
 
-        const filteredItems = apiResult.data.items.filter(
-          item => !shouldIgnoreFile(item.path)
-        );
-
-        const isPathOnlyMatch = query.match === 'path';
-
-        const repoMetadata: Record<string, { pushedAt: string }> = {};
-        const repoResults: Record<string, Record<string, string[]>> = {};
-
-        for (const item of filteredItems) {
-          const nameWithOwner = item.repository?.nameWithOwner || 'unknown';
-          const pushedAt = item.repository?.pushedAt || '';
-
-          if (!repoResults[nameWithOwner]) {
-            repoResults[nameWithOwner] = {};
-            repoMetadata[nameWithOwner] = { pushedAt };
-          }
-
-          if (isPathOnlyMatch) {
-            repoResults[nameWithOwner][item.path] = ['(match="path")'];
-          } else {
-            const textMatches = item.matches.map(match => match.context);
-            repoResults[nameWithOwner][item.path] = textMatches;
-          }
-        }
-
-        const sortedRepos = Object.keys(repoResults).sort((a, b) => {
-          const aPushed = repoMetadata[a]?.pushedAt || '';
-          const bPushed = repoMetadata[b]?.pushedAt || '';
-          if (aPushed !== bPushed) {
-            return bPushed.localeCompare(aPushed); // Descending (newest first)
-          }
-          return a.localeCompare(b); // Alphabetically as tiebreaker
-        });
-
-        const sortedResults: Record<string, Record<string, string[]>> = {};
-        for (const repo of sortedRepos) {
-          const repoData = repoResults[repo];
-          if (!repoData) continue;
-
-          const paths = Object.keys(repoData);
-          const sortedPaths = paths.sort((a, b) => {
-            const aDepth = a.split('/').length;
-            const bDepth = b.split('/').length;
-            if (aDepth !== bDepth) {
-              return aDepth - bDepth;
+        const files = apiResult.data.items
+          .filter(item => !shouldIgnoreFile(item.path))
+          .map(item => {
+            if (query.match === 'path') {
+              return { path: item.path, text_matches: [] };
             }
-            return a.localeCompare(b);
+            return {
+              path: item.path,
+              text_matches: item.matches.map(match => match.context),
+            };
           });
-
-          sortedResults[repo] = {};
-          for (const path of sortedPaths) {
-            sortedResults[repo][path] = repoData[path]!;
-          }
-        }
 
         return createSuccessResult(
           query,
-          { repositories: sortedResults } satisfies SearchResult,
-          Object.keys(sortedResults).length > 0,
+          {
+            files,
+          } satisfies SearchResult,
+          files.length > 0,
           'GITHUB_SEARCH_CODE'
         );
       } catch (error) {
@@ -151,7 +107,7 @@ async function searchMultipleGitHubCode(
     },
     {
       toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-      keysPriority: ['error'] satisfies Array<keyof SearchResult>,
+      keysPriority: ['files', 'error'] satisfies Array<keyof SearchResult>,
     }
   );
 }

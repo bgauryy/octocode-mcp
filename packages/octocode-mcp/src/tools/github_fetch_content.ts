@@ -47,8 +47,9 @@ export function registerFetchGitHubFileContentTool(
         if (callback) {
           try {
             await callback(TOOL_NAMES.GITHUB_FETCH_CONTENT, queries);
-            // eslint-disable-next-line no-empty
-          } catch {}
+          } catch {
+            // ignore
+          }
         }
 
         return fetchMultipleGitHubFileContents(queries, authInfo, sessionId);
@@ -80,6 +81,7 @@ async function fetchMultipleGitHubFileContents(
 
         const hasContent = hasValidContent(result);
 
+        // Strip query parameters from result - response should only contain NEW data
         const cleanedResult = stripQueryParams(
           result as Record<string, unknown>
         );
@@ -129,7 +131,8 @@ function buildApiRequest(query: FileContentQuery) {
       fullContent || !query.matchString ? undefined : String(query.matchString),
     matchStringContextLines: query.matchStringContextLines ?? 5,
     minified: query.minified ?? true,
-    addTimestamp: query.addTimestamp ?? true,
+    sanitize: query.sanitize ?? true,
+    addTimestamp: query.addTimestamp ?? false,
   };
 }
 
