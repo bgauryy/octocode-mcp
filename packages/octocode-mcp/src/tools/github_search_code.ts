@@ -74,7 +74,7 @@ async function searchMultipleGitHubCode(
         const apiError = handleApiError(apiResult, query);
         if (apiError) return apiError;
 
-        if (!('data' in apiResult)) {
+        if (!('data' in apiResult) || !apiResult.data) {
           return handleCatchError(
             new Error('Invalid API response structure'),
             query
@@ -82,10 +82,10 @@ async function searchMultipleGitHubCode(
         }
 
         // Group files by repository (nameWithOwner) -> path -> matches
-        // Structure: { "repo": { "path": ["match1", "match2"] } }
+        // Structure: { "owner/repo": { "path": ["match1", "match2"] } }
         // - For content matches: array contains matched code snippets
         // - For path-only matches: array is empty (just listing the file)
-        const files: Record<string, Record<string, string[]>> = {};
+        const repoResults: Record<string, Record<string, string[]>> = {};
         const filteredItems = apiResult.data.items.filter(
           item => !shouldIgnoreFile(item.path)
         );
@@ -95,24 +95,25 @@ async function searchMultipleGitHubCode(
         for (const item of filteredItems) {
           const nameWithOwner = item.repository?.nameWithOwner || 'unknown';
 
-          if (!files[nameWithOwner]) {
-            files[nameWithOwner] = {};
+          if (!repoResults[nameWithOwner]) {
+            repoResults[nameWithOwner] = {};
           }
 
           if (isPathOnlyMatch) {
-            // For path-only matches, empty array (just listing the file)
-            files[nameWithOwner][item.path] = [];
+            // For path-only matches, return a placeholder to ensure the file is listed
+            // (empty arrays are filtered out by response cleaner)
+            repoResults[nameWithOwner][item.path] = ['(match="path")'];
           } else {
             // For content matches, array of matched code snippets
             const textMatches = item.matches.map(match => match.context);
-            files[nameWithOwner][item.path] = textMatches;
+            repoResults[nameWithOwner][item.path] = textMatches;
           }
         }
 
         return createSuccessResult(
           query,
-          { files } satisfies SearchResult,
-          Object.keys(files).length > 0,
+          { ...repoResults } satisfies SearchResult,
+          Object.keys(repoResults).length > 0,
           'GITHUB_SEARCH_CODE'
         );
       } catch (error) {
@@ -121,7 +122,7 @@ async function searchMultipleGitHubCode(
     },
     {
       toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-      keysPriority: ['files', 'error'] satisfies Array<keyof SearchResult>,
+      keysPriority: ['error'] satisfies Array<keyof SearchResult>,
     }
   );
 }

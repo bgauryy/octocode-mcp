@@ -287,6 +287,9 @@ export function getToolHintsSync(
 }
 
 export function getGenericErrorHintsSync(): readonly string[] {
+  if (!METADATA_JSON) {
+    return [];
+  }
   return getMeta().genericErrorHints;
 }
 

@@ -134,8 +134,8 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       // Verify response structure
       expect(responseText).toContain('status: "hasResults"');
 
-      // Verify files object is present
-      expect(responseText).toContain('files:');
+      // Verify data object is present (grouped by repo)
+      expect(responseText).toContain('data:');
 
       // Verify all files are included (paths as keys in new structure)
       expect(responseText).toContain('src/tools/utils.ts:');
@@ -192,7 +192,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
 
       // Verify it searches IN content
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('files:');
+      expect(responseText).toContain('data:');
 
       // Verify content snippets are returned (now directly under path key)
       expect(responseText).toContain('function handleApiError(error: Error)');
@@ -284,7 +284,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
 
       // Verify response structure
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('files:');
+      expect(responseText).toContain('data:');
 
       // "utils" matched in the PATH/FILENAME - for path-only matches,
       // paths are listed as array values under the repo key
@@ -343,7 +343,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
 
       // Verify it searches in path/filenames (keyword "test" is in the filenames)
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('files:');
+      expect(responseText).toContain('data:');
 
       // These files were found because "test" appears in their PATH/FILENAME
       expect(responseText).toContain('example.test.ts');
@@ -528,7 +528,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       const responseText = getTextContent(result.content);
 
       // Both queries return files grouped by repository
-      expect(responseText).toContain('files:');
+      expect(responseText).toContain('data:');
       expect(responseText).toContain('content-match.ts');
       expect(responseText).toContain('path-match.ts');
 
@@ -581,9 +581,9 @@ describe('GitHub Search Code - match Parameter Modes', () => {
 
         const responseText = getTextContent(result.content);
 
-        // All modes return status and files object
+        // All modes return status and data object
         expect(responseText).toContain('status: "hasResults"');
-        expect(responseText).toContain('files:');
+        expect(responseText).toContain('data:');
         expect(responseText).toContain(`test-${testCase.match}.ts`);
 
         // Only file search includes text match content
@@ -621,7 +621,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
 
       // Files with actual matches are included in results
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('files:');
+      expect(responseText).toContain('data:');
       expect(responseText).toContain('example.ts');
       expect(responseText).toContain('actual content');
     });

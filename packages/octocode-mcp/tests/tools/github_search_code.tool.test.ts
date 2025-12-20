@@ -83,7 +83,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('results:');
       expect(responseText).toContain('1 ok');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('files:');
       // New structure: paths are keys, not nested objects
       expect(responseText).toContain('src/index.ts:');
       expect(responseText).toContain('src/utils.ts:');
@@ -120,7 +119,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('files:');
     });
 
     it('should include text matches grouped by repo and path', async () => {
@@ -724,7 +722,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('wix-private/premium-service:');
       expect(responseText).toContain('premium/config.ts:');
       // Empty array for path-only matches (normalized structure)
-      expect(responseText).toContain('[]');
+      expect(responseText).toContain('(match=\\"path\\")');
     });
   });
 
