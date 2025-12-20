@@ -921,7 +921,7 @@ describe('executeBulkOperation', () => {
   });
 
   describe('Research fields priority in response', () => {
-    it('should output mainResearchGoal before status in response', async () => {
+    it('should output numeric id before status in response', async () => {
       const queries = [
         {
           id: 'q1',
@@ -938,15 +938,15 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      const mainResearchGoalIndex = responseText.indexOf('mainResearchGoal:');
+      const idIndex = responseText.indexOf('id: 1');
       const statusIndex = responseText.indexOf('status:');
 
-      expect(mainResearchGoalIndex).toBeGreaterThan(-1);
+      expect(idIndex).toBeGreaterThan(-1);
       expect(statusIndex).toBeGreaterThan(-1);
-      expect(mainResearchGoalIndex).toBeLessThan(statusIndex);
+      expect(idIndex).toBeLessThan(statusIndex);
     });
 
-    it('should output researchGoal before status in response', async () => {
+    it('should output status before data in response', async () => {
       const queries = [
         {
           id: 'q1',
@@ -963,15 +963,15 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      const researchGoalIndex = responseText.indexOf('researchGoal:');
       const statusIndex = responseText.indexOf('status:');
+      const dataIndex = responseText.indexOf('data:');
 
-      expect(researchGoalIndex).toBeGreaterThan(-1);
       expect(statusIndex).toBeGreaterThan(-1);
-      expect(researchGoalIndex).toBeLessThan(statusIndex);
+      expect(dataIndex).toBeGreaterThan(-1);
+      expect(statusIndex).toBeLessThan(dataIndex);
     });
 
-    it('should output reasoning before status in response', async () => {
+    it('should output data before research fields in response', async () => {
       const queries = [
         {
           id: 'q1',
@@ -988,15 +988,15 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
+      const dataIndex = responseText.indexOf('data:');
       const reasoningIndex = responseText.indexOf('reasoning:');
-      const statusIndex = responseText.indexOf('status:');
 
+      expect(dataIndex).toBeGreaterThan(-1);
       expect(reasoningIndex).toBeGreaterThan(-1);
-      expect(statusIndex).toBeGreaterThan(-1);
-      expect(reasoningIndex).toBeLessThan(statusIndex);
+      expect(dataIndex).toBeLessThan(reasoningIndex);
     });
 
-    it('should output all research fields before status and data', async () => {
+    it('should output all fields in correct order: id -> status -> data -> research fields', async () => {
       const queries = [
         {
           id: 'q1',
@@ -1015,26 +1015,25 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
+      const idIndex = responseText.indexOf('id:');
+      const statusIndex = responseText.indexOf('status:');
+      const dataIndex = responseText.indexOf('data:');
       const mainResearchGoalIndex = responseText.indexOf('mainResearchGoal:');
       const researchGoalIndex = responseText.indexOf('researchGoal:');
       const reasoningIndex = responseText.indexOf('reasoning:');
-      const statusIndex = responseText.indexOf('status:');
-      const dataIndex = responseText.indexOf('data:');
 
-      // All research fields should exist
+      // All fields should exist
+      expect(idIndex).toBeGreaterThan(-1);
+      expect(statusIndex).toBeGreaterThan(-1);
+      expect(dataIndex).toBeGreaterThan(-1);
       expect(mainResearchGoalIndex).toBeGreaterThan(-1);
       expect(researchGoalIndex).toBeGreaterThan(-1);
       expect(reasoningIndex).toBeGreaterThan(-1);
-      expect(statusIndex).toBeGreaterThan(-1);
-      expect(dataIndex).toBeGreaterThan(-1);
 
-      // Research fields should come before status
-      expect(mainResearchGoalIndex).toBeLessThan(statusIndex);
-      expect(researchGoalIndex).toBeLessThan(statusIndex);
-      expect(reasoningIndex).toBeLessThan(statusIndex);
-
-      // Status should come before data
+      // New order: id -> status -> data -> research fields (for LLM readability)
+      expect(idIndex).toBeLessThan(statusIndex);
       expect(statusIndex).toBeLessThan(dataIndex);
+      expect(dataIndex).toBeLessThan(mainResearchGoalIndex);
     });
 
     it('should maintain research fields priority order in error responses', async () => {
@@ -1056,15 +1055,13 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      const mainResearchGoalIndex = responseText.indexOf('mainResearchGoal:');
-      const researchGoalIndex = responseText.indexOf('researchGoal:');
-      const reasoningIndex = responseText.indexOf('reasoning:');
+      const idIndex = responseText.indexOf('id:');
       const statusIndex = responseText.indexOf('status:');
+      const dataIndex = responseText.indexOf('data:');
 
-      // All research fields should come before status even in errors
-      expect(mainResearchGoalIndex).toBeLessThan(statusIndex);
-      expect(researchGoalIndex).toBeLessThan(statusIndex);
-      expect(reasoningIndex).toBeLessThan(statusIndex);
+      // New order: id -> status -> data -> research fields (for LLM readability)
+      expect(idIndex).toBeLessThan(statusIndex);
+      expect(statusIndex).toBeLessThan(dataIndex);
     });
 
     it('should maintain research fields priority with thrown errors', async () => {
@@ -1083,15 +1080,13 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      const mainResearchGoalIndex = responseText.indexOf('mainResearchGoal:');
-      const researchGoalIndex = responseText.indexOf('researchGoal:');
-      const reasoningIndex = responseText.indexOf('reasoning:');
+      const idIndex = responseText.indexOf('id:');
       const statusIndex = responseText.indexOf('status:');
+      const dataIndex = responseText.indexOf('data:');
 
-      // All research fields should come before status even with thrown errors
-      expect(mainResearchGoalIndex).toBeLessThan(statusIndex);
-      expect(researchGoalIndex).toBeLessThan(statusIndex);
-      expect(reasoningIndex).toBeLessThan(statusIndex);
+      // New order: id -> status -> data -> research fields (for LLM readability)
+      expect(idIndex).toBeLessThan(statusIndex);
+      expect(statusIndex).toBeLessThan(dataIndex);
     });
   });
 

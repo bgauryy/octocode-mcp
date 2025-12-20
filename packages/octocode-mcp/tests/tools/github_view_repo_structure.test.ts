@@ -88,8 +88,6 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(responseText).toContain('results:');
     expect(responseText).toContain('1 hasResults');
     expect(responseText).toContain('status: "hasResults"');
-    expect(responseText).toContain('owner: "test"');
-    expect(responseText).toContain('repo: "repo"');
     expect(responseText).toContain('path: "/"');
     expect(responseText).toContain('files:');
     expect(responseText).toContain('folders:');
@@ -236,8 +234,6 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(responseText).toContain('results:');
     expect(responseText).toContain('1 hasResults');
     expect(responseText).toContain('status: "hasResults"');
-    expect(responseText).toContain('owner: "test"');
-    expect(responseText).toContain('repo: "repo"');
     expect(responseText).toContain('path: "src"');
     expect(responseText).not.toMatch(/^data:/m);
     expect(responseText).not.toContain('queries:');
@@ -393,7 +389,6 @@ describe('GitHub View Repository Structure Tool', () => {
       // Branch should NOT be in the response data (it was only in query)
       expect(responseText).not.toContain('branch:');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('owner: "test"');
       expect(responseText).toContain('path: "/"');
       expect(responseText).toContain('1 hasResults');
       expect(responseText).toContain('files:');
@@ -403,7 +398,7 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(responseText).not.toMatch(/^hints:/m);
     });
 
-    it('should use correct field ordering: queryId, reasoning, repository, path, files, folders', async () => {
+    it('should use correct field ordering: path, files, folders', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
         files: [{ path: '/test.js', size: 500 }],
         folders: {
@@ -436,32 +431,22 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
 
-      // Verify key fields exist in the response
+      // Verify key fields exist in the response (owner/repo removed - they're in request)
       const statusIndex = responseText.indexOf('status:');
-      const dataIndex = responseText.indexOf('data:');
-      const ownerIndex = responseText.indexOf('owner:');
-      const repoIndex = responseText.indexOf('repo:');
       const pathIndex = responseText.indexOf('path:');
       const filesIndex = responseText.indexOf('files:');
       const foldersIndex = responseText.indexOf('folders:');
 
       // Verify all fields exist (must be found, not -1)
       expect(statusIndex).not.toEqual(-1);
-      expect(dataIndex).not.toEqual(-1);
-      expect(ownerIndex).not.toEqual(-1);
-      expect(repoIndex).not.toEqual(-1);
       expect(pathIndex).not.toEqual(-1);
       expect(filesIndex).not.toEqual(-1);
       expect(foldersIndex).not.toEqual(-1);
 
-      // Verify field ordering: status < data < owner < repo < path < files < folders
-      expect(statusIndex < dataIndex).toEqual(true);
-      expect(ownerIndex < repoIndex).toEqual(true);
-      expect(repoIndex < pathIndex).toEqual(true);
+      // Verify field ordering: path < files < folders
       expect(pathIndex < filesIndex).toEqual(true);
       expect(filesIndex < foldersIndex).toEqual(true);
 
-      expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
     });

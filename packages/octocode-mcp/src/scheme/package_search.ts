@@ -44,12 +44,6 @@ export const PackageSearchQuerySchema = z.discriminatedUnion('ecosystem', [
   PythonPackageQuerySchema,
 ]);
 
-// Bulk Package Search Schema
-export const PackageSearchBulkQuerySchema = createBulkQuerySchema(
-  TOOL_NAMES.PACKAGE_SEARCH,
-  PackageSearchQuerySchema
-);
-
 // Export types - explicit type definitions to avoid deep inference
 export type NpmPackageQuery = z.infer<typeof NpmPackageQuerySchema>;
 export type PythonPackageQuery = z.infer<typeof PythonPackageQuerySchema>;
@@ -57,3 +51,9 @@ export type PackageSearchQuery = NpmPackageQuery | PythonPackageQuery;
 export type PackageSearchBulkParams = {
   queries: PackageSearchQuery[];
 };
+
+// Bulk Package Search Schema
+export const PackageSearchBulkQuerySchema = createBulkQuerySchema(
+  TOOL_NAMES.PACKAGE_SEARCH,
+  PackageSearchQuerySchema
+);

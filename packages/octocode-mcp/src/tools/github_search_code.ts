@@ -60,28 +60,6 @@ export function registerGitHubSearchCodeTool(
   );
 }
 
-function extractOwnerAndRepo(nameWithOwner: string | undefined): {
-  owner?: string;
-  repo?: string;
-} {
-  if (!nameWithOwner) return {};
-
-  const parts = nameWithOwner.split('/');
-  return parts.length === 2 ? { owner: parts[0], repo: parts[1] } : {};
-}
-
-function getNameWithOwner(apiResult: {
-  data: {
-    repository?: { name?: string };
-    items: Array<{ repository?: { nameWithOwner?: string } }>;
-  };
-}): string | undefined {
-  return (
-    apiResult.data.repository?.name ||
-    apiResult.data.items[0]?.repository?.nameWithOwner
-  );
-}
-
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
   authInfo?: AuthInfo,
@@ -103,10 +81,6 @@ async function searchMultipleGitHubCode(
           );
         }
 
-        const { owner, repo } = extractOwnerAndRepo(
-          getNameWithOwner(apiResult)
-        );
-
         const files = apiResult.data.items
           .filter(item => !shouldIgnoreFile(item.path))
           .map(item => {
@@ -123,8 +97,6 @@ async function searchMultipleGitHubCode(
           query,
           {
             files,
-            owner,
-            repo,
           } satisfies SearchResult,
           files.length > 0,
           'GITHUB_SEARCH_CODE'

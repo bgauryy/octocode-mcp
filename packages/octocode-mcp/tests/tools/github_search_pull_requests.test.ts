@@ -960,7 +960,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('incomplete_results: true');
+      expect(responseText).toContain('status: "hasResults"');
     });
 
     it('should handle PR by number with owner and repo', async () => {

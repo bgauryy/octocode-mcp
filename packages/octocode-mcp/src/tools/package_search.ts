@@ -37,7 +37,8 @@ export async function registerPackageSearchTool(
     TOOL_NAMES.PACKAGE_SEARCH,
     {
       description: DESCRIPTIONS[TOOL_NAMES.PACKAGE_SEARCH],
-      inputSchema: PackageSearchBulkQuerySchema,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- breaks deep type inference from discriminatedUnion
+      inputSchema: PackageSearchBulkQuerySchema as any,
       annotations: {
         title: 'Package Search',
         readOnlyHint: true,
@@ -104,9 +105,9 @@ async function searchPackages(
           return createErrorResult(query, apiResult.error);
         }
 
+        // Only include NEW data - ecosystem is already in the query
         const result = {
           packages: apiResult.packages as PackageResult[],
-          ecosystem: apiResult.ecosystem,
           totalFound: apiResult.totalFound,
         };
 
@@ -114,14 +115,14 @@ async function searchPackages(
 
         // Check deprecation for npm packages (only for first package to avoid too many API calls)
         let deprecationInfo: DeprecationInfo | null = null;
-        if (hasContent && result.ecosystem === 'npm' && result.packages[0]) {
+        if (hasContent && query.ecosystem === 'npm' && result.packages[0]) {
           deprecationInfo = await checkNpmDeprecation(
             getPackageName(result.packages[0])
           );
         }
 
         const customHints = hasContent
-          ? generateSuccessHints(result, deprecationInfo)
+          ? generateSuccessHints(result, query.ecosystem, deprecationInfo)
           : generateEmptyHints(query);
 
         return createSuccessResult(
@@ -137,7 +138,7 @@ async function searchPackages(
     },
     {
       toolName: TOOL_NAMES.PACKAGE_SEARCH,
-      keysPriority: ['packages', 'ecosystem', 'totalFound', 'error'],
+      keysPriority: ['packages', 'totalFound', 'error'],
     }
   );
 }
@@ -145,8 +146,8 @@ async function searchPackages(
 function generateSuccessHints(
   result: {
     packages: PackageResult[];
-    ecosystem: 'npm' | 'python';
   },
+  ecosystem: 'npm' | 'python',
   deprecationInfo?: DeprecationInfo | null
 ): string[] {
   const hints: string[] = [];
@@ -177,7 +178,7 @@ function generateSuccessHints(
 
   // Install command hint
   hints.push(
-    result.ecosystem === 'npm'
+    ecosystem === 'npm'
       ? `Install: npm install ${name}`
       : `Install: pip install ${name}`
   );

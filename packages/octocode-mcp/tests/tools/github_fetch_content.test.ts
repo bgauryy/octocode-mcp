@@ -109,7 +109,7 @@ describe('GitHub Fetch Content Tool', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('repository: "test/repo"');
-      expect(responseText).toContain('path: "README.md"');
+      // path is in query, not duplicated in response (clean bulk responses)
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('contentLength: 35');
       expect(responseText).toContain(
@@ -210,12 +210,9 @@ describe('GitHub Fetch Content Tool', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('2 hasResults');
-      // Check first result
-      expect(responseText).toContain('path: "README.md"');
+      // path is in query, not duplicated in response (clean bulk responses)
       expect(responseText).toContain('contentLength: 1');
       expect(responseText).toContain('content: "# README"');
-      // Check second result
-      expect(responseText).toContain('path: "package.json"');
       expect(responseText).toContain('content: "{\\"name\\": \\"test\\"}"');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
@@ -377,7 +374,7 @@ End of file.`;
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('path: "README.md"');
+      // path is in query, not duplicated in response (clean bulk responses)
       expect(responseText).toContain('contentLength: 12');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
@@ -467,7 +464,7 @@ End of file.`;
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('path: "src/index.js"');
+      // path is in query, not duplicated in response (clean bulk responses)
       expect(responseText).toContain('contentLength: 20');
       expect(responseText).toContain('startLine: 5');
       expect(responseText).toContain('endLine: 7');
@@ -527,7 +524,7 @@ End of file.`;
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('path: "src/utils.js"');
+      // path is in query, not duplicated in response (clean bulk responses)
       expect(responseText).toContain('contentLength: 50');
       expect(responseText).toContain('startLine: 8');
       expect(responseText).toContain('endLine: 14');
@@ -630,7 +627,7 @@ End of file.`;
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('path: "src/app.js"');
+      // path is in query, not duplicated in response (clean bulk responses)
       expect(responseText).toContain('minified: true');
       expect(responseText).toContain('minificationFailed: false');
       expect(responseText).toContain('minificationType: "terser"');
@@ -680,7 +677,7 @@ End of file.`;
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('path: "src/readable.js"');
+      // path is in query, not duplicated in response (clean bulk responses)
       expect(responseText).toContain('contentLength: 37');
       expect(responseText).toContain('minified: false');
       expect(responseText).not.toMatch(/^data:/m);
@@ -731,7 +728,7 @@ End of file.`;
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('path: "src/broken.js"');
+      // path is in query, not duplicated in response (clean bulk responses)
       expect(responseText).toContain('minified: false');
       expect(responseText).toContain('minificationFailed: true');
       expect(responseText).toContain('minificationType: "failed"');
@@ -779,7 +776,7 @@ End of file.`;
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('path: "config.env"');
+      // path is in query, not duplicated in response
       expect(responseText).toContain('contentLength: 2');
       expect(responseText).toContain('securityWarnings:');
       expect(responseText).not.toMatch(/^data:/m);
@@ -870,8 +867,7 @@ End of file.`;
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('path: "feature.js"');
-      expect(responseText).toContain('branch: "feature-branch"');
+      // path and branch are in query, not duplicated in response (clean bulk responses)
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -978,8 +974,7 @@ End of file.`;
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('1 hasResults, 2 failed');
-      // Success result
-      expect(responseText).toContain('path: "success.js"');
+      // Success result - path is in query, not duplicated in response
       expect(responseText).toContain('status: "hasResults"');
       // Error results
       expect(responseText).toContain('error: "File not found"');

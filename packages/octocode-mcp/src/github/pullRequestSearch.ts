@@ -120,19 +120,10 @@ async function searchGitHubPullRequestsAPIInternal(
       })
     );
 
-    const owner = Array.isArray(params.owner)
-      ? params.owner[0] || ''
-      : params.owner || '';
-    const repo = Array.isArray(params.repo)
-      ? params.repo[0] || ''
-      : params.repo || '';
-
     const formattedPRs = transformedPRs.map(pr => ({
-      id: 0, // We don't have this in our format
       number: pr.number,
       title: pr.title,
       url: pr.url,
-      html_url: pr.url,
       state: pr.state as 'open' | 'closed',
       draft: pr.draft ?? false,
       merged: pr.state === 'closed' && !!pr.merged_at,
@@ -140,25 +131,17 @@ async function searchGitHubPullRequestsAPIInternal(
       updated_at: pr.updated_at,
       closed_at: pr.closed_at ?? undefined,
       merged_at: pr.merged_at,
-      author: {
-        login: pr.author,
-        id: 0,
-        avatar_url: '',
-        html_url: `https://github.com/${pr.author}`,
-      },
+      author: pr.author,
       head: {
         ref: pr.head || '',
         sha: pr.head_sha || '',
-        repo: owner && repo ? `${owner}/${repo}` : '',
       },
       base: {
         ref: pr.base || '',
         sha: pr.base_sha || '',
-        repo: owner && repo ? `${owner}/${repo}` : '',
       },
       body: pr.body,
       comments: pr.comments?.length || 0,
-      review_comments: 0,
       commits: pr.commits?.length || 0,
       additions:
         pr.file_changes?.files.reduce((sum, file) => sum + file.additions, 0) ||
@@ -230,11 +213,9 @@ async function searchPullRequestsWithREST(
     );
 
     const formattedPRs = transformedPRs.map(pr => ({
-      id: 0,
       number: pr.number,
       title: pr.title,
       url: pr.url,
-      html_url: pr.url,
       state: pr.state as 'open' | 'closed',
       draft: pr.draft ?? false,
       merged: pr.state === 'closed' && !!pr.merged_at,
@@ -242,25 +223,17 @@ async function searchPullRequestsWithREST(
       updated_at: pr.updated_at,
       closed_at: pr.closed_at ?? undefined,
       merged_at: pr.merged_at,
-      author: {
-        login: pr.author,
-        id: 0,
-        avatar_url: '',
-        html_url: `https://github.com/${pr.author}`,
-      },
+      author: pr.author,
       head: {
         ref: pr.head || '',
         sha: pr.head_sha || '',
-        repo: `${owner}/${repo}`,
       },
       base: {
         ref: pr.base || '',
         sha: pr.base_sha || '',
-        repo: `${owner}/${repo}`,
       },
       body: pr.body,
       comments: pr.comments?.length || 0,
-      review_comments: 0,
       commits: pr.commits?.length || 0,
       additions:
         pr.file_changes?.files.reduce((sum, file) => sum + file.additions, 0) ||
@@ -809,40 +782,28 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
     const transformedPR: GitHubPullRequestItem =
       await transformPullRequestItemFromREST(pr, params, octokit, authInfo);
 
-    const repoFullName = `${params.owner}/${params.repo}`;
-
     const formattedPR = {
-      id: 0,
       number: transformedPR.number,
       title: transformedPR.title,
       url: transformedPR.url,
-      html_url: transformedPR.url,
       state: transformedPR.state as 'open' | 'closed',
-      draft: transformedPR.draft ?? false, // Default to false if undefined
+      draft: transformedPR.draft ?? false,
       merged: transformedPR.state === 'closed' && !!transformedPR.merged_at,
       created_at: transformedPR.created_at,
       updated_at: transformedPR.updated_at,
       closed_at: transformedPR.closed_at ?? undefined,
       merged_at: transformedPR.merged_at,
-      author: {
-        login: transformedPR.author,
-        id: 0,
-        avatar_url: '',
-        html_url: `https://github.com/${transformedPR.author}`,
-      },
+      author: transformedPR.author,
       head: {
         ref: transformedPR.head || '',
         sha: transformedPR.head_sha || '',
-        repo: repoFullName,
       },
       base: {
         ref: transformedPR.base || '',
         sha: transformedPR.base_sha || '',
-        repo: repoFullName,
       },
       body: transformedPR.body,
       comments: transformedPR.comments?.length || 0,
-      review_comments: 0,
       commits: transformedPR.commits?.length || 0,
       additions:
         transformedPR.file_changes?.files.reduce(
@@ -855,7 +816,6 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
           0
         ) || 0,
       changed_files: transformedPR.file_changes?.total_count || 0,
-      // Include file_changes if it was requested and fetched
       ...(transformedPR.file_changes && {
         file_changes: transformedPR.file_changes.files?.map(file => ({
           filename: file.filename,
@@ -865,7 +825,6 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
           patch: file.patch,
         })),
       }),
-      // Include commits breakdown
       ...(transformedPR.commits && {
         commit_details: transformedPR.commits,
       }),

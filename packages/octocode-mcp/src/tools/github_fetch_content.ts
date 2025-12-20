@@ -1,11 +1,10 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import {
+  McpServer,
+  RegisteredTool,
+} from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
-import type {
-  ToolInvocationCallback,
-  FileContentQuery,
-  ContentResult,
-} from '../types.js';
+import type { ToolInvocationCallback, FileContentQuery } from '../types.js';
 import { fetchGitHubFileContentAPI } from '../github/fileOperations.js';
 import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
 import { FileContentBulkQuerySchema } from '../scheme/github_fetch_content.js';
@@ -20,7 +19,7 @@ import {
 export function registerFetchGitHubFileContentTool(
   server: McpServer,
   callback?: ToolInvocationCallback
-) {
+): RegisteredTool {
   return server.registerTool(
     TOOL_NAMES.GITHUB_FETCH_CONTENT,
     {
@@ -80,13 +79,16 @@ async function fetchMultipleGitHubFileContents(
 
         const result = 'data' in apiResult ? apiResult.data : apiResult;
 
-        const resultWithSampling = result as Record<string, unknown>;
-
         const hasContent = hasValidContent(result);
+
+        // Strip query parameters from result - response should only contain NEW data
+        const cleanedResult = stripQueryParams(
+          result as Record<string, unknown>
+        );
 
         return createSuccessResult(
           query,
-          resultWithSampling,
+          cleanedResult,
           hasContent,
           'GITHUB_FETCH_CONTENT'
         );
@@ -97,24 +99,16 @@ async function fetchMultipleGitHubFileContents(
     {
       toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       keysPriority: [
-        'path',
-        'owner',
-        'repo',
-        'branch',
         'contentLength',
         'content',
         'isPartial',
         'startLine',
         'endLine',
-        'minified',
-        'minificationFailed',
-        'minificationType',
         'lastModified',
         'lastModifiedBy',
         'securityWarnings',
-        'sampling',
         'error',
-      ] satisfies Array<keyof ContentResult>,
+      ],
     }
   );
 }
@@ -153,4 +147,23 @@ function hasValidContent(result: unknown): boolean {
     result.content &&
     String(result.content).length > 0
   );
+}
+
+/**
+ * Strip query parameters from result - response should only contain NEW data
+ * Query already has: owner, repo, path, branch, etc.
+ */
+function stripQueryParams(
+  result: Record<string, unknown>
+): Record<string, unknown> {
+  const queryParams = new Set(['owner', 'repo', 'path', 'branch']);
+  const cleaned: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(result)) {
+    if (!queryParams.has(key)) {
+      cleaned[key] = value;
+    }
+  }
+
+  return cleaned;
 }

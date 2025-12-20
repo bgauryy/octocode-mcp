@@ -58,11 +58,12 @@ function createBulkResponse<
     'errorStatusHints',
   ];
   const resultFields = [
+    'id',
+    'status',
+    'data',
     'mainResearchGoal',
     'researchGoal',
     'reasoning',
-    'status',
-    'data',
   ];
   const standardFields = [...topLevelFields, ...resultFields, 'owner', 'repo'];
   const fullKeysPriority = [
@@ -105,6 +106,7 @@ function createBulkResponse<
     }
 
     const flatQuery: FlatQueryResult = {
+      id: r.queryIndex + 1, // 1-based ID for LLM readability
       status,
       data:
         status === 'error' && r.result.error
@@ -134,6 +136,7 @@ function createBulkResponse<
     hasAnyError = true;
 
     flatQueries.push({
+      id: err.queryIndex + 1, // 1-based ID for LLM readability
       status: 'error',
       data: { error: err.error },
       mainResearchGoal: safeExtractString(originalQuery, 'mainResearchGoal'),

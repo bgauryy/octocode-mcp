@@ -119,8 +119,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('owner: "facebook"');
-      expect(responseText).toContain('repo: "react"');
+      expect(responseText).toContain('files:');
     });
 
     it('should include text_matches from items', async () => {
@@ -210,9 +209,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "empty"');
-      // When empty, the tool returns owner/repo in data but files are filtered out
-      expect(responseText).toContain('owner: "test"');
-      expect(responseText).toContain('repo: "repo"');
+      // When all files are filtered, response is minimal (no files field)
     });
   });
 
