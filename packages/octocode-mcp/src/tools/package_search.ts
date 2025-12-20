@@ -103,6 +103,7 @@ async function searchPackages(
           return createErrorResult(query, apiResult.error);
         }
 
+        // Only include NEW data - ecosystem is already in the query
         const result = {
           packages: apiResult.packages as PackageResult[],
           totalFound: apiResult.totalFound,
