@@ -124,7 +124,7 @@ export async function searchPythonPackage(
         if (Array.isArray(versionFiles) && versionFiles.length > 0) {
           const uploadTime = versionFiles[0]?.upload_time;
           if (uploadTime) {
-            lastPublished = new Date(uploadTime).toLocaleDateString('en-GB');
+            lastPublished = uploadTime;
           }
         }
       }

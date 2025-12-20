@@ -61,7 +61,7 @@ function mapToResult(data: NpmViewResult): NpmPackageResult {
     const versionTime = data.version ? data.time[data.version] : undefined;
     const timeStr = versionTime || data.time.modified;
     if (timeStr) {
-      lastPublished = new Date(timeStr).toLocaleDateString('en-GB');
+      lastPublished = timeStr;
     }
   }
 

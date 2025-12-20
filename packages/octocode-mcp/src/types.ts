@@ -96,12 +96,13 @@ export interface GitHubCodeSearchQuery {
 
 /**
  * Code search result with matched files grouped by repository.
- * - For content matches: { "repo": { "path": ["match1", "match2"] } }
- * - For path-only matches: { "repo": ["path1", "path2"] }
+ * Structure: { "repo": { "path": ["match1", "match2"] } }
+ * - For content matches: array contains matched code snippets
+ * - For path-only matches: array is empty (just listing the file)
  */
 export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
-  /** Files grouped by repository (nameWithOwner) */
-  files: Record<string, Record<string, string[]> | string[]>;
+  /** Files grouped by repository (nameWithOwner) -> path -> matches */
+  files: Record<string, Record<string, string[]>>;
 }
 
 // ─── File Content (github_fetch_content) ────────────────────────────────────
@@ -208,13 +209,24 @@ export interface GitHubViewRepoStructureQuery {
   reasoning?: string;
 }
 
-/** Repository structure result data */
+/** Directory entry with files and folders grouped together */
+export interface DirectoryEntry {
+  files: string[];
+  folders: string[];
+}
+
+/**
+ * Repository structure result data - optimized format.
+ * Groups files by parent directory to eliminate path repetition.
+ * Keys are relative directory paths (e.g., ".", "src", "src/utils").
+ */
 export interface RepoStructureResultData {
   owner?: string;
   repo?: string;
+  /** Base path that was queried */
   path?: string;
-  files?: string[];
-  folders?: string[];
+  /** Structure grouped by directory - keys are relative paths */
+  structure?: Record<string, DirectoryEntry>;
 }
 
 /** Complete repository structure result */

@@ -141,10 +141,10 @@ describe('Empty Arrays Removal in Responses', () => {
       registerViewGitHubRepoStructureTool(mockServer.server);
     });
 
-    it('should not include empty files or folders arrays in response', async () => {
+    it('should not include empty structure in response', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValueOnce({
-        files: [], // Empty files
-        folders: { folders: [] }, // Empty folders
+        structure: {}, // Empty structure
+        path: '/',
       });
 
       const result = await mockServer.callTool(
@@ -155,7 +155,7 @@ describe('Empty Arrays Removal in Responses', () => {
               owner: 'test',
               repo: 'repo',
               branch: 'main',
-              reasoning: 'Test empty arrays removal',
+              reasoning: 'Test empty structure removal',
             },
           ],
         },
@@ -164,9 +164,8 @@ describe('Empty Arrays Removal in Responses', () => {
 
       const responseText = getTextContent(result.content);
 
-      // Should not contain "files: []" or "folders: []"
-      expect(responseText).not.toMatch(/files:\s*\[\]/);
-      expect(responseText).not.toMatch(/folders:\s*\[\]/);
+      // Should not contain empty structure
+      expect(responseText).not.toMatch(/structure:\s*\{\}/);
 
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('1 empty');

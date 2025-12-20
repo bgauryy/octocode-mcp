@@ -47,7 +47,9 @@ describe('npmPackage - branch coverage', () => {
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        expect((result.packages[0] as any)?.lastPublished).toBe('15/01/2024');
+        expect((result.packages[0] as any)?.lastPublished).toBe(
+          '2024-01-15T10:30:00.000Z'
+        );
       }
     });
 
@@ -77,7 +79,9 @@ describe('npmPackage - branch coverage', () => {
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        expect((result.packages[0] as any)?.lastPublished).toBe('20/01/2024');
+        expect((result.packages[0] as any)?.lastPublished).toBe(
+          '2024-01-20T10:30:00.000Z'
+        );
       }
     });
 

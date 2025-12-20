@@ -235,15 +235,9 @@ async function transformToOptimizedFormat(
     result.repository = {
       name: singleRepo.full_name,
       url: singleRepo.url,
-      createdAt: singleRepo.created_at
-        ? new Date(singleRepo.created_at).toLocaleDateString('en-GB')
-        : undefined,
-      updatedAt: singleRepo.updated_at
-        ? new Date(singleRepo.updated_at).toLocaleDateString('en-GB')
-        : undefined,
-      pushedAt: singleRepo.pushed_at
-        ? new Date(singleRepo.pushed_at).toLocaleDateString('en-GB')
-        : undefined,
+      createdAt: singleRepo.created_at || undefined,
+      updatedAt: singleRepo.updated_at || undefined,
+      pushedAt: singleRepo.pushed_at || undefined,
     };
   }
 

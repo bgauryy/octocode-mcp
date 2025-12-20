@@ -696,7 +696,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('src/utils.ts:');
     });
 
-    it('should list paths as array for path match queries', async () => {
+    it('should list paths with empty arrays for path match queries', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValue({
         data: {
           total_count: 1,
@@ -720,9 +720,11 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      // Path-only matches: repo key maps to array of paths
+      // Path-only matches: same structure as content, but with empty arrays
       expect(responseText).toContain('wix-private/premium-service:');
-      expect(responseText).toContain('premium/config.ts');
+      expect(responseText).toContain('premium/config.ts:');
+      // Empty array for path-only matches (normalized structure)
+      expect(responseText).toContain('[]');
     });
   });
 

@@ -8,6 +8,7 @@ import type {
   ToolInvocationCallback,
   GitHubViewRepoStructureQuery,
   RepoStructureResult,
+  DirectoryEntry,
 } from '../types.js';
 import { viewGitHubRepositoryStructureAPI } from '../github/fileOperations.js';
 import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
@@ -82,26 +83,33 @@ function buildStructureApiRequest(
   };
 }
 
-function filterStructureItems(apiResult: {
-  files: Array<{ path: string }>;
-  folders?: { folders?: Array<{ path: string }> };
-}) {
-  const filteredFiles = apiResult.files.filter(
-    file => !shouldIgnoreFile(file.path)
-  );
+/**
+ * Filter structure entries to remove ignored files and folders.
+ * Structure is a Record<string, DirectoryEntry> where keys are relative paths.
+ */
+function filterStructure(
+  structure: Record<string, DirectoryEntry>
+): Record<string, DirectoryEntry> {
+  const filtered: Record<string, DirectoryEntry> = {};
 
-  const filteredFolders = (apiResult.folders?.folders || []).filter(folder => {
-    const folderName = folder.path.split('/').pop() || '';
-    return !shouldIgnoreDir(folderName) && !shouldIgnoreFile(folder.path);
-  });
+  for (const [dirPath, entry] of Object.entries(structure)) {
+    const filteredFiles = entry.files.filter(
+      fileName => !shouldIgnoreFile(fileName)
+    );
+    const filteredFolders = entry.folders.filter(
+      folderName => !shouldIgnoreDir(folderName)
+    );
 
-  return { filteredFiles, filteredFolders };
-}
+    // Only include directory if it has content after filtering
+    if (filteredFiles.length > 0 || filteredFolders.length > 0) {
+      filtered[dirPath] = {
+        files: filteredFiles,
+        folders: filteredFolders,
+      };
+    }
+  }
 
-function removePathPrefix(path: string, prefix: string): string {
-  return prefix && path.startsWith(prefix)
-    ? path.substring(prefix.length)
-    : path;
+  return filtered;
 }
 
 function createEmptyStructureResult(
@@ -114,23 +122,20 @@ function createEmptyStructureResult(
   owner: string;
   repo: string;
   path: string;
-  files: string[];
-  folders: string[];
+  structure: Record<string, DirectoryEntry>;
 } {
   return {
     owner: query.owner,
     repo: query.repo,
     path: query.path || '/',
-    files: [],
-    folders: [],
+    structure: {},
     ...error,
   } as Record<string, unknown> & {
     status: 'error';
     owner: string;
     repo: string;
     path: string;
-    files: string[];
-    folders: string[];
+    structure: Record<string, DirectoryEntry>;
   };
 }
 
@@ -156,7 +161,8 @@ async function exploreMultipleRepositoryStructures(
           return createEmptyStructureResult(query, apiError);
         }
 
-        if (!('files' in apiResult) || !Array.isArray(apiResult.files)) {
+        // New format uses 'structure' field
+        if (!('structure' in apiResult) || !apiResult.structure) {
           return createEmptyStructureResult(
             query,
             handleCatchError(
@@ -166,28 +172,17 @@ async function exploreMultipleRepositoryStructures(
           );
         }
 
-        const { filteredFiles, filteredFolders } =
-          filterStructureItems(apiResult);
+        // Filter structure to remove ignored files/folders
+        const filteredStructure = filterStructure(apiResult.structure);
 
-        const pathPrefix = apiRequest.path || '/';
-        const normalizedPrefix = pathPrefix === '/' ? '' : pathPrefix;
-
-        const filePaths = filteredFiles.map(file =>
-          removePathPrefix(file.path, normalizedPrefix)
-        );
-
-        const folderPaths = filteredFolders.map(folder =>
-          removePathPrefix(folder.path, normalizedPrefix)
-        );
-
-        const hasContent = filePaths.length > 0 || folderPaths.length > 0;
+        // Check if there's any content
+        const hasContent = Object.keys(filteredStructure).length > 0;
 
         return createSuccessResult(
           query,
           {
             path: apiRequest.path || '/',
-            files: filePaths,
-            folders: folderPaths,
+            structure: filteredStructure,
           },
           hasContent,
           'GITHUB_VIEW_REPO_STRUCTURE'
@@ -203,7 +198,7 @@ async function exploreMultipleRepositoryStructures(
     },
     {
       toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-      keysPriority: ['path', 'files', 'folders', 'error'] satisfies Array<
+      keysPriority: ['path', 'structure', 'error'] satisfies Array<
         keyof RepoStructureResult
       >,
     }

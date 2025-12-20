@@ -285,9 +285,7 @@ async function fetchFileTimestamp(
         'Unknown';
 
       return {
-        lastModified: commitDate
-          ? new Date(commitDate).toLocaleDateString('en-GB')
-          : 'Unknown',
+        lastModified: commitDate || 'Unknown',
         lastModifiedBy: authorName,
       };
     }
@@ -652,20 +650,73 @@ async function viewGitHubRepositoryStructureAPIInternal(
       return a.path.localeCompare(b.path);
     });
 
-    const files = limitedItems
-      .filter(item => item.type === 'file')
-      .map(item => ({
-        path: item.path.startsWith('/') ? item.path : `/${item.path}`,
-        size: item.size,
-        url: item.path,
-      }));
+    // Group files and folders by parent directory
+    const structure: Record<string, { files: string[]; folders: string[] }> =
+      {};
+    const basePath = cleanPath || '';
 
-    const folders = limitedItems
-      .filter(item => item.type === 'dir')
-      .map(item => ({
-        path: item.path.startsWith('/') ? item.path : `/${item.path}`,
-        url: item.path,
-      }));
+    // Helper to get parent directory path relative to base
+    const getRelativeParent = (itemPath: string): string => {
+      // Remove base path prefix to get relative path
+      let relativePath = itemPath;
+      if (basePath && itemPath.startsWith(basePath)) {
+        relativePath = itemPath.slice(basePath.length);
+        if (relativePath.startsWith('/')) {
+          relativePath = relativePath.slice(1);
+        }
+      }
+
+      const lastSlash = relativePath.lastIndexOf('/');
+      if (lastSlash === -1) {
+        return '.'; // Root level
+      }
+      return relativePath.slice(0, lastSlash);
+    };
+
+    // Helper to get item name (last part of path)
+    const getItemName = (itemPath: string): string => {
+      const lastSlash = itemPath.lastIndexOf('/');
+      return lastSlash === -1 ? itemPath : itemPath.slice(lastSlash + 1);
+    };
+
+    // Initialize structure for all items
+    for (const item of limitedItems) {
+      const parentDir = getRelativeParent(item.path);
+
+      if (!structure[parentDir]) {
+        structure[parentDir] = { files: [], folders: [] };
+      }
+
+      const itemName = getItemName(item.path);
+      if (item.type === 'file') {
+        structure[parentDir].files.push(itemName);
+      } else {
+        structure[parentDir].folders.push(itemName);
+      }
+    }
+
+    // Sort entries within each directory
+    for (const dir of Object.keys(structure)) {
+      structure[dir].files.sort();
+      structure[dir].folders.sort();
+    }
+
+    // Sort directory keys (root first, then alphabetically)
+    const sortedStructure: Record<
+      string,
+      { files: string[]; folders: string[] }
+    > = {};
+    const sortedKeys = Object.keys(structure).sort((a, b) => {
+      if (a === '.') return -1;
+      if (b === '.') return 1;
+      return a.localeCompare(b);
+    });
+    for (const key of sortedKeys) {
+      sortedStructure[key] = structure[key];
+    }
+
+    const totalFiles = limitedItems.filter(i => i.type === 'file').length;
+    const totalFolders = limitedItems.filter(i => i.type === 'dir').length;
 
     return {
       owner,
@@ -674,17 +725,13 @@ async function viewGitHubRepositoryStructureAPIInternal(
       path: cleanPath || '/',
       apiSource: true,
       summary: {
-        totalFiles: files.length,
-        totalFolders: folders.length,
+        totalFiles,
+        totalFolders,
         truncated: allItems.length > limitedItems.length,
         filtered: true,
         originalCount: allItems.length,
       },
-      files: files,
-      folders: {
-        count: folders.length,
-        folders: folders,
-      },
+      structure: sortedStructure,
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);

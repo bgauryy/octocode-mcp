@@ -685,8 +685,13 @@ describe('Response Structure - All Tools', () => {
 
     it('should handle successful queries only', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValueOnce({
-        files: [{ path: '/README.md', size: 100 }],
-        folders: { folders: [{ path: '/src' }] },
+        structure: {
+          '.': {
+            files: ['README.md'],
+            folders: ['src'],
+          },
+        },
+        path: '/',
         summary: {
           totalFiles: 1,
           totalDirectories: 1,
@@ -716,8 +721,8 @@ describe('Response Structure - All Tools', () => {
 
     it('should handle empty queries only', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValueOnce({
-        files: [],
-        folders: { folders: [] },
+        structure: {},
+        path: '/',
         summary: {
           totalFiles: 0,
           totalDirectories: 0,
@@ -748,16 +753,21 @@ describe('Response Structure - All Tools', () => {
     it('should handle successful + empty + error combination', async () => {
       mockViewGitHubRepositoryStructureAPI
         .mockResolvedValueOnce({
-          files: [{ path: '/README.md', size: 100 }],
-          folders: { folders: [{ path: '/src' }] },
+          structure: {
+            '.': {
+              files: ['README.md'],
+              folders: ['src'],
+            },
+          },
+          path: '/',
           summary: {
             totalFiles: 1,
             totalDirectories: 1,
           },
         })
         .mockResolvedValueOnce({
-          files: [],
-          folders: { folders: [] },
+          structure: {},
+          path: '/',
           summary: {
             totalFiles: 0,
             totalDirectories: 0,

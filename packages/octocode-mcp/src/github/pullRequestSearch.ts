@@ -304,15 +304,9 @@ function createBasePRTransformation(item: Record<string, unknown>): {
       (item.labels as Array<Record<string, unknown>>)?.map(
         (l: Record<string, unknown>) => l.name as string
       ) || [],
-    created_at: item.created_at
-      ? new Date(item.created_at as string).toLocaleDateString('en-GB')
-      : '',
-    updated_at: item.updated_at
-      ? new Date(item.updated_at as string).toLocaleDateString('en-GB')
-      : '',
-    closed_at: item.closed_at
-      ? new Date(item.closed_at as string).toLocaleDateString('en-GB')
-      : null,
+    created_at: (item.created_at as string) || '',
+    updated_at: (item.updated_at as string) || '',
+    closed_at: (item.closed_at as string) || null,
     url: item.html_url as string,
     comments: [], // Will be populated if withComments is true
     reactions: 0, // REST API doesn't provide reactions in list
@@ -324,9 +318,7 @@ function createBasePRTransformation(item: Record<string, unknown>): {
   };
 
   if (item.merged_at) {
-    prData.merged_at = new Date(item.merged_at as string).toLocaleDateString(
-      'en-GB'
-    );
+    prData.merged_at = item.merged_at as string;
   }
 
   return { prData, sanitizationWarnings };
@@ -352,12 +344,8 @@ async function fetchPRComments(
         'unknown',
       body: ContentSanitizer.sanitizeContent((comment.body as string) || '')
         .content,
-      created_at: new Date(comment.created_at as string).toLocaleDateString(
-        'en-GB'
-      ),
-      updated_at: new Date(comment.updated_at as string).toLocaleDateString(
-        'en-GB'
-      ),
+      created_at: (comment.created_at as string) || '',
+      updated_at: (comment.updated_at as string) || '',
     }));
   } catch {
     return [];
@@ -629,9 +617,7 @@ async function fetchPRCommitsWithFiles(
         sha: commit.sha,
         message: commit.commit.message,
         author: commit.commit.author?.name || 'unknown',
-        date: commit.commit.author?.date
-          ? new Date(commit.commit.author.date).toLocaleDateString('en-GB')
-          : '',
+        date: commit.commit.author?.date || '',
         files: processedFiles,
       };
     })

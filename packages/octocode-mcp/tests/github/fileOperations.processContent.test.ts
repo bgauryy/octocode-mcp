@@ -779,8 +779,8 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
         path: '',
       });
 
-      expect(result).toHaveProperty('files');
-      if ('files' in result) {
+      expect(result).toHaveProperty('structure');
+      if ('structure' in result) {
         expect(result.branch).toBe('main');
       }
     });
@@ -825,8 +825,8 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
         path: '',
       });
 
-      expect(result).toHaveProperty('files');
-      if ('files' in result) {
+      expect(result).toHaveProperty('structure');
+      if ('structure' in result) {
         expect(result.branch).toBe('master');
       }
     });

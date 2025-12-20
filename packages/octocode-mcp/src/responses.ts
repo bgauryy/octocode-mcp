@@ -44,14 +44,24 @@ export function createResponseFormat(
   return maskSensitiveData(sanitizationResult.content);
 }
 
-function cleanJsonObject(obj: unknown): unknown {
+function cleanJsonObject(
+  obj: unknown,
+  context: { inFilesObject?: boolean; depth?: number } = {}
+): unknown {
   if (obj === null || obj === undefined || Number.isNaN(obj)) {
     return undefined;
   }
 
+  const { inFilesObject = false, depth = 0 } = context;
+
   if (Array.isArray(obj)) {
-    const cleaned = obj.map(cleanJsonObject).filter(item => item !== undefined);
-    return cleaned.length > 0 ? cleaned : undefined;
+    const cleaned = obj
+      .map(item => cleanJsonObject(item, { inFilesObject, depth: depth + 1 }))
+      .filter(item => item !== undefined);
+    // Preserve empty arrays ONLY when deeply nested in files object (code search path results)
+    // depth >= 2 means we're inside files > repo > path level
+    const isCodeSearchPathMatch = inFilesObject && depth >= 2;
+    return cleaned.length > 0 || isCodeSearchPathMatch ? cleaned : undefined;
   }
 
   if (typeof obj === 'object' && obj !== null) {
@@ -59,7 +69,12 @@ function cleanJsonObject(obj: unknown): unknown {
     let hasValidProperties = false;
 
     for (const [key, value] of Object.entries(obj)) {
-      const cleanedValue = cleanJsonObject(value);
+      // Track when we enter a 'files' object (code search results)
+      const enteringFilesObject = key === 'files' && !inFilesObject;
+      const cleanedValue = cleanJsonObject(value, {
+        inFilesObject: inFilesObject || enteringFilesObject,
+        depth: enteringFilesObject ? 0 : depth + 1,
+      });
       if (cleanedValue !== undefined) {
         cleaned[key] = cleanedValue;
         hasValidProperties = true;

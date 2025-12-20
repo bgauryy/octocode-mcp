@@ -48,14 +48,15 @@ describe('GitHub View Repository Structure Tool', () => {
     vi.clearAllMocks();
     registerViewGitHubRepoStructureTool(mockServer.server);
 
+    // New optimized structure format - files grouped by directory
     mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-      files: [
-        { path: '/README.md', size: 1024 },
-        { path: '/package.json', size: 512 },
-      ],
-      folders: {
-        folders: [{ path: '/src' }, { path: '/tests' }],
+      structure: {
+        '.': {
+          files: ['README.md', 'package.json'],
+          folders: ['src', 'tests'],
+        },
       },
+      path: '/',
       summary: {
         totalFiles: 2,
         totalFolders: 2,
@@ -89,6 +90,8 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(responseText).toContain('1 ok');
     expect(responseText).toContain('status: "hasResults"');
     expect(responseText).toContain('path: "/"');
+    // New format uses 'structure' with nested files/folders
+    expect(responseText).toContain('structure:');
     expect(responseText).toContain('files:');
     expect(responseText).toContain('folders:');
     expect(responseText).not.toMatch(/^data:/m);
@@ -97,21 +100,15 @@ describe('GitHub View Repository Structure Tool', () => {
   });
 
   it('should pass authInfo and sessionId to GitHub API', async () => {
-    // Mock successful API response
+    // Mock successful API response with new structure format
     mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-      files: [
-        {
-          path: 'README.md',
-          size: 1024,
-          type: 'file',
+      structure: {
+        '.': {
+          files: ['README.md'],
+          folders: ['src'],
         },
-      ],
-      folders: [
-        {
-          path: 'src',
-          type: 'dir',
-        },
-      ],
+      },
+      path: '/',
       summary: {
         totalFiles: 1,
         totalDirectories: 1,
@@ -241,22 +238,20 @@ describe('GitHub View Repository Structure Tool', () => {
   });
 
   describe('New Features Tests', () => {
-    it('should remove path prefix from files and folders for subdirectory paths', async () => {
-      // Mock API response with files and folders that have the path prefix
+    it('should group files by directory with structure format', async () => {
+      // Mock API response with new structure format - files grouped by parent dir
       mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        files: [
-          { path: '/contextapp/.gitignore', size: 100 },
-          { path: '/contextapp/package.json', size: 500 },
-          { path: '/contextapp/src/App.js', size: 1200 },
-          { path: '/contextapp/src/index.js', size: 800 },
-        ],
-        folders: {
-          folders: [
-            { path: '/contextapp/src' },
-            { path: '/contextapp/public' },
-            { path: '/contextapp/src/components' },
-          ],
+        structure: {
+          '.': {
+            files: ['.gitignore', 'package.json'],
+            folders: ['src', 'public'],
+          },
+          src: {
+            files: ['App.js', 'index.js'],
+            folders: ['components'],
+          },
         },
+        path: '/',
         summary: {
           totalFiles: 4,
           totalFolders: 3,
@@ -271,7 +266,6 @@ describe('GitHub View Repository Structure Tool', () => {
               owner: 'iamshaunjp',
               repo: 'react-context-hooks',
               branch: 'main',
-              path: '/contextapp',
               id: 'contextapp-test',
             },
           ],
@@ -283,38 +277,34 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
+      expect(responseText).toContain('structure:');
 
-      // Verify the path prefix is removed from files
-      expect(responseText).toContain('/.gitignore');
-      expect(responseText).toContain('/package.json');
-      expect(responseText).toContain('/src/App.js');
-      expect(responseText).toContain('/src/index.js');
+      // Verify files are grouped by directory
+      expect(responseText).toContain('.gitignore');
+      expect(responseText).toContain('package.json');
+      expect(responseText).toContain('App.js');
+      expect(responseText).toContain('index.js');
 
-      // Verify the path prefix is removed from folders
-      expect(responseText).toContain('/src');
-      expect(responseText).toContain('/public');
-      expect(responseText).toContain('/src/components');
+      // Verify folders
+      expect(responseText).toContain('src');
+      expect(responseText).toContain('public');
+      expect(responseText).toContain('components');
 
-      // Verify the original path prefixes are NOT present
-      expect(responseText).not.toContain('/contextapp/.gitignore');
-      expect(responseText).not.toContain('/contextapp/package.json');
-      expect(responseText).not.toContain('/contextapp/src/App.js');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
     });
 
-    it('should handle root path without removing prefixes', async () => {
+    it('should handle root path with structure format', async () => {
       // Mock API response for root directory
       mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        files: [
-          { path: '/.gitignore', size: 100 },
-          { path: '/package.json', size: 500 },
-          { path: '/README.md', size: 1200 },
-        ],
-        folders: {
-          folders: [{ path: '/src' }, { path: '/public' }, { path: '/docs' }],
+        structure: {
+          '.': {
+            files: ['.gitignore', 'package.json', 'README.md'],
+            folders: ['src', 'public', 'docs'],
+          },
         },
+        path: '/',
         summary: {
           totalFiles: 3,
           totalFolders: 3,
@@ -341,14 +331,15 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
+      expect(responseText).toContain('structure:');
 
-      // For root path, files and folders should keep their absolute paths
-      expect(responseText).toContain('/.gitignore');
-      expect(responseText).toContain('/package.json');
-      expect(responseText).toContain('/README.md');
-      expect(responseText).toContain('/src');
-      expect(responseText).toContain('/public');
-      expect(responseText).toContain('/docs');
+      // Verify files are in root "." key
+      expect(responseText).toContain('.gitignore');
+      expect(responseText).toContain('package.json');
+      expect(responseText).toContain('README.md');
+      expect(responseText).toContain('src');
+      expect(responseText).toContain('public');
+      expect(responseText).toContain('docs');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -356,10 +347,13 @@ describe('GitHub View Repository Structure Tool', () => {
 
     it('should not include branch field in output', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        files: [{ path: '/README.md', size: 1024 }],
-        folders: {
-          folders: [{ path: '/src' }],
+        structure: {
+          '.': {
+            files: ['README.md'],
+            folders: ['src'],
+          },
         },
+        path: '/',
         summary: {
           totalFiles: 1,
           totalFolders: 1,
@@ -391,19 +385,21 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('path: "/"');
       expect(responseText).toContain('1 ok');
-      expect(responseText).toContain('files:');
-      expect(responseText).toContain('folders:');
+      expect(responseText).toContain('structure:');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
     });
 
-    it('should use correct field ordering: path, files, folders', async () => {
+    it('should use correct field ordering: path, structure', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        files: [{ path: '/test.js', size: 500 }],
-        folders: {
-          folders: [{ path: '/utils' }],
+        structure: {
+          '.': {
+            files: ['test.js'],
+            folders: ['utils'],
+          },
         },
+        path: '/',
         summary: {
           totalFiles: 1,
           totalFolders: 1,
@@ -431,36 +427,33 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
 
-      // Verify key fields exist in the response (owner/repo removed - they're in request)
+      // Verify key fields exist in the response
       const statusIndex = responseText.indexOf('status:');
       const pathIndex = responseText.indexOf('path:');
-      const filesIndex = responseText.indexOf('files:');
-      const foldersIndex = responseText.indexOf('folders:');
+      const structureIndex = responseText.indexOf('structure:');
 
       // Verify all fields exist (must be found, not -1)
       expect(statusIndex).not.toEqual(-1);
       expect(pathIndex).not.toEqual(-1);
-      expect(filesIndex).not.toEqual(-1);
-      expect(foldersIndex).not.toEqual(-1);
+      expect(structureIndex).not.toEqual(-1);
 
-      // Verify field ordering: path < files < folders
-      expect(pathIndex < filesIndex).toEqual(true);
-      expect(filesIndex < foldersIndex).toEqual(true);
+      // Verify field ordering: path < structure
+      expect(pathIndex < structureIndex).toEqual(true);
 
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
     });
 
-    it('should handle empty path prefix removal correctly', async () => {
-      // Mock API response with files that don't have a common prefix
+    it('should handle subdirectory queries with grouped structure', async () => {
+      // Mock API response for a subdirectory
       mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        files: [
-          { path: '/utils/helper.js', size: 300 },
-          { path: '/utils/config.js', size: 200 },
-        ],
-        folders: {
-          folders: [{ path: '/utils/lib' }],
+        structure: {
+          '.': {
+            files: ['helper.js', 'config.js'],
+            folders: ['lib'],
+          },
         },
+        path: '/utils',
         summary: {
           totalFiles: 2,
           totalFolders: 1,
@@ -487,42 +480,39 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(false);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
+      expect(responseText).toContain('structure:');
 
-      // Verify the /utils prefix is removed
-      expect(responseText).toContain('/helper.js');
-      expect(responseText).toContain('/config.js');
-      expect(responseText).toContain('/lib');
+      // Verify files are relative to queried path (no path prefix)
+      expect(responseText).toContain('helper.js');
+      expect(responseText).toContain('config.js');
+      expect(responseText).toContain('lib');
 
-      // Verify the original paths with prefix are not present
-      expect(responseText).not.toContain('/utils/helper.js');
-      expect(responseText).not.toContain('/utils/config.js');
-      expect(responseText).not.toContain('/utils/lib');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
     });
 
-    it('should handle multiple queries with different path prefixes', async () => {
+    it('should handle multiple queries with different paths', async () => {
       // Mock API responses for different calls
       mockViewGitHubRepositoryStructureAPI
         .mockResolvedValueOnce({
-          files: [
-            { path: '/src/App.js', size: 1000 },
-            { path: '/src/index.js', size: 500 },
-          ],
-          folders: {
-            folders: [{ path: '/src/components' }],
+          structure: {
+            '.': {
+              files: ['App.js', 'index.js'],
+              folders: ['components'],
+            },
           },
+          path: '/src',
           summary: { totalFiles: 2, totalFolders: 1 },
         })
         .mockResolvedValueOnce({
-          files: [
-            { path: '/docs/README.md', size: 800 },
-            { path: '/docs/API.md', size: 600 },
-          ],
-          folders: {
-            folders: [{ path: '/docs/images' }],
+          structure: {
+            '.': {
+              files: ['README.md', 'API.md'],
+              folders: ['images'],
+            },
           },
+          path: '/docs',
           summary: { totalFiles: 2, totalFolders: 1 },
         });
 
@@ -554,20 +544,19 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
 
-      // Verify both queries have their prefixes removed correctly
+      // Verify both queries return structure
+      expect(responseText).toContain('structure:');
+
       // First query (/src)
-      expect(responseText).toContain('/App.js');
-      expect(responseText).toContain('/index.js');
-      expect(responseText).toContain('/components');
+      expect(responseText).toContain('App.js');
+      expect(responseText).toContain('index.js');
+      expect(responseText).toContain('components');
 
       // Second query (/docs)
-      expect(responseText).toContain('/README.md');
-      expect(responseText).toContain('/API.md');
-      expect(responseText).toContain('/images');
+      expect(responseText).toContain('README.md');
+      expect(responseText).toContain('API.md');
+      expect(responseText).toContain('images');
 
-      // Verify original prefixed paths are not present
-      expect(responseText).not.toContain('/src/App.js');
-      expect(responseText).not.toContain('/docs/README.md');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -577,10 +566,8 @@ describe('GitHub View Repository Structure Tool', () => {
   describe('Error Handling', () => {
     it('should handle invalid API response structure', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        // Missing 'files' array
-        folders: {
-          folders: [{ path: '/src' }],
-        },
+        // Missing 'structure' field
+        path: '/',
       });
 
       const result = await mockServer.callTool(
@@ -630,10 +617,13 @@ describe('GitHub View Repository Structure Tool', () => {
         .mockRejectedValue(new Error('Callback error'));
 
       mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        files: [{ path: '/README.md', size: 1024 }],
-        folders: {
-          folders: [],
+        structure: {
+          '.': {
+            files: ['README.md'],
+            folders: [],
+          },
         },
+        path: '/',
       });
 
       // Re-register with error callback
@@ -660,12 +650,10 @@ describe('GitHub View Repository Structure Tool', () => {
       newMockServer.cleanup();
     });
 
-    it('should handle empty files response', async () => {
+    it('should handle empty structure response', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        files: [],
-        folders: {
-          folders: [],
-        },
+        structure: {},
+        path: '/',
       });
 
       const result = await mockServer.callTool(

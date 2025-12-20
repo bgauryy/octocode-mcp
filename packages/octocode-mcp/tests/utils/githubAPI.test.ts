@@ -659,9 +659,9 @@ describe('GitHub API Utils', () => {
                 description:
                   'A declarative, efficient, and flexible JavaScript library for building user interfaces.',
                 url: 'https://github.com/facebook/react',
-                createdAt: '24/05/2013',
-                updatedAt: '01/12/2023',
-                pushedAt: '01/12/2023',
+                createdAt: '2013-05-24T10:00:00Z',
+                updatedAt: '2023-12-01T10:00:00Z',
+                pushedAt: '2023-12-01T08:00:00Z',
               },
             ],
           },
