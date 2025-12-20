@@ -11,6 +11,7 @@ import {
   isBetaEnabled,
   isSamplingEnabled,
   isLoggingEnabled,
+  isSanitizeEnabled,
 } from '../src/serverConfig.js';
 
 // Helper function to create mock process
@@ -65,6 +66,7 @@ describe('ServerConfig - Simplified Version', () => {
     delete process.env.ENABLE_TOOLS;
     delete process.env.DISABLE_TOOLS;
     delete process.env.LOG;
+    delete process.env.SANITIZE;
     delete process.env.TEST_GITHUB_TOKEN;
   });
 
@@ -335,6 +337,72 @@ describe('ServerConfig - Simplified Version', () => {
 
         expect(isLoggingEnabled()).toBe(testCase.expected);
         expect(getServerConfig().loggingEnabled).toBe(testCase.expected);
+      }
+    });
+  });
+
+  describe('Sanitize Configuration', () => {
+    it('should enable sanitize by default when SANITIZE is not set', async () => {
+      delete process.env.SANITIZE;
+      mockSpawnFailure();
+
+      await initialize();
+
+      expect(isSanitizeEnabled()).toBe(true);
+      expect(getServerConfig().sanitize).toBe(true);
+    });
+
+    it('should enable sanitize when SANITIZE is set to true', async () => {
+      process.env.SANITIZE = 'true';
+      mockSpawnFailure();
+
+      await initialize();
+
+      expect(isSanitizeEnabled()).toBe(true);
+      expect(getServerConfig().sanitize).toBe(true);
+    });
+
+    it('should disable sanitize when SANITIZE is set to false', async () => {
+      process.env.SANITIZE = 'false';
+      mockSpawnFailure();
+
+      await initialize();
+
+      expect(isSanitizeEnabled()).toBe(false);
+      expect(getServerConfig().sanitize).toBe(false);
+    });
+
+    it('should handle various SANITIZE flag formats', async () => {
+      const testCases = [
+        {
+          value: undefined,
+          expected: true,
+          description: 'undefined (default)',
+        },
+        { value: 'true', expected: true, description: 'true' },
+        { value: 'TRUE', expected: true, description: 'TRUE' },
+        { value: 'false', expected: false, description: 'false' },
+        { value: 'FALSE', expected: false, description: 'FALSE' },
+        { value: 'False', expected: false, description: 'False' },
+        { value: '1', expected: true, description: '1 (truthy)' },
+        { value: '0', expected: true, description: '0 (not false string)' },
+        { value: '', expected: true, description: 'empty string' },
+        { value: 'anything', expected: true, description: 'any other value' },
+      ];
+
+      for (const testCase of testCases) {
+        cleanup();
+        if (testCase.value === undefined) {
+          delete process.env.SANITIZE;
+        } else {
+          process.env.SANITIZE = testCase.value;
+        }
+        mockSpawnFailure();
+
+        await initialize();
+
+        expect(isSanitizeEnabled()).toBe(testCase.expected);
+        expect(getServerConfig().sanitize).toBe(testCase.expected);
       }
     });
   });

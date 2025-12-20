@@ -81,24 +81,40 @@ async function searchMultipleGitHubCode(
           );
         }
 
-        const files = apiResult.data.items
-          .filter(item => !shouldIgnoreFile(item.path))
-          .map(item => {
-            if (query.match === 'path') {
-              return { path: item.path, text_matches: [] };
+        // Group files by repository (nameWithOwner)
+        // - For content matches: { "repo": { "path": ["match1", "match2"] } }
+        // - For path-only matches: { "repo": ["path1", "path2"] }
+        const files: Record<string, Record<string, string[]> | string[]> = {};
+        const filteredItems = apiResult.data.items.filter(
+          item => !shouldIgnoreFile(item.path)
+        );
+
+        const isPathOnlyMatch = query.match === 'path';
+
+        for (const item of filteredItems) {
+          const nameWithOwner = item.repository?.nameWithOwner || 'unknown';
+
+          if (isPathOnlyMatch) {
+            // For path-only matches, just collect paths as an array
+            if (!files[nameWithOwner]) {
+              files[nameWithOwner] = [];
             }
-            return {
-              path: item.path,
-              text_matches: item.matches.map(match => match.context),
-            };
-          });
+            (files[nameWithOwner] as string[]).push(item.path);
+          } else {
+            // For content matches, group by path -> text_matches
+            if (!files[nameWithOwner]) {
+              files[nameWithOwner] = {};
+            }
+            const textMatches = item.matches.map(match => match.context);
+            (files[nameWithOwner] as Record<string, string[]>)[item.path] =
+              textMatches;
+          }
+        }
 
         return createSuccessResult(
           query,
-          {
-            files,
-          } satisfies SearchResult,
-          files.length > 0,
+          { files } satisfies SearchResult,
+          Object.keys(files).length > 0,
           'GITHUB_SEARCH_CODE'
         );
       } catch (error) {

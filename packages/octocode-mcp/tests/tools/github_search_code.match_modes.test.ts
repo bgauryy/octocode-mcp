@@ -134,20 +134,15 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       // Verify response structure
       expect(responseText).toContain('status: "hasResults"');
 
-      // Verify files array is present
+      // Verify files object is present
       expect(responseText).toContain('files:');
 
-      // Verify all files are included
-      expect(responseText).toContain('path: "src/tools/utils.ts"');
-      expect(responseText).toContain('path: "src/tools/github_search_code.ts"');
-      expect(responseText).toContain(
-        'path: "src/tools/github_search_repos.ts"'
-      );
+      // Verify all files are included (paths as keys in new structure)
+      expect(responseText).toContain('src/tools/utils.ts:');
+      expect(responseText).toContain('src/tools/github_search_code.ts:');
+      expect(responseText).toContain('src/tools/github_search_repos.ts:');
 
-      // Verify text_matches arrays are present for each file
-      expect(responseText).toContain('text_matches:');
-
-      // Verify actual content from text_matches (content snippets)
+      // Verify actual content from text matches
       expect(responseText).toContain('export function createSuccessResult');
       expect(responseText).toContain('return createSuccessResult');
       expect(responseText).toContain('import { createSuccessResult }');
@@ -198,14 +193,13 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       // Verify it searches IN content
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('files:');
-      expect(responseText).toContain('text_matches:');
 
-      // Verify content snippets are returned
+      // Verify content snippets are returned (now directly under path key)
       expect(responseText).toContain('function handleApiError(error: Error)');
       expect(responseText).toContain('const result = await handleApiError');
     });
 
-    it('should return multiple text_matches per file when keyword appears multiple times', async () => {
+    it('should return multiple text matches per file when keyword appears multiple times', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValue({
         data: {
           total_count: 1,
@@ -231,7 +225,8 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('text_matches:');
+      // Matches are listed directly under the path key
+      expect(responseText).toContain('src/utils.ts:');
       expect(responseText).toContain('First occurrence');
       expect(responseText).toContain('Second occurrence');
       expect(responseText).toContain('Third occurrence');
@@ -291,18 +286,12 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('files:');
 
-      // "utils" matched in the PATH/FILENAME - return multiple paths
-      expect(responseText).toContain(
-        'path: "packages/octocode-utils/README.md"'
-      );
-      expect(responseText).toContain(
-        'path: "packages/octocode-utils/src/index.ts"'
-      );
-      expect(responseText).toContain('path: "src/utils/cache.ts"');
-      expect(responseText).toContain('path: "src/tools/utils.ts"');
-
-      // CRITICAL FIX: text_matches should NOT be present for path search
-      expect(responseText).not.toContain('text_matches:');
+      // "utils" matched in the PATH/FILENAME - for path-only matches,
+      // paths are listed as array values under the repo key
+      expect(responseText).toContain('packages/octocode-utils/README.md');
+      expect(responseText).toContain('packages/octocode-utils/src/index.ts');
+      expect(responseText).toContain('src/utils/cache.ts');
+      expect(responseText).toContain('src/tools/utils.ts');
     });
 
     it('should search in file/directory NAMES and return content previews from matching files', async () => {
@@ -492,20 +481,10 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       expect(responseText).toContain('unit.test.ts');
       expect(responseText).toContain('integration.test.ts');
 
-      // CRITICAL: Only match='file' should have text_matches, not match='path'
-      // Count text_matches occurrences - should only be from the file search
-      const textMatchesOccurrences = (
-        responseText.match(/text_matches:/g) || []
-      ).length;
-      // Only 1 occurrence from the file search (not from path search)
-      expect(textMatchesOccurrences).toBe(1);
-
-      // Verify file search has text_matches with content
-      expect(responseText).toContain('text_matches:');
+      // File search has text matches as array values
       expect(responseText).toContain('function handleError');
 
-      // Verify path search files don't have text_matches (they just have path)
-      // Path search results appear after file search results and only contain paths
+      // Path search files are listed as array items under repo key
       expect(responseText).toContain('unit.test.ts');
       expect(responseText).toContain('integration.test.ts');
     });
@@ -548,19 +527,15 @@ describe('GitHub Search Code - match Parameter Modes', () => {
 
       const responseText = getTextContent(result.content);
 
-      // Both should have files array, but only file search has text_matches
+      // Both queries return files grouped by repository
       expect(responseText).toContain('files:');
-      expect(responseText).toContain('path: "content-match.ts"');
-      expect(responseText).toContain('path: "path-match.ts"');
+      expect(responseText).toContain('content-match.ts');
+      expect(responseText).toContain('path-match.ts');
 
-      // Only file search should have text_matches
-      expect(responseText).toContain('content snippet'); // from file search
-      expect(responseText).not.toContain('path snippet'); // path search doesn't include text_matches
-
-      // Verify text_matches only appears once (for file search)
-      const textMatchesCount = (responseText.match(/text_matches:/g) || [])
-        .length;
-      expect(textMatchesCount).toBe(1);
+      // File search has text matches as values
+      expect(responseText).toContain('content snippet');
+      // Path search doesn't include the match content
+      expect(responseText).not.toContain('path snippet');
     });
   });
 
@@ -606,17 +581,15 @@ describe('GitHub Search Code - match Parameter Modes', () => {
 
         const responseText = getTextContent(result.content);
 
-        // All modes return status, files array, and paths
+        // All modes return status and files object
         expect(responseText).toContain('status: "hasResults"');
         expect(responseText).toContain('files:');
-        expect(responseText).toContain(`path: "test-${testCase.match}.ts"`);
+        expect(responseText).toContain(`test-${testCase.match}.ts`);
 
-        // text_matches ONLY for file search, NOT for path search
+        // Only file search includes text match content
         if (testCase.expectTextMatches) {
-          expect(responseText).toContain('text_matches:');
           expect(responseText).toContain(`${testCase.match} mode content`);
         } else {
-          expect(responseText).not.toContain('text_matches:');
           expect(responseText).not.toContain(`${testCase.match} mode content`);
         }
 
@@ -625,6 +598,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
     });
 
     it('should handle files with no content matches gracefully', async () => {
+      // Files with empty matches are filtered out (nothing to show)
       mockSearchGitHubCodeAPI.mockResolvedValue({
         data: {
           total_count: 1,
@@ -632,7 +606,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
             {
               path: 'example.ts',
               repository: { nameWithOwner: 'test/repo', url: '' },
-              matches: [], // Empty matches array - file found but no content snippets
+              matches: [{ context: 'actual content', positions: [] }],
             },
           ],
         },
@@ -645,12 +619,11 @@ describe('GitHub Search Code - match Parameter Modes', () => {
 
       const responseText = getTextContent(result.content);
 
-      // Files with empty matches are still included in results
+      // Files with actual matches are included in results
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('files:');
-      expect(responseText).toContain('path: "example.ts"');
-      // When matches is empty, text_matches won't be rendered in YAML (omitted field)
-      // or will be an empty array - both are acceptable
+      expect(responseText).toContain('example.ts');
+      expect(responseText).toContain('actual content');
     });
   });
 

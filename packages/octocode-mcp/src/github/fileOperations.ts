@@ -20,6 +20,7 @@ import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
 import { FILE_OPERATION_ERRORS, REPOSITORY_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
+import { isSanitizeEnabled } from '../serverConfig.js';
 
 interface FileTimestampInfo {
   lastModified: string;
@@ -310,19 +311,22 @@ async function processFileContentAPI(
   matchStringContextLines: number = 5,
   matchString?: string
 ): Promise<ContentResult> {
-  const sanitizationResult = ContentSanitizer.sanitizeContent(decodedContent);
-  decodedContent = sanitizationResult.content;
-
   const securityWarningsSet = new Set<string>();
-  if (sanitizationResult.hasSecrets) {
-    securityWarningsSet.add(
-      `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
-    );
-  }
-  if (sanitizationResult.warnings.length > 0) {
-    sanitizationResult.warnings.forEach(warning =>
-      securityWarningsSet.add(warning)
-    );
+
+  if (isSanitizeEnabled()) {
+    const sanitizationResult = ContentSanitizer.sanitizeContent(decodedContent);
+    decodedContent = sanitizationResult.content;
+
+    if (sanitizationResult.hasSecrets) {
+      securityWarningsSet.add(
+        `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
+      );
+    }
+    if (sanitizationResult.warnings.length > 0) {
+      sanitizationResult.warnings.forEach(warning =>
+        securityWarningsSet.add(warning)
+      );
+    }
   }
   const securityWarnings = Array.from(securityWarningsSet);
 

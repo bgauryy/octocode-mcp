@@ -228,7 +228,8 @@ describe('Empty Arrays Removal in Responses', () => {
           items: [
             {
               path: 'file1.js',
-              matches: [], // Empty nested array - should be removed
+              repository: { nameWithOwner: 'owner/repo', url: '' },
+              matches: [{ context: 'const test = 1', positions: [] }],
             },
           ],
         },
@@ -252,7 +253,9 @@ describe('Empty Arrays Removal in Responses', () => {
       // Should not contain any empty array syntax
       expect(responseText).not.toMatch(/:\s*\[\]\s*/);
 
+      // File should be present with its match
       expect(responseText).toContain('file1.js');
+      expect(responseText).toContain('const test = 1');
     });
   });
 

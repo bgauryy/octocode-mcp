@@ -34,11 +34,6 @@ export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
     .optional()
     .default(true)
     .describe(GITHUB_SEARCH_CODE.processing.minify),
-  sanitize: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe(GITHUB_SEARCH_CODE.processing.sanitize),
 });
 
 export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(

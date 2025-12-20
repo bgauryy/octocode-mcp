@@ -74,6 +74,10 @@ export async function initialize(): Promise<void> {
         process.env.LOG === undefined ||
         process.env.LOG === null ||
         process.env.LOG?.toLowerCase() !== 'false',
+      sanitize:
+        process.env.SANITIZE === undefined ||
+        process.env.SANITIZE === null ||
+        process.env.SANITIZE?.toLowerCase() !== 'false',
     };
   })();
 
@@ -130,6 +134,10 @@ export function isSamplingEnabled(): boolean {
 
 export function isLoggingEnabled(): boolean {
   return config?.loggingEnabled ?? false;
+}
+
+export function isSanitizeEnabled(): boolean {
+  return getServerConfig().sanitize;
 }
 
 export function clearCachedToken(): void {

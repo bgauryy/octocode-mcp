@@ -764,7 +764,6 @@ End of file.`;
               owner: 'test',
               repo: 'repo',
               path: 'config.env',
-              sanitize: true,
               id: 'security-test',
             },
           ],
@@ -783,53 +782,8 @@ End of file.`;
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
 
-      expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sanitize: true,
-        }),
-        undefined, // authInfo
-        undefined // sessionId
-      );
-    });
-
-    it('should handle sanitize=false parameter', async () => {
-      mockFetchGitHubFileContentAPI.mockResolvedValue({
-        data: {
-          path: 'public.js',
-          repository: 'test/repo',
-          branch: 'main',
-          content: 'console.log("Public content");',
-          contentLength: 1,
-          minified: false,
-        },
-        status: 200,
-      });
-
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        {
-          queries: [
-            {
-              owner: 'test',
-              repo: 'repo',
-              path: 'public.js',
-              sanitize: false,
-              id: 'no-sanitize-test',
-            },
-          ],
-        }
-      );
-
-      expect(result.isError).toBe(false);
-
-      // Verify API was called with sanitize=false
-      expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sanitize: false,
-        }),
-        undefined, // authInfo
-        undefined // sessionId
-      );
+      // Sanitization is controlled by server config, not query parameter
+      expect(mockFetchGitHubFileContentAPI).toHaveBeenCalled();
     });
   });
 
@@ -1054,7 +1008,6 @@ End of file.`;
               path: 'test.js',
               fullContent: true,
               minified: true,
-              sanitize: false,
               id: 'boolean-params-test',
             },
           ],
@@ -1068,7 +1021,6 @@ End of file.`;
         expect.objectContaining({
           fullContent: true,
           minified: true,
-          sanitize: false,
         }),
         undefined, // authInfo
         undefined // sessionId

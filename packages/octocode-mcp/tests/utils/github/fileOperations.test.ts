@@ -20,6 +20,7 @@ const mockminifyContent = vi.hoisted(() =>
 const mockWithDataCache = vi.hoisted(() => vi.fn());
 const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
 const mockCreateResult = vi.hoisted(() => vi.fn());
+const mockIsSanitizeEnabled = vi.hoisted(() => vi.fn().mockReturnValue(true));
 
 // Set up mocks
 vi.mock('../../../src/github/client.js', () => ({
@@ -44,6 +45,10 @@ vi.mock('../../../src/mcp/responses.js', () => ({
   createResult: mockCreateResult,
 }));
 
+vi.mock('../../../src/serverConfig.js', () => ({
+  isSanitizeEnabled: mockIsSanitizeEnabled,
+}));
+
 // Import after mocks are set up
 import { fetchGitHubFileContentAPI } from '../../../src/github/fileOperations.js';
 
@@ -55,7 +60,6 @@ function createTestParams(overrides: Record<string, unknown> = {}) {
     path: 'test.txt',
     fullContent: false,
     minified: false,
-    sanitize: true,
     matchStringContextLines: 5,
     ...overrides,
   };
@@ -86,7 +90,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       expect(parsed.matchString).toBeUndefined(); // Should be optional
       expect(parsed.matchStringContextLines).toBe(5); // Should have default
       expect(parsed.minified).toBe(true); // Should have default
-      expect(parsed.sanitize).toBe(true); // Should have default
+      // sanitize is now controlled by serverConfig.isSanitizeEnabled(), not a schema parameter
     });
   });
   let mockOctokit: {
@@ -967,6 +971,8 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
   describe('Content Sanitization', () => {
     beforeEach(() => {
+      // Ensure sanitization is enabled via serverConfig
+      mockIsSanitizeEnabled.mockReturnValue(true);
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
           type: 'file',
@@ -978,7 +984,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should detect and warn about secrets', async () => {
-      const params = createTestParams({ sanitize: true });
+      const params = createTestParams();
 
       mockContentSanitizer.sanitizeContent.mockReturnValue({
         content: 'test content with [REDACTED]',
@@ -998,7 +1004,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should include custom security warnings', async () => {
-      const params = createTestParams({ sanitize: true });
+      const params = createTestParams();
 
       mockContentSanitizer.sanitizeContent.mockReturnValue({
         content: 'sanitized content',

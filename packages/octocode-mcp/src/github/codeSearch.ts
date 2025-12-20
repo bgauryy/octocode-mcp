@@ -17,6 +17,7 @@ import { shouldIgnoreFile } from '../utils/fileFilters';
 import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
+import { isSanitizeEnabled } from '../serverConfig.js';
 
 export async function searchGitHubCodeAPI(
   params: GitHubCodeSearchQuery,
@@ -96,7 +97,7 @@ async function searchGitHubCodeAPIInternal(
     const optimizedResult = await convertCodeSearchResult(
       result,
       params.minify !== false,
-      params.sanitize !== false
+      isSanitizeEnabled()
     );
 
     return {

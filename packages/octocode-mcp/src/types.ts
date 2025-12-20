@@ -89,23 +89,19 @@ export interface GitHubCodeSearchQuery {
   match?: 'file' | 'path';
   limit?: number;
   minify?: boolean;
-  sanitize?: boolean;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
 
-/** Individual file in code search results */
-export interface SearchFile {
-  path: string;
-  text_matches: string[];
-}
-
-/** Code search result with matched files */
+/**
+ * Code search result with matched files grouped by repository.
+ * - For content matches: { "repo": { "path": ["match1", "match2"] } }
+ * - For path-only matches: { "repo": ["path1", "path2"] }
+ */
 export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
-  owner?: string;
-  repo?: string;
-  files: SearchFile[];
+  /** Files grouped by repository (nameWithOwner) */
+  files: Record<string, Record<string, string[]> | string[]>;
 }
 
 // ─── File Content (github_fetch_content) ────────────────────────────────────
@@ -122,7 +118,6 @@ export interface FileContentQuery {
   matchString?: string;
   matchStringContextLines?: number;
   minified?: boolean;
-  sanitize?: boolean;
   addTimestamp?: boolean;
   mainResearchGoal?: string;
   researchGoal?: string;
@@ -577,6 +572,7 @@ export interface ServerConfig {
   timeout: number;
   maxRetries: number;
   loggingEnabled: boolean;
+  sanitize: boolean;
 }
 
 // ─── Session Management (session.ts) ────────────────────────────────────────

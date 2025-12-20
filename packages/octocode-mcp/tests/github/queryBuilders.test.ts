@@ -20,7 +20,6 @@ const toCodeSearchQuery = (params: {
   match?: 'file' | 'path' | Array<'file' | 'path'>;
   limit?: number;
   minify?: boolean;
-  sanitize?: boolean;
 }): GitHubCodeSearchQuery => params as GitHubCodeSearchQuery;
 
 describe('Query Builders', () => {
@@ -40,7 +39,6 @@ describe('Query Builders', () => {
         keywordsToSearch: ['function', 'auth'],
 
         minify: true,
-        sanitize: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -54,7 +52,6 @@ describe('Query Builders', () => {
         repo: 'vscode',
 
         minify: true,
-        sanitize: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -67,7 +64,6 @@ describe('Query Builders', () => {
         owner: 'google',
 
         minify: true,
-        sanitize: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -81,7 +77,6 @@ describe('Query Builders', () => {
         repo: ['vscode', 'typescript'],
 
         minify: true,
-        sanitize: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -98,7 +93,6 @@ describe('Query Builders', () => {
         path: 'src/',
 
         minify: true,
-        sanitize: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -111,7 +105,6 @@ describe('Query Builders', () => {
         match: ['file', 'path'],
 
         minify: true,
-        sanitize: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -124,7 +117,6 @@ describe('Query Builders', () => {
         match: 'file',
 
         minify: true,
-        sanitize: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -137,7 +129,6 @@ describe('Query Builders', () => {
         stars: '>100',
 
         minify: true,
-        sanitize: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -150,7 +141,6 @@ describe('Query Builders', () => {
         owner: 'microsoft',
 
         minify: true,
-        sanitize: true,
       });
 
       const query = buildCodeSearchQuery(params);

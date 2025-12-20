@@ -30,6 +30,7 @@ vi.mock('../../src/utils/cache.js', () => ({
 vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
   getGitHubToken: vi.fn(() => Promise.resolve('test-token')),
+  isSanitizeEnabled: vi.fn(() => true),
 }));
 
 // Import after mocking
@@ -371,7 +372,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
                 full_name: 'test/repo',
                 url: 'https://api.github.com/repos/test/repo',
               },
-              text_matches: [],
+              text_matches: [{ fragment: 'component code', matches: [] }],
             },
             {
               name: 'test.log',
@@ -380,7 +381,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
                 full_name: 'test/repo',
                 url: 'https://api.github.com/repos/test/repo',
               },
-              text_matches: [],
+              text_matches: [{ fragment: 'log content', matches: [] }],
             },
           ],
         },
@@ -397,7 +398,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
                 full_name: 'test/repo',
                 url: 'https://api.github.com/repos/test/repo',
               },
-              text_matches: [],
+              text_matches: [{ fragment: 'utils code', matches: [] }],
             },
             {
               name: '.env',
@@ -406,7 +407,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
                 full_name: 'test/repo',
                 url: 'https://api.github.com/repos/test/repo',
               },
-              text_matches: [],
+              text_matches: [{ fragment: 'env content', matches: [] }],
             },
           ],
         },

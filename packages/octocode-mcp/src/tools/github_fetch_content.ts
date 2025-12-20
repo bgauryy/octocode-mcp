@@ -131,8 +131,7 @@ function buildApiRequest(query: FileContentQuery) {
       fullContent || !query.matchString ? undefined : String(query.matchString),
     matchStringContextLines: query.matchStringContextLines ?? 5,
     minified: query.minified ?? true,
-    sanitize: query.sanitize ?? true,
-    addTimestamp: query.addTimestamp ?? false,
+    addTimestamp: query.addTimestamp ?? true,
   };
 }
 

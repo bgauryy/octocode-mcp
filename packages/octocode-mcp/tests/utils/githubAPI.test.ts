@@ -210,7 +210,6 @@ describe('GitHub API Utils', () => {
         repo: 'react',
 
         minify: true,
-        sanitize: true,
       };
 
       await searchGitHubCodeAPI(params);
@@ -248,7 +247,6 @@ describe('GitHub API Utils', () => {
         owner: 'test',
         repo: 'repo',
         minify: true,
-        sanitize: true,
       };
 
       const result = await searchGitHubCodeAPI(params);
@@ -288,7 +286,6 @@ describe('GitHub API Utils', () => {
         owner: 'test',
         repo: 'repo',
         minify: true,
-        sanitize: true,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -319,7 +316,6 @@ describe('GitHub API Utils', () => {
         owner: 'test',
         repo: 'repo',
         minify: true,
-        sanitize: true,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -350,7 +346,6 @@ describe('GitHub API Utils', () => {
         owner: 'test',
         repo: 'repo',
         minify: true,
-        sanitize: true,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -377,7 +372,6 @@ describe('GitHub API Utils', () => {
         path: 'src',
         match: 'file',
         minify: true,
-        sanitize: true,
       };
 
       await searchGitHubCodeAPI(params);
@@ -403,7 +397,6 @@ describe('GitHub API Utils', () => {
         owner: 'octocat',
         repo: 'test',
         minify: true,
-        sanitize: true,
       };
 
       await searchGitHubCodeAPI(userParams);
@@ -423,7 +416,6 @@ describe('GitHub API Utils', () => {
         owner: 'github',
         repo: 'test',
         minify: true,
-        sanitize: true,
       };
 
       await searchGitHubCodeAPI(orgParams);
@@ -443,7 +435,6 @@ describe('GitHub API Utils', () => {
         owner: 'octocat',
         repo: 'test',
         minify: true,
-        sanitize: true,
         excludeArchived: true,
         excludeForks: false,
       };
@@ -471,7 +462,6 @@ describe('GitHub API Utils', () => {
         owner: 'test',
         repo: 'repo',
         minify: true,
-        sanitize: true,
       };
 
       await searchGitHubCodeAPI(forkTrueParams);
@@ -491,7 +481,6 @@ describe('GitHub API Utils', () => {
         owner: 'facebook',
         repo: 'react',
         minify: true,
-        sanitize: true,
       };
 
       await searchGitHubCodeAPI(forkFalseParams);
@@ -512,7 +501,6 @@ describe('GitHub API Utils', () => {
         repo: 'repo',
         stars: '>100',
         minify: true,
-        sanitize: true,
       };
 
       await searchGitHubCodeAPI(forkOnlyParams);
@@ -538,7 +526,6 @@ describe('GitHub API Utils', () => {
         owner: 'test',
         repo: 'repo',
         minify: true,
-        sanitize: true,
       };
 
       await searchGitHubCodeAPI(archivedTrueParams);
@@ -558,7 +545,6 @@ describe('GitHub API Utils', () => {
         owner: 'microsoft',
         repo: 'test',
         minify: true,
-        sanitize: true,
       };
 
       await searchGitHubCodeAPI(archivedFalseParams);
@@ -584,7 +570,6 @@ describe('GitHub API Utils', () => {
         owner: 'facebook',
         repo: 'react',
         minify: true,
-        sanitize: true,
       };
 
       await searchGitHubCodeAPI(params);
@@ -610,7 +595,6 @@ describe('GitHub API Utils', () => {
         repo: 'test',
         language: 'javascript',
         minify: true,
-        sanitize: true,
       };
 
       await searchGitHubCodeAPI(params);

@@ -84,8 +84,9 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('1 ok');
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('files:');
-      expect(responseText).toContain('path: "src/index.ts"');
-      expect(responseText).toContain('path: "src/utils.ts"');
+      // New structure: paths are keys, not nested objects
+      expect(responseText).toContain('src/index.ts:');
+      expect(responseText).toContain('src/utils.ts:');
     });
 
     it('should extract owner and repo from repository nameWithOwner', async () => {
@@ -122,7 +123,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('files:');
     });
 
-    it('should include text_matches from items', async () => {
+    it('should include text matches grouped by repo and path', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValue({
         data: {
           total_count: 1,
@@ -147,7 +148,9 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('text_matches:');
+      // New structure: matches are directly under path
+      expect(responseText).toContain('test/repo:');
+      expect(responseText).toContain('test.js:');
       expect(responseText).toContain('function test1() {}');
       expect(responseText).toContain('function test2() {}');
     });
@@ -650,6 +653,150 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('0 results');
+    });
+  });
+
+  describe('Repository info in results', () => {
+    it('should group files by repository (nameWithOwner as key)', async () => {
+      mockSearchGitHubCodeAPI.mockResolvedValue({
+        data: {
+          total_count: 2,
+          items: [
+            {
+              path: 'src/index.ts',
+              repository: {
+                nameWithOwner: 'owner1/repo1',
+                url: 'https://api.github.com/repos/owner1/repo1',
+              },
+              matches: [{ context: 'const test = 1;', positions: [] }],
+            },
+            {
+              path: 'src/utils.ts',
+              repository: {
+                nameWithOwner: 'owner2/repo2',
+                url: 'https://api.github.com/repos/owner2/repo2',
+              },
+              matches: [{ context: 'export const util = 2;', positions: [] }],
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [{ keywordsToSearch: ['test'] }],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      // New structure: nameWithOwner is a top-level key
+      expect(responseText).toContain('owner1/repo1:');
+      expect(responseText).toContain('owner2/repo2:');
+      expect(responseText).toContain('src/index.ts:');
+      expect(responseText).toContain('src/utils.ts:');
+    });
+
+    it('should list paths as array for path match queries', async () => {
+      mockSearchGitHubCodeAPI.mockResolvedValue({
+        data: {
+          total_count: 1,
+          items: [
+            {
+              path: 'premium/config.ts',
+              repository: {
+                nameWithOwner: 'wix-private/premium-service',
+                url: 'https://api.github.com/repos/wix-private/premium-service',
+              },
+              matches: [],
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [{ keywordsToSearch: ['premium'], match: 'path' }],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      // Path-only matches: repo key maps to array of paths
+      expect(responseText).toContain('wix-private/premium-service:');
+      expect(responseText).toContain('premium/config.ts');
+    });
+  });
+
+  describe('Result grouping by repository', () => {
+    it('should group multiple files under same repository', async () => {
+      mockSearchGitHubCodeAPI.mockResolvedValue({
+        data: {
+          total_count: 3,
+          items: [
+            {
+              path: 'src/a.ts',
+              repository: { nameWithOwner: 'owner/repo', url: '' },
+              matches: [{ context: 'a', positions: [] }],
+            },
+            {
+              path: 'src/b.ts',
+              repository: { nameWithOwner: 'owner/repo', url: '' },
+              matches: [{ context: 'b', positions: [] }],
+            },
+            {
+              path: 'src/c.ts',
+              repository: { nameWithOwner: 'other/repo', url: '' },
+              matches: [{ context: 'c', positions: [] }],
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [{ keywordsToSearch: ['test'] }],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+
+      // Both repos should be grouped
+      expect(responseText).toContain('owner/repo:');
+      expect(responseText).toContain('other/repo:');
+      // All files should be present
+      expect(responseText).toContain('src/a.ts:');
+      expect(responseText).toContain('src/b.ts:');
+      expect(responseText).toContain('src/c.ts:');
+    });
+
+    it('should handle items without repository gracefully', async () => {
+      mockSearchGitHubCodeAPI.mockResolvedValue({
+        data: {
+          total_count: 2,
+          items: [
+            {
+              path: 'src/b.ts',
+              repository: { nameWithOwner: 'owner/repo', url: '' },
+              matches: [{ context: 'b', positions: [] }],
+            },
+            {
+              path: 'src/a.ts',
+              // Missing repository - should be grouped under 'unknown'
+              matches: [{ context: 'a', positions: [] }],
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [{ keywordsToSearch: ['test'] }],
+      });
+
+      // Should not crash
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('unknown:');
     });
   });
 

@@ -11,11 +11,6 @@ const FileContentBaseSchema = BaseQuerySchema.extend({
     .optional()
     .default(true)
     .describe(GITHUB_FETCH_CONTENT.processing.minified),
-  sanitize: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe(GITHUB_FETCH_CONTENT.processing.sanitize),
   path: z.string().describe(GITHUB_FETCH_CONTENT.scope.path),
   branch: z
     .string()
@@ -53,7 +48,7 @@ const FileContentBaseSchema = BaseQuerySchema.extend({
   addTimestamp: z
     .boolean()
     .optional()
-    .default(false)
+    .default(true)
     .describe(GITHUB_FETCH_CONTENT.processing.addTimestamp),
 });
 

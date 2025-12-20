@@ -25,6 +25,10 @@ vi.mock('../../src/session.js', () => ({
   logSessionError: vi.fn(() => Promise.resolve()),
 }));
 
+vi.mock('../../src/serverConfig.js', () => ({
+  isSanitizeEnabled: vi.fn().mockReturnValue(true),
+}));
+
 // Import after mocking
 import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
 import { SEARCH_ERRORS } from '../../src/errorCodes.js';
