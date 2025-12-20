@@ -481,8 +481,8 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       const responseText = getTextContent(result.content);
 
       // Verify bulk response
-      expect(responseText).toContain('Bulk response with 2 results');
-      expect(responseText).toContain('2 hasResults');
+      expect(responseText).toContain('2 results');
+      expect(responseText).toContain('2 ok');
 
       // Verify first query (content search)
       expect(responseText).toContain('src/api.ts');

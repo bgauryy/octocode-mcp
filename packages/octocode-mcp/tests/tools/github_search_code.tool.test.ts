@@ -44,8 +44,8 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
     vi.resetAllMocks();
   });
 
-  describe('Status: hasResults', () => {
-    it('should return hasResults status when API returns items', async () => {
+  describe('Status: ok', () => {
+    it('should return ok status when API returns items', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValue({
         data: {
           total_count: 2,
@@ -81,7 +81,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('1 ok');
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('files:');
       expect(responseText).toContain('path: "src/index.ts"');
@@ -228,7 +228,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('1 error');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "API rate limit exceeded"');
     });
@@ -244,7 +244,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('1 error');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "Network timeout"');
     });
@@ -280,7 +280,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
   });
 
   describe('Multiple queries - same status', () => {
-    it('should handle multiple queries all with hasResults', async () => {
+    it('should handle multiple queries all with ok', async () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
@@ -332,8 +332,8 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('3 hasResults');
+      expect(responseText).toContain('3 results');
+      expect(responseText).toContain('3 ok');
       expect(responseText).not.toContain('empty');
       expect(responseText).not.toContain('failed');
     });
@@ -353,7 +353,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 2 results');
+      expect(responseText).toContain('2 results');
       expect(responseText).toContain('2 empty');
       expect(responseText).not.toContain('hasResults');
       expect(responseText).not.toContain('status: "failed"');
@@ -372,15 +372,15 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('3 failed');
+      expect(responseText).toContain('3 results');
+      expect(responseText).toContain('3 error');
       expect(responseText).not.toContain('hasResults');
       expect(responseText).not.toContain('empty');
     });
   });
 
   describe('Multiple queries - mixed statuses', () => {
-    it('should handle hasResults + empty mix', async () => {
+    it('should handle ok + empty mix', async () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
@@ -423,13 +423,13 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('2 hasResults');
+      expect(responseText).toContain('3 results');
+      expect(responseText).toContain('2 ok');
       expect(responseText).toContain('1 empty');
       expect(responseText).not.toContain('status: "failed"');
     });
 
-    it('should handle hasResults + error mix', async () => {
+    it('should handle ok + error mix', async () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
@@ -472,9 +472,9 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('2 hasResults');
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('3 results');
+      expect(responseText).toContain('2 ok');
+      expect(responseText).toContain('1 error');
       expect(responseText).not.toContain(': 0 empty');
     });
 
@@ -505,9 +505,9 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 4 results');
+      expect(responseText).toContain('4 results');
       expect(responseText).toContain('2 empty');
-      expect(responseText).toContain('2 failed');
+      expect(responseText).toContain('2 error');
       expect(responseText).not.toContain('hasResults');
     });
 
@@ -547,15 +547,15 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 4 results');
-      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('4 results');
+      expect(responseText).toContain('1 ok');
       expect(responseText).toContain('1 empty');
-      expect(responseText).toContain('2 failed');
+      expect(responseText).toContain('2 error');
     });
   });
 
-  describe('Research fields propagation', () => {
-    it('should propagate researchGoal from query', async () => {
+  describe('Optimized response (no query duplication)', () => {
+    it('should NOT include researchGoal from query (optimized)', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValue({
         data: {
           total_count: 1,
@@ -582,10 +582,11 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('researchGoal: "Find testing patterns"');
+      // Optimized: Query params not duplicated in response
+      expect(responseText).not.toContain('researchGoal:');
     });
 
-    it('should propagate reasoning from query', async () => {
+    it('should NOT include reasoning from query (optimized)', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValue({
         data: { total_count: 0, items: [] },
         status: 200,
@@ -603,7 +604,8 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "empty"');
-      expect(responseText).toContain('reasoning: "Looking for best practices"');
+      // Optimized: Query params not duplicated in response
+      expect(responseText).not.toContain('reasoning:');
     });
 
     it('should handle query with researchSuggestions gracefully', async () => {
@@ -636,7 +638,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('0 results');
     });
 
     it('should handle missing queries parameter gracefully', async () => {
@@ -647,7 +649,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('0 results');
     });
   });
 

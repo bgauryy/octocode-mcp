@@ -209,7 +209,7 @@ describe('GitHub Fetch Content Tool', () => {
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('2 hasResults');
+      expect(responseText).toContain('2 ok');
       // path is in query, not duplicated in response (clean bulk responses)
       expect(responseText).toContain('contentLength: 1');
       expect(responseText).toContain('content: "# README"');
@@ -247,7 +247,7 @@ describe('GitHub Fetch Content Tool', () => {
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('1 error');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain(
         'error: "Repository, resource, or path not found"'
@@ -280,7 +280,7 @@ describe('GitHub Fetch Content Tool', () => {
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('1 error');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "Network error"');
       // Query fields (owner, repo, path) are no longer echoed in response
@@ -973,7 +973,7 @@ End of file.`;
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('1 hasResults, 2 failed');
+      expect(responseText).toContain('1 ok, 2 error');
       // Success result - path is in query, not duplicated in response
       expect(responseText).toContain('status: "hasResults"');
       // Error results
@@ -1089,7 +1089,7 @@ End of file.`;
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
-      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('0 results');
       expect(responseText).toContain('results:');
     });
 
@@ -1103,7 +1103,7 @@ End of file.`;
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
-      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('0 results');
       expect(responseText).toContain('results:');
     });
   });

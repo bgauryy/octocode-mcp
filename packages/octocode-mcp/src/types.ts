@@ -449,14 +449,11 @@ export interface ProcessedBulkResult<
   [key: string]: unknown; // Tool-specific fields
 }
 
-/** Flattened query result for bulk operations */
+/** Flattened query result for bulk operations (optimized - no query duplication) */
 export interface FlatQueryResult {
   id: number;
   status: QueryStatus;
   data: Record<string, unknown>;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
 }
 
 /** Error information for failed queries */

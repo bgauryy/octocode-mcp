@@ -86,7 +86,7 @@ describe('GitHub View Repository Structure Tool', () => {
     const responseText = getTextContent(result.content);
     expect(responseText).toContain('instructions:');
     expect(responseText).toContain('results:');
-    expect(responseText).toContain('1 hasResults');
+    expect(responseText).toContain('1 ok');
     expect(responseText).toContain('status: "hasResults"');
     expect(responseText).toContain('path: "/"');
     expect(responseText).toContain('files:');
@@ -174,7 +174,7 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(result.isError).toBe(false);
     expect(responseText).toContain('instructions:');
     expect(responseText).toContain('results:');
-    expect(responseText).toContain('1 failed');
+    expect(responseText).toContain('1 error');
     expect(responseText).toContain('status: "error"');
     expect(responseText).toContain(
       'error: "Repository not found or access denied"'
@@ -232,7 +232,7 @@ describe('GitHub View Repository Structure Tool', () => {
     const responseText = getTextContent(result.content);
     expect(responseText).toContain('instructions:');
     expect(responseText).toContain('results:');
-    expect(responseText).toContain('1 hasResults');
+    expect(responseText).toContain('1 ok');
     expect(responseText).toContain('status: "hasResults"');
     expect(responseText).toContain('path: "src"');
     expect(responseText).not.toMatch(/^data:/m);
@@ -390,7 +390,7 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(responseText).not.toContain('branch:');
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('path: "/"');
-      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('1 ok');
       expect(responseText).toContain('files:');
       expect(responseText).toContain('folders:');
       expect(responseText).not.toMatch(/^data:/m);
