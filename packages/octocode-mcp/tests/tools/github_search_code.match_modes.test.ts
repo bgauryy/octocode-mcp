@@ -137,10 +137,10 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       // Verify data object is present (grouped by repo)
       expect(responseText).toContain('data:');
 
-      // Verify all files are included (paths as keys in new structure)
-      expect(responseText).toContain('src/tools/utils.ts:');
-      expect(responseText).toContain('src/tools/github_search_code.ts:');
-      expect(responseText).toContain('src/tools/github_search_repos.ts:');
+      // Verify all files are included
+      expect(responseText).toContain('src/tools/utils.ts');
+      expect(responseText).toContain('src/tools/github_search_code.ts');
+      expect(responseText).toContain('src/tools/github_search_repos.ts');
 
       // Verify actual content from text matches
       expect(responseText).toContain('export function createSuccessResult');
@@ -225,8 +225,8 @@ describe('GitHub Search Code - match Parameter Modes', () => {
       const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('status: "hasResults"');
-      // Matches are listed directly under the path key
-      expect(responseText).toContain('src/utils.ts:');
+      // Verify file path and matches are present
+      expect(responseText).toContain('src/utils.ts');
       expect(responseText).toContain('First occurrence');
       expect(responseText).toContain('Second occurrence');
       expect(responseText).toContain('Third occurrence');
@@ -471,7 +471,7 @@ describe('GitHub Search Code - match Parameter Modes', () => {
 
       // Verify bulk response
       expect(responseText).toContain('2 results');
-      expect(responseText).toContain('2 ok');
+      expect(responseText).toContain('2 hasResults');
 
       // Verify first query (content search)
       expect(responseText).toContain('src/api.ts');

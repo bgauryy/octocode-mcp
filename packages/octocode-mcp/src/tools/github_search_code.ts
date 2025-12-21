@@ -85,7 +85,8 @@ async function searchMultipleGitHubCode(
           .filter(item => !shouldIgnoreFile(item.path))
           .map(item => {
             if (query.match === 'path') {
-              return { path: item.path, text_matches: [] };
+              // For path searches, don't include text_matches
+              return { path: item.path };
             }
             return {
               path: item.path,

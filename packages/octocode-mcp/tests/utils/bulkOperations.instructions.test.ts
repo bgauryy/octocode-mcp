@@ -25,7 +25,7 @@ describe('Bulk Instructions Generation', () => {
 
     // Optimized: Short instruction format
     expect(text).toContain('1 results:');
-    expect(text).toContain('1 ok');
+    expect(text).toContain('1 hasResults');
     expect(text).not.toContain('original query');
   });
 
@@ -52,9 +52,9 @@ describe('Bulk Instructions Generation', () => {
 
     // Optimized format
     expect(text).toContain('3 results:');
-    expect(text).toContain('1 ok');
+    expect(text).toContain('1 hasResults');
     expect(text).toContain('1 empty');
-    expect(text).toContain('1 error');
+    expect(text).toContain('1 failed');
   });
 
   it('should include hints sections only for present statuses with custom hints', async () => {

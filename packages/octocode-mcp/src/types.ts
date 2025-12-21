@@ -95,14 +95,16 @@ export interface GitHubCodeSearchQuery {
 }
 
 /**
- * Code search result with matched files grouped by repository.
- * Structure: { "owner/repo": { "path": ["match1", "match2"] } }
- * - For content matches: array contains matched code snippets
- * - For path-only matches: array is empty (just listing the file)
+ * Code search result with matched files.
+ * - For content matches: includes text_matches with matched code snippets
+ * - For path-only matches: only includes path (no text_matches)
  */
 export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
-  /** Files grouped by repository (nameWithOwner) -> path -> matches */
-  repositories?: Record<string, Record<string, string[]>>;
+  /** Array of matched files with their paths and optional text matches */
+  files?: Array<{
+    path: string;
+    text_matches?: string[];
+  }>;
 }
 
 // ─── File Content (github_fetch_content) ────────────────────────────────────
