@@ -102,7 +102,7 @@ export interface GitHubCodeSearchQuery {
  */
 export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
   /** Files grouped by repository (nameWithOwner) -> path -> matches */
-  [repository: string]: Record<string, string[]> | unknown;
+  repositories?: Record<string, Record<string, string[]>>;
 }
 
 // ─── File Content (github_fetch_content) ────────────────────────────────────

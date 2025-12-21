@@ -292,4 +292,51 @@ describe('Empty Arrays Removal in Responses', () => {
       expect(responseText).not.toMatch(/hasResultsStatusHints:\s*\[\]/);
     });
   });
+
+  describe('Path-only Match Preservation', () => {
+    beforeEach(() => {
+      registerGitHubSearchCodeTool(mockServer.server);
+    });
+
+    it('should preserve files even if matches array is empty (path match)', async () => {
+      // Mock API result with a file that has no matches (empty array)
+      mockSearchGitHubCodeAPI.mockResolvedValueOnce({
+        data: {
+          items: [
+            {
+              path: 'path/to/empty_match_file.ts',
+              repository: {
+                nameWithOwner: 'owner/repo',
+                url: 'http://github.com/owner/repo',
+                pushedAt: '2023-01-01',
+              },
+              matches: [], // Empty matches
+              url: 'http://github.com/owner/repo/blob/main/path/to/empty_match_file.ts',
+            },
+          ],
+          total_count: 1,
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['test'],
+              reasoning: 'Repro test',
+              match: 'path',
+            },
+          ],
+        },
+        { authInfo: { token: 'mock-token' } }
+      );
+
+      const responseText = getTextContent(result.content);
+
+      // We expect the file path to be present in the output
+      expect(responseText).toContain('path/to/empty_match_file.ts');
+    });
+  });
 });

@@ -68,7 +68,8 @@ function cleanJsonObject(
     let hasValidProperties = false;
 
     for (const [key, value] of Object.entries(obj)) {
-      const enteringFilesObject = key === 'files' && !inFilesObject;
+      const enteringFilesObject =
+        (key === 'files' || key === 'repositories') && !inFilesObject;
       const cleanedValue = cleanJsonObject(value, {
         inFilesObject: inFilesObject || enteringFilesObject,
         depth: enteringFilesObject ? 0 : depth + 1,

@@ -1,4 +1,7 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import {
+  McpServer,
+  RegisteredTool,
+} from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
 import type {
@@ -21,7 +24,7 @@ import {
 export function registerGitHubSearchCodeTool(
   server: McpServer,
   callback?: ToolInvocationCallback
-) {
+): RegisteredTool {
   return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_CODE,
     {
@@ -117,25 +120,28 @@ async function searchMultipleGitHubCode(
 
         const sortedResults: Record<string, Record<string, string[]>> = {};
         for (const repo of sortedRepos) {
-          const paths = Object.keys(repoResults[repo]);
+          const repoData = repoResults[repo];
+          if (!repoData) continue;
+
+          const paths = Object.keys(repoData);
           const sortedPaths = paths.sort((a, b) => {
             const aDepth = a.split('/').length;
             const bDepth = b.split('/').length;
             if (aDepth !== bDepth) {
-              return aDepth - bDepth; // Shallower paths first
+              return aDepth - bDepth;
             }
-            return a.localeCompare(b); // Alphabetically
+            return a.localeCompare(b);
           });
 
           sortedResults[repo] = {};
           for (const path of sortedPaths) {
-            sortedResults[repo][path] = repoResults[repo][path];
+            sortedResults[repo][path] = repoData[path]!;
           }
         }
 
         return createSuccessResult(
           query,
-          { ...sortedResults } satisfies SearchResult,
+          { repositories: sortedResults } satisfies SearchResult,
           Object.keys(sortedResults).length > 0,
           'GITHUB_SEARCH_CODE'
         );
