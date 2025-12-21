@@ -10,8 +10,6 @@ import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
 import { filterPatch } from '../utils/diffParser.js';
-
-// GitHub API types for pull request files
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
@@ -73,7 +71,6 @@ async function searchGitHubPullRequestsAPIInternal(
       !Array.isArray(params.owner) &&
       !Array.isArray(params.repo)
     ) {
-      // Use REST API for simple repository-specific searches (like gh pr list)
       return await searchPullRequestsWithREST(octokit, params);
     }
 
@@ -120,19 +117,10 @@ async function searchGitHubPullRequestsAPIInternal(
       })
     );
 
-    const owner = Array.isArray(params.owner)
-      ? params.owner[0] || ''
-      : params.owner || '';
-    const repo = Array.isArray(params.repo)
-      ? params.repo[0] || ''
-      : params.repo || '';
-
     const formattedPRs = transformedPRs.map(pr => ({
-      id: 0, // We don't have this in our format
       number: pr.number,
       title: pr.title,
       url: pr.url,
-      html_url: pr.url,
       state: pr.state as 'open' | 'closed',
       draft: pr.draft ?? false,
       merged: pr.state === 'closed' && !!pr.merged_at,
@@ -140,25 +128,13 @@ async function searchGitHubPullRequestsAPIInternal(
       updated_at: pr.updated_at,
       closed_at: pr.closed_at ?? undefined,
       merged_at: pr.merged_at,
-      author: {
-        login: pr.author,
-        id: 0,
-        avatar_url: '',
-        html_url: `https://github.com/${pr.author}`,
-      },
-      head: {
-        ref: pr.head || '',
-        sha: pr.head_sha || '',
-        repo: owner && repo ? `${owner}/${repo}` : '',
-      },
-      base: {
-        ref: pr.base || '',
-        sha: pr.base_sha || '',
-        repo: owner && repo ? `${owner}/${repo}` : '',
-      },
+      author: pr.author,
+      head_ref: pr.head || '',
+      head_sha: pr.head_sha || '',
+      base_ref: pr.base || '',
+      base_sha: pr.base_sha || '',
       body: pr.body,
       comments: pr.comments?.length || 0,
-      review_comments: 0,
       commits: pr.commits?.length || 0,
       additions:
         pr.file_changes?.files.reduce((sum, file) => sum + file.additions, 0) ||
@@ -184,7 +160,7 @@ async function searchGitHubPullRequestsAPIInternal(
     return {
       pull_requests: formattedPRs,
       total_count: searchResult.data.total_count,
-      incomplete_results: searchResult.data.incomplete_results,
+      ...(searchResult.data.incomplete_results && { incomplete_results: true }),
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -230,11 +206,9 @@ async function searchPullRequestsWithREST(
     );
 
     const formattedPRs = transformedPRs.map(pr => ({
-      id: 0,
       number: pr.number,
       title: pr.title,
       url: pr.url,
-      html_url: pr.url,
       state: pr.state as 'open' | 'closed',
       draft: pr.draft ?? false,
       merged: pr.state === 'closed' && !!pr.merged_at,
@@ -242,25 +216,13 @@ async function searchPullRequestsWithREST(
       updated_at: pr.updated_at,
       closed_at: pr.closed_at ?? undefined,
       merged_at: pr.merged_at,
-      author: {
-        login: pr.author,
-        id: 0,
-        avatar_url: '',
-        html_url: `https://github.com/${pr.author}`,
-      },
-      head: {
-        ref: pr.head || '',
-        sha: pr.head_sha || '',
-        repo: `${owner}/${repo}`,
-      },
-      base: {
-        ref: pr.base || '',
-        sha: pr.base_sha || '',
-        repo: `${owner}/${repo}`,
-      },
+      author: pr.author,
+      head_ref: pr.head || '',
+      head_sha: pr.head_sha || '',
+      base_ref: pr.base || '',
+      base_sha: pr.base_sha || '',
       body: pr.body,
       comments: pr.comments?.length || 0,
-      review_comments: 0,
       commits: pr.commits?.length || 0,
       additions:
         pr.file_changes?.files.reduce((sum, file) => sum + file.additions, 0) ||
@@ -286,7 +248,6 @@ async function searchPullRequestsWithREST(
     return {
       pull_requests: formattedPRs,
       total_count: formattedPRs.length,
-      incomplete_results: false,
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -331,15 +292,9 @@ function createBasePRTransformation(item: Record<string, unknown>): {
       (item.labels as Array<Record<string, unknown>>)?.map(
         (l: Record<string, unknown>) => l.name as string
       ) || [],
-    created_at: item.created_at
-      ? new Date(item.created_at as string).toLocaleDateString('en-GB')
-      : '',
-    updated_at: item.updated_at
-      ? new Date(item.updated_at as string).toLocaleDateString('en-GB')
-      : '',
-    closed_at: item.closed_at
-      ? new Date(item.closed_at as string).toLocaleDateString('en-GB')
-      : null,
+    created_at: (item.created_at as string) || '',
+    updated_at: (item.updated_at as string) || '',
+    closed_at: (item.closed_at as string) || null,
     url: item.html_url as string,
     comments: [], // Will be populated if withComments is true
     reactions: 0, // REST API doesn't provide reactions in list
@@ -351,9 +306,7 @@ function createBasePRTransformation(item: Record<string, unknown>): {
   };
 
   if (item.merged_at) {
-    prData.merged_at = new Date(item.merged_at as string).toLocaleDateString(
-      'en-GB'
-    );
+    prData.merged_at = item.merged_at as string;
   }
 
   return { prData, sanitizationWarnings };
@@ -379,12 +332,8 @@ async function fetchPRComments(
         'unknown',
       body: ContentSanitizer.sanitizeContent((comment.body as string) || '')
         .content,
-      created_at: new Date(comment.created_at as string).toLocaleDateString(
-        'en-GB'
-      ),
-      updated_at: new Date(comment.updated_at as string).toLocaleDateString(
-        'en-GB'
-      ),
+      created_at: (comment.created_at as string) || '',
+      updated_at: (comment.updated_at as string) || '',
     }));
   } catch {
     return [];
@@ -431,7 +380,6 @@ function applyPartialContentFilter(
         };
       });
   }
-  // fullContent: keep as is
   return files;
 }
 
@@ -504,7 +452,6 @@ async function transformPullRequestItem(
     }
   }
 
-  // Fetch commits only if requested
   if (params.withCommits) {
     try {
       const { owner, repo } = normalizeOwnerRepo(params);
@@ -623,7 +570,6 @@ async function fetchPRCommitsWithFiles(
   const commits = await fetchPRCommitsAPI(owner, repo, prNumber, authInfo);
   if (!commits) return null;
 
-  // Sort commits by date descending (most recent first)
   const sortedCommits = [...commits].sort((a, b) => {
     const dateA = a.commit.author?.date
       ? new Date(a.commit.author.date).getTime()
@@ -656,9 +602,7 @@ async function fetchPRCommitsWithFiles(
         sha: commit.sha,
         message: commit.commit.message,
         author: commit.commit.author?.name || 'unknown',
-        date: commit.commit.author?.date
-          ? new Date(commit.commit.author.date).toLocaleDateString('en-GB')
-          : '',
+        date: commit.commit.author?.date || '',
         files: processedFiles,
       };
     })
@@ -709,7 +653,6 @@ export async function transformPullRequestItemFromREST(
     );
   }
 
-  // Fetch commits only if requested
   if (params.withCommits) {
     try {
       const commits = await fetchPRCommitsWithFiles(
@@ -754,7 +697,6 @@ export async function fetchGitHubPullRequestByNumberAPI(
       return await fetchGitHubPullRequestByNumberAPIInternal(params, authInfo);
     },
     {
-      // Only cache successful responses
       shouldCache: (value: PullRequestSearchResult) => !value.error,
     }
   );
@@ -797,7 +739,6 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
   try {
     const octokit = await getOctokit(authInfo);
 
-    // Use REST API to get specific PR by number
     const result = await octokit.rest.pulls.get({
       owner,
       repo,
@@ -809,40 +750,24 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
     const transformedPR: GitHubPullRequestItem =
       await transformPullRequestItemFromREST(pr, params, octokit, authInfo);
 
-    const repoFullName = `${params.owner}/${params.repo}`;
-
     const formattedPR = {
-      id: 0,
       number: transformedPR.number,
       title: transformedPR.title,
       url: transformedPR.url,
-      html_url: transformedPR.url,
       state: transformedPR.state as 'open' | 'closed',
-      draft: transformedPR.draft ?? false, // Default to false if undefined
+      draft: transformedPR.draft ?? false,
       merged: transformedPR.state === 'closed' && !!transformedPR.merged_at,
       created_at: transformedPR.created_at,
       updated_at: transformedPR.updated_at,
       closed_at: transformedPR.closed_at ?? undefined,
       merged_at: transformedPR.merged_at,
-      author: {
-        login: transformedPR.author,
-        id: 0,
-        avatar_url: '',
-        html_url: `https://github.com/${transformedPR.author}`,
-      },
-      head: {
-        ref: transformedPR.head || '',
-        sha: transformedPR.head_sha || '',
-        repo: repoFullName,
-      },
-      base: {
-        ref: transformedPR.base || '',
-        sha: transformedPR.base_sha || '',
-        repo: repoFullName,
-      },
+      author: transformedPR.author,
+      head_ref: transformedPR.head || '',
+      head_sha: transformedPR.head_sha || '',
+      base_ref: transformedPR.base || '',
+      base_sha: transformedPR.base_sha || '',
       body: transformedPR.body,
       comments: transformedPR.comments?.length || 0,
-      review_comments: 0,
       commits: transformedPR.commits?.length || 0,
       additions:
         transformedPR.file_changes?.files.reduce(
@@ -855,7 +780,6 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
           0
         ) || 0,
       changed_files: transformedPR.file_changes?.total_count || 0,
-      // Include file_changes if it was requested and fetched
       ...(transformedPR.file_changes && {
         file_changes: transformedPR.file_changes.files?.map(file => ({
           filename: file.filename,
@@ -865,7 +789,6 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
           patch: file.patch,
         })),
       }),
-      // Include commits breakdown
       ...(transformedPR.commits && {
         commit_details: transformedPR.commits,
       }),
@@ -874,7 +797,6 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
     return {
       pull_requests: [formattedPR],
       total_count: 1,
-      incomplete_results: false,
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);

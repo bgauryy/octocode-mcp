@@ -39,12 +39,10 @@ export function tryInferRepoUrl(
   packageName: string,
   existingResult: NpmPackageResult
 ): NpmPackageResult {
-  // Skip if we already have a repo URL
   if (existingResult.repoUrl) {
     return existingResult;
   }
 
-  // Check known package mappings first
   const knownRepo = KNOWN_PACKAGE_REPOS[packageName];
   if (knownRepo) {
     return {
@@ -53,7 +51,6 @@ export function tryInferRepoUrl(
     };
   }
 
-  // Try to infer from scoped package name
   const inferredUrl = inferRepoFromPackageName(packageName);
   if (inferredUrl) {
     return {
@@ -90,12 +87,10 @@ function inferRepoFromPackageName(packageName: string): string | null {
     return null;
   }
 
-  // For @types packages, they all live in DefinitelyTyped
   if (scope === 'types') {
     return 'https://github.com/DefinitelyTyped/DefinitelyTyped';
   }
 
-  // Common pattern: @scope/package-name -> org/package-name
   return `https://github.com/${org}/${name}`;
 }
 

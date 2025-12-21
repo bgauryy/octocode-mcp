@@ -18,7 +18,6 @@ export function registerPrompts(
   }
 
   for (const prompt of Object.values(prompts)) {
-    // Validate required fields
     if (
       !prompt ||
       typeof prompt.name !== 'string' ||
@@ -31,7 +30,6 @@ export function registerPrompts(
       continue;
     }
 
-    // Create Zod schema for validation (as requested)
     const argsShape: Record<string, z.ZodTypeAny> = {};
     if (prompt.args) {
       for (const arg of prompt.args) {

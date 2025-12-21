@@ -248,7 +248,6 @@ async function minifyWithTerser(
   content: string
 ): Promise<{ content: string; failed: boolean; reason?: string }> {
   try {
-    // Handle empty content gracefully
     if (!content.trim()) {
       return {
         content: content,
@@ -284,7 +283,6 @@ async function minifyWithTerser(
       failed: false,
     };
   } catch (error: unknown) {
-    // Always return original content on failure
     return {
       content: content,
       failed: true,
@@ -309,7 +307,6 @@ function removeComments(
           try {
             result = result.replace(pattern, '');
           } catch {
-            // Continue with other patterns if one fails
             continue;
           }
         }
@@ -318,7 +315,6 @@ function removeComments(
 
     return result;
   } catch {
-    // Return original content if comment removal fails
     return content;
   }
 }
@@ -330,12 +326,10 @@ function minifyConservative(
   try {
     let result = content;
 
-    // Remove comments if specified
     if (config.comments) {
       result = removeComments(result, config.comments as string | string[]);
     }
 
-    // Conservative whitespace handling - preserve line structure and indentation
     result = result
       .replace(/[ \t]+$/gm, '') // Remove trailing whitespace
       .replace(/\n\s*\n\s*\n+/g, '\n\n') // Collapse excessive empty lines (3+ -> 2)
@@ -343,7 +337,6 @@ function minifyConservative(
 
     return result;
   } catch {
-    // Return original content if conservative minification fails
     return content;
   }
 }
@@ -371,7 +364,6 @@ async function minifyCSS(
     };
   } catch {
     try {
-      // Fallback to regex-based minification
       let result = content;
       result = removeComments(result, 'c-style');
       result = result
@@ -381,10 +373,9 @@ async function minifyCSS(
 
       return {
         content: result,
-        failed: false, // Don't mark as failed since we have fallback
+        failed: false,
       };
     } catch {
-      // If even fallback fails, return original content
       return {
         content: content,
         failed: true,
@@ -415,17 +406,15 @@ async function minifyHTML(
     };
   } catch {
     try {
-      // Fallback to regex-based minification
       let result = content;
       result = removeComments(result, 'html');
       result = result.replace(/\s+/g, ' ').replace(/>\s+</g, '><').trim();
 
       return {
         content: result,
-        failed: false, // Don't mark as failed since we have fallback
+        failed: false,
       };
     } catch {
-      // If even fallback fails, return original content
       return {
         content: content,
         failed: true,
@@ -442,12 +431,10 @@ function minifyAggressive(
   try {
     let result = content;
 
-    // Remove comments if specified
     if (config.comments) {
       result = removeComments(result, config.comments as string | string[]);
     }
 
-    // Aggressive whitespace handling
     result = result
       .replace(/\s+/g, ' ') // Collapse all whitespace to single spaces
       .replace(/\s*([{}:;,])\s*/g, '$1') // Remove spaces around CSS/code syntax
@@ -456,7 +443,6 @@ function minifyAggressive(
 
     return result;
   } catch {
-    // Return original content if aggressive minification fails
     return content;
   }
 }
@@ -474,10 +460,7 @@ function minifyJson(content: string): {
     };
   } catch {
     try {
-      // Try to remove comments (support for JSONC)
-      // We try c-style comments as they are the most common in JSONC
-      // Note: This might corrupt strings with // in them, but if so,
-      // the subsequent JSON.parse will likely fail, sending us to the final fallback
+      // Try JSONC (JSON with comments)
       const contentWithoutComments = removeComments(content, 'c-style');
       const parsed = JSON.parse(contentWithoutComments);
       return {
@@ -485,8 +468,6 @@ function minifyJson(content: string): {
         failed: false,
       };
     } catch {
-      // Fallback: Return original content (trimmed) to avoid corrupting data
-      // We previously used aggressive whitespace removal which corrupted strings
       return {
         content: content.trim(),
         failed: false,
@@ -497,10 +478,8 @@ function minifyJson(content: string): {
 
 function minifyGeneral(content: string): string {
   try {
-    // General minification for plain text, logs, etc.
     let result = content;
 
-    // Remove excessive whitespace and normalize line endings
     result = result
       .replace(/[ \t]+$/gm, '') // Remove trailing whitespace
       .replace(/\r\n/g, '\n') // Normalize line endings
@@ -510,60 +489,32 @@ function minifyGeneral(content: string): string {
 
     return result;
   } catch {
-    // Return original content if general minification fails
     return content;
   }
 }
 
 function minifyMarkdown(content: string): string {
   try {
-    // Specialized markdown minification preserving structure while reducing tokens
     let result = content;
 
-    // Remove HTML comments (allowed in markdown)
     result = result.replace(/<!--[\s\S]*?-->/g, '');
-
-    // Remove trailing whitespace from lines
     result = result.replace(/[ \t]+$/gm, '');
-
-    // Normalize line endings
     result = result.replace(/\r\n/g, '\n');
-
-    // Collapse excessive empty lines but preserve paragraph breaks
-    // Keep double newlines for paragraphs, collapse 3+ newlines to 2
     result = result.replace(/\n\s*\n\s*\n+/g, '\n\n');
-
-    // Reduce excessive inline whitespace but preserve markdown formatting
-    // Be careful not to break indented code blocks or lists
-    result = result
-      // Only collapse excessive inline whitespace (5+ spaces between words -> 1 space)
-      // Don't collapse 4-space indentation which is significant for nested lists and code blocks
-      .replace(/([^\n])[ \t]{5,}([^\n])/g, '$1 $2');
-
-    // Clean up table formatting by normalizing pipe spacing
+    result = result.replace(/([^\n])[ \t]{5,}([^\n])/g, '$1 $2');
     result = result.replace(/\s*\|\s*/g, ' | ');
-
-    // Normalize heading spacing (remove extra spaces after #)
     result = result.replace(/^(#{1,6})[ \t]+/gm, '$1 ');
-
-    // Clean up list formatting - normalize spacing
     result = result.replace(/^(\s*)([-*+]|\d+\.)[ \t]+/gm, '$1$2 ');
-
-    // Remove excessive whitespace around fenced code blocks
     result = result.replace(/\n{3,}(```)/g, '\n\n$1');
     result = result.replace(/(```)\n{3,}/g, '$1\n\n');
-
-    // Final trim
     result = result.trim();
 
     return result;
   } catch {
-    // Return original content if markdown minification fails
     return content;
   }
 }
 
-// Main minification functions
 export async function minifyContent(
   content: string,
   filePath: string
@@ -581,8 +532,7 @@ export async function minifyContent(
   reason?: string;
 }> {
   try {
-    // Check size limit (1MB)
-    const MAX_SIZE = 1024 * 1024; // 1MB in bytes
+    const MAX_SIZE = 1024 * 1024;
     const contentSize = Buffer.byteLength(content, 'utf8');
 
     if (contentSize > MAX_SIZE) {
@@ -647,7 +597,6 @@ export async function minifyContent(
       case 'aggressive': {
         const ext = getFileExtension(filePath);
 
-        // Use specialized minifiers for CSS and HTML
         if (['css', 'less', 'scss'].includes(ext)) {
           const result = await minifyCSS(content);
           return {
@@ -668,7 +617,6 @@ export async function minifyContent(
           };
         }
 
-        // Fallback to generic aggressive minification
         const result = minifyAggressive(content, config);
         return {
           content: result,
@@ -678,7 +626,6 @@ export async function minifyContent(
       }
 
       default: {
-        // Fallback to general minification for unknown file types
         const result = minifyGeneral(content);
         return {
           content: result,
@@ -688,7 +635,6 @@ export async function minifyContent(
       }
     }
   } catch (error: unknown) {
-    // Always return original content if anything fails
     return {
       content: content,
       failed: true,
@@ -698,7 +644,6 @@ export async function minifyContent(
   }
 }
 
-// Utility functions for backward compatibility
 export function isJavaScriptFileV2(filePath: string): boolean {
   const ext = getFileExtension(filePath);
   return ['js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs'].includes(ext);
@@ -728,5 +673,4 @@ export function isIndentationSensitiveV2(filePath: string): boolean {
   return indentationSensitive.includes(ext);
 }
 
-// Export for testing
 export { MINIFY_CONFIG };

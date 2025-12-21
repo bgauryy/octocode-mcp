@@ -3,7 +3,6 @@ import type { SanitizationResult, ValidationResult } from '../types.js';
 
 export class ContentSanitizer {
   public static sanitizeContent(content: string): SanitizationResult {
-    // Detect secrets
     const secretsResult = this.detectSecrets(content);
 
     return {
@@ -26,10 +25,7 @@ export class ContentSanitizer {
       for (const pattern of allRegexPatterns) {
         const matches = sanitizedContent.match(pattern.regex);
         if (matches && matches.length > 0) {
-          // Add each match to the set (automatically deduplicates)
           matches.forEach(_match => secretsDetectedSet.add(pattern.name));
-
-          // Replace with redacted placeholder
           sanitizedContent = sanitizedContent.replace(
             pattern.regex,
             `[REDACTED-${pattern.name.toUpperCase()}]`
@@ -37,7 +33,6 @@ export class ContentSanitizer {
         }
       }
     } catch {
-      // Return original content if there's an error
       return {
         hasSecrets: false,
         secretsDetected: [],
@@ -57,7 +52,6 @@ export class ContentSanitizer {
   public static validateInputParameters(
     params: Record<string, unknown>
   ): ValidationResult {
-    // First, validate the basic structure and types
     if (!params || typeof params !== 'object') {
       return {
         sanitizedParams: {},
@@ -73,14 +67,12 @@ export class ContentSanitizer {
     let hasValidationErrors = false;
 
     for (const [key, value] of Object.entries(params)) {
-      // Validate parameter key
       if (typeof key !== 'string' || key.trim() === '') {
         hasValidationErrors = true;
         warnings.add(`Invalid parameter key: ${key}`);
         continue;
       }
 
-      // Check for potentially dangerous parameter names
       const dangerousKeys = ['__proto__', 'constructor', 'prototype'];
       if (dangerousKeys.includes(key)) {
         hasValidationErrors = true;
@@ -89,7 +81,6 @@ export class ContentSanitizer {
       }
 
       if (typeof value === 'string') {
-        // Check for excessively long strings (potential DoS)
         if (value.length > 10000) {
           warnings.add(
             `Parameter ${key} exceeds maximum length (10,000 characters)`
@@ -99,7 +90,6 @@ export class ContentSanitizer {
           sanitizedParams[key] = value;
         }
       } else if (Array.isArray(value)) {
-        // Validate arrays
         if (value.length > 100) {
           warnings.add(
             `Parameter ${key} array exceeds maximum length (100 items)`
@@ -109,7 +99,6 @@ export class ContentSanitizer {
           sanitizedParams[key] = value;
         }
       } else if (value !== null && typeof value === 'object') {
-        // Recursively validate nested objects
         const nestedValidation = this.validateInputParameters(
           value as Record<string, unknown>
         );
@@ -123,7 +112,6 @@ export class ContentSanitizer {
         sanitizedParams[key] = nestedValidation.sanitizedParams;
         hasSecrets = hasSecrets || nestedValidation.hasSecrets;
       } else {
-        // For other types (number, boolean, null, undefined), pass through
         sanitizedParams[key] = value;
       }
     }

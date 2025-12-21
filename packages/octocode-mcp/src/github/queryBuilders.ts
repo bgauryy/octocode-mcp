@@ -2,7 +2,6 @@ import type { GitHubCodeSearchQuery, GitHubReposSearchQuery } from '../types';
 import { GitHubPullRequestsSearchParams } from './githubAPI';
 
 export function getOwnerQualifier(owner: string): string {
-  // GitHub's 'user:' qualifier matches both users and organizations
   return `user:${owner}`;
 }
 
@@ -292,7 +291,6 @@ export function buildPullRequestSearchQuery(
 export function shouldUseSearchForPRs(
   params: GitHubPullRequestsSearchParams
 ): boolean {
-  // Use search if we have complex filters
   return (
     params.draft !== undefined ||
     params.author !== undefined ||

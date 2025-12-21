@@ -17,6 +17,7 @@ import { shouldIgnoreFile } from '../utils/fileFilters';
 import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
+import { isSanitizeEnabled } from '../serverConfig.js';
 
 export async function searchGitHubCodeAPI(
   params: GitHubCodeSearchQuery,
@@ -96,7 +97,7 @@ async function searchGitHubCodeAPIInternal(
     const optimizedResult = await convertCodeSearchResult(
       result,
       params.minify !== false,
-      params.sanitize !== false
+      isSanitizeEnabled()
     );
 
     return {
@@ -140,7 +141,6 @@ async function transformToOptimizedFormat(
   let hasMinificationFailures = false;
   const minificationTypes: string[] = [];
 
-  const foundPackages = new Set<string>();
   const foundFiles = new Set<string>();
 
   const filteredItems = items.filter(item => !shouldIgnoreFile(item.path));
@@ -204,6 +204,7 @@ async function transformToOptimizedFormat(
         repository: {
           nameWithOwner: item.repository.full_name,
           url: item.repository.url,
+          pushedAt: item.repository.pushed_at || undefined,
         },
         ...(minify &&
           minificationTypes.length > 0 && {
@@ -217,7 +218,6 @@ async function transformToOptimizedFormat(
     items: optimizedItems,
     total_count: filteredItems.length,
     _researchContext: {
-      foundPackages: Array.from(foundPackages),
       foundFiles: Array.from(foundFiles),
       repositoryContext: singleRepo
         ? (() => {
@@ -234,15 +234,9 @@ async function transformToOptimizedFormat(
     result.repository = {
       name: singleRepo.full_name,
       url: singleRepo.url,
-      createdAt: singleRepo.created_at
-        ? new Date(singleRepo.created_at).toLocaleDateString('en-GB')
-        : undefined,
-      updatedAt: singleRepo.updated_at
-        ? new Date(singleRepo.updated_at).toLocaleDateString('en-GB')
-        : undefined,
-      pushedAt: singleRepo.pushed_at
-        ? new Date(singleRepo.pushed_at).toLocaleDateString('en-GB')
-        : undefined,
+      createdAt: singleRepo.created_at || undefined,
+      updatedAt: singleRepo.updated_at || undefined,
+      pushedAt: singleRepo.pushed_at || undefined,
     };
   }
 

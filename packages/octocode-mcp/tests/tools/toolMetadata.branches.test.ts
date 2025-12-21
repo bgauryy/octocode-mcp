@@ -40,13 +40,11 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
   });
 
   describe('getMeta() when METADATA_JSON is null (lines 103-107)', () => {
-    it('should throw error when getGenericErrorHintsSync is called before initialization', async () => {
+    it('should return empty array when getGenericErrorHintsSync is called before initialization', async () => {
       const { getGenericErrorHintsSync } =
         await import('../../src/tools/toolMetadata.js');
 
-      expect(() => getGenericErrorHintsSync()).toThrow(
-        'Tool metadata not initialized. Call and await initializeToolMetadata() before using tool metadata.'
-      );
+      expect(getGenericErrorHintsSync()).toEqual([]);
     });
 
     it('should throw error when getDynamicHints is called before initialization', async () => {

@@ -86,7 +86,6 @@ export async function searchPackage(
           fetchMetadata
         );
 
-        // Apply repo URL fallback for npm packages missing repoUrl
         if (!('error' in result) && result.packages.length > 0) {
           result.packages = result.packages.map(pkg => {
             if ('repoUrl' in pkg && !pkg.repoUrl) {

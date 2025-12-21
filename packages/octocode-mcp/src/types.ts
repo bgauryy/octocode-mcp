@@ -89,23 +89,20 @@ export interface GitHubCodeSearchQuery {
   match?: 'file' | 'path';
   limit?: number;
   minify?: boolean;
-  sanitize?: boolean;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
 
-/** Individual file in code search results */
-export interface SearchFile {
-  path: string;
-  text_matches: string[];
-}
-
-/** Code search result with matched files */
+/**
+ * Code search result with matched files grouped by repository.
+ * Structure: { "owner/repo": { "path": ["match1", "match2"] } }
+ * - For content matches: array contains matched code snippets
+ * - For path-only matches: array is empty (just listing the file)
+ */
 export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
-  owner?: string;
-  repo?: string;
-  files: SearchFile[];
+  /** Files grouped by repository (nameWithOwner) -> path -> matches */
+  repositories?: Record<string, Record<string, string[]>>;
 }
 
 // ─── File Content (github_fetch_content) ────────────────────────────────────
@@ -122,7 +119,6 @@ export interface FileContentQuery {
   matchString?: string;
   matchStringContextLines?: number;
   minified?: boolean;
-  sanitize?: boolean;
   addTimestamp?: boolean;
   mainResearchGoal?: string;
   researchGoal?: string;
@@ -213,13 +209,24 @@ export interface GitHubViewRepoStructureQuery {
   reasoning?: string;
 }
 
-/** Repository structure result data */
+/** Directory entry with files and folders grouped together */
+export interface DirectoryEntry {
+  files: string[];
+  folders: string[];
+}
+
+/**
+ * Repository structure result data - optimized format.
+ * Groups files by parent directory to eliminate path repetition.
+ * Keys are relative directory paths (e.g., ".", "src", "src/utils").
+ */
 export interface RepoStructureResultData {
   owner?: string;
   repo?: string;
+  /** Base path that was queried */
   path?: string;
-  files?: string[];
-  folders?: string[];
+  /** Structure grouped by directory - keys are relative paths */
+  structure?: Record<string, DirectoryEntry>;
 }
 
 /** Complete repository structure result */
@@ -315,11 +322,11 @@ export interface GitHubPullRequestSearchQuery {
 
 /** Detailed pull request information */
 export interface PullRequestInfo {
-  id: number;
+  id?: number;
   number: number;
   title: string;
   url: string;
-  html_url: string;
+  html_url?: string;
   state: 'open' | 'closed';
   draft: boolean;
   merged: boolean;
@@ -327,12 +334,7 @@ export interface PullRequestInfo {
   updated_at: string;
   closed_at?: string;
   merged_at?: string;
-  author: {
-    login: string;
-    id: number;
-    avatar_url: string;
-    html_url: string;
-  };
+  author: string;
   assignees?: Array<{
     login: string;
     id: number;
@@ -354,16 +356,10 @@ export interface PullRequestInfo {
     updated_at: string;
     due_on?: string;
   };
-  head: {
-    ref: string;
-    sha: string;
-    repo?: string;
-  };
-  base: {
-    ref: string;
-    sha: string;
-    repo: string;
-  };
+  head_ref: string;
+  head_sha: string;
+  base_ref: string;
+  base_sha: string;
   body?: string;
   comments?: number;
   review_comments?: number;
@@ -449,13 +445,11 @@ export interface ProcessedBulkResult<
   [key: string]: unknown; // Tool-specific fields
 }
 
-/** Flattened query result for bulk operations */
+/** Flattened query result for bulk operations (optimized - no query duplication) */
 export interface FlatQueryResult {
+  id: number;
   status: QueryStatus;
   data: Record<string, unknown>;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
 }
 
 /** Error information for failed queries */
@@ -579,6 +573,7 @@ export interface ServerConfig {
   timeout: number;
   maxRetries: number;
   loggingEnabled: boolean;
+  sanitize: boolean;
 }
 
 // ─── Session Management (session.ts) ────────────────────────────────────────

@@ -54,14 +54,12 @@ function mapToResult(data: NpmViewResult): NpmPackageResult {
     }
   }
 
-  // Get last published date from time object
   let lastPublished: string | undefined;
   if (data.time) {
-    // Prefer the specific version's publish time, fallback to modified
     const versionTime = data.version ? data.time[data.version] : undefined;
     const timeStr = versionTime || data.time.modified;
     if (timeStr) {
-      lastPublished = new Date(timeStr).toLocaleDateString('en-GB');
+      lastPublished = timeStr;
     }
   }
 
@@ -79,7 +77,6 @@ async function fetchPackageDetails(
   packageName: string
 ): Promise<NpmPackageResult | null> {
   try {
-    // npm view --json returns all fields including 'time' with publish timestamps
     const result = await executeNpmCommand('view', [packageName, '--json']);
 
     if (result.error || result.exitCode !== 0) {
@@ -110,8 +107,6 @@ async function fetchNpmPackageByView(
   packageName: string,
   _fetchMetadata: boolean
 ): Promise<PackageSearchAPIResult | PackageSearchError> {
-  // For exact match, we always try to fetch details to confirm existence and get full info
-  // Even if fetchMetadata is false, getting the basic details via 'view' is accurate.
   const pkg = await fetchPackageDetails(packageName);
 
   if (!pkg) {
@@ -187,7 +182,6 @@ async function searchNpmPackageViaSearch(
       };
     }
 
-    // Limit manually just in case
     searchResults = searchResults.slice(0, limit);
 
     const packages = await Promise.all(
@@ -197,7 +191,6 @@ async function searchNpmPackageViaSearch(
           if (details) return details;
         }
 
-        // Fast path or fallback
         return {
           repoUrl: item.links?.repository
             ? cleanRepoUrl(item.links.repository)

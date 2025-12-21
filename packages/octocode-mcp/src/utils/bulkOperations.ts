@@ -58,11 +58,12 @@ function createBulkResponse<
     'errorStatusHints',
   ];
   const resultFields = [
+    'id',
+    'status',
+    'data',
     'mainResearchGoal',
     'researchGoal',
     'reasoning',
-    'status',
-    'data',
   ];
   const standardFields = [...topLevelFields, ...resultFields, 'owner', 'repo'];
   const fullKeysPriority = [
@@ -103,21 +104,13 @@ function createBulkResponse<
         hintsArray.forEach(hint => errorHintsSet.add(hint));
       }
     }
-
     const flatQuery: FlatQueryResult = {
+      id: r.queryIndex + 1,
       status,
       data:
         status === 'error' && r.result.error
           ? { error: r.result.error }
           : toolData,
-      mainResearchGoal:
-        r.result.mainResearchGoal ||
-        safeExtractString(r.originalQuery, 'mainResearchGoal'),
-      researchGoal:
-        r.result.researchGoal ||
-        safeExtractString(r.originalQuery, 'researchGoal'),
-      reasoning:
-        r.result.reasoning || safeExtractString(r.originalQuery, 'reasoning'),
     };
 
     flatQueries.push(flatQuery);
@@ -134,11 +127,9 @@ function createBulkResponse<
     hasAnyError = true;
 
     flatQueries.push({
+      id: err.queryIndex + 1, // 1-based ID for LLM readability
       status: 'error',
       data: { error: err.error },
-      mainResearchGoal: safeExtractString(originalQuery, 'mainResearchGoal'),
-      researchGoal: safeExtractString(originalQuery, 'researchGoal'),
-      reasoning: safeExtractString(originalQuery, 'reasoning'),
     });
 
     errorCount++;
@@ -172,9 +163,11 @@ function createBulkResponse<
   const responseData: ToolResponse = {
     instructions,
     results: flatQueries,
-    hasResultsStatusHints: hasResultsHints,
-    emptyStatusHints: emptyHints,
-    errorStatusHints: errorHints,
+    ...(hasResultsHints.length > 0 && {
+      hasResultsStatusHints: hasResultsHints,
+    }),
+    ...(emptyHints.length > 0 && { emptyStatusHints: emptyHints }),
+    ...(errorHints.length > 0 && { errorStatusHints: errorHints }),
   };
 
   return {
@@ -290,14 +283,6 @@ function extractToolData<TData = Record<string, unknown>, TQuery = object>(
   return toolData;
 }
 
-function safeExtractString<T extends object>(
-  obj: T,
-  key: string
-): string | undefined {
-  const value = (obj as Record<string, unknown>)[key];
-  return typeof value === 'string' ? value : undefined;
-}
-
 function generateBulkInstructions(
   total: number,
   hasResultsCount: number,
@@ -305,27 +290,9 @@ function generateBulkInstructions(
   errorCount: number
 ): string {
   const counts = [];
-  if (hasResultsCount > 0) counts.push(`${hasResultsCount} hasResults`);
+  if (hasResultsCount > 0) counts.push(`${hasResultsCount} ok`);
   if (emptyCount > 0) counts.push(`${emptyCount} empty`);
-  if (errorCount > 0) counts.push(`${errorCount} failed`);
+  if (errorCount > 0) counts.push(`${errorCount} error`);
 
-  const instructionsParts = [
-    `Bulk response with ${total} results: ${counts.join(', ')}. Each result includes the status, data, and research details.`,
-  ];
-
-  if (hasResultsCount > 0) {
-    instructionsParts.push(
-      'Review hasResultsStatusHints for guidance on results with data.'
-    );
-  }
-  if (emptyCount > 0) {
-    instructionsParts.push('Review emptyStatusHints for no-results scenarios.');
-  }
-  if (errorCount > 0) {
-    instructionsParts.push(
-      'Review errorStatusHints for error recovery strategies.'
-    );
-  }
-
-  return instructionsParts.join('\n');
+  return `${total} results: ${counts.join(', ')}`;
 }

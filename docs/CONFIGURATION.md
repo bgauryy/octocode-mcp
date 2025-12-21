@@ -94,7 +94,8 @@ Use a custom API base URL with `GITHUB_API_URL`.
 | `ENABLE_TOOLS`   | string (CSV)       | none                      | Additive list of tools to enable. Ignored if `TOOLS_TO_RUN` is set. |
 | `DISABLE_TOOLS`  | string (CSV)       | none                      | List of tools to disable. Ignored if `TOOLS_TO_RUN` is set. |
 | `BETA`           | "0" \| "1" \| "true"/"false" | "0"/false          | Enable experimental features. |
-| `LOG`            | "true" \| "false"  | "true"                    | - |
+| `LOG`            | "true" \| "false"  | "true"                    | Enable session logging. |
+| `SANITIZE`       | "true" \| "false"  | "true"                    | Enable content sanitization (secret detection and redaction). Security-critical: only disable for trusted environments. |
 | `REQUEST_TIMEOUT`| number (ms)        | 30000 (min 30000)         | Per-request timeout. Values lower than 30000 are clamped to 30000. |
 | `MAX_RETRIES`    | number             | 3 (range 0..10)           | Max retry attempts for transient errors; clamped between 0 and 10. |
 

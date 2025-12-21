@@ -48,36 +48,17 @@ export function jsonToYamlString(
 
   try {
     return dump(jsonObject, {
-      // Force quotes on all non-key strings for consistency
       forceQuotes: true,
-
-      // Use double quotes to match JSON convention
       quotingType: '"',
-
-      // No line wrapping for cleaner, more predictable output
       lineWidth: -1,
-
-      // Don't convert duplicate objects into references for cleaner output
       noRefs: true,
-
-      // Apply configured sorting function
       sortKeys: createSortFunction(),
-
-      // Use 2-space indentation (YAML standard)
       indent: 2,
-
-      // Don't try to be compatible with older YAML versions
       noCompatMode: true,
-
-      // Use flow style sparingly (only when beneficial)
       flowLevel: -1,
-
-      // Don't skip invalid values, let them be handled explicitly
       skipInvalid: false,
     });
   } catch (error) {
-    // If YAML conversion fails, fallback to JSON.stringify for safety
-    // This ensures the function always returns a valid string representation
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error';
     //eslint-disable-next-line no-console
@@ -88,7 +69,6 @@ export function jsonToYamlString(
     try {
       return JSON.stringify(jsonObject, null, 2);
     } catch (jsonError) {
-      // If JSON.stringify also fails (e.g., circular references), return a safe string
       return `# YAML conversion failed: ${errorMessage}\n# JSON conversion also failed: ${jsonError instanceof Error ? jsonError.message : 'Unknown error'}\n# Object: [Unconvertible]`;
     }
   }

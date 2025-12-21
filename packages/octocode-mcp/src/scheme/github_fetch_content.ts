@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_FETCH_CONTENT, TOOL_NAMES } from '../tools/toolMetadata';
 
-// Base schema without refinement - keeps ZodObject type for extensibility
 const FileContentBaseSchema = BaseQuerySchema.extend({
   owner: z.string().min(1).max(200).describe(GITHUB_FETCH_CONTENT.scope.owner),
   repo: z.string().min(1).max(150).describe(GITHUB_FETCH_CONTENT.scope.repo),
@@ -11,11 +10,6 @@ const FileContentBaseSchema = BaseQuerySchema.extend({
     .optional()
     .default(true)
     .describe(GITHUB_FETCH_CONTENT.processing.minified),
-  sanitize: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe(GITHUB_FETCH_CONTENT.processing.sanitize),
   path: z.string().describe(GITHUB_FETCH_CONTENT.scope.path),
   branch: z
     .string()
@@ -53,12 +47,10 @@ const FileContentBaseSchema = BaseQuerySchema.extend({
   addTimestamp: z
     .boolean()
     .optional()
-    .default(false)
+    .default(true)
     .describe(GITHUB_FETCH_CONTENT.processing.addTimestamp),
 });
 
-// Apply validation refinements while maintaining ZodObject extensibility
-// superRefine validates parameter combinations at parse time
 export const FileContentQuerySchema = FileContentBaseSchema.superRefine(
   (data, ctx) => {
     if (
@@ -84,7 +76,6 @@ export const FileContentQuerySchema = FileContentBaseSchema.superRefine(
   }
 );
 
-// Type export for external use
 export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
 
 export const FileContentBulkQuerySchema = createBulkQuerySchema(

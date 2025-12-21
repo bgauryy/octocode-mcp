@@ -7,7 +7,6 @@ export async function getGithubCLIToken(): Promise<string | null> {
       timeout: 10000, // 10 second timeout
       env: {
         ...process.env,
-        // Remove potentially dangerous environment variables
         NODE_OPTIONS: undefined,
       },
     });
@@ -44,8 +43,6 @@ export async function getGithubCLIToken(): Promise<string | null> {
   });
 }
 
-// NPM Command Execution
-
 const ALLOWED_NPM_COMMANDS = [
   'view',
   'search',
@@ -69,20 +66,15 @@ interface NpmExecResult {
   exitCode?: number;
 }
 
-// Safely escape shell arguments - REMOVED as spawn handles this safely
-// function escapeShellArg(arg: string): string { ... }
-
 /**
  * Validate arguments for safety
  */
 function validateArgs(args: string[]): { valid: boolean; error?: string } {
   for (const arg of args) {
-    // Check for null bytes (command injection technique)
     if (arg.includes('\0')) {
       return { valid: false, error: 'Null bytes not allowed in arguments' };
     }
 
-    // Check for excessively long arguments (potential DoS)
     if (arg.length > 1000) {
       return { valid: false, error: 'Argument too long' };
     }
@@ -119,7 +111,6 @@ export async function executeNpmCommand(
     };
   }
 
-  // Validate arguments for security
   const validation = validateArgs(args);
   if (!validation.valid) {
     return {
@@ -137,7 +128,6 @@ export async function executeNpmCommand(
       env: {
         ...process.env,
         ...env,
-        // Remove potentially dangerous environment variables
         NODE_OPTIONS: undefined,
         NPM_CONFIG_SCRIPT_SHELL: undefined,
       },
@@ -172,7 +162,6 @@ export async function executeNpmCommand(
       });
     });
 
-    // Handle timeout
     const timeoutHandle = setTimeout(() => {
       childProcess.kill('SIGTERM');
       resolve({

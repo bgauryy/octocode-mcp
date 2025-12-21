@@ -30,6 +30,7 @@ vi.mock('../../src/utils/cache.js', () => ({
 vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
   getGitHubToken: vi.fn(() => Promise.resolve('test-token')),
+  isSanitizeEnabled: vi.fn(() => true),
 }));
 
 // Import after mocking
@@ -149,7 +150,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       expect(resultText).toContain('instructions:');
       expect(resultText).toContain('results:');
       expect(resultText).toContain('status: "hasResults"');
-      expect(resultText).toContain('1 hasResults');
+      expect(resultText).toContain('1 ok');
     });
 
     it('should handle empty results after filtering at tool level', async () => {
@@ -278,7 +279,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       expect(resultText).toContain('instructions:');
       expect(resultText).toContain('results:');
       expect(resultText).toContain('status: "hasResults"');
-      expect(resultText).toContain('1 hasResults');
+      expect(resultText).toContain('1 ok');
     });
 
     it('should filter build and dist directories', async () => {
@@ -356,7 +357,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       expect(resultText).toContain('instructions:');
       expect(resultText).toContain('results:');
       expect(resultText).toContain('status: "hasResults"');
-      expect(resultText).toContain('1 hasResults');
+      expect(resultText).toContain('1 ok');
     });
 
     it('should handle multiple queries with filtering', async () => {
@@ -371,7 +372,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
                 full_name: 'test/repo',
                 url: 'https://api.github.com/repos/test/repo',
               },
-              text_matches: [],
+              text_matches: [{ fragment: 'component code', matches: [] }],
             },
             {
               name: 'test.log',
@@ -380,7 +381,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
                 full_name: 'test/repo',
                 url: 'https://api.github.com/repos/test/repo',
               },
-              text_matches: [],
+              text_matches: [{ fragment: 'log content', matches: [] }],
             },
           ],
         },
@@ -397,7 +398,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
                 full_name: 'test/repo',
                 url: 'https://api.github.com/repos/test/repo',
               },
-              text_matches: [],
+              text_matches: [{ fragment: 'utils code', matches: [] }],
             },
             {
               name: '.env',
@@ -406,7 +407,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
                 full_name: 'test/repo',
                 url: 'https://api.github.com/repos/test/repo',
               },
-              text_matches: [],
+              text_matches: [{ fragment: 'env content', matches: [] }],
             },
           ],
         },
@@ -442,7 +443,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       expect(resultText).toContain('instructions:');
       expect(resultText).toContain('results:');
       expect(resultText).toContain('status: "hasResults"');
-      expect(resultText).toContain('2 hasResults');
+      expect(resultText).toContain('2 ok');
       expect(resultText).toContain('src/component.js');
       expect(resultText).toContain('src/utils.ts');
     });
