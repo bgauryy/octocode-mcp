@@ -3,7 +3,7 @@ import { builtinModules } from 'module';
 
 export default defineConfig({
   entry: ['src/index.ts'],
-  format: ['esm'],
+  format: ['cjs'],
   target: 'node20',
   platform: 'node',
   outDir: 'dist',

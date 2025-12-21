@@ -2,7 +2,7 @@
   "dxt_version": "0.1",
   "name": "octocode-mcp",
   "display_name": "Octocode MCP Extension",
-  "version": "7.0.15",
+  "version": "9.2.0",
   "description": "GitHub code search and npm package exploration MCP server",
   "long_description": "A comprehensive MCP server that provides GitHub code search, repository exploration, commit history, pull requests, issues, and npm package search capabilities. This extension enables AI assistants to efficiently search and analyze code across GitHub repositories and npm packages with advanced filtering and content retrieval features.",
   "author": {
@@ -17,13 +17,13 @@
   "homepage": "https://octocode.ai",
   "documentation": "https://github.com/bgauryy/octocode-mcp#readme",
   "support": "https://github.com/bgauryy/octocode-mcp/issues",
-  "icon": "assets/logo.png",
+  "icon": "assets/logo_white.png",
   "server": {
     "type": "node",
-    "entry_point": "dist/index.js",
+    "entry_point": "dist/index.cjs",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/dist/index.js"],
+      "args": ["${__dirname}/dist/index.cjs"],
       "env": {
         "NODE_ENV": "production"
       }
@@ -71,12 +71,12 @@
     "mcp",
     "octocode"
   ],
-  "license": "MIT",
+  "license": "PolyForm-Small-Business-1.0.0",
   "compatibility": {
     "claude_desktop": ">=0.10.0",
     "platforms": ["darwin", "win32", "linux"],
     "runtimes": {
-      "node": ">=18.0.0"
+      "node": ">=20.0.0"
     }
   },
   "user_config": {

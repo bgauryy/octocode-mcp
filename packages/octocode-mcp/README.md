@@ -151,7 +151,7 @@ curl -fsSL https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/install/i
 
 #### Prerequisites
 
-- **Node.js** >= 18.12.0
+- **Node.js** >= 20.0.0
 - **GitHub Authentication** (choose one):
   - **GitHub CLI (recommended)**: Install from [cli.github.com](https://cli.github.com/) and run `gh auth login`
   - **Personal Access Token**: Create at [github.com/settings/tokens](https://github.com/settings/tokens) with scopes: `repo`, `read:user`, `read:org`
@@ -696,4 +696,4 @@ If Octocode helps your AI development workflow:
 
 ## License
 
-MIT - See [LICENSE](./LICENSE) for details.
+PolyForm Small Business License 1.0.0 - See [LICENSE](./LICENSE) for details.
