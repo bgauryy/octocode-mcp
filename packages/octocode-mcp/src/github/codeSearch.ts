@@ -197,6 +197,10 @@ async function transformToOptimizedFormat(
         })
       );
 
+      const itemWithOptionalFields = item as CodeSearchResultItem & {
+        last_modified_at?: string;
+      };
+
       return {
         path: item.path,
         matches: processedMatches,
@@ -206,6 +210,9 @@ async function transformToOptimizedFormat(
           url: item.repository.url,
           pushedAt: item.repository.pushed_at || undefined,
         },
+        ...(itemWithOptionalFields.last_modified_at && {
+          lastModifiedAt: itemWithOptionalFields.last_modified_at,
+        }),
         ...(minify &&
           minificationTypes.length > 0 && {
             minificationType: Array.from(new Set(minificationTypes)).join(','),

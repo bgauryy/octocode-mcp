@@ -169,6 +169,203 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(responseText).toContain('url: "https://github.com/nodejs/node"');
       expect(responseText).toContain('updatedAt: "2024-01-20"');
     });
+
+    it('should include defaultBranch when present', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              stars: 100,
+              description: 'Test repo',
+              url: 'https://github.com/test/repo',
+              createdAt: '2024-01-20',
+              updatedAt: '2024-01-20',
+              pushedAt: '2024-01-20',
+              defaultBranch: 'main',
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [{ keywordsToSearch: ['test'] }],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('defaultBranch: "main"');
+    });
+
+    it('should include visibility when present', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              stars: 100,
+              description: 'Test repo',
+              url: 'https://github.com/test/repo',
+              createdAt: '2024-01-20',
+              updatedAt: '2024-01-20',
+              pushedAt: '2024-01-20',
+              visibility: 'public',
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [{ keywordsToSearch: ['test'] }],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('visibility: "public"');
+    });
+
+    it('should include topics when present', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              owner: 'facebook',
+              repo: 'react',
+              stars: 200000,
+              description: 'React library',
+              url: 'https://github.com/facebook/react',
+              createdAt: '2024-01-20',
+              updatedAt: '2024-01-20',
+              pushedAt: '2024-01-20',
+              topics: ['javascript', 'react', 'frontend'],
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [{ keywordsToSearch: ['react'] }],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('topics:');
+      expect(responseText).toContain('javascript');
+      expect(responseText).toContain('react');
+      expect(responseText).toContain('frontend');
+    });
+
+    it('should include forksCount when present', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              stars: 100,
+              description: 'Test repo',
+              url: 'https://github.com/test/repo',
+              createdAt: '2024-01-20',
+              updatedAt: '2024-01-20',
+              pushedAt: '2024-01-20',
+              forksCount: 42,
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [{ keywordsToSearch: ['test'] }],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('forksCount: 42');
+    });
+
+    it('should include openIssuesCount when present', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              stars: 100,
+              description: 'Test repo',
+              url: 'https://github.com/test/repo',
+              createdAt: '2024-01-20',
+              updatedAt: '2024-01-20',
+              pushedAt: '2024-01-20',
+              openIssuesCount: 15,
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [{ keywordsToSearch: ['test'] }],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('openIssuesCount: 15');
+    });
+
+    it('should include all new research context fields when present', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              owner: 'facebook',
+              repo: 'react',
+              stars: 200000,
+              description: 'React library',
+              url: 'https://github.com/facebook/react',
+              createdAt: '2024-01-20',
+              updatedAt: '2024-01-20',
+              pushedAt: '2024-01-20',
+              defaultBranch: 'main',
+              visibility: 'public',
+              topics: ['javascript', 'react'],
+              forksCount: 15000,
+              openIssuesCount: 500,
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [{ keywordsToSearch: ['react'] }],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('defaultBranch: "main"');
+      expect(responseText).toContain('visibility: "public"');
+      expect(responseText).toContain('topics:');
+      expect(responseText).toContain('forksCount: 15000');
+      expect(responseText).toContain('openIssuesCount: 500');
+    });
   });
 
   describe('Status: empty', () => {

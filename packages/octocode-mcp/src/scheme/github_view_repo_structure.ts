@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_VIEW_REPO_STRUCTURE, TOOL_NAMES } from '../tools/toolMetadata';
+import type { DirectoryEntry } from '../types.js';
 
 export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
   owner: z
@@ -83,18 +84,7 @@ export interface GitHubRepositoryStructureResult {
     filtered: boolean;
     originalCount: number;
   };
-  files: Array<{
-    path: string;
-    size?: number;
-    url: string;
-  }>;
-  folders: {
-    count: number;
-    folders: Array<{
-      path: string;
-      url: string;
-    }>;
-  };
+  structure: Record<string, DirectoryEntry>;
 }
 
 export interface GitHubRepositoryStructureError {

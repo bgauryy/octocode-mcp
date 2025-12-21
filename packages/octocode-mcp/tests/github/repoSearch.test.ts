@@ -440,6 +440,316 @@ describe('GitHub Repository Search', () => {
     });
   });
 
+  describe('searchGitHubReposAPI - New Research Context Fields', () => {
+    it('should include defaultBranch when present', async () => {
+      const mockResponse = {
+        data: {
+          items: [
+            {
+              full_name: 'test/repo',
+              stargazers_count: 100,
+              description: 'Test repo',
+              html_url: 'https://github.com/test/repo',
+              created_at: '2024-01-01T10:00:00Z',
+              updated_at: '2024-01-15T10:30:00Z',
+              pushed_at: '2024-01-15T08:00:00Z',
+              default_branch: 'main',
+            },
+          ],
+        },
+        headers: {},
+      };
+
+      mockOctokit.rest.search.repos.mockResolvedValue(mockResponse);
+
+      const params: GitHubReposSearchQuery = {
+        keywordsToSearch: ['test'],
+      };
+
+      const result = await searchGitHubReposAPI(params);
+
+      if ('data' in result) {
+        expect(result.data.repositories[0]).toHaveProperty('defaultBranch');
+        expect(result.data.repositories[0]!.defaultBranch).toBe('main');
+      }
+    });
+
+    it('should include visibility when present', async () => {
+      const mockResponse = {
+        data: {
+          items: [
+            {
+              full_name: 'test/repo',
+              stargazers_count: 100,
+              description: 'Test repo',
+              html_url: 'https://github.com/test/repo',
+              created_at: '2024-01-01T10:00:00Z',
+              updated_at: '2024-01-15T10:30:00Z',
+              pushed_at: '2024-01-15T08:00:00Z',
+              visibility: 'public',
+            },
+          ],
+        },
+        headers: {},
+      };
+
+      mockOctokit.rest.search.repos.mockResolvedValue(mockResponse);
+
+      const params: GitHubReposSearchQuery = {
+        keywordsToSearch: ['test'],
+      };
+
+      const result = await searchGitHubReposAPI(params);
+
+      if ('data' in result) {
+        expect(result.data.repositories[0]).toHaveProperty('visibility');
+        expect(result.data.repositories[0]!.visibility).toBe('public');
+      }
+    });
+
+    it('should include topics when array is non-empty', async () => {
+      const mockResponse = {
+        data: {
+          items: [
+            {
+              full_name: 'test/repo',
+              stargazers_count: 100,
+              description: 'Test repo',
+              html_url: 'https://github.com/test/repo',
+              created_at: '2024-01-01T10:00:00Z',
+              updated_at: '2024-01-15T10:30:00Z',
+              pushed_at: '2024-01-15T08:00:00Z',
+              topics: ['typescript', 'react', 'testing'],
+            },
+          ],
+        },
+        headers: {},
+      };
+
+      mockOctokit.rest.search.repos.mockResolvedValue(mockResponse);
+
+      const params: GitHubReposSearchQuery = {
+        keywordsToSearch: ['test'],
+      };
+
+      const result = await searchGitHubReposAPI(params);
+
+      if ('data' in result) {
+        expect(result.data.repositories[0]).toHaveProperty('topics');
+        expect(result.data.repositories[0]!.topics).toEqual([
+          'typescript',
+          'react',
+          'testing',
+        ]);
+      }
+    });
+
+    it('should not include topics when array is empty', async () => {
+      const mockResponse = {
+        data: {
+          items: [
+            {
+              full_name: 'test/repo',
+              stargazers_count: 100,
+              description: 'Test repo',
+              html_url: 'https://github.com/test/repo',
+              created_at: '2024-01-01T10:00:00Z',
+              updated_at: '2024-01-15T10:30:00Z',
+              pushed_at: '2024-01-15T08:00:00Z',
+              topics: [],
+            },
+          ],
+        },
+        headers: {},
+      };
+
+      mockOctokit.rest.search.repos.mockResolvedValue(mockResponse);
+
+      const params: GitHubReposSearchQuery = {
+        keywordsToSearch: ['test'],
+      };
+
+      const result = await searchGitHubReposAPI(params);
+
+      if ('data' in result) {
+        expect(result.data.repositories[0]).not.toHaveProperty('topics');
+      }
+    });
+
+    it('should include forksCount when greater than 0', async () => {
+      const mockResponse = {
+        data: {
+          items: [
+            {
+              full_name: 'test/repo',
+              stargazers_count: 100,
+              description: 'Test repo',
+              html_url: 'https://github.com/test/repo',
+              created_at: '2024-01-01T10:00:00Z',
+              updated_at: '2024-01-15T10:30:00Z',
+              pushed_at: '2024-01-15T08:00:00Z',
+              forks_count: 42,
+            },
+          ],
+        },
+        headers: {},
+      };
+
+      mockOctokit.rest.search.repos.mockResolvedValue(mockResponse);
+
+      const params: GitHubReposSearchQuery = {
+        keywordsToSearch: ['test'],
+      };
+
+      const result = await searchGitHubReposAPI(params);
+
+      if ('data' in result) {
+        expect(result.data.repositories[0]).toHaveProperty('forksCount');
+        expect(result.data.repositories[0]!.forksCount).toBe(42);
+      }
+    });
+
+    it('should not include forksCount when 0', async () => {
+      const mockResponse = {
+        data: {
+          items: [
+            {
+              full_name: 'test/repo',
+              stargazers_count: 100,
+              description: 'Test repo',
+              html_url: 'https://github.com/test/repo',
+              created_at: '2024-01-01T10:00:00Z',
+              updated_at: '2024-01-15T10:30:00Z',
+              pushed_at: '2024-01-15T08:00:00Z',
+              forks_count: 0,
+            },
+          ],
+        },
+        headers: {},
+      };
+
+      mockOctokit.rest.search.repos.mockResolvedValue(mockResponse);
+
+      const params: GitHubReposSearchQuery = {
+        keywordsToSearch: ['test'],
+      };
+
+      const result = await searchGitHubReposAPI(params);
+
+      if ('data' in result) {
+        expect(result.data.repositories[0]).not.toHaveProperty('forksCount');
+      }
+    });
+
+    it('should include openIssuesCount when greater than 0', async () => {
+      const mockResponse = {
+        data: {
+          items: [
+            {
+              full_name: 'test/repo',
+              stargazers_count: 100,
+              description: 'Test repo',
+              html_url: 'https://github.com/test/repo',
+              created_at: '2024-01-01T10:00:00Z',
+              updated_at: '2024-01-15T10:30:00Z',
+              pushed_at: '2024-01-15T08:00:00Z',
+              open_issues_count: 15,
+            },
+          ],
+        },
+        headers: {},
+      };
+
+      mockOctokit.rest.search.repos.mockResolvedValue(mockResponse);
+
+      const params: GitHubReposSearchQuery = {
+        keywordsToSearch: ['test'],
+      };
+
+      const result = await searchGitHubReposAPI(params);
+
+      if ('data' in result) {
+        expect(result.data.repositories[0]).toHaveProperty('openIssuesCount');
+        expect(result.data.repositories[0]!.openIssuesCount).toBe(15);
+      }
+    });
+
+    it('should not include openIssuesCount when 0', async () => {
+      const mockResponse = {
+        data: {
+          items: [
+            {
+              full_name: 'test/repo',
+              stargazers_count: 100,
+              description: 'Test repo',
+              html_url: 'https://github.com/test/repo',
+              created_at: '2024-01-01T10:00:00Z',
+              updated_at: '2024-01-15T10:30:00Z',
+              pushed_at: '2024-01-15T08:00:00Z',
+              open_issues_count: 0,
+            },
+          ],
+        },
+        headers: {},
+      };
+
+      mockOctokit.rest.search.repos.mockResolvedValue(mockResponse);
+
+      const params: GitHubReposSearchQuery = {
+        keywordsToSearch: ['test'],
+      };
+
+      const result = await searchGitHubReposAPI(params);
+
+      if ('data' in result) {
+        expect(result.data.repositories[0]).not.toHaveProperty(
+          'openIssuesCount'
+        );
+      }
+    });
+
+    it('should include all new fields when all are present', async () => {
+      const mockResponse = {
+        data: {
+          items: [
+            {
+              full_name: 'facebook/react',
+              stargazers_count: 50000,
+              description: 'A JavaScript library',
+              html_url: 'https://github.com/facebook/react',
+              created_at: '2013-05-24T10:00:00Z',
+              updated_at: '2024-01-15T10:30:00Z',
+              pushed_at: '2024-01-15T08:00:00Z',
+              default_branch: 'main',
+              visibility: 'public',
+              topics: ['javascript', 'react', 'frontend'],
+              forks_count: 15000,
+              open_issues_count: 500,
+            },
+          ],
+        },
+        headers: {},
+      };
+
+      mockOctokit.rest.search.repos.mockResolvedValue(mockResponse);
+
+      const params: GitHubReposSearchQuery = {
+        keywordsToSearch: ['react'],
+      };
+
+      const result = await searchGitHubReposAPI(params);
+
+      if ('data' in result) {
+        const repo = result.data.repositories[0]!;
+        expect(repo.defaultBranch).toBe('main');
+        expect(repo.visibility).toBe('public');
+        expect(repo.topics).toEqual(['javascript', 'react', 'frontend']);
+        expect(repo.forksCount).toBe(15000);
+        expect(repo.openIssuesCount).toBe(500);
+      }
+    });
+  });
+
   describe('searchGitHubReposAPI - Error Handling', () => {
     it('should handle API errors', async () => {
       const mockError = new Error('API Error');
