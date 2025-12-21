@@ -17,6 +17,8 @@ export interface PackageSearchInput {
 export interface MinimalPackageResult {
   name: string;
   repository: string | null;
+  owner?: string;
+  repo?: string;
 }
 
 export interface NpmPackageResult {
@@ -26,6 +28,8 @@ export interface NpmPackageResult {
   mainEntry: string | null;
   typeDefinitions: string | null;
   lastPublished?: string;
+  owner?: string;
+  repo?: string;
 }
 
 export interface PythonPackageResult {
@@ -38,6 +42,8 @@ export interface PythonPackageResult {
   author?: string;
   license?: string;
   lastPublished?: string;
+  owner?: string;
+  repo?: string;
 }
 
 export type PackageResult =

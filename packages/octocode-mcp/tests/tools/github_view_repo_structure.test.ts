@@ -343,7 +343,7 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(responseText).not.toMatch(/^hints:/m);
     });
 
-    it('should not include branch field in output', async () => {
+    it('should include branch field in output', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
         structure: {
           '.': {
@@ -378,8 +378,8 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
 
-      // Branch should NOT be in the response data (it was only in query)
-      expect(responseText).not.toContain('branch:');
+      // Branch should be in the response data
+      expect(responseText).toContain('branch: "main"');
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('path: "/"');
       expect(responseText).toContain('1 hasResults');

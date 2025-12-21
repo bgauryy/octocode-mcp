@@ -90,6 +90,21 @@ function getPackageRepo(pkg: PackageResult): string | null {
   return pkg.repository;
 }
 
+function parseRepoInfo(repoUrl: string | null | undefined): {
+  owner?: string;
+  repo?: string;
+} {
+  if (!repoUrl || !repoUrl.includes('github.com')) return {};
+  const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+  if (match && match[1] && match[2]) {
+    const owner = match[1];
+    const repoName = match[2];
+    const cleanRepo = repoName.replace(/\.git$/, '').replace(/\/$/, '');
+    return { owner, repo: cleanRepo };
+  }
+  return {};
+}
+
 async function searchPackages(
   queries: PackageSearchQuery[]
 ): Promise<CallToolResult> {
@@ -103,9 +118,18 @@ async function searchPackages(
           return createErrorResult(query, apiResult.error);
         }
 
+        const packages = (apiResult.packages as PackageResult[]).map(pkg => {
+          const repoUrl = getPackageRepo(pkg);
+          const { owner, repo } = parseRepoInfo(repoUrl);
+          if (owner && repo) {
+            return { ...pkg, owner, repo };
+          }
+          return pkg;
+        });
+
         // Only include NEW data - ecosystem is already in the query
         const result = {
-          packages: apiResult.packages as PackageResult[],
+          packages,
           totalFound: apiResult.totalFound,
         };
 

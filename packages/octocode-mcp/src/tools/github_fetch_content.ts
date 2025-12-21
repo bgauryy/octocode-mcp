@@ -96,6 +96,10 @@ async function fetchMultipleGitHubFileContents(
     {
       toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       keysPriority: [
+        'owner',
+        'repo',
+        'path',
+        'branch',
         'contentLength',
         'content',
         'isPartial',
@@ -148,18 +152,11 @@ function hasValidContent(result: unknown): boolean {
 /**
  * Strip query parameters from result - response should only contain NEW data
  * Query already has: owner, repo, path, branch, etc.
+ * UPDATE: We now preserve these fields to ensure context is available in cross-tool workflows
  */
 function stripQueryParams(
   result: Record<string, unknown>
 ): Record<string, unknown> {
-  const queryParams = new Set(['owner', 'repo', 'path', 'branch']);
-  const cleaned: Record<string, unknown> = {};
-
-  for (const [key, value] of Object.entries(result)) {
-    if (!queryParams.has(key)) {
-      cleaned[key] = value;
-    }
-  }
-
-  return cleaned;
+  // We no longer strip these fields as they are needed for context
+  return result;
 }

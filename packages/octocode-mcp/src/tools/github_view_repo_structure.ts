@@ -167,6 +167,9 @@ async function exploreMultipleRepositoryStructures(
         return createSuccessResult(
           query,
           {
+            owner: apiRequest.owner,
+            repo: apiRequest.repo,
+            branch: apiRequest.branch,
             path: apiRequest.path || '/',
             structure: filteredStructure,
           },
@@ -184,9 +187,14 @@ async function exploreMultipleRepositoryStructures(
     },
     {
       toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-      keysPriority: ['path', 'structure', 'error'] satisfies Array<
-        keyof RepoStructureResult
-      >,
+      keysPriority: [
+        'owner',
+        'repo',
+        'branch',
+        'path',
+        'structure',
+        'error',
+      ] satisfies Array<keyof RepoStructureResult>,
     }
   );
 }

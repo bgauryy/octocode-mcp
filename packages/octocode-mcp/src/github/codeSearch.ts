@@ -197,6 +197,13 @@ async function transformToOptimizedFormat(
         })
       );
 
+      // Access optional fields from GitHub API response
+      const itemWithOptionalFields = item as CodeSearchResultItem & {
+        score?: number;
+        line_numbers?: string[];
+        last_modified_at?: string;
+      };
+
       return {
         path: item.path,
         matches: processedMatches,
@@ -206,6 +213,17 @@ async function transformToOptimizedFormat(
           url: item.repository.url,
           pushedAt: item.repository.pushed_at || undefined,
         },
+        // New fields for better cross-tool research
+        ...(itemWithOptionalFields.line_numbers &&
+          itemWithOptionalFields.line_numbers.length > 0 && {
+            lineNumbers: itemWithOptionalFields.line_numbers,
+          }),
+        ...(itemWithOptionalFields.last_modified_at && {
+          lastModifiedAt: itemWithOptionalFields.last_modified_at,
+        }),
+        ...(typeof itemWithOptionalFields.score === 'number' && {
+          relevanceRanking: itemWithOptionalFields.score,
+        }),
         ...(minify &&
           minificationTypes.length > 0 && {
             minificationType: Array.from(new Set(minificationTypes)).join(','),

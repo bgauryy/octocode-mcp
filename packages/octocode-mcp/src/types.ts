@@ -98,13 +98,29 @@ export interface GitHubCodeSearchQuery {
  * Code search result with matched files.
  * - For content matches: includes text_matches with matched code snippets
  * - For path-only matches: only includes path (no text_matches)
+ * - Each file includes repo (owner/repo) for direct use with githubGetFileContent
  */
 export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
   /** Array of matched files with their paths and optional text matches */
   files?: Array<{
+    /** File path within the repository */
     path: string;
+    /** Repository in owner/repo format - use this for githubGetFileContent */
+    repo?: string;
+    /** Matched code snippets (only for match="file") */
     text_matches?: string[];
+    /** Line number ranges where matches occur (e.g., ["73..77", "77..78"]) - use with startLine/endLine in githubGetFileContent */
+    lineNumbers?: string[];
+    /** File last modified timestamp */
+    lastModifiedAt?: string;
+    /** Search relevance score - higher means more relevant */
+    relevanceRanking?: number;
   }>;
+  /** When all files are from the same repo, this provides the owner and repo separately */
+  repositoryContext?: {
+    owner: string;
+    repo: string;
+  };
 }
 
 // ─── File Content (github_fetch_content) ────────────────────────────────────
@@ -184,12 +200,21 @@ export interface GitHubReposSearchQuery {
 export interface SimplifiedRepository {
   owner: string;
   repo: string;
+  defaultBranch?: string;
   stars: number;
   description: string;
   url: string;
   createdAt: string;
   updatedAt: string;
   pushedAt: string;
+  /** Repository visibility: public, private, or internal */
+  visibility?: string;
+  /** Array of topic tags (only included if repository has topics) */
+  topics?: string[];
+  /** Number of forks (only included if > 0) */
+  forksCount?: number;
+  /** Number of open issues (only included if > 0) */
+  openIssuesCount?: number;
 }
 
 /** Repository search result */
@@ -225,6 +250,7 @@ export interface DirectoryEntry {
 export interface RepoStructureResultData {
   owner?: string;
   repo?: string;
+  branch?: string;
   /** Base path that was queried */
   path?: string;
   /** Structure grouped by directory - keys are relative paths */
@@ -257,6 +283,8 @@ export interface PackageInfo {
   description: string | null;
   keywords: string[];
   repository: string | null;
+  owner?: string;
+  repo?: string;
   license?: string;
   homepage?: string;
   author?: string;
@@ -402,6 +430,8 @@ export interface PullRequestInfo {
 
 /** Pull request search result data */
 export interface PullRequestSearchResultData {
+  owner?: string;
+  repo?: string;
   pull_requests?: PullRequestInfo[];
   total_count?: number;
   incomplete_results?: boolean;

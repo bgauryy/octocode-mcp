@@ -710,6 +710,230 @@ describe('Code Search Filtering - File Filters', () => {
     });
   });
 
+  describe('New research context fields', () => {
+    it('should include lineNumbers when present in API response', async () => {
+      const mockResponse = {
+        data: {
+          total_count: 1,
+          items: [
+            {
+              name: 'app.js',
+              path: 'src/app.js',
+              repository: {
+                full_name: 'test/repo',
+                url: 'https://api.github.com/repos/test/repo',
+              },
+              text_matches: [],
+              line_numbers: ['73..77', '77..78'],
+            },
+          ],
+        },
+      };
+
+      mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+      const result = await searchGitHubCodeAPI({
+        keywordsToSearch: ['function'],
+        owner: 'test',
+        repo: 'repo',
+        minify: false,
+      });
+
+      if ('data' in result) {
+        expect(result.data.items[0]).toHaveProperty('lineNumbers');
+        expect(result.data.items[0]!.lineNumbers).toEqual(['73..77', '77..78']);
+      } else {
+        expect.fail('Expected successful result');
+      }
+    });
+
+    it('should include lastModifiedAt when present in API response', async () => {
+      const mockResponse = {
+        data: {
+          total_count: 1,
+          items: [
+            {
+              name: 'app.js',
+              path: 'src/app.js',
+              repository: {
+                full_name: 'test/repo',
+                url: 'https://api.github.com/repos/test/repo',
+              },
+              text_matches: [],
+              last_modified_at: '2025-12-01T10:30:00Z',
+            },
+          ],
+        },
+      };
+
+      mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+      const result = await searchGitHubCodeAPI({
+        keywordsToSearch: ['function'],
+        owner: 'test',
+        repo: 'repo',
+        minify: false,
+      });
+
+      if ('data' in result) {
+        expect(result.data.items[0]).toHaveProperty('lastModifiedAt');
+        expect(result.data.items[0]!.lastModifiedAt).toBe(
+          '2025-12-01T10:30:00Z'
+        );
+      } else {
+        expect.fail('Expected successful result');
+      }
+    });
+
+    it('should include relevanceRanking when score is present in API response', async () => {
+      const mockResponse = {
+        data: {
+          total_count: 1,
+          items: [
+            {
+              name: 'app.js',
+              path: 'src/app.js',
+              repository: {
+                full_name: 'test/repo',
+                url: 'https://api.github.com/repos/test/repo',
+              },
+              text_matches: [],
+              score: 0.95,
+            },
+          ],
+        },
+      };
+
+      mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+      const result = await searchGitHubCodeAPI({
+        keywordsToSearch: ['function'],
+        owner: 'test',
+        repo: 'repo',
+        minify: false,
+      });
+
+      if ('data' in result) {
+        expect(result.data.items[0]).toHaveProperty('relevanceRanking');
+        expect(result.data.items[0]!.relevanceRanking).toBe(0.95);
+      } else {
+        expect.fail('Expected successful result');
+      }
+    });
+
+    it('should include all new fields when all are present', async () => {
+      const mockResponse = {
+        data: {
+          total_count: 1,
+          items: [
+            {
+              name: 'app.js',
+              path: 'src/app.js',
+              repository: {
+                full_name: 'test/repo',
+                url: 'https://api.github.com/repos/test/repo',
+              },
+              text_matches: [],
+              line_numbers: ['100..105'],
+              last_modified_at: '2025-11-15T08:00:00Z',
+              score: 1.5,
+            },
+          ],
+        },
+      };
+
+      mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+      const result = await searchGitHubCodeAPI({
+        keywordsToSearch: ['function'],
+        owner: 'test',
+        repo: 'repo',
+        minify: false,
+      });
+
+      if ('data' in result) {
+        const item = result.data.items[0]!;
+        expect(item.lineNumbers).toEqual(['100..105']);
+        expect(item.lastModifiedAt).toBe('2025-11-15T08:00:00Z');
+        expect(item.relevanceRanking).toBe(1.5);
+      } else {
+        expect.fail('Expected successful result');
+      }
+    });
+
+    it('should not include lineNumbers when array is empty', async () => {
+      const mockResponse = {
+        data: {
+          total_count: 1,
+          items: [
+            {
+              name: 'app.js',
+              path: 'src/app.js',
+              repository: {
+                full_name: 'test/repo',
+                url: 'https://api.github.com/repos/test/repo',
+              },
+              text_matches: [],
+              line_numbers: [],
+            },
+          ],
+        },
+      };
+
+      mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+      const result = await searchGitHubCodeAPI({
+        keywordsToSearch: ['function'],
+        owner: 'test',
+        repo: 'repo',
+        minify: false,
+      });
+
+      if ('data' in result) {
+        expect(result.data.items[0]).not.toHaveProperty('lineNumbers');
+      } else {
+        expect.fail('Expected successful result');
+      }
+    });
+
+    it('should not include fields when not present in API response', async () => {
+      const mockResponse = {
+        data: {
+          total_count: 1,
+          items: [
+            {
+              name: 'app.js',
+              path: 'src/app.js',
+              repository: {
+                full_name: 'test/repo',
+                url: 'https://api.github.com/repos/test/repo',
+              },
+              text_matches: [],
+              // No line_numbers, last_modified_at, or score
+            },
+          ],
+        },
+      };
+
+      mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+      const result = await searchGitHubCodeAPI({
+        keywordsToSearch: ['function'],
+        owner: 'test',
+        repo: 'repo',
+        minify: false,
+      });
+
+      if ('data' in result) {
+        expect(result.data.items[0]).not.toHaveProperty('lineNumbers');
+        expect(result.data.items[0]).not.toHaveProperty('lastModifiedAt');
+        expect(result.data.items[0]).not.toHaveProperty('relevanceRanking');
+      } else {
+        expect.fail('Expected successful result');
+      }
+    });
+  });
+
   describe('Combined filtering scenarios', () => {
     it('should handle mixed valid and invalid files correctly', async () => {
       const mockResponse = {

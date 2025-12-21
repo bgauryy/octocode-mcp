@@ -88,6 +88,7 @@ async function searchGitHubReposAPIInternal(
         return {
           owner,
           repo: repoName,
+          defaultBranch: repo.default_branch,
           stars: repo.stargazers_count || 0,
           description: repo.description
             ? repo.description.length > 150
@@ -98,6 +99,17 @@ async function searchGitHubReposAPIInternal(
           createdAt: repo.created_at,
           updatedAt: repo.updated_at,
           pushedAt: repo.pushed_at,
+          // New fields for cross-tool research context
+          visibility: repo.visibility,
+          ...(repo.topics && repo.topics.length > 0 && { topics: repo.topics }),
+          ...(repo.forks_count &&
+            repo.forks_count > 0 && {
+              forksCount: repo.forks_count,
+            }),
+          ...(repo.open_issues_count &&
+            repo.open_issues_count > 0 && {
+              openIssuesCount: repo.open_issues_count,
+            }),
         };
       })
       .sort((a: SimplifiedRepository, b: SimplifiedRepository) => {

@@ -595,6 +595,9 @@ Search for specific code patterns, functions, or implementations across millions
 - **Path Search**: Discover files/directories by name (25x faster)
 - **Smart Filtering**: Scope by repository, path, file extension, or popularity
 - **Context-Rich Results**: Returns code snippets with surrounding context
+- **Line Numbers**: Returns `lineNumbers` array with exact match locations (e.g., `["73..77"]`)
+- **File Freshness**: Returns `lastModifiedAt` timestamp for each file
+- **Relevance Ranking**: Returns `relevanceRanking` score to prioritize results
 
 **Common Use Cases**:
 ```
@@ -616,6 +619,10 @@ Your starting point for repository discovery - find the right projects to analyz
 - **Keyword Search**: Find repos by name, description, or README content
 - **Quality Filters**: Filter by stars, language, size, activity
 - **Sorting Options**: By popularity, recency, or relevance
+- **Default Branch**: Returns `defaultBranch` for seamless follow-up queries
+- **Visibility**: Returns repository visibility (public/private/internal)
+- **Topics**: Returns topic tags when available
+- **Activity Indicators**: Returns `forksCount` and `openIssuesCount` (when > 0)
 
 **Common Use Cases**:
 ```
