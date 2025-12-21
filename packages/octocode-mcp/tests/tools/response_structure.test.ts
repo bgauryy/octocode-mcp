@@ -166,7 +166,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
       // Optimized: reasoning not duplicated in response
-      expect(responseText).toContain('1 ok');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle empty queries only', async () => {
@@ -214,7 +214,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "error"');
       // Optimized: reasoning not duplicated in response
-      expect(responseText).toContain('1 error');
+      expect(responseText).toContain('1 failed');
     });
 
     it('should handle successful + empty combination', async () => {
@@ -251,7 +251,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 ok, 1 empty');
+      expect(responseText).toContain('1 hasResults, 1 empty');
     });
 
     it('should handle successful + error combination', async () => {
@@ -285,7 +285,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 ok, 1 error');
+      expect(responseText).toContain('1 hasResults, 1 failed');
     });
 
     it('should handle empty + error combination', async () => {
@@ -313,7 +313,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).not.toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 empty, 1 error');
+      expect(responseText).toContain('1 empty, 1 failed');
     });
 
     it('should handle successful + empty + error combination', async () => {
@@ -355,7 +355,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 ok, 1 empty, 1 error');
+      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
     });
   });
 
@@ -395,7 +395,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 ok');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle error queries only', async () => {
@@ -422,7 +422,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).not.toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 error');
+      expect(responseText).toContain('1 failed');
     });
 
     it('should handle successful + error combination', async () => {
@@ -467,7 +467,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 ok, 1 error');
+      expect(responseText).toContain('1 hasResults, 1 failed');
     });
   });
 
@@ -511,7 +511,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 ok');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle empty queries only', async () => {
@@ -586,7 +586,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 ok, 1 empty, 1 error');
+      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
     });
   });
 
@@ -617,7 +617,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 ok');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle empty queries only', async () => {
@@ -674,7 +674,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 ok, 1 empty, 1 error');
+      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
     });
   });
 
@@ -716,7 +716,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 ok');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle empty queries only', async () => {
@@ -807,7 +807,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 ok, 1 empty, 1 error');
+      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
     });
   });
 

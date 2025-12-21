@@ -150,7 +150,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       expect(resultText).toContain('instructions:');
       expect(resultText).toContain('results:');
       expect(resultText).toContain('status: "hasResults"');
-      expect(resultText).toContain('1 ok');
+      expect(resultText).toContain('1 hasResults');
     });
 
     it('should handle empty results after filtering at tool level', async () => {
@@ -279,7 +279,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       expect(resultText).toContain('instructions:');
       expect(resultText).toContain('results:');
       expect(resultText).toContain('status: "hasResults"');
-      expect(resultText).toContain('1 ok');
+      expect(resultText).toContain('1 hasResults');
     });
 
     it('should filter build and dist directories', async () => {
@@ -357,7 +357,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       expect(resultText).toContain('instructions:');
       expect(resultText).toContain('results:');
       expect(resultText).toContain('status: "hasResults"');
-      expect(resultText).toContain('1 ok');
+      expect(resultText).toContain('1 hasResults');
     });
 
     it('should handle multiple queries with filtering', async () => {
@@ -443,7 +443,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       expect(resultText).toContain('instructions:');
       expect(resultText).toContain('results:');
       expect(resultText).toContain('status: "hasResults"');
-      expect(resultText).toContain('2 ok');
+      expect(resultText).toContain('2 hasResults');
       expect(resultText).toContain('src/component.js');
       expect(resultText).toContain('src/utils.ts');
     });

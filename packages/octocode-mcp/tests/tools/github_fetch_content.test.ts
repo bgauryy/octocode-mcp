@@ -739,7 +739,7 @@ End of file.`;
   });
 
   describe('Security and Sanitization', () => {
-    it('should sanitize content and provide security warnings', async () => {
+    it('should handle content with security warnings from API', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
           path: 'config.env',
@@ -764,7 +764,6 @@ End of file.`;
               owner: 'test',
               repo: 'repo',
               path: 'config.env',
-              sanitize: true,
               id: 'security-test',
             },
           ],
@@ -782,17 +781,9 @@ End of file.`;
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
-
-      expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sanitize: true,
-        }),
-        undefined, // authInfo
-        undefined // sessionId
-      );
     });
 
-    it('should handle sanitize=false parameter', async () => {
+    it('should handle public content without security warnings', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
           path: 'public.js',
@@ -813,23 +804,18 @@ End of file.`;
               owner: 'test',
               repo: 'repo',
               path: 'public.js',
-              sanitize: false,
-              id: 'no-sanitize-test',
+              id: 'public-content-test',
             },
           ],
         }
       );
 
       expect(result.isError).toBe(false);
-
-      // Verify API was called with sanitize=false
-      expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sanitize: false,
-        }),
-        undefined, // authInfo
-        undefined // sessionId
-      );
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('Public content');
+      // No security warnings expected
+      expect(responseText).not.toContain('securityWarnings:');
     });
   });
 
@@ -1054,7 +1040,6 @@ End of file.`;
               path: 'test.js',
               fullContent: true,
               minified: true,
-              sanitize: false,
               id: 'boolean-params-test',
             },
           ],
@@ -1068,7 +1053,6 @@ End of file.`;
         expect.objectContaining({
           fullContent: true,
           minified: true,
-          sanitize: false,
         }),
         undefined, // authInfo
         undefined // sessionId

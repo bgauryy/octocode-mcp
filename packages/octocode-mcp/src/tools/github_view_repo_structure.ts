@@ -1,7 +1,4 @@
-import {
-  McpServer,
-  RegisteredTool,
-} from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
 import type {
@@ -25,7 +22,7 @@ import {
 export function registerViewGitHubRepoStructureTool(
   server: McpServer,
   callback?: ToolInvocationCallback
-): RegisteredTool {
+) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     {
