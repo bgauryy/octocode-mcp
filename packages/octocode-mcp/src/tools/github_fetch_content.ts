@@ -1,7 +1,4 @@
-import {
-  McpServer,
-  RegisteredTool,
-} from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from '../security/withSecurityValidation.js';
 import type { ToolInvocationCallback, FileContentQuery } from '../types.js';
@@ -19,7 +16,7 @@ import {
 export function registerFetchGitHubFileContentTool(
   server: McpServer,
   callback?: ToolInvocationCallback
-): RegisteredTool {
+) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_FETCH_CONTENT,
     {
@@ -131,7 +128,6 @@ function buildApiRequest(query: FileContentQuery) {
       fullContent || !query.matchString ? undefined : String(query.matchString),
     matchStringContextLines: query.matchStringContextLines ?? 5,
     minified: query.minified ?? true,
-    sanitize: query.sanitize ?? true,
     addTimestamp: query.addTimestamp ?? false,
   };
 }

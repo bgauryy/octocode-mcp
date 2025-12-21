@@ -89,7 +89,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(responseText).toContain('repositories:');
       expect(responseText).toContain('facebook/react');
       expect(responseText).toContain('vercel/next.js');
-      expect(responseText).toContain('1 ok');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle single repository result', async () => {
@@ -127,7 +127,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(result.isError).toBe(false);
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('microsoft/TypeScript');
-      expect(responseText).toContain('1 ok');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should include all repository fields in response', async () => {
@@ -253,7 +253,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "API rate limit exceeded"');
-      expect(responseText).toContain('1 error');
+      expect(responseText).toContain('1 failed');
     });
 
     it('should handle exception thrown during API call', async () => {
@@ -377,7 +377,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
-      expect(responseText).toContain('3 ok');
+      expect(responseText).toContain('3 hasResults');
       expect(responseText).toContain('facebook/react');
       expect(responseText).toContain('angular/angular');
       expect(responseText).toContain('vuejs/vue');
@@ -432,7 +432,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
-      expect(responseText).toContain('2 error');
+      expect(responseText).toContain('2 failed');
     });
   });
 
@@ -470,7 +470,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
-      expect(responseText).toContain('1 ok');
+      expect(responseText).toContain('1 hasResults');
       expect(responseText).toContain('1 empty');
     });
 
@@ -511,8 +511,8 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
-      expect(responseText).toContain('1 ok');
-      expect(responseText).toContain('1 error');
+      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('1 failed');
     });
 
     it('should handle empty + error mix', async () => {
@@ -538,7 +538,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
 
       expect(result.isError).toBe(false);
       expect(responseText).toContain('1 empty');
-      expect(responseText).toContain('1 error');
+      expect(responseText).toContain('1 failed');
     });
 
     it('should handle all three status types in single response', async () => {
@@ -580,9 +580,9 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       const responseText = getTextContent(result.content);
 
       expect(result.isError).toBe(false);
-      expect(responseText).toContain('1 ok');
+      expect(responseText).toContain('1 hasResults');
       expect(responseText).toContain('1 empty');
-      expect(responseText).toContain('1 error');
+      expect(responseText).toContain('1 failed');
     });
   });
 
@@ -618,11 +618,11 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       );
 
       const responseText = getTextContent(result.content);
-      // Optimized: Query params not duplicated in response
-      expect(responseText).not.toContain('researchGoal:');
+      // researchGoal is included in response for context
+      expect(responseText).toContain('researchGoal:');
     });
 
-    it('should NOT include reasoning from query (optimized)', async () => {
+    it('should include reasoning in response for context', async () => {
       mockSearchGitHubReposAPI.mockResolvedValue({
         data: { repositories: [] },
         status: 200,
@@ -641,8 +641,8 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       );
 
       const responseText = getTextContent(result.content);
-      // Optimized: Query params not duplicated in response
-      expect(responseText).not.toContain('reasoning:');
+      // reasoning is included in response for context
+      expect(responseText).toContain('reasoning:');
     });
 
     it('should handle query with researchSuggestions gracefully', async () => {
@@ -744,7 +744,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
 
       expect(result.isError).toBe(false);
       // Should have 2 results (query was split into topics and keywords)
-      expect(responseText).toContain('2 ok');
+      expect(responseText).toContain('2 hasResults');
       expect(responseText).toContain('topic/repo');
       expect(responseText).toContain('keyword/repo');
       // Optimized: reasoning no longer duplicated in response

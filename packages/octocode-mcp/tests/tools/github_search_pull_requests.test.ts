@@ -296,7 +296,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('1 error');
+      expect(responseText).toContain('1 failed');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain(
         'error: "Query too long. Maximum 256 characters allowed."'

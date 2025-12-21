@@ -88,7 +88,7 @@ describe('GitHub Search Repositories Response Structure Test', () => {
 
     expect(responseText).toContain('instructions:');
     expect(responseText).toContain('results:');
-    expect(responseText).toContain('1 ok');
+    expect(responseText).toContain('1 hasResults');
     // Optimized: reasoning no longer duplicated in response
     expect(responseText).toContain('status: "hasResults"');
     expect(responseText).toContain('repositories:');

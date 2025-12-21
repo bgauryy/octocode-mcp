@@ -212,7 +212,7 @@ describe('Empty Arrays Removal in Responses', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       // Optimized format: "1 ok, 1 empty"
-      expect(responseText).toContain('1 ok, 1 empty');
+      expect(responseText).toContain('1 hasResults, 1 empty');
     });
   });
 
