@@ -1,4 +1,5 @@
 import { defineConfig } from 'tsup';
+import { builtinModules } from 'module';
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -12,6 +13,8 @@ export default defineConfig({
   splitting: false,
   sourcemap: false,
   treeshake: true,
+  noExternal: [/.*/], // Bundle all dependencies for standalone execution
+  external: [...builtinModules, ...builtinModules.map(m => `node:${m}`)],
   banner: {
     js: '#!/usr/bin/env node',
   },
