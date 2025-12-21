@@ -119,21 +119,16 @@ function createEmptyStructureResult(
   >
 ): Record<string, unknown> & {
   status: 'error';
-  owner: string;
-  repo: string;
   path: string;
   structure: Record<string, DirectoryEntry>;
 } {
+  // Only include NEW data - owner/repo already in query, don't duplicate
   return {
-    owner: query.owner,
-    repo: query.repo,
     path: query.path || '/',
     structure: {},
     ...error,
   } as Record<string, unknown> & {
     status: 'error';
-    owner: string;
-    repo: string;
     path: string;
     structure: Record<string, DirectoryEntry>;
   };

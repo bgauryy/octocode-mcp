@@ -132,14 +132,10 @@ async function searchGitHubPullRequestsAPIInternal(
       closed_at: pr.closed_at ?? undefined,
       merged_at: pr.merged_at,
       author: pr.author,
-      head: {
-        ref: pr.head || '',
-        sha: pr.head_sha || '',
-      },
-      base: {
-        ref: pr.base || '',
-        sha: pr.base_sha || '',
-      },
+      head_ref: pr.head || '',
+      head_sha: pr.head_sha || '',
+      base_ref: pr.base || '',
+      base_sha: pr.base_sha || '',
       body: pr.body,
       comments: pr.comments?.length || 0,
       commits: pr.commits?.length || 0,
@@ -167,7 +163,7 @@ async function searchGitHubPullRequestsAPIInternal(
     return {
       pull_requests: formattedPRs,
       total_count: searchResult.data.total_count,
-      incomplete_results: searchResult.data.incomplete_results,
+      ...(searchResult.data.incomplete_results && { incomplete_results: true }),
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -224,14 +220,10 @@ async function searchPullRequestsWithREST(
       closed_at: pr.closed_at ?? undefined,
       merged_at: pr.merged_at,
       author: pr.author,
-      head: {
-        ref: pr.head || '',
-        sha: pr.head_sha || '',
-      },
-      base: {
-        ref: pr.base || '',
-        sha: pr.base_sha || '',
-      },
+      head_ref: pr.head || '',
+      head_sha: pr.head_sha || '',
+      base_ref: pr.base || '',
+      base_sha: pr.base_sha || '',
       body: pr.body,
       comments: pr.comments?.length || 0,
       commits: pr.commits?.length || 0,
@@ -259,7 +251,6 @@ async function searchPullRequestsWithREST(
     return {
       pull_requests: formattedPRs,
       total_count: formattedPRs.length,
-      incomplete_results: false,
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -780,14 +771,10 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
       closed_at: transformedPR.closed_at ?? undefined,
       merged_at: transformedPR.merged_at,
       author: transformedPR.author,
-      head: {
-        ref: transformedPR.head || '',
-        sha: transformedPR.head_sha || '',
-      },
-      base: {
-        ref: transformedPR.base || '',
-        sha: transformedPR.base_sha || '',
-      },
+      head_ref: transformedPR.head || '',
+      head_sha: transformedPR.head_sha || '',
+      base_ref: transformedPR.base || '',
+      base_sha: transformedPR.base_sha || '',
       body: transformedPR.body,
       comments: transformedPR.comments?.length || 0,
       commits: transformedPR.commits?.length || 0,
@@ -819,7 +806,6 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
     return {
       pull_requests: [formattedPR],
       total_count: 1,
-      incomplete_results: false,
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);

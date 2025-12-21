@@ -85,35 +85,66 @@ async function searchMultipleGitHubCode(
         // Structure: { "owner/repo": { "path": ["match1", "match2"] } }
         // - For content matches: array contains matched code snippets
         // - For path-only matches: array is empty (just listing the file)
-        const repoResults: Record<string, Record<string, string[]>> = {};
         const filteredItems = apiResult.data.items.filter(
           item => !shouldIgnoreFile(item.path)
         );
 
         const isPathOnlyMatch = query.match === 'path';
 
+        // Collect repo metadata for sorting (most recently pushed first)
+        const repoMetadata: Record<string, { pushedAt: string }> = {};
+        const repoResults: Record<string, Record<string, string[]>> = {};
+
         for (const item of filteredItems) {
           const nameWithOwner = item.repository?.nameWithOwner || 'unknown';
+          const pushedAt = item.repository?.pushedAt || '';
 
           if (!repoResults[nameWithOwner]) {
             repoResults[nameWithOwner] = {};
+            repoMetadata[nameWithOwner] = { pushedAt };
           }
 
           if (isPathOnlyMatch) {
-            // For path-only matches, return a placeholder to ensure the file is listed
-            // (empty arrays are filtered out by response cleaner)
             repoResults[nameWithOwner][item.path] = ['(match="path")'];
           } else {
-            // For content matches, array of matched code snippets
             const textMatches = item.matches.map(match => match.context);
             repoResults[nameWithOwner][item.path] = textMatches;
           }
         }
 
+        // Sort repos by pushedAt (most recent first), then alphabetically
+        const sortedRepos = Object.keys(repoResults).sort((a, b) => {
+          const aPushed = repoMetadata[a]?.pushedAt || '';
+          const bPushed = repoMetadata[b]?.pushedAt || '';
+          if (aPushed !== bPushed) {
+            return bPushed.localeCompare(aPushed); // Descending (newest first)
+          }
+          return a.localeCompare(b); // Alphabetically as tiebreaker
+        });
+
+        // Build sorted result with paths sorted by depth then alphabetically
+        const sortedResults: Record<string, Record<string, string[]>> = {};
+        for (const repo of sortedRepos) {
+          const paths = Object.keys(repoResults[repo]);
+          const sortedPaths = paths.sort((a, b) => {
+            const aDepth = a.split('/').length;
+            const bDepth = b.split('/').length;
+            if (aDepth !== bDepth) {
+              return aDepth - bDepth; // Shallower paths first
+            }
+            return a.localeCompare(b); // Alphabetically
+          });
+
+          sortedResults[repo] = {};
+          for (const path of sortedPaths) {
+            sortedResults[repo][path] = repoResults[repo][path];
+          }
+        }
+
         return createSuccessResult(
           query,
-          { ...repoResults } satisfies SearchResult,
-          Object.keys(repoResults).length > 0,
+          { ...sortedResults } satisfies SearchResult,
+          Object.keys(sortedResults).length > 0,
           'GITHUB_SEARCH_CODE'
         );
       } catch (error) {

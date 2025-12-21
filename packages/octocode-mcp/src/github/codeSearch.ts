@@ -141,7 +141,6 @@ async function transformToOptimizedFormat(
   let hasMinificationFailures = false;
   const minificationTypes: string[] = [];
 
-  const foundPackages = new Set<string>();
   const foundFiles = new Set<string>();
 
   const filteredItems = items.filter(item => !shouldIgnoreFile(item.path));
@@ -205,6 +204,7 @@ async function transformToOptimizedFormat(
         repository: {
           nameWithOwner: item.repository.full_name,
           url: item.repository.url,
+          pushedAt: item.repository.pushed_at || undefined,
         },
         ...(minify &&
           minificationTypes.length > 0 && {
@@ -218,7 +218,6 @@ async function transformToOptimizedFormat(
     items: optimizedItems,
     total_count: filteredItems.length,
     _researchContext: {
-      foundPackages: Array.from(foundPackages),
       foundFiles: Array.from(foundFiles),
       repositoryContext: singleRepo
         ? (() => {

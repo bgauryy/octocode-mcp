@@ -77,6 +77,7 @@ export type OptimizedCodeSearchResult = {
       repository: {
         nameWithOwner: string;
         url: string;
+        pushedAt?: string;
       };
       minificationType?: string;
     }
@@ -94,7 +95,6 @@ export type OptimizedCodeSearchResult = {
   minificationFailed?: boolean;
   minificationTypes?: string[];
   _researchContext?: {
-    foundPackages: string[];
     foundFiles: string[];
     repositoryContext?: {
       owner: string;

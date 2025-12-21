@@ -322,11 +322,11 @@ export interface GitHubPullRequestSearchQuery {
 
 /** Detailed pull request information */
 export interface PullRequestInfo {
-  id: number;
+  id?: number;
   number: number;
   title: string;
   url: string;
-  html_url: string;
+  html_url?: string;
   state: 'open' | 'closed';
   draft: boolean;
   merged: boolean;
@@ -361,16 +361,10 @@ export interface PullRequestInfo {
     updated_at: string;
     due_on?: string;
   };
-  head: {
-    ref: string;
-    sha: string;
-    repo?: string;
-  };
-  base: {
-    ref: string;
-    sha: string;
-    repo: string;
-  };
+  head_ref: string;
+  head_sha: string;
+  base_ref: string;
+  base_sha: string;
   body?: string;
   comments?: number;
   review_comments?: number;
