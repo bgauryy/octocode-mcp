@@ -334,12 +334,7 @@ export interface PullRequestInfo {
   updated_at: string;
   closed_at?: string;
   merged_at?: string;
-  author: {
-    login: string;
-    id: number;
-    avatar_url: string;
-    html_url: string;
-  };
+  author: string;
   assignees?: Array<{
     login: string;
     id: number;
