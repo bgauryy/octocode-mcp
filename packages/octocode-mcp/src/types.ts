@@ -109,12 +109,8 @@ export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
     repo?: string;
     /** Matched code snippets (only for match="file") */
     text_matches?: string[];
-    /** Line number ranges where matches occur (e.g., ["73..77", "77..78"]) - use with startLine/endLine in githubGetFileContent */
-    lineNumbers?: string[];
     /** File last modified timestamp */
     lastModifiedAt?: string;
-    /** Search relevance score - higher means more relevant */
-    relevanceRanking?: number;
   }>;
   /** When all files are from the same repo, this provides the owner and repo separately */
   repositoryContext?: {

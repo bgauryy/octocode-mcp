@@ -136,6 +136,8 @@ async function searchMultipleGitHubPullRequests(
 
         const pullRequests = apiResult.pull_requests || [];
 
+        const hasContent = pullRequests.length > 0;
+
         return createSuccessResult(
           query,
           {
@@ -144,7 +146,7 @@ async function searchMultipleGitHubPullRequests(
             pull_requests: pullRequests,
             total_count: apiResult.total_count || pullRequests.length,
           },
-          pullRequests.length > 0,
+          hasContent,
           'GITHUB_SEARCH_PULL_REQUESTS'
         );
       } catch (error) {

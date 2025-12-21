@@ -127,7 +127,6 @@ async function searchPackages(
           return pkg;
         });
 
-        // Only include NEW data - ecosystem is already in the query
         const result = {
           packages,
           totalFound: apiResult.totalFound,

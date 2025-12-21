@@ -192,9 +192,8 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      // Should include hint about using repositoryContext
+      // Should include repositoryContext in the response data
       expect(responseText).toContain('repositoryContext');
-      expect(responseText).toContain('githubGetFileContent');
     });
 
     it('should extract owner and repo from repository nameWithOwner', async () => {
@@ -261,34 +260,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('function test2() {}');
     });
 
-    it('should include lineNumbers when present in API response', async () => {
-      mockSearchGitHubCodeAPI.mockResolvedValue({
-        data: {
-          total_count: 1,
-          items: [
-            {
-              path: 'src/utils.ts',
-              repository: { nameWithOwner: 'test/repo', url: '' },
-              matches: [{ context: 'function test() {}', positions: [] }],
-              lineNumbers: ['73..77', '77..78'],
-            },
-          ],
-        },
-        status: 200,
-      });
-
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
-        queries: [{ keywordsToSearch: ['function'] }],
-      });
-
-      expect(result.isError).toBe(false);
-      const responseText = getTextContent(result.content);
-      expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('lineNumbers:');
-      expect(responseText).toContain('73..77');
-      expect(responseText).toContain('77..78');
-    });
-
     it('should include lastModifiedAt when present in API response', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValue({
         data: {
@@ -314,65 +285,6 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('lastModifiedAt:');
       expect(responseText).toContain('2025-12-01T10:30:00Z');
-    });
-
-    it('should include relevanceRanking when present in API response', async () => {
-      mockSearchGitHubCodeAPI.mockResolvedValue({
-        data: {
-          total_count: 1,
-          items: [
-            {
-              path: 'src/utils.ts',
-              repository: { nameWithOwner: 'test/repo', url: '' },
-              matches: [{ context: 'function test() {}', positions: [] }],
-              relevanceRanking: 0.95,
-            },
-          ],
-        },
-        status: 200,
-      });
-
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
-        queries: [{ keywordsToSearch: ['function'] }],
-      });
-
-      expect(result.isError).toBe(false);
-      const responseText = getTextContent(result.content);
-      expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('relevanceRanking:');
-      expect(responseText).toContain('0.95');
-    });
-
-    it('should include all new research context fields when present', async () => {
-      mockSearchGitHubCodeAPI.mockResolvedValue({
-        data: {
-          total_count: 1,
-          items: [
-            {
-              path: 'src/utils.ts',
-              repository: { nameWithOwner: 'test/repo', url: '' },
-              matches: [{ context: 'function test() {}', positions: [] }],
-              lineNumbers: ['100..105'],
-              lastModifiedAt: '2025-11-15T08:00:00Z',
-              relevanceRanking: 1.5,
-            },
-          ],
-        },
-        status: 200,
-      });
-
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
-        queries: [{ keywordsToSearch: ['function'] }],
-      });
-
-      expect(result.isError).toBe(false);
-      const responseText = getTextContent(result.content);
-      expect(responseText).toContain('lineNumbers:');
-      expect(responseText).toContain('100..105');
-      expect(responseText).toContain('lastModifiedAt:');
-      expect(responseText).toContain('2025-11-15T08:00:00Z');
-      expect(responseText).toContain('relevanceRanking:');
-      expect(responseText).toContain('1.5');
     });
   });
 

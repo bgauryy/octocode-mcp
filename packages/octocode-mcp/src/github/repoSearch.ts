@@ -99,7 +99,6 @@ async function searchGitHubReposAPIInternal(
           createdAt: repo.created_at,
           updatedAt: repo.updated_at,
           pushedAt: repo.pushed_at,
-          // New fields for cross-tool research context
           visibility: repo.visibility,
           ...(repo.topics && repo.topics.length > 0 && { topics: repo.topics }),
           ...(repo.forks_count &&

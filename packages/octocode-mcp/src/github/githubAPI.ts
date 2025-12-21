@@ -80,6 +80,7 @@ export type OptimizedCodeSearchResult = {
         pushedAt?: string;
       };
       minificationType?: string;
+      lastModifiedAt?: string;
     }
   >;
   total_count: number;
