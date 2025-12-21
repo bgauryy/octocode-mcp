@@ -27,6 +27,7 @@ vi.mock('../../src/utils/cache.js', () => ({
 vi.mock('../../src/serverConfig.js', () => ({
   getGitHubToken: vi.fn(() => Promise.resolve('test-token')),
   isLoggingEnabled: vi.fn(() => false),
+  isSanitizeEnabled: vi.fn(() => true),
 }));
 
 // Import after mocking
@@ -194,7 +195,6 @@ describe('Quality Boosting and Research Goals', () => {
       repo: 'repo',
       limit: 5,
       minify: true,
-      sanitize: true,
     });
 
     expect(result).not.toHaveProperty('error');
@@ -220,7 +220,6 @@ describe('Quality Boosting and Research Goals', () => {
       repo: 'repo',
       limit: 5,
       minify: true,
-      sanitize: true,
     });
 
     expect(result).not.toHaveProperty('error');
@@ -245,7 +244,6 @@ describe('Quality Boosting and Research Goals', () => {
       repo: 'repo',
       limit: 5,
       minify: true,
-      sanitize: true,
     });
 
     expect(result).not.toHaveProperty('error');
@@ -271,7 +269,6 @@ describe('Quality Boosting and Research Goals', () => {
       limit: 5,
 
       minify: true,
-      sanitize: true,
     });
 
     expect(result).not.toHaveProperty('error');
@@ -298,7 +295,6 @@ describe('Quality Boosting and Research Goals', () => {
       stars: '>1000',
       limit: 5,
       minify: true,
-      sanitize: true,
     });
 
     expect(result).not.toHaveProperty('error');

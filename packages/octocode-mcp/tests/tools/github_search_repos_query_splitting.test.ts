@@ -581,9 +581,11 @@ describe('GitHub Search Repositories Query Splitting', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('2 hasResults');
-      expect(responseText).toContain('topics-based search');
-      expect(responseText).toContain('keywords-based search');
+      // Optimized: Should have 2 results from the split query
+      expect(responseText).toContain('2 ok');
+      // Optimized: reasoning fields no longer duplicated in response
+      // The API was called twice (verified by mock call count), once per split
+      expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(2);
     });
   });
 });

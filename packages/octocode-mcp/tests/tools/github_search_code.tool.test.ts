@@ -44,8 +44,8 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
     vi.resetAllMocks();
   });
 
-  describe('Status: hasResults', () => {
-    it('should return hasResults status when API returns items', async () => {
+  describe('Status: ok', () => {
+    it('should return ok status when API returns items', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValue({
         data: {
           total_count: 2,
@@ -81,11 +81,11 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('1 ok');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('files:');
-      expect(responseText).toContain('path: "src/index.ts"');
-      expect(responseText).toContain('path: "src/utils.ts"');
+      // New structure: paths are keys, not nested objects
+      expect(responseText).toContain('src/index.ts:');
+      expect(responseText).toContain('src/utils.ts:');
     });
 
     it('should extract owner and repo from repository nameWithOwner', async () => {
@@ -119,11 +119,9 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('owner: "facebook"');
-      expect(responseText).toContain('repo: "react"');
     });
 
-    it('should include text_matches from items', async () => {
+    it('should include text matches grouped by repo and path', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValue({
         data: {
           total_count: 1,
@@ -148,7 +146,9 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('text_matches:');
+      // New structure: matches are directly under path
+      expect(responseText).toContain('test/repo:');
+      expect(responseText).toContain('test.js:');
       expect(responseText).toContain('function test1() {}');
       expect(responseText).toContain('function test2() {}');
     });
@@ -210,9 +210,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "empty"');
-      // When empty, the tool returns owner/repo in data but files are filtered out
-      expect(responseText).toContain('owner: "test"');
-      expect(responseText).toContain('repo: "repo"');
+      // When all files are filtered, response is minimal (no files field)
     });
   });
 
@@ -231,7 +229,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('1 error');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "API rate limit exceeded"');
     });
@@ -247,7 +245,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('1 error');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "Network timeout"');
     });
@@ -283,7 +281,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
   });
 
   describe('Multiple queries - same status', () => {
-    it('should handle multiple queries all with hasResults', async () => {
+    it('should handle multiple queries all with ok', async () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
@@ -335,8 +333,8 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('3 hasResults');
+      expect(responseText).toContain('3 results');
+      expect(responseText).toContain('3 ok');
       expect(responseText).not.toContain('empty');
       expect(responseText).not.toContain('failed');
     });
@@ -356,7 +354,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 2 results');
+      expect(responseText).toContain('2 results');
       expect(responseText).toContain('2 empty');
       expect(responseText).not.toContain('hasResults');
       expect(responseText).not.toContain('status: "failed"');
@@ -375,15 +373,15 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('3 failed');
+      expect(responseText).toContain('3 results');
+      expect(responseText).toContain('3 error');
       expect(responseText).not.toContain('hasResults');
       expect(responseText).not.toContain('empty');
     });
   });
 
   describe('Multiple queries - mixed statuses', () => {
-    it('should handle hasResults + empty mix', async () => {
+    it('should handle ok + empty mix', async () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
@@ -426,13 +424,13 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('2 hasResults');
+      expect(responseText).toContain('3 results');
+      expect(responseText).toContain('2 ok');
       expect(responseText).toContain('1 empty');
       expect(responseText).not.toContain('status: "failed"');
     });
 
-    it('should handle hasResults + error mix', async () => {
+    it('should handle ok + error mix', async () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
@@ -475,9 +473,9 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('2 hasResults');
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('3 results');
+      expect(responseText).toContain('2 ok');
+      expect(responseText).toContain('1 error');
       expect(responseText).not.toContain(': 0 empty');
     });
 
@@ -508,9 +506,9 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 4 results');
+      expect(responseText).toContain('4 results');
       expect(responseText).toContain('2 empty');
-      expect(responseText).toContain('2 failed');
+      expect(responseText).toContain('2 error');
       expect(responseText).not.toContain('hasResults');
     });
 
@@ -550,15 +548,15 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 4 results');
-      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('4 results');
+      expect(responseText).toContain('1 ok');
       expect(responseText).toContain('1 empty');
-      expect(responseText).toContain('2 failed');
+      expect(responseText).toContain('2 error');
     });
   });
 
-  describe('Research fields propagation', () => {
-    it('should propagate researchGoal from query', async () => {
+  describe('Optimized response (no query duplication)', () => {
+    it('should NOT include researchGoal from query (optimized)', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValue({
         data: {
           total_count: 1,
@@ -585,10 +583,11 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('researchGoal: "Find testing patterns"');
+      // Optimized: Query params not duplicated in response
+      expect(responseText).not.toContain('researchGoal:');
     });
 
-    it('should propagate reasoning from query', async () => {
+    it('should NOT include reasoning from query (optimized)', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValue({
         data: { total_count: 0, items: [] },
         status: 200,
@@ -606,7 +605,8 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "empty"');
-      expect(responseText).toContain('reasoning: "Looking for best practices"');
+      // Optimized: Query params not duplicated in response
+      expect(responseText).not.toContain('reasoning:');
     });
 
     it('should handle query with researchSuggestions gracefully', async () => {
@@ -639,7 +639,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('0 results');
     });
 
     it('should handle missing queries parameter gracefully', async () => {
@@ -650,7 +650,153 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('0 results');
+    });
+  });
+
+  describe('Repository info in results', () => {
+    it('should group files by repository (nameWithOwner as key)', async () => {
+      mockSearchGitHubCodeAPI.mockResolvedValue({
+        data: {
+          total_count: 2,
+          items: [
+            {
+              path: 'src/index.ts',
+              repository: {
+                nameWithOwner: 'owner1/repo1',
+                url: 'https://api.github.com/repos/owner1/repo1',
+              },
+              matches: [{ context: 'const test = 1;', positions: [] }],
+            },
+            {
+              path: 'src/utils.ts',
+              repository: {
+                nameWithOwner: 'owner2/repo2',
+                url: 'https://api.github.com/repos/owner2/repo2',
+              },
+              matches: [{ context: 'export const util = 2;', positions: [] }],
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [{ keywordsToSearch: ['test'] }],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      // New structure: nameWithOwner is a top-level key
+      expect(responseText).toContain('owner1/repo1:');
+      expect(responseText).toContain('owner2/repo2:');
+      expect(responseText).toContain('src/index.ts:');
+      expect(responseText).toContain('src/utils.ts:');
+    });
+
+    it('should list paths with empty arrays for path match queries', async () => {
+      mockSearchGitHubCodeAPI.mockResolvedValue({
+        data: {
+          total_count: 1,
+          items: [
+            {
+              path: 'premium/config.ts',
+              repository: {
+                nameWithOwner: 'wix-private/premium-service',
+                url: 'https://api.github.com/repos/wix-private/premium-service',
+              },
+              matches: [],
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [{ keywordsToSearch: ['premium'], match: 'path' }],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      // Path-only matches: same structure as content, but with empty arrays
+      expect(responseText).toContain('wix-private/premium-service:');
+      expect(responseText).toContain('premium/config.ts:');
+      // Empty array for path-only matches (normalized structure)
+      expect(responseText).toContain('(match=\\"path\\")');
+    });
+  });
+
+  describe('Result grouping by repository', () => {
+    it('should group multiple files under same repository', async () => {
+      mockSearchGitHubCodeAPI.mockResolvedValue({
+        data: {
+          total_count: 3,
+          items: [
+            {
+              path: 'src/a.ts',
+              repository: { nameWithOwner: 'owner/repo', url: '' },
+              matches: [{ context: 'a', positions: [] }],
+            },
+            {
+              path: 'src/b.ts',
+              repository: { nameWithOwner: 'owner/repo', url: '' },
+              matches: [{ context: 'b', positions: [] }],
+            },
+            {
+              path: 'src/c.ts',
+              repository: { nameWithOwner: 'other/repo', url: '' },
+              matches: [{ context: 'c', positions: [] }],
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [{ keywordsToSearch: ['test'] }],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+
+      // Both repos should be grouped
+      expect(responseText).toContain('owner/repo:');
+      expect(responseText).toContain('other/repo:');
+      // All files should be present
+      expect(responseText).toContain('src/a.ts:');
+      expect(responseText).toContain('src/b.ts:');
+      expect(responseText).toContain('src/c.ts:');
+    });
+
+    it('should handle items without repository gracefully', async () => {
+      mockSearchGitHubCodeAPI.mockResolvedValue({
+        data: {
+          total_count: 2,
+          items: [
+            {
+              path: 'src/b.ts',
+              repository: { nameWithOwner: 'owner/repo', url: '' },
+              matches: [{ context: 'b', positions: [] }],
+            },
+            {
+              path: 'src/a.ts',
+              // Missing repository - should be grouped under 'unknown'
+              matches: [{ context: 'a', positions: [] }],
+            },
+          ],
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [{ keywordsToSearch: ['test'] }],
+      });
+
+      // Should not crash
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('unknown:');
     });
   });
 

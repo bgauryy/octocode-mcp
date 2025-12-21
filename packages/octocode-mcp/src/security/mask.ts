@@ -7,7 +7,6 @@ interface Match {
   accuracy: 'high' | 'medium';
 }
 
-// Cache the combined regex
 let combinedRegex: RegExp | null = null;
 let patternMap: SensitiveDataPattern[] = [];
 
@@ -16,12 +15,9 @@ export function maskSensitiveData(text: string): string {
 
   const regex = getCombinedRegex();
   const matches: Match[] = [];
-
-  // Single pass to find all matches
   let match;
 
   while ((match = regex.exec(text)) !== null) {
-    // Find which named capture group matched
     for (let i = 0; i < patternMap.length; i++) {
       if (match.groups?.[`p${i}`]) {
         matches.push({
@@ -41,10 +37,8 @@ export function maskSensitiveData(text: string): string {
 
   if (matches.length === 0) return text;
 
-  // Sort matches by start position
   matches.sort((a, b) => a.start - b.start);
 
-  // Remove overlapping matches (keep first one)
   const nonOverlapping: Match[] = [];
   let lastEnd = -1;
 
@@ -55,7 +49,6 @@ export function maskSensitiveData(text: string): string {
     }
   }
 
-  // Apply replacements in reverse order to maintain positions
   let result = text;
   for (let i = nonOverlapping.length - 1; i >= 0; i--) {
     const match = nonOverlapping[i];
@@ -91,10 +84,8 @@ function maskEveryTwoChars(text: string): string {
   return result;
 }
 
-// Compile all patterns into a single regex for better performance
 function createCombinedRegex(patterns: SensitiveDataPattern[]): RegExp {
   const regexSources = patterns.map((pattern, index) => {
-    // Remove global flag and wrap in named capture group
     const source = pattern.regex.source;
     return `(?<p${index}>${source})`;
   });

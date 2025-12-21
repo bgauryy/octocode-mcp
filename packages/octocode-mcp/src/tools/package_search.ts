@@ -27,7 +27,6 @@ export async function registerPackageSearchTool(
   server: McpServer,
   callback?: ToolInvocationCallback
 ): Promise<RegisteredTool | null> {
-  // Check if npm registry is reachable (10 second timeout)
   const npmAvailable = await checkNpmAvailability(10000);
   if (!npmAvailable) {
     return null;
@@ -37,7 +36,8 @@ export async function registerPackageSearchTool(
     TOOL_NAMES.PACKAGE_SEARCH,
     {
       description: DESCRIPTIONS[TOOL_NAMES.PACKAGE_SEARCH],
-      inputSchema: PackageSearchBulkQuerySchema,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- breaks deep type inference from discriminatedUnion
+      inputSchema: PackageSearchBulkQuerySchema as any,
       annotations: {
         title: 'Package Search',
         readOnlyHint: true,
@@ -60,9 +60,8 @@ export async function registerPackageSearchTool(
         if (callback) {
           try {
             await callback(TOOL_NAMES.PACKAGE_SEARCH, queries);
-          } catch {
-            // ignore
-          }
+            // eslint-disable-next-line no-empty
+          } catch {}
         }
 
         return searchPackages(queries);
@@ -106,22 +105,20 @@ async function searchPackages(
 
         const result = {
           packages: apiResult.packages as PackageResult[],
-          ecosystem: apiResult.ecosystem,
           totalFound: apiResult.totalFound,
         };
 
         const hasContent = result.packages.length > 0;
 
-        // Check deprecation for npm packages (only for first package to avoid too many API calls)
         let deprecationInfo: DeprecationInfo | null = null;
-        if (hasContent && result.ecosystem === 'npm' && result.packages[0]) {
+        if (hasContent && query.ecosystem === 'npm' && result.packages[0]) {
           deprecationInfo = await checkNpmDeprecation(
             getPackageName(result.packages[0])
           );
         }
 
         const customHints = hasContent
-          ? generateSuccessHints(result, deprecationInfo)
+          ? generateSuccessHints(result, query.ecosystem, deprecationInfo)
           : generateEmptyHints(query);
 
         return createSuccessResult(
@@ -137,7 +134,7 @@ async function searchPackages(
     },
     {
       toolName: TOOL_NAMES.PACKAGE_SEARCH,
-      keysPriority: ['packages', 'ecosystem', 'totalFound', 'error'],
+      keysPriority: ['packages', 'totalFound', 'error'],
     }
   );
 }
@@ -145,8 +142,8 @@ async function searchPackages(
 function generateSuccessHints(
   result: {
     packages: PackageResult[];
-    ecosystem: 'npm' | 'python';
   },
+  ecosystem: 'npm' | 'python',
   deprecationInfo?: DeprecationInfo | null
 ): string[] {
   const hints: string[] = [];
@@ -156,13 +153,11 @@ function generateSuccessHints(
   const name = getPackageName(pkg);
   const repo = getPackageRepo(pkg);
 
-  // Deprecation warning (highest priority)
   if (deprecationInfo?.deprecated) {
     const msg = deprecationInfo.message || 'This package is deprecated';
     hints.push(`DEPRECATED: ${name} - ${msg}`);
   }
 
-  // GitHub tool integration hint - extract owner/repo from URL
   if (repo?.includes('github.com')) {
     const match = repo.match(/github\.com\/([^/]+)\/([^/]+)/);
     if (match && match[1] && match[2]) {
@@ -175,9 +170,8 @@ function generateSuccessHints(
     }
   }
 
-  // Install command hint
   hints.push(
-    result.ecosystem === 'npm'
+    ecosystem === 'npm'
       ? `Install: npm install ${name}`
       : `Install: pip install ${name}`
   );
@@ -191,13 +185,11 @@ function generateEmptyHints(query: PackageSearchQuery): string[] {
 
   hints.push(`No ${query.ecosystem} packages found for '${name}'`);
 
-  // Generate name variations
   const variations = generateNameVariations(name, query.ecosystem);
   if (variations.length > 0) {
     hints.push(`Try: ${variations.join(', ')}`);
   }
 
-  // Browse link
   const browseUrl =
     query.ecosystem === 'npm'
       ? `https://npmjs.com/search?q=${encodeURIComponent(name)}`
@@ -213,7 +205,6 @@ function generateNameVariations(
 ): string[] {
   const variations: string[] = [];
 
-  // Convert hyphens to underscores and vice versa
   if (name.includes('-')) {
     variations.push(name.replace(/-/g, '_'));
     variations.push(name.replace(/-/g, ''));
@@ -222,13 +213,11 @@ function generateNameVariations(
     variations.push(name.replace(/_/g, '-'));
   }
 
-  // Extract unscoped name from @scope/name packages
   if (name.startsWith('@')) {
     const unscoped = name.split('/').pop();
     if (unscoped) variations.push(unscoped);
   }
 
-  // Ecosystem-specific variations
   if (ecosystem === 'npm' && !name.endsWith('js')) {
     variations.push(name + 'js');
   }
@@ -236,6 +225,5 @@ function generateNameVariations(
     variations.push('py' + name);
   }
 
-  // Return unique variations, excluding original name, limited to 3
   return [...new Set(variations)].filter(v => v !== name).slice(0, 3);
 }

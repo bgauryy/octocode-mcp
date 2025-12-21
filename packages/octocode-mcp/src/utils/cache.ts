@@ -111,9 +111,8 @@ export async function withDataCache<T>(
         cacheStats.hits++;
         return cached;
       }
-    } catch {
-      // ignore
-    }
+      // eslint-disable-next-line no-empty
+    } catch {}
   }
 
   cacheStats.misses++;
@@ -132,9 +131,8 @@ export async function withDataCache<T>(
       cache.set(cacheKey, result, ttl);
       cacheStats.sets++;
       cacheStats.totalKeys = cache.keys().length;
-    } catch {
-      // ignore
-    }
+      // eslint-disable-next-line no-empty
+    } catch {}
   }
 
   return result;

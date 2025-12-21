@@ -32,8 +32,8 @@ describe('executeBulkOperation', () => {
       expect(processor).toHaveBeenCalledWith(queries[0], 0);
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 1 results');
-      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('1 results:');
+      expect(responseText).toContain('1 ok');
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('path: "test.ts"');
       expect(responseText).toContain('hasResultsStatusHints:');
@@ -53,7 +53,7 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 1 results');
+      expect(responseText).toContain('1 results:');
       expect(responseText).toContain('1 empty');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('emptyStatusHints:');
@@ -73,7 +73,7 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('1 error');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "Rate limit exceeded"');
       expect(responseText).toContain('errorStatusHints:');
@@ -89,7 +89,7 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('1 error');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "API error"');
       // Note: Thrown errors don't have hints - only errors returned with status: 'error' have hints
@@ -118,10 +118,10 @@ describe('executeBulkOperation', () => {
       expect(processor).toHaveBeenCalledTimes(3);
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('3 hasResults');
+      expect(responseText).toContain('3 results:');
+      expect(responseText).toContain('3 ok');
       expect(responseText).not.toContain('empty');
-      expect(responseText).not.toContain('failed');
+      expect(responseText).not.toContain('error');
       expect(responseText).toContain('name: "react-repo"');
       expect(responseText).toContain('name: "vue-repo"');
       expect(responseText).toContain('name: "angular-repo"');
@@ -144,10 +144,10 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 2 results');
+      expect(responseText).toContain('2 results:');
       expect(responseText).toContain('2 empty');
-      expect(responseText).not.toContain('hasResults');
-      expect(responseText).not.toContain('failed');
+      expect(responseText).not.toContain('ok');
+      expect(responseText).not.toContain('error');
       expect(responseText).toContain('emptyStatusHints:');
     });
 
@@ -165,9 +165,9 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('3 failed');
-      expect(responseText).not.toContain('hasResults');
+      expect(responseText).toContain('3 results:');
+      expect(responseText).toContain('3 error');
+      expect(responseText).not.toContain('ok');
       expect(responseText).not.toContain('empty');
       expect(responseText).toContain('errorStatusHints:');
     });
@@ -182,8 +182,8 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 2 results');
-      expect(responseText).toContain('2 failed');
+      expect(responseText).toContain('2 results:');
+      expect(responseText).toContain('2 error');
       expect(responseText).toContain('error: "Network timeout"');
     });
   });
@@ -212,10 +212,10 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('2 hasResults');
+      expect(responseText).toContain('3 results:');
+      expect(responseText).toContain('2 ok');
       expect(responseText).toContain('1 empty');
-      expect(responseText).not.toContain('failed');
+      expect(responseText).not.toContain('error');
       expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).toContain('emptyStatusHints:');
     });
@@ -249,10 +249,10 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('2 hasResults');
-      expect(responseText).toContain('1 failed');
-      expect(responseText).not.toContain(': 0 empty');
+      expect(responseText).toContain('3 results:');
+      expect(responseText).toContain('2 ok');
+      expect(responseText).toContain('1 error');
+      expect(responseText).not.toContain('0 empty');
       expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).toContain('errorStatusHints:');
     });
@@ -283,10 +283,10 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 4 results');
+      expect(responseText).toContain('4 results:');
       expect(responseText).toContain('2 empty');
-      expect(responseText).toContain('2 failed');
-      expect(responseText).not.toContain('hasResults');
+      expect(responseText).toContain('2 error');
+      expect(responseText).not.toContain('ok');
       expect(responseText).toContain('emptyStatusHints:');
       // Note: Thrown errors don't have hints - only errors returned with status: 'error' have hints
     });
@@ -326,10 +326,10 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 4 results');
-      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('4 results:');
+      expect(responseText).toContain('1 ok');
       expect(responseText).toContain('1 empty');
-      expect(responseText).toContain('2 failed');
+      expect(responseText).toContain('2 error');
       expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).toContain('emptyStatusHints:');
       expect(responseText).toContain('errorStatusHints:');
@@ -362,15 +362,15 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 6 results');
-      expect(responseText).toContain('2 hasResults');
+      expect(responseText).toContain('6 results:');
+      expect(responseText).toContain('2 ok');
       expect(responseText).toContain('2 empty');
-      expect(responseText).toContain('2 failed');
+      expect(responseText).toContain('2 error');
     });
   });
 
-  describe('Research fields propagation', () => {
-    it('should propagate researchGoal from query when not in result', async () => {
+  describe('Optimized response (no query duplication)', () => {
+    it('should NOT include researchGoal from query in result (optimized)', async () => {
       const queries = [
         {
           id: 'q1',
@@ -387,12 +387,11 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain(
-        'researchGoal: "Find LangGraph implementations"'
-      );
+      // Optimized: Query params no longer duplicated in response
+      expect(responseText).not.toContain('researchGoal:');
     });
 
-    it('should propagate reasoning from query when not in result', async () => {
+    it('should NOT include reasoning from query in result (optimized)', async () => {
       const queries = [
         {
           id: 'q1',
@@ -409,12 +408,11 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain(
-        'reasoning: "Looking for AI agent patterns"'
-      );
+      // Optimized: Query params no longer duplicated in response
+      expect(responseText).not.toContain('reasoning:');
     });
 
-    it('should propagate all research fields from query when not in result', async () => {
+    it('should NOT include any research fields from query (optimized)', async () => {
       const queries = [
         {
           id: 'q1',
@@ -433,14 +431,13 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain(
-        'mainResearchGoal: "Understand API patterns"'
-      );
-      expect(responseText).toContain('researchGoal: "Find implementations"');
-      expect(responseText).toContain('reasoning: "Looking for patterns"');
+      // Optimized: Query params no longer duplicated in response
+      expect(responseText).not.toContain('mainResearchGoal:');
+      expect(responseText).not.toContain('researchGoal:');
+      expect(responseText).not.toContain('reasoning:');
     });
 
-    it('should prefer result fields over query fields when both exist', async () => {
+    it('should have minimal result structure with only id, status, data', async () => {
       const queries = [
         {
           id: 'q1',
@@ -451,28 +448,25 @@ describe('executeBulkOperation', () => {
       ];
       const processor = vi.fn().mockResolvedValue({
         status: 'hasResults' as const,
-        mainResearchGoal: 'Result main goal',
-        reasoning: 'Result reasoning',
-        researchGoal: 'Result goal',
-        data: { test: true },
+        files: [{ path: 'test.ts' }],
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       const responseText = getTextContent(result.content);
-      // Result fields should appear (preferred over query fields)
-      expect(responseText).toContain('mainResearchGoal: "Result main goal"');
-      expect(responseText).toContain('reasoning: "Result reasoning"');
-      expect(responseText).toContain('researchGoal: "Result goal"');
-      // Query fields should NOT appear (result takes precedence)
-      expect(responseText).not.toContain('Query main goal');
-      expect(responseText).not.toContain('Query reasoning');
-      expect(responseText).not.toContain('Query goal');
+      // Should contain essential fields
+      expect(responseText).toContain('id: 1');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('data:');
+      // Should NOT contain query duplication
+      expect(responseText).not.toContain('mainResearchGoal:');
+      expect(responseText).not.toContain('researchGoal:');
+      expect(responseText).not.toContain('reasoning:');
     });
 
-    it('should handle research fields in error scenarios', async () => {
+    it('should have minimal structure in error scenarios (optimized)', async () => {
       const queries = [
         {
           id: 'q1',
@@ -489,9 +483,10 @@ describe('executeBulkOperation', () => {
 
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('mainResearchGoal: "Test main goal"');
-      expect(responseText).toContain('researchGoal: "Test goal"');
-      expect(responseText).toContain('reasoning: "Test reasoning"');
+      // Optimized: No query duplication in error results either
+      expect(responseText).not.toContain('mainResearchGoal:');
+      expect(responseText).not.toContain('researchGoal:');
+      expect(responseText).not.toContain('reasoning:');
     });
   });
 
@@ -647,9 +642,7 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      // Metadata fields should appear at result level, not in data section
-      expect(responseText).toContain('researchGoal: "Test goal"');
-      expect(responseText).toContain('reasoning: "Test reasoning"');
+      // Optimized: researchGoal/reasoning not duplicated in response
       // Verify actualData appears in the response
       expect(responseText).toContain('actualData: "This should appear"');
       // Verify data section exists
@@ -734,7 +727,7 @@ describe('executeBulkOperation', () => {
 
         expect(result.isError).toBe(false);
         const responseText = getTextContent(result.content);
-        expect(responseText).toContain('Bulk response with 1 results');
+        expect(responseText).toContain('1 results:');
       }
     });
 
@@ -769,7 +762,7 @@ describe('executeBulkOperation', () => {
       expect(processor).not.toHaveBeenCalled();
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('0 results:');
     });
   });
 
@@ -920,14 +913,9 @@ describe('executeBulkOperation', () => {
     });
   });
 
-  describe('Research fields priority in response', () => {
-    it('should output mainResearchGoal before status in response', async () => {
-      const queries = [
-        {
-          id: 'q1',
-          mainResearchGoal: 'Understand authentication flow',
-        },
-      ];
+  describe('Optimized response field ordering', () => {
+    it('should output numeric id before status in response', async () => {
+      const queries = [{ id: 'q1' }];
       const processor = vi.fn().mockResolvedValue({
         status: 'hasResults' as const,
         data: { test: true },
@@ -938,21 +926,16 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      const mainResearchGoalIndex = responseText.indexOf('mainResearchGoal:');
+      const idIndex = responseText.indexOf('id: 1');
       const statusIndex = responseText.indexOf('status:');
 
-      expect(mainResearchGoalIndex).toBeGreaterThan(-1);
+      expect(idIndex).toBeGreaterThan(-1);
       expect(statusIndex).toBeGreaterThan(-1);
-      expect(mainResearchGoalIndex).toBeLessThan(statusIndex);
+      expect(idIndex).toBeLessThan(statusIndex);
     });
 
-    it('should output researchGoal before status in response', async () => {
-      const queries = [
-        {
-          id: 'q1',
-          researchGoal: 'Find implementations',
-        },
-      ];
+    it('should output status before data in response', async () => {
+      const queries = [{ id: 'q1' }];
       const processor = vi.fn().mockResolvedValue({
         status: 'hasResults' as const,
         data: { test: true },
@@ -963,46 +946,19 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      const researchGoalIndex = responseText.indexOf('researchGoal:');
       const statusIndex = responseText.indexOf('status:');
+      const dataIndex = responseText.indexOf('data:');
 
-      expect(researchGoalIndex).toBeGreaterThan(-1);
       expect(statusIndex).toBeGreaterThan(-1);
-      expect(researchGoalIndex).toBeLessThan(statusIndex);
+      expect(dataIndex).toBeGreaterThan(-1);
+      expect(statusIndex).toBeLessThan(dataIndex);
     });
 
-    it('should output reasoning before status in response', async () => {
+    it('should have minimal structure: id, status, data only (optimized)', async () => {
       const queries = [
         {
           id: 'q1',
           reasoning: 'Looking for patterns',
-        },
-      ];
-      const processor = vi.fn().mockResolvedValue({
-        status: 'hasResults' as const,
-        data: { test: true },
-      });
-
-      const result = await executeBulkOperation(queries, processor, {
-        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-      });
-
-      const responseText = getTextContent(result.content);
-      const reasoningIndex = responseText.indexOf('reasoning:');
-      const statusIndex = responseText.indexOf('status:');
-
-      expect(reasoningIndex).toBeGreaterThan(-1);
-      expect(statusIndex).toBeGreaterThan(-1);
-      expect(reasoningIndex).toBeLessThan(statusIndex);
-    });
-
-    it('should output all research fields before status and data', async () => {
-      const queries = [
-        {
-          id: 'q1',
-          mainResearchGoal: 'Main goal',
-          researchGoal: 'Specific goal',
-          reasoning: 'The reasoning',
         },
       ];
       const processor = vi.fn().mockResolvedValue({
@@ -1015,37 +971,42 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      const mainResearchGoalIndex = responseText.indexOf('mainResearchGoal:');
-      const researchGoalIndex = responseText.indexOf('researchGoal:');
-      const reasoningIndex = responseText.indexOf('reasoning:');
+      // Should have essential fields
+      expect(responseText).toContain('id: 1');
+      expect(responseText).toContain('status:');
+      expect(responseText).toContain('data:');
+      // Optimized: No research fields duplicated
+      expect(responseText).not.toContain('reasoning:');
+    });
+
+    it('should output fields in correct order: id -> status -> data (optimized)', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        files: [{ path: 'test.ts' }],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = getTextContent(result.content);
+      const idIndex = responseText.indexOf('id:');
       const statusIndex = responseText.indexOf('status:');
       const dataIndex = responseText.indexOf('data:');
 
-      // All research fields should exist
-      expect(mainResearchGoalIndex).toBeGreaterThan(-1);
-      expect(researchGoalIndex).toBeGreaterThan(-1);
-      expect(reasoningIndex).toBeGreaterThan(-1);
+      // Essential fields should exist
+      expect(idIndex).toBeGreaterThan(-1);
       expect(statusIndex).toBeGreaterThan(-1);
       expect(dataIndex).toBeGreaterThan(-1);
 
-      // Research fields should come before status
-      expect(mainResearchGoalIndex).toBeLessThan(statusIndex);
-      expect(researchGoalIndex).toBeLessThan(statusIndex);
-      expect(reasoningIndex).toBeLessThan(statusIndex);
-
-      // Status should come before data
+      // Order: id -> status -> data
+      expect(idIndex).toBeLessThan(statusIndex);
       expect(statusIndex).toBeLessThan(dataIndex);
     });
 
-    it('should maintain research fields priority order in error responses', async () => {
-      const queries = [
-        {
-          id: 'q1',
-          mainResearchGoal: 'Main goal',
-          researchGoal: 'Specific goal',
-          reasoning: 'The reasoning',
-        },
-      ];
+    it('should maintain field order in error responses', async () => {
+      const queries = [{ id: 'q1' }];
       const processor = vi.fn().mockResolvedValue({
         status: 'error' as const,
         error: 'Something went wrong',
@@ -1056,26 +1017,17 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      const mainResearchGoalIndex = responseText.indexOf('mainResearchGoal:');
-      const researchGoalIndex = responseText.indexOf('researchGoal:');
-      const reasoningIndex = responseText.indexOf('reasoning:');
+      const idIndex = responseText.indexOf('id:');
       const statusIndex = responseText.indexOf('status:');
+      const dataIndex = responseText.indexOf('data:');
 
-      // All research fields should come before status even in errors
-      expect(mainResearchGoalIndex).toBeLessThan(statusIndex);
-      expect(researchGoalIndex).toBeLessThan(statusIndex);
-      expect(reasoningIndex).toBeLessThan(statusIndex);
+      // Order: id -> status -> data
+      expect(idIndex).toBeLessThan(statusIndex);
+      expect(statusIndex).toBeLessThan(dataIndex);
     });
 
-    it('should maintain research fields priority with thrown errors', async () => {
-      const queries = [
-        {
-          id: 'q1',
-          mainResearchGoal: 'Main goal',
-          researchGoal: 'Specific goal',
-          reasoning: 'The reasoning',
-        },
-      ];
+    it('should maintain field order with thrown errors', async () => {
+      const queries = [{ id: 'q1' }];
       const processor = vi.fn().mockRejectedValue(new Error('Network error'));
 
       const result = await executeBulkOperation(queries, processor, {
@@ -1083,15 +1035,13 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      const mainResearchGoalIndex = responseText.indexOf('mainResearchGoal:');
-      const researchGoalIndex = responseText.indexOf('researchGoal:');
-      const reasoningIndex = responseText.indexOf('reasoning:');
+      const idIndex = responseText.indexOf('id:');
       const statusIndex = responseText.indexOf('status:');
+      const dataIndex = responseText.indexOf('data:');
 
-      // All research fields should come before status even with thrown errors
-      expect(mainResearchGoalIndex).toBeLessThan(statusIndex);
-      expect(researchGoalIndex).toBeLessThan(statusIndex);
-      expect(reasoningIndex).toBeLessThan(statusIndex);
+      // Order: id -> status -> data
+      expect(idIndex).toBeLessThan(statusIndex);
+      expect(statusIndex).toBeLessThan(dataIndex);
     });
   });
 

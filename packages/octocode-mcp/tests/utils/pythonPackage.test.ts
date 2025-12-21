@@ -51,7 +51,7 @@ describe('pythonPackage - branch coverage', () => {
       if ('packages' in result) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const pkg = result.packages[0] as any;
-        expect(pkg.lastPublished).toBe('15/01/2024');
+        expect(pkg.lastPublished).toBe('2024-01-15T10:30:00');
       }
     });
 

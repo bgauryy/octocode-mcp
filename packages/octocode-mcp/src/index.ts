@@ -88,9 +88,8 @@ async function startServer() {
 
         try {
           await server.close();
-        } catch {
-          // ignore
-        }
+          // eslint-disable-next-line no-empty
+        } catch {}
 
         if (shutdownTimeout) {
           clearTimeout(shutdownTimeout);

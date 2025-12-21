@@ -86,7 +86,7 @@ describe('toolMetadata', () => {
     genericErrorHints: ['Generic error hint 1', 'Generic error hint 2'],
     bulkOperations: {
       instructions: {
-        base: 'Bulk response with {count} results',
+        base: '{count} results',
         hasResults: 'Review hasResults hints',
         empty: 'Review empty hints',
         error: 'Review error hints',

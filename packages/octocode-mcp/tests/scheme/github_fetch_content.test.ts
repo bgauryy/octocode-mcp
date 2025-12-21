@@ -32,9 +32,9 @@ describe('FileContentQuerySchema', () => {
 
       const result = FileContentQuerySchema.parse(validQuery);
       expect(result.minified).toBe(true); // Default
-      expect(result.sanitize).toBe(true); // Default
       expect(result.fullContent).toBe(false); // Default
       expect(result.matchStringContextLines).toBe(5); // Default
+      expect(result.addTimestamp).toBe(true); // Default
     });
 
     it('should validate with optional branch parameter', () => {

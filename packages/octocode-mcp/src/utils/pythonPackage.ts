@@ -116,7 +116,6 @@ export async function searchPythonPackage(
         description = description.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
       }
 
-      // Extract last published date from releases
       let lastPublished: string | undefined;
       const releases = packageInfo.releases;
       if (releases && info.version && releases[info.version]) {
@@ -124,7 +123,7 @@ export async function searchPythonPackage(
         if (Array.isArray(versionFiles) && versionFiles.length > 0) {
           const uploadTime = versionFiles[0]?.upload_time;
           if (uploadTime) {
-            lastPublished = new Date(uploadTime).toLocaleDateString('en-GB');
+            lastPublished = uploadTime;
           }
         }
       }

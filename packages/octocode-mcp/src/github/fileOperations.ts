@@ -20,6 +20,7 @@ import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
 import { FILE_OPERATION_ERRORS, REPOSITORY_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
+import { isSanitizeEnabled } from '../serverConfig.js';
 
 interface FileTimestampInfo {
   lastModified: string;
@@ -220,7 +221,6 @@ async function fetchGitHubFileContentAPIInternal(
         };
       }
 
-      // Fetch timestamp if requested
       if (params.addTimestamp) {
         const timestampInfo = await fetchFileTimestamp(
           octokit,
@@ -284,15 +284,12 @@ async function fetchFileTimestamp(
         'Unknown';
 
       return {
-        lastModified: commitDate
-          ? new Date(commitDate).toLocaleDateString('en-GB')
-          : 'Unknown',
+        lastModified: commitDate || 'Unknown',
         lastModifiedBy: authorName,
       };
     }
     return null;
   } catch {
-    // Silently fail - timestamp is optional enhancement
     return null;
   }
 }
@@ -310,19 +307,22 @@ async function processFileContentAPI(
   matchStringContextLines: number = 5,
   matchString?: string
 ): Promise<ContentResult> {
-  const sanitizationResult = ContentSanitizer.sanitizeContent(decodedContent);
-  decodedContent = sanitizationResult.content;
-
   const securityWarningsSet = new Set<string>();
-  if (sanitizationResult.hasSecrets) {
-    securityWarningsSet.add(
-      `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
-    );
-  }
-  if (sanitizationResult.warnings.length > 0) {
-    sanitizationResult.warnings.forEach(warning =>
-      securityWarningsSet.add(warning)
-    );
+
+  if (isSanitizeEnabled()) {
+    const sanitizationResult = ContentSanitizer.sanitizeContent(decodedContent);
+    decodedContent = sanitizationResult.content;
+
+    if (sanitizationResult.hasSecrets) {
+      securityWarningsSet.add(
+        `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
+      );
+    }
+    if (sanitizationResult.warnings.length > 0) {
+      sanitizationResult.warnings.forEach(warning =>
+        securityWarningsSet.add(warning)
+      );
+    }
   }
   const securityWarnings = Array.from(securityWarningsSet);
 
@@ -530,9 +530,8 @@ async function viewGitHubRepositoryStructureAPIInternal(
                 foundBranch = tryBranch;
                 workingBranch = tryBranch;
                 break;
-              } catch {
-                // ignore
-              }
+                // eslint-disable-next-line no-empty
+              } catch {}
             }
 
             if (!foundBranch) {
@@ -648,20 +647,66 @@ async function viewGitHubRepositoryStructureAPIInternal(
       return a.path.localeCompare(b.path);
     });
 
-    const files = limitedItems
-      .filter(item => item.type === 'file')
-      .map(item => ({
-        path: item.path.startsWith('/') ? item.path : `/${item.path}`,
-        size: item.size,
-        url: item.path,
-      }));
+    const structure: Record<string, { files: string[]; folders: string[] }> =
+      {};
+    const basePath = cleanPath || '';
 
-    const folders = limitedItems
-      .filter(item => item.type === 'dir')
-      .map(item => ({
-        path: item.path.startsWith('/') ? item.path : `/${item.path}`,
-        url: item.path,
-      }));
+    const getRelativeParent = (itemPath: string): string => {
+      let relativePath = itemPath;
+      if (basePath && itemPath.startsWith(basePath)) {
+        relativePath = itemPath.slice(basePath.length);
+        if (relativePath.startsWith('/')) {
+          relativePath = relativePath.slice(1);
+        }
+      }
+
+      const lastSlash = relativePath.lastIndexOf('/');
+      if (lastSlash === -1) {
+        return '.'; // Root level
+      }
+      return relativePath.slice(0, lastSlash);
+    };
+
+    const getItemName = (itemPath: string): string => {
+      const lastSlash = itemPath.lastIndexOf('/');
+      return lastSlash === -1 ? itemPath : itemPath.slice(lastSlash + 1);
+    };
+
+    for (const item of limitedItems) {
+      const parentDir = getRelativeParent(item.path);
+
+      if (!structure[parentDir]) {
+        structure[parentDir] = { files: [], folders: [] };
+      }
+
+      const itemName = getItemName(item.path);
+      if (item.type === 'file') {
+        structure[parentDir].files.push(itemName);
+      } else {
+        structure[parentDir].folders.push(itemName);
+      }
+    }
+
+    for (const dir of Object.keys(structure)) {
+      structure[dir].files.sort();
+      structure[dir].folders.sort();
+    }
+
+    const sortedStructure: Record<
+      string,
+      { files: string[]; folders: string[] }
+    > = {};
+    const sortedKeys = Object.keys(structure).sort((a, b) => {
+      if (a === '.') return -1;
+      if (b === '.') return 1;
+      return a.localeCompare(b);
+    });
+    for (const key of sortedKeys) {
+      sortedStructure[key] = structure[key];
+    }
+
+    const totalFiles = limitedItems.filter(i => i.type === 'file').length;
+    const totalFolders = limitedItems.filter(i => i.type === 'dir').length;
 
     return {
       owner,
@@ -670,17 +715,13 @@ async function viewGitHubRepositoryStructureAPIInternal(
       path: cleanPath || '/',
       apiSource: true,
       summary: {
-        totalFiles: files.length,
-        totalFolders: folders.length,
+        totalFiles,
+        totalFolders,
         truncated: allItems.length > limitedItems.length,
         filtered: true,
         originalCount: allItems.length,
       },
-      files: files,
-      folders: {
-        count: folders.length,
-        folders: folders,
-      },
+      structure: sortedStructure,
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -741,7 +782,6 @@ async function fetchDirectoryContentsRecursivelyAPI(
 
     const allItems: GitHubApiFileItem[] = [...apiItems];
 
-    // If we haven't reached max depth, recursively fetch subdirectories
     if (currentDepth < maxDepth) {
       const directories = apiItems.filter(item => item.type === 'dir');
 

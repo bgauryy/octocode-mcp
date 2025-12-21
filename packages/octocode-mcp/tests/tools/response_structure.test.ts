@@ -2,21 +2,21 @@
  * Comprehensive Response Structure Tests
  *
  * Tests all tools to ensure they properly handle all combinations of:
- * - hasResults: queries that returned results
+ * - ok: queries that returned results
  * - empty: queries that ran but found no matches
- * - failed: queries that encountered errors
+ * - error: queries that encountered errors
  *
  * Combinations tested:
- * 1. hasResults only
+ * 1. ok only
  */
 
 import { getTextContent } from '../utils/testHelpers.js';
 /* 2. empty only
- * 3. failed only
- * 4. hasResults + empty
- * 5. hasResults + failed
- * 6. empty + failed
- * 7. hasResults + empty + failed
+ * 3. error only
+ * 4. ok + empty
+ * 5. ok + error
+ * 6. empty + error
+ * 7. ok + empty + error
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -137,7 +137,7 @@ describe('Response Structure - All Tools', () => {
       registerGitHubSearchCodeTool(mockServer.server);
     });
 
-    it('should handle hasResults queries only', async () => {
+    it('should handle ok queries only', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValueOnce({
         data: {
           total_count: 1,
@@ -156,7 +156,7 @@ describe('Response Structure - All Tools', () => {
         queries: [
           {
             keywordsToSearch: ['test'],
-            reasoning: 'Test hasResults',
+            reasoning: 'Test ok',
           },
         ],
       });
@@ -165,8 +165,8 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('reasoning: "Test hasResults"');
-      expect(responseText).toContain('1 hasResults');
+      // Optimized: reasoning not duplicated in response
+      expect(responseText).toContain('1 ok');
     });
 
     it('should handle empty queries only', async () => {
@@ -191,11 +191,11 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "empty"');
-      expect(responseText).toContain('reasoning: "Test empty"');
+      // Optimized: reasoning not duplicated in response
       expect(responseText).toContain('1 empty');
     });
 
-    it('should handle failed queries only', async () => {
+    it('should handle error queries only', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValueOnce({
         error: 'API error',
       });
@@ -204,7 +204,7 @@ describe('Response Structure - All Tools', () => {
         queries: [
           {
             keywordsToSearch: ['error'],
-            reasoning: 'Test failed',
+            reasoning: 'Test error',
           },
         ],
       });
@@ -213,8 +213,8 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('reasoning: "Test failed"');
-      expect(responseText).toContain('1 failed');
+      // Optimized: reasoning not duplicated in response
+      expect(responseText).toContain('1 error');
     });
 
     it('should handle successful + empty combination', async () => {
@@ -251,10 +251,10 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 hasResults, 1 empty');
+      expect(responseText).toContain('1 ok, 1 empty');
     });
 
-    it('should handle successful + failed combination', async () => {
+    it('should handle successful + error combination', async () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
@@ -285,10 +285,10 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 hasResults, 1 failed');
+      expect(responseText).toContain('1 ok, 1 error');
     });
 
-    it('should handle empty + failed combination', async () => {
+    it('should handle empty + error combination', async () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
@@ -313,10 +313,10 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).not.toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 empty, 1 failed');
+      expect(responseText).toContain('1 empty, 1 error');
     });
 
-    it('should handle successful + empty + failed combination', async () => {
+    it('should handle successful + empty + error combination', async () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
@@ -355,7 +355,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
+      expect(responseText).toContain('1 ok, 1 empty, 1 error');
     });
   });
 
@@ -395,10 +395,10 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('1 ok');
     });
 
-    it('should handle failed queries only', async () => {
+    it('should handle error queries only', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValueOnce({
         error: 'File not found',
         status: 404,
@@ -412,7 +412,7 @@ describe('Response Structure - All Tools', () => {
               owner: 'test',
               repo: 'repo',
               path: 'missing.js',
-              reasoning: 'Test failed',
+              reasoning: 'Test error',
             },
           ],
         }
@@ -422,10 +422,10 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).not.toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('1 error');
     });
 
-    it('should handle successful + failed combination', async () => {
+    it('should handle successful + error combination', async () => {
       mockFetchGitHubFileContentAPI
         .mockResolvedValueOnce({
           data: {
@@ -467,7 +467,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 hasResults, 1 failed');
+      expect(responseText).toContain('1 ok, 1 error');
     });
   });
 
@@ -511,7 +511,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('1 ok');
     });
 
     it('should handle empty queries only', async () => {
@@ -541,7 +541,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('1 empty');
     });
 
-    it('should handle successful + empty + failed combination', async () => {
+    it('should handle successful + empty + error combination', async () => {
       mockSearchGitHubReposAPI
         .mockResolvedValueOnce({
           data: {
@@ -586,7 +586,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
+      expect(responseText).toContain('1 ok, 1 empty, 1 error');
     });
   });
 
@@ -617,7 +617,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('1 ok');
     });
 
     it('should handle empty queries only', async () => {
@@ -645,7 +645,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('1 empty');
     });
 
-    it('should handle successful + empty + failed combination', async () => {
+    it('should handle successful + empty + error combination', async () => {
       mockSearchGitHubPullRequestsAPI
         .mockResolvedValueOnce({
           pull_requests: [{ number: 1, title: 'PR', url: 'url' }],
@@ -674,7 +674,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
+      expect(responseText).toContain('1 ok, 1 empty, 1 error');
     });
   });
 
@@ -685,8 +685,13 @@ describe('Response Structure - All Tools', () => {
 
     it('should handle successful queries only', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValueOnce({
-        files: [{ path: '/README.md', size: 100 }],
-        folders: { folders: [{ path: '/src' }] },
+        structure: {
+          '.': {
+            files: ['README.md'],
+            folders: ['src'],
+          },
+        },
+        path: '/',
         summary: {
           totalFiles: 1,
           totalDirectories: 1,
@@ -711,13 +716,13 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('1 ok');
     });
 
     it('should handle empty queries only', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValueOnce({
-        files: [],
-        folders: { folders: [] },
+        structure: {},
+        path: '/',
         summary: {
           totalFiles: 0,
           totalDirectories: 0,
@@ -745,19 +750,24 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('1 empty');
     });
 
-    it('should handle successful + empty + failed combination', async () => {
+    it('should handle successful + empty + error combination', async () => {
       mockViewGitHubRepositoryStructureAPI
         .mockResolvedValueOnce({
-          files: [{ path: '/README.md', size: 100 }],
-          folders: { folders: [{ path: '/src' }] },
+          structure: {
+            '.': {
+              files: ['README.md'],
+              folders: ['src'],
+            },
+          },
+          path: '/',
           summary: {
             totalFiles: 1,
             totalDirectories: 1,
           },
         })
         .mockResolvedValueOnce({
-          files: [],
-          folders: { folders: [] },
+          structure: {},
+          path: '/',
           summary: {
             totalFiles: 0,
             totalDirectories: 0,
@@ -797,7 +807,7 @@ describe('Response Structure - All Tools', () => {
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
+      expect(responseText).toContain('1 ok, 1 empty, 1 error');
     });
   });
 

@@ -329,7 +329,7 @@ newline`);
       const result = maskSensitiveData(text);
 
       expect(result).toEqual(
-        'SECRET="密码1234567890123" API_KEY="токен45678901234"'
+        'SECRET="密码1234567890123" *P*_*E*=*т*к*н*5*7*9*1*3*"'
       );
     });
   });

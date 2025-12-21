@@ -73,14 +73,12 @@ export async function fetchWithRetries(
     includeVersion = false,
   } = options;
 
-  // Append version query parameter if requested
   let finalUrl = url;
   if (includeVersion) {
     const separator = url.includes('?') ? '&' : '?';
     finalUrl = `${url}${separator}version=${encodeURIComponent(version)}`;
   }
 
-  // Merge default User-Agent with custom headers (custom headers take precedence)
   const finalHeaders: Record<string, string> = {
     'User-Agent': `Octocode-MCP/${version}`,
     ...headers,
@@ -96,7 +94,6 @@ export async function fetchWithRetries(
   }
 
   let lastError: Error | undefined;
-  // maxRetries refers to retries, so total attempts is maxRetries + 1
   const maxAttempts = maxRetries + 1;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -115,11 +112,9 @@ export async function fetchWithRetries(
           FETCH_ERRORS.FETCH_HTTP_ERROR.message(res.status, res.statusText)
         ) as ExtendedError;
 
-        // Attach status and headers for retry logic
         error.status = res.status;
         error.headers = res.headers;
 
-        // 429 and 5xx are retryable
         const isRetryable =
           res.status === 429 || (res.status >= 500 && res.status < 600);
         error.retryable = isRetryable;
@@ -127,7 +122,6 @@ export async function fetchWithRetries(
         throw error;
       }
 
-      // Handle 204 No Content
       if (res.status === 204) {
         return null;
       }
@@ -136,7 +130,6 @@ export async function fetchWithRetries(
     } catch (error: unknown) {
       const extendedError = error as ExtendedError;
 
-      // Check if explicitly marked as not retryable
       if (extendedError && extendedError.retryable === false) {
         throw error;
       }
@@ -149,7 +142,6 @@ export async function fetchWithRetries(
 
       let delayMs = initialDelayMs * Math.pow(2, attempt - 1);
 
-      // Check Retry-After header if available
       if (
         extendedError &&
         extendedError.headers &&

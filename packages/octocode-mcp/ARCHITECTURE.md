@@ -181,6 +181,7 @@ Environment variables handled in `serverConfig.ts`:
 | `REQUEST_TIMEOUT` | `30000` | Request timeout in ms |
 | `MAX_RETRIES` | `3` | Maximum retry attempts |
 | `LOG` | `true` | Enable session logging |
+| `SANITIZE` | `true` | Enable content sanitization |
 
 ### Token Resolution Order
 

@@ -222,7 +222,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('instructions:');
-      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('0 results');
       expect(responseText).toContain('results:');
     });
 
@@ -241,7 +241,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       const responseText = getTextContent(result.content);
 
       expect(responseText).toContain('instructions:');
-      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('0 results');
       expect(responseText).toContain('results:');
     });
 
@@ -296,7 +296,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('1 error');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain(
         'error: "Query too long. Maximum 256 characters allowed."'
@@ -960,7 +960,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('incomplete_results: true');
+      expect(responseText).toContain('status: "hasResults"');
     });
 
     it('should handle PR by number with owner and repo', async () => {

@@ -95,18 +95,16 @@ async function searchGitHubReposAPIInternal(
               : repo.description
             : 'No description',
           url: repo.html_url,
-          createdAt: new Date(repo.created_at).toLocaleDateString('en-GB'),
-          updatedAt: new Date(repo.updated_at).toLocaleDateString('en-GB'),
-          pushedAt: new Date(repo.pushed_at).toLocaleDateString('en-GB'),
+          createdAt: repo.created_at,
+          updatedAt: repo.updated_at,
+          pushedAt: repo.pushed_at,
         };
       })
       .sort((a: SimplifiedRepository, b: SimplifiedRepository) => {
         if (b.stars !== a.stars) {
           return b.stars - a.stars;
         }
-        const dateA = new Date(a.updatedAt.split('/').reverse().join('-'));
-        const dateB = new Date(b.updatedAt.split('/').reverse().join('-'));
-        return dateB.getTime() - dateA.getTime();
+        return b.updatedAt.localeCompare(a.updatedAt);
       });
 
     return {

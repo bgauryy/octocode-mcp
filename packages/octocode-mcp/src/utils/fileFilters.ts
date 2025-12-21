@@ -2,7 +2,6 @@
  * Folder names to ignore (exact matches)
  */
 export const IGNORED_FOLDER_NAMES = [
-  // Hidden folders (starting with .)
   '.github',
   '.git',
   '.vscode',
@@ -18,28 +17,20 @@ export const IGNORED_FOLDER_NAMES = [
   '.ng-dev',
   '.configurations',
   '.tx',
-
-  // Build/distribution folders
   'dist',
   'build',
   'out',
   'output',
   'target',
   'release',
-
-  // Dependencies
   'node_modules',
   'vendor',
   'third_party',
-
-  // Temporary/cache directories
   'tmp',
   'temp',
   'cache',
   '.cache',
   '.tmp',
-
-  // Language-specific cache/build directories
   '.pytest_cache',
   '.tox',
   '.venv',
@@ -54,78 +45,47 @@ export const IGNORED_FOLDER_NAMES = [
   '.nox',
   'htmlcov',
   'cover',
-
-  // Java/Kotlin/Scala
   '.gradle',
   '.m2',
   '.sbt',
   '.bloop',
   '.metals',
   '.bsp',
-
-  // .NET/C#
   'bin',
   'obj',
   'TestResults',
   'BenchmarkDotNet.Artifacts',
-
-  // Go
   '.vendor-new',
   'Godeps',
-
-  // PHP
   'composer.phar',
   '.phpunit.result.cache',
-
-  // Ruby
   '.bundle',
   '.byebug_history',
   '.rspec_status',
-
-  // Maven/Gradle specific
   '.mvn',
-
-  // Cloud/AWS/GCP
   '.aws',
   '.gcp',
-
-  // Fastlane
   'fastlane',
-
-  // Swift/iOS
   'DerivedData',
   'xcuserdata',
-
-  // Android
   'local.properties',
   '.navigation',
   'captures',
   '.externalNativeBuild',
   '.cxx',
-
-  // IDE/Editor specific
   '.idea',
   '.idea_modules',
   '.vs',
   '.history',
-
-  // Coverage reports
   'coverage',
   '.nyc_output',
-
-  // Logs
   'logs',
   'log',
-
-  // OS specific
   '.DS_Store',
 ];
 
 export const IGNORED_FILE_NAMES = [
-  // Lock files (dependency management)
   'package-lock.json',
-
-  // Sensitive files (API keys, certificates, secrets)
   '.secrets',
   '.secret',
   'secrets.json',
@@ -153,24 +113,16 @@ export const IGNORED_FILE_NAMES = [
   'firebase-adminsdk.json',
   'google-services.json',
   'GoogleService-Info.plist',
-
-  // OS/IDE specific files
   '.DS_Store',
   'Thumbs.db',
-
-  // Binary database files (large and not searchable)
   'db.sqlite3',
   'db.sqlite3-journal',
-
-  // Cache files that are regenerated
   '.eslintcache',
   '.stylelintcache',
   '.node_repl_history',
   '.yarn-integrity',
   'celerybeat-schedule',
   'celerybeat.pid',
-
-  // Large generated notice/license files
   'ThirdPartyNoticeText.txt',
   'ThirdPartyNotices.txt',
   'cglicenses.json',
@@ -181,7 +133,6 @@ export const IGNORED_FILE_NAMES = [
  * File extensions to ignore
  */
 export const IGNORED_FILE_EXTENSIONS = [
-  // Lock files (dependency management)
   '.lock',
   '.log',
   '.tmp',
@@ -198,8 +149,6 @@ export const IGNORED_FILE_EXTENSIONS = [
   '.old',
   '.save',
   '.temporary',
-
-  // Compiled/binary files
   '.exe',
   '.dll',
   '.so',
@@ -219,15 +168,11 @@ export const IGNORED_FILE_EXTENSIONS = [
   '.war',
   '.ear',
   '.nar',
-
-  // Database files
   '.db',
   '.sqlite',
   '.sqlite3',
   '.mdb',
   '.accdb',
-
-  // Archive files
   '.zip',
   '.tar',
   '.gz',
@@ -239,8 +184,6 @@ export const IGNORED_FILE_EXTENSIONS = [
   '.tgz',
   '.rar',
   '.7z',
-
-  // Package files
   '.deb',
   '.rpm',
   '.pkg',
@@ -248,16 +191,10 @@ export const IGNORED_FILE_EXTENSIONS = [
   '.msi',
   '.appx',
   '.snap',
-
-  // Map files
   '.map',
   '.d.ts.map',
-
-  // Minified files
   '.min.js',
   '.min.css',
-
-  // Certificate/key files
   '.key',
   '.pem',
   '.p12',
@@ -269,8 +206,6 @@ export const IGNORED_FILE_EXTENSIONS = [
   '.jks',
   '.keystore',
   '.truststore',
-
-  // IDE/Editor specific
   '.kate-swp',
   '.gnome-desktop',
   '.sublime-project',
@@ -278,19 +213,13 @@ export const IGNORED_FILE_EXTENSIONS = [
   '.iml',
   '.iws',
   '.ipr',
-
-  // Version control
   '.patch',
   '.diff',
-
-  // Profiling/debugging
   '.prof',
   '.profile',
   '.trace',
   '.perf',
   '.coverage',
-
-  // Language specific
   '.egg-info',
   '.egg',
   '.mo',
@@ -312,22 +241,18 @@ export function shouldIgnoreDir(folderName: string): boolean {
  * @param filePath - Full file path (e.g., ".yarn/x/y/z.js")
  */
 export function shouldIgnoreFile(filePath: string): boolean {
-  // Extract file name from path (do this once)
   const fileName = filePath.split('/').pop() || '';
 
-  // 1. Check file extension first (fastest - simple string operations)
   for (const ext of IGNORED_FILE_EXTENSIONS) {
     if (fileName.endsWith(ext)) {
       return true;
     }
   }
 
-  // 2. Check if file name is ignored (fast - single array lookup)
   if (IGNORED_FILE_NAMES.includes(fileName)) {
     return true;
   }
 
-  // 3. Check if file is in an ignored directory (most expensive - path traversal)
   const pathParts = filePath.split('/');
   for (const part of pathParts) {
     if (IGNORED_FOLDER_NAMES.includes(part)) {

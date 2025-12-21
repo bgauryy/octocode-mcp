@@ -28,6 +28,9 @@ function createRequestError(message: string, status: number) {
 // Mock dependencies
 vi.mock('../../src/github/client.js');
 vi.mock('../../src/utils/minifier/index.js');
+vi.mock('../../src/serverConfig.js', () => ({
+  isSanitizeEnabled: vi.fn().mockReturnValue(true),
+}));
 
 describe('GitHub File Operations - processFileContentAPI coverage', () => {
   beforeEach(() => {
@@ -776,8 +779,8 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
         path: '',
       });
 
-      expect(result).toHaveProperty('files');
-      if ('files' in result) {
+      expect(result).toHaveProperty('structure');
+      if ('structure' in result) {
         expect(result.branch).toBe('main');
       }
     });
@@ -822,8 +825,8 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
         path: '',
       });
 
-      expect(result).toHaveProperty('files');
-      if ('files' in result) {
+      expect(result).toHaveProperty('structure');
+      if ('structure' in result) {
         expect(result.branch).toBe('master');
       }
     });

@@ -1,8 +1,6 @@
-// Core client and utilities
 export { getOctokit, OctokitWithThrottling, clearCachedToken } from './client';
 export { handleGitHubAPIError } from './errors';
 
-// Export enhanced/custom types and utilities
 export type {
   GitHubAPIError,
   GitHubAPIResponse,
@@ -18,11 +16,9 @@ export type {
   isRepository,
 } from './githubAPI';
 
-// Re-export direct Octokit types for convenience
 export type { components } from '@octokit/openapi-types';
 export type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
 
-// Query builders
 export {
   buildCodeSearchQuery,
   buildRepoSearchQuery,
@@ -30,7 +26,6 @@ export {
   shouldUseSearchForPRs,
 } from './queryBuilders';
 
-// Search operations
 export { searchGitHubCodeAPI } from './codeSearch';
 export { searchGitHubReposAPI } from './repoSearch';
 export {
@@ -39,7 +34,6 @@ export {
   transformPullRequestItemFromREST,
 } from './pullRequestSearch';
 
-// File operations
 export {
   fetchGitHubFileContentAPI,
   viewGitHubRepositoryStructureAPI,
