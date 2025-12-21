@@ -126,7 +126,6 @@ function createBulkResponse<
 
     hasAnyError = true;
 
-    // Optimized: Query params not duplicated in error results either
     flatQueries.push({
       id: err.queryIndex + 1, // 1-based ID for LLM readability
       status: 'error',
@@ -161,7 +160,6 @@ function createBulkResponse<
     errorCount
   );
 
-  // Optimized: Only include non-empty hint arrays to reduce payload size
   const responseData: ToolResponse = {
     instructions,
     results: flatQueries,
@@ -291,7 +289,6 @@ function generateBulkInstructions(
   emptyCount: number,
   errorCount: number
 ): string {
-  // Optimized: Shortened instructions to reduce payload size
   const counts = [];
   if (hasResultsCount > 0) counts.push(`${hasResultsCount} ok`);
   if (emptyCount > 0) counts.push(`${emptyCount} empty`);

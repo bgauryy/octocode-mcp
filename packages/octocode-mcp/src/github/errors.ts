@@ -12,17 +12,14 @@ import {
 import { logRateLimit } from '../session.js';
 
 export function handleGitHubAPIError(error: unknown): GitHubAPIError {
-  // Handle Octokit RequestError
   if (error instanceof RequestError) {
     return handleRequestError(error);
   }
 
-  // Handle standard JavaScript errors
   if (error instanceof Error) {
     return handleJavaScriptError(error);
   }
 
-  // Handle unknown error types (strings, null, undefined, objects)
   return {
     error:
       typeof error === 'string'
@@ -35,18 +32,15 @@ export function handleGitHubAPIError(error: unknown): GitHubAPIError {
 function handleRequestError(error: RequestError): GitHubAPIError {
   const { status, message, response } = error;
 
-  // Handle 403 errors (most complex - rate limits and permissions)
   if (status === 403) {
     return handle403Error(message, response);
   }
 
-  // Handle other HTTP status codes
   const errorCode = STATUS_TO_ERROR_CODE[status];
   if (errorCode) {
     return handleKnownHttpError(errorCode, status);
   }
 
-  // Handle unknown HTTP status codes
   return createErrorResponse(ERROR_CODES.UNKNOWN, {
     error: message || ERROR_MESSAGES[ERROR_CODES.UNKNOWN].message,
     status,
@@ -59,12 +53,10 @@ function handle403Error(
 ): GitHubAPIError {
   const headers = response?.headers;
 
-  // Check for secondary rate limit FIRST (per @octokit/plugin-throttling pattern)
   if (RATE_LIMIT_PATTERNS.SECONDARY.test(message)) {
     return handleSecondaryRateLimit(headers);
   }
 
-  // Check for primary rate limit (REST + GraphQL)
   const remaining = headers?.['x-ratelimit-remaining'];
   const isGraphQLRateLimited = checkGraphQLRateLimit(response);
 
@@ -72,7 +64,6 @@ function handle403Error(
     return handlePrimaryRateLimit(headers);
   }
 
-  // Handle permission/scope errors
   return handlePermissionError(headers);
 }
 
@@ -104,7 +95,6 @@ function handlePrimaryRateLimit(
   const reset = headers?.['x-ratelimit-reset'];
   const resetTime = reset ? new Date(parseInt(String(reset)) * 1000) : null;
 
-  // Calculate retry time with +1 second buffer per GitHub best practices
   const retryAfterSeconds = resetTime
     ? Math.max(
         Math.ceil((resetTime.getTime() - Date.now()) / 1000) +
@@ -186,7 +176,6 @@ function handleKnownHttpError(
 }
 
 function handleJavaScriptError(error: Error): GitHubAPIError {
-  // Check for connection failures
   if (
     NETWORK_ERROR_PATTERNS.CONNECTION_FAILED.some(pattern =>
       error.message.includes(pattern)
@@ -200,7 +189,6 @@ function handleJavaScriptError(error: Error): GitHubAPIError {
     };
   }
 
-  // Check for timeout errors
   if (
     NETWORK_ERROR_PATTERNS.TIMEOUT.some(pattern =>
       error.message.includes(pattern)
@@ -213,7 +201,6 @@ function handleJavaScriptError(error: Error): GitHubAPIError {
     };
   }
 
-  // Unknown JavaScript error
   return {
     error: error.message,
     type: 'unknown',
@@ -254,7 +241,4 @@ function generateScopesSuggestion(
   return ERROR_MESSAGES[ERROR_CODES.FORBIDDEN_PERMISSIONS].fallbackSuggestion;
 }
 
-//
-
-// Export error codes for testing and external use
 export { ERROR_CODES, ERROR_MESSAGES, type ErrorCode };

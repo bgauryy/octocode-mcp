@@ -10,8 +10,6 @@ import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
 import { filterPatch } from '../utils/diffParser.js';
-
-// GitHub API types for pull request files
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
@@ -73,7 +71,6 @@ async function searchGitHubPullRequestsAPIInternal(
       !Array.isArray(params.owner) &&
       !Array.isArray(params.repo)
     ) {
-      // Use REST API for simple repository-specific searches (like gh pr list)
       return await searchPullRequestsWithREST(octokit, params);
     }
 
@@ -383,7 +380,6 @@ function applyPartialContentFilter(
         };
       });
   }
-  // fullContent: keep as is
   return files;
 }
 
@@ -456,7 +452,6 @@ async function transformPullRequestItem(
     }
   }
 
-  // Fetch commits only if requested
   if (params.withCommits) {
     try {
       const { owner, repo } = normalizeOwnerRepo(params);
@@ -575,7 +570,6 @@ async function fetchPRCommitsWithFiles(
   const commits = await fetchPRCommitsAPI(owner, repo, prNumber, authInfo);
   if (!commits) return null;
 
-  // Sort commits by date descending (most recent first)
   const sortedCommits = [...commits].sort((a, b) => {
     const dateA = a.commit.author?.date
       ? new Date(a.commit.author.date).getTime()
@@ -659,7 +653,6 @@ export async function transformPullRequestItemFromREST(
     );
   }
 
-  // Fetch commits only if requested
   if (params.withCommits) {
     try {
       const commits = await fetchPRCommitsWithFiles(
@@ -704,7 +697,6 @@ export async function fetchGitHubPullRequestByNumberAPI(
       return await fetchGitHubPullRequestByNumberAPIInternal(params, authInfo);
     },
     {
-      // Only cache successful responses
       shouldCache: (value: PullRequestSearchResult) => !value.error,
     }
   );
@@ -747,7 +739,6 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
   try {
     const octokit = await getOctokit(authInfo);
 
-    // Use REST API to get specific PR by number
     const result = await octokit.rest.pulls.get({
       owner,
       repo,

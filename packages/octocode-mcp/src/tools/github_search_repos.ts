@@ -49,9 +49,8 @@ export function registerSearchGitHubReposTool(
         if (callback) {
           try {
             await callback(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, queries);
-          } catch {
-            // ignore
-          }
+            // eslint-disable-next-line no-empty
+          } catch {}
         }
 
         return searchMultipleGitHubRepos(queries, authInfo, sessionId);

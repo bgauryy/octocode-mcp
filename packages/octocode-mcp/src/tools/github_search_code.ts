@@ -49,9 +49,8 @@ export function registerGitHubSearchCodeTool(
         if (callback) {
           try {
             await callback(TOOL_NAMES.GITHUB_SEARCH_CODE, queries);
-          } catch {
-            // ignore
-          }
+            // eslint-disable-next-line no-empty
+          } catch {}
         }
 
         return searchMultipleGitHubCode(queries, authInfo, sessionId);
@@ -81,17 +80,12 @@ async function searchMultipleGitHubCode(
           );
         }
 
-        // Group files by repository (nameWithOwner) -> path -> matches
-        // Structure: { "owner/repo": { "path": ["match1", "match2"] } }
-        // - For content matches: array contains matched code snippets
-        // - For path-only matches: array is empty (just listing the file)
         const filteredItems = apiResult.data.items.filter(
           item => !shouldIgnoreFile(item.path)
         );
 
         const isPathOnlyMatch = query.match === 'path';
 
-        // Collect repo metadata for sorting (most recently pushed first)
         const repoMetadata: Record<string, { pushedAt: string }> = {};
         const repoResults: Record<string, Record<string, string[]>> = {};
 
@@ -112,7 +106,6 @@ async function searchMultipleGitHubCode(
           }
         }
 
-        // Sort repos by pushedAt (most recent first), then alphabetically
         const sortedRepos = Object.keys(repoResults).sort((a, b) => {
           const aPushed = repoMetadata[a]?.pushedAt || '';
           const bPushed = repoMetadata[b]?.pushedAt || '';
@@ -122,7 +115,6 @@ async function searchMultipleGitHubCode(
           return a.localeCompare(b); // Alphabetically as tiebreaker
         });
 
-        // Build sorted result with paths sorted by depth then alphabetically
         const sortedResults: Record<string, Record<string, string[]>> = {};
         for (const repo of sortedRepos) {
           const paths = Object.keys(repoResults[repo]);

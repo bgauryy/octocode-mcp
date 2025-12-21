@@ -104,7 +104,6 @@ async function searchGitHubReposAPIInternal(
         if (b.stars !== a.stars) {
           return b.stars - a.stars;
         }
-        // ISO 8601 dates are lexicographically sortable
         return b.updatedAt.localeCompare(a.updatedAt);
       });
 

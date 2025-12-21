@@ -34,15 +34,12 @@ export function registerTools(
       let reason = '';
       let isAvailableInMetadata = false;
 
-      // Check metadata availability first (with error handling)
       try {
         isAvailableInMetadata = isToolAvailableSync(tool.name);
       } catch {
-        // If metadata check fails, treat as unavailable
         isAvailableInMetadata = false;
       }
 
-      // Skip silently if tool is missing from remote metadata
       if (!isAvailableInMetadata) {
         continue;
       }

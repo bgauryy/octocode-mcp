@@ -59,27 +59,22 @@ export function filterPatch(
 ): string {
   if (!patch) return '';
 
-  // If both arrays are undefined → return full patch (no filtering)
   if (additions === undefined && deletions === undefined) {
     return patch;
   }
 
   const parsed = parsePatch(patch);
 
-  // null means "include all of this type", empty array means "include none" (if explicitly passed as [])
   const addSet = additions !== undefined ? new Set(additions) : null;
   const delSet = deletions !== undefined ? new Set(deletions) : null;
 
   const filteredLines = parsed.filter(line => {
     if (line.type === 'addition' && line.newLineNumber !== null) {
-      // If addSet is null, include all additions
       return addSet === null || addSet.has(line.newLineNumber);
     }
     if (line.type === 'deletion' && line.originalLineNumber !== null) {
-      // If delSet is null, include all deletions
       return delSet === null || delSet.has(line.originalLineNumber);
     }
-    // Include context lines if we're including some content
     if (line.type === 'context') {
       return (
         addSet === null || addSet.size > 0 || delSet === null || delSet.size > 0

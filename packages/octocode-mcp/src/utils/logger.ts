@@ -67,9 +67,8 @@ export class OctocodeLogger {
           data: logData,
         });
       }
-    } catch {
-      // Silent fallback - don't break the app if logging fails
-    }
+      // eslint-disable-next-line no-empty
+    } catch {}
   }
 }
 

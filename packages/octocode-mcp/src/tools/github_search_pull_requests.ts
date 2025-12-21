@@ -80,9 +80,8 @@ export function registerSearchGitHubPullRequestsTool(
         if (callback) {
           try {
             await callback(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, queries);
-          } catch {
-            // ignore
-          }
+            // eslint-disable-next-line no-empty
+          } catch {}
         }
 
         const longQueryIndex = queries.findIndex(hasQueryLengthError);

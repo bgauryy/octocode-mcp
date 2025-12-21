@@ -47,9 +47,8 @@ export function registerFetchGitHubFileContentTool(
         if (callback) {
           try {
             await callback(TOOL_NAMES.GITHUB_FETCH_CONTENT, queries);
-          } catch {
-            // ignore
-          }
+            // eslint-disable-next-line no-empty
+          } catch {}
         }
 
         return fetchMultipleGitHubFileContents(queries, authInfo, sessionId);
@@ -81,7 +80,6 @@ async function fetchMultipleGitHubFileContents(
 
         const hasContent = hasValidContent(result);
 
-        // Strip query parameters from result - response should only contain NEW data
         const cleanedResult = stripQueryParams(
           result as Record<string, unknown>
         );

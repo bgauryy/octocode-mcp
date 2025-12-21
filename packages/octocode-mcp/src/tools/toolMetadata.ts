@@ -2,8 +2,6 @@ import { fetchWithRetries } from '../utils/fetchWithRetries.js';
 import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
-// --- Core Metadata Types ---
-
 export interface PromptArgument {
   name: string;
   description: string;
@@ -52,16 +50,12 @@ export interface CompleteMetadata {
   genericErrorHints: readonly string[];
 }
 
-// --- Helper Types ---
-
 type ToolNamesValue =
   CompleteMetadata['toolNames'][keyof CompleteMetadata['toolNames']];
 
 type ToolNamesMap = Record<string, ToolNamesValue>;
 
 export type ToolName = ToolNamesValue;
-
-// --- Internal Data Types ---
 
 type RawBaseSchema = {
   mainResearchGoal: string;
@@ -80,12 +74,8 @@ type RawCompleteMetadata = {
   genericErrorHints: readonly string[];
 };
 
-// --- State ---
-
 let METADATA_JSON: CompleteMetadata | null = null;
 let initializationPromise: Promise<void> | null = null;
-
-// --- Constants ---
 
 const STATIC_TOOL_NAMES: ToolNamesMap = {
   GITHUB_FETCH_CONTENT: 'githubGetFileContent',
@@ -95,8 +85,6 @@ const STATIC_TOOL_NAMES: ToolNamesMap = {
   GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
   PACKAGE_SEARCH: 'packageSearch',
 };
-
-// --- Helper Functions ---
 
 function getMeta(): CompleteMetadata {
   if (!METADATA_JSON) {
@@ -127,8 +115,6 @@ function deepFreeze<T>(obj: T): T {
   }
   return obj;
 }
-
-// --- Initialization ---
 
 export async function initializeToolMetadata(): Promise<void> {
   if (METADATA_JSON) {
@@ -197,8 +183,6 @@ export async function loadToolContent(): Promise<CompleteMetadata> {
   }
   return getMeta();
 }
-
-// --- Accessors ---
 
 export const TOOL_NAMES = new Proxy({} as CompleteMetadata['toolNames'], {
   get(_target, prop: string) {

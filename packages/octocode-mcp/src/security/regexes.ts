@@ -61,6 +61,20 @@ const aiProviderPatterns: SensitiveDataPattern[] = [
     regex: /\b(sk-ant-(?:admin01|api03)-[\w-]{93}AA)\b/g,
     matchAccuracy: 'high',
   },
+  // Mistral AI
+  {
+    name: 'mistralApiKey',
+    description: 'Mistral AI API key',
+    regex: /\b(?:mistral-|mist_)[a-zA-Z0-9]{32,}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Tavily
+  {
+    name: 'tavilyApiKey',
+    description: 'Tavily API key',
+    regex: /\btvly-[a-zA-Z0-9]{30,}\b/g,
+    matchAccuracy: 'high',
+  },
 ];
 
 const awsPatterns: SensitiveDataPattern[] = [
@@ -106,6 +120,13 @@ const awsPatterns: SensitiveDataPattern[] = [
     name: 'awsS3BucketArn',
     description: 'AWS S3 bucket ARN',
     regex: /\barn:aws:s3:::[a-zA-Z0-9._-]+\b/g,
+    matchAccuracy: 'high',
+  },
+  // Alibaba Cloud
+  {
+    name: 'alibabaAccessKeyId',
+    description: 'Alibaba Cloud AccessKey ID',
+    regex: /\bLTAI[a-zA-Z0-9]{20}\b/g,
     matchAccuracy: 'high',
   },
   {
@@ -291,6 +312,12 @@ const cloudProviderPatterns: SensitiveDataPattern[] = [
 
   // Database Services
   {
+    name: 'supabaseServiceKey',
+    description: 'Supabase service role key',
+    regex: /\bsbp_[a-f0-9]{40}\b/g,
+    matchAccuracy: 'high',
+  },
+  {
     name: 'planetScaleConnectionString',
     description: 'PlanetScale connection string',
     regex:
@@ -430,7 +457,7 @@ const codeConfigPatterns: SensitiveDataPattern[] = [
     name: 'kubernetesSecrets',
     description: 'Kubernetes secrets in YAML',
     regex:
-      /\bkind:\s*["']?Secret["']?[\s\S]*?\bdata:\s*[\s\S]*?[a-zA-Z0-9_-]+:\s*[a-zA-Z0-9+/]{16,}={0,3}\b/gi,
+      /\bkind:\s*["']?Secret["']?[\s\S]{0,2000}?\bdata:\s*[\s\S]{0,2000}?[a-zA-Z0-9_-]+:\s*[a-zA-Z0-9+/]{16,}={0,3}\b/gi,
     matchAccuracy: 'high',
     fileContext: /\.ya?ml$/i,
   },
@@ -1058,9 +1085,9 @@ const genericSecretPatterns: SensitiveDataPattern[] = [
   // Generic environment variable secrets
   {
     name: 'envVarSecrets',
-    description: 'Environment variable secrets with quotes',
+    description: 'Environment variable secrets (KEY, SECRET, TOKEN, PASSWORD)',
     regex:
-      /\b(?:SECRET|secret|password|key|token|jwt_secret)[_a-zA-Z]*\s*=\s*["'][^"']{16,}["']/gi,
+      /\b(?:\w+_)?(?:SECRET|secret|password|key|token|jwt_secret)(?:_\w+)?\s*=\s*["'][^"']{16,}["']/gi,
     matchAccuracy: 'medium',
   },
 ];

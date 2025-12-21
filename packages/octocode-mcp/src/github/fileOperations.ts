@@ -221,7 +221,6 @@ async function fetchGitHubFileContentAPIInternal(
         };
       }
 
-      // Fetch timestamp if requested
       if (params.addTimestamp) {
         const timestampInfo = await fetchFileTimestamp(
           octokit,
@@ -291,7 +290,6 @@ async function fetchFileTimestamp(
     }
     return null;
   } catch {
-    // Silently fail - timestamp is optional enhancement
     return null;
   }
 }
@@ -532,9 +530,8 @@ async function viewGitHubRepositoryStructureAPIInternal(
                 foundBranch = tryBranch;
                 workingBranch = tryBranch;
                 break;
-              } catch {
-                // ignore
-              }
+                // eslint-disable-next-line no-empty
+              } catch {}
             }
 
             if (!foundBranch) {
@@ -650,14 +647,11 @@ async function viewGitHubRepositoryStructureAPIInternal(
       return a.path.localeCompare(b.path);
     });
 
-    // Group files and folders by parent directory
     const structure: Record<string, { files: string[]; folders: string[] }> =
       {};
     const basePath = cleanPath || '';
 
-    // Helper to get parent directory path relative to base
     const getRelativeParent = (itemPath: string): string => {
-      // Remove base path prefix to get relative path
       let relativePath = itemPath;
       if (basePath && itemPath.startsWith(basePath)) {
         relativePath = itemPath.slice(basePath.length);
@@ -673,13 +667,11 @@ async function viewGitHubRepositoryStructureAPIInternal(
       return relativePath.slice(0, lastSlash);
     };
 
-    // Helper to get item name (last part of path)
     const getItemName = (itemPath: string): string => {
       const lastSlash = itemPath.lastIndexOf('/');
       return lastSlash === -1 ? itemPath : itemPath.slice(lastSlash + 1);
     };
 
-    // Initialize structure for all items
     for (const item of limitedItems) {
       const parentDir = getRelativeParent(item.path);
 
@@ -695,13 +687,11 @@ async function viewGitHubRepositoryStructureAPIInternal(
       }
     }
 
-    // Sort entries within each directory
     for (const dir of Object.keys(structure)) {
       structure[dir].files.sort();
       structure[dir].folders.sort();
     }
 
-    // Sort directory keys (root first, then alphabetically)
     const sortedStructure: Record<
       string,
       { files: string[]; folders: string[] }
@@ -792,7 +782,6 @@ async function fetchDirectoryContentsRecursivelyAPI(
 
     const allItems: GitHubApiFileItem[] = [...apiItems];
 
-    // If we haven't reached max depth, recursively fetch subdirectories
     if (currentDepth < maxDepth) {
       const directories = apiItems.filter(item => item.type === 'dir');
 

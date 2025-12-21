@@ -27,7 +27,6 @@ export async function registerPackageSearchTool(
   server: McpServer,
   callback?: ToolInvocationCallback
 ): Promise<RegisteredTool | null> {
-  // Check if npm registry is reachable (10 second timeout)
   const npmAvailable = await checkNpmAvailability(10000);
   if (!npmAvailable) {
     return null;
@@ -61,9 +60,8 @@ export async function registerPackageSearchTool(
         if (callback) {
           try {
             await callback(TOOL_NAMES.PACKAGE_SEARCH, queries);
-          } catch {
-            // ignore
-          }
+            // eslint-disable-next-line no-empty
+          } catch {}
         }
 
         return searchPackages(queries);
@@ -105,7 +103,6 @@ async function searchPackages(
           return createErrorResult(query, apiResult.error);
         }
 
-        // Only include NEW data - ecosystem is already in the query
         const result = {
           packages: apiResult.packages as PackageResult[],
           totalFound: apiResult.totalFound,
@@ -113,7 +110,6 @@ async function searchPackages(
 
         const hasContent = result.packages.length > 0;
 
-        // Check deprecation for npm packages (only for first package to avoid too many API calls)
         let deprecationInfo: DeprecationInfo | null = null;
         if (hasContent && query.ecosystem === 'npm' && result.packages[0]) {
           deprecationInfo = await checkNpmDeprecation(
@@ -157,13 +153,11 @@ function generateSuccessHints(
   const name = getPackageName(pkg);
   const repo = getPackageRepo(pkg);
 
-  // Deprecation warning (highest priority)
   if (deprecationInfo?.deprecated) {
     const msg = deprecationInfo.message || 'This package is deprecated';
     hints.push(`DEPRECATED: ${name} - ${msg}`);
   }
 
-  // GitHub tool integration hint - extract owner/repo from URL
   if (repo?.includes('github.com')) {
     const match = repo.match(/github\.com\/([^/]+)\/([^/]+)/);
     if (match && match[1] && match[2]) {
@@ -176,7 +170,6 @@ function generateSuccessHints(
     }
   }
 
-  // Install command hint
   hints.push(
     ecosystem === 'npm'
       ? `Install: npm install ${name}`
@@ -192,13 +185,11 @@ function generateEmptyHints(query: PackageSearchQuery): string[] {
 
   hints.push(`No ${query.ecosystem} packages found for '${name}'`);
 
-  // Generate name variations
   const variations = generateNameVariations(name, query.ecosystem);
   if (variations.length > 0) {
     hints.push(`Try: ${variations.join(', ')}`);
   }
 
-  // Browse link
   const browseUrl =
     query.ecosystem === 'npm'
       ? `https://npmjs.com/search?q=${encodeURIComponent(name)}`
@@ -214,7 +205,6 @@ function generateNameVariations(
 ): string[] {
   const variations: string[] = [];
 
-  // Convert hyphens to underscores and vice versa
   if (name.includes('-')) {
     variations.push(name.replace(/-/g, '_'));
     variations.push(name.replace(/-/g, ''));
@@ -223,13 +213,11 @@ function generateNameVariations(
     variations.push(name.replace(/_/g, '-'));
   }
 
-  // Extract unscoped name from @scope/name packages
   if (name.startsWith('@')) {
     const unscoped = name.split('/').pop();
     if (unscoped) variations.push(unscoped);
   }
 
-  // Ecosystem-specific variations
   if (ecosystem === 'npm' && !name.endsWith('js')) {
     variations.push(name + 'js');
   }
@@ -237,6 +225,5 @@ function generateNameVariations(
     variations.push('py' + name);
   }
 
-  // Return unique variations, excluding original name, limited to 3
   return [...new Set(variations)].filter(v => v !== name).slice(0, 3);
 }

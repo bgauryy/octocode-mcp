@@ -58,8 +58,7 @@ function cleanJsonObject(
     const cleaned = obj
       .map(item => cleanJsonObject(item, { inFilesObject, depth: depth + 1 }))
       .filter(item => item !== undefined);
-    // Preserve empty arrays ONLY when deeply nested in files object (code search path results)
-    // depth >= 2 means we're inside files > repo > path level
+    // Preserve empty arrays for code search path results (files > repo > path level)
     const isCodeSearchPathMatch = inFilesObject && depth >= 2;
     return cleaned.length > 0 || isCodeSearchPathMatch ? cleaned : undefined;
   }
@@ -69,7 +68,6 @@ function cleanJsonObject(
     let hasValidProperties = false;
 
     for (const [key, value] of Object.entries(obj)) {
-      // Track when we enter a 'files' object (code search results)
       const enteringFilesObject = key === 'files' && !inFilesObject;
       const cleanedValue = cleanJsonObject(value, {
         inFilesObject: inFilesObject || enteringFilesObject,

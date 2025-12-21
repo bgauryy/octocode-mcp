@@ -29,11 +29,9 @@ async function resolveGitHubToken(): Promise<string | null> {
       return cliToken.trim();
     }
   } catch (error) {
-    // Mask any potential token exposure in error messages
     if (error instanceof Error && error.message) {
       error.message = maskSensitiveData(error.message);
     }
-    // ignore error and continue
   }
 
   return null;
@@ -92,9 +90,7 @@ export function cleanup(): void {
 
 export function getServerConfig(): ServerConfig {
   if (!config) {
-    // NOTE: Cannot call logSessionError here as it would create circular dependency
-    // getServerConfig -> logSessionError -> sendLog -> isLoggingEnabled -> getServerConfig
-    // Mask any sensitive data in error message before throwing
+    // NOTE: Circular dependency prevents calling logSessionError here
     const sanitizedMessage = maskSensitiveData(
       CONFIG_ERRORS.NOT_INITIALIZED.message
     );
@@ -115,7 +111,6 @@ export async function getGitHubToken(): Promise<string | null> {
 export async function getToken(): Promise<string> {
   const token = await getGitHubToken();
   if (!token) {
-    // Mask any sensitive data in error message before throwing
     const sanitizedMessage = maskSensitiveData(
       CONFIG_ERRORS.NO_GITHUB_TOKEN.message
     );

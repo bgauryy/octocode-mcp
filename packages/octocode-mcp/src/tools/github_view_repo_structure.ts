@@ -53,9 +53,8 @@ export function registerViewGitHubRepoStructureTool(
         if (callback) {
           try {
             await callback(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, queries);
-          } catch {
-            // ignore
-          }
+            // eslint-disable-next-line no-empty
+          } catch {}
         }
 
         return exploreMultipleRepositoryStructures(
@@ -100,7 +99,6 @@ function filterStructure(
       folderName => !shouldIgnoreDir(folderName)
     );
 
-    // Only include directory if it has content after filtering
     if (filteredFiles.length > 0 || filteredFolders.length > 0) {
       filtered[dirPath] = {
         files: filteredFiles,
@@ -122,7 +120,6 @@ function createEmptyStructureResult(
   path: string;
   structure: Record<string, DirectoryEntry>;
 } {
-  // Only include NEW data - owner/repo already in query, don't duplicate
   return {
     path: query.path || '/',
     structure: {},
@@ -156,7 +153,6 @@ async function exploreMultipleRepositoryStructures(
           return createEmptyStructureResult(query, apiError);
         }
 
-        // New format uses 'structure' field
         if (!('structure' in apiResult) || !apiResult.structure) {
           return createEmptyStructureResult(
             query,
@@ -167,10 +163,8 @@ async function exploreMultipleRepositoryStructures(
           );
         }
 
-        // Filter structure to remove ignored files/folders
         const filteredStructure = filterStructure(apiResult.structure);
 
-        // Check if there's any content
         const hasContent = Object.keys(filteredStructure).length > 0;
 
         return createSuccessResult(

@@ -205,7 +205,6 @@ export function extractResearchFields(params: Record<string, unknown>): {
       processQuery(query as Record<string, unknown>);
     }
   } else {
-    // Single operation
     processQuery(params);
   }
 
@@ -320,7 +319,6 @@ export function extractRepoOwnerFromParams(
     for (const query of params.queries) {
       const queryObj = query as Record<string, unknown>;
 
-      // Check for combined repository field first
       const repository =
         typeof queryObj.repository === 'string'
           ? queryObj.repository
