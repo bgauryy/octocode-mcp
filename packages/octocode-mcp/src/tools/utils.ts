@@ -1,6 +1,6 @@
 import type { GitHubAPIError } from '../github/githubAPI';
 import type { ToolErrorResult, ToolSuccessResult } from '../types.js';
-import { TOOL_NAMES } from './toolMetadata.js';
+import { TOOL_NAMES, getToolHintsSync } from './toolMetadata.js';
 
 function extractApiErrorHints(apiError: GitHubAPIError): string[] {
   const hints: string[] = [];
@@ -75,8 +75,11 @@ export function createSuccessResult<T extends Record<string, unknown>>(
     ...data,
   };
 
-  if (customHints && customHints.length > 0) {
-    result.hints = customHints;
+  const staticHints = getToolHintsSync(_toolName as string, status);
+  const allHints = [...staticHints, ...(customHints || [])];
+
+  if (allHints.length > 0) {
+    result.hints = allHints;
   }
 
   return result as ToolSuccessResult<T> & T;

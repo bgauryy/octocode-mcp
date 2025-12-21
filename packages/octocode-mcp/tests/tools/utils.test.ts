@@ -496,8 +496,8 @@ describe('Tools Utils', () => {
         customHints
       );
 
-      // The hints are assigned directly (not copied)
-      expect(result.hints).toBe(customHints);
+      // Custom hints are included in the result (may be merged with static hints)
+      expect(result.hints).toStrictEqual(customHints);
       expect(result.hints).toHaveLength(2);
       expect(result.hints).toEqual(['Hint 1', 'Hint 2']);
     });

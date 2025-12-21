@@ -2,77 +2,22 @@ import { fetchWithRetries } from '../utils/fetchWithRetries.js';
 import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
-export interface PromptArgument {
-  name: string;
-  description: string;
-  required?: boolean;
-}
+import {
+  CompleteMetadata,
+  RawCompleteMetadata,
+  ToolNames,
+} from '../types/metadata.js';
 
-export interface PromptMetadata {
-  name: string;
-  description: string;
-  content: string;
-  args?: PromptArgument[];
-}
+export type {
+  CompleteMetadata,
+  RawCompleteMetadata,
+} from '../types/metadata.js';
 
-export interface ToolMetadata {
-  name: string;
-  description: string;
-  schema: Record<string, string>;
-  hints: {
-    hasResults: readonly string[];
-    empty: readonly string[];
-  };
-}
-
-export interface CompleteMetadata {
-  instructions: string;
-  prompts: Record<string, PromptMetadata>;
-  toolNames: {
-    GITHUB_FETCH_CONTENT: 'githubGetFileContent';
-    GITHUB_SEARCH_CODE: 'githubSearchCode';
-    GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests';
-    GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories';
-    GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure';
-    PACKAGE_SEARCH: 'packageSearch';
-  };
-  baseSchema: {
-    mainResearchGoal: string;
-    researchGoal: string;
-    reasoning: string;
-    bulkQuery: (toolName: string) => string;
-  };
-  tools: Record<string, ToolMetadata>;
-  baseHints: {
-    hasResults: readonly string[];
-    empty: readonly string[];
-  };
-  genericErrorHints: readonly string[];
-}
-
-type ToolNamesValue =
-  CompleteMetadata['toolNames'][keyof CompleteMetadata['toolNames']];
+type ToolNamesValue = ToolNames[keyof ToolNames];
 
 type ToolNamesMap = Record<string, ToolNamesValue>;
 
 export type ToolName = ToolNamesValue;
-
-type RawBaseSchema = {
-  mainResearchGoal: string;
-  researchGoal: string;
-  reasoning: string;
-  bulkQueryTemplate: string;
-};
-
-type RawCompleteMetadata = {
-  instructions: string;
-  prompts: CompleteMetadata['prompts'];
-  toolNames: CompleteMetadata['toolNames'];
-  baseSchema: RawBaseSchema;
-  tools: Record<string, ToolMetadata>;
-  baseHints: CompleteMetadata['baseHints'];
-  genericErrorHints: readonly string[];
-};
 
 let METADATA_JSON: CompleteMetadata | null = null;
 let initializationPromise: Promise<void> | null = null;
@@ -187,9 +132,9 @@ export async function loadToolContent(): Promise<CompleteMetadata> {
 export const TOOL_NAMES = new Proxy({} as CompleteMetadata['toolNames'], {
   get(_target, prop: string) {
     if (METADATA_JSON) {
-      return (METADATA_JSON.toolNames as ToolNamesMap)[prop as string];
+      return (METADATA_JSON.toolNames as unknown as ToolNamesMap)[prop];
     }
-    return STATIC_TOOL_NAMES[prop as string as keyof typeof STATIC_TOOL_NAMES];
+    return STATIC_TOOL_NAMES[prop as keyof typeof STATIC_TOOL_NAMES];
   },
   ownKeys() {
     return METADATA_JSON
@@ -202,7 +147,9 @@ export const TOOL_NAMES = new Proxy({} as CompleteMetadata['toolNames'], {
         return {
           enumerable: true,
           configurable: true,
-          value: (METADATA_JSON.toolNames as ToolNamesMap)[prop as string],
+          value: (METADATA_JSON.toolNames as unknown as ToolNamesMap)[
+            prop as string
+          ],
         };
       }
       return undefined;
@@ -279,16 +226,12 @@ export function getGenericErrorHintsSync(): readonly string[] {
 
 export function getDynamicHints(
   toolName: string,
-  hintType: 'topicsHasResults' | 'topicsEmpty' | 'keywordsEmpty'
+  hintType: string
 ): readonly string[] {
   const tool = (getMeta().tools as Record<string, unknown>)[toolName] as
     | {
         hints?: {
-          dynamic?: {
-            topicsHasResults?: string[];
-            topicsEmpty?: string[];
-            keywordsEmpty?: string[];
-          };
+          dynamic?: Record<string, string[] | undefined>;
         };
       }
     | undefined;

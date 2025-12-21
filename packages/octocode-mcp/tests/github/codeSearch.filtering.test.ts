@@ -710,6 +710,81 @@ describe('Code Search Filtering - File Filters', () => {
     });
   });
 
+  describe('New research context fields', () => {
+    it('should include lastModifiedAt when present in API response', async () => {
+      const mockResponse = {
+        data: {
+          total_count: 1,
+          items: [
+            {
+              name: 'app.js',
+              path: 'src/app.js',
+              repository: {
+                full_name: 'test/repo',
+                url: 'https://api.github.com/repos/test/repo',
+              },
+              text_matches: [],
+              last_modified_at: '2025-12-01T10:30:00Z',
+            },
+          ],
+        },
+      };
+
+      mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+      const result = await searchGitHubCodeAPI({
+        keywordsToSearch: ['function'],
+        owner: 'test',
+        repo: 'repo',
+        minify: false,
+      });
+
+      if ('data' in result) {
+        expect(result.data.items[0]).toHaveProperty('lastModifiedAt');
+        expect(result.data.items[0]!.lastModifiedAt).toBe(
+          '2025-12-01T10:30:00Z'
+        );
+      } else {
+        expect.fail('Expected successful result');
+      }
+    });
+
+    it('should not include lastModifiedAt when not present in API response', async () => {
+      const mockResponse = {
+        data: {
+          total_count: 1,
+          items: [
+            {
+              name: 'app.js',
+              path: 'src/app.js',
+              repository: {
+                full_name: 'test/repo',
+                url: 'https://api.github.com/repos/test/repo',
+              },
+              text_matches: [],
+              // No last_modified_at
+            },
+          ],
+        },
+      };
+
+      mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+      const result = await searchGitHubCodeAPI({
+        keywordsToSearch: ['function'],
+        owner: 'test',
+        repo: 'repo',
+        minify: false,
+      });
+
+      if ('data' in result) {
+        expect(result.data.items[0]).not.toHaveProperty('lastModifiedAt');
+      } else {
+        expect.fail('Expected successful result');
+      }
+    });
+  });
+
   describe('Combined filtering scenarios', () => {
     it('should handle mixed valid and invalid files correctly', async () => {
       const mockResponse = {

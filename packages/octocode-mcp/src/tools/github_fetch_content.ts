@@ -44,9 +44,8 @@ export function registerFetchGitHubFileContentTool(
         if (callback) {
           try {
             await callback(TOOL_NAMES.GITHUB_FETCH_CONTENT, queries);
-          } catch {
-            // ignore
-          }
+            // eslint-disable-next-line no-empty
+          } catch {}
         }
 
         return fetchMultipleGitHubFileContents(queries, authInfo, sessionId);
@@ -78,14 +77,9 @@ async function fetchMultipleGitHubFileContents(
 
         const hasContent = hasValidContent(result);
 
-        // Strip query parameters from result - response should only contain NEW data
-        const cleanedResult = stripQueryParams(
-          result as Record<string, unknown>
-        );
-
         return createSuccessResult(
           query,
-          cleanedResult,
+          result as Record<string, unknown>,
           hasContent,
           'GITHUB_FETCH_CONTENT'
         );
@@ -96,6 +90,10 @@ async function fetchMultipleGitHubFileContents(
     {
       toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       keysPriority: [
+        'owner',
+        'repo',
+        'path',
+        'branch',
         'contentLength',
         'content',
         'isPartial',
@@ -132,9 +130,6 @@ function buildApiRequest(query: FileContentQuery) {
   };
 }
 
-/**
- * Check if result has valid content for sampling
- */
 function hasValidContent(result: unknown): boolean {
   return Boolean(
     result &&
@@ -143,23 +138,4 @@ function hasValidContent(result: unknown): boolean {
     result.content &&
     String(result.content).length > 0
   );
-}
-
-/**
- * Strip query parameters from result - response should only contain NEW data
- * Query already has: owner, repo, path, branch, etc.
- */
-function stripQueryParams(
-  result: Record<string, unknown>
-): Record<string, unknown> {
-  const queryParams = new Set(['owner', 'repo', 'path', 'branch']);
-  const cleaned: Record<string, unknown> = {};
-
-  for (const [key, value] of Object.entries(result)) {
-    if (!queryParams.has(key)) {
-      cleaned[key] = value;
-    }
-  }
-
-  return cleaned;
 }

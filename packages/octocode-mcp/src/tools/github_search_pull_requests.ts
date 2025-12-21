@@ -136,13 +136,17 @@ async function searchMultipleGitHubPullRequests(
 
         const pullRequests = apiResult.pull_requests || [];
 
+        const hasContent = pullRequests.length > 0;
+
         return createSuccessResult(
           query,
           {
+            owner: query.owner,
+            repo: query.repo,
             pull_requests: pullRequests,
             total_count: apiResult.total_count || pullRequests.length,
           },
-          pullRequests.length > 0,
+          hasContent,
           'GITHUB_SEARCH_PULL_REQUESTS'
         );
       } catch (error) {
@@ -151,9 +155,13 @@ async function searchMultipleGitHubPullRequests(
     },
     {
       toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-      keysPriority: ['pull_requests', 'total_count', 'error'] satisfies Array<
-        keyof PullRequestSearchResult
-      >,
+      keysPriority: [
+        'owner',
+        'repo',
+        'pull_requests',
+        'total_count',
+        'error',
+      ] satisfies Array<keyof PullRequestSearchResult>,
     }
   );
 }

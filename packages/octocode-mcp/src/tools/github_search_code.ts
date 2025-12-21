@@ -6,7 +6,7 @@ import type {
   GitHubCodeSearchQuery,
   SearchResult,
 } from '../types.js';
-import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
+import { TOOL_NAMES, DESCRIPTIONS, getDynamicHints } from './toolMetadata.js';
 import { GitHubCodeSearchBulkQuerySchema } from '../scheme/github_search_code.js';
 import { searchGitHubCodeAPI } from '../github/codeSearch.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
@@ -49,9 +49,8 @@ export function registerGitHubSearchCodeTool(
         if (callback) {
           try {
             await callback(TOOL_NAMES.GITHUB_SEARCH_CODE, queries);
-          } catch {
-            // ignore
-          }
+            // eslint-disable-next-line no-empty
+          } catch {}
         }
 
         return searchMultipleGitHubCode(queries, authInfo, sessionId);
@@ -84,23 +83,38 @@ async function searchMultipleGitHubCode(
         const files = apiResult.data.items
           .filter(item => !shouldIgnoreFile(item.path))
           .map(item => {
+            const repoName = item.repository?.nameWithOwner;
+            const baseFile = {
+              path: item.path,
+              ...(repoName && { repo: repoName }),
+              ...(item.lastModifiedAt && {
+                lastModifiedAt: item.lastModifiedAt,
+              }),
+            };
+
             if (query.match === 'path') {
-              // For path searches, don't include text_matches
-              return { path: item.path };
+              return baseFile;
             }
             return {
-              path: item.path,
+              ...baseFile,
               text_matches: item.matches.map(match => match.context),
             };
           });
 
+        const result: SearchResult = { files };
+        const repoContext = apiResult.data._researchContext?.repositoryContext;
+        if (repoContext) {
+          result.repositoryContext = repoContext;
+        }
+
+        const customHints = generateCodeSearchHints(files, repoContext);
+
         return createSuccessResult(
           query,
-          {
-            files,
-          } satisfies SearchResult,
+          result as unknown as Record<string, unknown>,
           files.length > 0,
-          'GITHUB_SEARCH_CODE'
+          'GITHUB_SEARCH_CODE',
+          customHints
         );
       } catch (error) {
         return handleCatchError(error, query);
@@ -108,7 +122,33 @@ async function searchMultipleGitHubCode(
     },
     {
       toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-      keysPriority: ['files', 'error'] satisfies Array<keyof SearchResult>,
+      keysPriority: ['files', 'repositoryContext', 'error'] satisfies Array<
+        keyof SearchResult
+      >,
     }
   );
+}
+
+/**
+ * Generate custom hints for code search results to help agents use the data
+ */
+function generateCodeSearchHints(
+  files: Array<{ path: string; repo?: string; text_matches?: string[] }>,
+  repoContext?: { owner: string; repo: string }
+): string[] {
+  const hints: string[] = [];
+
+  if (files.length > 0) {
+    if (repoContext) {
+      hints.push(
+        ...getDynamicHints(TOOL_NAMES.GITHUB_SEARCH_CODE, 'singleRepo')
+      );
+    } else if (files.some(f => f.repo)) {
+      hints.push(
+        ...getDynamicHints(TOOL_NAMES.GITHUB_SEARCH_CODE, 'multiRepo')
+      );
+    }
+  }
+
+  return hints;
 }
