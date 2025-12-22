@@ -7,6 +7,7 @@ export default defineConfig({
   target: 'node20',
   platform: 'node',
   outDir: 'dist',
+  outExtension: () => ({ js: '.js' }),
   clean: true,
   dts: false, // Generate declarations separately via tsc to avoid memory issues
   minify: true,
