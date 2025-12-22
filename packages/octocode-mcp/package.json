@@ -31,8 +31,8 @@
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "PolyForm-Small-Business-1.0.0",
   "bin": {
-    "octocode-mcp": "dist/index.cjs",
-    "octocode-mcp-beta": "dist/index.cjs"
+    "octocode-mcp": "dist/index.js",
+    "octocode-mcp-beta": "dist/index.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.22.0",
@@ -77,18 +77,18 @@
   },
   "exports": {
     ".": {
-      "require": "./dist/index.cjs"
+      "require": "./dist/index.js"
     }
   },
   "files": [
-    "dist/index.cjs",
+    "dist/",
     "manifest.json",
     "server.json",
     "LICENSE",
     "README.md",
     "assets/"
   ],
-  "main": "dist/index.cjs",
+  "main": "dist/index.js",
   "mcp": {
     "type": "stdio",
     "command": "octocode-mcp",
@@ -108,7 +108,7 @@
     "build:dev": "yarn clean && tsup",
     "build:watch": "tsup --watch",
     "clean": "rm -rf dist/",
-    "debug": "npx @modelcontextprotocol/inspector node dist/index.cjs",
+    "debug": "npx @modelcontextprotocol/inspector node dist/index.js",
     "dxt:pack": "yarn build && dxt pack . octocode-mcp.dxt",
     "dxt:release": "yarn build && dxt pack . octocode-mcp.dxt && dxt sign octocode-mcp.dxt --self-signed && dxt verify octocode-mcp.dxt",
     "dxt:validate": "dxt validate manifest.json",

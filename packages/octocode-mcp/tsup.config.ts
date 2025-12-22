@@ -1,5 +1,7 @@
 import { defineConfig } from 'tsup';
 import { builtinModules } from 'module';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -8,6 +10,13 @@ export default defineConfig({
   platform: 'node',
   outDir: 'dist',
   outExtension: () => ({ js: '.js' }),
+  async onSuccess() {
+    // Create package.json in dist to override parent's "type": "module"
+    await fs.writeFile(
+      path.resolve('dist', 'package.json'),
+      '{"type": "commonjs"}'
+    );
+  },
   clean: true,
   dts: false, // Generate declarations separately via tsc to avoid memory issues
   minify: true,
