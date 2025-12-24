@@ -127,10 +127,11 @@ jobs:
     if: fromJson(needs.discover-packages.outputs.package-count) > 0
     permissions:
       contents: read
+      id-token: write
     strategy:
       matrix:
         package: ${{ fromJson(needs.discover-packages.outputs.packages) }}
-      fail-fast: false  # Continue publishing other packages even if one fails
+      fail-fast: false
     outputs:
       results: ${{ steps.collect-results.outputs.results }}
     steps:
@@ -140,7 +141,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'  # npm 11.5.1+ required for OIDC trusted publishing
           registry-url: 'https://registry.npmjs.org'
 
       # Enable Corepack for Yarn support
@@ -229,23 +230,7 @@ jobs:
           echo "🏷️  New alpha version: $ALPHA_VERSION"
           echo "⚠️  Will publish ONLY to 'alpha' tag, NOT 'latest'"
           
-          # Setup npmrc for this package (for both npm and yarn)
-          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
-          echo "registry=https://registry.npmjs.org/" >> .npmrc
-          echo "always-auth=true" >> .npmrc
-          
-          # Also configure Yarn for npm registry
-          echo "📋 Configuring Yarn for npm registry..."
-          yarn config set npmRegistryServer "https://registry.npmjs.org"
-          yarn config set npmAlwaysAuth true
-          yarn config set npmAuthToken "${NODE_AUTH_TOKEN}"
-          
-          # Debug: Show package.json dependencies to understand workspace resolution
-          echo "📦 Current package.json dependencies:"
-          node -p "JSON.stringify(require('./package.json').dependencies || {}, null, 2)"
-          
           # Safety verification before publishing
-          # Check using glob matching which is more robust than regex here
           if [[ "$ALPHA_VERSION" != *"-alpha."* ]]; then
             echo "❌ CRITICAL ERROR: Version '$ALPHA_VERSION' does not contain '-alpha.' suffix!"
             echo "❌ Refusing to publish - this could pollute the main npm release!"
@@ -254,26 +239,24 @@ jobs:
           
           echo "🔒 Safety check passed: Publishing alpha version $ALPHA_VERSION"
           
-          # Temporarily update package.json version to alpha (Yarn v4 doesn't create git tags automatically)
-          yarn version $ALPHA_VERSION
+          # Update package.json version to alpha
+          npm version $ALPHA_VERSION --no-git-tag-version
           
-          # Debug: Show how Yarn resolves workspace dependencies
-          echo "🔍 Yarn workspace dependency resolution:"
-          node -p "JSON.stringify(require('./package.json').dependencies || {}, null, 2)"
+          # Debug: Show package.json version
+          echo "📦 Updated package.json version:"
+          node -p "require('./package.json').version"
           
-          # Publish with alpha tag (NOT latest - ensures no main version pollution)
-          echo "🚀 Publishing $PACKAGE_NAME@$ALPHA_VERSION to npm with 'alpha' tag (NOT 'latest')..."
-          
-          # Always use Yarn for workspace packages (handles workspace: dependencies correctly)
-          # NOTE: --provenance removed due to Yarn Berry compatibility issues with npm OIDC
-          echo "🔧 Using Yarn to publish (handles workspace dependencies automatically)"
-          yarn npm publish --access public --tag alpha
+          # Publish with OIDC trusted publishing (no token needed!)
+          # Provenance is automatically generated with trusted publishing
+          echo "🚀 Publishing $PACKAGE_NAME@$ALPHA_VERSION to npm with 'alpha' tag using OIDC..."
+          echo "🔐 Using npm trusted publishing (OIDC) - no NPM_TOKEN needed"
+          npm publish --access public --tag alpha
           
           # Revert package.json version back to original
-          yarn version $PACKAGE_VERSION
+          npm version $PACKAGE_VERSION --no-git-tag-version
           
           echo "✅ Successfully published $PACKAGE_NAME@$ALPHA_VERSION to npm with 'alpha' tag"
-          echo "⚠️  This version is NOT published to 'latest' - only available via 'alpha' tag"
+          echo "🔐 Published with OIDC trusted publishing + automatic provenance"
           echo "📥 Users can install with: npm install $PACKAGE_NAME@alpha"
           
           # Set outputs for notification
@@ -282,10 +265,6 @@ jobs:
           echo "alpha_version=$ALPHA_VERSION" >> $GITHUB_OUTPUT
           echo "alpha_number=$NEW_ALPHA_NUMBER" >> $GITHUB_OUTPUT
           echo "published=true" >> $GITHUB_OUTPUT
-          
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Collect results
         id: collect-results
