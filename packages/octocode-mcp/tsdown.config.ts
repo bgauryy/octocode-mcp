@@ -29,8 +29,8 @@ export default defineConfig({
   // No sourcemaps for production bundle
   sourcemap: false,
 
-  // Output as .mjs for ESM
-  outExtensions: () => ({ js: '.mjs' }),
+  // Output as .js for ESM (package.json has "type": "module")
+  outExtensions: () => ({ js: '.js' }),
 
   // Shebang for CLI execution
   banner: '#!/usr/bin/env node',

@@ -365,32 +365,32 @@ describe('exec utilities', () => {
       vi.mocked(spawn).mockReturnValue(mockProcess as unknown as ChildProcess);
     });
 
-    it('should return true when npm ping succeeds', async () => {
+    it('should return true when npm --version succeeds', async () => {
       const promise = checkNpmAvailability();
-      mockProcess.simulateSuccess('Ping success: {}');
+      mockProcess.simulateSuccess('10.0.0');
 
       const result = await promise;
 
       expect(result).toBe(true);
       expect(vi.mocked(spawn)).toHaveBeenCalledWith(
-        'npm',
-        ['ping'],
+        expect.stringMatching(/npm$/),
+        ['--version'],
         expect.objectContaining({
           timeout: 10000,
         })
       );
     });
 
-    it('should return false when npm ping fails with non-zero exit code', async () => {
+    it('should return false when npm --version fails with non-zero exit code', async () => {
       const promise = checkNpmAvailability();
-      mockProcess.simulateFailure(1, 'ERR! ping failed');
+      mockProcess.simulateFailure(1, 'ERR! command not found');
 
       const result = await promise;
 
       expect(result).toBe(false);
     });
 
-    it('should return false when npm ping encounters an error', async () => {
+    it('should return false when npm --version encounters an error', async () => {
       const promise = checkNpmAvailability();
       mockProcess.simulateError(new Error('ENOENT: npm not found'));
 
@@ -399,7 +399,7 @@ describe('exec utilities', () => {
       expect(result).toBe(false);
     });
 
-    it('should return false when npm ping times out', async () => {
+    it('should return false when npm --version times out', async () => {
       vi.useFakeTimers();
 
       const promise = checkNpmAvailability(5000);
@@ -417,13 +417,13 @@ describe('exec utilities', () => {
 
     it('should use custom timeout when provided', async () => {
       const promise = checkNpmAvailability(15000);
-      mockProcess.simulateSuccess('Ping success');
+      mockProcess.simulateSuccess('10.0.0');
 
       await promise;
 
       expect(vi.mocked(spawn)).toHaveBeenCalledWith(
-        'npm',
-        ['ping'],
+        expect.stringMatching(/npm$/),
+        ['--version'],
         expect.objectContaining({
           timeout: 15000,
         })
@@ -432,13 +432,13 @@ describe('exec utilities', () => {
 
     it('should use default timeout of 10 seconds', async () => {
       const promise = checkNpmAvailability();
-      mockProcess.simulateSuccess('Ping success');
+      mockProcess.simulateSuccess('10.0.0');
 
       await promise;
 
       expect(vi.mocked(spawn)).toHaveBeenCalledWith(
-        'npm',
-        ['ping'],
+        expect.stringMatching(/npm$/),
+        ['--version'],
         expect.objectContaining({
           timeout: 10000,
         })

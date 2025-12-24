@@ -164,7 +164,7 @@ export async function registerAllTools(
     await logger.info('GitHub token ready');
   }
 
-  const { successCount } = registerTools(server);
+  const { successCount } = await registerTools(server);
   await logger.info('Tools registered', { count: successCount });
 
   if (successCount === 0) {

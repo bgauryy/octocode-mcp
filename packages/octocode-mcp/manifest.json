@@ -20,10 +20,10 @@
   "icon": "assets/logo.png",
   "server": {
     "type": "node",
-    "entry_point": "dist/index.mjs",
+    "entry_point": "dist/index.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/dist/index.mjs"],
+      "args": ["${__dirname}/dist/index.js"],
       "env": {
         "NODE_ENV": "production"
       }
