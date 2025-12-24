@@ -13,10 +13,13 @@ export default defineConfig({
   splitting: false,
   sourcemap: false,
   treeshake: true,
+  shims: true, // Enable CJS/ESM interop shims for dynamic require
   noExternal: [/.*/], // Bundle all dependencies for standalone execution
   external: [...builtinModules, ...builtinModules.map(m => `node:${m}`)],
   banner: {
-    js: '#!/usr/bin/env node',
+    js: `#!/usr/bin/env node
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);`,
   },
   esbuildOptions(options) {
     options.drop = ['debugger'];
