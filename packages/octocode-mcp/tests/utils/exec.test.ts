@@ -373,7 +373,7 @@ describe('exec utilities', () => {
 
       expect(result).toBe(true);
       expect(vi.mocked(spawn)).toHaveBeenCalledWith(
-        expect.stringMatching(/npm$/),
+        expect.stringMatching(/npm(\.cmd)?$/),
         ['--version'],
         expect.objectContaining({
           timeout: 10000,
@@ -422,7 +422,7 @@ describe('exec utilities', () => {
       await promise;
 
       expect(vi.mocked(spawn)).toHaveBeenCalledWith(
-        expect.stringMatching(/npm$/),
+        expect.stringMatching(/npm(\.cmd)?$/),
         ['--version'],
         expect.objectContaining({
           timeout: 15000,
@@ -437,7 +437,7 @@ describe('exec utilities', () => {
       await promise;
 
       expect(vi.mocked(spawn)).toHaveBeenCalledWith(
-        expect.stringMatching(/npm$/),
+        expect.stringMatching(/npm(\.cmd)?$/),
         ['--version'],
         expect.objectContaining({
           timeout: 10000,

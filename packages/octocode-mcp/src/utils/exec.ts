@@ -4,10 +4,12 @@ import { dirname, join } from 'path';
 /**
  * Get the npm binary path by looking next to the current node binary.
  * This ensures npm is found even when PATH doesn't include it.
+ * On Windows, npm is a batch script (npm.cmd), not a binary.
  */
 function getNpmPath(): string {
   const nodeDir = dirname(process.execPath);
-  return join(nodeDir, 'npm');
+  const npmBinary = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  return join(nodeDir, npmBinary);
 }
 
 export async function getGithubCLIToken(): Promise<string | null> {
