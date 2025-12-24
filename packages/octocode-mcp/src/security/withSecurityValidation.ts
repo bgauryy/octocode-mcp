@@ -2,8 +2,9 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../responses.js';
 import { ContentSanitizer } from './contentSanitizer.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { logToolCall } from '../session.js';
+import { logToolCall, logSessionError } from '../session.js';
 import { isLoggingEnabled as isSessionEnabled } from '../serverConfig.js';
+import { TOOL_ERRORS } from '../errorCodes.js';
 
 export function withSecurityValidation<T extends Record<string, unknown>>(
   toolName: string,
@@ -45,6 +46,12 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
         sessionId
       );
     } catch (error) {
+      // Log security validation errors for monitoring
+      logSessionError(
+        toolName,
+        TOOL_ERRORS.SECURITY_VALIDATION_FAILED.code
+      ).catch(() => {});
+
       return createResult({
         data: {
           error: `Security validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -75,6 +82,12 @@ export function withBasicSecurityValidation<T extends Record<string, unknown>>(
 
       return await toolHandler(validation.sanitizedParams as T);
     } catch (error) {
+      // Log security validation errors for monitoring (no tool name in basic validation)
+      logSessionError(
+        'basic_security_validation',
+        TOOL_ERRORS.SECURITY_VALIDATION_FAILED.code
+      ).catch(() => {});
+
       return createResult({
         data: {
           error: `Security validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,

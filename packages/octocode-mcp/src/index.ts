@@ -175,6 +175,9 @@ export async function registerAllTools(
   }
 }
 
-startServer().catch(() => {
+startServer().catch((error: unknown) => {
+  const errorMessage =
+    error instanceof Error ? error.message : String(error || 'Unknown error');
+  process.stderr.write(`❌ Startup failed: ${errorMessage}\n`);
   process.exit(1);
 });

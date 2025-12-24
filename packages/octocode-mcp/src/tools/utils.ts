@@ -1,6 +1,8 @@
 import type { GitHubAPIError } from '../github/githubAPI';
 import type { ToolErrorResult, ToolSuccessResult } from '../types.js';
 import { TOOL_NAMES, getToolHintsSync } from './toolMetadata.js';
+import { logSessionError } from '../session.js';
+import { TOOL_ERRORS } from '../errorCodes.js';
 
 function extractApiErrorHints(apiError: GitHubAPIError): string[] {
   const hints: string[] = [];
@@ -150,13 +152,20 @@ export function handleCatchError(
     researchGoal?: string;
     reasoning?: string;
   },
-  contextMessage?: string
+  contextMessage?: string,
+  toolName?: string
 ): ToolErrorResult {
   const errorMessage =
     error instanceof Error ? error.message : 'Unknown error occurred';
   const fullErrorMessage = contextMessage
     ? `${contextMessage}: ${errorMessage}`
     : errorMessage;
+
+  // Log the error to session for monitoring
+  const logToolName = toolName || contextMessage || 'unknown_tool';
+  logSessionError(logToolName, TOOL_ERRORS.EXECUTION_FAILED.code).catch(
+    () => {}
+  );
 
   return createErrorResult(query, fullErrorMessage);
 }
