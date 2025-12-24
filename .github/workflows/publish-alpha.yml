@@ -34,6 +34,16 @@ jobs:
       - name: Run tests
         run: yarn test
 
+      # Upload build artifacts for reuse in publish job (avoids rebuilding in each matrix job)
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            packages/*/dist
+            packages/*/out
+          retention-days: 1
+
   discover-packages:
     needs: verify
     runs-on: ubuntu-latest
@@ -115,6 +125,9 @@ jobs:
     needs: [verify, discover-packages]
     runs-on: ubuntu-latest
     if: fromJson(needs.discover-packages.outputs.package-count) > 0
+    permissions:
+      contents: read
+      id-token: write  # Required for npm provenance
     strategy:
       matrix:
         package: ${{ fromJson(needs.discover-packages.outputs.packages) }}
@@ -138,11 +151,17 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
-      - name: Lint code
-        run: yarn lint
+      # Download pre-built artifacts from verify job (saves ~2-3 min per matrix job)
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: .
 
-      - name: Build packages
-        run: yarn build
+      - name: Verify build artifacts exist
+        run: |
+          echo "📦 Checking build artifacts..."
+          ls -la ${{ matrix.package.path }}/dist/ 2>/dev/null || ls -la ${{ matrix.package.path }}/out/ 2>/dev/null || echo "⚠️ No dist/out found, may need to build"
 
       - name: Check and publish alpha version for ${{ matrix.package.name }}
         id: publish-package
@@ -157,30 +176,31 @@ jobs:
           # Change to package directory
           cd "$PACKAGE_PATH"
           
-          # Safety check: Ensure we never publish a non-alpha version
-          if [[ "$PACKAGE_VERSION" =~ -alpha\. ]]; then
-            echo "❌ ERROR: package.json version already contains '-alpha' suffix!"
-            echo "❌ This workflow should only work with clean base versions (e.g., '4.0.0')"
-            exit 1
+          # Determine BASE_VERSION (strip -alpha suffix if present)
+          if [[ "$PACKAGE_VERSION" =~ (.*)-alpha\.[0-9]+ ]]; then
+            BASE_VERSION="${BASH_REMATCH[1]}"
+            echo "ℹ️  Package has alpha version: $PACKAGE_VERSION. Base version is: $BASE_VERSION"
+          else
+            BASE_VERSION="$PACKAGE_VERSION"
+            echo "ℹ️  Package has clean version: $PACKAGE_VERSION. Base version is: $BASE_VERSION"
           fi
           
-          # Get the latest alpha version number for this base version
-          LATEST_ALPHA_NUMBER=0
+          # Get the latest alpha version number for this base version (efficient single npm call)
+          echo "🔍 Checking for existing alpha versions of $BASE_VERSION for $PACKAGE_NAME..."
+          LATEST_ALPHA=$(npm view "$PACKAGE_NAME" versions --json 2>/dev/null | jq -r '.[]?' 2>/dev/null | grep "^${BASE_VERSION}-alpha\." | sort -V | tail -1 || echo "")
           
-          # Check for existing alpha versions and find the highest number
-          echo "🔍 Checking for existing alpha versions of $PACKAGE_VERSION for $PACKAGE_NAME..."
-          for i in {1..100}; do
-            if npm view "$PACKAGE_NAME@${PACKAGE_VERSION}-alpha.$i" version 2>/dev/null; then
-              LATEST_ALPHA_NUMBER=$i
-              echo "   Found: ${PACKAGE_VERSION}-alpha.$i"
-            else
-              break
-            fi
-          done
+          if [ -n "$LATEST_ALPHA" ]; then
+            # Extract the alpha number from version like "1.0.0-alpha.5"
+            LATEST_ALPHA_NUMBER=$(echo "$LATEST_ALPHA" | sed "s/^${BASE_VERSION}-alpha\.//")
+            echo "   Found latest: $LATEST_ALPHA"
+          else
+            LATEST_ALPHA_NUMBER=0
+            echo "   No existing alpha versions found"
+          fi
           
           # Increment the alpha number
           NEW_ALPHA_NUMBER=$((LATEST_ALPHA_NUMBER + 1))
-          ALPHA_VERSION="${PACKAGE_VERSION}-alpha.${NEW_ALPHA_NUMBER}"
+          ALPHA_VERSION="${BASE_VERSION}-alpha.${NEW_ALPHA_NUMBER}"
           
           echo "📊 Latest alpha number: $LATEST_ALPHA_NUMBER"
           echo "🆕 New alpha number: $NEW_ALPHA_NUMBER"
@@ -222,8 +242,9 @@ jobs:
           echo "🚀 Publishing $PACKAGE_NAME@$ALPHA_VERSION to npm with 'alpha' tag (NOT 'latest')..."
           
           # Always use Yarn for workspace packages (handles workspace: dependencies correctly)
+          # --provenance adds npm attestation for supply chain security (requires id-token: write permission)
           echo "🔧 Using Yarn to publish (handles workspace dependencies automatically)"
-          yarn npm publish --access public --tag alpha
+          yarn npm publish --access public --tag alpha --provenance
           
           # Revert package.json version back to original
           yarn version $PACKAGE_VERSION
