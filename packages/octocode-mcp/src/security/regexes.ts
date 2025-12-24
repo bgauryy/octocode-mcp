@@ -1046,16 +1046,6 @@ const paymentProviderPatterns: SensitiveDataPattern[] = [
   },
 ];
 
-const piiPatterns: SensitiveDataPattern[] = [
-  // Email & Contact Information
-  {
-    name: 'emailAddress',
-    description: 'Email address',
-    regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
-    matchAccuracy: 'high',
-  },
-];
-
 const privateKeyPatterns: SensitiveDataPattern[] = [
   // Comprehensive Private Key Detection
   {
@@ -1179,7 +1169,6 @@ export const allRegexPatterns: SensitiveDataPattern[] = [
   ...genericSecretPatterns,
   ...mappingMonitoringPatterns,
   ...paymentProviderPatterns,
-  ...piiPatterns,
   ...privateKeyPatterns,
   ...slackPatterns,
   ...socialMediaPatterns,

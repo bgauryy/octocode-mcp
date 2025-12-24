@@ -3,19 +3,21 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 // Create hoisted mocks
 const mockGetOctokit = vi.hoisted(() => vi.fn());
 const mockContentSanitizer = vi.hoisted(() => ({
-  sanitizeContent: vi.fn().mockReturnValue({
-    content: '',
+  sanitizeContent: vi.fn().mockImplementation((content: string) => ({
+    content: content, // Pass through content unchanged for testing
     hasSecrets: false,
     warnings: [],
     secretsDetected: [],
-  }),
+  })),
 }));
 const mockminifyContent = vi.hoisted(() =>
-  vi.fn().mockResolvedValue({
-    content: 'minified content',
-    failed: false,
-    type: 'general',
-  })
+  vi.fn().mockImplementation((content: string) =>
+    Promise.resolve({
+      content: content, // Pass through content unchanged for testing
+      failed: false,
+      type: 'general',
+    })
+  )
 );
 const mockWithDataCache = vi.hoisted(() => vi.fn());
 const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
@@ -59,7 +61,6 @@ function createTestParams(overrides: Record<string, unknown> = {}) {
     repo: 'repo',
     path: 'test.txt',
     fullContent: false,
-    minified: false,
     matchStringContextLines: 5,
     ...overrides,
   };
@@ -89,8 +90,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       expect(parsed.endLine).toBeUndefined(); // Should be optional
       expect(parsed.matchString).toBeUndefined(); // Should be optional
       expect(parsed.matchStringContextLines).toBe(5); // Should have default
-      expect(parsed.minified).toBe(true); // Should have default
-      // sanitize is now controlled by serverConfig.isSanitizeEnabled(), not a schema parameter
+      // minified and sanitize are now always enabled (not schema parameters)
     });
   });
   let mockOctokit: {
@@ -152,12 +152,14 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       })
     );
 
-    // Reset minifier mock
-    mockminifyContent.mockResolvedValue({
-      content: 'minified content',
-      failed: false,
-      type: 'general',
-    });
+    // Setup minifier to pass through content (minification is always on)
+    mockminifyContent.mockImplementation((content: string) =>
+      Promise.resolve({
+        content: content,
+        failed: false,
+        type: 'general',
+      })
+    );
   });
 
   afterEach(() => {
@@ -194,16 +196,15 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           branch: 'abc123',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
           contentLength: 34,
+          minified: true,
+          minificationType: 'general',
+          minificationFailed: false,
         },
       });
     });
 
     it('should fetch entire file when only non-content parameters are specified', async () => {
-      const params = createTestParams({
-        minified: false,
-        sanitize: true,
-        // No fullContent, startLine, endLine, or matchString
-      });
+      const params = createTestParams();
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -216,6 +217,9 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           branch: 'abc123',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
           contentLength: 34,
+          minified: true,
+          minificationType: 'general',
+          minificationFailed: false,
         },
       });
     });
@@ -237,14 +241,15 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           branch: 'abc123',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
           contentLength: 34,
+          minified: true,
+          minificationType: 'general',
+          minificationFailed: false,
         },
       });
     });
 
-    it('should apply minification when minified=true', async () => {
-      const params = createTestParams({
-        minified: true,
-      });
+    it('should always apply minification', async () => {
+      const params = createTestParams();
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -259,31 +264,11 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           repo: 'repo',
           path: 'test.txt',
           branch: 'abc123',
-          content: 'minified content',
-          contentLength: 16,
+          content: 'line 1\nline 2\nline 3\nline 4\nline 5',
+          contentLength: 34,
           minified: true,
           minificationType: 'general',
           minificationFailed: false,
-        },
-      });
-    });
-
-    it('should not apply minification when minified=false', async () => {
-      const params = createTestParams();
-
-      const result = await fetchGitHubFileContentAPI(params);
-
-      expect(mockminifyContent).not.toHaveBeenCalled();
-
-      expect(result).toEqual({
-        status: 200,
-        data: {
-          owner: 'test',
-          repo: 'repo',
-          path: 'test.txt',
-          branch: 'abc123',
-          content: 'line 1\nline 2\nline 3\nline 4\nline 5',
-          contentLength: 34,
         },
       });
     });
@@ -306,6 +291,9 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           branch: 'abc123',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
           contentLength: 34,
+          minified: true,
+          minificationType: 'general',
+          minificationFailed: false,
         },
       });
     });
@@ -674,7 +662,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       const params = createTestParams({
         startLine: 5,
         endLine: 8,
-        minified: true,
       });
 
       const result = await fetchGitHubFileContentAPI(params);
@@ -685,7 +672,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       );
       expect(result.status).toBe(200);
       if ('data' in result) {
-        expect(result.data.content).toBe('minified content');
+        expect(result.data.content).toBe('line 5\nline 6\nline 7\nline 8');
         expect(result.data.minified).toBe(true);
         expect(result.data.isPartial).toBe(true);
       }
@@ -695,7 +682,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       const params = createTestParams({
         matchString: 'line 15',
         matchStringContextLines: 1,
-        minified: true,
       });
 
       const result = await fetchGitHubFileContentAPI(params);
@@ -706,7 +692,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       );
       expect(result.status).toBe(200);
       if ('data' in result) {
-        expect(result.data.content).toBe('minified content');
+        expect(result.data.content).toBe('line 14\nline 15\nline 16');
         expect(result.data.minified).toBe(true);
         expect(result.data.isPartial).toBe(true);
       }
@@ -721,7 +707,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         endLine: 10,
         matchString: 'search term',
         matchStringContextLines: 3,
-        minified: true,
       });
 
       // Mock file response
@@ -746,7 +731,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           startLine: 5,
           endLine: 10,
           matchString: 'search term',
-          minified: true,
           matchStringContextLines: 3,
         },
         undefined
@@ -789,7 +773,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           startLine: undefined,
           endLine: undefined,
           matchString: undefined,
-          minified: false,
           matchStringContextLines: 5,
         },
         undefined
@@ -805,7 +788,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           startLine: 1,
           endLine: 5,
           matchString: undefined,
-          minified: false,
           matchStringContextLines: 5,
         },
         undefined
