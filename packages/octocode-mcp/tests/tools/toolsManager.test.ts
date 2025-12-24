@@ -28,15 +28,37 @@ vi.mock('../../src/tools/toolConfig.js', () => {
   };
 });
 
+vi.mock('../../src/tools/toolMetadata.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../src/tools/toolMetadata.js')
+  >('../../src/tools/toolMetadata.js');
+  return {
+    ...actual,
+    isToolAvailableSync: vi.fn(),
+    TOOL_NAMES: {
+      GITHUB_FETCH_CONTENT: 'githubGetFileContent',
+      GITHUB_SEARCH_CODE: 'githubSearchCode',
+      GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
+      GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
+      GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
+      PACKAGE_SEARCH: 'packageSearch',
+    },
+  };
+});
+
 vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn(),
 }));
 
 import { DEFAULT_TOOLS } from '../../src/tools/toolConfig.js';
 import { getServerConfig } from '../../src/serverConfig.js';
-import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
+import {
+  TOOL_NAMES,
+  isToolAvailableSync,
+} from '../../src/tools/toolMetadata.js';
 
 const mockGetServerConfig = vi.mocked(getServerConfig);
+const mockIsToolAvailableSync = vi.mocked(isToolAvailableSync);
 
 describe('ToolsManager', () => {
   let mockServer: McpServer;
@@ -51,6 +73,9 @@ describe('ToolsManager', () => {
     // Mock stderr to capture warnings
     process.stderr.write = vi.fn();
 
+    // Mock tool availability
+    mockIsToolAvailableSync.mockReturnValue(true);
+
     // Reset all tool function mocks
     DEFAULT_TOOLS.forEach(tool => {
       vi.mocked(tool.fn).mockReset();
@@ -62,7 +87,7 @@ describe('ToolsManager', () => {
   });
 
   describe('Default Configuration (no env vars)', () => {
-    it('should register only default tools', () => {
+    it('should register only default tools', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -71,9 +96,10 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       // Should register default tools
       expect(result.successCount).toBeGreaterThan(0);
@@ -86,7 +112,7 @@ describe('ToolsManager', () => {
   });
 
   describe('TOOLS_TO_RUN Configuration', () => {
-    it('should register only specified tools when TOOLS_TO_RUN is set', () => {
+    it('should register only specified tools when TOOLS_TO_RUN is set', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -99,9 +125,10 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(typeof result.successCount).toBe('number');
       expect(result.successCount).toBeGreaterThanOrEqual(0);
@@ -109,7 +136,7 @@ describe('ToolsManager', () => {
       expect(Array.isArray(result.failedTools)).toBe(true);
     });
 
-    it('should handle non-existent tools in TOOLS_TO_RUN gracefully', () => {
+    it('should handle non-existent tools in TOOLS_TO_RUN gracefully', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -123,9 +150,10 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       // Should register existing tools, ignore non-existent one
       expect(typeof result.successCount).toBe('number');
@@ -134,7 +162,7 @@ describe('ToolsManager', () => {
       expect(Array.isArray(result.failedTools)).toBe(true);
     });
 
-    it('should register no tools if TOOLS_TO_RUN contains only non-existent tools', () => {
+    it('should register no tools if TOOLS_TO_RUN contains only non-existent tools', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -144,9 +172,10 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(0);
       expect(Array.isArray(result.failedTools)).toBe(true);
@@ -159,7 +188,7 @@ describe('ToolsManager', () => {
   });
 
   describe('TOOLS_TO_RUN conflicts with ENABLE_TOOLS/DISABLE_TOOLS', () => {
-    it('should warn when TOOLS_TO_RUN is used with ENABLE_TOOLS', () => {
+    it('should warn when TOOLS_TO_RUN is used with ENABLE_TOOLS', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -170,9 +199,10 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
-      registerTools(mockServer);
+      await registerTools(mockServer);
 
       expect(process.stderr.write).toHaveBeenCalledWith(
         'Warning: TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.\n'
@@ -181,7 +211,7 @@ describe('ToolsManager', () => {
       // Should use TOOLS_TO_RUN exclusively
     });
 
-    it('should warn when TOOLS_TO_RUN is used with DISABLE_TOOLS', () => {
+    it('should warn when TOOLS_TO_RUN is used with DISABLE_TOOLS', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -192,16 +222,17 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
-      registerTools(mockServer);
+      await registerTools(mockServer);
 
       expect(process.stderr.write).toHaveBeenCalledWith(
         'Warning: TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.\n'
       );
     });
 
-    it('should warn when TOOLS_TO_RUN is used with both ENABLE_TOOLS and DISABLE_TOOLS', () => {
+    it('should warn when TOOLS_TO_RUN is used with both ENABLE_TOOLS and DISABLE_TOOLS', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -213,9 +244,10 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
-      registerTools(mockServer);
+      await registerTools(mockServer);
 
       expect(process.stderr.write).toHaveBeenCalledWith(
         'Warning: TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.\n'
@@ -224,7 +256,7 @@ describe('ToolsManager', () => {
   });
 
   describe('ENABLE_TOOLS/DISABLE_TOOLS Configuration (without TOOLS_TO_RUN)', () => {
-    it('should register all default tools with ENABLE_TOOLS (no-op for already default tools)', () => {
+    it('should register all default tools with ENABLE_TOOLS (no-op for already default tools)', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -234,9 +266,10 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       // Should register all 5 default tools (PR is now default, so ENABLE_TOOLS is redundant)
       expect(result.successCount).toBeGreaterThanOrEqual(0);
@@ -250,7 +283,7 @@ describe('ToolsManager', () => {
       expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalled(); // githubSearchPullRequests
     });
 
-    it('should remove default tools with DISABLE_TOOLS', () => {
+    it('should remove default tools with DISABLE_TOOLS', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -263,9 +296,10 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       // Should register some tools (default minus disabled)
       expect(typeof result.successCount).toBe('number');
@@ -281,7 +315,7 @@ describe('ToolsManager', () => {
       expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalled(); // githubSearchPullRequests
     });
 
-    it('should handle both ENABLE_TOOLS and DISABLE_TOOLS', () => {
+    it('should handle both ENABLE_TOOLS and DISABLE_TOOLS', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -292,9 +326,10 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       // Should register some tools (default minus disabled)
       expect(typeof result.successCount).toBe('number');
@@ -311,7 +346,7 @@ describe('ToolsManager', () => {
       expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalled(); // githubSearchPullRequests
     });
 
-    it('should handle disabling enabled tools (DISABLE_TOOLS takes precedence)', () => {
+    it('should handle disabling enabled tools (DISABLE_TOOLS takes precedence)', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -322,9 +357,10 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       // Should register some tools (default minus disabled)
       expect(typeof result.successCount).toBe('number');
@@ -337,7 +373,7 @@ describe('ToolsManager', () => {
   });
 
   describe('Error Handling', () => {
-    it('should handle tool registration failures gracefully', () => {
+    it('should handle tool registration failures gracefully', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -346,6 +382,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
       // Make first tool throw error
@@ -353,7 +390,7 @@ describe('ToolsManager', () => {
         throw new Error('Registration failed');
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       // Should register some tools, with failures tracked
       expect(typeof result.successCount).toBe('number');
@@ -363,7 +400,7 @@ describe('ToolsManager', () => {
       expect(result.failedTools.length).toBeGreaterThan(0);
     });
 
-    it('should continue registering tools after failures', () => {
+    it('should continue registering tools after failures', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -372,6 +409,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
       // Make multiple tools throw errors
@@ -382,7 +420,7 @@ describe('ToolsManager', () => {
         throw new Error('Registration failed');
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       // Should register some tools, with failures tracked
       expect(typeof result.successCount).toBe('number');

@@ -91,6 +91,7 @@ describe('ToolsManager - Metadata Availability', () => {
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: true,
+      sanitize: true,
     });
   });
 
@@ -99,11 +100,11 @@ describe('ToolsManager - Metadata Availability', () => {
   });
 
   describe('All Tools Available in Metadata', () => {
-    it('should register all tools when all are available in metadata', () => {
+    it('should register all tools when all are available in metadata', async () => {
       // All tools are available
       mockIsToolAvailableSync.mockReturnValue(true);
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(5);
       expect(result.failedTools).toEqual([]);
@@ -119,12 +120,12 @@ describe('ToolsManager - Metadata Availability', () => {
   });
 
   describe('Single Tool Missing from Metadata', () => {
-    it('should skip githubSearchCode when not in metadata', () => {
+    it('should skip githubSearchCode when not in metadata', async () => {
       mockIsToolAvailableSync.mockImplementation((toolName: string) => {
         return toolName !== 'githubSearchCode';
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(4);
       expect(result.failedTools).toEqual([]);
@@ -142,12 +143,12 @@ describe('ToolsManager - Metadata Availability', () => {
       expect(process.stderr.write).not.toHaveBeenCalled();
     });
 
-    it('should skip githubGetFileContent when not in metadata', () => {
+    it('should skip githubGetFileContent when not in metadata', async () => {
       mockIsToolAvailableSync.mockImplementation((toolName: string) => {
         return toolName !== 'githubGetFileContent';
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(4);
       expect(result.failedTools).toEqual([]);
@@ -161,12 +162,12 @@ describe('ToolsManager - Metadata Availability', () => {
       expect(process.stderr.write).not.toHaveBeenCalled();
     });
 
-    it('should skip githubViewRepoStructure when not in metadata', () => {
+    it('should skip githubViewRepoStructure when not in metadata', async () => {
       mockIsToolAvailableSync.mockImplementation((toolName: string) => {
         return toolName !== 'githubViewRepoStructure';
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(4);
       expect(result.failedTools).toEqual([]);
@@ -180,12 +181,12 @@ describe('ToolsManager - Metadata Availability', () => {
       expect(process.stderr.write).not.toHaveBeenCalled();
     });
 
-    it('should skip githubSearchRepositories when not in metadata', () => {
+    it('should skip githubSearchRepositories when not in metadata', async () => {
       mockIsToolAvailableSync.mockImplementation((toolName: string) => {
         return toolName !== 'githubSearchRepositories';
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(4);
       expect(result.failedTools).toEqual([]);
@@ -199,12 +200,12 @@ describe('ToolsManager - Metadata Availability', () => {
       expect(process.stderr.write).not.toHaveBeenCalled();
     });
 
-    it('should skip githubSearchPullRequests when not in metadata', () => {
+    it('should skip githubSearchPullRequests when not in metadata', async () => {
       mockIsToolAvailableSync.mockImplementation((toolName: string) => {
         return toolName !== 'githubSearchPullRequests';
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(4);
       expect(result.failedTools).toEqual([]);
@@ -220,7 +221,7 @@ describe('ToolsManager - Metadata Availability', () => {
   });
 
   describe('Multiple Tools Missing from Metadata', () => {
-    it('should skip multiple tools when not in metadata', () => {
+    it('should skip multiple tools when not in metadata', async () => {
       mockIsToolAvailableSync.mockImplementation((toolName: string) => {
         return (
           toolName !== 'githubSearchCode' &&
@@ -228,7 +229,7 @@ describe('ToolsManager - Metadata Availability', () => {
         );
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(3);
       expect(result.failedTools).toEqual([]);
@@ -243,12 +244,12 @@ describe('ToolsManager - Metadata Availability', () => {
       expect(process.stderr.write).not.toHaveBeenCalled();
     });
 
-    it('should skip all but one tool when most are missing from metadata', () => {
+    it('should skip all but one tool when most are missing from metadata', async () => {
       mockIsToolAvailableSync.mockImplementation((toolName: string) => {
         return toolName === 'githubSearchCode';
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(1);
       expect(result.failedTools).toEqual([]);
@@ -265,10 +266,10 @@ describe('ToolsManager - Metadata Availability', () => {
   });
 
   describe('No Tools Available in Metadata', () => {
-    it('should register no tools when all are missing from metadata', () => {
+    it('should register no tools when all are missing from metadata', async () => {
       mockIsToolAvailableSync.mockReturnValue(false);
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(0);
       expect(result.failedTools).toEqual([]);
@@ -283,7 +284,7 @@ describe('ToolsManager - Metadata Availability', () => {
   });
 
   describe('Metadata Availability with TOOLS_TO_RUN', () => {
-    it('should skip tools not in metadata even when specified in TOOLS_TO_RUN', () => {
+    it('should skip tools not in metadata even when specified in TOOLS_TO_RUN', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -293,6 +294,7 @@ describe('ToolsManager - Metadata Availability', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
       // githubSearchCode is not in metadata
@@ -300,7 +302,7 @@ describe('ToolsManager - Metadata Availability', () => {
         return toolName !== 'githubSearchCode';
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(1); // Only githubGetFileContent
       expect(result.failedTools).toEqual([]);
@@ -324,7 +326,7 @@ describe('ToolsManager - Metadata Availability', () => {
       );
     });
 
-    it('should register no tools when TOOLS_TO_RUN specifies tools not in metadata', () => {
+    it('should register no tools when TOOLS_TO_RUN specifies tools not in metadata', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -334,12 +336,13 @@ describe('ToolsManager - Metadata Availability', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
       // None of the specified tools are in metadata
       mockIsToolAvailableSync.mockReturnValue(false);
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(0);
       expect(result.failedTools).toEqual([]);
@@ -353,7 +356,7 @@ describe('ToolsManager - Metadata Availability', () => {
   });
 
   describe('Metadata Availability with DISABLE_TOOLS', () => {
-    it('should respect both metadata availability and DISABLE_TOOLS', () => {
+    it('should respect both metadata availability and DISABLE_TOOLS', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -363,6 +366,7 @@ describe('ToolsManager - Metadata Availability', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        sanitize: true,
       });
 
       // githubSearchCode is not in metadata, githubGetFileContent is disabled
@@ -370,7 +374,7 @@ describe('ToolsManager - Metadata Availability', () => {
         return toolName !== 'githubSearchCode';
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(3); // 5 - 1 (not in metadata) - 1 (disabled)
       expect(result.failedTools).toEqual([]);
@@ -390,7 +394,7 @@ describe('ToolsManager - Metadata Availability', () => {
   });
 
   describe('Error Handling with Missing Metadata', () => {
-    it('should handle registration errors for available tools', () => {
+    it('should handle registration errors for available tools', async () => {
       mockIsToolAvailableSync.mockReturnValue(true);
 
       // Make first tool throw error
@@ -398,7 +402,7 @@ describe('ToolsManager - Metadata Availability', () => {
         throw new Error('Registration failed');
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(4);
       expect(result.failedTools).toEqual(['githubSearchCode']);
@@ -410,7 +414,7 @@ describe('ToolsManager - Metadata Availability', () => {
       expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalled();
     });
 
-    it('should not add missing metadata tools to failedTools', () => {
+    it('should not add missing metadata tools to failedTools', async () => {
       // Some tools not in metadata
       mockIsToolAvailableSync.mockImplementation((toolName: string) => {
         return toolName !== 'githubSearchCode';
@@ -421,7 +425,7 @@ describe('ToolsManager - Metadata Availability', () => {
         throw new Error('Registration failed');
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(result.successCount).toBe(3);
       // Only the tool that threw error should be in failedTools
@@ -435,10 +439,10 @@ describe('ToolsManager - Metadata Availability', () => {
   });
 
   describe('Metadata Availability Check Edge Cases', () => {
-    it('should handle isToolAvailableSync returning undefined gracefully', () => {
+    it('should handle isToolAvailableSync returning undefined gracefully', async () => {
       mockIsToolAvailableSync.mockReturnValue(undefined as unknown as boolean);
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       // Undefined should be treated as false (not available)
       expect(result.successCount).toBe(0);
@@ -449,12 +453,12 @@ describe('ToolsManager - Metadata Availability', () => {
       });
     });
 
-    it('should handle isToolAvailableSync throwing error gracefully', () => {
+    it('should handle isToolAvailableSync throwing error gracefully', async () => {
       mockIsToolAvailableSync.mockImplementation(() => {
         throw new Error('Metadata check failed');
       });
 
-      const result = registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       // Should treat as unavailable and skip all tools
       expect(result.successCount).toBe(0);

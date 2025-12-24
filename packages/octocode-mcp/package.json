@@ -31,8 +31,8 @@
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "PolyForm-Small-Business-1.0.0",
   "bin": {
-    "octocode-mcp": "dist/index.js",
-    "octocode-mcp-beta": "dist/index.js"
+    "octocode-mcp": "dist/index.mjs",
+    "octocode-mcp-beta": "dist/index.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.22.0",
@@ -67,26 +67,26 @@
     "eslint-config-prettier": "^10.1.5",
     "eslint-plugin-prettier": "^5.5.4",
     "prettier": "^3.5.3",
+    "tsdown": "^0.17.2",
     "tslib": "^2.8.1",
-    "tsup": "^8.4.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.13"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=18.0.0"
   },
   "exports": {
     ".": {
-      "import": "./dist/index.js"
+      "import": "./dist/index.mjs"
     }
   },
   "files": [
-    "dist/index.js",
+    "dist/index.mjs",
     "manifest.json",
     "server.json",
     "LICENSE"
   ],
-  "main": "dist/index.js",
+  "main": "dist/index.mjs",
   "mcp": {
     "type": "stdio",
     "command": "octocode-mcp",
@@ -94,7 +94,7 @@
   },
   "mcpName": "io.github.bgauryy/octocode-mcp",
   "scripts": {
-    "build": "yarn lint && yarn clean && tsup",
+    "build": "yarn lint && yarn clean && tsdown",
     "build:bin": "bun build ./src/index.ts --compile --minify --sourcemap --outfile dist/octocode-mcp",
     "build:bin:all": "bun run build:bin:linux-x64 && bun run build:bin:linux-arm64 && bun run build:bin:linux-x64-musl && bun run build:bin:darwin-arm64 && bun run build:bin:darwin-x64 && bun run build:bin:windows-x64",
     "build:bin:darwin-arm64": "bun build ./src/index.ts --compile --minify --sourcemap --target=bun-darwin-arm64 --outfile dist/octocode-mcp-darwin-arm64",
@@ -103,10 +103,10 @@
     "build:bin:linux-x64": "bun build ./src/index.ts --compile --minify --sourcemap --target=bun-linux-x64 --outfile dist/octocode-mcp-linux-x64",
     "build:bin:linux-x64-musl": "bun build ./src/index.ts --compile --minify --sourcemap --target=bun-linux-x64-musl --outfile dist/octocode-mcp-linux-x64-musl",
     "build:bin:windows-x64": "bun build ./src/index.ts --compile --minify --sourcemap --target=bun-windows-x64 --outfile dist/octocode-mcp-windows-x64.exe",
-    "build:dev": "yarn clean && tsup",
-    "build:watch": "tsup --watch",
+    "build:dev": "yarn clean && tsdown",
+    "build:watch": "tsdown --watch",
     "clean": "rm -rf dist/",
-    "debug": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "debug": "npx @modelcontextprotocol/inspector node dist/index.mjs",
     "dxt:pack": "yarn build && dxt pack . octocode-mcp.dxt",
     "dxt:release": "yarn build && dxt pack . octocode-mcp.dxt && dxt sign octocode-mcp.dxt --self-signed && dxt verify octocode-mcp.dxt",
     "dxt:validate": "dxt validate manifest.json",
@@ -115,7 +115,7 @@
     "lint": "eslint src/**/*.ts tests/**/*.ts",
     "lint:fix": "eslint src/**/*.ts tests/**/*.ts --fix",
     "prepack": "yarn build",
-    "prepublishOnly": "yarn lint && yarn test && tsup",
+    "prepublishOnly": "yarn lint && yarn test && tsdown",
     "test": "vitest run --coverage",
     "test:coverage": "vitest run --coverage",
     "test:quiet": "vitest run --reporter=dot --silent",
