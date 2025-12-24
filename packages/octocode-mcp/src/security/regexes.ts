@@ -75,6 +75,72 @@ const aiProviderPatterns: SensitiveDataPattern[] = [
     regex: /\btvly-[a-zA-Z0-9]{30,}\b/g,
     matchAccuracy: 'high',
   },
+  // DeepSeek
+  {
+    name: 'deepseekApiKey',
+    description: 'DeepSeek API key',
+    regex: /\bsk-[a-zA-Z0-9]{32,64}\b/g,
+    matchAccuracy: 'medium',
+  },
+  // Together AI
+  {
+    name: 'togetherApiKey',
+    description: 'Together AI API key',
+    regex:
+      /\b['"]?(?:TOGETHER|together)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{40,64}['"]?\b/g,
+    matchAccuracy: 'medium',
+  },
+  // Fireworks AI
+  {
+    name: 'fireworksApiKey',
+    description: 'Fireworks AI API key',
+    regex:
+      /\b['"]?(?:FIREWORKS|fireworks)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{40,64}['"]?\b/g,
+    matchAccuracy: 'medium',
+  },
+  // xAI (Grok)
+  {
+    name: 'xaiApiKey',
+    description: 'xAI (Grok) API key',
+    regex: /\bxai-[a-zA-Z0-9]{48,}\b/g,
+    matchAccuracy: 'high',
+  },
+  // OpenRouter
+  {
+    name: 'openRouterApiKey',
+    description: 'OpenRouter API key',
+    regex: /\bsk-or-v1-[a-zA-Z0-9]{64}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Amazon Bedrock
+  {
+    name: 'amazonBedrockApiKey',
+    description: 'Amazon Bedrock API key',
+    regex: /\bABSK[A-Za-z0-9+/]{109,269}={0,2}\b/g,
+    matchAccuracy: 'high',
+  },
+  // AI21 Labs
+  {
+    name: 'ai21ApiKey',
+    description: 'AI21 Labs API key',
+    regex:
+      /\b['"]?(?:AI21|ai21)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{40,64}['"]?\b/g,
+    matchAccuracy: 'medium',
+  },
+  // Stability AI
+  {
+    name: 'stabilityApiKey',
+    description: 'Stability AI API key',
+    regex: /\bsk-[a-zA-Z0-9]{48,}\b/g,
+    matchAccuracy: 'medium',
+  },
+  // Voyage AI
+  {
+    name: 'voyageApiKey',
+    description: 'Voyage AI API key',
+    regex: /\bpa-[a-zA-Z0-9]{40,}\b/g,
+    matchAccuracy: 'high',
+  },
 ];
 
 const awsPatterns: SensitiveDataPattern[] = [
@@ -386,12 +452,6 @@ const cloudProviderPatterns: SensitiveDataPattern[] = [
 
   // Package Managers & Registries
   {
-    name: 'npmToken',
-    description: 'NPM authentication token',
-    regex: /\bnpm_[a-zA-Z0-9]{36}\b/g,
-    matchAccuracy: 'high',
-  },
-  {
     name: 'dockerHubToken',
     description: 'Docker Hub personal access token',
     regex: /\bdckr_pat_[a-zA-Z0-9_]{36}\b/g,
@@ -440,6 +500,139 @@ const cloudProviderPatterns: SensitiveDataPattern[] = [
     name: 'digitalOceanToken',
     description: 'DigitalOcean API token',
     regex: /\bdop_v1_[a-f0-9]{64}\b/g,
+    matchAccuracy: 'high',
+  },
+  // DigitalOcean OAuth
+  {
+    name: 'digitalOceanOAuthToken',
+    description: 'DigitalOcean OAuth access token',
+    regex: /\bdoo_v1_[a-f0-9]{64}\b/g,
+    matchAccuracy: 'high',
+  },
+  // DigitalOcean Refresh Token
+  {
+    name: 'digitalOceanRefreshToken',
+    description: 'DigitalOcean OAuth refresh token',
+    regex: /\bdor_v1_[a-f0-9]{64}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Cloudflare API Key
+  {
+    name: 'cloudflareApiKey',
+    description: 'Cloudflare API key',
+    regex:
+      /\b['"]?(?:cloudflare)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9_-]{40}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Cloudflare Global API Key
+  {
+    name: 'cloudflareGlobalApiKey',
+    description: 'Cloudflare Global API key',
+    regex:
+      /\b['"]?(?:cloudflare)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{37}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Cloudflare Origin CA Key
+  {
+    name: 'cloudflareOriginCaKey',
+    description: 'Cloudflare Origin CA key',
+    regex: /\bv1\.0-[a-f0-9]{24}-[a-f0-9]{146}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Fly.io Access Token
+  {
+    name: 'flyioAccessToken',
+    description: 'Fly.io API access token',
+    regex: /\bfo1_[\w-]{43}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Fly.io Machine Token
+  {
+    name: 'flyioMachineToken',
+    description: 'Fly.io machine token',
+    regex: /\bfm[12][ar]?_[a-zA-Z0-9+/]{100,}={0,3}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Doppler API Token
+  {
+    name: 'dopplerApiToken',
+    description: 'Doppler API token',
+    regex: /\bdp\.pt\.[a-z0-9]{43}\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Dynatrace API Token
+  {
+    name: 'dynatraceApiToken',
+    description: 'Dynatrace API token',
+    regex: /\bdt0c01\.[a-z0-9]{24}\.[a-z0-9]{64}\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Netlify Access Token
+  {
+    name: 'netlifyAccessToken',
+    description: 'Netlify access token',
+    regex:
+      /\b['"]?(?:netlify)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9=_-]{40,46}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Scalingo API Token
+  {
+    name: 'scalingoApiToken',
+    description: 'Scalingo API token',
+    regex: /\btk-us-[\w-]{48}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Infracost API Token
+  {
+    name: 'infracostApiToken',
+    description: 'Infracost API token',
+    regex: /\bico-[a-zA-Z0-9]{32}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Harness API Key
+  {
+    name: 'harnessApiKey',
+    description: 'Harness Access Token (PAT or SAT)',
+    regex:
+      /\b(?:pat|sat)\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9]{24}\.[a-zA-Z0-9]{20}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Azure AD Client Secret
+  {
+    name: 'azureAdClientSecret',
+    description: 'Azure AD client secret',
+    regex:
+      /(?:^|[\\'"` \s>=:(,)])([a-zA-Z0-9_~.]{3}\dQ~[a-zA-Z0-9_~.-]{31,34})(?:$|[\\'"` \s<),])/g,
+    matchAccuracy: 'high',
+  },
+  // Heroku API Key v2
+  {
+    name: 'herokuApiKeyV2',
+    description: 'Heroku API key (new format)',
+    regex: /\bHRKU-AA[0-9a-zA-Z_-]{58}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Microsoft Teams Webhook
+  {
+    name: 'microsoftTeamsWebhook',
+    description: 'Microsoft Teams incoming webhook URL',
+    regex:
+      /https:\/\/[a-z0-9]+\.webhook\.office\.com\/webhookb2\/[a-z0-9]{8}-(?:[a-z0-9]{4}-){3}[a-z0-9]{12}@[a-z0-9]{8}-(?:[a-z0-9]{4}-){3}[a-z0-9]{12}\/IncomingWebhook\/[a-z0-9]{32}\/[a-z0-9]{8}-(?:[a-z0-9]{4}-){3}[a-z0-9]{12}/gi,
+    matchAccuracy: 'high',
+  },
+  // Okta Access Token
+  {
+    name: 'oktaAccessToken',
+    description: 'Okta access token',
+    regex:
+      /\b['"]?(?:okta)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?00[\w=-]{40}['"]?\b/gi,
+    matchAccuracy: 'high',
+  },
+  // OpenShift User Token
+  {
+    name: 'openshiftUserToken',
+    description: 'OpenShift user token',
+    regex: /\bsha256~[\w-]{43}\b/g,
     matchAccuracy: 'high',
   },
 ];
@@ -736,6 +929,36 @@ const databasePatterns: SensitiveDataPattern[] = [
     regex: /\b(?:postgres|mysql|mongodb|redis):\/\/[^:]+:[^@]+@[^/\s]+\b/gi,
     matchAccuracy: 'medium',
   },
+  // ClickHouse Cloud API Secret Key
+  {
+    name: 'clickhouseCloudApiKey',
+    description: 'ClickHouse Cloud API secret key',
+    regex: /\b4b1d[A-Za-z0-9]{38}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Neon Database Connection String
+  {
+    name: 'neonDatabaseConnectionString',
+    description: 'Neon database connection string',
+    regex: /\bpostgres:\/\/[^:]+:[^@]+@[^/\s]*neon\.tech[^?\s]*\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Turso Database Token
+  {
+    name: 'tursoDatabaseToken',
+    description: 'Turso database auth token',
+    regex:
+      /\b['"]?(?:turso|libsql)(?:[\s\w.-]{0,20})(?:token|auth)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9._-]{50,}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Upstash Redis Token
+  {
+    name: 'upstashRedisToken',
+    description: 'Upstash Redis REST token',
+    regex:
+      /\b['"]?(?:upstash)(?:[\s\w.-]{0,20})(?:token|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9=]{40,}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
 ];
 
 const developerToolsPatterns: SensitiveDataPattern[] = [
@@ -743,12 +966,6 @@ const developerToolsPatterns: SensitiveDataPattern[] = [
     name: 'npmAccessToken',
     description: 'NPM access token',
     regex: /\bnpm_[a-zA-Z0-9]{36}\b/g,
-    matchAccuracy: 'high',
-  },
-  {
-    name: 'pypiDevApiToken',
-    description: 'PyPI development API token',
-    regex: /\bpypi-[A-Za-z0-9_-]{84}\b/g,
     matchAccuracy: 'high',
   },
   {
@@ -828,6 +1045,118 @@ const developerToolsPatterns: SensitiveDataPattern[] = [
     name: 'rollbarAccessToken',
     description: 'Rollbar access token',
     regex: /\brollbar[\s\w]*(?:access|token)[\s:=]*["']?[a-f0-9]{32}["']?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Postman API Token
+  {
+    name: 'postmanApiToken',
+    description: 'Postman API token',
+    regex: /\bPMAK-[a-f0-9]{24}-[a-f0-9]{34}\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Prefect API Token
+  {
+    name: 'prefectApiToken',
+    description: 'Prefect API token',
+    regex: /\bpnu_[a-zA-Z0-9]{36}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Readme API Token
+  {
+    name: 'readmeApiToken',
+    description: 'Readme API token',
+    regex: /\brdme_[a-z0-9]{70}\b/g,
+    matchAccuracy: 'high',
+  },
+  // RubyGems API Token
+  {
+    name: 'rubygemsApiToken',
+    description: 'RubyGems API token',
+    regex: /\brubygems_[a-f0-9]{48}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Clojars API Token
+  {
+    name: 'clojarsApiToken',
+    description: 'Clojars API token',
+    regex: /\bCLOJARS_[a-z0-9]{60}\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Snyk API Token
+  {
+    name: 'snykApiToken',
+    description: 'Snyk API token',
+    regex:
+      /\b['"]?(?:snyk[_.-]?(?:(?:api|oauth)[_.-]?)?(?:key|token))['"]?\s*(?::|=>|=)\s*['"]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}['"]?\b/gi,
+    matchAccuracy: 'high',
+  },
+  // SonarQube Token
+  {
+    name: 'sonarqubeToken',
+    description: 'SonarQube/SonarCloud token',
+    regex: /\b(?:squ_|sqp_|sqa_)[a-z0-9=_-]{40}\b/gi,
+    matchAccuracy: 'high',
+  },
+  // TravisCI Access Token
+  {
+    name: 'travisciAccessToken',
+    description: 'Travis CI access token',
+    regex:
+      /\b['"]?(?:travis)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{22}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Codecov Access Token
+  {
+    name: 'codecovAccessToken',
+    description: 'Codecov access token',
+    regex:
+      /\b['"]?(?:codecov)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{32}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // DroneCI Access Token
+  {
+    name: 'droneCiAccessToken',
+    description: 'DroneCI access token',
+    regex:
+      /\b['"]?(?:droneci|drone)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{32}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Octopus Deploy API Key
+  {
+    name: 'octopusDeployApiKey',
+    description: 'Octopus Deploy API key',
+    regex: /\bAPI-[A-Z0-9]{26}\b/g,
+    matchAccuracy: 'high',
+  },
+  // CircleCI Token
+  {
+    name: 'circleciToken',
+    description: 'CircleCI personal API token',
+    regex:
+      /\b['"]?(?:circleci|circle)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{40}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Buildkite Agent Token
+  {
+    name: 'buildkiteAgentToken',
+    description: 'Buildkite agent token',
+    regex: /\bbkagent_[a-f0-9]{40}\b/g,
+    matchAccuracy: 'high',
+  },
+  // LaunchDarkly Access Token
+  {
+    name: 'launchdarklyAccessToken',
+    description: 'LaunchDarkly access token',
+    regex:
+      /\b['"]?(?:launchdarkly)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9=_-]{40}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Algolia API Key
+  {
+    name: 'algoliaApiKey',
+    description: 'Algolia API key',
+    regex:
+      /\b['"]?(?:algolia)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{32}['"]?\b/gi,
     matchAccuracy: 'medium',
   },
 ];
@@ -925,6 +1254,62 @@ const versionControlPatterns: SensitiveDataPattern[] = [
     regex: /\bghs_[0-9a-zA-Z]{37}\b/g,
     matchAccuracy: 'high',
   },
+  // GitLab SCIM Token
+  {
+    name: 'gitlabScimToken',
+    description: 'GitLab SCIM token',
+    regex: /\bglsoat-[0-9a-zA-Z_-]{20}\b/g,
+    matchAccuracy: 'high',
+  },
+  // GitLab Feature Flag Client Token
+  {
+    name: 'gitlabFeatureFlagToken',
+    description: 'GitLab feature flag client token',
+    regex: /\bglffct-[0-9a-zA-Z_-]{20}\b/g,
+    matchAccuracy: 'high',
+  },
+  // GitLab Feed Token
+  {
+    name: 'gitlabFeedToken',
+    description: 'GitLab feed token',
+    regex: /\bglft-[0-9a-zA-Z_-]{20}\b/g,
+    matchAccuracy: 'high',
+  },
+  // GitLab Incoming Mail Token
+  {
+    name: 'gitlabIncomingMailToken',
+    description: 'GitLab incoming mail token',
+    regex: /\bglimt-[0-9a-zA-Z_-]{25}\b/g,
+    matchAccuracy: 'high',
+  },
+  // GitLab Kubernetes Agent Token
+  {
+    name: 'gitlabK8sAgentToken',
+    description: 'GitLab Kubernetes agent token',
+    regex: /\bglagent-[0-9a-zA-Z_-]{50}\b/g,
+    matchAccuracy: 'high',
+  },
+  // GitLab OAuth App Secret
+  {
+    name: 'gitlabOAuthAppSecret',
+    description: 'GitLab OAuth application secret',
+    regex: /\bgloas-[0-9a-zA-Z_-]{64}\b/g,
+    matchAccuracy: 'high',
+  },
+  // GitLab Session Cookie
+  {
+    name: 'gitlabSessionCookie',
+    description: 'GitLab session cookie',
+    regex: /_gitlab_session=[0-9a-z]{32}/g,
+    matchAccuracy: 'high',
+  },
+  // Bitbucket Repository Token
+  {
+    name: 'bitbucketRepoToken',
+    description: 'Bitbucket repository access token',
+    regex: /\bATCTT3[a-zA-Z0-9]{24}\b/g,
+    matchAccuracy: 'high',
+  },
 ];
 
 const mappingMonitoringPatterns: SensitiveDataPattern[] = [
@@ -953,6 +1338,81 @@ const mappingMonitoringPatterns: SensitiveDataPattern[] = [
     description: 'New Relic Insights query key',
     regex: /\bNRIK-[A-Z0-9]{32}\b/g,
     matchAccuracy: 'high',
+  },
+  // New Relic Browser API Token
+  {
+    name: 'newRelicBrowserApiToken',
+    description: 'New Relic browser API token',
+    regex: /\bNRJS-[a-f0-9]{19}\b/g,
+    matchAccuracy: 'high',
+  },
+  // New Relic Insert Key
+  {
+    name: 'newRelicInsertKey',
+    description: 'New Relic ingest insert key',
+    regex: /\bNRII-[a-z0-9-]{32}\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Grafana API Key
+  {
+    name: 'grafanaApiKey',
+    description: 'Grafana API key',
+    regex: /\beyJrIjoi[A-Za-z0-9]{70,400}={0,3}\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Grafana Service Account Token
+  {
+    name: 'grafanaServiceAccountToken',
+    description: 'Grafana service account token',
+    regex: /\bglsa_[A-Za-z0-9]{32}_[A-Fa-f0-9]{8}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Sentry Organization Token
+  {
+    name: 'sentryOrgToken',
+    description: 'Sentry organization token',
+    regex:
+      /\bsntrys_eyJpYXQiO[a-zA-Z0-9+/]{10,200}(?:LCJyZWdpb25fdXJs|InJlZ2lvbl91cmwi|cmVnaW9uX3VybCI6)[a-zA-Z0-9+/]{10,200}={0,2}_[a-zA-Z0-9+/]{43}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Sentry User Token
+  {
+    name: 'sentryUserToken',
+    description: 'Sentry user token',
+    regex: /\bsntryu_[a-f0-9]{64}\b/g,
+    matchAccuracy: 'high',
+  },
+  // SumoLogic Access ID
+  {
+    name: 'sumoLogicAccessId',
+    description: 'SumoLogic access ID',
+    regex:
+      /\b['"]?(?:sumo)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?su[a-zA-Z0-9]{12}['"]?\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Splunk API Token
+  {
+    name: 'splunkApiToken',
+    description: 'Splunk HEC token',
+    regex:
+      /\b['"]?(?:splunk)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // LogDNA / Mezmo API Key
+  {
+    name: 'logdnaApiKey',
+    description: 'LogDNA/Mezmo API key',
+    regex:
+      /\b['"]?(?:logdna|mezmo)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{32}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Loggly Token
+  {
+    name: 'logglyToken',
+    description: 'Loggly customer token',
+    regex:
+      /\b['"]?(?:loggly)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}['"]?\b/gi,
+    matchAccuracy: 'medium',
   },
 ];
 
@@ -1044,6 +1504,78 @@ const paymentProviderPatterns: SensitiveDataPattern[] = [
     regex: /\bFLW(?:PUBK|SECK)_(?:TEST|LIVE)-[a-h0-9]{32}-X\b/g,
     matchAccuracy: 'high',
   },
+
+  // Cryptocurrency Exchanges
+  // Coinbase
+  {
+    name: 'coinbaseAccessToken',
+    description: 'Coinbase access token',
+    regex:
+      /\b['"]?(?:coinbase)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9_-]{64}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Kraken
+  {
+    name: 'krakenAccessToken',
+    description: 'Kraken access token',
+    regex:
+      /\b['"]?(?:kraken)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9/=_+-]{80,90}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Kucoin
+  {
+    name: 'kucoinAccessToken',
+    description: 'Kucoin access token',
+    regex:
+      /\b['"]?(?:kucoin)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{24}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  {
+    name: 'kucoinSecretKey',
+    description: 'Kucoin secret key',
+    regex:
+      /\b['"]?(?:kucoin)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Bittrex
+  {
+    name: 'bittrexAccessKey',
+    description: 'Bittrex access key',
+    regex:
+      /\b['"]?(?:bittrex)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{32}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Binance
+  {
+    name: 'binanceApiKey',
+    description: 'Binance API key',
+    regex:
+      /\b['"]?(?:binance)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[A-Za-z0-9]{64}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Bybit
+  {
+    name: 'bybitApiKey',
+    description: 'Bybit API key',
+    regex:
+      /\b['"]?(?:bybit)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[A-Za-z0-9]{18,24}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // GoCardless
+  {
+    name: 'gocardlessApiToken',
+    description: 'GoCardless API token',
+    regex: /\blive_[a-z0-9\-_=]{40}\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Plaid
+  {
+    name: 'plaidApiToken',
+    description: 'Plaid API token',
+    regex:
+      /\baccess-(?:sandbox|development|production)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g,
+    matchAccuracy: 'high',
+  },
 ];
 
 const privateKeyPatterns: SensitiveDataPattern[] = [
@@ -1107,6 +1639,75 @@ const slackPatterns: SensitiveDataPattern[] = [
     regex: /\bxoxr-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*\b/g,
     matchAccuracy: 'high',
   },
+  // Slack Webhook URL
+  {
+    name: 'slackWebhookUrl',
+    description: 'Slack incoming webhook URL',
+    regex:
+      /(?:https?:\/\/)?hooks\.slack\.com\/(?:services|workflows|triggers)\/[A-Za-z0-9+/]{43,56}/gi,
+    matchAccuracy: 'high',
+  },
+  // Slack App Token
+  {
+    name: 'slackAppToken',
+    description: 'Slack app-level token',
+    regex: /\bxapp-\d-[A-Z0-9]+-\d+-[a-z0-9]+\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Slack Config Access Token
+  {
+    name: 'slackConfigAccessToken',
+    description: 'Slack configuration access token',
+    regex: /\bxoxe\.xox[bp]-\d-[A-Z0-9]{163,166}\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Sendbird Access Token
+  {
+    name: 'sendbirdAccessToken',
+    description: 'Sendbird access token',
+    regex:
+      /\b['"]?(?:sendbird)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{40}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // MessageBird API Token
+  {
+    name: 'messagebirdApiToken',
+    description: 'MessageBird API token',
+    regex:
+      /\b['"]?(?:messagebird|message_bird|message-bird)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{25}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Mattermost Access Token
+  {
+    name: 'mattermostAccessToken',
+    description: 'Mattermost access token',
+    regex:
+      /\b['"]?(?:mattermost)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{26}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Zendesk Secret Key
+  {
+    name: 'zendeskSecretKey',
+    description: 'Zendesk secret key',
+    regex:
+      /\b['"]?(?:zendesk)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{40}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Freshdesk API Key
+  {
+    name: 'freshdeskApiKey',
+    description: 'Freshdesk API key',
+    regex:
+      /\b['"]?(?:freshdesk)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{20}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Sendinblue (Brevo) API Token
+  {
+    name: 'sendinblueApiToken',
+    description: 'Sendinblue (Brevo) API token',
+    regex: /\bxkeysib-[a-f0-9]{64}-[a-z0-9]{16}\b/g,
+    matchAccuracy: 'high',
+  },
 ];
 
 const socialMediaPatterns: SensitiveDataPattern[] = [
@@ -1153,6 +1754,128 @@ const socialMediaPatterns: SensitiveDataPattern[] = [
     regex: /\bpina_[a-zA-Z0-9]{32}\b/g,
     matchAccuracy: 'high',
   },
+  // LinkedIn API Token
+  {
+    name: 'linkedinApiToken',
+    description: 'LinkedIn API token',
+    regex:
+      /\b['"]?(?:linkedin|linked_in|linked-in)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{14,16}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // YouTube API Key
+  {
+    name: 'youtubeApiKey',
+    description: 'YouTube Data API key',
+    regex:
+      /\b['"]?(?:youtube)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?AIza[a-zA-Z0-9_-]{35}['"]?\b/gi,
+    matchAccuracy: 'high',
+  },
+  // TikTok API Token
+  {
+    name: 'tiktokApiToken',
+    description: 'TikTok API token',
+    regex:
+      /\b['"]?(?:tiktok)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9_-]{40,}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+];
+
+const shippingLogisticsPatterns: SensitiveDataPattern[] = [
+  // Shippo API Token
+  {
+    name: 'shippoApiToken',
+    description: 'Shippo API token',
+    regex: /\bshippo_(?:live|test)_[a-fA-F0-9]{40}\b/g,
+    matchAccuracy: 'high',
+  },
+  // EasyPost API Token
+  {
+    name: 'easypostApiToken',
+    description: 'EasyPost API token',
+    regex: /\bEZAK[a-z0-9]{54}\b/gi,
+    matchAccuracy: 'high',
+  },
+  // EasyPost Test API Token
+  {
+    name: 'easypostTestApiToken',
+    description: 'EasyPost test API token',
+    regex: /\bEZTK[a-z0-9]{54}\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Duffel API Token
+  {
+    name: 'duffelApiToken',
+    description: 'Duffel travel API token',
+    regex: /\bduffel_(?:test|live)_[a-z0-9_\-=]{43}\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Frame.io API Token
+  {
+    name: 'frameioApiToken',
+    description: 'Frame.io API token',
+    regex: /\bfio-u-[a-z0-9\-_=]{64}\b/gi,
+    matchAccuracy: 'high',
+  },
+  // MaxMind License Key
+  {
+    name: 'maxmindLicenseKey',
+    description: 'MaxMind license key',
+    regex: /\b[A-Za-z0-9]{6}_[A-Za-z0-9]{29}_mmk\b/g,
+    matchAccuracy: 'high',
+  },
+  // Asana Personal Access Token
+  {
+    name: 'asanaPersonalAccessToken',
+    description: 'Asana personal access token',
+    regex:
+      /\b['"]?(?:asana)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[0-9]{16}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Monday.com API Token
+  {
+    name: 'mondayApiToken',
+    description: 'Monday.com API token',
+    regex:
+      /\b['"]?(?:monday)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?eyJ[a-zA-Z0-9_-]{100,}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Trello API Key
+  {
+    name: 'trelloApiKey',
+    description: 'Trello API key',
+    regex:
+      /\b['"]?(?:trello)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{32}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Jira API Token (legacy format)
+  {
+    name: 'jiraApiToken',
+    description: 'Jira API token',
+    regex:
+      /\b['"]?(?:jira)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{24}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // SettleMint Application Access Token
+  {
+    name: 'settlemintApplicationAccessToken',
+    description: 'SettleMint application access token',
+    regex: /\bsm_aat_[a-zA-Z0-9]{16}\b/g,
+    matchAccuracy: 'high',
+  },
+  // SettleMint Personal Access Token
+  {
+    name: 'settlemintPersonalAccessToken',
+    description: 'SettleMint personal access token',
+    regex: /\bsm_pat_[a-zA-Z0-9]{16}\b/g,
+    matchAccuracy: 'high',
+  },
+  // SettleMint Service Access Token
+  {
+    name: 'settlemintServiceAccessToken',
+    description: 'SettleMint service access token',
+    regex: /\bsm_sat_[a-zA-Z0-9]{16}\b/g,
+    matchAccuracy: 'high',
+  },
 ];
 
 export const allRegexPatterns: SensitiveDataPattern[] = [
@@ -1170,6 +1893,7 @@ export const allRegexPatterns: SensitiveDataPattern[] = [
   ...mappingMonitoringPatterns,
   ...paymentProviderPatterns,
   ...privateKeyPatterns,
+  ...shippingLogisticsPatterns,
   ...slackPatterns,
   ...socialMediaPatterns,
   ...versionControlPatterns,
