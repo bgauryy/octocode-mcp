@@ -6,37 +6,38 @@ This directory contains the CI/CD workflows for the Octocode-MCP monorepo. Each 
 
 | Workflow | Trigger | Purpose | Duration |
 |----------|---------|---------|----------|
-| [PR Validation](#pr-validation-pr-validationyml) | Pull Requests | Quality checks before merge | ~3-5 min |
+| [CI - Lint, Build & Test](#ci---lint-build--test-ciyml) | Pull Requests | Quality checks before merge | ~3-5 min |
 | [Alpha Publishing](#alpha-publishing-publish-alphayml) | Push to `main`/`master` | Auto-publish alpha versions | ~5-8 min |
-| [Production Publishing](#production-publishing-publish-mcpyml) | Version tags (e.g., `v7.0.8`) | Official releases to npm & MCP Registry | ~4-6 min |
+| [Production Publishing](#production-publishing-publish-octocodeyml) | Push to `publish-octocode*` branch | Official releases to npm | ~4-6 min |
+| [Release Binaries](#release-binaries-releasesyml) | GitHub Release published | Build & upload platform binaries | ~8-10 min |
 
 ## Workflows
 
-### PR Validation (`pr-validation.yml`)
+### CI - Lint, Build & Test (`ci.yml`)
 
-**Trigger:** When a Pull Request is opened, synchronized, or reopened against `main` or `master` branches.
+**Trigger:** When a Pull Request is opened or updated.
 
 **Purpose:** Ensures code quality and prevents broken code from being merged into the main branches.
 
 **What it does:**
 1. ✅ **Lint Check** - Runs ESLint to enforce code style and quality standards
-2. ✅ **Build Validation** - Compiles all packages to catch TypeScript errors
+2. ✅ **Build Validation** - Compiles all packages to catch TypeScript errors, verifies `packages/octocode-mcp/dist/index.js` exists
 3. ✅ **Test Suite** - Runs the complete test suite with coverage
-4. ✅ **Package Integrity** - Validates all `package.json` files in the monorepo
-5. 📊 **Summary Report** - Posts a validation summary to the PR
+4. 📊 **PR Validation Complete** - Summary job confirms all checks passed
 
 **Concurrency:** Cancels in-progress runs for the same PR when new commits are pushed (saves CI resources).
 
 **Requirements to merge:**
 - All linting rules must pass
-- All packages must build successfully
+- All packages must build successfully (output: `dist/index.js`)
 - All tests must pass
-- All package.json files must be valid JSON with name and version
 
 **Example Output:**
 ```
-✅ All validation checks passed!
-🚀 This PR is ready for review and merge.
+✅ All CI checks passed!
+   Lint: success
+   Build: success
+   Test: success
 ```
 
 ---
@@ -102,70 +103,85 @@ Published alpha versions:
 
 ---
 
-### Production Publishing (`publish-mcp.yml`)
+### Production Publishing (`publish-octocode.yml`)
 
-**Trigger:** When a version tag is pushed (e.g., `git tag v7.0.8 && git push --tags`).
+**Trigger:** Push to `publish-octocode` or `publish-octocode-*` branches.
 
-**Purpose:** Official production releases to both npm and the MCP (Model Context Protocol) Registry.
+**Purpose:** Official production releases to npm.
 
 **What it does:**
 
 1. ✅ **Quality Checks** - Full validation suite (lint, build, test)
-2. 📝 **Sync Versions** - Updates `server.json` to match the git tag version
-3. 📦 **Publish to npm** - Publishes the main package with the `latest` tag
-4. 🔧 **Download MCP Publisher** - Fetches the latest MCP Registry publisher tool
-5. 🚀 **Publish to MCP Registry** - Registers the package in the MCP Registry using GitHub OIDC authentication
-
-**Version Syncing:**
-```bash
-# If you push tag v7.0.8
-server.json version: "7.0.8"
-server.json packages[0].version: "7.0.8"
-npm publish: octocode-mcp@7.0.8 (tag: latest)
-```
+2. 🔍 **Version Check** - Verifies version doesn't already exist on npm
+3. 📦 **Publish to npm** - Publishes `octocode-mcp` with the `latest` tag
 
 **Publishing Targets:**
 - **npm Registry:** `https://registry.npmjs.org/octocode-mcp`
-- **MCP Registry:** Discoverable in MCP-compatible AI assistants
 
 **Authentication:**
 - **npm:** Uses `NPM_TOKEN` secret
-- **MCP Registry:** Uses GitHub OIDC (no manual token needed)
 
 **Required Secrets:**
 - `NPM_TOKEN` - npm authentication token with publish permissions
-
-**Required Permissions:**
-- `id-token: write` - For GitHub OIDC authentication with MCP Registry
-- `contents: read` - To read repository contents
+- `DISCORD_WEBHOOK` (optional) - Discord webhook URL for notifications
 
 **How to Release:**
 ```bash
 # 1. Update version in package.json
 cd packages/octocode-mcp
-yarn version 7.0.8
+yarn version 10.0.1
 
 # 2. Commit the version change
 git add .
-git commit -m "chore(release): bump to v7.0.8"
+git commit -m "chore(release): bump to v10.0.1"
 
-# 3. Create and push the tag
-git tag v7.0.8
-git push origin main --tags
+# 3. Create and push to publish branch
+git checkout -b publish-octocode
+git push origin publish-octocode
 
 # 4. GitHub Actions will automatically:
 #    - Run all tests
+#    - Check version doesn't exist on npm
 #    - Publish to npm with 'latest' tag
-#    - Publish to MCP Registry
 ```
 
 **Example Output:**
 ```
-📝 Syncing server.json version to 7.0.8
-🚀 Publishing octocode-mcp to npm...
-✅ Successfully published to npm
-🚀 Publishing to MCP Registry...
-✅ Successfully published to MCP Registry
+🚀 Publishing package: octocode-mcp@10.0.1
+✅ npm version 10.0.1 does not exist, proceeding...
+🚀 Publishing octocode-mcp@10.0.1 to npm with 'latest' tag...
+✅ Successfully published octocode-mcp@10.0.1 to npm
+```
+
+---
+
+### Release Binaries (`releases.yml`)
+
+**Trigger:** When a GitHub Release is published, or via manual workflow dispatch.
+
+**Purpose:** Build and upload standalone binaries for all platforms.
+
+**What it does:**
+
+1. 🔨 **Build Binaries** - Compiles standalone executables using Bun for:
+   - Linux x64 (glibc)
+   - Linux ARM64 (glibc)
+   - Linux x64 (musl/Alpine)
+   - macOS ARM64 (Apple Silicon)
+   - macOS x64 (Intel)
+   - Windows x64
+2. 📦 **Build JS Source** - Also builds `dist/index.js` for Node.js users
+3. 📤 **Upload to Release** - Attaches all binaries to the GitHub Release
+4. 🔐 **Create Checksums** - Generates SHA256 checksums for verification
+
+**Required Permissions:**
+- `contents: write` - To upload release assets
+
+**Example Output:**
+```
+🎉 Binaries Released
+Successfully built and uploaded binaries for all platforms
+Platforms: Linux x64, Linux ARM64, Alpine, macOS ARM64, macOS x64, Windows
 ```
 
 ---
@@ -174,14 +190,16 @@ git push origin main --tags
 
 ```mermaid
 graph TD
-    A[Developer] -->|Opens PR| B[pr-validation.yml]
+    A[Developer] -->|Opens PR| B[ci.yml]
     B -->|✅ Passes| C[Merge to main]
     C -->|Auto-trigger| D[publish-alpha.yml]
     D -->|Publishes| E[npm: octocode-mcp@alpha]
     
-    A -->|Creates tag| F[publish-mcp.yml]
+    A -->|Push publish-octocode branch| F[publish-octocode.yml]
     F -->|Publishes| G[npm: octocode-mcp@latest]
-    F -->|Publishes| H[MCP Registry]
+    
+    A -->|Create GitHub Release| H[releases.yml]
+    H -->|Uploads| I[Platform Binaries]
 ```
 
 ## Environment Setup
@@ -199,7 +217,7 @@ Configure these in **Settings → Secrets and variables → Actions**:
 
 The workflows use the following GitHub token permissions:
 
-- `id-token: write` - For OIDC authentication with MCP Registry (production publishing)
+- `contents: write` - To upload release assets (releases workflow)
 - `contents: read` - To read repository contents (all workflows)
 
 ## Monitoring & Debugging
@@ -223,13 +241,7 @@ The workflows use the following GitHub token permissions:
 ```
 **Solution:** Verify `NPM_TOKEN` secret is valid and has publish permissions
 
-#### MCP Publishing Fails
-```
-❌ ERROR: OIDC token exchange failed
-```
-**Solution:** Ensure `id-token: write` permission is set in the workflow
-
-#### PR Validation Fails
+#### CI Validation Fails
 ```
 ❌ Validation checks failed!
 ```
@@ -255,18 +267,19 @@ node -e "console.log(require('./packages/octocode-mcp/package.json'))"
 
 ### When to Use Each Workflow
 
-- **PR Validation** - Automatic, runs on every PR
-- **Alpha Publishing** - Automatic, runs after merging to main
-- **Production Publishing** - Manual, only when creating a release tag
+- **CI** - Automatic, runs on every PR
+- **Alpha Publishing** - Automatic, runs after merging to main/master
+- **Production Publishing** - Manual, push to `publish-octocode` branch
+- **Release Binaries** - Automatic when GitHub Release is published
 
 ### Release Workflow
 
 1. 🔧 **Development** - Make changes on feature branch
-2. 🔍 **PR Review** - Open PR → `pr-validation.yml` runs
+2. 🔍 **PR Review** - Open PR → `ci.yml` runs
 3. ✅ **Merge** - After approval → `publish-alpha.yml` publishes alpha version
 4. 🧪 **Testing** - Test alpha version: `npm install octocode-mcp@alpha`
-5. 🏷️ **Tag Release** - Create version tag → `publish-mcp.yml` publishes production
-6. 🎉 **Done** - Package available on npm and MCP Registry
+5. 📦 **Publish** - Push to `publish-octocode` branch → `publish-octocode.yml` publishes to npm
+6. 🎉 **Release** - Create GitHub Release → `releases.yml` builds and uploads binaries
 
 ### Version Numbering
 
@@ -287,6 +300,6 @@ Next Dev:     7.0.8-alpha.1, 7.0.8-alpha.2, ...
 
 ---
 
-**Last Updated:** November 2025  
+**Last Updated:** December 2025  
 **Maintainer:** Octocode-MCP Team
 
