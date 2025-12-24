@@ -127,7 +127,6 @@ jobs:
     if: fromJson(needs.discover-packages.outputs.package-count) > 0
     permissions:
       contents: read
-      id-token: write  # Required for npm provenance
     strategy:
       matrix:
         package: ${{ fromJson(needs.discover-packages.outputs.packages) }}
@@ -266,9 +265,9 @@ jobs:
           echo "🚀 Publishing $PACKAGE_NAME@$ALPHA_VERSION to npm with 'alpha' tag (NOT 'latest')..."
           
           # Always use Yarn for workspace packages (handles workspace: dependencies correctly)
-          # --provenance adds npm attestation for supply chain security (requires id-token: write permission)
+          # NOTE: --provenance removed due to Yarn Berry compatibility issues with npm OIDC
           echo "🔧 Using Yarn to publish (handles workspace dependencies automatically)"
-          yarn npm publish --access public --tag alpha --provenance
+          yarn npm publish --access public --tag alpha
           
           # Revert package.json version back to original
           yarn version $PACKAGE_VERSION
