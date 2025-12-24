@@ -4725,8 +4725,8 @@ __metadata:
     vitest: "npm:^4.0.13"
     zod: "npm:^3.24.0"
   bin:
-    octocode-mcp: dist/index.mjs
-    octocode-mcp-beta: dist/index.mjs
+    octocode-mcp: dist/index.js
+    octocode-mcp-beta: dist/index.js
   languageName: unknown
   linkType: soft
 
