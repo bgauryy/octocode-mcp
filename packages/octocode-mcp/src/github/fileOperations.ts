@@ -20,7 +20,6 @@ import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
 import { FILE_OPERATION_ERRORS, REPOSITORY_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
-import { isSanitizeEnabled } from '../serverConfig.js';
 
 interface FileTimestampInfo {
   lastModified: string;
@@ -43,7 +42,6 @@ export async function fetchGitHubFileContentAPI(
       startLine: params.startLine,
       endLine: params.endLine,
       matchString: params.matchString,
-      minified: params.minified,
       matchStringContextLines: params.matchStringContextLines,
     },
     sessionId
@@ -205,7 +203,6 @@ async function fetchGitHubFileContentAPIInternal(
         repo,
         branch || data.sha,
         filePath,
-        params.minified !== false,
         params.fullContent || false,
         params.startLine,
         params.endLine,
@@ -221,18 +218,16 @@ async function fetchGitHubFileContentAPIInternal(
         };
       }
 
-      if (params.addTimestamp) {
-        const timestampInfo = await fetchFileTimestamp(
-          octokit,
-          owner,
-          repo,
-          filePath,
-          branch
-        );
-        if (timestampInfo) {
-          result.lastModified = timestampInfo.lastModified;
-          result.lastModifiedBy = timestampInfo.lastModifiedBy;
-        }
+      const timestampInfo = await fetchFileTimestamp(
+        octokit,
+        owner,
+        repo,
+        filePath,
+        branch
+      );
+      if (timestampInfo) {
+        result.lastModified = timestampInfo.lastModified;
+        result.lastModifiedBy = timestampInfo.lastModifiedBy;
       }
 
       return {
@@ -300,7 +295,6 @@ async function processFileContentAPI(
   repo: string,
   branch: string,
   filePath: string,
-  minified: boolean,
   fullContent: boolean,
   startLine?: number,
   endLine?: number,
@@ -309,20 +303,18 @@ async function processFileContentAPI(
 ): Promise<ContentResult> {
   const securityWarningsSet = new Set<string>();
 
-  if (isSanitizeEnabled()) {
-    const sanitizationResult = ContentSanitizer.sanitizeContent(decodedContent);
-    decodedContent = sanitizationResult.content;
+  const sanitizationResult = ContentSanitizer.sanitizeContent(decodedContent);
+  decodedContent = sanitizationResult.content;
 
-    if (sanitizationResult.hasSecrets) {
-      securityWarningsSet.add(
-        `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
-      );
-    }
-    if (sanitizationResult.warnings.length > 0) {
-      sanitizationResult.warnings.forEach(warning =>
-        securityWarningsSet.add(warning)
-      );
-    }
+  if (sanitizationResult.hasSecrets) {
+    securityWarningsSet.add(
+      `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
+    );
+  }
+  if (sanitizationResult.warnings.length > 0) {
+    sanitizationResult.warnings.forEach(warning =>
+      securityWarningsSet.add(warning)
+    );
   }
   const securityWarnings = Array.from(securityWarningsSet);
 
@@ -408,15 +400,10 @@ async function processFileContentAPI(
     }
   }
 
-  let minificationFailed = false;
-  let minificationType = 'none';
-
-  if (minified) {
-    const minifyResult = await minifyContent(finalContent, filePath);
-    finalContent = minifyResult.content;
-    minificationFailed = minifyResult.failed;
-    minificationType = minifyResult.type;
-  }
+  const minifyResult = await minifyContent(finalContent, filePath);
+  finalContent = minifyResult.content;
+  const minificationFailed = minifyResult.failed;
+  const minificationType = minifyResult.type;
 
   return {
     owner,
@@ -430,11 +417,9 @@ async function processFileContentAPI(
       endLine: actualEndLine,
       isPartial,
     }),
-    ...(minified && {
-      minified: !minificationFailed,
-      minificationFailed: minificationFailed,
-      minificationType: minificationType,
-    }),
+    minified: !minificationFailed,
+    minificationFailed: minificationFailed,
+    minificationType: minificationType,
     ...(securityWarnings.length > 0 && {
       securityWarnings,
     }),
@@ -688,8 +673,8 @@ async function viewGitHubRepositoryStructureAPIInternal(
     }
 
     for (const dir of Object.keys(structure)) {
-      structure[dir].files.sort();
-      structure[dir].folders.sort();
+      structure[dir]!.files.sort();
+      structure[dir]!.folders.sort();
     }
 
     const sortedStructure: Record<
@@ -702,7 +687,7 @@ async function viewGitHubRepositoryStructureAPIInternal(
       return a.localeCompare(b);
     });
     for (const key of sortedKeys) {
-      sortedStructure[key] = structure[key];
+      sortedStructure[key] = structure[key]!;
     }
 
     const totalFiles = limitedItems.filter(i => i.type === 'file').length;

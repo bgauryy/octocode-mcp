@@ -164,7 +164,7 @@ export async function registerAllTools(
     await logger.info('GitHub token ready');
   }
 
-  const { successCount } = registerTools(server);
+  const { successCount } = await registerTools(server);
   await logger.info('Tools registered', { count: successCount });
 
   if (successCount === 0) {
@@ -175,6 +175,9 @@ export async function registerAllTools(
   }
 }
 
-startServer().catch(() => {
+startServer().catch((error: unknown) => {
+  const errorMessage =
+    error instanceof Error ? error.message : String(error || 'Unknown error');
+  process.stderr.write(`❌ Startup failed: ${errorMessage}\n`);
   process.exit(1);
 });

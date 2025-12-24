@@ -1,4 +1,7 @@
-export { jsonToYamlString, YamlConversionConfig } from './jsonToYamlString.js';
+export {
+  jsonToYamlString,
+  type YamlConversionConfig,
+} from './jsonToYamlString.js';
 export {
   minifyContent,
   isJavaScriptFileV2,

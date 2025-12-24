@@ -328,9 +328,7 @@ export const GITHUB_FETCH_CONTENT = createSchemaHelper(
     path: string;
   };
   processing: {
-    minified: string;
     sanitize: string;
-    addTimestamp: string;
   };
   range: {
     startLine: string;
@@ -365,7 +363,6 @@ export const GITHUB_SEARCH_CODE = createSchemaHelper(
     limit: string;
   };
   processing: {
-    minify: string;
     sanitize: string;
   };
 };

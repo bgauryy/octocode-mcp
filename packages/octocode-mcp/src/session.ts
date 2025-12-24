@@ -105,7 +105,11 @@ class SessionManager {
         },
       });
     } catch (error) {
-      void error;
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      process.stderr.write(
+        `[session] Failed to send log (${intent}): ${errorMessage}\n`
+      );
     }
   }
 }

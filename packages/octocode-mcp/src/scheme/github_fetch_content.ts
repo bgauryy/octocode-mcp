@@ -5,11 +5,6 @@ import { GITHUB_FETCH_CONTENT, TOOL_NAMES } from '../tools/toolMetadata';
 const FileContentBaseSchema = BaseQuerySchema.extend({
   owner: z.string().min(1).max(200).describe(GITHUB_FETCH_CONTENT.scope.owner),
   repo: z.string().min(1).max(150).describe(GITHUB_FETCH_CONTENT.scope.repo),
-  minified: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe(GITHUB_FETCH_CONTENT.processing.minified),
   path: z.string().describe(GITHUB_FETCH_CONTENT.scope.path),
   branch: z
     .string()
@@ -44,11 +39,6 @@ const FileContentBaseSchema = BaseQuerySchema.extend({
     .max(50)
     .default(5)
     .describe(GITHUB_FETCH_CONTENT.range.matchStringContextLines),
-  addTimestamp: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe(GITHUB_FETCH_CONTENT.processing.addTimestamp),
 });
 
 export const FileContentQuerySchema = FileContentBaseSchema.superRefine(

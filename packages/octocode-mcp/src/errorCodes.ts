@@ -207,6 +207,19 @@ export const PROMISE_ERRORS = {
   },
 } as const;
 
+export const TOOL_ERRORS = {
+  EXECUTION_FAILED: {
+    code: 'TOOL_EXECUTION_FAILED',
+    message: (toolName: string, error: string) =>
+      `Tool ${toolName} execution failed: ${error}`,
+  },
+  SECURITY_VALIDATION_FAILED: {
+    code: 'TOOL_SECURITY_VALIDATION_FAILED',
+    message: (toolName: string, error: string) =>
+      `Security validation failed for ${toolName}: ${error}`,
+  },
+} as const;
+
 export const ALL_ERROR_CODES = {
   ...CONFIG_ERRORS,
   ...VALIDATION_ERRORS,
@@ -217,6 +230,7 @@ export const ALL_ERROR_CODES = {
   ...SEARCH_ERRORS,
   ...STARTUP_ERRORS,
   ...PROMISE_ERRORS,
+  ...TOOL_ERRORS,
 } as const;
 
 export type ErrorCategory =
@@ -228,7 +242,8 @@ export type ErrorCategory =
   | 'REPOSITORY'
   | 'SEARCH'
   | 'STARTUP'
-  | 'PROMISE';
+  | 'PROMISE'
+  | 'TOOL';
 
 export type ErrorCode =
   (typeof ALL_ERROR_CODES)[keyof typeof ALL_ERROR_CODES]['code'];
@@ -255,6 +270,8 @@ export function getErrorsByCategory(
       return STARTUP_ERRORS;
     case 'PROMISE':
       return PROMISE_ERRORS;
+    case 'TOOL':
+      return TOOL_ERRORS;
     default:
       return {};
   }

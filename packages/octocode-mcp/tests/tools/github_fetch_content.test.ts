@@ -592,7 +592,7 @@ End of file.`;
   });
 
   describe('Minification', () => {
-    it('should apply minification when minified=true', async () => {
+    it('should always apply minification', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
           path: 'src/app.js',
@@ -615,7 +615,6 @@ End of file.`;
               owner: 'test',
               repo: 'repo',
               path: 'src/app.js',
-              minified: true,
               id: 'minified-test',
             },
           ],
@@ -627,70 +626,12 @@ End of file.`;
       expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
       expect(responseText).toContain('status: "hasResults"');
-      // path is in query, not duplicated in response (clean bulk responses)
       expect(responseText).toContain('minified: true');
       expect(responseText).toContain('minificationFailed: false');
       expect(responseText).toContain('minificationType: "terser"');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
-
-      expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          minified: true,
-        }),
-        undefined, // authInfo
-        undefined // sessionId
-      );
-    });
-
-    it('should not apply minification when minified=false', async () => {
-      mockFetchGitHubFileContentAPI.mockResolvedValue({
-        data: {
-          path: 'src/readable.js',
-          repository: 'test/repo',
-          branch: 'main',
-          content: 'const app = () => {\n  return "Hello World";\n};',
-          contentLength: 37,
-          minified: false,
-        },
-        status: 200,
-      });
-
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        {
-          queries: [
-            {
-              owner: 'test',
-              repo: 'repo',
-              path: 'src/readable.js',
-              minified: false,
-              id: 'not-minified-test',
-            },
-          ],
-        }
-      );
-
-      expect(result.isError).toBe(false);
-      const responseText = getTextContent(result.content);
-      expect(responseText).toContain('instructions:');
-      expect(responseText).toContain('results:');
-      expect(responseText).toContain('status: "hasResults"');
-      // path is in query, not duplicated in response (clean bulk responses)
-      expect(responseText).toContain('contentLength: 37');
-      expect(responseText).toContain('minified: false');
-      expect(responseText).not.toMatch(/^data:/m);
-      expect(responseText).not.toContain('queries:');
-      expect(responseText).not.toMatch(/^hints:/m);
-
-      expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          minified: false,
-        }),
-        undefined, // authInfo
-        undefined // sessionId
-      );
     });
 
     it('should handle minification failure gracefully', async () => {
@@ -1039,7 +980,6 @@ End of file.`;
               repo: 'repo',
               path: 'test.js',
               fullContent: true,
-              minified: true,
               id: 'boolean-params-test',
             },
           ],
@@ -1052,7 +992,6 @@ End of file.`;
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           fullContent: true,
-          minified: true,
         }),
         undefined, // authInfo
         undefined // sessionId

@@ -687,7 +687,6 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
         owner: 'test',
         repo: 'repo',
         path: 'test.js',
-        minified: true,
       });
 
       expect(result).toHaveProperty('data');
@@ -696,47 +695,6 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
         expect(result.data.minificationFailed).toBe(true);
         expect(result.data.minificationType).toBe('terser');
       }
-    });
-
-    it('should skip minification when minified=false', async () => {
-      const fileContent = 'Test content';
-
-      const mockOctokit = {
-        rest: {
-          repos: {
-            getContent: vi.fn().mockResolvedValue({
-              data: {
-                type: 'file',
-                content: Buffer.from(fileContent).toString('base64'),
-                size: fileContent.length,
-                sha: 'abc123',
-                name: 'test.txt',
-                path: 'test.txt',
-              },
-            }),
-          },
-        },
-      };
-
-      vi.mocked(getOctokit).mockResolvedValue(
-        mockOctokit as unknown as ReturnType<typeof getOctokit>
-      );
-
-      const result = await fetchGitHubFileContentAPI({
-        owner: 'test',
-        repo: 'repo',
-        path: 'test.txt',
-        minified: false,
-      });
-
-      expect(result).toHaveProperty('data');
-      if ('data' in result && !('error' in result.data)) {
-        expect(result.data).not.toHaveProperty('minified');
-        expect(result.data).not.toHaveProperty('minificationFailed');
-      }
-
-      // minifyContent should not be called
-      expect(minifierModule.minifyContent).not.toHaveBeenCalled();
     });
   });
 
