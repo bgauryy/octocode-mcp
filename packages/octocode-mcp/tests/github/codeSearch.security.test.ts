@@ -128,7 +128,6 @@ describe('Code Search - Security Warnings', () => {
       keywordsToSearch: ['API_KEY'],
       owner: 'test',
       repo: 'repo',
-      sanitize: true,
     });
 
     if ('data' in result) {
@@ -169,7 +168,6 @@ describe('Code Search - Security Warnings', () => {
       keywordsToSearch: ['value'],
       owner: 'test',
       repo: 'repo',
-      sanitize: false,
     });
 
     if ('data' in result) {
@@ -224,7 +222,6 @@ describe('Code Search - Security Warnings', () => {
       keywordsToSearch: ['token', 'script'],
       owner: 'test',
       repo: 'repo',
-      sanitize: true,
     });
 
     if ('data' in result) {
@@ -272,7 +269,6 @@ describe('Code Search - Minification', () => {
       keywordsToSearch: ['function'],
       owner: 'test',
       repo: 'repo',
-      minify: true,
     });
 
     if ('data' in result) {
@@ -313,54 +309,11 @@ describe('Code Search - Minification', () => {
       keywordsToSearch: ['function'],
       owner: 'test',
       repo: 'repo',
-      minify: true,
     });
 
     if ('data' in result) {
       expect(result.data.minified).toBeDefined();
       expect(result.data.minificationTypes).toBeDefined();
-    } else {
-      expect.fail('Expected successful result');
-    }
-  });
-
-  it('should not add minification metadata when minify is false', async () => {
-    const mockResponse = {
-      data: {
-        total_count: 1,
-        items: [
-          {
-            name: 'app.js',
-            path: 'src/app.js',
-            repository: {
-              full_name: 'test/repo',
-              url: 'https://api.github.com/repos/test/repo',
-            },
-            text_matches: [
-              {
-                fragment: 'function test() { return true; }',
-                matches: [{ indices: [0, 8] }],
-              },
-            ],
-          },
-        ],
-      },
-      headers: {},
-    };
-
-    mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
-
-    const result = await searchGitHubCodeAPI({
-      keywordsToSearch: ['function'],
-      owner: 'test',
-      repo: 'repo',
-      minify: false,
-    });
-
-    if ('data' in result) {
-      expect(result.data.minified).toBeUndefined();
-      expect(result.data.minificationFailed).toBeUndefined();
-      expect(result.data.minificationTypes).toBeUndefined();
     } else {
       expect.fail('Expected successful result');
     }
@@ -402,7 +355,6 @@ describe('Code Search - Security Warnings Array Creation', () => {
       keywordsToSearch: ['API_KEY'],
       owner: 'test',
       repo: 'repo',
-      sanitize: true,
     });
 
     if ('data' in result) {
@@ -443,7 +395,6 @@ describe('Code Search - Security Warnings Array Creation', () => {
       keywordsToSearch: ['API_KEY'],
       owner: 'test',
       repo: 'repo',
-      sanitize: false,
     });
 
     if ('data' in result) {
@@ -505,7 +456,6 @@ describe('Code Search - Security Warning Structure', () => {
       keywordsToSearch: ['key', 'token'],
       owner: 'test',
       repo: 'repo',
-      sanitize: true,
     });
 
     if ('data' in result) {
@@ -548,7 +498,6 @@ describe('Code Search - Security Warning Structure', () => {
       keywordsToSearch: ['API_KEY'],
       owner: 'test',
       repo: 'repo',
-      sanitize: true,
     });
 
     if ('data' in result) {

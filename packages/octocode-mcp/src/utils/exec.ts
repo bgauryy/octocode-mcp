@@ -1,4 +1,16 @@
 import { spawn } from 'child_process';
+import { dirname, join } from 'path';
+
+/**
+ * Get the npm binary path by looking next to the current node binary.
+ * This ensures npm is found even when PATH doesn't include it.
+ * On Windows, npm is a batch script (npm.cmd), not a binary.
+ */
+function getNpmPath(): string {
+  const nodeDir = dirname(process.execPath);
+  const npmBinary = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  return join(nodeDir, npmBinary);
+}
 
 export async function getGithubCLIToken(): Promise<string | null> {
   return new Promise(resolve => {
@@ -84,15 +96,40 @@ function validateArgs(args: string[]): { valid: boolean; error?: string } {
 }
 
 /**
- * Check if npm registry is available by running `npm ping`
+ * Check if npm CLI is available by running `npm --version`
  * @param timeoutMs - Timeout in milliseconds (default 10000ms)
- * @returns true if npm registry is reachable, false otherwise
+ * @returns true if npm CLI is installed and accessible, false otherwise
  */
 export async function checkNpmAvailability(
   timeoutMs: number = 10000
 ): Promise<boolean> {
-  const result = await executeNpmCommand('ping', [], { timeout: timeoutMs });
-  return !result.error && result.exitCode === 0;
+  return new Promise(resolve => {
+    const childProcess = spawn(getNpmPath(), ['--version'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: timeoutMs,
+      env: {
+        ...process.env,
+        NODE_OPTIONS: undefined,
+      },
+    });
+
+    childProcess.on('close', code => {
+      resolve(code === 0);
+    });
+
+    childProcess.on('error', () => {
+      resolve(false);
+    });
+
+    const timeoutHandle = setTimeout(() => {
+      childProcess.kill('SIGTERM');
+      resolve(false);
+    }, timeoutMs);
+
+    childProcess.on('close', () => {
+      clearTimeout(timeoutHandle);
+    });
+  });
 }
 
 /**
@@ -123,7 +160,7 @@ export async function executeNpmCommand(
   const { timeout = 30000, cwd, env } = options;
 
   return new Promise(resolve => {
-    const childProcess = spawn('npm', [command, ...args], {
+    const childProcess = spawn(getNpmPath(), [command, ...args], {
       cwd,
       env: {
         ...process.env,

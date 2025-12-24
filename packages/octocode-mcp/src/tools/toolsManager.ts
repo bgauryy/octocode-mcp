@@ -4,13 +4,13 @@ import { getServerConfig } from '../serverConfig.js';
 import { ToolInvocationCallback } from '../types.js';
 import { isToolAvailableSync } from './toolMetadata.js';
 
-export function registerTools(
+export async function registerTools(
   server: McpServer,
   callback?: ToolInvocationCallback
-): {
+): Promise<{
   successCount: number;
   failedTools: string[];
-} {
+}> {
   const config = getServerConfig();
   const toolsToRun = config.toolsToRun || [];
   const enableTools = config.enableTools || [];
@@ -67,8 +67,14 @@ export function registerTools(
       }
 
       if (shouldRegisterTool) {
-        tool.fn(server, callback);
-        successCount++;
+        const result = await tool.fn(server, callback);
+        if (result !== null) {
+          successCount++;
+        } else {
+          process.stderr.write(
+            `Tool ${tool.name} registration returned null (tool unavailable)\n`
+          );
+        }
       } else if (reason) {
         process.stderr.write(`Tool ${tool.name} ${reason}\n`);
       }

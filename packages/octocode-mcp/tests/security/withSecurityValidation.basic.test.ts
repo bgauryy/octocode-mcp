@@ -12,7 +12,11 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 // Mock dependencies
 vi.mock('../../src/security/contentSanitizer.js');
-vi.mock('../../src/session.js');
+vi.mock('../../src/session.js', () => ({
+  logToolCall: vi.fn().mockResolvedValue(undefined),
+  logSessionError: vi.fn().mockResolvedValue(undefined),
+  isLoggingEnabled: vi.fn().mockReturnValue(false),
+}));
 vi.mock('../../src/serverConfig.js');
 
 // Mock sanitizeContent to always return proper structure

@@ -1,6 +1,6 @@
 {
   "name": "octocode-mcp",
-  "version": "9.2.0",
+  "version": "10.0.0",
   "description": "Model Context Protocol (MCP) server for advanced GitHub repository analysis and code discovery. Provides AI assistants with powerful tools to search, analyze, and understand codebases across GitHub.",
   "keywords": [
     "mcp",
@@ -67,13 +67,13 @@
     "eslint-config-prettier": "^10.1.5",
     "eslint-plugin-prettier": "^5.5.4",
     "prettier": "^3.5.3",
+    "tsdown": "^0.17.2",
     "tslib": "^2.8.1",
-    "tsup": "^8.4.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.13"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=18.0.0"
   },
   "exports": {
     ".": {
@@ -94,7 +94,7 @@
   },
   "mcpName": "io.github.bgauryy/octocode-mcp",
   "scripts": {
-    "build": "yarn lint && yarn clean && tsup",
+    "build": "yarn lint && yarn clean && tsdown",
     "build:bin": "bun build ./src/index.ts --compile --minify --sourcemap --outfile dist/octocode-mcp",
     "build:bin:all": "bun run build:bin:linux-x64 && bun run build:bin:linux-arm64 && bun run build:bin:linux-x64-musl && bun run build:bin:darwin-arm64 && bun run build:bin:darwin-x64 && bun run build:bin:windows-x64",
     "build:bin:darwin-arm64": "bun build ./src/index.ts --compile --minify --sourcemap --target=bun-darwin-arm64 --outfile dist/octocode-mcp-darwin-arm64",
@@ -103,8 +103,8 @@
     "build:bin:linux-x64": "bun build ./src/index.ts --compile --minify --sourcemap --target=bun-linux-x64 --outfile dist/octocode-mcp-linux-x64",
     "build:bin:linux-x64-musl": "bun build ./src/index.ts --compile --minify --sourcemap --target=bun-linux-x64-musl --outfile dist/octocode-mcp-linux-x64-musl",
     "build:bin:windows-x64": "bun build ./src/index.ts --compile --minify --sourcemap --target=bun-windows-x64 --outfile dist/octocode-mcp-windows-x64.exe",
-    "build:dev": "yarn clean && tsup",
-    "build:watch": "tsup --watch",
+    "build:dev": "yarn clean && tsdown",
+    "build:watch": "tsdown --watch",
     "clean": "rm -rf dist/",
     "debug": "npx @modelcontextprotocol/inspector node dist/index.js",
     "dxt:pack": "yarn build && dxt pack . octocode-mcp.dxt",
@@ -115,7 +115,7 @@
     "lint": "eslint src/**/*.ts tests/**/*.ts",
     "lint:fix": "eslint src/**/*.ts tests/**/*.ts --fix",
     "prepack": "yarn build",
-    "prepublishOnly": "yarn lint && yarn test && tsup",
+    "prepublishOnly": "yarn lint && yarn test && tsdown",
     "test": "vitest run --coverage",
     "test:coverage": "vitest run --coverage",
     "test:quiet": "vitest run --reporter=dot --silent",

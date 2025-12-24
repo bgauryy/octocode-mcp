@@ -17,7 +17,6 @@ import { shouldIgnoreFile } from '../utils/fileFilters';
 import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
-import { isSanitizeEnabled } from '../serverConfig.js';
 
 export async function searchGitHubCodeAPI(
   params: GitHubCodeSearchQuery,
@@ -94,11 +93,7 @@ async function searchGitHubCodeAPIInternal(
 
     const result = await octokit.rest.search.code(searchParams);
 
-    const optimizedResult = await convertCodeSearchResult(
-      result,
-      params.minify !== false,
-      isSanitizeEnabled()
-    );
+    const optimizedResult = await convertCodeSearchResult(result);
 
     return {
       data: {
@@ -121,19 +116,15 @@ async function searchGitHubCodeAPIInternal(
 }
 
 async function convertCodeSearchResult(
-  octokitResult: SearchCodeResponse,
-  minify: boolean = true,
-  sanitize: boolean = true
+  octokitResult: SearchCodeResponse
 ): Promise<OptimizedCodeSearchResult> {
   const items: CodeSearchResultItem[] = octokitResult.data.items;
 
-  return transformToOptimizedFormat(items, minify, sanitize);
+  return transformToOptimizedFormat(items);
 }
 
 async function transformToOptimizedFormat(
-  items: CodeSearchResultItem[],
-  minify: boolean,
-  sanitize: boolean
+  items: CodeSearchResultItem[]
 ): Promise<OptimizedCodeSearchResult> {
   const singleRepo = extractSingleRepository(items);
 
@@ -153,36 +144,32 @@ async function transformToOptimizedFormat(
         (item.text_matches || []).map(async match => {
           let processedFragment = match.fragment;
 
-          if (sanitize) {
-            const sanitizationResult = ContentSanitizer.sanitizeContent(
-              processedFragment || ''
-            );
-            processedFragment = sanitizationResult.content;
+          const sanitizationResult = ContentSanitizer.sanitizeContent(
+            processedFragment || ''
+          );
+          processedFragment = sanitizationResult.content;
 
-            if (sanitizationResult.hasSecrets) {
-              allSecurityWarningsSet.add(
-                `Secrets detected in ${item.path}: ${sanitizationResult.secretsDetected.join(', ')}`
-              );
-            }
-            if (sanitizationResult.warnings.length > 0) {
-              sanitizationResult.warnings.forEach(w =>
-                allSecurityWarningsSet.add(`${item.path}: ${w}`)
-              );
-            }
+          if (sanitizationResult.hasSecrets) {
+            allSecurityWarningsSet.add(
+              `Secrets detected in ${item.path}: ${sanitizationResult.secretsDetected.join(', ')}`
+            );
+          }
+          if (sanitizationResult.warnings.length > 0) {
+            sanitizationResult.warnings.forEach(w =>
+              allSecurityWarningsSet.add(`${item.path}: ${w}`)
+            );
           }
 
-          if (minify) {
-            const minifyResult = await minifyContent(
-              processedFragment || '',
-              item.path
-            );
-            processedFragment = minifyResult.content;
+          const minifyResult = await minifyContent(
+            processedFragment || '',
+            item.path
+          );
+          processedFragment = minifyResult.content;
 
-            if (minifyResult.failed) {
-              hasMinificationFailures = true;
-            } else if (minifyResult.type !== 'failed') {
-              minificationTypes.push(minifyResult.type);
-            }
+          if (minifyResult.failed) {
+            hasMinificationFailures = true;
+          } else if (minifyResult.type !== 'failed') {
+            minificationTypes.push(minifyResult.type);
           }
 
           return {
@@ -213,10 +200,9 @@ async function transformToOptimizedFormat(
         ...(itemWithOptionalFields.last_modified_at && {
           lastModifiedAt: itemWithOptionalFields.last_modified_at,
         }),
-        ...(minify &&
-          minificationTypes.length > 0 && {
-            minificationType: Array.from(new Set(minificationTypes)).join(','),
-          }),
+        ...(minificationTypes.length > 0 && {
+          minificationType: Array.from(new Set(minificationTypes)).join(','),
+        }),
       };
     })
   );
@@ -247,16 +233,14 @@ async function transformToOptimizedFormat(
     };
   }
 
-  if (sanitize && allSecurityWarningsSet.size > 0) {
+  if (allSecurityWarningsSet.size > 0) {
     result.securityWarnings = Array.from(allSecurityWarningsSet);
   }
 
-  if (minify) {
-    result.minified = !hasMinificationFailures;
-    result.minificationFailed = hasMinificationFailures;
-    if (minificationTypes.length > 0) {
-      result.minificationTypes = Array.from(new Set(minificationTypes));
-    }
+  result.minified = !hasMinificationFailures;
+  result.minificationFailed = hasMinificationFailures;
+  if (minificationTypes.length > 0) {
+    result.minificationTypes = Array.from(new Set(minificationTypes));
   }
 
   return result;

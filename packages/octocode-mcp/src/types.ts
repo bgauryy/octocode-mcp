@@ -88,7 +88,6 @@ export interface GitHubCodeSearchQuery {
   path?: string;
   match?: 'file' | 'path';
   limit?: number;
-  minify?: boolean;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -132,8 +131,6 @@ export interface FileContentQuery {
   endLine?: number;
   matchString?: string;
   matchStringContextLines?: number;
-  minified?: boolean;
-  addTimestamp?: boolean;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;

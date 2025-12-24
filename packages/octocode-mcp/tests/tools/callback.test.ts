@@ -44,6 +44,7 @@ vi.mock('../../src/serverConfig.js', () => ({
     timeout: 30000,
     maxRetries: 3,
     loggingEnabled: false,
+    sanitize: true,
   }),
   isSamplingEnabled: vi.fn().mockReturnValue(false),
 }));
@@ -94,16 +95,16 @@ describe('Tool Invocation Callback', () => {
   });
 
   describe('registerTools with callback', () => {
-    it('should pass callback to all registered tools', () => {
-      const result = registerTools(server, mockCallback);
+    it('should pass callback to all registered tools', async () => {
+      const result = await registerTools(server, mockCallback);
 
       expect(result.successCount).toBeGreaterThanOrEqual(0);
       expect(typeof result.successCount).toBe('number');
       expect(Array.isArray(result.failedTools)).toBe(true);
     });
 
-    it('should work without callback', () => {
-      const result = registerTools(server);
+    it('should work without callback', async () => {
+      const result = await registerTools(server);
 
       expect(result.successCount).toBeGreaterThanOrEqual(0);
       expect(typeof result.successCount).toBe('number');
