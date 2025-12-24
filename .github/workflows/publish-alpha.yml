@@ -223,8 +223,9 @@ jobs:
           node -p "JSON.stringify(require('./package.json').dependencies || {}, null, 2)"
           
           # Safety verification before publishing
-          if [[ ! "$ALPHA_VERSION" =~ -alpha\. ]]; then
-            echo "❌ CRITICAL ERROR: Version '$ALPHA_VERSION' does not contain '-alpha' suffix!"
+          # Check using glob matching which is more robust than regex here
+          if [[ "$ALPHA_VERSION" != *"-alpha."* ]]; then
+            echo "❌ CRITICAL ERROR: Version '$ALPHA_VERSION' does not contain '-alpha.' suffix!"
             echo "❌ Refusing to publish - this could pollute the main npm release!"
             exit 1
           fi
