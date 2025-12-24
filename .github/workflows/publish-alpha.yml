@@ -187,17 +187,40 @@ jobs:
           
           # Get the latest alpha version number for this base version (efficient single npm call)
           echo "🔍 Checking for existing alpha versions of $BASE_VERSION for $PACKAGE_NAME..."
-          LATEST_ALPHA=$(npm view "$PACKAGE_NAME" versions --json 2>/dev/null | jq -r '.[]?' 2>/dev/null | grep "^${BASE_VERSION}-alpha\." | sort -V | tail -1 || echo "")
-          
+
+          # npm view returns a single string (not array) when only one version exists, or an array for multiple
+          # Handle both cases by normalizing to array format
+          NPM_VERSIONS=$(npm view "$PACKAGE_NAME" versions --json 2>/dev/null || echo "[]")
+
+          # Check if it's a string (single version) or array, normalize to newline-separated list
+          if echo "$NPM_VERSIONS" | jq -e 'type == "string"' >/dev/null 2>&1; then
+            # Single version returned as string
+            VERSIONS_LIST=$(echo "$NPM_VERSIONS" | jq -r '.')
+          elif echo "$NPM_VERSIONS" | jq -e 'type == "array"' >/dev/null 2>&1; then
+            # Array of versions
+            VERSIONS_LIST=$(echo "$NPM_VERSIONS" | jq -r '.[]' 2>/dev/null)
+          else
+            # Package doesn't exist yet or other error
+            VERSIONS_LIST=""
+          fi
+
+          # Find the latest alpha version for this base version
+          LATEST_ALPHA=$(echo "$VERSIONS_LIST" | grep "^${BASE_VERSION}-alpha\." | sort -V | tail -1 || echo "")
+
           if [ -n "$LATEST_ALPHA" ]; then
             # Extract the alpha number from version like "1.0.0-alpha.5"
-            LATEST_ALPHA_NUMBER=$(echo "$LATEST_ALPHA" | sed "s/^${BASE_VERSION}-alpha\.//")
-            echo "   Found latest: $LATEST_ALPHA"
+            LATEST_ALPHA_NUMBER=$(echo "$LATEST_ALPHA" | sed "s/^${BASE_VERSION}-alpha\.//" | grep -E '^[0-9]+$' || echo "")
+            if [ -z "$LATEST_ALPHA_NUMBER" ] || ! [[ "$LATEST_ALPHA_NUMBER" =~ ^[0-9]+$ ]]; then
+              echo "⚠️  Warning: Could not parse alpha number from '$LATEST_ALPHA', starting from 0"
+              LATEST_ALPHA_NUMBER=0
+            else
+              echo "   Found latest: $LATEST_ALPHA (alpha number: $LATEST_ALPHA_NUMBER)"
+            fi
           else
             LATEST_ALPHA_NUMBER=0
-            echo "   No existing alpha versions found"
+            echo "   No existing alpha versions found for base version $BASE_VERSION"
           fi
-          
+
           # Increment the alpha number
           NEW_ALPHA_NUMBER=$((LATEST_ALPHA_NUMBER + 1))
           ALPHA_VERSION="${BASE_VERSION}-alpha.${NEW_ALPHA_NUMBER}"
