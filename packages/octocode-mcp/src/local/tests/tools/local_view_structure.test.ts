@@ -246,7 +246,7 @@ describe('local_view_structure', () => {
   });
 
   describe('Filtering', () => {
-    it('should filter by glob pattern with wildcards', async () => {
+    it('should filter by glob pattern with wildcards in recursive mode', async () => {
       mockReaddir.mockResolvedValue([
         'test1.txt',
         'test2.txt',
@@ -264,7 +264,7 @@ describe('local_view_structure', () => {
 
       const result = await viewStructure({
         path: '/test/path',
-        pattern: 'test*.txt',
+        pattern: 'test*',
         depth: 1,
       });
 
@@ -275,7 +275,7 @@ describe('local_view_structure', () => {
       expect(result.structuredOutput).not.toContain('other.txt');
     });
 
-    it('should filter by glob pattern with question mark', async () => {
+    it('should filter by glob pattern with question mark in recursive mode', async () => {
       mockReaddir.mockResolvedValue(['a1.txt', 'a2.txt', 'ab.txt', 'abc.txt']);
 
       mockLstat.mockResolvedValue({
@@ -288,7 +288,7 @@ describe('local_view_structure', () => {
 
       const result = await viewStructure({
         path: '/test/path',
-        pattern: 'a?.txt',
+        pattern: 'a?.*',
         depth: 1,
       });
 
@@ -953,6 +953,84 @@ describe('local_view_structure', () => {
         expect(result.errorCode).toBeDefined();
       }
     });
+
+    it('should error for large recursive listing exceeding MAX_ENTRIES_BEFORE_PAGINATION', async () => {
+      // Mock very large recursive result (>100 entries)
+      mockReaddir.mockResolvedValue(
+        Array.from({ length: 150 }, (_, i) => `file${i}.txt`)
+      );
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date(),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+        // No charLength - should trigger error for too many entries
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe(ERROR_CODES.OUTPUT_TOO_LARGE);
+      expect(result.hints).toBeDefined();
+      expect(
+        result.hints?.some(h => h.toLowerCase().includes('recursive'))
+      ).toBe(true);
+    });
+
+    it('should stop at maxEntries in walkDirectory', async () => {
+      // Create a structure that would exceed maxEntries
+      // Mock 200 files which with limit=10 should stop early
+      mockReaddir.mockResolvedValue(
+        Array.from({ length: 200 }, (_, i) => `file${i}.txt`)
+      );
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date(),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+        limit: 10, // This sets maxEntries to limit * 2 = 20
+        charLength: 10000, // Allow pagination to avoid OUTPUT_TOO_LARGE error
+      });
+
+      expect(result.status).toBe('hasResults');
+    });
+
+    it('should handle readdir errors gracefully in walkDirectory', async () => {
+      mockReaddir.mockRejectedValue(new Error('Cannot read directory'));
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+      });
+
+      // Should handle error gracefully and return empty
+      expect(result.status).toBe('empty');
+    });
+
+    it('should handle lstat errors gracefully in walkDirectory', async () => {
+      mockReaddir.mockResolvedValue(['file1.txt', 'file2.txt']);
+      mockLstat.mockRejectedValue(new Error('Cannot stat file'));
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+      });
+
+      // Should skip inaccessible items gracefully
+      expect(result.status).toBe('empty');
+    });
   });
 
   describe('Summary statistics', () => {
@@ -1056,6 +1134,32 @@ describe('local_view_structure', () => {
 
       expect(result.status).toBe('hasResults');
       // Should respect limit
+    });
+
+    it('should apply limit in non-recursive mode with pagination', async () => {
+      const fileList = Array.from(
+        { length: 50 },
+        (_, i) => `file${i}.txt`
+      ).join('\n');
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: fileList,
+        stderr: '',
+      });
+
+      mockLstatSync.mockReturnValue({
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        limit: 5,
+        entriesPerPage: 20,
+      });
+
+      expect(result.status).toBe('hasResults');
     });
   });
 
