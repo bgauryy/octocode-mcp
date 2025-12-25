@@ -60,6 +60,26 @@ describe('executionContextValidator', () => {
       expect(result.error).toContain(workspaceRoot);
     });
 
+    it('should reject sibling directory with similar prefix (path traversal attack)', () => {
+      // This is a critical security test: "/workspace-evil" should NOT match "/workspace"
+      // The vulnerable pattern: "/workspace-evil".startsWith("/workspace") === true
+      const siblingPath = workspaceRoot + '-evil';
+      const result = validateExecutionContext(siblingPath);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain(
+        'Can only execute commands within workspace directory'
+      );
+    });
+
+    it('should reject paths with similar prefix (e.g., workspace2)', () => {
+      const similarPath = workspaceRoot + '2';
+      const result = validateExecutionContext(similarPath);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain(
+        'Can only execute commands within workspace directory'
+      );
+    });
+
     it('should reject path traversal with ../', () => {
       const result = validateExecutionContext('../');
       expect(result.isValid).toBe(false);

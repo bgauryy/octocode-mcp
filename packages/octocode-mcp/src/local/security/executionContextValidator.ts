@@ -56,7 +56,9 @@ export function validateExecutionContext(
   const absoluteCwd = path.resolve(cwd);
 
   // Check if cwd is within workspace
-  if (!absoluteCwd.startsWith(workspace)) {
+  // Must be the workspace itself OR start with workspace + path separator
+  // This prevents "/workspace-evil" from matching "/workspace"
+  if (absoluteCwd !== workspace && !absoluteCwd.startsWith(workspace + path.sep)) {
     return {
       isValid: false,
       error: `Can only execute commands within workspace directory: ${workspace}. Attempted execution in: ${absoluteCwd}`,
@@ -69,7 +71,8 @@ export function validateExecutionContext(
     const realPath = fs.realpathSync(absoluteCwd);
 
     // Verify the real path is still within workspace
-    if (!realPath.startsWith(workspace)) {
+    // Must be the workspace itself OR start with workspace + path separator
+    if (realPath !== workspace && !realPath.startsWith(workspace + path.sep)) {
       return {
         isValid: false,
         error: `Symlink target '${realPath}' is outside workspace directory: ${workspace}`,
