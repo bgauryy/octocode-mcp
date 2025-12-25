@@ -8,7 +8,7 @@
  */
 
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { jsonToYamlString } from 'octocode-utils';
+import { jsonToYamlString } from '../../utils/minifier/jsonToYamlString.js';
 import { RESPONSE_KEY_PRIORITY } from '../scheme/responsePriority.js';
 
 /**

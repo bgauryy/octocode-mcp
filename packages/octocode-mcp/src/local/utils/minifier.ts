@@ -115,7 +115,7 @@ function minifyHTML(content: string): string {
   return (
     content
       // Remove HTML comments
-      .replace(/<!--[^>]*-->/g, '')
+      .replace(/<!--[\s\S]*?-->/g, '')
       // Remove extra whitespace between tags
       .replace(/>\s+</g, '><')
       // Remove extra whitespace
