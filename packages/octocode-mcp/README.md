@@ -137,6 +137,21 @@ https://github.com/user-attachments/assets/c184d5d4-c9b6-40a1-a55a-41cb9b3ecc4f
 
 ## Installation
 
+### ⚡ Quick Start (Recommended)
+
+The easiest way to install and configure Octocode is using the interactive CLI:
+
+```bash
+npx octocode-cli
+```
+
+This will automatically:
+- Detect your installed IDEs (Cursor, Claude, Windsurf, etc.)
+- Verify your environment (Node.js, GitHub CLI)
+- Configure the MCP server correctly for each tool
+
+---
+
 ### Standalone Binary (No Node.js Required)
 
 ```bash
