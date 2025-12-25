@@ -1,8 +1,37 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { DEFAULT_TOOLS } from './toolConfig.js';
-import { getServerConfig } from '../serverConfig.js';
+import { getServerConfig, isLocalEnabled } from '../serverConfig.js';
 import { ToolInvocationCallback } from '../types.js';
 import { isToolAvailableSync } from './toolMetadata.js';
+// Local tools imports
+import { TOOL_NAMES as LOCAL_TOOL_NAMES } from '../local/constants.js';
+import {
+  BulkRipgrepQuerySchema,
+  LOCAL_RIPGREP_DESCRIPTION,
+  type RipgrepQuery,
+} from '../local/scheme/local_ripgrep.js';
+import {
+  BulkViewStructureSchema,
+  LOCAL_VIEW_STRUCTURE_DESCRIPTION,
+  type ViewStructureQuery,
+} from '../local/scheme/local_view_structure.js';
+import {
+  BulkFindFilesSchema,
+  LOCAL_FIND_FILES_DESCRIPTION,
+  type FindFilesQuery,
+} from '../local/scheme/local_find_files.js';
+import {
+  BulkFetchContentSchema,
+  LOCAL_FETCH_CONTENT_DESCRIPTION,
+  type FetchContentQuery,
+} from '../local/scheme/local_fetch_content.js';
+import { searchContentRipgrep } from '../local/tools/local_ripgrep.js';
+import { viewStructure } from '../local/tools/local_view_structure.js';
+import { findFiles } from '../local/tools/local_find_files.js';
+import { fetchContent } from '../local/tools/local_fetch_content.js';
+import { executeBulkOperation } from '../local/utils/bulkOperations.js';
+import { registerLocalResearchPrompt } from '../local/prompts/research_local_explorer.js';
 
 export async function registerTools(
   server: McpServer,
@@ -83,5 +112,142 @@ export async function registerTools(
     }
   }
 
+  // Register local tools if ENABLE_LOCAL is set
+  if (isLocalEnabled()) {
+    try {
+      registerLocalToolsDirectly(server);
+      registerLocalResearchPrompt(server);
+      successCount += 4; // 4 local tools
+    } catch (error) {
+      process.stderr.write(
+        `Failed to register local tools: ${error instanceof Error ? error.message : 'Unknown error'}\n`
+      );
+      failedTools.push('local_tools');
+    }
+  }
+
   return { successCount, failedTools };
+}
+
+/**
+ * Register all local tools directly with the MCP server
+ */
+function registerLocalToolsDirectly(server: McpServer): void {
+  // Register local_ripgrep
+  server.registerTool(
+    LOCAL_TOOL_NAMES.LOCAL_RIPGREP,
+    {
+      description: LOCAL_RIPGREP_DESCRIPTION,
+      inputSchema: BulkRipgrepQuerySchema,
+      annotations: {
+        title: 'Local Ripgrep Search',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (args: { queries: RipgrepQuery[] }): Promise<CallToolResult> => {
+      return executeBulkOperation(
+        args.queries || [],
+        async (query: RipgrepQuery) => {
+          const result = await searchContentRipgrep(query);
+          return {
+            status: result.status,
+            ...result,
+          };
+        },
+        { toolName: LOCAL_TOOL_NAMES.LOCAL_RIPGREP }
+      );
+    }
+  );
+
+  // Register local_view_structure
+  server.registerTool(
+    LOCAL_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
+    {
+      description: LOCAL_VIEW_STRUCTURE_DESCRIPTION,
+      inputSchema: BulkViewStructureSchema,
+      annotations: {
+        title: 'Local View Structure',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (args: {
+      queries: ViewStructureQuery[];
+    }): Promise<CallToolResult> => {
+      return executeBulkOperation(
+        args.queries || [],
+        async (query: ViewStructureQuery) => {
+          const result = await viewStructure(query);
+          return {
+            status: result.status,
+            ...result,
+          };
+        },
+        { toolName: LOCAL_TOOL_NAMES.LOCAL_VIEW_STRUCTURE }
+      );
+    }
+  );
+
+  // Register local_find_files
+  server.registerTool(
+    LOCAL_TOOL_NAMES.LOCAL_FIND_FILES,
+    {
+      description: LOCAL_FIND_FILES_DESCRIPTION,
+      inputSchema: BulkFindFilesSchema,
+      annotations: {
+        title: 'Local Find Files',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (args: { queries: FindFilesQuery[] }): Promise<CallToolResult> => {
+      return executeBulkOperation(
+        args.queries || [],
+        async (query: FindFilesQuery) => {
+          const result = await findFiles(query);
+          return {
+            status: result.status,
+            ...result,
+          };
+        },
+        { toolName: LOCAL_TOOL_NAMES.LOCAL_FIND_FILES }
+      );
+    }
+  );
+
+  // Register local_fetch_content
+  server.registerTool(
+    LOCAL_TOOL_NAMES.LOCAL_FETCH_CONTENT,
+    {
+      description: LOCAL_FETCH_CONTENT_DESCRIPTION,
+      inputSchema: BulkFetchContentSchema,
+      annotations: {
+        title: 'Local Fetch Content',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (args: { queries: FetchContentQuery[] }): Promise<CallToolResult> => {
+      return executeBulkOperation(
+        args.queries || [],
+        async (query: FetchContentQuery) => {
+          const result = await fetchContent(query);
+          return {
+            status: result.status,
+            ...result,
+          };
+        },
+        { toolName: LOCAL_TOOL_NAMES.LOCAL_FETCH_CONTENT }
+      );
+    }
+  );
 }

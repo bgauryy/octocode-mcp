@@ -2,8 +2,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   minifyContent,
-  isJavaScriptFileV2,
-  isIndentationSensitiveV2,
   MINIFY_CONFIG,
 } from '../../../src/utils/minifier/minifier.js';
 
@@ -30,36 +28,6 @@ describe('MinifierV2', () => {
       expect(MINIFY_CONFIG.fileTypes.py!.strategy).toBe('conservative');
       expect(MINIFY_CONFIG.fileTypes.html!.strategy).toBe('aggressive');
       expect(MINIFY_CONFIG.fileTypes.json!.strategy).toBe('json');
-    });
-  });
-
-  describe('Utility Functions', () => {
-    describe('isJavaScriptFileV2', () => {
-      it('should identify JavaScript files correctly', () => {
-        expect(isJavaScriptFileV2('file.js')).toBe(true);
-        expect(isJavaScriptFileV2('file.ts')).toBe(true);
-        expect(isJavaScriptFileV2('file.jsx')).toBe(true);
-        expect(isJavaScriptFileV2('file.tsx')).toBe(true);
-        expect(isJavaScriptFileV2('file.mjs')).toBe(true);
-        expect(isJavaScriptFileV2('file.cjs')).toBe(true);
-        expect(isJavaScriptFileV2('file.py')).toBe(false);
-        expect(isJavaScriptFileV2('file.html')).toBe(false);
-      });
-    });
-
-    describe('isIndentationSensitiveV2', () => {
-      it('should identify indentation-sensitive languages', () => {
-        expect(isIndentationSensitiveV2('file.py')).toBe(true);
-        expect(isIndentationSensitiveV2('file.yaml')).toBe(true);
-        expect(isIndentationSensitiveV2('file.yml')).toBe(true);
-        expect(isIndentationSensitiveV2('file.coffee')).toBe(true);
-        expect(isIndentationSensitiveV2('file.haml')).toBe(true);
-        expect(isIndentationSensitiveV2('file.sass')).toBe(true);
-
-        expect(isIndentationSensitiveV2('file.js')).toBe(false);
-        expect(isIndentationSensitiveV2('file.html')).toBe(false);
-        expect(isIndentationSensitiveV2('file.css')).toBe(false);
-      });
     });
   });
 

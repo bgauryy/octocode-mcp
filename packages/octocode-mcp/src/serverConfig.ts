@@ -76,6 +76,9 @@ export async function initialize(): Promise<void> {
         process.env.SANITIZE === undefined ||
         process.env.SANITIZE === null ||
         process.env.SANITIZE?.toLowerCase() !== 'false',
+      enableLocal:
+        process.env.ENABLE_LOCAL === '1' ||
+        process.env.ENABLE_LOCAL?.toLowerCase() === 'true',
     };
   })();
 
@@ -121,6 +124,10 @@ export async function getToken(): Promise<string> {
 
 export function isBetaEnabled(): boolean {
   return getServerConfig().betaEnabled;
+}
+
+export function isLocalEnabled(): boolean {
+  return getServerConfig().enableLocal;
 }
 
 export function isSamplingEnabled(): boolean {

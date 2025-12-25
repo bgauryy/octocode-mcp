@@ -599,6 +599,7 @@ export interface ServerConfig {
   maxRetries: number;
   loggingEnabled: boolean;
   sanitize: boolean;
+  enableLocal: boolean;
 }
 
 // ─── Session Management (session.ts) ────────────────────────────────────────

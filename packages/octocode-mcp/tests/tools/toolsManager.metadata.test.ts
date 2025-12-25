@@ -56,6 +56,7 @@ vi.mock('../../src/tools/toolConfig.js', () => {
 
 vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn(),
+  isLocalEnabled: vi.fn().mockReturnValue(false),
 }));
 
 import { DEFAULT_TOOLS } from '../../src/tools/toolConfig.js';

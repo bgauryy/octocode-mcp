@@ -93,21 +93,3 @@ function inferRepoFromPackageName(packageName: string): string | null {
 
   return `https://github.com/${org}/${name}`;
 }
-
-/**
- * Add a new known package to repo mapping at runtime.
- * Useful for caching discovered mappings.
- */
-export function addKnownPackageRepo(
-  packageName: string,
-  repoUrl: string
-): void {
-  KNOWN_PACKAGE_REPOS[packageName] = repoUrl;
-}
-
-/**
- * Get the GitHub organization for a given npm scope.
- */
-export function getOrgForScope(scope: string): string | undefined {
-  return SCOPE_TO_ORG[scope];
-}

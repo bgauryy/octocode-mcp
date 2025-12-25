@@ -644,33 +644,4 @@ export async function minifyContent(
   }
 }
 
-export function isJavaScriptFileV2(filePath: string): boolean {
-  const ext = getFileExtension(filePath);
-  return ['js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs'].includes(ext);
-}
-
-export function isIndentationSensitiveV2(filePath: string): boolean {
-  const ext = getFileExtension(filePath);
-  const indentationSensitive = [
-    'py',
-    'yaml',
-    'yml',
-    'coffee',
-    'nim',
-    'haml',
-    'slim',
-    'sass',
-    'styl',
-    'pug',
-    'jade',
-    'star',
-    'bzl',
-    'cmake',
-    'md',
-    'markdown',
-    'rst',
-  ];
-  return indentationSensitive.includes(ext);
-}
-
 export { MINIFY_CONFIG };
