@@ -9,11 +9,13 @@ import path from 'path';
 import { execSync } from 'child_process';
 
 describe('🔍 Investigating Potential Bypasses', () => {
-  const validator = new PathValidator('/Users/guybary');
+  // Use cwd as workspace to ensure tests work in CI
+  const workspaceRoot = process.cwd();
+  const validator = new PathValidator(workspaceRoot);
 
   describe('URL Encoding Analysis', () => {
     it('URL encoded %2e%2e - check if real bypass', () => {
-      const testPath = '/Users/guybary/%2e%2e/%2e%2e/etc';
+      const testPath = path.join(workspaceRoot, '%2e%2e/%2e%2e/etc');
       const result = validator.validate(testPath);
 
       // What does Node's path.resolve do?
@@ -26,7 +28,7 @@ describe('🔍 Investigating Potential Bypasses', () => {
       console.log(`   sanitizedPath: ${result.sanitizedPath}`);
 
       // The key question: Does the resolved path escape the workspace?
-      const escapedWorkspace = !resolved.startsWith('/Users/guybary');
+      const escapedWorkspace = !resolved.startsWith(workspaceRoot);
       console.log(
         `   Escaped workspace? ${escapedWorkspace ? '🚨 YES - CRITICAL!' : '✅ NO - stays within workspace'}`
       );
@@ -52,7 +54,7 @@ describe('🔍 Investigating Potential Bypasses', () => {
     });
 
     it('Double URL encoding %252e - check if real bypass', () => {
-      const testPath = '/Users/guybary/%252e%252e/etc';
+      const testPath = path.join(workspaceRoot, '%252e%252e/etc');
       validator.validate(testPath);
       const resolved = path.resolve(testPath);
 
@@ -60,16 +62,16 @@ describe('🔍 Investigating Potential Bypasses', () => {
       console.log(`   Input: ${testPath}`);
       console.log(`   Node resolve: ${resolved}`);
       console.log(
-        `   Escaped workspace? ${!resolved.startsWith('/Users/guybary') ? '🚨 YES' : '✅ NO'}`
+        `   Escaped workspace? ${!resolved.startsWith(workspaceRoot) ? '🚨 YES' : '✅ NO'}`
       );
 
-      expect(resolved.startsWith('/Users/guybary')).toBe(true);
+      expect(resolved.startsWith(workspaceRoot)).toBe(true);
     });
   });
 
   describe('Unicode Analysis', () => {
     it('Full-width dots ．． - check if real bypass', () => {
-      const testPath = '/Users/guybary/．．/etc';
+      const testPath = path.join(workspaceRoot, '．．/etc');
       const result = validator.validate(testPath);
       const resolved = path.resolve(testPath);
 
@@ -78,7 +80,7 @@ describe('🔍 Investigating Potential Bypasses', () => {
       console.log(`   Node resolve: ${resolved}`);
       console.log(`   isValid: ${result.isValid}`);
       console.log(
-        `   Escaped workspace? ${!resolved.startsWith('/Users/guybary') ? '🚨 YES' : '✅ NO'}`
+        `   Escaped workspace? ${!resolved.startsWith(workspaceRoot) ? '🚨 YES' : '✅ NO'}`
       );
 
       // Check if Unicode is normalized
@@ -87,7 +89,7 @@ describe('🔍 Investigating Potential Bypasses', () => {
         `   Full-width kept as literal? ${containsFullWidth ? '✅ YES' : '🚨 NO - normalized!'}`
       );
 
-      expect(resolved.startsWith('/Users/guybary')).toBe(true);
+      expect(resolved.startsWith(workspaceRoot)).toBe(true);
     });
   });
 
