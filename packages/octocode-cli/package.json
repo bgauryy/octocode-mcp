@@ -1,0 +1,69 @@
+{
+  "name": "octocode-cli",
+  "version": "1.0.0",
+  "description": "Interactive CLI installer for octocode-mcp - Configure MCP servers for Cursor, Claude Desktop, and more",
+  "type": "module",
+  "main": "out/octocode-cli.js",
+  "bin": {
+    "octocode": "./out/octocode-cli.js",
+    "octocode-cli": "./out/octocode-cli.js"
+  },
+  "files": [
+    "out/octocode-cli.js",
+    "assets/example.png",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "yarn lint && vite build",
+    "build:dev": "vite build",
+    "clean": "rm -rf out/",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "start": "node ./out/octocode-cli.js",
+    "test": "vitest run --coverage",
+    "test:quiet": "vitest run --reporter=dot --silent",
+    "test:watch": "vitest --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "octocode",
+    "mcp",
+    "model-context-protocol",
+    "cli",
+    "installer",
+    "cursor",
+    "claude",
+    "claude-code",
+    "windsurf",
+    "zed",
+    "cline",
+    "github",
+    "ai-coding"
+  ],
+  "author": "Guy Bary <bgauryy@octocodeai.com>",
+  "homepage": "https://octocode.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bgauryy/octocode-mcp.git",
+    "directory": "packages/octocode-cli"
+  },
+  "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
+  "license": "PolyForm-Small-Business-1.0.0",
+  "dependencies": {
+    "@inquirer/prompts": "^7.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "@typescript-eslint/eslint-plugin": "^8.32.0",
+    "@typescript-eslint/parser": "^8.32.0",
+    "@vitest/coverage-v8": "^4.0.13",
+    "eslint": "^8.57.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.0.0",
+    "vitest": "^4.0.13"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
