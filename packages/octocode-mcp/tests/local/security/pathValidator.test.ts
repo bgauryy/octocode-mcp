@@ -3,10 +3,11 @@ import path from 'path';
 import fs from 'fs';
 
 // Mock shouldIgnore before importing PathValidator
-const mockShouldIgnore = vi.fn();
 vi.mock('../../../src/local/security/ignoredPathFilter.js', () => ({
-  shouldIgnore: mockShouldIgnore,
+  shouldIgnore: vi.fn(),
 }));
+
+import { shouldIgnore } from '../../../src/local/security/ignoredPathFilter.js';
 
 // Mock fs module
 vi.mock('fs', async () => {
@@ -46,7 +47,7 @@ describe('PathValidator', () => {
       p.toString()
     );
     // Default behavior: don't ignore paths
-    mockShouldIgnore.mockReturnValue(false);
+    vi.mocked(shouldIgnore).mockReturnValue(false);
   });
 
   afterEach(() => {
@@ -183,7 +184,7 @@ describe('PathValidator', () => {
         const targetPath = path.join(workspaceRoot, '.git', 'config');
         vi.mocked(fs.realpathSync).mockReturnValue(targetPath);
         // First call for absolutePath check returns false, second for realPath returns true
-        mockShouldIgnore
+        vi.mocked(shouldIgnore)
           .mockReturnValueOnce(false) // Initial absolutePath check
           .mockReturnValueOnce(true); // realPath (symlink target) check
         const result = validator.validate(symlinkPath);
