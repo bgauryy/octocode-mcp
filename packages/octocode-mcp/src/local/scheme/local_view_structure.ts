@@ -25,6 +25,7 @@ Examples:
 - depth: 1, entriesPerPage: 20
 - pattern: "*.ts", filesOnly: true
 - extensions: ["ts","tsx"], hidden: true
+- path: "node_modules/express", depth: 1 (explore inside node_modules)
 `;
 
 /**

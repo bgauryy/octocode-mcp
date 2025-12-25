@@ -24,6 +24,7 @@ Examples:
 - name: "*.test.ts", modifiedWithin: "7d"
 - iname: "readme", type: "f"
 - type: "d", pathPattern: "src/**"
+- path: "node_modules", name: "package.json", maxDepth: 2 (find packages in node_modules)
 `;
 
 /**

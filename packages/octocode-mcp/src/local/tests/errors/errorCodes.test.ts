@@ -195,7 +195,10 @@ describe('Local Error Codes', () => {
 
   describe('ToolErrors factory functions', () => {
     it('should create pathValidationFailed error', () => {
-      const error = ToolErrors.pathValidationFailed('/invalid/path', 'Outside workspace');
+      const error = ToolErrors.pathValidationFailed(
+        '/invalid/path',
+        'Outside workspace'
+      );
 
       expect(error.errorCode).toBe(ERROR_CODES.PATH_VALIDATION_FAILED);
       expect(error.message).toBe('Outside workspace');
@@ -249,11 +252,16 @@ describe('Local Error Codes', () => {
     });
 
     it('should create noMatches error', () => {
-      const error = ToolErrors.noMatches('searchPattern', { directory: '/src' });
+      const error = ToolErrors.noMatches('searchPattern', {
+        directory: '/src',
+      });
 
       expect(error.errorCode).toBe(ERROR_CODES.NO_MATCHES);
       expect(error.message).toContain('searchPattern');
-      expect(error.context).toEqual({ pattern: 'searchPattern', directory: '/src' });
+      expect(error.context).toEqual({
+        pattern: 'searchPattern',
+        directory: '/src',
+      });
     });
 
     it('should create patternTooBroad error', () => {
@@ -320,4 +328,3 @@ describe('Local Error Codes', () => {
     });
   });
 });
-

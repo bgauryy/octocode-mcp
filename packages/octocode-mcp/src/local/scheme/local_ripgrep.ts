@@ -25,10 +25,13 @@ Output: files[{path, matchCount, matches?, modified, pagination}], totals.
 Notes: Offsets are bytes; fetch_content uses the same.
 Tips: Prefer type/include filters; smartCase=true; perlRegex for lookaheads; fixedString for literals; multiline is slow.
 
+IMPORTANT: ripgrep respects .gitignore by default. To search node_modules, use noIgnore=true.
+
 Examples:
 - pattern: "export function", type: "ts", filesOnly: true
 - pattern: "AuthService", include: ["*.{ts,tsx}"], excludeDir: ["node_modules"], matchesPerPage: 5
 - pattern: "useEffect(", smartCase: true
+- pattern: "express", path: "node_modules/express", noIgnore: true (search inside node_modules)
 `;
 
 /**
@@ -113,10 +116,13 @@ export const RipgrepQuerySchema = BaseQuerySchema.extend({
     .describe('Exclude dirs (e.g., ["node_modules",".git","dist"]).'),
 
   // IGNORE CONTROL (gitignore behavior)
+  // NOTE: ripgrep respects .gitignore by default. To search node_modules, use noIgnore=true
   noIgnore: z
     .boolean()
     .optional()
-    .describe('Ignore .gitignore (search everything).'),
+    .describe(
+      'Ignore .gitignore (search everything). REQUIRED for searching node_modules since it is typically in .gitignore.'
+    ),
   hidden: z
     .boolean()
     .optional()
