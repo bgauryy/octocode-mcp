@@ -31,7 +31,6 @@ export const DEFAULT_EXCLUDE_PATTERNS = [
   '.git',
   '.svn',
   '.hg',
-  'node_modules',
   'dist',
   'build',
   'coverage',

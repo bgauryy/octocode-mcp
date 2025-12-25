@@ -508,6 +508,54 @@ test:
       expect(result.type).toBe('aggressive');
       expect(result.failed).toBe(false);
     });
+
+    it('should minify complex CSS with selectors', async () => {
+      const cssCode = `
+        .selector-one,
+        .selector-two {
+          color: red;
+          background-color: blue;
+          /* Multiple properties */
+          border: 1px solid black;
+        }
+      `;
+
+      const result = await minifyContent(cssCode, 'complex.css');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+      expect(result.content.length).toBeLessThan(cssCode.length);
+    });
+
+    it('should handle LESS files with aggressive strategy', async () => {
+      const lessCode = `
+        @color: red;
+        .test {
+          /* comment */
+          color: @color;
+        }
+      `;
+
+      const result = await minifyContent(lessCode, 'styles.less');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+    });
+
+    it('should handle SCSS files with aggressive strategy', async () => {
+      const scssCode = `
+        $color: blue;
+        .test {
+          /* comment */
+          color: $color;
+        }
+      `;
+
+      const result = await minifyContent(scssCode, 'styles.scss');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+    });
   });
 
   describe('HTML Error Handling', () => {
@@ -520,6 +568,21 @@ test:
       // Should succeed
       expect(result.type).toBe('aggressive');
       expect(result.failed).toBe(false);
+    });
+
+    it('should handle HTM extension with HTML strategy', async () => {
+      const htmCode = `<html>
+        <body>
+          <!-- comment -->
+          <p>Test</p>
+        </body>
+      </html>`;
+
+      const result = await minifyContent(htmCode, 'test.htm');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+      expect(result.content).not.toContain('<!-- comment -->');
     });
   });
 

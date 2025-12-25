@@ -91,6 +91,35 @@ describe('promiseUtils', () => {
       expect(results[3]?.error?.message).toBe('error2');
     });
 
+    it('should handle non-Error rejection reasons', async () => {
+      const promises = [
+        () => Promise.resolve('success'),
+        () => Promise.reject('string error'), // Non-Error rejection
+        () => Promise.reject(123), // Number rejection
+        () => Promise.reject({ custom: 'object' }), // Object rejection
+      ];
+
+      const results = await executeWithErrorIsolation(promises);
+
+      expect(results).toHaveLength(4);
+      expect(results[0]?.success).toBe(true);
+
+      // String rejection should be converted to Error
+      expect(results[1]?.success).toBe(false);
+      expect(results[1]?.error).toBeInstanceOf(Error);
+      expect(results[1]?.error?.message).toBe('string error');
+
+      // Number rejection should be converted to Error
+      expect(results[2]?.success).toBe(false);
+      expect(results[2]?.error).toBeInstanceOf(Error);
+      expect(results[2]?.error?.message).toBe('123');
+
+      // Object rejection should be converted to Error
+      expect(results[3]?.success).toBe(false);
+      expect(results[3]?.error).toBeInstanceOf(Error);
+      expect(results[3]?.error?.message).toContain('object');
+    });
+
     it('should handle timeout correctly', async () => {
       vi.useFakeTimers();
 

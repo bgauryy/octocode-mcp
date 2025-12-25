@@ -96,6 +96,101 @@ describe('local_fetch_content', () => {
       expect(result.status).toBe('empty');
       expect(result.errorCode).toBe(ERROR_CODES.NO_MATCHES);
     });
+
+    it('should show regex-specific hint when matchStringIsRegex and no matches', async () => {
+      const testContent = 'line 1\nline 2\nline 3';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        matchString: 'VERY_SPECIFIC_REGEX_PATTERN',
+        matchStringIsRegex: true,
+      });
+
+      expect(result.status).toBe('empty');
+      expect(result.hints).toBeDefined();
+      expect(result.hints?.some(h => h.includes('Regex pattern'))).toBe(true);
+    });
+
+    it('should show case-sensitive hint when enabled and no matches', async () => {
+      const testContent = 'LINE 1\nLINE 2\nLINE 3';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        matchString: 'line',
+        matchStringCaseSensitive: true,
+      });
+
+      expect(result.status).toBe('empty');
+      expect(result.hints).toBeDefined();
+      expect(result.hints?.some(h => h.includes('Case-sensitive'))).toBe(true);
+    });
+
+    it('should match using regex when matchStringIsRegex is true', async () => {
+      const testContent = 'line 1\nexport function test() {}\nline 3';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        matchString: 'export.*function',
+        matchStringIsRegex: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.content).toContain('export function');
+    });
+
+    it('should match case-sensitively when matchStringCaseSensitive is true', async () => {
+      const testContent = 'MATCH\nmatch\nMatch';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        matchString: 'MATCH',
+        matchStringCaseSensitive: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.content).toContain('MATCH');
+    });
+
+    it('should throw error for invalid regex pattern', async () => {
+      const testContent = 'line 1\nline 2\nline 3';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        matchString: '[invalid(regex',
+        matchStringIsRegex: true,
+      });
+
+      expect(result.status).toBe('error');
+    });
+
+    it('should merge adjacent ranges and show omitted lines', async () => {
+      // Create content with widely spaced matches
+      const lines = [];
+      for (let i = 0; i < 100; i++) {
+        if (i === 10 || i === 50 || i === 90) {
+          lines.push('MATCH_LINE');
+        } else {
+          lines.push(`line ${i}`);
+        }
+      }
+      const testContent = lines.join('\n');
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        matchString: 'MATCH_LINE',
+        matchStringContextLines: 2,
+      });
+
+      expect(result.status).toBe('hasResults');
+      // Should contain omitted lines indicator
+      expect(result.content).toContain('lines omitted');
+    });
   });
 
   describe('Error handling', () => {
@@ -122,6 +217,41 @@ describe('local_fetch_content', () => {
 
       expect(result.status).toBe('error');
       expect(result.errorCode).toBe(ERROR_CODES.FILE_READ_FAILED);
+    });
+
+    it('should handle stat errors (file access failed)', async () => {
+      mockStat.mockRejectedValue(new Error('Cannot access file'));
+
+      const result = await fetchContent({
+        path: 'inaccessible.txt',
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe(ERROR_CODES.FILE_ACCESS_FAILED);
+    });
+
+    it('should handle stat errors with non-Error objects', async () => {
+      mockStat.mockRejectedValue('String error');
+
+      const result = await fetchContent({
+        path: 'inaccessible.txt',
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe(ERROR_CODES.FILE_ACCESS_FAILED);
+    });
+
+    it('should handle unexpected errors in main try-catch', async () => {
+      // Force an error by mocking validate to throw
+      mockValidate.mockImplementation(() => {
+        throw new Error('Unexpected validation error');
+      });
+
+      const result = await fetchContent({
+        path: 'test.txt',
+      });
+
+      expect(result.status).toBe('error');
     });
   });
 
@@ -154,6 +284,24 @@ describe('local_fetch_content', () => {
       expect(result.errorCode).toBe(ERROR_CODES.FILE_TOO_LARGE);
       expect(result.hints).toBeDefined();
       expect(result.hints!.length).toBeGreaterThan(0);
+    });
+
+    it('should require pagination for content exceeding MAX_OUTPUT_CHARS', async () => {
+      // Create content larger than MAX_OUTPUT_CHARS (10000)
+      const largeContent = 'x'.repeat(15000);
+      mockStat.mockResolvedValue({ size: 15000 } as unknown as Awaited<
+        ReturnType<typeof fs.stat>
+      >);
+      mockReadFile.mockResolvedValue(largeContent);
+
+      const result = await fetchContent({
+        path: 'medium-file.txt',
+        // No charLength - should trigger pagination required error
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe(ERROR_CODES.PAGINATION_REQUIRED);
+      expect(result.hints).toBeDefined();
     });
 
     it('should allow large file with charLength pagination', async () => {

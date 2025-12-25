@@ -268,5 +268,6 @@ export function shouldIgnoreFile(filePath: string): boolean {
  */
 export function getExtension(filePath: string): string {
   const parts = filePath.split('.');
-  return parts.length > 1 ? (parts[parts.length - 1] ?? '') : '';
+  // parts.length > 1 guarantees parts[parts.length - 1] exists
+  return parts.length > 1 ? parts[parts.length - 1]! : '';
 }

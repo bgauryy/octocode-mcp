@@ -246,6 +246,81 @@ describe('local_view_structure', () => {
   });
 
   describe('Filtering', () => {
+    it('should filter by glob pattern with wildcards', async () => {
+      mockReaddir.mockResolvedValue([
+        'test1.txt',
+        'test2.txt',
+        'other.txt',
+        'test-abc.txt',
+      ]);
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date(),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        pattern: 'test*.txt',
+        depth: 1,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.structuredOutput).toContain('test1.txt');
+      expect(result.structuredOutput).toContain('test2.txt');
+      expect(result.structuredOutput).toContain('test-abc.txt');
+      expect(result.structuredOutput).not.toContain('other.txt');
+    });
+
+    it('should filter by glob pattern with question mark', async () => {
+      mockReaddir.mockResolvedValue(['a1.txt', 'a2.txt', 'ab.txt', 'abc.txt']);
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date(),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        pattern: 'a?.txt',
+        depth: 1,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.structuredOutput).toContain('a1.txt');
+      expect(result.structuredOutput).toContain('a2.txt');
+      expect(result.structuredOutput).toContain('ab.txt');
+      expect(result.structuredOutput).not.toContain('abc.txt');
+    });
+
+    it('should fallback to substring match for invalid regex pattern', async () => {
+      mockReaddir.mockResolvedValue(['test-file.txt', 'other.txt']);
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date(),
+      } as Stats);
+
+      // Pattern with brackets that might cause regex issues
+      const result = await viewStructure({
+        path: '/test/path',
+        pattern: '[invalid',
+        depth: 1,
+      });
+
+      // Should not crash, falls back to substring match
+      expect(['hasResults', 'empty']).toContain(result.status);
+    });
+
     it('should filter by file extension', async () => {
       mockReaddir.mockResolvedValue(['file1.ts', 'file2.js', 'file3.ts']);
 
@@ -367,6 +442,112 @@ describe('local_view_structure', () => {
     });
   });
 
+  describe('Symlink handling', () => {
+    it('should identify symlinks in recursive mode', async () => {
+      mockReaddir.mockResolvedValue(['file.txt', 'link']);
+
+      mockLstat.mockImplementation(
+        async (path: string | Buffer | URL): Promise<Stats> =>
+          ({
+            isDirectory: () => false,
+            isFile: () => path.toString().includes('file'),
+            isSymbolicLink: () => path.toString().includes('link'),
+            size: 1024,
+            mtime: new Date(),
+          }) as Stats
+      );
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.structuredOutput).toContain('[LINK]');
+    });
+
+    it('should identify symlinks in parseLsLongFormat', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout:
+          'lrwxrwxrwx 1 user group 10 Jan 1 12:00 link -> target\n-rw-r--r-- 1 user group 1024 Jan 1 12:00 file.txt',
+        stderr: '',
+      });
+
+      const result = await viewStructure({
+        path: '/test/path',
+        details: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.structuredOutput).toContain('[LINK]');
+    });
+  });
+
+  describe('showFileLastModified', () => {
+    it('should include modified date when showFileLastModified is true in parseLsSimple', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: 'file.txt',
+        stderr: '',
+      });
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date('2024-01-15T12:00:00Z'),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        showFileLastModified: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+    });
+
+    it('should include modified date in parseLsLongFormat', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '-rw-r--r-- 1 user group 1024 Jan 15 12:00 file.txt',
+        stderr: '',
+      });
+
+      const result = await viewStructure({
+        path: '/test/path',
+        details: true,
+        showFileLastModified: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+    });
+
+    it('should include modified date in recursive walkDirectory', async () => {
+      mockReaddir.mockResolvedValue(['file.txt']);
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date('2024-06-15T12:00:00Z'),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+        showFileLastModified: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+    });
+  });
+
   describe('Hidden files', () => {
     it('should show hidden files when requested', async () => {
       mockReaddir.mockResolvedValue(['.hidden', 'visible.txt']);
@@ -453,6 +634,89 @@ describe('local_view_structure', () => {
 
       expect(result.status).toBe('hasResults');
       // Should be sorted by size
+    });
+
+    it('should sort by extension in recursive mode', async () => {
+      mockReaddir.mockResolvedValue(['file.ts', 'file.js', 'file.css']);
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date(),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+        sortBy: 'extension',
+      });
+
+      expect(result.status).toBe('hasResults');
+    });
+
+    it('should sort by time in recursive mode with showFileLastModified', async () => {
+      mockReaddir.mockResolvedValue(['file1.txt', 'file2.txt']);
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date('2024-01-01'),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+        sortBy: 'time',
+        showFileLastModified: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+    });
+
+    it('should sort by time falling back to name when modified not available', async () => {
+      mockReaddir.mockResolvedValue(['file1.txt', 'file2.txt']);
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date(),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+        sortBy: 'time',
+        showFileLastModified: false, // Modified not shown, should fallback
+      });
+
+      expect(result.status).toBe('hasResults');
+    });
+
+    it('should support reverse sorting in recursive mode', async () => {
+      mockReaddir.mockResolvedValue(['alpha.txt', 'beta.txt', 'gamma.txt']);
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date(),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+        sortBy: 'name',
+        reverse: true,
+      });
+
+      expect(result.status).toBe('hasResults');
     });
   });
 

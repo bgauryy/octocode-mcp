@@ -445,4 +445,301 @@ describe('RipgrepCommandBuilder', () => {
       expect(args).toContain('/repo/src');
     });
   });
+
+  describe('count modes', () => {
+    it('should use count mode with -c flag', () => {
+      const query = createQuery({
+        pattern: 'TODO',
+        path: './src',
+        count: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('-c');
+    });
+
+    it('should use countMatches mode with --count-matches flag', () => {
+      const query = createQuery({
+        pattern: 'FIXME',
+        path: './src',
+        countMatches: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('--count-matches');
+    });
+
+    it('should use filesWithoutMatch mode', () => {
+      const query = createQuery({
+        pattern: 'deprecated',
+        path: './src',
+        filesWithoutMatch: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('--files-without-match');
+    });
+  });
+
+  describe('additional flags', () => {
+    it('should add noIgnore flag', () => {
+      const query = createQuery({
+        pattern: 'test',
+        path: './src',
+        noIgnore: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('--no-ignore');
+    });
+
+    it('should add hidden flag', () => {
+      const query = createQuery({
+        pattern: 'config',
+        path: './',
+        hidden: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('--hidden');
+    });
+
+    it('should add multilineDotall flag when multiline is enabled', () => {
+      const query = createQuery({
+        pattern: 'start.*end',
+        path: './src',
+        multiline: true,
+        multilineDotall: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('-U');
+      expect(args).toContain('--multiline-dotall');
+    });
+
+    it('should not add multilineDotall without multiline', () => {
+      const query = createQuery({
+        pattern: 'test',
+        path: './src',
+        multilineDotall: true, // Should be ignored without multiline: true
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).not.toContain('--multiline-dotall');
+    });
+
+    it('should add threads option', () => {
+      const query = createQuery({
+        pattern: 'search',
+        path: './src',
+        threads: 4,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('-j');
+      expect(args).toContain('4');
+    });
+
+    it('should add no-mmap flag when mmap is false', () => {
+      const query = createQuery({
+        pattern: 'test',
+        path: './src',
+        mmap: false,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('--no-mmap');
+    });
+
+    it('should add noMessages flag', () => {
+      const query = createQuery({
+        pattern: 'test',
+        path: './src',
+        noMessages: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('--no-messages');
+    });
+
+    it('should add lineRegexp flag', () => {
+      const query = createQuery({
+        pattern: 'exact-line-match',
+        path: './src',
+        lineRegexp: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('-x');
+    });
+
+    it('should add passthru flag', () => {
+      const query = createQuery({
+        pattern: 'highlight',
+        path: './src',
+        passthru: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('--passthru');
+    });
+  });
+
+  describe('fluent API methods', () => {
+    it('should chain smartCase method', () => {
+      const builder = new RipgrepCommandBuilder();
+      const { args } = builder.smartCase().build();
+
+      expect(args).toContain('-S');
+    });
+
+    it('should chain filesOnly method', () => {
+      const builder = new RipgrepCommandBuilder();
+      const { args } = builder.filesOnly().build();
+
+      expect(args).toContain('-l');
+    });
+
+    it('should chain context method', () => {
+      const builder = new RipgrepCommandBuilder();
+      const { args } = builder.context(10).build();
+
+      expect(args).toContain('-C');
+      expect(args).toContain('10');
+    });
+
+    it('should chain include method', () => {
+      const builder = new RipgrepCommandBuilder();
+      const { args } = builder.include('*.ts').build();
+
+      expect(args).toContain('-g');
+      expect(args).toContain('*.ts');
+    });
+
+    it('should chain exclude method', () => {
+      const builder = new RipgrepCommandBuilder();
+      const { args } = builder.exclude('*.test.ts').build();
+
+      expect(args).toContain('-g');
+      expect(args).toContain('!*.test.ts');
+    });
+
+    it('should chain excludeDir method', () => {
+      const builder = new RipgrepCommandBuilder();
+      const { args } = builder.excludeDir('node_modules').build();
+
+      expect(args).toContain('-g');
+      expect(args).toContain('!node_modules/');
+    });
+
+    it('should chain type method', () => {
+      const builder = new RipgrepCommandBuilder();
+      const { args } = builder.type('js').build();
+
+      expect(args).toContain('-t');
+      expect(args).toContain('js');
+    });
+
+    it('should chain fixedString method', () => {
+      const builder = new RipgrepCommandBuilder();
+      const { args } = builder.fixedString().build();
+
+      expect(args).toContain('-F');
+    });
+
+    it('should chain perlRegex method', () => {
+      const builder = new RipgrepCommandBuilder();
+      const { args } = builder.perlRegex().build();
+
+      expect(args).toContain('-P');
+    });
+
+    it('should chain maxMatches method', () => {
+      const builder = new RipgrepCommandBuilder();
+      const { args } = builder.maxMatches(50).build();
+
+      expect(args).toContain('-m');
+      expect(args).toContain('50');
+    });
+
+    it('should chain multiple methods together', () => {
+      const builder = new RipgrepCommandBuilder();
+      const { args } = builder
+        .smartCase()
+        .type('ts')
+        .include('*.tsx')
+        .excludeDir('dist')
+        .context(5)
+        .maxMatches(20)
+        .build();
+
+      expect(args).toContain('-S');
+      expect(args).toContain('-t');
+      expect(args).toContain('ts');
+      expect(args).toContain('*.tsx');
+      expect(args).toContain('!dist/');
+      expect(args).toContain('-C');
+      expect(args).toContain('5');
+      expect(args).toContain('-m');
+      expect(args).toContain('20');
+    });
+  });
+
+  describe('sort option clearing', () => {
+    it('should clear --sort when switching to --sortr via query', () => {
+      // First create a builder with --sort set (default)
+      const builder = new RipgrepCommandBuilder();
+
+      // Build with sortReverse to trigger clearSortOption
+      const query = createQuery({
+        pattern: 'test',
+        path: './src',
+        sortReverse: true,
+      });
+
+      const { args } = builder.fromQuery(query).build();
+
+      // --sortr should be present, --sort should not
+      expect(args).toContain('--sortr');
+      expect(args.indexOf('--sort')).toBe(-1);
+    });
+
+    it('should clear --sortr when switching to --sort via query', () => {
+      // Create a query that first sets --sortr then switches to --sort
+      const builder = new RipgrepCommandBuilder();
+
+      // First apply a reverse sort
+      const queryReverse = createQuery({
+        pattern: 'test',
+        path: './src',
+        sortReverse: true,
+      });
+      builder.fromQuery(queryReverse);
+
+      // Now apply a normal sort (should clear --sortr)
+      const queryNormal = createQuery({
+        pattern: 'test2',
+        path: './src',
+        sortReverse: false,
+      });
+
+      const { args } = builder.fromQuery(queryNormal).build();
+
+      // --sort should be present, --sortr should not
+      expect(args).toContain('--sort');
+      expect(args.indexOf('--sortr')).toBe(-1);
+    });
+  });
 });

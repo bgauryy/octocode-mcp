@@ -18,6 +18,12 @@ describe('fileSize utils', () => {
     expect(parseFileSize('5M')).toBe(5 * 1024 * 1024);
   });
 
+  it('parses gigabytes and terabytes', () => {
+    expect(parseFileSize('1G')).toBe(1024 * 1024 * 1024);
+    expect(parseFileSize('2G')).toBe(2 * 1024 * 1024 * 1024);
+    expect(parseFileSize('1T')).toBe(1024 * 1024 * 1024 * 1024);
+  });
+
   it('round-trips basic sizes with supported parser units', () => {
     const pairs: Array<[number, string]> = [
       [0, '0'],
