@@ -142,6 +142,7 @@ describe('PathValidator', () => {
       it('should return invalid for .git directory', () => {
         const gitPath = path.join(workspaceRoot, '.git', 'config');
         vi.mocked(fs.realpathSync).mockReturnValue(gitPath);
+        vi.mocked(shouldIgnore).mockReturnValue(true);
         const result = validator.validate(gitPath);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('ignored');
@@ -150,6 +151,7 @@ describe('PathValidator', () => {
       it('should return invalid for .env file', () => {
         const envPath = path.join(workspaceRoot, '.env');
         vi.mocked(fs.realpathSync).mockReturnValue(envPath);
+        vi.mocked(shouldIgnore).mockReturnValue(true);
         const result = validator.validate(envPath);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('ignored');
@@ -163,6 +165,7 @@ describe('PathValidator', () => {
           'index.js'
         );
         vi.mocked(fs.realpathSync).mockReturnValue(nmPath);
+        vi.mocked(shouldIgnore).mockReturnValue(true);
         const result = validator.validate(nmPath);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('ignored');
