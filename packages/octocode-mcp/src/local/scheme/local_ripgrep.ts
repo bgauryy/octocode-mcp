@@ -5,10 +5,10 @@
 
 import { z } from 'zod';
 import {
-  BaseQuerySchema,
-  createBulkQuerySchema,
+  BaseQuerySchemaLocal,
+  createBulkQuerySchemaLocal,
   COMMON_PAGINATION_DESCRIPTIONS,
-} from './baseSchema.js';
+} from '../../scheme/baseSchema.js';
 import { TOOL_NAMES } from '../constants.js';
 
 /**
@@ -38,7 +38,7 @@ Examples:
  * Ripgrep search content query schema
  * Optimized based on performance research
  */
-export const RipgrepQuerySchema = BaseQuerySchema.extend({
+export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
   // REQUIRED FIELDS
   pattern: z
     .string()
@@ -330,7 +330,7 @@ export const RipgrepQuerySchema = BaseQuerySchema.extend({
 /**
  * Bulk ripgrep search schema (1–5 queries per call)
  */
-export const BulkRipgrepQuerySchema = createBulkQuerySchema(
+export const BulkRipgrepQuerySchema = createBulkQuerySchemaLocal(
   TOOL_NAMES.LOCAL_RIPGREP || 'local_ripgrep',
   RipgrepQuerySchema
 );

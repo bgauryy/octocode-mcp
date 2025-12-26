@@ -1,4 +1,7 @@
 import type { GitHubAPIError } from './github/githubAPI.js';
+import type { PaginationInfo } from './local/types.js';
+
+export type { PaginationInfo };
 
 export type QueryStatus = 'hasResults' | 'empty' | 'error';
 
@@ -131,6 +134,8 @@ export interface FileContentQuery {
   endLine?: number;
   matchString?: string;
   matchStringContextLines?: number;
+  charOffset?: number;
+  charLength?: number;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -164,6 +169,7 @@ export interface ContentResultData {
   sampling?: SamplingInfo;
   lastModified?: string;
   lastModifiedBy?: string;
+  pagination?: PaginationInfo;
 }
 
 /** Complete file content result */

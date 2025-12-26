@@ -1,111 +1,115 @@
 ---
 name: octocode-research
-description: Use when researching codebases, tracing implementations, understanding dependencies, investigating bugs, or answering "how does X work" questions requiring evidence from code.
+description: Use when answering questions about codebases, implementations, dependencies, or bugs that require evidence from actual code.
 ---
 
 # Octocode Research
 
 Evidence-first code forensics using Octocode MCP tools.
 
-## Iron Laws
+## The Iron Laws
 
 ```
-1. NO CONCLUSIONS WITHOUT CODE EVIDENCE
-   Every claim cites actual source code with full GitHub links.
-
-2. VALIDATE BEFORE TRUSTING
-   Cross-reference findings. Check updated dates (avoid >1yr stale).
-
-3. FOLLOW THE HINTS
-   Every tool returns hints - follow them.
-   Empty results = wrong query → try semantic variants.
+NO CONCLUSIONS WITHOUT CODE EVIDENCE
 ```
 
-## Required Fields
+1.  **Code is Truth**: Comments, docs, and variable names lie. Only implementation logic is truth.
+2.  **Validate Findings**: Cross-reference findings. Check updated dates (avoid >1yr stale).
+3.  **Follow Hints**: Every tool returns hints - follow them. Empty results = wrong query → try semantic variants.
 
-Every Octocode tool call MUST include:
-```yaml
-mainResearchGoal: "Overall objective"
-researchGoal: "This query's target"
-reasoning: "Why this helps"
+## When to Use
+
+Use for ANY question about code:
+- "How does auth work?"
+- "Where is the API defined?"
+- "Why did this break?"
+- "What dependencies does X use?"
+
+## The Research Cycle
+
+```dot
+digraph research_cycle {
+    rankdir=LR;
+    prepare [label="PREPARE\nDefine Goal", shape=box];
+    discover [label="DISCOVER\nMap & Search", shape=box];
+    analyze [label="ANALYZE\nRead & Trace", shape=box];
+    output [label="OUTPUT\nAnswer with Evidence", shape=box];
+    
+    prepare -> discover;
+    discover -> analyze [label="found\nleads"];
+    analyze -> discover [label="need\nmore"];
+    analyze -> output [label="proven"];
+    discover -> prepare [label="dead\nend"];
+}
 ```
 
-## Four Phases
+### 1. Prepare
+Define exact goal. Identify entry point (repo, package, file). Set success criteria.
 
-```
-PREPARE → DISCOVER → ANALYZE → OUTPUT
-```
+### 2. Discover
+Use cheapest tool first. Start broad.
+- **Package?** `packageSearch`
+- **Repo?** `githubSearchRepositories`
+- **Structure?** `githubViewRepoStructure`
+- **Pattern?** `githubSearchCode`
 
-| Phase | Actions |
-|-------|---------|
-| **PREPARE** | Define goal, identify entry point, set success criteria |
-| **DISCOVER** | Use cheapest tool first, start broad, narrow based on results |
-| **ANALYZE** | Read actual code, trace flow, map dependencies |
-| **OUTPUT** | Answer with evidence, document gaps, ask next steps |
+### 3. Analyze
+Read actual code. Trace execution flow.
+- **Read:** `githubGetFileContent`
+- **History:** `githubSearchPullRequests`
 
-## Tool Selection
+### 4. Output
+Answer with full GitHub links. Document gaps.
 
-| Need | Tool |
-|------|------|
-| Package → Repo | `packageSearch` |
-| Find Repos | `githubSearchRepositories` |
-| Map Structure | `githubViewRepoStructure` |
-| Find Patterns | `githubSearchCode` |
-| Read Code | `githubGetFileContent` |
-| History/Why | `githubSearchPullRequests` |
-| Local: Structure | `local_view_structure` |
-| Local: Search | `local_ripgrep` |
-| Local: Read | `local_fetch_content` |
-| Local: Metadata | `local_find_files` |
+## Red Flags - STOP AND THINK
 
-## Transitions
+If you catch yourself thinking these, **STOP**:
 
-```
-FROM                     → NEED          → GO TO
-githubSearchCode         → Content       → githubGetFileContent
-githubSearchRepositories → Structure     → githubViewRepoStructure
-packageSearch            → Repo          → githubViewRepoStructure
-githubViewRepoStructure  → Pattern       → githubSearchCode
-local_ripgrep            → Content       → local_fetch_content
-```
+- "I assume it works like..." → **Find evidence**
+- "It's probably in `src/utils`..." → **Search first**
+- "Based on the function name..." → **Read implementation**
+- "I'll just guess the path..." → **Use `viewRepoStructure`**
+- "3 empty results..." → **Try semantic variants (auth → login)**
+- "Too many results..." → **Add filters (path, extension)**
 
-## Red Flags
+## Common Rationalizations
 
-- "I assume..." → Find evidence
-- "Probably in..." → Search first
-- "Based on naming..." → Read implementation
-- "3 empty results" → Try semantic variants
-- "Too many results" → Add filters
+| Excuse | Reality |
+| ------ | ------- |
+| "I know how this usually works" | Implementations vary. Assumptions cause hallucinations. |
+| "Searching takes too long" | Guessing and being wrong takes longer. |
+| "Docs say X" | Docs are often outdated. Code is truth. |
+| "I can't find it immediately" | You haven't tried semantic variants yet. |
+| "It's a standard pattern" | Standards are often violated or customized. |
 
-## Semantic Variants
+## Tool Transitions
 
-| Term | Try Also |
-|------|----------|
-| auth | login, security, credentials, token |
-| config | settings, options, env |
-| error | exception, failure, fault |
-| create | add, insert, new, generate |
+| From Tool | Need | Go To |
+| --------- | ---- | ----- |
+| `githubSearchCode` | Content | `githubGetFileContent` |
+| `githubSearchRepositories` | Structure | `githubViewRepoStructure` |
+| `packageSearch` | Repo Location | `githubViewRepoStructure` |
+| `githubViewRepoStructure` | Find Pattern | `githubSearchCode` |
+| `local_ripgrep` | Content | `local_fetch_content` |
 
-## Output Format
+## Verification Checklist
 
-```markdown
-# Research: [Goal]
+Before outputting an answer:
 
-## TL;DR
-[1-2 sentence answer]
+- [ ] Every claim has a specific code citation
+- [ ] Links are full GitHub URLs (owner/repo/blob/branch/path)
+- [ ] Code is from the correct branch/version
+- [ ] You have verified the code is not deprecated/dead
+- [ ] You have checked for recent changes (last 6 months)
 
-## Evidence
-[Code citations with full GitHub links]
+## When Stuck
 
-## Gaps
-[What remains uncertain]
-```
+1.  **Empty Results?** Try synonyms (e.g., `auth` → `credential`, `token`, `login`, `session`).
+2.  **Too Many?** Filter by file extension (`extension: "ts"`) or path (`path: "src/"`).
+3.  **Lost?** Go back to `githubViewRepoStructure` to understand the map.
+4.  **Still Stuck?** Ask the user for context or a specific pointer.
 
 ## Resources
 
-- `resources/tool-reference.md` - Complete tool parameters
-- `resources/workflow-patterns.md` - Common research flows
-
----
-*<160 lines. See resources/ for details.*
-
+- **Tools**: `resources/tool-reference.md` (Parameters & Tips)
+- **Workflows**: `resources/workflow-patterns.md` (Recipes)

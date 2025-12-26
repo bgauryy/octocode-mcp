@@ -96,6 +96,7 @@ async function fetchMultipleGitHubFileContents(
         'branch',
         'contentLength',
         'content',
+        'pagination',
         'isPartial',
         'startLine',
         'endLine',
@@ -125,6 +126,8 @@ function buildApiRequest(query: FileContentQuery) {
     matchString:
       fullContent || !query.matchString ? undefined : String(query.matchString),
     matchStringContextLines: query.matchStringContextLines ?? 5,
+    charOffset: query.charOffset ?? 0,
+    charLength: query.charLength,
   };
 }
 

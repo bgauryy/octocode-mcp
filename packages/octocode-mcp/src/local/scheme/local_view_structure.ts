@@ -4,10 +4,10 @@
 
 import { z } from 'zod';
 import {
-  BaseQuerySchema,
-  createBulkQuerySchema,
+  BaseQuerySchemaLocal,
+  createBulkQuerySchemaLocal,
   COMMON_PAGINATION_DESCRIPTIONS,
-} from './baseSchema.js';
+} from '../../scheme/baseSchema.js';
 import { TOOL_NAMES } from '../constants.js';
 
 /**
@@ -31,7 +31,7 @@ Examples:
 /**
  * View structure query schema
  */
-export const ViewStructureQuerySchema = BaseQuerySchema.extend({
+export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
   path: z.string().describe('Directory path (required).'),
 
   details: z
@@ -114,7 +114,7 @@ export const ViewStructureQuerySchema = BaseQuerySchema.extend({
 /**
  * Bulk view structure schema
  */
-export const BulkViewStructureSchema = createBulkQuerySchema(
+export const BulkViewStructureSchema = createBulkQuerySchemaLocal(
   TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
   ViewStructureQuerySchema
 );

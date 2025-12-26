@@ -67,6 +67,8 @@ Find code patterns across GitHub.
 }
 ```
 
+**WARNING:** NEVER cite search results directly. Search snippets are incomplete and often misleading. ALWAYS follow up with `githubGetFileContent` to verify.
+
 **Tips:** `match: "path"` for files, `match: "file"` for content.
 
 ### githubGetFileContent
@@ -186,4 +188,3 @@ Find files by metadata.
 | Too many results | Add filters (path, owner, type) |
 | File too large | Use matchString or line range |
 | Path is directory | Use view structure tool |
-

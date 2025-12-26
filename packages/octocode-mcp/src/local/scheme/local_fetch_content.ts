@@ -4,10 +4,10 @@
 
 import { z } from 'zod';
 import {
-  BaseQuerySchema,
-  createBulkQuerySchema,
+  BaseQuerySchemaLocal,
+  createBulkQuerySchemaLocal,
   COMMON_PAGINATION_DESCRIPTIONS,
-} from './baseSchema.js';
+} from '../../scheme/baseSchema.js';
 import { TOOL_NAMES } from '../constants.js';
 
 /**
@@ -42,7 +42,7 @@ const FETCH_CONTENT_DESCRIPTIONS = {
 /**
  * Single query schema for fetching file content
  */
-export const FetchContentQuerySchema = BaseQuerySchema.extend({
+export const FetchContentQuerySchema = BaseQuerySchemaLocal.extend({
   path: z.string().min(1).describe(FETCH_CONTENT_DESCRIPTIONS.path),
 
   fullContent: z
@@ -100,7 +100,7 @@ export const FetchContentQuerySchema = BaseQuerySchema.extend({
 /**
  * Bulk query schema for fetching multiple file contents
  */
-export const BulkFetchContentSchema = createBulkQuerySchema(
+export const BulkFetchContentSchema = createBulkQuerySchemaLocal(
   TOOL_NAMES.LOCAL_FETCH_CONTENT,
   FetchContentQuerySchema
 );

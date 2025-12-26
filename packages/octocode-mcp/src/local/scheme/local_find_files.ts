@@ -4,10 +4,10 @@
 
 import { z } from 'zod';
 import {
-  BaseQuerySchema,
-  createBulkQuerySchema,
+  BaseQuerySchemaLocal,
+  createBulkQuerySchemaLocal,
   COMMON_PAGINATION_DESCRIPTIONS,
-} from './baseSchema.js';
+} from '../../scheme/baseSchema.js';
 import { TOOL_NAMES } from '../constants.js';
 
 /**
@@ -30,7 +30,7 @@ Examples:
 /**
  * Find files query schema
  */
-export const FindFilesQuerySchema = BaseQuerySchema.extend({
+export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
   path: z.string().describe('Starting directory (required).'),
 
   maxDepth: z
@@ -136,7 +136,7 @@ export const FindFilesQuerySchema = BaseQuerySchema.extend({
 /**
  * Bulk find files schema
  */
-export const BulkFindFilesSchema = createBulkQuerySchema(
+export const BulkFindFilesSchema = createBulkQuerySchemaLocal(
   TOOL_NAMES.LOCAL_FIND_FILES,
   FindFilesQuerySchema
 );

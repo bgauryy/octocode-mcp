@@ -12,6 +12,12 @@ Common research flows for different investigation types.
 packageSearch → githubViewRepoStructure → githubSearchCode → githubGetFileContent
 ```
 
+**Atomic Steps:**
+1.  **Locate**: Find the correct repo URL.
+2.  **Map**: specific directory structure (don't map everything).
+3.  **Entry**: Find the main entry point (package.json `main` or index file).
+4.  **Read**: Get the actual content of the entry file.
+
 ```json
 // 1. Find repo
 { "name": "express", "ecosystem": "npm" }
@@ -32,18 +38,27 @@ packageSearch → githubViewRepoStructure → githubSearchCode → githubGetFile
 
 **Goal:** Understand how a feature is implemented.
 
+**Pattern:** Trace from *User Surface* → *Internal Logic* → *Data Layer*.
+
 ```
-githubSearchCode → githubGetFileContent → trace imports → repeat
+githubSearchCode(surface) → githubGetFileContent → trace imports → repeat
 ```
+
+**Atomic Steps:**
+1.  **Surface**: Find the public API/Component (e.g. `useState`).
+2.  **Definition**: Read the function definition.
+3.  **Dependency**: Identify *one* key internal dependency (e.g. `resolveDispatcher`).
+4.  **Trace**: Search for that dependency's definition.
+5.  **Repeat**: Continue until you hit the bottom (primitive or external lib).
 
 ```json
-// 1. Find feature
+// 1. Find feature surface
 { "keywordsToSearch": ["useState"], "match": "file", "path": "packages/react" }
 
-// 2. Read definition
+// 2. Read definition (The Gate: Read before assuming)
 { "path": "packages/react/src/ReactHooks.js", "matchString": "export function useState" }
 
-// 3. Trace dependencies
+// 3. Trace dependency
 { "keywordsToSearch": ["resolveDispatcher"], "match": "file" }
 ```
 
@@ -57,6 +72,11 @@ githubSearchCode → githubGetFileContent → trace imports → repeat
 githubSearchCode(error) → githubGetFileContent → githubSearchPullRequests
 ```
 
+**Atomic Steps:**
+1.  **Locate Error**: Find where the error string/code is defined.
+2.  **Read Context**: Read the condition *causing* the error.
+3.  **Blame/History**: Who changed this last and why?
+
 ```json
 // 1. Find error source
 { "keywordsToSearch": ["ENOENT"], "match": "file" }
@@ -64,7 +84,7 @@ githubSearchCode(error) → githubGetFileContent → githubSearchPullRequests
 // 2. Read context
 { "path": "src/utils/fileReader.ts", "matchString": "ENOENT" }
 
-// 3. Check history
+// 3. Check history (Why was this added?)
 { "query": "file reader", "merged": true, "type": "metadata" }
 ```
 
@@ -78,19 +98,10 @@ githubSearchCode(error) → githubGetFileContent → githubSearchPullRequests
 local_view_structure → drill down → local_ripgrep → local_fetch_content
 ```
 
-```json
-// 1. Map root
-{ "path": "/project", "depth": 1 }
-
-// 2. Drill into src
-{ "path": "/project/src", "depth": 2 }
-
-// 3. Search pattern
-{ "pattern": "main|bootstrap", "path": "/project/src", "filesOnly": true }
-
-// 4. Read
-{ "path": "/project/src/index.ts", "matchString": "export" }
-```
+1.  **Map Root**: See top-level folders.
+2.  **Drill Down**: Pick *one* relevant folder (e.g. `src`).
+3.  **Search**: Look for architectural keywords (`App`, `Server`, `Main`).
+4.  **Read**: detailed implementation.
 
 ---
 
@@ -102,31 +113,21 @@ local_view_structure → drill down → local_ripgrep → local_fetch_content
 local_ripgrep(filesOnly) → local_fetch_content
 ```
 
-```json
-// 1. Discovery
-{ "pattern": "useAuth", "path": "/project/src", "filesOnly": true, "type": "ts" }
-
-// 2. Read
-{ "path": "/project/src/hooks/useAuth.ts", "matchString": "export function useAuth" }
-```
+1.  **Discovery**: Find *files* containing the term (fast).
+2.  **Target**: Pick the most likely file.
+3.  **Read**: Read specific function.
 
 ---
 
-## 6. Local: Recent Changes
+## The Verification Gate
 
-**Use when:** Chasing regressions.
+**BEFORE claiming a finding, pass this gate:**
 
-```
-local_find_files(modifiedWithin) → local_ripgrep → local_fetch_content
-```
-
-```json
-// 1. Find recent
-{ "path": "/project/src", "modifiedWithin": "7d", "type": "f" }
-
-// 2. Search issues
-{ "pattern": "TODO|FIXME", "path": "/project/src" }
-```
+1.  **IDENTIFY**: What exact lines of code prove this?
+2.  **FETCH**: Did you read the *actual file content*? (Search snippets don't count)
+3.  **VERIFY**: Does the logic actually do what you think?
+4.  **CHECK DATES**: Is this code from 5 years ago?
+5.  **ONLY THEN**: Output the finding.
 
 ---
 
@@ -150,18 +151,19 @@ Max 3 queries per call. Parallelize independent searches:
 
 | ❌ Bad | ✅ Good |
 |--------|---------|
-| Assume path exists | Search first |
-| `fullContent: true` | `matchString` with context |
-| Repeat same query | Try semantic variant |
-| 10 queries for simple lookup | 2-3 targeted queries |
+| **Citing Search Results** | **Citing File Content** (Read the file!) |
+| **"I assume..."** | **"The code shows..."** |
+| **"Should work like..."** | **"Logic implements..."** |
+| **Broad Search (`auth`)** | **Targeted Search (`class AuthService`)** |
+| **Ignoring Dates** | **Checking `lastModified`** |
 
 ---
 
 ## Checklist
 
-- [ ] Goal defined?
-- [ ] Code evidence found?
-- [ ] Cross-referenced?
-- [ ] Updated dates checked?
-- [ ] Gaps documented?
-
+- [ ] **Goal defined?** (Atomic question)
+- [ ] **Code evidence found?** (Line numbers)
+- [ ] **The Gate passed?** (Read full content)
+- [ ] **Cross-referenced?** (Imports/Usage)
+- [ ] **Updated dates checked?**
+- [ ] **Gaps documented?**

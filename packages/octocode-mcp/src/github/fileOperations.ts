@@ -4,6 +4,7 @@ import type {
   FileContentQuery,
   ContentResult,
   GitHubViewRepoStructureQuery,
+  PaginationInfo,
 } from '../types';
 import type {
   GitHubApiFileItem,
@@ -21,6 +22,16 @@ import { TOOL_NAMES } from '../tools/toolMetadata.js';
 import { FILE_OPERATION_ERRORS, REPOSITORY_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
+/** Pagination constants for GitHub content fetching */
+const GITHUB_PAGINATION = {
+  /** Max chars before auto-pagination (~5K tokens) */
+  MAX_CHARS_BEFORE_PAGINATION: 20000,
+  /** Default page size in characters */
+  DEFAULT_PAGE_SIZE: 20000,
+  /** Chars per token estimate */
+  CHARS_PER_TOKEN: 4,
+} as const;
+
 interface FileTimestampInfo {
   lastModified: string;
   lastModifiedBy: string;
@@ -31,6 +42,7 @@ export async function fetchGitHubFileContentAPI(
   authInfo?: AuthInfo,
   sessionId?: string
 ): Promise<GitHubAPIResponse<ContentResult>> {
+  // Cache key excludes charOffset/charLength - pagination is post-cache
   const cacheKey = generateCacheKey(
     'gh-api-file-content',
     {
@@ -43,6 +55,7 @@ export async function fetchGitHubFileContentAPI(
       endLine: params.endLine,
       matchString: params.matchString,
       matchStringContextLines: params.matchStringContextLines,
+      // NOTE: charOffset and charLength are EXCLUDED - pagination is post-cache
     },
     sessionId
   );
@@ -57,6 +70,19 @@ export async function fetchGitHubFileContentAPI(
         'data' in value && !(value as { error?: unknown }).error,
     }
   );
+
+  // Apply pagination AFTER cache retrieval
+  if ('data' in result && result.data && result.data.content) {
+    const paginatedResult = applyContentPagination(
+      result.data,
+      params.charOffset ?? 0,
+      params.charLength
+    );
+    return {
+      ...result,
+      data: paginatedResult,
+    };
+  }
 
   return result;
 }
@@ -249,6 +275,93 @@ async function fetchGitHubFileContentAPIInternal(
     const apiError = handleGitHubAPIError(error);
     return apiError;
   }
+}
+
+/**
+ * Apply pagination to content result (post-cache operation)
+ */
+function applyContentPagination(
+  data: ContentResult,
+  charOffset: number,
+  charLength?: number
+): ContentResult {
+  const content = data.content ?? '';
+  const maxChars = charLength ?? GITHUB_PAGINATION.MAX_CHARS_BEFORE_PAGINATION;
+  const totalChars = content.length;
+
+  // No pagination needed if content is small and no explicit offset
+  if (totalChars <= maxChars && charOffset === 0) {
+    return data;
+  }
+
+  const startPos = Math.min(charOffset, totalChars);
+  const endPos = Math.min(startPos + maxChars, totalChars);
+
+  const paginatedContent = content.substring(startPos, endPos);
+  const actualLength = paginatedContent.length;
+  const hasMore = endPos < totalChars;
+
+  const currentPage = Math.floor(charOffset / maxChars) + 1;
+  const totalPages = Math.ceil(totalChars / maxChars);
+
+  const pagination: PaginationInfo = {
+    currentPage,
+    totalPages,
+    hasMore,
+    charOffset: startPos,
+    charLength: actualLength,
+    totalChars,
+  };
+
+  // Generate pagination hints
+  const paginationHints = generatePaginationHints(pagination, {
+    owner: data.owner ?? '',
+    repo: data.repo ?? '',
+    path: data.path ?? '',
+    branch: data.branch,
+  });
+
+  return {
+    ...data,
+    content: paginatedContent,
+    contentLength: actualLength,
+    pagination,
+    hints: paginationHints,
+  };
+}
+
+/**
+ * Generate hints for paginated responses
+ * Uses dedicated hints field (NOT securityWarnings)
+ */
+function generatePaginationHints(
+  pagination: PaginationInfo,
+  query: { owner: string; repo: string; path: string; branch?: string }
+): string[] {
+  if (!pagination.hasMore) {
+    return [
+      `✓ Complete content retrieved ` +
+        `(${pagination.totalPages} page${pagination.totalPages > 1 ? 's' : ''})`,
+    ];
+  }
+
+  const nextOffset =
+    (pagination.charOffset ?? 0) + (pagination.charLength ?? 0);
+  const branchParam = query.branch ? `, branch="${query.branch}"` : '';
+
+  return [
+    `📄 Page ${pagination.currentPage}/${pagination.totalPages} ` +
+      `(${(pagination.charLength ?? 0).toLocaleString()} of ` +
+      `${(pagination.totalChars ?? 0).toLocaleString()} chars)`,
+    ``,
+    `▶ TO GET NEXT PAGE:`,
+    `  Use: charOffset=${nextOffset}`,
+    `  Same params: owner="${query.owner}", repo="${query.repo}", ` +
+      `path="${query.path}"${branchParam}`,
+    ``,
+    `💡 TIP: Use matchString for targeted extraction instead of ` +
+      `paginating through entire file`,
+  ];
 }
 
 /**
