@@ -56,6 +56,7 @@ vi.mock('../../src/tools/toolConfig.js', () => {
 
 vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn(),
+  isLocalEnabled: vi.fn().mockReturnValue(false),
 }));
 
 import { DEFAULT_TOOLS } from '../../src/tools/toolConfig.js';
@@ -87,11 +88,9 @@ describe('ToolsManager - Metadata Availability', () => {
       version: '1.0.0',
       githubApiUrl: 'https://api.github.com',
       enableLogging: true,
-      betaEnabled: false,
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: true,
-      sanitize: true,
     });
   });
 
@@ -290,11 +289,9 @@ describe('ToolsManager - Metadata Availability', () => {
         githubApiUrl: 'https://api.github.com',
         toolsToRun: ['githubSearchCode', 'githubGetFileContent'],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       // githubSearchCode is not in metadata
@@ -332,11 +329,9 @@ describe('ToolsManager - Metadata Availability', () => {
         githubApiUrl: 'https://api.github.com',
         toolsToRun: ['githubSearchCode', 'githubGetFileContent'],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       // None of the specified tools are in metadata
@@ -362,11 +357,9 @@ describe('ToolsManager - Metadata Availability', () => {
         githubApiUrl: 'https://api.github.com',
         disableTools: ['githubGetFileContent'],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       // githubSearchCode is not in metadata, githubGetFileContent is disabled

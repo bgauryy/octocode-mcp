@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 // ============================================================================
 // Git/VCS Directory Detection
@@ -181,4 +182,65 @@ export function getPlatformName(): string {
  */
 export function getArchitecture(): string {
   return os.arch();
+}
+
+/**
+ * Open a file in the default application or specified editor
+ * @param filePath - Path to the file to open
+ * @param editor - Optional editor command (e.g., 'code', 'cursor', 'vim')
+ * @returns true if successful, false otherwise
+ */
+export function openFile(filePath: string, editor?: string): boolean {
+  try {
+    let command: string;
+    let args: string[];
+
+    if (editor) {
+      // Use specified editor
+      command = editor;
+      args = [filePath];
+    } else if (isMac) {
+      // macOS: use 'open' command
+      command = 'open';
+      args = [filePath];
+    } else if (isWindows) {
+      // Windows: use 'start' command via cmd
+      command = 'cmd';
+      args = ['/c', 'start', '""', filePath];
+    } else {
+      // Linux: use 'xdg-open'
+      command = 'xdg-open';
+      args = [filePath];
+    }
+
+    const result = spawnSync(command, args, {
+      stdio: 'ignore',
+      shell: isWindows && !editor,
+    });
+
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Open a file in a specific IDE
+ * @param filePath - Path to the file to open
+ * @param ide - IDE to use ('cursor', 'vscode', 'default')
+ * @returns true if successful, false otherwise
+ */
+export function openInEditor(
+  filePath: string,
+  ide: 'cursor' | 'vscode' | 'default'
+): boolean {
+  switch (ide) {
+    case 'cursor':
+      return openFile(filePath, 'cursor');
+    case 'vscode':
+      return openFile(filePath, 'code');
+    case 'default':
+    default:
+      return openFile(filePath);
+  }
 }

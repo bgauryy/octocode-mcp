@@ -55,7 +55,6 @@
         "owner": "{{owner}}_value",
         "repo": "{{repo}}_value",
         "extension": "{{extension}}_value",
-        "stars": "{{stars}}_value",
         "filename": "{{filename}}_value",
         "path": "{{path}}_value",
         "match": "{{match}}_value",

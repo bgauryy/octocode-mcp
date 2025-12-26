@@ -14,7 +14,6 @@ const toCodeSearchQuery = (params: {
   owner?: string | string[];
   repo?: string | string[];
   extension?: string;
-  stars?: string;
   filename?: string;
   path?: string;
   match?: 'file' | 'path' | Array<'file' | 'path'>;
@@ -121,18 +120,6 @@ describe('Query Builders', () => {
 
       const query = buildCodeSearchQuery(params);
       expect(query).toBe('test in:file');
-    });
-
-    it('should build query with stars and date filters', () => {
-      const params = toCodeSearchQuery({
-        keywordsToSearch: ['react'],
-        stars: '>100',
-
-        minify: true,
-      });
-
-      const query = buildCodeSearchQuery(params);
-      expect(query).toBe('react stars:>100');
     });
 
     it('should handle empty query terms', () => {

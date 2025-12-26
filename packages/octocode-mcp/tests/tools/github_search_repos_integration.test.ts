@@ -18,7 +18,6 @@ vi.mock('../../src/serverConfig.js', () => ({
     enableTools: [],
     disableTools: [],
     enableLogging: true,
-    betaEnabled: false,
     timeout: 30000,
     maxRetries: 3,
   })),

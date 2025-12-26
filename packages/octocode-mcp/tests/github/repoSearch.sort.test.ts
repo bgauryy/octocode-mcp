@@ -1,0 +1,73 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { searchGitHubReposAPI } from '../../src/github/repoSearch.js';
+import { getOctokit } from '../../src/github/client.js';
+import { clearAllCache } from '../../src/utils/cache.js';
+
+vi.mock('../../src/github/client.js');
+vi.mock('../../src/session.js', () => ({
+  logSessionError: vi.fn(() => Promise.resolve()),
+}));
+
+describe('Repo Search - Sorting', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearAllCache();
+  });
+
+  it('should respect API sort order and NOT force re-sort', async () => {
+    const searchReposMock = vi.fn();
+
+    const mockOctokit = {
+      rest: {
+        search: {
+          repos: searchReposMock,
+        },
+      },
+    };
+
+    vi.mocked(getOctokit).mockResolvedValue(
+      mockOctokit as unknown as ReturnType<typeof getOctokit>
+    );
+
+    // Mock API returning results in specific order (e.g. Ascending Stars)
+    // Repo A: 5 stars
+    // Repo B: 10 stars
+    // If we request ASC order, API returns A then B.
+    // Current bug forces DESC sort, so it would return B then A.
+
+    searchReposMock.mockResolvedValue({
+      data: {
+        items: [
+          {
+            full_name: 'user/repoA',
+            stargazers_count: 5,
+            updated_at: '2023-01-01T00:00:00Z',
+            owner: { login: 'user' },
+          },
+          {
+            full_name: 'user/repoB',
+            stargazers_count: 10,
+            updated_at: '2023-01-01T00:00:00Z',
+            owner: { login: 'user' },
+          },
+        ],
+        total_count: 2,
+      },
+      headers: {},
+    });
+
+    const result = await searchGitHubReposAPI({
+      keywordsToSearch: ['test'],
+      sort: 'stars',
+      order: 'asc', // Request ASCENDING
+    });
+
+    expect(result.data).toBeDefined();
+    if (result.data) {
+      expect(result.data.repositories.length).toBe(2);
+      // Should match API order (A then B)
+      expect(result.data.repositories[0].repo).toBe('repoA');
+      expect(result.data.repositories[1].repo).toBe('repoB');
+    }
+  });
+});

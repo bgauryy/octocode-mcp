@@ -1,12 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createResult } from '../../src/responses';
 import { jsonToYamlString } from '../../src/utils/minifier/index.js';
 import { getTextContent } from './testHelpers.js';
-
-// Mock the isBetaEnabled function
-vi.mock('../../src/serverConfig', () => ({
-  isBetaEnabled: vi.fn(() => false),
-}));
 
 describe('Response Utilities', () => {
   describe('createResult', () => {

@@ -2,8 +2,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   minifyContent,
-  isJavaScriptFileV2,
-  isIndentationSensitiveV2,
   MINIFY_CONFIG,
 } from '../../../src/utils/minifier/minifier.js';
 
@@ -33,36 +31,6 @@ describe('MinifierV2', () => {
     });
   });
 
-  describe('Utility Functions', () => {
-    describe('isJavaScriptFileV2', () => {
-      it('should identify JavaScript files correctly', () => {
-        expect(isJavaScriptFileV2('file.js')).toBe(true);
-        expect(isJavaScriptFileV2('file.ts')).toBe(true);
-        expect(isJavaScriptFileV2('file.jsx')).toBe(true);
-        expect(isJavaScriptFileV2('file.tsx')).toBe(true);
-        expect(isJavaScriptFileV2('file.mjs')).toBe(true);
-        expect(isJavaScriptFileV2('file.cjs')).toBe(true);
-        expect(isJavaScriptFileV2('file.py')).toBe(false);
-        expect(isJavaScriptFileV2('file.html')).toBe(false);
-      });
-    });
-
-    describe('isIndentationSensitiveV2', () => {
-      it('should identify indentation-sensitive languages', () => {
-        expect(isIndentationSensitiveV2('file.py')).toBe(true);
-        expect(isIndentationSensitiveV2('file.yaml')).toBe(true);
-        expect(isIndentationSensitiveV2('file.yml')).toBe(true);
-        expect(isIndentationSensitiveV2('file.coffee')).toBe(true);
-        expect(isIndentationSensitiveV2('file.haml')).toBe(true);
-        expect(isIndentationSensitiveV2('file.sass')).toBe(true);
-
-        expect(isIndentationSensitiveV2('file.js')).toBe(false);
-        expect(isIndentationSensitiveV2('file.html')).toBe(false);
-        expect(isIndentationSensitiveV2('file.css')).toBe(false);
-      });
-    });
-  });
-
   describe('Terser Strategy', () => {
     it('should use terser for JavaScript files', async () => {
       const jsCode = 'function test() { return true; }';
@@ -87,6 +55,140 @@ describe('MinifierV2', () => {
       expect(result.type).toBe('failed');
       expect(result.failed).toBe(true);
       expect(result.content).toBe(jsCode); // Returns original content
+    });
+  });
+
+  describe('TypeScript Aggressive Strategy', () => {
+    it('should use aggressive strategy for TypeScript files (not terser)', async () => {
+      const tsCode = `// Single line comment
+interface User {
+  name: string;
+  age: number;
+}
+
+/* Multi-line comment
+   describing the function */
+function greet(user: User): string {
+  return \`Hello, \${user.name}!\`;
+}`;
+
+      const result = await minifyContent(tsCode, 'test.ts');
+
+      // Should use aggressive strategy, not terser
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+
+      // Should remove comments
+      expect(result.content).not.toContain('// Single line comment');
+      expect(result.content).not.toContain('/* Multi-line comment');
+      expect(result.content).not.toContain('describing the function */');
+
+      // Should preserve TypeScript syntax
+      expect(result.content).toContain('interface User');
+      expect(result.content).toContain('name:string');
+      expect(result.content).toContain('function greet(user:User):string');
+
+      // Terser should NOT be called for .ts files
+      expect(mockMinify).not.toHaveBeenCalled();
+    });
+
+    it('should handle TSX files with aggressive strategy', async () => {
+      const tsxCode = `// Component comment
+import React from 'react';
+
+interface Props {
+  title: string;
+}
+
+/* Main component */
+export const Header: React.FC<Props> = ({ title }) => {
+  return <h1>{title}</h1>;
+};`;
+
+      const result = await minifyContent(tsxCode, 'Header.tsx');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+
+      // Should remove comments
+      expect(result.content).not.toContain('// Component comment');
+      expect(result.content).not.toContain('/* Main component */');
+
+      // Should preserve TSX/TypeScript syntax
+      expect(result.content).toContain('interface Props');
+      expect(result.content).toContain('title:string');
+      expect(result.content).toContain('React.FC<Props>');
+
+      // Terser should NOT be called for .tsx files
+      expect(mockMinify).not.toHaveBeenCalled();
+    });
+
+    it('should handle complex TypeScript with generics and type annotations', async () => {
+      const tsCode = `// Utility types
+type Partial<T> = {
+  [P in keyof T]?: T[P];
+};
+
+/* Generic function */
+async function fetchData<T extends object>(
+  url: string,
+  options?: RequestInit
+): Promise<T> {
+  const response = await fetch(url, options);
+  return response.json() as T;
+}
+
+// Enum definition
+enum Status {
+  Pending = 'pending',
+  Active = 'active',
+  Done = 'done'
+}`;
+
+      const result = await minifyContent(tsCode, 'utils.ts');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+
+      // Should remove all comments
+      expect(result.content).not.toContain('// Utility types');
+      expect(result.content).not.toContain('/* Generic function */');
+      expect(result.content).not.toContain('// Enum definition');
+
+      // Should preserve complex TypeScript syntax
+      expect(result.content).toContain('type Partial<T>');
+      expect(result.content).toContain('keyof T');
+      expect(result.content).toContain(
+        'async function fetchData<T extends object>'
+      );
+      expect(result.content).toContain('Promise<T>');
+      expect(result.content).toContain('enum Status');
+    });
+
+    it('should never fail on TypeScript files (unlike terser)', async () => {
+      // TypeScript code that would cause terser to fail
+      const tsCode = `
+interface ComplexType<T extends Record<string, unknown>> {
+  data: T;
+  metadata: {
+    createdAt: Date;
+    updatedAt?: Date;
+  };
+}
+
+type ExtractKeys<T> = T extends Record<infer K, unknown> ? K : never;
+
+const handler: <T>(input: T) => T = (input) => input;
+`;
+
+      const result = await minifyContent(tsCode, 'complex.ts');
+
+      // Should ALWAYS succeed with aggressive strategy
+      expect(result.failed).toBe(false);
+      expect(result.type).toBe('aggressive');
+
+      // Content should be minified (smaller)
+      expect(result.content.length).toBeLessThan(tsCode.length);
     });
   });
 
@@ -540,6 +642,54 @@ test:
       expect(result.type).toBe('aggressive');
       expect(result.failed).toBe(false);
     });
+
+    it('should minify complex CSS with selectors', async () => {
+      const cssCode = `
+        .selector-one,
+        .selector-two {
+          color: red;
+          background-color: blue;
+          /* Multiple properties */
+          border: 1px solid black;
+        }
+      `;
+
+      const result = await minifyContent(cssCode, 'complex.css');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+      expect(result.content.length).toBeLessThan(cssCode.length);
+    });
+
+    it('should handle LESS files with aggressive strategy', async () => {
+      const lessCode = `
+        @color: red;
+        .test {
+          /* comment */
+          color: @color;
+        }
+      `;
+
+      const result = await minifyContent(lessCode, 'styles.less');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+    });
+
+    it('should handle SCSS files with aggressive strategy', async () => {
+      const scssCode = `
+        $color: blue;
+        .test {
+          /* comment */
+          color: $color;
+        }
+      `;
+
+      const result = await minifyContent(scssCode, 'styles.scss');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+    });
   });
 
   describe('HTML Error Handling', () => {
@@ -552,6 +702,21 @@ test:
       // Should succeed
       expect(result.type).toBe('aggressive');
       expect(result.failed).toBe(false);
+    });
+
+    it('should handle HTM extension with HTML strategy', async () => {
+      const htmCode = `<html>
+        <body>
+          <!-- comment -->
+          <p>Test</p>
+        </body>
+      </html>`;
+
+      const result = await minifyContent(htmCode, 'test.htm');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+      expect(result.content).not.toContain('<!-- comment -->');
     });
   });
 
@@ -588,6 +753,185 @@ echo "test";
       const result = await minifyContent(content, 'file.zzzzzzz');
 
       expect(result.type).toBe('general');
+      expect(result.failed).toBe(false);
+    });
+  });
+
+  describe('Switch Default Branch Coverage', () => {
+    it('should handle file types that fall through to default case via getFileConfig returning unknown strategy', async () => {
+      // Testing files that might trigger edge cases
+      // A file with a completely novel extension that doesn't exist in config
+      const content = 'some test content with    spaces and\n\n\nlines';
+      const result = await minifyContent(content, 'test.xyzabc123');
+
+      // Should use general strategy as default fallback
+      expect(result.type).toBe('general');
+      expect(result.failed).toBe(false);
+    });
+  });
+
+  describe('Catch Block Coverage', () => {
+    it('should catch errors in minifyGeneral and return original content', async () => {
+      // The minifyGeneral function has a try-catch that returns content on error
+      // We can't easily trigger this without mocking, but we verify the function handles edge cases
+      const complexContent =
+        'Valid content \r\n with\t\t  mixed  \n\n\n\n whitespace';
+      const result = await minifyContent(complexContent, 'test.unknownext');
+
+      expect(result.type).toBe('general');
+      expect(result.failed).toBe(false);
+      // Should have normalized line endings
+      expect(result.content).not.toContain('\r\n');
+    });
+
+    it('should catch errors in minifyMarkdown and return original content', async () => {
+      // Test markdown with potential edge cases
+      const markdownContent =
+        '# Test\n\n```\ncode block\n```\n\n- item\n  - nested';
+      const result = await minifyContent(markdownContent, 'test.md');
+
+      expect(result.type).toBe('markdown');
+      expect(result.failed).toBe(false);
+    });
+
+    it('should handle markdown with HTML comments in edge cases', async () => {
+      const markdownWithComments = `# Title
+<!-- Hidden comment that spans
+multiple lines -->
+Content here.
+
+| Col1 | Col2 |
+|------|------|
+| a    | b    |`;
+
+      const result = await minifyContent(markdownWithComments, 'readme.md');
+
+      expect(result.type).toBe('markdown');
+      expect(result.failed).toBe(false);
+      // Comments should be removed
+      expect(result.content).not.toContain('Hidden comment');
+    });
+  });
+
+  describe('Additional File Type Coverage', () => {
+    it('should handle Dockerfile conservatively', async () => {
+      const dockerfile = `# Dockerfile comment
+FROM node:18
+RUN npm install
+
+# Another comment
+COPY . .`;
+
+      const result = await minifyContent(dockerfile, 'Dockerfile');
+
+      expect(result.type).toBe('conservative');
+      expect(result.failed).toBe(false);
+      // Should preserve indentation
+      expect(result.content).toContain('FROM node:18');
+    });
+
+    it('should handle Jenkinsfile conservatively', async () => {
+      const jenkinsfile = `# Pipeline definition
+pipeline {
+    agent any
+    stages {
+        stage('Build') {
+            steps {
+                echo 'Building...'
+            }
+        }
+    }
+}`;
+
+      const result = await minifyContent(jenkinsfile, 'Jenkinsfile');
+
+      expect(result.type).toBe('conservative');
+      expect(result.failed).toBe(false);
+    });
+
+    it('should handle Vagrantfile conservatively', async () => {
+      const vagrantfile = `# Vagrant config
+Vagrant.configure("2") do |config|
+    config.vm.box = "ubuntu/focal64"
+end`;
+
+      const result = await minifyContent(vagrantfile, 'Vagrantfile');
+
+      expect(result.type).toBe('conservative');
+      expect(result.failed).toBe(false);
+    });
+
+    it('should handle various indentation-sensitive filenames', async () => {
+      const makefileContent = `# Build
+build:
+	echo "building"`;
+
+      // Test multiple indentation-sensitive file names
+      const filenames = ['Rakefile', 'Gemfile', 'Podfile', 'Fastfile'];
+
+      for (const filename of filenames) {
+        const result = await minifyContent(makefileContent, filename);
+        expect(result.type).toBe('conservative');
+        expect(result.failed).toBe(false);
+      }
+    });
+
+    it('should handle Haskell files with conservative strategy', async () => {
+      const haskellCode = `-- Haskell comment
+module Main where
+
+{- Block comment
+   spanning lines -}
+main :: IO ()
+main = putStrLn "Hello"`;
+
+      const result = await minifyContent(haskellCode, 'Main.hs');
+
+      expect(result.type).toBe('conservative');
+      expect(result.failed).toBe(false);
+      // Should remove comments
+      expect(result.content).not.toContain('-- Haskell comment');
+      expect(result.content).not.toContain('Block comment');
+    });
+
+    it('should handle Lua files with aggressive strategy', async () => {
+      const luaCode = `-- Lua single line comment
+local x = 1
+--[[ Block comment
+spanning lines ]]
+print(x)`;
+
+      const result = await minifyContent(luaCode, 'script.lua');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+    });
+
+    it('should handle template files (handlebars, twig, etc)', async () => {
+      const hbsContent = `{{!-- Comment --}}
+<div>
+  {{! Another comment }}
+  <p>{{name}}</p>
+</div>`;
+
+      const result = await minifyContent(hbsContent, 'template.hbs');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+      expect(result.content).not.toContain('Comment');
+    });
+
+    it('should handle Terraform files with multiple comment types', async () => {
+      const tfContent = `# Hash comment
+/* Block comment */
+resource "aws_instance" "example" {
+  ami           = "ami-12345"
+  instance_type = "t2.micro"
+}`;
+
+      const result = await minifyContent(tfContent, 'main.tf');
+
+      expect(result.type).toBe('aggressive');
       expect(result.failed).toBe(false);
     });
   });

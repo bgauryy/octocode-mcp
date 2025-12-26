@@ -14,7 +14,6 @@ export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
     .string()
     .optional()
     .describe(GITHUB_SEARCH_CODE.filters.extension),
-  stars: z.string().optional().describe(GITHUB_SEARCH_CODE.filters.stars),
   filename: z.string().optional().describe(GITHUB_SEARCH_CODE.filters.filename),
   path: z.string().optional().describe(GITHUB_SEARCH_CODE.filters.path),
   match: z

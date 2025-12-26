@@ -8,10 +8,7 @@ import {
   getToken,
   clearCachedToken,
   getServerConfig,
-  isBetaEnabled,
-  isSamplingEnabled,
   isLoggingEnabled,
-  isSanitizeEnabled,
 } from '../src/serverConfig.js';
 
 // Helper function to create mock process
@@ -61,12 +58,10 @@ describe('ServerConfig - Simplified Version', () => {
     delete process.env.GITHUB_TOKEN;
     delete process.env.GH_TOKEN;
     delete process.env.Authorization;
-    delete process.env.BETA;
     delete process.env.TOOLS_TO_RUN;
     delete process.env.ENABLE_TOOLS;
     delete process.env.DISABLE_TOOLS;
     delete process.env.LOG;
-    delete process.env.SANITIZE;
     delete process.env.TEST_GITHUB_TOKEN;
   });
 
@@ -90,18 +85,15 @@ describe('ServerConfig - Simplified Version', () => {
       expect(config.timeout).toEqual(30000);
       expect(config.maxRetries).toEqual(3);
       expect(config.enableLogging).toEqual(true);
-      expect(config.betaEnabled).toEqual(false);
     });
 
     it('should initialize with environment variables', async () => {
-      process.env.BETA = '1';
       process.env.REQUEST_TIMEOUT = '60000';
       process.env.MAX_RETRIES = '5';
 
       await initialize();
       const config = getServerConfig();
 
-      expect(config.betaEnabled).toBe(true);
       expect(config.enableLogging).toBe(true);
       expect(config.timeout).toBe(60000);
       expect(config.maxRetries).toBe(5);
@@ -232,49 +224,6 @@ describe('ServerConfig - Simplified Version', () => {
     });
   });
 
-  describe('Beta Features', () => {
-    it('should detect beta features correctly', async () => {
-      process.env.BETA = '1';
-      mockSpawnFailure();
-
-      await initialize();
-
-      expect(isBetaEnabled()).toBe(true);
-      expect(isSamplingEnabled()).toBe(true);
-    });
-
-    it('should handle disabled beta features', async () => {
-      mockSpawnFailure();
-
-      await initialize();
-
-      expect(isBetaEnabled()).toBe(false);
-      expect(isSamplingEnabled()).toBe(false);
-    });
-
-    it('should handle various beta flag formats', async () => {
-      const testCases = [
-        { value: '1', expected: true },
-        { value: 'true', expected: true },
-        { value: 'TRUE', expected: true },
-        { value: 'false', expected: false },
-        { value: '0', expected: false },
-        { value: '', expected: false },
-      ];
-
-      for (const testCase of testCases) {
-        cleanup();
-        process.env.BETA = testCase.value;
-        mockSpawnFailure();
-
-        await initialize();
-
-        expect(isBetaEnabled()).toBe(testCase.expected);
-        expect(isSamplingEnabled()).toBe(testCase.expected);
-      }
-    });
-  });
-
   describe('Logging Configuration', () => {
     it('should enable logging by default when LOG is not set', async () => {
       delete process.env.LOG;
@@ -337,72 +286,6 @@ describe('ServerConfig - Simplified Version', () => {
 
         expect(isLoggingEnabled()).toBe(testCase.expected);
         expect(getServerConfig().loggingEnabled).toBe(testCase.expected);
-      }
-    });
-  });
-
-  describe('Sanitize Configuration', () => {
-    it('should enable sanitize by default when SANITIZE is not set', async () => {
-      delete process.env.SANITIZE;
-      mockSpawnFailure();
-
-      await initialize();
-
-      expect(isSanitizeEnabled()).toBe(true);
-      expect(getServerConfig().sanitize).toBe(true);
-    });
-
-    it('should enable sanitize when SANITIZE is set to true', async () => {
-      process.env.SANITIZE = 'true';
-      mockSpawnFailure();
-
-      await initialize();
-
-      expect(isSanitizeEnabled()).toBe(true);
-      expect(getServerConfig().sanitize).toBe(true);
-    });
-
-    it('should disable sanitize when SANITIZE is set to false', async () => {
-      process.env.SANITIZE = 'false';
-      mockSpawnFailure();
-
-      await initialize();
-
-      expect(isSanitizeEnabled()).toBe(false);
-      expect(getServerConfig().sanitize).toBe(false);
-    });
-
-    it('should handle various SANITIZE flag formats', async () => {
-      const testCases = [
-        {
-          value: undefined,
-          expected: true,
-          description: 'undefined (default)',
-        },
-        { value: 'true', expected: true, description: 'true' },
-        { value: 'TRUE', expected: true, description: 'TRUE' },
-        { value: 'false', expected: false, description: 'false' },
-        { value: 'FALSE', expected: false, description: 'FALSE' },
-        { value: 'False', expected: false, description: 'False' },
-        { value: '1', expected: true, description: '1 (truthy)' },
-        { value: '0', expected: true, description: '0 (not false string)' },
-        { value: '', expected: true, description: 'empty string' },
-        { value: 'anything', expected: true, description: 'any other value' },
-      ];
-
-      for (const testCase of testCases) {
-        cleanup();
-        if (testCase.value === undefined) {
-          delete process.env.SANITIZE;
-        } else {
-          process.env.SANITIZE = testCase.value;
-        }
-        mockSpawnFailure();
-
-        await initialize();
-
-        expect(isSanitizeEnabled()).toBe(testCase.expected);
-        expect(getServerConfig().sanitize).toBe(testCase.expected);
       }
     });
   });

@@ -1,5 +1,15 @@
-import { spawn } from 'child_process';
+/**
+ * npm and gh CLI execution utilities
+ * Uses shared base module for spawn functionality
+ */
+
 import { dirname, join } from 'path';
+import {
+  spawnWithTimeout,
+  spawnCheckSuccess,
+  spawnCollectStdout,
+  validateArgs,
+} from './exec/base.js';
 
 /**
  * Get the npm binary path by looking next to the current node binary.
@@ -12,47 +22,12 @@ function getNpmPath(): string {
   return join(nodeDir, npmBinary);
 }
 
+/**
+ * Get GitHub CLI authentication token
+ * @returns Promise resolving to token string or null if not authenticated
+ */
 export async function getGithubCLIToken(): Promise<string | null> {
-  return new Promise(resolve => {
-    const childProcess = spawn('gh', ['auth', 'token'], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 10000, // 10 second timeout
-      env: {
-        ...process.env,
-        NODE_OPTIONS: undefined,
-      },
-    });
-
-    let stdout = '';
-
-    childProcess.stdout?.on('data', data => {
-      stdout += data.toString();
-    });
-
-    childProcess.stderr?.on('data', _data => {});
-
-    childProcess.on('close', code => {
-      if (code === 0) {
-        const token = stdout.trim();
-        resolve(token || null);
-      } else {
-        resolve(null);
-      }
-    });
-
-    childProcess.on('error', () => {
-      resolve(null);
-    });
-
-    const timeoutHandle = setTimeout(() => {
-      childProcess.kill('SIGTERM');
-      resolve(null);
-    }, 10000);
-
-    childProcess.on('close', () => {
-      clearTimeout(timeoutHandle);
-    });
-  });
+  return spawnCollectStdout('gh', ['auth', 'token'], 10000);
 }
 
 const ALLOWED_NPM_COMMANDS = [
@@ -79,23 +54,6 @@ interface NpmExecResult {
 }
 
 /**
- * Validate arguments for safety
- */
-function validateArgs(args: string[]): { valid: boolean; error?: string } {
-  for (const arg of args) {
-    if (arg.includes('\0')) {
-      return { valid: false, error: 'Null bytes not allowed in arguments' };
-    }
-
-    if (arg.length > 1000) {
-      return { valid: false, error: 'Argument too long' };
-    }
-  }
-
-  return { valid: true };
-}
-
-/**
  * Check if npm CLI is available by running `npm --version`
  * @param timeoutMs - Timeout in milliseconds (default 10000ms)
  * @returns true if npm CLI is installed and accessible, false otherwise
@@ -103,33 +61,7 @@ function validateArgs(args: string[]): { valid: boolean; error?: string } {
 export async function checkNpmAvailability(
   timeoutMs: number = 10000
 ): Promise<boolean> {
-  return new Promise(resolve => {
-    const childProcess = spawn(getNpmPath(), ['--version'], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: timeoutMs,
-      env: {
-        ...process.env,
-        NODE_OPTIONS: undefined,
-      },
-    });
-
-    childProcess.on('close', code => {
-      resolve(code === 0);
-    });
-
-    childProcess.on('error', () => {
-      resolve(false);
-    });
-
-    const timeoutHandle = setTimeout(() => {
-      childProcess.kill('SIGTERM');
-      resolve(false);
-    }, timeoutMs);
-
-    childProcess.on('close', () => {
-      clearTimeout(timeoutHandle);
-    });
-  });
+  return spawnCheckSuccess(getNpmPath(), ['--version'], timeoutMs);
 }
 
 /**
@@ -159,57 +91,17 @@ export async function executeNpmCommand(
 
   const { timeout = 30000, cwd, env } = options;
 
-  return new Promise(resolve => {
-    const childProcess = spawn(getNpmPath(), [command, ...args], {
-      cwd,
-      env: {
-        ...process.env,
-        ...env,
-        NODE_OPTIONS: undefined,
-        NPM_CONFIG_SCRIPT_SHELL: undefined,
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout,
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    childProcess.stdout?.on('data', data => {
-      stdout += data.toString();
-    });
-
-    childProcess.stderr?.on('data', data => {
-      stderr += data.toString();
-    });
-
-    childProcess.on('close', code => {
-      resolve({
-        stdout,
-        stderr,
-        exitCode: code ?? undefined,
-      });
-    });
-
-    childProcess.on('error', error => {
-      resolve({
-        stdout: '',
-        stderr: '',
-        error,
-      });
-    });
-
-    const timeoutHandle = setTimeout(() => {
-      childProcess.kill('SIGTERM');
-      resolve({
-        stdout: '',
-        stderr: '',
-        error: new Error('Command timeout'),
-      });
-    }, timeout);
-
-    childProcess.on('close', () => {
-      clearTimeout(timeoutHandle);
-    });
+  const result = await spawnWithTimeout(getNpmPath(), [command, ...args], {
+    timeout,
+    cwd,
+    env,
+    removeEnvVars: ['NODE_OPTIONS', 'NPM_CONFIG_SCRIPT_SHELL'],
   });
+
+  return {
+    stdout: result.stdout,
+    stderr: result.stderr,
+    exitCode: result.exitCode ?? undefined,
+    error: result.error,
+  };
 }

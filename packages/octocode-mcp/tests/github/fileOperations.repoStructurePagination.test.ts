@@ -1,0 +1,420 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { viewGitHubRepositoryStructureAPI } from '../../src/github/fileOperations.js';
+import { getOctokit } from '../../src/github/client.js';
+import { clearAllCache } from '../../src/utils/cache.js';
+import { GITHUB_STRUCTURE_DEFAULTS } from '../../src/scheme/github_view_repo_structure.js';
+
+vi.mock('../../src/github/client.js');
+vi.mock('../../src/session.js', () => ({
+  logSessionError: vi.fn(() => Promise.resolve()),
+}));
+
+describe('GitHub Repository Structure - Pagination', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearAllCache();
+  });
+
+  function createMockFiles(count: number, prefix: string = 'file') {
+    return Array.from({ length: count }, (_, i) => ({
+      name: `${prefix}${i}.ts`,
+      path: `${prefix}${i}.ts`,
+      type: 'file' as const,
+      size: 100,
+      url: `https://api.github.com/repos/test/repo/contents/${prefix}${i}.ts`,
+      html_url: `https://github.com/test/repo/blob/main/${prefix}${i}.ts`,
+      git_url: `https://api.github.com/repos/test/repo/git/blobs/${i}`,
+      sha: `sha${i}`,
+    }));
+  }
+
+  function createMockOctokit(items: unknown[]) {
+    return {
+      rest: {
+        repos: {
+          get: vi.fn().mockResolvedValue({
+            data: { default_branch: 'main' },
+          }),
+          getContent: vi.fn().mockResolvedValue({
+            data: items,
+          }),
+        },
+      },
+    };
+  }
+
+  describe('pagination info', () => {
+    it('should include pagination info when results fit on one page', async () => {
+      const files = createMockFiles(10);
+      const mockOctokit = createMockOctokit(files);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+      });
+
+      expect('structure' in result).toBe(true);
+      if ('structure' in result) {
+        expect(result.pagination).toBeDefined();
+        expect(result.pagination?.currentPage).toBe(1);
+        expect(result.pagination?.totalPages).toBe(1);
+        expect(result.pagination?.hasMore).toBe(false);
+        expect(result.pagination?.entriesPerPage).toBe(
+          GITHUB_STRUCTURE_DEFAULTS.ENTRIES_PER_PAGE
+        );
+        expect(result.pagination?.totalEntries).toBe(10);
+      }
+    });
+
+    it('should paginate results when exceeding entriesPerPage', async () => {
+      const files = createMockFiles(100);
+      const mockOctokit = createMockOctokit(files);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        entriesPerPage: 20,
+      });
+
+      expect('structure' in result).toBe(true);
+      if ('structure' in result) {
+        expect(result.pagination).toBeDefined();
+        expect(result.pagination?.currentPage).toBe(1);
+        expect(result.pagination?.totalPages).toBe(5); // 100 / 20
+        expect(result.pagination?.hasMore).toBe(true);
+        expect(result.pagination?.entriesPerPage).toBe(20);
+        expect(result.pagination?.totalEntries).toBe(100);
+
+        // Should only have first 20 files
+        expect(result.structure['.']!.files.length).toBe(20);
+      }
+    });
+
+    it('should return correct page when entryPageNumber is specified', async () => {
+      const files = createMockFiles(100);
+      const mockOctokit = createMockOctokit(files);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        entriesPerPage: 20,
+        entryPageNumber: 3,
+      });
+
+      expect('structure' in result).toBe(true);
+      if ('structure' in result) {
+        expect(result.pagination?.currentPage).toBe(3);
+        expect(result.pagination?.totalPages).toBe(5);
+        expect(result.pagination?.hasMore).toBe(true);
+
+        // Should have 20 files on page 3
+        // Note: files are sorted lexicographically, so file10 < file2 < file20
+        expect(result.structure['.']!.files.length).toBe(20);
+      }
+    });
+
+    it('should handle last page correctly', async () => {
+      const files = createMockFiles(95); // Not a clean multiple of 20
+      const mockOctokit = createMockOctokit(files);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        entriesPerPage: 20,
+        entryPageNumber: 5, // Last page
+      });
+
+      expect('structure' in result).toBe(true);
+      if ('structure' in result) {
+        expect(result.pagination?.currentPage).toBe(5);
+        expect(result.pagination?.totalPages).toBe(5);
+        expect(result.pagination?.hasMore).toBe(false);
+
+        // Last page should have remaining files (95 total, pages 1-4 have 80, so 15 left)
+        // Note: files are sorted lexicographically
+        expect(result.structure['.']!.files.length).toBe(15);
+      }
+    });
+
+    it('should use default entriesPerPage when not specified', async () => {
+      const files = createMockFiles(100);
+      const mockOctokit = createMockOctokit(files);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+      });
+
+      expect('structure' in result).toBe(true);
+      if ('structure' in result) {
+        expect(result.pagination?.entriesPerPage).toBe(
+          GITHUB_STRUCTURE_DEFAULTS.ENTRIES_PER_PAGE
+        );
+      }
+    });
+  });
+
+  describe('pagination hints', () => {
+    it('should include pagination hints when hasMore is true', async () => {
+      const files = createMockFiles(100);
+      const mockOctokit = createMockOctokit(files);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        entriesPerPage: 20,
+      });
+
+      expect('structure' in result).toBe(true);
+      if ('structure' in result) {
+        expect(result.hints).toBeDefined();
+        expect(Array.isArray(result.hints)).toBe(true);
+
+        const hintsText = result.hints!.join('\n');
+
+        // Should mention page info
+        expect(hintsText).toContain('Page 1/5');
+
+        // Should explain how to get next page
+        expect(hintsText).toContain('TO GET NEXT PAGE');
+        expect(hintsText).toContain('entryPageNumber=2');
+
+        // Should include context params
+        expect(hintsText).toContain('owner="test"');
+        expect(hintsText).toContain('repo="repo"');
+        expect(hintsText).toContain('branch="main"');
+      }
+    });
+
+    it('should indicate complete results when hasMore is false', async () => {
+      const files = createMockFiles(10);
+      const mockOctokit = createMockOctokit(files);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+      });
+
+      expect('structure' in result).toBe(true);
+      if ('structure' in result) {
+        expect(result.hints).toBeDefined();
+
+        const hintsText = result.hints!.join('\n');
+
+        // Should indicate complete results
+        expect(hintsText).toContain('Complete structure retrieved');
+        expect(hintsText).not.toContain('TO GET NEXT PAGE');
+      }
+    });
+
+    it('should include path and depth in hints when specified', async () => {
+      const folders = [
+        {
+          name: 'sub1',
+          path: 'src/sub1',
+          type: 'dir' as const,
+          size: 0,
+          url: 'https://api.github.com/repos/test/repo/contents/src/sub1',
+          html_url: 'https://github.com/test/repo/tree/main/src/sub1',
+          git_url: 'https://api.github.com/repos/test/repo/git/trees/a',
+          sha: 'sha1',
+        },
+      ];
+      const files = createMockFiles(100).map(f => ({
+        ...f,
+        path: `src/${f.name}`,
+      }));
+      const mockOctokit = createMockOctokit([...folders, ...files]);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        path: 'src',
+        depth: 2,
+        entriesPerPage: 20,
+      });
+
+      expect('structure' in result).toBe(true);
+      if ('structure' in result && result.pagination?.hasMore) {
+        const hintsText = result.hints!.join('\n');
+
+        // Should include path in hints
+        expect(hintsText).toContain('path="src"');
+        // Should include depth when > 1
+        expect(hintsText).toContain('depth=2');
+      }
+    });
+  });
+
+  describe('summary truncation info', () => {
+    it('should set truncated=true when more pages exist', async () => {
+      const files = createMockFiles(100);
+      const mockOctokit = createMockOctokit(files);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        entriesPerPage: 20,
+      });
+
+      expect('structure' in result).toBe(true);
+      if ('structure' in result) {
+        expect(result.summary.truncated).toBe(true);
+        expect(result.summary.originalCount).toBe(100);
+      }
+    });
+
+    it('should set truncated=false when all results are shown', async () => {
+      const files = createMockFiles(10);
+      const mockOctokit = createMockOctokit(files);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+      });
+
+      expect('structure' in result).toBe(true);
+      if ('structure' in result) {
+        expect(result.summary.truncated).toBe(false);
+      }
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should handle page number beyond total pages', async () => {
+      const files = createMockFiles(50);
+      const mockOctokit = createMockOctokit(files);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        entriesPerPage: 20,
+        entryPageNumber: 10, // Way beyond available pages (should be 3)
+      });
+
+      expect('structure' in result).toBe(true);
+      if ('structure' in result) {
+        // Should return empty structure for beyond-last-page
+        expect(result.structure['.']?.files?.length ?? 0).toBe(0);
+        expect(result.pagination?.hasMore).toBe(false);
+      }
+    });
+
+    it('should handle empty directory', async () => {
+      const mockOctokit = createMockOctokit([]);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        entriesPerPage: 20,
+      });
+
+      expect('structure' in result).toBe(true);
+      if ('structure' in result) {
+        expect(result.pagination?.totalEntries).toBe(0);
+        expect(result.pagination?.totalPages).toBe(1);
+        expect(result.pagination?.hasMore).toBe(false);
+      }
+    });
+
+    it('should count files and folders correctly in hints', async () => {
+      const items = [
+        ...createMockFiles(30),
+        ...[1, 2, 3, 4, 5].map(i => ({
+          name: `folder${i}`,
+          path: `folder${i}`,
+          type: 'dir' as const,
+          size: 0,
+          url: `https://api.github.com/repos/test/repo/contents/folder${i}`,
+          html_url: `https://github.com/test/repo/tree/main/folder${i}`,
+          git_url: `https://api.github.com/repos/test/repo/git/trees/f${i}`,
+          sha: `shaf${i}`,
+        })),
+      ];
+      const mockOctokit = createMockOctokit(items);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        entriesPerPage: 20,
+      });
+
+      expect('structure' in result).toBe(true);
+      if ('structure' in result) {
+        expect(result.hints).toBeDefined();
+
+        const hintsText = result.hints!.join('\n');
+
+        // Should show total files and folders
+        expect(hintsText).toContain('30 files');
+        expect(hintsText).toContain('5 folders');
+        expect(hintsText).toContain('35 entries');
+      }
+    });
+  });
+});

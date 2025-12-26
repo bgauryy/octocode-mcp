@@ -31,20 +31,24 @@ export async function showGitHubAuthGuidance(): Promise<void> {
       `  ${c('red', '✗')} GitHub CLI (gh) is ${c('red', 'not installed')}`
     );
     console.log();
-    console.log(`  ${bold('Why do you need GitHub CLI?')}`);
-    console.log(`    ${dim('Octocode uses GitHub CLI for authentication.')}`);
     console.log(
-      `    ${dim('This provides secure access to GitHub repositories.')}`
+      `  ${bold('Option 1: Install GitHub CLI')} ${dim('(Recommended)')}`
     );
-    console.log();
-    console.log(`  ${bold('To install:')}`);
     console.log(`    ${c('cyan', '→')} Visit: ${c('underscore', GH_CLI_URL)}`);
     console.log();
-    console.log(`  ${dim('macOS:')}     ${c('yellow', 'brew install gh')}`);
+    console.log(`    ${dim('macOS:')}     ${c('yellow', 'brew install gh')}`);
     console.log(
-      `  ${dim('Windows:')}   ${c('yellow', 'winget install GitHub.cli')}`
+      `    ${dim('Windows:')}   ${c('yellow', 'winget install GitHub.cli')}`
     );
-    console.log(`  ${dim('Linux:')}     ${c('yellow', 'See ' + GH_CLI_URL)}`);
+    console.log(`    ${dim('Linux:')}     ${c('yellow', 'See ' + GH_CLI_URL)}`);
+    console.log();
+    console.log(`  ${bold('Option 2: Set GITHUB_TOKEN')}`);
+    console.log(`    ${dim('Add to your MCP config env section:')}`);
+    console.log(`    ${c('yellow', '"GITHUB_TOKEN": "ghp_your_token_here"')}`);
+    console.log();
+    console.log(
+      `    ${dim('Get a token at:')} ${c('underscore', 'https://github.com/settings/tokens')}`
+    );
     console.log();
 
     await promptContinue();
@@ -71,15 +75,24 @@ export async function showGitHubAuthGuidance(): Promise<void> {
     // Not authenticated
     console.log(`  ${c('yellow', '⚠')} ${c('yellow', 'Not authenticated')}`);
     console.log();
-    console.log(`  ${bold('To authenticate:')}`);
+    console.log(
+      `  ${bold('Option 1: Login with GitHub CLI')} ${dim('(Recommended)')}`
+    );
     console.log(
       `    ${c('cyan', '→')} Run: ${c('yellow', getAuthLoginCommand())}`
     );
     console.log();
     console.log(
-      `  ${dim('This will open a browser to authenticate with GitHub.')}`
+      `    ${dim('This will open a browser to authenticate with GitHub.')}`
     );
-    console.log(`  ${dim('Follow the prompts to complete authentication.')}`);
+    console.log();
+    console.log(`  ${bold('Option 2: Set GITHUB_TOKEN')}`);
+    console.log(`    ${dim('Add to your MCP config env section:')}`);
+    console.log(`    ${c('yellow', '"GITHUB_TOKEN": "ghp_your_token_here"')}`);
+    console.log();
+    console.log(
+      `    ${dim('Get a token at:')} ${c('underscore', 'https://github.com/settings/tokens')}`
+    );
   }
 
   console.log();
@@ -96,10 +109,12 @@ export function printGitHubAuthStatus(): void {
     console.log(
       `  ${c('yellow', '⚠')} GitHub CLI not installed - visit ${c('underscore', GH_CLI_URL)}`
     );
+    console.log(`      ${dim('or set GITHUB_TOKEN in MCP config')}`);
   } else if (!status.authenticated) {
     console.log(
       `  ${c('yellow', '⚠')} GitHub CLI not authenticated - run ${c('yellow', getAuthLoginCommand())}`
     );
+    console.log(`      ${dim('or set GITHUB_TOKEN in MCP config')}`);
   } else {
     console.log(
       `  ${c('green', '✓')} GitHub: Authenticated as ${c('cyan', status.username || 'unknown')}`

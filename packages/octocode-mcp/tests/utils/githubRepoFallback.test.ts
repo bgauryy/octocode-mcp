@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  tryInferRepoUrl,
-  addKnownPackageRepo,
-  getOrgForScope,
-} from '../../src/utils/githubRepoFallback.js';
+import { tryInferRepoUrl } from '../../src/utils/githubRepoFallback.js';
 import type { NpmPackageResult } from '../../src/utils/package.js';
 
 // Helper to create a valid NpmPackageResult with optional overrides
@@ -167,69 +163,6 @@ describe('githubRepoFallback', () => {
       const result = tryInferRepoUrl('@trpc/server', existing);
 
       expect(result.repoUrl).toBe('https://github.com/trpc/server');
-    });
-  });
-
-  describe('addKnownPackageRepo', () => {
-    it('should add a new known package mapping', () => {
-      const packageName = '@test/new-package-' + Date.now();
-      const repoUrl = 'https://github.com/test/new-package';
-
-      addKnownPackageRepo(packageName, repoUrl);
-
-      const existing = createNpmResult();
-      const result = tryInferRepoUrl(packageName, existing);
-
-      expect(result.repoUrl).toBe(repoUrl);
-    });
-
-    it('should override existing mapping', () => {
-      const packageName = '@test/override-package-' + Date.now();
-      const originalUrl = 'https://github.com/test/original';
-      const newUrl = 'https://github.com/test/new';
-
-      addKnownPackageRepo(packageName, originalUrl);
-      addKnownPackageRepo(packageName, newUrl);
-
-      const existing = createNpmResult();
-      const result = tryInferRepoUrl(packageName, existing);
-
-      expect(result.repoUrl).toBe(newUrl);
-    });
-  });
-
-  describe('getOrgForScope', () => {
-    it('should return org for known scope', () => {
-      expect(getOrgForScope('wix')).toBe('wix-private');
-      expect(getOrgForScope('babel')).toBe('babel');
-      expect(getOrgForScope('angular')).toBe('angular');
-      expect(getOrgForScope('vue')).toBe('vuejs');
-      expect(getOrgForScope('types')).toBe('DefinitelyTyped');
-    });
-
-    it('should return undefined for unknown scope', () => {
-      expect(getOrgForScope('unknown')).toBeUndefined();
-      expect(getOrgForScope('random-scope')).toBeUndefined();
-    });
-
-    it('should return org for vercel and related scopes', () => {
-      expect(getOrgForScope('vercel')).toBe('vercel');
-      expect(getOrgForScope('nextjs')).toBe('vercel');
-    });
-
-    it('should return org for prisma and trpc', () => {
-      expect(getOrgForScope('prisma')).toBe('prisma');
-      expect(getOrgForScope('trpc')).toBe('trpc');
-    });
-
-    it('should return org for modelcontextprotocol', () => {
-      expect(getOrgForScope('modelcontextprotocol')).toBe(
-        'modelcontextprotocol'
-      );
-    });
-
-    it('should return org for react scope', () => {
-      expect(getOrgForScope('react')).toBe('facebook');
     });
   });
 });

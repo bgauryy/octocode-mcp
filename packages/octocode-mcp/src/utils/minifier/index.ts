@@ -2,9 +2,4 @@ export {
   jsonToYamlString,
   type YamlConversionConfig,
 } from './jsonToYamlString.js';
-export {
-  minifyContent,
-  isJavaScriptFileV2,
-  isIndentationSensitiveV2,
-  MINIFY_CONFIG,
-} from './minifier.js';
+export { minifyContent, MINIFY_CONFIG } from './minifier.js';

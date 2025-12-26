@@ -3,7 +3,11 @@ import {
   GitHubPullRequestItem,
   CommitInfo,
   DiffEntry,
-  CommitFileItem,
+  CommitFileInfo,
+  IssueSearchResultItem,
+  PullRequestSimple,
+  PullRequestItem,
+  IssueComment,
 } from './githubAPI';
 import type { PullRequestSearchResult } from '../types';
 import { SEARCH_ERRORS } from '../errorCodes.js';
@@ -106,14 +110,13 @@ async function searchGitHubPullRequestsAPIInternal(
       per_page: Math.min(params.limit || 30, 100),
     });
 
-    const pullRequests =
-      searchResult.data.items?.filter(
-        (item: Record<string, unknown>) => item.pull_request
-      ) || [];
+    const pullRequests = (searchResult.data.items?.filter(
+      (item: IssueSearchResultItem) => !!item.pull_request
+    ) || []) as IssueSearchResultItem[];
 
     const transformedPRs: GitHubPullRequestItem[] = await Promise.all(
-      pullRequests.map(async (item: Record<string, unknown>) => {
-        return await transformPullRequestItem(item, params, octokit);
+      pullRequests.map(async (item: IssueSearchResultItem) => {
+        return await transformPullRequestItemFromSearch(item, params, octokit);
       })
     );
 
@@ -155,6 +158,9 @@ async function searchGitHubPullRequestsAPIInternal(
       ...(pr.commits && {
         commit_details: pr.commits,
       }),
+      ...(pr._sanitization_warnings && {
+        _sanitization_warnings: pr._sanitization_warnings,
+      }),
     }));
 
     return {
@@ -185,22 +191,19 @@ async function searchPullRequestsWithREST(
     const owner = params.owner as string;
     const repo = params.repo as string;
 
-    const listParams: Record<string, unknown> = {
+    const result = await octokit.rest.pulls.list({
       owner,
       repo,
       state: params.state || 'open',
       per_page: Math.min(params.limit || 30, 100),
       sort: params.sort === 'updated' ? 'updated' : 'created',
       direction: params.order || 'desc',
-    };
-
-    if (params.head) listParams.head = params.head;
-    if (params.base) listParams.base = params.base;
-
-    const result = await octokit.rest.pulls.list(listParams);
+      ...(params.head && { head: params.head }),
+      ...(params.base && { base: params.base }),
+    });
 
     const transformedPRs: GitHubPullRequestItem[] = await Promise.all(
-      result.data.map(async (item: Record<string, unknown>) => {
+      result.data.map(async (item: PullRequestSimple) => {
         return await transformPullRequestItemFromREST(item, params, octokit);
       })
     );
@@ -243,6 +246,9 @@ async function searchPullRequestsWithREST(
       ...(pr.commits && {
         commit_details: pr.commits,
       }),
+      ...(pr._sanitization_warnings && {
+        _sanitization_warnings: pr._sanitization_warnings,
+      }),
     }));
 
     return {
@@ -264,15 +270,62 @@ async function searchPullRequestsWithREST(
   }
 }
 
-function createBasePRTransformation(item: Record<string, unknown>): {
+function createBasePRTransformationFromSearch(item: IssueSearchResultItem): {
   prData: GitHubPullRequestItem;
   sanitizationWarnings: Set<string>;
 } {
-  const titleSanitized = ContentSanitizer.sanitizeContent(
-    (item.title as string) || ''
-  );
+  const titleSanitized = ContentSanitizer.sanitizeContent(item.title ?? '');
   const bodySanitized = item.body
-    ? ContentSanitizer.sanitizeContent(item.body as string)
+    ? ContentSanitizer.sanitizeContent(item.body)
+    : { content: undefined, warnings: [] };
+
+  const sanitizationWarnings = new Set<string>([
+    ...titleSanitized.warnings,
+    ...bodySanitized.warnings,
+  ]);
+
+  // Search API may include merged_at in extended response
+  const itemWithMergedAt = item as IssueSearchResultItem & {
+    merged_at?: string | null;
+  };
+
+  const prData: GitHubPullRequestItem = {
+    number: item.number,
+    title: titleSanitized.content,
+    body: bodySanitized.content,
+    state: (item.state?.toLowerCase() ?? 'unknown') as 'open' | 'closed',
+    author: item.user?.login ?? '',
+    labels:
+      item.labels?.map(l => (typeof l === 'string' ? l : (l.name ?? ''))) ?? [],
+    created_at: item.created_at ?? '',
+    updated_at: item.updated_at ?? '',
+    closed_at: item.closed_at ?? null,
+    url: item.html_url,
+    comments: [],
+    reactions: 0,
+    draft: item.draft ?? false,
+    // Search API doesn't include head/base refs - will be fetched from PR details
+    head: undefined,
+    head_sha: undefined,
+    base: undefined,
+    base_sha: undefined,
+    ...(itemWithMergedAt.merged_at && {
+      merged_at: itemWithMergedAt.merged_at,
+    }),
+  };
+
+  return { prData, sanitizationWarnings };
+}
+
+function createBasePRTransformationFromREST(
+  item: PullRequestSimple | PullRequestItem
+): {
+  prData: GitHubPullRequestItem;
+  sanitizationWarnings: Set<string>;
+} {
+  const titleSanitized = ContentSanitizer.sanitizeContent(item.title ?? '');
+  const bodySanitized = item.body
+    ? ContentSanitizer.sanitizeContent(item.body)
     : { content: undefined, warnings: [] };
 
   const sanitizationWarnings = new Set<string>([
@@ -281,32 +334,28 @@ function createBasePRTransformation(item: Record<string, unknown>): {
   ]);
 
   const prData: GitHubPullRequestItem = {
-    number: item.number as number,
+    number: item.number,
     title: titleSanitized.content,
     body: bodySanitized.content,
-    state: ((item.state as string)?.toLowerCase() || 'unknown') as
-      | 'open'
-      | 'closed',
-    author: ((item.user as Record<string, unknown>)?.login as string) || '',
+    state: (item.state?.toLowerCase() ?? 'unknown') as 'open' | 'closed',
+    author: item.user?.login ?? '',
     labels:
-      (item.labels as Array<Record<string, unknown>>)?.map(
-        (l: Record<string, unknown>) => l.name as string
-      ) || [],
-    created_at: (item.created_at as string) || '',
-    updated_at: (item.updated_at as string) || '',
-    closed_at: (item.closed_at as string) || null,
-    url: item.html_url as string,
-    comments: [], // Will be populated if withComments is true
-    reactions: 0, // REST API doesn't provide reactions in list
-    draft: (item.draft as boolean) ?? false,
-    head: (item.head as Record<string, unknown>)?.ref as string,
-    head_sha: (item.head as Record<string, unknown>)?.sha as string,
-    base: (item.base as Record<string, unknown>)?.ref as string,
-    base_sha: (item.base as Record<string, unknown>)?.sha as string,
+      item.labels?.map(l => (typeof l === 'string' ? l : (l.name ?? ''))) ?? [],
+    created_at: item.created_at ?? '',
+    updated_at: item.updated_at ?? '',
+    closed_at: item.closed_at ?? null,
+    url: item.html_url,
+    comments: [],
+    reactions: 0,
+    draft: item.draft ?? false,
+    head: item.head?.ref,
+    head_sha: item.head?.sha,
+    base: item.base?.ref,
+    base_sha: item.base?.sha,
   };
 
   if (item.merged_at) {
-    prData.merged_at = item.merged_at as string;
+    prData.merged_at = item.merged_at;
   }
 
   return { prData, sanitizationWarnings };
@@ -325,15 +374,12 @@ async function fetchPRComments(
       issue_number: prNumber,
     });
 
-    return commentsResult.data.map((comment: Record<string, unknown>) => ({
-      id: comment.id as string,
-      user:
-        ((comment.user as Record<string, unknown>)?.login as string) ||
-        'unknown',
-      body: ContentSanitizer.sanitizeContent((comment.body as string) || '')
-        .content,
-      created_at: (comment.created_at as string) || '',
-      updated_at: (comment.updated_at as string) || '',
+    return commentsResult.data.map((comment: IssueComment) => ({
+      id: String(comment.id),
+      user: comment.user?.login ?? 'unknown',
+      body: ContentSanitizer.sanitizeContent(comment.body ?? '').content,
+      created_at: comment.created_at ?? '',
+      updated_at: comment.updated_at ?? '',
     }));
   } catch {
     return [];
@@ -354,9 +400,9 @@ function normalizeOwnerRepo(params: GitHubPullRequestsSearchParams): {
 }
 
 function applyPartialContentFilter(
-  files: (DiffEntry | CommitFileItem)[],
+  files: (DiffEntry | CommitFileInfo)[],
   params: GitHubPullRequestsSearchParams
-): (DiffEntry | CommitFileItem)[] {
+): (DiffEntry | CommitFileInfo)[] {
   const type = params.type || 'metadata';
   const metadataMap = new Map(
     params.partialContentMetadata?.map(m => [m.file, m]) || []
@@ -383,13 +429,13 @@ function applyPartialContentFilter(
   return files;
 }
 
-async function transformPullRequestItem(
-  item: Record<string, unknown>,
+async function transformPullRequestItemFromSearch(
+  item: IssueSearchResultItem,
   params: GitHubPullRequestsSearchParams,
   octokit: InstanceType<typeof OctokitWithThrottling>
 ): Promise<GitHubPullRequestItem> {
   const { prData: result, sanitizationWarnings } =
-    createBasePRTransformation(item);
+    createBasePRTransformationFromSearch(item);
 
   if (sanitizationWarnings.size > 0) {
     result._sanitization_warnings = Array.from(sanitizationWarnings);
@@ -407,7 +453,7 @@ async function transformPullRequestItem(
         const prDetails = await octokit.rest.pulls.get({
           owner,
           repo,
-          pull_number: item.number as number,
+          pull_number: item.number,
         });
 
         if (prDetails.data) {
@@ -417,11 +463,16 @@ async function transformPullRequestItem(
           result.base_sha = prDetails.data.base?.sha;
           result.draft = prDetails.data.draft ?? false;
 
+          // Copy merged_at from PR details - Search API doesn't return this field
+          if (prDetails.data.merged_at) {
+            result.merged_at = prDetails.data.merged_at;
+          }
+
           if (shouldFetchContent) {
             const fileChanges = await fetchPRFileChangesAPI(
               owner,
               repo,
-              item.number as number
+              item.number
             );
 
             if (fileChanges) {
@@ -437,6 +488,10 @@ async function transformPullRequestItem(
       }
     } catch (e) {
       logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(e));
+      result._sanitization_warnings = [
+        ...(result._sanitization_warnings || []),
+        `Partial Data: Failed to fetch details (files): ${e instanceof Error ? e.message : String(e)}`,
+      ];
     }
   }
 
@@ -447,7 +502,7 @@ async function transformPullRequestItem(
         octokit,
         owner,
         repo,
-        item.number as number
+        item.number
       );
     }
   }
@@ -459,7 +514,7 @@ async function transformPullRequestItem(
         const commits = await fetchPRCommitsWithFiles(
           owner,
           repo,
-          item.number as number,
+          item.number,
           params
         );
         if (commits) {
@@ -468,6 +523,10 @@ async function transformPullRequestItem(
       }
     } catch (e) {
       logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(e));
+      result._sanitization_warnings = [
+        ...(result._sanitization_warnings || []),
+        `Partial Data: Failed to fetch details (commits): ${e instanceof Error ? e.message : String(e)}`,
+      ];
     }
   }
 
@@ -480,33 +539,29 @@ async function fetchPRFileChangesAPI(
   prNumber: number,
   authInfo?: AuthInfo
 ): Promise<{ total_count: number; files: DiffEntry[] } | null> {
-  try {
-    const octokit = await getOctokit(authInfo);
-    const allFiles: DiffEntry[] = [];
-    let page = 1;
-    let keepFetching = true;
+  const octokit = await getOctokit(authInfo);
+  const allFiles: DiffEntry[] = [];
+  let page = 1;
+  let keepFetching = true;
 
-    do {
-      const result = await octokit.rest.pulls.listFiles({
-        owner,
-        repo,
-        pull_number: prNumber,
-        per_page: 100,
-        page: page,
-      });
+  do {
+    const result = await octokit.rest.pulls.listFiles({
+      owner,
+      repo,
+      pull_number: prNumber,
+      per_page: 100,
+      page: page,
+    });
 
-      allFiles.push(...result.data);
-      keepFetching = result.data.length === 100;
-      page++;
-    } while (keepFetching);
+    allFiles.push(...result.data);
+    keepFetching = result.data.length === 100;
+    page++;
+  } while (keepFetching);
 
-    return {
-      total_count: allFiles.length,
-      files: allFiles,
-    };
-  } catch {
-    return null;
-  }
+  return {
+    total_count: allFiles.length,
+    files: allFiles,
+  };
 }
 
 interface CommitListItem {
@@ -526,18 +581,14 @@ async function fetchPRCommitsAPI(
   prNumber: number,
   authInfo?: AuthInfo
 ): Promise<CommitListItem[] | null> {
-  try {
-    const octokit = await getOctokit(authInfo);
-    const result = await octokit.rest.pulls.listCommits({
-      owner,
-      repo,
-      pull_number: prNumber,
-    });
+  const octokit = await getOctokit(authInfo);
+  const result = await octokit.rest.pulls.listCommits({
+    owner,
+    repo,
+    pull_number: prNumber,
+  });
 
-    return result.data as CommitListItem[];
-  } catch {
-    return null;
-  }
+  return result.data as CommitListItem[];
 }
 
 async function fetchCommitFilesAPI(
@@ -545,7 +596,7 @@ async function fetchCommitFilesAPI(
   repo: string,
   sha: string,
   authInfo?: AuthInfo
-): Promise<CommitFileItem[] | null> {
+): Promise<CommitFileInfo[] | null> {
   try {
     const octokit = await getOctokit(authInfo);
     const result = await octokit.rest.repos.getCommit({
@@ -554,7 +605,7 @@ async function fetchCommitFilesAPI(
       ref: sha,
     });
 
-    return (result.data.files || []) as CommitFileItem[];
+    return (result.data.files || []) as CommitFileInfo[];
   } catch {
     return null;
   }
@@ -595,7 +646,7 @@ async function fetchPRCommitsWithFiles(
         processedFiles = applyPartialContentFilter(
           files,
           params
-        ) as CommitFileItem[];
+        ) as CommitFileInfo[];
       }
 
       return {
@@ -612,13 +663,13 @@ async function fetchPRCommitsWithFiles(
 }
 
 export async function transformPullRequestItemFromREST(
-  item: Record<string, unknown>,
+  item: PullRequestSimple | PullRequestItem,
   params: GitHubPullRequestsSearchParams,
   octokit: InstanceType<typeof OctokitWithThrottling>,
   authInfo?: AuthInfo
 ): Promise<GitHubPullRequestItem> {
   const { prData: result, sanitizationWarnings } =
-    createBasePRTransformation(item);
+    createBasePRTransformationFromREST(item);
 
   if (sanitizationWarnings.size > 0) {
     result._sanitization_warnings = Array.from(sanitizationWarnings);
@@ -628,37 +679,44 @@ export async function transformPullRequestItemFromREST(
   const shouldFetchContent =
     type === 'fullContent' || type === 'partialContent' || type === 'metadata';
 
+  // Owner and repo are guaranteed to be strings for REST API calls
+  const owner = params.owner as string;
+  const repo = params.repo as string;
+
   if (shouldFetchContent) {
-    const fileChanges = await fetchPRFileChangesAPI(
-      params.owner as string,
-      params.repo as string,
-      item.number as number,
-      authInfo
-    );
-    if (fileChanges) {
-      fileChanges.files = applyPartialContentFilter(
-        fileChanges.files,
-        params
-      ) as DiffEntry[];
-      result.file_changes = fileChanges;
+    try {
+      const fileChanges = await fetchPRFileChangesAPI(
+        owner,
+        repo,
+        item.number,
+        authInfo
+      );
+      if (fileChanges) {
+        fileChanges.files = applyPartialContentFilter(
+          fileChanges.files,
+          params
+        ) as DiffEntry[];
+        result.file_changes = fileChanges;
+      }
+    } catch (e) {
+      logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(e));
+      result._sanitization_warnings = [
+        ...(result._sanitization_warnings || []),
+        `Partial Data: Failed to fetch details (files): ${e instanceof Error ? e.message : String(e)}`,
+      ];
     }
   }
 
   if (params.withComments) {
-    result.comments = await fetchPRComments(
-      octokit,
-      params.owner as string,
-      params.repo as string,
-      item.number as number
-    );
+    result.comments = await fetchPRComments(octokit, owner, repo, item.number);
   }
 
   if (params.withCommits) {
     try {
       const commits = await fetchPRCommitsWithFiles(
-        params.owner as string,
-        params.repo as string,
-        item.number as number,
+        owner,
+        repo,
+        item.number,
         params,
         authInfo
       );
@@ -667,6 +725,10 @@ export async function transformPullRequestItemFromREST(
       }
     } catch (e) {
       logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(e));
+      result._sanitization_warnings = [
+        ...(result._sanitization_warnings || []),
+        `Partial Data: Failed to fetch details (commits): ${e instanceof Error ? e.message : String(e)}`,
+      ];
     }
   }
 
@@ -791,6 +853,9 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
       }),
       ...(transformedPR.commits && {
         commit_details: transformedPR.commits,
+      }),
+      ...(transformedPR._sanitization_warnings && {
+        _sanitization_warnings: transformedPR._sanitization_warnings,
       }),
     };
 

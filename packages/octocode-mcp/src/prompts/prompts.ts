@@ -31,8 +31,11 @@ export function registerPrompts(
     }
 
     const argsShape: Record<string, z.ZodTypeAny> = {};
-    if (prompt.args) {
+    if (prompt.args && Array.isArray(prompt.args)) {
       for (const arg of prompt.args) {
+        if (!arg || typeof arg.name !== 'string') {
+          continue;
+        }
         let schema: z.ZodTypeAny = z.string().describe(arg.description);
         if (!arg.required) {
           schema = schema.optional();

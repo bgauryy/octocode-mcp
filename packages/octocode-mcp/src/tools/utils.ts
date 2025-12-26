@@ -1,6 +1,6 @@
 import type { GitHubAPIError } from '../github/githubAPI';
 import type { ToolErrorResult, ToolSuccessResult } from '../types.js';
-import { TOOL_NAMES, getToolHintsSync } from './toolMetadata.js';
+import { getToolHintsSync } from './toolMetadata.js';
 import { logSessionError } from '../session.js';
 import { TOOL_ERRORS } from '../errorCodes.js';
 
@@ -30,6 +30,10 @@ function extractApiErrorHints(apiError: GitHubAPIError): string[] {
   return hints;
 }
 
+/**
+ * Create error result for GitHub API tools
+ * Handles GitHub API errors with rate limits, scopes suggestions, etc.
+ */
 export function createErrorResult(
   query: {
     mainResearchGoal?: string;
@@ -64,7 +68,7 @@ export function createSuccessResult<T extends Record<string, unknown>>(
   },
   data: T,
   hasContent: boolean,
-  _toolName: keyof typeof TOOL_NAMES,
+  toolName: string,
   customHints?: string[]
 ): ToolSuccessResult<T> & T {
   const status = hasContent ? ('hasResults' as const) : ('empty' as const);
@@ -77,7 +81,7 @@ export function createSuccessResult<T extends Record<string, unknown>>(
     ...data,
   };
 
-  const staticHints = getToolHintsSync(_toolName as string, status);
+  const staticHints = getToolHintsSync(toolName, status);
   const allHints = [...staticHints, ...(customHints || [])];
 
   if (allHints.length > 0) {

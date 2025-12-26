@@ -30,6 +30,15 @@ export interface NpmPackageResult {
   lastPublished?: string;
   owner?: string;
   repo?: string;
+  // Extended metadata (available when npmFetchMetadata=true)
+  description?: string;
+  keywords?: string[];
+  license?: string;
+  homepage?: string;
+  author?: string;
+  engines?: Record<string, string>;
+  dependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
 }
 
 export interface PythonPackageResult {

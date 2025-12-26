@@ -19,6 +19,10 @@ import {
 import { checkNodeInPath, checkNpmInPath } from '../features/node-check.js';
 import { IDE_INFO, INSTALL_METHOD_INFO } from '../ui/constants.js';
 import { Spinner } from '../utils/spinner.js';
+import { copyDirectory, dirExists, listSubdirectories } from '../utils/fs.js';
+import { HOME } from '../utils/platform.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Print node-doctor hint for CLI mode
@@ -246,9 +250,152 @@ const authCommand: CLICommand = {
 };
 
 /**
+ * Get skills source directory
+ */
+function getSkillsSourceDir(): string {
+  // Get the directory where this file is located
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  // Navigate from out/cli/ to skills/
+  return path.resolve(__dirname, '..', '..', 'skills');
+}
+
+/**
+ * Get Claude skills destination directory
+ */
+function getSkillsDestDir(): string {
+  return path.join(HOME, '.claude', 'skills');
+}
+
+/**
+ * Skills command
+ */
+const skillsCommand: CLICommand = {
+  name: 'skills',
+  aliases: ['sk'],
+  description: 'Install Octocode skills for Claude Code',
+  usage: 'octocode skills [install|list]',
+  options: [
+    {
+      name: 'force',
+      short: 'f',
+      description: 'Overwrite existing skills',
+    },
+  ],
+  handler: async (args: ParsedArgs) => {
+    const subcommand = args.args[0] || 'list';
+    const force = Boolean(args.options['force'] || args.options['f']);
+
+    const srcDir = getSkillsSourceDir();
+    const destDir = getSkillsDestDir();
+
+    // Check if skills source exists
+    if (!dirExists(srcDir)) {
+      console.log();
+      console.log(`  ${c('red', '✗')} Skills directory not found`);
+      console.log(`  ${dim('Expected:')} ${srcDir}`);
+      console.log();
+      process.exitCode = 1;
+      return;
+    }
+
+    const availableSkills = listSubdirectories(srcDir).filter(
+      name => !name.startsWith('.')
+    );
+
+    if (subcommand === 'list') {
+      console.log();
+      console.log(`  ${bold('📚 Available Octocode Skills')}`);
+      console.log();
+
+      if (availableSkills.length === 0) {
+        console.log(`  ${dim('No skills available.')}`);
+      } else {
+        for (const skill of availableSkills) {
+          const installed = dirExists(path.join(destDir, skill));
+          const status = installed
+            ? c('green', '✓ installed')
+            : dim('not installed');
+          console.log(`  ${c('cyan', '•')} ${skill} ${status}`);
+        }
+      }
+
+      console.log();
+      console.log(`  ${dim('To install:')} octocode skills install`);
+      console.log(`  ${dim('Destination:')} ${destDir}`);
+      console.log();
+      return;
+    }
+
+    if (subcommand === 'install') {
+      console.log();
+      console.log(`  ${bold('📦 Installing Octocode Skills')}`);
+      console.log();
+
+      if (availableSkills.length === 0) {
+        console.log(`  ${c('yellow', '⚠')} No skills to install.`);
+        console.log();
+        return;
+      }
+
+      const spinner = new Spinner('Installing skills...').start();
+      let installed = 0;
+      let skipped = 0;
+
+      for (const skill of availableSkills) {
+        const skillSrc = path.join(srcDir, skill);
+        const skillDest = path.join(destDir, skill);
+
+        if (dirExists(skillDest) && !force) {
+          skipped++;
+          continue;
+        }
+
+        if (copyDirectory(skillSrc, skillDest)) {
+          installed++;
+        }
+      }
+
+      spinner.succeed('Skills installation complete!');
+      console.log();
+
+      if (installed > 0) {
+        console.log(
+          `  ${c('green', '✓')} Installed ${installed} skill(s) to ${destDir}`
+        );
+      }
+      if (skipped > 0) {
+        console.log(
+          `  ${c('yellow', '⚠')} Skipped ${skipped} existing skill(s)`
+        );
+        console.log(
+          `  ${dim('Use')} ${c('cyan', '--force')} ${dim('to overwrite.')}`
+        );
+      }
+
+      console.log();
+      console.log(`  ${bold('Skills are now available in Claude Code!')}`);
+      console.log();
+      return;
+    }
+
+    // Unknown subcommand
+    console.log();
+    console.log(`  ${c('red', '✗')} Unknown subcommand: ${subcommand}`);
+    console.log(`  ${dim('Usage:')} octocode skills [install|list]`);
+    console.log();
+    process.exitCode = 1;
+  },
+};
+
+/**
  * All available commands
  */
-export const commands: CLICommand[] = [installCommand, authCommand];
+export const commands: CLICommand[] = [
+  installCommand,
+  authCommand,
+  skillsCommand,
+];
 
 /**
  * Find a command by name or alias

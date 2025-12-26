@@ -48,18 +48,18 @@ export async function initialize(): Promise<void> {
   initializationPromise = (async () => {
     cachedToken = await resolveGitHubToken();
 
+    const isLoggingEnabled =
+      process.env.LOG === undefined ||
+      process.env.LOG === null ||
+      process.env.LOG?.toLowerCase() !== 'false';
+
     config = {
       version: version,
       githubApiUrl: process.env.GITHUB_API_URL || 'https://api.github.com',
       toolsToRun: parseStringArray(process.env.TOOLS_TO_RUN),
       enableTools: parseStringArray(process.env.ENABLE_TOOLS),
       disableTools: parseStringArray(process.env.DISABLE_TOOLS),
-      enableLogging:
-        process.env.LOG === undefined ||
-        process.env.LOG === null ||
-        process.env.LOG?.toLowerCase() !== 'false',
-      betaEnabled:
-        process.env.BETA === '1' || process.env.BETA?.toLowerCase() === 'true',
+      enableLogging: isLoggingEnabled,
       timeout: Math.max(
         30000,
         parseInt(process.env.REQUEST_TIMEOUT || '30000') || 30000
@@ -68,14 +68,10 @@ export async function initialize(): Promise<void> {
         0,
         Math.min(10, parseInt(process.env.MAX_RETRIES || '3') || 3)
       ),
-      loggingEnabled:
-        process.env.LOG === undefined ||
-        process.env.LOG === null ||
-        process.env.LOG?.toLowerCase() !== 'false',
-      sanitize:
-        process.env.SANITIZE === undefined ||
-        process.env.SANITIZE === null ||
-        process.env.SANITIZE?.toLowerCase() !== 'false',
+      loggingEnabled: isLoggingEnabled,
+      enableLocal:
+        process.env.ENABLE_LOCAL === '1' ||
+        process.env.ENABLE_LOCAL?.toLowerCase() === 'true',
     };
   })();
 
@@ -119,20 +115,12 @@ export async function getToken(): Promise<string> {
   return token;
 }
 
-export function isBetaEnabled(): boolean {
-  return getServerConfig().betaEnabled;
-}
-
-export function isSamplingEnabled(): boolean {
-  return isBetaEnabled();
+export function isLocalEnabled(): boolean {
+  return getServerConfig().enableLocal;
 }
 
 export function isLoggingEnabled(): boolean {
   return config?.loggingEnabled ?? false;
-}
-
-export function isSanitizeEnabled(): boolean {
-  return getServerConfig().sanitize;
 }
 
 export function clearCachedToken(): void {

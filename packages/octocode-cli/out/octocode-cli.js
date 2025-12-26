@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os, { homedir } from "node:os";
 import path from "node:path";
 import { spawnSync, execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 const colors = {
   reset: "\x1B[0m",
   bright: "\x1B[1m",
@@ -38,12 +39,50 @@ function clearScreen() {
   const clearSequence = "\x1B[2J\x1B[3J\x1B[H";
   process.stdout.write(clearSequence);
 }
+function openFile(filePath, editor) {
+  try {
+    let command;
+    let args;
+    if (editor) {
+      command = editor;
+      args = [filePath];
+    } else if (isMac) {
+      command = "open";
+      args = [filePath];
+    } else if (isWindows) {
+      command = "cmd";
+      args = ["/c", "start", '""', filePath];
+    } else {
+      command = "xdg-open";
+      args = [filePath];
+    }
+    const result = spawnSync(command, args, {
+      stdio: "ignore",
+      shell: isWindows && !editor
+    });
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+function openInEditor(filePath, ide) {
+  switch (ide) {
+    case "cursor":
+      return openFile(filePath, "cursor");
+    case "vscode":
+      return openFile(filePath, "code");
+    case "default":
+    default:
+      return openFile(filePath);
+  }
+}
 const notLoadedError = () => {
   throw new Error("Inquirer not loaded. Call loadInquirer() first.");
 };
 let select = notLoadedError;
 let confirm = notLoadedError;
 let input = notLoadedError;
+let checkbox = notLoadedError;
 let Separator = class {
   type = "separator";
   separator = "";
@@ -59,6 +98,7 @@ async function loadInquirer() {
     select = inquirer.select;
     confirm = inquirer.confirm;
     input = inquirer.input;
+    checkbox = inquirer.checkbox;
     Separator = inquirer.Separator;
     loaded = true;
   } catch {
@@ -68,6 +108,25 @@ async function loadInquirer() {
     process.exit(1);
   }
 }
+const prompts = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  get Separator() {
+    return Separator;
+  },
+  get checkbox() {
+    return checkbox;
+  },
+  get confirm() {
+    return confirm;
+  },
+  get input() {
+    return input;
+  },
+  loadInquirer,
+  get select() {
+    return select;
+  }
+}, Symbol.toStringTag, { value: "Module" }));
 function runCommand(command, args = []) {
   try {
     const result = spawnSync(command, args, {
@@ -359,6 +418,39 @@ function writeJsonFile(filePath, data) {
     return writeFileContent(filePath, content);
   } catch {
     return false;
+  }
+}
+function copyDirectory(src, dest) {
+  try {
+    if (!dirExists(src)) {
+      return false;
+    }
+    if (!dirExists(dest)) {
+      fs.mkdirSync(dest, { recursive: true });
+    }
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+    for (const entry of entries) {
+      const srcPath = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
+      if (entry.isDirectory()) {
+        copyDirectory(srcPath, destPath);
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+function listSubdirectories(dirPath) {
+  try {
+    if (!dirExists(dirPath)) {
+      return [];
+    }
+    return fs.readdirSync(dirPath, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  } catch {
+    return [];
   }
 }
 function getAppSupportDir() {
@@ -762,6 +854,7 @@ async function promptCustomPath() {
   console.log(
     `  ${c("blue", "ℹ")} Enter the full path to your MCP config file (JSON)`
   );
+  console.log(`  ${dim("Leave empty to go back")}`);
   console.log();
   console.log(`  ${dim("Common paths:")}`);
   console.log(`    ${dim("•")} ~/.cursor/mcp.json ${dim("(Cursor)")}`);
@@ -777,10 +870,10 @@ async function promptCustomPath() {
   console.log(`    ${dim("•")} ~/.continue/config.json ${dim("(Continue)")}`);
   console.log();
   const customPath = await input({
-    message: "MCP config path:",
+    message: "MCP config path (or press Enter to go back):",
     validate: (value) => {
       if (!value.trim()) {
-        return "Path is required";
+        return true;
       }
       const expandedPath = expandPath(value);
       if (!expandedPath.endsWith(".json")) {
@@ -797,7 +890,7 @@ Create it first or choose a different location.`;
       return true;
     }
   });
-  if (!customPath) return null;
+  if (!customPath || !customPath.trim()) return null;
   return expandPath(customPath);
 }
 async function selectInstallMethod() {
@@ -878,20 +971,24 @@ async function showGitHubAuthGuidance() {
       `  ${c("red", "✗")} GitHub CLI (gh) is ${c("red", "not installed")}`
     );
     console.log();
-    console.log(`  ${bold("Why do you need GitHub CLI?")}`);
-    console.log(`    ${dim("Octocode uses GitHub CLI for authentication.")}`);
     console.log(
-      `    ${dim("This provides secure access to GitHub repositories.")}`
+      `  ${bold("Option 1: Install GitHub CLI")} ${dim("(Recommended)")}`
     );
-    console.log();
-    console.log(`  ${bold("To install:")}`);
     console.log(`    ${c("cyan", "→")} Visit: ${c("underscore", GH_CLI_URL)}`);
     console.log();
-    console.log(`  ${dim("macOS:")}     ${c("yellow", "brew install gh")}`);
+    console.log(`    ${dim("macOS:")}     ${c("yellow", "brew install gh")}`);
     console.log(
-      `  ${dim("Windows:")}   ${c("yellow", "winget install GitHub.cli")}`
+      `    ${dim("Windows:")}   ${c("yellow", "winget install GitHub.cli")}`
     );
-    console.log(`  ${dim("Linux:")}     ${c("yellow", "See " + GH_CLI_URL)}`);
+    console.log(`    ${dim("Linux:")}     ${c("yellow", "See " + GH_CLI_URL)}`);
+    console.log();
+    console.log(`  ${bold("Option 2: Set GITHUB_TOKEN")}`);
+    console.log(`    ${dim("Add to your MCP config env section:")}`);
+    console.log(`    ${c("yellow", '"GITHUB_TOKEN": "ghp_your_token_here"')}`);
+    console.log();
+    console.log(
+      `    ${dim("Get a token at:")} ${c("underscore", "https://github.com/settings/tokens")}`
+    );
     console.log();
     await promptContinue();
     return;
@@ -911,15 +1008,24 @@ async function showGitHubAuthGuidance() {
   } else {
     console.log(`  ${c("yellow", "⚠")} ${c("yellow", "Not authenticated")}`);
     console.log();
-    console.log(`  ${bold("To authenticate:")}`);
+    console.log(
+      `  ${bold("Option 1: Login with GitHub CLI")} ${dim("(Recommended)")}`
+    );
     console.log(
       `    ${c("cyan", "→")} Run: ${c("yellow", getAuthLoginCommand())}`
     );
     console.log();
     console.log(
-      `  ${dim("This will open a browser to authenticate with GitHub.")}`
+      `    ${dim("This will open a browser to authenticate with GitHub.")}`
     );
-    console.log(`  ${dim("Follow the prompts to complete authentication.")}`);
+    console.log();
+    console.log(`  ${bold("Option 2: Set GITHUB_TOKEN")}`);
+    console.log(`    ${dim("Add to your MCP config env section:")}`);
+    console.log(`    ${c("yellow", '"GITHUB_TOKEN": "ghp_your_token_here"')}`);
+    console.log();
+    console.log(
+      `    ${dim("Get a token at:")} ${c("underscore", "https://github.com/settings/tokens")}`
+    );
   }
   console.log();
   await promptContinue();
@@ -1385,15 +1491,833 @@ async function checkNodeEnvironment() {
     octocodePackageVersion: octocodeCheck.version
   };
 }
+const ALL_AVAILABLE_TOOLS = {
+  // GitHub tools
+  github: [
+    {
+      id: "githubSearchCode",
+      name: "Search Code",
+      description: "Search for code patterns in GitHub repositories"
+    },
+    {
+      id: "githubGetFileContent",
+      name: "Get File Content",
+      description: "Fetch file content from GitHub repositories"
+    },
+    {
+      id: "githubViewRepoStructure",
+      name: "View Repo Structure",
+      description: "Browse repository directory structure"
+    },
+    {
+      id: "githubSearchRepositories",
+      name: "Search Repositories",
+      description: "Search for GitHub repositories"
+    },
+    {
+      id: "githubSearchPullRequests",
+      name: "Search Pull Requests",
+      description: "Search for pull requests and view diffs"
+    },
+    {
+      id: "packageSearch",
+      name: "Package Search",
+      description: "Search npm/Python packages and find their repos"
+    }
+  ],
+  // Local tools
+  local: [
+    {
+      id: "localSearchCode",
+      name: "Ripgrep Search",
+      description: "Fast content search with regex support"
+    },
+    {
+      id: "localViewStructure",
+      name: "View Structure",
+      description: "Browse local directory structure"
+    },
+    {
+      id: "localFindFiles",
+      name: "Find Files",
+      description: "Find files by name, time, size, permissions"
+    },
+    {
+      id: "localGetFileContent",
+      name: "Fetch Content",
+      description: "Read targeted sections of local files"
+    }
+  ]
+};
+const ALL_CONFIG_OPTIONS = [
+  {
+    id: "enableLocal",
+    envVar: "ENABLE_LOCAL",
+    name: "Local File Tools",
+    description: "Enable local file exploration tools for searching and browsing local files",
+    type: "boolean",
+    defaultValue: "false"
+  },
+  {
+    id: "githubApiUrl",
+    envVar: "GITHUB_API_URL",
+    name: "GitHub API URL",
+    description: "Custom GitHub API endpoint (for GitHub Enterprise)",
+    type: "string",
+    defaultValue: "https://api.github.com"
+  },
+  {
+    id: "toolsToRun",
+    envVar: "TOOLS_TO_RUN",
+    name: "Tools to Run",
+    description: "Specific tools to enable (all others disabled)",
+    type: "array",
+    defaultValue: "",
+    toolCategory: "all"
+  },
+  {
+    id: "enableTools",
+    envVar: "ENABLE_TOOLS",
+    name: "Enable Tools",
+    description: "Additional tools to enable",
+    type: "array",
+    defaultValue: "",
+    toolCategory: "all"
+  },
+  {
+    id: "disableTools",
+    envVar: "DISABLE_TOOLS",
+    name: "Disable Tools",
+    description: "Tools to disable",
+    type: "array",
+    defaultValue: "",
+    toolCategory: "all"
+  },
+  {
+    id: "requestTimeout",
+    envVar: "REQUEST_TIMEOUT",
+    name: "Request Timeout",
+    description: "API request timeout in milliseconds",
+    type: "number",
+    defaultValue: "30000",
+    validation: { min: 3e4, max: 6e5 }
+  },
+  {
+    id: "maxRetries",
+    envVar: "MAX_RETRIES",
+    name: "Max Retries",
+    description: "Maximum number of API retry attempts",
+    type: "number",
+    defaultValue: "3",
+    validation: { min: 0, max: 10 }
+  }
+];
+function getAllTools() {
+  return [
+    ...ALL_AVAILABLE_TOOLS.github.map((t) => ({
+      ...t,
+      category: "github"
+    })),
+    ...ALL_AVAILABLE_TOOLS.local.map((t) => ({
+      ...t,
+      category: "local"
+    }))
+  ];
+}
+function getCurrentValue(env, option) {
+  const value = env[option.envVar];
+  if (value === void 0 || value === null || value === "") {
+    return option.defaultValue;
+  }
+  return value;
+}
+function formatDisplayValue(option, value) {
+  if (option.type === "boolean") {
+    const isEnabled = value === "1" || value.toLowerCase() === "true";
+    return isEnabled ? c("green", "enabled") : c("dim", "disabled");
+  }
+  if (option.type === "array") {
+    if (!value || value === "") {
+      return c("dim", option.id === "toolsToRun" ? "(all tools)" : "(none)");
+    }
+    const tools = value.split(",").filter((t) => t.trim());
+    return tools.length > 2 ? `${tools.slice(0, 2).join(", ")} ${c("dim", `+${tools.length - 2} more`)}` : tools.join(", ");
+  }
+  if (option.type === "number") {
+    if (value === option.defaultValue) {
+      return `${value} ${c("dim", "(default)")}`;
+    }
+    return value;
+  }
+  if (value === option.defaultValue) {
+    return `${c("dim", value)}`;
+  }
+  return c("cyan", value);
+}
+function parseBooleanValue(value) {
+  return value === "1" || value.toLowerCase() === "true";
+}
+async function showConfigMenu() {
+  const choice = await select({
+    message: "Configuration Options:",
+    choices: [
+      {
+        name: "🔧 Edit configuration",
+        value: "edit",
+        description: "Configure all octocode-mcp settings for a client"
+      },
+      {
+        name: "📋 View all configuration options",
+        value: "view",
+        description: "Show available environment variables and their defaults"
+      },
+      {
+        name: "📄 Show current JSON config",
+        value: "show-json",
+        description: "Display the actual MCP config JSON for a client"
+      },
+      new Separator(),
+      {
+        name: `${c("dim", "← Back to main menu")}`,
+        value: "back"
+      }
+    ],
+    pageSize: 10,
+    loop: false,
+    theme: {
+      prefix: "  ",
+      style: {
+        highlight: (text) => c("cyan", text),
+        message: (text) => bold(text)
+      }
+    }
+  });
+  return choice;
+}
+async function runConfigOptionsFlow() {
+  await loadInquirer();
+  console.log();
+  console.log(c("blue", "━".repeat(66)));
+  console.log(`  ⚙️  ${bold("Configure Octocode Options")}`);
+  console.log(c("blue", "━".repeat(66)));
+  console.log();
+  const choice = await showConfigMenu();
+  switch (choice) {
+    case "view":
+      showConfigInfo();
+      await pressEnterToContinue$1();
+      break;
+    case "edit":
+      await runEditConfigFlow();
+      break;
+    case "show-json":
+      await showCurrentJsonConfig();
+      break;
+  }
+}
+async function pressEnterToContinue$1() {
+  const { input: input2 } = await Promise.resolve().then(() => prompts);
+  console.log();
+  await input2({
+    message: dim("Press Enter to continue..."),
+    default: ""
+  });
+}
+async function promptOpenConfigFile(configPath) {
+  console.log();
+  const openChoice = await select({
+    message: "Open config file?",
+    choices: [
+      {
+        name: "📝 Open in Cursor",
+        value: "cursor",
+        description: "Open in Cursor IDE"
+      },
+      {
+        name: "📝 Open in VS Code",
+        value: "vscode",
+        description: "Open in Visual Studio Code"
+      },
+      {
+        name: "📄 Open in default app",
+        value: "default",
+        description: "Open with system default application"
+      },
+      new Separator(),
+      {
+        name: `${c("dim", "← Skip")}`,
+        value: "no"
+      }
+    ],
+    pageSize: 10,
+    loop: false,
+    theme: {
+      prefix: "  ",
+      style: {
+        highlight: (text) => c("cyan", text),
+        message: (text) => bold(text)
+      }
+    }
+  });
+  if (openChoice === "no") {
+    return;
+  }
+  const success = openInEditor(configPath, openChoice);
+  if (success) {
+    console.log(`  ${c("green", "✓")} Opened ${configPath}`);
+  } else {
+    console.log(`  ${c("yellow", "⚠")} Could not open file automatically`);
+    console.log(`  ${dim("Try opening manually:")} ${c("cyan", configPath)}`);
+  }
+  console.log();
+}
+async function editBooleanOption(option, currentValue) {
+  const isEnabled = parseBooleanValue(currentValue);
+  const currentStatus = isEnabled ? c("green", "enabled") : c("dim", "disabled");
+  console.log();
+  console.log(`  ${bold(option.name)}`);
+  console.log(`  ${dim(option.description)}`);
+  console.log(`  ${dim("Current:")} ${currentStatus}`);
+  console.log();
+  const choice = await select({
+    message: `${option.name}:`,
+    choices: [
+      {
+        name: `${c("green", "✓")} Enable`,
+        value: "enable"
+      },
+      {
+        name: `${c("yellow", "○")} Disable`,
+        value: "disable"
+      },
+      new Separator(),
+      {
+        name: `${c("dim", "← Cancel")}`,
+        value: "cancel"
+      }
+    ],
+    loop: false
+  });
+  if (choice === "cancel") return null;
+  return choice === "enable" ? "1" : "false";
+}
+async function editStringOption(option, currentValue) {
+  const displayCurrent = currentValue && currentValue !== option.defaultValue ? c("cyan", currentValue) : c("dim", currentValue || option.defaultValue);
+  console.log();
+  console.log(`  ${bold(option.name)}`);
+  console.log(`  ${dim(option.description)}`);
+  console.log(`  ${dim("Current:")} ${displayCurrent}`);
+  console.log(`  ${dim("Default:")} ${option.defaultValue}`);
+  console.log(`  ${dim("(Leave empty and press Enter to cancel)")}`);
+  console.log();
+  const newValue = await input({
+    message: `${option.name}:`,
+    default: "",
+    validate: (value) => {
+      if (!value.trim()) {
+        return true;
+      }
+      if (option.validation?.pattern && !option.validation.pattern.test(value)) {
+        return "Invalid format";
+      }
+      return true;
+    }
+  });
+  if (!newValue.trim()) {
+    return null;
+  }
+  return newValue === option.defaultValue ? "" : newValue;
+}
+async function editNumberOption(option, currentValue) {
+  const displayCurrent = currentValue && currentValue !== option.defaultValue ? c("cyan", currentValue) : c("dim", currentValue || option.defaultValue);
+  console.log();
+  console.log(`  ${bold(option.name)}`);
+  console.log(`  ${dim(option.description)}`);
+  console.log(`  ${dim("Current:")} ${displayCurrent}`);
+  if (option.validation?.min !== void 0 || option.validation?.max !== void 0) {
+    const min = option.validation?.min ?? 0;
+    const max = option.validation?.max ?? Infinity;
+    console.log(`  ${dim("Range:")} ${min} - ${max === Infinity ? "∞" : max}`);
+  }
+  console.log(`  ${dim("Default:")} ${option.defaultValue}`);
+  console.log(`  ${dim("(Leave empty and press Enter to cancel)")}`);
+  console.log();
+  const newValue = await input({
+    message: `${option.name}:`,
+    default: "",
+    validate: (value) => {
+      if (!value.trim()) {
+        return true;
+      }
+      const num = parseInt(value, 10);
+      if (isNaN(num)) {
+        return "Please enter a valid number";
+      }
+      if (option.validation?.min !== void 0 && num < option.validation.min) {
+        return `Minimum value is ${option.validation.min}`;
+      }
+      if (option.validation?.max !== void 0 && num > option.validation.max) {
+        return `Maximum value is ${option.validation.max}`;
+      }
+      return true;
+    }
+  });
+  if (!newValue.trim()) {
+    return null;
+  }
+  return newValue === option.defaultValue ? "" : newValue;
+}
+async function editArrayOption(option, currentValue) {
+  const allTools = getAllTools();
+  const currentTools = currentValue ? currentValue.split(",").map((t) => t.trim()).filter(Boolean) : [];
+  const currentDisplay = currentTools.length > 0 ? currentTools.join(", ") : option.id === "toolsToRun" ? c("dim", "(all tools)") : c("dim", "(none)");
+  console.log();
+  console.log(`  ${bold(option.name)}`);
+  console.log(`  ${dim(option.description)}`);
+  console.log(`  ${dim("Current:")} ${currentDisplay}`);
+  console.log();
+  const action = await select({
+    message: `${option.name}:`,
+    choices: [
+      {
+        name: "📝 Select tools",
+        value: "select",
+        description: "Choose which tools to include"
+      },
+      {
+        name: `${c("yellow", "↺")} Clear all`,
+        value: "clear",
+        description: option.id === "toolsToRun" ? "Reset to all tools enabled" : "Remove all tools from this list"
+      },
+      new Separator(),
+      {
+        name: `${c("dim", "← Cancel")}`,
+        value: "cancel"
+      }
+    ],
+    loop: false
+  });
+  if (action === "cancel") {
+    return null;
+  }
+  if (action === "clear") {
+    return "";
+  }
+  const choices = [];
+  choices.push({
+    name: c("blue", "── GitHub Tools ──"),
+    value: "__separator_github__",
+    disabled: true
+  });
+  for (const tool of allTools.filter((t) => t.category === "github")) {
+    choices.push({
+      name: `${tool.name} ${c("dim", `(${tool.id})`)}`,
+      value: tool.id,
+      checked: currentTools.includes(tool.id),
+      description: tool.description
+    });
+  }
+  choices.push({
+    name: c("yellow", "── Local Tools ──"),
+    value: "__separator_local__",
+    disabled: true
+  });
+  for (const tool of allTools.filter((t) => t.category === "local")) {
+    choices.push({
+      name: `${tool.name} ${c("dim", `(${tool.id})`)}`,
+      value: tool.id,
+      checked: currentTools.includes(tool.id),
+      description: tool.description
+    });
+  }
+  console.log();
+  console.log(`  ${dim("Use Space to select/deselect, Enter to confirm")}`);
+  const selected = await checkbox({
+    message: `Select tools for ${option.name}:`,
+    choices,
+    pageSize: 15,
+    loop: false,
+    theme: {
+      prefix: "  ",
+      style: {
+        highlight: (text) => c("cyan", text),
+        message: (text) => bold(text)
+      }
+    }
+  });
+  const validTools = selected.filter((t) => !t.startsWith("__separator"));
+  return validTools.length > 0 ? validTools.join(",") : "";
+}
+async function showEditConfigMenu(env) {
+  const choices = [];
+  const booleanOptions = ALL_CONFIG_OPTIONS.filter((o) => o.type === "boolean");
+  const stringOptions = ALL_CONFIG_OPTIONS.filter((o) => o.type === "string");
+  const numberOptions = ALL_CONFIG_OPTIONS.filter((o) => o.type === "number");
+  const arrayOptions = ALL_CONFIG_OPTIONS.filter((o) => o.type === "array");
+  if (booleanOptions.length > 0) {
+    choices.push({
+      name: c("dim", "── Features ──"),
+      value: "__sep1__"
+    });
+    for (const option of booleanOptions) {
+      const value = getCurrentValue(env, option);
+      const displayValue = formatDisplayValue(option, value);
+      choices.push({
+        name: `${option.name}: ${displayValue}`,
+        value: option.id,
+        description: option.description
+      });
+    }
+  }
+  if (stringOptions.length > 0) {
+    choices.push({
+      name: c("dim", "── Endpoints ──"),
+      value: "__sep2__"
+    });
+    for (const option of stringOptions) {
+      const value = getCurrentValue(env, option);
+      const displayValue = formatDisplayValue(option, value);
+      choices.push({
+        name: `${option.name}: ${displayValue}`,
+        value: option.id,
+        description: option.description
+      });
+    }
+  }
+  if (numberOptions.length > 0) {
+    choices.push({
+      name: c("dim", "── Performance ──"),
+      value: "__sep3__"
+    });
+    for (const option of numberOptions) {
+      const value = getCurrentValue(env, option);
+      const displayValue = formatDisplayValue(option, value);
+      choices.push({
+        name: `${option.name}: ${displayValue}`,
+        value: option.id,
+        description: option.description
+      });
+    }
+  }
+  if (arrayOptions.length > 0) {
+    choices.push({
+      name: c("dim", "── Tool Selection ──"),
+      value: "__sep4__"
+    });
+    for (const option of arrayOptions) {
+      const value = getCurrentValue(env, option);
+      const displayValue = formatDisplayValue(option, value);
+      choices.push({
+        name: `${option.name}: ${displayValue}`,
+        value: option.id,
+        description: option.description
+      });
+    }
+  }
+  choices.push({
+    name: c("dim", "── Actions ──"),
+    value: "__sep5__"
+  });
+  choices.push({
+    name: `${c("green", "💾")} Save changes`,
+    value: "save",
+    description: "Save configuration and exit"
+  });
+  choices.push({
+    name: `${c("yellow", "↺")} Reset to defaults`,
+    value: "reset",
+    description: "Clear all custom configuration"
+  });
+  choices.push({
+    name: `${c("dim", "← Back")}`,
+    value: "back"
+  });
+  const choice = await select({
+    message: "Select option to configure:",
+    choices,
+    pageSize: 18,
+    loop: false,
+    theme: {
+      prefix: "  ",
+      style: {
+        highlight: (text) => c("cyan", text),
+        message: (text) => bold(text)
+      }
+    }
+  });
+  return choice;
+}
+async function runEditConfigFlow() {
+  const selection = await selectMCPClient();
+  if (!selection) return;
+  const { client, customPath } = selection;
+  const clientInfo = MCP_CLIENTS[client];
+  const configPath = customPath || getMCPConfigPath(client);
+  const config = readMCPConfig(configPath);
+  if (!config) {
+    console.log();
+    console.log(`  ${c("red", "✗")} Failed to read config file: ${configPath}`);
+    console.log();
+    return;
+  }
+  if (!isOctocodeConfigured(config)) {
+    console.log();
+    console.log(
+      `  ${c("yellow", "⚠")} Octocode is not configured for ${clientInfo.name}`
+    );
+    console.log(
+      `  ${dim('Please install octocode first using "Install octocode-mcp".')}`
+    );
+    console.log();
+    return;
+  }
+  console.log();
+  console.log(`  ${dim("Config file:")} ${c("cyan", configPath)}`);
+  console.log(`  ${dim("Client:")} ${clientInfo.name}`);
+  console.log();
+  const originalEnv = { ...config.mcpServers?.octocode?.env || {} };
+  const workingEnv = { ...originalEnv };
+  let editing = true;
+  while (editing) {
+    const choice = await showEditConfigMenu(workingEnv);
+    if (choice.startsWith("__sep")) {
+      continue;
+    }
+    switch (choice) {
+      case "save": {
+        const hasChanges = JSON.stringify(originalEnv) !== JSON.stringify(workingEnv);
+        if (!hasChanges) {
+          console.log();
+          console.log(`  ${dim("No changes to save.")}`);
+          console.log();
+          editing = false;
+          break;
+        }
+        const spinner = new Spinner("Saving configuration...").start();
+        const cleanEnv = {};
+        for (const [key, value] of Object.entries(workingEnv)) {
+          if (value && value !== "") {
+            cleanEnv[key] = value;
+          }
+        }
+        const updatedConfig = {
+          ...config,
+          mcpServers: {
+            ...config.mcpServers,
+            octocode: {
+              ...config.mcpServers.octocode,
+              env: Object.keys(cleanEnv).length > 0 ? cleanEnv : void 0
+            }
+          }
+        };
+        if (updatedConfig.mcpServers?.octocode?.env && Object.keys(updatedConfig.mcpServers.octocode.env).length === 0) {
+          delete updatedConfig.mcpServers.octocode.env;
+        }
+        const result = writeMCPConfig(configPath, updatedConfig);
+        if (result.success) {
+          spinner.succeed("Configuration saved!");
+          console.log();
+          console.log(`  ${c("green", "✓")} Config saved to: ${configPath}`);
+          if (result.backupPath) {
+            console.log(`  ${dim("Backup:")} ${result.backupPath}`);
+          }
+          console.log();
+          console.log(
+            `  ${bold("Note:")} Restart ${clientInfo.name} for changes to take effect.`
+          );
+          await promptOpenConfigFile(configPath);
+        } else {
+          spinner.fail("Failed to save configuration");
+          console.log();
+          console.log(`  ${c("red", "✗")} ${result.error || "Unknown error"}`);
+          console.log();
+        }
+        editing = false;
+        break;
+      }
+      case "reset": {
+        const confirmReset = await confirm({
+          message: "Reset all configuration to defaults?",
+          default: false
+        });
+        if (confirmReset) {
+          for (const key of Object.keys(workingEnv)) {
+            delete workingEnv[key];
+          }
+          console.log(`  ${c("yellow", "↺")} Configuration reset to defaults`);
+        }
+        break;
+      }
+      case "back": {
+        const hasUnsavedChanges = JSON.stringify(originalEnv) !== JSON.stringify(workingEnv);
+        if (hasUnsavedChanges) {
+          const confirmDiscard = await confirm({
+            message: "Discard unsaved changes?",
+            default: false
+          });
+          if (!confirmDiscard) {
+            break;
+          }
+        }
+        editing = false;
+        break;
+      }
+      default: {
+        const option = ALL_CONFIG_OPTIONS.find((o) => o.id === choice);
+        if (!option) break;
+        const currentValue = getCurrentValue(workingEnv, option);
+        let newValue = null;
+        switch (option.type) {
+          case "boolean":
+            newValue = await editBooleanOption(option, currentValue);
+            break;
+          case "string":
+            newValue = await editStringOption(option, currentValue);
+            break;
+          case "number":
+            newValue = await editNumberOption(option, currentValue);
+            break;
+          case "array":
+            newValue = await editArrayOption(option, currentValue);
+            break;
+        }
+        if (newValue !== null) {
+          if (newValue === "" || newValue === option.defaultValue) {
+            delete workingEnv[option.envVar];
+          } else {
+            workingEnv[option.envVar] = newValue;
+          }
+        }
+        break;
+      }
+    }
+  }
+}
+async function showCurrentJsonConfig() {
+  const selection = await selectMCPClient();
+  if (!selection) return;
+  const { client, customPath } = selection;
+  const clientInfo = MCP_CLIENTS[client];
+  const configPath = customPath || getMCPConfigPath(client);
+  const config = readMCPConfig(configPath);
+  if (!config) {
+    console.log();
+    console.log(`  ${c("red", "✗")} Failed to read config file: ${configPath}`);
+    console.log();
+    return;
+  }
+  if (!isOctocodeConfigured(config)) {
+    console.log();
+    console.log(
+      `  ${c("yellow", "⚠")} Octocode is not configured for ${clientInfo.name}`
+    );
+    console.log(
+      `  ${dim('Please install octocode first using "Install octocode-mcp".')}`
+    );
+    console.log();
+    return;
+  }
+  const octocodeConfig = config.mcpServers?.octocode;
+  console.log();
+  console.log(c("blue", "━".repeat(66)));
+  console.log(`  📄 ${bold("Current Octocode Configuration")}`);
+  console.log(c("blue", "━".repeat(66)));
+  console.log();
+  console.log(`  ${dim("Client:")} ${c("cyan", clientInfo.name)}`);
+  console.log(`  ${dim("Config file:")} ${c("cyan", configPath)}`);
+  console.log();
+  console.log(`  ${bold("JSON Configuration:")}`);
+  console.log();
+  const jsonString = JSON.stringify({ octocode: octocodeConfig }, null, 2);
+  const lines = jsonString.split("\n");
+  for (const line of lines) {
+    const highlighted = line.replace(/"([^"]+)":/g, `${c("cyan", '"$1"')}:`).replace(/: "([^"]+)"/g, `: ${c("green", '"$1"')}`).replace(/: (\d+)/g, `: ${c("yellow", "$1")}`).replace(/: (true|false)/g, `: ${c("magenta", "$1")}`);
+    console.log(`  ${highlighted}`);
+  }
+  console.log();
+  console.log(c("blue", "━".repeat(66)));
+  await promptOpenConfigFile(configPath);
+}
+function getExampleValue(option) {
+  switch (option.id) {
+    case "enableLocal":
+      return "ENABLE_LOCAL=1";
+    case "githubApiUrl":
+      return "GITHUB_API_URL=https://github.mycompany.com/api/v3";
+    case "toolsToRun":
+      return "TOOLS_TO_RUN=githubSearchCode,githubGetFileContent";
+    case "enableTools":
+      return "ENABLE_TOOLS=localSearchCode,localFindFiles";
+    case "disableTools":
+      return "DISABLE_TOOLS=githubSearchPullRequests";
+    case "requestTimeout":
+      return "REQUEST_TIMEOUT=60000";
+    case "maxRetries":
+      return "MAX_RETRIES=5";
+    default:
+      return `${option.envVar}=${option.defaultValue}`;
+  }
+}
+function getDisplayDefault(option) {
+  if (option.type === "array") {
+    return option.id === "toolsToRun" ? "(all tools)" : "(none)";
+  }
+  return option.defaultValue;
+}
+function showConfigInfo() {
+  console.log();
+  console.log(`  ${bold("All Available Configuration Options")}`);
+  console.log();
+  console.log(
+    `  ${dim("These options can be set as environment variables in your MCP config.")}`
+  );
+  console.log(
+    `  ${dim('Add them to the "env" object in your octocode server configuration.')}`
+  );
+  console.log();
+  console.log(`  ${dim("Example config:")}`);
+  console.log(`  ${dim("{")}
+  ${dim('  "mcpServers": {')}
+  ${dim('    "octocode": {')}
+  ${dim('      "command": "npx",')}
+  ${dim('      "args": ["octocode-mcp@latest"],')}
+  ${c("green", '      "env": { "ENABLE_LOCAL": "1" }')}
+  ${dim("    }")}
+  ${dim("  }")}
+  ${dim("}")}`);
+  console.log();
+  console.log(c("blue", "━".repeat(66)));
+  console.log();
+  for (const option of ALL_CONFIG_OPTIONS) {
+    const typeColor = option.type === "boolean" ? "green" : option.type === "number" ? "yellow" : option.type === "array" ? "magenta" : "cyan";
+    console.log(`  ${c("cyan", option.envVar)} ${dim(`(${option.type})`)}`);
+    console.log(`    ${option.description}`);
+    console.log(`    ${dim("Default:")} ${getDisplayDefault(option)}`);
+    console.log(
+      `    ${dim("Example:")} ${c(typeColor, getExampleValue(option))}`
+    );
+    console.log();
+  }
+}
 async function showMainMenu() {
   console.log();
   const choice = await select({
     message: "What would you like to do?",
     choices: [
       {
-        name: "📦 Configure octocode-mcp",
+        name: "📦 Install octocode-mcp",
         value: "install",
-        description: "Configure MCP server for Cursor or Claude Desktop"
+        description: "Install MCP server for Cursor, Claude Desktop, and more"
+      },
+      {
+        name: "📚 Install Skills",
+        value: "skills",
+        description: "Install Octocode skills for Claude Code"
+      },
+      {
+        name: "⚙️  Configure Options",
+        value: "conf",
+        description: "View/edit octocode settings (local tools, timeout, etc.)"
       },
       {
         name: "🔐 Check GitHub authentication",
@@ -1423,10 +2347,217 @@ async function showMainMenu() {
   });
   return choice;
 }
+function getSkillsSourceDir$1() {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  return path.resolve(__dirname, "..", "skills");
+}
+function getSkillsDestDir$1() {
+  return path.join(HOME, ".claude", "skills");
+}
+async function pressEnterToContinue() {
+  console.log();
+  await input({
+    message: dim("Press Enter to continue..."),
+    default: ""
+  });
+}
+async function showSkillsMenu(hasUninstalled) {
+  const choices = [];
+  if (hasUninstalled) {
+    choices.push({
+      name: "📥 Install skills",
+      value: "install",
+      description: "Install Octocode skills to Claude Code"
+    });
+  }
+  choices.push({
+    name: "📋 View skills status",
+    value: "view",
+    description: "Show installed and available skills"
+  });
+  choices.push(
+    new Separator()
+  );
+  choices.push({
+    name: `${c("dim", "← Back to main menu")}`,
+    value: "back"
+  });
+  const choice = await select({
+    message: "Skills Options:",
+    choices,
+    pageSize: 10,
+    loop: false,
+    theme: {
+      prefix: "  ",
+      style: {
+        highlight: (text) => c("magenta", text),
+        message: (text) => bold(text)
+      }
+    }
+  });
+  return choice;
+}
+function getSkillsInfo() {
+  const srcDir = getSkillsSourceDir$1();
+  const destDir = getSkillsDestDir$1();
+  if (!dirExists(srcDir)) {
+    return {
+      srcDir,
+      destDir,
+      skillsStatus: [],
+      notInstalled: [],
+      sourceExists: false
+    };
+  }
+  const availableSkills = listSubdirectories(srcDir).filter(
+    (name) => !name.startsWith(".")
+  );
+  const skillsStatus = availableSkills.map((skill) => ({
+    name: skill,
+    installed: dirExists(path.join(destDir, skill)),
+    srcPath: path.join(srcDir, skill),
+    destPath: path.join(destDir, skill)
+  }));
+  const notInstalled = skillsStatus.filter((s) => !s.installed);
+  return { srcDir, destDir, skillsStatus, notInstalled, sourceExists: true };
+}
+function showSkillsStatus(info) {
+  const { destDir, skillsStatus, notInstalled } = info;
+  if (skillsStatus.length === 0) {
+    console.log(`  ${dim("No skills available.")}`);
+    console.log();
+    return;
+  }
+  console.log(`  ${bold("Skills:")}`);
+  console.log();
+  for (const skill of skillsStatus) {
+    if (skill.installed) {
+      console.log(
+        `    ${c("green", "✓")} ${skill.name} - ${c("green", "installed")}`
+      );
+    } else {
+      console.log(
+        `    ${c("yellow", "○")} ${skill.name} - ${dim("not installed")}`
+      );
+    }
+  }
+  console.log();
+  console.log(`  ${bold("Installation path:")}`);
+  console.log(`  ${c("cyan", destDir)}`);
+  console.log();
+  if (notInstalled.length === 0) {
+    console.log(`  ${c("green", "✓")} All skills are installed!`);
+  } else {
+    console.log(
+      `  ${c("yellow", "ℹ")} ${notInstalled.length} skill(s) not installed`
+    );
+  }
+  console.log();
+}
+async function installSkills(info) {
+  const { destDir, notInstalled } = info;
+  if (notInstalled.length === 0) {
+    console.log(`  ${c("green", "✓")} All skills are already installed!`);
+    console.log();
+    console.log(`  ${bold("Installation path:")}`);
+    console.log(`  ${c("cyan", destDir)}`);
+    console.log();
+    await pressEnterToContinue();
+    return;
+  }
+  console.log(`  ${bold("Skills to install:")}`);
+  console.log();
+  for (const skill of notInstalled) {
+    console.log(`    ${c("yellow", "○")} ${skill.name}`);
+  }
+  console.log();
+  console.log(`  ${bold("Installation path:")}`);
+  console.log(`  ${c("cyan", destDir)}`);
+  console.log();
+  const shouldInstall = await confirm({
+    message: `Install ${notInstalled.length} skill(s)?`,
+    default: true
+  });
+  if (!shouldInstall) {
+    console.log();
+    console.log(`  ${dim("Installation cancelled.")}`);
+    console.log();
+    return;
+  }
+  console.log();
+  const spinner = new Spinner("Installing skills...").start();
+  let installedCount = 0;
+  const failed = [];
+  for (const skill of notInstalled) {
+    if (copyDirectory(skill.srcPath, skill.destPath)) {
+      installedCount++;
+    } else {
+      failed.push(skill.name);
+    }
+  }
+  if (failed.length === 0) {
+    spinner.succeed("Skills installed!");
+  } else {
+    spinner.warn("Some skills failed to install");
+  }
+  console.log();
+  if (installedCount > 0) {
+    console.log(`  ${c("green", "✓")} Installed ${installedCount} skill(s)`);
+    console.log(`  ${dim("Location:")} ${c("cyan", destDir)}`);
+  }
+  if (failed.length > 0) {
+    console.log(`  ${c("red", "✗")} Failed: ${failed.join(", ")}`);
+  }
+  console.log();
+  if (installedCount > 0) {
+    console.log(`  ${bold("Skills are now available in Claude Code!")}`);
+    console.log();
+  }
+  await pressEnterToContinue();
+}
+async function runSkillsFlow() {
+  await loadInquirer();
+  console.log();
+  console.log(c("blue", "━".repeat(66)));
+  console.log(`  📚 ${bold("Octocode Skills for Claude Code")}`);
+  console.log(c("blue", "━".repeat(66)));
+  console.log();
+  const info = getSkillsInfo();
+  if (!info.sourceExists) {
+    console.log(`  ${c("yellow", "⚠")} Skills source directory not found.`);
+    console.log(`  ${dim("This may happen if running from source.")}`);
+    console.log();
+    await pressEnterToContinue();
+    return;
+  }
+  if (info.skillsStatus.length === 0) {
+    console.log(`  ${dim("No skills available.")}`);
+    console.log();
+    await pressEnterToContinue();
+    return;
+  }
+  const choice = await showSkillsMenu(info.notInstalled.length > 0);
+  switch (choice) {
+    case "install":
+      await installSkills(info);
+      break;
+    case "view":
+      showSkillsStatus(info);
+      await pressEnterToContinue();
+      break;
+  }
+}
 async function handleMenuChoice(choice) {
   switch (choice) {
     case "install":
       await runInstallFlow();
+      return true;
+    case "skills":
+      await runSkillsFlow();
+      return true;
+    case "conf":
+      await runConfigOptionsFlow();
       return true;
     case "gh-auth":
       await showGitHubAuthGuidance();
@@ -1685,7 +2816,116 @@ const authCommand = {
     }
   }
 };
-const commands = [installCommand, authCommand];
+function getSkillsSourceDir() {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  return path.resolve(__dirname, "..", "..", "skills");
+}
+function getSkillsDestDir() {
+  return path.join(HOME, ".claude", "skills");
+}
+const skillsCommand = {
+  name: "skills",
+  aliases: ["sk"],
+  description: "Install Octocode skills for Claude Code",
+  usage: "octocode skills [install|list]",
+  options: [
+    {
+      name: "force",
+      short: "f",
+      description: "Overwrite existing skills"
+    }
+  ],
+  handler: async (args) => {
+    const subcommand = args.args[0] || "list";
+    const force = Boolean(args.options["force"] || args.options["f"]);
+    const srcDir = getSkillsSourceDir();
+    const destDir = getSkillsDestDir();
+    if (!dirExists(srcDir)) {
+      console.log();
+      console.log(`  ${c("red", "✗")} Skills directory not found`);
+      console.log(`  ${dim("Expected:")} ${srcDir}`);
+      console.log();
+      process.exitCode = 1;
+      return;
+    }
+    const availableSkills = listSubdirectories(srcDir).filter(
+      (name) => !name.startsWith(".")
+    );
+    if (subcommand === "list") {
+      console.log();
+      console.log(`  ${bold("📚 Available Octocode Skills")}`);
+      console.log();
+      if (availableSkills.length === 0) {
+        console.log(`  ${dim("No skills available.")}`);
+      } else {
+        for (const skill of availableSkills) {
+          const installed = dirExists(path.join(destDir, skill));
+          const status = installed ? c("green", "✓ installed") : dim("not installed");
+          console.log(`  ${c("cyan", "•")} ${skill} ${status}`);
+        }
+      }
+      console.log();
+      console.log(`  ${dim("To install:")} octocode skills install`);
+      console.log(`  ${dim("Destination:")} ${destDir}`);
+      console.log();
+      return;
+    }
+    if (subcommand === "install") {
+      console.log();
+      console.log(`  ${bold("📦 Installing Octocode Skills")}`);
+      console.log();
+      if (availableSkills.length === 0) {
+        console.log(`  ${c("yellow", "⚠")} No skills to install.`);
+        console.log();
+        return;
+      }
+      const spinner = new Spinner("Installing skills...").start();
+      let installed = 0;
+      let skipped = 0;
+      for (const skill of availableSkills) {
+        const skillSrc = path.join(srcDir, skill);
+        const skillDest = path.join(destDir, skill);
+        if (dirExists(skillDest) && !force) {
+          skipped++;
+          continue;
+        }
+        if (copyDirectory(skillSrc, skillDest)) {
+          installed++;
+        }
+      }
+      spinner.succeed("Skills installation complete!");
+      console.log();
+      if (installed > 0) {
+        console.log(
+          `  ${c("green", "✓")} Installed ${installed} skill(s) to ${destDir}`
+        );
+      }
+      if (skipped > 0) {
+        console.log(
+          `  ${c("yellow", "⚠")} Skipped ${skipped} existing skill(s)`
+        );
+        console.log(
+          `  ${dim("Use")} ${c("cyan", "--force")} ${dim("to overwrite.")}`
+        );
+      }
+      console.log();
+      console.log(`  ${bold("Skills are now available in Claude Code!")}`);
+      console.log();
+      return;
+    }
+    console.log();
+    console.log(`  ${c("red", "✗")} Unknown subcommand: ${subcommand}`);
+    console.log(`  ${dim("Usage:")} octocode skills [install|list]`);
+    console.log();
+    process.exitCode = 1;
+  }
+};
+const commands = [
+  installCommand,
+  authCommand,
+  skillsCommand
+];
 function findCommand(name) {
   return commands.find((cmd) => cmd.name === name || cmd.aliases?.includes(name));
 }

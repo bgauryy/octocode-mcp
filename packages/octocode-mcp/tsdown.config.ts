@@ -9,10 +9,18 @@ export default defineConfig({
   target: 'node18',
   platform: 'node',
 
+  // Configure .md files to be loaded as raw text (like esbuild's loader option)
+  // This allows importing markdown files as strings for prompts
+  inputOptions: {
+    moduleTypes: {
+      '.md': 'text',
+    },
+  },
+
   // Bundle ALL dependencies for standalone CLI execution
   noExternal: [/.*/],
   // Keep Node.js built-ins external (they're always available)
-  external: [...builtinModules, ...builtinModules.map((m) => `node:${m}`)],
+  external: [...builtinModules, ...builtinModules.map(m => `node:${m}`)],
 
   // Tree shaking - Rolldown has excellent tree shaking by default
   treeshake: true,
