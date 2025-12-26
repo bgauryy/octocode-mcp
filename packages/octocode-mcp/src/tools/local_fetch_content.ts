@@ -181,6 +181,7 @@ export async function fetchContent(
         return {
           status: 'hasResults',
           path: query.path,
+          cwd: process.cwd(),
           content: autoPagination.paginatedContent,
           contentLength: autoPagination.paginatedContent.length,
           isPartial: true,
@@ -257,6 +258,7 @@ export async function fetchContent(
     return {
       status: 'hasResults',
       path: query.path,
+      cwd: process.cwd(),
       content: pagination.paginatedContent,
       contentLength: pagination.paginatedContent.length,
       isPartial,

@@ -26,6 +26,10 @@ const STATIC_TOOL_NAMES: ToolNamesMap = {
   GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
   GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
   PACKAGE_SEARCH: 'packageSearch',
+  LOCAL_RIPGREP: 'localSearchCode',
+  LOCAL_FETCH_CONTENT: 'localGetFileContent',
+  LOCAL_FIND_FILES: 'localFindFiles',
+  LOCAL_VIEW_STRUCTURE: 'localViewStructure',
 };
 
 // Zod schemas for validation
@@ -515,5 +519,159 @@ export const PACKAGE_SEARCH = createSchemaHelper(TOOL_NAMES.PACKAGE_SEARCH) as {
     searchLimit: string;
     npmFetchMetadata: string;
     pythonFetchMetadata: string;
+  };
+};
+
+export const LOCAL_RIPGREP = createSchemaHelper(TOOL_NAMES.LOCAL_RIPGREP) as {
+  search: {
+    pattern: string;
+    path: string;
+    mode: string;
+  };
+  filters: {
+    type: string;
+    include: string;
+    exclude: string;
+    excludeDir: string;
+    binaryFiles: string;
+    noIgnore: string;
+    hidden: string;
+    followSymlinks: string;
+  };
+  options: {
+    smartCase: string;
+    caseInsensitive: string;
+    caseSensitive: string;
+    fixedString: string;
+    perlRegex: string;
+    wholeWord: string;
+    invertMatch: string;
+    multiline: string;
+    multilineDotall: string;
+  };
+  output: {
+    filesOnly: string;
+    filesWithoutMatch: string;
+    count: string;
+    countMatches: string;
+    jsonOutput: string;
+    vimgrepFormat: string;
+    includeStats: string;
+    includeDistribution: string;
+  };
+  context: {
+    contextLines: string;
+    beforeContext: string;
+    afterContext: string;
+    matchContentLength: string;
+    lineNumbers: string;
+    column: string;
+  };
+  pagination: {
+    filesPerPage: string;
+    filePageNumber: string;
+    matchesPerPage: string;
+    maxFiles: string;
+    maxMatchesPerFile: string;
+  };
+};
+
+export const LOCAL_FETCH_CONTENT = createSchemaHelper(
+  TOOL_NAMES.LOCAL_FETCH_CONTENT
+) as {
+  scope: {
+    path: string;
+  };
+  options: {
+    fullContent: string;
+    matchString: string;
+    matchStringContextLines: string;
+    matchStringIsRegex: string;
+    matchStringCaseSensitive: string;
+    minified: string;
+  };
+  pagination: {
+    charOffset: string;
+    charLength: string;
+  };
+};
+
+export const LOCAL_FIND_FILES = createSchemaHelper(
+  TOOL_NAMES.LOCAL_FIND_FILES
+) as {
+  scope: {
+    path: string;
+  };
+  filters: {
+    name: string;
+    iname: string;
+    names: string;
+    pathPattern: string;
+    regex: string;
+    regexType: string;
+    type: string;
+    empty: string;
+    executable: string;
+    readable: string;
+    writable: string;
+    excludeDir: string;
+  };
+  time: {
+    modifiedWithin: string;
+    modifiedBefore: string;
+    accessedWithin: string;
+  };
+  size: {
+    sizeGreater: string;
+    sizeLess: string;
+  };
+  pagination: {
+    limit: string;
+    filesPerPage: string;
+    filePageNumber: string;
+    charOffset: string;
+    charLength: string;
+  };
+  options: {
+    maxDepth: string;
+    minDepth: string;
+    details: string;
+    permissions: string;
+    showFileLastModified: string;
+  };
+};
+
+export const LOCAL_VIEW_STRUCTURE = createSchemaHelper(
+  TOOL_NAMES.LOCAL_VIEW_STRUCTURE
+) as {
+  scope: {
+    path: string;
+  };
+  filters: {
+    pattern: string;
+    directoriesOnly: string;
+    filesOnly: string;
+    extension: string;
+    extensions: string;
+    hidden: string;
+  };
+  options: {
+    depth: string;
+    recursive: string;
+    details: string;
+    humanReadable: string;
+    summary: string;
+    showFileLastModified: string;
+  };
+  sorting: {
+    sortBy: string;
+    reverse: string;
+  };
+  pagination: {
+    limit: string;
+    entriesPerPage: string;
+    entryPageNumber: string;
+    charOffset: string;
+    charLength: string;
   };
 };

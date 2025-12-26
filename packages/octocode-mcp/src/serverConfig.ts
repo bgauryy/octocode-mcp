@@ -48,16 +48,18 @@ export async function initialize(): Promise<void> {
   initializationPromise = (async () => {
     cachedToken = await resolveGitHubToken();
 
+    const isLoggingEnabled =
+      process.env.LOG === undefined ||
+      process.env.LOG === null ||
+      process.env.LOG?.toLowerCase() !== 'false';
+
     config = {
       version: version,
       githubApiUrl: process.env.GITHUB_API_URL || 'https://api.github.com',
       toolsToRun: parseStringArray(process.env.TOOLS_TO_RUN),
       enableTools: parseStringArray(process.env.ENABLE_TOOLS),
       disableTools: parseStringArray(process.env.DISABLE_TOOLS),
-      enableLogging:
-        process.env.LOG === undefined ||
-        process.env.LOG === null ||
-        process.env.LOG?.toLowerCase() !== 'false',
+      enableLogging: isLoggingEnabled,
       timeout: Math.max(
         30000,
         parseInt(process.env.REQUEST_TIMEOUT || '30000') || 30000
@@ -66,10 +68,7 @@ export async function initialize(): Promise<void> {
         0,
         Math.min(10, parseInt(process.env.MAX_RETRIES || '3') || 3)
       ),
-      loggingEnabled:
-        process.env.LOG === undefined ||
-        process.env.LOG === null ||
-        process.env.LOG?.toLowerCase() !== 'false',
+      loggingEnabled: isLoggingEnabled,
       enableLocal:
         process.env.ENABLE_LOCAL === '1' ||
         process.env.ENABLE_LOCAL?.toLowerCase() === 'true',

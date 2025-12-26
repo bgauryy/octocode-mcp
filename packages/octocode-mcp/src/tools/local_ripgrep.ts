@@ -193,6 +193,7 @@ export async function searchContentRipgrep(
     return {
       status: 'hasResults',
       files: finalFiles,
+      cwd: process.cwd(),
       totalMatches: configuredQuery.filesOnly ? 0 : totalMatches,
       totalFiles,
       path: configuredQuery.path,

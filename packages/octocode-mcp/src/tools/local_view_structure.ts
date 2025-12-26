@@ -51,8 +51,11 @@ function applyEntryFilters(
       pattern.includes('*') || pattern.includes('?') || pattern.includes('[');
 
     if (isGlob) {
-      let regexPattern = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+      // First escape regex metacharacters INCLUDING glob characters (* and ?)
+      // so they can be converted to regex patterns in the next step
+      let regexPattern = pattern.replace(/[.+^${}()|[\]\\*?]/g, '\\$&');
 
+      // Convert escaped glob characters to regex equivalents
       regexPattern = regexPattern
         .replace(/\\\*/g, '.*')
         .replace(/\\\?/g, '.')
@@ -62,12 +65,31 @@ function applyEntryFilters(
 
       try {
         const regex = new RegExp(`^${regexPattern}$`, 'i');
-        filtered = filtered.filter(e => regex.test(e.name));
+        filtered = filtered.filter(e => {
+          // For recursive mode, entry.name is the relative path (e.g., "subdir/file.ts")
+          // Pattern should match the filename part only for consistency
+          const filename = e.name.includes('/')
+            ? e.name.split('/').pop()!
+            : e.name;
+          return regex.test(filename);
+        });
       } catch {
-        filtered = filtered.filter(e => e.name.includes(pattern));
+        filtered = filtered.filter(e => {
+          const filename = e.name.includes('/')
+            ? e.name.split('/').pop()!
+            : e.name;
+          return filename.includes(pattern);
+        });
       }
     } else {
-      filtered = filtered.filter(e => e.name.includes(pattern));
+      filtered = filtered.filter(e => {
+        // For recursive mode, entry.name is the relative path (e.g., "subdir/file.ts")
+        // Pattern should match the filename part only for consistency
+        const filename = e.name.includes('/')
+          ? e.name.split('/').pop()!
+          : e.name;
+        return filename.includes(pattern);
+      });
     }
   }
 
@@ -271,6 +293,7 @@ export async function viewStructure(
     return {
       status,
       path: query.path,
+      cwd: process.cwd(),
       structuredOutput,
       totalFiles,
       totalDirectories,

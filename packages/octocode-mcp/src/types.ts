@@ -279,6 +279,8 @@ export interface GitHubViewRepoStructureQuery {
   branch: string;
   path?: string;
   depth?: number;
+  entriesPerPage?: number;
+  entryPageNumber?: number;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;

@@ -551,6 +551,116 @@ describe('Pull Request Search', () => {
       );
     });
 
+    it('should correctly set merged status from PR details when using Search API', async () => {
+      // This test verifies the fix for the bug where merged: true filter
+      // returned PRs with merged: false because merged_at wasn't being
+      // copied from PR details to the result
+      mockShouldUseSearchForPRs.mockReturnValue(true);
+      mockBuildPullRequestSearchQuery.mockReturnValue(
+        'repo:test/repo is:pr is:merged'
+      );
+
+      const mockSearchResult = {
+        total_count: 1,
+        incomplete_results: false,
+        items: [
+          {
+            number: 100,
+            title: 'Merged PR',
+            state: 'closed',
+            user: { login: 'user1' },
+            labels: [],
+            created_at: '2023-01-01T00:00:00Z',
+            updated_at: '2023-01-10T00:00:00Z',
+            closed_at: '2023-01-10T00:00:00Z',
+            html_url: 'https://github.com/test/repo/pull/100',
+            body: 'This PR was merged',
+            pull_request: {},
+            // Note: Search API doesn't return merged_at
+          },
+        ],
+      };
+
+      mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+        data: mockSearchResult,
+      });
+
+      // PR details include merged_at - this is where we get the merged status
+      mockOctokit.rest.pulls.get.mockResolvedValue({
+        data: {
+          number: 100,
+          head: { ref: 'feature', sha: 'abc' },
+          base: { ref: 'main', sha: 'def' },
+          draft: false,
+          merged_at: '2023-01-10T00:00:00Z', // This should be copied to result
+        },
+      });
+
+      const result = await searchGitHubPullRequestsAPI({
+        owner: 'test',
+        repo: 'repo',
+        merged: true,
+        state: 'closed',
+      });
+
+      expect(result.pull_requests).toHaveLength(1);
+      expect(result.pull_requests?.[0]?.merged).toBe(true);
+      expect(result.pull_requests?.[0]?.merged_at).toBe('2023-01-10T00:00:00Z');
+    });
+
+    it('should correctly set merged: false when PR is closed but not merged', async () => {
+      mockShouldUseSearchForPRs.mockReturnValue(true);
+      mockBuildPullRequestSearchQuery.mockReturnValue(
+        'repo:test/repo is:pr is:unmerged'
+      );
+
+      const mockSearchResult = {
+        total_count: 1,
+        incomplete_results: false,
+        items: [
+          {
+            number: 101,
+            title: 'Closed but not merged PR',
+            state: 'closed',
+            user: { login: 'user1' },
+            labels: [],
+            created_at: '2023-01-01T00:00:00Z',
+            updated_at: '2023-01-10T00:00:00Z',
+            closed_at: '2023-01-10T00:00:00Z',
+            html_url: 'https://github.com/test/repo/pull/101',
+            body: 'This PR was closed without merging',
+            pull_request: {},
+          },
+        ],
+      };
+
+      mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+        data: mockSearchResult,
+      });
+
+      // PR details without merged_at - closed but not merged
+      mockOctokit.rest.pulls.get.mockResolvedValue({
+        data: {
+          number: 101,
+          head: { ref: 'feature', sha: 'abc' },
+          base: { ref: 'main', sha: 'def' },
+          draft: false,
+          merged_at: null, // Not merged
+        },
+      });
+
+      const result = await searchGitHubPullRequestsAPI({
+        owner: 'test',
+        repo: 'repo',
+        merged: false,
+        state: 'closed',
+      });
+
+      expect(result.pull_requests).toHaveLength(1);
+      expect(result.pull_requests?.[0]?.merged).toBe(false);
+      expect(result.pull_requests?.[0]?.merged_at).toBeUndefined();
+    });
+
     it('should filter out non-PR items from search results', async () => {
       mockShouldUseSearchForPRs.mockReturnValue(true);
       mockBuildPullRequestSearchQuery.mockReturnValue('repo:test/repo is:pr');

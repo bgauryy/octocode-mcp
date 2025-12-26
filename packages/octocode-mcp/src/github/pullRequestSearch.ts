@@ -463,6 +463,11 @@ async function transformPullRequestItemFromSearch(
           result.base_sha = prDetails.data.base?.sha;
           result.draft = prDetails.data.draft ?? false;
 
+          // Copy merged_at from PR details - Search API doesn't return this field
+          if (prDetails.data.merged_at) {
+            result.merged_at = prDetails.data.merged_at;
+          }
+
           if (shouldFetchContent) {
             const fileChanges = await fetchPRFileChangesAPI(
               owner,

@@ -11,6 +11,7 @@ import type {
   GitHubRepositoryStructureResult,
   GitHubRepositoryStructureError,
 } from '../scheme/github_view_repo_structure';
+import { GITHUB_STRUCTURE_DEFAULTS as STRUCTURE_DEFAULTS } from '../scheme/github_view_repo_structure';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from '../utils/minifier/index.js';
 import { getOctokit, OctokitWithThrottling } from './client';
@@ -395,6 +396,70 @@ function generateGitHubPaginationHints(
 }
 
 /**
+ * Generate hints for repository structure pagination
+ */
+function generateStructurePaginationHints(
+  pagination: {
+    currentPage: number;
+    totalPages: number;
+    hasMore: boolean;
+    entriesPerPage: number;
+    totalEntries: number;
+  },
+  context: {
+    owner: string;
+    repo: string;
+    branch: string;
+    path?: string;
+    depth?: number;
+    pageFiles: number;
+    pageFolders: number;
+    allFiles: number;
+    allFolders: number;
+  }
+): string[] {
+  const hints: string[] = [];
+
+  // Summary of current page
+  hints.push(
+    `📂 Page ${pagination.currentPage}/${pagination.totalPages} ` +
+      `(${context.pageFiles} files, ${context.pageFolders} folders on this page)`
+  );
+
+  hints.push(
+    `📊 Total: ${context.allFiles} files, ${context.allFolders} folders ` +
+      `(${pagination.totalEntries} entries)`
+  );
+
+  if (pagination.hasMore) {
+    const pathParam = context.path ? `path="${context.path}", ` : '';
+    const depthParam =
+      context.depth && context.depth > 1 ? `depth=${context.depth}, ` : '';
+
+    hints.push('');
+    hints.push(`▶ TO GET NEXT PAGE:`);
+    hints.push(`  Use: entryPageNumber=${pagination.currentPage + 1}`);
+    hints.push(
+      `  Same params: owner="${context.owner}", repo="${context.repo}", ` +
+        `branch="${context.branch}", ${pathParam}${depthParam}entriesPerPage=${pagination.entriesPerPage}`
+    );
+    hints.push('');
+    hints.push(
+      `💡 TIP: Use githubSearchCode with path filter for targeted discovery ` +
+        `instead of paginating through entire structure`
+    );
+  } else {
+    hints.push('');
+    hints.push(
+      `✓ Complete structure retrieved ` +
+        `(${pagination.totalPages} page${pagination.totalPages > 1 ? 's' : ''})`
+    );
+  }
+
+  return hints;
+}
+
+/**
  * Fetch the last modification timestamp for a file via commits API
  */
 async function fetchFileTimestamp(
@@ -757,10 +822,8 @@ async function viewGitHubRepositoryStructureAPIInternal(
       return !shouldIgnoreFile(item.path);
     });
 
-    const itemLimit = Math.min(200, 50 * depth);
-    const limitedItems = filteredItems.slice(0, itemLimit);
-
-    limitedItems.sort((a, b) => {
+    // Sort all items first for consistent pagination
+    filteredItems.sort((a, b) => {
       if (a.type !== b.type) {
         return a.type === 'dir' ? -1 : 1;
       }
@@ -774,6 +837,17 @@ async function viewGitHubRepositoryStructureAPIInternal(
 
       return a.path.localeCompare(b.path);
     });
+
+    // Apply pagination
+    const entriesPerPage =
+      params.entriesPerPage ?? STRUCTURE_DEFAULTS.ENTRIES_PER_PAGE;
+    const entryPageNumber = params.entryPageNumber ?? 1;
+    const totalEntries = filteredItems.length;
+    const totalPages = Math.max(1, Math.ceil(totalEntries / entriesPerPage));
+    const startIdx = (entryPageNumber - 1) * entriesPerPage;
+    const endIdx = Math.min(startIdx + entriesPerPage, totalEntries);
+
+    const paginatedItems = filteredItems.slice(startIdx, endIdx);
 
     const structure: Record<string, { files: string[]; folders: string[] }> =
       {};
@@ -800,7 +874,7 @@ async function viewGitHubRepositoryStructureAPIInternal(
       return lastSlash === -1 ? itemPath : itemPath.slice(lastSlash + 1);
     };
 
-    for (const item of limitedItems) {
+    for (const item of paginatedItems) {
       const parentDir = getRelativeParent(item.path);
 
       if (!structure[parentDir]) {
@@ -833,8 +907,33 @@ async function viewGitHubRepositoryStructureAPIInternal(
       sortedStructure[key] = structure[key]!;
     }
 
-    const totalFiles = limitedItems.filter(i => i.type === 'file').length;
-    const totalFolders = limitedItems.filter(i => i.type === 'dir').length;
+    const pageFiles = paginatedItems.filter(i => i.type === 'file').length;
+    const pageFolders = paginatedItems.filter(i => i.type === 'dir').length;
+    const allFiles = filteredItems.filter(i => i.type === 'file').length;
+    const allFolders = filteredItems.filter(i => i.type === 'dir').length;
+
+    // Build pagination info
+    const hasMore = entryPageNumber < totalPages;
+    const paginationInfo = {
+      currentPage: entryPageNumber,
+      totalPages,
+      hasMore,
+      entriesPerPage,
+      totalEntries,
+    };
+
+    // Generate pagination hints
+    const hints = generateStructurePaginationHints(paginationInfo, {
+      owner,
+      repo,
+      branch: workingBranch,
+      path: cleanPath,
+      depth,
+      pageFiles,
+      pageFolders,
+      allFiles,
+      allFolders,
+    });
 
     return {
       owner,
@@ -843,13 +942,15 @@ async function viewGitHubRepositoryStructureAPIInternal(
       path: cleanPath || '/',
       apiSource: true,
       summary: {
-        totalFiles,
-        totalFolders,
-        truncated: allItems.length > limitedItems.length,
+        totalFiles: allFiles,
+        totalFolders: allFolders,
+        truncated: hasMore,
         filtered: true,
-        originalCount: allItems.length,
+        originalCount: filteredItems.length,
       },
       structure: sortedStructure,
+      pagination: paginationInfo,
+      hints,
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);

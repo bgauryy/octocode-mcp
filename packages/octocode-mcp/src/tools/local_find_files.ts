@@ -197,6 +197,7 @@ export async function findFiles(
     return {
       status,
       files: finalFiles,
+      cwd: process.cwd(),
       totalFiles,
       pagination: {
         currentPage: filePageNumber,

@@ -371,6 +371,101 @@ describe('localViewStructure', () => {
       expect(result.structuredOutput).toContain('test2.txt');
       expect(result.structuredOutput).not.toContain('other.txt');
     });
+
+    it('should filter by glob pattern with asterisks', async () => {
+      mockReaddir.mockResolvedValue([
+        'parser.test.ts',
+        'utils.test.ts',
+        'helper.ts',
+        'config.ts',
+      ]);
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date(),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        pattern: '*test*',
+        depth: 1,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.structuredOutput).toContain('parser.test.ts');
+      expect(result.structuredOutput).toContain('utils.test.ts');
+      expect(result.structuredOutput).not.toContain('helper.ts');
+      expect(result.structuredOutput).not.toContain('config.ts');
+    });
+
+    it('should filter by glob pattern, extensions, and recursive together', async () => {
+      // Simulate a nested directory structure
+      mockReaddir
+        .mockResolvedValueOnce(['subdir', 'root.test.ts', 'other.ts'])
+        .mockResolvedValueOnce(['nested.test.ts', 'another.ts']);
+
+      mockLstat.mockImplementation(
+        async (pathArg: string | Buffer | URL): Promise<Stats> => {
+          const p = pathArg.toString();
+          return {
+            isDirectory: () => p.endsWith('subdir'),
+            isFile: () => p.endsWith('.ts'),
+            isSymbolicLink: () => false,
+            size: 1024,
+            mtime: new Date(),
+          } as Stats;
+        }
+      );
+
+      const result = await viewStructure({
+        path: '/test/path',
+        pattern: '*test*',
+        extensions: ['ts'],
+        filesOnly: true,
+        recursive: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.structuredOutput).toContain('root.test.ts');
+      expect(result.structuredOutput).toContain('nested.test.ts');
+      expect(result.structuredOutput).not.toContain('other.ts');
+      expect(result.structuredOutput).not.toContain('another.ts');
+    });
+
+    it('should filter by glob pattern with question mark', async () => {
+      mockReaddir.mockResolvedValue([
+        'test1.ts',
+        'test2.ts',
+        'test10.ts',
+        'testing.ts',
+      ]);
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date(),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        pattern: 'test?.ts',
+        depth: 1,
+      });
+
+      expect(result.status).toBe('hasResults');
+      // ? matches exactly one character, so test1.ts and test2.ts match
+      expect(result.structuredOutput).toContain('test1.ts');
+      expect(result.structuredOutput).toContain('test2.ts');
+      // test10.ts has two chars after 'test' before '.ts', so it doesn't match
+      expect(result.structuredOutput).not.toContain('test10.ts');
+      // testing.ts has 'ing' after 'test' before '.ts', so it doesn't match
+      expect(result.structuredOutput).not.toContain('testing.ts');
+    });
   });
 
   describe('Symlink handling', () => {

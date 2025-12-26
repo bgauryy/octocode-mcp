@@ -84,6 +84,7 @@ export interface PaginationInfo {
 export interface SearchContentResult extends BaseQuery {
   status: 'hasResults' | 'empty' | 'error';
   path?: string;
+  cwd?: string;
   errorCode?: ErrorCode;
   hints?: readonly string[];
   warnings?: string[]; // Validation warnings
@@ -241,6 +242,7 @@ export interface ViewStructureQuery extends BaseQuery {
 export interface ViewStructureResult extends BaseQuery {
   status: 'hasResults' | 'empty' | 'error';
   path?: string;
+  cwd?: string;
   structuredOutput?: string; // Compact indented string format
   totalFiles?: number;
   totalDirectories?: number;
@@ -309,6 +311,7 @@ export interface FoundFile {
 export interface FindFilesResult extends BaseQuery {
   status: 'hasResults' | 'empty' | 'error';
   files?: FoundFile[];
+  cwd?: string;
   totalFiles?: number;
   errorCode?: ErrorCode;
   hints?: readonly string[];
@@ -341,6 +344,7 @@ export interface FetchContentQuery extends BaseQuery {
 export interface FetchContentResult extends BaseQuery {
   status: 'hasResults' | 'empty' | 'error';
   path?: string;
+  cwd?: string;
   content?: string;
   contentLength?: number;
   isPartial?: boolean;
