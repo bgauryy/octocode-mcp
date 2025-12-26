@@ -854,6 +854,7 @@ async function promptCustomPath() {
   console.log(
     `  ${c("blue", "ℹ")} Enter the full path to your MCP config file (JSON)`
   );
+  console.log(`  ${dim("Leave empty to go back")}`);
   console.log();
   console.log(`  ${dim("Common paths:")}`);
   console.log(`    ${dim("•")} ~/.cursor/mcp.json ${dim("(Cursor)")}`);
@@ -869,10 +870,10 @@ async function promptCustomPath() {
   console.log(`    ${dim("•")} ~/.continue/config.json ${dim("(Continue)")}`);
   console.log();
   const customPath = await input({
-    message: "MCP config path:",
+    message: "MCP config path (or press Enter to go back):",
     validate: (value) => {
       if (!value.trim()) {
-        return "Path is required";
+        return true;
       }
       const expandedPath = expandPath(value);
       if (!expandedPath.endsWith(".json")) {
@@ -889,7 +890,7 @@ Create it first or choose a different location.`;
       return true;
     }
   });
-  if (!customPath) return null;
+  if (!customPath || !customPath.trim()) return null;
   return expandPath(customPath);
 }
 async function selectInstallMethod() {
@@ -1772,49 +1773,82 @@ async function promptOpenConfigFile(configPath) {
 }
 async function editBooleanOption(option, currentValue) {
   const isEnabled = parseBooleanValue(currentValue);
+  const currentStatus = isEnabled ? c("green", "enabled") : c("dim", "disabled");
   console.log();
   console.log(`  ${bold(option.name)}`);
   console.log(`  ${dim(option.description)}`);
+  console.log(`  ${dim("Current:")} ${currentStatus}`);
   console.log();
-  const newValue = await confirm({
-    message: `Enable ${option.name}?`,
-    default: isEnabled
+  const choice = await select({
+    message: `${option.name}:`,
+    choices: [
+      {
+        name: `${c("green", "✓")} Enable`,
+        value: "enable"
+      },
+      {
+        name: `${c("yellow", "○")} Disable`,
+        value: "disable"
+      },
+      new Separator(),
+      {
+        name: `${c("dim", "← Cancel")}`,
+        value: "cancel"
+      }
+    ],
+    loop: false
   });
-  return newValue ? "1" : "false";
+  if (choice === "cancel") return null;
+  return choice === "enable" ? "1" : "false";
 }
 async function editStringOption(option, currentValue) {
+  const displayCurrent = currentValue && currentValue !== option.defaultValue ? c("cyan", currentValue) : c("dim", currentValue || option.defaultValue);
   console.log();
   console.log(`  ${bold(option.name)}`);
   console.log(`  ${dim(option.description)}`);
+  console.log(`  ${dim("Current:")} ${displayCurrent}`);
   console.log(`  ${dim("Default:")} ${option.defaultValue}`);
+  console.log(`  ${dim("(Leave empty and press Enter to cancel)")}`);
   console.log();
   const newValue = await input({
     message: `${option.name}:`,
-    default: currentValue || option.defaultValue,
+    default: "",
     validate: (value) => {
+      if (!value.trim()) {
+        return true;
+      }
       if (option.validation?.pattern && !option.validation.pattern.test(value)) {
         return "Invalid format";
       }
       return true;
     }
   });
+  if (!newValue.trim()) {
+    return null;
+  }
   return newValue === option.defaultValue ? "" : newValue;
 }
 async function editNumberOption(option, currentValue) {
+  const displayCurrent = currentValue && currentValue !== option.defaultValue ? c("cyan", currentValue) : c("dim", currentValue || option.defaultValue);
   console.log();
   console.log(`  ${bold(option.name)}`);
   console.log(`  ${dim(option.description)}`);
+  console.log(`  ${dim("Current:")} ${displayCurrent}`);
   if (option.validation?.min !== void 0 || option.validation?.max !== void 0) {
     const min = option.validation?.min ?? 0;
     const max = option.validation?.max ?? Infinity;
     console.log(`  ${dim("Range:")} ${min} - ${max === Infinity ? "∞" : max}`);
   }
   console.log(`  ${dim("Default:")} ${option.defaultValue}`);
+  console.log(`  ${dim("(Leave empty and press Enter to cancel)")}`);
   console.log();
   const newValue = await input({
     message: `${option.name}:`,
-    default: currentValue || option.defaultValue,
+    default: "",
     validate: (value) => {
+      if (!value.trim()) {
+        return true;
+      }
       const num = parseInt(value, 10);
       if (isNaN(num)) {
         return "Please enter a valid number";
@@ -1828,18 +1862,47 @@ async function editNumberOption(option, currentValue) {
       return true;
     }
   });
+  if (!newValue.trim()) {
+    return null;
+  }
   return newValue === option.defaultValue ? "" : newValue;
 }
 async function editArrayOption(option, currentValue) {
   const allTools = getAllTools();
   const currentTools = currentValue ? currentValue.split(",").map((t) => t.trim()).filter(Boolean) : [];
+  const currentDisplay = currentTools.length > 0 ? currentTools.join(", ") : option.id === "toolsToRun" ? c("dim", "(all tools)") : c("dim", "(none)");
   console.log();
   console.log(`  ${bold(option.name)}`);
   console.log(`  ${dim(option.description)}`);
-  if (option.id === "toolsToRun") {
-    console.log(`  ${dim("Leave empty to enable all tools")}`);
-  }
+  console.log(`  ${dim("Current:")} ${currentDisplay}`);
   console.log();
+  const action = await select({
+    message: `${option.name}:`,
+    choices: [
+      {
+        name: "📝 Select tools",
+        value: "select",
+        description: "Choose which tools to include"
+      },
+      {
+        name: `${c("yellow", "↺")} Clear all`,
+        value: "clear",
+        description: option.id === "toolsToRun" ? "Reset to all tools enabled" : "Remove all tools from this list"
+      },
+      new Separator(),
+      {
+        name: `${c("dim", "← Cancel")}`,
+        value: "cancel"
+      }
+    ],
+    loop: false
+  });
+  if (action === "cancel") {
+    return null;
+  }
+  if (action === "clear") {
+    return "";
+  }
   const choices = [];
   choices.push({
     name: c("blue", "── GitHub Tools ──"),
@@ -1867,6 +1930,8 @@ async function editArrayOption(option, currentValue) {
       description: tool.description
     });
   }
+  console.log();
+  console.log(`  ${dim("Use Space to select/deselect, Enter to confirm")}`);
   const selected = await checkbox({
     message: `Select tools for ${option.name}:`,
     choices,

@@ -406,18 +406,39 @@ async function editBooleanOption(
   currentValue: string
 ): Promise<string | null> {
   const isEnabled = parseBooleanValue(currentValue);
+  const currentStatus = isEnabled
+    ? c('green', 'enabled')
+    : c('dim', 'disabled');
 
   console.log();
   console.log(`  ${bold(option.name)}`);
   console.log(`  ${dim(option.description)}`);
+  console.log(`  ${dim('Current:')} ${currentStatus}`);
   console.log();
 
-  const newValue = await confirm({
-    message: `Enable ${option.name}?`,
-    default: isEnabled,
+  type BoolChoice = 'enable' | 'disable' | 'cancel';
+  const choice = await select<BoolChoice>({
+    message: `${option.name}:`,
+    choices: [
+      {
+        name: `${c('green', '✓')} Enable`,
+        value: 'enable',
+      },
+      {
+        name: `${c('yellow', '○')} Disable`,
+        value: 'disable',
+      },
+      new Separator() as unknown as { name: string; value: BoolChoice },
+      {
+        name: `${c('dim', '← Cancel')}`,
+        value: 'cancel',
+      },
+    ],
+    loop: false,
   });
 
-  return newValue ? '1' : 'false';
+  if (choice === 'cancel') return null;
+  return choice === 'enable' ? '1' : 'false';
 }
 
 /**
@@ -427,16 +448,27 @@ async function editStringOption(
   option: ConfigOption,
   currentValue: string
 ): Promise<string | null> {
+  const displayCurrent =
+    currentValue && currentValue !== option.defaultValue
+      ? c('cyan', currentValue)
+      : c('dim', currentValue || option.defaultValue);
+
   console.log();
   console.log(`  ${bold(option.name)}`);
   console.log(`  ${dim(option.description)}`);
+  console.log(`  ${dim('Current:')} ${displayCurrent}`);
   console.log(`  ${dim('Default:')} ${option.defaultValue}`);
+  console.log(`  ${dim('(Leave empty and press Enter to cancel)')}`);
   console.log();
 
   const newValue = await input({
     message: `${option.name}:`,
-    default: currentValue || option.defaultValue,
+    default: '',
     validate: (value: string) => {
+      // Allow empty to cancel
+      if (!value.trim()) {
+        return true;
+      }
       if (
         option.validation?.pattern &&
         !option.validation.pattern.test(value)
@@ -446,6 +478,11 @@ async function editStringOption(
       return true;
     },
   });
+
+  // Empty means cancel - return null to indicate no change
+  if (!newValue.trim()) {
+    return null;
+  }
 
   // Return empty string if matches default (to remove from env)
   return newValue === option.defaultValue ? '' : newValue;
@@ -458,9 +495,15 @@ async function editNumberOption(
   option: ConfigOption,
   currentValue: string
 ): Promise<string | null> {
+  const displayCurrent =
+    currentValue && currentValue !== option.defaultValue
+      ? c('cyan', currentValue)
+      : c('dim', currentValue || option.defaultValue);
+
   console.log();
   console.log(`  ${bold(option.name)}`);
   console.log(`  ${dim(option.description)}`);
+  console.log(`  ${dim('Current:')} ${displayCurrent}`);
   if (
     option.validation?.min !== undefined ||
     option.validation?.max !== undefined
@@ -470,12 +513,17 @@ async function editNumberOption(
     console.log(`  ${dim('Range:')} ${min} - ${max === Infinity ? '∞' : max}`);
   }
   console.log(`  ${dim('Default:')} ${option.defaultValue}`);
+  console.log(`  ${dim('(Leave empty and press Enter to cancel)')}`);
   console.log();
 
   const newValue = await input({
     message: `${option.name}:`,
-    default: currentValue || option.defaultValue,
+    default: '',
     validate: (value: string) => {
+      // Allow empty to cancel
+      if (!value.trim()) {
+        return true;
+      }
       const num = parseInt(value, 10);
       if (isNaN(num)) {
         return 'Please enter a valid number';
@@ -489,6 +537,11 @@ async function editNumberOption(
       return true;
     },
   });
+
+  // Empty means cancel - return null to indicate no change
+  if (!newValue.trim()) {
+    return null;
+  }
 
   // Return empty string if matches default (to remove from env)
   return newValue === option.defaultValue ? '' : newValue;
@@ -509,13 +562,54 @@ async function editArrayOption(
         .filter(Boolean)
     : [];
 
+  // Show current state
+  const currentDisplay =
+    currentTools.length > 0
+      ? currentTools.join(', ')
+      : option.id === 'toolsToRun'
+        ? c('dim', '(all tools)')
+        : c('dim', '(none)');
+
   console.log();
   console.log(`  ${bold(option.name)}`);
   console.log(`  ${dim(option.description)}`);
-  if (option.id === 'toolsToRun') {
-    console.log(`  ${dim('Leave empty to enable all tools')}`);
-  }
+  console.log(`  ${dim('Current:')} ${currentDisplay}`);
   console.log();
+
+  // First, ask what the user wants to do
+  type ArrayAction = 'select' | 'clear' | 'cancel';
+  const action = await select<ArrayAction>({
+    message: `${option.name}:`,
+    choices: [
+      {
+        name: '📝 Select tools',
+        value: 'select',
+        description: 'Choose which tools to include',
+      },
+      {
+        name: `${c('yellow', '↺')} Clear all`,
+        value: 'clear',
+        description:
+          option.id === 'toolsToRun'
+            ? 'Reset to all tools enabled'
+            : 'Remove all tools from this list',
+      },
+      new Separator() as unknown as { name: string; value: ArrayAction },
+      {
+        name: `${c('dim', '← Cancel')}`,
+        value: 'cancel',
+      },
+    ],
+    loop: false,
+  });
+
+  if (action === 'cancel') {
+    return null;
+  }
+
+  if (action === 'clear') {
+    return '';
+  }
 
   // Build choices with categories
   const choices: Array<{
@@ -556,6 +650,9 @@ async function editArrayOption(
       description: tool.description,
     });
   }
+
+  console.log();
+  console.log(`  ${dim('Use Space to select/deselect, Enter to confirm')}`);
 
   const selected = await checkbox<string>({
     message: `Select tools for ${option.name}:`,
