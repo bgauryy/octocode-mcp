@@ -11,22 +11,26 @@
     - **Plan**: Create a plan using the `todo` tool for any non-trivial task.
     - **Track**: Mark tasks as in-progress/completed as you work.
 
-2.  **TDD (Test Driven Development)**:
+2.  **Research & Discovery**:
+    - **Tools**: **Prefer `octocode-local`** and research tools for codebase exploration.
+    - **Search**: Use semantic search and `grep` before reading files.
+
+3.  **TDD (Test Driven Development)**:
     - **Test**: Write a failing test case for the new feature or bug fix.
-    - **Fail**: Run the test and confirm it fails (red).
+    - **Fail**: Run the test (`yarn test`) and confirm it fails (red).
     - **Fix**: Write the minimal code necessary to pass the test (green).
     - **Pass**: Verify the test passes and coverage is maintained.
     - **Refactor**: Clean up the code if needed while keeping tests passing.
 
-3.  **ReAct Loop**:
+4.  **ReAct Loop**:
     - **Reason**: Analyze the current state and decide the next step.
     - **Act**: Execute a tool call (edit file, run terminal command).
     - **Observe**: Check the tool output (linter errors, test results, file content).
     - **Loop**: Repeat until the objective is met.
 
-4.  **Quality Control**:
+5.  **Quality Control**:
     - Adhere to "Clean Code" principles.
-    - Add only critical comments to code
+    - Add only critical comments.
     - Run linter (`yarn lint`) and tests (`yarn test`) after substantive changes.
     - **Never** leave the codebase in a broken state.
 
@@ -38,7 +42,8 @@
 octocode-mcp/
 ├── packages/
 │   ├── octocode-mcp/      # GitHub API MCP server (Node.js)
-│   └── octocode-vscode/   # VS Code extension
+│   ├── octocode-vscode/   # VS Code extension
+│   └── octocode-cli/      # CLI installer
 ├── docs/                  # Configuration & auth guides
 └── package.json           # Workspace root
 ```
@@ -52,6 +57,7 @@ octocode-mcp/
 |------|--------|-------------|
 | `packages/octocode-mcp/` | FULL | GitHub MCP server source |
 | `packages/octocode-vscode/` | FULL | VS Code extension source |
+| `packages/octocode-cli/` | FULL | CLI installer source |
 | `docs/` | EDIT | Documentation |
 | `*.json`, `*.config.*` | ASK | Root configurations |
 | `.env*`, `.octocode/` | NEVER | Secrets & research context |
@@ -77,6 +83,8 @@ octocode-mcp/
 
 ## 🛠️ Commands & Workflow
 
+**Use `yarn` for all package management.**
+
 | Task | Command | Scope |
 |------|---------|-------|
 | **Install** | `yarn install` | All packages |
@@ -85,11 +93,13 @@ octocode-mcp/
 | **Test (Quiet)**| `yarn test:quiet` | Minimal output |
 | **Lint** | `yarn lint` | All packages |
 
-**Note**: For package-specific commands, `cd packages/<name>` first.
+**Note**: Check `package.json` scripts for each package for specific commands.
+For package-specific commands, `cd packages/<name>` first.
 
 ### File Actions
 
-- **String Replacement**: Use `sed` for changing strings across multiple files.
+- **String Replacement**: **MUST use `sed`** for changing strings across multiple files.
+- **Simplify Flows**: Write and run scripts (e.g., Node.js, Shell) to automate complex sequences instead of looping through tool calls.
 - **Repetitive Tasks**: Prefer CLI commands over manual edits for bulk/repetitive operations.
 
 ## 📏 Development Standards
@@ -97,16 +107,9 @@ octocode-mcp/
 ### Style Guide
 
 - **Language**: TypeScript (strict mode)
-- **Formatting**:
-  - Semicolons: Yes
-  - Quotes: Single
-  - Print width: 80
-  - Tab width: 2 spaces
-  - Trailing comma: ES5
+- **Formatting**: Semicolons: Yes, Quotes: Single, Width: 80, Tab: 2.
 - **Code Style**:
-  - Prefer `const`, never use `var`.
-  - Use explicit return types.
-  - No `any` types (enforced by ESLint).
+  - Prefer `const`. Explicit return types. No `any`.
   - Use optional chaining (`?.`) and nullish coalescing (`??`).
 
 ### Naming Conventions
