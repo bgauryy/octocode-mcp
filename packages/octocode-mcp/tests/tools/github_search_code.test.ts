@@ -277,7 +277,7 @@ describe('Quality Boosting and Research Goals', () => {
     expect(callArgs!.q).toMatch(/repo:facebook\/react/);
   });
 
-  it('should handle manual quality filters correctly', async () => {
+  it('should handle code search with extension filter correctly', async () => {
     const mockResponse = {
       data: {
         total_count: 1,
@@ -291,13 +291,13 @@ describe('Quality Boosting and Research Goals', () => {
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'test',
       repo: 'repo',
-      stars: '>1000',
+      extension: 'tsx',
       limit: 5,
       minify: true,
     });
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).toMatch(/stars:>1000/);
+    expect(callArgs.q).toMatch(/extension:tsx/);
   });
 });

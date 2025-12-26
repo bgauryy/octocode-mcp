@@ -58,6 +58,140 @@ describe('MinifierV2', () => {
     });
   });
 
+  describe('TypeScript Aggressive Strategy', () => {
+    it('should use aggressive strategy for TypeScript files (not terser)', async () => {
+      const tsCode = `// Single line comment
+interface User {
+  name: string;
+  age: number;
+}
+
+/* Multi-line comment
+   describing the function */
+function greet(user: User): string {
+  return \`Hello, \${user.name}!\`;
+}`;
+
+      const result = await minifyContent(tsCode, 'test.ts');
+
+      // Should use aggressive strategy, not terser
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+
+      // Should remove comments
+      expect(result.content).not.toContain('// Single line comment');
+      expect(result.content).not.toContain('/* Multi-line comment');
+      expect(result.content).not.toContain('describing the function */');
+
+      // Should preserve TypeScript syntax
+      expect(result.content).toContain('interface User');
+      expect(result.content).toContain('name:string');
+      expect(result.content).toContain('function greet(user:User):string');
+
+      // Terser should NOT be called for .ts files
+      expect(mockMinify).not.toHaveBeenCalled();
+    });
+
+    it('should handle TSX files with aggressive strategy', async () => {
+      const tsxCode = `// Component comment
+import React from 'react';
+
+interface Props {
+  title: string;
+}
+
+/* Main component */
+export const Header: React.FC<Props> = ({ title }) => {
+  return <h1>{title}</h1>;
+};`;
+
+      const result = await minifyContent(tsxCode, 'Header.tsx');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+
+      // Should remove comments
+      expect(result.content).not.toContain('// Component comment');
+      expect(result.content).not.toContain('/* Main component */');
+
+      // Should preserve TSX/TypeScript syntax
+      expect(result.content).toContain('interface Props');
+      expect(result.content).toContain('title:string');
+      expect(result.content).toContain('React.FC<Props>');
+
+      // Terser should NOT be called for .tsx files
+      expect(mockMinify).not.toHaveBeenCalled();
+    });
+
+    it('should handle complex TypeScript with generics and type annotations', async () => {
+      const tsCode = `// Utility types
+type Partial<T> = {
+  [P in keyof T]?: T[P];
+};
+
+/* Generic function */
+async function fetchData<T extends object>(
+  url: string,
+  options?: RequestInit
+): Promise<T> {
+  const response = await fetch(url, options);
+  return response.json() as T;
+}
+
+// Enum definition
+enum Status {
+  Pending = 'pending',
+  Active = 'active',
+  Done = 'done'
+}`;
+
+      const result = await minifyContent(tsCode, 'utils.ts');
+
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+
+      // Should remove all comments
+      expect(result.content).not.toContain('// Utility types');
+      expect(result.content).not.toContain('/* Generic function */');
+      expect(result.content).not.toContain('// Enum definition');
+
+      // Should preserve complex TypeScript syntax
+      expect(result.content).toContain('type Partial<T>');
+      expect(result.content).toContain('keyof T');
+      expect(result.content).toContain(
+        'async function fetchData<T extends object>'
+      );
+      expect(result.content).toContain('Promise<T>');
+      expect(result.content).toContain('enum Status');
+    });
+
+    it('should never fail on TypeScript files (unlike terser)', async () => {
+      // TypeScript code that would cause terser to fail
+      const tsCode = `
+interface ComplexType<T extends Record<string, unknown>> {
+  data: T;
+  metadata: {
+    createdAt: Date;
+    updatedAt?: Date;
+  };
+}
+
+type ExtractKeys<T> = T extends Record<infer K, unknown> ? K : never;
+
+const handler: <T>(input: T) => T = (input) => input;
+`;
+
+      const result = await minifyContent(tsCode, 'complex.ts');
+
+      // Should ALWAYS succeed with aggressive strategy
+      expect(result.failed).toBe(false);
+      expect(result.type).toBe('aggressive');
+
+      // Content should be minified (smaller)
+      expect(result.content.length).toBeLessThan(tsCode.length);
+    });
+  });
+
   describe('Conservative Strategy (Indentation-Sensitive)', () => {
     it('should preserve Python indentation structure', async () => {
       const pythonCode = `def hello():

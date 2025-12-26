@@ -10,6 +10,7 @@ import {
   validateToolPath,
   createErrorResult,
 } from '../utils/local/utils/toolHelpers.js';
+import { byteToCharIndex, byteSlice } from '../utils/local/utils/byteOffset.js';
 import { RESOURCE_LIMITS } from '../utils/constants.js';
 import type {
   SearchContentResult,
@@ -77,8 +78,11 @@ export async function searchContentRipgrep(
       configuredQuery
     );
 
+    // Compute actual character offsets (convert byte offsets to char indices)
+    const filesWithCharOffsets = await computeCharacterOffsets(parsedFiles);
+
     const filesWithMetadata = await Promise.all(
-      parsedFiles.map(async f => {
+      filesWithCharOffsets.map(async f => {
         const file: typeof f & { modified?: string } = { ...f };
         if (configuredQuery.showFileLastModified) {
           file.modified = await getFileModifiedTime(f.path);
@@ -524,7 +528,13 @@ function parseRipgrepJson(
 
         return {
           value,
-          location: { charOffset: m.absoluteOffset, charLength: m.matchLength },
+          location: {
+            byteOffset: m.absoluteOffset,
+            byteLength: m.matchLength,
+            // Placeholder - will be computed with file content
+            charOffset: m.absoluteOffset,
+            charLength: m.matchLength,
+          },
           line: m.lineNumber,
           column: m.column,
         };
@@ -550,4 +560,56 @@ async function getFileModifiedTime(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Compute actual character offsets for matches by reading file content.
+ * This converts ripgrep's byte offsets to JavaScript string indices.
+ */
+async function computeCharacterOffsets(
+  files: RipgrepFileMatches[]
+): Promise<RipgrepFileMatches[]> {
+  return Promise.all(
+    files.map(async file => {
+      // Skip if no matches
+      if (!file.matches || file.matches.length === 0) {
+        return file;
+      }
+
+      try {
+        // Read file content for byte-to-char conversion
+        const content = await fs.readFile(file.path, 'utf8');
+
+        // Update each match with actual character positions
+        const updatedMatches = file.matches.map(match => {
+          const charOffset = byteToCharIndex(
+            content,
+            match.location.byteOffset
+          );
+          const matchText = byteSlice(
+            content,
+            match.location.byteOffset,
+            match.location.byteOffset + match.location.byteLength
+          );
+
+          return {
+            ...match,
+            location: {
+              ...match.location,
+              charOffset,
+              charLength: matchText.length,
+            },
+          };
+        });
+
+        return {
+          ...file,
+          matches: updatedMatches,
+        };
+      } catch {
+        // If file read fails, keep byte offsets as fallback
+        return file;
+      }
+    })
+  );
 }

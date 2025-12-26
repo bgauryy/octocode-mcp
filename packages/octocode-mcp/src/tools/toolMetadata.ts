@@ -404,7 +404,6 @@ export const GITHUB_SEARCH_CODE = createSchemaHelper(
   };
   filters: {
     extension: string;
-    stars: string;
     filename: string;
     path: string;
     match: string;

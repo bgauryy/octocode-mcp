@@ -494,19 +494,18 @@ describe('GitHub API Utils', () => {
         },
       });
 
-      // Test with explicit stars and pushed filters
-      const forkOnlyParams = {
+      // Test with owner and repo filters
+      const ownerRepoParams = {
         keywordsToSearch: ['function'],
         owner: 'test',
         repo: 'repo',
-        stars: '>100',
         minify: true,
       };
 
-      await searchGitHubCodeAPI(forkOnlyParams);
+      await searchGitHubCodeAPI(ownerRepoParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function stars:>100 repo:test/repo',
+        q: 'function repo:test/repo',
         per_page: 30,
         page: 1,
         headers: {

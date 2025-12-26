@@ -126,25 +126,25 @@ export interface RipgrepMatch {
   value: string; // Match + context, max 200 chars
   location: {
     /**
-     * WARNING: This is a BYTE offset, not a character/codepoint offset!
-     *
-     * Ripgrep returns byte offsets in the file's encoding. For UTF-8 files with
-     * multi-byte characters (é, 中, emoji), byte offset ≠ character offset.
-     *
-     * Example: In "Hello 世界 World"
-     * - "World" byte offset: 13 (each Chinese char = 3 bytes)
-     * - "World" character offset: 7
-     *
-     * For ASCII-only files: byte offset = character offset ✓
-     * For UTF-8 with multi-byte chars: conversion required
-     *
-     * Integration: FETCH_CONTENT expects byte offsets, so this works directly.
+     * Byte offset in the file (from ripgrep).
+     * Use this for byte-level operations or with localGetFileContent.
+     */
+    byteOffset: number;
+
+    /**
+     * Byte length of the match (from ripgrep).
+     */
+    byteLength: number;
+
+    /**
+     * Character offset (UTF-16 code unit index) - for use with JavaScript strings.
+     * Computed from byteOffset using UTF-8 to UTF-16 conversion.
      */
     charOffset: number;
 
     /**
-     * WARNING: This is a BYTE length, not character length!
-     * See charOffset warning above for details.
+     * Character length (number of UTF-16 code units) - for use with JavaScript strings.
+     * Note: Emoji and other surrogate pairs count as 2.
      */
     charLength: number;
   };

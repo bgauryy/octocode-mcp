@@ -75,11 +75,13 @@ const MINIFY_CONFIG: MinifyConfig = {
   fileTypes: {
     // JavaScript family - use terser
     js: { strategy: 'terser' },
-    ts: { strategy: 'terser' },
     jsx: { strategy: 'terser' },
-    tsx: { strategy: 'terser' },
     mjs: { strategy: 'terser' },
     cjs: { strategy: 'terser' },
+
+    // TypeScript - use aggressive (terser doesn't support TS syntax)
+    ts: { strategy: 'aggressive', comments: 'c-style' },
+    tsx: { strategy: 'aggressive', comments: 'c-style' },
 
     // Indentation-sensitive languages - conservative approach
     py: { strategy: 'conservative', comments: 'hash' },

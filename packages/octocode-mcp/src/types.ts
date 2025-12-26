@@ -134,7 +134,6 @@ export interface GitHubCodeSearchQuery {
   owner?: string;
   repo?: string;
   extension?: string;
-  stars?: string;
   filename?: string;
   path?: string;
   match?: 'file' | 'path';
