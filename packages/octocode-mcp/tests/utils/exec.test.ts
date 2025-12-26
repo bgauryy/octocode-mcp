@@ -276,7 +276,7 @@ describe('exec utilities', () => {
       const result = await promise;
 
       expect(result.error).toBeDefined();
-      expect(result.error?.message).toBe('Command timeout');
+      expect(result.error?.message).toMatch(/^Command timeout/);
       expect(mockProcess.killed).toBe(true);
 
       vi.useRealTimers();

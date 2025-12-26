@@ -1,4 +1,9 @@
-import type { GitHubAPIError } from './github/githubAPI.js';
+import type {
+  GitHubAPIError,
+  OctokitRateLimit,
+  OctokitPrivateUser,
+} from './github/githubAPI.js';
+// Note: OctokitRateLimitOverview is available from './github/githubAPI.js' for full rate limit response
 import type { PaginationInfo } from './utils/types.js';
 
 export type { PaginationInfo };
@@ -47,6 +52,19 @@ export interface OrganizedHints {
   failed?: string[];
 }
 
+// ============================================================================
+// GITHUB USER & RATE LIMIT TYPES
+// These types are derived from Octokit's OpenAPI schemas with customizations.
+// ============================================================================
+
+/**
+ * GitHub user information for authenticated user.
+ *
+ * Derived from Octokit's OctokitPrivateUser (components['schemas']['private-user'])
+ * but with a simplified subset of fields for our use cases.
+ *
+ * @see OctokitPrivateUser for the full Octokit type
+ */
 export interface GitHubUserInfo {
   login: string;
   id: number;
@@ -61,26 +79,55 @@ export interface GitHubUserInfo {
   };
 }
 
+/**
+ * Type helper to verify GitHubUserInfo is compatible with OctokitPrivateUser.
+ * This ensures our custom type stays in sync with Octokit's schema.
+ */
+type _AssertUserInfoCompatible =
+  GitHubUserInfo extends Pick<
+    OctokitPrivateUser,
+    'login' | 'id' | 'name' | 'email' | 'company' | 'type'
+  >
+    ? true
+    : never;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _userInfoCheck: _AssertUserInfoCompatible = true;
+
+/**
+ * Rate limit information for a single resource category.
+ *
+ * This is equivalent to Octokit's OctokitRateLimit (components['schemas']['rate-limit']).
+ * We keep a local alias for backwards compatibility and explicit documentation.
+ *
+ * @see OctokitRateLimit for the official Octokit type
+ */
+export type RateLimitResource = OctokitRateLimit;
+
+/**
+ * GitHub rate limit information across resource categories.
+ *
+ * Derived from Octokit's OctokitRateLimitOverview (components['schemas']['rate-limit-overview']).
+ * This is a simplified subset focusing on the main rate limit categories we use.
+ *
+ * @see OctokitRateLimitOverview for the full Octokit type with all resource categories
+ */
 export interface GitHubRateLimitInfo {
-  core: {
-    limit: number;
-    used: number;
-    remaining: number;
-    reset: number;
-  };
-  search: {
-    limit: number;
-    used: number;
-    remaining: number;
-    reset: number;
-  };
-  graphql: {
-    limit: number;
-    used: number;
-    remaining: number;
-    reset: number;
-  };
+  /** Core API rate limit (REST API calls) */
+  core: RateLimitResource;
+  /** Search API rate limit (code/repo/issue search) */
+  search: RateLimitResource;
+  /** GraphQL API rate limit */
+  graphql: RateLimitResource;
 }
+
+/**
+ * Type helper to verify GitHubRateLimitInfo resources are compatible with Octokit's rate-limit schema.
+ * OctokitRateLimitOverview.resources contains 'core', 'search', 'graphql' among others.
+ */
+type _AssertRateLimitCompatible =
+  GitHubRateLimitInfo['core'] extends OctokitRateLimit ? true : never;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _rateLimitCheck: _AssertRateLimitCompatible = true;
 
 export interface GitHubCodeSearchQuery {
   keywordsToSearch: string[];

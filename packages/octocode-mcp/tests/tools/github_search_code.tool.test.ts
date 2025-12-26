@@ -317,21 +317,13 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
     });
 
     it('should return empty when all files are filtered by shouldIgnoreFile', async () => {
+      // Note: File filtering happens in codeSearch.ts (API layer), which is mocked here.
+      // This test simulates the API returning empty items after filtering was applied.
+      // The actual filtering logic is tested in codeSearch.filtering.test.ts
       mockSearchGitHubCodeAPI.mockResolvedValue({
         data: {
-          total_count: 2,
-          items: [
-            {
-              path: 'node_modules/package/index.js',
-              repository: { nameWithOwner: 'test/repo', url: '' },
-              matches: [{ context: 'const test = 1;', positions: [] }],
-            },
-            {
-              path: 'dist/bundle.js',
-              repository: { nameWithOwner: 'test/repo', url: '' },
-              matches: [{ context: 'const test = 2;', positions: [] }],
-            },
-          ],
+          total_count: 0, // API already filtered out ignored files
+          items: [], // No items remain after filtering
         },
         status: 200,
       });

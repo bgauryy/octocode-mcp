@@ -2,13 +2,29 @@
  * Integration test demonstrating execution context security
  */
 
-import { describe, it, expect, vi } from 'vitest';
-
-// Unmock child_process for integration tests - we need real command execution
-vi.unmock('child_process');
-
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import path from 'path';
-import { safeExec } from '../../src/utils/local/utils/exec.js';
+import { spawn } from 'child_process';
+import type { ExecResult } from '../../src/utils/types.js';
+
+// We need to manually reset the spawn mock to use real implementation
+// because vi.unmock doesn't work after module is already loaded
+let safeExec: (
+  command: string,
+  args?: string[],
+  options?: { cwd?: string; timeout?: number }
+) => Promise<ExecResult>;
+
+beforeAll(async () => {
+  // Reset the spawn mock to use real child_process.spawn
+  const childProcess =
+    await vi.importActual<typeof import('child_process')>('child_process');
+  vi.mocked(spawn).mockImplementation(childProcess.spawn);
+
+  // Now import safeExec which will use the real spawn
+  const execModule = await import('../../src/utils/local/utils/exec.js');
+  safeExec = execModule.safeExec;
+});
 
 describe('safeExec execution context security', () => {
   const workspaceRoot = process.cwd();

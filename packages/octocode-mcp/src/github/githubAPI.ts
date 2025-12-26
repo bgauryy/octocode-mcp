@@ -1,32 +1,84 @@
 import type { components } from '@octokit/openapi-types';
 import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
 
+// ============================================================================
+// OCTOKIT SCHEMA TYPE ALIASES
+// These types are derived directly from Octokit's OpenAPI-generated schemas.
+// Reference: https://github.com/octokit/openapi-types.ts
+// Schema source: https://github.com/github/rest-api-description
+// ============================================================================
+
+// ─── Repository Types ───────────────────────────────────────────────────────
+/** Full repository details. Schema: components['schemas']['full-repository'] */
 export type Repository = components['schemas']['full-repository'];
+
+// ─── Search Result Types ────────────────────────────────────────────────────
+/** Code search result item. Schema: components['schemas']['code-search-result-item'] */
 export type CodeSearchResultItem =
   components['schemas']['code-search-result-item'];
+
+/** Repository search result item. Schema: components['schemas']['repo-search-result-item'] */
 export type RepoSearchResultItem =
   components['schemas']['repo-search-result-item'];
+
+/** Issue/PR search result item. Schema: components['schemas']['issue-search-result-item'] */
 export type IssueSearchResultItem =
   components['schemas']['issue-search-result-item'];
+
+// ─── Pull Request Types ─────────────────────────────────────────────────────
+/** Diff entry for file changes. Schema: components['schemas']['diff-entry'] */
 export type DiffEntry = components['schemas']['diff-entry'];
 
-// Pull Request types from REST API
+/** Full pull request details. Schema: components['schemas']['pull-request'] */
 export type PullRequestItem = components['schemas']['pull-request'];
+
+/** Simplified pull request. Schema: components['schemas']['pull-request-simple'] */
 export type PullRequestSimple = components['schemas']['pull-request-simple'];
 
-// Issue comment type from REST API
+// ─── Comment Types ──────────────────────────────────────────────────────────
+/** Issue comment. Schema: components['schemas']['issue-comment'] */
 export type IssueComment = components['schemas']['issue-comment'];
 
-export interface CommitFileItem {
-  filename: string;
-  status: string;
-  additions: number;
-  deletions: number;
-  changes: number;
-  patch?: string;
-}
+// ─── Rate Limit Types ───────────────────────────────────────────────────────
+/**
+ * Rate limit resource info (core, search, graphql, etc.)
+ * Schema: components['schemas']['rate-limit']
+ */
+export type OctokitRateLimit = components['schemas']['rate-limit'];
 
-/** Commit file change information */
+/**
+ * Full rate limit overview response.
+ * Schema: components['schemas']['rate-limit-overview']
+ */
+export type OctokitRateLimitOverview =
+  components['schemas']['rate-limit-overview'];
+
+// ─── User Types ─────────────────────────────────────────────────────────────
+/**
+ * Simple user representation (minimal fields).
+ * Schema: components['schemas']['simple-user']
+ */
+export type OctokitSimpleUser = components['schemas']['simple-user'];
+
+/**
+ * Public user profile with full details.
+ * Schema: components['schemas']['public-user']
+ */
+export type OctokitPublicUser = components['schemas']['public-user'];
+
+/**
+ * Private user profile (authenticated user).
+ * Schema: components['schemas']['private-user']
+ */
+export type OctokitPrivateUser = components['schemas']['private-user'];
+
+// ─── Commit Types ───────────────────────────────────────────────────────────
+/**
+ * Commit details. Schema: components['schemas']['commit']
+ */
+export type OctokitCommit = components['schemas']['commit'];
+
+/** Commit file change information (merged from CommitFileItem) */
 export interface CommitFileInfo {
   filename: string;
   status: string;
@@ -82,6 +134,12 @@ export interface GitHubAPISuccess<T> {
 
 export type GitHubAPIResponse<T> = GitHubAPISuccess<T> | GitHubAPIError;
 
+/**
+ * Optimized code search result with enhanced match information.
+ *
+ * Derives from CodeSearchResultItem (components['schemas']['code-search-result-item'])
+ * but with optimized structure for our search operations.
+ */
 export type OptimizedCodeSearchResult = {
   items: Array<
     Pick<CodeSearchResultItem, 'path' | 'url'> & {
@@ -119,6 +177,17 @@ export type OptimizedCodeSearchResult = {
   };
 };
 
+/**
+ * Custom pull request item for search results.
+ *
+ * This type picks common fields from IssueSearchResultItem (which GitHub uses for
+ * both issues and PRs in search results) and extends with PR-specific fields.
+ *
+ * Related Octokit types:
+ * - IssueSearchResultItem: components['schemas']['issue-search-result-item']
+ * - PullRequestItem: components['schemas']['pull-request'] (full PR details)
+ * - DiffEntry: components['schemas']['diff-entry'] (file changes)
+ */
 export type GitHubPullRequestItem = Pick<
   IssueSearchResultItem,
   | 'number'

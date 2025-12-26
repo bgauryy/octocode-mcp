@@ -14,6 +14,13 @@ export type {
   isGitHubAPIError,
   isGitHubAPISuccess,
   isRepository,
+  // Octokit schema type aliases
+  OctokitRateLimit,
+  OctokitRateLimitOverview,
+  OctokitSimpleUser,
+  OctokitPublicUser,
+  OctokitPrivateUser,
+  OctokitCommit,
 } from './githubAPI';
 
 export type { components } from '@octokit/openapi-types';

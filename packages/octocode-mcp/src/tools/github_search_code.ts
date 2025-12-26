@@ -11,7 +11,6 @@ import { GitHubCodeSearchBulkQuerySchema } from '../scheme/github_search_code.js
 import { searchGitHubCodeAPI } from '../github/codeSearch.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { shouldIgnoreFile } from '../utils/fileFilters.js';
 import {
   handleApiError,
   handleCatchError,
@@ -80,26 +79,25 @@ async function searchMultipleGitHubCode(
           );
         }
 
-        const files = apiResult.data.items
-          .filter(item => !shouldIgnoreFile(item.path))
-          .map(item => {
-            const repoName = item.repository?.nameWithOwner;
-            const baseFile = {
-              path: item.path,
-              ...(repoName && { repo: repoName }),
-              ...(item.lastModifiedAt && {
-                lastModifiedAt: item.lastModifiedAt,
-              }),
-            };
+        // Note: Files are already filtered by shouldIgnoreFile in codeSearch.ts API layer
+        const files = apiResult.data.items.map(item => {
+          const repoName = item.repository?.nameWithOwner;
+          const baseFile = {
+            path: item.path,
+            ...(repoName && { repo: repoName }),
+            ...(item.lastModifiedAt && {
+              lastModifiedAt: item.lastModifiedAt,
+            }),
+          };
 
-            if (query.match === 'path') {
-              return baseFile;
-            }
-            return {
-              ...baseFile,
-              text_matches: item.matches.map(match => match.context),
-            };
-          });
+          if (query.match === 'path') {
+            return baseFile;
+          }
+          return {
+            ...baseFile,
+            text_matches: item.matches.map(match => match.context),
+          };
+        });
 
         const result: SearchResult = { files };
         const repoContext = apiResult.data._researchContext?.repositoryContext;

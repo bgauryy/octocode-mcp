@@ -329,8 +329,9 @@ describe('safeExec', () => {
         await import('../../../src/utils/local/utils/exec.js');
 
       // Use 'ls' which is allowed - the spawn mock will throw before command runs
+      // The error from spawn is re-thrown as-is when it's an Error instance
       await expect(safeExec('ls', [], { cwd: process.cwd() })).rejects.toThrow(
-        "Failed to spawn command 'ls'"
+        'Failed to spawn process'
       );
     });
 
@@ -343,8 +344,9 @@ describe('safeExec', () => {
       const { safeExec } =
         await import('../../../src/utils/local/utils/exec.js');
 
+      // Non-Error throws are wrapped with a generic message by spawnWithTimeout
       await expect(safeExec('ls', [], { cwd: process.cwd() })).rejects.toThrow(
-        "Failed to spawn command 'ls': Spawn failed"
+        "Failed to spawn command 'ls'"
       );
     });
   });

@@ -3,7 +3,7 @@ import {
   GitHubPullRequestItem,
   CommitInfo,
   DiffEntry,
-  CommitFileItem,
+  CommitFileInfo,
   IssueSearchResultItem,
   PullRequestSimple,
   PullRequestItem,
@@ -400,9 +400,9 @@ function normalizeOwnerRepo(params: GitHubPullRequestsSearchParams): {
 }
 
 function applyPartialContentFilter(
-  files: (DiffEntry | CommitFileItem)[],
+  files: (DiffEntry | CommitFileInfo)[],
   params: GitHubPullRequestsSearchParams
-): (DiffEntry | CommitFileItem)[] {
+): (DiffEntry | CommitFileInfo)[] {
   const type = params.type || 'metadata';
   const metadataMap = new Map(
     params.partialContentMetadata?.map(m => [m.file, m]) || []
@@ -591,7 +591,7 @@ async function fetchCommitFilesAPI(
   repo: string,
   sha: string,
   authInfo?: AuthInfo
-): Promise<CommitFileItem[] | null> {
+): Promise<CommitFileInfo[] | null> {
   try {
     const octokit = await getOctokit(authInfo);
     const result = await octokit.rest.repos.getCommit({
@@ -600,7 +600,7 @@ async function fetchCommitFilesAPI(
       ref: sha,
     });
 
-    return (result.data.files || []) as CommitFileItem[];
+    return (result.data.files || []) as CommitFileInfo[];
   } catch {
     return null;
   }
@@ -641,7 +641,7 @@ async function fetchPRCommitsWithFiles(
         processedFiles = applyPartialContentFilter(
           files,
           params
-        ) as CommitFileItem[];
+        ) as CommitFileInfo[];
       }
 
       return {

@@ -10,7 +10,7 @@ describe('RESPONSE_KEY_PRIORITY', () => {
   it('should use camelCase for all keys', () => {
     const camelCaseRegex = /^[a-z][a-zA-Z0-9]*$/;
     const invalidKeys = RESPONSE_KEY_PRIORITY.filter(
-      (key) => !camelCaseRegex.test(key)
+      key => !camelCaseRegex.test(key)
     );
     expect(invalidKeys).toEqual([]);
   });
@@ -40,7 +40,8 @@ describe('RESPONSE_KEY_PRIORITY', () => {
   it('should be usable as a sort comparator for response keys', () => {
     const unsortedKeys = ['hints', 'content', 'researchGoal', 'pagination'];
     const sorted = [...unsortedKeys].sort(
-      (a, b) => RESPONSE_KEY_PRIORITY.indexOf(a) - RESPONSE_KEY_PRIORITY.indexOf(b)
+      (a, b) =>
+        RESPONSE_KEY_PRIORITY.indexOf(a) - RESPONSE_KEY_PRIORITY.indexOf(b)
     );
 
     expect(sorted).toEqual(['researchGoal', 'content', 'pagination', 'hints']);

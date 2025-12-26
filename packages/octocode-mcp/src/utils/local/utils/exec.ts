@@ -1,12 +1,13 @@
 /**
  * Safe command execution with security validation
  * Validates commands and execution context before spawning processes
+ * Uses shared base module for spawn functionality
  */
 
-import { spawn, ChildProcess } from 'child_process';
 import { validateCommand } from '../../../security/commandValidator.js';
 import { validateExecutionContext } from '../../../security/executionContextValidator.js';
-import type { ExecResult, ExecOptions } from '../../../utils/types.js';
+import { spawnWithTimeout } from '../../exec/base.js';
+import type { ExecResult, ExecOptions } from '../../types.js';
 
 /**
  * Safely execute a command with security validation
@@ -46,104 +47,24 @@ export async function safeExec(
     maxOutputSize = 10 * 1024 * 1024, // 10MB default
   } = options;
 
-  return new Promise((resolve, reject) => {
-    let childProcess: ChildProcess;
-    let stdout = '';
-    let stderr = '';
-    let killed = false;
-
-    try {
-      childProcess = spawn(command, args, {
-        cwd,
-        env: {
-          ...process.env,
-          ...env,
-          NODE_OPTIONS: undefined,
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-    } catch (error) {
-      reject(
-        new Error(
-          `Failed to spawn command '${command}': ${error instanceof Error ? error.message : 'Spawn failed'}`
-        )
-      );
-      return;
-    }
-
-    // Timeout handling
-    const timeoutHandle = setTimeout(() => {
-      if (!killed) {
-        killed = true;
-        childProcess.kill('SIGKILL');
-        reject(new Error(`Command timeout after ${timeout}ms`));
-      }
-    }, timeout);
-
-    // Output size tracking
-    let totalOutputSize = 0;
-
-    // Collect stdout
-    childProcess.stdout?.on('data', (data: Buffer) => {
-      if (killed) return;
-
-      const chunk = data.toString();
-      totalOutputSize += Buffer.byteLength(chunk);
-
-      if (totalOutputSize > maxOutputSize) {
-        if (!killed) {
-          killed = true;
-          childProcess.kill('SIGKILL');
-          clearTimeout(timeoutHandle);
-          reject(new Error('Output size limit exceeded'));
-        }
-        return;
-      }
-
-      stdout += chunk;
-    });
-
-    // Collect stderr
-    childProcess.stderr?.on('data', (data: Buffer) => {
-      if (killed) return;
-
-      const chunk = data.toString();
-      totalOutputSize += Buffer.byteLength(chunk);
-
-      if (totalOutputSize > maxOutputSize) {
-        if (!killed) {
-          killed = true;
-          childProcess.kill('SIGKILL');
-          clearTimeout(timeoutHandle);
-          reject(new Error('Output size limit exceeded'));
-        }
-        return;
-      }
-
-      stderr += chunk;
-    });
-
-    // Handle process close
-    childProcess.on('close', code => {
-      if (killed) return;
-
-      clearTimeout(timeoutHandle);
-
-      resolve({
-        success: code === 0,
-        code,
-        stdout,
-        stderr,
-      });
-    });
-
-    // Handle spawn errors
-    childProcess.on('error', error => {
-      if (killed) return;
-
-      killed = true;
-      clearTimeout(timeoutHandle);
-      reject(error);
-    });
+  const result = await spawnWithTimeout(command, args, {
+    timeout,
+    cwd,
+    env,
+    maxOutputSize,
+    removeEnvVars: ['NODE_OPTIONS'],
   });
+
+  // Convert SpawnResult to ExecResult format
+  // Note: spawnWithTimeout resolves (doesn't reject), so we need to throw on errors
+  if (result.error) {
+    throw result.error;
+  }
+
+  return {
+    success: result.success,
+    code: result.exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
 }
