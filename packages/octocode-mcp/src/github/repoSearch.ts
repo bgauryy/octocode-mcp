@@ -78,45 +78,38 @@ async function searchGitHubReposAPIInternal(
 
     const result = await octokit.rest.search.repos(searchParams);
 
-    const repositories = result.data.items
-      .map((repo: RepoSearchResultItem) => {
-        const fullName = repo.full_name;
-        const parts = fullName.split('/');
-        const owner = parts[0] || '';
-        const repoName = parts[1] || '';
+    const repositories = result.data.items.map((repo: RepoSearchResultItem) => {
+      const fullName = repo.full_name;
+      const parts = fullName.split('/');
+      const owner = parts[0] || '';
+      const repoName = parts[1] || '';
 
-        return {
-          owner,
-          repo: repoName,
-          defaultBranch: repo.default_branch,
-          stars: repo.stargazers_count || 0,
-          description: repo.description
-            ? repo.description.length > 150
-              ? repo.description.substring(0, 150) + '...'
-              : repo.description
-            : 'No description',
-          url: repo.html_url,
-          createdAt: repo.created_at,
-          updatedAt: repo.updated_at,
-          pushedAt: repo.pushed_at,
-          visibility: repo.visibility,
-          ...(repo.topics && repo.topics.length > 0 && { topics: repo.topics }),
-          ...(repo.forks_count &&
-            repo.forks_count > 0 && {
-              forksCount: repo.forks_count,
-            }),
-          ...(repo.open_issues_count &&
-            repo.open_issues_count > 0 && {
-              openIssuesCount: repo.open_issues_count,
-            }),
-        };
-      })
-      .sort((a: SimplifiedRepository, b: SimplifiedRepository) => {
-        if (b.stars !== a.stars) {
-          return b.stars - a.stars;
-        }
-        return b.updatedAt.localeCompare(a.updatedAt);
-      });
+      return {
+        owner,
+        repo: repoName,
+        defaultBranch: repo.default_branch,
+        stars: repo.stargazers_count || 0,
+        description: repo.description
+          ? repo.description.length > 150
+            ? repo.description.substring(0, 150) + '...'
+            : repo.description
+          : 'No description',
+        url: repo.html_url,
+        createdAt: repo.created_at,
+        updatedAt: repo.updated_at,
+        pushedAt: repo.pushed_at,
+        visibility: repo.visibility,
+        ...(repo.topics && repo.topics.length > 0 && { topics: repo.topics }),
+        ...(repo.forks_count &&
+          repo.forks_count > 0 && {
+            forksCount: repo.forks_count,
+          }),
+        ...(repo.open_issues_count &&
+          repo.open_issues_count > 0 && {
+            openIssuesCount: repo.open_issues_count,
+          }),
+      };
+    });
 
     return {
       data: {

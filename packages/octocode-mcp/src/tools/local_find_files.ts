@@ -2,7 +2,6 @@ import { FindCommandBuilder } from '../commands/FindCommandBuilder.js';
 import { safeExec } from '../utils/local/utils/exec.js';
 import { getToolHints } from './hints.js';
 import {
-  applyPagination,
   generatePaginationHints,
   serializeForPagination,
   createPaginationInfo,
@@ -19,7 +18,7 @@ import type {
   FoundFile,
 } from '../utils/types.js';
 import fs from 'fs';
-import { ToolErrors } from '../errorCodes.js';
+import { ToolErrors, type LocalToolErrorCode } from '../errorCodes.js';
 
 export async function findFiles(
   query: FindFilesQuery
@@ -103,7 +102,7 @@ export async function findFiles(
     if (safetyCheck.shouldBlock) {
       return {
         status: 'error',
-        errorCode: safetyCheck.errorCode!,
+        errorCode: safetyCheck.errorCode! as LocalToolErrorCode,
         totalFiles,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
@@ -115,18 +114,72 @@ export async function findFiles(
     let paginationMetadata: PaginationMetadata | null = null;
 
     if (query.charLength) {
-      const serialized = serializeForPagination(paginatedFiles, false);
-      const pagination = applyPagination(
-        serialized,
-        query.charOffset ?? 0,
-        query.charLength
-      );
-      try {
-        finalFiles = JSON.parse(pagination.paginatedContent);
-        paginationMetadata = pagination;
-      } catch {
-        finalFiles = paginatedFiles;
-        paginationMetadata = null;
+      // Robust pagination: Select items that fit in the window instead of slicing JSON string
+      const fullJson = serializeForPagination(paginatedFiles, false);
+      const totalChars = fullJson.length;
+
+      const startOffset = query.charOffset ?? 0;
+      const targetLength = query.charLength;
+      const endLimit = startOffset + targetLength;
+
+      if (startOffset >= totalChars) {
+        finalFiles = [];
+        paginationMetadata = {
+          paginatedContent: '[]',
+          charOffset: startOffset,
+          charLength: 0,
+          totalChars,
+          hasMore: false,
+          estimatedTokens: 0,
+          currentPage: Math.floor(startOffset / targetLength) + 1,
+          totalPages: Math.ceil(totalChars / targetLength),
+          actualOffset: startOffset,
+          actualLength: 0,
+        };
+      } else {
+        const selectedFiles: FoundFile[] = [];
+        let currentPos = 1; // Account for starting '['
+
+        for (let i = 0; i < paginatedFiles.length; i++) {
+          const itemJson = JSON.stringify(paginatedFiles[i]);
+          const itemLen = itemJson.length;
+          // Item occupies [currentPos, currentPos + itemLen]
+          // Next char is ',' or ']' (length 1)
+
+          const itemStart = currentPos;
+          const itemEnd = itemStart + itemLen;
+
+          // Logic: Include item if it overlaps with the requested window
+          // [startOffset, endLimit]
+          const overlaps = itemStart < endLimit && itemEnd > startOffset;
+
+          if (overlaps) {
+            selectedFiles.push(paginatedFiles[i]!);
+          }
+
+          currentPos += itemLen + 1; // +1 for comma or closing bracket
+
+          // Optimization: If we are past the window, we can stop
+          if (currentPos >= endLimit) break;
+        }
+
+        finalFiles = selectedFiles;
+        const finalJson = serializeForPagination(finalFiles, false);
+        const hasMore = currentPos < totalChars; // Use actual position to determine if more exists
+
+        paginationMetadata = {
+          paginatedContent: finalJson,
+          charOffset: startOffset,
+          charLength: finalJson.length,
+          totalChars,
+          hasMore,
+          nextCharOffset: hasMore ? currentPos : undefined,
+          estimatedTokens: Math.ceil(finalJson.length / 4),
+          currentPage: Math.floor(startOffset / targetLength) + 1,
+          totalPages: Math.ceil(totalChars / targetLength),
+          actualOffset: startOffset,
+          actualLength: finalJson.length,
+        };
       }
     }
 

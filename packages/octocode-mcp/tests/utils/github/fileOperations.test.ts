@@ -47,7 +47,10 @@ vi.mock('../../../src/mcp/responses.js', () => ({
 }));
 
 // Import after mocks are set up
-import { fetchGitHubFileContentAPI } from '../../../src/github/fileOperations.js';
+import {
+  fetchGitHubFileContentAPI,
+  clearDefaultBranchCache,
+} from '../../../src/github/fileOperations.js';
 
 // Helper function to create properly formatted test parameters
 function createTestParams(overrides: Record<string, unknown> = {}) {
@@ -98,12 +101,15 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clearDefaultBranchCache();
 
     // Setup default mock Octokit instance
     mockOctokit = {
       rest: {
         repos: {
           getContent: vi.fn(),
+          get: vi.fn().mockResolvedValue({ data: { default_branch: 'main' } }),
+          listCommits: vi.fn().mockResolvedValue({ data: [] }),
         },
       },
     };
@@ -1020,6 +1026,11 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         },
       });
 
+      // Mock getRepo to return 'master' as default branch
+      mockOctokit.rest.repos.get.mockResolvedValue({
+        data: { default_branch: 'master' },
+      });
+
       // First call fails (main branch)
       // Second call succeeds (master branch)
       mockOctokit.rest.repos.getContent
@@ -1068,6 +1079,11 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           url: 'https://api.github.com/repos/test/repo/contents/test.txt',
           headers: {},
         },
+      });
+
+      // Mock getRepo to return 'main' as default branch
+      mockOctokit.rest.repos.get.mockResolvedValue({
+        data: { default_branch: 'main' },
       });
 
       // First call fails (master branch)
@@ -1138,7 +1154,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       if ('scopesSuggestion' in result) {
         expect(result.scopesSuggestion).toContain('feature');
         expect(result.scopesSuggestion).toContain(
-          'Ask user: Do you want to get the file from the default branch instead?'
+          "Branch 'feature' not found. Default branch is 'main'. Ask user: Do you want to get the file from 'main' instead?"
         );
       }
     });
@@ -1151,6 +1167,11 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           url: 'https://api.github.com/repos/test/repo/contents/test.txt',
           headers: {},
         },
+      });
+
+      // Mock getRepo to return 'master'
+      mockOctokit.rest.repos.get.mockResolvedValue({
+        data: { default_branch: 'master' },
       });
 
       // Both calls fail
@@ -1227,7 +1248,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       expect('scopesSuggestion' in result).toBe(true);
       if ('scopesSuggestion' in result) {
         expect(result.scopesSuggestion).toBe(
-          "Branch 'develop' not found. Ask user: Do you want to get the file from the default branch instead?"
+          "Branch 'develop' not found. Default branch is 'main'. Ask user: Do you want to get the file from 'main' instead?"
         );
       }
     });

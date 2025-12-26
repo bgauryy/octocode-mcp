@@ -1092,6 +1092,38 @@ describe('localViewStructure', () => {
 
       expect(result.status).toBe('hasResults');
     });
+
+    it('should apply limit BEFORE pagination logic', async () => {
+      // 100 files total. Limit 5. EntriesPerPage 20.
+      // Expected: 5 items total. Pagination should reflect 5 items.
+      const fileList = Array.from(
+        { length: 100 },
+        (_, i) => `file${i}.txt`
+      ).join('\n');
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: fileList,
+        stderr: '',
+      });
+      mockLstatSync.mockReturnValue({
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        limit: 5,
+        entriesPerPage: 20,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.structuredOutput?.split('\n').length).toBe(5);
+      // Pagination should reflect filtered count (5)
+      expect(result.totalFiles).toBe(5);
+      // Should NOT have multiple pages (since 5 < 20)
+      expect(result.pagination?.totalPages).toBe(1);
+    });
   });
 
   describe('NEW FEATURE: Entry-based pagination with default time sorting', () => {

@@ -38,6 +38,7 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'index.js',
               path: 'src/index.js',
+              html_url: 'https://github.com/test/repo/blob/main/src/index.js',
               repository: {
                 full_name: 'test/repo',
                 url: 'https://api.github.com/repos/test/repo',
@@ -52,6 +53,8 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'lodash.js',
               path: 'node_modules/lodash/lodash.js',
+              html_url:
+                'https://github.com/test/repo/blob/main/node_modules/lodash/lodash.js',
               repository: {
                 full_name: 'test/repo',
                 url: 'https://api.github.com/repos/test/repo',
@@ -66,6 +69,8 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'package.json',
               path: 'node_modules/react/package.json',
+              html_url:
+                'https://github.com/test/repo/blob/main/node_modules/react/package.json',
               repository: {
                 full_name: 'test/repo',
                 url: 'https://api.github.com/repos/test/repo',
@@ -82,14 +87,13 @@ describe('Code Search Filtering - File Filters', () => {
         keywordsToSearch: ['function'],
         owner: 'test',
         repo: 'repo',
-        minify: true,
       });
 
       if ('data' in result) {
         expect(result.data.items).toEqual([
           {
             path: 'src/index.js',
-            url: 'src/index.js',
+            url: 'https://github.com/test/repo/blob/main/src/index.js',
             repository: {
               nameWithOwner: 'test/repo',
               url: 'https://api.github.com/repos/test/repo',
@@ -116,42 +120,53 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'app.js',
               path: 'src/app.js',
+              html_url: 'https://github.com/test/repo/blob/main/src/app.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'test.js',
               path: 'dist/test.js',
+              html_url: 'https://github.com/test/repo/blob/main/dist/test.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'build.js',
               path: 'build/build.js',
+              html_url: 'https://github.com/test/repo/blob/main/build/build.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'vendor.js',
               path: 'vendor/vendor.js',
+              html_url:
+                'https://github.com/test/repo/blob/main/vendor/vendor.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'cache.js',
               path: '.cache/cache.js',
+              html_url:
+                'https://github.com/test/repo/blob/main/.cache/cache.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'git.js',
               path: '.git/hooks/pre-commit',
+              html_url:
+                'https://github.com/test/repo/blob/main/.git/hooks/pre-commit',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'valid.js',
               path: 'src/components/valid.js',
+              html_url:
+                'https://github.com/test/repo/blob/main/src/components/valid.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
@@ -165,20 +180,19 @@ describe('Code Search Filtering - File Filters', () => {
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
-        minify: true,
       });
 
       if ('data' in result) {
         expect(result.data.items).toEqual([
           {
             path: 'src/app.js',
-            url: 'src/app.js',
+            url: 'https://github.com/test/repo/blob/main/src/app.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: 'src/components/valid.js',
-            url: 'src/components/valid.js',
+            url: 'https://github.com/test/repo/blob/main/src/components/valid.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
@@ -198,24 +212,29 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'package.json',
               path: 'package.json',
+              html_url: 'https://github.com/test/repo/blob/main/package.json',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'package-lock.json',
               path: 'package-lock.json',
+              html_url:
+                'https://github.com/test/repo/blob/main/package-lock.json',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'yarn.lock',
               path: 'yarn.lock',
+              html_url: 'https://github.com/test/repo/blob/main/yarn.lock',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'index.js',
               path: 'src/index.js',
+              html_url: 'https://github.com/test/repo/blob/main/src/index.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
@@ -229,20 +248,19 @@ describe('Code Search Filtering - File Filters', () => {
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
-        minify: true,
       });
 
       if ('data' in result) {
         expect(result.data.items).toEqual([
           {
             path: 'package.json',
-            url: 'package.json',
+            url: 'https://github.com/test/repo/blob/main/package.json',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: 'src/index.js',
-            url: 'src/index.js',
+            url: 'https://github.com/test/repo/blob/main/src/index.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
@@ -260,36 +278,43 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: '.gitignore',
               path: '.gitignore',
+              html_url: 'https://github.com/test/repo/blob/main/.gitignore',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: '.eslintrc',
               path: '.eslintrc',
+              html_url: 'https://github.com/test/repo/blob/main/.eslintrc',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'tsconfig.json',
               path: 'tsconfig.json',
+              html_url: 'https://github.com/test/repo/blob/main/tsconfig.json',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'webpack.config.js',
               path: 'webpack.config.js',
+              html_url:
+                'https://github.com/test/repo/blob/main/webpack.config.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'Dockerfile',
               path: 'Dockerfile',
+              html_url: 'https://github.com/test/repo/blob/main/Dockerfile',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'app.js',
               path: 'src/app.js',
+              html_url: 'https://github.com/test/repo/blob/main/src/app.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
@@ -303,44 +328,43 @@ describe('Code Search Filtering - File Filters', () => {
         keywordsToSearch: ['config'],
         owner: 'test',
         repo: 'repo',
-        minify: true,
       });
 
       if ('data' in result) {
         expect(result.data.items).toEqual([
           {
             path: '.gitignore',
-            url: '.gitignore',
+            url: 'https://github.com/test/repo/blob/main/.gitignore',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: '.eslintrc',
-            url: '.eslintrc',
+            url: 'https://github.com/test/repo/blob/main/.eslintrc',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: 'tsconfig.json',
-            url: 'tsconfig.json',
+            url: 'https://github.com/test/repo/blob/main/tsconfig.json',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: 'webpack.config.js',
-            url: 'webpack.config.js',
+            url: 'https://github.com/test/repo/blob/main/webpack.config.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: 'Dockerfile',
-            url: 'Dockerfile',
+            url: 'https://github.com/test/repo/blob/main/Dockerfile',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: 'src/app.js',
-            url: 'src/app.js',
+            url: 'https://github.com/test/repo/blob/main/src/app.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
@@ -358,30 +382,36 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: '.env',
               path: '.env',
+              html_url: 'https://github.com/test/repo/blob/main/.env',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: '.env.local',
               path: '.env.local',
+              html_url: 'https://github.com/test/repo/blob/main/.env.local',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'secrets.json',
               path: 'secrets.json',
+              html_url: 'https://github.com/test/repo/blob/main/secrets.json',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'credentials.json',
               path: 'config/credentials.json',
+              html_url:
+                'https://github.com/test/repo/blob/main/config/credentials.json',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'config.js',
               path: 'src/config.js',
+              html_url: 'https://github.com/test/repo/blob/main/src/config.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
@@ -395,26 +425,25 @@ describe('Code Search Filtering - File Filters', () => {
         keywordsToSearch: ['env'],
         owner: 'test',
         repo: 'repo',
-        minify: true,
       });
 
       if ('data' in result) {
         expect(result.data.items).toEqual([
           {
             path: '.env',
-            url: '.env',
+            url: 'https://github.com/test/repo/blob/main/.env',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: '.env.local',
-            url: '.env.local',
+            url: 'https://github.com/test/repo/blob/main/.env.local',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: 'src/config.js',
-            url: 'src/config.js',
+            url: 'https://github.com/test/repo/blob/main/src/config.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
@@ -434,48 +463,58 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'app.js',
               path: 'src/app.js',
+              html_url: 'https://github.com/test/repo/blob/main/src/app.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'app.exe',
               path: 'bin/app.exe',
+              html_url: 'https://github.com/test/repo/blob/main/bin/app.exe',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'lib.dll',
               path: 'lib/lib.dll',
+              html_url: 'https://github.com/test/repo/blob/main/lib/lib.dll',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'module.so',
               path: 'lib/module.so',
+              html_url: 'https://github.com/test/repo/blob/main/lib/module.so',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'Main.class',
               path: 'build/Main.class',
+              html_url:
+                'https://github.com/test/repo/blob/main/build/Main.class',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'cache.pyc',
               path: '__pycache__/cache.pyc',
+              html_url:
+                'https://github.com/test/repo/blob/main/__pycache__/cache.pyc',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'app.jar',
               path: 'dist/app.jar',
+              html_url: 'https://github.com/test/repo/blob/main/dist/app.jar',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'main.py',
               path: 'src/main.py',
+              html_url: 'https://github.com/test/repo/blob/main/src/main.py',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
@@ -489,20 +528,19 @@ describe('Code Search Filtering - File Filters', () => {
         keywordsToSearch: ['app'],
         owner: 'test',
         repo: 'repo',
-        minify: true,
       });
 
       if ('data' in result) {
         expect(result.data.items).toEqual([
           {
             path: 'src/app.js',
-            url: 'src/app.js',
+            url: 'https://github.com/test/repo/blob/main/src/app.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: 'src/main.py',
-            url: 'src/main.py',
+            url: 'https://github.com/test/repo/blob/main/src/main.py',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
@@ -520,18 +558,23 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'app.js',
               path: 'src/app.js',
+              html_url: 'https://github.com/test/repo/blob/main/src/app.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'app.min.js',
               path: 'dist/app.min.js',
+              html_url:
+                'https://github.com/test/repo/blob/main/dist/app.min.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'styles.min.css',
               path: 'dist/styles.min.css',
+              html_url:
+                'https://github.com/test/repo/blob/main/dist/styles.min.css',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
@@ -545,14 +588,13 @@ describe('Code Search Filtering - File Filters', () => {
         keywordsToSearch: ['app'],
         owner: 'test',
         repo: 'repo',
-        minify: true,
       });
 
       if ('data' in result) {
         expect(result.data.items).toEqual([
           {
             path: 'src/app.js',
-            url: 'src/app.js',
+            url: 'https://github.com/test/repo/blob/main/src/app.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
@@ -570,36 +612,42 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'app.js',
               path: 'src/app.js',
+              html_url: 'https://github.com/test/repo/blob/main/src/app.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'backup.zip',
               path: 'backup.zip',
+              html_url: 'https://github.com/test/repo/blob/main/backup.zip',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'archive.tar.gz',
               path: 'archive.tar.gz',
+              html_url: 'https://github.com/test/repo/blob/main/archive.tar.gz',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'data.rar',
               path: 'data.rar',
+              html_url: 'https://github.com/test/repo/blob/main/data.rar',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'package.7z',
               path: 'package.7z',
+              html_url: 'https://github.com/test/repo/blob/main/package.7z',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'readme.md',
               path: 'readme.md',
+              html_url: 'https://github.com/test/repo/blob/main/readme.md',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
@@ -613,20 +661,19 @@ describe('Code Search Filtering - File Filters', () => {
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
-        minify: true,
       });
 
       if ('data' in result) {
         expect(result.data.items).toEqual([
           {
             path: 'src/app.js',
-            url: 'src/app.js',
+            url: 'https://github.com/test/repo/blob/main/src/app.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: 'readme.md',
-            url: 'readme.md',
+            url: 'https://github.com/test/repo/blob/main/readme.md',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
@@ -644,36 +691,43 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'app.js',
               path: 'src/app.js',
+              html_url: 'https://github.com/test/repo/blob/main/src/app.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'file.tmp',
               path: 'temp/file.tmp',
+              html_url: 'https://github.com/test/repo/blob/main/temp/file.tmp',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'data.cache',
               path: 'cache/data.cache',
+              html_url:
+                'https://github.com/test/repo/blob/main/cache/data.cache',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'backup.bak',
               path: 'backup.bak',
+              html_url: 'https://github.com/test/repo/blob/main/backup.bak',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: '.swp',
               path: '.swp',
+              html_url: 'https://github.com/test/repo/blob/main/.swp',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'error.log',
               path: 'logs/error.log',
+              html_url: 'https://github.com/test/repo/blob/main/logs/error.log',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
@@ -687,14 +741,13 @@ describe('Code Search Filtering - File Filters', () => {
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
-        minify: true,
       });
 
       if ('data' in result) {
         expect(result.data.items).toEqual([
           {
             path: 'src/app.js',
-            url: 'src/app.js',
+            url: 'https://github.com/test/repo/blob/main/src/app.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
@@ -714,6 +767,7 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'app.js',
               path: 'src/app.js',
+              html_url: 'https://github.com/test/repo/blob/main/src/app.js',
               repository: {
                 full_name: 'test/repo',
                 url: 'https://api.github.com/repos/test/repo',
@@ -731,7 +785,6 @@ describe('Code Search Filtering - File Filters', () => {
         keywordsToSearch: ['function'],
         owner: 'test',
         repo: 'repo',
-        minify: false,
       });
 
       if ('data' in result) {
@@ -752,6 +805,7 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'app.js',
               path: 'src/app.js',
+              html_url: 'https://github.com/test/repo/blob/main/src/app.js',
               repository: {
                 full_name: 'test/repo',
                 url: 'https://api.github.com/repos/test/repo',
@@ -769,7 +823,6 @@ describe('Code Search Filtering - File Filters', () => {
         keywordsToSearch: ['function'],
         owner: 'test',
         repo: 'repo',
-        minify: false,
       });
 
       if ('data' in result) {
@@ -790,18 +843,24 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'UserService.js',
               path: 'src/services/UserService.js',
+              html_url:
+                'https://github.com/test/repo/blob/main/src/services/UserService.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'AuthController.js',
               path: 'src/controllers/AuthController.js',
+              html_url:
+                'https://github.com/test/repo/blob/main/src/controllers/AuthController.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'utils.ts',
               path: 'src/utils/utils.ts',
+              html_url:
+                'https://github.com/test/repo/blob/main/src/utils/utils.ts',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
@@ -809,18 +868,23 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'index.js',
               path: 'node_modules/express/index.js',
+              html_url:
+                'https://github.com/test/repo/blob/main/node_modules/express/index.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'bundle.js',
               path: 'dist/bundle.js',
+              html_url: 'https://github.com/test/repo/blob/main/dist/bundle.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'test.js',
               path: '.git/hooks/test.js',
+              html_url:
+                'https://github.com/test/repo/blob/main/.git/hooks/test.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
@@ -828,12 +892,15 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'package-lock.json',
               path: 'package-lock.json',
+              html_url:
+                'https://github.com/test/repo/blob/main/package-lock.json',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: '.env',
               path: '.env',
+              html_url: 'https://github.com/test/repo/blob/main/.env',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
@@ -841,12 +908,14 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'app.exe',
               path: 'bin/app.exe',
+              html_url: 'https://github.com/test/repo/blob/main/bin/app.exe',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'data.log',
               path: 'logs/data.log',
+              html_url: 'https://github.com/test/repo/blob/main/logs/data.log',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
@@ -860,32 +929,31 @@ describe('Code Search Filtering - File Filters', () => {
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
-        minify: true,
       });
 
       if ('data' in result) {
         expect(result.data.items).toEqual([
           {
             path: 'src/services/UserService.js',
-            url: 'src/services/UserService.js',
+            url: 'https://github.com/test/repo/blob/main/src/services/UserService.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: 'src/controllers/AuthController.js',
-            url: 'src/controllers/AuthController.js',
+            url: 'https://github.com/test/repo/blob/main/src/controllers/AuthController.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: 'src/utils/utils.ts',
-            url: 'src/utils/utils.ts',
+            url: 'https://github.com/test/repo/blob/main/src/utils/utils.ts',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: '.env',
-            url: '.env',
+            url: 'https://github.com/test/repo/blob/main/.env',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
@@ -903,18 +971,22 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'package-lock.json',
               path: 'package-lock.json',
+              html_url:
+                'https://github.com/test/repo/blob/main/package-lock.json',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'yarn.lock',
               path: 'yarn.lock',
+              html_url: 'https://github.com/test/repo/blob/main/yarn.lock',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'Cargo.lock',
               path: 'Cargo.lock',
+              html_url: 'https://github.com/test/repo/blob/main/Cargo.lock',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
@@ -928,7 +1000,6 @@ describe('Code Search Filtering - File Filters', () => {
         keywordsToSearch: ['lock'],
         owner: 'test',
         repo: 'repo',
-        minify: true,
       });
 
       if ('data' in result) {
@@ -947,30 +1018,36 @@ describe('Code Search Filtering - File Filters', () => {
             {
               name: 'app.js',
               path: 'src/app.js',
+              html_url: 'https://github.com/test/repo/blob/main/src/app.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'test.js',
               path: 'node_modules/jest/test.js',
+              html_url:
+                'https://github.com/test/repo/blob/main/node_modules/jest/test.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'config.js',
               path: 'src/config.js',
+              html_url: 'https://github.com/test/repo/blob/main/src/config.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'bundle.js',
               path: 'dist/bundle.js',
+              html_url: 'https://github.com/test/repo/blob/main/dist/bundle.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
             {
               name: 'utils.js',
               path: 'src/utils.js',
+              html_url: 'https://github.com/test/repo/blob/main/src/utils.js',
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [],
             },
@@ -984,26 +1061,25 @@ describe('Code Search Filtering - File Filters', () => {
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
-        minify: true,
       });
 
       if ('data' in result) {
         expect(result.data.items).toEqual([
           {
             path: 'src/app.js',
-            url: 'src/app.js',
+            url: 'https://github.com/test/repo/blob/main/src/app.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: 'src/config.js',
-            url: 'src/config.js',
+            url: 'https://github.com/test/repo/blob/main/src/config.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },
           {
             path: 'src/utils.js',
-            url: 'src/utils.js',
+            url: 'https://github.com/test/repo/blob/main/src/utils.js',
             repository: { nameWithOwner: 'test/repo', url: 'url' },
             matches: [],
           },

@@ -31,6 +31,7 @@ interface DirectoryEntry {
   modified?: string;
   permissions?: string;
   extension?: string;
+  depth?: number;
 }
 
 /**
@@ -165,7 +166,11 @@ export async function viewStructure(
         );
 
     // Apply filters using consolidated filter logic
-    const filteredEntries = applyEntryFilters(entries, query);
+    let filteredEntries = applyEntryFilters(entries, query);
+
+    if (query.limit) {
+      filteredEntries = filteredEntries.slice(0, query.limit);
+    }
 
     const totalEntries = filteredEntries.length;
     const totalFiles = filteredEntries.filter(e => e.type === 'file').length;
@@ -188,7 +193,7 @@ export async function viewStructure(
     const startIdx = (entryPageNumber - 1) * entriesPerPage;
     const endIdx = Math.min(startIdx + entriesPerPage, totalEntries);
 
-    let paginatedEntries = filteredEntries.slice(startIdx, endIdx);
+    const paginatedEntries = filteredEntries.slice(startIdx, endIdx);
 
     const entryPaginationInfo = {
       currentPage: entryPageNumber,
@@ -197,10 +202,6 @@ export async function viewStructure(
       totalEntries,
       hasMore: entryPageNumber < totalPages,
     };
-
-    if (query.limit) {
-      paginatedEntries = paginatedEntries.slice(0, query.limit);
-    }
 
     if (
       !query.charLength &&
@@ -486,9 +487,10 @@ async function viewStructureRecursive(
     };
   }
 
-  // Convert entries to string format with indentation based on path depth
+  // Convert entries to string format with indentation based on stored depth
   const structuredLines = filteredEntries.map(entry => {
-    const depth = entry.name.split(path.sep).length - 1;
+    // Fallback to path splitting if depth not present (e.g. from ls parsing)
+    const depth = entry.depth ?? entry.name.split(path.sep).length - 1;
     return formatEntryString(entry, depth);
   });
   let structuredOutput = structuredLines.join('\n');
@@ -563,6 +565,7 @@ async function walkDirectory(
           type,
           size: formatFileSize(stats.size),
           extension: getExtension(item),
+          depth: depth, // Store correct depth from walker
         };
         if (showModified) {
           entry.modified = stats.mtime.toISOString();

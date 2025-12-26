@@ -336,8 +336,10 @@ describe('Pull Request Search', () => {
 
       // Should succeed but without commit_details
       expect(result.pull_requests?.[0]?.commit_details).toBeUndefined();
-      // And no session error logged because it's swallowed by fetchPRCommitsAPI returning null
-      expect(mockLogSessionError).not.toHaveBeenCalled();
+      // Error should be logged now
+      expect(mockLogSessionError).toHaveBeenCalled();
+      // Warning should be present
+      expect(result.pull_requests?.[0]?._sanitization_warnings).toBeDefined();
     });
 
     it('should return error when no valid search parameters provided', async () => {

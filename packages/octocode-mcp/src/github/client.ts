@@ -8,7 +8,12 @@ import { version } from '../../package.json';
 
 export const OctokitWithThrottling = Octokit.plugin(throttling);
 
-let octokitInstance: InstanceType<typeof OctokitWithThrottling> | null = null;
+// Cache instances by token (or 'DEFAULT' for the default token)
+const instances = new Map<string, InstanceType<typeof OctokitWithThrottling>>();
+// Track pending default creation to handle race conditions
+let pendingDefaultPromise: Promise<
+  InstanceType<typeof OctokitWithThrottling>
+> | null = null;
 
 const createThrottleOptions = () => ({
   onRateLimit: (
@@ -25,29 +30,63 @@ const createThrottleOptions = () => ({
   ) => false,
 });
 
+function createOctokitInstance(
+  token?: string
+): InstanceType<typeof OctokitWithThrottling> {
+  const config = getServerConfig();
+  const baseUrl = config.githubApiUrl;
+
+  const options: OctokitOptions & {
+    throttle: ReturnType<typeof createThrottleOptions>;
+  } = {
+    userAgent: `octocode-mcp/${version}`,
+    baseUrl,
+    request: { timeout: config.timeout || 30000 },
+    throttle: createThrottleOptions(),
+    ...(token && { auth: token }),
+  };
+
+  return new OctokitWithThrottling(options);
+}
+
 export async function getOctokit(
   authInfo?: AuthInfo
 ): Promise<InstanceType<typeof OctokitWithThrottling>> {
-  if (!octokitInstance || authInfo) {
-    const token = authInfo?.token || (await getGitHubToken());
-    const config = getServerConfig();
-    const baseUrl = config.githubApiUrl;
-
-    const options: OctokitOptions & {
-      throttle: ReturnType<typeof createThrottleOptions>;
-    } = {
-      userAgent: `octocode-mcp/${version}`,
-      baseUrl,
-      request: { timeout: config.timeout || 30000 },
-      throttle: createThrottleOptions(),
-      ...(token && { auth: token }),
-    };
-
-    octokitInstance = new OctokitWithThrottling(options);
+  // Case 1: Specific Auth Info provided
+  if (authInfo?.token) {
+    const key = authInfo.token;
+    if (!instances.has(key)) {
+      instances.set(key, createOctokitInstance(key));
+    }
+    return instances.get(key)!;
   }
-  return octokitInstance;
+
+  // Case 2: Default instance already exists
+  if (instances.has('DEFAULT')) {
+    return instances.get('DEFAULT')!;
+  }
+
+  // Case 3: Default instance being created (race condition protection)
+  if (pendingDefaultPromise) {
+    return pendingDefaultPromise;
+  }
+
+  // Case 4: Create new default instance
+  pendingDefaultPromise = (async () => {
+    try {
+      const token = await getGitHubToken();
+      const instance = createOctokitInstance(token);
+      instances.set('DEFAULT', instance);
+      return instance;
+    } finally {
+      pendingDefaultPromise = null;
+    }
+  })();
+
+  return pendingDefaultPromise;
 }
 
 export function clearCachedToken(): void {
-  octokitInstance = null;
+  instances.clear();
+  pendingDefaultPromise = null;
 }

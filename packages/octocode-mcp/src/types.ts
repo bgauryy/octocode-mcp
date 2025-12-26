@@ -137,6 +137,7 @@ export interface FileContentQuery {
   matchStringContextLines?: number;
   charOffset?: number;
   charLength?: number;
+  noTimestamp?: boolean;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;

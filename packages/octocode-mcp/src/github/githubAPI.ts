@@ -10,6 +10,13 @@ export type IssueSearchResultItem =
   components['schemas']['issue-search-result-item'];
 export type DiffEntry = components['schemas']['diff-entry'];
 
+// Pull Request types from REST API
+export type PullRequestItem = components['schemas']['pull-request'];
+export type PullRequestSimple = components['schemas']['pull-request-simple'];
+
+// Issue comment type from REST API
+export type IssueComment = components['schemas']['issue-comment'];
+
 export interface CommitFileItem {
   filename: string;
   status: string;
@@ -48,6 +55,14 @@ export type SearchCodeResponse =
   RestEndpointMethodTypes['search']['code']['response'];
 export type SearchReposParameters =
   RestEndpointMethodTypes['search']['repos']['parameters'];
+
+// Pull Request REST endpoint types
+export type PullsListResponse =
+  RestEndpointMethodTypes['pulls']['list']['response'];
+export type PullsGetResponse =
+  RestEndpointMethodTypes['pulls']['get']['response'];
+export type IssuesListCommentsResponse =
+  RestEndpointMethodTypes['issues']['listComments']['response'];
 
 export interface GitHubAPIError {
   error: string;

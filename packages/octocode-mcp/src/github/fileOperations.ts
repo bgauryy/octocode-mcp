@@ -16,6 +16,10 @@ import { minifyContent } from '../utils/minifier/index.js';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
 import { generateCacheKey, withDataCache } from '../utils/cache';
+import {
+  applyPagination,
+  createPaginationInfo,
+} from '../utils/local/utils/pagination.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
@@ -37,6 +41,32 @@ interface FileTimestampInfo {
   lastModifiedBy: string;
 }
 
+// Cache default branch per repo to avoid repeated API calls
+const defaultBranchCache = new Map<string, string>();
+
+export function clearDefaultBranchCache(): void {
+  defaultBranchCache.clear();
+}
+
+async function getDefaultBranch(
+  octokit: InstanceType<typeof OctokitWithThrottling>,
+  owner: string,
+  repo: string
+): Promise<string> {
+  const cacheKey = `${owner}/${repo}`;
+  if (defaultBranchCache.has(cacheKey)) {
+    return defaultBranchCache.get(cacheKey)!;
+  }
+  try {
+    const repoInfo = await octokit.rest.repos.get({ owner, repo });
+    const branch = repoInfo.data.default_branch || 'main';
+    defaultBranchCache.set(cacheKey, branch);
+    return branch;
+  } catch {
+    return 'main'; // Fallback default if we can't get it
+  }
+}
+
 export async function fetchGitHubFileContentAPI(
   params: FileContentQuery,
   authInfo?: AuthInfo,
@@ -55,6 +85,7 @@ export async function fetchGitHubFileContentAPI(
       endLine: params.endLine,
       matchString: params.matchString,
       matchStringContextLines: params.matchStringContextLines,
+      noTimestamp: params.noTimestamp,
       // NOTE: charOffset and charLength are EXCLUDED - pagination is post-cache
     },
     sessionId
@@ -107,21 +138,32 @@ async function fetchGitHubFileContentAPIInternal(
       result = await octokit.rest.repos.getContent(contentParams);
     } catch (error: unknown) {
       if (error instanceof RequestError && error.status === 404 && branch) {
-        if (branch === 'main' || branch === 'master') {
-          const fallbackBranch = branch === 'main' ? 'master' : 'main';
+        // Smart Fallback Logic
+        const defaultBranch = await getDefaultBranch(octokit, owner, repo);
+
+        // If user requested 'main' or 'master' but it's not the default, try the default
+        const isCommonDefaultGuess = branch === 'main' || branch === 'master';
+
+        if (isCommonDefaultGuess && branch !== defaultBranch) {
           try {
             result = await octokit.rest.repos.getContent({
               ...contentParams,
-              ref: fallbackBranch,
+              ref: defaultBranch,
             });
+            // If successful, we proceed with 'result' populated
           } catch {
-            throw error;
+            throw error; // Fallback failed, throw original error
           }
         } else {
           const apiError = handleGitHubAPIError(error);
+          const suggestion =
+            branch === defaultBranch
+              ? undefined
+              : `Branch '${branch}' not found. Default branch is '${defaultBranch}'. Ask user: Do you want to get the file from '${defaultBranch}' instead?`;
+
           return {
             ...apiError,
-            scopesSuggestion: `Branch '${branch}' not found. Ask user: Do you want to get the file from the default branch instead?`,
+            ...(suggestion && { scopesSuggestion: suggestion }),
           };
         }
       } else {
@@ -244,16 +286,18 @@ async function fetchGitHubFileContentAPIInternal(
         };
       }
 
-      const timestampInfo = await fetchFileTimestamp(
-        octokit,
-        owner,
-        repo,
-        filePath,
-        branch
-      );
-      if (timestampInfo) {
-        result.lastModified = timestampInfo.lastModified;
-        result.lastModifiedBy = timestampInfo.lastModifiedBy;
+      if (!params.noTimestamp) {
+        const timestampInfo = await fetchFileTimestamp(
+          octokit,
+          owner,
+          repo,
+          filePath,
+          branch
+        );
+        if (timestampInfo) {
+          result.lastModified = timestampInfo.lastModified;
+          result.lastModifiedBy = timestampInfo.lastModifiedBy;
+        }
       }
 
       return {
@@ -287,34 +331,20 @@ function applyContentPagination(
 ): ContentResult {
   const content = data.content ?? '';
   const maxChars = charLength ?? GITHUB_PAGINATION.MAX_CHARS_BEFORE_PAGINATION;
-  const totalChars = content.length;
 
-  // No pagination needed if content is small and no explicit offset
-  if (totalChars <= maxChars && charOffset === 0) {
+  // Optimization: No pagination needed if content fits in one page and we are at start
+  const totalBytes = Buffer.byteLength(content, 'utf-8');
+  if (totalBytes <= maxChars && charOffset === 0) {
     return data;
   }
 
-  const startPos = Math.min(charOffset, totalChars);
-  const endPos = Math.min(startPos + maxChars, totalChars);
-
-  const paginatedContent = content.substring(startPos, endPos);
-  const actualLength = paginatedContent.length;
-  const hasMore = endPos < totalChars;
-
-  const currentPage = Math.floor(charOffset / maxChars) + 1;
-  const totalPages = Math.ceil(totalChars / maxChars);
-
-  const pagination: PaginationInfo = {
-    currentPage,
-    totalPages,
-    hasMore,
-    charOffset: startPos,
-    charLength: actualLength,
-    totalChars,
-  };
+  const paginationMeta = applyPagination(content, charOffset, maxChars, {
+    mode: 'bytes',
+  });
+  const paginationInfo = createPaginationInfo(paginationMeta);
 
   // Generate pagination hints
-  const paginationHints = generatePaginationHints(pagination, {
+  const paginationHints = generateGitHubPaginationHints(paginationInfo, {
     owner: data.owner ?? '',
     repo: data.repo ?? '',
     path: data.path ?? '',
@@ -323,9 +353,9 @@ function applyContentPagination(
 
   return {
     ...data,
-    content: paginatedContent,
-    contentLength: actualLength,
-    pagination,
+    content: paginationMeta.paginatedContent,
+    contentLength: paginationMeta.paginatedContent.length,
+    pagination: paginationInfo,
     hints: paginationHints,
   };
 }
@@ -334,7 +364,7 @@ function applyContentPagination(
  * Generate hints for paginated responses
  * Uses dedicated hints field (NOT securityWarnings)
  */
-function generatePaginationHints(
+function generateGitHubPaginationHints(
   pagination: PaginationInfo,
   query: { owner: string; repo: string; path: string; branch?: string }
 ): string[] {
@@ -897,7 +927,7 @@ async function fetchDirectoryContentsRecursivelyAPI(
               dir.path,
               currentDepth + 1,
               maxDepth,
-              new Set(visitedPaths) // Pass a copy to avoid shared state issues
+              visitedPaths // Pass reference, not copy
             );
             return subItems;
           } catch {

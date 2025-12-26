@@ -72,6 +72,22 @@ describe('pagination utility', () => {
 
       expect(result.currentPage).toBe(2); // 10/10 + 1 = 2
     });
+
+    // NEW TEST CASE FOR UTF-8 BYTE OFFSETS
+    it('should handle UTF-8 byte offsets correctly (failing case)', () => {
+      const content = 'a🚀b'; // 'a' (1 byte), '🚀' (4 bytes), 'b' (1 byte)
+      // We want to skip 'a' (1 byte) and take next 4 bytes (🚀)
+      const result = applyPagination(content, 1, 4, { mode: 'bytes' });
+
+      // If we use byte offsets:
+      // Byte 0: 'a'
+      // Byte 1-4: '🚀'
+      // Byte 5: 'b'
+      // Offset 1, Length 4 -> Bytes 1,2,3,4 -> "🚀"
+
+      expect(result.paginatedContent).toBe('🚀');
+      expect(result.charLength).toBe(4); // Bytes, not chars
+    });
   });
 
   describe('generatePaginationHints', () => {

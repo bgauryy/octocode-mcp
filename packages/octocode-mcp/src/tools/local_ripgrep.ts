@@ -513,8 +513,12 @@ function parseRipgrepJson(
         }
 
         let value = contextLines.join('\n');
-        if (value.length > maxLength) {
-          value = value.substring(0, maxLength) + '...';
+        // Use Array.from/spread to split by code points (handles surrogate pairs correctly)
+        // This prevents splitting multi-byte characters like emojis
+        const charArray = [...value];
+        if (charArray.length > maxLength) {
+          // Slice to maxLength - 3 to leave room for '...'
+          value = charArray.slice(0, maxLength - 3).join('') + '...';
         }
 
         return {
