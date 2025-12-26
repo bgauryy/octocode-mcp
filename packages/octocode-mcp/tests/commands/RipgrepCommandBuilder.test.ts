@@ -1,7 +1,3 @@
-/**
- * Tests for RipgrepCommandBuilder
- */
-
 import { describe, it, expect } from 'vitest';
 import { RipgrepCommandBuilder } from '../../src/commands/RipgrepCommandBuilder.js';
 import { RipgrepQuerySchema } from '../../src/scheme/local_ripgrep.js';

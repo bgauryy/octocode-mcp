@@ -106,7 +106,6 @@ export async function searchContentRipgrep(
       }
     );
 
-    // Apply maxFiles limit if specified
     let limitedFiles = filesWithMetadata;
     let wasLimited = false;
     if (
@@ -174,7 +173,6 @@ export async function searchContentRipgrep(
         : 'Final page',
     ];
 
-    // Add hint if files were limited
     if (wasLimited) {
       paginationHints.push(
         `Results limited to ${configuredQuery.maxFiles} files (found ${filesWithMetadata.length} matching)`
@@ -221,7 +219,6 @@ export async function searchContentRipgrep(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    // Provide helpful hints for output size limit errors
     if (errorMessage.includes('Output size limit exceeded')) {
       return {
         status: 'error',
@@ -281,8 +278,8 @@ function _getStructuredResultSizeHints(
     hints.push(
       '',
       'Integration:',
-      '  - Use location.charOffset with FETCH_CONTENT for precise extraction',
-      '  - WARNING: charOffset/charLength are BYTE offsets, not character offsets (matters for UTF-8 multi-byte chars)',
+      '  - location.byteOffset/byteLength: raw byte offsets from ripgrep (use with Buffer operations)',
+      '  - location.charOffset/charLength: character indices for JavaScript strings',
       `  - Match values truncated to ${contentLength} chars (configurable via matchContentLength: 1-800)`,
       '  - Line/column numbers provided for human reference'
     );
@@ -531,7 +528,6 @@ function parseRipgrepJson(
           location: {
             byteOffset: m.absoluteOffset,
             byteLength: m.matchLength,
-            // Placeholder - will be computed with file content
             charOffset: m.absoluteOffset,
             charLength: m.matchLength,
           },
@@ -571,7 +567,6 @@ async function computeCharacterOffsets(
 ): Promise<RipgrepFileMatches[]> {
   return Promise.all(
     files.map(async file => {
-      // Skip if no matches
       if (!file.matches || file.matches.length === 0) {
         return file;
       }

@@ -5,7 +5,6 @@ import {
   clearCachedToken,
 } from '../../src/github/client.js';
 
-// Mock dependencies
 vi.mock('../../src/serverConfig.js', () => ({
   getGitHubToken: vi.fn(function () {}),
   getServerConfig: vi.fn(function () {
@@ -54,9 +53,8 @@ const mockOctokit = vi.mocked(Octokit);
 describe('GitHub Client', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    clearCachedToken(); // Clear any cached instances
+    clearCachedToken();
 
-    // Setup default mocks
     mockGetServerConfig.mockReturnValue({
       version: '1.0.0',
       githubApiUrl: 'https://api.github.com',

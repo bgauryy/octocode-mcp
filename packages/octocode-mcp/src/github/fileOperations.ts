@@ -87,7 +87,6 @@ export async function fetchGitHubFileContentAPI(
       matchString: params.matchString,
       matchStringContextLines: params.matchStringContextLines,
       noTimestamp: params.noTimestamp,
-      // NOTE: charOffset and charLength are EXCLUDED - pagination is post-cache
     },
     sessionId
   );
@@ -151,7 +150,6 @@ async function fetchGitHubFileContentAPIInternal(
               ...contentParams,
               ref: defaultBranch,
             });
-            // If successful, we proceed with 'result' populated
           } catch {
             throw error; // Fallback failed, throw original error
           }

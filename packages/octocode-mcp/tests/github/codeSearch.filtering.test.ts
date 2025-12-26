@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// Mock the GitHub client
 const mockOctokit = vi.hoisted(() => ({
   rest: {
     search: {
@@ -13,7 +12,6 @@ vi.mock('../../src/github/client.js', () => ({
   getOctokit: vi.fn(() => mockOctokit),
 }));
 
-// Mock the cache to prevent interference
 vi.mock('../../src/utils/cache.js', () => ({
   generateCacheKey: vi.fn(() => 'test-cache-key'),
   withDataCache: vi.fn(async (_key: string, fn: () => unknown) => {
@@ -21,7 +19,6 @@ vi.mock('../../src/utils/cache.js', () => ({
   }),
 }));
 
-// Import after mocking
 import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
 
 describe('Code Search Filtering - File Filters', () => {

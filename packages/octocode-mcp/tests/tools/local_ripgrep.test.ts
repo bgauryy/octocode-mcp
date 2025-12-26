@@ -1547,6 +1547,208 @@ describe('localSearchCode', () => {
     });
   });
 
+  describe('computeCharacterOffsets - branch coverage', () => {
+    it('should return empty when only begin/end messages (no matches)', async () => {
+      // Create output with only begin/end messages but no actual matches
+      const jsonOutput = [
+        JSON.stringify({
+          type: 'begin',
+          data: { path: { text: '/test/emptyfile.ts' } },
+        }),
+        JSON.stringify({
+          type: 'end',
+          data: { path: { text: '/test/emptyfile.ts' } },
+        }),
+        JSON.stringify({
+          type: 'summary',
+          data: {
+            elapsed_total: { human: '0ms' },
+            stats: {
+              elapsed: { human: '0ms' },
+              searches: 1,
+              searches_with_match: 0,
+              bytes_searched: 100,
+              bytes_printed: 0,
+              matched_lines: 0,
+              matches: 0,
+            },
+          },
+        }),
+      ].join('\n');
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonOutput,
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'nonexistent',
+        path: '/test/path',
+      });
+
+      // Files with no matches means no file entries in result
+      expect(result.status).toBe('hasResults');
+      expect(result.files).toHaveLength(0);
+    });
+
+    it('should handle file with empty matches array', async () => {
+      // This test covers the branch where file.matches is empty (line 575-576)
+      const jsonOutput = JSON.stringify({
+        type: 'match',
+        data: {
+          path: { text: '/test/file.ts' },
+          lines: { text: 'test' },
+          line_number: 1,
+          absolute_offset: 0,
+          submatches: [], // Empty submatches
+        },
+      });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonOutput,
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.files).toBeDefined();
+    });
+
+    it('should fallback to byte offsets when file read fails', async () => {
+      // Test that when fs.readFile fails, the byte offsets are kept as fallback
+      const jsonOutput = JSON.stringify({
+        type: 'match',
+        data: {
+          path: { text: '/test/unreadable.ts' },
+          lines: { text: 'test match' },
+          line_number: 10,
+          absolute_offset: 500,
+          submatches: [{ start: 0, end: 4, match: { text: 'test' } }],
+        },
+      });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonOutput,
+        stderr: '',
+      });
+
+      // Mock stat to fail for this file path to simulate file read error
+      mockFsStat.mockRejectedValue(new Error('File not found'));
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+        showFileLastModified: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+      // Should still have the match with byte offsets
+      expect(result.files![0]!.matches[0]!.location.byteOffset).toBe(500);
+    });
+
+    it('should handle context lines with missing context entries', async () => {
+      // Create NDJSON with match but missing context lines in the map
+      const jsonLines = [
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: 'file1.ts' },
+            lines: { text: 'match line' },
+            line_number: 10,
+            absolute_offset: 100,
+            submatches: [{ start: 0, end: 5, match: { text: 'match' } }],
+          },
+        }),
+        // Context for line 11 exists, but 9 and 12 are missing
+        JSON.stringify({
+          type: 'context',
+          data: {
+            path: { text: 'file1.ts' },
+            lines: { text: 'next line' },
+            line_number: 11,
+            absolute_offset: 200,
+          },
+        }),
+      ].join('\n');
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonLines,
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'match',
+        path: '/test/path',
+        beforeContext: 2,
+        afterContext: 2,
+      });
+
+      expect(result.status).toBe('hasResults');
+      // Should include the context that exists but skip missing ones
+      const value = result.files![0]!.matches[0]!.value;
+      expect(value).toContain('match line');
+      expect(value).toContain('next line');
+    });
+
+    it('should handle before context when context line does not exist in map', async () => {
+      // Test the branch where before context lookup returns undefined
+      const jsonLines = [
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: 'file1.ts' },
+            lines: { text: 'match at line 5' },
+            line_number: 5,
+            absolute_offset: 100,
+            submatches: [{ start: 0, end: 5, match: { text: 'match' } }],
+          },
+        }),
+        // Only provide context for line 6, not lines 3, 4
+        JSON.stringify({
+          type: 'context',
+          data: {
+            path: { text: 'file1.ts' },
+            lines: { text: 'line 6' },
+            line_number: 6,
+            absolute_offset: 200,
+          },
+        }),
+      ].join('\n');
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonLines,
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'match',
+        path: '/test/path',
+        beforeContext: 2, // Request context for lines 3 and 4
+        afterContext: 1, // Request context for line 6
+      });
+
+      expect(result.status).toBe('hasResults');
+      const value = result.files![0]!.matches[0]!.value;
+      expect(value).toContain('match at line 5');
+      expect(value).toContain('line 6');
+      // Lines 3 and 4 context were not in the map, so they won't be in output
+    });
+  });
+
   describe('Pagination hints validation', () => {
     it('should show file pagination hints accurately', async () => {
       const files = Array.from({ length: 30 }, (_, i) => ({

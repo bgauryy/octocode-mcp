@@ -187,7 +187,6 @@ export async function viewStructure(
           query.showFileLastModified
         );
 
-    // Apply filters using consolidated filter logic
     let filteredEntries = applyEntryFilters(entries, query);
 
     if (query.limit) {
@@ -432,7 +431,6 @@ async function viewStructureRecursive(
     showModified
   );
 
-  // Apply filters using consolidated filter logic
   let filteredEntries = applyEntryFilters(entries, query);
 
   if (query.sortBy) {
@@ -510,7 +508,6 @@ async function viewStructureRecursive(
     };
   }
 
-  // Convert entries to string format with indentation based on stored depth
   const structuredLines = filteredEntries.map(entry => {
     // Fallback to path splitting if depth not present (e.g. from ls parsing)
     const depth = entry.depth ?? entry.name.split(path.sep).length - 1;

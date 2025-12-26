@@ -149,7 +149,6 @@ export async function fetchContent(
         }
       }
 
-      // Handle excessive matches by returning partial results
       if (result.matchCount > 50) {
         return {
           status: 'hasResults',
@@ -172,12 +171,10 @@ export async function fetchContent(
         };
       }
 
-      // Auto-paginate if output is large
       if (
         !query.charLength &&
         resultContent.length > DEFAULTS.MAX_OUTPUT_CHARS
       ) {
-        // Reasonable match count but large output - auto-paginate
         const autoPagination = applyPagination(
           resultContent,
           0,
@@ -212,7 +209,6 @@ export async function fetchContent(
       resultContent = content;
       isPartial = false;
 
-      // Apply minification for non-matchString content
       if (query.minified !== false) {
         try {
           const originalLength = resultContent.length;

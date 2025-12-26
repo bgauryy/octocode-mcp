@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getOctokit, clearCachedToken } from '../../src/github/client.js';
 
-// Mock dependencies
 vi.mock('../../src/serverConfig.js', () => ({
   getGitHubToken: vi.fn(function () {}),
   getServerConfig: vi.fn(function () {
