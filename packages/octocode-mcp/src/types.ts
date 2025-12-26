@@ -594,11 +594,9 @@ export interface ServerConfig {
   enableTools?: string[];
   disableTools?: string[];
   enableLogging: boolean;
-  betaEnabled: boolean;
   timeout: number;
   maxRetries: number;
   loggingEnabled: boolean;
-  sanitize: boolean;
   enableLocal: boolean;
 }
 

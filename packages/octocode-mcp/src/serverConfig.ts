@@ -58,8 +58,6 @@ export async function initialize(): Promise<void> {
         process.env.LOG === undefined ||
         process.env.LOG === null ||
         process.env.LOG?.toLowerCase() !== 'false',
-      betaEnabled:
-        process.env.BETA === '1' || process.env.BETA?.toLowerCase() === 'true',
       timeout: Math.max(
         30000,
         parseInt(process.env.REQUEST_TIMEOUT || '30000') || 30000
@@ -72,10 +70,6 @@ export async function initialize(): Promise<void> {
         process.env.LOG === undefined ||
         process.env.LOG === null ||
         process.env.LOG?.toLowerCase() !== 'false',
-      sanitize:
-        process.env.SANITIZE === undefined ||
-        process.env.SANITIZE === null ||
-        process.env.SANITIZE?.toLowerCase() !== 'false',
       enableLocal:
         process.env.ENABLE_LOCAL === '1' ||
         process.env.ENABLE_LOCAL?.toLowerCase() === 'true',
@@ -122,24 +116,12 @@ export async function getToken(): Promise<string> {
   return token;
 }
 
-export function isBetaEnabled(): boolean {
-  return getServerConfig().betaEnabled;
-}
-
 export function isLocalEnabled(): boolean {
   return getServerConfig().enableLocal;
 }
 
-export function isSamplingEnabled(): boolean {
-  return isBetaEnabled();
-}
-
 export function isLoggingEnabled(): boolean {
   return config?.loggingEnabled ?? false;
-}
-
-export function isSanitizeEnabled(): boolean {
-  return getServerConfig().sanitize;
 }
 
 export function clearCachedToken(): void {

@@ -33,6 +33,12 @@
  * Directories and paths that contain sensitive security data
  */
 export const IGNORED_PATH_PATTERNS: RegExp[] = [
+  // Git directory (internal git data)
+  /^\.git$/,
+  /^\.git\//,
+  /\/\.git$/,
+  /\/\.git\//,
+
   // SSH directory (contains private keys)
   /^\.ssh$/,
   /^\.ssh\//,

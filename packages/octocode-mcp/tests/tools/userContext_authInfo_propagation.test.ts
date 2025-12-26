@@ -49,7 +49,6 @@ vi.mock('../../src/utils/cache.js', () => ({
 // Mock server config to disable logging
 vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
-  isSamplingEnabled: vi.fn(() => false),
 }));
 
 // Now import the tool handlers

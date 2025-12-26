@@ -177,11 +177,9 @@ Environment variables handled in `serverConfig.ts`:
 | `TOOLS_TO_RUN` | - | Exclusive tool whitelist (comma-separated) |
 | `ENABLE_TOOLS` | - | Additional tools to enable |
 | `DISABLE_TOOLS` | - | Tools to disable |
-| `BETA` | `false` | Enable beta features |
 | `REQUEST_TIMEOUT` | `30000` | Request timeout in ms |
 | `MAX_RETRIES` | `3` | Maximum retry attempts |
 | `LOG` | `true` | Enable session logging |
-| `SANITIZE` | `true` | Enable content sanitization |
 
 ### Token Resolution Order
 

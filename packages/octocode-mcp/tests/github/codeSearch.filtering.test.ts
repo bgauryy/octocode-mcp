@@ -21,11 +21,6 @@ vi.mock('../../src/utils/cache.js', () => ({
   }),
 }));
 
-// Mock serverConfig for sanitize
-vi.mock('../../src/serverConfig.js', () => ({
-  isSanitizeEnabled: vi.fn(() => true),
-}));
-
 // Import after mocking
 import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
 

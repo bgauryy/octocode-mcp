@@ -27,12 +27,7 @@ import { registerSearchGitHubReposTool } from '../src/tools/github_search_repos.
 import { registerSearchGitHubPullRequestsTool } from '../src/tools/github_search_pull_requests.js';
 import { registerViewGitHubRepoStructureTool } from '../src/tools/github_view_repo_structure.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';
-import {
-  isBetaEnabled,
-  initialize,
-  cleanup,
-  getServerConfig,
-} from '../src/serverConfig.js';
+import { initialize, cleanup, getServerConfig } from '../src/serverConfig.js';
 import { registerTools } from '../src/tools/toolsManager.js';
 import { getGitHubToken } from '../src/serverConfig.js';
 import { TOOL_NAMES } from '../src/tools/toolMetadata.js';
@@ -53,7 +48,6 @@ const mockStdioServerTransport = vi.mocked(StdioServerTransport);
 const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
 const mockRegisterTools = vi.mocked(registerTools);
 const mockGetGitHubToken = vi.mocked(getGitHubToken);
-const mockIsBetaEnabled = vi.mocked(isBetaEnabled);
 const mockInitialize = vi.mocked(initialize);
 const mockCleanup = vi.mocked(cleanup);
 const mockGetServerConfig = vi.mocked(getServerConfig);
@@ -181,7 +175,6 @@ describe('Index Module', () => {
     });
 
     // Mock simplified dependencies
-    mockIsBetaEnabled.mockReturnValue(false);
     mockGetGitHubToken.mockResolvedValue('test-token');
     mockInitialize.mockResolvedValue(undefined);
     mockCleanup.mockImplementation(() => {});
@@ -191,7 +184,6 @@ describe('Index Module', () => {
       enableTools: [],
       disableTools: [],
       enableLogging: true,
-      betaEnabled: false,
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: true,

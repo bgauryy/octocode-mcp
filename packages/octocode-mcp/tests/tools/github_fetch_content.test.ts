@@ -15,13 +15,11 @@ vi.mock('../../src/github/fileOperations.js', () => ({
 
 const mockInitialize = vi.hoisted(() => vi.fn());
 const mockGetServerConfig = vi.hoisted(() => vi.fn());
-const mockIsSamplingEnabled = vi.hoisted(() => vi.fn());
 const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/serverConfig.js', () => ({
   initialize: mockInitialize,
   getServerConfig: mockGetServerConfig,
-  isSamplingEnabled: mockIsSamplingEnabled,
   isLoggingEnabled: vi.fn(() => false),
   getGitHubToken: mockGetGitHubToken,
 }));
@@ -52,13 +50,11 @@ describe('GitHub Fetch Content Tool', () => {
       enableTools: [],
       disableTools: [],
       enableLogging: true,
-      betaEnabled: false,
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: true,
     });
     mockInitialize.mockResolvedValue(undefined);
-    mockIsSamplingEnabled.mockReturnValue(false);
 
     // Reset sampling mocks
     mockPerformSampling.mockReset();

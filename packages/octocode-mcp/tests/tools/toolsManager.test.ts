@@ -119,11 +119,9 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       const result = await registerTools(mockServer);
@@ -148,11 +146,9 @@ describe('ToolsManager', () => {
           TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         ],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       const result = await registerTools(mockServer);
@@ -173,11 +169,9 @@ describe('ToolsManager', () => {
           TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         ],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       const result = await registerTools(mockServer);
@@ -195,11 +189,9 @@ describe('ToolsManager', () => {
         githubApiUrl: 'https://api.github.com',
         toolsToRun: ['nonExistentTool1', 'nonExistentTool2'],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       const result = await registerTools(mockServer);
@@ -222,11 +214,9 @@ describe('ToolsManager', () => {
         toolsToRun: [TOOL_NAMES.GITHUB_SEARCH_CODE],
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       await registerTools(mockServer);
@@ -245,11 +235,9 @@ describe('ToolsManager', () => {
         toolsToRun: [TOOL_NAMES.GITHUB_SEARCH_CODE],
         disableTools: [TOOL_NAMES.GITHUB_FETCH_CONTENT],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       await registerTools(mockServer);
@@ -267,11 +255,9 @@ describe('ToolsManager', () => {
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         disableTools: [TOOL_NAMES.GITHUB_FETCH_CONTENT],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       await registerTools(mockServer);
@@ -289,11 +275,9 @@ describe('ToolsManager', () => {
         githubApiUrl: 'https://api.github.com',
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       const result = await registerTools(mockServer);
@@ -319,11 +303,9 @@ describe('ToolsManager', () => {
           TOOL_NAMES.GITHUB_FETCH_CONTENT,
         ],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       const result = await registerTools(mockServer);
@@ -349,11 +331,9 @@ describe('ToolsManager', () => {
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         disableTools: [TOOL_NAMES.GITHUB_SEARCH_CODE],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       const result = await registerTools(mockServer);
@@ -380,11 +360,9 @@ describe('ToolsManager', () => {
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         disableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS], // Same tool in both lists
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       const result = await registerTools(mockServer);
@@ -405,11 +383,9 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       // Make first tool throw error
@@ -432,11 +408,9 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       // Make multiple tools throw errors
@@ -470,11 +444,9 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       // Mock server with registerTool method
@@ -499,11 +471,9 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       const result = await registerTools(mockServer);
@@ -518,11 +488,9 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       // Mock server that throws on registerTool
@@ -551,11 +519,9 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       const result = await registerTools(mockServer);
@@ -572,11 +538,9 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       // Make tool return null (tool unavailable)
@@ -609,11 +573,9 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
         // No enableTools provided, so non-default tools should be skipped
       });
 
@@ -633,11 +595,9 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
       });
 
       const toolHandlers = new Map<string, Function>();

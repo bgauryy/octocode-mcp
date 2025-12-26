@@ -63,7 +63,6 @@ vi.mock('../../src/security/contentSanitizer.js', () => ({
 
 // Mock server config
 vi.mock('../../src/serverConfig.js', () => ({
-  isSamplingEnabled: vi.fn(() => false),
   getGitHubToken: vi.fn(async () => 'test-token'),
   isLoggingEnabled: vi.fn(() => true),
 }));

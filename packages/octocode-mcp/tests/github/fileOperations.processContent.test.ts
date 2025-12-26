@@ -28,9 +28,6 @@ function createRequestError(message: string, status: number) {
 // Mock dependencies
 vi.mock('../../src/github/client.js');
 vi.mock('../../src/utils/minifier/index.js');
-vi.mock('../../src/serverConfig.js', () => ({
-  isSanitizeEnabled: vi.fn().mockReturnValue(true),
-}));
 
 describe('GitHub File Operations - processFileContentAPI coverage', () => {
   beforeEach(() => {

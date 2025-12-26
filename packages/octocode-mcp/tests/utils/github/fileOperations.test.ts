@@ -22,7 +22,6 @@ const mockminifyContent = vi.hoisted(() =>
 const mockWithDataCache = vi.hoisted(() => vi.fn());
 const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
 const mockCreateResult = vi.hoisted(() => vi.fn());
-const mockIsSanitizeEnabled = vi.hoisted(() => vi.fn().mockReturnValue(true));
 
 // Set up mocks
 vi.mock('../../../src/github/client.js', () => ({
@@ -45,10 +44,6 @@ vi.mock('../../../src/utils/cache.js', () => ({
 
 vi.mock('../../../src/mcp/responses.js', () => ({
   createResult: mockCreateResult,
-}));
-
-vi.mock('../../../src/serverConfig.js', () => ({
-  isSanitizeEnabled: mockIsSanitizeEnabled,
 }));
 
 // Import after mocks are set up
@@ -953,8 +948,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
   describe('Content Sanitization', () => {
     beforeEach(() => {
-      // Ensure sanitization is enabled via serverConfig
-      mockIsSanitizeEnabled.mockReturnValue(true);
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
           type: 'file',

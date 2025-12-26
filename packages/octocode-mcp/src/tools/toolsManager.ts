@@ -151,11 +151,7 @@ function registerLocalToolsDirectly(server: McpServer): void {
       return executeBulkOperation(
         args.queries || [],
         async (query: RipgrepQuery) => {
-          const result = await searchContentRipgrep(query);
-          return {
-            status: result.status,
-            ...result,
-          };
+          return await searchContentRipgrep(query);
         },
         { toolName: LOCAL_TOOL_NAMES.LOCAL_RIPGREP }
       );
@@ -182,11 +178,7 @@ function registerLocalToolsDirectly(server: McpServer): void {
       return executeBulkOperation(
         args.queries || [],
         async (query: ViewStructureQuery) => {
-          const result = await viewStructure(query);
-          return {
-            status: result.status,
-            ...result,
-          };
+          return await viewStructure(query);
         },
         { toolName: LOCAL_TOOL_NAMES.LOCAL_VIEW_STRUCTURE }
       );
@@ -211,11 +203,7 @@ function registerLocalToolsDirectly(server: McpServer): void {
       return executeBulkOperation(
         args.queries || [],
         async (query: FindFilesQuery) => {
-          const result = await findFiles(query);
-          return {
-            status: result.status,
-            ...result,
-          };
+          return await findFiles(query);
         },
         { toolName: LOCAL_TOOL_NAMES.LOCAL_FIND_FILES }
       );
@@ -240,11 +228,7 @@ function registerLocalToolsDirectly(server: McpServer): void {
       return executeBulkOperation(
         args.queries || [],
         async (query: FetchContentQuery) => {
-          const result = await fetchContent(query);
-          return {
-            status: result.status,
-            ...result,
-          };
+          return await fetchContent(query);
         },
         { toolName: LOCAL_TOOL_NAMES.LOCAL_FETCH_CONTENT }
       );

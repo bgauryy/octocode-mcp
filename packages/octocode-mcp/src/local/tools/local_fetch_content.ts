@@ -132,42 +132,87 @@ export async function fetchContent(
 
       resultContent = result.lines.join('\n');
 
+      // Apply minification BEFORE size check (fixes patternTooBroad false positives)
+      if (query.minified !== false) {
+        try {
+          const originalLength = resultContent.length;
+          const minifiedContent = minifyContent(resultContent, query.path);
+          if (minifiedContent.length < originalLength) {
+            resultContent = minifiedContent;
+          }
+        } catch {
+          // Keep original if minification fails
+        }
+      }
+
+      // Auto-paginate if output is large instead of throwing patternTooBroad error
+      // Only error if match count is truly excessive (>50 matches indicates broad pattern)
       if (
         !query.charLength &&
         resultContent.length > DEFAULTS.MAX_OUTPUT_CHARS
       ) {
-        const toolError = ToolErrors.patternTooBroad(
-          query.matchString || '',
-          result.matchRanges.length
+        if (result.matchCount > 50) {
+          // Truly broad pattern - too many matches
+          const toolError = ToolErrors.patternTooBroad(
+            query.matchString || '',
+            result.matchCount
+          );
+          return createErrorResult(toolError, 'LOCAL_FETCH_CONTENT', query, {
+            path: query.path,
+            totalLines,
+            hints: [
+              `Pattern matched ${result.matchCount} lines - likely too generic`,
+              'Make the pattern more specific to target only what you need',
+              'TIP: Use charLength to paginate if you need all matches',
+            ],
+          }) as FetchContentResult;
+        }
+
+        // Reasonable match count but large output - auto-paginate
+        const autoPagination = applyPagination(
+          resultContent,
+          0,
+          RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH
         );
-        return createErrorResult(toolError, 'LOCAL_FETCH_CONTENT', query, {
+
+        return {
+          status: 'hasResults',
           path: query.path,
+          content: autoPagination.paginatedContent,
+          contentLength: autoPagination.paginatedContent.length,
+          isPartial: true,
           totalLines,
-          hints: [
-            `Your pattern matched extensively - likely hitting common code`,
-            'Make the pattern more specific to target only what you need, or use charLength to paginate results',
-            'Possible causes: Minified files, repeated patterns, or overly broad match terms',
-            'Strategy: Refine matchString to be more selective, or explore with pagination',
+          pagination: createPaginationInfo(autoPagination),
+          researchGoal: query.researchGoal,
+          reasoning: query.reasoning,
+          warnings: [
+            `Auto-paginated: ${result.matchCount} matches exceeded display limit`,
           ],
-        }) as FetchContentResult;
+          hints: [
+            ...getToolHints('LOCAL_FETCH_CONTENT', 'hasResults'),
+            ...generatePaginationHints(autoPagination, {
+              toolName: 'local_fetch_content',
+            }),
+          ],
+        };
       }
 
       isPartial = true;
     } else {
       resultContent = content;
       isPartial = false;
-    }
 
-    if (query.minified !== false) {
-      try {
-        const originalLength = resultContent.length;
-        const minifiedContent = minifyContent(resultContent, query.path);
-
-        if (minifiedContent.length < originalLength) {
-          resultContent = minifiedContent;
+      // Apply minification for non-matchString content
+      if (query.minified !== false) {
+        try {
+          const originalLength = resultContent.length;
+          const minifiedContent = minifyContent(resultContent, query.path);
+          if (minifiedContent.length < originalLength) {
+            resultContent = minifiedContent;
+          }
+        } catch {
+          // Keep original if minification fails
         }
-      } catch {
-        // Keep original if minification fails
       }
     }
 
@@ -233,7 +278,11 @@ function extractMatchingLines(
   contextLines: number,
   isRegex: boolean = false,
   caseSensitive: boolean = false
-): { lines: string[]; matchRanges: Array<{ start: number; end: number }> } {
+): {
+  lines: string[];
+  matchRanges: Array<{ start: number; end: number }>;
+  matchCount: number;
+} {
   const matchingLineNumbers: number[] = [];
 
   // Compile regex once if needed
@@ -264,7 +313,7 @@ function extractMatchingLines(
   });
 
   if (matchingLineNumbers.length === 0) {
-    return { lines: [], matchRanges: [] };
+    return { lines: [], matchRanges: [], matchCount: 0 };
   }
 
   // Group consecutive matches to avoid duplicating context
@@ -301,5 +350,9 @@ function extractMatchingLines(
     resultLines.push(...lines.slice(range.start - 1, range.end));
   });
 
-  return { lines: resultLines, matchRanges: ranges };
+  return {
+    lines: resultLines,
+    matchRanges: ranges,
+    matchCount: matchingLineNumbers.length,
+  };
 }

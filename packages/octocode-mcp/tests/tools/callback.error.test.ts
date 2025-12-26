@@ -39,12 +39,10 @@ vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn().mockReturnValue({
     version: '1.0.0',
     enableLogging: false,
-    betaEnabled: false,
     timeout: 30000,
     maxRetries: 3,
     loggingEnabled: false,
   }),
-  isSamplingEnabled: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock('../../src/session.js', () => ({

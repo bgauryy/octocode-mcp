@@ -58,7 +58,10 @@ export function validateExecutionContext(
   // Check if cwd is within workspace
   // Must be the workspace itself OR start with workspace + path separator
   // This prevents "/workspace-evil" from matching "/workspace"
-  if (absoluteCwd !== workspace && !absoluteCwd.startsWith(workspace + path.sep)) {
+  if (
+    absoluteCwd !== workspace &&
+    !absoluteCwd.startsWith(workspace + path.sep)
+  ) {
     return {
       isValid: false,
       error: `Can only execute commands within workspace directory: ${workspace}. Attempted execution in: ${absoluteCwd}`,
