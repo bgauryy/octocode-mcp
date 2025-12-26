@@ -44,7 +44,9 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .string()
     .min(1)
     .describe('Pattern or regex to search (use fixedString for literals)'),
-  path: z.string().describe('Root directory to search'),
+  path: z
+    .string()
+    .describe('Root directory to search (absolute path required)'),
 
   // WORKFLOW MODE (recommended presets)
   mode: z

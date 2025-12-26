@@ -30,7 +30,7 @@ Examples:
  * Schema descriptions for fetch content parameters
  */
 const FETCH_CONTENT_DESCRIPTIONS = {
-  path: 'File path (absolute or relative).',
+  path: 'File path (absolute required).',
   fullContent:
     'Return entire file (token-expensive; prefer matchString for sections).',
   matchString:

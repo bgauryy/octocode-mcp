@@ -31,7 +31,7 @@ Examples:
  * Find files query schema
  */
 export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
-  path: z.string().describe('Starting directory (required).'),
+  path: z.string().describe('Starting directory (absolute path required).'),
 
   maxDepth: z
     .number()

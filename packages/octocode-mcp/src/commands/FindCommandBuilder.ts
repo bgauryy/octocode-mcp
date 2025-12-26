@@ -13,6 +13,7 @@ export class FindCommandBuilder extends BaseCommandBuilder {
       this.addFlag('-O3');
     }
 
+    // Depth constraints must come first (they apply globally)
     if (query.maxDepth !== undefined) {
       this.addOption('-maxdepth', query.maxDepth);
     }
@@ -21,6 +22,37 @@ export class FindCommandBuilder extends BaseCommandBuilder {
       this.addOption('-mindepth', query.minDepth);
     }
 
+    // excludeDir prune clauses must come BEFORE other filters
+    // Correct find syntax: find path (exclude) -prune -o (filters) -print0
+    const hasExcludeDir = query.excludeDir && query.excludeDir.length > 0;
+    if (hasExcludeDir) {
+      // Add all prune clauses first
+      this.addArg('(');
+      query.excludeDir!.forEach((dir: string, index: number) => {
+        if (index > 0) {
+          this.addArg('-o');
+        }
+        this.addArg('-path');
+        this.addArg(`*/${dir}`);
+        this.addArg('-o');
+        this.addArg('-path');
+        this.addArg(`*/${dir}/*`);
+      });
+      this.addArg(')');
+      this.addArg('-prune');
+      this.addArg('-o');
+    }
+
+    // Check if we have any filters that need grouping
+    const hasFilters = this.hasAnyFilter(query);
+
+    // When using excludeDir with filters, we need to group the filters
+    // to ensure they apply correctly after -prune -o
+    if (hasExcludeDir && hasFilters) {
+      this.addArg('(');
+    }
+
+    // Now add all the filters (these come AFTER -prune -o when excludeDir is used)
     if (query.type) {
       this.addOption('-type', query.type);
     }
@@ -100,24 +132,38 @@ export class FindCommandBuilder extends BaseCommandBuilder {
       this.addFlag('-writable');
     }
 
-    if (query.excludeDir && query.excludeDir.length > 0) {
-      for (const dir of query.excludeDir) {
-        this.addArg('(');
-        this.addArg('-path');
-        this.addArg(`*/${dir}`);
-        this.addArg('-o');
-        this.addArg('-path');
-        this.addArg(`*/${dir}/*`);
-        this.addArg(')');
-        this.addArg('-prune');
-        this.addArg('-o');
-      }
-      this.addArg('-print0');
-    } else {
-      this.addArg('-print0');
+    // Add -print0 and close grouping if needed
+    this.addArg('-print0');
+
+    if (hasExcludeDir && hasFilters) {
+      this.addArg(')');
     }
 
     return this;
+  }
+
+  /**
+   * Check if query has any filter conditions
+   */
+  private hasAnyFilter(query: FindFilesQuery): boolean {
+    return !!(
+      query.type ||
+      query.name ||
+      (query.names && query.names.length > 0) ||
+      query.iname ||
+      query.pathPattern ||
+      query.regex ||
+      query.empty ||
+      query.sizeGreater ||
+      query.sizeLess ||
+      query.modifiedWithin ||
+      query.modifiedBefore ||
+      query.accessedWithin ||
+      query.permissions ||
+      query.executable ||
+      query.readable ||
+      query.writable
+    );
   }
 
   simple(path: string, name: string): this {

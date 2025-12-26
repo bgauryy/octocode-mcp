@@ -335,6 +335,64 @@ describe('FindCommandBuilder', () => {
       expect(args).toContain('-print0');
     });
 
+    it('should place filters AFTER -prune -o when excludeDir is used with type', () => {
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({
+          path: '/test',
+          type: 'f',
+          excludeDir: ['node_modules'],
+        })
+        .build();
+
+      // Find positions of key elements
+      const pruneIndex = args.indexOf('-prune');
+      const typeIndex = args.indexOf('-type');
+      const print0Index = args.indexOf('-print0');
+
+      // -prune must come BEFORE -type (filters come after prune)
+      expect(pruneIndex).toBeGreaterThan(-1);
+      expect(typeIndex).toBeGreaterThan(-1);
+      expect(pruneIndex).toBeLessThan(typeIndex);
+
+      // -print0 should come after -type
+      expect(print0Index).toBeGreaterThan(typeIndex);
+    });
+
+    it('should group filters when excludeDir is used with multiple filters', () => {
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({
+          path: '/test',
+          type: 'f',
+          sizeGreater: '10k',
+          excludeDir: ['node_modules', 'dist'],
+        })
+        .build();
+
+      // Verify correct order: path, prune clauses, -prune, -o, (, filters, -print0, )
+      const pruneIndex = args.indexOf('-prune');
+      const orIndex = args.lastIndexOf('-o'); // Last -o is the one after -prune
+      const typeIndex = args.indexOf('-type');
+      const sizeIndex = args.indexOf('-size');
+      const print0Index = args.indexOf('-print0');
+
+      // -prune must exist and come before the last -o
+      expect(pruneIndex).toBeGreaterThan(-1);
+      expect(orIndex).toBeGreaterThan(pruneIndex);
+
+      // All filters should come after the last -o (which follows -prune)
+      expect(typeIndex).toBeGreaterThan(orIndex);
+      expect(sizeIndex).toBeGreaterThan(orIndex);
+      expect(print0Index).toBeGreaterThan(sizeIndex);
+
+      // Filters should be grouped with parentheses
+      const openParenAfterOr = args.indexOf('(', orIndex);
+      const closeParenAtEnd = args.lastIndexOf(')');
+      expect(openParenAfterOr).toBeGreaterThan(orIndex);
+      expect(closeParenAtEnd).toBeGreaterThan(print0Index);
+    });
+
     it('should handle invalid time string gracefully', () => {
       const builder = new FindCommandBuilder();
       const { args } = builder

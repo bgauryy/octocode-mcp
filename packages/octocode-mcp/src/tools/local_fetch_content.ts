@@ -1,5 +1,5 @@
 import { readFile, stat } from 'fs/promises';
-import { resolve, isAbsolute } from 'path';
+import { resolve } from 'path';
 import { minifyContentSync } from '../utils/minifier/minifierSync.js';
 import { getToolHints } from './hints.js';
 import {
@@ -24,9 +24,7 @@ export async function fetchContent(
       return pathValidation.errorResult as FetchContentResult;
     }
 
-    const absolutePath = isAbsolute(query.path)
-      ? query.path
-      : resolve(process.cwd(), query.path);
+    const absolutePath = resolve(query.path);
 
     let fileStats;
     try {

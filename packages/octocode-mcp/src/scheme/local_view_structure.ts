@@ -32,7 +32,11 @@ Examples:
  * View structure query schema
  */
 export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
-  path: z.string().describe('Directory path (required).'),
+  path: z
+    .string()
+    .describe(
+      'Absolute directory path (required). Relative paths are not allowed.'
+    ),
 
   details: z
     .boolean()

@@ -78,8 +78,17 @@ export class PathValidator {
       };
     }
 
-    // Resolve to absolute path (normalizes ./ and ../ but doesn't resolve symlinks yet)
-    const absolutePath = path.resolve(inputPath);
+    // Resolve relative paths to absolute paths relative to workspace root
+    // This ensures relative paths like './src' resolve correctly
+    let absolutePath: string;
+    if (path.isAbsolute(inputPath)) {
+      // Already absolute, just normalize
+      absolutePath = path.resolve(inputPath);
+    } else {
+      // Resolve relative path from workspace root (first allowed root)
+      const workspaceRoot = this.allowedRoots[0] || process.cwd();
+      absolutePath = path.resolve(workspaceRoot, inputPath);
+    }
 
     // Check if path is within allowed roots
     // Must be the root itself OR start with root + path separator
