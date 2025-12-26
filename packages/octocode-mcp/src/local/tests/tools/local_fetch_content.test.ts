@@ -1,5 +1,5 @@
 /**
- * Tests for local_fetch_content tool
+ * Tests for localGetFileContent tool
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -21,7 +21,7 @@ vi.mock('../../security/pathValidator.js', () => ({
   },
 }));
 
-describe('local_fetch_content', () => {
+describe('localGetFileContent', () => {
   const mockReadFile = vi.mocked(fs.readFile);
   const mockStat = vi.mocked(fs.stat);
   const mockValidate = vi.mocked(pathValidator.pathValidator.validate);

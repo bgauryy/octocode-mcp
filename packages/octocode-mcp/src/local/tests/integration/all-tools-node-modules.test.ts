@@ -65,7 +65,7 @@ function verifySmartData<T extends ToolResult>(result: T, toolName: string): T {
 }
 
 describe('Integration Tests: All Tools on node_modules', () => {
-  describe('local_ripgrep - Pattern Search', () => {
+  describe('localSearchCode - Pattern Search', () => {
     it('should find patterns in JavaScript files', async () => {
       const result = await runRipgrep({
         pattern: 'export',
@@ -76,7 +76,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         reasoning: 'Testing pattern search on node_modules',
       });
 
-      verifySmartData(result, 'local_ripgrep');
+      verifySmartData(result, 'localSearchCode');
 
       if (result.status === 'hasResults') {
         expect(result.files).toBeDefined();
@@ -94,7 +94,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         reasoning: 'Testing filesOnly mode',
       });
 
-      verifySmartData(result, 'local_ripgrep');
+      verifySmartData(result, 'localSearchCode');
 
       if (result.status === 'hasResults') {
         expect(result.files).toBeDefined();
@@ -103,7 +103,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
     });
   });
 
-  describe('local_view_structure - Directory Listing', () => {
+  describe('localViewStructure - Directory Listing', () => {
     it('should list directory contents', async () => {
       const result = await viewStructure({
         path: NODE_MODULES_PATH,
@@ -113,7 +113,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         reasoning: 'Testing basic directory listing',
       });
 
-      verifySmartData(result, 'local_view_structure');
+      verifySmartData(result, 'localViewStructure');
 
       if (result.status === 'hasResults') {
         expect(result.structuredOutput).toBeDefined();
@@ -130,7 +130,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         reasoning: 'Testing detailed listing with sorting',
       });
 
-      verifySmartData(result, 'local_view_structure');
+      verifySmartData(result, 'localViewStructure');
 
       if (result.status === 'hasResults') {
         expect(result.structuredOutput).toBeDefined();
@@ -145,7 +145,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         reasoning: 'Testing tree view mode',
       });
 
-      verifySmartData(result, 'local_view_structure');
+      verifySmartData(result, 'localViewStructure');
 
       if (result.status === 'hasResults') {
         expect(result.structuredOutput).toBeDefined();
@@ -153,7 +153,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
     });
   });
 
-  describe('local_find_files - File Discovery', () => {
+  describe('localFindFiles - File Discovery', () => {
     it('should find files by name', async () => {
       const result = await findFiles({
         path: NODE_MODULES_PATH,
@@ -164,7 +164,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         reasoning: 'Testing name-based file discovery',
       });
 
-      verifySmartData(result, 'local_find_files');
+      verifySmartData(result, 'localFindFiles');
 
       if (result.status === 'hasResults') {
         expect(result.files).toBeDefined();
@@ -182,7 +182,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         reasoning: 'Testing extension-based discovery',
       });
 
-      verifySmartData(result, 'local_find_files');
+      verifySmartData(result, 'localFindFiles');
 
       if (result.status === 'hasResults') {
         expect(result.files).toBeDefined();
@@ -199,7 +199,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         reasoning: 'Testing directory discovery',
       });
 
-      verifySmartData(result, 'local_find_files');
+      verifySmartData(result, 'localFindFiles');
 
       if (result.status === 'hasResults') {
         expect(result.files).toBeDefined();
@@ -207,7 +207,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
     });
   });
 
-  describe('local_fetch_content - File Content Reading', () => {
+  describe('localGetFileContent - File Content Reading', () => {
     let testFile: string | null = null;
 
     it('should find a test file first', async () => {
@@ -270,7 +270,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         reasoning: 'Testing full content fetch',
       });
 
-      verifySmartData(result, 'local_fetch_content');
+      verifySmartData(result, 'localGetFileContent');
 
       if (result.status === 'hasResults') {
         expect(result.content).toBeDefined();
@@ -291,7 +291,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         reasoning: 'Testing line range fetch',
       });
 
-      verifySmartData(result, 'local_fetch_content');
+      verifySmartData(result, 'localGetFileContent');
 
       if (result.status === 'hasResults') {
         expect(result.content).toBeDefined();
@@ -311,7 +311,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         reasoning: 'Testing pattern-based extraction',
       });
 
-      verifySmartData(result, 'local_fetch_content');
+      verifySmartData(result, 'localGetFileContent');
 
       if (result.status === 'hasResults') {
         expect(result.content).toBeDefined();

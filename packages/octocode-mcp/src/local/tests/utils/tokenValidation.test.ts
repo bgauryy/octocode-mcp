@@ -72,11 +72,11 @@ describe('tokenValidation', () => {
       const content = 'x'.repeat(150000);
       const result = validateTokenLimit({
         content,
-        toolName: 'local_ripgrep',
+        toolName: 'localSearchCode',
       });
 
       expect(result.isValid).toBe(false);
-      expect(result.hints!.some(h => h.includes('local_ripgrep'))).toBe(true);
+      expect(result.hints!.some(h => h.includes('localSearchCode'))).toBe(true);
       expect(result.hints!.some(h => h.includes('discovery'))).toBe(true);
     });
 
@@ -84,11 +84,11 @@ describe('tokenValidation', () => {
       const content = 'x'.repeat(150000);
       const result = validateTokenLimit({
         content,
-        toolName: 'local_view_structure',
+        toolName: 'localViewStructure',
       });
 
       expect(result.isValid).toBe(false);
-      expect(result.hints!.some(h => h.includes('local_view_structure'))).toBe(
+      expect(result.hints!.some(h => h.includes('localViewStructure'))).toBe(
         true
       );
       expect(result.hints!.some(h => h.includes('depth'))).toBe(true);

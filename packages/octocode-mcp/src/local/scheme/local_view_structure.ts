@@ -1,5 +1,5 @@
 /**
- * Zod schema for local_view_structure tool
+ * Zod schema for localViewStructure tool
  */
 
 import { z } from 'zod';

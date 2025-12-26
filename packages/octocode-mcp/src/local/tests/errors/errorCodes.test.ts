@@ -319,11 +319,11 @@ describe('Local Error Codes', () => {
 
     it('should create toolExecutionFailed error', () => {
       const cause = new Error('Internal error');
-      const error = ToolErrors.toolExecutionFailed('local_ripgrep', cause);
+      const error = ToolErrors.toolExecutionFailed('localSearchCode', cause);
 
       expect(error.errorCode).toBe(ERROR_CODES.TOOL_EXECUTION_FAILED);
-      expect(error.message).toContain('local_ripgrep');
-      expect(error.context).toEqual({ toolName: 'local_ripgrep' });
+      expect(error.message).toContain('localSearchCode');
+      expect(error.context).toEqual({ toolName: 'localSearchCode' });
       expect(error.stack).toContain('Caused by:');
     });
   });

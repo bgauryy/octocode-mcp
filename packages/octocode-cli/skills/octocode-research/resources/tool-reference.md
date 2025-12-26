@@ -114,7 +114,7 @@ Find PR history and discussions.
 
 ## Local Tools
 
-### local_view_structure
+### localViewStructure
 
 Explore local directory structure.
 
@@ -128,7 +128,7 @@ Explore local directory structure.
 }
 ```
 
-### local_ripgrep
+### localSearchCode
 
 Fast pattern search in local codebase.
 
@@ -145,7 +145,7 @@ Fast pattern search in local codebase.
 
 **Tips:** Start with `filesOnly: true` for discovery.
 
-### local_fetch_content
+### localGetFileContent
 
 Read local file content.
 
@@ -163,7 +163,7 @@ Read local file content.
 
 **Note:** `charOffset`/`charLength` are BYTES, not characters.
 
-### local_find_files
+### localFindFiles
 
 Find files by metadata.
 

@@ -1,5 +1,5 @@
 /**
- * Zod schema for local_ripgrep tool
+ * Zod schema for localSearchCode tool
  * Optimized ripgrep implementation with performance enhancements
  */
 
@@ -331,7 +331,7 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
  * Bulk ripgrep search schema (1–5 queries per call)
  */
 export const BulkRipgrepQuerySchema = createBulkQuerySchemaLocal(
-  TOOL_NAMES.LOCAL_RIPGREP || 'local_ripgrep',
+  TOOL_NAMES.LOCAL_RIPGREP || 'localSearchCode',
   RipgrepQuerySchema
 );
 

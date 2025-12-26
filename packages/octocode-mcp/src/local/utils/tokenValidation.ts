@@ -50,7 +50,7 @@ export interface TokenValidationOptions {
  * ```typescript
  * const result = validateTokenLimit({
  *   content: largeOutput,
- *   toolName: 'local_ripgrep',
+ *   toolName: 'localSearchCode',
  *   queryCount: 5
  * });
  *
@@ -117,7 +117,7 @@ export function validateTokenLimit(
   }
 
   // Add tool-specific hints
-  if (toolName === 'local_ripgrep' || toolName === 'LOCAL_RIPGREP') {
+  if (toolName === 'localSearchCode' || toolName === 'LOCAL_RIPGREP') {
     hints.push(
       ``,
       `Tool-specific (${toolName}):`,
@@ -126,7 +126,7 @@ export function validateTokenLimit(
       `- Add excludeDir=["node_modules", ".git", "dist"] to skip large dirs`
     );
   } else if (
-    toolName === 'local_view_structure' ||
+    toolName === 'localViewStructure' ||
     toolName === 'LOCAL_VIEW_STRUCTURE'
   ) {
     hints.push(

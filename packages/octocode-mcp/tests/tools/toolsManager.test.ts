@@ -64,14 +64,6 @@ vi.mock('../../src/local/tools/local_find_files.js', () => ({
 vi.mock('../../src/local/tools/local_fetch_content.js', () => ({
   fetchContent: vi.fn(),
 }));
-vi.mock('../../src/local/prompts/research_local_explorer.js', () => ({
-  RESEARCH_LOCAL_EXPLORER_PROMPT: {
-    name: 'research_local_explorer',
-    description: 'Test prompt',
-    arguments: [],
-  },
-  registerLocalResearchPrompt: vi.fn(),
-}));
 vi.mock('../../src/local/utils/bulkOperations.js', () => ({
   executeBulkOperation: vi.fn(),
 }));
@@ -122,6 +114,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -149,6 +142,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -172,6 +166,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -192,6 +187,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -217,6 +213,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       await registerTools(mockServer);
@@ -238,6 +235,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       await registerTools(mockServer);
@@ -258,6 +256,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       await registerTools(mockServer);
@@ -278,6 +277,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -306,6 +306,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -334,6 +335,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -363,6 +365,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -386,6 +389,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       // Make first tool throw error
@@ -411,6 +415,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       // Make multiple tools throw errors
@@ -447,6 +452,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: true,
       });
 
       // Mock server with registerTool method
@@ -474,6 +480,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -491,6 +498,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: true,
       });
 
       // Mock server that throws on registerTool
@@ -522,6 +530,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -541,6 +550,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
       });
 
       // Make tool return null (tool unavailable)
@@ -559,7 +569,13 @@ describe('ToolsManager', () => {
     it('should log "not a default tool" for non-default tools without enableTools', async () => {
       // Create a mock non-default tool
       const mockNonDefaultTools = [
-        { name: 'nonDefaultTool', isDefault: false, fn: vi.fn() },
+        {
+          name: 'nonDefaultTool',
+          description: 'A non-default tool for testing',
+          isDefault: false,
+          type: 'debug' as const,
+          fn: vi.fn(),
+        },
       ];
 
       vi.mocked(DEFAULT_TOOLS).splice(
@@ -576,6 +592,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         // No enableTools provided, so non-default tools should be skipped
       });
 
@@ -589,7 +606,7 @@ describe('ToolsManager', () => {
   });
 
   describe('Local tool handlers execution', () => {
-    it('should execute local_ripgrep handler when invoked', async () => {
+    it('should execute localSearchCode handler when invoked', async () => {
       mockIsLocalEnabled.mockReturnValue(true);
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
@@ -598,6 +615,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: true,
       });
 
       const toolHandlers = new Map<string, Function>();
@@ -616,10 +634,10 @@ describe('ToolsManager', () => {
       await registerTools(serverWithRegister);
 
       // Verify handlers were registered
-      expect(toolHandlers.has('local_ripgrep')).toBe(true);
-      expect(toolHandlers.has('local_view_structure')).toBe(true);
-      expect(toolHandlers.has('local_find_files')).toBe(true);
-      expect(toolHandlers.has('local_fetch_content')).toBe(true);
+      expect(toolHandlers.has('localSearchCode')).toBe(true);
+      expect(toolHandlers.has('localViewStructure')).toBe(true);
+      expect(toolHandlers.has('localFindFiles')).toBe(true);
+      expect(toolHandlers.has('localGetFileContent')).toBe(true);
 
       // Execute handlers to cover the code paths
       const { executeBulkOperation } =
@@ -629,16 +647,16 @@ describe('ToolsManager', () => {
       });
 
       // Call each handler
-      const ripgrepHandler = toolHandlers.get('local_ripgrep')!;
+      const ripgrepHandler = toolHandlers.get('localSearchCode')!;
       await ripgrepHandler({ queries: [] });
 
-      const viewStructureHandler = toolHandlers.get('local_view_structure')!;
+      const viewStructureHandler = toolHandlers.get('localViewStructure')!;
       await viewStructureHandler({ queries: [] });
 
-      const findFilesHandler = toolHandlers.get('local_find_files')!;
+      const findFilesHandler = toolHandlers.get('localFindFiles')!;
       await findFilesHandler({ queries: [] });
 
-      const fetchContentHandler = toolHandlers.get('local_fetch_content')!;
+      const fetchContentHandler = toolHandlers.get('localGetFileContent')!;
       await fetchContentHandler({ queries: [] });
 
       // Verify executeBulkOperation was called for each handler

@@ -1,5 +1,5 @@
 /**
- * Zod schema for local_find_files tool
+ * Zod schema for localFindFiles tool
  */
 
 import { z } from 'zod';

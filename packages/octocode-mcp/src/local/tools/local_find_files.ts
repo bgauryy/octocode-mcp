@@ -158,7 +158,7 @@ export async function findFiles(
         ...getToolHints('LOCAL_FIND_FILES', status),
         ...(paginationMetadata
           ? generatePaginationHints(paginationMetadata, {
-              toolName: 'local_find_files',
+              toolName: 'localFindFiles',
             })
           : []),
       ],

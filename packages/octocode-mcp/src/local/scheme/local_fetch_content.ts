@@ -1,5 +1,5 @@
 /**
- * Schema for local_fetch_content tool
+ * Schema for localGetFileContent tool
  */
 
 import { z } from 'zod';

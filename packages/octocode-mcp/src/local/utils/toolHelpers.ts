@@ -180,7 +180,7 @@ export interface LargeOutputCheck {
  * - Calculates token estimates
  * - Generates helpful error messages and hints
  *
- * Used by: local_find_files, local_fetch_content, local_view_structure
+ * Used by: localFindFiles, localGetFileContent, localViewStructure
  *
  * @param itemCount - Number of items (files, entries, characters, etc.)
  * @param hasCharLength - Whether pagination (charLength) is specified

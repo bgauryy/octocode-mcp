@@ -1,5 +1,5 @@
 /**
- * Tests for local_ripgrep schema and validation functions
+ * Tests for localSearchCode schema and validation functions
  */
 
 import { describe, it, expect } from 'vitest';
@@ -11,7 +11,7 @@ import {
   type RipgrepQuery,
 } from '../../scheme/local_ripgrep.js';
 
-describe('local_ripgrep schema', () => {
+describe('localSearchCode schema', () => {
   describe('RipgrepQuerySchema', () => {
     it('should validate basic query', () => {
       const query = {

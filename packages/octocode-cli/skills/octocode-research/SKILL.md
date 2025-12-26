@@ -90,7 +90,7 @@ If you catch yourself thinking these, **STOP**:
 | `githubSearchRepositories` | Structure | `githubViewRepoStructure` |
 | `packageSearch` | Repo Location | `githubViewRepoStructure` |
 | `githubViewRepoStructure` | Find Pattern | `githubSearchCode` |
-| `local_ripgrep` | Content | `local_fetch_content` |
+| `localSearchCode` | Content | `localGetFileContent` |
 
 ## Verification Checklist
 

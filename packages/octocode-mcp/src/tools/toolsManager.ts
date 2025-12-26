@@ -31,7 +31,6 @@ import { viewStructure } from '../local/tools/local_view_structure.js';
 import { findFiles } from '../local/tools/local_find_files.js';
 import { fetchContent } from '../local/tools/local_fetch_content.js';
 import { executeBulkOperation } from '../local/utils/bulkOperations.js';
-import { registerLocalResearchPrompt } from '../local/prompts/research_local_explorer.js';
 
 export async function registerTools(
   server: McpServer,
@@ -116,7 +115,6 @@ export async function registerTools(
   if (isLocalEnabled()) {
     try {
       registerLocalToolsDirectly(server);
-      registerLocalResearchPrompt(server);
       successCount += 4; // 4 local tools
     } catch (error) {
       process.stderr.write(
@@ -133,7 +131,7 @@ export async function registerTools(
  * Register all local tools directly with the MCP server
  */
 function registerLocalToolsDirectly(server: McpServer): void {
-  // Register local_ripgrep
+  // Register localSearchCode
   server.registerTool(
     LOCAL_TOOL_NAMES.LOCAL_RIPGREP,
     {
@@ -158,7 +156,7 @@ function registerLocalToolsDirectly(server: McpServer): void {
     }
   );
 
-  // Register local_view_structure
+  // Register localViewStructure
   server.registerTool(
     LOCAL_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
     {
@@ -185,7 +183,7 @@ function registerLocalToolsDirectly(server: McpServer): void {
     }
   );
 
-  // Register local_find_files
+  // Register localFindFiles
   server.registerTool(
     LOCAL_TOOL_NAMES.LOCAL_FIND_FILES,
     {
@@ -210,7 +208,7 @@ function registerLocalToolsDirectly(server: McpServer): void {
     }
   );
 
-  // Register local_fetch_content
+  // Register localGetFileContent
   server.registerTool(
     LOCAL_TOOL_NAMES.LOCAL_FETCH_CONTENT,
     {

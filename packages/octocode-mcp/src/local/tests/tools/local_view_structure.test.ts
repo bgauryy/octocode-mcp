@@ -1,5 +1,5 @@
 /**
- * Tests for local_view_structure tool - comprehensive coverage including pagination
+ * Tests for localViewStructure tool - comprehensive coverage including pagination
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -42,7 +42,7 @@ vi.mock('fs', () => ({
   },
 }));
 
-describe('local_view_structure', () => {
+describe('localViewStructure', () => {
   const mockSafeExec = vi.mocked(exec.safeExec);
   const mockValidate = vi.mocked(pathValidator.pathValidator.validate);
   // Use the shared mock functions directly

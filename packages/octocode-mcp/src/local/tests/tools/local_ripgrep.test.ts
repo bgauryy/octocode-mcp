@@ -1,5 +1,5 @@
 /**
- * Tests for local_ripgrep tool
+ * Tests for localSearchCode tool
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -30,7 +30,7 @@ vi.mock('fs', () => ({
 const runRipgrep = (query: Parameters<typeof RipgrepQuerySchema.parse>[0]) =>
   searchContentRipgrep(RipgrepQuerySchema.parse(query));
 
-describe('local_ripgrep', () => {
+describe('localSearchCode', () => {
   const mockSafeExec = vi.mocked(exec.safeExec);
   const mockValidate = vi.mocked(pathValidator.pathValidator.validate);
   const mockFsStat = vi.mocked(fs.stat);

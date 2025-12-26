@@ -66,22 +66,22 @@ const ALL_AVAILABLE_TOOLS = {
   // Local tools
   local: [
     {
-      id: 'local_ripgrep',
+      id: 'localSearchCode',
       name: 'Ripgrep Search',
       description: 'Fast content search with regex support',
     },
     {
-      id: 'local_view_structure',
+      id: 'localViewStructure',
       name: 'View Structure',
       description: 'Browse local directory structure',
     },
     {
-      id: 'local_find_files',
+      id: 'localFindFiles',
       name: 'Find Files',
       description: 'Find files by name, time, size, permissions',
     },
     {
-      id: 'local_fetch_content',
+      id: 'localGetFileContent',
       name: 'Fetch Content',
       description: 'Read targeted sections of local files',
     },
@@ -1067,7 +1067,7 @@ function getExampleValue(option: ConfigOption): string {
     case 'toolsToRun':
       return 'TOOLS_TO_RUN=githubSearchCode,githubGetFileContent';
     case 'enableTools':
-      return 'ENABLE_TOOLS=local_ripgrep,local_find_files';
+      return 'ENABLE_TOOLS=localSearchCode,localFindFiles';
     case 'disableTools':
       return 'DISABLE_TOOLS=githubSearchPullRequests';
     case 'requestTimeout':

@@ -95,7 +95,7 @@ githubSearchCode(error) → githubGetFileContent → githubSearchPullRequests
 **Use when:** Entry points unclear, new codebase.
 
 ```
-local_view_structure → drill down → local_ripgrep → local_fetch_content
+localViewStructure → drill down → localSearchCode → localGetFileContent
 ```
 
 1.  **Map Root**: See top-level folders.
@@ -110,7 +110,7 @@ local_view_structure → drill down → local_ripgrep → local_fetch_content
 **Use when:** Know WHAT, not WHERE.
 
 ```
-local_ripgrep(filesOnly) → local_fetch_content
+localSearchCode(filesOnly) → localGetFileContent
 ```
 
 1.  **Discovery**: Find *files* containing the term (fast).

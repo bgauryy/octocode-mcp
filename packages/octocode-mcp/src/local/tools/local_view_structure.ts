@@ -276,7 +276,7 @@ export async function viewStructure(
         ...getToolHints('LOCAL_VIEW_STRUCTURE', status),
         ...(paginationMetadata
           ? generatePaginationHints(paginationMetadata, {
-              toolName: 'local_view_structure',
+              toolName: 'localViewStructure',
             })
           : []),
       ],
@@ -499,7 +499,7 @@ async function viewStructureRecursive(
   const baseHints = getToolHints('LOCAL_VIEW_STRUCTURE', status);
   const paginationHints = paginationMetadata
     ? generatePaginationHints(paginationMetadata, {
-        toolName: 'local_view_structure',
+        toolName: 'localViewStructure',
       })
     : [];
 

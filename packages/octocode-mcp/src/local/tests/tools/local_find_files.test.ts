@@ -1,5 +1,5 @@
 /**
- * Tests for local_find_files tool
+ * Tests for localFindFiles tool
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -35,7 +35,7 @@ const expectDefinedFiles = (result: FindFilesResult) => {
   return result.files!;
 };
 
-describe('local_find_files', () => {
+describe('localFindFiles', () => {
   const mockSafeExec = vi.mocked(exec.safeExec);
   const mockValidate = vi.mocked(pathValidator.pathValidator.validate);
 

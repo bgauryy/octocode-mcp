@@ -191,7 +191,7 @@ export async function fetchContent(
           hints: [
             ...getToolHints('LOCAL_FETCH_CONTENT', 'hasResults'),
             ...generatePaginationHints(autoPagination, {
-              toolName: 'local_fetch_content',
+              toolName: 'localGetFileContent',
             }),
           ],
         };
@@ -248,7 +248,7 @@ export async function fetchContent(
 
     const baseHints = getToolHints('LOCAL_FETCH_CONTENT', 'hasResults');
     const paginationHints = query.charLength
-      ? generatePaginationHints(pagination, { toolName: 'local_fetch_content' })
+      ? generatePaginationHints(pagination, { toolName: 'localGetFileContent' })
       : [];
 
     return {

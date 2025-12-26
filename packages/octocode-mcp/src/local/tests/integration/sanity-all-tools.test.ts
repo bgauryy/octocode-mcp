@@ -78,7 +78,7 @@ describe('Integration sanity: all tools', () => {
   });
 
   it('should run all tools end-to-end with core functionality', async () => {
-    // 1) local_view_structure: simple listing with pagination
+    // 1) localViewStructure: simple listing with pagination
     mockSafeExec.mockResolvedValueOnce({
       success: true,
       code: 0,
@@ -104,7 +104,7 @@ describe('Integration sanity: all tools', () => {
     expect(vs.pagination?.currentPage).toBe(1);
     expect(vs.pagination?.entriesPerPage).toBe(2);
 
-    // 2) local_find_files: NUL output, details, pagination
+    // 2) localFindFiles: NUL output, details, pagination
     mockSafeExec.mockResolvedValueOnce({
       success: true,
       code: 0,
@@ -140,7 +140,7 @@ describe('Integration sanity: all tools', () => {
     expect(ff.files?.length).toBeLessThanOrEqual(2);
     expect(ff.pagination?.currentPage).toBe(1);
 
-    // 3) local_ripgrep: NDJSON matches, per-file pagination, show modified
+    // 3) localSearchCode: NDJSON matches, per-file pagination, show modified
     const rgJson = [
       JSON.stringify({
         type: 'match',
@@ -182,7 +182,7 @@ describe('Integration sanity: all tools', () => {
     expect(rg.files?.[0].matches.length).toBe(1); // paginated matches
     expect(rg.files?.[0].pagination?.totalPages).toBe(2);
 
-    // 4) local_fetch_content: large file paginated and matchString
+    // 4) localGetFileContent: large file paginated and matchString
     mockReadFile.mockResolvedValueOnce('x'.repeat(20000));
     mockStat.mockResolvedValueOnce({ size: 20000 } as unknown as Awaited<
       ReturnType<typeof fsp.stat>
