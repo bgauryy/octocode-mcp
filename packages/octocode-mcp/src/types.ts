@@ -1,5 +1,5 @@
 import type { GitHubAPIError } from './github/githubAPI.js';
-import type { PaginationInfo } from './local/types.js';
+import type { PaginationInfo } from './utils/types.js';
 
 export type { PaginationInfo };
 
@@ -35,7 +35,8 @@ export interface ToolSuccessResult<
   data?: T;
 }
 
-export interface HintContext {
+/** Hint context for GitHub API error handling */
+export interface GitHubHintContext {
   resultType: 'hasResults' | 'empty' | 'failed';
   apiError?: GitHubAPIError;
 }
@@ -481,6 +482,9 @@ export interface FlatQueryResult {
   id: number;
   status: QueryStatus;
   data: Record<string, unknown>;
+  mainResearchGoal?: string;
+  researchGoal?: string;
+  reasoning?: string;
 }
 
 /** Error information for failed queries */
@@ -532,9 +536,16 @@ export interface ToolResponse {
   hints?: string[]; // DEPRECATED: Use instructions
   instructions?: string; // Processing instructions
   results?: unknown[]; // Bulk operation results
+  summary?: {
+    total: number;
+    hasResults: number;
+    empty: number;
+    errors: number;
+  };
   hasResultsStatusHints?: string[]; // Bulk hints for successful queries
   emptyStatusHints?: string[]; // Bulk hints for empty results
   errorStatusHints?: string[]; // Bulk hints for errors
+  [key: string]: unknown; // Allow additional tool-specific fields
 }
 
 // ─── Sampling (sampling.ts) ─────────────────────────────────────────────────

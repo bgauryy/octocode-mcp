@@ -147,7 +147,7 @@ async function searchMultipleGitHubPullRequests(
             total_count: apiResult.total_count || pullRequests.length,
           },
           hasContent,
-          'GITHUB_SEARCH_PULL_REQUESTS'
+          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
         );
       } catch (error) {
         return handleCatchError(error, query);

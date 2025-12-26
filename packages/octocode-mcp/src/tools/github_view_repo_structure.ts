@@ -174,7 +174,7 @@ async function exploreMultipleRepositoryStructures(
             structure: filteredStructure,
           },
           hasContent,
-          'GITHUB_VIEW_REPO_STRUCTURE'
+          TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE
         );
       } catch (error) {
         const catchError = handleCatchError(

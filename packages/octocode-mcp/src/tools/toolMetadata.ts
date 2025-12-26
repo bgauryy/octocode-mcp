@@ -1,12 +1,9 @@
+import { z } from 'zod';
 import { fetchWithRetries } from '../utils/fetchWithRetries.js';
 import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
-import {
-  CompleteMetadata,
-  RawCompleteMetadata,
-  ToolNames,
-} from '../types/metadata.js';
+import { CompleteMetadata, ToolNames } from '../types/metadata.js';
 
 export type {
   CompleteMetadata,
@@ -30,6 +27,63 @@ const STATIC_TOOL_NAMES: ToolNamesMap = {
   GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
   PACKAGE_SEARCH: 'packageSearch',
 };
+
+// Zod schemas for validation
+const PromptArgumentSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  required: z.boolean().optional(),
+});
+
+const PromptMetadataSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  content: z.string(),
+  args: z.array(PromptArgumentSchema).optional(),
+});
+
+const ToolMetadataSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  schema: z.record(z.string()),
+  hints: z.object({
+    hasResults: z.array(z.string()),
+    empty: z.array(z.string()),
+    dynamic: z.record(z.array(z.string()).optional()).optional(),
+  }),
+});
+
+const BaseSchemaSchema = z.object({
+  mainResearchGoal: z.string(),
+  researchGoal: z.string(),
+  reasoning: z.string(),
+  bulkQueryTemplate: z.string(),
+});
+
+const BulkOperationsSchema = z.object({
+  instructions: z
+    .object({
+      base: z.string().optional(),
+      hasResults: z.string().optional(),
+      empty: z.string().optional(),
+      error: z.string().optional(),
+    })
+    .optional(),
+});
+
+const RawCompleteMetadataSchema = z.object({
+  instructions: z.string(),
+  prompts: z.record(PromptMetadataSchema),
+  toolNames: z.record(z.string()),
+  baseSchema: BaseSchemaSchema,
+  tools: z.record(ToolMetadataSchema),
+  baseHints: z.object({
+    hasResults: z.array(z.string()),
+    empty: z.array(z.string()),
+  }),
+  genericErrorHints: z.array(z.string()),
+  bulkOperations: BulkOperationsSchema.optional(),
+});
 
 function getMeta(): CompleteMetadata {
   if (!METADATA_JSON) {
@@ -72,24 +126,14 @@ export async function initializeToolMetadata(): Promise<void> {
   initializationPromise = (async () => {
     const METADATA_URL = 'https://octocodeai.com/api/mcpContent';
 
-    const data = (await fetchWithRetries(METADATA_URL, {
+    const responseData = await fetchWithRetries(METADATA_URL, {
       maxRetries: 3,
       includeVersion: true,
-    })) as unknown;
+    });
 
-    if (
-      typeof data !== 'object' ||
-      data === null ||
-      typeof (data as Record<string, unknown>).instructions !== 'string' ||
-      typeof (data as Record<string, unknown>).toolNames !== 'object' ||
-      typeof (data as Record<string, unknown>).tools !== 'object' ||
-      typeof (data as Record<string, unknown>).baseSchema !== 'object' ||
-      typeof (data as Record<string, unknown>).baseHints !== 'object' ||
-      !Array.isArray(
-        (data as Record<string, unknown>).genericErrorHints as unknown[]
-      ) ||
-      typeof (data as Record<string, unknown>).prompts !== 'object'
-    ) {
+    const parseResult = RawCompleteMetadataSchema.safeParse(responseData);
+
+    if (!parseResult.success) {
       await logSessionError(
         'toolMetadata',
         TOOL_METADATA_ERRORS.INVALID_API_RESPONSE.code
@@ -97,8 +141,9 @@ export async function initializeToolMetadata(): Promise<void> {
       throw new Error(TOOL_METADATA_ERRORS.INVALID_FORMAT.message);
     }
 
-    const raw = data as RawCompleteMetadata;
-    const toolNames = raw.toolNames;
+    const raw = parseResult.data;
+    // Cast toolNames to match the interface, relying on runtime validation structure
+    const toolNames = raw.toolNames as unknown as ToolNames;
     const baseSchema = raw.baseSchema;
 
     const complete: CompleteMetadata = {
@@ -115,6 +160,7 @@ export async function initializeToolMetadata(): Promise<void> {
       tools: raw.tools,
       baseHints: raw.baseHints,
       genericErrorHints: raw.genericErrorHints,
+      bulkOperations: raw.bulkOperations,
     };
 
     METADATA_JSON = deepFreeze(complete);

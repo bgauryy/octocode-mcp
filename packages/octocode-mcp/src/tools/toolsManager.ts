@@ -5,32 +5,32 @@ import { getServerConfig, isLocalEnabled } from '../serverConfig.js';
 import { ToolInvocationCallback } from '../types.js';
 import { isToolAvailableSync } from './toolMetadata.js';
 // Local tools imports
-import { TOOL_NAMES as LOCAL_TOOL_NAMES } from '../local/constants.js';
+import { TOOL_NAMES as LOCAL_TOOL_NAMES } from '../utils/constants.js';
 import {
   BulkRipgrepQuerySchema,
   LOCAL_RIPGREP_DESCRIPTION,
   type RipgrepQuery,
-} from '../local/scheme/local_ripgrep.js';
+} from '../scheme/local_ripgrep.js';
 import {
   BulkViewStructureSchema,
   LOCAL_VIEW_STRUCTURE_DESCRIPTION,
   type ViewStructureQuery,
-} from '../local/scheme/local_view_structure.js';
+} from '../scheme/local_view_structure.js';
 import {
   BulkFindFilesSchema,
   LOCAL_FIND_FILES_DESCRIPTION,
   type FindFilesQuery,
-} from '../local/scheme/local_find_files.js';
+} from '../scheme/local_find_files.js';
 import {
   BulkFetchContentSchema,
   LOCAL_FETCH_CONTENT_DESCRIPTION,
   type FetchContentQuery,
-} from '../local/scheme/local_fetch_content.js';
-import { searchContentRipgrep } from '../local/tools/local_ripgrep.js';
-import { viewStructure } from '../local/tools/local_view_structure.js';
-import { findFiles } from '../local/tools/local_find_files.js';
-import { fetchContent } from '../local/tools/local_fetch_content.js';
-import { executeBulkOperation } from '../local/utils/bulkOperations.js';
+} from '../scheme/local_fetch_content.js';
+import { searchContentRipgrep } from './local_ripgrep.js';
+import { viewStructure } from './local_view_structure.js';
+import { findFiles } from './local_find_files.js';
+import { fetchContent } from './local_fetch_content.js';
+import { executeBulkOperation } from '../utils/bulkOperations.js';
 
 export async function registerTools(
   server: McpServer,
@@ -129,9 +129,11 @@ export async function registerTools(
 
 /**
  * Register all local tools directly with the MCP server
+ * Note: Type assertions used to avoid excessive type instantiation depth from MCP SDK generics
  */
 function registerLocalToolsDirectly(server: McpServer): void {
   // Register localSearchCode
+  // @ts-expect-error - MCP SDK type recursion is too deep
   server.registerTool(
     LOCAL_TOOL_NAMES.LOCAL_RIPGREP,
     {
@@ -157,6 +159,7 @@ function registerLocalToolsDirectly(server: McpServer): void {
   );
 
   // Register localViewStructure
+  // @ts-expect-error - MCP SDK type recursion is too deep
   server.registerTool(
     LOCAL_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
     {
@@ -184,6 +187,7 @@ function registerLocalToolsDirectly(server: McpServer): void {
   );
 
   // Register localFindFiles
+  // @ts-expect-error - MCP SDK type recursion is too deep
   server.registerTool(
     LOCAL_TOOL_NAMES.LOCAL_FIND_FILES,
     {
@@ -209,6 +213,7 @@ function registerLocalToolsDirectly(server: McpServer): void {
   );
 
   // Register localGetFileContent
+  // @ts-expect-error - MCP SDK type recursion is too deep
   server.registerTool(
     LOCAL_TOOL_NAMES.LOCAL_FETCH_CONTENT,
     {

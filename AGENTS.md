@@ -87,6 +87,11 @@ octocode-mcp/
 
 **Note**: For package-specific commands, `cd packages/<name>` first.
 
+### File Actions
+
+- **String Replacement**: Use `sed` for changing strings across multiple files.
+- **Repetitive Tasks**: Prefer CLI commands over manual edits for bulk/repetitive operations.
+
 ## 📏 Development Standards
 
 ### Style Guide

@@ -113,7 +113,7 @@ async function searchMultipleGitHubCode(
           query,
           result as unknown as Record<string, unknown>,
           files.length > 0,
-          'GITHUB_SEARCH_CODE',
+          TOOL_NAMES.GITHUB_SEARCH_CODE,
           customHints
         );
       } catch (error) {

@@ -81,7 +81,7 @@ async function fetchMultipleGitHubFileContents(
           query,
           result as Record<string, unknown>,
           hasContent,
-          'GITHUB_FETCH_CONTENT'
+          TOOL_NAMES.GITHUB_FETCH_CONTENT
         );
       } catch (error) {
         return handleCatchError(error, query);

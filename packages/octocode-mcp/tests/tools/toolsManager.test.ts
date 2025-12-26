@@ -52,19 +52,19 @@ vi.mock('../../src/serverConfig.js', () => ({
 }));
 
 // Mock local tools registration
-vi.mock('../../src/local/tools/local_ripgrep.js', () => ({
+vi.mock('../../src/tools/local_ripgrep.js', () => ({
   searchContentRipgrep: vi.fn(),
 }));
-vi.mock('../../src/local/tools/local_view_structure.js', () => ({
+vi.mock('../../src/tools/local_view_structure.js', () => ({
   viewStructure: vi.fn(),
 }));
-vi.mock('../../src/local/tools/local_find_files.js', () => ({
+vi.mock('../../src/tools/local_find_files.js', () => ({
   findFiles: vi.fn(),
 }));
-vi.mock('../../src/local/tools/local_fetch_content.js', () => ({
+vi.mock('../../src/tools/local_fetch_content.js', () => ({
   fetchContent: vi.fn(),
 }));
-vi.mock('../../src/local/utils/bulkOperations.js', () => ({
+vi.mock('../../src/utils/bulkOperations.js', () => ({
   executeBulkOperation: vi.fn(),
 }));
 
@@ -641,7 +641,7 @@ describe('ToolsManager', () => {
 
       // Execute handlers to cover the code paths
       const { executeBulkOperation } =
-        await import('../../src/local/utils/bulkOperations.js');
+        await import('../../src/utils/bulkOperations.js');
       vi.mocked(executeBulkOperation).mockResolvedValue({
         content: [{ type: 'text', text: 'test' }],
       });

@@ -1,0 +1,282 @@
+/**
+ * Pagination utilities for character-based content pagination
+ */
+
+import type { PaginationInfo } from '../../../utils/types.js';
+
+/**
+ * Pagination metadata returned by applyPagination
+ */
+export interface PaginationMetadata {
+  paginatedContent: string;
+  charOffset: number;
+  charLength: number;
+  totalChars: number;
+  hasMore: boolean;
+  nextCharOffset?: number;
+  estimatedTokens?: number;
+  currentPage: number;
+  totalPages: number;
+  actualOffset?: number;
+  actualLength?: number;
+}
+
+/**
+ * Options for applyPagination
+ */
+interface ApplyPaginationOptions {
+  actualOffset?: number;
+}
+
+/**
+ * Options for generatePaginationHints
+ */
+interface GeneratePaginationHintsOptions {
+  enableWarnings?: boolean;
+  customHints?: string[];
+  toolName?: string;
+}
+
+/**
+ * Apply pagination to content based on character offset and length
+ */
+export function applyPagination(
+  content: string,
+  charOffset: number = 0,
+  charLength?: number,
+  options: ApplyPaginationOptions = {}
+): PaginationMetadata {
+  const totalChars = content.length;
+  const actualOffset = options.actualOffset ?? charOffset;
+
+  // If no charLength provided, return full content
+  if (charLength === undefined) {
+    return {
+      paginatedContent: content,
+      charOffset: 0,
+      charLength: totalChars,
+      totalChars,
+      hasMore: false,
+      estimatedTokens: Math.ceil(totalChars / 4),
+      currentPage: 1,
+      totalPages: 1,
+      actualOffset: 0,
+      actualLength: totalChars,
+    };
+  }
+
+  // Cap offset to content length
+  const startPos = Math.min(charOffset, totalChars);
+  const endPos = Math.min(startPos + charLength, totalChars);
+  const paginatedContent = content.substring(startPos, endPos);
+  const hasMore = endPos < totalChars;
+  const nextCharOffset = hasMore ? endPos : undefined;
+
+  // Calculate page numbers based on actualOffset or charOffset
+  const pageSize = charLength;
+  const currentPage = Math.floor(actualOffset / pageSize) + 1;
+  const totalPages = Math.ceil(totalChars / pageSize);
+
+  return {
+    paginatedContent,
+    charOffset: startPos,
+    charLength: paginatedContent.length,
+    totalChars,
+    hasMore,
+    nextCharOffset,
+    estimatedTokens: Math.ceil(paginatedContent.length / 4),
+    currentPage,
+    totalPages,
+    actualOffset: startPos,
+    actualLength: paginatedContent.length,
+  };
+}
+
+/**
+ * Generate pagination hints based on metadata
+ */
+export function generatePaginationHints(
+  metadata: PaginationMetadata,
+  options: GeneratePaginationHintsOptions = {}
+): string[] {
+  const { enableWarnings = true, customHints = [] } = options;
+  const hints: string[] = [];
+
+  // Add custom hints first
+  hints.push(...customHints);
+
+  // Token usage warnings (if enabled)
+  if (enableWarnings && metadata.estimatedTokens) {
+    const tokens = metadata.estimatedTokens;
+
+    if (tokens > 50000) {
+      hints.push(
+        '🚨 CRITICAL: Response TOO LARGE (>50K tokens) - will likely exceed model context limits',
+        'ACTION REQUIRED: Use smaller charLength or refine query to reduce output size'
+      );
+    } else if (tokens > 30000) {
+      hints.push(
+        '⚠️ WARNING: High token usage (>30K tokens) - may approach context limits',
+        'RECOMMENDATION: Consider reducing charLength or using more specific queries'
+      );
+    } else if (tokens > 15000) {
+      hints.push(
+        'ℹ️ NOTICE: Moderate token usage (>15K tokens) - monitor context window usage'
+      );
+    } else if (tokens > 5000) {
+      hints.push(
+        'ℹ️ Moderate usage: Response uses ~' +
+          tokens.toLocaleString() +
+          ' tokens'
+      );
+    } else {
+      hints.push(
+        '✓ Efficient query: Response uses ~' +
+          tokens.toLocaleString() +
+          ' tokens'
+      );
+    }
+  }
+
+  // Pagination navigation hints
+  if (metadata.hasMore && metadata.nextCharOffset !== undefined) {
+    hints.push(
+      '📄 More available: This is page ' +
+        metadata.currentPage +
+        ' of ' +
+        metadata.totalPages,
+      '▶ Next page: Use charOffset=' + metadata.nextCharOffset + ' to continue'
+    );
+  } else if (metadata.charOffset > 0 && !metadata.hasMore) {
+    hints.push('✓ Final page: Reached end of content');
+  }
+
+  return hints;
+}
+
+/**
+ * Serialize data for pagination (convert to JSON string)
+ */
+export function serializeForPagination(
+  data: unknown,
+  pretty: boolean = false
+): string {
+  return pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
+}
+
+/**
+ * Slice text by character count while respecting line boundaries
+ */
+export function sliceByCharRespectLines(
+  text: string,
+  charOffset: number,
+  charLength: number
+): {
+  sliced: string;
+  actualOffset: number;
+  actualLength: number;
+  hasMore: boolean;
+  nextOffset?: number;
+  lineCount: number;
+  totalChars: number;
+} {
+  const totalChars = text.length;
+
+  // Handle empty text
+  if (totalChars === 0) {
+    return {
+      sliced: '',
+      actualOffset: 0,
+      actualLength: 0,
+      hasMore: false,
+      lineCount: 0,
+      totalChars: 0,
+    };
+  }
+
+  // Handle offset beyond text length
+  if (charOffset >= totalChars) {
+    return {
+      sliced: '',
+      actualOffset: totalChars,
+      actualLength: 0,
+      hasMore: false,
+      nextOffset: totalChars,
+      lineCount: 0,
+      totalChars,
+    };
+  }
+
+  // Find line boundaries
+  const lines: number[] = [0]; // Start of first line
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\n') {
+      lines.push(i + 1); // Start of next line
+    }
+  }
+
+  // Find the line that contains charOffset
+  let startLineIdx = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i]! <= charOffset) {
+      startLineIdx = i;
+    } else {
+      break;
+    }
+  }
+
+  // Adjust offset to start of line if mid-line
+  const actualOffset = lines[startLineIdx]!;
+
+  // Find end position (try to respect charLength but extend to complete lines)
+  let endPos = Math.min(actualOffset + charLength, totalChars);
+  let endLineIdx = startLineIdx;
+
+  // Find the line that contains endPos (use < to not include lines starting AT endPos)
+  for (let i = startLineIdx; i < lines.length; i++) {
+    if (lines[i]! < endPos) {
+      endLineIdx = i;
+    } else {
+      break;
+    }
+  }
+
+  // If we're mid-line at the end, extend to end of line
+  // (only if endPos is not already at a line boundary)
+  if (endLineIdx < lines.length - 1 && endPos < lines[endLineIdx + 1]!) {
+    endPos = lines[endLineIdx + 1]!;
+  } else if (endLineIdx === lines.length - 1 && endPos < totalChars) {
+    // Last line - include until end of text
+    endPos = totalChars;
+  }
+
+  const sliced = text.substring(actualOffset, endPos);
+  const hasMore = endPos < totalChars;
+  const lineCount = sliced.split('\n').length - 1; // Count newlines
+
+  return {
+    sliced,
+    actualOffset,
+    actualLength: sliced.length,
+    hasMore,
+    nextOffset: hasMore ? endPos : undefined,
+    lineCount,
+    totalChars,
+  };
+}
+
+/**
+ * Create PaginationInfo from PaginationMetadata
+ */
+export function createPaginationInfo(
+  metadata: PaginationMetadata
+): PaginationInfo {
+  return {
+    currentPage: metadata.currentPage,
+    totalPages: metadata.totalPages,
+    hasMore: metadata.hasMore,
+    charOffset: metadata.charOffset,
+    charLength: metadata.charLength,
+    totalChars: metadata.totalChars,
+  };
+}
