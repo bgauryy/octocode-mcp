@@ -89,7 +89,8 @@ export async function fetchContent(
         query.matchString,
         query.matchStringContextLines ?? 5,
         query.matchStringIsRegex ?? false,
-        query.matchStringCaseSensitive ?? false
+        query.matchStringCaseSensitive ?? false,
+        50
       );
 
       if (result.lines.length === 0) {
@@ -148,29 +149,34 @@ export async function fetchContent(
         }
       }
 
-      // Auto-paginate if output is large instead of throwing patternTooBroad error
-      // Only error if match count is truly excessive (>50 matches indicates broad pattern)
+      // Handle excessive matches by returning partial results
+      if (result.matchCount > 50) {
+        return {
+          status: 'hasResults',
+          path: query.path,
+          cwd: process.cwd(),
+          content: resultContent,
+          contentLength: resultContent.length,
+          isPartial: true,
+          totalLines,
+          researchGoal: query.researchGoal,
+          reasoning: query.reasoning,
+          warnings: [
+            `Pattern matched ${result.matchCount} lines. Truncated to first 50 matches.`,
+          ],
+          hints: [
+            `Pattern matched ${result.matchCount} lines - likely too generic`,
+            'Make the pattern more specific to target only what you need',
+            'TIP: Use charLength to paginate if you need all matches',
+          ],
+        };
+      }
+
+      // Auto-paginate if output is large
       if (
         !query.charLength &&
         resultContent.length > DEFAULTS.MAX_OUTPUT_CHARS
       ) {
-        if (result.matchCount > 50) {
-          // Truly broad pattern - too many matches
-          const toolError = ToolErrors.patternTooBroad(
-            query.matchString || '',
-            result.matchCount
-          );
-          return createErrorResult(toolError, 'LOCAL_FETCH_CONTENT', query, {
-            path: query.path,
-            totalLines,
-            hints: [
-              `Pattern matched ${result.matchCount} lines - likely too generic`,
-              'Make the pattern more specific to target only what you need',
-              'TIP: Use charLength to paginate if you need all matches',
-            ],
-          }) as FetchContentResult;
-        }
-
         // Reasonable match count but large output - auto-paginate
         const autoPagination = applyPagination(
           resultContent,
@@ -282,7 +288,8 @@ function extractMatchingLines(
   pattern: string,
   contextLines: number,
   isRegex: boolean = false,
-  caseSensitive: boolean = false
+  caseSensitive: boolean = false,
+  maxMatches?: number
 ): {
   lines: string[];
   matchRanges: Array<{ start: number; end: number }>;
@@ -317,20 +324,26 @@ function extractMatchingLines(
     }
   });
 
-  if (matchingLineNumbers.length === 0) {
+  const totalMatchCount = matchingLineNumbers.length;
+
+  if (totalMatchCount === 0) {
     return { lines: [], matchRanges: [], matchCount: 0 };
   }
 
+  const matchesToProcess = maxMatches
+    ? matchingLineNumbers.slice(0, maxMatches)
+    : matchingLineNumbers;
+
   // Group consecutive matches to avoid duplicating context
   const ranges: Array<{ start: number; end: number }> = [];
-  const firstMatchLine = matchingLineNumbers[0]!;
+  const firstMatchLine = matchesToProcess[0]!;
   let currentRange = {
     start: Math.max(1, firstMatchLine - contextLines),
     end: Math.min(lines.length, firstMatchLine + contextLines),
   };
 
-  for (let i = 1; i < matchingLineNumbers.length; i++) {
-    const matchLine = matchingLineNumbers[i]!;
+  for (let i = 1; i < matchesToProcess.length; i++) {
+    const matchLine = matchesToProcess[i]!;
     const rangeStart = Math.max(1, matchLine - contextLines);
     const rangeEnd = Math.min(lines.length, matchLine + contextLines);
 
@@ -360,6 +373,6 @@ function extractMatchingLines(
   return {
     lines: resultLines,
     matchRanges: ranges,
-    matchCount: matchingLineNumbers.length,
+    matchCount: totalMatchCount,
   };
 }

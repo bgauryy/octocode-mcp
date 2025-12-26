@@ -6,11 +6,12 @@ import type {
   GitHubCodeSearchQuery,
   SearchResult,
 } from '../types.js';
-import { TOOL_NAMES, DESCRIPTIONS, getDynamicHints } from './toolMetadata.js';
+import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
 import { GitHubCodeSearchBulkQuerySchema } from '../scheme/github_search_code.js';
 import { searchGitHubCodeAPI } from '../github/codeSearch.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+import { getToolHints } from './hints.js';
 import {
   handleApiError,
   handleCatchError,
@@ -105,12 +106,20 @@ async function searchMultipleGitHubCode(
           result.repositoryContext = repoContext;
         }
 
-        const customHints = generateCodeSearchHints(files, repoContext);
+        const hasContent = files.length > 0;
+        // Determine if specific owner/repo was requested (context for hints)
+        const hasOwnerRepo = !!(query.owner && query.repo);
+
+        const customHints = getToolHints(
+          TOOL_NAMES.GITHUB_SEARCH_CODE,
+          hasContent ? 'hasResults' : 'empty',
+          { hasOwnerRepo }
+        );
 
         return createSuccessResult(
           query,
           result as unknown as Record<string, unknown>,
-          files.length > 0,
+          hasContent,
           TOOL_NAMES.GITHUB_SEARCH_CODE,
           customHints
         );
@@ -125,28 +134,4 @@ async function searchMultipleGitHubCode(
       >,
     }
   );
-}
-
-/**
- * Generate custom hints for code search results to help agents use the data
- */
-function generateCodeSearchHints(
-  files: Array<{ path: string; repo?: string; text_matches?: string[] }>,
-  repoContext?: { owner: string; repo: string }
-): string[] {
-  const hints: string[] = [];
-
-  if (files.length > 0) {
-    if (repoContext) {
-      hints.push(
-        ...getDynamicHints(TOOL_NAMES.GITHUB_SEARCH_CODE, 'singleRepo')
-      );
-    } else if (files.some(f => f.repo)) {
-      hints.push(
-        ...getDynamicHints(TOOL_NAMES.GITHUB_SEARCH_CODE, 'multiRepo')
-      );
-    }
-  }
-
-  return hints;
 }

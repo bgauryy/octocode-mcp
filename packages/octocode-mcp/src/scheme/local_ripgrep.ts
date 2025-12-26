@@ -93,7 +93,11 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
   invertMatch: z
     .boolean()
     .optional()
-    .describe("Invert matching: show lines that DON'T match"),
+    .describe(
+      "Invert matching PER-LINE: show lines that DON'T match. " +
+        'NOTE: Files may still contain the pattern on other lines. ' +
+        'For FILE-level inversion (files without ANY matches), use filesWithoutMatch instead.'
+    ),
 
   // FILE FILTERING (optimized strategies)
   type: z
@@ -423,6 +427,15 @@ export function validateRipgrepQuery(query: RipgrepQuery): {
   if (query.lineRegexp && query.wholeWord) {
     warnings.push(
       'lineRegexp and wholeWord both specified. lineRegexp takes precedence.'
+    );
+  }
+
+  // Warn about invertMatch semantics
+  if (query.invertMatch && !query.filesWithoutMatch) {
+    warnings.push(
+      'invertMatch inverts at LINE level (shows non-matching lines). ' +
+        'Files in results may still contain the pattern on other lines. ' +
+        'For FILE-level inversion (files without ANY matches), use filesWithoutMatch=true instead.'
     );
   }
 

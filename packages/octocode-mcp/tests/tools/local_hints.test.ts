@@ -16,6 +16,7 @@ describe('Local Tools Hints', () => {
       expect(HINTS.LOCAL_FETCH_CONTENT).toBeDefined();
       expect(HINTS.LOCAL_VIEW_STRUCTURE).toBeDefined();
       expect(HINTS.LOCAL_FIND_FILES).toBeDefined();
+      expect(HINTS.GITHUB_SEARCH_CODE).toBeDefined();
     });
 
     it('should have all status types for each tool', () => {
@@ -64,7 +65,7 @@ describe('Local Tools Hints', () => {
       it('should return size limit hints', () => {
         const hints = HINTS.LOCAL_RIPGREP.error({ errorType: 'size_limit' });
 
-        expect(hints.some(h => h.includes('Narrow'))).toBe(true);
+        expect(hints.some(h => h?.includes('Narrow'))).toBe(true);
       });
 
       it('should include match count in size limit error', () => {
@@ -73,7 +74,7 @@ describe('Local Tools Hints', () => {
           matchCount: 1000,
         });
 
-        expect(hints.some(h => h.includes('1000'))).toBe(true);
+        expect(hints.some(h => h?.includes('1000'))).toBe(true);
       });
 
       it('should include node_modules tip when in node_modules', () => {
@@ -98,7 +99,7 @@ describe('Local Tools Hints', () => {
       it('should return generic error hints for unknown error type', () => {
         const hints = HINTS.LOCAL_RIPGREP.error({ errorType: 'not_found' });
 
-        expect(hints.some(h => h.includes('unavailable'))).toBe(true);
+        expect(hints.some(h => h?.includes('unavailable'))).toBe(true);
       });
     });
   });
@@ -298,6 +299,70 @@ describe('Local Tools Hints', () => {
     });
   });
 
+  describe('GITHUB_SEARCH_CODE hints', () => {
+    describe('hasResults', () => {
+      it('should return single repo hint when hasOwnerRepo is true', () => {
+        const hints = HINTS.GITHUB_SEARCH_CODE.hasResults({
+          hasOwnerRepo: true,
+        });
+
+        expect(hints.length).toBe(1);
+        expect(hints[0]).toContain('single repo');
+        expect(hints[0]).toContain('githubGetFileContent');
+      });
+
+      it('should return multi repo hint when hasOwnerRepo is false', () => {
+        const hints = HINTS.GITHUB_SEARCH_CODE.hasResults({
+          hasOwnerRepo: false,
+        });
+
+        expect(hints.length).toBe(1);
+        expect(hints[0]).toContain('multiple repos');
+      });
+
+      it('should return multi repo hint when context is empty', () => {
+        const hints = HINTS.GITHUB_SEARCH_CODE.hasResults({});
+
+        expect(hints.length).toBe(1);
+        expect(hints[0]).toContain('multiple repos');
+      });
+    });
+
+    describe('empty', () => {
+      it('should return cross-repo hints when hasOwnerRepo is false', () => {
+        const hints = HINTS.GITHUB_SEARCH_CODE.empty({ hasOwnerRepo: false });
+
+        expect(hints.length).toBe(3);
+        expect(hints[0]).toContain('No code matches');
+        expect(hints[1]).toContain('Cross-repo');
+        expect(hints[2]).toContain('owner/repo');
+      });
+
+      it('should return semantic variant hints when hasOwnerRepo is true', () => {
+        const hints = HINTS.GITHUB_SEARCH_CODE.empty({ hasOwnerRepo: true });
+
+        expect(hints.length).toBe(2);
+        expect(hints[0]).toContain('No code matches');
+        expect(hints[1]).toContain('semantic variants');
+      });
+
+      it('should return cross-repo hints when context is empty', () => {
+        const hints = HINTS.GITHUB_SEARCH_CODE.empty({});
+
+        expect(hints.length).toBe(3);
+        expect(hints.some(h => h.includes('Cross-repo'))).toBe(true);
+      });
+    });
+
+    describe('error', () => {
+      it('should return empty array', () => {
+        const hints = HINTS.GITHUB_SEARCH_CODE.error();
+
+        expect(hints).toEqual([]);
+      });
+    });
+  });
+
   describe('getToolHints', () => {
     it('should return hints for valid tool and status', () => {
       const hints = getToolHints('LOCAL_RIPGREP', 'hasResults');
@@ -341,6 +406,28 @@ describe('Local Tools Hints', () => {
         expect(hint).toBeDefined();
         expect(typeof hint).toBe('string');
       });
+    });
+
+    it('should return GITHUB_SEARCH_CODE hints with hasOwnerRepo context', () => {
+      const hintsWithOwner = getToolHints('GITHUB_SEARCH_CODE', 'hasResults', {
+        hasOwnerRepo: true,
+      });
+      const hintsWithoutOwner = getToolHints(
+        'GITHUB_SEARCH_CODE',
+        'hasResults',
+        { hasOwnerRepo: false }
+      );
+
+      expect(hintsWithOwner[0]).toContain('single repo');
+      expect(hintsWithoutOwner[0]).toContain('multiple repos');
+    });
+
+    it('should return GITHUB_SEARCH_CODE empty hints with context', () => {
+      const hints = getToolHints('GITHUB_SEARCH_CODE', 'empty', {
+        hasOwnerRepo: false,
+      });
+
+      expect(hints.some(h => h.includes('Cross-repo'))).toBe(true);
     });
   });
 

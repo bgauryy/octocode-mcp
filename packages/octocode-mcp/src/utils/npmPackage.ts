@@ -13,6 +13,16 @@ interface NpmViewResult {
   main?: string;
   types?: string;
   typings?: string;
+  description?: string;
+  keywords?: string[];
+  license?: string | { type?: string };
+  homepage?: string;
+  author?: string | { name?: string; email?: string; url?: string };
+  maintainers?: Array<{ name?: string; email?: string }>;
+  engines?: Record<string, string>;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
   time?: {
     modified?: string;
     created?: string;
@@ -44,7 +54,10 @@ function isExactPackageName(query: string): boolean {
   return /^[a-z0-9][a-z0-9._-]*$/i.test(query);
 }
 
-function mapToResult(data: NpmViewResult): NpmPackageResult {
+function mapToResult(
+  data: NpmViewResult,
+  includeExtendedMetadata: boolean = false
+): NpmPackageResult {
   let repoUrl: string | null = null;
   if (data.repository) {
     if (typeof data.repository === 'string') {
@@ -63,7 +76,7 @@ function mapToResult(data: NpmViewResult): NpmPackageResult {
     }
   }
 
-  return {
+  const result: NpmPackageResult = {
     repoUrl,
     path: data.name,
     version: data.version || 'latest',
@@ -71,10 +84,53 @@ function mapToResult(data: NpmViewResult): NpmPackageResult {
     typeDefinitions: data.types || data.typings || null,
     lastPublished,
   };
+
+  // Extended metadata - only included when explicitly requested
+  if (includeExtendedMetadata) {
+    // Extract license (can be string or object)
+    if (data.license) {
+      result.license =
+        typeof data.license === 'string' ? data.license : data.license.type;
+    }
+
+    // Extract author (can be string or object)
+    if (data.author) {
+      if (typeof data.author === 'string') {
+        result.author = data.author;
+      } else if (data.author.name) {
+        result.author = data.author.name;
+      }
+    }
+
+    if (data.description) {
+      result.description = data.description;
+    }
+    if (data.keywords && data.keywords.length > 0) {
+      result.keywords = data.keywords;
+    }
+    if (data.homepage) {
+      result.homepage = data.homepage;
+    }
+    if (data.engines && Object.keys(data.engines).length > 0) {
+      result.engines = data.engines;
+    }
+    if (data.dependencies && Object.keys(data.dependencies).length > 0) {
+      result.dependencies = data.dependencies;
+    }
+    if (
+      data.peerDependencies &&
+      Object.keys(data.peerDependencies).length > 0
+    ) {
+      result.peerDependencies = data.peerDependencies;
+    }
+  }
+
+  return result;
 }
 
 async function fetchPackageDetails(
-  packageName: string
+  packageName: string,
+  includeExtendedMetadata: boolean = false
 ): Promise<NpmPackageResult | null> {
   try {
     const result = await executeNpmCommand('view', [packageName, '--json']);
@@ -97,7 +153,7 @@ async function fetchPackageDetails(
       return null;
     }
 
-    return mapToResult(data);
+    return mapToResult(data, includeExtendedMetadata);
   } catch {
     return null;
   }
@@ -105,9 +161,9 @@ async function fetchPackageDetails(
 
 async function fetchNpmPackageByView(
   packageName: string,
-  _fetchMetadata: boolean
+  fetchMetadata: boolean
 ): Promise<PackageSearchAPIResult | PackageSearchError> {
-  const pkg = await fetchPackageDetails(packageName);
+  const pkg = await fetchPackageDetails(packageName, fetchMetadata);
 
   if (!pkg) {
     return {
@@ -187,7 +243,7 @@ async function searchNpmPackageViaSearch(
     const packages = await Promise.all(
       searchResults.map(async item => {
         if (fetchMetadata) {
-          const details = await fetchPackageDetails(item.name);
+          const details = await fetchPackageDetails(item.name, true);
           if (details) return details;
         }
 
@@ -226,7 +282,9 @@ export async function searchNpmPackage(
   limit: number,
   fetchMetadata: boolean
 ): Promise<PackageSearchAPIResult | PackageSearchError> {
-  if (isExactPackageName(packageName)) {
+  // If limit is > 1, we want to see alternatives, so force a search
+  // even if the name looks like an exact match.
+  if (limit === 1 && isExactPackageName(packageName)) {
     return fetchNpmPackageByView(packageName, fetchMetadata);
   }
   return searchNpmPackageViaSearch(packageName, limit, fetchMetadata);

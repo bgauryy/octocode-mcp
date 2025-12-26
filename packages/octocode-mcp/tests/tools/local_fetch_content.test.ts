@@ -704,7 +704,7 @@ describe('localGetFileContent', () => {
       expect(result.status).toBe('hasResults');
     });
 
-    it('should error with patternTooBroad when matches are too large without pagination', async () => {
+    it('should return partial results with warning when matches are excessive without pagination', async () => {
       const manyLines = Array.from({ length: 2000 }, () => 'MATCH').join('\n');
       mockStat.mockResolvedValue({
         size: manyLines.length,
@@ -714,11 +714,14 @@ describe('localGetFileContent', () => {
       const result = await fetchContent({
         path: 'huge.txt',
         matchString: 'MATCH',
-        // No charLength specified -> should be too broad
+        // No charLength specified -> returns partial results with warning
       });
 
-      expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.PATTERN_TOO_BROAD);
+      expect(result.status).toBe('hasResults');
+      expect(result.isPartial).toBe(true);
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings?.[0]).toContain('2000');
+      expect(result.warnings?.[0]).toContain('Truncated to first 50 matches');
     });
   });
 

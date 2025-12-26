@@ -162,12 +162,43 @@ async function fetchGitHubFileContentAPIInternal(
               ? undefined
               : `Branch '${branch}' not found. Default branch is '${defaultBranch}'. Ask user: Do you want to get the file from '${defaultBranch}' instead?`;
 
+          // Check for similar files in parent directory
+          const pathSuggestions = await findPathSuggestions(
+            octokit,
+            owner,
+            repo,
+            filePath,
+            branch || defaultBranch
+          );
+
+          if (pathSuggestions.length > 0) {
+            const hint = `Did you mean: ${pathSuggestions.join(', ')}?`;
+            apiError.hints = [...(apiError.hints || []), hint];
+          }
+
           return {
             ...apiError,
             ...(suggestion && { scopesSuggestion: suggestion }),
           };
         }
       } else {
+        // Check for similar files in parent directory for non-branch 404s (e.g. wrong path on valid branch)
+        if (error instanceof RequestError && error.status === 404) {
+          const apiError = handleGitHubAPIError(error);
+          const pathSuggestions = await findPathSuggestions(
+            octokit,
+            owner,
+            repo,
+            filePath,
+            branch || 'main' // fallback if undefined
+          );
+          if (pathSuggestions.length > 0) {
+            const hint = `Did you mean: ${pathSuggestions.join(', ')}?`;
+            apiError.hints = [...(apiError.hints || []), hint];
+          }
+          return apiError;
+        }
+
         throw error;
       }
     }
@@ -1044,6 +1075,53 @@ async function fetchDirectoryContentsRecursivelyAPI(
     }
 
     return allItems;
+  } catch {
+    return [];
+  }
+}
+
+async function findPathSuggestions(
+  octokit: InstanceType<typeof OctokitWithThrottling>,
+  owner: string,
+  repo: string,
+  filePath: string,
+  branch: string
+): Promise<string[]> {
+  try {
+    const parentPath = filePath.split('/').slice(0, -1).join('/');
+    const targetName = filePath.split('/').pop();
+
+    if (!targetName) return [];
+
+    const parentContent = await octokit.rest.repos.getContent({
+      owner,
+      repo,
+      path: parentPath,
+      ref: branch,
+    });
+
+    if (!Array.isArray(parentContent.data)) return [];
+
+    const files = parentContent.data as GitHubApiFileItem[];
+    const suggestions: string[] = [];
+
+    // 1. Case insensitive match
+    const caseMatch = files.find(
+      f => f.name.toLowerCase() === targetName.toLowerCase()
+    );
+    if (caseMatch) suggestions.push(caseMatch.path);
+
+    // 2. Common extensions (ts <-> js, tsx <-> jsx, etc)
+    const nameNoExt = targetName.replace(/\.[^/.]+$/, '');
+    const extMatches = files.filter(f => {
+      if (f.name === targetName) return false;
+      if (f.name.startsWith(nameNoExt + '.')) return true;
+      return false;
+    });
+
+    extMatches.forEach(f => suggestions.push(f.path));
+
+    return Array.from(new Set(suggestions)).slice(0, 3);
   } catch {
     return [];
   }

@@ -323,6 +323,45 @@ describe('npmPackage - branch coverage', () => {
         '--searchlimit=5',
       ]);
     });
+
+    it('should use search when limit > 1 even for exact package name', async () => {
+      mockExecuteNpmCommand.mockResolvedValue({
+        stdout: JSON.stringify([
+          { name: 'react', version: '18.0.0', links: {} },
+          { name: 'react-dom', version: '18.0.0', links: {} },
+        ]),
+        stderr: '',
+        exitCode: 0,
+      });
+
+      await searchNpmPackage('react', 5, false);
+
+      // Should use search not view because limit > 1
+      expect(mockExecuteNpmCommand).toHaveBeenCalledWith('search', [
+        'react',
+        '--json',
+        '--searchlimit=5',
+      ]);
+    });
+
+    it('should use view when limit === 1 for exact package name', async () => {
+      mockExecuteNpmCommand.mockResolvedValue({
+        stdout: JSON.stringify({
+          name: 'react',
+          version: '18.0.0',
+        }),
+        stderr: '',
+        exitCode: 0,
+      });
+
+      await searchNpmPackage('react', 1, false);
+
+      // Should use view because limit === 1 and name is exact
+      expect(mockExecuteNpmCommand).toHaveBeenCalledWith('view', [
+        'react',
+        '--json',
+      ]);
+    });
   });
 
   describe('fetchPackageDetails - outer catch', () => {

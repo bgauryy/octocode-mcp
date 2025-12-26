@@ -124,6 +124,7 @@ export interface GitHubAPIError {
   rateLimitRemaining?: number;
   rateLimitReset?: number;
   retryAfter?: number;
+  hints?: string[];
 }
 
 export interface GitHubAPISuccess<T> {

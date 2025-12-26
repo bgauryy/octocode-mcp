@@ -29,6 +29,7 @@ export interface HintContext {
   hasPattern?: boolean; // has matchString/pattern
   hasPagination?: boolean; // has charLength/pagination
   path?: string; // path being searched
+  hasOwnerRepo?: boolean; // has owner/repo context
 }
 
 /**
@@ -151,12 +152,39 @@ export const HINTS = {
       'Search failed; try VIEW_STRUCTURE or RIPGREP.',
     ],
   },
+
+  GITHUB_SEARCH_CODE: {
+    hasResults: (ctx: HintContext = {}) => {
+      const hints: string[] = [];
+      if (ctx.hasOwnerRepo) {
+        hints.push(
+          'Result is from single repo. Use githubGetFileContent with path.'
+        );
+      } else {
+        hints.push(
+          'Results from multiple repos. Check owners/repos before fetching.'
+        );
+      }
+      return hints;
+    },
+    empty: (ctx: HintContext = {}) => {
+      const hints = ['No code matches found.'];
+      if (!ctx.hasOwnerRepo) {
+        hints.push('Cross-repo search requires unique keywords (3+ chars).');
+        hints.push('Try adding owner/repo context if known.');
+      } else {
+        hints.push('Try semantic variants (e.g. "auth" vs "authentication").');
+      }
+      return hints;
+    },
+    error: (_ctx: HintContext = {}) => [],
+  },
 } as const;
 
 /** Local tool names for hint generation */
 export type LocalToolName = keyof typeof HINTS;
 /** Alias for backwards compatibility */
-export type ToolName = LocalToolName;
+export type ToolName = LocalToolName | 'GITHUB_SEARCH_CODE';
 export type HintStatus = 'hasResults' | 'empty' | 'error';
 
 /**

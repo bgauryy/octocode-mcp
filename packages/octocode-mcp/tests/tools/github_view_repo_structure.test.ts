@@ -562,6 +562,45 @@ describe('GitHub View Repository Structure Tool', () => {
   });
 
   describe('Error Handling', () => {
+    it('should include pagination info when present in API response', async () => {
+      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
+        structure: {
+          '.': {
+            files: ['file1.js', 'file2.js'],
+            folders: ['src'],
+          },
+        },
+        path: '/',
+        summary: {
+          totalFiles: 50,
+          totalFolders: 10,
+        },
+        pagination: {
+          page: 1,
+          totalPages: 5,
+          hasMore: true,
+        },
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+            },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('pagination:');
+      expect(responseText).toContain('hasMore: true');
+    });
+
     it('should handle invalid API response structure', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
         // Missing 'files' array
