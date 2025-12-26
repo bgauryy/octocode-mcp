@@ -26,13 +26,11 @@ vi.mock('../../src/github/fileOperations.js', () => ({
 }));
 
 const mockGetServerConfig = vi.hoisted(() => vi.fn());
-const mockIsSamplingEnabled = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/serverConfig.js', () => ({
   initialize: vi.fn(),
   getServerConfig: mockGetServerConfig,
   getGitHubToken: vi.fn(() => Promise.resolve('mock-token')),
-  isSamplingEnabled: mockIsSamplingEnabled,
   isLoggingEnabled: vi.fn(() => false),
 }));
 
@@ -53,12 +51,10 @@ describe('Empty Arrays Removal in Responses', () => {
       enableTools: [],
       disableTools: [],
       enableLogging: true,
-      betaEnabled: false,
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: false,
     });
-    mockIsSamplingEnabled.mockReturnValue(false);
   });
 
   afterEach(() => {

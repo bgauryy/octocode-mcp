@@ -29,6 +29,10 @@ export interface ToolNames {
   GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories';
   GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure';
   PACKAGE_SEARCH: 'packageSearch';
+  LOCAL_RIPGREP: 'localSearchCode';
+  LOCAL_FETCH_CONTENT: 'localGetFileContent';
+  LOCAL_FIND_FILES: 'localFindFiles';
+  LOCAL_VIEW_STRUCTURE: 'localViewStructure';
 }
 
 export interface BaseSchema {

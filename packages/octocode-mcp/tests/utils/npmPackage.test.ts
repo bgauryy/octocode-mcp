@@ -323,6 +323,45 @@ describe('npmPackage - branch coverage', () => {
         '--searchlimit=5',
       ]);
     });
+
+    it('should use search when limit > 1 even for exact package name', async () => {
+      mockExecuteNpmCommand.mockResolvedValue({
+        stdout: JSON.stringify([
+          { name: 'react', version: '18.0.0', links: {} },
+          { name: 'react-dom', version: '18.0.0', links: {} },
+        ]),
+        stderr: '',
+        exitCode: 0,
+      });
+
+      await searchNpmPackage('react', 5, false);
+
+      // Should use search not view because limit > 1
+      expect(mockExecuteNpmCommand).toHaveBeenCalledWith('search', [
+        'react',
+        '--json',
+        '--searchlimit=5',
+      ]);
+    });
+
+    it('should use view when limit === 1 for exact package name', async () => {
+      mockExecuteNpmCommand.mockResolvedValue({
+        stdout: JSON.stringify({
+          name: 'react',
+          version: '18.0.0',
+        }),
+        stderr: '',
+        exitCode: 0,
+      });
+
+      await searchNpmPackage('react', 1, false);
+
+      // Should use view because limit === 1 and name is exact
+      expect(mockExecuteNpmCommand).toHaveBeenCalledWith('view', [
+        'react',
+        '--json',
+      ]);
+    });
   });
 
   describe('fetchPackageDetails - outer catch', () => {
@@ -341,6 +380,464 @@ describe('npmPackage - branch coverage', () => {
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
         expect(result.packages).toHaveLength(0);
+      }
+    });
+  });
+
+  describe('mapToResult - extended metadata coverage', () => {
+    it('should extract author as string when fetchMetadata is true', async () => {
+      mockExecuteNpmCommand.mockImplementation(
+        (cmd: string, args: string[]) => {
+          if (cmd === 'view' && args[1] === '--json') {
+            return Promise.resolve({
+              stdout: JSON.stringify({
+                name: 'test-pkg',
+                version: '1.0.0',
+                author: 'John Doe <john@example.com>',
+              }),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+      );
+
+      const result = await searchNpmPackage('test-pkg', 1, true);
+
+      expect('packages' in result).toBe(true);
+      if ('packages' in result) {
+        expect(result.packages[0]?.author).toBe('John Doe <john@example.com>');
+      }
+    });
+
+    it('should extract author.name from object when fetchMetadata is true', async () => {
+      mockExecuteNpmCommand.mockImplementation(
+        (cmd: string, args: string[]) => {
+          if (cmd === 'view' && args[1] === '--json') {
+            return Promise.resolve({
+              stdout: JSON.stringify({
+                name: 'test-pkg',
+                version: '1.0.0',
+                author: { name: 'Jane Doe', email: 'jane@example.com' },
+              }),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+      );
+
+      const result = await searchNpmPackage('test-pkg', 1, true);
+
+      expect('packages' in result).toBe(true);
+      if ('packages' in result) {
+        expect(result.packages[0]?.author).toBe('Jane Doe');
+      }
+    });
+
+    it('should extract peerDependencies when fetchMetadata is true', async () => {
+      mockExecuteNpmCommand.mockImplementation(
+        (cmd: string, args: string[]) => {
+          if (cmd === 'view' && args[1] === '--json') {
+            return Promise.resolve({
+              stdout: JSON.stringify({
+                name: 'test-pkg',
+                version: '1.0.0',
+                peerDependencies: {
+                  react: '^18.0.0',
+                  'react-dom': '^18.0.0',
+                },
+              }),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+      );
+
+      const result = await searchNpmPackage('test-pkg', 1, true);
+
+      expect('packages' in result).toBe(true);
+      if ('packages' in result) {
+        expect(result.packages[0]?.peerDependencies).toEqual({
+          react: '^18.0.0',
+          'react-dom': '^18.0.0',
+        });
+      }
+    });
+
+    it('should extract all extended metadata fields', async () => {
+      mockExecuteNpmCommand.mockImplementation(
+        (cmd: string, args: string[]) => {
+          if (cmd === 'view' && args[1] === '--json') {
+            return Promise.resolve({
+              stdout: JSON.stringify({
+                name: 'full-pkg',
+                version: '2.0.0',
+                description: 'A full featured package',
+                keywords: ['test', 'example', 'demo'],
+                license: 'MIT',
+                homepage: 'https://example.com',
+                author: { name: 'Test Author' },
+                engines: { node: '>=18.0.0' },
+                dependencies: { lodash: '^4.17.21' },
+                peerDependencies: { react: '^18.0.0' },
+              }),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+      );
+
+      const result = await searchNpmPackage('full-pkg', 1, true);
+
+      expect('packages' in result).toBe(true);
+      if ('packages' in result) {
+        const pkg = result.packages[0];
+        expect(pkg?.description).toBe('A full featured package');
+        expect(pkg?.keywords).toEqual(['test', 'example', 'demo']);
+        expect(pkg?.license).toBe('MIT');
+        expect(pkg?.homepage).toBe('https://example.com');
+        expect(pkg?.author).toBe('Test Author');
+        expect(pkg?.engines).toEqual({ node: '>=18.0.0' });
+        expect(pkg?.dependencies).toEqual({ lodash: '^4.17.21' });
+        expect(pkg?.peerDependencies).toEqual({ react: '^18.0.0' });
+      }
+    });
+
+    it('should extract license.type from object when fetchMetadata is true', async () => {
+      mockExecuteNpmCommand.mockImplementation(
+        (cmd: string, args: string[]) => {
+          if (cmd === 'view' && args[1] === '--json') {
+            return Promise.resolve({
+              stdout: JSON.stringify({
+                name: 'test-pkg',
+                version: '1.0.0',
+                license: { type: 'Apache-2.0', url: 'https://...' },
+              }),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+      );
+
+      const result = await searchNpmPackage('test-pkg', 1, true);
+
+      expect('packages' in result).toBe(true);
+      if ('packages' in result) {
+        expect(result.packages[0]?.license).toBe('Apache-2.0');
+      }
+    });
+
+    it('should not include extended metadata when fetchMetadata is false', async () => {
+      mockExecuteNpmCommand.mockImplementation(
+        (cmd: string, args: string[]) => {
+          if (cmd === 'view' && args[1] === '--json') {
+            return Promise.resolve({
+              stdout: JSON.stringify({
+                name: 'test-pkg',
+                version: '1.0.0',
+                description: 'Should not be included',
+                author: 'Should not be included',
+                peerDependencies: { react: '^18.0.0' },
+              }),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+      );
+
+      const result = await searchNpmPackage('test-pkg', 1, false);
+
+      expect('packages' in result).toBe(true);
+      if ('packages' in result) {
+        expect(result.packages[0]?.description).toBeUndefined();
+        expect(result.packages[0]?.author).toBeUndefined();
+        expect(result.packages[0]?.peerDependencies).toBeUndefined();
+      }
+    });
+
+    it('should handle empty engines object', async () => {
+      mockExecuteNpmCommand.mockImplementation(
+        (cmd: string, args: string[]) => {
+          if (cmd === 'view' && args[1] === '--json') {
+            return Promise.resolve({
+              stdout: JSON.stringify({
+                name: 'test-pkg',
+                version: '1.0.0',
+                engines: {},
+              }),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+      );
+
+      const result = await searchNpmPackage('test-pkg', 1, true);
+
+      expect('packages' in result).toBe(true);
+      if ('packages' in result) {
+        // Empty engines should not be included
+        expect(result.packages[0]?.engines).toBeUndefined();
+      }
+    });
+
+    it('should handle empty keywords array', async () => {
+      mockExecuteNpmCommand.mockImplementation(
+        (cmd: string, args: string[]) => {
+          if (cmd === 'view' && args[1] === '--json') {
+            return Promise.resolve({
+              stdout: JSON.stringify({
+                name: 'test-pkg',
+                version: '1.0.0',
+                keywords: [],
+              }),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+      );
+
+      const result = await searchNpmPackage('test-pkg', 1, true);
+
+      expect('packages' in result).toBe(true);
+      if ('packages' in result) {
+        // Empty keywords should not be included
+        expect(result.packages[0]?.keywords).toBeUndefined();
+      }
+    });
+
+    it('should handle empty dependencies object', async () => {
+      mockExecuteNpmCommand.mockImplementation(
+        (cmd: string, args: string[]) => {
+          if (cmd === 'view' && args[1] === '--json') {
+            return Promise.resolve({
+              stdout: JSON.stringify({
+                name: 'test-pkg',
+                version: '1.0.0',
+                dependencies: {},
+              }),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+      );
+
+      const result = await searchNpmPackage('test-pkg', 1, true);
+
+      expect('packages' in result).toBe(true);
+      if ('packages' in result) {
+        // Empty dependencies should not be included
+        expect(result.packages[0]?.dependencies).toBeUndefined();
+      }
+    });
+
+    it('should handle empty peerDependencies object', async () => {
+      mockExecuteNpmCommand.mockImplementation(
+        (cmd: string, args: string[]) => {
+          if (cmd === 'view' && args[1] === '--json') {
+            return Promise.resolve({
+              stdout: JSON.stringify({
+                name: 'test-pkg',
+                version: '1.0.0',
+                peerDependencies: {},
+              }),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+      );
+
+      const result = await searchNpmPackage('test-pkg', 1, true);
+
+      expect('packages' in result).toBe(true);
+      if ('packages' in result) {
+        // Empty peerDependencies should not be included
+        expect(result.packages[0]?.peerDependencies).toBeUndefined();
+      }
+    });
+
+    it('should handle author object without name property', async () => {
+      mockExecuteNpmCommand.mockImplementation(
+        (cmd: string, args: string[]) => {
+          if (cmd === 'view' && args[1] === '--json') {
+            return Promise.resolve({
+              stdout: JSON.stringify({
+                name: 'test-pkg',
+                version: '1.0.0',
+                author: { email: 'test@example.com' }, // No name property
+              }),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+      );
+
+      const result = await searchNpmPackage('test-pkg', 1, true);
+
+      expect('packages' in result).toBe(true);
+      if ('packages' in result) {
+        // Author without name should not be included
+        expect(result.packages[0]?.author).toBeUndefined();
+      }
+    });
+  });
+
+  describe('searchNpmPackageViaSearch - result handling', () => {
+    it('should fetch metadata for each search result when fetchMetadata is true', async () => {
+      mockExecuteNpmCommand.mockImplementation(
+        (cmd: string, args: string[]) => {
+          if (cmd === 'search') {
+            return Promise.resolve({
+              stdout: JSON.stringify([
+                {
+                  name: 'pkg-1',
+                  version: '1.0.0',
+                  links: { repository: 'https://github.com/test/pkg-1' },
+                },
+                {
+                  name: 'pkg-2',
+                  version: '2.0.0',
+                  links: { repository: 'https://github.com/test/pkg-2' },
+                },
+              ]),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          if (cmd === 'view' && args[0] === 'pkg-1') {
+            return Promise.resolve({
+              stdout: JSON.stringify({
+                name: 'pkg-1',
+                version: '1.0.0',
+                description: 'Package 1 description',
+                repository: 'https://github.com/test/pkg-1',
+              }),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          if (cmd === 'view' && args[0] === 'pkg-2') {
+            return Promise.resolve({
+              stdout: JSON.stringify({
+                name: 'pkg-2',
+                version: '2.0.0',
+                description: 'Package 2 description',
+                repository: 'https://github.com/test/pkg-2',
+              }),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+      );
+
+      const result = await searchNpmPackage('test keyword', 5, true);
+
+      expect('packages' in result).toBe(true);
+      if ('packages' in result) {
+        expect(result.packages).toHaveLength(2);
+        expect(result.packages[0]?.description).toBe('Package 1 description');
+        expect(result.packages[1]?.description).toBe('Package 2 description');
+      }
+    });
+
+    it('should use basic result when fetchPackageDetails fails', async () => {
+      mockExecuteNpmCommand.mockImplementation(
+        (cmd: string, _args: string[]) => {
+          if (cmd === 'search') {
+            return Promise.resolve({
+              stdout: JSON.stringify([
+                {
+                  name: 'pkg-1',
+                  version: '1.0.0',
+                  links: { repository: 'https://github.com/test/pkg-1' },
+                },
+              ]),
+              stderr: '',
+              exitCode: 0,
+            });
+          }
+          if (cmd === 'view') {
+            // Fail to fetch details
+            return Promise.resolve({
+              stdout: '',
+              stderr: 'Not found',
+              exitCode: 1,
+            });
+          }
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+      );
+
+      const result = await searchNpmPackage('test keyword', 5, true);
+
+      expect('packages' in result).toBe(true);
+      if ('packages' in result) {
+        expect(result.packages).toHaveLength(1);
+        expect(result.packages[0]?.path).toBe('pkg-1');
+        expect(result.packages[0]?.version).toBe('1.0.0');
+      }
+    });
+
+    it('should handle search result with missing links.repository', async () => {
+      mockExecuteNpmCommand.mockImplementation((cmd: string) => {
+        if (cmd === 'search') {
+          return Promise.resolve({
+            stdout: JSON.stringify([
+              {
+                name: 'pkg-no-repo',
+                version: '1.0.0',
+                links: {}, // No repository link
+              },
+            ]),
+            stderr: '',
+            exitCode: 0,
+          });
+        }
+        return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+      });
+
+      const result = await searchNpmPackage('test keyword', 5, false);
+
+      expect('packages' in result).toBe(true);
+      if ('packages' in result) {
+        expect(result.packages[0]?.repoUrl).toBeNull();
+      }
+    });
+
+    it('should handle non-array search response', async () => {
+      mockExecuteNpmCommand.mockResolvedValue({
+        stdout: '"not an array"',
+        stderr: '',
+        exitCode: 0,
+      });
+
+      const result = await searchNpmPackage('test keyword', 5, false);
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.error).toContain('Invalid npm search response');
       }
     });
   });

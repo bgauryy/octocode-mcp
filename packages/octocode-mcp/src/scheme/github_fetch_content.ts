@@ -39,6 +39,25 @@ const FileContentBaseSchema = BaseQuerySchema.extend({
     .max(50)
     .default(5)
     .describe(GITHUB_FETCH_CONTENT.range.matchStringContextLines),
+  charOffset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      'Starting character offset for pagination (default: 0). ' +
+        'Use charOffset + charLength from previous response to get next page.'
+    ),
+  charLength: z
+    .number()
+    .int()
+    .min(1000)
+    .max(50000)
+    .optional()
+    .describe(
+      'Maximum characters to return per page (default: 20000, ~5K tokens). ' +
+        'Content exceeding this is auto-paginated.'
+    ),
 });
 
 export const FileContentQuerySchema = FileContentBaseSchema.superRefine(

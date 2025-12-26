@@ -161,6 +161,7 @@ async function promptCustomPath(): Promise<string | null> {
   console.log(
     `  ${c('blue', 'ℹ')} Enter the full path to your MCP config file (JSON)`
   );
+  console.log(`  ${dim('Leave empty to go back')}`);
   console.log();
   console.log(`  ${dim('Common paths:')}`);
   console.log(`    ${dim('•')} ~/.cursor/mcp.json ${dim('(Cursor)')}`);
@@ -177,10 +178,11 @@ async function promptCustomPath(): Promise<string | null> {
   console.log();
 
   const customPath = await input({
-    message: 'MCP config path:',
+    message: 'MCP config path (or press Enter to go back):',
     validate: (value: string) => {
+      // Allow empty to go back
       if (!value.trim()) {
-        return 'Path is required';
+        return true;
       }
 
       const expandedPath = expandPath(value);
@@ -205,7 +207,8 @@ async function promptCustomPath(): Promise<string | null> {
     },
   });
 
-  if (!customPath) return null;
+  // Empty input means go back
+  if (!customPath || !customPath.trim()) return null;
 
   return expandPath(customPath);
 }

@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// Mock the GitHub client
 const mockOctokit = vi.hoisted(() => ({
   rest: {
     search: {
@@ -13,7 +12,6 @@ vi.mock('../../src/github/client.js', () => ({
   getOctokit: vi.fn(() => mockOctokit),
 }));
 
-// Mock the cache
 vi.mock('../../src/utils/cache.js', () => ({
   generateCacheKey: vi.fn(() => 'test-cache-key'),
   withDataCache: vi.fn(async (_key: string, fn: () => unknown) => {
@@ -23,10 +21,6 @@ vi.mock('../../src/utils/cache.js', () => ({
 
 vi.mock('../../src/session.js', () => ({
   logSessionError: vi.fn(() => Promise.resolve()),
-}));
-
-vi.mock('../../src/serverConfig.js', () => ({
-  isSanitizeEnabled: vi.fn().mockReturnValue(true),
 }));
 
 // Import after mocking
@@ -71,7 +65,6 @@ describe('Code Search - Empty Query Validation', () => {
       repo: 'repo',
     });
 
-    // Should handle empty keywords gracefully
     expect('error' in result || 'data' in result).toBe(true);
   });
 
@@ -131,7 +124,6 @@ describe('Code Search - Security Warnings', () => {
     });
 
     if ('data' in result) {
-      // Should complete successfully with sanitization enabled
       expect(result.data.items).toBeDefined();
     } else {
       expect.fail('Expected successful result');
@@ -171,7 +163,6 @@ describe('Code Search - Security Warnings', () => {
     });
 
     if ('data' in result) {
-      // No security warnings when sanitize is disabled
       expect(result.data.securityWarnings).toBeUndefined();
     } else {
       expect.fail('Expected successful result');
@@ -272,7 +263,6 @@ describe('Code Search - Minification', () => {
     });
 
     if ('data' in result) {
-      // Minification will be attempted
       expect(result.data.minified).toBeDefined();
     } else {
       expect.fail('Expected successful result');
@@ -358,7 +348,6 @@ describe('Code Search - Security Warnings Array Creation', () => {
     });
 
     if ('data' in result) {
-      // Should complete successfully
       expect(result.data.items).toBeDefined();
     } else {
       expect.fail('Expected successful result');
@@ -398,7 +387,6 @@ describe('Code Search - Security Warnings Array Creation', () => {
     });
 
     if ('data' in result) {
-      // Security warnings should NOT be created when sanitize is false
       expect(result.data.securityWarnings).toBeUndefined();
     } else {
       expect.fail('Expected successful result');
@@ -406,7 +394,6 @@ describe('Code Search - Security Warnings Array Creation', () => {
   });
 });
 
-// Tests for security warning aggregation and handling
 describe('Code Search - Security Warning Structure', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -459,7 +446,6 @@ describe('Code Search - Security Warning Structure', () => {
     });
 
     if ('data' in result) {
-      // Multiple secrets across different files should create multiple warnings
       expect(result.data.securityWarnings).toBeDefined();
       expect(result.data.securityWarnings?.length).toBeGreaterThan(0);
     } else {
@@ -501,7 +487,6 @@ describe('Code Search - Security Warning Structure', () => {
     });
 
     if ('data' in result) {
-      // Should have warnings for the detected secrets
       expect(result.data.securityWarnings).toBeDefined();
       const warnings = result.data.securityWarnings || [];
       expect(warnings.some((w: string) => w.includes('multi-secret.js'))).toBe(

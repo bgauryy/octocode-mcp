@@ -1,0 +1,82 @@
+/**
+ * Integration test demonstrating execution context security
+ */
+
+import { describe, it, expect, vi, beforeAll } from 'vitest';
+import path from 'path';
+import { spawn } from 'child_process';
+import type { ExecResult } from '../../src/utils/types.js';
+
+// We need to manually reset the spawn mock to use real implementation
+// because vi.unmock doesn't work after module is already loaded
+let safeExec: (
+  command: string,
+  args?: string[],
+  options?: { cwd?: string; timeout?: number }
+) => Promise<ExecResult>;
+
+beforeAll(async () => {
+  // Reset the spawn mock to use real child_process.spawn
+  const childProcess =
+    await vi.importActual<typeof import('child_process')>('child_process');
+  vi.mocked(spawn).mockImplementation(childProcess.spawn);
+
+  // Now import safeExec which will use the real spawn
+  const execModule = await import('../../src/utils/local/utils/exec.js');
+  safeExec = execModule.safeExec;
+});
+
+describe('safeExec execution context security', () => {
+  const workspaceRoot = process.cwd();
+  const parentDir = path.dirname(workspaceRoot);
+
+  it('should allow execution within workspace', async () => {
+    // This should work - executing in workspace
+    const result = await safeExec('ls', ['-la'], {
+      cwd: workspaceRoot,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should allow execution in subdirectory of workspace', async () => {
+    // This should work - executing in workspace subdirectory
+    const srcPath = path.join(workspaceRoot, 'src');
+    const result = await safeExec('ls', ['-la'], {
+      cwd: srcPath,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should prevent execution in parent directory', async () => {
+    // This should FAIL - attempting to execute outside workspace
+    await expect(async () => {
+      await safeExec('ls', ['-la'], {
+        cwd: parentDir,
+      });
+    }).rejects.toThrow('Execution context validation failed');
+  });
+
+  it('should prevent execution with path traversal', async () => {
+    // This should FAIL - attempting to traverse outside workspace
+    await expect(async () => {
+      await safeExec('ls', ['-la'], {
+        cwd: '../../../../',
+      });
+    }).rejects.toThrow('Can only execute commands within workspace directory');
+  });
+
+  it('should prevent execution in system directories', async () => {
+    // This should FAIL - attempting to execute in /etc
+    await expect(async () => {
+      await safeExec('ls', ['-la'], {
+        cwd: '/etc',
+      });
+    }).rejects.toThrow('Can only execute commands within workspace directory');
+  });
+
+  it('should allow execution with undefined cwd (defaults to safe)', async () => {
+    // This should work - undefined cwd is safe (uses process.cwd())
+    const result = await safeExec('ls', ['-la']);
+    expect(result.success).toBe(true);
+  });
+});

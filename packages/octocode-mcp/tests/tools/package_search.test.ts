@@ -453,9 +453,12 @@ describe('searchPackage - NPM (CLI)', () => {
       // fields present
       expect(pkg.version).toBe('1.6.0');
 
-      // Removed fields
-      expect('description' in pkg).toBe(false);
-      expect('keywords' in pkg).toBe(false);
+      // Extended metadata fields ARE returned when npmFetchMetadata=true
+      expect(pkg.description).toBe(
+        'Promise based HTTP client for the browser and node.js'
+      );
+      expect(pkg.keywords).toEqual(['xhr', 'http', 'ajax', 'promise', 'node']);
+      expect(pkg.homepage).toBe('https://axios-http.com');
 
       expect(result.ecosystem).toBe('npm');
       expect(result.totalFound).toBe(1);

@@ -1,12 +1,9 @@
+import { z } from 'zod';
 import { fetchWithRetries } from '../utils/fetchWithRetries.js';
 import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
-import {
-  CompleteMetadata,
-  RawCompleteMetadata,
-  ToolNames,
-} from '../types/metadata.js';
+import { CompleteMetadata, ToolNames } from '../types/metadata.js';
 
 export type {
   CompleteMetadata,
@@ -29,7 +26,68 @@ const STATIC_TOOL_NAMES: ToolNamesMap = {
   GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
   GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
   PACKAGE_SEARCH: 'packageSearch',
+  LOCAL_RIPGREP: 'localSearchCode',
+  LOCAL_FETCH_CONTENT: 'localGetFileContent',
+  LOCAL_FIND_FILES: 'localFindFiles',
+  LOCAL_VIEW_STRUCTURE: 'localViewStructure',
 };
+
+// Zod schemas for validation
+const PromptArgumentSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  required: z.boolean().optional(),
+});
+
+const PromptMetadataSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  content: z.string(),
+  args: z.array(PromptArgumentSchema).optional(),
+});
+
+const ToolMetadataSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  schema: z.record(z.string()),
+  hints: z.object({
+    hasResults: z.array(z.string()),
+    empty: z.array(z.string()),
+    dynamic: z.record(z.array(z.string()).optional()).optional(),
+  }),
+});
+
+const BaseSchemaSchema = z.object({
+  mainResearchGoal: z.string(),
+  researchGoal: z.string(),
+  reasoning: z.string(),
+  bulkQueryTemplate: z.string(),
+});
+
+const BulkOperationsSchema = z.object({
+  instructions: z
+    .object({
+      base: z.string().optional(),
+      hasResults: z.string().optional(),
+      empty: z.string().optional(),
+      error: z.string().optional(),
+    })
+    .optional(),
+});
+
+const RawCompleteMetadataSchema = z.object({
+  instructions: z.string(),
+  prompts: z.record(PromptMetadataSchema),
+  toolNames: z.record(z.string()),
+  baseSchema: BaseSchemaSchema,
+  tools: z.record(ToolMetadataSchema),
+  baseHints: z.object({
+    hasResults: z.array(z.string()),
+    empty: z.array(z.string()),
+  }),
+  genericErrorHints: z.array(z.string()),
+  bulkOperations: BulkOperationsSchema.optional(),
+});
 
 function getMeta(): CompleteMetadata {
   if (!METADATA_JSON) {
@@ -72,24 +130,14 @@ export async function initializeToolMetadata(): Promise<void> {
   initializationPromise = (async () => {
     const METADATA_URL = 'https://octocodeai.com/api/mcpContent';
 
-    const data = (await fetchWithRetries(METADATA_URL, {
+    const responseData = await fetchWithRetries(METADATA_URL, {
       maxRetries: 3,
       includeVersion: true,
-    })) as unknown;
+    });
 
-    if (
-      typeof data !== 'object' ||
-      data === null ||
-      typeof (data as Record<string, unknown>).instructions !== 'string' ||
-      typeof (data as Record<string, unknown>).toolNames !== 'object' ||
-      typeof (data as Record<string, unknown>).tools !== 'object' ||
-      typeof (data as Record<string, unknown>).baseSchema !== 'object' ||
-      typeof (data as Record<string, unknown>).baseHints !== 'object' ||
-      !Array.isArray(
-        (data as Record<string, unknown>).genericErrorHints as unknown[]
-      ) ||
-      typeof (data as Record<string, unknown>).prompts !== 'object'
-    ) {
+    const parseResult = RawCompleteMetadataSchema.safeParse(responseData);
+
+    if (!parseResult.success) {
       await logSessionError(
         'toolMetadata',
         TOOL_METADATA_ERRORS.INVALID_API_RESPONSE.code
@@ -97,8 +145,9 @@ export async function initializeToolMetadata(): Promise<void> {
       throw new Error(TOOL_METADATA_ERRORS.INVALID_FORMAT.message);
     }
 
-    const raw = data as RawCompleteMetadata;
-    const toolNames = raw.toolNames;
+    const raw = parseResult.data;
+    // Cast toolNames to match the interface, relying on runtime validation structure
+    const toolNames = raw.toolNames as unknown as ToolNames;
     const baseSchema = raw.baseSchema;
 
     const complete: CompleteMetadata = {
@@ -115,6 +164,7 @@ export async function initializeToolMetadata(): Promise<void> {
       tools: raw.tools,
       baseHints: raw.baseHints,
       genericErrorHints: raw.genericErrorHints,
+      bulkOperations: raw.bulkOperations,
     };
 
     METADATA_JSON = deepFreeze(complete);
@@ -354,7 +404,6 @@ export const GITHUB_SEARCH_CODE = createSchemaHelper(
   };
   filters: {
     extension: string;
-    stars: string;
     filename: string;
     path: string;
     match: string;
@@ -469,5 +518,159 @@ export const PACKAGE_SEARCH = createSchemaHelper(TOOL_NAMES.PACKAGE_SEARCH) as {
     searchLimit: string;
     npmFetchMetadata: string;
     pythonFetchMetadata: string;
+  };
+};
+
+export const LOCAL_RIPGREP = createSchemaHelper(TOOL_NAMES.LOCAL_RIPGREP) as {
+  search: {
+    pattern: string;
+    path: string;
+    mode: string;
+  };
+  filters: {
+    type: string;
+    include: string;
+    exclude: string;
+    excludeDir: string;
+    binaryFiles: string;
+    noIgnore: string;
+    hidden: string;
+    followSymlinks: string;
+  };
+  options: {
+    smartCase: string;
+    caseInsensitive: string;
+    caseSensitive: string;
+    fixedString: string;
+    perlRegex: string;
+    wholeWord: string;
+    invertMatch: string;
+    multiline: string;
+    multilineDotall: string;
+  };
+  output: {
+    filesOnly: string;
+    filesWithoutMatch: string;
+    count: string;
+    countMatches: string;
+    jsonOutput: string;
+    vimgrepFormat: string;
+    includeStats: string;
+    includeDistribution: string;
+  };
+  context: {
+    contextLines: string;
+    beforeContext: string;
+    afterContext: string;
+    matchContentLength: string;
+    lineNumbers: string;
+    column: string;
+  };
+  pagination: {
+    filesPerPage: string;
+    filePageNumber: string;
+    matchesPerPage: string;
+    maxFiles: string;
+    maxMatchesPerFile: string;
+  };
+};
+
+export const LOCAL_FETCH_CONTENT = createSchemaHelper(
+  TOOL_NAMES.LOCAL_FETCH_CONTENT
+) as {
+  scope: {
+    path: string;
+  };
+  options: {
+    fullContent: string;
+    matchString: string;
+    matchStringContextLines: string;
+    matchStringIsRegex: string;
+    matchStringCaseSensitive: string;
+    minified: string;
+  };
+  pagination: {
+    charOffset: string;
+    charLength: string;
+  };
+};
+
+export const LOCAL_FIND_FILES = createSchemaHelper(
+  TOOL_NAMES.LOCAL_FIND_FILES
+) as {
+  scope: {
+    path: string;
+  };
+  filters: {
+    name: string;
+    iname: string;
+    names: string;
+    pathPattern: string;
+    regex: string;
+    regexType: string;
+    type: string;
+    empty: string;
+    executable: string;
+    readable: string;
+    writable: string;
+    excludeDir: string;
+  };
+  time: {
+    modifiedWithin: string;
+    modifiedBefore: string;
+    accessedWithin: string;
+  };
+  size: {
+    sizeGreater: string;
+    sizeLess: string;
+  };
+  pagination: {
+    limit: string;
+    filesPerPage: string;
+    filePageNumber: string;
+    charOffset: string;
+    charLength: string;
+  };
+  options: {
+    maxDepth: string;
+    minDepth: string;
+    details: string;
+    permissions: string;
+    showFileLastModified: string;
+  };
+};
+
+export const LOCAL_VIEW_STRUCTURE = createSchemaHelper(
+  TOOL_NAMES.LOCAL_VIEW_STRUCTURE
+) as {
+  scope: {
+    path: string;
+  };
+  filters: {
+    pattern: string;
+    directoriesOnly: string;
+    filesOnly: string;
+    extension: string;
+    extensions: string;
+    hidden: string;
+  };
+  options: {
+    depth: string;
+    recursive: string;
+    details: string;
+    humanReadable: string;
+    summary: string;
+    showFileLastModified: string;
+  };
+  sorting: {
+    sortBy: string;
+    reverse: string;
+  };
+  pagination: {
+    limit: string;
+    entriesPerPage: string;
+    entryPageNumber: string;
+    charOffset: string;
+    charLength: string;
   };
 };

@@ -267,8 +267,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
 
   describe('getToolHintsSync ?? fallbacks (lines 285-286)', () => {
     it('should handle missing baseHints resultType with fallback', async () => {
-      // Create metadata with missing resultType in baseHints
-      const incompleteMetadata = {
+      // Create valid metadata, then test with a non-existent resultType
+      const validMetadata = {
         instructions: 'Test',
         prompts: {},
         toolNames: {
@@ -289,26 +289,25 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
             name: 'githubSearchCode',
             description: 'Search',
             schema: {},
-            // hints missing resultType
-            hints: {},
+            hints: { hasResults: ['hint1'], empty: ['hint2'] },
           },
         },
-        // baseHints missing resultType key
-        baseHints: {},
+        baseHints: { hasResults: ['baseHint1'], empty: ['baseHint2'] },
         genericErrorHints: [],
       };
 
       const { fetchWithRetries } =
         await import('../../src/utils/fetchWithRetries.js');
-      vi.mocked(fetchWithRetries).mockResolvedValueOnce(incompleteMetadata);
+      vi.mocked(fetchWithRetries).mockResolvedValueOnce(validMetadata);
 
       const { initializeToolMetadata, getToolHintsSync } =
         await import('../../src/tools/toolMetadata.js');
 
       await initializeToolMetadata();
 
-      // Should return empty array via ?? fallback for both base and tool hints
-      const hints = getToolHintsSync('githubSearchCode', 'hasResults');
+      // Should return empty array via ?? fallback when resultType doesn't exist
+      // @ts-expect-error - testing fallback for non-existent resultType
+      const hints = getToolHintsSync('githubSearchCode', 'nonExistentType');
       expect(hints).toEqual([]);
     });
   });
@@ -351,9 +350,9 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
     });
   });
 
-  describe('TOOL_HINTS getOwnPropertyDescriptor hints ?? fallback (line 357)', () => {
-    it('should fallback when tool exists but hints is undefined', async () => {
-      const metadataWithMissingHints = {
+  describe('TOOL_HINTS getOwnPropertyDescriptor hints ?? fallback (line 332-335)', () => {
+    it('should return tool hints with fallback for existing tool', async () => {
+      const validMetadata = {
         instructions: 'Test',
         prompts: {},
         toolNames: {
@@ -374,31 +373,39 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
             name: 'githubSearchCode',
             description: 'Search',
             schema: {},
-            // hints is undefined to trigger ?? fallback
+            hints: { hasResults: ['toolHint'], empty: ['emptyHint'] },
           },
         },
-        baseHints: { hasResults: [], empty: [] },
+        baseHints: { hasResults: ['baseResult'], empty: ['baseEmpty'] },
         genericErrorHints: [],
       };
 
       const { fetchWithRetries } =
         await import('../../src/utils/fetchWithRetries.js');
-      vi.mocked(fetchWithRetries).mockResolvedValueOnce(
-        metadataWithMissingHints
-      );
+      vi.mocked(fetchWithRetries).mockResolvedValueOnce(validMetadata);
 
       const { initializeToolMetadata, TOOL_HINTS } =
         await import('../../src/tools/toolMetadata.js');
 
       await initializeToolMetadata();
 
-      // getOwnPropertyDescriptor should use the ?? fallback
+      // getOwnPropertyDescriptor for existing tool should return its hints
       const descriptor = Object.getOwnPropertyDescriptor(
         TOOL_HINTS,
         'githubSearchCode'
       );
       expect(descriptor).toBeDefined();
-      expect(descriptor?.value).toEqual({ hasResults: [], empty: [] });
+      expect(descriptor?.value).toEqual({
+        hasResults: ['toolHint'],
+        empty: ['emptyHint'],
+      });
+
+      // Non-existent tool returns undefined (correct behavior per line 342)
+      const nonExistentDescriptor = Object.getOwnPropertyDescriptor(
+        TOOL_HINTS,
+        'nonExistentTool'
+      );
+      expect(nonExistentDescriptor).toBeUndefined();
     });
   });
 });

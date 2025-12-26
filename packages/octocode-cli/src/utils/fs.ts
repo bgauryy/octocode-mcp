@@ -101,3 +101,52 @@ export function writeJsonFile(filePath: string, data: unknown): boolean {
     return false;
   }
 }
+
+/**
+ * Copy a directory recursively
+ */
+export function copyDirectory(src: string, dest: string): boolean {
+  try {
+    if (!dirExists(src)) {
+      return false;
+    }
+
+    if (!dirExists(dest)) {
+      fs.mkdirSync(dest, { recursive: true });
+    }
+
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const srcPath = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
+
+      if (entry.isDirectory()) {
+        copyDirectory(srcPath, destPath);
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * List subdirectories in a directory
+ */
+export function listSubdirectories(dirPath: string): string[] {
+  try {
+    if (!dirExists(dirPath)) {
+      return [];
+    }
+    return fs
+      .readdirSync(dirPath, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name);
+  } catch {
+    return [];
+  }
+}

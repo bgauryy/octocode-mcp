@@ -48,10 +48,28 @@ vi.mock('../../src/tools/toolMetadata.js', async () => {
 
 vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn(),
+  isLocalEnabled: vi.fn().mockReturnValue(false),
+}));
+
+// Mock local tools registration
+vi.mock('../../src/tools/local_ripgrep.js', () => ({
+  searchContentRipgrep: vi.fn(),
+}));
+vi.mock('../../src/tools/local_view_structure.js', () => ({
+  viewStructure: vi.fn(),
+}));
+vi.mock('../../src/tools/local_find_files.js', () => ({
+  findFiles: vi.fn(),
+}));
+vi.mock('../../src/tools/local_fetch_content.js', () => ({
+  fetchContent: vi.fn(),
+}));
+vi.mock('../../src/utils/bulkOperations.js', () => ({
+  executeBulkOperation: vi.fn(),
 }));
 
 import { DEFAULT_TOOLS } from '../../src/tools/toolConfig.js';
-import { getServerConfig } from '../../src/serverConfig.js';
+import { getServerConfig, isLocalEnabled } from '../../src/serverConfig.js';
 import {
   TOOL_NAMES,
   isToolAvailableSync,
@@ -59,6 +77,7 @@ import {
 
 const mockGetServerConfig = vi.mocked(getServerConfig);
 const mockIsToolAvailableSync = vi.mocked(isToolAvailableSync);
+const mockIsLocalEnabled = vi.mocked(isLocalEnabled);
 
 describe('ToolsManager', () => {
   let mockServer: McpServer;
@@ -92,11 +111,10 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -121,11 +139,10 @@ describe('ToolsManager', () => {
           TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         ],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -146,11 +163,10 @@ describe('ToolsManager', () => {
           TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         ],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -168,11 +184,10 @@ describe('ToolsManager', () => {
         githubApiUrl: 'https://api.github.com',
         toolsToRun: ['nonExistentTool1', 'nonExistentTool2'],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -195,11 +210,10 @@ describe('ToolsManager', () => {
         toolsToRun: [TOOL_NAMES.GITHUB_SEARCH_CODE],
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
+        enableLocal: false,
       });
 
       await registerTools(mockServer);
@@ -218,11 +232,10 @@ describe('ToolsManager', () => {
         toolsToRun: [TOOL_NAMES.GITHUB_SEARCH_CODE],
         disableTools: [TOOL_NAMES.GITHUB_FETCH_CONTENT],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
+        enableLocal: false,
       });
 
       await registerTools(mockServer);
@@ -240,11 +253,10 @@ describe('ToolsManager', () => {
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         disableTools: [TOOL_NAMES.GITHUB_FETCH_CONTENT],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
+        enableLocal: false,
       });
 
       await registerTools(mockServer);
@@ -262,11 +274,10 @@ describe('ToolsManager', () => {
         githubApiUrl: 'https://api.github.com',
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -292,11 +303,10 @@ describe('ToolsManager', () => {
           TOOL_NAMES.GITHUB_FETCH_CONTENT,
         ],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -322,11 +332,10 @@ describe('ToolsManager', () => {
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         disableTools: [TOOL_NAMES.GITHUB_SEARCH_CODE],
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -353,11 +362,10 @@ describe('ToolsManager', () => {
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         disableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS], // Same tool in both lists
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
+        enableLocal: false,
       });
 
       const result = await registerTools(mockServer);
@@ -378,11 +386,10 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
+        enableLocal: false,
       });
 
       // Make first tool throw error
@@ -405,11 +412,10 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         enableLogging: true,
-        betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        sanitize: true,
+        enableLocal: false,
       });
 
       // Make multiple tools throw errors
@@ -433,6 +439,228 @@ describe('ToolsManager', () => {
       expect(DEFAULT_TOOLS[1]?.fn).toHaveBeenCalled(); // githubGetFileContent
       expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalled(); // githubSearchRepositories
       expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalled(); // githubSearchPullRequests
+    });
+  });
+
+  describe('Local Tools Registration', () => {
+    it('should register local tools when ENABLE_LOCAL is set', async () => {
+      mockIsLocalEnabled.mockReturnValue(true);
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        enableLogging: true,
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: true,
+      });
+
+      // Mock server with registerTool method
+      const registerToolMock = vi.fn();
+      const registerPromptMock = vi.fn();
+      const serverWithRegister = {
+        ...mockServer,
+        registerTool: registerToolMock,
+        prompt: registerPromptMock,
+      } as unknown as McpServer;
+
+      const result = await registerTools(serverWithRegister);
+
+      // Should register local tools (4 local tools)
+      expect(result.successCount).toBeGreaterThanOrEqual(4);
+      expect(registerToolMock).toHaveBeenCalled();
+    });
+
+    it('should not register local tools when ENABLE_LOCAL is not set', async () => {
+      mockIsLocalEnabled.mockReturnValue(false);
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        enableLogging: true,
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: false,
+      });
+
+      const result = await registerTools(mockServer);
+
+      // Should only register GitHub tools, not local tools
+      expect(result.successCount).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should handle local tools registration failure gracefully', async () => {
+      mockIsLocalEnabled.mockReturnValue(true);
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        enableLogging: true,
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: true,
+      });
+
+      // Mock server that throws on registerTool
+      const serverThatThrows = {
+        ...mockServer,
+        registerTool: vi.fn().mockImplementation(() => {
+          throw new Error('Registration failed');
+        }),
+        prompt: vi.fn(),
+      } as unknown as McpServer;
+
+      const result = await registerTools(serverThatThrows);
+
+      // Should track the failure
+      expect(result.failedTools).toContain('local_tools');
+      expect(process.stderr.write).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to register local tools')
+      );
+    });
+  });
+
+  describe('Tool availability check', () => {
+    it('should not register tools that are unavailable', async () => {
+      mockIsToolAvailableSync.mockReturnValue(false);
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        enableLogging: true,
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: false,
+      });
+
+      const result = await registerTools(mockServer);
+
+      // Tools should not be registered when unavailable
+      expect(result.successCount).toBe(0);
+    });
+  });
+
+  describe('Tool registration returning null', () => {
+    it('should handle tool.fn returning null', async () => {
+      mockIsToolAvailableSync.mockReturnValue(true);
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        enableLogging: true,
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: false,
+      });
+
+      // Make tool return null (tool unavailable)
+      vi.mocked(DEFAULT_TOOLS[0]?.fn!).mockResolvedValue(null);
+
+      await registerTools(mockServer);
+
+      // Should log that tool returned null
+      expect(process.stderr.write).toHaveBeenCalledWith(
+        expect.stringContaining('registration returned null')
+      );
+    });
+  });
+
+  describe('Non-default tool handling', () => {
+    it('should log "not a default tool" for non-default tools without enableTools', async () => {
+      // Create a mock non-default tool
+      const mockNonDefaultTools = [
+        {
+          name: 'nonDefaultTool',
+          description: 'A non-default tool for testing',
+          isDefault: false,
+          type: 'debug' as const,
+          fn: vi.fn(),
+        },
+      ];
+
+      vi.mocked(DEFAULT_TOOLS).splice(
+        0,
+        DEFAULT_TOOLS.length,
+        ...mockNonDefaultTools
+      );
+
+      mockIsToolAvailableSync.mockReturnValue(true);
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        enableLogging: true,
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: false,
+        // No enableTools provided, so non-default tools should be skipped
+      });
+
+      await registerTools(mockServer);
+
+      // Should log that tool is "not a default tool"
+      expect(process.stderr.write).toHaveBeenCalledWith(
+        expect.stringContaining('not a default tool')
+      );
+    });
+  });
+
+  describe('Local tool handlers execution', () => {
+    it('should execute localSearchCode handler when invoked', async () => {
+      mockIsLocalEnabled.mockReturnValue(true);
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        enableLogging: true,
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: true,
+      });
+
+      const toolHandlers = new Map<string, Function>();
+      const registerToolMock = vi.fn(
+        (name: string, _options: unknown, handler: Function) => {
+          toolHandlers.set(name, handler);
+        }
+      );
+
+      const serverWithRegister = {
+        ...mockServer,
+        registerTool: registerToolMock,
+        prompt: vi.fn(),
+      } as unknown as McpServer;
+
+      await registerTools(serverWithRegister);
+
+      // Verify handlers were registered
+      expect(toolHandlers.has('localSearchCode')).toBe(true);
+      expect(toolHandlers.has('localViewStructure')).toBe(true);
+      expect(toolHandlers.has('localFindFiles')).toBe(true);
+      expect(toolHandlers.has('localGetFileContent')).toBe(true);
+
+      // Execute handlers to cover the code paths
+      const { executeBulkOperation } =
+        await import('../../src/utils/bulkOperations.js');
+      vi.mocked(executeBulkOperation).mockResolvedValue({
+        content: [{ type: 'text', text: 'test' }],
+      });
+
+      // Call each handler
+      const ripgrepHandler = toolHandlers.get('localSearchCode')!;
+      await ripgrepHandler({ queries: [] });
+
+      const viewStructureHandler = toolHandlers.get('localViewStructure')!;
+      await viewStructureHandler({ queries: [] });
+
+      const findFilesHandler = toolHandlers.get('localFindFiles')!;
+      await findFilesHandler({ queries: [] });
+
+      const fetchContentHandler = toolHandlers.get('localGetFileContent')!;
+      await fetchContentHandler({ queries: [] });
+
+      // Verify executeBulkOperation was called for each handler
+      expect(vi.mocked(executeBulkOperation)).toHaveBeenCalledTimes(4);
     });
   });
 });

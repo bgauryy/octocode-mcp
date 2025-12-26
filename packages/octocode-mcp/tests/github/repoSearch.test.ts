@@ -176,7 +176,7 @@ describe('GitHub Repository Search', () => {
       }
     });
 
-    it('should sort by stars descending', async () => {
+    it('should preserve API sort order (e.g. best match)', async () => {
       const mockResponse = {
         data: {
           items: [
@@ -215,13 +215,14 @@ describe('GitHub Repository Search', () => {
       const result = await searchGitHubReposAPI(params);
 
       if ('data' in result) {
-        expect(result.data.repositories[0]!.stars).toBe(50000);
-        expect(result.data.repositories[1]!.stars).toBe(1000);
-        expect(result.data.repositories[2]!.stars).toBe(100);
+        // Should preserve API order (no client-side sorting)
+        expect(result.data.repositories[0]!.stars).toBe(100);
+        expect(result.data.repositories[1]!.stars).toBe(50000);
+        expect(result.data.repositories[2]!.stars).toBe(1000);
       }
     });
 
-    it('should sort by updatedAt when stars are equal', async () => {
+    it('should preserve API sort order for equal stars (secondary sort)', async () => {
       const mockResponse = {
         data: {
           items: [
@@ -252,12 +253,12 @@ describe('GitHub Repository Search', () => {
 
       const result = await searchGitHubReposAPI(params);
 
-      // Should be sorted by date descending (newer first)
+      // Should preserve API order
       if ('data' in result) {
-        expect(result.data.repositories[0]!.owner).toBe('owner2');
-        expect(result.data.repositories[0]!.repo).toBe('newer');
-        expect(result.data.repositories[1]!.owner).toBe('owner1');
-        expect(result.data.repositories[1]!.repo).toBe('older');
+        expect(result.data.repositories[0]!.owner).toBe('owner1');
+        expect(result.data.repositories[0]!.repo).toBe('older');
+        expect(result.data.repositories[1]!.owner).toBe('owner2');
+        expect(result.data.repositories[1]!.repo).toBe('newer');
       }
     });
 

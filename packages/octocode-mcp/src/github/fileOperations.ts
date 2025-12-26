@@ -4,26 +4,68 @@ import type {
   FileContentQuery,
   ContentResult,
   GitHubViewRepoStructureQuery,
+  PaginationInfo,
 } from '../types';
 import type {
   GitHubApiFileItem,
   GitHubRepositoryStructureResult,
   GitHubRepositoryStructureError,
 } from '../scheme/github_view_repo_structure';
+import { GITHUB_STRUCTURE_DEFAULTS as STRUCTURE_DEFAULTS } from '../scheme/github_view_repo_structure';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from '../utils/minifier/index.js';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
 import { generateCacheKey, withDataCache } from '../utils/cache';
+import {
+  applyPagination,
+  createPaginationInfo,
+} from '../utils/local/utils/pagination.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
 import { FILE_OPERATION_ERRORS, REPOSITORY_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
+/** Pagination constants for GitHub content fetching */
+const GITHUB_PAGINATION = {
+  /** Max chars before auto-pagination (~5K tokens) */
+  MAX_CHARS_BEFORE_PAGINATION: 20000,
+  /** Default page size in characters */
+  DEFAULT_PAGE_SIZE: 20000,
+  /** Chars per token estimate */
+  CHARS_PER_TOKEN: 4,
+} as const;
+
 interface FileTimestampInfo {
   lastModified: string;
   lastModifiedBy: string;
+}
+
+// Cache default branch per repo to avoid repeated API calls
+const defaultBranchCache = new Map<string, string>();
+
+export function clearDefaultBranchCache(): void {
+  defaultBranchCache.clear();
+}
+
+async function getDefaultBranch(
+  octokit: InstanceType<typeof OctokitWithThrottling>,
+  owner: string,
+  repo: string
+): Promise<string> {
+  const cacheKey = `${owner}/${repo}`;
+  if (defaultBranchCache.has(cacheKey)) {
+    return defaultBranchCache.get(cacheKey)!;
+  }
+  try {
+    const repoInfo = await octokit.rest.repos.get({ owner, repo });
+    const branch = repoInfo.data.default_branch || 'main';
+    defaultBranchCache.set(cacheKey, branch);
+    return branch;
+  } catch {
+    return 'main'; // Fallback default if we can't get it
+  }
 }
 
 export async function fetchGitHubFileContentAPI(
@@ -31,6 +73,7 @@ export async function fetchGitHubFileContentAPI(
   authInfo?: AuthInfo,
   sessionId?: string
 ): Promise<GitHubAPIResponse<ContentResult>> {
+  // Cache key excludes charOffset/charLength - pagination is post-cache
   const cacheKey = generateCacheKey(
     'gh-api-file-content',
     {
@@ -43,6 +86,7 @@ export async function fetchGitHubFileContentAPI(
       endLine: params.endLine,
       matchString: params.matchString,
       matchStringContextLines: params.matchStringContextLines,
+      noTimestamp: params.noTimestamp,
     },
     sessionId
   );
@@ -57,6 +101,19 @@ export async function fetchGitHubFileContentAPI(
         'data' in value && !(value as { error?: unknown }).error,
     }
   );
+
+  // Apply pagination AFTER cache retrieval
+  if ('data' in result && result.data && result.data.content) {
+    const paginatedResult = applyContentPagination(
+      result.data,
+      params.charOffset ?? 0,
+      params.charLength
+    );
+    return {
+      ...result,
+      data: paginatedResult,
+    };
+  }
 
   return result;
 }
@@ -81,24 +138,65 @@ async function fetchGitHubFileContentAPIInternal(
       result = await octokit.rest.repos.getContent(contentParams);
     } catch (error: unknown) {
       if (error instanceof RequestError && error.status === 404 && branch) {
-        if (branch === 'main' || branch === 'master') {
-          const fallbackBranch = branch === 'main' ? 'master' : 'main';
+        // Smart Fallback Logic
+        const defaultBranch = await getDefaultBranch(octokit, owner, repo);
+
+        // If user requested 'main' or 'master' but it's not the default, try the default
+        const isCommonDefaultGuess = branch === 'main' || branch === 'master';
+
+        if (isCommonDefaultGuess && branch !== defaultBranch) {
           try {
             result = await octokit.rest.repos.getContent({
               ...contentParams,
-              ref: fallbackBranch,
+              ref: defaultBranch,
             });
           } catch {
-            throw error;
+            throw error; // Fallback failed, throw original error
           }
         } else {
           const apiError = handleGitHubAPIError(error);
+          const suggestion =
+            branch === defaultBranch
+              ? undefined
+              : `Branch '${branch}' not found. Default branch is '${defaultBranch}'. Ask user: Do you want to get the file from '${defaultBranch}' instead?`;
+
+          // Check for similar files in parent directory
+          const pathSuggestions = await findPathSuggestions(
+            octokit,
+            owner,
+            repo,
+            filePath,
+            branch || defaultBranch
+          );
+
+          if (pathSuggestions.length > 0) {
+            const hint = `Did you mean: ${pathSuggestions.join(', ')}?`;
+            apiError.hints = [...(apiError.hints || []), hint];
+          }
+
           return {
             ...apiError,
-            scopesSuggestion: `Branch '${branch}' not found. Ask user: Do you want to get the file from the default branch instead?`,
+            ...(suggestion && { scopesSuggestion: suggestion }),
           };
         }
       } else {
+        // Check for similar files in parent directory for non-branch 404s (e.g. wrong path on valid branch)
+        if (error instanceof RequestError && error.status === 404) {
+          const apiError = handleGitHubAPIError(error);
+          const pathSuggestions = await findPathSuggestions(
+            octokit,
+            owner,
+            repo,
+            filePath,
+            branch || 'main' // fallback if undefined
+          );
+          if (pathSuggestions.length > 0) {
+            const hint = `Did you mean: ${pathSuggestions.join(', ')}?`;
+            apiError.hints = [...(apiError.hints || []), hint];
+          }
+          return apiError;
+        }
+
         throw error;
       }
     }
@@ -218,16 +316,18 @@ async function fetchGitHubFileContentAPIInternal(
         };
       }
 
-      const timestampInfo = await fetchFileTimestamp(
-        octokit,
-        owner,
-        repo,
-        filePath,
-        branch
-      );
-      if (timestampInfo) {
-        result.lastModified = timestampInfo.lastModified;
-        result.lastModifiedBy = timestampInfo.lastModifiedBy;
+      if (!params.noTimestamp) {
+        const timestampInfo = await fetchFileTimestamp(
+          octokit,
+          owner,
+          repo,
+          filePath,
+          branch
+        );
+        if (timestampInfo) {
+          result.lastModified = timestampInfo.lastModified;
+          result.lastModifiedBy = timestampInfo.lastModifiedBy;
+        }
       }
 
       return {
@@ -249,6 +349,143 @@ async function fetchGitHubFileContentAPIInternal(
     const apiError = handleGitHubAPIError(error);
     return apiError;
   }
+}
+
+/**
+ * Apply pagination to content result (post-cache operation)
+ */
+function applyContentPagination(
+  data: ContentResult,
+  charOffset: number,
+  charLength?: number
+): ContentResult {
+  const content = data.content ?? '';
+  const maxChars = charLength ?? GITHUB_PAGINATION.MAX_CHARS_BEFORE_PAGINATION;
+
+  // Optimization: No pagination needed if content fits in one page and we are at start
+  const totalBytes = Buffer.byteLength(content, 'utf-8');
+  if (totalBytes <= maxChars && charOffset === 0) {
+    return data;
+  }
+
+  const paginationMeta = applyPagination(content, charOffset, maxChars, {
+    mode: 'bytes',
+  });
+  const paginationInfo = createPaginationInfo(paginationMeta);
+
+  // Generate pagination hints
+  const paginationHints = generateGitHubPaginationHints(paginationInfo, {
+    owner: data.owner ?? '',
+    repo: data.repo ?? '',
+    path: data.path ?? '',
+    branch: data.branch,
+  });
+
+  return {
+    ...data,
+    content: paginationMeta.paginatedContent,
+    contentLength: paginationMeta.paginatedContent.length,
+    pagination: paginationInfo,
+    hints: paginationHints,
+  };
+}
+
+/**
+ * Generate hints for paginated responses
+ * Uses dedicated hints field (NOT securityWarnings)
+ */
+function generateGitHubPaginationHints(
+  pagination: PaginationInfo,
+  query: { owner: string; repo: string; path: string; branch?: string }
+): string[] {
+  if (!pagination.hasMore) {
+    return [
+      `✓ Complete content retrieved ` +
+        `(${pagination.totalPages} page${pagination.totalPages > 1 ? 's' : ''})`,
+    ];
+  }
+
+  const nextOffset =
+    (pagination.charOffset ?? 0) + (pagination.charLength ?? 0);
+  const branchParam = query.branch ? `, branch="${query.branch}"` : '';
+
+  return [
+    `📄 Page ${pagination.currentPage}/${pagination.totalPages} ` +
+      `(${(pagination.charLength ?? 0).toLocaleString()} of ` +
+      `${(pagination.totalChars ?? 0).toLocaleString()} chars)`,
+    ``,
+    `▶ TO GET NEXT PAGE:`,
+    `  Use: charOffset=${nextOffset}`,
+    `  Same params: owner="${query.owner}", repo="${query.repo}", ` +
+      `path="${query.path}"${branchParam}`,
+    ``,
+    `💡 TIP: Use matchString for targeted extraction instead of ` +
+      `paginating through entire file`,
+  ];
+}
+
+/**
+ * Generate hints for repository structure pagination
+ */
+function generateStructurePaginationHints(
+  pagination: {
+    currentPage: number;
+    totalPages: number;
+    hasMore: boolean;
+    entriesPerPage: number;
+    totalEntries: number;
+  },
+  context: {
+    owner: string;
+    repo: string;
+    branch: string;
+    path?: string;
+    depth?: number;
+    pageFiles: number;
+    pageFolders: number;
+    allFiles: number;
+    allFolders: number;
+  }
+): string[] {
+  const hints: string[] = [];
+
+  // Summary of current page
+  hints.push(
+    `📂 Page ${pagination.currentPage}/${pagination.totalPages} ` +
+      `(${context.pageFiles} files, ${context.pageFolders} folders on this page)`
+  );
+
+  hints.push(
+    `📊 Total: ${context.allFiles} files, ${context.allFolders} folders ` +
+      `(${pagination.totalEntries} entries)`
+  );
+
+  if (pagination.hasMore) {
+    const pathParam = context.path ? `path="${context.path}", ` : '';
+    const depthParam =
+      context.depth && context.depth > 1 ? `depth=${context.depth}, ` : '';
+
+    hints.push('');
+    hints.push(`▶ TO GET NEXT PAGE:`);
+    hints.push(`  Use: entryPageNumber=${pagination.currentPage + 1}`);
+    hints.push(
+      `  Same params: owner="${context.owner}", repo="${context.repo}", ` +
+        `branch="${context.branch}", ${pathParam}${depthParam}entriesPerPage=${pagination.entriesPerPage}`
+    );
+    hints.push('');
+    hints.push(
+      `💡 TIP: Use githubSearchCode with path filter for targeted discovery ` +
+        `instead of paginating through entire structure`
+    );
+  } else {
+    hints.push('');
+    hints.push(
+      `✓ Complete structure retrieved ` +
+        `(${pagination.totalPages} page${pagination.totalPages > 1 ? 's' : ''})`
+    );
+  }
+
+  return hints;
 }
 
 /**
@@ -614,10 +851,8 @@ async function viewGitHubRepositoryStructureAPIInternal(
       return !shouldIgnoreFile(item.path);
     });
 
-    const itemLimit = Math.min(200, 50 * depth);
-    const limitedItems = filteredItems.slice(0, itemLimit);
-
-    limitedItems.sort((a, b) => {
+    // Sort all items first for consistent pagination
+    filteredItems.sort((a, b) => {
       if (a.type !== b.type) {
         return a.type === 'dir' ? -1 : 1;
       }
@@ -631,6 +866,17 @@ async function viewGitHubRepositoryStructureAPIInternal(
 
       return a.path.localeCompare(b.path);
     });
+
+    // Apply pagination
+    const entriesPerPage =
+      params.entriesPerPage ?? STRUCTURE_DEFAULTS.ENTRIES_PER_PAGE;
+    const entryPageNumber = params.entryPageNumber ?? 1;
+    const totalEntries = filteredItems.length;
+    const totalPages = Math.max(1, Math.ceil(totalEntries / entriesPerPage));
+    const startIdx = (entryPageNumber - 1) * entriesPerPage;
+    const endIdx = Math.min(startIdx + entriesPerPage, totalEntries);
+
+    const paginatedItems = filteredItems.slice(startIdx, endIdx);
 
     const structure: Record<string, { files: string[]; folders: string[] }> =
       {};
@@ -657,7 +903,7 @@ async function viewGitHubRepositoryStructureAPIInternal(
       return lastSlash === -1 ? itemPath : itemPath.slice(lastSlash + 1);
     };
 
-    for (const item of limitedItems) {
+    for (const item of paginatedItems) {
       const parentDir = getRelativeParent(item.path);
 
       if (!structure[parentDir]) {
@@ -690,8 +936,33 @@ async function viewGitHubRepositoryStructureAPIInternal(
       sortedStructure[key] = structure[key]!;
     }
 
-    const totalFiles = limitedItems.filter(i => i.type === 'file').length;
-    const totalFolders = limitedItems.filter(i => i.type === 'dir').length;
+    const pageFiles = paginatedItems.filter(i => i.type === 'file').length;
+    const pageFolders = paginatedItems.filter(i => i.type === 'dir').length;
+    const allFiles = filteredItems.filter(i => i.type === 'file').length;
+    const allFolders = filteredItems.filter(i => i.type === 'dir').length;
+
+    // Build pagination info
+    const hasMore = entryPageNumber < totalPages;
+    const paginationInfo = {
+      currentPage: entryPageNumber,
+      totalPages,
+      hasMore,
+      entriesPerPage,
+      totalEntries,
+    };
+
+    // Generate pagination hints
+    const hints = generateStructurePaginationHints(paginationInfo, {
+      owner,
+      repo,
+      branch: workingBranch,
+      path: cleanPath,
+      depth,
+      pageFiles,
+      pageFolders,
+      allFiles,
+      allFolders,
+    });
 
     return {
       owner,
@@ -700,13 +971,15 @@ async function viewGitHubRepositoryStructureAPIInternal(
       path: cleanPath || '/',
       apiSource: true,
       summary: {
-        totalFiles,
-        totalFolders,
-        truncated: allItems.length > limitedItems.length,
+        totalFiles: allFiles,
+        totalFolders: allFolders,
+        truncated: hasMore,
         filtered: true,
-        originalCount: allItems.length,
+        originalCount: filteredItems.length,
       },
       structure: sortedStructure,
+      pagination: paginationInfo,
+      hints,
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -784,7 +1057,7 @@ async function fetchDirectoryContentsRecursivelyAPI(
               dir.path,
               currentDepth + 1,
               maxDepth,
-              new Set(visitedPaths) // Pass a copy to avoid shared state issues
+              visitedPaths // Pass reference, not copy
             );
             return subItems;
           } catch {
@@ -800,6 +1073,53 @@ async function fetchDirectoryContentsRecursivelyAPI(
     }
 
     return allItems;
+  } catch {
+    return [];
+  }
+}
+
+async function findPathSuggestions(
+  octokit: InstanceType<typeof OctokitWithThrottling>,
+  owner: string,
+  repo: string,
+  filePath: string,
+  branch: string
+): Promise<string[]> {
+  try {
+    const parentPath = filePath.split('/').slice(0, -1).join('/');
+    const targetName = filePath.split('/').pop();
+
+    if (!targetName) return [];
+
+    const parentContent = await octokit.rest.repos.getContent({
+      owner,
+      repo,
+      path: parentPath,
+      ref: branch,
+    });
+
+    if (!Array.isArray(parentContent.data)) return [];
+
+    const files = parentContent.data as GitHubApiFileItem[];
+    const suggestions: string[] = [];
+
+    // 1. Case insensitive match
+    const caseMatch = files.find(
+      f => f.name.toLowerCase() === targetName.toLowerCase()
+    );
+    if (caseMatch) suggestions.push(caseMatch.path);
+
+    // 2. Common extensions (ts <-> js, tsx <-> jsx, etc)
+    const nameNoExt = targetName.replace(/\.[^/.]+$/, '');
+    const extMatches = files.filter(f => {
+      if (f.name === targetName) return false;
+      if (f.name.startsWith(nameNoExt + '.')) return true;
+      return false;
+    });
+
+    extMatches.forEach(f => suggestions.push(f.path));
+
+    return Array.from(new Set(suggestions)).slice(0, 3);
   } catch {
     return [];
   }

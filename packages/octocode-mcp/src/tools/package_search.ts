@@ -149,7 +149,7 @@ async function searchPackages(
           query,
           result,
           hasContent,
-          'PACKAGE_SEARCH',
+          TOOL_NAMES.PACKAGE_SEARCH,
           customHints
         );
       } catch (error) {

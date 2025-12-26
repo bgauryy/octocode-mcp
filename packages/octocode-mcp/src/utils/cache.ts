@@ -32,6 +32,9 @@ const CACHE_TTL_CONFIG = {
   default: 86400,
 } as const;
 
+// Track pending requests for deduplication
+const pendingRequests = new Map<string, Promise<unknown>>();
+
 export function generateCacheKey(
   prefix: string,
   params: unknown,
@@ -115,27 +118,45 @@ export async function withDataCache<T>(
     } catch {}
   }
 
-  cacheStats.misses++;
-
-  const result = await operation();
-
-  const shouldCache = options.shouldCache ?? (() => true);
-  if (shouldCache(result)) {
-    try {
-      let ttl = options.ttl;
-      if (!ttl) {
-        const prefixMatch = cacheKey.match(/^v\d+-([^:]+):/);
-        const prefix = prefixMatch?.[1] ?? 'default';
-        ttl = getTTLForPrefix(prefix);
-      }
-      cache.set(cacheKey, result, ttl);
-      cacheStats.sets++;
-      cacheStats.totalKeys = cache.keys().length;
-      // eslint-disable-next-line no-empty
-    } catch {}
+  // Check for pending request to deduplicate
+  if (pendingRequests.has(cacheKey)) {
+    return pendingRequests.get(cacheKey) as Promise<T>;
   }
 
-  return result;
+  const promise = (async () => {
+    try {
+      // Execute operation
+      const result = await operation();
+
+      // Update cache stats only after successful operation (miss)
+      if (!options.forceRefresh) {
+        cacheStats.misses++;
+      }
+
+      const shouldCache = options.shouldCache ?? (() => true);
+      if (shouldCache(result)) {
+        try {
+          let ttl = options.ttl;
+          if (!ttl) {
+            const prefixMatch = cacheKey.match(/^v\d+-([^:]+):/);
+            const prefix = prefixMatch?.[1] ?? 'default';
+            ttl = getTTLForPrefix(prefix);
+          }
+          cache.set(cacheKey, result, ttl);
+          cacheStats.sets++;
+          cacheStats.totalKeys = cache.keys().length;
+          // eslint-disable-next-line no-empty
+        } catch {}
+      }
+
+      return result;
+    } finally {
+      pendingRequests.delete(cacheKey);
+    }
+  })();
+
+  pendingRequests.set(cacheKey, promise);
+  return promise as Promise<T>;
 }
 
 /**
@@ -143,6 +164,7 @@ export async function withDataCache<T>(
  */
 export function clearAllCache(): void {
   cache.flushAll();
+  pendingRequests.clear();
 
   cacheStats.hits = 0;
   cacheStats.misses = 0;

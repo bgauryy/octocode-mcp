@@ -120,11 +120,12 @@ async function convertCodeSearchResult(
 ): Promise<OptimizedCodeSearchResult> {
   const items: CodeSearchResultItem[] = octokitResult.data.items;
 
-  return transformToOptimizedFormat(items);
+  return transformToOptimizedFormat(items, octokitResult.data.total_count);
 }
 
 async function transformToOptimizedFormat(
-  items: CodeSearchResultItem[]
+  items: CodeSearchResultItem[],
+  apiTotalCount?: number
 ): Promise<OptimizedCodeSearchResult> {
   const singleRepo = extractSingleRepository(items);
 
@@ -191,7 +192,7 @@ async function transformToOptimizedFormat(
       return {
         path: item.path,
         matches: processedMatches,
-        url: singleRepo ? item.path : item.url,
+        url: item.html_url,
         repository: {
           nameWithOwner: item.repository.full_name,
           url: item.repository.url,
@@ -209,7 +210,9 @@ async function transformToOptimizedFormat(
 
   const result: OptimizedCodeSearchResult = {
     items: optimizedItems,
-    total_count: filteredItems.length,
+    // Use API total count if available, otherwise fallback to filtered length
+    total_count:
+      apiTotalCount !== undefined ? apiTotalCount : filteredItems.length,
     _researchContext: {
       foundFiles: Array.from(foundFiles),
       repositoryContext: singleRepo

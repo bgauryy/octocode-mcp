@@ -23,7 +23,8 @@ export interface ToolConfig {
 }
 
 const getDescription = (toolName: string): string => {
-  return DESCRIPTIONS[toolName] ?? '';
+  // DESCRIPTIONS Proxy already returns '' for unknown keys
+  return DESCRIPTIONS[toolName];
 };
 
 export const GITHUB_SEARCH_CODE: ToolConfig = {

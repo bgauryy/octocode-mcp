@@ -81,7 +81,7 @@ async function fetchMultipleGitHubFileContents(
           query,
           result as Record<string, unknown>,
           hasContent,
-          'GITHUB_FETCH_CONTENT'
+          TOOL_NAMES.GITHUB_FETCH_CONTENT
         );
       } catch (error) {
         return handleCatchError(error, query);
@@ -96,6 +96,7 @@ async function fetchMultipleGitHubFileContents(
         'branch',
         'contentLength',
         'content',
+        'pagination',
         'isPartial',
         'startLine',
         'endLine',
@@ -125,6 +126,8 @@ function buildApiRequest(query: FileContentQuery) {
     matchString:
       fullContent || !query.matchString ? undefined : String(query.matchString),
     matchStringContextLines: query.matchStringContextLines ?? 5,
+    charOffset: query.charOffset ?? 0,
+    charLength: query.charLength,
   };
 }
 

@@ -78,13 +78,11 @@ vi.mock('../../src/github/pullRequestSearch.js', () => ({
 }));
 
 const mockGetServerConfig = vi.hoisted(() => vi.fn());
-const mockIsSamplingEnabled = vi.hoisted(() => vi.fn());
 const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/serverConfig.js', () => ({
   initialize: vi.fn(),
   getServerConfig: mockGetServerConfig,
-  isSamplingEnabled: mockIsSamplingEnabled,
   isLoggingEnabled: vi.fn(() => false),
   getGitHubToken: mockGetGitHubToken,
 }));
@@ -117,12 +115,10 @@ describe('Response Structure - All Tools', () => {
       enableTools: [],
       disableTools: [],
       enableLogging: true,
-      betaEnabled: false,
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: false,
     });
-    mockIsSamplingEnabled.mockReturnValue(false);
     // Return a test token for authentication
     mockGetGitHubToken.mockResolvedValue('test-token');
   });

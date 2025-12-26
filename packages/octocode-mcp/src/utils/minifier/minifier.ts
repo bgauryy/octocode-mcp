@@ -75,11 +75,13 @@ const MINIFY_CONFIG: MinifyConfig = {
   fileTypes: {
     // JavaScript family - use terser
     js: { strategy: 'terser' },
-    ts: { strategy: 'terser' },
     jsx: { strategy: 'terser' },
-    tsx: { strategy: 'terser' },
     mjs: { strategy: 'terser' },
     cjs: { strategy: 'terser' },
+
+    // TypeScript - use aggressive (terser doesn't support TS syntax)
+    ts: { strategy: 'aggressive', comments: 'c-style' },
+    tsx: { strategy: 'aggressive', comments: 'c-style' },
 
     // Indentation-sensitive languages - conservative approach
     py: { strategy: 'conservative', comments: 'hash' },
@@ -642,35 +644,6 @@ export async function minifyContent(
       reason: `Unexpected minification error: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
-}
-
-export function isJavaScriptFileV2(filePath: string): boolean {
-  const ext = getFileExtension(filePath);
-  return ['js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs'].includes(ext);
-}
-
-export function isIndentationSensitiveV2(filePath: string): boolean {
-  const ext = getFileExtension(filePath);
-  const indentationSensitive = [
-    'py',
-    'yaml',
-    'yml',
-    'coffee',
-    'nim',
-    'haml',
-    'slim',
-    'sass',
-    'styl',
-    'pug',
-    'jade',
-    'star',
-    'bzl',
-    'cmake',
-    'md',
-    'markdown',
-    'rst',
-  ];
-  return indentationSensitive.includes(ext);
 }
 
 export { MINIFY_CONFIG };

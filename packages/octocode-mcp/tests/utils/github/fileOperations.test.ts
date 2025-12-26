@@ -22,7 +22,6 @@ const mockminifyContent = vi.hoisted(() =>
 const mockWithDataCache = vi.hoisted(() => vi.fn());
 const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
 const mockCreateResult = vi.hoisted(() => vi.fn());
-const mockIsSanitizeEnabled = vi.hoisted(() => vi.fn().mockReturnValue(true));
 
 // Set up mocks
 vi.mock('../../../src/github/client.js', () => ({
@@ -47,12 +46,11 @@ vi.mock('../../../src/mcp/responses.js', () => ({
   createResult: mockCreateResult,
 }));
 
-vi.mock('../../../src/serverConfig.js', () => ({
-  isSanitizeEnabled: mockIsSanitizeEnabled,
-}));
-
 // Import after mocks are set up
-import { fetchGitHubFileContentAPI } from '../../../src/github/fileOperations.js';
+import {
+  fetchGitHubFileContentAPI,
+  clearDefaultBranchCache,
+} from '../../../src/github/fileOperations.js';
 
 // Helper function to create properly formatted test parameters
 function createTestParams(overrides: Record<string, unknown> = {}) {
@@ -103,12 +101,15 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clearDefaultBranchCache();
 
     // Setup default mock Octokit instance
     mockOctokit = {
       rest: {
         repos: {
           getContent: vi.fn(),
+          get: vi.fn().mockResolvedValue({ data: { default_branch: 'main' } }),
+          listCommits: vi.fn().mockResolvedValue({ data: [] }),
         },
       },
     };
@@ -953,8 +954,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
   describe('Content Sanitization', () => {
     beforeEach(() => {
-      // Ensure sanitization is enabled via serverConfig
-      mockIsSanitizeEnabled.mockReturnValue(true);
       mockOctokit.rest.repos.getContent.mockResolvedValue({
         data: {
           type: 'file',
@@ -1027,6 +1026,11 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         },
       });
 
+      // Mock getRepo to return 'master' as default branch
+      mockOctokit.rest.repos.get.mockResolvedValue({
+        data: { default_branch: 'master' },
+      });
+
       // First call fails (main branch)
       // Second call succeeds (master branch)
       mockOctokit.rest.repos.getContent
@@ -1075,6 +1079,11 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           url: 'https://api.github.com/repos/test/repo/contents/test.txt',
           headers: {},
         },
+      });
+
+      // Mock getRepo to return 'main' as default branch
+      mockOctokit.rest.repos.get.mockResolvedValue({
+        data: { default_branch: 'main' },
       });
 
       // First call fails (master branch)
@@ -1127,14 +1136,18 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         },
       });
 
-      mockOctokit.rest.repos.getContent.mockRejectedValueOnce(notFoundError);
+      // First call: main file request fails
+      // Second call: findPathSuggestions tries parent directory (may fail too)
+      mockOctokit.rest.repos.getContent
+        .mockRejectedValueOnce(notFoundError)
+        .mockRejectedValueOnce(notFoundError);
 
       const params = createTestParams({ branch: 'feature', minified: false });
 
       const result = await fetchGitHubFileContentAPI(params);
 
       expect(result.status).toBe(404);
-      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(1);
+      // First call is the main request, second is findPathSuggestions trying parent
       expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledWith({
         owner: 'test',
         repo: 'repo',
@@ -1145,7 +1158,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       if ('scopesSuggestion' in result) {
         expect(result.scopesSuggestion).toContain('feature');
         expect(result.scopesSuggestion).toContain(
-          'Ask user: Do you want to get the file from the default branch instead?'
+          "Branch 'feature' not found. Default branch is 'main'. Ask user: Do you want to get the file from 'main' instead?"
         );
       }
     });
@@ -1158,6 +1171,11 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           url: 'https://api.github.com/repos/test/repo/contents/test.txt',
           headers: {},
         },
+      });
+
+      // Mock getRepo to return 'master'
+      mockOctokit.rest.repos.get.mockResolvedValue({
+        data: { default_branch: 'master' },
       });
 
       // Both calls fail
@@ -1203,7 +1221,11 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         },
       });
 
-      mockOctokit.rest.repos.getContent.mockRejectedValueOnce(notFoundError);
+      // First call: main file request fails
+      // Second call: findPathSuggestions tries parent directory (may fail too)
+      mockOctokit.rest.repos.getContent
+        .mockRejectedValueOnce(notFoundError)
+        .mockRejectedValueOnce(notFoundError);
 
       const params = createTestParams({ minified: false });
       // Don't set branch, so it uses default
@@ -1211,7 +1233,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       const result = await fetchGitHubFileContentAPI(params);
 
       expect(result.status).toBe(404);
-      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(1);
     });
 
     it('should include helpful hint for specific branch 404 errors', async () => {
@@ -1234,7 +1255,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       expect('scopesSuggestion' in result).toBe(true);
       if ('scopesSuggestion' in result) {
         expect(result.scopesSuggestion).toBe(
-          "Branch 'develop' not found. Ask user: Do you want to get the file from the default branch instead?"
+          "Branch 'develop' not found. Default branch is 'main'. Ask user: Do you want to get the file from 'main' instead?"
         );
       }
     });
@@ -1262,6 +1283,75 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       // Should not have the "Ask user" hint since we tried fallback
       if ('scopesSuggestion' in result) {
         expect(result.scopesSuggestion).not.toContain('Ask user');
+      }
+    });
+
+    it('should suggest alternative files when 404 and similar files exist', async () => {
+      const { RequestError } = await import('octokit');
+      const notFoundError = new RequestError('Not Found', 404, {
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/repos/test/repo/contents/src/Test.ts',
+          headers: {},
+        },
+      });
+
+      // File request fails
+      mockOctokit.rest.repos.getContent.mockRejectedValueOnce(notFoundError);
+      // Parent directory request succeeds with similar files
+      mockOctokit.rest.repos.getContent.mockResolvedValueOnce({
+        data: [
+          { name: 'test.ts', path: 'src/test.ts', type: 'file' },
+          { name: 'test.js', path: 'src/test.js', type: 'file' },
+          { name: 'Test.tsx', path: 'src/Test.tsx', type: 'file' },
+        ],
+      });
+
+      const params = createTestParams({
+        path: 'src/Test.ts',
+        branch: 'feature',
+        minified: false,
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(404);
+      // Should have hint suggesting alternative files
+      if ('hints' in result && result.hints) {
+        const hintText = result.hints.join(' ');
+        expect(hintText).toContain('Did you mean');
+      }
+    });
+
+    it('should handle case-insensitive file suggestions', async () => {
+      const { RequestError } = await import('octokit');
+      const notFoundError = new RequestError('Not Found', 404, {
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/repos/test/repo/contents/src/INDEX.ts',
+          headers: {},
+        },
+      });
+
+      // File request fails
+      mockOctokit.rest.repos.getContent.mockRejectedValueOnce(notFoundError);
+      // Parent directory request succeeds with case-different file
+      mockOctokit.rest.repos.getContent.mockResolvedValueOnce({
+        data: [{ name: 'index.ts', path: 'src/index.ts', type: 'file' }],
+      });
+
+      const params = createTestParams({
+        path: 'src/INDEX.ts',
+        branch: 'feature',
+        minified: false,
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(404);
+      if ('hints' in result && result.hints) {
+        const hintText = result.hints.join(' ');
+        expect(hintText).toContain('src/index.ts');
       }
     });
   });

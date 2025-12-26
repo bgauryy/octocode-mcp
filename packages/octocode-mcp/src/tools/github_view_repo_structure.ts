@@ -76,6 +76,14 @@ function buildStructureApiRequest(
     branch: String(query.branch),
     path: query.path ? String(query.path) : undefined,
     depth: typeof query.depth === 'number' ? query.depth : undefined,
+    entriesPerPage:
+      typeof query.entriesPerPage === 'number'
+        ? query.entriesPerPage
+        : undefined,
+    entryPageNumber:
+      typeof query.entryPageNumber === 'number'
+        ? query.entryPageNumber
+        : undefined,
   };
 }
 
@@ -164,17 +172,30 @@ async function exploreMultipleRepositoryStructures(
 
         const hasContent = Object.keys(filteredStructure).length > 0;
 
+        // Build result data with pagination info
+        const resultData: Record<string, unknown> = {
+          owner: apiRequest.owner,
+          repo: apiRequest.repo,
+          branch: apiResult.branch ?? apiRequest.branch,
+          path: apiRequest.path || '/',
+          structure: filteredStructure,
+          summary: apiResult.summary,
+        };
+
+        // Include pagination info if present
+        if (apiResult.pagination) {
+          resultData.pagination = apiResult.pagination;
+        }
+
+        // Extract API-generated hints (pagination hints, etc.)
+        const apiHints = apiResult.hints || [];
+
         return createSuccessResult(
           query,
-          {
-            owner: apiRequest.owner,
-            repo: apiRequest.repo,
-            branch: apiRequest.branch,
-            path: apiRequest.path || '/',
-            structure: filteredStructure,
-          },
+          resultData,
           hasContent,
-          'GITHUB_VIEW_REPO_STRUCTURE'
+          TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+          apiHints
         );
       } catch (error) {
         const catchError = handleCatchError(

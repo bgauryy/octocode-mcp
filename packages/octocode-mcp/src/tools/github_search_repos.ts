@@ -149,7 +149,7 @@ async function searchMultipleGitHubRepos(
           query,
           { repositories },
           repositories.length > 0,
-          'GITHUB_SEARCH_REPOSITORIES',
+          TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
           customHints
         );
       } catch (error) {
