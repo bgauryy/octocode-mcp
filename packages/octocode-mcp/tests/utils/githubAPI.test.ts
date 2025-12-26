@@ -371,7 +371,6 @@ describe('GitHub API Utils', () => {
         extension: 'js',
         path: 'src',
         match: 'file',
-        minify: true,
       };
 
       await searchGitHubCodeAPI(params);
