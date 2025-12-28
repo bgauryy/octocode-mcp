@@ -26,6 +26,11 @@ vi.mock('node:fs', () => ({
   existsSync: vi.fn(),
 }));
 
+// Mock child_process for openFile tests
+vi.mock('node:child_process', () => ({
+  spawnSync: vi.fn(),
+}));
+
 describe('Platform Utilities', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -251,6 +256,205 @@ describe('Platform Utilities', () => {
 
       const { findGitRoot } = await import('../../src/utils/platform.js');
       expect(findGitRoot('/Users/test/not-a-repo')).toBe(null);
+    });
+  });
+
+  describe('getAppDataPath', () => {
+    it('should return HOME on non-Windows', async () => {
+      vi.mocked(os.platform).mockReturnValue('darwin');
+      vi.mocked(os.homedir).mockReturnValue('/Users/test');
+
+      const { getAppDataPath } = await import('../../src/utils/platform.js');
+      expect(getAppDataPath()).toBe('/Users/test');
+    });
+  });
+
+  describe('getLocalAppDataPath', () => {
+    it('should return HOME on non-Windows', async () => {
+      vi.mocked(os.platform).mockReturnValue('darwin');
+      vi.mocked(os.homedir).mockReturnValue('/Users/test');
+
+      const { getLocalAppDataPath } = await import('../../src/utils/platform.js');
+      expect(getLocalAppDataPath()).toBe('/Users/test');
+    });
+  });
+
+  describe('clearScreen', () => {
+    it('should write clear sequence to stdout', async () => {
+      vi.mocked(os.platform).mockReturnValue('darwin');
+      vi.mocked(os.homedir).mockReturnValue('/Users/test');
+
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+
+      const { clearScreen } = await import('../../src/utils/platform.js');
+      clearScreen();
+
+      expect(writeSpy).toHaveBeenCalledWith('\x1b[2J\x1b[3J\x1b[H');
+      writeSpy.mockRestore();
+    });
+  });
+
+  describe('openFile', () => {
+    it('should open file with specified editor', async () => {
+      vi.mocked(os.platform).mockReturnValue('darwin');
+      vi.mocked(os.homedir).mockReturnValue('/Users/test');
+
+      const { spawnSync } = await import('node:child_process');
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { openFile } = await import('../../src/utils/platform.js');
+      const result = openFile('/path/to/file.txt', 'vim');
+
+      expect(result).toBe(true);
+      expect(spawnSync).toHaveBeenCalledWith(
+        'vim',
+        ['/path/to/file.txt'],
+        expect.any(Object)
+      );
+    });
+
+    it('should use open command on macOS', async () => {
+      vi.mocked(os.platform).mockReturnValue('darwin');
+      vi.mocked(os.homedir).mockReturnValue('/Users/test');
+
+      const { spawnSync } = await import('node:child_process');
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { openFile } = await import('../../src/utils/platform.js');
+      const result = openFile('/path/to/file.txt');
+
+      expect(result).toBe(true);
+      expect(spawnSync).toHaveBeenCalledWith(
+        'open',
+        ['/path/to/file.txt'],
+        expect.any(Object)
+      );
+    });
+
+    it('should return false on error', async () => {
+      vi.mocked(os.platform).mockReturnValue('darwin');
+      vi.mocked(os.homedir).mockReturnValue('/Users/test');
+
+      const { spawnSync } = await import('node:child_process');
+      vi.mocked(spawnSync).mockImplementation(() => {
+        throw new Error('Command failed');
+      });
+
+      const { openFile } = await import('../../src/utils/platform.js');
+      const result = openFile('/path/to/file.txt');
+
+      expect(result).toBe(false);
+    });
+
+    it('should return false when command fails', async () => {
+      vi.mocked(os.platform).mockReturnValue('darwin');
+      vi.mocked(os.homedir).mockReturnValue('/Users/test');
+
+      const { spawnSync } = await import('node:child_process');
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 1,
+        stdout: '',
+        stderr: 'error',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { openFile } = await import('../../src/utils/platform.js');
+      const result = openFile('/path/to/file.txt');
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('openInEditor', () => {
+    it('should open with cursor', async () => {
+      vi.mocked(os.platform).mockReturnValue('darwin');
+      vi.mocked(os.homedir).mockReturnValue('/Users/test');
+
+      const { spawnSync } = await import('node:child_process');
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { openInEditor } = await import('../../src/utils/platform.js');
+      const result = openInEditor('/path/to/file.txt', 'cursor');
+
+      expect(result).toBe(true);
+      expect(spawnSync).toHaveBeenCalledWith(
+        'cursor',
+        ['/path/to/file.txt'],
+        expect.any(Object)
+      );
+    });
+
+    it('should open with vscode', async () => {
+      vi.mocked(os.platform).mockReturnValue('darwin');
+      vi.mocked(os.homedir).mockReturnValue('/Users/test');
+
+      const { spawnSync } = await import('node:child_process');
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { openInEditor } = await import('../../src/utils/platform.js');
+      const result = openInEditor('/path/to/file.txt', 'vscode');
+
+      expect(result).toBe(true);
+      expect(spawnSync).toHaveBeenCalledWith(
+        'code',
+        ['/path/to/file.txt'],
+        expect.any(Object)
+      );
+    });
+
+    it('should open with default handler', async () => {
+      vi.mocked(os.platform).mockReturnValue('darwin');
+      vi.mocked(os.homedir).mockReturnValue('/Users/test');
+
+      const { spawnSync } = await import('node:child_process');
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { openInEditor } = await import('../../src/utils/platform.js');
+      const result = openInEditor('/path/to/file.txt', 'default');
+
+      expect(result).toBe(true);
+      expect(spawnSync).toHaveBeenCalledWith(
+        'open',
+        ['/path/to/file.txt'],
+        expect.any(Object)
+      );
     });
   });
 });

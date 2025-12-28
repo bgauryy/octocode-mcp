@@ -6,8 +6,7 @@ import { getToolHints } from './hints.js';
 import {
   applyPagination,
   generatePaginationHints,
-  createPaginationInfo,
-} from '../utils/local/utils/pagination.js';
+} from '../utils/pagination/index.js';
 import {
   formatFileSize,
   parseFileSize,
@@ -481,11 +480,32 @@ async function viewStructureRecursive(
   }
   const totalSize = totalSizeBytes;
 
+  const totalEntries = filteredEntries.length;
+
+  // Apply entry-based pagination
+  const entriesPerPage =
+    query.entriesPerPage || RESOURCE_LIMITS.DEFAULT_ENTRIES_PER_PAGE;
+  const entryPageNumber = query.entryPageNumber || 1;
+  const totalPages = Math.ceil(totalEntries / entriesPerPage);
+  const startIdx = (entryPageNumber - 1) * entriesPerPage;
+  const endIdx = Math.min(startIdx + entriesPerPage, totalEntries);
+
+  const paginatedEntries = filteredEntries.slice(startIdx, endIdx);
+
+  const entryPaginationInfo = {
+    currentPage: entryPageNumber,
+    totalPages,
+    entriesPerPage,
+    totalEntries,
+    hasMore: entryPageNumber < totalPages,
+  };
+
   if (
     !query.charLength &&
-    filteredEntries.length > RESOURCE_LIMITS.MAX_ENTRIES_BEFORE_PAGINATION
+    totalEntries > RESOURCE_LIMITS.MAX_ENTRIES_BEFORE_PAGINATION &&
+    !query.entriesPerPage
   ) {
-    const estimatedSize = filteredEntries.length * 150;
+    const estimatedSize = totalEntries * 150;
     const toolError = ToolErrors.outputTooLarge(
       estimatedSize,
       RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH
@@ -500,15 +520,15 @@ async function viewStructureRecursive(
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
       hints: [
-        `Recursive listing found ${filteredEntries.length} entries - too much to process at once`,
-        'Options: Use charLength to paginate through the tree, or limit to reduce scope',
+        `Recursive listing found ${totalEntries} entries - too much to process at once`,
+        'Options: Use entriesPerPage to paginate through results, or limit to reduce scope',
         'Alternative: Start with depth=1 to get overview, then drill into specific subdirectories',
         'Why this matters: Large trees overwhelm context and make it hard to find what you need',
       ],
     };
   }
 
-  const structuredLines = filteredEntries.map(entry => {
+  const structuredLines = paginatedEntries.map(entry => {
     // Fallback to path splitting if depth not present (e.g. from ls parsing)
     const depth = entry.depth ?? entry.name.split(path.sep).length - 1;
     return formatEntryString(entry, depth);
@@ -526,13 +546,35 @@ async function viewStructureRecursive(
     structuredOutput = paginationMetadata.paginatedContent;
   }
 
-  const status = filteredEntries.length > 0 ? 'hasResults' : 'empty';
+  const status = totalEntries > 0 ? 'hasResults' : 'empty';
   const baseHints = getToolHints('LOCAL_VIEW_STRUCTURE', status);
+
+  const entryPaginationHints = [
+    `Page ${entryPageNumber}/${totalPages} (showing ${paginatedEntries.length} of ${totalEntries})`,
+    `Total: ${totalFiles} files, ${totalDirectories} directories`,
+    entryPaginationInfo.hasMore
+      ? `Next: entryPageNumber=${entryPageNumber + 1}`
+      : 'Final page',
+  ];
+
   const paginationHints = paginationMetadata
     ? generatePaginationHints(paginationMetadata, {
         toolName: 'localViewStructure',
       })
     : [];
+
+  const pagination = {
+    currentPage: entryPaginationInfo.currentPage,
+    totalPages: entryPaginationInfo.totalPages,
+    entriesPerPage: entryPaginationInfo.entriesPerPage,
+    totalEntries: entryPaginationInfo.totalEntries,
+    hasMore: entryPaginationInfo.hasMore,
+    ...(paginationMetadata && {
+      charOffset: paginationMetadata.charOffset,
+      charLength: paginationMetadata.charLength,
+      totalChars: paginationMetadata.totalChars,
+    }),
+  };
 
   return {
     status,
@@ -541,12 +583,10 @@ async function viewStructureRecursive(
     totalFiles,
     totalDirectories,
     totalSize,
-    ...(paginationMetadata && {
-      pagination: createPaginationInfo(paginationMetadata),
-    }),
+    pagination,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
-    hints: [...baseHints, ...paginationHints],
+    hints: [...baseHints, ...entryPaginationHints, ...paginationHints],
   };
 }
 

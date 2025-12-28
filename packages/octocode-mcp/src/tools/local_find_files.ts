@@ -6,7 +6,7 @@ import {
   serializeForPagination,
   createPaginationInfo,
   type PaginationMetadata,
-} from '../utils/local/utils/pagination.js';
+} from '../utils/pagination/index.js';
 import {
   validateToolPath,
   createErrorResult,

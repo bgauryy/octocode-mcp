@@ -3,23 +3,24 @@
  */
 
 import { pathValidator } from '../../../security/pathValidator.js';
-import { ToolErrors, toToolError } from '../../../errorCodes.js';
-import { getToolHints, type LocalToolName } from '../../../tools/hints.js';
+import { ToolErrors } from '../../../errorCodes.js';
 import type { BaseQuery } from '../../../utils/types.js';
+import {
+  createErrorResult as createUnifiedErrorResult,
+  type UnifiedErrorResult,
+} from '../../errorResult.js';
+
+/**
+ * Local error result type - compatible with UnifiedErrorResult
+ */
+export type LocalErrorResult = UnifiedErrorResult;
 
 /**
  * Path validation result with error result for tool returns
  */
 interface ToolPathValidationResult {
   isValid: boolean;
-  errorResult?: {
-    status: 'error';
-    errorCode: string;
-    researchGoal?: string;
-    reasoning?: string;
-    hints?: string[];
-    [key: string]: unknown;
-  };
+  errorResult?: LocalErrorResult;
 }
 
 /**
@@ -39,17 +40,14 @@ export function validateToolPath(
 
     return {
       isValid: false,
-      errorResult: {
-        status: 'error',
-        errorCode: toolError.errorCode,
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
-        hints: getToolHints(toolName as LocalToolName, 'error', {
+      errorResult: createUnifiedErrorResult(toolError, query, {
+        toolName,
+        hintContext: {
           errorType: 'permission',
           path: query.path,
           originalError: validation.error,
-        }),
-      },
+        },
+      }),
     };
   }
 
@@ -58,35 +56,25 @@ export function validateToolPath(
 
 /**
  * Create error result for local file system tools
- * Handles local tool errors with error codes and hints
+ * Uses the unified error result system with local tool-specific configuration
+ *
+ * @param error - The error (Error, ToolError, or unknown)
+ * @param toolName - Tool name for hint generation (e.g., 'LOCAL_FETCH_CONTENT')
+ * @param query - Query object with research context
+ * @param extra - Additional fields to include in the result
+ * @returns LocalErrorResult compatible with local tool responses
  */
 export function createErrorResult<T extends BaseQuery>(
   error: unknown,
   toolName: string,
   query: T,
   extra?: Record<string, unknown>
-): {
-  status: 'error';
-  errorCode: string;
-  researchGoal?: string;
-  reasoning?: string;
-  hints?: string[];
-  [key: string]: unknown;
-} {
-  const toolError = toToolError(error);
-  const hints = getToolHints(toolName as LocalToolName, 'error', {
-    originalError: toolError.message,
-    ...extra,
+): LocalErrorResult {
+  return createUnifiedErrorResult(error, query, {
+    toolName,
+    extra,
+    hintContext: extra,
   });
-
-  return {
-    status: 'error',
-    errorCode: toolError.errorCode,
-    researchGoal: query.researchGoal,
-    reasoning: query.reasoning,
-    hints: extra?.hints ? [...hints, ...(extra.hints as string[])] : hints,
-    ...extra,
-  };
 }
 
 /**

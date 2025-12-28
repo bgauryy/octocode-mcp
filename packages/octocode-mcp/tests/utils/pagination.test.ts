@@ -6,11 +6,13 @@ import { describe, it, expect } from 'vitest';
 import {
   applyPagination,
   generatePaginationHints,
+  generateGitHubPaginationHints,
+  generateStructurePaginationHints,
   serializeForPagination,
   sliceByCharRespectLines,
   createPaginationInfo,
   type PaginationMetadata,
-} from '../../src/utils/local/utils/pagination.js';
+} from '../../src/utils/pagination/index.js';
 
 describe('pagination utility', () => {
   describe('applyPagination', () => {
@@ -452,6 +454,168 @@ describe('pagination utility', () => {
       expect(info.currentPage).toBe(1);
       expect(info.totalPages).toBe(1);
       expect(info.hasMore).toBe(false);
+    });
+  });
+
+  describe('generateGitHubPaginationHints', () => {
+    it('should show complete message when no more pages', () => {
+      const pagination = {
+        currentPage: 1,
+        totalPages: 1,
+        hasMore: false,
+        charOffset: 0,
+        charLength: 100,
+        totalChars: 100,
+      };
+      const query = {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        path: 'src/index.ts',
+        branch: 'main',
+      };
+
+      const hints = generateGitHubPaginationHints(pagination, query);
+
+      expect(hints.some(h => h.includes('Complete content retrieved'))).toBe(
+        true
+      );
+      expect(hints.some(h => h.includes('1 page'))).toBe(true);
+    });
+
+    it('should show next page instructions when hasMore is true', () => {
+      const pagination = {
+        currentPage: 1,
+        totalPages: 3,
+        hasMore: true,
+        charOffset: 0,
+        charLength: 20000,
+        totalChars: 60000,
+      };
+      const query = {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        path: 'src/index.ts',
+        branch: 'main',
+      };
+
+      const hints = generateGitHubPaginationHints(pagination, query);
+
+      expect(hints.some(h => h.includes('Page 1/3'))).toBe(true);
+      expect(hints.some(h => h.includes('TO GET NEXT PAGE'))).toBe(true);
+      expect(hints.some(h => h.includes('charOffset=20000'))).toBe(true);
+      expect(hints.some(h => h.includes('owner="test-owner"'))).toBe(true);
+      expect(hints.some(h => h.includes('repo="test-repo"'))).toBe(true);
+      expect(hints.some(h => h.includes('path="src/index.ts"'))).toBe(true);
+      expect(hints.some(h => h.includes('branch="main"'))).toBe(true);
+    });
+
+    it('should omit branch param when not provided', () => {
+      const pagination = {
+        currentPage: 1,
+        totalPages: 2,
+        hasMore: true,
+        charOffset: 0,
+        charLength: 20000,
+        totalChars: 40000,
+      };
+      const query = {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        path: 'src/index.ts',
+      };
+
+      const hints = generateGitHubPaginationHints(pagination, query);
+
+      expect(hints.some(h => h.includes('branch='))).toBe(false);
+    });
+  });
+
+  describe('generateStructurePaginationHints', () => {
+    it('should show page info and file/folder counts', () => {
+      const pagination = {
+        currentPage: 1,
+        totalPages: 1,
+        hasMore: false,
+        entriesPerPage: 50,
+        totalEntries: 35,
+      };
+      const context = {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        branch: 'main',
+        pageFiles: 30,
+        pageFolders: 5,
+        allFiles: 30,
+        allFolders: 5,
+      };
+
+      const hints = generateStructurePaginationHints(pagination, context);
+
+      expect(hints.some(h => h.includes('Page 1/1'))).toBe(true);
+      expect(hints.some(h => h.includes('30 files'))).toBe(true);
+      expect(hints.some(h => h.includes('5 folders'))).toBe(true);
+      expect(hints.some(h => h.includes('35 entries'))).toBe(true);
+      expect(hints.some(h => h.includes('Complete structure retrieved'))).toBe(
+        true
+      );
+    });
+
+    it('should show next page instructions when hasMore is true', () => {
+      const pagination = {
+        currentPage: 1,
+        totalPages: 3,
+        hasMore: true,
+        entriesPerPage: 20,
+        totalEntries: 55,
+      };
+      const context = {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        branch: 'main',
+        path: 'src',
+        depth: 2,
+        pageFiles: 15,
+        pageFolders: 5,
+        allFiles: 40,
+        allFolders: 15,
+      };
+
+      const hints = generateStructurePaginationHints(pagination, context);
+
+      expect(hints.some(h => h.includes('Page 1/3'))).toBe(true);
+      expect(hints.some(h => h.includes('TO GET NEXT PAGE'))).toBe(true);
+      expect(hints.some(h => h.includes('entryPageNumber=2'))).toBe(true);
+      expect(hints.some(h => h.includes('owner="test-owner"'))).toBe(true);
+      expect(hints.some(h => h.includes('repo="test-repo"'))).toBe(true);
+      expect(hints.some(h => h.includes('branch="main"'))).toBe(true);
+      expect(hints.some(h => h.includes('path="src"'))).toBe(true);
+      expect(hints.some(h => h.includes('depth=2'))).toBe(true);
+      expect(hints.some(h => h.includes('entriesPerPage=20'))).toBe(true);
+    });
+
+    it('should omit path and depth when not provided', () => {
+      const pagination = {
+        currentPage: 1,
+        totalPages: 2,
+        hasMore: true,
+        entriesPerPage: 20,
+        totalEntries: 30,
+      };
+      const context = {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        branch: 'main',
+        pageFiles: 18,
+        pageFolders: 2,
+        allFiles: 25,
+        allFolders: 5,
+      };
+
+      const hints = generateStructurePaginationHints(pagination, context);
+
+      expect(hints.some(h => h.includes('path='))).toBe(false);
+      // depth=1 is default, should not be included
+      expect(hints.some(h => h.includes('depth='))).toBe(false);
     });
   });
 });

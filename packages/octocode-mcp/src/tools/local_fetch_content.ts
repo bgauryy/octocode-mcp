@@ -1,12 +1,12 @@
 import { readFile, stat } from 'fs/promises';
 import { resolve, isAbsolute } from 'path';
-import { minifyContentSync } from '../utils/minifier/minifierSync.js';
+import { minifyContentSync } from '../utils/minifier/index.js';
 import { getToolHints } from './hints.js';
 import {
   applyPagination,
   generatePaginationHints,
   createPaginationInfo,
-} from '../utils/local/utils/pagination.js';
+} from '../utils/pagination/index.js';
 import { RESOURCE_LIMITS, DEFAULTS } from '../utils/constants.js';
 import {
   validateToolPath,
@@ -14,6 +14,34 @@ import {
 } from '../utils/local/utils/toolHelpers.js';
 import type { FetchContentQuery, FetchContentResult } from '../utils/types.js';
 import { ToolErrors, ERROR_CODES } from '../errorCodes.js';
+
+/**
+ * Apply minification to content if enabled (minified !== false)
+ * Only replaces content if minification reduces size
+ *
+ * @param content - The content to potentially minify
+ * @param filePath - File path for determining minification strategy
+ * @param shouldMinify - Whether minification is enabled (default true)
+ * @returns Minified content if smaller, otherwise original
+ */
+function applyMinification(
+  content: string,
+  filePath: string,
+  shouldMinify: boolean = true
+): string {
+  if (!shouldMinify) {
+    return content;
+  }
+
+  try {
+    const minifiedContent = minifyContentSync(content, filePath);
+    // Only use minified version if it's actually smaller
+    return minifiedContent.length < content.length ? minifiedContent : content;
+  } catch {
+    // Keep original if minification fails
+    return content;
+  }
+}
 
 export async function fetchContent(
   query: FetchContentQuery
@@ -137,17 +165,11 @@ export async function fetchContent(
       resultContent = result.lines.join('\n');
 
       // Apply minification BEFORE size check (fixes patternTooBroad false positives)
-      if (query.minified !== false) {
-        try {
-          const originalLength = resultContent.length;
-          const minifiedContent = minifyContentSync(resultContent, query.path);
-          if (minifiedContent.length < originalLength) {
-            resultContent = minifiedContent;
-          }
-        } catch {
-          // Keep original if minification fails
-        }
-      }
+      resultContent = applyMinification(
+        resultContent,
+        query.path,
+        query.minified !== false
+      );
 
       if (result.matchCount > 50) {
         return {
@@ -209,17 +231,11 @@ export async function fetchContent(
       resultContent = content;
       isPartial = false;
 
-      if (query.minified !== false) {
-        try {
-          const originalLength = resultContent.length;
-          const minifiedContent = minifyContentSync(resultContent, query.path);
-          if (minifiedContent.length < originalLength) {
-            resultContent = minifiedContent;
-          }
-        } catch {
-          // Keep original if minification fails
-        }
-      }
+      resultContent = applyMinification(
+        resultContent,
+        query.path,
+        query.minified !== false
+      );
     }
 
     if (!resultContent || resultContent.trim().length === 0) {

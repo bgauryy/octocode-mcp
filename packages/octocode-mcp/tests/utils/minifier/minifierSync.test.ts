@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { minifyContentSync } from '../../../src/utils/minifier/minifierSync.js';
+import { minifyContentSync } from '../../../src/utils/minifier/index.js';
 
 describe('minifierSync', () => {
   describe('minifyContentSync', () => {
@@ -248,7 +248,7 @@ x = foo()`;
         expect(result).not.toMatch(/\n{3,}/);
       });
 
-      it('should conservatively minify Ruby files', () => {
+      it('should minify Ruby files (aggressive - not indentation-sensitive)', () => {
         const content = `# Ruby code
 def hello
   puts "Hello"
@@ -259,7 +259,9 @@ end
 hello()`;
 
         const result = minifyContentSync(content, 'script.rb');
-        expect(result).toContain('  puts');
+        // Ruby is not indentation-sensitive, so uses aggressive minification
+        expect(result).not.toContain('# Ruby code');
+        expect(result.length).toBeLessThan(content.length);
       });
 
       it('should conservatively minify Shell files', () => {

@@ -51,7 +51,7 @@ const FileContentBaseSchema = BaseQuerySchema.extend({
   charLength: z
     .number()
     .int()
-    .min(1000)
+    .min(50)
     .max(50000)
     .optional()
     .describe(

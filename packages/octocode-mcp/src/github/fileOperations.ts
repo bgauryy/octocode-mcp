@@ -4,7 +4,6 @@ import type {
   FileContentQuery,
   ContentResult,
   GitHubViewRepoStructureQuery,
-  PaginationInfo,
 } from '../types';
 import type {
   GitHubApiFileItem,
@@ -20,7 +19,9 @@ import { generateCacheKey, withDataCache } from '../utils/cache';
 import {
   applyPagination,
   createPaginationInfo,
-} from '../utils/local/utils/pagination.js';
+  generateGitHubPaginationHints,
+  generateStructurePaginationHints,
+} from '../utils/pagination/index.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
@@ -388,104 +389,6 @@ function applyContentPagination(
     pagination: paginationInfo,
     hints: paginationHints,
   };
-}
-
-/**
- * Generate hints for paginated responses
- * Uses dedicated hints field (NOT securityWarnings)
- */
-function generateGitHubPaginationHints(
-  pagination: PaginationInfo,
-  query: { owner: string; repo: string; path: string; branch?: string }
-): string[] {
-  if (!pagination.hasMore) {
-    return [
-      `✓ Complete content retrieved ` +
-        `(${pagination.totalPages} page${pagination.totalPages > 1 ? 's' : ''})`,
-    ];
-  }
-
-  const nextOffset =
-    (pagination.charOffset ?? 0) + (pagination.charLength ?? 0);
-  const branchParam = query.branch ? `, branch="${query.branch}"` : '';
-
-  return [
-    `📄 Page ${pagination.currentPage}/${pagination.totalPages} ` +
-      `(${(pagination.charLength ?? 0).toLocaleString()} of ` +
-      `${(pagination.totalChars ?? 0).toLocaleString()} chars)`,
-    ``,
-    `▶ TO GET NEXT PAGE:`,
-    `  Use: charOffset=${nextOffset}`,
-    `  Same params: owner="${query.owner}", repo="${query.repo}", ` +
-      `path="${query.path}"${branchParam}`,
-    ``,
-    `💡 TIP: Use matchString for targeted extraction instead of ` +
-      `paginating through entire file`,
-  ];
-}
-
-/**
- * Generate hints for repository structure pagination
- */
-function generateStructurePaginationHints(
-  pagination: {
-    currentPage: number;
-    totalPages: number;
-    hasMore: boolean;
-    entriesPerPage: number;
-    totalEntries: number;
-  },
-  context: {
-    owner: string;
-    repo: string;
-    branch: string;
-    path?: string;
-    depth?: number;
-    pageFiles: number;
-    pageFolders: number;
-    allFiles: number;
-    allFolders: number;
-  }
-): string[] {
-  const hints: string[] = [];
-
-  // Summary of current page
-  hints.push(
-    `📂 Page ${pagination.currentPage}/${pagination.totalPages} ` +
-      `(${context.pageFiles} files, ${context.pageFolders} folders on this page)`
-  );
-
-  hints.push(
-    `📊 Total: ${context.allFiles} files, ${context.allFolders} folders ` +
-      `(${pagination.totalEntries} entries)`
-  );
-
-  if (pagination.hasMore) {
-    const pathParam = context.path ? `path="${context.path}", ` : '';
-    const depthParam =
-      context.depth && context.depth > 1 ? `depth=${context.depth}, ` : '';
-
-    hints.push('');
-    hints.push(`▶ TO GET NEXT PAGE:`);
-    hints.push(`  Use: entryPageNumber=${pagination.currentPage + 1}`);
-    hints.push(
-      `  Same params: owner="${context.owner}", repo="${context.repo}", ` +
-        `branch="${context.branch}", ${pathParam}${depthParam}entriesPerPage=${pagination.entriesPerPage}`
-    );
-    hints.push('');
-    hints.push(
-      `💡 TIP: Use githubSearchCode with path filter for targeted discovery ` +
-        `instead of paginating through entire structure`
-    );
-  } else {
-    hints.push('');
-    hints.push(
-      `✓ Complete structure retrieved ` +
-        `(${pagination.totalPages} page${pagination.totalPages > 1 ? 's' : ''})`
-    );
-  }
-
-  return hints;
 }
 
 /**
