@@ -140,17 +140,54 @@ async function searchMultipleGitHubRepos(
             ? apiResult.data.repositories || []
             : ([] satisfies SimplifiedRepository[]);
 
-        const customHints = generateSearchSpecificHints(
+        const pagination =
+          'data' in apiResult ? apiResult.data.pagination : undefined;
+
+        // Generate pagination hints with full context for navigation
+        const paginationHints: string[] = [];
+        if (pagination) {
+          const { currentPage, totalPages, totalMatches, perPage, hasMore } =
+            pagination;
+          const startItem = (currentPage - 1) * perPage + 1;
+          const endItem = Math.min(currentPage * perPage, totalMatches);
+
+          // Main pagination summary
+          paginationHints.push(
+            `Page ${currentPage}/${totalPages} (showing ${startItem}-${endItem} of ${totalMatches} repos)`
+          );
+
+          // Navigation hints
+          if (hasMore) {
+            paginationHints.push(`Next: page=${currentPage + 1}`);
+          }
+          if (currentPage > 1) {
+            paginationHints.push(`Previous: page=${currentPage - 1}`);
+          }
+          if (!hasMore) {
+            paginationHints.push('Final page');
+          }
+
+          // Quick navigation hint for multi-page results
+          if (totalPages > 2) {
+            paginationHints.push(
+              `Jump to: page=1 (first) or page=${totalPages} (last)`
+            );
+          }
+        }
+
+        const searchHints = generateSearchSpecificHints(
           query,
           repositories.length > 0
         );
 
+        const customHints = [...paginationHints, ...(searchHints || [])];
+
         return createSuccessResult(
           query,
-          { repositories },
+          { repositories, pagination },
           repositories.length > 0,
           TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-          customHints
+          customHints.length > 0 ? customHints : undefined
         );
       } catch (error) {
         return handleCatchError(error, query);
@@ -158,7 +195,7 @@ async function searchMultipleGitHubRepos(
     },
     {
       toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-      keysPriority: ['repositories', 'error'] satisfies Array<
+      keysPriority: ['repositories', 'pagination', 'error'] satisfies Array<
         keyof RepoSearchResult
       >,
     }

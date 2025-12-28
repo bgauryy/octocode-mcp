@@ -451,6 +451,9 @@ export const GITHUB_SEARCH_REPOS = createSchemaHelper(
   resultLimit: {
     limit: string;
   };
+  pagination: {
+    page: string;
+  };
 };
 
 export const GITHUB_SEARCH_PULL_REQUESTS = createSchemaHelper(

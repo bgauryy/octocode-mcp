@@ -158,6 +158,7 @@ export interface GitHubReposSearchQuery {
   match?: Array<'name' | 'description' | 'readme'>;
   sort?: 'forks' | 'stars' | 'updated' | 'best-match';
   limit?: number;
+  page?: number;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -187,6 +188,19 @@ export interface SimplifiedRepository {
 /** Repository search result */
 export interface RepoSearchResult extends BaseToolResult<GitHubReposSearchQuery> {
   repositories: SimplifiedRepository[];
+  /** Pagination info for navigating through results */
+  pagination?: {
+    /** Current page number (1-based) */
+    currentPage: number;
+    /** Total number of available pages */
+    totalPages: number;
+    /** Number of results per page */
+    perPage: number;
+    /** Total number of matching results (capped at 1000 by GitHub) */
+    totalMatches: number;
+    /** Whether more pages are available */
+    hasMore: boolean;
+  };
 }
 
 // ─── Repository Structure (github_view_repo_structure) ──────────────────────

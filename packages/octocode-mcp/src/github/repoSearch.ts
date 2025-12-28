@@ -13,6 +13,15 @@ import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
 
+/** Pagination info for repository search results */
+export interface RepoSearchPagination {
+  currentPage: number;
+  totalPages: number;
+  perPage: number;
+  totalMatches: number;
+  hasMore: boolean;
+}
+
 export async function searchGitHubReposAPI(
   params: GitHubReposSearchQuery,
   authInfo?: AuthInfo,
@@ -20,6 +29,7 @@ export async function searchGitHubReposAPI(
 ): Promise<
   GitHubAPIResponse<{
     repositories: SimplifiedRepository[];
+    pagination?: RepoSearchPagination;
   }>
 > {
   // Cache key excludes context fields (mainResearchGoal, researchGoal, reasoning)
@@ -37,6 +47,7 @@ export async function searchGitHubReposAPI(
       match: params.match,
       sort: params.sort,
       limit: params.limit,
+      page: params.page,
     },
     sessionId
   );
@@ -44,6 +55,7 @@ export async function searchGitHubReposAPI(
   const result = await withDataCache<
     GitHubAPIResponse<{
       repositories: SimplifiedRepository[];
+      pagination?: RepoSearchPagination;
     }>
   >(
     cacheKey,
@@ -65,6 +77,7 @@ async function searchGitHubReposAPIInternal(
 ): Promise<
   GitHubAPIResponse<{
     repositories: SimplifiedRepository[];
+    pagination?: RepoSearchPagination;
   }>
 > {
   try {
@@ -83,10 +96,13 @@ async function searchGitHubReposAPIInternal(
       };
     }
 
+    const perPage = Math.min(params.limit || 30, 100);
+    const currentPage = params.page || 1;
+
     const searchParams: SearchReposParameters = {
       q: query,
-      per_page: Math.min(params.limit || 30, 100),
-      page: 1,
+      per_page: perPage,
+      page: currentPage,
     };
 
     if (params.sort && params.sort !== 'best-match') {
@@ -128,9 +144,21 @@ async function searchGitHubReposAPIInternal(
       };
     });
 
+    // GitHub caps at 1000 total results
+    const totalMatches = Math.min(result.data.total_count, 1000);
+    const totalPages = Math.min(Math.ceil(totalMatches / perPage), 10);
+    const hasMore = currentPage < totalPages;
+
     return {
       data: {
         repositories,
+        pagination: {
+          currentPage,
+          totalPages,
+          perPage,
+          totalMatches,
+          hasMore,
+        },
       },
       status: 200,
       headers: result.headers,
