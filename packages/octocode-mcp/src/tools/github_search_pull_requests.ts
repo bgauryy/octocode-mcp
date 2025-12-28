@@ -16,6 +16,7 @@ import {
   handleCatchError,
   createSuccessResult,
   createErrorResult,
+  invokeCallbackSafely,
 } from './utils.js';
 
 const VALIDATION_MESSAGES = {
@@ -77,12 +78,11 @@ export function registerSearchGitHubPullRequestsTool(
       ): Promise<CallToolResult> => {
         let queries = args.queries || [];
 
-        if (callback) {
-          try {
-            await callback(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, queries);
-            // eslint-disable-next-line no-empty
-          } catch {}
-        }
+        await invokeCallbackSafely(
+          callback,
+          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+          queries
+        );
 
         const longQueryIndex = queries.findIndex(hasQueryLengthError);
         if (longQueryIndex !== -1) {

@@ -20,6 +20,7 @@ import {
   handleCatchError,
   createSuccessResult,
   createErrorResult,
+  invokeCallbackSafely,
 } from './utils.js';
 import { checkNpmAvailability } from '../utils/exec/index.js';
 
@@ -57,12 +58,11 @@ export async function registerPackageSearchTool(
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
-        if (callback) {
-          try {
-            await callback(TOOL_NAMES.PACKAGE_SEARCH, queries);
-            // eslint-disable-next-line no-empty
-          } catch {}
-        }
+        await invokeCallbackSafely(
+          callback,
+          TOOL_NAMES.PACKAGE_SEARCH,
+          queries
+        );
 
         return searchPackages(queries);
       }

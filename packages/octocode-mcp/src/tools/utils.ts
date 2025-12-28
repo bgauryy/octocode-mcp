@@ -1,11 +1,35 @@
 import type { GitHubAPIError } from '../github/githubAPI';
-import type { ToolErrorResult, ToolSuccessResult } from '../types.js';
+import type {
+  ToolErrorResult,
+  ToolSuccessResult,
+  ToolInvocationCallback,
+} from '../types.js';
 import { getToolHintsSync } from './toolMetadata.js';
 import { logSessionError } from '../session.js';
 import { TOOL_ERRORS } from '../errorCodes.js';
 import { createErrorResult } from '../utils/errorResult.js';
 
 export { createErrorResult };
+
+/**
+ * Safely invoke a tool invocation callback with error logging.
+ * Errors are logged but not thrown - callback failures shouldn't block tool execution.
+ */
+export async function invokeCallbackSafely(
+  callback: ToolInvocationCallback | undefined,
+  toolName: string,
+  queries: unknown[]
+): Promise<void> {
+  if (!callback) return;
+  try {
+    await callback(toolName, queries);
+  } catch {
+    // Log callback failure to session for monitoring
+    logSessionError(toolName, TOOL_ERRORS.EXECUTION_FAILED.code).catch(
+      () => {}
+    );
+  }
+}
 
 export function createSuccessResult<T extends Record<string, unknown>>(
   query: {

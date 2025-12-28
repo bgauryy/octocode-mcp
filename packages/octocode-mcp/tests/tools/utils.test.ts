@@ -3,14 +3,22 @@
  * Validates hint propagation, error handling, and result creation
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   createSuccessResult,
   createErrorResult,
   handleApiError,
   handleCatchError,
+  invokeCallbackSafely,
 } from '../../src/tools/utils.js';
 import type { GitHubAPIError } from '../../src/github/githubAPI.js';
+import type { ToolInvocationCallback } from '../../src/types.js';
+import { logSessionError } from '../../src/session.js';
+
+// Mock session logging
+vi.mock('../../src/session.js', () => ({
+  logSessionError: vi.fn().mockResolvedValue(undefined),
+}));
 
 describe('Tools Utils', () => {
   describe('createSuccessResult', () => {
@@ -631,6 +639,143 @@ describe('Tools Utils', () => {
       expect(result.hints).toStrictEqual(customHints);
       expect(result.hints).toHaveLength(2);
       expect(result.hints).toEqual(['Hint 1', 'Hint 2']);
+    });
+  });
+
+  describe('invokeCallbackSafely', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it('should do nothing when callback is undefined', async () => {
+      await expect(
+        invokeCallbackSafely(undefined, 'TEST_TOOL', [{ query: 'test' }])
+      ).resolves.toBeUndefined();
+
+      expect(logSessionError).not.toHaveBeenCalled();
+    });
+
+    it('should invoke callback with correct arguments', async () => {
+      const mockCallback: ToolInvocationCallback = vi
+        .fn()
+        .mockResolvedValue(undefined);
+      const queries = [{ query: 'test1' }, { query: 'test2' }];
+
+      await invokeCallbackSafely(mockCallback, 'GITHUB_SEARCH_CODE', queries);
+
+      expect(mockCallback).toHaveBeenCalledTimes(1);
+      expect(mockCallback).toHaveBeenCalledWith('GITHUB_SEARCH_CODE', queries);
+      expect(logSessionError).not.toHaveBeenCalled();
+    });
+
+    it('should catch and log synchronous errors from callback', async () => {
+      const mockCallback: ToolInvocationCallback = vi
+        .fn()
+        .mockImplementation(() => {
+          throw new Error('Sync callback error');
+        });
+
+      await expect(
+        invokeCallbackSafely(mockCallback, 'GITHUB_FETCH_CONTENT', [])
+      ).resolves.toBeUndefined();
+
+      expect(mockCallback).toHaveBeenCalledTimes(1);
+      expect(logSessionError).toHaveBeenCalledTimes(1);
+      expect(logSessionError).toHaveBeenCalledWith(
+        'GITHUB_FETCH_CONTENT',
+        'TOOL_EXECUTION_FAILED'
+      );
+    });
+
+    it('should catch and log async rejected promises from callback', async () => {
+      const mockCallback: ToolInvocationCallback = vi
+        .fn()
+        .mockRejectedValue(new Error('Async callback error'));
+
+      await expect(
+        invokeCallbackSafely(mockCallback, 'GITHUB_SEARCH_REPOSITORIES', [
+          { name: 'test' },
+        ])
+      ).resolves.toBeUndefined();
+
+      expect(mockCallback).toHaveBeenCalledTimes(1);
+      expect(logSessionError).toHaveBeenCalledTimes(1);
+      expect(logSessionError).toHaveBeenCalledWith(
+        'GITHUB_SEARCH_REPOSITORIES',
+        'TOOL_EXECUTION_FAILED'
+      );
+    });
+
+    it('should not propagate errors to caller', async () => {
+      const mockCallback: ToolInvocationCallback = vi
+        .fn()
+        .mockRejectedValue(new Error('Should not propagate'));
+
+      // This should NOT throw
+      await invokeCallbackSafely(
+        mockCallback,
+        'GITHUB_VIEW_REPO_STRUCTURE',
+        []
+      );
+
+      expect(logSessionError).toHaveBeenCalled();
+    });
+
+    it('should handle callback that returns rejected promise', async () => {
+      const mockCallback: ToolInvocationCallback = vi
+        .fn()
+        .mockImplementation(async () => {
+          return Promise.reject(new Error('Promise rejection'));
+        });
+
+      await expect(
+        invokeCallbackSafely(mockCallback, 'GITHUB_SEARCH_PULL_REQUESTS', [])
+      ).resolves.toBeUndefined();
+
+      expect(logSessionError).toHaveBeenCalledWith(
+        'GITHUB_SEARCH_PULL_REQUESTS',
+        'TOOL_EXECUTION_FAILED'
+      );
+    });
+
+    it('should handle non-Error thrown values', async () => {
+      const mockCallback: ToolInvocationCallback = vi
+        .fn()
+        .mockImplementation(() => {
+          throw 'string error'; // eslint-disable-line no-throw-literal
+        });
+
+      await expect(
+        invokeCallbackSafely(mockCallback, 'PACKAGE_SEARCH', [])
+      ).resolves.toBeUndefined();
+
+      expect(logSessionError).toHaveBeenCalledWith(
+        'PACKAGE_SEARCH',
+        'TOOL_EXECUTION_FAILED'
+      );
+    });
+
+    it('should work with all tool types', async () => {
+      const toolNames = [
+        'GITHUB_SEARCH_CODE',
+        'GITHUB_FETCH_CONTENT',
+        'GITHUB_SEARCH_REPOSITORIES',
+        'GITHUB_SEARCH_PULL_REQUESTS',
+        'GITHUB_VIEW_REPO_STRUCTURE',
+        'PACKAGE_SEARCH',
+      ];
+
+      for (const toolName of toolNames) {
+        vi.clearAllMocks();
+        const mockCallback: ToolInvocationCallback = vi
+          .fn()
+          .mockResolvedValue(undefined);
+
+        await invokeCallbackSafely(mockCallback, toolName, [{ test: true }]);
+
+        expect(mockCallback).toHaveBeenCalledWith(toolName, [{ test: true }]);
+        expect(logSessionError).not.toHaveBeenCalled();
+      }
     });
   });
 });

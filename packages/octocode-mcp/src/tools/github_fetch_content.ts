@@ -11,6 +11,7 @@ import {
   handleCatchError,
   createSuccessResult,
   handleApiError,
+  invokeCallbackSafely,
 } from './utils.js';
 
 export function registerFetchGitHubFileContentTool(
@@ -41,12 +42,11 @@ export function registerFetchGitHubFileContentTool(
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
-        if (callback) {
-          try {
-            await callback(TOOL_NAMES.GITHUB_FETCH_CONTENT, queries);
-            // eslint-disable-next-line no-empty
-          } catch {}
-        }
+        await invokeCallbackSafely(
+          callback,
+          TOOL_NAMES.GITHUB_FETCH_CONTENT,
+          queries
+        );
 
         return fetchMultipleGitHubFileContents(queries, authInfo, sessionId);
       }

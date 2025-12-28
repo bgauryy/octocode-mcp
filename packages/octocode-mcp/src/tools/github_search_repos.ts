@@ -16,6 +16,7 @@ import {
   handleApiError,
   handleCatchError,
   createSuccessResult,
+  invokeCallbackSafely,
 } from './utils.js';
 
 export function registerSearchGitHubReposTool(
@@ -46,12 +47,11 @@ export function registerSearchGitHubReposTool(
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
-        if (callback) {
-          try {
-            await callback(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, queries);
-            // eslint-disable-next-line no-empty
-          } catch {}
-        }
+        await invokeCallbackSafely(
+          callback,
+          TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+          queries
+        );
 
         return searchMultipleGitHubRepos(queries, authInfo, sessionId);
       }
