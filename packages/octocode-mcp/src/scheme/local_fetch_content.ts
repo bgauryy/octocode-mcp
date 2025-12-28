@@ -69,7 +69,9 @@ export const FetchContentQuerySchema = BaseQuerySchemaLocal.extend({
     .boolean()
     .optional()
     .default(false)
-    .describe('Treat matchString as regex (default: false for literal).'),
+    .describe(
+      'Treat matchString as regex (default: false for literal). Matches per-line only.'
+    ),
 
   matchStringCaseSensitive: z
     .boolean()

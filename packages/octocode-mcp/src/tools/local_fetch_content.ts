@@ -136,7 +136,7 @@ export async function fetchContent(
         // Add pattern-specific hints
         if (query.matchStringIsRegex) {
           contextHints.push(
-            'TIP: Regex pattern may be too specific - try simplifying'
+            'TIP: Regex matches per-line only (not multiline). Verify pattern exists on a single line.'
           );
         } else {
           contextHints.push(

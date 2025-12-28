@@ -109,7 +109,7 @@ describe('localGetFileContent', () => {
 
       expect(result.status).toBe('empty');
       expect(result.hints).toBeDefined();
-      expect(result.hints?.some(h => h.includes('Regex pattern'))).toBe(true);
+      expect(result.hints?.some(h => h.includes('per-line'))).toBe(true);
     });
 
     it('should show case-sensitive hint when enabled and no matches', async () => {
@@ -139,6 +139,69 @@ describe('localGetFileContent', () => {
 
       expect(result.status).toBe('hasResults');
       expect(result.content).toContain('export function');
+    });
+
+    // Issue verification: export.*const patterns
+    describe('regex .* pattern behavior', () => {
+      it('should match export.*const when content has "export const" on same line', async () => {
+        const testContent = 'line 1\nexport const foo = 1;\nline 3';
+        mockReadFile.mockResolvedValue(testContent);
+
+        const result = await fetchContent({
+          path: 'test.ts',
+          matchString: 'export.*const',
+          matchStringIsRegex: true,
+        });
+
+        expect(result.status).toBe('hasResults');
+        expect(result.content).toContain('export const');
+      });
+
+      it('should NOT match export.*const when file has export function only', async () => {
+        // This is the scenario from the issue - file has export function but not export const
+        const testContent =
+          'line 1\nexport function test() {}\nexport async function foo() {}\nline 4';
+        mockReadFile.mockResolvedValue(testContent);
+
+        const result = await fetchContent({
+          path: 'test.ts',
+          matchString: 'export.*const',
+          matchStringIsRegex: true,
+        });
+
+        // Expected: no matches because file doesn't contain "export const"
+        expect(result.status).toBe('empty');
+        expect(result.errorCode).toBe(ERROR_CODES.NO_MATCHES);
+      });
+
+      it('should match patterns line-by-line (not multiline)', async () => {
+        // Pattern won't match across lines even if keywords exist
+        const testContent = 'export\nconst foo = 1;';
+        mockReadFile.mockResolvedValue(testContent);
+
+        const result = await fetchContent({
+          path: 'test.ts',
+          matchString: 'export.*const',
+          matchStringIsRegex: true,
+        });
+
+        // export and const are on different lines - regex matches per line
+        expect(result.status).toBe('empty');
+      });
+
+      it('should work with greedy .* when content exists on same line', async () => {
+        const testContent = 'export type MyType = { const: string };';
+        mockReadFile.mockResolvedValue(testContent);
+
+        const result = await fetchContent({
+          path: 'test.ts',
+          matchString: 'export.*const',
+          matchStringIsRegex: true,
+        });
+
+        // "export" ... "const" on same line matches
+        expect(result.status).toBe('hasResults');
+      });
     });
 
     it('should match case-sensitively when matchStringCaseSensitive is true', async () => {
