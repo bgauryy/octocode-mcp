@@ -9,6 +9,7 @@
 import { minify } from 'terser';
 import CleanCSS from 'clean-css';
 import { minify as htmlMinifierTerser } from 'html-minifier-terser';
+import { getExtension } from '../fileFilters.js';
 
 // ============================================================================
 // Types
@@ -244,12 +245,11 @@ const INDENTATION_SENSITIVE_NAMES = new Set([
 // Shared Utilities
 // ============================================================================
 
-function getFileExtension(filePath: string): string {
-  return filePath.split('.').pop()?.toLowerCase() || 'txt';
-}
+/** Extension options for minifier: lowercase with 'txt' fallback */
+const MINIFIER_EXT_OPTIONS = { lowercase: true, fallback: 'txt' } as const;
 
 function getFileConfig(filePath: string): FileTypeMinifyConfig {
-  const ext = getFileExtension(filePath);
+  const ext = getExtension(filePath, MINIFIER_EXT_OPTIONS);
   const baseName = (filePath.split('/').pop() || '').toLowerCase();
 
   if (INDENTATION_SENSITIVE_NAMES.has(baseName)) {
@@ -432,7 +432,7 @@ function minifyJavaScriptCore(content: string): string {
  */
 export function minifyContentSync(content: string, filePath: string): string {
   const config = getFileConfig(filePath);
-  const ext = getFileExtension(filePath);
+  const ext = getExtension(filePath, MINIFIER_EXT_OPTIONS);
 
   try {
     switch (config.strategy) {
@@ -578,7 +578,7 @@ export async function minifyContent(
     }
 
     const config = getFileConfig(filePath);
-    const ext = getFileExtension(filePath);
+    const ext = getExtension(filePath, MINIFIER_EXT_OPTIONS);
 
     switch (config.strategy) {
       case 'terser': {

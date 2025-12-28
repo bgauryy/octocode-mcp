@@ -7,6 +7,8 @@ import { maskSensitiveData } from './security/mask.js';
 let config: ServerConfig | null = null;
 let cachedToken: string | null = null;
 let initializationPromise: Promise<void> | null = null;
+// Track pending token resolution to prevent race conditions
+let pendingTokenPromise: Promise<string | null> | null = null;
 
 function parseStringArray(value?: string): string[] | undefined {
   if (!value?.trim()) return undefined;
@@ -84,6 +86,7 @@ export function cleanup(): void {
   config = null;
   cachedToken = null;
   initializationPromise = null;
+  pendingTokenPromise = null;
 }
 
 export function getServerConfig(): ServerConfig {
@@ -98,12 +101,27 @@ export function getServerConfig(): ServerConfig {
 }
 
 export async function getGitHubToken(): Promise<string | null> {
+  // Case 1: Token already cached
   if (cachedToken) {
     return cachedToken;
   }
 
-  cachedToken = await resolveGitHubToken();
-  return cachedToken;
+  // Case 2: Token resolution already in progress (race condition protection)
+  if (pendingTokenPromise) {
+    return pendingTokenPromise;
+  }
+
+  // Case 3: Start new token resolution
+  pendingTokenPromise = (async () => {
+    try {
+      cachedToken = await resolveGitHubToken();
+      return cachedToken;
+    } finally {
+      pendingTokenPromise = null;
+    }
+  })();
+
+  return pendingTokenPromise;
 }
 
 export async function getToken(): Promise<string> {
@@ -125,8 +143,9 @@ export function isLoggingEnabled(): boolean {
   return config?.loggingEnabled ?? false;
 }
 
-export function clearCachedToken(): void {
+export function clearConfigCachedToken(): void {
   cachedToken = null;
+  pendingTokenPromise = null;
 }
 
 export { parseStringArray };

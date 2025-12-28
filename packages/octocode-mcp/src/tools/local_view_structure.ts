@@ -1,9 +1,9 @@
 import { LsCommandBuilder } from '../commands/LsCommandBuilder.js';
 import { safeExec } from '../utils/exec/index.js';
-import { pathValidator } from '../security/pathValidator.js';
 import { getExtension } from '../utils/fileFilters.js';
 import { getHints } from './hints/index.js';
-import { STATIC_TOOL_NAMES } from './toolMetadata.js';
+import { STATIC_TOOL_NAMES, TOOL_NAMES } from './toolMetadata.js';
+import { validateToolPath } from '../utils/local/utils/toolHelpers.js';
 import {
   applyPagination,
   generatePaginationHints,
@@ -19,7 +19,7 @@ import type {
 } from '../utils/types.js';
 import fs from 'fs';
 import path from 'path';
-import { ERROR_CODES, ToolErrors } from '../errorCodes.js';
+import { ToolErrors } from '../errorCodes.js';
 
 /**
  * Internal directory entry for processing
@@ -141,15 +141,12 @@ export async function viewStructure(
   query: ViewStructureQuery
 ): Promise<ViewStructureResult> {
   try {
-    const pathValidation = pathValidator.validate(query.path);
+    const pathValidation = validateToolPath(
+      query,
+      TOOL_NAMES.LOCAL_VIEW_STRUCTURE
+    );
     if (!pathValidation.isValid) {
-      return {
-        status: 'error',
-        errorCode: ERROR_CODES.PATH_VALIDATION_FAILED,
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
-        hints: getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
-      };
+      return pathValidation.errorResult as ViewStructureResult;
     }
 
     if (query.depth || query.recursive) {

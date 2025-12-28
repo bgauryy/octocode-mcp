@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   getOctokit,
   OctokitWithThrottling,
-  clearCachedToken,
+  clearOctokitInstances,
 } from '../../src/github/client.js';
 
 vi.mock('../../src/serverConfig.js', () => ({
@@ -53,7 +53,7 @@ const mockOctokit = vi.mocked(Octokit);
 describe('GitHub Client', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    clearCachedToken();
+    clearOctokitInstances();
 
     mockGetServerConfig.mockReturnValue({
       version: '1.0.0',
@@ -67,7 +67,7 @@ describe('GitHub Client', () => {
   });
 
   afterEach(() => {
-    clearCachedToken();
+    clearOctokitInstances();
   });
 
   describe('getOctokit', () => {
@@ -191,7 +191,7 @@ describe('GitHub Client', () => {
     });
   });
 
-  describe('clearCachedToken', () => {
+  describe('clearOctokitInstances', () => {
     it('should clear cached Octokit instance', async () => {
       mockGetGitHubToken.mockResolvedValue('test-token');
 
@@ -214,7 +214,7 @@ describe('GitHub Client', () => {
       const instance1 = await getOctokit();
 
       // Clear cache
-      clearCachedToken();
+      clearOctokitInstances();
 
       // Create new instance
       const instance2 = await getOctokit();

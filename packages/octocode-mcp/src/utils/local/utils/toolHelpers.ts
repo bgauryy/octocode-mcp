@@ -25,6 +25,7 @@ export { createErrorResult };
 interface ToolPathValidationResult {
   isValid: boolean;
   errorResult?: LocalErrorResult;
+  sanitizedPath?: string;
 }
 
 /**
@@ -55,7 +56,7 @@ export function validateToolPath(
     };
   }
 
-  return { isValid: true };
+  return { isValid: true, sanitizedPath: validation.sanitizedPath };
 }
 
 /**

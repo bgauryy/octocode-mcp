@@ -94,7 +94,7 @@ vi.mock('../../src/utils/minifier/index.js', () => ({
 
 vi.mock('../../src/github/client.js', () => ({
   getOctokit: vi.fn(() => Promise.resolve(mockOctokit)),
-  clearCachedToken: vi.fn(),
+  clearOctokitInstances: vi.fn(),
 }));
 
 vi.mock('../../src/utils/exec/index.js', () => ({

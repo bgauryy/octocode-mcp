@@ -264,10 +264,40 @@ export function shouldIgnoreFile(filePath: string): boolean {
 }
 
 /**
- * Gets file extension from a path
+ * Options for getExtension function
  */
-export function getExtension(filePath: string): string {
+export interface GetExtensionOptions {
+  /** Convert extension to lowercase (default: false) */
+  lowercase?: boolean;
+  /** Fallback value when no extension found (default: '') */
+  fallback?: string;
+}
+
+/**
+ * Gets file extension from a path
+ * @param filePath - The file path to extract extension from
+ * @param options - Optional configuration for case handling and fallback
+ * @returns The file extension without the leading dot
+ *
+ * @example
+ * getExtension('file.TXT') // 'TXT'
+ * getExtension('file.TXT', { lowercase: true }) // 'txt'
+ * getExtension('noext', { fallback: 'txt' }) // 'txt'
+ * getExtension('.gitignore') // '' (dotfile with no extension)
+ */
+export function getExtension(
+  filePath: string,
+  options?: GetExtensionOptions
+): string {
   const parts = filePath.split('.');
+
+  // Handle dotfiles like '.gitignore' - these have no extension
+  // parts.length <= 1 means no dot, or only a leading dot
+  if (parts.length <= 1 || (parts.length === 2 && parts[0] === '')) {
+    return options?.fallback ?? '';
+  }
+
   // parts.length > 1 guarantees parts[parts.length - 1] exists
-  return parts.length > 1 ? parts[parts.length - 1]! : '';
+  const ext = parts[parts.length - 1]!;
+  return options?.lowercase ? ext.toLowerCase() : ext;
 }

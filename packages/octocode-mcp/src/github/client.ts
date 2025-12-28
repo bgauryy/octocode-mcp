@@ -86,7 +86,7 @@ export async function getOctokit(
   return pendingDefaultPromise;
 }
 
-export function clearCachedToken(): void {
+export function clearOctokitInstances(): void {
   instances.clear();
   pendingDefaultPromise = null;
 }

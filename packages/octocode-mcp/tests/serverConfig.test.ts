@@ -6,7 +6,7 @@ import {
   cleanup,
   getGitHubToken,
   getToken,
-  clearCachedToken,
+  clearConfigCachedToken,
   getServerConfig,
   isLoggingEnabled,
 } from '../src/serverConfig.js';
@@ -51,7 +51,7 @@ describe('ServerConfig - Simplified Version', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     cleanup();
-    clearCachedToken();
+    clearConfigCachedToken();
 
     // Reset environment variables
     process.env = { ...originalEnv };
@@ -67,13 +67,13 @@ describe('ServerConfig - Simplified Version', () => {
 
   afterEach(() => {
     // Ensure cache is cleared between tests
-    clearCachedToken();
+    clearConfigCachedToken();
   });
 
   afterEach(() => {
     process.env = originalEnv;
     cleanup();
-    clearCachedToken();
+    clearConfigCachedToken();
   });
 
   describe('Configuration Initialization', () => {
@@ -144,7 +144,7 @@ describe('ServerConfig - Simplified Version', () => {
   describe('Token Resolution', () => {
     it('should prioritize GITHUB_TOKEN env var over CLI token', async () => {
       process.env.GITHUB_TOKEN = 'env-github-token';
-      clearCachedToken();
+      clearConfigCachedToken();
       cleanup();
 
       mockSpawnSuccess('cli-token');
@@ -156,7 +156,7 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should fall back to CLI token when GITHUB_TOKEN is not set', async () => {
       delete process.env.GITHUB_TOKEN;
-      clearCachedToken();
+      clearConfigCachedToken();
       cleanup();
 
       mockSpawnSuccess('cli-token');
@@ -167,7 +167,7 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should return null when no token found', async () => {
       delete process.env.GITHUB_TOKEN;
-      clearCachedToken();
+      clearConfigCachedToken();
 
       mockSpawnFailure();
       const token = await getGitHubToken();
@@ -176,7 +176,7 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should cache token after first retrieval', async () => {
       delete process.env.GITHUB_TOKEN;
-      clearCachedToken();
+      clearConfigCachedToken();
 
       mockSpawnSuccess('cached-token');
       const token1 = await getGitHubToken();
@@ -189,13 +189,13 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should clear cache properly', async () => {
       delete process.env.GITHUB_TOKEN;
-      clearCachedToken();
+      clearConfigCachedToken();
 
       mockSpawnSuccess('initial-token');
       await getGitHubToken();
 
       // Clear cache and get new token
-      clearCachedToken();
+      clearConfigCachedToken();
       mockSpawnSuccess('new-token');
       const token = await getGitHubToken();
       expect(token).toBe('new-token');
@@ -205,7 +205,7 @@ describe('ServerConfig - Simplified Version', () => {
   describe('getToken with Error Throwing', () => {
     it('should return token when available', async () => {
       process.env.GITHUB_TOKEN = 'available-token';
-      clearCachedToken();
+      clearConfigCachedToken();
       mockSpawnFailure();
 
       const token = await getToken();
@@ -215,7 +215,7 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should throw when no token available', async () => {
       delete process.env.GITHUB_TOKEN;
-      clearCachedToken();
+      clearConfigCachedToken();
       mockSpawnFailure();
 
       await expect(getToken()).rejects.toThrow(
@@ -293,7 +293,7 @@ describe('ServerConfig - Simplified Version', () => {
   describe('Error Handling', () => {
     it('should handle GitHub CLI errors gracefully', async () => {
       process.env.GITHUB_TOKEN = 'fallback-token';
-      clearCachedToken();
+      clearConfigCachedToken();
       mockSpawnFailure();
 
       const token = await getGitHubToken();
@@ -303,7 +303,7 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should handle empty string tokens correctly', async () => {
       delete process.env.GITHUB_TOKEN;
-      clearCachedToken();
+      clearConfigCachedToken();
 
       mockSpawnSuccess('   \n  ');
       const token = await getGitHubToken();
@@ -312,7 +312,7 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should handle whitespace-only tokens', async () => {
       delete process.env.GITHUB_TOKEN;
-      clearCachedToken();
+      clearConfigCachedToken();
 
       mockSpawnSuccess('   \n\t  ');
       const token = await getGitHubToken();
