@@ -90,6 +90,59 @@ describe('pagination utility', () => {
       expect(result.paginatedContent).toBe('🚀');
       expect(result.charLength).toBe(4); // Bytes, not chars
     });
+
+    it('should handle bytes mode reaching end of content (hasMore=false)', () => {
+      const content = 'Hello'; // 5 bytes ASCII
+      // Start at byte 3, take 10 bytes (will hit end)
+      const result = applyPagination(content, 3, 10, { mode: 'bytes' });
+
+      expect(result.paginatedContent).toBe('lo');
+      expect(result.hasMore).toBe(false);
+      expect(result.nextCharOffset).toBeUndefined();
+    });
+
+    it('should handle bytes mode with multi-byte UTF-8 at exact boundary', () => {
+      const content = '你好世界'; // 4 Chinese chars, 12 bytes total (3 bytes each)
+      const result = applyPagination(content, 0, 6, { mode: 'bytes' });
+
+      expect(result.paginatedContent).toBe('你好');
+      expect(result.charLength).toBe(6);
+      expect(result.hasMore).toBe(true);
+      expect(result.nextCharOffset).toBe(6);
+    });
+
+    it('should handle bytes mode with exact fit content', () => {
+      const content = 'abc'; // 3 bytes
+      const result = applyPagination(content, 0, 3, { mode: 'bytes' });
+
+      expect(result.paginatedContent).toBe('abc');
+      expect(result.hasMore).toBe(false);
+      expect(result.nextCharOffset).toBeUndefined();
+      expect(result.totalChars).toBe(3);
+    });
+
+    it('should return estimated tokens correctly', () => {
+      const content = 'a'.repeat(400); // 400 chars = ~100 tokens
+      const result = applyPagination(content, 0, 200);
+
+      expect(result.estimatedTokens).toBe(50); // 200/4 = 50
+    });
+
+    it('should handle zero charOffset explicitly', () => {
+      const content = 'Test content';
+      const result = applyPagination(content, 0, 5);
+
+      expect(result.paginatedContent).toBe('Test ');
+      expect(result.charOffset).toBe(0);
+    });
+
+    it('should set nextCharOffset to undefined when at last page in character mode', () => {
+      const content = 'Short';
+      const result = applyPagination(content, 0, 5);
+
+      expect(result.hasMore).toBe(false);
+      expect(result.nextCharOffset).toBeUndefined();
+    });
   });
 
   describe('generatePaginationHints', () => {
@@ -254,6 +307,84 @@ describe('pagination utility', () => {
       const hints = generatePaginationHints(metadata);
 
       expect(hints.some(h => h.includes('Final page'))).toBe(true);
+    });
+
+    it('should not show navigation hints when on first page with no more', () => {
+      const metadata: PaginationMetadata = {
+        paginatedContent: 'Hello',
+        charOffset: 0,
+        charLength: 5,
+        totalChars: 5,
+        hasMore: false,
+        estimatedTokens: 2,
+        currentPage: 1,
+        totalPages: 1,
+      };
+
+      const hints = generatePaginationHints(metadata);
+
+      // Should NOT show "Final page" since charOffset is 0
+      expect(hints.some(h => h.includes('Final page'))).toBe(false);
+      // Should NOT show "More available" since hasMore is false
+      expect(hints.some(h => h.includes('More available'))).toBe(false);
+    });
+
+    it('should handle metadata without estimatedTokens', () => {
+      const metadata: PaginationMetadata = {
+        paginatedContent: 'Hello',
+        charOffset: 0,
+        charLength: 5,
+        totalChars: 10,
+        hasMore: true,
+        nextCharOffset: 5,
+        currentPage: 1,
+        totalPages: 2,
+      };
+
+      const hints = generatePaginationHints(metadata);
+
+      // Should still have navigation hints
+      expect(hints.some(h => h.includes('More available'))).toBe(true);
+      // Should NOT have token warnings since estimatedTokens is undefined
+      expect(hints.some(h => h.includes('tokens'))).toBe(false);
+    });
+
+    it('should handle missing nextCharOffset when hasMore is true', () => {
+      const metadata: PaginationMetadata = {
+        paginatedContent: 'Hello',
+        charOffset: 0,
+        charLength: 5,
+        totalChars: 10,
+        hasMore: true,
+        // nextCharOffset is intentionally missing
+        currentPage: 1,
+        totalPages: 2,
+      };
+
+      const hints = generatePaginationHints(metadata);
+
+      // Should NOT show "Next page: Use charOffset=" if nextCharOffset is missing
+      expect(hints.some(h => h.includes('charOffset='))).toBe(false);
+    });
+
+    it('should include toolName in hints if provided', () => {
+      const metadata: PaginationMetadata = {
+        paginatedContent: 'Hello',
+        charOffset: 0,
+        charLength: 5,
+        totalChars: 10,
+        hasMore: true,
+        nextCharOffset: 5,
+        estimatedTokens: 2,
+        currentPage: 1,
+        totalPages: 2,
+      };
+
+      const hints = generatePaginationHints(metadata, {
+        toolName: 'testTool',
+      });
+
+      expect(Array.isArray(hints)).toBe(true);
     });
   });
 
@@ -528,6 +659,68 @@ describe('pagination utility', () => {
 
       expect(hints.some(h => h.includes('branch='))).toBe(false);
     });
+
+    it('should handle undefined charOffset and charLength (nullish coalescing)', () => {
+      const pagination = {
+        currentPage: 1,
+        totalPages: 2,
+        hasMore: true,
+        // charOffset and charLength are undefined
+      };
+      const query = {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        path: 'src/index.ts',
+      };
+
+      const hints = generateGitHubPaginationHints(pagination, query);
+
+      // Should use 0 as default for calculations
+      expect(hints.some(h => h.includes('charOffset=0'))).toBe(true);
+      // Should show "0 of X chars" with defaults
+      expect(hints.some(h => h.includes('0 of'))).toBe(true);
+    });
+
+    it('should handle undefined totalChars', () => {
+      const pagination = {
+        currentPage: 1,
+        totalPages: 2,
+        hasMore: true,
+        charOffset: 0,
+        charLength: 1000,
+        // totalChars is undefined
+      };
+      const query = {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        path: 'src/index.ts',
+      };
+
+      const hints = generateGitHubPaginationHints(pagination, query);
+
+      // Should use 0 as default
+      expect(hints.some(h => h.includes('1,000 of 0 chars'))).toBe(true);
+    });
+
+    it('should show plural "pages" when totalPages > 1', () => {
+      const pagination = {
+        currentPage: 2,
+        totalPages: 3,
+        hasMore: false,
+        charOffset: 40000,
+        charLength: 20000,
+        totalChars: 60000,
+      };
+      const query = {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        path: 'src/index.ts',
+      };
+
+      const hints = generateGitHubPaginationHints(pagination, query);
+
+      expect(hints.some(h => h.includes('3 pages'))).toBe(true);
+    });
   });
 
   describe('generateStructurePaginationHints', () => {
@@ -616,6 +809,140 @@ describe('pagination utility', () => {
       expect(hints.some(h => h.includes('path='))).toBe(false);
       // depth=1 is default, should not be included
       expect(hints.some(h => h.includes('depth='))).toBe(false);
+    });
+
+    it('should show singular "page" when totalPages is 1', () => {
+      const pagination = {
+        currentPage: 1,
+        totalPages: 1,
+        hasMore: false,
+        entriesPerPage: 50,
+        totalEntries: 10,
+      };
+      const context = {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        branch: 'main',
+        pageFiles: 10,
+        pageFolders: 0,
+        allFiles: 10,
+        allFolders: 0,
+      };
+
+      const hints = generateStructurePaginationHints(pagination, context);
+
+      expect(hints.some(h => h.includes('1 page)'))).toBe(true);
+      expect(hints.some(h => h.includes('pages)'))).toBe(false);
+    });
+
+    it('should show plural "pages" when totalPages > 1', () => {
+      const pagination = {
+        currentPage: 3,
+        totalPages: 3,
+        hasMore: false,
+        entriesPerPage: 20,
+        totalEntries: 55,
+      };
+      const context = {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        branch: 'main',
+        pageFiles: 15,
+        pageFolders: 0,
+        allFiles: 55,
+        allFolders: 0,
+      };
+
+      const hints = generateStructurePaginationHints(pagination, context);
+
+      expect(hints.some(h => h.includes('3 pages)'))).toBe(true);
+    });
+
+    it('should include depth=1 when explicitly set to 1 and hasMore', () => {
+      const pagination = {
+        currentPage: 1,
+        totalPages: 2,
+        hasMore: true,
+        entriesPerPage: 20,
+        totalEntries: 30,
+      };
+      const context = {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        branch: 'main',
+        depth: 1, // Explicitly set to 1
+        pageFiles: 18,
+        pageFolders: 2,
+        allFiles: 25,
+        allFolders: 5,
+      };
+
+      const hints = generateStructurePaginationHints(pagination, context);
+
+      // depth=1 should NOT be included (it's the default)
+      expect(hints.some(h => h.includes('depth=1'))).toBe(false);
+    });
+
+    it('should include path="" (empty string) when provided', () => {
+      const pagination = {
+        currentPage: 1,
+        totalPages: 2,
+        hasMore: true,
+        entriesPerPage: 20,
+        totalEntries: 30,
+      };
+      const context = {
+        owner: 'test-owner',
+        repo: 'test-repo',
+        branch: 'main',
+        path: '', // Empty string - falsy but defined
+        pageFiles: 18,
+        pageFolders: 2,
+        allFiles: 25,
+        allFolders: 5,
+      };
+
+      const hints = generateStructurePaginationHints(pagination, context);
+
+      // Empty path should NOT be included in hints
+      expect(hints.some(h => h.includes('path=""'))).toBe(false);
+    });
+
+    it('should handle all pagination info correctly', () => {
+      const pagination = {
+        currentPage: 2,
+        totalPages: 5,
+        hasMore: true,
+        entriesPerPage: 10,
+        totalEntries: 50,
+      };
+      const context = {
+        owner: 'org',
+        repo: 'project',
+        branch: 'develop',
+        path: 'packages/core',
+        depth: 3,
+        pageFiles: 8,
+        pageFolders: 2,
+        allFiles: 40,
+        allFolders: 10,
+      };
+
+      const hints = generateStructurePaginationHints(pagination, context);
+
+      expect(hints.some(h => h.includes('Page 2/5'))).toBe(true);
+      expect(
+        hints.some(h => h.includes('8 files, 2 folders on this page'))
+      ).toBe(true);
+      expect(hints.some(h => h.includes('40 files, 10 folders'))).toBe(true);
+      expect(hints.some(h => h.includes('50 entries'))).toBe(true);
+      expect(hints.some(h => h.includes('entryPageNumber=3'))).toBe(true);
+      expect(hints.some(h => h.includes('owner="org"'))).toBe(true);
+      expect(hints.some(h => h.includes('repo="project"'))).toBe(true);
+      expect(hints.some(h => h.includes('branch="develop"'))).toBe(true);
+      expect(hints.some(h => h.includes('path="packages/core"'))).toBe(true);
+      expect(hints.some(h => h.includes('depth=3'))).toBe(true);
+      expect(hints.some(h => h.includes('entriesPerPage=10'))).toBe(true);
     });
   });
 });
