@@ -44,6 +44,7 @@ export interface GitHubCodeSearchQuery {
   path?: string;
   match?: 'file' | 'path';
   limit?: number;
+  page?: number;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -71,6 +72,19 @@ export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
   repositoryContext?: {
     owner: string;
     repo: string;
+  };
+  /** Pagination info for navigating through results */
+  pagination?: {
+    /** Current page number (1-based) */
+    currentPage: number;
+    /** Total number of available pages */
+    totalPages: number;
+    /** Number of results per page */
+    perPage: number;
+    /** Total number of matching results (capped at 1000 by GitHub) */
+    totalMatches: number;
+    /** Whether more pages are available */
+    hasMore: boolean;
   };
 }
 

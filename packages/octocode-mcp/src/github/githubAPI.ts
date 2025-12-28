@@ -176,6 +176,13 @@ export type OptimizedCodeSearchResult = {
       repo: string;
     };
   };
+  pagination?: {
+    currentPage: number;
+    totalPages: number;
+    perPage: number;
+    totalMatches: number;
+    hasMore: boolean;
+  };
 };
 
 /**

@@ -36,6 +36,7 @@ export async function searchGitHubCodeAPI(
       path: params.path,
       match: params.match,
       limit: params.limit,
+      page: params.page,
     },
     sessionId
   );
@@ -94,13 +95,16 @@ async function searchGitHubCodeAPIInternal(
       };
     }
 
+    const perPage = Math.min(
+      typeof params.limit === 'number' ? params.limit : 30,
+      100
+    );
+    const currentPage = params.page || 1;
+
     const searchParams: SearchCodeParameters = {
       q: query,
-      per_page: Math.min(
-        typeof params.limit === 'number' ? params.limit : 30,
-        100
-      ),
-      page: 1,
+      per_page: perPage,
+      page: currentPage,
       headers: {
         Accept: 'application/vnd.github.v3.text-match+json',
       },
@@ -109,6 +113,11 @@ async function searchGitHubCodeAPIInternal(
     const result = await octokit.rest.search.code(searchParams);
 
     const optimizedResult = await convertCodeSearchResult(result);
+
+    // GitHub caps at 1000 total results
+    const totalMatches = Math.min(optimizedResult.total_count, 1000);
+    const totalPages = Math.min(Math.ceil(totalMatches / perPage), 10);
+    const hasMore = currentPage < totalPages;
 
     return {
       data: {
@@ -120,6 +129,13 @@ async function searchGitHubCodeAPIInternal(
         minificationFailed: optimizedResult.minificationFailed,
         minificationTypes: optimizedResult.minificationTypes,
         _researchContext: optimizedResult._researchContext,
+        pagination: {
+          currentPage,
+          totalPages,
+          perPage,
+          totalMatches,
+          hasMore,
+        },
       },
       status: 200,
       headers: result.headers,

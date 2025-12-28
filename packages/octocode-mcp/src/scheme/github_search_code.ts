@@ -24,10 +24,20 @@ export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
     .number()
     .int()
     .min(1)
-    .max(10)
+    .max(100)
     .default(10)
     .optional()
     .describe(GITHUB_SEARCH_CODE.resultLimit.limit),
+  page: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .default(1)
+    .optional()
+    .describe(
+      'Page number (1-based, default 1). GitHub limits to 1000 total results (10 pages × 100 per page max).'
+    ),
 });
 
 export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(

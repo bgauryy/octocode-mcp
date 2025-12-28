@@ -106,15 +106,59 @@ async function searchMultipleGitHubCode(
           result.repositoryContext = repoContext;
         }
 
+        // Add pagination info if available
+        const pagination = apiResult.data.pagination;
+        if (pagination) {
+          result.pagination = pagination;
+        }
+
         const hasContent = files.length > 0;
         // Determine if specific owner/repo was requested (context for hints)
         const hasOwnerRepo = !!(query.owner && query.repo);
 
-        const customHints = getHints(
-          TOOL_NAMES.GITHUB_SEARCH_CODE,
-          hasContent ? 'hasResults' : 'empty',
-          { hasOwnerRepo, match: query.match }
-        );
+        // Generate pagination hints with full context for navigation
+        const paginationHints: string[] = [];
+        if (pagination) {
+          const { currentPage, totalPages, totalMatches, perPage, hasMore } =
+            pagination;
+          const startItem = (currentPage - 1) * perPage + 1;
+          const endItem = Math.min(currentPage * perPage, totalMatches);
+
+          // Main pagination summary
+          paginationHints.push(
+            `Page ${currentPage}/${totalPages} (showing ${startItem}-${endItem} of ${totalMatches} matches)`
+          );
+
+          // Navigation hints
+          if (hasMore) {
+            paginationHints.push(`Next: page=${currentPage + 1}`);
+          }
+          if (currentPage > 1) {
+            paginationHints.push(`Previous: page=${currentPage - 1}`);
+          }
+          if (!hasMore) {
+            paginationHints.push('Final page');
+          }
+
+          // Quick navigation hint for multi-page results
+          if (totalPages > 2) {
+            paginationHints.push(
+              `Jump to: page=1 (first) or page=${totalPages} (last)`
+            );
+          }
+        }
+
+        const customHints = [
+          ...paginationHints,
+          ...getHints(
+            TOOL_NAMES.GITHUB_SEARCH_CODE,
+            hasContent ? 'hasResults' : 'empty',
+            {
+              hasOwnerRepo,
+              match: query.match,
+            }
+          ),
+        ];
 
         return createSuccessResult(
           query,
@@ -129,9 +173,12 @@ async function searchMultipleGitHubCode(
     },
     {
       toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-      keysPriority: ['files', 'repositoryContext', 'error'] satisfies Array<
-        keyof SearchResult
-      >,
+      keysPriority: [
+        'files',
+        'pagination',
+        'repositoryContext',
+        'error',
+      ] satisfies Array<keyof SearchResult>,
     }
   );
 }

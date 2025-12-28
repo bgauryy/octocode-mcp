@@ -419,6 +419,9 @@ export const GITHUB_SEARCH_CODE = createSchemaHelper(
   resultLimit: {
     limit: string;
   };
+  pagination: {
+    page: string;
+  };
   processing: {
     sanitize: string;
   };
