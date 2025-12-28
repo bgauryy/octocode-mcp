@@ -29,7 +29,50 @@ export async function searchGitHubPullRequestsAPI(
   authInfo?: AuthInfo,
   sessionId?: string
 ): Promise<PullRequestSearchResult> {
-  const cacheKey = generateCacheKey('gh-api-prs', params, sessionId);
+  // Cache key excludes context fields (mainResearchGoal, researchGoal, reasoning)
+  // as they don't affect the API response
+  const cacheKey = generateCacheKey(
+    'gh-api-prs',
+    {
+      query: params.query,
+      owner: params.owner,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      state: params.state,
+      draft: params.draft,
+      merged: params.merged,
+      author: params.author,
+      assignee: params.assignee,
+      mentions: params.mentions,
+      commenter: params.commenter,
+      involves: params.involves,
+      'reviewed-by': params['reviewed-by'],
+      'review-requested': params['review-requested'],
+      head: params.head,
+      base: params.base,
+      created: params.created,
+      updated: params.updated,
+      'merged-at': params['merged-at'],
+      closed: params.closed,
+      comments: params.comments,
+      reactions: params.reactions,
+      interactions: params.interactions,
+      label: params.label,
+      'no-assignee': params['no-assignee'],
+      'no-label': params['no-label'],
+      'no-milestone': params['no-milestone'],
+      'no-project': params['no-project'],
+      match: params.match,
+      sort: params.sort,
+      order: params.order,
+      limit: params.limit,
+      withComments: params.withComments,
+      withCommits: params.withCommits,
+      type: params.type,
+      partialContentMetadata: params.partialContentMetadata,
+    },
+    sessionId
+  );
 
   const result = await withDataCache<PullRequestSearchResult>(
     cacheKey,
@@ -463,7 +506,6 @@ async function transformPullRequestItemFromSearch(
           result.base_sha = prDetails.data.base?.sha;
           result.draft = prDetails.data.draft ?? false;
 
-          // Copy merged_at from PR details - Search API doesn't return this field
           if (prDetails.data.merged_at) {
             result.merged_at = prDetails.data.merged_at;
           }

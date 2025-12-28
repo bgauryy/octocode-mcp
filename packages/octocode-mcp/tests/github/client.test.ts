@@ -62,6 +62,7 @@ describe('GitHub Client', () => {
       enableLogging: true,
       maxRetries: 3,
       loggingEnabled: true,
+      enableLocal: true,
     });
   });
 

@@ -1,0 +1,558 @@
+/**
+ * GitHub API Caching Tests
+ *
+ * These tests verify that:
+ * 1. Each GitHub API function caches responses correctly
+ * 2. Cache keys only include GitHub API params (not context fields)
+ * 3. Same API params result in cache hits
+ * 4. Different API params result in cache misses
+ * 5. Post-processing params (pagination, line ranges) don't affect cache key
+ */
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { clearAllCache, getCacheStats } from '../../src/utils/cache';
+import { getOctokit } from '../../src/github/client';
+import { searchGitHubCodeAPI } from '../../src/github/codeSearch';
+import { searchGitHubReposAPI } from '../../src/github/repoSearch';
+import { searchGitHubPullRequestsAPI } from '../../src/github/pullRequestSearch';
+import {
+  fetchGitHubFileContentAPI,
+  viewGitHubRepositoryStructureAPI,
+} from '../../src/github/fileOperations';
+
+// Mock the GitHub client
+vi.mock('../../src/github/client');
+
+const mockOctokit = {
+  rest: {
+    search: {
+      code: vi.fn(),
+      repos: vi.fn(),
+      issuesAndPullRequests: vi.fn(),
+    },
+    repos: {
+      getContent: vi.fn(),
+      get: vi.fn(),
+      listCommits: vi.fn(),
+    },
+    pulls: {
+      get: vi.fn(),
+      listCommits: vi.fn(),
+      listFiles: vi.fn(),
+      listReviewComments: vi.fn(),
+      listReviews: vi.fn(),
+    },
+  },
+};
+
+describe('GitHub API Caching', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearAllCache();
+    vi.mocked(getOctokit).mockResolvedValue(
+      mockOctokit as unknown as Awaited<ReturnType<typeof getOctokit>>
+    );
+  });
+
+  describe('githubSearchCode caching', () => {
+    beforeEach(() => {
+      mockOctokit.rest.search.code.mockResolvedValue({
+        data: {
+          total_count: 1,
+          incomplete_results: false,
+          items: [
+            {
+              name: 'test.ts',
+              path: 'src/test.ts',
+              sha: 'abc123',
+              html_url: 'https://github.com/owner/repo/blob/main/src/test.ts',
+              repository: {
+                full_name: 'owner/repo',
+                owner: { login: 'owner' },
+                name: 'repo',
+                html_url: 'https://github.com/owner/repo',
+              },
+              text_matches: [],
+            },
+          ],
+        },
+      });
+    });
+
+    it('should cache code search results and return cached on second call', async () => {
+      const params = {
+        keywordsToSearch: ['useState'],
+        owner: 'facebook',
+        repo: 'react',
+        mainResearchGoal: 'Find hooks',
+        researchGoal: 'Find useState',
+        reasoning: 'Testing',
+      };
+
+      await searchGitHubCodeAPI(params);
+      const statsBefore = getCacheStats();
+
+      await searchGitHubCodeAPI(params);
+      const statsAfter = getCacheStats();
+
+      // Should have 1 miss (first call) and 1 hit (second call)
+      expect(statsAfter.hits).toBe(statsBefore.hits + 1);
+      // API should only be called once
+      expect(mockOctokit.rest.search.code).toHaveBeenCalledTimes(1);
+    });
+
+    it('should hit cache when only context params differ', async () => {
+      const params1 = {
+        keywordsToSearch: ['useState'],
+        owner: 'facebook',
+        repo: 'react',
+        mainResearchGoal: 'Goal 1',
+        researchGoal: 'Research 1',
+        reasoning: 'Reason 1',
+      };
+
+      const params2 = {
+        keywordsToSearch: ['useState'],
+        owner: 'facebook',
+        repo: 'react',
+        mainResearchGoal: 'DIFFERENT GOAL',
+        researchGoal: 'DIFFERENT RESEARCH',
+        reasoning: 'DIFFERENT REASON',
+      };
+
+      await searchGitHubCodeAPI(params1);
+      await searchGitHubCodeAPI(params2);
+
+      // API should only be called once - context params don't affect cache
+      expect(mockOctokit.rest.search.code).toHaveBeenCalledTimes(1);
+    });
+
+    it('should miss cache when API params differ', async () => {
+      const params1 = {
+        keywordsToSearch: ['useState'],
+        owner: 'facebook',
+        repo: 'react',
+        mainResearchGoal: 'Goal',
+        researchGoal: 'Research',
+        reasoning: 'Reason',
+      };
+
+      const params2 = {
+        keywordsToSearch: ['useEffect'], // Different keyword
+        owner: 'facebook',
+        repo: 'react',
+        mainResearchGoal: 'Goal',
+        researchGoal: 'Research',
+        reasoning: 'Reason',
+      };
+
+      await searchGitHubCodeAPI(params1);
+      await searchGitHubCodeAPI(params2);
+
+      // API should be called twice - different keywords
+      expect(mockOctokit.rest.search.code).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('githubSearchRepositories caching', () => {
+    beforeEach(() => {
+      mockOctokit.rest.search.repos.mockResolvedValue({
+        data: {
+          total_count: 1,
+          incomplete_results: false,
+          items: [
+            {
+              id: 1,
+              name: 'react',
+              full_name: 'facebook/react',
+              owner: { login: 'facebook' },
+              html_url: 'https://github.com/facebook/react',
+              description: 'React library',
+              stargazers_count: 200000,
+              forks_count: 40000,
+              language: 'JavaScript',
+              topics: ['javascript', 'react'],
+              updated_at: '2024-01-01T00:00:00Z',
+              pushed_at: '2024-01-01T00:00:00Z',
+              created_at: '2013-01-01T00:00:00Z',
+              default_branch: 'main',
+              archived: false,
+              license: { spdx_id: 'MIT' },
+            },
+          ],
+        },
+      });
+    });
+
+    it('should cache repo search results and return cached on second call', async () => {
+      const params = {
+        keywordsToSearch: ['react'],
+        mainResearchGoal: 'Find repos',
+        researchGoal: 'Find react',
+        reasoning: 'Testing',
+      };
+
+      await searchGitHubReposAPI(params);
+      await searchGitHubReposAPI(params);
+
+      // API should only be called once
+      expect(mockOctokit.rest.search.repos).toHaveBeenCalledTimes(1);
+    });
+
+    it('should hit cache when only context params differ', async () => {
+      const params1 = {
+        keywordsToSearch: ['react'],
+        stars: '>1000',
+        mainResearchGoal: 'Goal 1',
+        researchGoal: 'Research 1',
+        reasoning: 'Reason 1',
+      };
+
+      const params2 = {
+        keywordsToSearch: ['react'],
+        stars: '>1000',
+        mainResearchGoal: 'DIFFERENT',
+        researchGoal: 'DIFFERENT',
+        reasoning: 'DIFFERENT',
+      };
+
+      await searchGitHubReposAPI(params1);
+      await searchGitHubReposAPI(params2);
+
+      expect(mockOctokit.rest.search.repos).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('githubSearchPullRequests caching', () => {
+    beforeEach(() => {
+      mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
+        data: {
+          total_count: 1,
+          incomplete_results: false,
+          items: [
+            {
+              number: 1,
+              title: 'Test PR',
+              state: 'open',
+              user: { login: 'user' },
+              html_url: 'https://github.com/owner/repo/pull/1',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+              labels: [],
+              pull_request: {
+                url: 'https://api.github.com/repos/owner/repo/pulls/1',
+              },
+            },
+          ],
+        },
+      });
+    });
+
+    it('should cache PR search results and return cached on second call', async () => {
+      const params = {
+        query: 'fix bug',
+        owner: 'facebook',
+        repo: 'react',
+        mainResearchGoal: 'Find PRs',
+        researchGoal: 'Find bug fixes',
+        reasoning: 'Testing',
+      };
+
+      await searchGitHubPullRequestsAPI(params);
+      await searchGitHubPullRequestsAPI(params);
+
+      expect(
+        mockOctokit.rest.search.issuesAndPullRequests
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it('should hit cache when only context params differ', async () => {
+      const params1 = {
+        query: 'fix',
+        owner: 'facebook',
+        repo: 'react',
+        state: 'closed' as const,
+        mainResearchGoal: 'Goal 1',
+        researchGoal: 'Research 1',
+        reasoning: 'Reason 1',
+      };
+
+      const params2 = {
+        query: 'fix',
+        owner: 'facebook',
+        repo: 'react',
+        state: 'closed' as const,
+        mainResearchGoal: 'DIFFERENT',
+        researchGoal: 'DIFFERENT',
+        reasoning: 'DIFFERENT',
+      };
+
+      await searchGitHubPullRequestsAPI(params1);
+      await searchGitHubPullRequestsAPI(params2);
+
+      expect(
+        mockOctokit.rest.search.issuesAndPullRequests
+      ).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('githubGetFileContent caching', () => {
+    const fileContent = 'line 1\nline 2\nline 3\nline 4\nline 5';
+
+    beforeEach(() => {
+      mockOctokit.rest.repos.getContent.mockResolvedValue({
+        data: {
+          type: 'file',
+          content: Buffer.from(fileContent).toString('base64'),
+          size: fileContent.length,
+          sha: 'abc123',
+          name: 'test.ts',
+          path: 'src/test.ts',
+        },
+      });
+      mockOctokit.rest.repos.listCommits.mockResolvedValue({ data: [] });
+    });
+
+    it('should cache file content and return cached on second call', async () => {
+      const params = {
+        owner: 'facebook',
+        repo: 'react',
+        path: 'src/index.ts',
+        mainResearchGoal: 'Read file',
+        researchGoal: 'Get content',
+        reasoning: 'Testing',
+      };
+
+      await fetchGitHubFileContentAPI(params);
+      await fetchGitHubFileContentAPI(params);
+
+      // API should only be called once
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(1);
+    });
+
+    it('should hit cache when only line range params differ', async () => {
+      // First call: lines 1-2
+      const params1 = {
+        owner: 'facebook',
+        repo: 'react',
+        path: 'src/index.ts',
+        startLine: 1,
+        endLine: 2,
+        mainResearchGoal: 'Read file',
+        researchGoal: 'Get content',
+        reasoning: 'Testing',
+      };
+
+      // Second call: lines 3-5 (same file, different lines)
+      const params2 = {
+        owner: 'facebook',
+        repo: 'react',
+        path: 'src/index.ts',
+        startLine: 3,
+        endLine: 5,
+        mainResearchGoal: 'Read file',
+        researchGoal: 'Get content',
+        reasoning: 'Testing',
+      };
+
+      await fetchGitHubFileContentAPI(params1);
+      await fetchGitHubFileContentAPI(params2);
+
+      // API should only be called once - line ranges are post-cache
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(1);
+    });
+
+    it('should hit cache when only matchString params differ', async () => {
+      const params1 = {
+        owner: 'facebook',
+        repo: 'react',
+        path: 'src/index.ts',
+        matchString: 'line 1',
+        mainResearchGoal: 'Read file',
+        researchGoal: 'Get content',
+        reasoning: 'Testing',
+      };
+
+      const params2 = {
+        owner: 'facebook',
+        repo: 'react',
+        path: 'src/index.ts',
+        matchString: 'line 3',
+        mainResearchGoal: 'Read file',
+        researchGoal: 'Get content',
+        reasoning: 'Testing',
+      };
+
+      await fetchGitHubFileContentAPI(params1);
+      await fetchGitHubFileContentAPI(params2);
+
+      // API should only be called once - matchString is post-cache
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(1);
+    });
+
+    it('should miss cache when file path differs', async () => {
+      const params1 = {
+        owner: 'facebook',
+        repo: 'react',
+        path: 'src/index.ts',
+        mainResearchGoal: 'Read file',
+        researchGoal: 'Get content',
+        reasoning: 'Testing',
+      };
+
+      const params2 = {
+        owner: 'facebook',
+        repo: 'react',
+        path: 'src/other.ts', // Different path
+        mainResearchGoal: 'Read file',
+        researchGoal: 'Get content',
+        reasoning: 'Testing',
+      };
+
+      await fetchGitHubFileContentAPI(params1);
+      await fetchGitHubFileContentAPI(params2);
+
+      // API should be called twice - different paths
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('githubViewRepoStructure caching', () => {
+    beforeEach(() => {
+      mockOctokit.rest.repos.getContent.mockResolvedValue({
+        data: [
+          { type: 'file', name: 'index.ts', path: 'src/index.ts', sha: 'a1' },
+          { type: 'file', name: 'utils.ts', path: 'src/utils.ts', sha: 'a2' },
+          {
+            type: 'dir',
+            name: 'components',
+            path: 'src/components',
+            sha: 'a3',
+          },
+        ],
+      });
+      mockOctokit.rest.repos.get.mockResolvedValue({
+        data: { default_branch: 'main' },
+      });
+    });
+
+    it('should cache repo structure and return cached on second call', async () => {
+      const params = {
+        owner: 'facebook',
+        repo: 'react',
+        branch: 'main',
+        path: 'src',
+        depth: 1,
+        mainResearchGoal: 'View structure',
+        researchGoal: 'Get files',
+        reasoning: 'Testing',
+      };
+
+      await viewGitHubRepositoryStructureAPI(params);
+      await viewGitHubRepositoryStructureAPI(params);
+
+      // API should only be called once
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(1);
+    });
+
+    it('should hit cache when only pagination params differ', async () => {
+      // First call: page 1
+      const params1 = {
+        owner: 'facebook',
+        repo: 'react',
+        branch: 'main',
+        path: 'src',
+        depth: 1,
+        entriesPerPage: 2,
+        entryPageNumber: 1,
+        mainResearchGoal: 'View structure',
+        researchGoal: 'Get files',
+        reasoning: 'Testing',
+      };
+
+      // Second call: page 2 (same repo, different page)
+      const params2 = {
+        owner: 'facebook',
+        repo: 'react',
+        branch: 'main',
+        path: 'src',
+        depth: 1,
+        entriesPerPage: 2,
+        entryPageNumber: 2,
+        mainResearchGoal: 'View structure',
+        researchGoal: 'Get files',
+        reasoning: 'Testing',
+      };
+
+      await viewGitHubRepositoryStructureAPI(params1);
+      await viewGitHubRepositoryStructureAPI(params2);
+
+      // API should only be called once - pagination is post-cache
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(1);
+    });
+
+    it('should miss cache when path differs', async () => {
+      const params1 = {
+        owner: 'facebook',
+        repo: 'react',
+        branch: 'main',
+        path: 'src',
+        depth: 1,
+        mainResearchGoal: 'View structure',
+        researchGoal: 'Get files',
+        reasoning: 'Testing',
+      };
+
+      const params2 = {
+        owner: 'facebook',
+        repo: 'react',
+        branch: 'main',
+        path: 'packages', // Different path
+        depth: 1,
+        mainResearchGoal: 'View structure',
+        researchGoal: 'Get files',
+        reasoning: 'Testing',
+      };
+
+      await viewGitHubRepositoryStructureAPI(params1);
+      await viewGitHubRepositoryStructureAPI(params2);
+
+      // API should be called twice - different paths
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('Cache isolation between different APIs', () => {
+    it('should not share cache between different API types', async () => {
+      // Setup mocks
+      mockOctokit.rest.search.code.mockResolvedValue({
+        data: { total_count: 0, incomplete_results: false, items: [] },
+      });
+      mockOctokit.rest.search.repos.mockResolvedValue({
+        data: { total_count: 0, incomplete_results: false, items: [] },
+      });
+
+      // Call code search
+      await searchGitHubCodeAPI({
+        keywordsToSearch: ['test'],
+        owner: 'owner',
+        repo: 'repo',
+        mainResearchGoal: 'Goal',
+        researchGoal: 'Research',
+        reasoning: 'Reason',
+      });
+
+      // Call repo search with same owner/repo
+      await searchGitHubReposAPI({
+        keywordsToSearch: ['test'],
+        owner: 'owner',
+        mainResearchGoal: 'Goal',
+        researchGoal: 'Research',
+        reasoning: 'Reason',
+      });
+
+      // Both APIs should be called - different cache prefixes
+      expect(mockOctokit.rest.search.code).toHaveBeenCalledTimes(1);
+      expect(mockOctokit.rest.search.repos).toHaveBeenCalledTimes(1);
+    });
+  });
+});

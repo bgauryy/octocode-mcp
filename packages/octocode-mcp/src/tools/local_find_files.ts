@@ -148,8 +148,6 @@ export async function findFiles(
           const itemStart = currentPos;
           const itemEnd = itemStart + itemLen;
 
-          // Logic: Include item if it overlaps with the requested window
-          // [startOffset, endLimit]
           const overlaps = itemStart < endLimit && itemEnd > startOffset;
 
           if (overlaps) {

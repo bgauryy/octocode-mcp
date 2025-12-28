@@ -78,17 +78,12 @@ export class PathValidator {
       };
     }
 
-    // Resolve to absolute path (normalizes ./ and ../ but doesn't resolve symlinks yet)
     const absolutePath = path.resolve(inputPath);
 
-    // Check if path is within allowed roots
-    // Must be the root itself OR start with root + path separator
     const isAllowed = this.allowedRoots.some(root => {
-      // Exact match
       if (absolutePath === root) {
         return true;
       }
-      // Must start with root + separator to ensure it's truly a child path
       return absolutePath.startsWith(root + path.sep);
     });
 
@@ -99,7 +94,6 @@ export class PathValidator {
       };
     }
 
-    // Check if path should be ignored (.git, .env, etc.)
     if (shouldIgnore(absolutePath)) {
       return {
         isValid: false,
@@ -107,11 +101,9 @@ export class PathValidator {
       };
     }
 
-    // Check for symlink traversal by resolving real path in a single step
     try {
       const realPath = fs.realpathSync(absolutePath);
       const isRealPathAllowed = this.allowedRoots.some(root => {
-        // Exact match or starts with root + separator
         return realPath === root || realPath.startsWith(root + path.sep);
       });
 
@@ -122,7 +114,6 @@ export class PathValidator {
         };
       }
 
-      // Check if resolved symlink target should be ignored
       if (shouldIgnore(realPath)) {
         return {
           isValid: false,

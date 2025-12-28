@@ -5,7 +5,6 @@ import { logSessionError } from '../session.js';
 import { TOOL_ERRORS } from '../errorCodes.js';
 import { createErrorResult } from '../utils/errorResult.js';
 
-// Re-export createErrorResult for backwards compatibility during migration
 export { createErrorResult };
 
 export function createSuccessResult<T extends Record<string, unknown>>(
@@ -81,8 +80,6 @@ export function handleApiError(
     retryAfter: apiResult.retryAfter,
   };
 
-  // Only pass external hints (from apiResult.hints)
-  // The createErrorResult function will extract hints from apiError via hintSourceError
   const externalHints = apiResult.hints || [];
 
   const errorResult = createErrorResult(apiError, query, {

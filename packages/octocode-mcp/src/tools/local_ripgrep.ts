@@ -84,7 +84,6 @@ export async function searchContentRipgrep(
       configuredQuery
     );
 
-    // Compute actual character offsets (convert byte offsets to char indices)
     const filesWithCharOffsets = await computeCharacterOffsets(parsedFiles);
 
     const filesWithMetadata = await Promise.all(

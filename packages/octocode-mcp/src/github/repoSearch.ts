@@ -22,7 +22,24 @@ export async function searchGitHubReposAPI(
     repositories: SimplifiedRepository[];
   }>
 > {
-  const cacheKey = generateCacheKey('gh-api-repos', params, sessionId);
+  // Cache key excludes context fields (mainResearchGoal, researchGoal, reasoning)
+  // as they don't affect the API response
+  const cacheKey = generateCacheKey(
+    'gh-api-repos',
+    {
+      keywordsToSearch: params.keywordsToSearch,
+      topicsToSearch: params.topicsToSearch,
+      owner: params.owner,
+      stars: params.stars,
+      size: params.size,
+      created: params.created,
+      updated: params.updated,
+      match: params.match,
+      sort: params.sort,
+      limit: params.limit,
+    },
+    sessionId
+  );
 
   const result = await withDataCache<
     GitHubAPIResponse<{

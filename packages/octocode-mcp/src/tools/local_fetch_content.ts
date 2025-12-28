@@ -171,7 +171,6 @@ export async function fetchContent(
 
       resultContent = result.lines.join('\n');
 
-      // Apply minification BEFORE size check (fixes patternTooBroad false positives)
       resultContent = applyMinification(
         resultContent,
         query.path,

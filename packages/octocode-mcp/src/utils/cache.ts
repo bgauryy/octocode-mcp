@@ -118,17 +118,14 @@ export async function withDataCache<T>(
     } catch {}
   }
 
-  // Check for pending request to deduplicate
   if (pendingRequests.has(cacheKey)) {
     return pendingRequests.get(cacheKey) as Promise<T>;
   }
 
   const promise = (async () => {
     try {
-      // Execute operation
       const result = await operation();
 
-      // Update cache stats only after successful operation (miss)
       if (!options.forceRefresh) {
         cacheStats.misses++;
       }

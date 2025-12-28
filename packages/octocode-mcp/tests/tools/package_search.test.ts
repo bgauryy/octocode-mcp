@@ -5,6 +5,7 @@ import {
   createMockMcpServer,
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
+import { clearAllCache } from '../../src/utils/cache.js';
 
 // Mock axios (for Python/PyPI searches and npm registry)
 const mockAxiosGet = vi.fn();
@@ -209,6 +210,7 @@ vi.mock('../../src/utils/cache.js', () => ({
   withDataCache: vi.fn(async (_key: string, fn: () => unknown) => {
     return await fn();
   }),
+  clearAllCache: vi.fn(),
 }));
 
 // Mock toolMetadata
@@ -356,6 +358,7 @@ describe('PackageSearchQuerySchema', () => {
 describe('searchPackage - NPM (CLI)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAllCache();
     clearNpmRegistryMocks();
     clearNpmCliViewMocks();
   });
@@ -672,6 +675,7 @@ describe('searchPackage - NPM (CLI)', () => {
 describe('searchPackage - Python', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAllCache();
   });
 
   it('should return minimal Python package results by default (name and repository only)', async () => {
@@ -902,6 +906,7 @@ describe('searchPackage - Python', () => {
 describe('searchPackage - Name normalization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAllCache();
   });
 
   it('should normalize Python package name with underscores', async () => {
@@ -940,6 +945,7 @@ describe('searchPackage - Name normalization', () => {
 describe('searchPackage - NPM Edge Cases', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAllCache();
     clearNpmRegistryMocks();
   });
 
@@ -971,6 +977,7 @@ describe('searchPackage - NPM Edge Cases', () => {
 describe('searchPackage - Python Edge Cases', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAllCache();
   });
 
   it('should fallback to home_page for repository URL', async () => {
@@ -1310,6 +1317,7 @@ describe('searchPackage - Python Edge Cases', () => {
 describe('Package search response structure', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAllCache();
     mockAxiosGet.mockReset();
     mockExecuteNpmCommand.mockReset();
     clearNpmRegistryMocks();
@@ -1460,6 +1468,7 @@ describe('registerPackageSearchTool', () => {
     mockServer = createMockMcpServer();
     mockCallback = vi.fn<ToolInvocationCallback>().mockResolvedValue(undefined);
     vi.clearAllMocks();
+    clearAllCache();
     mockExecuteNpmCommand.mockReset();
     mockAxiosGet.mockReset();
     clearNpmRegistryMocks();
@@ -2446,6 +2455,7 @@ describe('Task 1: Enhanced GitHub Integration Hints', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    clearAllCache();
     clearNpmRegistryMocks();
     mockCheckNpmAvailability.mockResolvedValue(true);
     mockServer = createMockMcpServer();
@@ -2583,6 +2593,7 @@ describe('Task 2: Name Variation Suggestions', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    clearAllCache();
     mockCheckNpmAvailability.mockResolvedValue(true);
     mockServer = createMockMcpServer();
   });
@@ -2736,6 +2747,7 @@ describe('Task 3: Deprecation Detection', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    clearAllCache();
     mockCheckNpmAvailability.mockResolvedValue(true);
     mockServer = createMockMcpServer();
   });
@@ -2981,6 +2993,7 @@ describe('Task 4: pythonFetchMetadata Parameter', () => {
 describe('searchPackage - NPM CLI Repository Fetching', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAllCache();
     clearNpmRegistryMocks();
     clearNpmCliViewMocks();
   });

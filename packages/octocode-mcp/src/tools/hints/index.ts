@@ -66,16 +66,12 @@ export function getHints(
   status: HintStatus,
   context?: HintContext
 ): string[] {
-  // 1. Get static hints (from toolMetadata/content.json)
   const staticHints = getStaticHints(toolName, status);
 
-  // 2. Get dynamic hints (context-aware, from dynamic.ts)
   const dynamicHints = hasDynamicHints(toolName)
     ? getDynamicHints(toolName, status, context)
     : [];
 
-  // 3. Merge and dedupe
-  // Use Set to remove exact duplicates while preserving order
   const allHints = [...staticHints, ...dynamicHints];
   return [...new Set(allHints)];
 }

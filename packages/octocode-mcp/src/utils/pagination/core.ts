@@ -18,8 +18,6 @@ function charOffsetToByteOffset(text: string, charOffset: number): number {
   if (charOffset >= text.length) {
     return Buffer.byteLength(text, 'utf-8');
   }
-  // Use substring to get characters up to offset, then get byte length
-  // This ensures we don't split multi-byte characters
   return Buffer.byteLength(text.substring(0, charOffset), 'utf-8');
 }
 
@@ -38,7 +36,6 @@ export function applyPagination(
   const totalBytes = Buffer.byteLength(content, 'utf-8');
   const actualOffset = options.actualOffset ?? charOffset;
 
-  // If no charLength provided, return full content
   if (charLength === undefined) {
     return {
       paginatedContent: content,
@@ -63,7 +60,6 @@ export function applyPagination(
   let totalPages: number;
 
   if (mode === 'bytes') {
-    // Byte offset mode (for GitHub API compatibility)
     const buffer = Buffer.from(content, 'utf-8');
     const startPos = Math.min(charOffset, totalBytes);
     const endPos = Math.min(startPos + charLength, totalBytes);
@@ -75,31 +71,25 @@ export function applyPagination(
     hasMore = endPos < totalBytes;
     nextCharOffset = hasMore ? endPos : undefined;
 
-    // Calculate page numbers based on byte offsets
     const pageSize = charLength;
     currentPage = Math.floor(actualOffset / pageSize) + 1;
     totalPages = Math.ceil(totalBytes / pageSize);
   } else {
-    // Character offset mode (default, for local tools)
     const startCharPos = Math.min(charOffset, totalChars);
     const endCharPos = Math.min(startCharPos + charLength, totalChars);
 
-    // Slice by characters (respects UTF-8 boundaries)
     paginatedContent = content.substring(startCharPos, endCharPos);
 
-    // Convert character positions to byte positions for metadata
     startBytePos = charOffsetToByteOffset(content, startCharPos);
     actualByteLength = Buffer.byteLength(paginatedContent, 'utf-8');
 
     hasMore = endCharPos < totalChars;
-    // Return character offset for nextCharOffset (for hints that tell users what charOffset to use)
     const nextCharPos = hasMore ? endCharPos : undefined;
     nextCharOffset =
       nextCharPos !== undefined
         ? charOffsetToByteOffset(content, nextCharPos)
         : undefined;
 
-    // Calculate page numbers based on character offsets
     const pageSize = charLength;
     currentPage = Math.floor(actualOffset / pageSize) + 1;
     totalPages = Math.ceil(totalChars / pageSize);
@@ -140,7 +130,6 @@ export function sliceByCharRespectLines(
 ): SliceByCharResult {
   const totalChars = text.length;
 
-  // Handle empty text
   if (totalChars === 0) {
     return {
       sliced: '',
@@ -152,7 +141,6 @@ export function sliceByCharRespectLines(
     };
   }
 
-  // Handle offset beyond text length
   if (charOffset >= totalChars) {
     return {
       sliced: '',
@@ -165,15 +153,13 @@ export function sliceByCharRespectLines(
     };
   }
 
-  // Find line boundaries
-  const lines: number[] = [0]; // Start of first line
+  const lines: number[] = [0];
   for (let i = 0; i < text.length; i++) {
     if (text[i] === '\n') {
       lines.push(i + 1); // Start of next line
     }
   }
 
-  // Find the line that contains charOffset
   let startLineIdx = 0;
   for (let i = 0; i < lines.length; i++) {
     if (lines[i]! <= charOffset) {
@@ -183,14 +169,11 @@ export function sliceByCharRespectLines(
     }
   }
 
-  // Adjust offset to start of line if mid-line
   const actualOffset = lines[startLineIdx]!;
 
-  // Find end position (try to respect charLength but extend to complete lines)
   let endPos = Math.min(actualOffset + charLength, totalChars);
   let endLineIdx = startLineIdx;
 
-  // Find the line that contains endPos (use < to not include lines starting AT endPos)
   for (let i = startLineIdx; i < lines.length; i++) {
     if (lines[i]! < endPos) {
       endLineIdx = i;
@@ -199,12 +182,9 @@ export function sliceByCharRespectLines(
     }
   }
 
-  // If we're mid-line at the end, extend to end of line
-  // (only if endPos is not already at a line boundary)
   if (endLineIdx < lines.length - 1 && endPos < lines[endLineIdx + 1]!) {
     endPos = lines[endLineIdx + 1]!;
   } else if (endLineIdx === lines.length - 1 && endPos < totalChars) {
-    // Last line - include until end of text
     endPos = totalChars;
   }
 

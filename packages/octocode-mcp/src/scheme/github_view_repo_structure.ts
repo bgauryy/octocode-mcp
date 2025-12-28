@@ -92,6 +92,12 @@ export interface GitHubRepositoryContentsResult {
   };
 }
 
+/** Internal item for caching (pre-pagination) */
+export interface CachedStructureItem {
+  path: string;
+  type: 'file' | 'dir';
+}
+
 export interface GitHubRepositoryStructureResult {
   owner: string;
   repo: string;
@@ -110,6 +116,8 @@ export interface GitHubRepositoryStructureResult {
   pagination?: PaginationInfo;
   /** Hints for next steps (including pagination hints) */
   hints?: string[];
+  /** Internal: raw items for post-cache pagination (not serialized in responses) */
+  _cachedItems?: CachedStructureItem[];
 }
 
 export interface GitHubRepositoryStructureError {

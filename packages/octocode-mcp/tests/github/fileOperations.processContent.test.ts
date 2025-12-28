@@ -6,6 +6,7 @@ import {
 import { getOctokit } from '../../src/github/client.js';
 import { RequestError } from 'octokit';
 import * as minifierModule from '../../src/utils/minifier/index.js';
+import { clearAllCache } from '../../src/utils/cache.js';
 
 // Helper to create RequestError with proper structure
 function createRequestError(message: string, status: number) {
@@ -32,6 +33,7 @@ vi.mock('../../src/utils/minifier/index.js');
 describe('GitHub File Operations - processFileContentAPI coverage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAllCache(); // Clear cache to prevent pollution between tests
   });
 
   describe('fetchGitHubFileContentAPI - File Size and Encoding', () => {

@@ -161,7 +161,6 @@ export function createErrorResult(
     result.error = error.message;
     result.errorCode = error.errorCode;
 
-    // Get tool-specific hints if toolName provided
     if (toolName) {
       const toolHints = getHints(toolName, 'error', {
         originalError: error.message,
@@ -171,15 +170,12 @@ export function createErrorResult(
       hints.push(...toolHints);
     }
   } else if (typeof error === 'string') {
-    // Simple string error
     result.error = error;
   } else if (error instanceof Error) {
-    // Convert standard Error to ToolError for consistent handling
     const toolError = toToolError(error);
     result.error = toolError.message;
     result.errorCode = toolError.errorCode;
 
-    // Get tool-specific hints if toolName provided
     if (toolName) {
       const toolHints = getHints(toolName, 'error', {
         originalError: toolError.message,
@@ -188,29 +184,24 @@ export function createErrorResult(
       hints.push(...toolHints);
     }
   } else {
-    // Unknown error type
     result.error = 'Unknown error occurred';
   }
 
-  // Add custom hints
   if (customHints && customHints.length > 0) {
     hints.push(...customHints);
   }
 
-  // Add extra hints from extra object
   if (extra?.hints && Array.isArray(extra.hints)) {
     hints.push(...(extra.hints as string[]));
   }
 
-  // Set hints if any were collected
   if (hints.length > 0) {
     result.hints = hints;
   }
 
-  // Merge extra fields (except hints which we handled separately)
   if (extra) {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { hints: _extractedHints, ...restExtra } = extra;
+    const { hints: _hints, ...restExtra } = extra;
+    void _hints; // Intentionally ignoring hints from extra
     Object.assign(result, restExtra);
   }
 

@@ -2,6 +2,7 @@
  * Tests for npmPackage.ts - specifically for uncovered branches
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { clearAllCache } from '../../src/utils/cache.js';
 
 // Mock executeNpmCommand
 const mockExecuteNpmCommand = vi.fn();
@@ -18,6 +19,7 @@ import {
 describe('npmPackage - branch coverage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAllCache(); // Clear cache to ensure test isolation
   });
 
   describe('mapToResult - time object parsing', () => {

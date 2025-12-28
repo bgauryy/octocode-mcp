@@ -23,7 +23,22 @@ export async function searchGitHubCodeAPI(
   authInfo?: AuthInfo,
   sessionId?: string
 ): Promise<GitHubAPIResponse<OptimizedCodeSearchResult>> {
-  const cacheKey = generateCacheKey('gh-api-code', params, sessionId);
+  // Cache key excludes context fields (mainResearchGoal, researchGoal, reasoning)
+  // as they don't affect the API response
+  const cacheKey = generateCacheKey(
+    'gh-api-code',
+    {
+      keywordsToSearch: params.keywordsToSearch,
+      owner: params.owner,
+      repo: params.repo,
+      extension: params.extension,
+      filename: params.filename,
+      path: params.path,
+      match: params.match,
+      limit: params.limit,
+    },
+    sessionId
+  );
 
   const result = await withDataCache<
     GitHubAPIResponse<OptimizedCodeSearchResult>

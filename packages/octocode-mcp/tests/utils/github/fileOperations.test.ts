@@ -722,6 +722,8 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       await fetchGitHubFileContentAPI(params);
 
+      // Cache key only includes GitHub API params (owner, repo, path, branch)
+      // Processing params (startLine, endLine, matchString) are applied post-cache
       expect(mockGenerateCacheKey).toHaveBeenCalledWith(
         'gh-api-file-content',
         {
@@ -729,16 +731,12 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           repo: 'repo',
           path: 'test.txt',
           branch: 'feature',
-          startLine: 5,
-          endLine: 10,
-          matchString: 'search term',
-          matchStringContextLines: 3,
         },
         undefined
       );
     });
 
-    it('should generate different cache keys for different parameters', async () => {
+    it('should generate same cache key for same file with different line params', async () => {
       const baseParams = createTestParams();
 
       // Mock file response
@@ -754,14 +752,15 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       // Call with base params
       await fetchGitHubFileContentAPI(baseParams);
 
-      // Call with additional params
+      // Call with additional params (different startLine/endLine)
       await fetchGitHubFileContentAPI({
         ...baseParams,
         startLine: 1,
         endLine: 5,
       });
 
-      // Should have been called twice with different parameter sets
+      // Cache key only includes GitHub API params - so SAME key for same file!
+      // Processing params are applied post-cache for efficiency
       expect(mockGenerateCacheKey).toHaveBeenCalledTimes(2);
       expect(mockGenerateCacheKey).toHaveBeenNthCalledWith(
         1,
@@ -771,13 +770,10 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           repo: 'repo',
           path: 'test.txt',
           branch: undefined,
-          startLine: undefined,
-          endLine: undefined,
-          matchString: undefined,
-          matchStringContextLines: 5,
         },
         undefined
       );
+      // Same cache key for second call - different processing applied post-cache
       expect(mockGenerateCacheKey).toHaveBeenNthCalledWith(
         2,
         'gh-api-file-content',
@@ -786,10 +782,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           repo: 'repo',
           path: 'test.txt',
           branch: undefined,
-          startLine: 1,
-          endLine: 5,
-          matchString: undefined,
-          matchStringContextLines: 5,
         },
         undefined
       );
