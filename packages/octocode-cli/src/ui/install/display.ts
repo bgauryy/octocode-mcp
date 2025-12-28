@@ -12,6 +12,8 @@ import type { InstallResult } from '../../features/install.js';
  * Print configuration preview
  */
 export function printConfigPreview(config: MCPServer): void {
+  const hasEnv = config.env && Object.keys(config.env).length > 0;
+
   console.log();
   console.log(c('dim', '  {'));
   console.log(c('dim', '    "mcpServers": {'));
@@ -28,10 +30,33 @@ export function printConfigPreview(config: MCPServer): void {
     console.log(
       c('dim', '          ') +
         c('green', `"${truncated}"`) +
-        (isLast ? '' : c('dim', ','))
+        (isLast && !hasEnv ? '' : c('dim', ','))
     );
   });
-  console.log(c('dim', '        ]'));
+  console.log(c('dim', '        ]') + (hasEnv ? c('dim', ',') : ''));
+
+  // Print env if present
+  if (hasEnv && config.env) {
+    console.log(c('dim', '        "env": {'));
+    const envEntries = Object.entries(config.env);
+    envEntries.forEach(([key, value], i) => {
+      const isLast = i === envEntries.length - 1;
+      // Mask token values for security
+      const lowerKey = key.toLowerCase();
+      const isSensitive =
+        lowerKey.includes('token') || lowerKey.includes('secret');
+      const displayValue = isSensitive ? '***' : value;
+      console.log(
+        c('dim', '          ') +
+          c('cyan', `"${key}"`) +
+          c('dim', ': ') +
+          c('green', `"${displayValue}"`) +
+          (isLast ? '' : c('dim', ','))
+      );
+    });
+    console.log(c('dim', '        }'));
+  }
+
   console.log(c('dim', '      }'));
   console.log(c('dim', '    }'));
   console.log(c('dim', '  }'));

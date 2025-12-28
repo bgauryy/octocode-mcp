@@ -5,8 +5,11 @@
 import { c, bold, dim } from '../../utils/colors.js';
 import { loadInquirer, confirm } from '../../utils/prompts.js';
 import { Spinner } from '../../utils/spinner.js';
-import { INSTALL_METHOD_INFO } from '../constants.js';
-import { selectMCPClient, selectInstallMethod } from './prompts.js';
+import {
+  selectMCPClient,
+  promptLocalTools,
+  promptGitHubAuth,
+} from './prompts.js';
 import {
   printConfigPreview,
   printInstallError,
@@ -21,6 +24,7 @@ import {
   getMCPConfigPath,
   MCP_CLIENTS,
 } from '../../utils/mcp-config.js';
+import type { OctocodeEnvOptions } from '../../utils/mcp-config.js';
 
 /**
  * Run the interactive install flow
@@ -56,16 +60,53 @@ export async function runInstallFlow(): Promise<void> {
     printExistingMCPConfig(existingConfig);
   }
 
-  // Select install method
-  const method = await selectInstallMethod();
-  if (!method) return;
+  // Only npx method is now supported
+  const method = 'npx' as const;
+
+  // Collect environment options
+  const envOptions: OctocodeEnvOptions = {};
+
+  // Prompt for local tools
+  const enableLocal = await promptLocalTools();
+  if (enableLocal) {
+    envOptions.enableLocal = true;
+  }
+
+  // Prompt for GitHub authentication
+  const githubAuth = await promptGitHubAuth();
+  if (githubAuth.method === 'token' && githubAuth.token) {
+    envOptions.githubToken = githubAuth.token;
+  }
 
   // Get install preview using shared function
-  const preview = getInstallPreviewForClient(client, method, customPath);
+  const preview = getInstallPreviewForClient(
+    client,
+    method,
+    customPath,
+    envOptions
+  );
 
-  // Show config path
+  // Show config path prominently
   console.log();
-  console.log(`  ${dim('📁 Config file:')} ${c('cyan', preview.configPath)}`);
+  console.log(c('cyan', '  ┌' + '─'.repeat(60) + '┐'));
+  console.log(
+    c('cyan', '  │ ') +
+      `${c('cyan', '📁')} ${bold('Configuration will be saved to:')}` +
+      ' '.repeat(23) +
+      c('cyan', '│')
+  );
+  console.log(c('cyan', '  │') + ' '.repeat(60) + c('cyan', '│'));
+  const pathDisplay =
+    preview.configPath.length > 56
+      ? '...' + preview.configPath.slice(-53)
+      : preview.configPath;
+  console.log(
+    c('cyan', '  │ ') +
+      c('green', pathDisplay) +
+      ' '.repeat(Math.max(0, 58 - pathDisplay.length)) +
+      c('cyan', '│')
+  );
+  console.log(c('cyan', '  └' + '─'.repeat(60) + '┘'));
 
   // Handle existing installation
   if (preview.action === 'override') {
@@ -95,10 +136,12 @@ export async function runInstallFlow(): Promise<void> {
       return;
     }
   } else if (preview.action === 'add') {
+    console.log();
     console.log(
       `  ${c('blue', 'ℹ')} Config file exists, will ${c('green', 'ADD')} octocode entry`
     );
   } else {
+    console.log();
     console.log(
       `  ${c('green', '✓')} Will ${c('green', 'CREATE')} new config file`
     );
@@ -119,12 +162,41 @@ export async function runInstallFlow(): Promise<void> {
   // Final summary
   console.log();
   console.log(`  ${bold('Summary:')}`);
-  console.log(`    ${dim('Client:')}   ${clientInfo.name}`);
-  console.log(`    ${dim('Method:')}   ${INSTALL_METHOD_INFO[method].name}`);
-  console.log(`    ${dim('Config:')}   ${preview.configPath}`);
+  console.log(`    ${dim('Client:')}       ${clientInfo.name}`);
+  console.log(`    ${dim('Method:')}       npx (octocode-mcp@latest)`);
+
+  const localStatus = envOptions.enableLocal
+    ? c('green', 'Enabled')
+    : c('dim', 'Disabled');
+  console.log(`    ${dim('Local Tools:')} ${localStatus}`);
+
+  let authStatus: string;
+  if (githubAuth.method === 'token') {
+    authStatus = c('green', 'Token configured');
+  } else if (githubAuth.method === 'gh-cli') {
+    authStatus = c('cyan', 'Using gh CLI');
+  } else {
+    authStatus = c('dim', 'Not configured');
+  }
+  console.log(`    ${dim('GitHub Auth:')} ${authStatus}`);
+
+  let actionStatus: string;
+  if (preview.action === 'override') {
+    actionStatus = c('yellow', 'OVERRIDE');
+  } else if (preview.action === 'add') {
+    actionStatus = c('green', 'ADD');
+  } else {
+    actionStatus = c('green', 'CREATE');
+  }
+  console.log(`    ${dim('Action:')}       ${actionStatus}`);
+  console.log();
+
+  // Security reminder
+  console.log(`  ${c('yellow', '⚠')} ${bold('Note:')}`);
   console.log(
-    `    ${dim('Action:')}   ${preview.action === 'override' ? c('yellow', 'OVERRIDE') : preview.action === 'add' ? c('green', 'ADD') : c('green', 'CREATE')}`
+    `  ${dim('Nothing is saved to any server. Configuration is stored locally at:')}`
   );
+  console.log(`  ${c('cyan', preview.configPath)}`);
   console.log();
 
   const proceed = await confirm({
@@ -146,11 +218,12 @@ export async function runInstallFlow(): Promise<void> {
     method,
     customPath,
     force: preview.action === 'override',
+    envOptions,
   });
 
   if (result.success) {
     spinner.succeed('Octocode configured successfully!');
-    printInstallSuccessForClient(result, client);
+    printInstallSuccessForClient(result, client, preview.configPath);
   } else {
     spinner.fail('Configuration failed');
     printInstallError(result);
@@ -162,7 +235,8 @@ export async function runInstallFlow(): Promise<void> {
  */
 function printInstallSuccessForClient(
   result: { configPath: string; backupPath?: string },
-  client: string
+  client: string,
+  configPath: string
 ): void {
   const clientInfo = MCP_CLIENTS[client as keyof typeof MCP_CLIENTS];
   console.log();
@@ -175,11 +249,17 @@ function printInstallSuccessForClient(
   );
   console.log(c('green', '  └' + '─'.repeat(60) + '┘'));
   console.log();
-  console.log(`  ${dim('Config saved to:')} ${result.configPath}`);
+
+  // Show where config was saved prominently
+  console.log(`  ${bold('Configuration saved to:')}`);
+  console.log(`  ${c('cyan', configPath)}`);
+  console.log();
+
   if (result.backupPath) {
     console.log(`  ${dim('Backup saved to:')} ${result.backupPath}`);
+    console.log();
   }
-  console.log();
+
   console.log(`  ${bold('Next steps:')}`);
   console.log(`    1. Restart ${clientInfo?.name || client}`);
   console.log(`    2. Look for ${c('cyan', 'octocode')} in MCP servers`);

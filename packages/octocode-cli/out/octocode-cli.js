@@ -693,39 +693,68 @@ function writeMCPConfig(configPath, config, createBackup = true) {
     };
   }
 }
-function getOctocodeServerConfig(method) {
+function getOctocodeServerConfig(method, envOptions) {
+  let config;
   switch (method) {
     case "direct":
-      return {
+      config = {
         command: "bash",
         args: [
           "-c",
           "curl -sL https://octocodeai.com/octocode/latest/index.js -o /tmp/index.js && node /tmp/index.js"
         ]
       };
+      break;
     case "npx":
-      return {
+      config = {
         command: "npx",
         args: ["octocode-mcp@latest"]
       };
+      break;
     default:
       throw new Error(`Unknown install method: ${method}`);
   }
+  if (envOptions) {
+    const env = {};
+    if (envOptions.enableLocal) {
+      env.ENABLE_LOCAL = "true";
+    }
+    if (envOptions.githubToken) {
+      env.GITHUB_TOKEN = envOptions.githubToken;
+    }
+    if (Object.keys(env).length > 0) {
+      config.env = env;
+    }
+  }
+  return config;
 }
-function getOctocodeServerConfigWindows(method) {
+function getOctocodeServerConfigWindows(method, envOptions) {
   if (method === "direct") {
-    return {
+    const config = {
       command: "powershell",
       args: [
         "-Command",
         "Invoke-WebRequest -Uri 'https://octocodeai.com/octocode/latest/index.js' -OutFile $env:TEMP\\index.js; node $env:TEMP\\index.js"
       ]
     };
+    if (envOptions) {
+      const env = {};
+      if (envOptions.enableLocal) {
+        env.ENABLE_LOCAL = "true";
+      }
+      if (envOptions.githubToken) {
+        env.GITHUB_TOKEN = envOptions.githubToken;
+      }
+      if (Object.keys(env).length > 0) {
+        config.env = env;
+      }
+    }
+    return config;
   }
-  return getOctocodeServerConfig(method);
+  return getOctocodeServerConfig(method, envOptions);
 }
-function mergeOctocodeConfig(config, method) {
-  const serverConfig = isWindows ? getOctocodeServerConfigWindows(method) : getOctocodeServerConfig(method);
+function mergeOctocodeConfig(config, method, envOptions) {
+  const serverConfig = isWindows ? getOctocodeServerConfigWindows(method, envOptions) : getOctocodeServerConfig(method, envOptions);
   return {
     ...config,
     mcpServers: {
@@ -893,29 +922,81 @@ Create it first or choose a different location.`;
   if (!customPath || !customPath.trim()) return null;
   return expandPath(customPath);
 }
-async function selectInstallMethod() {
-  const selected = await select({
-    message: "Select installation method:",
+async function promptLocalTools() {
+  const { confirm: confirm2 } = await Promise.resolve().then(() => prompts);
+  console.log();
+  console.log(`  ${c("blue", "ℹ")} ${bold("Local Tools")}`);
+  console.log(
+    `  ${dim("Enable local filesystem tools for searching and reading files")}`
+  );
+  console.log(`  ${dim("in your local codebase.")}`);
+  console.log();
+  return await confirm2({
+    message: "Enable local tools?",
+    default: false
+  });
+}
+async function promptGitHubAuth() {
+  console.log();
+  console.log(`  ${c("blue", "ℹ")} ${bold("GitHub Authentication")}`);
+  console.log(`  ${dim("Required for accessing GitHub repositories.")}`);
+  console.log();
+  const method = await select({
+    message: "How would you like to authenticate with GitHub?",
     choices: [
       {
-        name: `${INSTALL_METHOD_INFO.npx.name} - ${dim(INSTALL_METHOD_INFO.npx.description)}`,
-        value: "npx",
-        description: INSTALL_METHOD_INFO.npx.pros.join(", ")
+        name: `${c("green", "●")} gh CLI ${dim("(Recommended)")} - ${dim("Uses existing gh auth")}`,
+        value: "gh-cli"
       },
       {
-        name: `${INSTALL_METHOD_INFO.direct.name} - ${dim(INSTALL_METHOD_INFO.direct.description)}`,
-        value: "direct",
-        description: INSTALL_METHOD_INFO.direct.pros.join(", ")
+        name: `${c("yellow", "●")} GITHUB_TOKEN - ${dim("Enter personal access token")}`,
+        value: "token"
       },
-      { type: "separator", separator: "" },
       {
-        name: `${c("dim", "← Back")}`,
-        value: "back"
+        name: `${c("dim", "○")} Skip - ${dim("Configure manually later")}`,
+        value: "skip"
       }
-    ]
+    ],
+    loop: false
   });
-  if (selected === "back") return null;
-  return selected;
+  if (method === "gh-cli") {
+    console.log();
+    console.log(
+      `  ${c("cyan", "→")} Make sure gh CLI is installed and authenticated:`
+    );
+    console.log(`    ${dim("https://cli.github.com/")}`);
+    console.log();
+    console.log(
+      `  ${dim("Run")} ${c("cyan", "gh auth login")} ${dim("if not already authenticated.")}`
+    );
+    console.log();
+    return { method: "gh-cli" };
+  }
+  if (method === "token") {
+    const token = await input({
+      message: "Enter your GitHub personal access token:",
+      validate: (value) => {
+        if (!value.trim()) {
+          return "Token cannot be empty";
+        }
+        if (value.length < 20) {
+          return "Token appears too short";
+        }
+        return true;
+      }
+    });
+    console.log();
+    console.log(`  ${c("yellow", "⚠")} ${bold("Security Note:")}`);
+    console.log(
+      `  ${dim("Your token will be saved in the MCP configuration file.")}`
+    );
+    console.log(
+      `  ${dim("Make sure this file is not committed to version control.")}`
+    );
+    console.log();
+    return { method: "token", token };
+  }
+  return { method: "skip" };
 }
 const GH_CLI_URL = "https://cli.github.com/";
 function isGitHubCLIInstalled() {
@@ -1037,6 +1118,7 @@ async function promptContinue() {
   });
 }
 function printConfigPreview(config) {
+  const hasEnv = config.env && Object.keys(config.env).length > 0;
   console.log();
   console.log(c("dim", "  {"));
   console.log(c("dim", '    "mcpServers": {'));
@@ -1049,10 +1131,24 @@ function printConfigPreview(config) {
     const isLast = i === config.args.length - 1;
     const truncated = arg.length > 50 ? arg.slice(0, 47) + "..." : arg;
     console.log(
-      c("dim", "          ") + c("green", `"${truncated}"`) + (isLast ? "" : c("dim", ","))
+      c("dim", "          ") + c("green", `"${truncated}"`) + (isLast && !hasEnv ? "" : c("dim", ","))
     );
   });
-  console.log(c("dim", "        ]"));
+  console.log(c("dim", "        ]") + (hasEnv ? c("dim", ",") : ""));
+  if (hasEnv && config.env) {
+    console.log(c("dim", '        "env": {'));
+    const envEntries = Object.entries(config.env);
+    envEntries.forEach(([key, value], i) => {
+      const isLast = i === envEntries.length - 1;
+      const lowerKey = key.toLowerCase();
+      const isSensitive = lowerKey.includes("token") || lowerKey.includes("secret");
+      const displayValue = isSensitive ? "***" : value;
+      console.log(
+        c("dim", "          ") + c("cyan", `"${key}"`) + c("dim", ": ") + c("green", `"${displayValue}"`) + (isLast ? "" : c("dim", ","))
+      );
+    });
+    console.log(c("dim", "        }"));
+  }
   console.log(c("dim", "      }"));
   console.log(c("dim", "    }"));
   console.log(c("dim", "  }"));
@@ -1186,7 +1282,7 @@ function checkExistingClientInstallation(client, customPath) {
   };
 }
 function installOctocodeForClient(options) {
-  const { client, method, customPath, force = false } = options;
+  const { client, method, customPath, force = false, envOptions } = options;
   const configPath = client === "custom" && customPath ? customPath : getMCPConfigPath(client, customPath);
   let config = readMCPConfig(configPath) || { mcpServers: {} };
   if (isOctocodeConfigured(config) && !force) {
@@ -1197,7 +1293,7 @@ function installOctocodeForClient(options) {
       error: "Octocode is already configured. Use --force to overwrite."
     };
   }
-  config = mergeOctocodeConfig(config, method);
+  config = mergeOctocodeConfig(config, method, envOptions);
   const writeResult = writeMCPConfig(configPath, config);
   if (!writeResult.success) {
     return {
@@ -1212,11 +1308,11 @@ function installOctocodeForClient(options) {
     backupPath: writeResult.backupPath
   };
 }
-function getInstallPreviewForClient(client, method, customPath) {
+function getInstallPreviewForClient(client, method, customPath, envOptions) {
   const configPath = client === "custom" && customPath ? customPath : getMCPConfigPath(client, customPath);
   const existing = checkExistingClientInstallation(client, customPath);
   const existingConfig = readMCPConfig(configPath);
-  const serverConfig = isWindows ? getOctocodeServerConfigWindows(method) : getOctocodeServerConfig(method);
+  const serverConfig = isWindows ? getOctocodeServerConfigWindows(method, envOptions) : getOctocodeServerConfig(method, envOptions);
   let action = "create";
   if (existing.installed) {
     action = "override";
@@ -1250,11 +1346,33 @@ async function runInstallFlow() {
     console.log(`  ${bold("Current MCP Configuration:")}`);
     printExistingMCPConfig(existingConfig);
   }
-  const method = await selectInstallMethod();
-  if (!method) return;
-  const preview = getInstallPreviewForClient(client, method, customPath);
+  const method = "npx";
+  const envOptions = {};
+  const enableLocal = await promptLocalTools();
+  if (enableLocal) {
+    envOptions.enableLocal = true;
+  }
+  const githubAuth = await promptGitHubAuth();
+  if (githubAuth.method === "token" && githubAuth.token) {
+    envOptions.githubToken = githubAuth.token;
+  }
+  const preview = getInstallPreviewForClient(
+    client,
+    method,
+    customPath,
+    envOptions
+  );
   console.log();
-  console.log(`  ${dim("📁 Config file:")} ${c("cyan", preview.configPath)}`);
+  console.log(c("cyan", "  ┌" + "─".repeat(60) + "┐"));
+  console.log(
+    c("cyan", "  │ ") + `${c("cyan", "📁")} ${bold("Configuration will be saved to:")}` + " ".repeat(23) + c("cyan", "│")
+  );
+  console.log(c("cyan", "  │") + " ".repeat(60) + c("cyan", "│"));
+  const pathDisplay = preview.configPath.length > 56 ? "..." + preview.configPath.slice(-53) : preview.configPath;
+  console.log(
+    c("cyan", "  │ ") + c("green", pathDisplay) + " ".repeat(Math.max(0, 58 - pathDisplay.length)) + c("cyan", "│")
+  );
+  console.log(c("cyan", "  └" + "─".repeat(60) + "┘"));
   if (preview.action === "override") {
     console.log();
     console.log(c("yellow", "  ┌" + "─".repeat(60) + "┐"));
@@ -1275,10 +1393,12 @@ async function runInstallFlow() {
       return;
     }
   } else if (preview.action === "add") {
+    console.log();
     console.log(
       `  ${c("blue", "ℹ")} Config file exists, will ${c("green", "ADD")} octocode entry`
     );
   } else {
+    console.log();
     console.log(
       `  ${c("green", "✓")} Will ${c("green", "CREATE")} new config file`
     );
@@ -1292,12 +1412,34 @@ async function runInstallFlow() {
   printConfigPreview(preview.serverConfig);
   console.log();
   console.log(`  ${bold("Summary:")}`);
-  console.log(`    ${dim("Client:")}   ${clientInfo.name}`);
-  console.log(`    ${dim("Method:")}   ${INSTALL_METHOD_INFO[method].name}`);
-  console.log(`    ${dim("Config:")}   ${preview.configPath}`);
+  console.log(`    ${dim("Client:")}       ${clientInfo.name}`);
+  console.log(`    ${dim("Method:")}       npx (octocode-mcp@latest)`);
+  const localStatus = envOptions.enableLocal ? c("green", "Enabled") : c("dim", "Disabled");
+  console.log(`    ${dim("Local Tools:")} ${localStatus}`);
+  let authStatus;
+  if (githubAuth.method === "token") {
+    authStatus = c("green", "Token configured");
+  } else if (githubAuth.method === "gh-cli") {
+    authStatus = c("cyan", "Using gh CLI");
+  } else {
+    authStatus = c("dim", "Not configured");
+  }
+  console.log(`    ${dim("GitHub Auth:")} ${authStatus}`);
+  let actionStatus;
+  if (preview.action === "override") {
+    actionStatus = c("yellow", "OVERRIDE");
+  } else if (preview.action === "add") {
+    actionStatus = c("green", "ADD");
+  } else {
+    actionStatus = c("green", "CREATE");
+  }
+  console.log(`    ${dim("Action:")}       ${actionStatus}`);
+  console.log();
+  console.log(`  ${c("yellow", "⚠")} ${bold("Note:")}`);
   console.log(
-    `    ${dim("Action:")}   ${preview.action === "override" ? c("yellow", "OVERRIDE") : preview.action === "add" ? c("green", "ADD") : c("green", "CREATE")}`
+    `  ${dim("Nothing is saved to any server. Configuration is stored locally at:")}`
   );
+  console.log(`  ${c("cyan", preview.configPath)}`);
   console.log();
   const proceed = await confirm({
     message: "Proceed with configuration?",
@@ -1313,17 +1455,18 @@ async function runInstallFlow() {
     client,
     method,
     customPath,
-    force: preview.action === "override"
+    force: preview.action === "override",
+    envOptions
   });
   if (result.success) {
     spinner.succeed("Octocode configured successfully!");
-    printInstallSuccessForClient(result, client);
+    printInstallSuccessForClient(result, client, preview.configPath);
   } else {
     spinner.fail("Configuration failed");
     printInstallError(result);
   }
 }
-function printInstallSuccessForClient(result, client) {
+function printInstallSuccessForClient(result, client, configPath) {
   const clientInfo = MCP_CLIENTS[client];
   console.log();
   console.log(c("green", "  ┌" + "─".repeat(60) + "┐"));
@@ -1332,11 +1475,13 @@ function printInstallSuccessForClient(result, client) {
   );
   console.log(c("green", "  └" + "─".repeat(60) + "┘"));
   console.log();
-  console.log(`  ${dim("Config saved to:")} ${result.configPath}`);
+  console.log(`  ${bold("Configuration saved to:")}`);
+  console.log(`  ${c("cyan", configPath)}`);
+  console.log();
   if (result.backupPath) {
     console.log(`  ${dim("Backup saved to:")} ${result.backupPath}`);
+    console.log();
   }
-  console.log();
   console.log(`  ${bold("Next steps:")}`);
   console.log(`    1. Restart ${clientInfo?.name || client}`);
   console.log(`    2. Look for ${c("cyan", "octocode")} in MCP servers`);

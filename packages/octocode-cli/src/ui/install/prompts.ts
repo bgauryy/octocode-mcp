@@ -3,9 +3,9 @@
  */
 
 import type { IDE, InstallMethod, MCPClient } from '../../types/index.js';
-import { c, dim } from '../../utils/colors.js';
+import { c, dim, bold } from '../../utils/colors.js';
 import { select, Separator, input } from '../../utils/prompts.js';
-import { IDE_INFO, INSTALL_METHOD_INFO } from '../constants.js';
+import { IDE_INFO } from '../constants.js';
 import { getAppContext } from '../../utils/context.js';
 import {
   MCP_CLIENTS,
@@ -265,34 +265,117 @@ export async function selectIDE(availableIDEs: IDE[]): Promise<IDE | null> {
 
 /**
  * Select install method prompt
+ * @deprecated Only npx is now supported, this function is kept for backward compatibility
  */
 export async function selectInstallMethod(): Promise<InstallMethod | null> {
-  const selected = await select<InstallMethod | 'back'>({
-    message: 'Select installation method:',
+  // Only npx method is now supported
+  return 'npx';
+}
+
+// ============================================================================
+// Environment Configuration Prompts
+// ============================================================================
+
+export interface EnvConfig {
+  enableLocal?: boolean;
+  githubToken?: string;
+}
+
+/**
+ * Prompt for local tools enablement
+ */
+export async function promptLocalTools(): Promise<boolean> {
+  const { confirm } = await import('../../utils/prompts.js');
+
+  console.log();
+  console.log(`  ${c('blue', 'ℹ')} ${bold('Local Tools')}`);
+  console.log(
+    `  ${dim('Enable local filesystem tools for searching and reading files')}`
+  );
+  console.log(`  ${dim('in your local codebase.')}`);
+  console.log();
+
+  return await confirm({
+    message: 'Enable local tools?',
+    default: false,
+  });
+}
+
+type GitHubAuthMethod = 'gh-cli' | 'token' | 'skip';
+
+/**
+ * Prompt for GitHub authentication method
+ */
+export async function promptGitHubAuth(): Promise<{
+  method: GitHubAuthMethod;
+  token?: string;
+}> {
+  console.log();
+  console.log(`  ${c('blue', 'ℹ')} ${bold('GitHub Authentication')}`);
+  console.log(`  ${dim('Required for accessing GitHub repositories.')}`);
+  console.log();
+
+  const method = await select<GitHubAuthMethod>({
+    message: 'How would you like to authenticate with GitHub?',
     choices: [
       {
-        name: `${INSTALL_METHOD_INFO.npx.name} - ${dim(INSTALL_METHOD_INFO.npx.description)}`,
-        value: 'npx' as const,
-        description: INSTALL_METHOD_INFO.npx.pros.join(', '),
+        name: `${c('green', '●')} gh CLI ${dim('(Recommended)')} - ${dim('Uses existing gh auth')}`,
+        value: 'gh-cli' as const,
       },
       {
-        name: `${INSTALL_METHOD_INFO.direct.name} - ${dim(INSTALL_METHOD_INFO.direct.description)}`,
-        value: 'direct' as const,
-        description: INSTALL_METHOD_INFO.direct.pros.join(', '),
-      },
-      { type: 'separator', separator: '' } as unknown as {
-        name: string;
-        value: 'back';
+        name: `${c('yellow', '●')} GITHUB_TOKEN - ${dim('Enter personal access token')}`,
+        value: 'token' as const,
       },
       {
-        name: `${c('dim', '← Back')}`,
-        value: 'back' as const,
+        name: `${c('dim', '○')} Skip - ${dim('Configure manually later')}`,
+        value: 'skip' as const,
       },
     ],
+    loop: false,
   });
 
-  if (selected === 'back') return null;
-  return selected;
+  if (method === 'gh-cli') {
+    console.log();
+    console.log(
+      `  ${c('cyan', '→')} Make sure gh CLI is installed and authenticated:`
+    );
+    console.log(`    ${dim('https://cli.github.com/')}`);
+    console.log();
+    console.log(
+      `  ${dim('Run')} ${c('cyan', 'gh auth login')} ${dim('if not already authenticated.')}`
+    );
+    console.log();
+    return { method: 'gh-cli' };
+  }
+
+  if (method === 'token') {
+    const token = await input({
+      message: 'Enter your GitHub personal access token:',
+      validate: (value: string) => {
+        if (!value.trim()) {
+          return 'Token cannot be empty';
+        }
+        if (value.length < 20) {
+          return 'Token appears too short';
+        }
+        return true;
+      },
+    });
+
+    console.log();
+    console.log(`  ${c('yellow', '⚠')} ${bold('Security Note:')}`);
+    console.log(
+      `  ${dim('Your token will be saved in the MCP configuration file.')}`
+    );
+    console.log(
+      `  ${dim('Make sure this file is not committed to version control.')}`
+    );
+    console.log();
+
+    return { method: 'token', token };
+  }
+
+  return { method: 'skip' };
 }
 
 /**

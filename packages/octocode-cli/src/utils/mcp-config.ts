@@ -23,48 +23,102 @@ export {
 export { readMCPConfig, writeMCPConfig } from './mcp-io.js';
 
 /**
+ * Environment options for octocode server configuration
+ */
+export interface OctocodeEnvOptions {
+  enableLocal?: boolean;
+  githubToken?: string;
+}
+
+/**
  * Get octocode MCP server configuration for a given install method
  */
-export function getOctocodeServerConfig(method: InstallMethod): MCPServer {
+export function getOctocodeServerConfig(
+  method: InstallMethod,
+  envOptions?: OctocodeEnvOptions
+): MCPServer {
+  let config: MCPServer;
+
   switch (method) {
     case 'direct':
-      return {
+      config = {
         command: 'bash',
         args: [
           '-c',
           'curl -sL https://octocodeai.com/octocode/latest/index.js -o /tmp/index.js && node /tmp/index.js',
         ],
       };
+      break;
 
     case 'npx':
-      return {
+      config = {
         command: 'npx',
         args: ['octocode-mcp@latest'],
       };
+      break;
 
     default:
       throw new Error(`Unknown install method: ${method}`);
   }
+
+  // Add env options if provided
+  if (envOptions) {
+    const env: Record<string, string> = {};
+
+    if (envOptions.enableLocal) {
+      env.ENABLE_LOCAL = 'true';
+    }
+
+    if (envOptions.githubToken) {
+      env.GITHUB_TOKEN = envOptions.githubToken;
+    }
+
+    if (Object.keys(env).length > 0) {
+      config.env = env;
+    }
+  }
+
+  return config;
 }
 
 /**
  * Get Windows-compatible octocode config for direct method
  */
 export function getOctocodeServerConfigWindows(
-  method: InstallMethod
+  method: InstallMethod,
+  envOptions?: OctocodeEnvOptions
 ): MCPServer {
   if (method === 'direct') {
     // Windows doesn't have bash/curl by default, use PowerShell
-    return {
+    const config: MCPServer = {
       command: 'powershell',
       args: [
         '-Command',
         "Invoke-WebRequest -Uri 'https://octocodeai.com/octocode/latest/index.js' -OutFile $env:TEMP\\index.js; node $env:TEMP\\index.js",
       ],
     };
+
+    // Add env options if provided
+    if (envOptions) {
+      const env: Record<string, string> = {};
+
+      if (envOptions.enableLocal) {
+        env.ENABLE_LOCAL = 'true';
+      }
+
+      if (envOptions.githubToken) {
+        env.GITHUB_TOKEN = envOptions.githubToken;
+      }
+
+      if (Object.keys(env).length > 0) {
+        config.env = env;
+      }
+    }
+
+    return config;
   }
   // npx works the same on Windows
-  return getOctocodeServerConfig(method);
+  return getOctocodeServerConfig(method, envOptions);
 }
 
 /**
@@ -72,11 +126,12 @@ export function getOctocodeServerConfigWindows(
  */
 export function mergeOctocodeConfig(
   config: MCPConfig,
-  method: InstallMethod
+  method: InstallMethod,
+  envOptions?: OctocodeEnvOptions
 ): MCPConfig {
   const serverConfig = isWindows
-    ? getOctocodeServerConfigWindows(method)
-    : getOctocodeServerConfig(method);
+    ? getOctocodeServerConfigWindows(method, envOptions)
+    : getOctocodeServerConfig(method, envOptions);
 
   return {
     ...config,
