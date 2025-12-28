@@ -807,9 +807,7 @@ function getClientStatusIndicator(status) {
   }
   return c("dim", "○ Not found");
 }
-async function selectMCPClient() {
-  const currentClient = detectCurrentClient();
-  const choices = [];
+function getAllClientsWithStatus() {
   const clientOrder = [
     "cursor",
     "claude-desktop",
@@ -822,31 +820,90 @@ async function selectMCPClient() {
     "vscode-roo",
     "vscode-continue"
   ];
-  for (const clientId of clientOrder) {
+  return clientOrder.map((clientId) => ({
+    clientId,
+    status: getClientInstallStatus(clientId),
+    isAvailable: clientConfigExists(clientId)
+  }));
+}
+async function selectMCPClient() {
+  const currentClient = detectCurrentClient();
+  const allClients = getAllClientsWithStatus();
+  const installedClients = allClients.filter((c2) => c2.status.octocodeInstalled);
+  const availableClients = allClients.filter(
+    (c2) => c2.isAvailable && !c2.status.octocodeInstalled
+  );
+  if (installedClients.length === 0) {
+    return await promptNoConfigurationsFound(availableClients, currentClient);
+  }
+  return await promptExistingConfigurations(
+    installedClients,
+    availableClients,
+    currentClient
+  );
+}
+async function promptNoConfigurationsFound(availableClients, currentClient) {
+  console.log();
+  console.log(c("yellow", "  ┌" + "─".repeat(60) + "┐"));
+  console.log(
+    c("yellow", "  │ ") + `${c("yellow", "ℹ")} No octocode configurations found` + " ".repeat(24) + c("yellow", "│")
+  );
+  console.log(c("yellow", "  └" + "─".repeat(60) + "┘"));
+  console.log();
+  console.log(`  ${dim("Octocode is not configured in any MCP client yet.")}`);
+  console.log();
+  if (availableClients.length === 0) {
+    console.log(
+      `  ${c("red", "✗")} ${dim("No MCP clients detected on this system.")}`
+    );
+    console.log();
+    console.log(`  ${dim("Supported clients:")}`);
+    console.log(`    ${dim("• Cursor, Claude Desktop, Claude Code")}`);
+    console.log(`    ${dim("• Windsurf, Zed, VS Code (Cline/Roo/Continue)")}`);
+    console.log();
+    console.log(`  ${dim("Install a supported client and try again,")}`);
+    console.log(`  ${dim('or use "Custom Path" to specify a config file.')}`);
+    console.log();
+    const choices2 = [
+      {
+        name: `${c("cyan", "⚙")} Custom Path - ${dim("Specify your own MCP config path")}`,
+        value: "custom"
+      },
+      new Separator(),
+      {
+        name: `${c("dim", "← Back")}`,
+        value: "back"
+      }
+    ];
+    const selected2 = await select({
+      message: "What would you like to do?",
+      choices: choices2,
+      loop: false
+    });
+    if (selected2 === "back") return null;
+    if (selected2 === "custom") {
+      const customPath = await promptCustomPath();
+      if (!customPath) return null;
+      return { client: "custom", customPath };
+    }
+    return null;
+  }
+  const choices = [];
+  for (const { clientId, status } of availableClients) {
     const client = MCP_CLIENTS[clientId];
-    const status = getClientInstallStatus(clientId);
-    const statusIndicator = getClientStatusIndicator(status);
-    const isAvailable = clientConfigExists(clientId);
     let name = `${client.name} - ${dim(client.description)}`;
-    name += ` ${statusIndicator}`;
+    name += ` ${getClientStatusIndicator(status)}`;
     if (currentClient === clientId) {
       name = `${c("green", "★")} ${name} ${c("yellow", "(Current)")}`;
     }
     choices.push({
       name,
-      value: clientId,
-      disabled: !isAvailable ? "Not installed" : void 0
+      value: clientId
     });
   }
   choices.sort((a, b) => {
-    if (a.disabled && !b.disabled) return 1;
-    if (!a.disabled && b.disabled) return -1;
-    const aStatus = getClientInstallStatus(a.value);
-    const bStatus = getClientInstallStatus(b.value);
     if (currentClient === a.value) return -1;
     if (currentClient === b.value) return 1;
-    if (aStatus.octocodeInstalled && !bStatus.octocodeInstalled) return -1;
-    if (!aStatus.octocodeInstalled && bStatus.octocodeInstalled) return 1;
     return 0;
   });
   choices.push(new Separator());
@@ -860,7 +917,7 @@ async function selectMCPClient() {
     value: "back"
   });
   const selected = await select({
-    message: "Select MCP client to configure:",
+    message: "Select a client to install octocode:",
     choices,
     loop: false
   });
@@ -869,6 +926,105 @@ async function selectMCPClient() {
     const customPath = await promptCustomPath();
     if (!customPath) return null;
     return { client: "custom", customPath };
+  }
+  return { client: selected };
+}
+async function promptExistingConfigurations(installedClients, availableClients, currentClient) {
+  console.log();
+  console.log(
+    `  ${c("green", "✓")} Found ${bold(String(installedClients.length))} octocode configuration${installedClients.length > 1 ? "s" : ""}`
+  );
+  console.log();
+  const choices = [];
+  for (const { clientId } of installedClients) {
+    const client = MCP_CLIENTS[clientId];
+    let name = `${c("green", "✓")} ${client.name} - ${dim("View/Edit configuration")}`;
+    if (currentClient === clientId) {
+      name += ` ${c("yellow", "(Current)")}`;
+    }
+    choices.push({
+      name,
+      value: clientId
+    });
+  }
+  choices.sort((a, b) => {
+    if (currentClient === a.value) return -1;
+    if (currentClient === b.value) return 1;
+    return 0;
+  });
+  if (availableClients.length > 0) {
+    choices.push(new Separator());
+    choices.push({
+      name: `${c("blue", "+")} Install to another client - ${dim(`${availableClients.length} available`)}`,
+      value: "install-new"
+    });
+  }
+  choices.push(new Separator());
+  choices.push({
+    name: `${c("cyan", "⚙")} Custom Path - ${dim("Specify your own MCP config path")}`,
+    value: "custom"
+  });
+  choices.push(new Separator());
+  choices.push({
+    name: `${c("dim", "← Back")}`,
+    value: "back"
+  });
+  const selected = await select({
+    message: "Select configuration to manage:",
+    choices,
+    loop: false
+  });
+  if (selected === "back") return null;
+  if (selected === "install-new") {
+    return await promptInstallToNewClient(availableClients, currentClient);
+  }
+  if (selected === "custom") {
+    const customPath = await promptCustomPath();
+    if (!customPath) return null;
+    return { client: "custom", customPath };
+  }
+  return { client: selected };
+}
+async function promptInstallToNewClient(availableClients, currentClient) {
+  console.log();
+  console.log(`  ${c("blue", "ℹ")} Select a client for new installation:`);
+  console.log();
+  const choices = [];
+  for (const { clientId, status } of availableClients) {
+    const client = MCP_CLIENTS[clientId];
+    let name = `${client.name} - ${dim(client.description)}`;
+    name += ` ${getClientStatusIndicator(status)}`;
+    if (currentClient === clientId) {
+      name = `${c("green", "★")} ${name} ${c("yellow", "(Current)")}`;
+    }
+    choices.push({
+      name,
+      value: clientId
+    });
+  }
+  choices.sort((a, b) => {
+    if (currentClient === a.value) return -1;
+    if (currentClient === b.value) return 1;
+    return 0;
+  });
+  choices.push(new Separator());
+  choices.push({
+    name: `${c("dim", "← Back to configurations")}`,
+    value: "back"
+  });
+  const selected = await select({
+    message: "Select client to install octocode:",
+    choices,
+    loop: false
+  });
+  if (selected === "back") {
+    const allClients = getAllClientsWithStatus();
+    const installedClients = allClients.filter((c2) => c2.status.octocodeInstalled);
+    return await promptExistingConfigurations(
+      installedClients,
+      availableClients,
+      currentClient
+    );
   }
   return { client: selected };
 }
@@ -1162,33 +1318,35 @@ function printInstallError(result) {
   }
   console.log();
 }
-function printExistingMCPConfig(config) {
-  const servers = config.mcpServers || {};
-  const serverNames = Object.keys(servers);
-  if (serverNames.length === 0) {
-    return;
-  }
-  const boxWidth = 62;
+function printExistingOctocodeConfig(server) {
+  const boxWidth = 60;
   console.log();
   console.log(c("cyan", "  ┌" + "─".repeat(boxWidth) + "┐"));
-  for (const name of serverNames) {
-    const server = servers[name];
-    if (!server) continue;
-    const command = server.command;
-    const args = server.args.join(" ");
-    const fullCommand = `${command} ${args}`;
-    const maxContentWidth = boxWidth - 4;
-    const displayName = c("magenta", name);
-    const separator = dim(": ");
-    const nameLen = name.length;
-    const availableForCommand = maxContentWidth - nameLen - 2;
-    const truncatedCommand = fullCommand.length > availableForCommand ? fullCommand.slice(0, availableForCommand - 3) + "..." : fullCommand;
-    const line = `${displayName}${separator}${dim(truncatedCommand)}`;
-    const visibleLen = name.length + 2 + truncatedCommand.length;
-    const padding = Math.max(0, boxWidth - visibleLen);
+  const commandLine = `${server.command} ${server.args.join(" ")}`;
+  const maxLen = boxWidth - 4;
+  const displayCommand = commandLine.length > maxLen ? commandLine.slice(0, maxLen - 3) + "..." : commandLine;
+  const cmdPadding = Math.max(0, boxWidth - 2 - displayCommand.length);
+  console.log(
+    c("cyan", "  │ ") + dim(displayCommand) + " ".repeat(cmdPadding) + c("cyan", "│")
+  );
+  if (server.env && Object.keys(server.env).length > 0) {
+    console.log(c("cyan", "  │") + " ".repeat(boxWidth) + c("cyan", "│"));
+    const envLabel = "Environment:";
+    const envPadding = boxWidth - 2 - envLabel.length;
     console.log(
-      c("cyan", "  │ ") + line + " ".repeat(padding) + c("cyan", " │")
+      c("cyan", "  │ ") + bold(envLabel) + " ".repeat(envPadding) + c("cyan", "│")
     );
+    for (const [key, value] of Object.entries(server.env)) {
+      const lowerKey = key.toLowerCase();
+      const isSensitive = lowerKey.includes("token") || lowerKey.includes("secret");
+      const displayValue = isSensitive ? "***" : value;
+      const envLine = `  ${key}: ${displayValue}`;
+      const truncatedEnv = envLine.length > maxLen ? envLine.slice(0, maxLen - 3) + "..." : envLine;
+      const padding = Math.max(0, boxWidth - 2 - truncatedEnv.length);
+      console.log(
+        c("cyan", "  │ ") + dim(truncatedEnv) + " ".repeat(padding) + c("cyan", "│")
+      );
+    }
   }
   console.log(c("cyan", "  └" + "─".repeat(boxWidth) + "┘"));
 }
@@ -1341,10 +1499,28 @@ async function runInstallFlow() {
   const clientInfo = MCP_CLIENTS[client];
   const configPath = customPath || getMCPConfigPath(client);
   const existingConfig = readMCPConfig(configPath);
-  if (existingConfig && existingConfig.mcpServers && Object.keys(existingConfig.mcpServers).length > 0) {
+  const hasExistingOctocode = existingConfig?.mcpServers?.octocode;
+  if (hasExistingOctocode) {
     console.log();
-    console.log(`  ${bold("Current MCP Configuration:")}`);
-    printExistingMCPConfig(existingConfig);
+    console.log(c("yellow", "  ┌" + "─".repeat(60) + "┐"));
+    console.log(
+      c("yellow", "  │ ") + `${c("yellow", "⚠")} ${bold("Octocode is already configured!")}` + " ".repeat(28) + c("yellow", "│")
+    );
+    console.log(c("yellow", "  └" + "─".repeat(60) + "┘"));
+    console.log();
+    console.log(`  ${bold("Current octocode configuration:")}`);
+    printExistingOctocodeConfig(existingConfig.mcpServers.octocode);
+    console.log();
+    console.log(`  ${dim("Config file:")} ${c("cyan", configPath)}`);
+    console.log();
+    const updateExisting = await confirm({
+      message: "Update existing octocode configuration?",
+      default: true
+    });
+    if (!updateExisting) {
+      console.log(`  ${dim("Configuration unchanged.")}`);
+      return;
+    }
   }
   const method = "npx";
   const envOptions = {};
@@ -1363,42 +1539,15 @@ async function runInstallFlow() {
     envOptions
   );
   console.log();
-  console.log(c("cyan", "  ┌" + "─".repeat(60) + "┐"));
-  console.log(
-    c("cyan", "  │ ") + `${c("cyan", "📁")} ${bold("Configuration will be saved to:")}` + " ".repeat(23) + c("cyan", "│")
-  );
-  console.log(c("cyan", "  │") + " ".repeat(60) + c("cyan", "│"));
-  const pathDisplay = preview.configPath.length > 56 ? "..." + preview.configPath.slice(-53) : preview.configPath;
-  console.log(
-    c("cyan", "  │ ") + c("green", pathDisplay) + " ".repeat(Math.max(0, 58 - pathDisplay.length)) + c("cyan", "│")
-  );
-  console.log(c("cyan", "  └" + "─".repeat(60) + "┘"));
-  if (preview.action === "override") {
-    console.log();
-    console.log(c("yellow", "  ┌" + "─".repeat(60) + "┐"));
+  if (hasExistingOctocode) {
     console.log(
-      c("yellow", "  │ ") + `${c("yellow", "⚠")} ${bold("Octocode is already configured!")}` + " ".repeat(28) + c("yellow", "│")
+      `  ${c("yellow", "⚠")} Will ${c("yellow", "UPDATE")} existing octocode configuration`
     );
-    console.log(c("yellow", "  │") + " ".repeat(60) + c("yellow", "│"));
-    console.log(
-      c("yellow", "  │ ") + `Current method: ${bold(preview.existingMethod || "unknown")}` + " ".repeat(60 - 18 - (preview.existingMethod?.length || 7)) + c("yellow", "│")
-    );
-    console.log(c("yellow", "  └" + "─".repeat(60) + "┘"));
-    const overwrite = await confirm({
-      message: `${c("yellow", "OVERRIDE")} existing configuration?`,
-      default: false
-    });
-    if (!overwrite) {
-      console.log(`  ${dim("Configuration unchanged.")}`);
-      return;
-    }
   } else if (preview.action === "add") {
-    console.log();
     console.log(
       `  ${c("blue", "ℹ")} Config file exists, will ${c("green", "ADD")} octocode entry`
     );
   } else {
-    console.log();
     console.log(
       `  ${c("green", "✓")} Will ${c("green", "CREATE")} new config file`
     );
@@ -1426,8 +1575,8 @@ async function runInstallFlow() {
   }
   console.log(`    ${dim("GitHub Auth:")} ${authStatus}`);
   let actionStatus;
-  if (preview.action === "override") {
-    actionStatus = c("yellow", "OVERRIDE");
+  if (hasExistingOctocode) {
+    actionStatus = c("yellow", "UPDATE");
   } else if (preview.action === "add") {
     actionStatus = c("green", "ADD");
   } else {
@@ -1455,7 +1604,7 @@ async function runInstallFlow() {
     client,
     method,
     customPath,
-    force: preview.action === "override",
+    force: hasExistingOctocode,
     envOptions
   });
   if (result.success) {

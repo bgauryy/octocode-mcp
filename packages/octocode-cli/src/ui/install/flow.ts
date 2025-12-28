@@ -13,7 +13,7 @@ import {
 import {
   printConfigPreview,
   printInstallError,
-  printExistingMCPConfig,
+  printExistingOctocodeConfig,
 } from './display.js';
 import {
   installOctocodeForClient,
@@ -46,18 +46,41 @@ export async function runInstallFlow(): Promise<void> {
   const { client, customPath } = selection;
   const clientInfo = MCP_CLIENTS[client];
 
-  // Show existing MCP configuration if it exists
+  // Check for existing octocode configuration
   const configPath = customPath || getMCPConfigPath(client);
   const existingConfig = readMCPConfig(configPath);
+  const hasExistingOctocode = existingConfig?.mcpServers?.octocode;
 
-  if (
-    existingConfig &&
-    existingConfig.mcpServers &&
-    Object.keys(existingConfig.mcpServers).length > 0
-  ) {
+  // If octocode already exists, show it and ask what to do
+  if (hasExistingOctocode) {
     console.log();
-    console.log(`  ${bold('Current MCP Configuration:')}`);
-    printExistingMCPConfig(existingConfig);
+    console.log(c('yellow', '  ┌' + '─'.repeat(60) + '┐'));
+    console.log(
+      c('yellow', '  │ ') +
+        `${c('yellow', '⚠')} ${bold('Octocode is already configured!')}` +
+        ' '.repeat(28) +
+        c('yellow', '│')
+    );
+    console.log(c('yellow', '  └' + '─'.repeat(60) + '┘'));
+    console.log();
+
+    // Show existing octocode config
+    console.log(`  ${bold('Current octocode configuration:')}`);
+    printExistingOctocodeConfig(existingConfig.mcpServers.octocode);
+
+    console.log();
+    console.log(`  ${dim('Config file:')} ${c('cyan', configPath)}`);
+    console.log();
+
+    const updateExisting = await confirm({
+      message: 'Update existing octocode configuration?',
+      default: true,
+    });
+
+    if (!updateExisting) {
+      console.log(`  ${dim('Configuration unchanged.')}`);
+      return;
+    }
   }
 
   // Only npx method is now supported
@@ -86,62 +109,17 @@ export async function runInstallFlow(): Promise<void> {
     envOptions
   );
 
-  // Show config path prominently
+  // Show action info
   console.log();
-  console.log(c('cyan', '  ┌' + '─'.repeat(60) + '┐'));
-  console.log(
-    c('cyan', '  │ ') +
-      `${c('cyan', '📁')} ${bold('Configuration will be saved to:')}` +
-      ' '.repeat(23) +
-      c('cyan', '│')
-  );
-  console.log(c('cyan', '  │') + ' '.repeat(60) + c('cyan', '│'));
-  const pathDisplay =
-    preview.configPath.length > 56
-      ? '...' + preview.configPath.slice(-53)
-      : preview.configPath;
-  console.log(
-    c('cyan', '  │ ') +
-      c('green', pathDisplay) +
-      ' '.repeat(Math.max(0, 58 - pathDisplay.length)) +
-      c('cyan', '│')
-  );
-  console.log(c('cyan', '  └' + '─'.repeat(60) + '┘'));
-
-  // Handle existing installation
-  if (preview.action === 'override') {
-    console.log();
-    console.log(c('yellow', '  ┌' + '─'.repeat(60) + '┐'));
+  if (hasExistingOctocode) {
     console.log(
-      c('yellow', '  │ ') +
-        `${c('yellow', '⚠')} ${bold('Octocode is already configured!')}` +
-        ' '.repeat(28) +
-        c('yellow', '│')
+      `  ${c('yellow', '⚠')} Will ${c('yellow', 'UPDATE')} existing octocode configuration`
     );
-    console.log(c('yellow', '  │') + ' '.repeat(60) + c('yellow', '│'));
-    console.log(
-      c('yellow', '  │ ') +
-        `Current method: ${bold(preview.existingMethod || 'unknown')}` +
-        ' '.repeat(60 - 18 - (preview.existingMethod?.length || 7)) +
-        c('yellow', '│')
-    );
-    console.log(c('yellow', '  └' + '─'.repeat(60) + '┘'));
-
-    const overwrite = await confirm({
-      message: `${c('yellow', 'OVERRIDE')} existing configuration?`,
-      default: false,
-    });
-    if (!overwrite) {
-      console.log(`  ${dim('Configuration unchanged.')}`);
-      return;
-    }
   } else if (preview.action === 'add') {
-    console.log();
     console.log(
       `  ${c('blue', 'ℹ')} Config file exists, will ${c('green', 'ADD')} octocode entry`
     );
   } else {
-    console.log();
     console.log(
       `  ${c('green', '✓')} Will ${c('green', 'CREATE')} new config file`
     );
@@ -181,8 +159,8 @@ export async function runInstallFlow(): Promise<void> {
   console.log(`    ${dim('GitHub Auth:')} ${authStatus}`);
 
   let actionStatus: string;
-  if (preview.action === 'override') {
-    actionStatus = c('yellow', 'OVERRIDE');
+  if (hasExistingOctocode) {
+    actionStatus = c('yellow', 'UPDATE');
   } else if (preview.action === 'add') {
     actionStatus = c('green', 'ADD');
   } else {
@@ -217,7 +195,7 @@ export async function runInstallFlow(): Promise<void> {
     client,
     method,
     customPath,
-    force: preview.action === 'override',
+    force: hasExistingOctocode,
     envOptions,
   });
 

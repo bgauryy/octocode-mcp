@@ -102,7 +102,66 @@ export function printInstallError(result: InstallResult): void {
 }
 
 /**
- * Print existing MCP configuration
+ * Print existing octocode configuration
+ */
+export function printExistingOctocodeConfig(server: MCPServer): void {
+  const boxWidth = 60;
+
+  console.log();
+  console.log(c('cyan', '  ┌' + '─'.repeat(boxWidth) + '┐'));
+
+  // Command line
+  const commandLine = `${server.command} ${server.args.join(' ')}`;
+  const maxLen = boxWidth - 4;
+  const displayCommand =
+    commandLine.length > maxLen
+      ? commandLine.slice(0, maxLen - 3) + '...'
+      : commandLine;
+  const cmdPadding = Math.max(0, boxWidth - 2 - displayCommand.length);
+  console.log(
+    c('cyan', '  │ ') +
+      dim(displayCommand) +
+      ' '.repeat(cmdPadding) +
+      c('cyan', '│')
+  );
+
+  // Show env vars if present
+  if (server.env && Object.keys(server.env).length > 0) {
+    console.log(c('cyan', '  │') + ' '.repeat(boxWidth) + c('cyan', '│'));
+    const envLabel = 'Environment:';
+    const envPadding = boxWidth - 2 - envLabel.length;
+    console.log(
+      c('cyan', '  │ ') +
+        bold(envLabel) +
+        ' '.repeat(envPadding) +
+        c('cyan', '│')
+    );
+
+    for (const [key, value] of Object.entries(server.env)) {
+      const lowerKey = key.toLowerCase();
+      const isSensitive =
+        lowerKey.includes('token') || lowerKey.includes('secret');
+      const displayValue = isSensitive ? '***' : value;
+      const envLine = `  ${key}: ${displayValue}`;
+      const truncatedEnv =
+        envLine.length > maxLen
+          ? envLine.slice(0, maxLen - 3) + '...'
+          : envLine;
+      const padding = Math.max(0, boxWidth - 2 - truncatedEnv.length);
+      console.log(
+        c('cyan', '  │ ') +
+          dim(truncatedEnv) +
+          ' '.repeat(padding) +
+          c('cyan', '│')
+      );
+    }
+  }
+
+  console.log(c('cyan', '  └' + '─'.repeat(boxWidth) + '┘'));
+}
+
+/**
+ * Print existing MCP configuration (all servers)
  */
 export function printExistingMCPConfig(config: MCPConfig): void {
   const servers = config.mcpServers || {};
@@ -112,7 +171,8 @@ export function printExistingMCPConfig(config: MCPConfig): void {
     return;
   }
 
-  const boxWidth = 62;
+  const boxWidth = 60;
+  const contentWidth = boxWidth - 2; // Account for spaces inside borders
 
   console.log();
   console.log(c('cyan', '  ┌' + '─'.repeat(boxWidth) + '┐'));
@@ -126,27 +186,25 @@ export function printExistingMCPConfig(config: MCPConfig): void {
     const args = server.args.join(' ');
     const fullCommand = `${command} ${args}`;
 
-    // Truncate if too long
-    const maxContentWidth = boxWidth - 4; // Account for padding
-    const displayName = c('magenta', name);
-    const separator = dim(': ');
-
     // Calculate available space for command
     const nameLen = name.length;
-    const availableForCommand = maxContentWidth - nameLen - 2; // -2 for ": "
+    const separatorLen = 2; // ": "
+    const availableForCommand = contentWidth - nameLen - separatorLen;
     const truncatedCommand =
       fullCommand.length > availableForCommand
         ? fullCommand.slice(0, availableForCommand - 3) + '...'
         : fullCommand;
 
+    const displayName = c('magenta', name);
+    const separator = dim(': ');
     const line = `${displayName}${separator}${dim(truncatedCommand)}`;
 
     // Calculate padding (accounting for ANSI codes)
-    const visibleLen = name.length + 2 + truncatedCommand.length;
-    const padding = Math.max(0, boxWidth - visibleLen);
+    const visibleLen = nameLen + separatorLen + truncatedCommand.length;
+    const padding = Math.max(0, contentWidth - visibleLen);
 
     console.log(
-      c('cyan', '  │ ') + line + ' '.repeat(padding) + c('cyan', ' │')
+      c('cyan', '  │ ') + line + ' '.repeat(padding) + c('cyan', '│')
     );
   }
 
