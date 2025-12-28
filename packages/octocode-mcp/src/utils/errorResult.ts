@@ -9,15 +9,10 @@
 import type { GitHubAPIError } from '../github/githubAPI.js';
 import { toToolError, isToolError, type ToolError } from '../errorCodes.js';
 import { getHints } from '../tools/hints/index.js';
+import type { BaseQuery } from './types.js';
 
-/**
- * Base query fields that all tools share
- */
-export interface BaseQueryFields {
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-}
+// Re-export for backwards compatibility
+export type { BaseQuery as BaseQueryFields };
 
 /**
  * Unified error result structure
@@ -232,36 +227,3 @@ function getErrorTypeFromToolError(
   }
 }
 
-/**
- * Create error result specifically for GitHub API tools
- * Supports the GitHub pattern where error and hint source can differ
- *
- * @param query - Query object with research context
- * @param error - Error string or GitHubAPIError object to store as the error
- * @param apiError - Optional GitHubAPIError for extracting hints (not stored as error)
- * @returns UnifiedErrorResult compatible with GitHub tools
- */
-export function createGitHubErrorResult(
-  query: BaseQueryFields,
-  error: string | GitHubAPIError,
-  apiError?: GitHubAPIError
-): UnifiedErrorResult {
-  return createErrorResult(error, query, {
-    hintSourceError: apiError,
-  });
-}
-
-/**
- * Create error result specifically for local file system tools
- * This is a convenience wrapper with toolName as required parameter
- *
- * @deprecated Use createErrorResult instead - this is kept for backwards compatibility
- */
-export function createLocalErrorResult<T extends BaseQueryFields>(
-  error: unknown,
-  toolName: string,
-  query: T,
-  extra?: Record<string, unknown>
-): UnifiedErrorResult {
-  return createErrorResult(error, query, { toolName, extra });
-}

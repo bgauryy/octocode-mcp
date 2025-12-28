@@ -2,7 +2,7 @@
  * Pagination utilities module
  *
  * Consolidates all pagination-related utilities:
- * - Core pagination logic (applyPagination, sliceByCharRespectLines)
+ * - Core pagination logic (applyPagination)
  * - Hint generation (generic, GitHub file content, structure)
  * - Type definitions
  */
@@ -22,7 +22,6 @@ export type {
 export {
   applyPagination,
   serializeForPagination,
-  sliceByCharRespectLines,
   createPaginationInfo,
 } from './core.js';
 

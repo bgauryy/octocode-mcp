@@ -39,6 +39,7 @@ export interface PathValidationResult {
  * Base query schema fields (inherited from octocode-mcp)
  */
 export interface BaseQuery {
+  mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
@@ -168,41 +169,6 @@ export interface RipgrepFileMatches {
     totalMatches: number; // Total matches in this file
     hasMore: boolean; // More matches available in this file
   };
-}
-
-/**
- * Metadata about the search that was performed
- */
-export interface SearchMetadata {
-  pattern: string; // Search pattern
-  path: string; // Search root path
-  mode?: 'discovery' | 'paginated' | 'detailed';
-
-  // Search parameters
-  caseSensitivity: 'smart' | 'sensitive' | 'insensitive';
-  regexType: 'fixed' | 'basic' | 'perl';
-
-  // Filtering
-  fileFilters?: string[]; // Include/exclude patterns
-  excludeDirs?: string[]; // Excluded directories
-
-  // Output control
-  contextLines: number; // Lines of context requested
-  maxMatchesPerFile: number; // Limit per file
-  filesOnly: boolean; // Whether only filenames returned
-
-  // Execution info
-  timestamp: string; // When search was executed
-}
-
-/**
- * Distribution analysis of matches across files
- */
-export interface MatchDistribution {
-  file: string; // File path
-  matchCount: number; // Total matches in this file
-  percentage: number; // Percentage of total matches
-  lines: number[]; // Line numbers with matches
 }
 
 /**

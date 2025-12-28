@@ -8,8 +8,9 @@ import {
   getToolHints,
   hasDynamicHints,
   getLargeFileWorkflowHints,
-  getMetadataDynamicHints,
 } from '../../../src/tools/hints/index.js';
+// Internal function imported directly for testing
+import { getMetadataDynamicHints } from '../../../src/tools/hints/static.js';
 import { STATIC_TOOL_NAMES } from '../../../src/tools/toolMetadata.js';
 import { initializeToolMetadata } from '../../../src/tools/toolMetadata.js';
 

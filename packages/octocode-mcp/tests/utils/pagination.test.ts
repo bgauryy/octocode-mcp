@@ -9,10 +9,11 @@ import {
   generateGitHubPaginationHints,
   generateStructurePaginationHints,
   serializeForPagination,
-  sliceByCharRespectLines,
   createPaginationInfo,
   type PaginationMetadata,
 } from '../../src/utils/pagination/index.js';
+// Internal function imported directly for testing
+import { sliceByCharRespectLines } from '../../src/utils/pagination/core.js';
 
 describe('pagination utility', () => {
   describe('applyPagination', () => {

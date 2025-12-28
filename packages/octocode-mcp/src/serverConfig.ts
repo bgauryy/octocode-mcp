@@ -147,5 +147,3 @@ export function clearConfigCachedToken(): void {
   cachedToken = null;
   pendingTokenPromise = null;
 }
-
-export { parseStringArray };

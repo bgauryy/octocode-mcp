@@ -26,7 +26,6 @@ export {
   getLargeFileWorkflowHints,
   HINTS,
 } from './dynamic.js';
-export { getMetadataDynamicHints } from './static.js';
 
 /**
  * Get unified hints for a tool
