@@ -399,6 +399,127 @@ describe('Tools Utils', () => {
       expect(result?.hints).toContain('Custom API hint');
       expect(result?.hints!.some(h => h.includes('Rate limit'))).toBe(true);
     });
+
+    it('should NOT produce duplicate hints for rate limit errors', () => {
+      const query = {
+        researchGoal: 'Find files',
+        reasoning: 'Searching',
+      };
+      const apiResult = {
+        error: 'Rate limit exceeded',
+        type: 'http' as const,
+        status: 429,
+        rateLimitRemaining: 0,
+        rateLimitReset: Date.now() + 3600000,
+      };
+
+      const result = handleApiError(apiResult, query);
+
+      expect(result).not.toBeNull();
+      expect(result?.hints).toBeDefined();
+
+      // Count how many times each EXACT hint appears (looking for true duplicates)
+      const hintCounts = new Map<string, number>();
+      for (const hint of result?.hints || []) {
+        hintCounts.set(hint, (hintCounts.get(hint) || 0) + 1);
+      }
+
+      // No hint should appear more than once
+      for (const [hint, count] of hintCounts) {
+        expect(count).toBe(1);
+        if (count > 1) {
+          throw new Error(
+            `Duplicate hint found: "${hint}" appears ${count} times`
+          );
+        }
+      }
+
+      // Verify expected hints are present
+      expect(
+        result?.hints!.some(h => h.includes('GitHub Octokit API Error'))
+      ).toBe(true);
+      expect(
+        result?.hints!.some(
+          h => h.startsWith('Rate limit:') && h.includes('remaining')
+        )
+      ).toBe(true);
+    });
+
+    it('should NOT produce duplicate hints for retry after errors', () => {
+      const query = {
+        researchGoal: 'Find files',
+        reasoning: 'Searching',
+      };
+      const apiResult = {
+        error: 'Too many requests',
+        type: 'http' as const,
+        status: 429,
+        retryAfter: 60,
+      };
+
+      const result = handleApiError(apiResult, query);
+
+      expect(result).not.toBeNull();
+      expect(result?.hints).toBeDefined();
+
+      // Count how many times each EXACT hint appears (looking for true duplicates)
+      const hintCounts = new Map<string, number>();
+      for (const hint of result?.hints || []) {
+        hintCounts.set(hint, (hintCounts.get(hint) || 0) + 1);
+      }
+
+      // No hint should appear more than once
+      for (const [hint, count] of hintCounts) {
+        expect(count).toBe(1);
+        if (count > 1) {
+          throw new Error(
+            `Duplicate hint found: "${hint}" appears ${count} times`
+          );
+        }
+      }
+
+      // Verify retry hint is present
+      expect(result?.hints!.some(h => h.includes('Retry after 60'))).toBe(true);
+    });
+
+    it('should NOT produce duplicate hints for scopes suggestion', () => {
+      const query = {
+        researchGoal: 'Find files',
+        reasoning: 'Searching',
+      };
+      const apiResult = {
+        error: 'Insufficient permissions',
+        type: 'http' as const,
+        status: 403,
+        scopesSuggestion: 'Required scopes: repo, read:org',
+      };
+
+      const result = handleApiError(apiResult, query);
+
+      expect(result).not.toBeNull();
+      expect(result?.hints).toBeDefined();
+
+      // Count how many times each EXACT hint appears (looking for true duplicates)
+      const hintCounts = new Map<string, number>();
+      for (const hint of result?.hints || []) {
+        hintCounts.set(hint, (hintCounts.get(hint) || 0) + 1);
+      }
+
+      // No hint should appear more than once
+      for (const [hint, count] of hintCounts) {
+        expect(count).toBe(1);
+        if (count > 1) {
+          throw new Error(
+            `Duplicate hint found: "${hint}" appears ${count} times`
+          );
+        }
+      }
+
+      // Verify scopes hint is present
+      expect(
+        result?.hints!.some(h => h.includes('Required scopes: repo, read:org'))
+      ).toBe(true);
+    });
   });
 
   describe('handleCatchError', () => {

@@ -8,7 +8,7 @@
 
 import type { GitHubAPIError } from '../github/githubAPI.js';
 import { toToolError, isToolError, type ToolError } from '../errorCodes.js';
-import { getToolHints, type LocalToolName } from '../tools/hints.js';
+import { getHints } from '../tools/hints/index.js';
 
 /**
  * Base query fields that all tools share
@@ -163,7 +163,7 @@ export function createErrorResult(
 
     // Get tool-specific hints if toolName provided
     if (toolName) {
-      const toolHints = getToolHints(toolName as LocalToolName, 'error', {
+      const toolHints = getHints(toolName, 'error', {
         originalError: error.message,
         errorType: getErrorTypeFromToolError(error),
         ...hintContext,
@@ -181,7 +181,7 @@ export function createErrorResult(
 
     // Get tool-specific hints if toolName provided
     if (toolName) {
-      const toolHints = getToolHints(toolName as LocalToolName, 'error', {
+      const toolHints = getHints(toolName, 'error', {
         originalError: toolError.message,
         ...hintContext,
       });

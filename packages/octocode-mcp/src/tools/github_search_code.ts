@@ -11,7 +11,7 @@ import { GitHubCodeSearchBulkQuerySchema } from '../scheme/github_search_code.js
 import { searchGitHubCodeAPI } from '../github/codeSearch.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { getToolHints } from './hints.js';
+import { getHints } from './hints/index.js';
 import {
   handleApiError,
   handleCatchError,
@@ -110,7 +110,7 @@ async function searchMultipleGitHubCode(
         // Determine if specific owner/repo was requested (context for hints)
         const hasOwnerRepo = !!(query.owner && query.repo);
 
-        const customHints = getToolHints(
+        const customHints = getHints(
           TOOL_NAMES.GITHUB_SEARCH_CODE,
           hasContent ? 'hasResults' : 'empty',
           { hasOwnerRepo }

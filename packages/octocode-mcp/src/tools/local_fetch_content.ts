@@ -1,7 +1,7 @@
 import { readFile, stat } from 'fs/promises';
 import { resolve, isAbsolute } from 'path';
 import { minifyContentSync } from '../utils/minifier/index.js';
-import { getToolHints } from './hints.js';
+import { getHints } from './hints/index.js';
 import {
   applyPagination,
   generatePaginationHints,
@@ -162,7 +162,7 @@ export async function fetchContent(
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           hints: [
-            ...getToolHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'empty'),
+            ...getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'empty'),
             '',
             ...contextHints,
           ],
@@ -225,7 +225,7 @@ export async function fetchContent(
             `Auto-paginated: ${result.matchCount} matches exceeded display limit`,
           ],
           hints: [
-            ...getToolHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'hasResults'),
+            ...getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'hasResults'),
             ...generatePaginationHints(autoPagination, {
               toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
             }),
@@ -252,7 +252,7 @@ export async function fetchContent(
         totalLines,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
-        hints: getToolHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'empty'),
+        hints: getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'empty'),
       };
     }
 
@@ -275,10 +275,7 @@ export async function fetchContent(
       query.charLength
     );
 
-    const baseHints = getToolHints(
-      TOOL_NAMES.LOCAL_FETCH_CONTENT,
-      'hasResults'
-    );
+    const baseHints = getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'hasResults');
     const paginationHints = query.charLength
       ? generatePaginationHints(pagination, {
           toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,

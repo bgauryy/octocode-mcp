@@ -2,7 +2,7 @@ import { LsCommandBuilder } from '../commands/LsCommandBuilder.js';
 import { safeExec } from '../utils/exec/index.js';
 import { pathValidator } from '../security/pathValidator.js';
 import { getExtension } from '../utils/fileFilters.js';
-import { getToolHints } from './hints.js';
+import { getHints } from './hints/index.js';
 import { STATIC_TOOL_NAMES } from './toolMetadata.js';
 import {
   applyPagination,
@@ -148,7 +148,7 @@ export async function viewStructure(
         errorCode: ERROR_CODES.PATH_VALIDATION_FAILED,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
-        hints: getToolHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
+        hints: getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
       };
     }
 
@@ -175,7 +175,7 @@ export async function viewStructure(
         errorCode: toolError.errorCode,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
-        hints: getToolHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
+        hints: getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
       };
     }
 
@@ -302,7 +302,7 @@ export async function viewStructure(
       reasoning: query.reasoning,
       hints: [
         ...entryPaginationHints,
-        ...getToolHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, status),
+        ...getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, status),
         ...(paginationMetadata
           ? generatePaginationHints(paginationMetadata, {
               toolName: STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
@@ -320,7 +320,7 @@ export async function viewStructure(
       errorCode: toolError.errorCode,
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
-      hints: getToolHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
+      hints: getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
     };
   }
 }
@@ -548,7 +548,7 @@ async function viewStructureRecursive(
   }
 
   const status = totalEntries > 0 ? 'hasResults' : 'empty';
-  const baseHints = getToolHints(
+  const baseHints = getHints(
     STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE as 'localViewStructure',
     status
   );

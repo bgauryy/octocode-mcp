@@ -4,10 +4,10 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  getToolHints,
+  getHints,
   getLargeFileWorkflowHints,
   HINTS,
-} from '../../src/tools/hints.js';
+} from '../../src/tools/hints/index.js';
 import { STATIC_TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 
 describe('Local Tools Hints', () => {
@@ -395,16 +395,16 @@ describe('Local Tools Hints', () => {
     });
   });
 
-  describe('getToolHints', () => {
+  describe('getHints', () => {
     it('should return hints for valid tool and status', () => {
-      const hints = getToolHints(STATIC_TOOL_NAMES.LOCAL_RIPGREP, 'hasResults');
+      const hints = getHints(STATIC_TOOL_NAMES.LOCAL_RIPGREP, 'hasResults');
 
       expect(Array.isArray(hints)).toBe(true);
       expect(hints.length).toBeGreaterThan(0);
     });
 
     it('should return empty array for invalid tool', () => {
-      const hints = getToolHints(
+      const hints = getHints(
         'invalidTool' as typeof STATIC_TOOL_NAMES.LOCAL_RIPGREP,
         'hasResults'
       );
@@ -413,7 +413,7 @@ describe('Local Tools Hints', () => {
     });
 
     it('should return empty array for invalid status', () => {
-      const hints = getToolHints(
+      const hints = getHints(
         STATIC_TOOL_NAMES.LOCAL_RIPGREP,
         'invalid' as 'hasResults' | 'empty' | 'error'
       );
@@ -422,25 +422,17 @@ describe('Local Tools Hints', () => {
     });
 
     it('should pass context to hint generator', () => {
-      const hints = getToolHints(
-        STATIC_TOOL_NAMES.LOCAL_RIPGREP,
-        'hasResults',
-        {
-          fileCount: 10,
-        }
-      );
+      const hints = getHints(STATIC_TOOL_NAMES.LOCAL_RIPGREP, 'hasResults', {
+        fileCount: 10,
+      });
 
       expect(hints.some((h: string) => h.includes('parallel'))).toBe(true);
     });
 
     it('should filter out undefined hints', () => {
-      const hints = getToolHints(
-        STATIC_TOOL_NAMES.LOCAL_RIPGREP,
-        'hasResults',
-        {
-          fileCount: 2,
-        }
-      );
+      const hints = getHints(STATIC_TOOL_NAMES.LOCAL_RIPGREP, 'hasResults', {
+        fileCount: 2,
+      });
 
       hints.forEach(hint => {
         expect(hint).toBeDefined();
@@ -449,14 +441,14 @@ describe('Local Tools Hints', () => {
     });
 
     it('should return GITHUB_SEARCH_CODE hints with hasOwnerRepo context', () => {
-      const hintsWithOwner = getToolHints(
+      const hintsWithOwner = getHints(
         STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE,
         'hasResults',
         {
           hasOwnerRepo: true,
         }
       );
-      const hintsWithoutOwner = getToolHints(
+      const hintsWithoutOwner = getHints(
         STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE,
         'hasResults',
         {
@@ -464,18 +456,17 @@ describe('Local Tools Hints', () => {
         }
       );
 
-      expect(hintsWithOwner[0]).toContain('single repo');
-      expect(hintsWithoutOwner[0]).toContain('multiple repos');
+      // Check that context affects the hints - hints should differ based on hasOwnerRepo
+      expect(hintsWithOwner.some(h => h.includes('single repo'))).toBe(true);
+      expect(hintsWithoutOwner.some(h => h.includes('multiple repos'))).toBe(
+        true
+      );
     });
 
     it('should return GITHUB_SEARCH_CODE empty hints with context', () => {
-      const hints = getToolHints(
-        STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE,
-        'empty',
-        {
-          hasOwnerRepo: false,
-        }
-      );
+      const hints = getHints(STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE, 'empty', {
+        hasOwnerRepo: false,
+      });
 
       expect(hints.some(h => h.includes('Cross-repo'))).toBe(true);
     });

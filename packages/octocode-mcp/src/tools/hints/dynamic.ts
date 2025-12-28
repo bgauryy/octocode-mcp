@@ -1,53 +1,25 @@
 /**
- * Centralized, context-aware hints for local file search tools
- * All hint generation logic lives here - tools only provide context
- *
- * Philosophy: Tools send context, hints generate reasoning
- * @module hints
+ * Dynamic, context-aware hints for tools
+ * Provides intelligent hints based on runtime context
+ * @module hints/dynamic
  */
 
-import { STATIC_TOOL_NAMES } from './toolMetadata.js';
-
-/**
- * Context that tools can provide to generate smarter hints
- */
-export interface HintContext {
-  // Size context
-  fileSize?: number; // KB
-  resultSize?: number; // chars
-  tokenEstimate?: number; // estimated tokens
-  entryCount?: number; // number of entries/files
-
-  // Search context
-  matchCount?: number; // number of matches
-  fileCount?: number; // number of files
-  isLarge?: boolean; // is result/file large?
-
-  // Error context
-  errorType?: 'size_limit' | 'not_found' | 'permission' | 'pattern_too_broad';
-  originalError?: string;
-
-  // Tool-specific context
-  hasPattern?: boolean; // has matchString/pattern
-  hasPagination?: boolean; // has charLength/pagination
-  path?: string; // path being searched
-  hasOwnerRepo?: boolean; // has owner/repo context
-}
+import { STATIC_TOOL_NAMES } from '../toolMetadata.js';
+import type { HintContext, HintStatus, ToolHintGenerators } from './types.js';
 
 /**
  * Smart, reasoning-based hints for each tool
- * Keys are actual tool names from TOOL_NAMES constants
+ * Keys are actual tool names from STATIC_TOOL_NAMES
  */
-export const HINTS = {
+export const HINTS: Record<string, ToolHintGenerators> = {
   [STATIC_TOOL_NAMES.LOCAL_RIPGREP]: {
-    hasResults: (ctx: HintContext = {}) =>
-      [
-        'Next: FETCH_CONTENT for context (prefer matchString).',
-        'Also search imports/usages/defs with RIPGREP.',
-        ctx.fileCount && ctx.fileCount > 5
-          ? 'Tip: run queries in parallel.'
-          : undefined,
-      ].filter(Boolean),
+    hasResults: (ctx: HintContext = {}) => [
+      'Next: FETCH_CONTENT for context (prefer matchString).',
+      'Also search imports/usages/defs with RIPGREP.',
+      ctx.fileCount && ctx.fileCount > 5
+        ? 'Tip: run queries in parallel.'
+        : undefined,
+    ],
 
     empty: (_ctx: HintContext = {}) => [
       'No matches. Broaden scope (noIgnore, hidden) or use fixedString.',
@@ -63,8 +35,8 @@ export const HINTS = {
             ? 'In node_modules, target specific packages.'
             : undefined,
           'Names only? Use FIND_FILES.',
-          'Flow: filesOnly=true → refine → read.',
-        ].filter(Boolean);
+          'Flow: filesOnly=true \u2192 refine \u2192 read.',
+        ];
       }
       return ['Tool unavailable; try FIND_FILES or VIEW_STRUCTURE.'];
     },
@@ -112,14 +84,13 @@ export const HINTS = {
   },
 
   [STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE]: {
-    hasResults: (ctx: HintContext = {}) =>
-      [
-        'Next: RIPGREP for patterns; FIND_FILES for filters.',
-        'Drill deeper with depth=2 when needed.',
-        ctx.entryCount && ctx.entryCount > 10
-          ? 'Parallelize across directories.'
-          : undefined,
-      ].filter(Boolean),
+    hasResults: (ctx: HintContext = {}) => [
+      'Next: RIPGREP for patterns; FIND_FILES for filters.',
+      'Drill deeper with depth=2 when needed.',
+      ctx.entryCount && ctx.entryCount > 10
+        ? 'Parallelize across directories.'
+        : undefined,
+    ],
 
     empty: (_ctx: HintContext = {}) => [
       'Empty/missing. Use hidden=true or check parent.',
@@ -138,12 +109,11 @@ export const HINTS = {
   },
 
   [STATIC_TOOL_NAMES.LOCAL_FIND_FILES]: {
-    hasResults: (ctx: HintContext = {}) =>
-      [
-        'Found files. Next: FETCH_CONTENT or RIPGREP.',
-        'Use modifiedWithin="7d" to track recent changes.',
-        ctx.fileCount && ctx.fileCount > 3 ? 'Batch in parallel.' : undefined,
-      ].filter(Boolean),
+    hasResults: (ctx: HintContext = {}) => [
+      'Found files. Next: FETCH_CONTENT or RIPGREP.',
+      'Use modifiedWithin="7d" to track recent changes.',
+      ctx.fileCount && ctx.fileCount > 3 ? 'Batch in parallel.' : undefined,
+    ],
 
     empty: (_ctx: HintContext = {}) => [
       'No matches. Broaden iname, increase maxDepth, relax filters.',
@@ -158,7 +128,7 @@ export const HINTS = {
 
   [STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE]: {
     hasResults: (ctx: HintContext = {}) => {
-      const hints: string[] = [];
+      const hints: (string | undefined)[] = [];
       if (ctx.hasOwnerRepo) {
         hints.push(
           'Result is from single repo. Use githubGetFileContent with path.'
@@ -171,7 +141,7 @@ export const HINTS = {
       return hints;
     },
     empty: (ctx: HintContext = {}) => {
-      const hints = ['No code matches found.'];
+      const hints: (string | undefined)[] = ['No code matches found.'];
       if (!ctx.hasOwnerRepo) {
         hints.push('Cross-repo search requires unique keywords (3+ chars).');
         hints.push('Try adding owner/repo context if known.');
@@ -182,24 +152,30 @@ export const HINTS = {
     },
     error: (_ctx: HintContext = {}) => [],
   },
-} as const;
-
-/** Tool names for hint generation - keys of HINTS object */
-export type LocalToolName = keyof typeof HINTS;
-/** Alias for backwards compatibility */
-export type ToolName = LocalToolName;
-export type HintStatus = 'hasResults' | 'empty' | 'error';
+};
 
 /**
- * Get smart, context-aware hints
- *
- * @param toolName - Tool that was executed
- * @param status - Result status
- * @param context - Optional context to generate smarter hints
- * @returns Array of intelligent, context-aware hints
+ * Tool names that have dynamic hint generators
  */
-export function getToolHints(
-  toolName: LocalToolName,
+export type DynamicToolName = keyof typeof HINTS;
+
+/**
+ * Check if a tool has dynamic hint generators
+ */
+export function hasDynamicHints(toolName: string): toolName is DynamicToolName {
+  return toolName in HINTS;
+}
+
+/**
+ * Get dynamic, context-aware hints for a tool
+ *
+ * @param toolName - The tool name
+ * @param status - The result status
+ * @param context - Optional context for smarter hints
+ * @returns Array of context-aware hints
+ */
+export function getDynamicHints(
+  toolName: string,
   status: HintStatus,
   context?: HintContext
 ): string[] {
@@ -207,14 +183,10 @@ export function getToolHints(
   if (!hintGenerator) return [];
 
   // Call the hint generator with context
-  const rawHints =
-    typeof hintGenerator === 'function'
-      ? hintGenerator(context || {})
-      : hintGenerator;
+  const rawHints = hintGenerator(context || {});
 
-  // Ensure we return string[] (filter out undefined from conditional hints)
-  const hints = Array.isArray(rawHints) ? rawHints : [rawHints];
-  return hints.filter((h): h is string => typeof h === 'string');
+  // Filter out undefined values from conditional hints
+  return rawHints.filter((h): h is string => typeof h === 'string');
 }
 
 /**
@@ -230,13 +202,13 @@ export function getLargeFileWorkflowHints(
   if (context === 'search') {
     return [
       'Large codebase: avoid floods.',
-      'Flow: RIPGREP filesOnly → add type/path filters → FETCH_CONTENT matchString → RIPGREP links.',
+      'Flow: RIPGREP filesOnly \u2192 add type/path filters \u2192 FETCH_CONTENT matchString \u2192 RIPGREP links.',
       'Parallelize where safe.',
     ];
   }
   return [
     "Large file: don't read all.",
-    'Flow: FETCH_CONTENT matchString → analyze → RIPGREP usages/imports → FETCH_CONTENT related.',
+    'Flow: FETCH_CONTENT matchString \u2192 analyze \u2192 RIPGREP usages/imports \u2192 FETCH_CONTENT related.',
     'Use charLength to paginate if needed.',
     'Avoid fullContent without charLength.',
   ];

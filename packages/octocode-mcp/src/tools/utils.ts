@@ -8,36 +8,6 @@ import { createErrorResult } from '../utils/errorResult.js';
 // Re-export createErrorResult for backwards compatibility during migration
 export { createErrorResult };
 
-/**
- * Extract hints from GitHub API errors
- * @internal Used by handleApiError
- */
-function extractApiErrorHints(apiError: GitHubAPIError): string[] {
-  const hints: string[] = [];
-
-  hints.push(`GitHub Octokit API Error: ${apiError.error}`);
-
-  if (apiError.scopesSuggestion) {
-    hints.push(apiError.scopesSuggestion);
-  }
-
-  if (
-    apiError.rateLimitRemaining !== undefined &&
-    apiError.rateLimitReset !== undefined
-  ) {
-    const resetDate = new Date(apiError.rateLimitReset);
-    hints.push(
-      `Rate limit: ${apiError.rateLimitRemaining} remaining, resets at ${resetDate.toLocaleTimeString()}`
-    );
-  }
-
-  if (apiError.retryAfter !== undefined) {
-    hints.push(`Retry after ${apiError.retryAfter} seconds`);
-  }
-
-  return hints;
-}
-
 export function createSuccessResult<T extends Record<string, unknown>>(
   query: {
     mainResearchGoal?: string;
@@ -111,16 +81,13 @@ export function handleApiError(
     retryAfter: apiResult.retryAfter,
   };
 
-  const apiHints = apiResult.hints;
-
-  const combinedHints = [
-    ...(apiHints || []),
-    ...extractApiErrorHints(apiError),
-  ];
+  // Only pass external hints (from apiResult.hints)
+  // The createErrorResult function will extract hints from apiError via hintSourceError
+  const externalHints = apiResult.hints || [];
 
   const errorResult = createErrorResult(apiError, query, {
     hintSourceError: apiError,
-    customHints: combinedHints,
+    customHints: externalHints,
   });
 
   return errorResult as ToolErrorResult;

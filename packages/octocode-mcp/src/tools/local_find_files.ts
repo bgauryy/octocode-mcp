@@ -1,6 +1,6 @@
 import { FindCommandBuilder } from '../commands/FindCommandBuilder.js';
 import { safeExec } from '../utils/exec/index.js';
-import { getToolHints } from './hints.js';
+import { getHints } from './hints/index.js';
 import {
   generatePaginationHints,
   serializeForPagination,
@@ -212,7 +212,7 @@ export async function findFiles(
       reasoning: query.reasoning,
       hints: [
         ...filePaginationHints,
-        ...getToolHints(TOOL_NAMES.LOCAL_FIND_FILES, status),
+        ...getHints(TOOL_NAMES.LOCAL_FIND_FILES, status),
         ...(paginationMetadata
           ? generatePaginationHints(paginationMetadata, {
               toolName: TOOL_NAMES.LOCAL_FIND_FILES,

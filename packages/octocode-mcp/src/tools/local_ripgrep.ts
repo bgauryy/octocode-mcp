@@ -1,6 +1,6 @@
 import { RipgrepCommandBuilder } from '../commands/RipgrepCommandBuilder.js';
 import { safeExec } from '../utils/exec/index.js';
-import { getToolHints, getLargeFileWorkflowHints } from './hints.js';
+import { getHints, getLargeFileWorkflowHints } from './hints/index.js';
 import {
   validateRipgrepQuery,
   applyWorkflowMode,
@@ -75,7 +75,7 @@ export async function searchContentRipgrep(
         warnings: [...validation.warnings, ...chunkingWarnings],
         researchGoal: configuredQuery.researchGoal,
         reasoning: configuredQuery.reasoning,
-        hints: getToolHints(TOOL_NAMES.LOCAL_RIPGREP, 'empty'),
+        hints: getHints(TOOL_NAMES.LOCAL_RIPGREP, 'empty'),
       };
     }
 
@@ -219,7 +219,7 @@ export async function searchContentRipgrep(
       hints: [
         ...paginationHints,
         ...refinementHints,
-        ...getToolHints(TOOL_NAMES.LOCAL_RIPGREP, 'hasResults'),
+        ...getHints(TOOL_NAMES.LOCAL_RIPGREP, 'hasResults'),
       ],
     };
   } catch (error) {
