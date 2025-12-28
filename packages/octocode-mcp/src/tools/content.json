@@ -1,11 +1,16 @@
 {
   "instructions": "{{instructions}}_value",
   "toolNames": {
-    "GITHUB_FETCH_CONTENT": "{{GITHUB_FETCH_CONTENT}}_value",
-    "GITHUB_SEARCH_CODE": "{{GITHUB_SEARCH_CODE}}_value",
-    "GITHUB_SEARCH_PULL_REQUESTS": "{{GITHUB_SEARCH_PULL_REQUESTS}}_value",
-    "GITHUB_SEARCH_REPOSITORIES": "{{GITHUB_SEARCH_REPOSITORIES}}_value",
-    "GITHUB_VIEW_REPO_STRUCTURE": "{{GITHUB_VIEW_REPO_STRUCTURE}}_value"
+    "GITHUB_FETCH_CONTENT": "githubGetFileContent",
+    "GITHUB_SEARCH_CODE": "githubSearchCode",
+    "GITHUB_SEARCH_PULL_REQUESTS": "githubSearchPullRequests",
+    "GITHUB_SEARCH_REPOSITORIES": "githubSearchRepositories",
+    "GITHUB_VIEW_REPO_STRUCTURE": "githubViewRepoStructure",
+    "PACKAGE_SEARCH": "packageSearch",
+    "LOCAL_RIPGREP": "localSearchCode",
+    "LOCAL_FETCH_CONTENT": "localGetFileContent",
+    "LOCAL_FIND_FILES": "localFindFiles",
+    "LOCAL_VIEW_STRUCTURE": "localViewStructure"
   },
   "baseSchema": {
     "mainResearchGoal": "{{mainResearchGoal}}_value",

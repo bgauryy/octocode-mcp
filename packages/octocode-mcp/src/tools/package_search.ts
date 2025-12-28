@@ -115,7 +115,7 @@ async function searchPackages(
         const apiResult = await searchPackage(query);
 
         if (isPackageSearchError(apiResult)) {
-          return createErrorResult(query, apiResult.error);
+          return createErrorResult(apiResult.error, query);
         }
 
         const packages = (apiResult.packages as PackageResult[]).map(pkg => {

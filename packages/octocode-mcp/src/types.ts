@@ -522,7 +522,7 @@ export interface ProcessedBulkResult<
   error?: string | GitHubAPIError;
   status: QueryStatus;
   query?: TQuery;
-  hints?: string[];
+  hints?: readonly string[] | string[];
   [key: string]: unknown; // Tool-specific fields
 }
 

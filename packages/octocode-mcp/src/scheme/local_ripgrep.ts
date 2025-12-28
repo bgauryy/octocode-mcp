@@ -9,7 +9,7 @@ import {
   createBulkQuerySchemaLocal,
   COMMON_PAGINATION_DESCRIPTIONS,
 } from './baseSchema.js';
-import { TOOL_NAMES } from '../utils/constants.js';
+import { TOOL_NAMES } from '../tools/toolMetadata.js';
 
 /**
  * Tool description for MCP registration
@@ -335,7 +335,7 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
  * Bulk ripgrep search schema (1–5 queries per call)
  */
 export const BulkRipgrepQuerySchema = createBulkQuerySchemaLocal(
-  TOOL_NAMES.LOCAL_RIPGREP || 'localSearchCode',
+  TOOL_NAMES.LOCAL_RIPGREP,
   RipgrepQuerySchema
 );
 

@@ -3,29 +3,10 @@ import type { ToolErrorResult, ToolSuccessResult } from '../types.js';
 import { getToolHintsSync } from './toolMetadata.js';
 import { logSessionError } from '../session.js';
 import { TOOL_ERRORS } from '../errorCodes.js';
-import {
-  createGitHubErrorResult,
-  type BaseQueryFields,
-} from '../utils/errorResult.js';
+import { createErrorResult } from '../utils/errorResult.js';
 
-/**
- * Create error result for GitHub API tools
- * Handles GitHub API errors with rate limits, scopes suggestions, etc.
- *
- * Uses the unified error result system internally.
- *
- * @param query - Query object with research context
- * @param error - Error string or GitHubAPIError object to store as the error
- * @param apiError - Optional GitHubAPIError for extracting hints (not stored as error)
- * @returns ToolErrorResult compatible with GitHub tools
- */
-export function createErrorResult(
-  query: BaseQueryFields,
-  error: string | GitHubAPIError,
-  apiError?: GitHubAPIError
-): ToolErrorResult {
-  return createGitHubErrorResult(query, error, apiError) as ToolErrorResult;
-}
+// Re-export createErrorResult for backwards compatibility during migration
+export { createErrorResult };
 
 /**
  * Extract hints from GitHub API errors
@@ -137,13 +118,12 @@ export function handleApiError(
     ...extractApiErrorHints(apiError),
   ];
 
-  const errorResult = createErrorResult(query, apiError, apiError);
+  const errorResult = createErrorResult(apiError, query, {
+    hintSourceError: apiError,
+    customHints: combinedHints,
+  });
 
-  if (combinedHints.length > 0) {
-    errorResult.hints = combinedHints;
-  }
-
-  return errorResult;
+  return errorResult as ToolErrorResult;
 }
 
 export function handleCatchError(
@@ -168,5 +148,5 @@ export function handleCatchError(
     () => {}
   );
 
-  return createErrorResult(query, fullErrorMessage);
+  return createErrorResult(fullErrorMessage, query) as ToolErrorResult;
 }

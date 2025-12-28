@@ -8,7 +8,7 @@ import {
   createBulkQuerySchemaLocal,
   COMMON_PAGINATION_DESCRIPTIONS,
 } from './baseSchema.js';
-import { TOOL_NAMES } from '../utils/constants.js';
+import { TOOL_NAMES } from '../tools/toolMetadata.js';
 
 /**
  * Tool description for MCP registration

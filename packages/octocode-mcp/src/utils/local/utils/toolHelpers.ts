@@ -6,7 +6,7 @@ import { pathValidator } from '../../../security/pathValidator.js';
 import { ToolErrors } from '../../../errorCodes.js';
 import type { BaseQuery } from '../../../utils/types.js';
 import {
-  createErrorResult as createUnifiedErrorResult,
+  createErrorResult,
   type UnifiedErrorResult,
 } from '../../errorResult.js';
 
@@ -14,6 +14,10 @@ import {
  * Local error result type - compatible with UnifiedErrorResult
  */
 export type LocalErrorResult = UnifiedErrorResult;
+
+// Re-export createErrorResult for backwards compatibility during migration
+// Consumers should migrate to importing directly from '../utils/errorResult.js'
+export { createErrorResult };
 
 /**
  * Path validation result with error result for tool returns
@@ -40,7 +44,7 @@ export function validateToolPath(
 
     return {
       isValid: false,
-      errorResult: createUnifiedErrorResult(toolError, query, {
+      errorResult: createErrorResult(toolError, query, {
         toolName,
         hintContext: {
           errorType: 'permission',
@@ -52,29 +56,6 @@ export function validateToolPath(
   }
 
   return { isValid: true };
-}
-
-/**
- * Create error result for local file system tools
- * Uses the unified error result system with local tool-specific configuration
- *
- * @param error - The error (Error, ToolError, or unknown)
- * @param toolName - Tool name for hint generation (e.g., 'LOCAL_FETCH_CONTENT')
- * @param query - Query object with research context
- * @param extra - Additional fields to include in the result
- * @returns LocalErrorResult compatible with local tool responses
- */
-export function createErrorResult<T extends BaseQuery>(
-  error: unknown,
-  toolName: string,
-  query: T,
-  extra?: Record<string, unknown>
-): LocalErrorResult {
-  return createUnifiedErrorResult(error, query, {
-    toolName,
-    extra,
-    hintContext: extra,
-  });
 }
 
 /**

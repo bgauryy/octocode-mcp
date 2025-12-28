@@ -19,12 +19,13 @@ import type {
 } from '../utils/types.js';
 import fs from 'fs';
 import { ToolErrors, type LocalToolErrorCode } from '../errorCodes.js';
+import { TOOL_NAMES } from './toolMetadata.js';
 
 export async function findFiles(
   query: FindFilesQuery
 ): Promise<FindFilesResult> {
   try {
-    const validation = validateToolPath(query, 'LOCAL_FIND_FILES');
+    const validation = validateToolPath(query, TOOL_NAMES.LOCAL_FIND_FILES);
     if (!validation.isValid) {
       return validation.errorResult as FindFilesResult;
     }
@@ -39,11 +40,9 @@ export async function findFiles(
         'find',
         new Error(result.stderr)
       );
-      return createErrorResult(
-        toolError,
-        'LOCAL_FIND_FILES',
-        query
-      ) as FindFilesResult;
+      return createErrorResult(toolError, query, {
+        toolName: TOOL_NAMES.LOCAL_FIND_FILES,
+      }) as FindFilesResult;
     }
 
     let filePaths = result.stdout
@@ -213,20 +212,18 @@ export async function findFiles(
       reasoning: query.reasoning,
       hints: [
         ...filePaginationHints,
-        ...getToolHints('LOCAL_FIND_FILES', status),
+        ...getToolHints(TOOL_NAMES.LOCAL_FIND_FILES, status),
         ...(paginationMetadata
           ? generatePaginationHints(paginationMetadata, {
-              toolName: 'localFindFiles',
+              toolName: TOOL_NAMES.LOCAL_FIND_FILES,
             })
           : []),
       ],
     };
   } catch (error) {
-    return createErrorResult(
-      error,
-      'LOCAL_FIND_FILES',
-      query
-    ) as FindFilesResult;
+    return createErrorResult(error, query, {
+      toolName: TOOL_NAMES.LOCAL_FIND_FILES,
+    }) as FindFilesResult;
   }
 }
 

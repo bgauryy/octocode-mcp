@@ -12,6 +12,7 @@ import {
 } from '../utils/local/utils/toolHelpers.js';
 import { byteToCharIndex, byteSlice } from '../utils/local/utils/byteOffset.js';
 import { RESOURCE_LIMITS } from '../utils/constants.js';
+import { TOOL_NAMES } from './toolMetadata.js';
 import type {
   SearchContentResult,
   SearchStats,
@@ -32,13 +33,18 @@ export async function searchContentRipgrep(
     if (!validation.isValid) {
       return createErrorResult(
         new Error(`Query validation failed: ${validation.errors.join(', ')}`),
-        'LOCAL_RIPGREP',
         configuredQuery,
-        { warnings: validation.warnings }
+        {
+          toolName: TOOL_NAMES.LOCAL_RIPGREP,
+          extra: { warnings: validation.warnings },
+        }
       ) as SearchContentResult;
     }
 
-    const pathValidation = validateToolPath(configuredQuery, 'LOCAL_RIPGREP');
+    const pathValidation = validateToolPath(
+      configuredQuery,
+      TOOL_NAMES.LOCAL_RIPGREP
+    );
     if (!pathValidation.isValid) {
       return {
         ...pathValidation.errorResult,
@@ -69,7 +75,7 @@ export async function searchContentRipgrep(
         warnings: [...validation.warnings, ...chunkingWarnings],
         researchGoal: configuredQuery.researchGoal,
         reasoning: configuredQuery.reasoning,
-        hints: getToolHints('LOCAL_RIPGREP', 'empty'),
+        hints: getToolHints(TOOL_NAMES.LOCAL_RIPGREP, 'empty'),
       };
     }
 
@@ -213,7 +219,7 @@ export async function searchContentRipgrep(
       hints: [
         ...paginationHints,
         ...refinementHints,
-        ...getToolHints('LOCAL_RIPGREP', 'hasResults'),
+        ...getToolHints(TOOL_NAMES.LOCAL_RIPGREP, 'hasResults'),
       ],
     };
   } catch (error) {
@@ -238,11 +244,9 @@ export async function searchContentRipgrep(
       } as SearchContentResult;
     }
 
-    return createErrorResult(
-      error,
-      'LOCAL_RIPGREP',
-      configuredQuery
-    ) as SearchContentResult;
+    return createErrorResult(error, configuredQuery, {
+      toolName: TOOL_NAMES.LOCAL_RIPGREP,
+    }) as SearchContentResult;
   }
 }
 

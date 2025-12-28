@@ -19,7 +19,11 @@ export type ToolName = ToolNamesValue;
 let METADATA_JSON: CompleteMetadata | null = null;
 let initializationPromise: Promise<void> | null = null;
 
-const STATIC_TOOL_NAMES: ToolNamesMap = {
+/**
+ * Static tool name constants - use for computed property keys
+ * The Proxy TOOL_NAMES should only be used for runtime access, not object literals
+ */
+export const STATIC_TOOL_NAMES = {
   GITHUB_FETCH_CONTENT: 'githubGetFileContent',
   GITHUB_SEARCH_CODE: 'githubSearchCode',
   GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
@@ -30,7 +34,7 @@ const STATIC_TOOL_NAMES: ToolNamesMap = {
   LOCAL_FETCH_CONTENT: 'localGetFileContent',
   LOCAL_FIND_FILES: 'localFindFiles',
   LOCAL_VIEW_STRUCTURE: 'localViewStructure',
-};
+} as const satisfies ToolNamesMap;
 
 // Zod schemas for validation
 const PromptArgumentSchema = z.object({
@@ -182,7 +186,11 @@ export async function loadToolContent(): Promise<CompleteMetadata> {
 export const TOOL_NAMES = new Proxy({} as CompleteMetadata['toolNames'], {
   get(_target, prop: string) {
     if (METADATA_JSON) {
-      return (METADATA_JSON.toolNames as unknown as ToolNamesMap)[prop];
+      const value = (METADATA_JSON.toolNames as unknown as ToolNamesMap)[prop];
+      // Fall back to STATIC_TOOL_NAMES if not in remote metadata (e.g., local tools)
+      if (value !== undefined) {
+        return value;
+      }
     }
     return STATIC_TOOL_NAMES[prop as keyof typeof STATIC_TOOL_NAMES];
   },

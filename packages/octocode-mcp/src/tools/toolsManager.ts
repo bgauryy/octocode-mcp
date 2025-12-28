@@ -5,7 +5,7 @@ import { getServerConfig, isLocalEnabled } from '../serverConfig.js';
 import { ToolInvocationCallback } from '../types.js';
 import { isToolAvailableSync } from './toolMetadata.js';
 // Local tools imports
-import { TOOL_NAMES as LOCAL_TOOL_NAMES } from '../utils/constants.js';
+import { TOOL_NAMES } from './toolMetadata.js';
 import {
   BulkRipgrepQuerySchema,
   LOCAL_RIPGREP_DESCRIPTION,
@@ -111,11 +111,18 @@ export async function registerTools(
     }
   }
 
-  // Register local tools if ENABLE_LOCAL is set
+  // Register local tools if ENABLE_LOCAL or LOCAL is set
   if (isLocalEnabled()) {
     try {
-      registerLocalToolsDirectly(server);
-      successCount += 4; // 4 local tools
+      const registeredCount = registerLocalToolsDirectly(server);
+      successCount += registeredCount;
+      // If no tools were registered, treat as failure
+      if (registeredCount === 0) {
+        failedTools.push('local_tools');
+        process.stderr.write(
+          'Failed to register local tools: No tools were successfully registered\n'
+        );
+      }
     } catch (error) {
       process.stderr.write(
         `Failed to register local tools: ${error instanceof Error ? error.message : 'Unknown error'}\n`
@@ -129,112 +136,147 @@ export async function registerTools(
 
 /**
  * Register all local tools directly with the MCP server
- * Note: Type assertions used to avoid excessive type instantiation depth from MCP SDK generics
+ * @returns Number of successfully registered tools
  */
-function registerLocalToolsDirectly(server: McpServer): void {
+function registerLocalToolsDirectly(server: McpServer): number {
+  let registeredCount = 0;
+
   // Register localSearchCode
-  // @ts-expect-error - MCP SDK type recursion is too deep
-  server.registerTool(
-    LOCAL_TOOL_NAMES.LOCAL_RIPGREP,
-    {
-      description: LOCAL_RIPGREP_DESCRIPTION,
-      inputSchema: BulkRipgrepQuerySchema,
-      annotations: {
-        title: 'Local Ripgrep Search',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    async (args: { queries: RipgrepQuery[] }): Promise<CallToolResult> => {
-      return executeBulkOperation(
-        args.queries || [],
-        async (query: RipgrepQuery) => {
-          return await searchContentRipgrep(query);
+  try {
+    const result = server.registerTool(
+      TOOL_NAMES.LOCAL_RIPGREP,
+      {
+        description: LOCAL_RIPGREP_DESCRIPTION,
+        inputSchema: BulkRipgrepQuerySchema,
+        annotations: {
+          title: 'Local Ripgrep Search',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
         },
-        { toolName: LOCAL_TOOL_NAMES.LOCAL_RIPGREP }
-      );
+      },
+      async (args: { queries: RipgrepQuery[] }): Promise<CallToolResult> => {
+        return executeBulkOperation<RipgrepQuery, Record<string, unknown>>(
+          args.queries || [],
+          async query => await searchContentRipgrep(query),
+          { toolName: TOOL_NAMES.LOCAL_RIPGREP }
+        );
+      }
+    );
+    // Count as success if no error thrown (null indicates failure, undefined/void is success)
+    if (result !== null) {
+      registeredCount++;
     }
-  );
+  } catch (error) {
+    process.stderr.write(
+      `Failed to register ${TOOL_NAMES.LOCAL_RIPGREP}: ${error instanceof Error ? error.message : 'Unknown error'}\n`
+    );
+  }
 
   // Register localViewStructure
-  // @ts-expect-error - MCP SDK type recursion is too deep
-  server.registerTool(
-    LOCAL_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
-    {
-      description: LOCAL_VIEW_STRUCTURE_DESCRIPTION,
-      inputSchema: BulkViewStructureSchema,
-      annotations: {
-        title: 'Local View Structure',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    async (args: {
-      queries: ViewStructureQuery[];
-    }): Promise<CallToolResult> => {
-      return executeBulkOperation(
-        args.queries || [],
-        async (query: ViewStructureQuery) => {
-          return await viewStructure(query);
+  try {
+    const result = server.registerTool(
+      TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
+      {
+        description: LOCAL_VIEW_STRUCTURE_DESCRIPTION,
+        inputSchema: BulkViewStructureSchema,
+        annotations: {
+          title: 'Local View Structure',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
         },
-        { toolName: LOCAL_TOOL_NAMES.LOCAL_VIEW_STRUCTURE }
-      );
+      },
+      async (args: {
+        queries: ViewStructureQuery[];
+      }): Promise<CallToolResult> => {
+        return executeBulkOperation<
+          ViewStructureQuery,
+          Record<string, unknown>
+        >(args.queries || [], async query => await viewStructure(query), {
+          toolName: TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
+        });
+      }
+    );
+    // Count as success if result is not explicitly null (null indicates failure)
+    if (result !== null) {
+      registeredCount++;
     }
-  );
+  } catch (error) {
+    process.stderr.write(
+      `Failed to register ${TOOL_NAMES.LOCAL_VIEW_STRUCTURE}: ${error instanceof Error ? error.message : 'Unknown error'}\n`
+    );
+  }
 
   // Register localFindFiles
-  // @ts-expect-error - MCP SDK type recursion is too deep
-  server.registerTool(
-    LOCAL_TOOL_NAMES.LOCAL_FIND_FILES,
-    {
-      description: LOCAL_FIND_FILES_DESCRIPTION,
-      inputSchema: BulkFindFilesSchema,
-      annotations: {
-        title: 'Local Find Files',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    async (args: { queries: FindFilesQuery[] }): Promise<CallToolResult> => {
-      return executeBulkOperation(
-        args.queries || [],
-        async (query: FindFilesQuery) => {
-          return await findFiles(query);
+  try {
+    const result = server.registerTool(
+      TOOL_NAMES.LOCAL_FIND_FILES,
+      {
+        description: LOCAL_FIND_FILES_DESCRIPTION,
+        inputSchema: BulkFindFilesSchema,
+        annotations: {
+          title: 'Local Find Files',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
         },
-        { toolName: LOCAL_TOOL_NAMES.LOCAL_FIND_FILES }
-      );
+      },
+      async (args: { queries: FindFilesQuery[] }): Promise<CallToolResult> => {
+        return executeBulkOperation<FindFilesQuery, Record<string, unknown>>(
+          args.queries || [],
+          async query => await findFiles(query),
+          { toolName: TOOL_NAMES.LOCAL_FIND_FILES }
+        );
+      }
+    );
+    // Count as success if result is not explicitly null (null indicates failure)
+    if (result !== null) {
+      registeredCount++;
     }
-  );
+  } catch (error) {
+    process.stderr.write(
+      `Failed to register ${TOOL_NAMES.LOCAL_FIND_FILES}: ${error instanceof Error ? error.message : 'Unknown error'}\n`
+    );
+  }
 
   // Register localGetFileContent
-  // @ts-expect-error - MCP SDK type recursion is too deep
-  server.registerTool(
-    LOCAL_TOOL_NAMES.LOCAL_FETCH_CONTENT,
-    {
-      description: LOCAL_FETCH_CONTENT_DESCRIPTION,
-      inputSchema: BulkFetchContentSchema,
-      annotations: {
-        title: 'Local Fetch Content',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    async (args: { queries: FetchContentQuery[] }): Promise<CallToolResult> => {
-      return executeBulkOperation(
-        args.queries || [],
-        async (query: FetchContentQuery) => {
-          return await fetchContent(query);
+  try {
+    const result = server.registerTool(
+      TOOL_NAMES.LOCAL_FETCH_CONTENT,
+      {
+        description: LOCAL_FETCH_CONTENT_DESCRIPTION,
+        inputSchema: BulkFetchContentSchema,
+        annotations: {
+          title: 'Local Fetch Content',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
         },
-        { toolName: LOCAL_TOOL_NAMES.LOCAL_FETCH_CONTENT }
-      );
+      },
+      async (args: {
+        queries: FetchContentQuery[];
+      }): Promise<CallToolResult> => {
+        return executeBulkOperation<FetchContentQuery, Record<string, unknown>>(
+          args.queries || [],
+          async query => await fetchContent(query),
+          { toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT }
+        );
+      }
+    );
+    // Count as success if result is not explicitly null (null indicates failure)
+    if (result !== null) {
+      registeredCount++;
     }
-  );
+  } catch (error) {
+    process.stderr.write(
+      `Failed to register ${TOOL_NAMES.LOCAL_FETCH_CONTENT}: ${error instanceof Error ? error.message : 'Unknown error'}\n`
+    );
+  }
+
+  return registeredCount;
 }

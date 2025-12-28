@@ -6,6 +6,8 @@
  * @module hints
  */
 
+import { STATIC_TOOL_NAMES } from './toolMetadata.js';
+
 /**
  * Context that tools can provide to generate smarter hints
  */
@@ -34,9 +36,10 @@ export interface HintContext {
 
 /**
  * Smart, reasoning-based hints for each tool
+ * Keys are actual tool names from TOOL_NAMES constants
  */
 export const HINTS = {
-  LOCAL_RIPGREP: {
+  [STATIC_TOOL_NAMES.LOCAL_RIPGREP]: {
     hasResults: (ctx: HintContext = {}) =>
       [
         'Next: FETCH_CONTENT for context (prefer matchString).',
@@ -67,7 +70,7 @@ export const HINTS = {
     },
   },
 
-  LOCAL_FETCH_CONTENT: {
+  [STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT]: {
     hasResults: (_ctx: HintContext = {}) => [
       'Next: trace imports/usages with RIPGREP.',
       'Open related files (tests/types/impl) together.',
@@ -108,7 +111,7 @@ export const HINTS = {
     },
   },
 
-  LOCAL_VIEW_STRUCTURE: {
+  [STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE]: {
     hasResults: (ctx: HintContext = {}) =>
       [
         'Next: RIPGREP for patterns; FIND_FILES for filters.',
@@ -134,7 +137,7 @@ export const HINTS = {
     },
   },
 
-  LOCAL_FIND_FILES: {
+  [STATIC_TOOL_NAMES.LOCAL_FIND_FILES]: {
     hasResults: (ctx: HintContext = {}) =>
       [
         'Found files. Next: FETCH_CONTENT or RIPGREP.',
@@ -153,7 +156,7 @@ export const HINTS = {
     ],
   },
 
-  GITHUB_SEARCH_CODE: {
+  [STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE]: {
     hasResults: (ctx: HintContext = {}) => {
       const hints: string[] = [];
       if (ctx.hasOwnerRepo) {
@@ -181,10 +184,10 @@ export const HINTS = {
   },
 } as const;
 
-/** Local tool names for hint generation */
+/** Tool names for hint generation - keys of HINTS object */
 export type LocalToolName = keyof typeof HINTS;
 /** Alias for backwards compatibility */
-export type ToolName = LocalToolName | 'GITHUB_SEARCH_CODE';
+export type ToolName = LocalToolName;
 export type HintStatus = 'hasResults' | 'empty' | 'error';
 
 /**

@@ -71,7 +71,9 @@ export async function initialize(): Promise<void> {
       loggingEnabled: isLoggingEnabled,
       enableLocal:
         process.env.ENABLE_LOCAL === '1' ||
-        process.env.ENABLE_LOCAL?.toLowerCase() === 'true',
+        process.env.ENABLE_LOCAL?.toLowerCase() === 'true' ||
+        process.env.LOCAL === '1' ||
+        process.env.LOCAL?.toLowerCase() === 'true',
     };
   })();
 

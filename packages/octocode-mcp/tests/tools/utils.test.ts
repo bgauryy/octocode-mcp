@@ -231,7 +231,8 @@ describe('Tools Utils', () => {
       };
       const error = 'API error occurred';
 
-      const result = createErrorResult(query, error);
+      // Uses unified signature: createErrorResult(error, query, options?)
+      const result = createErrorResult(error, query);
 
       expect(result.status).toBe('error');
       expect(result.error).toBe('API error occurred');
@@ -253,7 +254,10 @@ describe('Tools Utils', () => {
         rateLimitReset: Date.now() + 3600000,
       };
 
-      const result = createErrorResult(query, 'Rate limit error', apiError);
+      // Uses unified signature with hintSourceError option
+      const result = createErrorResult('Rate limit error', query, {
+        hintSourceError: apiError,
+      });
 
       expect(result.status).toBe('error');
       expect(result.error).toBe('Rate limit error');
@@ -274,7 +278,10 @@ describe('Tools Utils', () => {
         retryAfter: 60,
       };
 
-      const result = createErrorResult(query, 'Too many requests', apiError);
+      // Uses unified signature with hintSourceError option
+      const result = createErrorResult('Too many requests', query, {
+        hintSourceError: apiError,
+      });
 
       expect(result.status).toBe('error');
       expect(result.hints).toBeDefined();
@@ -293,7 +300,10 @@ describe('Tools Utils', () => {
         scopesSuggestion: 'Required scopes: repo, read:org',
       };
 
-      const result = createErrorResult(query, 'Permission denied', apiError);
+      // Uses unified signature with hintSourceError option
+      const result = createErrorResult('Permission denied', query, {
+        hintSourceError: apiError,
+      });
 
       expect(result.status).toBe('error');
       expect(result.hints).toBeDefined();

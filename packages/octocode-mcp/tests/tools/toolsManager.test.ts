@@ -42,6 +42,10 @@ vi.mock('../../src/tools/toolMetadata.js', async () => {
       GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
       GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
       PACKAGE_SEARCH: 'packageSearch',
+      LOCAL_RIPGREP: 'localSearchCode',
+      LOCAL_FETCH_CONTENT: 'localGetFileContent',
+      LOCAL_FIND_FILES: 'localFindFiles',
+      LOCAL_VIEW_STRUCTURE: 'localViewStructure',
     },
   };
 });
@@ -633,11 +637,14 @@ describe('ToolsManager', () => {
 
       await registerTools(serverWithRegister);
 
-      // Verify handlers were registered
-      expect(toolHandlers.has('localSearchCode')).toBe(true);
-      expect(toolHandlers.has('localViewStructure')).toBe(true);
-      expect(toolHandlers.has('localFindFiles')).toBe(true);
-      expect(toolHandlers.has('localGetFileContent')).toBe(true);
+      // Debug: see what tool names were registered
+      const registeredNames = Array.from(toolHandlers.keys());
+
+      // Verify handlers were registered using the mocked TOOL_NAMES values
+      expect(registeredNames).toContain(TOOL_NAMES.LOCAL_RIPGREP);
+      expect(registeredNames).toContain(TOOL_NAMES.LOCAL_VIEW_STRUCTURE);
+      expect(registeredNames).toContain(TOOL_NAMES.LOCAL_FIND_FILES);
+      expect(registeredNames).toContain(TOOL_NAMES.LOCAL_FETCH_CONTENT);
 
       // Execute handlers to cover the code paths
       const { executeBulkOperation } =
@@ -646,17 +653,21 @@ describe('ToolsManager', () => {
         content: [{ type: 'text', text: 'test' }],
       });
 
-      // Call each handler
-      const ripgrepHandler = toolHandlers.get('localSearchCode')!;
+      // Call each handler using mocked TOOL_NAMES values
+      const ripgrepHandler = toolHandlers.get(TOOL_NAMES.LOCAL_RIPGREP)!;
       await ripgrepHandler({ queries: [] });
 
-      const viewStructureHandler = toolHandlers.get('localViewStructure')!;
+      const viewStructureHandler = toolHandlers.get(
+        TOOL_NAMES.LOCAL_VIEW_STRUCTURE
+      )!;
       await viewStructureHandler({ queries: [] });
 
-      const findFilesHandler = toolHandlers.get('localFindFiles')!;
+      const findFilesHandler = toolHandlers.get(TOOL_NAMES.LOCAL_FIND_FILES)!;
       await findFilesHandler({ queries: [] });
 
-      const fetchContentHandler = toolHandlers.get('localGetFileContent')!;
+      const fetchContentHandler = toolHandlers.get(
+        TOOL_NAMES.LOCAL_FETCH_CONTENT
+      )!;
       await fetchContentHandler({ queries: [] });
 
       // Verify executeBulkOperation was called for each handler

@@ -8,6 +8,7 @@ import {
   createPaginationInfo,
 } from '../utils/pagination/index.js';
 import { RESOURCE_LIMITS, DEFAULTS } from '../utils/constants.js';
+import { TOOL_NAMES } from './toolMetadata.js';
 import {
   validateToolPath,
   createErrorResult,
@@ -47,7 +48,10 @@ export async function fetchContent(
   query: FetchContentQuery
 ): Promise<FetchContentResult> {
   try {
-    const pathValidation = validateToolPath(query, 'LOCAL_FETCH_CONTENT');
+    const pathValidation = validateToolPath(
+      query,
+      TOOL_NAMES.LOCAL_FETCH_CONTENT
+    );
     if (!pathValidation.isValid) {
       return pathValidation.errorResult as FetchContentResult;
     }
@@ -64,8 +68,9 @@ export async function fetchContent(
         query.path,
         error instanceof Error ? error : undefined
       );
-      return createErrorResult(toolError, 'LOCAL_FETCH_CONTENT', query, {
-        path: query.path,
+      return createErrorResult(toolError, query, {
+        toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+        extra: { path: query.path },
       }) as FetchContentResult;
     }
 
@@ -81,9 +86,10 @@ export async function fetchContent(
         fileSizeKB,
         RESOURCE_LIMITS.LARGE_FILE_THRESHOLD_KB
       );
-      return createErrorResult(toolError, 'LOCAL_FETCH_CONTENT', query, {
-        path: query.path,
-        hints: [
+      return createErrorResult(toolError, query, {
+        toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+        extra: { path: query.path },
+        customHints: [
           'Best approach: Use matchString to extract specific functions/classes you actually need',
           'Alternative: Use charLength for pagination if you need to browse through the file systematically',
           'Why matchString works better: Gets only relevant sections, faster, and uses fewer tokens',
@@ -100,8 +106,9 @@ export async function fetchContent(
         query.path,
         error instanceof Error ? error : undefined
       );
-      return createErrorResult(toolError, 'LOCAL_FETCH_CONTENT', query, {
-        path: query.path,
+      return createErrorResult(toolError, query, {
+        toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+        extra: { path: query.path },
       }) as FetchContentResult;
     }
 
@@ -155,7 +162,7 @@ export async function fetchContent(
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           hints: [
-            ...getToolHints('LOCAL_FETCH_CONTENT', 'empty'),
+            ...getToolHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'empty'),
             '',
             ...contextHints,
           ],
@@ -218,9 +225,9 @@ export async function fetchContent(
             `Auto-paginated: ${result.matchCount} matches exceeded display limit`,
           ],
           hints: [
-            ...getToolHints('LOCAL_FETCH_CONTENT', 'hasResults'),
+            ...getToolHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'hasResults'),
             ...generatePaginationHints(autoPagination, {
-              toolName: 'localGetFileContent',
+              toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
             }),
           ],
         };
@@ -245,16 +252,16 @@ export async function fetchContent(
         totalLines,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
-        hints: getToolHints('LOCAL_FETCH_CONTENT', 'empty'),
+        hints: getToolHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'empty'),
       };
     }
 
     if (!query.charLength && resultContent.length > DEFAULTS.MAX_OUTPUT_CHARS) {
       const toolError = ToolErrors.paginationRequired(resultContent.length);
-      return createErrorResult(toolError, 'LOCAL_FETCH_CONTENT', query, {
-        path: query.path,
-        totalLines,
-        hints: [
+      return createErrorResult(toolError, query, {
+        toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+        extra: { path: query.path, totalLines },
+        customHints: [
           `RECOMMENDED: charLength=${RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH} (paginate results)`,
           'ALTERNATIVE: Use matchString for targeted extraction',
           `NOTE: Results >10K chars require pagination for safety`,
@@ -268,9 +275,14 @@ export async function fetchContent(
       query.charLength
     );
 
-    const baseHints = getToolHints('LOCAL_FETCH_CONTENT', 'hasResults');
+    const baseHints = getToolHints(
+      TOOL_NAMES.LOCAL_FETCH_CONTENT,
+      'hasResults'
+    );
     const paginationHints = query.charLength
-      ? generatePaginationHints(pagination, { toolName: 'localGetFileContent' })
+      ? generatePaginationHints(pagination, {
+          toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+        })
       : [];
 
     return {
@@ -289,8 +301,9 @@ export async function fetchContent(
       hints: [...baseHints, ...paginationHints],
     };
   } catch (error) {
-    return createErrorResult(error, 'LOCAL_FETCH_CONTENT', query, {
-      path: query.path,
+    return createErrorResult(error, query, {
+      toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+      extra: { path: query.path },
     }) as FetchContentResult;
   }
 }

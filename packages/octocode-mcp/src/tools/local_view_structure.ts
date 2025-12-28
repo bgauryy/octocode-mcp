@@ -3,6 +3,7 @@ import { safeExec } from '../utils/exec/index.js';
 import { pathValidator } from '../security/pathValidator.js';
 import { getExtension } from '../utils/fileFilters.js';
 import { getToolHints } from './hints.js';
+import { STATIC_TOOL_NAMES } from './toolMetadata.js';
 import {
   applyPagination,
   generatePaginationHints,
@@ -147,7 +148,7 @@ export async function viewStructure(
         errorCode: ERROR_CODES.PATH_VALIDATION_FAILED,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
-        hints: getToolHints('LOCAL_VIEW_STRUCTURE', 'error'),
+        hints: getToolHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
       };
     }
 
@@ -174,7 +175,7 @@ export async function viewStructure(
         errorCode: toolError.errorCode,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
-        hints: getToolHints('LOCAL_VIEW_STRUCTURE', 'error'),
+        hints: getToolHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
       };
     }
 
@@ -301,10 +302,10 @@ export async function viewStructure(
       reasoning: query.reasoning,
       hints: [
         ...entryPaginationHints,
-        ...getToolHints('LOCAL_VIEW_STRUCTURE', status),
+        ...getToolHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, status),
         ...(paginationMetadata
           ? generatePaginationHints(paginationMetadata, {
-              toolName: 'localViewStructure',
+              toolName: STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
             })
           : []),
       ],
@@ -319,7 +320,7 @@ export async function viewStructure(
       errorCode: toolError.errorCode,
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
-      hints: getToolHints('LOCAL_VIEW_STRUCTURE', 'error'),
+      hints: getToolHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
     };
   }
 }
@@ -547,7 +548,10 @@ async function viewStructureRecursive(
   }
 
   const status = totalEntries > 0 ? 'hasResults' : 'empty';
-  const baseHints = getToolHints('LOCAL_VIEW_STRUCTURE', status);
+  const baseHints = getToolHints(
+    STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE as 'localViewStructure',
+    status
+  );
 
   const entryPaginationHints = [
     `Page ${entryPageNumber}/${totalPages} (showing ${paginatedEntries.length} of ${totalEntries})`,
@@ -559,7 +563,7 @@ async function viewStructureRecursive(
 
   const paginationHints = paginationMetadata
     ? generatePaginationHints(paginationMetadata, {
-        toolName: 'localViewStructure',
+        toolName: STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
       })
     : [];
 

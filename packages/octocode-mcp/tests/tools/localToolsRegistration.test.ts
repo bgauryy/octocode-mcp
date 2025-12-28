@@ -1,0 +1,131 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerTools } from '../../src/tools/toolsManager.js';
+import { STATIC_TOOL_NAMES } from '../../src/tools/toolMetadata.js';
+
+// Mock only what's necessary - don't mock TOOL_NAMES
+vi.mock('../../src/tools/toolConfig.js', () => ({
+  DEFAULT_TOOLS: [], // No GitHub tools for this test
+}));
+
+vi.mock('../../src/serverConfig.js', () => ({
+  getServerConfig: vi.fn().mockReturnValue({
+    version: '1.0.0',
+    githubApiUrl: 'https://api.github.com',
+    enableLogging: true,
+    timeout: 30000,
+    maxRetries: 3,
+    loggingEnabled: true,
+    enableLocal: true,
+  }),
+  isLocalEnabled: vi.fn().mockReturnValue(true),
+}));
+
+// Mock local tool implementations
+vi.mock('../../src/tools/local_ripgrep.js', () => ({
+  searchContentRipgrep: vi.fn().mockResolvedValue({ status: 'hasResults' }),
+}));
+vi.mock('../../src/tools/local_view_structure.js', () => ({
+  viewStructure: vi.fn().mockResolvedValue({ status: 'hasResults' }),
+}));
+vi.mock('../../src/tools/local_find_files.js', () => ({
+  findFiles: vi.fn().mockResolvedValue({ status: 'hasResults' }),
+}));
+vi.mock('../../src/tools/local_fetch_content.js', () => ({
+  fetchContent: vi.fn().mockResolvedValue({ status: 'hasResults' }),
+}));
+vi.mock('../../src/utils/bulkOperations.js', () => ({
+  executeBulkOperation: vi.fn().mockResolvedValue({
+    content: [{ type: 'text', text: 'test' }],
+  }),
+}));
+
+describe('Local Tools Registration (TDD)', () => {
+  let mockServer: McpServer;
+  let registeredTools: Map<string, unknown>;
+  const originalStderr = process.stderr.write;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    registeredTools = new Map();
+    process.stderr.write = vi.fn();
+
+    // Create mock server that tracks registered tools
+    mockServer = {
+      registerTool: vi.fn(
+        (name: string, options: unknown, handler: unknown) => {
+          registeredTools.set(name, { options, handler });
+        }
+      ),
+      prompt: vi.fn(),
+    } as unknown as McpServer;
+  });
+
+  afterEach(() => {
+    process.stderr.write = originalStderr;
+  });
+
+  it('should register all 4 local tools when ENABLE_LOCAL is true', async () => {
+    const result = await registerTools(mockServer);
+
+    expect(result.successCount).toBe(4);
+    expect(result.failedTools).toHaveLength(0);
+  });
+
+  it('should register localSearchCode with correct name', async () => {
+    await registerTools(mockServer);
+
+    expect(registeredTools.has(STATIC_TOOL_NAMES.LOCAL_RIPGREP)).toBe(true);
+    expect(registeredTools.has('localSearchCode')).toBe(true);
+  });
+
+  it('should register localViewStructure with correct name', async () => {
+    await registerTools(mockServer);
+
+    expect(registeredTools.has(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE)).toBe(
+      true
+    );
+    expect(registeredTools.has('localViewStructure')).toBe(true);
+  });
+
+  it('should register localFindFiles with correct name', async () => {
+    await registerTools(mockServer);
+
+    expect(registeredTools.has(STATIC_TOOL_NAMES.LOCAL_FIND_FILES)).toBe(true);
+    expect(registeredTools.has('localFindFiles')).toBe(true);
+  });
+
+  it('should register localGetFileContent with correct name', async () => {
+    await registerTools(mockServer);
+
+    expect(registeredTools.has(STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT)).toBe(
+      true
+    );
+    expect(registeredTools.has('localGetFileContent')).toBe(true);
+  });
+
+  it('should NOT register tools with undefined name', async () => {
+    await registerTools(mockServer);
+
+    expect(registeredTools.has('undefined')).toBe(false);
+    expect(registeredTools.has(undefined as unknown as string)).toBe(false);
+  });
+
+  it('should call server.registerTool 4 times for local tools', async () => {
+    await registerTools(mockServer);
+
+    expect(mockServer.registerTool).toHaveBeenCalledTimes(4);
+  });
+
+  it('should register tools with valid inputSchema', async () => {
+    await registerTools(mockServer);
+
+    // Check that each tool has a valid schema
+    for (const [name, value] of registeredTools.entries()) {
+      const { options } = value as { options: unknown; handler: unknown };
+      const opts = options as { inputSchema?: unknown };
+      expect(opts.inputSchema).toBeDefined();
+      expect(name).not.toBe('undefined');
+    }
+  });
+});

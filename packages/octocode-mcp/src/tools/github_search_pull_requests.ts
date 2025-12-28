@@ -122,7 +122,7 @@ async function searchMultipleGitHubPullRequests(
         const validationError = (query as unknown as Record<string, unknown>)
           ?._validationError;
         if (validationError && typeof validationError === 'string') {
-          return createErrorResult(query, validationError);
+          return createErrorResult(validationError, query);
         }
 
         const apiResult = await searchGitHubPullRequestsAPI(
