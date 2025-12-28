@@ -6,11 +6,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ERROR_CODES } from '../../src/errorCodes.js';
 import { findFiles } from '../../src/tools/local_find_files.js';
 import type { FindFilesResult } from '../../src/utils/types.js';
-import * as exec from '../../src/utils/local/utils/exec.js';
+import * as exec from '../../src/utils/exec/index.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 
 // Mock dependencies
-vi.mock('../../src/utils/local/utils/exec.js', () => ({
+vi.mock('../../src/utils/exec/index.js', () => ({
   safeExec: vi.fn(),
 }));
 

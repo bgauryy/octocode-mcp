@@ -1,4 +1,4 @@
-import { getGithubCLIToken } from './utils/exec.js';
+import { getGithubCLIToken } from './utils/exec/index.js';
 import { version } from '../package.json';
 import type { ServerConfig } from './types.js';
 import { CONFIG_ERRORS } from './errorCodes.js';

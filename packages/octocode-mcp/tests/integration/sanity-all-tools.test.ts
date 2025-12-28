@@ -7,12 +7,12 @@ import { viewStructure } from '../../src/tools/local_view_structure.js';
 import { findFiles } from '../../src/tools/local_find_files.js';
 import { searchContentRipgrep } from '../../src/tools/local_ripgrep.js';
 import { fetchContent } from '../../src/tools/local_fetch_content.js';
-import * as exec from '../../src/utils/local/utils/exec.js';
+import * as exec from '../../src/utils/exec/index.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 import type { Stats } from 'fs';
 
 // Mocks
-vi.mock('../../src/utils/local/utils/exec.js', () => ({ safeExec: vi.fn() }));
+vi.mock('../../src/utils/exec/index.js', () => ({ safeExec: vi.fn() }));
 vi.mock('../../src/security/pathValidator.js', () => ({
   pathValidator: { validate: vi.fn() },
 }));

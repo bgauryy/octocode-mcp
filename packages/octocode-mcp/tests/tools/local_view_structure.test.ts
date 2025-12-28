@@ -5,12 +5,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ERROR_CODES } from '../../src/errorCodes.js';
 import { viewStructure } from '../../src/tools/local_view_structure.js';
-import * as exec from '../../src/utils/local/utils/exec.js';
+import * as exec from '../../src/utils/exec/index.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 import type { Stats } from 'fs';
 
 // Mock dependencies
-vi.mock('../../src/utils/local/utils/exec.js', () => ({
+vi.mock('../../src/utils/exec/index.js', () => ({
   safeExec: vi.fn(),
 }));
 

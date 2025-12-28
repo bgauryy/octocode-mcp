@@ -15,7 +15,7 @@ vi.mock('../src/tools/github_fetch_content.js');
 vi.mock('../src/tools/github_search_repos.js');
 vi.mock('../src/tools/github_search_pull_requests.js');
 vi.mock('../src/tools/github_view_repo_structure.js');
-vi.mock('../src/utils/exec.js');
+vi.mock('../src/utils/exec/index.js');
 vi.mock('../src/serverConfig.js');
 vi.mock('../src/tools/toolsManager.js');
 
@@ -26,7 +26,7 @@ import { registerFetchGitHubFileContentTool } from '../src/tools/github_fetch_co
 import { registerSearchGitHubReposTool } from '../src/tools/github_search_repos.js';
 import { registerSearchGitHubPullRequestsTool } from '../src/tools/github_search_pull_requests.js';
 import { registerViewGitHubRepoStructureTool } from '../src/tools/github_view_repo_structure.js';
-import { getGithubCLIToken } from '../src/utils/exec.js';
+import { getGithubCLIToken } from '../src/utils/exec/index.js';
 import { initialize, cleanup, getServerConfig } from '../src/serverConfig.js';
 import { registerTools } from '../src/tools/toolsManager.js';
 import { getGitHubToken } from '../src/serverConfig.js';

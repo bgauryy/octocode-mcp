@@ -21,7 +21,7 @@ import {
   createSuccessResult,
   createErrorResult,
 } from './utils.js';
-import { checkNpmAvailability } from '../utils/exec.js';
+import { checkNpmAvailability } from '../utils/exec/index.js';
 
 export async function registerPackageSearchTool(
   server: McpServer,

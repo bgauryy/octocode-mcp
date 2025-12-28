@@ -97,7 +97,7 @@ vi.mock('../../src/github/client.js', () => ({
   clearCachedToken: vi.fn(),
 }));
 
-vi.mock('../../src/utils/exec.js', () => ({
+vi.mock('../../src/utils/exec/index.js', () => ({
   getGithubCLIToken: vi.fn().mockResolvedValue('mocked-cli-token'),
 }));
 

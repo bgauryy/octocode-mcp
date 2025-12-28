@@ -1,13 +1,12 @@
 /**
  * Safe command execution with security validation
  * Validates commands and execution context before spawning processes
- * Uses shared base module for spawn functionality
  */
 
-import { validateCommand } from '../../../security/commandValidator.js';
-import { validateExecutionContext } from '../../../security/executionContextValidator.js';
-import { spawnWithTimeout } from '../../exec/base.js';
-import type { ExecResult, ExecOptions } from '../../types.js';
+import { validateCommand } from '../../security/commandValidator.js';
+import { validateExecutionContext } from '../../security/executionContextValidator.js';
+import { spawnWithTimeout } from './spawn.js';
+import type { ExecResult, ExecOptions } from '../types.js';
 
 /**
  * Safely execute a command with security validation

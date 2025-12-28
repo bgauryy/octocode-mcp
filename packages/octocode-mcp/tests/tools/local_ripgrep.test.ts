@@ -6,12 +6,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { searchContentRipgrep } from '../../src/tools/local_ripgrep.js';
 import { ERROR_CODES } from '../../src/errorCodes.js';
 import { RipgrepQuerySchema } from '../../src/scheme/local_ripgrep.js';
-import * as exec from '../../src/utils/local/utils/exec.js';
+import * as exec from '../../src/utils/exec/index.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 import { promises as fs } from 'fs';
 
 // Mock dependencies
-vi.mock('../../src/utils/local/utils/exec.js', () => ({
+vi.mock('../../src/utils/exec/index.js', () => ({
   safeExec: vi.fn(),
 }));
 

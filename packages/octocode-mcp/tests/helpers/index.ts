@@ -17,7 +17,7 @@
  * });
  *
  * vi.mock('fs', () => fsMocks);
- * vi.mock('../../src/utils/local/utils/exec.js', () => execMocks);
+ * vi.mock('../../src/utils/exec/index.js', () => execMocks);
  * vi.mock('../../src/security/pathValidator.js', () => pathValidatorMocks);
  * ```
  *

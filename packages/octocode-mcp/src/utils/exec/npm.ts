@@ -1,6 +1,6 @@
 /**
  * npm and gh CLI execution utilities
- * Uses shared base module for spawn functionality
+ * Uses shared spawn module for process management
  */
 
 import { dirname, join } from 'path';
@@ -9,7 +9,7 @@ import {
   spawnCheckSuccess,
   spawnCollectStdout,
   validateArgs,
-} from './exec/base.js';
+} from './spawn.js';
 
 /**
  * Get the npm binary path by looking next to the current node binary.

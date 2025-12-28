@@ -1,5 +1,5 @@
 import { LsCommandBuilder } from '../commands/LsCommandBuilder.js';
-import { safeExec } from '../utils/local/utils/exec.js';
+import { safeExec } from '../utils/exec/index.js';
 import { pathValidator } from '../security/pathValidator.js';
 import { getExtension } from '../utils/fileFilters.js';
 import { getToolHints } from './hints.js';

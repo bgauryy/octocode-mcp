@@ -24,7 +24,7 @@
  *
  * // Step 3: Apply mocks
  * vi.mock('fs', () => mocks.fsMock);
- * vi.mock('../../src/utils/local/utils/exec.js', () => mocks.execMock);
+ * vi.mock('../../src/utils/exec/index.js', () => mocks.execMock);
  * vi.mock('../../src/security/pathValidator.js', () => mocks.pathValidatorMock);
  *
  * // Step 4: Import the module under test AFTER mocks

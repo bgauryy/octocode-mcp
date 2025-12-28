@@ -197,7 +197,7 @@ vi.mock('axios', () => ({
 // Mock executeNpmCommand and checkNpmAvailability (for npm CLI searches)
 const mockExecuteNpmCommand = vi.fn();
 const mockCheckNpmAvailability = vi.fn();
-vi.mock('../../src/utils/exec.js', () => ({
+vi.mock('../../src/utils/exec/index.js', () => ({
   executeNpmCommand: (...args: unknown[]) => mockExecuteNpmCommand(...args),
   checkNpmAvailability: (...args: unknown[]) =>
     mockCheckNpmAvailability(...args),

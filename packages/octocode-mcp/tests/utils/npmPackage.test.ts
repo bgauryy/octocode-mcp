@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock executeNpmCommand
 const mockExecuteNpmCommand = vi.fn();
-vi.mock('../../src/utils/exec.js', () => ({
+vi.mock('../../src/utils/exec/index.js', () => ({
   executeNpmCommand: (...args: unknown[]) => mockExecuteNpmCommand(...args),
 }));
 

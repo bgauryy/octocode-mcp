@@ -1,5 +1,5 @@
 import { RipgrepCommandBuilder } from '../commands/RipgrepCommandBuilder.js';
-import { safeExec } from '../utils/local/utils/exec.js';
+import { safeExec } from '../utils/exec/index.js';
 import { getToolHints, getLargeFileWorkflowHints } from './hints.js';
 import {
   validateRipgrepQuery,

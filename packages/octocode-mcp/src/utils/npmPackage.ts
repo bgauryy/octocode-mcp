@@ -1,4 +1,4 @@
-import { executeNpmCommand } from './exec.js';
+import { executeNpmCommand } from './exec/index.js';
 import {
   PackageSearchAPIResult,
   PackageSearchError,

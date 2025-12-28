@@ -1,5 +1,5 @@
 import { FindCommandBuilder } from '../commands/FindCommandBuilder.js';
-import { safeExec } from '../utils/local/utils/exec.js';
+import { safeExec } from '../utils/exec/index.js';
 import { getToolHints } from './hints.js';
 import {
   generatePaginationHints,
