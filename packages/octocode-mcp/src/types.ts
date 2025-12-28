@@ -35,7 +35,6 @@ export interface ToolSuccessResult<
   data?: T;
 }
 
-
 export interface GitHubCodeSearchQuery {
   keywordsToSearch: string[];
   owner?: string;

@@ -22,6 +22,14 @@ export abstract class BaseCommandBuilder {
   }
 
   /**
+   * Prepends a flag at the beginning (e.g., -E for macOS find)
+   */
+  protected prependArg(arg: string): this {
+    this.args.unshift(arg);
+    return this;
+  }
+
+  /**
    * Adds an option with a value (e.g., -A 3)
    */
   protected addOption(option: string, value: string | number): this {

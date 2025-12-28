@@ -245,10 +245,18 @@ describe('localFindFiles', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(mockSafeExec).toHaveBeenCalledWith(
-        'find',
-        expect.arrayContaining(['-executable'])
-      );
+      // Platform-specific: Linux uses -executable, macOS uses -perm +111
+      if (process.platform === 'linux') {
+        expect(mockSafeExec).toHaveBeenCalledWith(
+          'find',
+          expect.arrayContaining(['-executable'])
+        );
+      } else {
+        expect(mockSafeExec).toHaveBeenCalledWith(
+          'find',
+          expect.arrayContaining(['-perm', '+111'])
+        );
+      }
     });
 
     it('should filter by permissions', async () => {

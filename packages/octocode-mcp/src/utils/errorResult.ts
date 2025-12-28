@@ -120,7 +120,7 @@ function isGitHubApiError(error: unknown): error is GitHubAPIError {
  */
 export function createErrorResult(
   error: unknown,
-  query: BaseQueryFields,
+  query: BaseQuery,
   options: CreateErrorResultOptions = {}
 ): UnifiedErrorResult {
   const { toolName, hintContext, extra, customHints, hintSourceError } =
@@ -226,4 +226,3 @@ function getErrorTypeFromToolError(
       return undefined;
   }
 }
-
