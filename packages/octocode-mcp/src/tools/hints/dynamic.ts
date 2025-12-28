@@ -142,7 +142,19 @@ export const HINTS: Record<string, ToolHintGenerators> = {
     },
     empty: (ctx: HintContext = {}) => {
       const hints: (string | undefined)[] = ['No code matches found.'];
-      if (!ctx.hasOwnerRepo) {
+
+      // Path-specific guidance when match="path" returns empty
+      if (ctx.match === 'path') {
+        hints.push(
+          'match="path" searches file/directory NAMES only, not contents.'
+        );
+        hints.push(
+          'No paths contain this keyword. Try match="file" to search content instead.'
+        );
+        hints.push(
+          'Or use githubViewRepoStructure to discover actual directory names.'
+        );
+      } else if (!ctx.hasOwnerRepo) {
         hints.push('Cross-repo search requires unique keywords (3+ chars).');
         hints.push('Try adding owner/repo context if known.');
       } else {

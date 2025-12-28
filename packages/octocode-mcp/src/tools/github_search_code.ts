@@ -113,7 +113,7 @@ async function searchMultipleGitHubCode(
         const customHints = getHints(
           TOOL_NAMES.GITHUB_SEARCH_CODE,
           hasContent ? 'hasResults' : 'empty',
-          { hasOwnerRepo }
+          { hasOwnerRepo, match: query.match }
         );
 
         return createSuccessResult(

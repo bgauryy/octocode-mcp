@@ -28,6 +28,7 @@ export interface HintContext {
   hasPagination?: boolean; // has charLength/pagination
   path?: string; // path being searched
   hasOwnerRepo?: boolean; // has owner/repo context
+  match?: 'file' | 'path'; // GitHub code search match mode
 }
 
 /**
