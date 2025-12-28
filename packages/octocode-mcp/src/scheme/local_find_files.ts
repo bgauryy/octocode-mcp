@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import {
   BaseQuerySchemaLocal,
-  createBulkQuerySchemaLocal,
+  createBulkQuerySchema,
   COMMON_PAGINATION_DESCRIPTIONS,
 } from './baseSchema.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
@@ -136,9 +136,10 @@ export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
 /**
  * Bulk find files schema
  */
-export const BulkFindFilesSchema = createBulkQuerySchemaLocal(
+export const BulkFindFilesSchema = createBulkQuerySchema(
   TOOL_NAMES.LOCAL_FIND_FILES,
-  FindFilesQuerySchema
+  FindFilesQuerySchema,
+  { maxQueries: 5 }
 );
 
 export type FindFilesQuery = z.infer<typeof FindFilesQuerySchema>;

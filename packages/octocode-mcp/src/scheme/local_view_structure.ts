@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import {
   BaseQuerySchemaLocal,
-  createBulkQuerySchemaLocal,
+  createBulkQuerySchema,
   COMMON_PAGINATION_DESCRIPTIONS,
 } from './baseSchema.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
@@ -114,9 +114,10 @@ export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
 /**
  * Bulk view structure schema
  */
-export const BulkViewStructureSchema = createBulkQuerySchemaLocal(
+export const BulkViewStructureSchema = createBulkQuerySchema(
   TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
-  ViewStructureQuerySchema
+  ViewStructureQuerySchema,
+  { maxQueries: 5 }
 );
 
 export type ViewStructureQuery = z.infer<typeof ViewStructureQuerySchema>;

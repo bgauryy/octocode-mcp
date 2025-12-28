@@ -18,34 +18,40 @@ export const BaseQuerySchemaLocal = z.object({
     .describe('Why this approach helps reach the goal'),
 });
 
-export function createBulkQuerySchema<T extends z.ZodTypeAny>(
-  toolName: string,
-  singleQuerySchema: T
-) {
-  return z.object({
-    queries: z
-      .array(singleQuerySchema)
-      .min(1)
-      .max(3)
-      .describe(BASE_SCHEMA.bulkQuery(toolName)),
-  });
+/**
+ * Options for bulk query schema creation
+ */
+export interface BulkQuerySchemaOptions {
+  /** Maximum number of queries allowed (default: 3 for GitHub tools) */
+  maxQueries?: number;
+  /** Custom description prefix (default: uses BASE_SCHEMA.bulkQuery for GitHub) */
+  descriptionPrefix?: string;
 }
 
 /**
- * Creates bulk query schema for local tools (1-5 queries per call)
+ * Creates a bulk query schema with configurable max queries
+ * @param toolName - Name of the tool for description
+ * @param singleQuerySchema - Schema for a single query
+ * @param options - Configuration options (maxQueries defaults to 3)
  */
-export function createBulkQuerySchemaLocal<T extends z.ZodTypeAny>(
+export function createBulkQuerySchema<T extends z.ZodTypeAny>(
   toolName: string,
-  singleQuerySchema: T
+  singleQuerySchema: T,
+  options: BulkQuerySchemaOptions = {}
 ) {
+  const { maxQueries = 3, descriptionPrefix } = options;
+  const description =
+    descriptionPrefix ??
+    (maxQueries === 3
+      ? BASE_SCHEMA.bulkQuery(toolName)
+      : `Queries for ${toolName} (1–${maxQueries} per call). Review schema before use.`);
+
   return z.object({
     queries: z
       .array(singleQuerySchema)
       .min(1)
-      .max(5)
-      .describe(
-        `Queries for ${toolName} (1–5 per call). Review schema before use.`
-      ),
+      .max(maxQueries)
+      .describe(description),
   });
 }
 

@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import {
   BaseQuerySchemaLocal,
-  createBulkQuerySchemaLocal,
+  createBulkQuerySchema,
   COMMON_PAGINATION_DESCRIPTIONS,
 } from './baseSchema.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
@@ -100,9 +100,10 @@ export const FetchContentQuerySchema = BaseQuerySchemaLocal.extend({
 /**
  * Bulk query schema for fetching multiple file contents
  */
-export const BulkFetchContentSchema = createBulkQuerySchemaLocal(
+export const BulkFetchContentSchema = createBulkQuerySchema(
   TOOL_NAMES.LOCAL_FETCH_CONTENT,
-  FetchContentQuerySchema
+  FetchContentQuerySchema,
+  { maxQueries: 5 }
 );
 
 export type FetchContentQuery = z.infer<typeof FetchContentQuerySchema>;

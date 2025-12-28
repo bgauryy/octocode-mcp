@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import {
   BaseQuerySchemaLocal,
-  createBulkQuerySchemaLocal,
+  createBulkQuerySchema,
   COMMON_PAGINATION_DESCRIPTIONS,
 } from './baseSchema.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
@@ -334,9 +334,10 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
 /**
  * Bulk ripgrep search schema (1–5 queries per call)
  */
-export const BulkRipgrepQuerySchema = createBulkQuerySchemaLocal(
+export const BulkRipgrepQuerySchema = createBulkQuerySchema(
   TOOL_NAMES.LOCAL_RIPGREP,
-  RipgrepQuerySchema
+  RipgrepQuerySchema,
+  { maxQueries: 5 }
 );
 
 export type RipgrepQuery = z.infer<typeof RipgrepQuerySchema>;
