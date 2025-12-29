@@ -283,6 +283,7 @@ export interface GitHubPullRequestsSearchParams {
   exhaustive?: boolean;
   maxPages?: number;
   pageSize?: number;
+  page?: number;
 }
 
 export function isGitHubAPIError(obj: unknown): obj is GitHubAPIError {

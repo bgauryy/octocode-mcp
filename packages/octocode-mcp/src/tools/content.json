@@ -192,6 +192,7 @@
         "sort": "{{sort}}_value",
         "order": "{{order}}_value",
         "limit": "{{limit}}_value",
+        "page": "{{page}}_value",
         "withComments": "{{withComments}}_value",
         "withContent": "{{withContent}}_value",
         "mainResearchGoal": "{{mainResearchGoal}}_value",

@@ -66,6 +66,7 @@ export async function searchGitHubPullRequestsAPI(
       sort: params.sort,
       order: params.order,
       limit: params.limit,
+      page: params.page,
       withComments: params.withComments,
       withCommits: params.withCommits,
       type: params.type,
@@ -141,6 +142,9 @@ async function searchGitHubPullRequestsAPIInternal(
         ? params.sort
         : undefined;
 
+    const perPage = Math.min(params.limit || 30, 100);
+    const currentPage = params.page || 1;
+
     const searchResult = await octokit.rest.search.issuesAndPullRequests({
       q: searchQuery,
       sort: sortValue as
@@ -150,7 +154,8 @@ async function searchGitHubPullRequestsAPIInternal(
         | 'updated'
         | undefined,
       order: params.order || 'desc',
-      per_page: Math.min(params.limit || 30, 100),
+      per_page: perPage,
+      page: currentPage,
     });
 
     const pullRequests = (searchResult.data.items?.filter(
@@ -206,10 +211,22 @@ async function searchGitHubPullRequestsAPIInternal(
       }),
     }));
 
+    // GitHub caps at 1000 total results
+    const totalMatches = Math.min(searchResult.data.total_count, 1000);
+    const totalPages = Math.min(Math.ceil(totalMatches / perPage), 10);
+    const hasMore = currentPage < totalPages;
+
     return {
       pull_requests: formattedPRs,
       total_count: searchResult.data.total_count,
       ...(searchResult.data.incomplete_results && { incomplete_results: true }),
+      pagination: {
+        currentPage,
+        totalPages,
+        perPage,
+        totalMatches,
+        hasMore,
+      },
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -234,11 +251,15 @@ async function searchPullRequestsWithREST(
     const owner = params.owner as string;
     const repo = params.repo as string;
 
+    const perPage = Math.min(params.limit || 30, 100);
+    const currentPage = params.page || 1;
+
     const result = await octokit.rest.pulls.list({
       owner,
       repo,
       state: params.state || 'open',
-      per_page: Math.min(params.limit || 30, 100),
+      per_page: perPage,
+      page: currentPage,
       sort: params.sort === 'updated' ? 'updated' : 'created',
       direction: params.order || 'desc',
       ...(params.head && { head: params.head }),
@@ -294,9 +315,20 @@ async function searchPullRequestsWithREST(
       }),
     }));
 
+    // REST API doesn't provide total count, estimate from response
+    // If we got full page, there might be more pages
+    const hasMore = result.data.length === perPage;
+
     return {
       pull_requests: formattedPRs,
       total_count: formattedPRs.length,
+      pagination: {
+        currentPage,
+        totalPages: hasMore ? currentPage + 1 : currentPage, // Estimate based on current results
+        perPage,
+        totalMatches: formattedPRs.length,
+        hasMore,
+      },
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);

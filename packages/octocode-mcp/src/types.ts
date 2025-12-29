@@ -411,6 +411,15 @@ export interface PullRequestInfo {
   }>;
 }
 
+/** Pagination info for pull request search results */
+export interface PRSearchPagination {
+  currentPage: number;
+  totalPages: number;
+  perPage: number;
+  totalMatches: number;
+  hasMore: boolean;
+}
+
 /** Pull request search result data */
 export interface PullRequestSearchResultData {
   owner?: string;
@@ -418,6 +427,7 @@ export interface PullRequestSearchResultData {
   pull_requests?: PullRequestInfo[];
   total_count?: number;
   incomplete_results?: boolean;
+  pagination?: PRSearchPagination;
 }
 
 /** Complete pull request search result */

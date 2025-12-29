@@ -501,6 +501,9 @@ export const GITHUB_SEARCH_PULL_REQUESTS = createSchemaHelper(
   resultLimit: {
     limit: string;
   };
+  pagination: {
+    page: string;
+  };
   outputShaping: {
     withComments: string;
     withCommits: string;
