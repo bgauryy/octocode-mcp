@@ -11,13 +11,13 @@ import { GitHubCodeSearchBulkQuerySchema } from '../scheme/github_search_code.js
 import { searchGitHubCodeAPI } from '../github/codeSearch.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { getHints } from './hints/index.js';
 import {
   handleApiError,
   handleCatchError,
   createSuccessResult,
   invokeCallbackSafely,
 } from './utils.js';
+import { getDynamicHints, hasDynamicHints } from './hints/dynamic.js';
 
 export function registerGitHubSearchCodeTool(
   server: McpServer,
@@ -148,17 +148,15 @@ async function searchMultipleGitHubCode(
           }
         }
 
-        const customHints = [
-          ...paginationHints,
-          ...getHints(
-            TOOL_NAMES.GITHUB_SEARCH_CODE,
-            hasContent ? 'hasResults' : 'empty',
-            {
-              hasOwnerRepo,
-              match: query.match,
-            }
-          ),
-        ];
+        // Combine pagination hints with dynamic hints (static hints added by createSuccessResult)
+        const dynamicHints = hasDynamicHints(TOOL_NAMES.GITHUB_SEARCH_CODE)
+          ? getDynamicHints(
+              TOOL_NAMES.GITHUB_SEARCH_CODE,
+              hasContent ? 'hasResults' : 'empty',
+              { hasOwnerRepo, match: query.match }
+            )
+          : [];
+        const customHints = [...paginationHints, ...dynamicHints];
 
         return createSuccessResult(
           query,

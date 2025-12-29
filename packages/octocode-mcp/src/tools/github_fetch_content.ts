@@ -13,6 +13,7 @@ import {
   handleApiError,
   invokeCallbackSafely,
 } from './utils.js';
+import { getDynamicHints, hasDynamicHints } from './hints/dynamic.js';
 
 export function registerFetchGitHubFileContentTool(
   server: McpServer,
@@ -83,12 +84,21 @@ async function fetchMultipleGitHubFileContents(
           ? (resultObj.hints as string[])
           : [];
 
+        // Combine pagination hints with dynamic hints (static hints added by createSuccessResult)
+        const dynamicHints = hasDynamicHints(TOOL_NAMES.GITHUB_FETCH_CONTENT)
+          ? getDynamicHints(
+              TOOL_NAMES.GITHUB_FETCH_CONTENT,
+              hasContent ? 'hasResults' : 'empty'
+            )
+          : [];
+        const customHints = [...paginationHints, ...dynamicHints];
+
         return createSuccessResult(
           query,
           resultObj,
           hasContent,
           TOOL_NAMES.GITHUB_FETCH_CONTENT,
-          paginationHints
+          customHints
         );
       } catch (error) {
         return handleCatchError(error, query);

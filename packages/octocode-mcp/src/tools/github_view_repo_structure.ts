@@ -19,6 +19,7 @@ import {
   createSuccessResult,
   invokeCallbackSafely,
 } from './utils.js';
+import { getDynamicHints, hasDynamicHints } from './hints/dynamic.js';
 
 export function registerViewGitHubRepoStructureTool(
   server: McpServer,
@@ -190,12 +191,30 @@ async function exploreMultipleRepositoryStructures(
         // Extract API-generated hints (pagination hints, etc.)
         const apiHints = apiResult.hints || [];
 
+        // Count entries for context-aware hints
+        const entryCount = Object.values(filteredStructure).reduce(
+          (sum, entry) => sum + entry.files.length + entry.folders.length,
+          0
+        );
+
+        // Combine API hints with dynamic hints (static hints added by createSuccessResult)
+        const dynamicHints = hasDynamicHints(
+          TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE
+        )
+          ? getDynamicHints(
+              TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+              hasContent ? 'hasResults' : 'empty',
+              { entryCount }
+            )
+          : [];
+        const customHints = [...apiHints, ...dynamicHints];
+
         return createSuccessResult(
           query,
           resultData,
           hasContent,
           TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-          apiHints
+          customHints
         );
       } catch (error) {
         const catchError = handleCatchError(

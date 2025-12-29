@@ -128,6 +128,7 @@ export const HINTS: Record<string, ToolHintGenerators> = {
 
   [STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE]: {
     hasResults: (ctx: HintContext = {}) => {
+      // Context-aware hints based on single vs multi-repo results
       const hints: (string | undefined)[] = [];
       if (ctx.hasOwnerRepo) {
         hints.push(
@@ -141,7 +142,8 @@ export const HINTS: Record<string, ToolHintGenerators> = {
       return hints;
     },
     empty: (ctx: HintContext = {}) => {
-      const hints: (string | undefined)[] = ['No code matches found.'];
+      // Context-aware hints - static hints cover generic cases
+      const hints: (string | undefined)[] = [];
 
       // Path-specific guidance when match="path" returns empty
       if (ctx.match === 'path') {
@@ -151,17 +153,53 @@ export const HINTS: Record<string, ToolHintGenerators> = {
         hints.push(
           'No paths contain this keyword. Try match="file" to search content instead.'
         );
-        hints.push(
-          'Or use githubViewRepoStructure to discover actual directory names.'
-        );
       } else if (!ctx.hasOwnerRepo) {
         hints.push('Cross-repo search requires unique keywords (3+ chars).');
-        hints.push('Try adding owner/repo context if known.');
-      } else {
-        hints.push('Try semantic variants (e.g. "auth" vs "authentication").');
       }
+      // Note: "Try semantic variants" is in static hints, not duplicated here
       return hints;
     },
+    error: (_ctx: HintContext = {}) => [],
+  },
+
+  [STATIC_TOOL_NAMES.GITHUB_FETCH_CONTENT]: {
+    hasResults: (ctx: HintContext = {}) => [
+      // Only add context-aware hints, static hints come from content.json
+      ctx.isLarge
+        ? 'Large file - use matchString to target specific sections'
+        : undefined,
+    ],
+    empty: (_ctx: HintContext = {}) => [
+      // Static hints cover the common cases, no dynamic hints needed
+    ],
+    error: (ctx: HintContext = {}) => {
+      if (ctx.errorType === 'size_limit') {
+        return [
+          'FILE_TOO_LARGE: Use matchString or startLine/endLine for partial reads',
+        ];
+      }
+      return [];
+    },
+  },
+
+  [STATIC_TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]: {
+    hasResults: (ctx: HintContext = {}) => [
+      // Only add context-aware hints based on entry count
+      ctx.entryCount && ctx.entryCount > 50
+        ? `Large directory (${ctx.entryCount} entries) - use entriesPerPage to paginate`
+        : undefined,
+    ],
+    empty: (_ctx: HintContext = {}) => [
+      // Static hints cover the common cases
+    ],
+    error: (_ctx: HintContext = {}) => [],
+  },
+
+  [STATIC_TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: {
+    // Note: Static hints already cover all common cases including "Multiple PRs? Look for patterns"
+    // Dynamic hints only for truly context-specific scenarios not covered by static
+    hasResults: (_ctx: HintContext = {}) => [],
+    empty: (_ctx: HintContext = {}) => [],
     error: (_ctx: HintContext = {}) => [],
   },
 };

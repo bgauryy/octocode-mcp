@@ -18,6 +18,7 @@ import {
   createErrorResult,
   invokeCallbackSafely,
 } from './utils.js';
+import { getDynamicHints, hasDynamicHints } from './hints/dynamic.js';
 
 const VALIDATION_MESSAGES = {
   QUERY_TOO_LONG: 'Query too long. Maximum 256 characters allowed.',
@@ -162,6 +163,18 @@ async function searchMultipleGitHubPullRequests(
           }
         }
 
+        // Combine pagination hints with dynamic hints (static hints added by createSuccessResult)
+        const dynamicHints = hasDynamicHints(
+          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
+        )
+          ? getDynamicHints(
+              TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+              hasContent ? 'hasResults' : 'empty',
+              { matchCount: pullRequests.length }
+            )
+          : [];
+        const customHints = [...paginationHints, ...dynamicHints];
+
         return createSuccessResult(
           query,
           {
@@ -173,7 +186,7 @@ async function searchMultipleGitHubPullRequests(
           },
           hasContent,
           TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-          paginationHints
+          customHints
         );
       } catch (error) {
         return handleCatchError(error, query);

@@ -362,26 +362,25 @@ describe('Local Tools Hints', () => {
           hasOwnerRepo: false,
         });
 
-        expect(hints.length).toBe(3);
-        expect(hints[0]).toContain('No code matches');
-        expect(hints[1]).toContain('Cross-repo');
-        expect(hints[2]).toContain('owner/repo');
+        // Dynamic hints only - static hints are added via getHints()
+        expect(hints.length).toBe(1);
+        expect(hints[0]).toContain('Cross-repo');
       });
 
-      it('should return semantic variant hints when hasOwnerRepo is true', () => {
+      it('should return empty array when hasOwnerRepo is true', () => {
         const hints = HINTS[STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE].empty({
           hasOwnerRepo: true,
         });
 
-        expect(hints.length).toBe(2);
-        expect(hints[0]).toContain('No code matches');
-        expect(hints[1]).toContain('semantic variants');
+        // No dynamic hints when owner/repo is specified - static hints cover this
+        expect(hints.length).toBe(0);
       });
 
       it('should return cross-repo hints when context is empty', () => {
         const hints = HINTS[STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE].empty({});
 
-        expect(hints.length).toBe(3);
+        // Default to cross-repo hints when no context provided
+        expect(hints.length).toBe(1);
         expect(hints.some(h => h.includes('Cross-repo'))).toBe(true);
       });
     });
