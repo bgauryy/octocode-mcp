@@ -255,7 +255,7 @@ export const GENERIC_ERROR_HINTS: readonly string[] = new Proxy(
   }
 ) as readonly string[];
 
-export function isToolAvailableSync(toolName: string): boolean {
+export function isToolInMetadata(toolName: string): boolean {
   if (!METADATA_JSON) {
     return false;
   }

@@ -5,7 +5,7 @@ import {
   getToolHintsSync,
   getGenericErrorHintsSync,
   getDynamicHints,
-  isToolAvailableSync,
+  isToolInMetadata,
   TOOL_NAMES,
   BASE_SCHEMA,
   GENERIC_ERROR_HINTS,
@@ -312,10 +312,10 @@ describe('toolMetadata', () => {
     });
   });
 
-  describe('isToolAvailableSync', () => {
+  describe('isToolInMetadata', () => {
     it('should check tool availability', () => {
       // Tool may be available if metadata was loaded in previous tests
-      const result = isToolAvailableSync('githubSearchCode');
+      const result = isToolInMetadata('githubSearchCode');
       expect(typeof result).toBe('boolean');
     });
 
@@ -323,14 +323,14 @@ describe('toolMetadata', () => {
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
-      expect(isToolAvailableSync('githubSearchCode')).toBe(true);
+      expect(isToolInMetadata('githubSearchCode')).toBe(true);
     });
 
     it('should return false for non-existent tool', async () => {
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
-      expect(isToolAvailableSync('nonExistent')).toBe(false);
+      expect(isToolInMetadata('nonExistent')).toBe(false);
     });
   });
 

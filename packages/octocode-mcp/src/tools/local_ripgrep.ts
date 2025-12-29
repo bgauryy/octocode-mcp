@@ -1,3 +1,5 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { RipgrepCommandBuilder } from '../commands/RipgrepCommandBuilder.js';
 import { safeExec } from '../utils/exec/index.js';
 import { getHints, getLargeFileWorkflowHints } from './hints/index.js';
@@ -5,6 +7,8 @@ import {
   validateRipgrepQuery,
   applyWorkflowMode,
   type RipgrepQuery,
+  BulkRipgrepQuerySchema,
+  LOCAL_RIPGREP_DESCRIPTION,
 } from '../scheme/local_ripgrep.js';
 import {
   validateToolPath,
@@ -22,6 +26,35 @@ import type {
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import { ERROR_CODES } from '../errorCodes.js';
+import { executeBulkOperation } from '../utils/bulkOperations.js';
+
+/**
+ * Register the local ripgrep search tool with the MCP server.
+ * Follows the same pattern as GitHub tools for consistency.
+ */
+export function registerLocalRipgrepTool(server: McpServer) {
+  return server.registerTool(
+    TOOL_NAMES.LOCAL_RIPGREP,
+    {
+      description: LOCAL_RIPGREP_DESCRIPTION,
+      inputSchema: BulkRipgrepQuerySchema,
+      annotations: {
+        title: 'Local Ripgrep Search',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (args: { queries: RipgrepQuery[] }): Promise<CallToolResult> => {
+      return executeBulkOperation<RipgrepQuery, Record<string, unknown>>(
+        args.queries || [],
+        async query => await searchContentRipgrep(query),
+        { toolName: TOOL_NAMES.LOCAL_RIPGREP }
+      );
+    }
+  );
+}
 
 export async function searchContentRipgrep(
   query: RipgrepQuery

@@ -1,37 +1,19 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { DEFAULT_TOOLS } from './toolConfig.js';
+import { ALL_TOOLS, type ToolConfig } from './toolConfig.js';
 import { getServerConfig, isLocalEnabled } from '../serverConfig.js';
 import { ToolInvocationCallback } from '../types.js';
-import { isToolAvailableSync } from './toolMetadata.js';
-// Local tools imports
-import { TOOL_NAMES } from './toolMetadata.js';
-import {
-  BulkRipgrepQuerySchema,
-  LOCAL_RIPGREP_DESCRIPTION,
-  type RipgrepQuery,
-} from '../scheme/local_ripgrep.js';
-import {
-  BulkViewStructureSchema,
-  LOCAL_VIEW_STRUCTURE_DESCRIPTION,
-  type ViewStructureQuery,
-} from '../scheme/local_view_structure.js';
-import {
-  BulkFindFilesSchema,
-  LOCAL_FIND_FILES_DESCRIPTION,
-  type FindFilesQuery,
-} from '../scheme/local_find_files.js';
-import {
-  BulkFetchContentSchema,
-  LOCAL_FETCH_CONTENT_DESCRIPTION,
-  type FetchContentQuery,
-} from '../scheme/local_fetch_content.js';
-import { searchContentRipgrep } from './local_ripgrep.js';
-import { viewStructure } from './local_view_structure.js';
-import { findFiles } from './local_find_files.js';
-import { fetchContent } from './local_fetch_content.js';
-import { executeBulkOperation } from '../utils/bulkOperations.js';
+import { isToolInMetadata } from './toolMetadata.js';
+import { logSessionError } from '../session.js';
+import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 
+/**
+ * Register all tools from ALL_TOOLS (single source of truth in toolConfig.ts).
+ *
+ * Flow:
+ * 1. Check if tool should be enabled (config filtering)
+ * 2. Check if tool exists in metadata
+ * 3. Register the tool
+ */
 export async function registerTools(
   server: McpServer,
   callback?: ToolInvocationCallback
@@ -39,244 +21,106 @@ export async function registerTools(
   successCount: number;
   failedTools: string[];
 }> {
-  const config = getServerConfig();
-  const toolsToRun = config.toolsToRun || [];
-  const enableTools = config.enableTools || [];
-  const disableTools = config.disableTools || [];
+  const localEnabled = isLocalEnabled();
+  const filterConfig = getToolFilterConfig();
 
-  let successCount = 0;
-  const failedTools: string[] = [];
-
+  // Warn about configuration conflicts
   if (
-    toolsToRun.length > 0 &&
-    (enableTools.length > 0 || disableTools.length > 0)
+    filterConfig.toolsToRun.length > 0 &&
+    (filterConfig.enableTools.length > 0 ||
+      filterConfig.disableTools.length > 0)
   ) {
     process.stderr.write(
       'Warning: TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.\n'
     );
   }
 
-  for (const tool of DEFAULT_TOOLS) {
+  let successCount = 0;
+  const failedTools: string[] = [];
+
+  for (const tool of ALL_TOOLS) {
+    // Step 1: Check if tool should be enabled
+    if (!isToolEnabled(tool, localEnabled, filterConfig)) {
+      continue;
+    }
+
+    // Step 2: Check if tool exists in metadata
     try {
-      let shouldRegisterTool = false;
-      let reason = '';
-      let isAvailableInMetadata = false;
-
-      try {
-        isAvailableInMetadata = isToolAvailableSync(tool.name);
-      } catch {
-        isAvailableInMetadata = false;
-      }
-
-      if (!isAvailableInMetadata) {
+      if (!isToolInMetadata(tool.name)) {
+        await logSessionError(
+          tool.name,
+          TOOL_METADATA_ERRORS.INVALID_FORMAT.code
+        );
         continue;
       }
+    } catch {
+      await logSessionError(
+        tool.name,
+        TOOL_METADATA_ERRORS.INVALID_API_RESPONSE.code
+      );
+      continue;
+    }
 
-      if (toolsToRun.length > 0) {
-        shouldRegisterTool = toolsToRun.includes(tool.name);
-        if (!shouldRegisterTool) {
-          reason = 'not specified in TOOLS_TO_RUN configuration';
-        }
-      } else {
-        shouldRegisterTool = tool.isDefault;
-
-        if (enableTools.includes(tool.name)) {
-          shouldRegisterTool = true;
-        }
-
-        if (!shouldRegisterTool && reason === '') {
-          reason = 'not a default tool';
-        }
-
-        if (disableTools.includes(tool.name)) {
-          shouldRegisterTool = false;
-          reason = 'disabled by DISABLE_TOOLS configuration';
-        }
-      }
-
-      if (shouldRegisterTool) {
-        const result = await tool.fn(server, callback);
-        if (result !== null) {
-          successCount++;
-        } else {
-          process.stderr.write(
-            `Tool ${tool.name} registration returned null (tool unavailable)\n`
-          );
-        }
-      } else if (reason) {
-        process.stderr.write(`Tool ${tool.name} ${reason}\n`);
+    // Step 3: Register the tool
+    try {
+      const result = await tool.fn(server, callback);
+      if (result !== null) {
+        successCount++;
       }
     } catch {
       failedTools.push(tool.name);
     }
   }
 
-  // Register local tools if ENABLE_LOCAL or LOCAL is set
-  if (isLocalEnabled()) {
-    try {
-      const registeredCount = registerLocalToolsDirectly(server);
-      successCount += registeredCount;
-      // If no tools were registered, treat as failure
-      if (registeredCount === 0) {
-        failedTools.push('local_tools');
-        process.stderr.write(
-          'Failed to register local tools: No tools were successfully registered\n'
-        );
-      }
-    } catch (error) {
-      process.stderr.write(
-        `Failed to register local tools: ${error instanceof Error ? error.message : 'Unknown error'}\n`
-      );
-      failedTools.push('local_tools');
-    }
-  }
-
   return { successCount, failedTools };
 }
 
+// --- Helper types and functions ---
+
+interface ToolFilterConfig {
+  toolsToRun: string[];
+  enableTools: string[];
+  disableTools: string[];
+}
+
+function getToolFilterConfig(): ToolFilterConfig {
+  const config = getServerConfig();
+  return {
+    toolsToRun: config.toolsToRun || [],
+    enableTools: config.enableTools || [],
+    disableTools: config.disableTools || [],
+  };
+}
+
 /**
- * Register all local tools directly with the MCP server
- * @returns Number of successfully registered tools
+ * Check if tool should be enabled based on:
+ * 1. Local tools require ENABLE_LOCAL
+ * 2. TOOLS_TO_RUN (if set, only these tools are enabled)
+ * 3. DISABLE_TOOLS (takes precedence over ENABLE_TOOLS)
+ * 4. ENABLE_TOOLS or isDefault
  */
-function registerLocalToolsDirectly(server: McpServer): number {
-  let registeredCount = 0;
-
-  // Register localSearchCode
-  try {
-    const result = server.registerTool(
-      TOOL_NAMES.LOCAL_RIPGREP,
-      {
-        description: LOCAL_RIPGREP_DESCRIPTION,
-        inputSchema: BulkRipgrepQuerySchema,
-        annotations: {
-          title: 'Local Ripgrep Search',
-          readOnlyHint: true,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: false,
-        },
-      },
-      async (args: { queries: RipgrepQuery[] }): Promise<CallToolResult> => {
-        return executeBulkOperation<RipgrepQuery, Record<string, unknown>>(
-          args.queries || [],
-          async query => await searchContentRipgrep(query),
-          { toolName: TOOL_NAMES.LOCAL_RIPGREP }
-        );
-      }
-    );
-    // Count as success if no error thrown (null indicates failure, undefined/void is success)
-    if (result !== null) {
-      registeredCount++;
-    }
-  } catch (error) {
-    process.stderr.write(
-      `Failed to register ${TOOL_NAMES.LOCAL_RIPGREP}: ${error instanceof Error ? error.message : 'Unknown error'}\n`
-    );
+function isToolEnabled(
+  tool: ToolConfig,
+  localEnabled: boolean,
+  config: ToolFilterConfig
+): boolean {
+  // Local tools require ENABLE_LOCAL
+  if (tool.isLocal && !localEnabled) {
+    return false;
   }
 
-  // Register localViewStructure
-  try {
-    const result = server.registerTool(
-      TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
-      {
-        description: LOCAL_VIEW_STRUCTURE_DESCRIPTION,
-        inputSchema: BulkViewStructureSchema,
-        annotations: {
-          title: 'Local View Structure',
-          readOnlyHint: true,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: false,
-        },
-      },
-      async (args: {
-        queries: ViewStructureQuery[];
-      }): Promise<CallToolResult> => {
-        return executeBulkOperation<
-          ViewStructureQuery,
-          Record<string, unknown>
-        >(args.queries || [], async query => await viewStructure(query), {
-          toolName: TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
-        });
-      }
-    );
-    // Count as success if result is not explicitly null (null indicates failure)
-    if (result !== null) {
-      registeredCount++;
-    }
-  } catch (error) {
-    process.stderr.write(
-      `Failed to register ${TOOL_NAMES.LOCAL_VIEW_STRUCTURE}: ${error instanceof Error ? error.message : 'Unknown error'}\n`
-    );
+  const { toolsToRun, enableTools, disableTools } = config;
+
+  // TOOLS_TO_RUN takes full precedence
+  if (toolsToRun.length > 0) {
+    return toolsToRun.includes(tool.name);
   }
 
-  // Register localFindFiles
-  try {
-    const result = server.registerTool(
-      TOOL_NAMES.LOCAL_FIND_FILES,
-      {
-        description: LOCAL_FIND_FILES_DESCRIPTION,
-        inputSchema: BulkFindFilesSchema,
-        annotations: {
-          title: 'Local Find Files',
-          readOnlyHint: true,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: false,
-        },
-      },
-      async (args: { queries: FindFilesQuery[] }): Promise<CallToolResult> => {
-        return executeBulkOperation<FindFilesQuery, Record<string, unknown>>(
-          args.queries || [],
-          async query => await findFiles(query),
-          { toolName: TOOL_NAMES.LOCAL_FIND_FILES }
-        );
-      }
-    );
-    // Count as success if result is not explicitly null (null indicates failure)
-    if (result !== null) {
-      registeredCount++;
-    }
-  } catch (error) {
-    process.stderr.write(
-      `Failed to register ${TOOL_NAMES.LOCAL_FIND_FILES}: ${error instanceof Error ? error.message : 'Unknown error'}\n`
-    );
+  // DISABLE_TOOLS takes precedence over ENABLE_TOOLS
+  if (disableTools.includes(tool.name)) {
+    return false;
   }
 
-  // Register localGetFileContent
-  try {
-    const result = server.registerTool(
-      TOOL_NAMES.LOCAL_FETCH_CONTENT,
-      {
-        description: LOCAL_FETCH_CONTENT_DESCRIPTION,
-        inputSchema: BulkFetchContentSchema,
-        annotations: {
-          title: 'Local Fetch Content',
-          readOnlyHint: true,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: false,
-        },
-      },
-      async (args: {
-        queries: FetchContentQuery[];
-      }): Promise<CallToolResult> => {
-        return executeBulkOperation<FetchContentQuery, Record<string, unknown>>(
-          args.queries || [],
-          async query => await fetchContent(query),
-          { toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT }
-        );
-      }
-    );
-    // Count as success if result is not explicitly null (null indicates failure)
-    if (result !== null) {
-      registeredCount++;
-    }
-  } catch (error) {
-    process.stderr.write(
-      `Failed to register ${TOOL_NAMES.LOCAL_FETCH_CONTENT}: ${error instanceof Error ? error.message : 'Unknown error'}\n`
-    );
-  }
-
-  return registeredCount;
+  // ENABLE_TOOLS or default
+  return enableTools.includes(tool.name) || tool.isDefault;
 }

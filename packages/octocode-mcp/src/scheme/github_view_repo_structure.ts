@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_VIEW_REPO_STRUCTURE, TOOL_NAMES } from '../tools/toolMetadata';
 import type { DirectoryEntry, PaginationInfo } from '../types.js';
+import type { ContentDirectoryEntry } from '../github/githubAPI.js';
 
 /** Default entries per page for GitHub repo structure pagination */
 export const GITHUB_STRUCTURE_DEFAULTS = {
@@ -59,22 +60,12 @@ export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(
   GitHubViewRepoStructureQuerySchema
 );
 
-export interface GitHubApiFileItem {
-  name: string;
-  path: string;
-  sha: string;
-  size: number;
-  type: 'file' | 'dir';
-  url: string;
-  html_url: string;
-  git_url: string;
-  download_url: string | null;
-  _links: {
-    self: string;
-    git: string;
-    html: string;
-  };
-}
+/**
+ * GitHub API file/directory item from content listing.
+ * Re-exported from Octokit's OpenAPI types for proper type safety.
+ * Schema: components['schemas']['content-directory'][number]
+ */
+export type GitHubApiFileItem = ContentDirectoryEntry;
 
 export interface GitHubRepositoryContentsResult {
   path: string;

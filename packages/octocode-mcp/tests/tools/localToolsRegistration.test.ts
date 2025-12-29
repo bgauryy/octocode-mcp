@@ -3,10 +3,78 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerTools } from '../../src/tools/toolsManager.js';
 import { STATIC_TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 
-// Mock only what's necessary - don't mock TOOL_NAMES
+// Mock toolConfig with ALL_TOOLS containing only local tools for this test
+// The fn functions call server.registerTool to simulate real registration
+type MockServer = {
+  registerTool: (name: string, options: unknown, handler: unknown) => unknown;
+};
+
 vi.mock('../../src/tools/toolConfig.js', () => ({
-  DEFAULT_TOOLS: [], // No GitHub tools for this test
+  ALL_TOOLS: [
+    {
+      name: 'localSearchCode',
+      isDefault: true,
+      isLocal: true,
+      fn: vi.fn((server: MockServer) => {
+        server.registerTool(
+          'localSearchCode',
+          { inputSchema: { type: 'object' } },
+          () => {}
+        );
+        return {};
+      }),
+    },
+    {
+      name: 'localViewStructure',
+      isDefault: true,
+      isLocal: true,
+      fn: vi.fn((server: MockServer) => {
+        server.registerTool(
+          'localViewStructure',
+          { inputSchema: { type: 'object' } },
+          () => {}
+        );
+        return {};
+      }),
+    },
+    {
+      name: 'localFindFiles',
+      isDefault: true,
+      isLocal: true,
+      fn: vi.fn((server: MockServer) => {
+        server.registerTool(
+          'localFindFiles',
+          { inputSchema: { type: 'object' } },
+          () => {}
+        );
+        return {};
+      }),
+    },
+    {
+      name: 'localGetFileContent',
+      isDefault: true,
+      isLocal: true,
+      fn: vi.fn((server: MockServer) => {
+        server.registerTool(
+          'localGetFileContent',
+          { inputSchema: { type: 'object' } },
+          () => {}
+        );
+        return {};
+      }),
+    },
+  ],
 }));
+
+vi.mock('../../src/tools/toolMetadata.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../src/tools/toolMetadata.js')
+  >('../../src/tools/toolMetadata.js');
+  return {
+    ...actual,
+    isToolInMetadata: vi.fn().mockReturnValue(true),
+  };
+});
 
 vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn().mockReturnValue({
@@ -19,6 +87,10 @@ vi.mock('../../src/serverConfig.js', () => ({
     enableLocal: true,
   }),
   isLocalEnabled: vi.fn().mockReturnValue(true),
+}));
+
+vi.mock('../../src/session.js', () => ({
+  logSessionError: vi.fn(),
 }));
 
 // Mock local tool implementations

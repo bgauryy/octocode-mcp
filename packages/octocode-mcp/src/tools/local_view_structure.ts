@@ -1,3 +1,5 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { LsCommandBuilder } from '../commands/LsCommandBuilder.js';
 import { safeExec } from '../utils/exec/index.js';
 import { getExtension } from '../utils/fileFilters.js';
@@ -20,6 +22,41 @@ import type {
 import fs from 'fs';
 import path from 'path';
 import { ToolErrors } from '../errorCodes.js';
+import { executeBulkOperation } from '../utils/bulkOperations.js';
+import {
+  BulkViewStructureSchema,
+  LOCAL_VIEW_STRUCTURE_DESCRIPTION,
+} from '../scheme/local_view_structure.js';
+
+/**
+ * Register the local view structure tool with the MCP server.
+ * Follows the same pattern as GitHub tools for consistency.
+ */
+export function registerLocalViewStructureTool(server: McpServer) {
+  return server.registerTool(
+    TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
+    {
+      description: LOCAL_VIEW_STRUCTURE_DESCRIPTION,
+      inputSchema: BulkViewStructureSchema,
+      annotations: {
+        title: 'Local View Structure',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (args: {
+      queries: ViewStructureQuery[];
+    }): Promise<CallToolResult> => {
+      return executeBulkOperation<ViewStructureQuery, Record<string, unknown>>(
+        args.queries || [],
+        async query => await viewStructure(query),
+        { toolName: TOOL_NAMES.LOCAL_VIEW_STRUCTURE }
+      );
+    }
+  );
+}
 
 /**
  * Internal directory entry for processing

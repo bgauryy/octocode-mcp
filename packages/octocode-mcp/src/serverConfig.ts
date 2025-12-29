@@ -18,6 +18,35 @@ function parseStringArray(value?: string): string[] | undefined {
     .filter(s => s.length > 0);
 }
 
+/**
+ * Parse a boolean environment variable with support for various formats.
+ * Handles whitespace, casing, and common truthy/falsy values.
+ * @param value - The environment variable value
+ * @param defaultValue - Default value if undefined/empty
+ * @returns Parsed boolean value
+ */
+function parseBooleanEnv(
+  value: string | undefined,
+  defaultValue: boolean
+): boolean {
+  if (value === undefined || value === null) return defaultValue;
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === '') return defaultValue;
+  return trimmed === 'true' || trimmed === '1';
+}
+
+/**
+ * Parse a boolean environment variable that defaults to true unless explicitly set to false.
+ * @param value - The environment variable value
+ * @returns true unless value is explicitly 'false'
+ */
+function parseBooleanEnvDefaultTrue(value: string | undefined): boolean {
+  if (value === undefined || value === null) return true;
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === '') return true;
+  return trimmed !== 'false' && trimmed !== '0';
+}
+
 async function resolveGitHubToken(): Promise<string | null> {
   // Priority 1: Explicit GITHUB_TOKEN environment variable
   if (process.env.GITHUB_TOKEN) {
@@ -50,32 +79,33 @@ export async function initialize(): Promise<void> {
   initializationPromise = (async () => {
     cachedToken = await resolveGitHubToken();
 
-    const isLoggingEnabled =
-      process.env.LOG === undefined ||
-      process.env.LOG === null ||
-      process.env.LOG?.toLowerCase() !== 'false';
+    // Parse logging flag (defaults to true unless explicitly 'false' or '0')
+    const isLoggingEnabled = parseBooleanEnvDefaultTrue(process.env.LOG);
+
+    // Parse ENABLE_LOCAL with fallback to LOCAL env var
+    // Supports: '1', 'true', 'TRUE', ' true ', etc.
+    const enableLocal =
+      parseBooleanEnv(process.env.ENABLE_LOCAL, false) ||
+      parseBooleanEnv(process.env.LOCAL, false);
 
     config = {
       version: version,
-      githubApiUrl: process.env.GITHUB_API_URL || 'https://api.github.com',
+      githubApiUrl:
+        process.env.GITHUB_API_URL?.trim() || 'https://api.github.com',
       toolsToRun: parseStringArray(process.env.TOOLS_TO_RUN),
       enableTools: parseStringArray(process.env.ENABLE_TOOLS),
       disableTools: parseStringArray(process.env.DISABLE_TOOLS),
       enableLogging: isLoggingEnabled,
       timeout: Math.max(
         30000,
-        parseInt(process.env.REQUEST_TIMEOUT || '30000') || 30000
+        parseInt(process.env.REQUEST_TIMEOUT?.trim() || '30000') || 30000
       ),
       maxRetries: Math.max(
         0,
-        Math.min(10, parseInt(process.env.MAX_RETRIES || '3') || 3)
+        Math.min(10, parseInt(process.env.MAX_RETRIES?.trim() || '3') || 3)
       ),
       loggingEnabled: isLoggingEnabled,
-      enableLocal:
-        process.env.ENABLE_LOCAL === '1' ||
-        process.env.ENABLE_LOCAL?.toLowerCase() === 'true' ||
-        process.env.LOCAL === '1' ||
-        process.env.LOCAL?.toLowerCase() === 'true',
+      enableLocal,
     };
   })();
 

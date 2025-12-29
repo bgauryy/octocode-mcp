@@ -14,9 +14,13 @@ vi.mock('../../src/tools/toolMetadata.js', async () => {
   >('../../src/tools/toolMetadata.js');
   return {
     ...actual,
-    isToolAvailableSync: vi.fn().mockReturnValue(true),
+    isToolInMetadata: vi.fn().mockReturnValue(true),
   };
 });
+
+vi.mock('../../src/session.js', () => ({
+  logSessionError: vi.fn(),
+}));
 
 // Mock tool registration functions to just return successfully
 vi.mock('../../src/tools/github_search_code.js', () => ({
@@ -38,17 +42,21 @@ vi.mock('../../src/tools/package_search.js', () => ({
   registerPackageSearchTool: vi.fn().mockReturnValue({}),
 }));
 
-// Mock local tools
+// Mock local tools - export registration functions used by toolConfig
 vi.mock('../../src/tools/local_ripgrep.js', () => ({
+  registerLocalRipgrepTool: vi.fn().mockReturnValue({}),
   searchContentRipgrep: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
 vi.mock('../../src/tools/local_view_structure.js', () => ({
+  registerLocalViewStructureTool: vi.fn().mockReturnValue({}),
   viewStructure: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
 vi.mock('../../src/tools/local_find_files.js', () => ({
+  registerLocalFindFilesTool: vi.fn().mockReturnValue({}),
   findFiles: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
 vi.mock('../../src/tools/local_fetch_content.js', () => ({
+  registerLocalFetchContentTool: vi.fn().mockReturnValue({}),
   fetchContent: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
 vi.mock('../../src/utils/bulkOperations.js', () => ({

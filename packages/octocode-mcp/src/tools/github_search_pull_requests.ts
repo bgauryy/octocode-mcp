@@ -138,6 +138,30 @@ async function searchMultipleGitHubPullRequests(
 
         const hasContent = pullRequests.length > 0;
 
+        // Generate pagination hints
+        const paginationHints: string[] = [];
+        if (apiResult.pagination) {
+          const { currentPage, totalPages, totalMatches, hasMore } =
+            apiResult.pagination;
+          paginationHints.push(
+            `Page ${currentPage}/${totalPages} (showing ${pullRequests.length} of ${totalMatches} PRs)`
+          );
+          if (hasMore) {
+            paginationHints.push(`Next: page=${currentPage + 1}`);
+          }
+          if (currentPage > 1) {
+            paginationHints.push(`Previous: page=${currentPage - 1}`);
+          }
+          if (!hasMore) {
+            paginationHints.push('Final page');
+          }
+          if (totalPages > 2) {
+            paginationHints.push(
+              `Jump to: page=1 (first) or page=${totalPages} (last)`
+            );
+          }
+        }
+
         return createSuccessResult(
           query,
           {
@@ -145,9 +169,11 @@ async function searchMultipleGitHubPullRequests(
             repo: query.repo,
             pull_requests: pullRequests,
             total_count: apiResult.total_count || pullRequests.length,
+            ...(apiResult.pagination && { pagination: apiResult.pagination }),
           },
           hasContent,
-          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
+          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+          paginationHints
         );
       } catch (error) {
         return handleCatchError(error, query);
@@ -159,6 +185,7 @@ async function searchMultipleGitHubPullRequests(
         'owner',
         'repo',
         'pull_requests',
+        'pagination',
         'total_count',
         'error',
       ] satisfies Array<keyof PullRequestSearchResult>,

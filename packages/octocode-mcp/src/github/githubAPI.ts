@@ -12,6 +12,17 @@ import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-meth
 /** Full repository details. Schema: components['schemas']['full-repository'] */
 export type Repository = components['schemas']['full-repository'];
 
+// ─── Content Types ──────────────────────────────────────────────────────────
+/**
+ * Content directory entry (single item from directory listing).
+ * Schema: components['schemas']['content-directory'][number]
+ *
+ * Note: The 'content-directory' schema is an array type, so we index into it
+ * to get the type of a single entry.
+ */
+export type ContentDirectoryEntry =
+  components['schemas']['content-directory'][number];
+
 // ─── Search Result Types ────────────────────────────────────────────────────
 /** Code search result item. Schema: components['schemas']['code-search-result-item'] */
 export type CodeSearchResultItem =
@@ -174,6 +185,7 @@ export type OptimizedCodeSearchResult = {
     repositoryContext?: {
       owner: string;
       repo: string;
+      branch?: string;
     };
   };
   pagination?: {

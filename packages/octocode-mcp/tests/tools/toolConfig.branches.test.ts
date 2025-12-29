@@ -99,7 +99,7 @@ describe('toolConfig branch coverage - getDescription fallback (line 26)', () =>
         GITHUB_SEARCH_REPOSITORIES,
         GITHUB_SEARCH_PULL_REQUESTS,
         PACKAGE_SEARCH,
-        DEFAULT_TOOLS,
+        ALL_TOOLS,
       } = await import('../../src/tools/toolConfig.js');
 
       // Verify all configs have required properties
@@ -125,7 +125,8 @@ describe('toolConfig branch coverage - getDescription fallback (line 26)', () =>
         expect(typeof config.fn).toBe('function');
       }
 
-      expect(DEFAULT_TOOLS).toHaveLength(6);
+      // ALL_TOOLS contains 6 GitHub tools + 4 Local tools = 10
+      expect(ALL_TOOLS).toHaveLength(10);
     });
 
     it('should have correct tool types assigned', async () => {
@@ -152,9 +153,9 @@ describe('toolConfig branch coverage - getDescription fallback (line 26)', () =>
     });
 
     it('should mark all tools as default', async () => {
-      const { DEFAULT_TOOLS } = await import('../../src/tools/toolConfig.js');
+      const { ALL_TOOLS } = await import('../../src/tools/toolConfig.js');
 
-      for (const tool of DEFAULT_TOOLS) {
+      for (const tool of ALL_TOOLS) {
         expect(tool.isDefault).toBe(true);
       }
     });

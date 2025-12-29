@@ -949,6 +949,320 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
     });
   });
 
+  describe('Pagination Hints Integration', () => {
+    it('should include pagination hints when API returns pagination data', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              repository: 'facebook/react',
+              stars: 200000,
+              description: 'A declarative JavaScript library',
+              url: 'https://github.com/facebook/react',
+              createdAt: '2024-01-15',
+              updatedAt: '2024-01-15',
+              pushedAt: '2024-01-15',
+            },
+          ],
+          pagination: {
+            currentPage: 1,
+            totalPages: 5,
+            perPage: 10,
+            totalMatches: 50,
+            hasMore: true,
+          },
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['react'],
+              limit: 10,
+            },
+          ],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('Page 1/5');
+      expect(responseText).toContain('Next: page=2');
+      expect(responseText).toContain(
+        'Jump to: page=1 (first) or page=5 (last)'
+      );
+      // Should NOT have Previous (on first page) or Final page (hasMore=true)
+      expect(responseText).not.toContain('Previous:');
+      expect(responseText).not.toContain('Final page');
+    });
+
+    it('should include Previous hint when not on first page', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              repository: 'facebook/react',
+              stars: 200000,
+              description: 'A declarative JavaScript library',
+              url: 'https://github.com/facebook/react',
+              createdAt: '2024-01-15',
+              updatedAt: '2024-01-15',
+              pushedAt: '2024-01-15',
+            },
+          ],
+          pagination: {
+            currentPage: 3,
+            totalPages: 5,
+            perPage: 10,
+            totalMatches: 50,
+            hasMore: true,
+          },
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['react'],
+              page: 3,
+            },
+          ],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('Page 3/5');
+      expect(responseText).toContain('Next: page=4');
+      expect(responseText).toContain('Previous: page=2');
+      expect(responseText).toContain(
+        'Jump to: page=1 (first) or page=5 (last)'
+      );
+      // Should NOT have Final page (hasMore=true)
+      expect(responseText).not.toContain('Final page');
+    });
+
+    it('should include Final page hint when on last page', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              repository: 'facebook/react',
+              stars: 200000,
+              description: 'A declarative JavaScript library',
+              url: 'https://github.com/facebook/react',
+              createdAt: '2024-01-15',
+              updatedAt: '2024-01-15',
+              pushedAt: '2024-01-15',
+            },
+          ],
+          pagination: {
+            currentPage: 5,
+            totalPages: 5,
+            perPage: 10,
+            totalMatches: 50,
+            hasMore: false,
+          },
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['react'],
+              page: 5,
+            },
+          ],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('Page 5/5');
+      expect(responseText).toContain('Final page');
+      expect(responseText).toContain('Previous: page=4');
+      expect(responseText).toContain(
+        'Jump to: page=1 (first) or page=5 (last)'
+      );
+      expect(responseText).not.toContain('Next: page=6');
+    });
+
+    it('should not include Jump hint when totalPages <= 2', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              repository: 'facebook/react',
+              stars: 200000,
+              description: 'A declarative JavaScript library',
+              url: 'https://github.com/facebook/react',
+              createdAt: '2024-01-15',
+              updatedAt: '2024-01-15',
+              pushedAt: '2024-01-15',
+            },
+          ],
+          pagination: {
+            currentPage: 1,
+            totalPages: 2,
+            perPage: 10,
+            totalMatches: 15,
+            hasMore: true,
+          },
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['react'],
+            },
+          ],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('Page 1/2');
+      expect(responseText).toContain('Next: page=2');
+      expect(responseText).not.toContain('Jump to:');
+    });
+
+    it('should include pagination summary with item range', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              repository: 'facebook/react',
+              stars: 200000,
+              description: 'A declarative JavaScript library',
+              url: 'https://github.com/facebook/react',
+              createdAt: '2024-01-15',
+              updatedAt: '2024-01-15',
+              pushedAt: '2024-01-15',
+            },
+          ],
+          pagination: {
+            currentPage: 2,
+            totalPages: 5,
+            perPage: 10,
+            totalMatches: 50,
+            hasMore: true,
+          },
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['react'],
+              page: 2,
+            },
+          ],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+
+      expect(result.isError).toBe(false);
+      // Should show item range: (2-1)*10+1=11 to min(2*10, 50)=20
+      expect(responseText).toContain('showing 11-20 of 50 repos');
+    });
+
+    it('should not include pagination hints when no pagination data', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              repository: 'facebook/react',
+              stars: 200000,
+              description: 'React library',
+              url: 'https://github.com/facebook/react',
+              createdAt: '2024-01-15',
+              updatedAt: '2024-01-15',
+              pushedAt: '2024-01-15',
+            },
+          ],
+          // No pagination data
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [{ keywordsToSearch: ['react'] }],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+      expect(result.isError).toBe(false);
+      // Should NOT have any pagination hints
+      expect(responseText).not.toContain('Page ');
+      expect(responseText).not.toContain('Next:');
+      expect(responseText).not.toContain('Previous:');
+      expect(responseText).not.toContain('Final page');
+      expect(responseText).not.toContain('Jump to:');
+    });
+
+    it('should include pagination object in result data', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              repository: 'facebook/react',
+              stars: 200000,
+              description: 'React library',
+              url: 'https://github.com/facebook/react',
+              createdAt: '2024-01-15',
+              updatedAt: '2024-01-15',
+              pushedAt: '2024-01-15',
+            },
+          ],
+          pagination: {
+            currentPage: 2,
+            totalPages: 10,
+            perPage: 5,
+            totalMatches: 50,
+            hasMore: true,
+          },
+        },
+        status: 200,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [{ keywordsToSearch: ['react'], page: 2 }],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('pagination:');
+      expect(responseText).toContain('currentPage: 2');
+      expect(responseText).toContain('totalPages: 10');
+    });
+  });
+
   describe('Custom hints per response', () => {
     it('should add topic search hints when topicsToSearch is used with results', async () => {
       mockSearchGitHubReposAPI.mockResolvedValue({

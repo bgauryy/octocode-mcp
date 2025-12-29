@@ -168,48 +168,7 @@ async function searchGitHubPullRequestsAPIInternal(
       })
     );
 
-    const formattedPRs = transformedPRs.map(pr => ({
-      number: pr.number,
-      title: pr.title,
-      url: pr.url,
-      state: pr.state as 'open' | 'closed',
-      draft: pr.draft ?? false,
-      merged: pr.state === 'closed' && !!pr.merged_at,
-      created_at: pr.created_at,
-      updated_at: pr.updated_at,
-      closed_at: pr.closed_at ?? undefined,
-      merged_at: pr.merged_at,
-      author: pr.author,
-      head_ref: pr.head || '',
-      head_sha: pr.head_sha || '',
-      base_ref: pr.base || '',
-      base_sha: pr.base_sha || '',
-      body: pr.body,
-      comments: pr.comments?.length || 0,
-      commits: pr.commits?.length || 0,
-      additions:
-        pr.file_changes?.files.reduce((sum, file) => sum + file.additions, 0) ||
-        0,
-      deletions:
-        pr.file_changes?.files.reduce((sum, file) => sum + file.deletions, 0) ||
-        0,
-      changed_files: pr.file_changes?.total_count || 0,
-      ...(pr.file_changes && {
-        file_changes: pr.file_changes.files?.map(file => ({
-          filename: file.filename,
-          status: file.status,
-          additions: file.additions,
-          deletions: file.deletions,
-          patch: file.patch,
-        })),
-      }),
-      ...(pr.commits && {
-        commit_details: pr.commits,
-      }),
-      ...(pr._sanitization_warnings && {
-        _sanitization_warnings: pr._sanitization_warnings,
-      }),
-    }));
+    const formattedPRs = transformedPRs.map(formatPRForResponse);
 
     // GitHub caps at 1000 total results
     const totalMatches = Math.min(searchResult.data.total_count, 1000);
@@ -272,48 +231,7 @@ async function searchPullRequestsWithREST(
       })
     );
 
-    const formattedPRs = transformedPRs.map(pr => ({
-      number: pr.number,
-      title: pr.title,
-      url: pr.url,
-      state: pr.state as 'open' | 'closed',
-      draft: pr.draft ?? false,
-      merged: pr.state === 'closed' && !!pr.merged_at,
-      created_at: pr.created_at,
-      updated_at: pr.updated_at,
-      closed_at: pr.closed_at ?? undefined,
-      merged_at: pr.merged_at,
-      author: pr.author,
-      head_ref: pr.head || '',
-      head_sha: pr.head_sha || '',
-      base_ref: pr.base || '',
-      base_sha: pr.base_sha || '',
-      body: pr.body,
-      comments: pr.comments?.length || 0,
-      commits: pr.commits?.length || 0,
-      additions:
-        pr.file_changes?.files.reduce((sum, file) => sum + file.additions, 0) ||
-        0,
-      deletions:
-        pr.file_changes?.files.reduce((sum, file) => sum + file.deletions, 0) ||
-        0,
-      changed_files: pr.file_changes?.total_count || 0,
-      ...(pr.file_changes && {
-        file_changes: pr.file_changes.files?.map(file => ({
-          filename: file.filename,
-          status: file.status,
-          additions: file.additions,
-          deletions: file.deletions,
-          patch: file.patch,
-        })),
-      }),
-      ...(pr.commits && {
-        commit_details: pr.commits,
-      }),
-      ...(pr._sanitization_warnings && {
-        _sanitization_warnings: pr._sanitization_warnings,
-      }),
-    }));
+    const formattedPRs = transformedPRs.map(formatPRForResponse);
 
     // REST API doesn't provide total count, estimate from response
     // If we got full page, there might be more pages
@@ -345,7 +263,33 @@ async function searchPullRequestsWithREST(
   }
 }
 
-function createBasePRTransformationFromSearch(item: IssueSearchResultItem): {
+/**
+ * Common interface for raw PR data from either Search API or REST API.
+ * This enables a unified transformation function that handles both sources.
+ */
+interface RawPRData {
+  number: number;
+  title?: string | null;
+  body?: string | null;
+  state?: string | null;
+  user?: { login: string } | null;
+  labels?: (string | { name?: string | null })[] | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  closed_at?: string | null;
+  html_url: string;
+  draft?: boolean | null;
+  merged_at?: string | null;
+  // REST-specific fields (optional - not present in Search API)
+  head?: { ref?: string; sha?: string };
+  base?: { ref?: string; sha?: string };
+}
+
+/**
+ * Unified PR transformation function that handles both Search API and REST API responses.
+ * The head/base refs will be undefined for Search API items (fetched separately from PR details).
+ */
+function createBasePRTransformation(item: RawPRData): {
   prData: GitHubPullRequestItem;
   sanitizationWarnings: Set<string>;
 } {
@@ -358,11 +302,6 @@ function createBasePRTransformationFromSearch(item: IssueSearchResultItem): {
     ...titleSanitized.warnings,
     ...bodySanitized.warnings,
   ]);
-
-  // Search API may include merged_at in extended response
-  const itemWithMergedAt = item as IssueSearchResultItem & {
-    merged_at?: string | null;
-  };
 
   const prData: GitHubPullRequestItem = {
     number: item.number,
@@ -379,61 +318,64 @@ function createBasePRTransformationFromSearch(item: IssueSearchResultItem): {
     comments: [],
     reactions: 0,
     draft: item.draft ?? false,
-    // Search API doesn't include head/base refs - will be fetched from PR details
-    head: undefined,
-    head_sha: undefined,
-    base: undefined,
-    base_sha: undefined,
-    ...(itemWithMergedAt.merged_at && {
-      merged_at: itemWithMergedAt.merged_at,
-    }),
+    // Include head/base if available (REST API), undefined otherwise (Search API)
+    head: item.head?.ref,
+    head_sha: item.head?.sha,
+    base: item.base?.ref,
+    base_sha: item.base?.sha,
+    ...(item.merged_at && { merged_at: item.merged_at }),
   };
 
   return { prData, sanitizationWarnings };
 }
 
-function createBasePRTransformationFromREST(
-  item: PullRequestSimple | PullRequestItem
-): {
-  prData: GitHubPullRequestItem;
-  sanitizationWarnings: Set<string>;
-} {
-  const titleSanitized = ContentSanitizer.sanitizeContent(item.title ?? '');
-  const bodySanitized = item.body
-    ? ContentSanitizer.sanitizeContent(item.body)
-    : { content: undefined, warnings: [] };
-
-  const sanitizationWarnings = new Set<string>([
-    ...titleSanitized.warnings,
-    ...bodySanitized.warnings,
-  ]);
-
-  const prData: GitHubPullRequestItem = {
-    number: item.number,
-    title: titleSanitized.content,
-    body: bodySanitized.content,
-    state: (item.state?.toLowerCase() ?? 'unknown') as 'open' | 'closed',
-    author: item.user?.login ?? '',
-    labels:
-      item.labels?.map(l => (typeof l === 'string' ? l : (l.name ?? ''))) ?? [],
-    created_at: item.created_at ?? '',
-    updated_at: item.updated_at ?? '',
-    closed_at: item.closed_at ?? null,
-    url: item.html_url,
-    comments: [],
-    reactions: 0,
-    draft: item.draft ?? false,
-    head: item.head?.ref,
-    head_sha: item.head?.sha,
-    base: item.base?.ref,
-    base_sha: item.base?.sha,
+/**
+ * Format a transformed PR item for API response output.
+ * Standardizes the output format across all PR search/fetch methods.
+ */
+export function formatPRForResponse(pr: GitHubPullRequestItem) {
+  return {
+    number: pr.number,
+    title: pr.title,
+    url: pr.url,
+    state: pr.state as 'open' | 'closed',
+    draft: pr.draft ?? false,
+    merged: pr.state === 'closed' && !!pr.merged_at,
+    created_at: pr.created_at,
+    updated_at: pr.updated_at,
+    closed_at: pr.closed_at ?? undefined,
+    merged_at: pr.merged_at,
+    author: pr.author,
+    head_ref: pr.head || '',
+    head_sha: pr.head_sha || '',
+    base_ref: pr.base || '',
+    base_sha: pr.base_sha || '',
+    body: pr.body,
+    comments: pr.comments?.length || 0,
+    commits: pr.commits?.length || 0,
+    additions:
+      pr.file_changes?.files.reduce((sum, file) => sum + file.additions, 0) ||
+      0,
+    deletions:
+      pr.file_changes?.files.reduce((sum, file) => sum + file.deletions, 0) ||
+      0,
+    changed_files: pr.file_changes?.total_count || 0,
+    ...(pr.file_changes && {
+      file_changes: pr.file_changes.files?.map(file => ({
+        filename: file.filename,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+        patch: file.patch,
+      })),
+    }),
+    ...(pr.commits && {
+      commit_details: pr.commits,
+    }),
+    ...(pr._sanitization_warnings && {
+      _sanitization_warnings: pr._sanitization_warnings,
+    }),
   };
-
-  if (item.merged_at) {
-    prData.merged_at = item.merged_at;
-  }
-
-  return { prData, sanitizationWarnings };
 }
 
 async function fetchPRComments(
@@ -509,8 +451,10 @@ async function transformPullRequestItemFromSearch(
   params: GitHubPullRequestsSearchParams,
   octokit: InstanceType<typeof OctokitWithThrottling>
 ): Promise<GitHubPullRequestItem> {
+  // Cast to RawPRData - Search API items may have merged_at in extended response
+  const rawItem = item as IssueSearchResultItem & { merged_at?: string | null };
   const { prData: result, sanitizationWarnings } =
-    createBasePRTransformationFromSearch(item);
+    createBasePRTransformation(rawItem);
 
   if (sanitizationWarnings.size > 0) {
     result._sanitization_warnings = Array.from(sanitizationWarnings);
@@ -743,7 +687,7 @@ export async function transformPullRequestItemFromREST(
   authInfo?: AuthInfo
 ): Promise<GitHubPullRequestItem> {
   const { prData: result, sanitizationWarnings } =
-    createBasePRTransformationFromREST(item);
+    createBasePRTransformation(item);
 
   if (sanitizationWarnings.size > 0) {
     result._sanitization_warnings = Array.from(sanitizationWarnings);
@@ -886,52 +830,7 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
     const transformedPR: GitHubPullRequestItem =
       await transformPullRequestItemFromREST(pr, params, octokit, authInfo);
 
-    const formattedPR = {
-      number: transformedPR.number,
-      title: transformedPR.title,
-      url: transformedPR.url,
-      state: transformedPR.state as 'open' | 'closed',
-      draft: transformedPR.draft ?? false,
-      merged: transformedPR.state === 'closed' && !!transformedPR.merged_at,
-      created_at: transformedPR.created_at,
-      updated_at: transformedPR.updated_at,
-      closed_at: transformedPR.closed_at ?? undefined,
-      merged_at: transformedPR.merged_at,
-      author: transformedPR.author,
-      head_ref: transformedPR.head || '',
-      head_sha: transformedPR.head_sha || '',
-      base_ref: transformedPR.base || '',
-      base_sha: transformedPR.base_sha || '',
-      body: transformedPR.body,
-      comments: transformedPR.comments?.length || 0,
-      commits: transformedPR.commits?.length || 0,
-      additions:
-        transformedPR.file_changes?.files.reduce(
-          (sum, file) => sum + file.additions,
-          0
-        ) || 0,
-      deletions:
-        transformedPR.file_changes?.files.reduce(
-          (sum, file) => sum + file.deletions,
-          0
-        ) || 0,
-      changed_files: transformedPR.file_changes?.total_count || 0,
-      ...(transformedPR.file_changes && {
-        file_changes: transformedPR.file_changes.files?.map(file => ({
-          filename: file.filename,
-          status: file.status,
-          additions: file.additions,
-          deletions: file.deletions,
-          patch: file.patch,
-        })),
-      }),
-      ...(transformedPR.commits && {
-        commit_details: transformedPR.commits,
-      }),
-      ...(transformedPR._sanitization_warnings && {
-        _sanitization_warnings: transformedPR._sanitization_warnings,
-      }),
-    };
+    const formattedPR = formatPRForResponse(transformedPR);
 
     return {
       pull_requests: [formattedPR],

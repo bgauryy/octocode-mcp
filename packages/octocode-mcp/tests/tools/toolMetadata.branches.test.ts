@@ -8,7 +8,7 @@
  * - Lines 103-107: getMeta() when METADATA_JSON is null
  * - Lines 245-249: BASE_SCHEMA proxy fallback for 'bulkQuery' when uninitialized
  * - Lines 264-265: GENERIC_ERROR_HINTS proxy fallback when uninitialized
- * - Line 272: isToolAvailableSync returns false when uninitialized
+ * - Line 272: isToolInMetadata returns false when uninitialized
  * - Lines 329-332: TOOL_HINTS get proxy fallback when uninitialized
  * - Lines 344-351: TOOL_HINTS getOwnPropertyDescriptor fallback when uninitialized
  * - Line 367: TOOL_HINTS getOwnPropertyDescriptor returns undefined for unknown prop
@@ -93,14 +93,14 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
     });
   });
 
-  describe('isToolAvailableSync returns false when uninitialized (line 272)', () => {
+  describe('isToolInMetadata returns false when uninitialized (line 272)', () => {
     it('should return false when METADATA_JSON is null', async () => {
-      const { isToolAvailableSync } =
+      const { isToolInMetadata } =
         await import('../../src/tools/toolMetadata.js');
 
       // Before initialization, should return false
-      expect(isToolAvailableSync('githubSearchCode')).toBe(false);
-      expect(isToolAvailableSync('anyTool')).toBe(false);
+      expect(isToolInMetadata('githubSearchCode')).toBe(false);
+      expect(isToolInMetadata('anyTool')).toBe(false);
     });
   });
 

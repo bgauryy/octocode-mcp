@@ -1,3 +1,5 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { readFile, stat } from 'fs/promises';
 import { resolve, isAbsolute } from 'path';
 import { minifyContentSync } from '../utils/minifier/index.js';
@@ -15,6 +17,39 @@ import {
 } from '../utils/local/utils/toolHelpers.js';
 import type { FetchContentQuery, FetchContentResult } from '../utils/types.js';
 import { ToolErrors, ERROR_CODES } from '../errorCodes.js';
+import { executeBulkOperation } from '../utils/bulkOperations.js';
+import {
+  BulkFetchContentSchema,
+  LOCAL_FETCH_CONTENT_DESCRIPTION,
+} from '../scheme/local_fetch_content.js';
+
+/**
+ * Register the local fetch content tool with the MCP server.
+ * Follows the same pattern as GitHub tools for consistency.
+ */
+export function registerLocalFetchContentTool(server: McpServer) {
+  return server.registerTool(
+    TOOL_NAMES.LOCAL_FETCH_CONTENT,
+    {
+      description: LOCAL_FETCH_CONTENT_DESCRIPTION,
+      inputSchema: BulkFetchContentSchema,
+      annotations: {
+        title: 'Local Fetch Content',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (args: { queries: FetchContentQuery[] }): Promise<CallToolResult> => {
+      return executeBulkOperation<FetchContentQuery, Record<string, unknown>>(
+        args.queries || [],
+        async query => await fetchContent(query),
+        { toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT }
+      );
+    }
+  );
+}
 
 /**
  * Apply minification to content if enabled (minified !== false)
