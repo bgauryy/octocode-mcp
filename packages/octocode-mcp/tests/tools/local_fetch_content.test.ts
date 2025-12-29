@@ -891,4 +891,142 @@ describe('localGetFileContent', () => {
       }
     });
   });
+
+  describe('byte/character offset separation', () => {
+    it('should return both byte and char offsets in pagination', async () => {
+      const largeContent = 'x'.repeat(20000);
+      mockStat.mockResolvedValue({ size: 20000 } as unknown as Awaited<
+        ReturnType<typeof fs.stat>
+      >);
+      mockReadFile.mockResolvedValue(largeContent);
+
+      const result = await fetchContent({
+        path: 'large.txt',
+        charLength: 5000,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.pagination).toBeDefined();
+
+      // Should have byte fields
+      expect(result.pagination?.byteOffset).toBeDefined();
+      expect(result.pagination?.byteLength).toBeDefined();
+      expect(result.pagination?.totalBytes).toBeDefined();
+
+      // Should have char fields
+      expect(result.pagination?.charOffset).toBeDefined();
+      expect(result.pagination?.charLength).toBeDefined();
+      expect(result.pagination?.totalChars).toBeDefined();
+
+      // For ASCII content, bytes and chars should be equal
+      expect(result.pagination?.byteOffset).toBe(result.pagination?.charOffset);
+      expect(result.pagination?.byteLength).toBe(result.pagination?.charLength);
+      expect(result.pagination?.totalBytes).toBe(result.pagination?.totalChars);
+    });
+
+    it('should handle UTF-8 content with correct byte/char separation', async () => {
+      // Content with emojis: each emoji is 4 bytes, 2 JS chars
+      const emojiContent = '👋'.repeat(5000) + 'x'.repeat(5000);
+      // 5000 emojis * 4 bytes + 5000 'x' = 25000 bytes
+      // 5000 emojis * 2 chars + 5000 'x' = 15000 chars
+      mockStat.mockResolvedValue({ size: 25000 } as unknown as Awaited<
+        ReturnType<typeof fs.stat>
+      >);
+      mockReadFile.mockResolvedValue(emojiContent);
+
+      const result = await fetchContent({
+        path: 'emoji.txt',
+        charLength: 5000,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.pagination).toBeDefined();
+
+      // Total bytes should differ from total chars
+      expect(result.pagination?.totalBytes).toBe(25000);
+      expect(result.pagination?.totalChars).toBe(15000);
+
+      // Local tools use character mode, so charLength should be 5000
+      expect(result.pagination?.charLength).toBe(5000);
+      // Byte length should be different for emoji content
+      // First 5000 chars = all emojis (2 chars each = 2500 emojis = 10000 bytes)
+      expect(result.pagination?.byteLength).toBeGreaterThan(
+        result.pagination?.charLength ?? 0
+      );
+    });
+
+    it('should use character offsets for navigation hints in local tools', async () => {
+      const largeContent = 'x'.repeat(20000);
+      mockStat.mockResolvedValue({ size: 20000 } as unknown as Awaited<
+        ReturnType<typeof fs.stat>
+      >);
+      mockReadFile.mockResolvedValue(largeContent);
+
+      const result = await fetchContent({
+        path: 'large.txt',
+        charLength: 5000,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.hints).toBeDefined();
+
+      // Local tools should use charOffset in hints
+      const hasCharOffsetHint = result.hints?.some(h =>
+        h.includes('charOffset=5000')
+      );
+      expect(hasCharOffsetHint).toBe(true);
+    });
+
+    it('should allow sequential pagination with nextCharOffset', async () => {
+      const content = '👋🚀🌍💻'.repeat(1000); // 8000 chars, 16000 bytes
+      mockStat.mockResolvedValue({ size: 16000 } as unknown as Awaited<
+        ReturnType<typeof fs.stat>
+      >);
+      mockReadFile.mockResolvedValue(content);
+
+      // First page
+      const page1 = await fetchContent({
+        path: 'emoji.txt',
+        charLength: 2000,
+        charOffset: 0,
+      });
+
+      expect(page1.status).toBe('hasResults');
+      expect(page1.pagination?.hasMore).toBe(true);
+      expect(page1.pagination?.charOffset).toBe(0);
+      expect(page1.pagination?.charLength).toBe(2000);
+
+      // Second page using character offset from hints
+      // (nextCharOffset would be 2000 for chars mode)
+      const page2 = await fetchContent({
+        path: 'emoji.txt',
+        charLength: 2000,
+        charOffset: 2000,
+      });
+
+      expect(page2.status).toBe('hasResults');
+      expect(page2.pagination?.charOffset).toBe(2000);
+    });
+
+    it('should correctly handle CJK content pagination', async () => {
+      // CJK content: each char is 3 bytes
+      const cjkContent = '你好世界'.repeat(1000); // 4000 chars, 12000 bytes
+      mockStat.mockResolvedValue({ size: 12000 } as unknown as Awaited<
+        ReturnType<typeof fs.stat>
+      >);
+      mockReadFile.mockResolvedValue(cjkContent);
+
+      const result = await fetchContent({
+        path: 'cjk.txt',
+        charLength: 1000,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.pagination?.totalBytes).toBe(12000);
+      expect(result.pagination?.totalChars).toBe(4000);
+      expect(result.pagination?.charLength).toBe(1000);
+      // 1000 CJK chars = 3000 bytes
+      expect(result.pagination?.byteLength).toBe(3000);
+    });
+  });
 });

@@ -56,6 +56,7 @@ function generateTokenWarnings(
 
 /**
  * Generate generic pagination navigation hints
+ * Uses character offsets (for local tools that use JavaScript string operations)
  */
 function generateNavigationHints(metadata: PaginationMetadata): string[] {
   const hints: string[] = [];
@@ -103,7 +104,7 @@ export function generatePaginationHints(
 
 /**
  * Generate hints for GitHub file content paginated responses
- * Uses dedicated hints field (NOT securityWarnings)
+ * Uses byte offsets (for GitHub API compatibility)
  */
 export function generateGitHubPaginationHints(
   pagination: PaginationInfo,
@@ -116,14 +117,15 @@ export function generateGitHubPaginationHints(
     ];
   }
 
+  // Use byte offsets for GitHub API compatibility
   const nextOffset =
-    (pagination.charOffset ?? 0) + (pagination.charLength ?? 0);
+    (pagination.byteOffset ?? 0) + (pagination.byteLength ?? 0);
   const branchParam = query.branch ? `, branch="${query.branch}"` : '';
 
   return [
     `📄 Page ${pagination.currentPage}/${pagination.totalPages} ` +
-      `(${(pagination.charLength ?? 0).toLocaleString()} of ` +
-      `${(pagination.totalChars ?? 0).toLocaleString()} chars)`,
+      `(${(pagination.byteLength ?? 0).toLocaleString()} of ` +
+      `${(pagination.totalBytes ?? 0).toLocaleString()} bytes)`,
     ``,
     `▶ TO GET NEXT PAGE:`,
     `  Use: charOffset=${nextOffset}`,

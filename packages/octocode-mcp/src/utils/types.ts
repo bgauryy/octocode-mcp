@@ -47,6 +47,12 @@ export interface BaseQuery {
 /**
  * Pagination information for all tools
  * Supports both character-based and entity-based pagination
+ *
+ * Contains both byte-based and character-based offsets:
+ * - Byte offsets: For GitHub API compatibility and binary operations
+ * - Character offsets: For JavaScript string operations (substring, slice)
+ *
+ * IMPORTANT: These are NOT interchangeable for multi-byte UTF-8 content (emojis, CJK, etc.)
  */
 export interface PaginationInfo {
   /** Current page number (1-based) - REQUIRED */
@@ -56,10 +62,18 @@ export interface PaginationInfo {
   /** More pages available - REQUIRED */
   hasMore: boolean;
 
-  // Character-based pagination (for all tools when using charLength)
-  /** Current character offset */
+  // Byte-based pagination (for GitHub API compatibility)
+  /** Current byte offset */
+  byteOffset?: number;
+  /** Page size in bytes */
+  byteLength?: number;
+  /** Total size in bytes */
+  totalBytes?: number;
+
+  // Character-based pagination (for JavaScript string operations)
+  /** Current character offset (for use with string.substring) */
   charOffset?: number;
-  /** Page size in characters */
+  /** Page size in characters (for use with string.length) */
   charLength?: number;
   /** Total size in characters */
   totalChars?: number;

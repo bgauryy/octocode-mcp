@@ -1,6 +1,6 @@
 /**
  * Core pagination utilities
- * Shared pagination logic for character-based content pagination
+ * Shared pagination logic for content pagination with proper byte/character handling
  */
 
 import type { PaginationInfo } from '../../types.js';
@@ -9,104 +9,117 @@ import type {
   ApplyPaginationOptions,
   SliceByCharResult,
 } from './types.js';
+import { byteToCharIndex, charToByteIndex } from '../local/utils/byteOffset.js';
 
 /**
- * Convert character offset to byte offset, ensuring we don't split UTF-8 characters
- */
-function charOffsetToByteOffset(text: string, charOffset: number): number {
-  if (charOffset <= 0) return 0;
-  if (charOffset >= text.length) {
-    return Buffer.byteLength(text, 'utf-8');
-  }
-  return Buffer.byteLength(text.substring(0, charOffset), 'utf-8');
-}
-
-/**
- * Apply pagination to content based on character offset and length
+ * Apply pagination to content based on offset and length
  * Supports both character offsets (default) and byte offsets (for GitHub API compatibility)
+ *
+ * Returns both byte-based and character-based offsets in the result:
+ * - Use byteOffset/nextByteOffset for GitHub API or byte-level operations
+ * - Use charOffset/nextCharOffset for JavaScript string operations
+ *
+ * @param content - The content to paginate
+ * @param offset - The starting offset (interpreted based on mode)
+ * @param length - The page size (interpreted based on mode)
+ * @param options - Pagination options including mode ('bytes' or 'characters')
  */
 export function applyPagination(
   content: string,
-  charOffset: number = 0,
-  charLength?: number,
+  offset: number = 0,
+  length?: number,
   options: ApplyPaginationOptions = {}
 ): PaginationMetadata {
   const mode = options.mode ?? 'characters';
   const totalChars = content.length;
   const totalBytes = Buffer.byteLength(content, 'utf-8');
-  const actualOffset = options.actualOffset ?? charOffset;
 
-  if (charLength === undefined) {
+  // No pagination requested - return full content
+  if (length === undefined) {
     return {
       paginatedContent: content,
+      // Byte fields
+      byteOffset: 0,
+      byteLength: totalBytes,
+      totalBytes,
+      nextByteOffset: undefined,
+      // Character fields
       charOffset: 0,
-      charLength: totalBytes,
-      totalChars: totalBytes, // Using bytes as totalChars for compatibility
+      charLength: totalChars,
+      totalChars,
+      nextCharOffset: undefined,
+      // Common fields
       hasMore: false,
       estimatedTokens: Math.ceil(content.length / 4),
       currentPage: 1,
       totalPages: 1,
-      actualOffset: 0,
-      actualLength: totalBytes,
     };
   }
 
   let paginatedContent: string;
   let startBytePos: number;
-  let actualByteLength: number;
+  let endBytePos: number;
+  let startCharPos: number;
+  let endCharPos: number;
   let hasMore: boolean;
-  let nextCharOffset: number | undefined;
   let currentPage: number;
   let totalPages: number;
 
   if (mode === 'bytes') {
+    // Byte mode: offset and length are in bytes
     const buffer = Buffer.from(content, 'utf-8');
-    const startPos = Math.min(charOffset, totalBytes);
-    const endPos = Math.min(startPos + charLength, totalBytes);
+    startBytePos = Math.min(offset, totalBytes);
+    endBytePos = Math.min(startBytePos + length, totalBytes);
 
-    const slice = buffer.subarray(startPos, endPos);
+    // Extract content using byte positions
+    const slice = buffer.subarray(startBytePos, endBytePos);
     paginatedContent = slice.toString('utf-8');
-    startBytePos = startPos;
-    actualByteLength = slice.length;
-    hasMore = endPos < totalBytes;
-    nextCharOffset = hasMore ? endPos : undefined;
 
-    const pageSize = charLength;
-    currentPage = Math.floor(actualOffset / pageSize) + 1;
-    totalPages = Math.ceil(totalBytes / pageSize);
+    // Calculate character positions from byte positions
+    startCharPos = byteToCharIndex(content, startBytePos);
+    endCharPos = byteToCharIndex(content, endBytePos);
+
+    hasMore = endBytePos < totalBytes;
+    // Use actualOffset for page calculation if provided
+    const pageOffset = options.actualOffset ?? startBytePos;
+    currentPage = Math.floor(pageOffset / length) + 1;
+    totalPages = Math.ceil(totalBytes / length);
   } else {
-    const startCharPos = Math.min(charOffset, totalChars);
-    const endCharPos = Math.min(startCharPos + charLength, totalChars);
+    // Character mode: offset and length are in characters
+    startCharPos = Math.min(offset, totalChars);
+    endCharPos = Math.min(startCharPos + length, totalChars);
 
+    // Extract content using character positions
     paginatedContent = content.substring(startCharPos, endCharPos);
 
-    startBytePos = charOffsetToByteOffset(content, startCharPos);
-    actualByteLength = Buffer.byteLength(paginatedContent, 'utf-8');
+    // Calculate byte positions from character positions
+    startBytePos = charToByteIndex(content, startCharPos);
+    endBytePos = charToByteIndex(content, endCharPos);
 
     hasMore = endCharPos < totalChars;
-    const nextCharPos = hasMore ? endCharPos : undefined;
-    nextCharOffset =
-      nextCharPos !== undefined
-        ? charOffsetToByteOffset(content, nextCharPos)
-        : undefined;
-
-    const pageSize = charLength;
-    currentPage = Math.floor(actualOffset / pageSize) + 1;
-    totalPages = Math.ceil(totalChars / pageSize);
+    // Use actualOffset for page calculation if provided
+    const pageOffset = options.actualOffset ?? startCharPos;
+    currentPage = Math.floor(pageOffset / length) + 1;
+    totalPages = Math.ceil(totalChars / length);
   }
 
   return {
     paginatedContent,
-    charOffset: startBytePos, // Return byte offset for compatibility with existing code
-    charLength: actualByteLength, // Return byte length for compatibility
-    totalChars: totalBytes, // Using bytes as totalChars for compatibility
+    // Byte fields - actual byte values
+    byteOffset: startBytePos,
+    byteLength: endBytePos - startBytePos,
+    totalBytes,
+    nextByteOffset: hasMore ? endBytePos : undefined,
+    // Character fields - actual character values
+    charOffset: startCharPos,
+    charLength: paginatedContent.length,
+    totalChars,
+    nextCharOffset: hasMore ? endCharPos : undefined,
+    // Common fields
     hasMore,
-    nextCharOffset,
     estimatedTokens: Math.ceil(paginatedContent.length / 4),
     currentPage,
     totalPages,
-    actualOffset: startBytePos,
-    actualLength: actualByteLength,
   };
 }
 
@@ -205,6 +218,7 @@ export function sliceByCharRespectLines(
 
 /**
  * Create PaginationInfo from PaginationMetadata
+ * Includes both byte and character offset fields
  */
 export function createPaginationInfo(
   metadata: PaginationMetadata
@@ -213,6 +227,11 @@ export function createPaginationInfo(
     currentPage: metadata.currentPage,
     totalPages: metadata.totalPages,
     hasMore: metadata.hasMore,
+    // Byte fields
+    byteOffset: metadata.byteOffset,
+    byteLength: metadata.byteLength,
+    totalBytes: metadata.totalBytes,
+    // Character fields
     charOffset: metadata.charOffset,
     charLength: metadata.charLength,
     totalChars: metadata.totalChars,

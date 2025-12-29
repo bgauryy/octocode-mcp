@@ -2199,4 +2199,84 @@ describe('localViewStructure', () => {
       expect(result.pagination?.hasMore).toBe(false);
     });
   });
+
+  describe('byte/character offset separation in charPagination', () => {
+    it('should return both byte and char offsets in charPagination', async () => {
+      // Create a large output that requires character pagination
+      const manyFiles = Array.from(
+        { length: 100 },
+        (_, i) => `file${i}.txt`
+      ).join('\n');
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: manyFiles,
+        stderr: '',
+      });
+
+      mockLstatSync.mockReturnValue({
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        charLength: 500, // Force character pagination
+      });
+
+      expect(result.status).toBe('hasResults');
+
+      if (result.charPagination) {
+        // Should have byte fields
+        expect(result.charPagination.byteOffset).toBeDefined();
+        expect(result.charPagination.byteLength).toBeDefined();
+        expect(result.charPagination.totalBytes).toBeDefined();
+
+        // Should have char fields
+        expect(result.charPagination.charOffset).toBeDefined();
+        expect(result.charPagination.charLength).toBeDefined();
+        expect(result.charPagination.totalChars).toBeDefined();
+
+        // For ASCII content, bytes and chars should be equal
+        expect(result.charPagination.byteOffset).toBe(
+          result.charPagination.charOffset
+        );
+      }
+    });
+
+    it('should handle UTF-8 filenames correctly', async () => {
+      // Create files with emoji/unicode names
+      const unicodeFiles = [
+        '文件1.txt',
+        '文件2.txt',
+        '📁folder',
+        'emoji👋.txt',
+      ].join('\n');
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: unicodeFiles,
+        stderr: '',
+      });
+
+      mockLstatSync.mockReturnValue({
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        charLength: 50, // Small enough to trigger pagination
+      });
+
+      expect(result.status).toBe('hasResults');
+
+      if (result.charPagination) {
+        // Bytes should differ from chars for UTF-8 filenames
+        expect(result.charPagination.totalBytes).toBeGreaterThan(
+          result.charPagination.totalChars ?? 0
+        );
+      }
+    });
+  });
 });

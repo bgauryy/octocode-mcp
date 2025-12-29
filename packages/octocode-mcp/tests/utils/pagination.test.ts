@@ -89,7 +89,7 @@ describe('pagination utility', () => {
       // Offset 1, Length 4 -> Bytes 1,2,3,4 -> "🚀"
 
       expect(result.paginatedContent).toBe('🚀');
-      expect(result.charLength).toBe(4); // Bytes, not chars
+      expect(result.byteLength).toBe(4); // Bytes, not chars
     });
 
     it('should handle bytes mode reaching end of content (hasMore=false)', () => {
@@ -107,9 +107,9 @@ describe('pagination utility', () => {
       const result = applyPagination(content, 0, 6, { mode: 'bytes' });
 
       expect(result.paginatedContent).toBe('你好');
-      expect(result.charLength).toBe(6);
+      expect(result.byteLength).toBe(6);
       expect(result.hasMore).toBe(true);
-      expect(result.nextCharOffset).toBe(6);
+      expect(result.nextByteOffset).toBe(6);
     });
 
     it('should handle bytes mode with exact fit content', () => {
@@ -143,6 +143,95 @@ describe('pagination utility', () => {
 
       expect(result.hasMore).toBe(false);
       expect(result.nextCharOffset).toBeUndefined();
+    });
+
+    // Tests for byte/character offset separation (fixing bytes vs chars confusion)
+    describe('byte/character offset separation', () => {
+      it('should return correct byte and char offsets for emoji content', () => {
+        // "Hello 👋 World" = 6 ASCII chars + 1 emoji (4 bytes, 2 chars in JS) + 6 ASCII chars
+        // Total: 14 chars, 16 bytes
+        const content = 'Hello 👋 World';
+        const result = applyPagination(content, 0, 10, { mode: 'bytes' });
+
+        // Byte mode with 10 bytes: "Hello " (6 bytes) + part of emoji (4 bytes) = 10 bytes
+        expect(result.paginatedContent).toBe('Hello 👋');
+        expect(result.byteOffset).toBe(0);
+        expect(result.byteLength).toBe(10); // Actual bytes
+        expect(result.totalBytes).toBe(16); // Total bytes
+        expect(result.charOffset).toBe(0);
+        expect(result.charLength).toBe(8); // "Hello " (6) + emoji (2 JS chars)
+        expect(result.totalChars).toBe(14); // Total characters
+        expect(result.nextByteOffset).toBe(10);
+        expect(result.nextCharOffset).toBe(8);
+      });
+
+      it('should return correct offsets for CJK content in bytes mode', () => {
+        const content = '你好世界'; // Each CJK char is 3 bytes, 1 JS char
+        const result = applyPagination(content, 0, 6, { mode: 'bytes' });
+
+        expect(result.paginatedContent).toBe('你好');
+        expect(result.byteOffset).toBe(0);
+        expect(result.byteLength).toBe(6); // 2 CJK chars * 3 bytes
+        expect(result.totalBytes).toBe(12); // 4 CJK chars * 3 bytes
+        expect(result.charOffset).toBe(0);
+        expect(result.charLength).toBe(2); // 2 CJK chars
+        expect(result.totalChars).toBe(4); // 4 CJK chars
+      });
+
+      it('should return correct offsets for CJK content in character mode', () => {
+        const content = '你好世界'; // Each CJK char is 3 bytes, 1 JS char
+        const result = applyPagination(content, 0, 2); // Character mode (default)
+
+        expect(result.paginatedContent).toBe('你好');
+        expect(result.charOffset).toBe(0);
+        expect(result.charLength).toBe(2);
+        expect(result.totalChars).toBe(4);
+        expect(result.byteOffset).toBe(0);
+        expect(result.byteLength).toBe(6); // 2 chars * 3 bytes
+        expect(result.totalBytes).toBe(12);
+      });
+
+      it('should allow using nextCharOffset with substring correctly', () => {
+        const content = 'Hello 👋 World';
+        const page1 = applyPagination(content, 0, 8); // First 8 chars
+
+        expect(page1.paginatedContent).toBe('Hello 👋'); // 6 + 2 chars
+        expect(page1.nextCharOffset).toBe(8);
+
+        // Verify using nextCharOffset with substring works
+        const remainingContent = content.substring(page1.nextCharOffset!);
+        expect(remainingContent).toBe(' World');
+      });
+
+      it('should allow using nextByteOffset with Buffer correctly', () => {
+        const content = 'Hello 👋 World';
+        const page1 = applyPagination(content, 0, 10, { mode: 'bytes' });
+
+        expect(page1.paginatedContent).toBe('Hello 👋');
+        expect(page1.nextByteOffset).toBe(10);
+
+        // Verify using nextByteOffset with Buffer works
+        const buffer = Buffer.from(content, 'utf-8');
+        const remainingContent = buffer
+          .subarray(page1.nextByteOffset!)
+          .toString('utf-8');
+        expect(remainingContent).toBe(' World');
+      });
+
+      it('should return undefined for fullContent without pagination', () => {
+        const content = 'Hello 👋 World';
+        const result = applyPagination(content); // No pagination
+
+        expect(result.byteOffset).toBe(0);
+        expect(result.byteLength).toBe(16);
+        expect(result.totalBytes).toBe(16);
+        expect(result.nextByteOffset).toBeUndefined();
+        expect(result.charOffset).toBe(0);
+        expect(result.charLength).toBe(14);
+        expect(result.totalChars).toBe(14);
+        expect(result.nextCharOffset).toBeUndefined();
+        expect(result.hasMore).toBe(false);
+      });
     });
   });
 
@@ -619,9 +708,9 @@ describe('pagination utility', () => {
         currentPage: 1,
         totalPages: 3,
         hasMore: true,
-        charOffset: 0,
-        charLength: 20000,
-        totalChars: 60000,
+        byteOffset: 0,
+        byteLength: 20000,
+        totalBytes: 60000,
       };
       const query = {
         owner: 'test-owner',
@@ -682,14 +771,14 @@ describe('pagination utility', () => {
       expect(hints.some(h => h.includes('0 of'))).toBe(true);
     });
 
-    it('should handle undefined totalChars', () => {
+    it('should handle undefined totalBytes', () => {
       const pagination = {
         currentPage: 1,
         totalPages: 2,
         hasMore: true,
-        charOffset: 0,
-        charLength: 1000,
-        // totalChars is undefined
+        byteOffset: 0,
+        byteLength: 1000,
+        // totalBytes is undefined
       };
       const query = {
         owner: 'test-owner',
@@ -700,7 +789,7 @@ describe('pagination utility', () => {
       const hints = generateGitHubPaginationHints(pagination, query);
 
       // Should use 0 as default
-      expect(hints.some(h => h.includes('1,000 of 0 chars'))).toBe(true);
+      expect(hints.some(h => h.includes('1,000 of 0 bytes'))).toBe(true);
     });
 
     it('should show plural "pages" when totalPages > 1', () => {

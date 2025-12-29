@@ -5,19 +5,41 @@
 
 /**
  * Pagination metadata returned by applyPagination
+ *
+ * Contains both byte-based and character-based offsets to support:
+ * - Byte offsets: For GitHub API compatibility and binary operations
+ * - Character offsets: For JavaScript string operations (substring, slice)
+ *
+ * IMPORTANT: These are NOT interchangeable for multi-byte UTF-8 content (emojis, CJK, etc.)
  */
 export interface PaginationMetadata {
   paginatedContent: string;
+
+  // Byte-based offsets (for GitHub API compatibility, binary operations)
+  /** Current byte offset in the content */
+  byteOffset: number;
+  /** Length of paginated content in bytes */
+  byteLength: number;
+  /** Total content size in bytes */
+  totalBytes: number;
+  /** Next byte offset for pagination (undefined if no more content) */
+  nextByteOffset?: number;
+
+  // Character-based offsets (for JavaScript string operations)
+  /** Current character offset in the content (for use with string.substring) */
   charOffset: number;
+  /** Length of paginated content in characters (for use with string.length) */
   charLength: number;
+  /** Total content size in characters */
   totalChars: number;
-  hasMore: boolean;
+  /** Next character offset for pagination (undefined if no more content) */
   nextCharOffset?: number;
+
+  // Common fields
+  hasMore: boolean;
   estimatedTokens?: number;
   currentPage: number;
   totalPages: number;
-  actualOffset?: number;
-  actualLength?: number;
 }
 
 /**
