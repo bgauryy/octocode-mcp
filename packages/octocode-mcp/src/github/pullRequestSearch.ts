@@ -1,6 +1,7 @@
 import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
+  PRCommentItem,
   CommitInfo,
   DiffEntry,
   CommitFileInfo,
@@ -303,11 +304,16 @@ function createBasePRTransformation(item: RawPRData): {
     ...bodySanitized.warnings,
   ]);
 
+  // GitHub PRs can only be 'open' or 'closed'. Default to 'open' if undefined.
+  const normalizedState = item.state?.toLowerCase();
+  const validState: 'open' | 'closed' =
+    normalizedState === 'closed' ? 'closed' : 'open';
+
   const prData: GitHubPullRequestItem = {
     number: item.number,
     title: titleSanitized.content,
     body: bodySanitized.content,
-    state: (item.state?.toLowerCase() ?? 'unknown') as 'open' | 'closed',
+    state: validState,
     author: item.user?.login ?? '',
     labels:
       item.labels?.map(l => (typeof l === 'string' ? l : (l.name ?? ''))) ?? [],
@@ -383,7 +389,7 @@ async function fetchPRComments(
   owner: string,
   repo: string,
   prNumber: number
-): Promise<GitHubPullRequestItem['comments']> {
+): Promise<PRCommentItem[]> {
   try {
     const commentsResult = await octokit.rest.issues.listComments({
       owner,
@@ -391,13 +397,15 @@ async function fetchPRComments(
       issue_number: prNumber,
     });
 
-    return commentsResult.data.map((comment: IssueComment) => ({
-      id: String(comment.id),
-      user: comment.user?.login ?? 'unknown',
-      body: ContentSanitizer.sanitizeContent(comment.body ?? '').content,
-      created_at: comment.created_at ?? '',
-      updated_at: comment.updated_at ?? '',
-    }));
+    return commentsResult.data.map(
+      (comment: IssueComment): PRCommentItem => ({
+        id: String(comment.id),
+        user: comment.user?.login ?? 'unknown',
+        body: ContentSanitizer.sanitizeContent(comment.body ?? '').content,
+        created_at: comment.created_at ?? '',
+        updated_at: comment.updated_at ?? '',
+      })
+    );
   } catch {
     return [];
   }

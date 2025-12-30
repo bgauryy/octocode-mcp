@@ -33,10 +33,11 @@ export class ContentSanitizer {
         }
       }
     } catch {
+      // Security: Fail-closed - assume secrets may be present if detection fails
       return {
-        hasSecrets: false,
-        secretsDetected: [],
-        sanitizedContent: content,
+        hasSecrets: true,
+        secretsDetected: ['detection-error'],
+        sanitizedContent: '[CONTENT-REDACTED-DETECTION-ERROR]',
       };
     }
 
@@ -81,14 +82,22 @@ export class ContentSanitizer {
       }
 
       if (typeof value === 'string') {
+        let sanitizedValue = value;
         if (value.length > 10000) {
           warnings.add(
             `Parameter ${key} exceeds maximum length (10,000 characters)`
           );
-          sanitizedParams[key] = value.substring(0, 10000);
-        } else {
-          sanitizedParams[key] = value;
+          sanitizedValue = value.substring(0, 10000);
         }
+        // Check string values for secrets
+        const secretsResult = this.detectSecrets(sanitizedValue);
+        if (secretsResult.hasSecrets) {
+          hasSecrets = true;
+          secretsResult.secretsDetected.forEach(secret =>
+            warnings.add(`Secrets detected in ${key}: ${secret}`)
+          );
+        }
+        sanitizedParams[key] = secretsResult.sanitizedContent;
       } else if (Array.isArray(value)) {
         if (value.length > 100) {
           warnings.add(

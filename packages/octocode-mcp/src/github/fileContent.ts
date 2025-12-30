@@ -21,6 +21,8 @@ import { TOOL_NAMES } from '../tools/toolMetadata.js';
 import { FILE_OPERATION_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
+import NodeCache from 'node-cache';
+
 /** Pagination constants for GitHub content fetching */
 const GITHUB_PAGINATION = {
   /** Max chars before auto-pagination (~5K tokens) */
@@ -42,10 +44,19 @@ interface RawContentResult {
   branch?: string;
 }
 
-const defaultBranchCache = new Map<string, string>();
+/**
+ * Cache for default branch names with TTL.
+ * TTL of 1 hour ensures we pick up branch changes reasonably quickly
+ * while still providing good performance.
+ */
+const defaultBranchCache = new NodeCache({
+  stdTTL: 3600, // 1 hour TTL
+  checkperiod: 600, // Check for expired keys every 10 minutes
+  useClones: false,
+});
 
 export function clearDefaultBranchCache(): void {
-  defaultBranchCache.clear();
+  defaultBranchCache.flushAll();
 }
 
 async function getDefaultBranch(
@@ -54,8 +65,9 @@ async function getDefaultBranch(
   repo: string
 ): Promise<string> {
   const cacheKey = `${owner}/${repo}`;
-  if (defaultBranchCache.has(cacheKey)) {
-    return defaultBranchCache.get(cacheKey)!;
+  const cached = defaultBranchCache.get<string>(cacheKey);
+  if (cached !== undefined) {
+    return cached;
   }
   try {
     const repoInfo = await octokit.rest.repos.get({ owner, repo });

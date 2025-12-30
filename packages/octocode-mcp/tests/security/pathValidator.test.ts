@@ -183,7 +183,7 @@ describe('PathValidator Security Tests', () => {
       realpathSyncSpy.mockRestore();
     });
 
-    it('should allow path with unknown error codes (fail-open)', () => {
+    it('should reject path with unknown error codes (fail-closed for security)', () => {
       const realpathSyncSpy = vi
         .spyOn(fs, 'realpathSync')
         .mockImplementation(() => {
@@ -193,8 +193,8 @@ describe('PathValidator Security Tests', () => {
         });
 
       const result = validator.validate(`${mockWorkspace}/unknown`);
-      expect(result.isValid).toBe(true);
-      expect(result.sanitizedPath).toBeDefined();
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('Unexpected error validating path');
 
       realpathSyncSpy.mockRestore();
     });

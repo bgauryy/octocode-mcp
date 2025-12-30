@@ -163,11 +163,11 @@ export class PathValidator {
         }
       }
 
-      // For unknown errors, allow if within workspace (fail-open for usability)
-      // but log for debugging in development
+      // Security: Fail-closed for unknown errors
+      // Unknown filesystem errors could indicate security issues
       return {
-        isValid: true,
-        sanitizedPath: absolutePath,
+        isValid: false,
+        error: `Unexpected error validating path: ${inputPath}`,
       };
     }
   }
