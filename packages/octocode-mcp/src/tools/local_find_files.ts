@@ -1,7 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { FindCommandBuilder } from '../commands/FindCommandBuilder.js';
-import { safeExec } from '../utils/exec/index.js';
+import {
+  safeExec,
+  checkCommandAvailability,
+  getMissingCommandError,
+} from '../utils/exec/index.js';
 import { getHints } from './hints/index.js';
 import {
   generatePaginationHints,
@@ -60,6 +64,18 @@ export async function findFiles(
   query: FindFilesQuery
 ): Promise<FindFilesResult> {
   try {
+    // Check if find command is available
+    const findAvailability = await checkCommandAvailability('find');
+    if (!findAvailability.available) {
+      const toolError = ToolErrors.commandNotAvailable(
+        'find',
+        getMissingCommandError('find')
+      );
+      return createErrorResult(toolError, query, {
+        toolName: TOOL_NAMES.LOCAL_FIND_FILES,
+      }) as FindFilesResult;
+    }
+
     const validation = validateToolPath(query, TOOL_NAMES.LOCAL_FIND_FILES);
     if (!validation.isValid) {
       return validation.errorResult as FindFilesResult;
@@ -71,12 +87,16 @@ export async function findFiles(
     const result = await safeExec(command, args);
 
     if (!result.success) {
+      // Provide more detailed error message including stderr
+      const stderrMsg = result.stderr?.trim();
       const toolError = ToolErrors.commandExecutionFailed(
         'find',
-        new Error(result.stderr)
+        new Error(stderrMsg || 'Unknown error'),
+        stderrMsg
       );
       return createErrorResult(toolError, query, {
         toolName: TOOL_NAMES.LOCAL_FIND_FILES,
+        extra: { stderr: stderrMsg },
       }) as FindFilesResult;
     }
 

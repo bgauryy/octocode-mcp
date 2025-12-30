@@ -14,6 +14,9 @@ import type { HintContext, HintStatus, ToolHintGenerators } from './types.js';
 export const HINTS: Record<string, ToolHintGenerators> = {
   [STATIC_TOOL_NAMES.LOCAL_RIPGREP]: {
     hasResults: (ctx: HintContext = {}) => [
+      ctx.searchEngine === 'grep'
+        ? 'Using grep fallback - install ripgrep for best performance and features.'
+        : undefined,
       'Next: FETCH_CONTENT for context (prefer matchString).',
       'Also search imports/usages/defs with RIPGREP.',
       ctx.fileCount && ctx.fileCount > 5
@@ -21,7 +24,10 @@ export const HINTS: Record<string, ToolHintGenerators> = {
         : undefined,
     ],
 
-    empty: (_ctx: HintContext = {}) => [
+    empty: (ctx: HintContext = {}) => [
+      ctx.searchEngine === 'grep'
+        ? 'Using grep fallback - note: grep does not respect .gitignore.'
+        : undefined,
       'No matches. Broaden scope (noIgnore, hidden) or use fixedString.',
       'Unsure of paths? VIEW_STRUCTURE or FIND_FILES.',
     ],

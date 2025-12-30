@@ -119,7 +119,7 @@ export interface SearchContentResult extends BaseQuery {
   };
 
   // Optional metadata
-  searchEngine?: 'rg'; // Which search engine was used
+  searchEngine?: 'rg' | 'grep'; // Which search engine was used
 }
 
 /**

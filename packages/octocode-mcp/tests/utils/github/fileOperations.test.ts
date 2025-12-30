@@ -588,17 +588,20 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       }
     });
 
-    it('should return error when matchString not found', async () => {
+    it('should return success with matchNotFound when matchString not found', async () => {
       const params = createTestParams({ matchString: 'nonexistent string' });
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      // The result should be a direct error response
-      expect('error' in result).toBe(true);
-      if ('error' in result) {
-        expect(result.error).toContain(
-          'Match string "nonexistent string" not found in file'
-        );
+      // The result should be a 200 success with matchNotFound flag
+      // "Match not found" is a normal scenario, NOT an error
+      expect(result.status).toBe(200);
+      expect('data' in result).toBe(true);
+      if ('data' in result) {
+        expect(result.data.matchNotFound).toBe(true);
+        expect(result.data.searchedFor).toBe('nonexistent string');
+        expect(result.data.content).toBe('');
+        expect(result.data.contentLength).toBe(0);
       }
     });
 

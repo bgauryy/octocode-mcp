@@ -29,6 +29,7 @@ export interface HintContext {
   path?: string; // path being searched
   hasOwnerRepo?: boolean; // has owner/repo context
   match?: 'file' | 'path'; // GitHub code search match mode
+  searchEngine?: 'rg' | 'grep'; // which search engine was used
 }
 
 /**

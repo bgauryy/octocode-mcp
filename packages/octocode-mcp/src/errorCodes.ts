@@ -287,7 +287,9 @@ export const LOCAL_TOOL_ERROR_CODES = {
   RESPONSE_TOO_LARGE: 'responseTooLarge',
 
   // Execution Errors
+  COMMAND_NOT_AVAILABLE: 'commandNotAvailable',
   COMMAND_EXECUTION_FAILED: 'commandExecutionFailed',
+  COMMAND_TIMEOUT: 'commandTimeout',
   QUERY_EXECUTION_FAILED: 'queryExecutionFailed',
   TOOL_EXECUTION_FAILED: 'toolExecutionFailed',
 } as const;
@@ -398,11 +400,23 @@ export const LOCAL_TOOL_ERROR_REGISTRY: Record<
   },
 
   // Execution
+  [LOCAL_TOOL_ERROR_CODES.COMMAND_NOT_AVAILABLE]: {
+    code: LOCAL_TOOL_ERROR_CODES.COMMAND_NOT_AVAILABLE,
+    category: LocalToolErrorCategory.EXECUTION,
+    description: 'Required CLI command is not installed or not in PATH',
+    recoverability: 'user-action-required',
+  },
   [LOCAL_TOOL_ERROR_CODES.COMMAND_EXECUTION_FAILED]: {
     code: LOCAL_TOOL_ERROR_CODES.COMMAND_EXECUTION_FAILED,
     category: LocalToolErrorCategory.EXECUTION,
     description: 'System command execution failed',
     recoverability: 'unrecoverable',
+  },
+  [LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT]: {
+    code: LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT,
+    category: LocalToolErrorCategory.EXECUTION,
+    description: 'Command execution timed out',
+    recoverability: 'user-action-required',
   },
   [LOCAL_TOOL_ERROR_CODES.QUERY_EXECUTION_FAILED]: {
     code: LOCAL_TOOL_ERROR_CODES.QUERY_EXECUTION_FAILED,
@@ -607,12 +621,28 @@ export const ToolErrors = {
       { tokens, limit }
     ),
 
-  commandExecutionFailed: (command: string, cause?: Error) =>
+  commandNotAvailable: (command: string, installHint?: string) =>
+    new ToolError(
+      LOCAL_TOOL_ERROR_CODES.COMMAND_NOT_AVAILABLE,
+      `Command '${command}' is not available. ${installHint || 'Please install it and ensure it is in your PATH.'}`,
+      { command, installHint }
+    ),
+
+  commandExecutionFailed: (command: string, cause?: Error, stderr?: string) =>
     new ToolError(
       LOCAL_TOOL_ERROR_CODES.COMMAND_EXECUTION_FAILED,
-      `Command execution failed: ${command}`,
-      { command },
+      stderr
+        ? `Command '${command}' failed: ${stderr}`
+        : `Command execution failed: ${command}`,
+      { command, stderr },
       cause
+    ),
+
+  commandTimeout: (command: string, timeoutMs: number) =>
+    new ToolError(
+      LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT,
+      `Command '${command}' timed out after ${timeoutMs}ms. Try a narrower search path or add filters.`,
+      { command, timeoutMs }
     ),
 
   queryExecutionFailed: (queryId?: string, cause?: Error) =>

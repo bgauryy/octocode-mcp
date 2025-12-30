@@ -140,6 +140,10 @@ export interface ContentResultData {
   lastModified?: string;
   lastModifiedBy?: string;
   pagination?: PaginationInfo;
+  /** True when matchString was provided but not found in file (not an error, just no match) */
+  matchNotFound?: boolean;
+  /** The matchString that was searched for (when matchNotFound is true) */
+  searchedFor?: string;
 }
 
 /** Complete file content result */

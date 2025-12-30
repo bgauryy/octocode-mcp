@@ -13,6 +13,10 @@ import { promises as fs } from 'fs';
 // Mock dependencies
 vi.mock('../../src/utils/exec/index.js', () => ({
   safeExec: vi.fn(),
+  checkCommandAvailability: vi
+    .fn()
+    .mockResolvedValue({ available: true, command: 'rg' }),
+  getMissingCommandError: vi.fn().mockReturnValue('Command not available'),
 }));
 
 vi.mock('../../src/security/pathValidator.js', () => ({
@@ -248,6 +252,38 @@ describe('localSearchCode', () => {
         'rg',
         expect.arrayContaining(['-l'])
       );
+    });
+
+    it('should report correct totalMatches when filesOnly=true', async () => {
+      // When filesOnly=true, ripgrep uses JSON output with match counts per file
+      const jsonOutput = [
+        '{"type":"begin","data":{"path":{"text":"file1.ts"}}}',
+        '{"type":"match","data":{"path":{"text":"file1.ts"},"lines":{"text":"match1"},"line_number":1,"absolute_offset":0,"submatches":[{"match":{"text":"test"},"start":0,"end":4}]}}',
+        '{"type":"match","data":{"path":{"text":"file1.ts"},"lines":{"text":"match2"},"line_number":2,"absolute_offset":10,"submatches":[{"match":{"text":"test"},"start":0,"end":4}]}}',
+        '{"type":"end","data":{"path":{"text":"file1.ts"}}}',
+        '{"type":"begin","data":{"path":{"text":"file2.ts"}}}',
+        '{"type":"match","data":{"path":{"text":"file2.ts"},"lines":{"text":"match3"},"line_number":1,"absolute_offset":0,"submatches":[{"match":{"text":"test"},"start":0,"end":4}]}}',
+        '{"type":"end","data":{"path":{"text":"file2.ts"}}}',
+        '{"type":"summary","data":{"elapsed_total":{"human":"0.001s"},"stats":{"elapsed":{"human":"0.001s"},"searches":2,"searches_with_match":2,"bytes_searched":100,"bytes_printed":50,"matched_lines":3,"matches":3}}}',
+      ].join('\n');
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonOutput,
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+        filesOnly: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.totalFiles).toBe(2);
+      // BUG FIX: totalMatches should report actual count, not 0
+      expect(result.totalMatches).toBe(3);
     });
 
     it('should include context lines', async () => {
@@ -1924,6 +1960,167 @@ describe('localSearchCode', () => {
         );
         expect(usesSchemaParams).toBe(true);
       }
+    });
+  });
+
+  describe('Grep fallback', () => {
+    const mockCheckCommandAvailability = vi.mocked(
+      exec.checkCommandAvailability
+    );
+
+    it('should fall back to grep when ripgrep is unavailable', async () => {
+      // Mock rg unavailable, grep available
+      mockCheckCommandAvailability
+        .mockResolvedValueOnce({ available: false, command: 'rg' })
+        .mockResolvedValueOnce({ available: true, command: 'grep' });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout:
+          '/test/path/file1.ts:10:function test() {\n/test/path/file2.ts:20:const test = 1;',
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.searchEngine).toBe('grep');
+      expect(result.warnings).toContain(
+        'Using grep fallback (ripgrep not available). Some features may be limited.'
+      );
+    });
+
+    it('should return error when both rg and grep are unavailable', async () => {
+      mockCheckCommandAvailability
+        .mockResolvedValueOnce({ available: false, command: 'rg' })
+        .mockResolvedValueOnce({ available: false, command: 'grep' });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe(ERROR_CODES.COMMAND_NOT_AVAILABLE);
+    });
+
+    it('should warn about unsupported grep features', async () => {
+      mockCheckCommandAvailability
+        .mockResolvedValueOnce({ available: false, command: 'rg' })
+        .mockResolvedValueOnce({ available: true, command: 'grep' });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '/test/path/file1.ts:10:match',
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+        smartCase: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.searchEngine).toBe('grep');
+      expect(result.warnings).toContainEqual(
+        expect.stringContaining('smartCase not supported by grep')
+      );
+    });
+
+    it('should reject multiline patterns when using grep', async () => {
+      mockCheckCommandAvailability
+        .mockResolvedValueOnce({ available: false, command: 'rg' })
+        .mockResolvedValueOnce({ available: true, command: 'grep' });
+
+      const result = await runRipgrep({
+        pattern: 'test.*\\nmore',
+        path: '/test/path',
+        multiline: true,
+      });
+
+      expect(result.status).toBe('error');
+    });
+
+    it('should parse grep files-only output correctly', async () => {
+      mockCheckCommandAvailability
+        .mockResolvedValueOnce({ available: false, command: 'rg' })
+        .mockResolvedValueOnce({ available: true, command: 'grep' });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '/test/path/file1.ts\n/test/path/file2.ts\n/test/path/file3.ts',
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+        filesOnly: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.searchEngine).toBe('grep');
+      expect(result.files).toHaveLength(3);
+      expect(result.files?.[0]?.path).toBe('/test/path/file1.ts');
+    });
+
+    it('should handle empty grep results', async () => {
+      mockCheckCommandAvailability
+        .mockResolvedValueOnce({ available: false, command: 'rg' })
+        .mockResolvedValueOnce({ available: true, command: 'grep' });
+
+      mockSafeExec.mockResolvedValue({
+        success: false,
+        code: 1, // grep returns 1 when no matches
+        stdout: '',
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'nonexistent',
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('empty');
+      expect(result.searchEngine).toBe('grep');
+    });
+
+    it('should use ripgrep when available (preferred)', async () => {
+      mockCheckCommandAvailability.mockResolvedValue({
+        available: true,
+        command: 'rg',
+      });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/test/file.ts' },
+            lines: { text: 'test match' },
+            line_number: 10,
+            absolute_offset: 100,
+            submatches: [{ start: 0, end: 4, match: { text: 'test' } }],
+          },
+        }),
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.searchEngine).toBe('rg');
     });
   });
 });

@@ -1,11 +1,18 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { LsCommandBuilder } from '../commands/LsCommandBuilder.js';
-import { safeExec } from '../utils/exec/index.js';
+import {
+  safeExec,
+  checkCommandAvailability,
+  getMissingCommandError,
+} from '../utils/exec/index.js';
 import { getExtension } from '../utils/fileFilters.js';
 import { getHints } from './hints/index.js';
 import { STATIC_TOOL_NAMES, TOOL_NAMES } from './toolMetadata.js';
-import { validateToolPath } from '../utils/local/utils/toolHelpers.js';
+import {
+  validateToolPath,
+  createErrorResult,
+} from '../utils/local/utils/toolHelpers.js';
 import {
   applyPagination,
   generatePaginationHints,
@@ -186,6 +193,7 @@ export async function viewStructure(
       return pathValidation.errorResult as ViewStructureResult;
     }
 
+    // For recursive mode, we use Node.js fs directly (no external command needed)
     if (query.depth || query.recursive) {
       return await viewStructureRecursive(
         query,
@@ -194,22 +202,40 @@ export async function viewStructure(
       );
     }
 
+    // For non-recursive mode, check if ls is available
+    const lsAvailability = await checkCommandAvailability('ls');
+    if (!lsAvailability.available) {
+      const toolError = ToolErrors.commandNotAvailable(
+        'ls',
+        getMissingCommandError('ls')
+      );
+      return createErrorResult(toolError, query, {
+        toolName: TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
+      }) as ViewStructureResult;
+    }
+
     const builder = new LsCommandBuilder();
     const { command, args } = builder.fromQuery(query).build();
 
     const result = await safeExec(command, args);
 
     if (!result.success) {
+      // Provide more detailed error message including stderr
+      const stderrMsg = result.stderr?.trim();
       const toolError = ToolErrors.commandExecutionFailed(
         'ls',
-        new Error(result.stderr)
+        new Error(stderrMsg || 'Unknown error'),
+        stderrMsg
       );
       return {
         status: 'error',
         errorCode: toolError.errorCode,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
-        hints: getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
+        hints: [
+          stderrMsg ? `Error: ${stderrMsg}` : 'ls command failed',
+          ...getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
+        ],
       };
     }
 

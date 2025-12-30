@@ -320,7 +320,7 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
   });
 
   describe('fetchGitHubFileContentAPI - Match String Not Found', () => {
-    it('should handle matchString not found in file', async () => {
+    it('should return success with matchNotFound flag when matchString not found in file', async () => {
       const fileContent = 'Line 1\nLine 2\nLine 3\nLine 4';
 
       const mockOctokit = {
@@ -351,13 +351,66 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
         matchString: 'NonExistentString',
       });
 
-      // When matchString not found, returns data with error field
-      expect(result).toHaveProperty('status');
-      if ('data' in result && result.data && typeof result.data === 'object') {
-        expect('error' in result.data).toBe(true);
-        const errorField = (result.data as Record<string, unknown>).error;
-        expect(errorField).toContain('Match string');
-        expect(errorField).toContain('not found');
+      // When matchString not found, returns 200 success with matchNotFound flag
+      // This is NOT an error - it's a normal scenario where the search pattern wasn't found
+      expect(result).toHaveProperty('status', 200);
+      expect('data' in result).toBe(true);
+      if ('data' in result && result.data) {
+        expect(result.data.matchNotFound).toBe(true);
+        expect(result.data.searchedFor).toBe('NonExistentString');
+        expect(result.data.content).toBe('');
+        expect(result.data.contentLength).toBe(0);
+        expect(result.data.hints).toBeDefined();
+        expect(result.data.hints?.[0]).toContain('not found');
+      }
+    });
+
+    it('should find matchString case-insensitively', async () => {
+      const fileContent = 'Line 1\nTarget Line\nLine 3\nLine 4\nLine 5';
+
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi.fn().mockResolvedValue({
+              data: {
+                type: 'file',
+                content: Buffer.from(fileContent).toString('base64'),
+                size: fileContent.length,
+                sha: 'abc123',
+                name: 'test.txt',
+                path: 'test.txt',
+              },
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+      vi.mocked(minifierModule.minifyContent).mockImplementation(
+        async content => ({
+          content,
+          failed: false,
+          type: 'general',
+        })
+      );
+
+      // Search with different case - should still find "Target Line"
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'test.txt',
+        matchString: 'TARGET LINE', // Different case!
+        matchStringContextLines: 1,
+      });
+
+      // Should find it despite case difference
+      expect(result.status).toBe(200);
+      expect('data' in result).toBe(true);
+      if ('data' in result) {
+        expect(result.data.matchNotFound).toBeUndefined();
+        expect(result.data.content).toContain('Target Line');
       }
     });
 

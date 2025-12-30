@@ -3,59 +3,35 @@
  */
 
 import { z } from 'zod';
+import { BaseQuerySchemaLocal, createBulkQuerySchema } from './baseSchema.js';
 import {
-  BaseQuerySchemaLocal,
-  createBulkQuerySchema,
-  COMMON_PAGINATION_DESCRIPTIONS,
-} from './baseSchema.js';
-import { TOOL_NAMES } from '../tools/toolMetadata.js';
+  LOCAL_FETCH_CONTENT,
+  TOOL_NAMES,
+  DESCRIPTIONS,
+} from '../tools/toolMetadata.js';
 
 /**
- * Tool description for MCP registration
+ * Tool description for localGetFileContent
  */
-export const LOCAL_FETCH_CONTENT_DESCRIPTION = `Purpose: Read targeted file sections or paginated content.
-
-Use when: You have a path (from ripgrep/find_files). Not for discovery.
-Workflow: Prefer matchString (+context). For full file, use charLength.
-Large files: Avoid fullContent without charLength; prefer matchString.
-Tips: minified=true (default) to reduce tokens; batch queries when safe.
-
-Examples:
-- matchString: "class UserService", matchStringContextLines: 5
-- matchString: "export.*function", matchStringIsRegex: true
-- fullContent: true, charLength: 5000, charOffset: 0
-`;
-
-/**
- * Schema descriptions for fetch content parameters
- */
-const FETCH_CONTENT_DESCRIPTIONS = {
-  path: 'File path (absolute or relative).',
-  fullContent:
-    'Return entire file (token-expensive; prefer matchString for sections).',
-  matchString:
-    'Search pattern — returns matches with context (token-efficient; pairs well with ripgrep).',
-  matchStringContextLines: 'Context lines around matches (1–50, default 5).',
-  minified: 'Minify content for token efficiency (default true).',
-} as const;
+export const LOCAL_FETCH_CONTENT_DESCRIPTION =
+  DESCRIPTIONS[TOOL_NAMES.LOCAL_FETCH_CONTENT] ||
+  'Read file content with optional pattern matching';
 
 /**
  * Single query schema for fetching file content
  */
 export const FetchContentQuerySchema = BaseQuerySchemaLocal.extend({
-  path: z.string().min(1).describe(FETCH_CONTENT_DESCRIPTIONS.path),
+  path: z.string().min(1).describe(LOCAL_FETCH_CONTENT.scope.path),
 
   fullContent: z
     .boolean()
     .default(false)
-    .describe(
-      'Return entire file. For large files, use with charLength for pagination.'
-    ),
+    .describe(LOCAL_FETCH_CONTENT.options.fullContent),
 
   matchString: z
     .string()
     .optional()
-    .describe(FETCH_CONTENT_DESCRIPTIONS.matchString),
+    .describe(LOCAL_FETCH_CONTENT.options.matchString),
 
   matchStringContextLines: z
     .number()
@@ -63,40 +39,38 @@ export const FetchContentQuerySchema = BaseQuerySchemaLocal.extend({
     .min(1)
     .max(50)
     .default(5)
-    .describe(FETCH_CONTENT_DESCRIPTIONS.matchStringContextLines),
+    .describe(LOCAL_FETCH_CONTENT.options.matchStringContextLines),
 
   matchStringIsRegex: z
     .boolean()
     .optional()
     .default(false)
-    .describe(
-      'Treat matchString as regex (default: false for literal). Matches per-line only.'
-    ),
+    .describe(LOCAL_FETCH_CONTENT.options.matchStringIsRegex),
 
   matchStringCaseSensitive: z
     .boolean()
     .optional()
     .default(false)
-    .describe('Case-sensitive matching (default: false).'),
+    .describe(LOCAL_FETCH_CONTENT.options.matchStringCaseSensitive),
 
   minified: z
     .boolean()
     .optional()
     .default(true)
-    .describe(FETCH_CONTENT_DESCRIPTIONS.minified),
+    .describe(LOCAL_FETCH_CONTENT.options.minified),
 
   charOffset: z
     .number()
     .min(0)
     .optional()
-    .describe(COMMON_PAGINATION_DESCRIPTIONS.charOffset),
+    .describe(LOCAL_FETCH_CONTENT.pagination.charOffset),
 
   charLength: z
     .number()
     .min(1)
     .max(10000)
     .optional()
-    .describe(COMMON_PAGINATION_DESCRIPTIONS.charLength),
+    .describe(LOCAL_FETCH_CONTENT.pagination.charLength),
 });
 
 /**

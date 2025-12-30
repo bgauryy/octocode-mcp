@@ -44,15 +44,13 @@ export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
     .max(GITHUB_STRUCTURE_DEFAULTS.MAX_ENTRIES_PER_PAGE)
     .default(GITHUB_STRUCTURE_DEFAULTS.ENTRIES_PER_PAGE)
     .optional()
-    .describe(
-      'Number of entries (files + folders) per page. Default: 50, Max: 200'
-    ),
+    .describe(GITHUB_VIEW_REPO_STRUCTURE.pagination.entriesPerPage),
   entryPageNumber: z
     .number()
     .min(1)
     .default(1)
     .optional()
-    .describe('Page number to retrieve (1-based). Default: 1'),
+    .describe(GITHUB_VIEW_REPO_STRUCTURE.pagination.entryPageNumber),
 });
 
 export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(

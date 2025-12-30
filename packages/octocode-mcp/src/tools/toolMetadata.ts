@@ -395,6 +395,10 @@ export const GITHUB_FETCH_CONTENT = createSchemaHelper(
     matchString: string;
     matchStringContextLines: string;
   };
+  pagination: {
+    charOffset: string;
+    charLength: string;
+  };
   validation: {
     parameterConflict: string;
   };
@@ -524,6 +528,10 @@ export const GITHUB_VIEW_REPO_STRUCTURE = createSchemaHelper(
   range: {
     depth: string;
   };
+  pagination: {
+    entriesPerPage: string;
+    entryPageNumber: string;
+  };
 };
 
 export const PACKAGE_SEARCH = createSchemaHelper(TOOL_NAMES.PACKAGE_SEARCH) as {
@@ -589,6 +597,19 @@ export const LOCAL_RIPGREP = createSchemaHelper(TOOL_NAMES.LOCAL_RIPGREP) as {
     matchesPerPage: string;
     maxFiles: string;
     maxMatchesPerFile: string;
+  };
+  advanced: {
+    threads: string;
+    mmap: string;
+    noUnicode: string;
+    encoding: string;
+    sort: string;
+    sortReverse: string;
+    noMessages: string;
+    lineRegexp: string;
+    passthru: string;
+    debug: string;
+    showFileLastModified: string;
   };
 };
 

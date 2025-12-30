@@ -12,6 +12,10 @@ import * as pathValidator from '../../src/security/pathValidator.js';
 // Mock dependencies
 vi.mock('../../src/utils/exec/index.js', () => ({
   safeExec: vi.fn(),
+  checkCommandAvailability: vi
+    .fn()
+    .mockResolvedValue({ available: true, command: 'find' }),
+  getMissingCommandError: vi.fn().mockReturnValue('Command not available'),
 }));
 
 vi.mock('../../src/security/pathValidator.js', () => ({

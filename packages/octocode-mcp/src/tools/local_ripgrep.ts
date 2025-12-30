@@ -1,7 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { RipgrepCommandBuilder } from '../commands/RipgrepCommandBuilder.js';
-import { safeExec } from '../utils/exec/index.js';
+import {
+  GrepCommandBuilder,
+  getGrepFeatureWarnings,
+} from '../commands/GrepCommandBuilder.js';
+import {
+  safeExec,
+  checkCommandAvailability,
+  getMissingCommandError,
+} from '../utils/exec/index.js';
 import { getHints, getLargeFileWorkflowHints } from './hints/index.js';
 import {
   validateRipgrepQuery,
@@ -25,7 +33,7 @@ import type {
 } from '../utils/types.js';
 import { promises as fs } from 'fs';
 import { join } from 'path';
-import { ERROR_CODES } from '../errorCodes.js';
+import { ERROR_CODES, ToolErrors } from '../errorCodes.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 
 /**
@@ -47,7 +55,8 @@ export function registerLocalRipgrepTool(server: McpServer) {
       },
     },
     async (args: { queries: RipgrepQuery[] }): Promise<CallToolResult> => {
-      return executeBulkOperation<RipgrepQuery, Record<string, unknown>>(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return executeBulkOperation<RipgrepQuery, any>(
         args.queries || [],
         async query => await searchContentRipgrep(query),
         { toolName: TOOL_NAMES.LOCAL_RIPGREP }
@@ -62,198 +71,40 @@ export async function searchContentRipgrep(
   const configuredQuery = applyWorkflowMode(query);
 
   try {
-    const validation = validateRipgrepQuery(configuredQuery);
-    if (!validation.isValid) {
+    // Check if ripgrep is available
+    const rgAvailability = await checkCommandAvailability('rg');
+
+    if (rgAvailability.available) {
+      // Use ripgrep (preferred - faster, more features)
+      return await executeRipgrepSearch(configuredQuery);
+    }
+
+    // rg not available - try grep fallback
+    const grepAvailability = await checkCommandAvailability('grep');
+    if (!grepAvailability.available) {
+      // Neither rg nor grep available
+      const toolError = ToolErrors.commandNotAvailable(
+        'rg or grep',
+        `${getMissingCommandError('rg')} Alternatively, ensure grep is in PATH.`
+      );
+      return createErrorResult(toolError, configuredQuery, {
+        toolName: TOOL_NAMES.LOCAL_RIPGREP,
+      }) as SearchContentResult;
+    }
+
+    // Check for features that don't work with grep
+    if (configuredQuery.multiline) {
       return createErrorResult(
-        new Error(`Query validation failed: ${validation.errors.join(', ')}`),
+        new Error(
+          'multiline patterns require ripgrep (rg). Install ripgrep or remove multiline option.'
+        ),
         configuredQuery,
-        {
-          toolName: TOOL_NAMES.LOCAL_RIPGREP,
-          extra: { warnings: validation.warnings },
-        }
+        { toolName: TOOL_NAMES.LOCAL_RIPGREP }
       ) as SearchContentResult;
     }
 
-    const pathValidation = validateToolPath(
-      configuredQuery,
-      TOOL_NAMES.LOCAL_RIPGREP
-    );
-    if (!pathValidation.isValid) {
-      return {
-        ...pathValidation.errorResult,
-        warnings: validation.warnings,
-      } as SearchContentResult;
-    }
-
-    const dirStats = await estimateDirectoryStats(configuredQuery.path);
-    const chunkingWarnings: string[] = [];
-
-    if (dirStats.isLarge && !configuredQuery.filesOnly) {
-      chunkingWarnings.push(
-        `Large directory detected (~${Math.round(dirStats.estimatedSizeMB)}MB, ~${dirStats.estimatedFileCount} files). Consider chunking workflow for better performance.`
-      );
-      chunkingWarnings.push(...getLargeFileWorkflowHints('search'));
-    }
-
-    const builder = new RipgrepCommandBuilder();
-    const { command, args } = builder.fromQuery(configuredQuery).build();
-
-    const result = await safeExec(command, args);
-
-    if (!result.success || !result.stdout.trim()) {
-      return {
-        status: 'empty',
-        path: configuredQuery.path,
-        searchEngine: 'rg',
-        warnings: [...validation.warnings, ...chunkingWarnings],
-        researchGoal: configuredQuery.researchGoal,
-        reasoning: configuredQuery.reasoning,
-        hints: getHints(TOOL_NAMES.LOCAL_RIPGREP, 'empty'),
-      };
-    }
-
-    const { files: parsedFiles } = parseRipgrepJson(
-      result.stdout,
-      configuredQuery
-    );
-
-    const filesWithCharOffsets = await computeCharacterOffsets(parsedFiles);
-
-    const filesWithMetadata = await Promise.all(
-      filesWithCharOffsets.map(async f => {
-        const file: typeof f & { modified?: string } = { ...f };
-        if (configuredQuery.showFileLastModified) {
-          file.modified = await getFileModifiedTime(f.path);
-        }
-        return file;
-      })
-    );
-
-    filesWithMetadata.sort(
-      (
-        a: RipgrepFileMatches & { modified?: string },
-        b: RipgrepFileMatches & { modified?: string }
-      ) => {
-        if (configuredQuery.showFileLastModified && a.modified && b.modified) {
-          return (
-            new Date(b.modified).getTime() - new Date(a.modified).getTime()
-          );
-        }
-        // Fallback to path sorting when modified is not available
-        return a.path.localeCompare(b.path);
-      }
-    );
-
-    let limitedFiles = filesWithMetadata;
-    let wasLimited = false;
-    if (
-      configuredQuery.maxFiles &&
-      filesWithMetadata.length > configuredQuery.maxFiles
-    ) {
-      limitedFiles = filesWithMetadata.slice(0, configuredQuery.maxFiles);
-      wasLimited = true;
-    }
-
-    const totalFiles = limitedFiles.length;
-    const totalMatches = limitedFiles.reduce(
-      (sum: number, f: RipgrepFileMatches & { modified?: string }) =>
-        sum + f.matchCount,
-      0
-    );
-
-    const filesPerPage =
-      configuredQuery.filesPerPage || RESOURCE_LIMITS.DEFAULT_FILES_PER_PAGE;
-    const filePageNumber = configuredQuery.filePageNumber || 1;
-    const totalFilePages = Math.ceil(totalFiles / filesPerPage);
-    const startIdx = (filePageNumber - 1) * filesPerPage;
-    const endIdx = Math.min(startIdx + filesPerPage, totalFiles);
-    const paginatedFiles = limitedFiles.slice(startIdx, endIdx);
-
-    const matchesPerPage =
-      configuredQuery.matchesPerPage ||
-      RESOURCE_LIMITS.DEFAULT_MATCHES_PER_PAGE;
-
-    const finalFiles: RipgrepFileMatches[] = paginatedFiles.map(
-      (file: RipgrepFileMatches & { modified?: string }) => {
-        const totalFileMatches = file.matches.length;
-        const totalMatchPages = Math.ceil(totalFileMatches / matchesPerPage);
-        const paginatedMatches = configuredQuery.filesOnly
-          ? []
-          : file.matches.slice(0, matchesPerPage);
-
-        const result: RipgrepFileMatches = {
-          path: file.path,
-          matchCount: totalFileMatches,
-          matches: paginatedMatches,
-          pagination:
-            !configuredQuery.filesOnly && totalFileMatches > matchesPerPage
-              ? {
-                  currentPage: 1,
-                  totalPages: totalMatchPages,
-                  matchesPerPage,
-                  totalMatches: totalFileMatches,
-                  hasMore: totalMatchPages > 1,
-                }
-              : undefined,
-        };
-        if (configuredQuery.showFileLastModified && file.modified) {
-          result.modified = file.modified;
-        }
-        return result;
-      }
-    );
-
-    const paginationHints = [
-      `File page ${filePageNumber}/${totalFilePages} (showing ${finalFiles.length} of ${totalFiles})`,
-      `Total: ${totalMatches} matches across ${totalFiles} files`,
-      filePageNumber < totalFilePages
-        ? `Next: filePageNumber=${filePageNumber + 1}`
-        : 'Final page',
-    ];
-
-    if (wasLimited) {
-      paginationHints.push(
-        `Results limited to ${configuredQuery.maxFiles} files (found ${filesWithMetadata.length} matching)`
-      );
-    }
-
-    const filesWithMoreMatches = finalFiles.filter(f => f.pagination?.hasMore);
-    if (filesWithMoreMatches.length > 0) {
-      paginationHints.push(
-        `Note: ${filesWithMoreMatches.length} file(s) have more matches - use matchesPerPage to see more`
-      );
-    }
-
-    const refinementHints = _getStructuredResultSizeHints(
-      finalFiles,
-      configuredQuery,
-      totalMatches
-    );
-
-    return {
-      status: 'hasResults',
-      files: finalFiles,
-      cwd: process.cwd(),
-      totalMatches: configuredQuery.filesOnly ? 0 : totalMatches,
-      totalFiles,
-      path: configuredQuery.path,
-      searchEngine: 'rg',
-      pagination: {
-        currentPage: filePageNumber,
-        totalPages: totalFilePages,
-        filesPerPage,
-        totalFiles,
-        hasMore: filePageNumber < totalFilePages,
-      },
-      warnings: [...validation.warnings, ...chunkingWarnings],
-      researchGoal: configuredQuery.researchGoal,
-      reasoning: configuredQuery.reasoning,
-      hints: [
-        ...paginationHints,
-        ...refinementHints,
-        ...getHints(TOOL_NAMES.LOCAL_RIPGREP, 'hasResults'),
-      ],
-    };
+    // Use grep fallback
+    return await executeGrepSearch(configuredQuery);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
@@ -280,6 +131,333 @@ export async function searchContentRipgrep(
       toolName: TOOL_NAMES.LOCAL_RIPGREP,
     }) as SearchContentResult;
   }
+}
+
+/**
+ * Execute search using ripgrep (rg) - preferred engine
+ */
+async function executeRipgrepSearch(
+  configuredQuery: RipgrepQuery
+): Promise<SearchContentResult> {
+  const validation = validateRipgrepQuery(configuredQuery);
+  if (!validation.isValid) {
+    return createErrorResult(
+      new Error(`Query validation failed: ${validation.errors.join(', ')}`),
+      configuredQuery,
+      {
+        toolName: TOOL_NAMES.LOCAL_RIPGREP,
+        extra: { warnings: validation.warnings },
+      }
+    ) as SearchContentResult;
+  }
+
+  const pathValidation = validateToolPath(
+    configuredQuery,
+    TOOL_NAMES.LOCAL_RIPGREP
+  );
+  if (!pathValidation.isValid) {
+    return {
+      ...pathValidation.errorResult,
+      warnings: validation.warnings,
+    } as SearchContentResult;
+  }
+
+  const dirStats = await estimateDirectoryStats(configuredQuery.path);
+  const chunkingWarnings: string[] = [];
+
+  if (dirStats.isLarge && !configuredQuery.filesOnly) {
+    chunkingWarnings.push(
+      `Large directory detected (~${Math.round(dirStats.estimatedSizeMB)}MB, ~${dirStats.estimatedFileCount} files). Consider chunking workflow for better performance.`
+    );
+    chunkingWarnings.push(...getLargeFileWorkflowHints('search'));
+  }
+
+  const builder = new RipgrepCommandBuilder();
+  const { command, args } = builder.fromQuery(configuredQuery).build();
+
+  const result = await safeExec(command, args);
+
+  // Check for timeout specifically
+  if (result.stderr?.includes('timeout') || result.code === null) {
+    const timeoutMs = RESOURCE_LIMITS.DEFAULT_EXEC_TIMEOUT_MS;
+    return {
+      status: 'error',
+      errorCode: ERROR_CODES.COMMAND_TIMEOUT,
+      path: configuredQuery.path,
+      searchEngine: 'rg',
+      researchGoal: configuredQuery.researchGoal,
+      reasoning: configuredQuery.reasoning,
+      hints: [
+        `Search timed out after ${timeoutMs / 1000} seconds.`,
+        'Try a more specific path or add type/include filters to narrow the search.',
+        'Use filesOnly=true for faster discovery.',
+        'Consider excluding large directories with excludeDir.',
+        ...chunkingWarnings,
+      ],
+    } as SearchContentResult;
+  }
+
+  if (!result.success || !result.stdout.trim()) {
+    return {
+      status: 'empty',
+      path: configuredQuery.path,
+      searchEngine: 'rg',
+      warnings: [...validation.warnings, ...chunkingWarnings],
+      researchGoal: configuredQuery.researchGoal,
+      reasoning: configuredQuery.reasoning,
+      hints: getHints(TOOL_NAMES.LOCAL_RIPGREP, 'empty'),
+    };
+  }
+
+  const { files: parsedFiles } = parseRipgrepJson(
+    result.stdout,
+    configuredQuery
+  );
+
+  return buildSearchResult(parsedFiles, configuredQuery, 'rg', [
+    ...validation.warnings,
+    ...chunkingWarnings,
+  ]);
+}
+
+/**
+ * Execute search using grep (fallback when ripgrep not available)
+ */
+async function executeGrepSearch(
+  configuredQuery: RipgrepQuery
+): Promise<SearchContentResult> {
+  // Get warnings about unsupported grep features
+  const grepWarnings = getGrepFeatureWarnings(configuredQuery);
+  grepWarnings.unshift(
+    'Using grep fallback (ripgrep not available). Some features may be limited.'
+  );
+
+  const validation = validateRipgrepQuery(configuredQuery);
+  if (!validation.isValid) {
+    return createErrorResult(
+      new Error(`Query validation failed: ${validation.errors.join(', ')}`),
+      configuredQuery,
+      {
+        toolName: TOOL_NAMES.LOCAL_RIPGREP,
+        extra: { warnings: [...grepWarnings, ...validation.warnings] },
+      }
+    ) as SearchContentResult;
+  }
+
+  const pathValidation = validateToolPath(
+    configuredQuery,
+    TOOL_NAMES.LOCAL_RIPGREP
+  );
+  if (!pathValidation.isValid) {
+    return {
+      ...pathValidation.errorResult,
+      warnings: [...grepWarnings, ...validation.warnings],
+    } as SearchContentResult;
+  }
+
+  const dirStats = await estimateDirectoryStats(configuredQuery.path);
+  const chunkingWarnings: string[] = [];
+
+  if (dirStats.isLarge && !configuredQuery.filesOnly) {
+    chunkingWarnings.push(
+      `Large directory detected (~${Math.round(dirStats.estimatedSizeMB)}MB, ~${dirStats.estimatedFileCount} files). Consider chunking workflow for better performance.`
+    );
+    chunkingWarnings.push(...getLargeFileWorkflowHints('search'));
+  }
+
+  const builder = new GrepCommandBuilder();
+  const { command, args } = builder.fromQuery(configuredQuery).build();
+
+  const result = await safeExec(command, args);
+
+  // Check for timeout
+  if (result.stderr?.includes('timeout') || result.code === null) {
+    const timeoutMs = RESOURCE_LIMITS.DEFAULT_EXEC_TIMEOUT_MS;
+    return {
+      status: 'error',
+      errorCode: ERROR_CODES.COMMAND_TIMEOUT,
+      path: configuredQuery.path,
+      searchEngine: 'grep',
+      researchGoal: configuredQuery.researchGoal,
+      reasoning: configuredQuery.reasoning,
+      hints: [
+        `Search timed out after ${timeoutMs / 1000} seconds.`,
+        'Try a more specific path or add type/include filters to narrow the search.',
+        'Use filesOnly=true for faster discovery.',
+        'Consider excluding large directories with excludeDir.',
+        ...chunkingWarnings,
+      ],
+    } as SearchContentResult;
+  }
+
+  // grep returns exit code 1 when no matches found (not an error)
+  if (!result.stdout.trim()) {
+    return {
+      status: 'empty',
+      path: configuredQuery.path,
+      searchEngine: 'grep',
+      warnings: [...grepWarnings, ...validation.warnings, ...chunkingWarnings],
+      researchGoal: configuredQuery.researchGoal,
+      reasoning: configuredQuery.reasoning,
+      hints: getHints(TOOL_NAMES.LOCAL_RIPGREP, 'empty'),
+    };
+  }
+
+  // Parse grep output
+  const parsedFiles = parseGrepOutput(result.stdout, configuredQuery);
+
+  return buildSearchResult(parsedFiles, configuredQuery, 'grep', [
+    ...grepWarnings,
+    ...validation.warnings,
+    ...chunkingWarnings,
+  ]);
+}
+
+/**
+ * Build the final search result with pagination and metadata
+ */
+async function buildSearchResult(
+  parsedFiles: RipgrepFileMatches[],
+  configuredQuery: RipgrepQuery,
+  searchEngine: 'rg' | 'grep',
+  warnings: string[]
+): Promise<SearchContentResult> {
+  const filesWithCharOffsets =
+    searchEngine === 'rg'
+      ? await computeCharacterOffsets(parsedFiles)
+      : parsedFiles; // grep doesn't provide byte offsets
+
+  const filesWithMetadata = await Promise.all(
+    filesWithCharOffsets.map(async f => {
+      const file: typeof f & { modified?: string } = { ...f };
+      if (configuredQuery.showFileLastModified) {
+        file.modified = await getFileModifiedTime(f.path);
+      }
+      return file;
+    })
+  );
+
+  filesWithMetadata.sort(
+    (
+      a: RipgrepFileMatches & { modified?: string },
+      b: RipgrepFileMatches & { modified?: string }
+    ) => {
+      if (configuredQuery.showFileLastModified && a.modified && b.modified) {
+        return new Date(b.modified).getTime() - new Date(a.modified).getTime();
+      }
+      return a.path.localeCompare(b.path);
+    }
+  );
+
+  let limitedFiles = filesWithMetadata;
+  let wasLimited = false;
+  if (
+    configuredQuery.maxFiles &&
+    filesWithMetadata.length > configuredQuery.maxFiles
+  ) {
+    limitedFiles = filesWithMetadata.slice(0, configuredQuery.maxFiles);
+    wasLimited = true;
+  }
+
+  const totalFiles = limitedFiles.length;
+  const totalMatches = limitedFiles.reduce(
+    (sum: number, f: RipgrepFileMatches & { modified?: string }) =>
+      sum + f.matchCount,
+    0
+  );
+
+  const filesPerPage =
+    configuredQuery.filesPerPage || RESOURCE_LIMITS.DEFAULT_FILES_PER_PAGE;
+  const filePageNumber = configuredQuery.filePageNumber || 1;
+  const totalFilePages = Math.ceil(totalFiles / filesPerPage);
+  const startIdx = (filePageNumber - 1) * filesPerPage;
+  const endIdx = Math.min(startIdx + filesPerPage, totalFiles);
+  const paginatedFiles = limitedFiles.slice(startIdx, endIdx);
+
+  const matchesPerPage =
+    configuredQuery.matchesPerPage || RESOURCE_LIMITS.DEFAULT_MATCHES_PER_PAGE;
+
+  const finalFiles: RipgrepFileMatches[] = paginatedFiles.map(
+    (file: RipgrepFileMatches & { modified?: string }) => {
+      const totalFileMatches = file.matches.length;
+      const totalMatchPages = Math.ceil(totalFileMatches / matchesPerPage);
+      const paginatedMatches = configuredQuery.filesOnly
+        ? []
+        : file.matches.slice(0, matchesPerPage);
+
+      const result: RipgrepFileMatches = {
+        path: file.path,
+        matchCount: totalFileMatches,
+        matches: paginatedMatches,
+        pagination:
+          !configuredQuery.filesOnly && totalFileMatches > matchesPerPage
+            ? {
+                currentPage: 1,
+                totalPages: totalMatchPages,
+                matchesPerPage,
+                totalMatches: totalFileMatches,
+                hasMore: totalMatchPages > 1,
+              }
+            : undefined,
+      };
+      if (configuredQuery.showFileLastModified && file.modified) {
+        result.modified = file.modified;
+      }
+      return result;
+    }
+  );
+
+  const paginationHints = [
+    `File page ${filePageNumber}/${totalFilePages} (showing ${finalFiles.length} of ${totalFiles})`,
+    `Total: ${totalMatches} matches across ${totalFiles} files`,
+    filePageNumber < totalFilePages
+      ? `Next: filePageNumber=${filePageNumber + 1}`
+      : 'Final page',
+  ];
+
+  if (wasLimited) {
+    paginationHints.push(
+      `Results limited to ${configuredQuery.maxFiles} files (found ${filesWithMetadata.length} matching)`
+    );
+  }
+
+  const filesWithMoreMatches = finalFiles.filter(f => f.pagination?.hasMore);
+  if (filesWithMoreMatches.length > 0) {
+    paginationHints.push(
+      `Note: ${filesWithMoreMatches.length} file(s) have more matches - use matchesPerPage to see more`
+    );
+  }
+
+  const refinementHints = _getStructuredResultSizeHints(
+    finalFiles,
+    configuredQuery,
+    totalMatches
+  );
+
+  return {
+    status: 'hasResults',
+    files: finalFiles,
+    cwd: process.cwd(),
+    totalMatches,
+    totalFiles,
+    path: configuredQuery.path,
+    searchEngine,
+    pagination: {
+      currentPage: filePageNumber,
+      totalPages: totalFilePages,
+      filesPerPage,
+      totalFiles,
+      hasMore: filePageNumber < totalFilePages,
+    },
+    warnings,
+    researchGoal: configuredQuery.researchGoal,
+    reasoning: configuredQuery.reasoning,
+    hints: [
+      ...paginationHints,
+      ...refinementHints,
+      ...getHints(TOOL_NAMES.LOCAL_RIPGREP, 'hasResults'),
+    ],
+  };
 }
 
 function _getStructuredResultSizeHints(
@@ -581,6 +759,116 @@ function parseRipgrepJson(
   );
 
   return { files, stats };
+}
+
+/**
+ * Parse grep output into structured format
+ * Grep output format: filename:lineNumber:content (with -n -H flags)
+ */
+function parseGrepOutput(
+  output: string,
+  query: RipgrepQuery
+): RipgrepFileMatches[] {
+  const lines = output.trim().split('\n').filter(Boolean);
+
+  type RawMatch = {
+    lineText: string;
+    lineNumber: number;
+    column: number;
+  };
+
+  const fileMap = new Map<string, RawMatch[]>();
+
+  // Grep output format with -n -H: filename:lineNumber:content
+  // For files-only mode (-l): just filename
+  if (query.filesOnly) {
+    // Each line is just a filename
+    for (const line of lines) {
+      const path = line.trim();
+      if (path && !fileMap.has(path)) {
+        fileMap.set(path, []);
+      }
+    }
+  } else {
+    // Parse filename:lineNumber:content format
+    for (const line of lines) {
+      // Handle the case where filename might contain colons
+      // Format is: path:lineNumber:content
+      // We need to find the first colon after the path (line number is always numeric)
+      const match = line.match(/^(.+?):(\d+):(.*)$/);
+      if (match) {
+        const [, matchPath, lineNumStr, matchContent] = match;
+        // These are guaranteed to be defined when the regex matches
+        const path = matchPath!;
+        const content = matchContent!;
+        const lineNumber = parseInt(lineNumStr!, 10);
+
+        if (!fileMap.has(path)) {
+          fileMap.set(path, []);
+        }
+
+        // Try to find the column (position of pattern in the line)
+        // For simplicity, we set column to 0 since grep doesn't provide it
+        fileMap.get(path)!.push({
+          lineText: content,
+          lineNumber,
+          column: 0,
+        });
+      } else if (line.includes(':')) {
+        // Fallback: try to parse as filename:content (no line number)
+        const colonIdx = line.indexOf(':');
+        const path = line.substring(0, colonIdx);
+        const content = line.substring(colonIdx + 1);
+
+        if (path && !path.includes('\0')) {
+          if (!fileMap.has(path)) {
+            fileMap.set(path, []);
+          }
+          fileMap.get(path)!.push({
+            lineText: content,
+            lineNumber: 0,
+            column: 0,
+          });
+        }
+      }
+    }
+  }
+
+  const maxLength =
+    query.matchContentLength || RESOURCE_LIMITS.DEFAULT_MATCH_CONTENT_LENGTH;
+
+  const files: RipgrepFileMatches[] = Array.from(fileMap.entries()).map(
+    ([path, rawMatches]) => {
+      const matches: RipgrepMatch[] = rawMatches.map(m => {
+        let value = m.lineText;
+        const charArray = [...value];
+        if (charArray.length > maxLength) {
+          value = charArray.slice(0, maxLength - 3).join('') + '...';
+        }
+
+        return {
+          value,
+          location: {
+            // grep doesn't provide byte offsets, use 0 as placeholder
+            byteOffset: 0,
+            byteLength: 0,
+            charOffset: 0,
+            charLength: value.length,
+          },
+          line: m.lineNumber,
+          column: m.column,
+        };
+      });
+
+      return {
+        path,
+        matchCount: matches.length,
+        matches,
+      };
+    }
+  );
+
+  return files;
 }
 
 async function getFileModifiedTime(

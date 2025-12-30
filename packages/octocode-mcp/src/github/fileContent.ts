@@ -463,52 +463,47 @@ async function processFileContentAPI(
 ): Promise<ContentResult> {
   const securityWarningsSet = new Set<string>();
 
-  const sanitizationResult = ContentSanitizer.sanitizeContent(decodedContent);
-  decodedContent = sanitizationResult.content;
-
-  if (sanitizationResult.hasSecrets) {
-    securityWarningsSet.add(
-      `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
-    );
-  }
-  if (sanitizationResult.warnings.length > 0) {
-    sanitizationResult.warnings.forEach(warning =>
-      securityWarningsSet.add(warning)
-    );
-  }
-  const securityWarnings = Array.from(securityWarningsSet);
+  // IMPORTANT: Search on ORIGINAL content first, sanitize OUTPUT later
+  // This prevents false "not found" when searching for patterns that get redacted
+  const originalContent = decodedContent;
+  const originalLines = originalContent.split('\n');
+  const totalLines = originalLines.length;
 
   let finalContent = decodedContent;
   let actualStartLine: number | undefined;
   let actualEndLine: number | undefined;
   let isPartial = false;
 
-  const lines = decodedContent.split('\n');
-  const totalLines = lines.length;
-
   if (fullContent) {
     finalContent = decodedContent;
   } else if (matchString) {
     const matchingLines: number[] = [];
 
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i]?.includes(matchString)) {
+    // Search on ORIGINAL content (before sanitization) with case-insensitive option
+    const searchLower = matchString.toLowerCase();
+    for (let i = 0; i < originalLines.length; i++) {
+      // Case-insensitive search for better UX
+      if (originalLines[i]?.toLowerCase().includes(searchLower)) {
         matchingLines.push(i + 1);
       }
     }
 
     if (matchingLines.length === 0) {
-      await logSessionError(
-        TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        FILE_OPERATION_ERRORS.MATCH_STRING_NOT_FOUND.code
-      );
+      // Return success with matchNotFound flag - this is NOT an error,
+      // just a normal scenario where the search pattern wasn't found
       return {
-        error:
-          FILE_OPERATION_ERRORS.MATCH_STRING_NOT_FOUND.message(matchString),
+        owner,
+        repo,
+        path: filePath,
+        content: '',
+        contentLength: 0,
+        branch,
+        matchNotFound: true,
+        searchedFor: matchString,
         hints: [
-          FILE_OPERATION_ERRORS.MATCH_STRING_NOT_FOUND.message(matchString),
+          `Pattern "${matchString}" not found in file. Try broader search or verify path.`,
         ],
-      };
+      } as ContentResult;
     }
 
     const firstMatch = matchingLines[0]!;
@@ -521,14 +516,15 @@ async function processFileContentAPI(
     startLine = matchStartLine;
     endLine = matchEndLine;
 
-    const selectedLines = lines.slice(matchStartLine - 1, matchEndLine);
+    // Extract from ORIGINAL content (before sanitization)
+    const selectedLines = originalLines.slice(matchStartLine - 1, matchEndLine);
     finalContent = selectedLines.join('\n');
 
     actualStartLine = matchStartLine;
     actualEndLine = matchEndLine;
     isPartial = true;
 
-    securityWarnings.push(
+    securityWarningsSet.add(
       `Found "${matchString}" on line ${firstMatch}${matchingLines.length > 1 ? ` (and ${matchingLines.length - 1} other locations)` : ''}`
     );
   } else if (startLine !== undefined || endLine !== undefined) {
@@ -544,7 +540,11 @@ async function processFileContentAPI(
       const adjustedStartLine = Math.max(1, effectiveStartLine);
       const adjustedEndLine = Math.min(totalLines, effectiveEndLine);
 
-      const selectedLines = lines.slice(adjustedStartLine - 1, adjustedEndLine);
+      // Extract from ORIGINAL content (before sanitization)
+      const selectedLines = originalLines.slice(
+        adjustedStartLine - 1,
+        adjustedEndLine
+      );
 
       actualStartLine = adjustedStartLine;
       actualEndLine = adjustedEndLine;
@@ -553,17 +553,34 @@ async function processFileContentAPI(
       finalContent = selectedLines.join('\n');
 
       if (effectiveEndLine > totalLines) {
-        securityWarnings.push(
+        securityWarningsSet.add(
           `Requested endLine ${effectiveEndLine} adjusted to ${totalLines} (file end)`
         );
       }
     }
   }
 
+  // NOW sanitize the OUTPUT content (after extraction, before return)
+  const sanitizationResult = ContentSanitizer.sanitizeContent(finalContent);
+  finalContent = sanitizationResult.content;
+
+  if (sanitizationResult.hasSecrets) {
+    securityWarningsSet.add(
+      `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
+    );
+  }
+  if (sanitizationResult.warnings.length > 0) {
+    sanitizationResult.warnings.forEach(warning =>
+      securityWarningsSet.add(warning)
+    );
+  }
+
   const minifyResult = await minifyContent(finalContent, filePath);
   finalContent = minifyResult.content;
   const minificationFailed = minifyResult.failed;
   const minificationType = minifyResult.type;
+
+  const securityWarnings = Array.from(securityWarningsSet);
 
   return {
     owner,

@@ -12,7 +12,13 @@ import * as pathValidator from '../../src/security/pathValidator.js';
 import type { Stats } from 'fs';
 
 // Mocks
-vi.mock('../../src/utils/exec/index.js', () => ({ safeExec: vi.fn() }));
+vi.mock('../../src/utils/exec/index.js', () => ({
+  safeExec: vi.fn(),
+  checkCommandAvailability: vi
+    .fn()
+    .mockResolvedValue({ available: true, command: 'ls' }),
+  getMissingCommandError: vi.fn().mockReturnValue('Command not available'),
+}));
 vi.mock('../../src/security/pathValidator.js', () => ({
   pathValidator: { validate: vi.fn() },
 }));

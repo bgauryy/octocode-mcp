@@ -126,6 +126,8 @@ interface FsMockModule {
  */
 interface ExecMockModule {
   safeExec: ReturnType<typeof vi.fn>;
+  checkCommandAvailability: ReturnType<typeof vi.fn>;
+  getMissingCommandError: ReturnType<typeof vi.fn>;
 }
 
 /**
@@ -193,9 +195,20 @@ export function createLocalToolMocks(
     },
   };
 
+  // Create command availability mock functions
+  const checkCommandAvailabilityFn = vi.fn().mockResolvedValue({
+    available: true,
+    command: 'ls',
+  });
+  const getMissingCommandErrorFn = vi
+    .fn()
+    .mockReturnValue('Command not available');
+
   // Create exec mock module structure
   const execMock: ExecMockModule = {
     safeExec: safeExecFn,
+    checkCommandAvailability: checkCommandAvailabilityFn,
+    getMissingCommandError: getMissingCommandErrorFn,
   };
 
   // Create path validator mock module structure

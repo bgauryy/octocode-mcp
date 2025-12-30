@@ -24,6 +24,13 @@ const { fsMocks, execMocks, pathValidatorMocks, mocks, createStats, helpers } =
     const readFile = vi.fn();
     const access = vi.fn();
     const safeExec = vi.fn();
+    const checkCommandAvailability = vi.fn().mockResolvedValue({
+      available: true,
+      command: 'ls',
+    });
+    const getMissingCommandError = vi
+      .fn()
+      .mockReturnValue('Command not available');
     const validate = vi.fn();
 
     // Stats factory
@@ -75,7 +82,7 @@ const { fsMocks, execMocks, pathValidatorMocks, mocks, createStats, helpers } =
         realpathSync,
         promises: { readdir, lstat, stat, readFile, access },
       },
-      execMocks: { safeExec },
+      execMocks: { safeExec, checkCommandAvailability, getMissingCommandError },
       pathValidatorMocks: { pathValidator: { validate } },
 
       // Individual mocks for direct access
