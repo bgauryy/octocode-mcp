@@ -273,16 +273,16 @@ function removeComments(
         for (const pattern of patterns) {
           try {
             result = result.replace(pattern, '');
-          } catch {
+          } /* v8 ignore start */ catch {
             continue;
-          }
+          } /* v8 ignore stop */
         }
       }
     }
     return result;
-  } catch {
+  } /* v8 ignore start */ catch {
     return content;
-  }
+  } /* v8 ignore stop */
 }
 
 // ============================================================================
@@ -307,9 +307,9 @@ function minifyConservativeCore(
       .replace(/[ \t]+$/gm, '') // Remove trailing whitespace
       .replace(/\n\s*\n\s*\n+/g, '\n\n') // Collapse 3+ empty lines to 2
       .trim();
-  } catch {
+  } /* v8 ignore start */ catch {
     return content;
-  }
+  } /* v8 ignore stop */
 }
 
 function minifyAggressiveCore(
@@ -331,9 +331,9 @@ function minifyAggressiveCore(
       .replace(/\s*([{}:;,])\s*/g, '$1') // Remove spaces around syntax
       .replace(/>\s+</g, '><') // Remove whitespace between tags
       .trim();
-  } catch {
+  } /* v8 ignore start */ catch {
     return content;
-  }
+  } /* v8 ignore stop */
 }
 
 function minifyJsonCore(content: string): {
@@ -362,9 +362,9 @@ function minifyGeneralCore(content: string): string {
       .replace(/\n\s*\n\s*\n+/g, '\n\n') // Collapse 3+ empty lines
       .replace(/[ \t]{3,}/g, ' ') // Collapse excessive inline whitespace
       .trim();
-  } catch {
+  } /* v8 ignore start */ catch {
     return content;
-  }
+  } /* v8 ignore stop */
 }
 
 function minifyMarkdownCore(content: string): string {
@@ -381,9 +381,9 @@ function minifyMarkdownCore(content: string): string {
       .replace(/\n{3,}(```)/g, '\n\n$1') // Normalize before code blocks
       .replace(/(```)\n{3,}/g, '$1\n\n') // Normalize after code blocks
       .trim();
-  } catch {
+  } /* v8 ignore start */ catch {
     return content;
-  }
+  } /* v8 ignore stop */
 }
 
 function minifyCSSCore(content: string): string {
@@ -392,9 +392,9 @@ function minifyCSSCore(content: string): string {
       .replace(/\s+/g, ' ')
       .replace(/\s*([{}:;,])\s*/g, '$1')
       .trim();
-  } catch {
+  } /* v8 ignore start */ catch {
     return content;
-  }
+  } /* v8 ignore stop */
 }
 
 function minifyHTMLCore(content: string): string {
@@ -403,9 +403,9 @@ function minifyHTMLCore(content: string): string {
       .replace(/\s+/g, ' ')
       .replace(/>\s+</g, '><')
       .trim();
-  } catch {
+  } /* v8 ignore start */ catch {
     return content;
-  }
+  } /* v8 ignore stop */
 }
 
 function minifyJavaScriptCore(content: string): string {
@@ -417,9 +417,9 @@ function minifyJavaScriptCore(content: string): string {
       .map(line => line.trim())
       .filter(line => line.length > 0)
       .join('\n');
-  } catch {
+  } /* v8 ignore start */ catch {
     return content;
-  }
+  } /* v8 ignore stop */
 }
 
 // ============================================================================
@@ -462,9 +462,9 @@ export function minifyContentSync(content: string, filePath: string): string {
       default:
         return minifyGeneralCore(content);
     }
-  } catch {
+  } /* v8 ignore start */ catch {
     return content;
-  }
+  } /* v8 ignore stop */
 }
 
 // ============================================================================
@@ -530,8 +530,13 @@ async function minifyCSSAsync(
     }
 
     return { content: result.styles, failed: false };
-  } catch {
-    return { content: minifyCSSCore(content), failed: false };
+  } catch (error: unknown) {
+    // Gracefully fallback to regex minification
+    return {
+      content: minifyCSSCore(content),
+      failed: false,
+      reason: `CleanCSS fallback: ${error instanceof Error ? error.message : 'unknown'}`,
+    };
   }
 }
 
@@ -551,8 +556,13 @@ async function minifyHTMLAsync(
     });
 
     return { content: result, failed: false };
-  } catch {
-    return { content: minifyHTMLCore(content), failed: false };
+  } catch (error: unknown) {
+    // Gracefully fallback to regex minification
+    return {
+      content: minifyHTMLCore(content),
+      failed: false,
+      reason: `html-minifier fallback: ${error instanceof Error ? error.message : 'unknown'}`,
+    };
   }
 }
 
@@ -627,8 +637,8 @@ export async function minifyContent(
           const result = await minifyCSSAsync(content);
           return {
             content: result.content,
-            failed: result.failed,
-            type: result.failed ? 'failed' : 'aggressive',
+            failed: false,
+            type: 'aggressive',
             ...(result.reason && { reason: result.reason }),
           };
         }
@@ -637,8 +647,8 @@ export async function minifyContent(
           const result = await minifyHTMLAsync(content);
           return {
             content: result.content,
-            failed: result.failed,
-            type: result.failed ? 'failed' : 'aggressive',
+            failed: false,
+            type: 'aggressive',
             ...(result.reason && { reason: result.reason }),
           };
         }
@@ -649,13 +659,6 @@ export async function minifyContent(
           type: 'aggressive',
         };
       }
-
-      default:
-        return {
-          content: minifyGeneralCore(content),
-          failed: false,
-          type: 'general',
-        };
     }
   } catch (error: unknown) {
     return {

@@ -4,7 +4,8 @@
  * @module hints/dynamic
  */
 
-import { STATIC_TOOL_NAMES } from '../toolMetadata.js';
+import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import { getMetadataDynamicHints } from './static.js';
 import type { HintContext, HintStatus, ToolHintGenerators } from './types.js';
 
 /**
@@ -17,8 +18,8 @@ export const HINTS: Record<string, ToolHintGenerators> = {
       ctx.searchEngine === 'grep'
         ? 'Using grep fallback - install ripgrep for best performance and features.'
         : undefined,
-      'Next: FETCH_CONTENT for context (prefer matchString).',
-      'Also search imports/usages/defs with RIPGREP.',
+      'Next: localGetFileContent for context (prefer matchString).',
+      'Also search imports/usages/defs with localSearchCode.',
       ctx.fileCount && ctx.fileCount > 5
         ? 'Tip: run queries in parallel.'
         : undefined,
@@ -29,35 +30,42 @@ export const HINTS: Record<string, ToolHintGenerators> = {
         ? 'Using grep fallback - note: grep does not respect .gitignore.'
         : undefined,
       'No matches. Broaden scope (noIgnore, hidden) or use fixedString.',
-      'Unsure of paths? VIEW_STRUCTURE or FIND_FILES.',
+      'Unsure of paths? localViewStructure or localFindFiles.',
     ],
 
     error: (ctx: HintContext = {}) => {
       if (ctx.errorType === 'size_limit') {
-        return [
+        const baseHints = [
           `Too many results${ctx.matchCount ? ` (${ctx.matchCount} matches)` : ''}. Narrow pattern/scope.`,
           'Add type/path filters to focus.',
           ctx.path?.includes('node_modules')
             ? 'In node_modules, target specific packages.'
             : undefined,
-          'Names only? Use FIND_FILES.',
+          'Names only? Use localFindFiles.',
           'Flow: filesOnly=true \u2192 refine \u2192 read.',
         ];
+        return [
+          ...baseHints,
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LOCAL_RIPGREP,
+            'largeResult'
+          ),
+        ];
       }
-      return ['Tool unavailable; try FIND_FILES or VIEW_STRUCTURE.'];
+      return ['Tool unavailable; try localFindFiles or localViewStructure.'];
     },
   },
 
   [STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT]: {
     hasResults: (_ctx: HintContext = {}) => [
-      'Next: trace imports/usages with RIPGREP.',
+      'Next: trace imports/usages with localSearchCode.',
       'Open related files (tests/types/impl) together.',
       'Prefer matchString over full file.',
     ],
 
     empty: (_ctx: HintContext = {}) => [
       'No match/file. Check path/pattern.',
-      'Locate via FIND_FILES (name) or RIPGREP (filesOnly for paths).',
+      'Locate via localFindFiles (name) or localSearchCode (filesOnly for paths).',
     ],
 
     error: (ctx: HintContext = {}) => {
@@ -67,31 +75,45 @@ export const HINTS: Record<string, ToolHintGenerators> = {
         !ctx.hasPagination &&
         !ctx.hasPattern
       ) {
-        return [
+        const baseHints = [
           ctx.fileSize
             ? `Large file (~${Math.round(ctx.fileSize * 0.25)}K tokens).`
             : 'Large file.',
           'Use matchString for sections, or charLength to paginate.',
           'Avoid fullContent without pagination.',
         ];
+        return [
+          ...baseHints,
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT,
+            'largeFile'
+          ),
+        ];
       }
 
       if (ctx.errorType === 'pattern_too_broad') {
-        return [
+        const baseHints = [
           ctx.tokenEstimate
             ? `Pattern too broad (~${ctx.tokenEstimate.toLocaleString()} tokens).`
             : 'Pattern too broad.',
           'Tighten pattern or paginate with charLength.',
         ];
+        return [
+          ...baseHints,
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT,
+            'patternTooBroad'
+          ),
+        ];
       }
 
-      return ['Unknown path; find via FIND_FILES or RIPGREP.'];
+      return ['Unknown path; find via localFindFiles or localSearchCode.'];
     },
   },
 
   [STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE]: {
     hasResults: (ctx: HintContext = {}) => [
-      'Next: RIPGREP for patterns; FIND_FILES for filters.',
+      'Next: localSearchCode for patterns; localFindFiles for filters.',
       'Drill deeper with depth=2 when needed.',
       ctx.entryCount && ctx.entryCount > 10
         ? 'Parallelize across directories.'
@@ -100,35 +122,54 @@ export const HINTS: Record<string, ToolHintGenerators> = {
 
     empty: (_ctx: HintContext = {}) => [
       'Empty/missing. Use hidden=true or check parent.',
-      'Discover dirs with FIND_FILES type="d".',
+      'Discover dirs with localFindFiles type="d".',
     ],
 
     error: (ctx: HintContext = {}) => {
       if (ctx.errorType === 'size_limit' && ctx.entryCount) {
-        return [
+        const baseHints = [
           `Directory has ${ctx.entryCount} entries${ctx.tokenEstimate ? ` (~${ctx.tokenEstimate.toLocaleString()} tokens)` : ''}. Use entriesPerPage.`,
           'Sort by recent; scan page by page.',
         ];
+        return [
+          ...baseHints,
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
+            'largeDirectory'
+          ),
+        ];
       }
-      return ['Access failed; locate dirs with FIND_FILES type="d".'];
+      return ['Access failed; locate dirs with localFindFiles type="d".'];
     },
   },
 
   [STATIC_TOOL_NAMES.LOCAL_FIND_FILES]: {
-    hasResults: (ctx: HintContext = {}) => [
-      'Found files. Next: FETCH_CONTENT or RIPGREP.',
-      'Use modifiedWithin="7d" to track recent changes.',
-      ctx.fileCount && ctx.fileCount > 3 ? 'Batch in parallel.' : undefined,
-    ],
+    hasResults: (ctx: HintContext = {}) => {
+      const baseHints = [
+        'Found files. Next: localGetFileContent or localSearchCode.',
+        'Use modifiedWithin="7d" to track recent changes.',
+        ctx.fileCount && ctx.fileCount > 3 ? 'Batch in parallel.' : undefined,
+      ];
+      if (ctx.fileCount && ctx.fileCount > 20) {
+        return [
+          ...baseHints,
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LOCAL_FIND_FILES,
+            'manyResults'
+          ),
+        ];
+      }
+      return baseHints;
+    },
 
     empty: (_ctx: HintContext = {}) => [
       'No matches. Broaden iname, increase maxDepth, relax filters.',
-      'Or use VIEW_STRUCTURE/RIPGREP.',
+      'Or use localViewStructure/localSearchCode.',
       'Syntax: time "7d", size "10M".',
     ],
 
     error: (_ctx: HintContext = {}) => [
-      'Search failed; try VIEW_STRUCTURE or RIPGREP.',
+      'Search failed; try localViewStructure or localSearchCode.',
     ],
   },
 
@@ -258,13 +299,13 @@ export function getLargeFileWorkflowHints(
   if (context === 'search') {
     return [
       'Large codebase: avoid floods.',
-      'Flow: RIPGREP filesOnly \u2192 add type/path filters \u2192 FETCH_CONTENT matchString \u2192 RIPGREP links.',
+      'Flow: localSearchCode filesOnly \u2192 add type/path filters \u2192 localGetFileContent matchString \u2192 localSearchCode links.',
       'Parallelize where safe.',
     ];
   }
   return [
     "Large file: don't read all.",
-    'Flow: FETCH_CONTENT matchString \u2192 analyze \u2192 RIPGREP usages/imports \u2192 FETCH_CONTENT related.',
+    'Flow: localGetFileContent matchString \u2192 analyze \u2192 localSearchCode usages/imports \u2192 localGetFileContent related.',
     'Use charLength to paginate if needed.',
     'Avoid fullContent without charLength.',
   ];

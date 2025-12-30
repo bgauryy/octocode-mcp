@@ -337,6 +337,36 @@ describe('Tools Utils', () => {
       expect(result).toBeNull();
     });
 
+    it('should return null for null values', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Test' };
+      expect(handleApiError(null, query)).toBeNull();
+    });
+
+    it('should return null for undefined values', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Test' };
+      expect(handleApiError(undefined, query)).toBeNull();
+    });
+
+    it('should return null when error field is not a string', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Test' };
+      expect(handleApiError({ error: 123 }, query)).toBeNull();
+      expect(handleApiError({ error: null }, query)).toBeNull();
+      expect(handleApiError({ error: {} }, query)).toBeNull();
+    });
+
+    it('should return null for objects without error field', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Test' };
+      expect(handleApiError({ status: 200 }, query)).toBeNull();
+      expect(handleApiError({ message: 'OK' }, query)).toBeNull();
+    });
+
+    it('should return null for primitive values', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Test' };
+      expect(handleApiError('string', query)).toBeNull();
+      expect(handleApiError(42, query)).toBeNull();
+      expect(handleApiError(true, query)).toBeNull();
+    });
+
     it('should return error result for error responses', () => {
       const query = {
         researchGoal: 'Find files',

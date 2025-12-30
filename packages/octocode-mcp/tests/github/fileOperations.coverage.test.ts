@@ -1,0 +1,808 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  fetchGitHubFileContentAPI,
+  viewGitHubRepositoryStructureAPI,
+  clearDefaultBranchCache,
+} from '../../src/github/fileOperations.js';
+import { getOctokit } from '../../src/github/client.js';
+import { clearAllCache } from '../../src/utils/cache.js';
+import { RequestError } from 'octokit';
+import * as minifierModule from '../../src/utils/minifier/index.js';
+
+vi.mock('../../src/github/client.js');
+vi.mock('../../src/session.js', () => ({
+  logSessionError: vi.fn(() => Promise.resolve()),
+}));
+vi.mock('../../src/utils/minifier/index.js');
+
+// Helper to create RequestError with proper structure
+function createRequestError(message: string, status: number) {
+  return new RequestError(message, status, {
+    request: {
+      method: 'GET',
+      url: 'https://api.github.com/test',
+      headers: {},
+    },
+    response: {
+      status,
+      url: 'https://api.github.com/test',
+      headers: {},
+      data: {},
+      retryCount: 0,
+    },
+  });
+}
+
+describe('File Operations - Additional Coverage Tests', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearAllCache();
+    clearDefaultBranchCache();
+  });
+
+  describe('fetchFileTimestamp coverage', () => {
+    it('should extract lastModified from commit data with author.name', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi.fn().mockResolvedValue({
+              data: {
+                type: 'file',
+                content: Buffer.from('test content').toString('base64'),
+                size: 12,
+                sha: 'abc123',
+                name: 'test.txt',
+                path: 'test.txt',
+              },
+            }),
+            listCommits: vi.fn().mockResolvedValue({
+              data: [
+                {
+                  commit: {
+                    author: {
+                      name: 'John Doe',
+                    },
+                    committer: {
+                      date: '2024-01-15T10:30:00Z',
+                    },
+                  },
+                  author: {
+                    login: 'johndoe',
+                  },
+                },
+              ],
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+      vi.mocked(minifierModule.minifyContent).mockResolvedValue({
+        content: 'test content',
+        failed: false,
+        type: 'general',
+      });
+
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'test.txt',
+      });
+
+      expect(result).toHaveProperty('data');
+      if ('data' in result && result.data) {
+        expect(result.data.lastModified).toBe('2024-01-15T10:30:00Z');
+        expect(result.data.lastModifiedBy).toBe('John Doe');
+      }
+    });
+
+    it('should fallback to author.login when commit.author.name is missing', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi.fn().mockResolvedValue({
+              data: {
+                type: 'file',
+                content: Buffer.from('test content').toString('base64'),
+                size: 12,
+                sha: 'abc123',
+                name: 'test.txt',
+                path: 'test.txt',
+              },
+            }),
+            listCommits: vi.fn().mockResolvedValue({
+              data: [
+                {
+                  commit: {
+                    author: {},
+                    committer: {
+                      date: '2024-01-15T10:30:00Z',
+                    },
+                  },
+                  author: {
+                    login: 'johndoe',
+                  },
+                },
+              ],
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+      vi.mocked(minifierModule.minifyContent).mockResolvedValue({
+        content: 'test content',
+        failed: false,
+        type: 'general',
+      });
+
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'test2.txt', // Different path to avoid cache
+      });
+
+      expect(result).toHaveProperty('data');
+      if ('data' in result && result.data) {
+        expect(result.data.lastModifiedBy).toBe('johndoe');
+      }
+    });
+
+    it('should use Unknown when no author info available', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi.fn().mockResolvedValue({
+              data: {
+                type: 'file',
+                content: Buffer.from('test content').toString('base64'),
+                size: 12,
+                sha: 'abc123',
+                name: 'test.txt',
+                path: 'test.txt',
+              },
+            }),
+            listCommits: vi.fn().mockResolvedValue({
+              data: [
+                {
+                  commit: {
+                    author: {},
+                    committer: {
+                      date: '2024-01-15T10:30:00Z',
+                    },
+                  },
+                  author: null,
+                },
+              ],
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+      vi.mocked(minifierModule.minifyContent).mockResolvedValue({
+        content: 'test content',
+        failed: false,
+        type: 'general',
+      });
+
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'test3.txt',
+      });
+
+      expect(result).toHaveProperty('data');
+      if ('data' in result && result.data) {
+        expect(result.data.lastModifiedBy).toBe('Unknown');
+      }
+    });
+
+    it('should use Unknown for date when committer.date is missing', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi.fn().mockResolvedValue({
+              data: {
+                type: 'file',
+                content: Buffer.from('test content').toString('base64'),
+                size: 12,
+                sha: 'abc123',
+                name: 'test.txt',
+                path: 'test.txt',
+              },
+            }),
+            listCommits: vi.fn().mockResolvedValue({
+              data: [
+                {
+                  commit: {
+                    author: { name: 'John' },
+                    committer: {},
+                  },
+                  author: null,
+                },
+              ],
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+      vi.mocked(minifierModule.minifyContent).mockResolvedValue({
+        content: 'test content',
+        failed: false,
+        type: 'general',
+      });
+
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'test4.txt',
+      });
+
+      expect(result).toHaveProperty('data');
+      if ('data' in result && result.data) {
+        expect(result.data.lastModified).toBe('Unknown');
+      }
+    });
+  });
+
+  describe('findPathSuggestions coverage', () => {
+    it('should provide case-insensitive path suggestions on 404', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi
+              .fn()
+              // First call fails - file not found
+              .mockRejectedValueOnce(createRequestError('Not Found', 404))
+              // Second call - parent directory listing
+              .mockResolvedValueOnce({
+                data: [
+                  {
+                    name: 'README.MD', // Case mismatch
+                    path: 'README.MD',
+                    type: 'file',
+                  },
+                  {
+                    name: 'readme.txt',
+                    path: 'readme.txt',
+                    type: 'file',
+                  },
+                ],
+              }),
+            get: vi.fn().mockResolvedValue({
+              data: { default_branch: 'main' },
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'readme.md', // lowercase
+        branch: 'main',
+      });
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.hints).toBeDefined();
+        expect(result.hints?.some(h => h.includes('Did you mean'))).toBe(true);
+        expect(result.hints?.some(h => h.includes('README.MD'))).toBe(true);
+      }
+    });
+
+    it('should suggest extension alternatives on 404', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi
+              .fn()
+              .mockRejectedValueOnce(createRequestError('Not Found', 404))
+              .mockResolvedValueOnce({
+                data: [
+                  {
+                    name: 'config.js', // Different extension
+                    path: 'src/config.js',
+                    type: 'file',
+                  },
+                  {
+                    name: 'config.json',
+                    path: 'src/config.json',
+                    type: 'file',
+                  },
+                ],
+              }),
+            get: vi.fn().mockResolvedValue({
+              data: { default_branch: 'main' },
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'src/config.ts', // Looking for .ts but .js and .json exist
+        branch: 'main',
+      });
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.hints).toBeDefined();
+        expect(result.hints?.some(h => h.includes('Did you mean'))).toBe(true);
+      }
+    });
+
+    it('should handle findPathSuggestions error gracefully', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi
+              .fn()
+              .mockRejectedValueOnce(createRequestError('Not Found', 404))
+              // Parent directory also fails
+              .mockRejectedValueOnce(new Error('Network error')),
+            get: vi.fn().mockResolvedValue({
+              data: { default_branch: 'main' },
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'nonexistent.txt',
+        branch: 'main',
+      });
+
+      // Should still return 404 error, just without suggestions
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.status).toBe(404);
+      }
+    });
+
+    it('should return empty suggestions when parent is not a directory', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi
+              .fn()
+              .mockRejectedValueOnce(createRequestError('Not Found', 404))
+              // Parent path returns a file, not array
+              .mockResolvedValueOnce({
+                data: {
+                  name: 'parent',
+                  path: 'parent',
+                  type: 'file',
+                },
+              }),
+            get: vi.fn().mockResolvedValue({
+              data: { default_branch: 'main' },
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'parent/child.txt',
+        branch: 'main',
+      });
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.status).toBe(404);
+        // Should not have suggestions since parent is not a directory
+        expect(result.hints?.some(h => h.includes('Did you mean'))).toBeFalsy();
+      }
+    });
+  });
+
+  describe('Branch fallback with path suggestions', () => {
+    it('should suggest default branch when requested branch not found', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi
+              .fn()
+              .mockRejectedValueOnce(createRequestError('Not Found', 404))
+              .mockResolvedValueOnce({
+                data: [],
+              }),
+            get: vi.fn().mockResolvedValue({
+              data: { default_branch: 'develop' },
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'file.txt',
+        branch: 'feature-branch',
+      });
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.scopesSuggestion).toContain('develop');
+        expect(result.scopesSuggestion).toContain(
+          'Do you want to get the file from'
+        );
+      }
+    });
+  });
+
+  describe('viewGitHubRepositoryStructureAPI error paths', () => {
+    it('should return error when path not found on any branch', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi
+              .fn()
+              // Original branch - 404
+              .mockRejectedValueOnce(createRequestError('Not Found', 404))
+              // Default branch - 404
+              .mockRejectedValueOnce(createRequestError('Not Found', 404))
+              // main - 404
+              .mockRejectedValueOnce(createRequestError('Not Found', 404))
+              // master - 404
+              .mockRejectedValueOnce(createRequestError('Not Found', 404))
+              // develop - 404
+              .mockRejectedValueOnce(createRequestError('Not Found', 404)),
+            get: vi.fn().mockResolvedValue({
+              data: { default_branch: 'custom-default' },
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'nonexistent',
+        path: 'nonexistent/path',
+      });
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.error).toContain('not found');
+        expect(result.triedBranches).toBeDefined();
+        expect(result.triedBranches).toContain('nonexistent');
+        expect(result.triedBranches).toContain('custom-default');
+        expect(result.defaultBranch).toBe('custom-default');
+      }
+    });
+
+    it('should return error when path not found and branch is the default', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi
+              .fn()
+              .mockRejectedValueOnce(createRequestError('Not Found', 404)),
+            get: vi.fn().mockResolvedValue({
+              data: { default_branch: 'main' },
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main', // Same as default
+        path: 'nonexistent/path',
+      });
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.error).toContain('not found');
+        expect(result.status).toBe(404);
+      }
+    });
+
+    it('should handle non-404 errors', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi
+              .fn()
+              .mockRejectedValueOnce(createRequestError('Forbidden', 403)),
+            get: vi.fn().mockResolvedValue({
+              data: { default_branch: 'main' },
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        path: '',
+      });
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.status).toBe(403);
+      }
+    });
+
+    it('should return error when repo not accessible', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi
+              .fn()
+              .mockRejectedValueOnce(createRequestError('Not Found', 404)),
+            get: vi
+              .fn()
+              .mockRejectedValueOnce(createRequestError('Not Found', 404)),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'nonexistent',
+        branch: 'main',
+        path: '',
+      });
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.error).toContain('not found');
+        expect(result.status).toBe(404);
+      }
+    });
+
+    it('should handle generic errors in structure exploration', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi.fn().mockRejectedValue(new Error('Network error')),
+            get: vi.fn().mockResolvedValue({
+              data: { default_branch: 'main' },
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        path: '',
+      });
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.error).toContain('Failed to access');
+      }
+    });
+  });
+
+  describe('Recursive fetch error handling', () => {
+    it('should handle errors in recursive directory fetching gracefully', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            get: vi.fn().mockResolvedValue({
+              data: { default_branch: 'main' },
+            }),
+            getContent: vi
+              .fn()
+              // First call - root with directories
+              .mockResolvedValueOnce({
+                data: [
+                  {
+                    name: 'dir1',
+                    path: 'dir1',
+                    type: 'dir',
+                    url: 'url',
+                    html_url: 'html',
+                    git_url: 'git',
+                    sha: 'sha1',
+                  },
+                  {
+                    name: 'dir2',
+                    path: 'dir2',
+                    type: 'dir',
+                    url: 'url',
+                    html_url: 'html',
+                    git_url: 'git',
+                    sha: 'sha2',
+                  },
+                ],
+              })
+              // Second call - dir1 errors
+              .mockRejectedValueOnce(new Error('Access denied'))
+              // Third call - dir2 succeeds
+              .mockResolvedValueOnce({
+                data: [
+                  {
+                    name: 'file.ts',
+                    path: 'dir2/file.ts',
+                    type: 'file',
+                    size: 100,
+                    url: 'url',
+                    html_url: 'html',
+                    git_url: 'git',
+                    sha: 'sha3',
+                  },
+                ],
+              }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        path: '',
+        depth: 2,
+      });
+
+      // Should complete successfully, dir2 results included
+      expect('structure' in result).toBe(true);
+      if ('structure' in result) {
+        expect(result.structure['.']).toBeDefined();
+        expect(result.structure['.']!.folders).toContain('dir1');
+        expect(result.structure['.']!.folders).toContain('dir2');
+        // dir2 content should have been fetched even though dir1 failed
+        // The content is merged at the root level for depth=2
+        expect(result.summary.totalFolders).toBeGreaterThanOrEqual(2);
+      }
+    });
+  });
+
+  describe('File content with no content returned', () => {
+    it('should handle file with null content field', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi.fn().mockResolvedValue({
+              data: {
+                type: 'file',
+                content: null,
+                size: 100,
+                sha: 'abc123',
+                name: 'test.txt',
+                path: 'test.txt',
+              },
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'test-null.txt',
+      });
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.error).toContain('File is empty');
+      }
+    });
+  });
+
+  describe('Multiple match locations in matchString', () => {
+    it('should report multiple match locations', async () => {
+      const fileContent =
+        'TODO: first\nLine 2\nTODO: second\nLine 4\nTODO: third';
+
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi.fn().mockResolvedValue({
+              data: {
+                type: 'file',
+                content: Buffer.from(fileContent).toString('base64'),
+                size: fileContent.length,
+                sha: 'abc123',
+                name: 'test.txt',
+                path: 'test.txt',
+              },
+            }),
+            listCommits: vi.fn().mockResolvedValue({ data: [] }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+      vi.mocked(minifierModule.minifyContent).mockImplementation(
+        async content => ({
+          content,
+          failed: false,
+          type: 'general',
+        })
+      );
+
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'multi-match.txt',
+        matchString: 'TODO',
+        matchStringContextLines: 1,
+      });
+
+      expect(result).toHaveProperty('data');
+      if ('data' in result && result.data) {
+        expect(result.data.securityWarnings).toBeDefined();
+        // Should mention multiple locations
+        expect(
+          result.data.securityWarnings?.some(
+            w => w.includes('2 other locations') || w.includes('other location')
+          )
+        ).toBe(true);
+      }
+    });
+  });
+});

@@ -28,6 +28,7 @@ vi.mock('../../src/security/pathValidator.js', () => ({
 vi.mock('fs', () => ({
   promises: {
     stat: vi.fn(),
+    readFile: vi.fn(),
   },
 }));
 
@@ -38,6 +39,7 @@ describe('localSearchCode', () => {
   const mockSafeExec = vi.mocked(exec.safeExec);
   const mockValidate = vi.mocked(pathValidator.pathValidator.validate);
   const mockFsStat = vi.mocked(fs.stat);
+  const mockFsReadFile = vi.mocked(fs.readFile);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -49,6 +51,10 @@ describe('localSearchCode', () => {
     mockFsStat.mockResolvedValue({
       mtime: new Date('2024-06-01T00:00:00.000Z'),
     } as unknown as Awaited<ReturnType<typeof fs.stat>>);
+    // Default mock for fs.readFile - return content for character offset computation
+    mockFsReadFile.mockResolvedValue(
+      'test content for byte to char conversion'
+    );
   });
 
   describe('Basic search', () => {
@@ -901,7 +907,7 @@ describe('localSearchCode', () => {
           path: { text: '/test/file.ts' },
           lines: { text: 'test match' },
           line_number: 10,
-          absolute_offset: 500,
+          absolute_offset: 50, // Byte offset in the file
           submatches: [{ start: 0, end: 4, match: { text: 'test' } }],
         },
       });
@@ -913,6 +919,11 @@ describe('localSearchCode', () => {
         stderr: '',
       });
 
+      // Mock file content that matches the byte offset
+      mockFsReadFile.mockResolvedValue(
+        'x'.repeat(50) + 'test match more content'
+      );
+
       const result = await runRipgrep({
         pattern: 'test',
         path: '/test/path',
@@ -920,7 +931,8 @@ describe('localSearchCode', () => {
 
       expect(result.status).toBe('hasResults');
       expect(result.files![0]!.matches[0]!.location).toBeDefined();
-      expect(result.files![0]!.matches[0]!.location.charOffset).toBe(500);
+      // charOffset is computed from byte offset using file content
+      expect(result.files![0]!.matches[0]!.location.charOffset).toBe(50);
       expect(result.files![0]!.matches[0]!.location.charLength).toBeGreaterThan(
         0
       );
@@ -1584,6 +1596,149 @@ describe('localSearchCode', () => {
   });
 
   describe('computeCharacterOffsets - branch coverage', () => {
+    it('should handle files with no matches array (empty file matches)', async () => {
+      // This specifically targets the early return at line 935
+      // when file.matches is empty or undefined
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '', // Empty output produces no matches
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      // Empty output means no files
+      expect(result.status).toBe('empty');
+    });
+
+    it('should compute character offsets for UTF-8 content', async () => {
+      // Targets the character offset computation at lines 943-964
+      const jsonOutput = JSON.stringify({
+        type: 'match',
+        data: {
+          path: { text: '/test/utf8file.ts' },
+          lines: { text: 'hello 世界 test' }, // Chinese chars are 3 bytes each
+          line_number: 1,
+          absolute_offset: 0,
+          submatches: [{ start: 10, end: 14, match: { text: 'test' } }],
+        },
+      });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonOutput,
+        stderr: '',
+      });
+
+      // Mock readFile to return the same content for accurate byte-to-char conversion
+      mockFsReadFile.mockResolvedValue('hello 世界 test');
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.files).toBeDefined();
+      expect(result.files![0]!.matches[0]!.location).toBeDefined();
+      // charOffset should be computed from byteOffset
+      expect(typeof result.files![0]!.matches[0]!.location.charOffset).toBe(
+        'number'
+      );
+    });
+
+    it('should successfully compute char offsets from byte offsets', async () => {
+      // Tests the actual character offset computation (lines 943-964)
+      const fileContent = 'const test = 42;\nfunction foo() {}';
+      const jsonOutput = JSON.stringify({
+        type: 'match',
+        data: {
+          path: { text: '/test/file.ts' },
+          lines: { text: 'const test = 42;' },
+          line_number: 1,
+          absolute_offset: 6, // 'test' starts at byte 6
+          submatches: [{ start: 0, end: 4, match: { text: 'test' } }],
+        },
+      });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonOutput,
+        stderr: '',
+      });
+
+      mockFsReadFile.mockResolvedValue(fileContent);
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.files![0]!.matches[0]!.location.byteOffset).toBe(6);
+      expect(result.files![0]!.matches[0]!.location.charOffset).toBeDefined();
+      expect(result.files![0]!.matches[0]!.location.charLength).toBeGreaterThan(
+        0
+      );
+    });
+
+    it('should handle file with matches array for char offset computation', async () => {
+      // Tests that files with matches are processed for char offset computation
+      const jsonOutput = [
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/test/file1.ts' },
+            lines: { text: 'first test match' },
+            line_number: 1,
+            absolute_offset: 6,
+            submatches: [{ start: 0, end: 4, match: { text: 'test' } }],
+          },
+        }),
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/test/file2.ts' },
+            lines: { text: 'second test match' },
+            line_number: 1,
+            absolute_offset: 7,
+            submatches: [{ start: 0, end: 4, match: { text: 'test' } }],
+          },
+        }),
+      ].join('\n');
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonOutput,
+        stderr: '',
+      });
+
+      mockFsReadFile.mockImplementation(path => {
+        if (path.toString().includes('file1')) {
+          return Promise.resolve('first test match');
+        }
+        return Promise.resolve('second test match');
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.files).toHaveLength(2);
+      // Both files should have char offsets computed
+      expect(result.files![0]!.matches[0]!.location.charOffset).toBeDefined();
+      expect(result.files![1]!.matches[0]!.location.charOffset).toBeDefined();
+    });
+
     it('should return empty when only begin/end messages (no matches)', async () => {
       // Create output with only begin/end messages but no actual matches
       const jsonOutput = [
@@ -1660,6 +1815,7 @@ describe('localSearchCode', () => {
 
     it('should fallback to byte offsets when file read fails', async () => {
       // Test that when fs.readFile fails, the byte offsets are kept as fallback
+      // This exercises the catch block in computeCharacterOffsets (lines 968-970)
       const jsonOutput = JSON.stringify({
         type: 'match',
         data: {
@@ -1678,7 +1834,9 @@ describe('localSearchCode', () => {
         stderr: '',
       });
 
-      // Mock stat to fail for this file path to simulate file read error
+      // Mock readFile to fail for character offset computation
+      mockFsReadFile.mockRejectedValue(new Error('File not found'));
+      // Mock stat to also fail
       mockFsStat.mockRejectedValue(new Error('File not found'));
 
       const result = await runRipgrep({
@@ -1688,7 +1846,7 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      // Should still have the match with byte offsets
+      // Should still have the match with byte offsets as fallback
       expect(result.files![0]!.matches[0]!.location.byteOffset).toBe(500);
     });
 

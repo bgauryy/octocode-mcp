@@ -1114,4 +1114,240 @@ describe('executeBulkOperation', () => {
       expect(processingOrder).toHaveLength(3);
     });
   });
+
+  describe('Edge cases for error hints aggregation', () => {
+    it('should aggregate error hints from processor returning error status with hints array', async () => {
+      const queries = [
+        { id: 'q1', mainResearchGoal: 'Goal 1' },
+        { id: 'q2', mainResearchGoal: 'Goal 2' },
+      ];
+      const processor = vi.fn().mockImplementation(async () => ({
+        status: 'error' as const,
+        error: 'API rate limit exceeded',
+        hints: ['Wait 60 seconds', 'Use authentication token'],
+      }));
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain('Wait 60 seconds');
+      expect(responseText).toContain('Use authentication token');
+      expect(responseText).toContain('2 failed');
+    });
+
+    it('should collect unique error hints from multiple error results', async () => {
+      const queries = [{ id: 'q1' }, { id: 'q2' }, { id: 'q3' }];
+      const processor = vi
+        .fn()
+        .mockResolvedValueOnce({
+          status: 'error' as const,
+          error: 'Error 1',
+          hints: ['Hint A', 'Hint B'],
+        })
+        .mockResolvedValueOnce({
+          status: 'error' as const,
+          error: 'Error 2',
+          hints: ['Hint B', 'Hint C'], // Hint B is duplicate
+        })
+        .mockResolvedValueOnce({
+          status: 'error' as const,
+          error: 'Error 3',
+          hints: ['Hint A', 'Hint D'], // Hint A is duplicate
+        });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('3 failed');
+      // Verify hints are deduplicated - each hint should appear only once
+      const hintAMatches = (responseText.match(/Hint A/g) || []).length;
+      const hintBMatches = (responseText.match(/Hint B/g) || []).length;
+      expect(hintAMatches).toBe(1);
+      expect(hintBMatches).toBe(1);
+    });
+
+    it('should handle error status without hints array', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'error' as const,
+        error: 'Simple error without hints',
+        // No hints array provided
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('errorStatusHints:');
+    });
+
+    it('should handle mixed hasResults, empty, and error with hints from all', async () => {
+      const queries = [
+        { id: 'q1', type: 'hasResults' },
+        { id: 'q2', type: 'empty' },
+        { id: 'q3', type: 'error' },
+      ];
+      const processor = vi
+        .fn()
+        .mockImplementation(async (query: { id: string; type: string }) => {
+          if (query.type === 'hasResults') {
+            return {
+              status: 'hasResults' as const,
+              data: { result: true },
+              hints: ['Success hint from processor'],
+            };
+          }
+          if (query.type === 'empty') {
+            return {
+              status: 'empty' as const,
+              files: [],
+              hints: ['Empty hint from processor'],
+            };
+          }
+          return {
+            status: 'error' as const,
+            error: 'Error from processor',
+            hints: ['Error hint from processor'],
+          };
+        });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('1 empty');
+      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('Success hint from processor');
+      expect(responseText).toContain('Empty hint from processor');
+      expect(responseText).toContain('Error hint from processor');
+    });
+  });
+
+  describe('Error handling with invalid query indices', () => {
+    it('should handle errors with queryIndex out of bounds gracefully', async () => {
+      // This tests the edge case where errors.forEach encounters
+      // an error with a queryIndex that doesn't have a corresponding originalQuery
+      const queries = [{ id: 'q1' }];
+
+      // Create a custom processor that will cause an internal error
+      // with a potentially invalid index scenario
+      const processor = vi.fn().mockImplementation(async () => {
+        throw new Error('Processor threw an error');
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('error:');
+    });
+
+    it('should handle all queries throwing errors simultaneously', async () => {
+      const queries = [
+        { id: 'q1', mainResearchGoal: 'Goal 1' },
+        { id: 'q2', mainResearchGoal: 'Goal 2' },
+        { id: 'q3', mainResearchGoal: 'Goal 3' },
+      ];
+
+      const processor = vi
+        .fn()
+        .mockImplementation(async (query: { id: string }) => {
+          throw new Error(`Error processing ${query.id}`);
+        });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('3 failed');
+      expect(responseText).toContain('mainResearchGoal: "Goal 1"');
+      expect(responseText).toContain('mainResearchGoal: "Goal 2"');
+      expect(responseText).toContain('mainResearchGoal: "Goal 3"');
+    });
+  });
+
+  describe('Status condition branches', () => {
+    it('should correctly handle error status branch for hints aggregation', async () => {
+      // This test specifically targets the error status condition branch (line 101)
+      const queries = [{ id: 'q1' }, { id: 'q2' }];
+
+      // First query returns hasResults, second returns error
+      const processor = vi
+        .fn()
+        .mockResolvedValueOnce({
+          status: 'hasResults' as const,
+          data: { success: true },
+          hints: ['Success hint'],
+        })
+        .mockResolvedValueOnce({
+          status: 'error' as const,
+          error: 'Something went wrong',
+          hints: ['Error recovery hint'],
+        });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain('Success hint');
+      expect(responseText).toContain('Error recovery hint');
+    });
+
+    it('should handle error status without any hints (fallback to generic)', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'error' as const,
+        error: 'Generic error',
+        // hints intentionally undefined to trigger fallback
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('errorStatusHints:');
+    });
+
+    it('should handle error status with empty hints array', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'error' as const,
+        error: 'Error with empty hints',
+        hints: [], // Empty array should trigger fallback
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('errorStatusHints:');
+    });
+  });
 });

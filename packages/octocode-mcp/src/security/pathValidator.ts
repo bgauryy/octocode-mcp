@@ -32,6 +32,7 @@
 
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import type { PathValidationResult } from '../utils/types.js';
 import { shouldIgnore } from './ignoredPathFilter.js';
 
@@ -46,16 +47,28 @@ export class PathValidator {
    * @param workspaceRoot - Optional workspace root directory. Defaults to current working directory.
    */
   constructor(workspaceRoot?: string) {
-    this.allowedRoots = workspaceRoot
-      ? [path.resolve(workspaceRoot)]
-      : [process.cwd()];
+    const root = workspaceRoot
+      ? this.expandTilde(workspaceRoot)
+      : process.cwd();
+    this.allowedRoots = [path.resolve(root)];
+  }
+
+  /**
+   * Expands ~ to home directory
+   */
+  private expandTilde(inputPath: string): string {
+    if (inputPath.startsWith('~')) {
+      return path.join(os.homedir(), inputPath.slice(1));
+    }
+    return inputPath;
   }
 
   /**
    * Adds an allowed root directory
    */
   addAllowedRoot(root: string): void {
-    const resolvedRoot = path.resolve(root);
+    const expandedRoot = this.expandTilde(root);
+    const resolvedRoot = path.resolve(expandedRoot);
     if (!this.allowedRoots.includes(resolvedRoot)) {
       this.allowedRoots.push(resolvedRoot);
     }
@@ -78,7 +91,8 @@ export class PathValidator {
       };
     }
 
-    const absolutePath = path.resolve(inputPath);
+    const expandedPath = this.expandTilde(inputPath);
+    const absolutePath = path.resolve(expandedPath);
 
     const isAllowed = this.allowedRoots.some(root => {
       if (absolutePath === root) {

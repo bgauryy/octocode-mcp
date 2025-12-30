@@ -344,5 +344,73 @@ More content`;
         expect(typeof result).toBe('string');
       });
     });
+
+    describe('File types without comments config', () => {
+      it('should handle CSV files conservatively without removing comments', () => {
+        const csvContent = `name,age,city
+John,30,NYC
+
+
+Jane,25,LA`;
+
+        const result = minifyContentSync(csvContent, 'data.csv');
+
+        // Should preserve structure, reduce blank lines
+        expect(result).not.toMatch(/\n{3,}/);
+        expect(result).toContain('name,age,city');
+      });
+
+      it('should handle TXT files with general strategy', () => {
+        const txtContent = `Plain text content
+
+With blank lines
+
+
+And more content    `;
+
+        const result = minifyContentSync(txtContent, 'notes.txt');
+
+        expect(result).not.toMatch(/\n{3,}/);
+        expect(result).not.toMatch(/ {2,}$/m);
+      });
+
+      it('should handle LOG files with general strategy', () => {
+        const logContent = `[INFO] Message\n\n[ERROR] Error`;
+
+        const result = minifyContentSync(logContent, 'app.log');
+
+        expect(result).toContain('[INFO]');
+        expect(result).toContain('[ERROR]');
+      });
+    });
+
+    describe('SVG minification', () => {
+      it('should minify SVG files with HTML strategy', () => {
+        const svgContent = `<svg>
+  <!-- comment -->
+  <rect width="100" height="100" />
+</svg>`;
+
+        const result = minifyContentSync(svgContent, 'icon.svg');
+
+        expect(result).not.toContain('<!-- comment -->');
+        expect(result).toContain('<svg>');
+      });
+    });
+
+    describe('XML minification', () => {
+      it('should minify XML files with HTML strategy', () => {
+        const xmlContent = `<?xml version="1.0"?>
+<!-- config comment -->
+<config>
+  <setting>value</setting>
+</config>`;
+
+        const result = minifyContentSync(xmlContent, 'config.xml');
+
+        expect(result).not.toContain('<!-- config comment -->');
+        expect(result).toContain('<config>');
+      });
+    });
   });
 });

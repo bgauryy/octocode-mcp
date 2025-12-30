@@ -11,7 +11,7 @@ import {
 } from '../../../src/tools/hints/index.js';
 // Internal function imported directly for testing
 import { getMetadataDynamicHints } from '../../../src/tools/hints/static.js';
-import { STATIC_TOOL_NAMES } from '../../../src/tools/toolMetadata.js';
+import { STATIC_TOOL_NAMES } from '../../../src/tools/toolNames.js';
 import { initializeToolMetadata } from '../../../src/tools/toolMetadata.js';
 
 // Initialize metadata before tests
@@ -170,7 +170,7 @@ describe('Unified Hints System', () => {
       expect(hints).toBeDefined();
       expect(Array.isArray(hints)).toBe(true);
       expect(hints.length).toBeGreaterThan(0);
-      expect(hints.some(h => h.includes('RIPGREP'))).toBe(true);
+      expect(hints.some(h => h.includes('localSearchCode'))).toBe(true);
     });
 
     it('should return read workflow hints', () => {
@@ -179,7 +179,7 @@ describe('Unified Hints System', () => {
       expect(hints).toBeDefined();
       expect(Array.isArray(hints)).toBe(true);
       expect(hints.length).toBeGreaterThan(0);
-      expect(hints.some(h => h.includes('FETCH_CONTENT'))).toBe(true);
+      expect(hints.some(h => h.includes('localGetFileContent'))).toBe(true);
     });
   });
 

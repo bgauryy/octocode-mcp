@@ -4,6 +4,7 @@ import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
 import { CompleteMetadata, ToolNames } from '../types/metadata.js';
+import { STATIC_TOOL_NAMES } from './toolNames.js';
 
 export type {
   CompleteMetadata,
@@ -19,22 +20,8 @@ export type ToolName = ToolNamesValue;
 let METADATA_JSON: CompleteMetadata | null = null;
 let initializationPromise: Promise<void> | null = null;
 
-/**
- * Static tool name constants - use for computed property keys
- * The Proxy TOOL_NAMES should only be used for runtime access, not object literals
- */
-export const STATIC_TOOL_NAMES = {
-  GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-  GITHUB_SEARCH_CODE: 'githubSearchCode',
-  GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-  GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-  GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-  PACKAGE_SEARCH: 'packageSearch',
-  LOCAL_RIPGREP: 'localSearchCode',
-  LOCAL_FETCH_CONTENT: 'localGetFileContent',
-  LOCAL_FIND_FILES: 'localFindFiles',
-  LOCAL_VIEW_STRUCTURE: 'localViewStructure',
-} as const satisfies ToolNamesMap;
+// Re-export STATIC_TOOL_NAMES for backward compatibility
+export { STATIC_TOOL_NAMES };
 
 // Zod schemas for validation
 const PromptArgumentSchema = z.object({

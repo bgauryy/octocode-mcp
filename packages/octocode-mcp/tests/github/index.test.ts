@@ -1,7 +1,32 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as githubIndex from '../../src/github/index.js';
 
+// Mock the client module to spy on clearOctokitInstances
+vi.mock('../../src/github/client.js', async () => {
+  const actual = await vi.importActual('../../src/github/client.js');
+  return {
+    ...actual,
+    clearOctokitInstances: vi.fn(),
+  };
+});
+
+// Mock the serverConfig module to spy on clearConfigCachedToken
+vi.mock('../../src/serverConfig.js', async () => {
+  const actual = await vi.importActual('../../src/serverConfig.js');
+  return {
+    ...actual,
+    clearConfigCachedToken: vi.fn(),
+  };
+});
+
+import { clearOctokitInstances } from '../../src/github/client.js';
+import { clearConfigCachedToken } from '../../src/serverConfig.js';
+
 describe('GitHub Index Exports', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   describe('Client exports', () => {
     it('should export client functions', () => {
       expect(githubIndex.getOctokit).toBeDefined();
@@ -14,6 +39,17 @@ describe('GitHub Index Exports', () => {
       expect(typeof githubIndex.clearOctokitInstances).toBe('function');
       expect(githubIndex.clearAllAuthState).toBeDefined();
       expect(typeof githubIndex.clearAllAuthState).toBe('function');
+    });
+  });
+
+  describe('clearAllAuthState', () => {
+    it('should clear both Octokit instances and config cached token', () => {
+      // Call the function
+      githubIndex.clearAllAuthState();
+
+      // Verify both underlying functions were called
+      expect(clearOctokitInstances).toHaveBeenCalledTimes(1);
+      expect(clearConfigCachedToken).toHaveBeenCalledTimes(1);
     });
   });
 

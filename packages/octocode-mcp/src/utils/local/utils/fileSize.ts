@@ -70,9 +70,8 @@ export function parseFileSize(sizeStr: string): number {
       return Math.round(value * 1024 * 1024);
     case 'G':
       return Math.round(value * 1024 * 1024 * 1024);
-    case 'T':
-      return Math.round(value * 1024 * 1024 * 1024 * 1024);
     default:
-      throw new Error(`Unknown unit: ${unit}`);
+      // 'T' - only remaining option after regex validation
+      return Math.round(value * 1024 * 1024 * 1024 * 1024);
   }
 }

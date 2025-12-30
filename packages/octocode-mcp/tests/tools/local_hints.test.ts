@@ -8,9 +8,14 @@ import {
   getLargeFileWorkflowHints,
   HINTS,
 } from '../../src/tools/hints/index.js';
-import { STATIC_TOOL_NAMES } from '../../src/tools/toolMetadata.js';
+import { STATIC_TOOL_NAMES } from '../../src/tools/toolNames.js';
 
 describe('Local Tools Hints', () => {
+  it('STATIC_TOOL_NAMES should be defined', () => {
+    expect(STATIC_TOOL_NAMES).toBeDefined();
+    expect(STATIC_TOOL_NAMES.LOCAL_RIPGREP).toBe('localSearchCode');
+  });
+
   describe('HINTS structure', () => {
     it('should have hints for all local tools', () => {
       expect(HINTS[STATIC_TOOL_NAMES.LOCAL_RIPGREP]).toBeDefined();
@@ -35,10 +40,12 @@ describe('Local Tools Hints', () => {
         const hints = HINTS[STATIC_TOOL_NAMES.LOCAL_RIPGREP].hasResults();
 
         expect(
-          hints.some((h: string | undefined) => h?.includes('FETCH_CONTENT'))
+          hints.some((h: string | undefined) =>
+            h?.includes('localGetFileContent')
+          )
         ).toBe(true);
         expect(
-          hints.some((h: string | undefined) => h?.includes('RIPGREP'))
+          hints.some((h: string | undefined) => h?.includes('localSearchCode'))
         ).toBe(true);
       });
 
@@ -68,7 +75,9 @@ describe('Local Tools Hints', () => {
         const hints = HINTS[STATIC_TOOL_NAMES.LOCAL_RIPGREP].empty();
 
         expect(hints.length).toBeGreaterThan(0);
-        expect(hints.some(h => h.includes('Broaden'))).toBe(true);
+        expect(
+          hints.some((h: string | undefined) => h?.includes('Broaden'))
+        ).toBe(true);
       });
     });
 
@@ -124,7 +133,7 @@ describe('Local Tools Hints', () => {
       it('should return standard hints', () => {
         const hints = HINTS[STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT].hasResults();
 
-        expect(hints.some(h => h.includes('RIPGREP'))).toBe(true);
+        expect(hints.some(h => h.includes('localSearchCode'))).toBe(true);
         expect(hints.some(h => h.includes('matchString'))).toBe(true);
       });
     });
@@ -215,7 +224,7 @@ describe('Local Tools Hints', () => {
         const hints =
           HINTS[STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE].hasResults();
 
-        expect(hints.some(h => h?.includes('RIPGREP'))).toBe(true);
+        expect(hints.some(h => h?.includes('localSearchCode'))).toBe(true);
         expect(hints.some(h => h?.includes('depth'))).toBe(true);
       });
 
@@ -272,7 +281,7 @@ describe('Local Tools Hints', () => {
           errorType: 'size_limit',
         });
 
-        expect(hints.some(h => h.includes('FIND_FILES'))).toBe(true);
+        expect(hints.some(h => h.includes('localFindFiles'))).toBe(true);
       });
     });
   });
@@ -282,7 +291,7 @@ describe('Local Tools Hints', () => {
       it('should return base hints', () => {
         const hints = HINTS[STATIC_TOOL_NAMES.LOCAL_FIND_FILES].hasResults();
 
-        expect(hints.some(h => h?.includes('FETCH_CONTENT'))).toBe(true);
+        expect(hints.some(h => h?.includes('localGetFileContent'))).toBe(true);
         expect(hints.some(h => h?.includes('modifiedWithin'))).toBe(true);
       });
 
@@ -320,7 +329,7 @@ describe('Local Tools Hints', () => {
         const hints = HINTS[STATIC_TOOL_NAMES.LOCAL_FIND_FILES].error();
 
         expect(hints.length).toBeGreaterThan(0);
-        expect(hints.some(h => h.includes('VIEW_STRUCTURE'))).toBe(true);
+        expect(hints.some(h => h?.includes('localViewStructure'))).toBe(true);
       });
     });
   });

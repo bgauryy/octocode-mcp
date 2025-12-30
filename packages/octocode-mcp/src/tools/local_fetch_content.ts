@@ -1,7 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { readFile, stat } from 'fs/promises';
-import { resolve, isAbsolute } from 'path';
 import { minifyContentSync } from '../utils/minifier/index.js';
 import { getHints } from './hints/index.js';
 import {
@@ -91,9 +90,7 @@ export async function fetchContent(
       return pathValidation.errorResult as FetchContentResult;
     }
 
-    const absolutePath = isAbsolute(query.path)
-      ? query.path
-      : resolve(process.cwd(), query.path);
+    const absolutePath = pathValidation.sanitizedPath!;
 
     let fileStats;
     try {
@@ -105,7 +102,10 @@ export async function fetchContent(
       );
       return createErrorResult(toolError, query, {
         toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
-        extra: { path: query.path },
+        extra: {
+          path: query.path,
+          resolvedPath: absolutePath,
+        },
       }) as FetchContentResult;
     }
 

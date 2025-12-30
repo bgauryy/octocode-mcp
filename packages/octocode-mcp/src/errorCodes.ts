@@ -559,13 +559,30 @@ export const ToolErrors = {
       { path }
     ),
 
-  fileAccessFailed: (path: string, cause?: Error) =>
-    new ToolError(
+  fileAccessFailed: (path: string, cause?: Error) => {
+    // Extract specific error message based on error code
+    let message = `Cannot access file: ${path}`;
+    const errorCode = (cause as Error & { code?: string })?.code;
+
+    if (errorCode === 'ENOENT') {
+      message = `File not found: ${path}. Verify the path exists using localFindFiles.`;
+    } else if (errorCode === 'EACCES') {
+      message = `Permission denied: ${path}. Check file permissions.`;
+    } else if (errorCode === 'EISDIR') {
+      message = `Path is a directory: ${path}. Use localViewStructure instead.`;
+    } else if (errorCode === 'ENOTDIR') {
+      message = `Invalid path: ${path}. A component of the path is not a directory.`;
+    } else if (errorCode === 'ENAMETOOLONG') {
+      message = `Path too long: ${path}`;
+    }
+
+    return new ToolError(
       LOCAL_TOOL_ERROR_CODES.FILE_ACCESS_FAILED,
-      `Cannot access file: ${path}`,
-      { path },
+      message,
+      { path, errorCode },
       cause
-    ),
+    );
+  },
 
   fileReadFailed: (path: string, cause?: Error) =>
     new ToolError(

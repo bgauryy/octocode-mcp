@@ -162,6 +162,9 @@ async function executeRipgrepSearch(
     } as SearchContentResult;
   }
 
+  // Use sanitized path (includes tilde expansion)
+  configuredQuery.path = pathValidation.sanitizedPath!;
+
   const dirStats = await estimateDirectoryStats(configuredQuery.path);
   const chunkingWarnings: string[] = [];
 
@@ -197,7 +200,8 @@ async function executeRipgrepSearch(
     } as SearchContentResult;
   }
 
-  if (!result.success || !result.stdout.trim()) {
+  // Check for empty results (exit code 1) or successful run with empty output
+  if (result.code === 1 || (result.success && !result.stdout.trim())) {
     return {
       status: 'empty',
       path: configuredQuery.path,
@@ -209,15 +213,29 @@ async function executeRipgrepSearch(
     };
   }
 
-  const { files: parsedFiles } = parseRipgrepJson(
+  // Handle other errors (exit code > 1)
+  if (!result.success) {
+    return createErrorResult(
+      new Error(`Ripgrep failed (exit code ${result.code}): ${result.stderr}`),
+      configuredQuery,
+      {
+        toolName: TOOL_NAMES.LOCAL_RIPGREP,
+      }
+    ) as SearchContentResult;
+  }
+
+  const { files: parsedFiles, stats } = parseRipgrepJson(
     result.stdout,
     configuredQuery
   );
 
-  return buildSearchResult(parsedFiles, configuredQuery, 'rg', [
-    ...validation.warnings,
-    ...chunkingWarnings,
-  ]);
+  return buildSearchResult(
+    parsedFiles,
+    configuredQuery,
+    'rg',
+    [...validation.warnings, ...chunkingWarnings],
+    stats
+  );
 }
 
 /**
@@ -255,6 +273,9 @@ async function executeGrepSearch(
     } as SearchContentResult;
   }
 
+  // Use sanitized path (includes tilde expansion)
+  configuredQuery.path = pathValidation.sanitizedPath!;
+
   const dirStats = await estimateDirectoryStats(configuredQuery.path);
   const chunkingWarnings: string[] = [];
 
@@ -291,7 +312,7 @@ async function executeGrepSearch(
   }
 
   // grep returns exit code 1 when no matches found (not an error)
-  if (!result.stdout.trim()) {
+  if (result.code === 1 || (result.success && !result.stdout.trim())) {
     return {
       status: 'empty',
       path: configuredQuery.path,
@@ -301,6 +322,17 @@ async function executeGrepSearch(
       reasoning: configuredQuery.reasoning,
       hints: getHints(TOOL_NAMES.LOCAL_RIPGREP, 'empty'),
     };
+  }
+
+  // Handle errors (exit code > 1)
+  if (!result.success) {
+    return createErrorResult(
+      new Error(`Grep failed (exit code ${result.code}): ${result.stderr}`),
+      configuredQuery,
+      {
+        toolName: TOOL_NAMES.LOCAL_RIPGREP,
+      }
+    ) as SearchContentResult;
   }
 
   // Parse grep output
@@ -320,7 +352,8 @@ async function buildSearchResult(
   parsedFiles: RipgrepFileMatches[],
   configuredQuery: RipgrepQuery,
   searchEngine: 'rg' | 'grep',
-  warnings: string[]
+  warnings: string[],
+  stats?: SearchStats
 ): Promise<SearchContentResult> {
   const filesWithCharOffsets =
     searchEngine === 'rg'
@@ -360,11 +393,18 @@ async function buildSearchResult(
   }
 
   const totalFiles = limitedFiles.length;
-  const totalMatches = limitedFiles.reduce(
+  // When filesOnly=true with ripgrep, use stats.matchCount from summary if available
+  // (ripgrep's -l flag doesn't return individual match data, but summary has totals)
+  // For grep or when stats unavailable, fall back to summing individual matchCounts
+  // For filesOnly mode without stats, use totalFiles as fallback (each file = 1 match)
+  const summedMatches = limitedFiles.reduce(
     (sum: number, f: RipgrepFileMatches & { modified?: string }) =>
       sum + f.matchCount,
     0
   );
+  const totalMatches = configuredQuery.filesOnly
+    ? (stats?.matchCount ?? totalFiles) // filesOnly: use stats or fallback to file count
+    : summedMatches;
 
   const filesPerPage =
     configuredQuery.filesPerPage || RESOURCE_LIMITS.DEFAULT_FILES_PER_PAGE;

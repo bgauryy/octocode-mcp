@@ -218,8 +218,94 @@ describe('Local Error Codes', () => {
 
       expect(error.errorCode).toBe(ERROR_CODES.FILE_ACCESS_FAILED);
       expect(error.message).toContain('/missing/file.txt');
-      expect(error.context).toEqual({ path: '/missing/file.txt' });
+      expect(error.context).toEqual({
+        path: '/missing/file.txt',
+        errorCode: undefined,
+      });
       expect(error.stack).toContain('Caused by:');
+    });
+
+    it('should create fileAccessFailed error with ENOENT code', () => {
+      const cause = Object.assign(new Error('File not found'), {
+        code: 'ENOENT',
+      });
+      const error = ToolErrors.fileAccessFailed('/missing/file.txt', cause);
+
+      expect(error.message).toContain('File not found');
+      expect(error.message).toContain('Verify the path exists');
+      expect(error.context).toEqual({
+        path: '/missing/file.txt',
+        errorCode: 'ENOENT',
+      });
+    });
+
+    it('should create fileAccessFailed error with EACCES code', () => {
+      const cause = Object.assign(new Error('Permission denied'), {
+        code: 'EACCES',
+      });
+      const error = ToolErrors.fileAccessFailed('/protected/file.txt', cause);
+
+      expect(error.message).toContain('Permission denied');
+      expect(error.message).toContain('Check file permissions');
+      expect(error.context).toEqual({
+        path: '/protected/file.txt',
+        errorCode: 'EACCES',
+      });
+    });
+
+    it('should create fileAccessFailed error with EISDIR code', () => {
+      const cause = Object.assign(new Error('Is a directory'), {
+        code: 'EISDIR',
+      });
+      const error = ToolErrors.fileAccessFailed('/some/directory', cause);
+
+      expect(error.message).toContain('Path is a directory');
+      expect(error.message).toContain('localViewStructure');
+      expect(error.context).toEqual({
+        path: '/some/directory',
+        errorCode: 'EISDIR',
+      });
+    });
+
+    it('should create fileAccessFailed error with ENOTDIR code', () => {
+      const cause = Object.assign(new Error('Not a directory'), {
+        code: 'ENOTDIR',
+      });
+      const error = ToolErrors.fileAccessFailed('/file.txt/child', cause);
+
+      expect(error.message).toContain('Invalid path');
+      expect(error.message).toContain('component of the path');
+      expect(error.context).toEqual({
+        path: '/file.txt/child',
+        errorCode: 'ENOTDIR',
+      });
+    });
+
+    it('should create fileAccessFailed error with ENAMETOOLONG code', () => {
+      const longPath = '/a'.repeat(500);
+      const cause = Object.assign(new Error('Name too long'), {
+        code: 'ENAMETOOLONG',
+      });
+      const error = ToolErrors.fileAccessFailed(longPath, cause);
+
+      expect(error.message).toContain('Path too long');
+      expect(error.context).toEqual({
+        path: longPath,
+        errorCode: 'ENAMETOOLONG',
+      });
+    });
+
+    it('should create fileAccessFailed error with unknown error code', () => {
+      const cause = Object.assign(new Error('Unknown error'), {
+        code: 'UNKNOWN',
+      });
+      const error = ToolErrors.fileAccessFailed('/some/path', cause);
+
+      expect(error.message).toContain('Cannot access file');
+      expect(error.context).toEqual({
+        path: '/some/path',
+        errorCode: 'UNKNOWN',
+      });
     });
 
     it('should create fileReadFailed error', () => {
