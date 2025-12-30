@@ -107,9 +107,11 @@ export function printGitHubAuthStatus(): void {
 
   if (!status.installed) {
     console.log(
-      `  ${c('yellow', '⚠')} GitHub CLI not installed - visit ${c('underscore', GH_CLI_URL)}`
+      `  ${c('yellow', '⚠')} GitHub: ${c('yellow', 'gh CLI not found')}`
     );
-    console.log(`      ${dim('or set GITHUB_TOKEN in MCP config')}`);
+    console.log(
+      `    ${c('yellow', 'Authenticate using gh CLI')} (${c('underscore', GH_CLI_URL)}) ${c('yellow', 'OR use GITHUB_TOKEN configuration')}`
+    );
   } else if (!status.authenticated) {
     console.log(
       `  ${c('yellow', '⚠')} GitHub CLI not authenticated - run ${c('yellow', getAuthLoginCommand())}`

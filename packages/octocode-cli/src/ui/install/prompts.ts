@@ -528,12 +528,13 @@ export interface EnvConfig {
   githubToken?: string;
 }
 
+type LocalToolsChoice = 'enable' | 'disable' | 'back';
+
 /**
  * Prompt for local tools enablement
+ * Returns: true (enable), false (disable), or null (back)
  */
-export async function promptLocalTools(): Promise<boolean> {
-  const { confirm } = await import('../../utils/prompts.js');
-
+export async function promptLocalTools(): Promise<boolean | null> {
   console.log();
   console.log(`  ${c('blue', 'ℹ')} ${bold('Local Tools')}`);
   console.log(
@@ -542,21 +543,40 @@ export async function promptLocalTools(): Promise<boolean> {
   console.log(`  ${dim('in your local codebase.')}`);
   console.log();
 
-  return await confirm({
+  const choice = await select<LocalToolsChoice>({
     message: 'Enable local tools?',
-    default: false,
+    choices: [
+      {
+        name: `${c('yellow', '○')} Disable ${dim('(Recommended)')} - ${dim('Use only GitHub tools')}`,
+        value: 'disable' as const,
+      },
+      {
+        name: `${c('green', '●')} Enable - ${dim('Allow local file exploration')}`,
+        value: 'enable' as const,
+      },
+      new Separator() as unknown as { name: string; value: LocalToolsChoice },
+      {
+        name: `${c('dim', '← Back')}`,
+        value: 'back' as const,
+      },
+    ],
+    loop: false,
   });
+
+  if (choice === 'back') return null;
+  return choice === 'enable';
 }
 
-type GitHubAuthMethod = 'gh-cli' | 'token' | 'skip';
+type GitHubAuthMethod = 'gh-cli' | 'token' | 'skip' | 'back';
 
 /**
  * Prompt for GitHub authentication method
+ * Returns null if user chooses to go back
  */
 export async function promptGitHubAuth(): Promise<{
-  method: GitHubAuthMethod;
+  method: Exclude<GitHubAuthMethod, 'back'>;
   token?: string;
-}> {
+} | null> {
   console.log();
   console.log(`  ${c('blue', 'ℹ')} ${bold('GitHub Authentication')}`);
   console.log(`  ${dim('Required for accessing GitHub repositories.')}`);
@@ -577,9 +597,16 @@ export async function promptGitHubAuth(): Promise<{
         name: `${c('dim', '○')} Skip - ${dim('Configure manually later')}`,
         value: 'skip' as const,
       },
+      new Separator() as unknown as { name: string; value: GitHubAuthMethod },
+      {
+        name: `${c('dim', '← Back')}`,
+        value: 'back' as const,
+      },
     ],
     loop: false,
   });
+
+  if (method === 'back') return null;
 
   if (method === 'gh-cli') {
     console.log();
@@ -596,11 +623,16 @@ export async function promptGitHubAuth(): Promise<{
   }
 
   if (method === 'token') {
+    console.log();
+    console.log(`  ${dim('Leave empty and press Enter to go back')}`);
+    console.log();
+
     const token = await input({
       message: 'Enter your GitHub personal access token:',
       validate: (value: string) => {
+        // Allow empty to go back
         if (!value.trim()) {
-          return 'Token cannot be empty';
+          return true;
         }
         if (value.length < 20) {
           return 'Token appears too short';
@@ -608,6 +640,11 @@ export async function promptGitHubAuth(): Promise<{
         return true;
       },
     });
+
+    // Empty input means go back
+    if (!token || !token.trim()) {
+      return null;
+    }
 
     console.log();
     console.log(`  ${c('yellow', '⚠')} ${bold('Security Note:')}`);

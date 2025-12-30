@@ -3,65 +3,306 @@
  */
 
 import { c, bold, dim } from '../utils/colors.js';
-import {
-  loadInquirer,
-  select,
-  Separator,
-  confirm,
-  input,
-} from '../utils/prompts.js';
+import { loadInquirer, select, Separator, input } from '../utils/prompts.js';
 import { clearScreen, HOME } from '../utils/platform.js';
 import { runInstallFlow } from './install/index.js';
-import { showGitHubAuthGuidance } from './gh-guidance.js';
 import { runConfigOptionsFlow } from './config/index.js';
 import { printGoodbye, printWelcome } from './header.js';
 import { copyDirectory, dirExists, listSubdirectories } from '../utils/fs.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Spinner } from '../utils/spinner.js';
+import {
+  getAllClientInstallStatus,
+  MCP_CLIENTS,
+  type ClientInstallStatus,
+} from '../utils/mcp-config.js';
+import { detectCurrentClient } from '../utils/mcp-paths.js';
+import { checkGitHubAuth } from '../features/gh-auth.js';
+import type { GitHubAuthStatus } from '../types/index.js';
 
-type MenuChoice = 'install' | 'conf' | 'skills' | 'gh-auth' | 'exit';
+type MenuChoice = 'install' | 'conf' | 'skills' | 'exit';
+
+// ============================================================================
+// App State Types
+// ============================================================================
+
+/**
+ * Skill installation info
+ */
+interface SkillInfo {
+  name: string;
+  installed: boolean;
+  srcPath: string;
+  destPath: string;
+}
+
+/**
+ * Skills state
+ */
+interface SkillsState {
+  sourceExists: boolean;
+  destDir: string;
+  skills: SkillInfo[];
+  installedCount: number;
+  notInstalledCount: number;
+  allInstalled: boolean;
+  hasSkills: boolean;
+}
+
+/**
+ * Octocode installation state
+ */
+interface OctocodeState {
+  installedClients: ClientInstallStatus[];
+  availableClients: ClientInstallStatus[];
+  isInstalled: boolean;
+  hasMoreToInstall: boolean;
+}
+
+/**
+ * Unified application state for all views
+ */
+interface AppState {
+  octocode: OctocodeState;
+  skills: SkillsState;
+  currentClient: string | null;
+  githubAuth: GitHubAuthStatus;
+}
+
+// ============================================================================
+// State Builders
+// ============================================================================
+
+/**
+ * Get skills state
+ */
+function getSkillsState(): SkillsState {
+  const srcDir = getSkillsSourceDir();
+  const destDir = getSkillsDestDir();
+
+  if (!dirExists(srcDir)) {
+    return {
+      sourceExists: false,
+      destDir,
+      skills: [],
+      installedCount: 0,
+      notInstalledCount: 0,
+      allInstalled: false,
+      hasSkills: false,
+    };
+  }
+
+  const availableSkills = listSubdirectories(srcDir).filter(
+    name => !name.startsWith('.')
+  );
+
+  const skills: SkillInfo[] = availableSkills.map(skill => ({
+    name: skill,
+    installed: dirExists(path.join(destDir, skill)),
+    srcPath: path.join(srcDir, skill),
+    destPath: path.join(destDir, skill),
+  }));
+
+  const installedCount = skills.filter(s => s.installed).length;
+  const notInstalledCount = skills.filter(s => !s.installed).length;
+
+  return {
+    sourceExists: true,
+    destDir,
+    skills,
+    installedCount,
+    notInstalledCount,
+    allInstalled: notInstalledCount === 0 && skills.length > 0,
+    hasSkills: skills.length > 0,
+  };
+}
+
+/**
+ * Get octocode installation state
+ */
+function getOctocodeState(): OctocodeState {
+  const allClients = getAllClientInstallStatus();
+  const installedClients = allClients.filter(c => c.octocodeInstalled);
+  const availableClients = allClients.filter(
+    c => c.configExists && !c.octocodeInstalled
+  );
+
+  return {
+    installedClients,
+    availableClients,
+    isInstalled: installedClients.length > 0,
+    hasMoreToInstall: availableClients.length > 0,
+  };
+}
+
+/**
+ * Get unified application state
+ */
+function getAppState(): AppState {
+  return {
+    octocode: getOctocodeState(),
+    skills: getSkillsState(),
+    currentClient: detectCurrentClient(),
+    githubAuth: checkGitHubAuth(),
+  };
+}
+
+/**
+ * Get friendly client names for display
+ */
+function getClientNames(clients: ClientInstallStatus[]): string {
+  return clients.map(c => MCP_CLIENTS[c.client]?.name || c.client).join(', ');
+}
+
+/**
+ * Format path for display (shorten home directory)
+ */
+function formatPath(p: string): string {
+  if (p.startsWith(HOME)) {
+    return '~' + p.slice(HOME.length);
+  }
+  return p;
+}
+
+/**
+ * Build skills menu item based on state
+ */
+function buildSkillsMenuItem(skills: SkillsState): {
+  name: string;
+  value: MenuChoice;
+  description: string;
+} {
+  if (!skills.sourceExists || !skills.hasSkills) {
+    // No skills available from source
+    return {
+      name: '📚 Skills',
+      value: 'skills',
+      description: 'No skills available',
+    };
+  }
+
+  if (skills.allInstalled) {
+    // All skills installed - show path
+    return {
+      name: `📚 Skills ${c('green', '✓')}`,
+      value: 'skills',
+      description: formatPath(skills.destDir),
+    };
+  }
+
+  if (skills.installedCount > 0) {
+    // Some installed, some not
+    return {
+      name: '📚 Skills',
+      value: 'skills',
+      description: `${skills.installedCount} installed, ${skills.notInstalledCount} available`,
+    };
+  }
+
+  // None installed
+  return {
+    name: '📚 Install Skills',
+    value: 'skills',
+    description: 'Install Octocode skills for Claude Code',
+  };
+}
 
 /**
  * Show main menu and handle selection
+ * @param state - Unified application state
  */
-export async function showMainMenu(): Promise<MenuChoice> {
-  console.log();
+export async function showMainMenu(state: AppState): Promise<MenuChoice> {
+  // Show status header
+  if (state.octocode.isInstalled) {
+    const names = getClientNames(state.octocode.installedClients);
+    console.log(`  ${c('green', '✓')} Installed in: ${c('cyan', names)}`);
+  }
 
+  // Show GitHub auth status
+  if (state.githubAuth.authenticated) {
+    console.log(
+      `  ${c('green', '✓')} GitHub: ${c('cyan', state.githubAuth.username || 'authenticated')}`
+    );
+  } else if (state.githubAuth.installed) {
+    console.log(
+      `  ${c('yellow', '⚠')} GitHub: ${c('yellow', 'not authenticated')}`
+    );
+  } else {
+    console.log(
+      `  ${c('yellow', '⚠')} GitHub CLI: ${c('yellow', 'not installed')}`
+    );
+  }
+
+  // Build menu choices based on state
+  const choices: Array<{
+    name: string;
+    value: MenuChoice;
+    description?: string;
+  }> = [];
+
+  if (state.octocode.isInstalled) {
+    // Octocode IS installed - show Configure Options first
+    choices.push({
+      name: '⚙️  Configure Options',
+      value: 'conf',
+    });
+
+    // Only show install option if there are more clients available
+    if (state.octocode.hasMoreToInstall) {
+      const availableNames = getClientNames(state.octocode.availableClients);
+      choices.push({
+        name: '📦 Install to more clients',
+        value: 'install',
+        description: `Available: ${availableNames}`,
+      });
+    }
+  } else {
+    // Octocode is NOT installed - show Install as only primary option
+    choices.push({
+      name: '📦 Install octocode-mcp',
+      value: 'install',
+      description: 'Install MCP server for Cursor, Claude Desktop, and more',
+    });
+    // Don't show Configure Options - nothing to configure yet
+  }
+
+  // Skills menu item - shows state-appropriate label and description
+  choices.push(buildSkillsMenuItem(state.skills));
+
+  // Separators and exit
+  choices.push(
+    new Separator() as unknown as {
+      name: string;
+      value: MenuChoice;
+    }
+  );
+  choices.push({
+    name: '🚪 Exit',
+    value: 'exit',
+    description: 'Quit the application',
+  });
+  choices.push(
+    new Separator(' ') as unknown as {
+      name: string;
+      value: MenuChoice;
+    }
+  );
+  choices.push(
+    new Separator(
+      `  ${c('yellow', 'For checking node status in your system use')} ${c('cyan', 'npx node-doctor')}`
+    ) as unknown as { name: string; value: MenuChoice }
+  );
+  choices.push(
+    new Separator(
+      c('magenta', `  ─── 🔍🐙 ${bold('https://octocode.ai')} ───`)
+    ) as unknown as { name: string; value: MenuChoice }
+  );
+
+  console.log();
   const choice = await select<MenuChoice>({
     message: 'What would you like to do?',
-    choices: [
-      {
-        name: '📦 Install octocode-mcp',
-        value: 'install',
-        description: 'Install MCP server for Cursor, Claude Desktop, and more',
-      },
-      {
-        name: '📚 Install Skills',
-        value: 'skills',
-        description: 'Install Octocode skills for Claude Code',
-      },
-      {
-        name: '⚙️  Configure Options',
-        value: 'conf',
-        description: 'View/edit octocode settings (local tools, timeout, etc.)',
-      },
-      {
-        name: '🔐 Check GitHub authentication',
-        value: 'gh-auth',
-        description: 'Verify GitHub CLI is installed and authenticated',
-      },
-      new Separator() as unknown as { name: string; value: MenuChoice },
-      {
-        name: '🚪 Exit',
-        value: 'exit',
-        description: 'Quit the application',
-      },
-      new Separator(' ') as unknown as { name: string; value: MenuChoice },
-      new Separator(
-        c('magenta', `  ─── 🔍🐙 ${bold('https://octocode.ai')} ───`)
-      ) as unknown as { name: string; value: MenuChoice },
-    ],
+    choices,
     pageSize: 10,
     loop: false,
     theme: {
@@ -255,12 +496,15 @@ function showSkillsStatus(info: ReturnType<typeof getSkillsInfo>): void {
   console.log();
 }
 
+type InstallSkillsChoice = 'install' | 'back';
+
 /**
  * Install skills
+ * Returns true if installation was performed, false if user went back
  */
 async function installSkills(
   info: ReturnType<typeof getSkillsInfo>
-): Promise<void> {
+): Promise<boolean> {
   const { destDir, notInstalled } = info;
 
   if (notInstalled.length === 0) {
@@ -270,7 +514,7 @@ async function installSkills(
     console.log(`  ${c('cyan', destDir)}`);
     console.log();
     await pressEnterToContinue();
-    return;
+    return true;
   }
 
   // Show what will be installed
@@ -284,17 +528,28 @@ async function installSkills(
   console.log(`  ${c('cyan', destDir)}`);
   console.log();
 
-  // Ask user if they want to install
-  const shouldInstall = await confirm({
+  // Ask user if they want to install with back option
+  const choice = await select<InstallSkillsChoice>({
     message: `Install ${notInstalled.length} skill(s)?`,
-    default: true,
+    choices: [
+      {
+        name: `${c('green', '✓')} Yes, install skills`,
+        value: 'install' as const,
+      },
+      new Separator() as unknown as {
+        name: string;
+        value: InstallSkillsChoice;
+      },
+      {
+        name: `${c('dim', '← Back to skills menu')}`,
+        value: 'back' as const,
+      },
+    ],
+    loop: false,
   });
 
-  if (!shouldInstall) {
-    console.log();
-    console.log(`  ${dim('Installation cancelled.')}`);
-    console.log();
-    return;
+  if (choice === 'back') {
+    return false;
   }
 
   // Install skills
@@ -333,6 +588,7 @@ async function installSkills(
   }
 
   await pressEnterToContinue();
+  return true;
 }
 
 /**
@@ -349,7 +605,7 @@ async function runSkillsFlow(): Promise<void> {
   console.log();
 
   // Get skills info
-  const info = getSkillsInfo();
+  let info = getSkillsInfo();
 
   // Handle source not found
   if (!info.sourceExists) {
@@ -368,23 +624,38 @@ async function runSkillsFlow(): Promise<void> {
     return;
   }
 
-  // Show submenu
-  const choice = await showSkillsMenu(info.notInstalled.length > 0);
+  // Skills menu loop - allows going back from install
+  let inSkillsMenu = true;
+  while (inSkillsMenu) {
+    // Refresh skills info on each iteration
+    info = getSkillsInfo();
 
-  switch (choice) {
-    case 'install':
-      await installSkills(info);
-      break;
+    // Show submenu
+    const choice = await showSkillsMenu(info.notInstalled.length > 0);
 
-    case 'view':
-      showSkillsStatus(info);
-      await pressEnterToContinue();
-      break;
+    switch (choice) {
+      case 'install': {
+        const installed = await installSkills(info);
+        // If user went back, stay in skills menu
+        // If installed, also stay in skills menu to show updated status
+        if (installed) {
+          // Refresh and continue showing menu
+          continue;
+        }
+        break;
+      }
 
-    case 'back':
-    default:
-      // Just return to main menu
-      break;
+      case 'view':
+        showSkillsStatus(info);
+        await pressEnterToContinue();
+        break;
+
+      case 'back':
+      default:
+        // Exit skills menu and return to main menu
+        inSkillsMenu = false;
+        break;
+    }
   }
 }
 
@@ -403,10 +674,6 @@ export async function handleMenuChoice(choice: MenuChoice): Promise<boolean> {
 
     case 'conf':
       await runConfigOptionsFlow();
-      return true;
-
-    case 'gh-auth':
-      await showGitHubAuthGuidance();
       return true;
 
     case 'exit':
@@ -436,7 +703,10 @@ export async function runMenuLoop(): Promise<void> {
     }
     firstRun = false;
 
-    const choice = await showMainMenu();
+    // Get unified app state (refreshed on each iteration)
+    const state = getAppState();
+
+    const choice = await showMainMenu(state);
     running = await handleMenuChoice(choice);
   }
 }
