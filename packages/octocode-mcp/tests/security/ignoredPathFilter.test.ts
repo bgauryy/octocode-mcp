@@ -85,20 +85,23 @@ describe('ignoredPathFilter', () => {
       expect(shouldIgnoreFile('.ssh/id_rsa')).toBe(true);
     });
 
-    it('should return true for backup files', () => {
-      expect(shouldIgnoreFile('config.bak')).toBe(true);
-      expect(shouldIgnoreFile('settings.old')).toBe(true);
+    // Backup files are NOW ALLOWED for code exploration
+    it('should return false for backup files (allowed for diff analysis)', () => {
+      expect(shouldIgnoreFile('config.bak')).toBe(false);
+      expect(shouldIgnoreFile('settings.old')).toBe(false);
     });
 
-    it('should return true for log files', () => {
-      expect(shouldIgnoreFile('app.log')).toBe(true);
-      expect(shouldIgnoreFile('error.log')).toBe(true);
+    // Log files are NOW ALLOWED for code exploration
+    it('should return false for log files (allowed for debugging)', () => {
+      expect(shouldIgnoreFile('app.log')).toBe(false);
+      expect(shouldIgnoreFile('error.log')).toBe(false);
     });
 
-    it('should return true for database files', () => {
-      expect(shouldIgnoreFile('data.db')).toBe(true);
-      expect(shouldIgnoreFile('users.sqlite')).toBe(true);
-      expect(shouldIgnoreFile('dump.sql')).toBe(true);
+    // Database files are NOW ALLOWED for code exploration (content sanitized)
+    it('should return false for database files (allowed, content sanitized)', () => {
+      expect(shouldIgnoreFile('data.db')).toBe(false);
+      expect(shouldIgnoreFile('users.sqlite')).toBe(false);
+      expect(shouldIgnoreFile('dump.sql')).toBe(false);
     });
   });
 
@@ -113,8 +116,9 @@ describe('ignoredPathFilter', () => {
       expect(shouldIgnore('server.key')).toBe(true);
     });
 
-    it('should return true for sensitive file in any path', () => {
-      expect(shouldIgnore('/project/config/app.log')).toBe(true);
+    // Log files are NOW ALLOWED
+    it('should return false for log files (allowed for debugging)', () => {
+      expect(shouldIgnore('/project/config/app.log')).toBe(false);
     });
 
     it('should return false for normal paths and files', () => {

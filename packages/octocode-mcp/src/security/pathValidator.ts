@@ -37,6 +37,18 @@ import type { PathValidationResult } from '../utils/types.js';
 import { shouldIgnore } from './ignoredPathFilter.js';
 
 /**
+ * PathValidator configuration options
+ */
+export interface PathValidatorOptions {
+  /** Primary workspace root directory. Defaults to CWD. */
+  workspaceRoot?: string;
+  /** Additional allowed root directories */
+  additionalRoots?: string[];
+  /** Include home directory as allowed root (default: true for local tools) */
+  includeHomeDir?: boolean;
+}
+
+/**
  * PathValidator class for validating and sanitizing file system paths
  */
 export class PathValidator {
@@ -44,13 +56,45 @@ export class PathValidator {
 
   /**
    * Creates a new PathValidator
-   * @param workspaceRoot - Optional workspace root directory. Defaults to current working directory.
+   * @param options - Configuration options (or legacy string for workspace root)
    */
-  constructor(workspaceRoot?: string) {
-    const root = workspaceRoot
-      ? this.expandTilde(workspaceRoot)
+  constructor(options?: string | PathValidatorOptions) {
+    // Support legacy string argument for backwards compatibility
+    const opts: PathValidatorOptions =
+      typeof options === 'string' ? { workspaceRoot: options } : options || {};
+
+    const root = opts.workspaceRoot
+      ? this.expandTilde(opts.workspaceRoot)
       : process.cwd();
+
     this.allowedRoots = [path.resolve(root)];
+
+    // Add home directory by default (can be disabled with includeHomeDir: false)
+    if (opts.includeHomeDir !== false) {
+      const homeDir = os.homedir();
+      if (homeDir && !this.allowedRoots.includes(homeDir)) {
+        this.allowedRoots.push(homeDir);
+      }
+    }
+
+    // Add additional roots from options
+    if (opts.additionalRoots) {
+      for (const additionalRoot of opts.additionalRoots) {
+        this.addAllowedRoot(additionalRoot);
+      }
+    }
+
+    // Add roots from ALLOWED_PATHS environment variable (comma-separated)
+    const envPaths = process.env.ALLOWED_PATHS;
+    if (envPaths) {
+      const paths = envPaths
+        .split(',')
+        .map(p => p.trim())
+        .filter(p => p.length > 0);
+      for (const envPath of paths) {
+        this.addAllowedRoot(envPath);
+      }
+    }
   }
 
   /**
@@ -224,9 +268,31 @@ export class PathValidator {
       return null;
     }
   }
+
+  /**
+   * Gets the list of currently allowed root directories (for debugging)
+   */
+  getAllowedRoots(): readonly string[] {
+    return [...this.allowedRoots];
+  }
 }
 
 /**
  * Global path validator instance
+ * Includes home directory by default for convenient local tool access
  */
 export const pathValidator = new PathValidator();
+
+/**
+ * Reinitialize the global path validator with custom options
+ * Useful for testing or runtime reconfiguration
+ */
+export function reinitializePathValidator(
+  options?: PathValidatorOptions
+): PathValidator {
+  const newValidator = new PathValidator(options);
+  // Copy allowed roots to the singleton (mutate in place)
+  (pathValidator as { allowedRoots: string[] }).allowedRoots =
+    newValidator.getAllowedRoots() as string[];
+  return pathValidator;
+}

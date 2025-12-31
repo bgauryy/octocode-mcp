@@ -313,6 +313,10 @@ export interface FetchContentQuery extends BaseQuery {
   matchStringCaseSensitive?: boolean;
   minified?: boolean;
 
+  // Line-based extraction (aligned with GitHub's githubGetFileContent)
+  startLine?: number;
+  endLine?: number;
+
   // Character-based pagination (universal mechanism)
   charOffset?: number;
   charLength?: number;
@@ -333,6 +337,11 @@ export interface FetchContentResult extends BaseQuery {
   errorCode?: ErrorCode;
   hints?: readonly string[];
   warnings?: string[];
+
+  // Line extraction info (when startLine/endLine used)
+  startLine?: number;
+  endLine?: number;
+  extractedLines?: number;
 
   // Pagination metadata (only present when pagination is active)
   pagination?: PaginationInfo;

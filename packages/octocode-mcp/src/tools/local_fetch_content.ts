@@ -152,7 +152,11 @@ export async function fetchContent(
 
     let resultContent: string;
     let isPartial = false;
+    let actualStartLine: number | undefined;
+    let actualEndLine: number | undefined;
+    const warnings: string[] = [];
 
+    // Priority: matchString > startLine/endLine > fullContent
     if (query.matchString) {
       const result = extractMatchingLines(
         lines,
@@ -268,6 +272,48 @@ export async function fetchContent(
       }
 
       isPartial = true;
+    } else if (query.startLine !== undefined && query.endLine !== undefined) {
+      // Line range extraction (aligned with GitHub's githubGetFileContent)
+      const effectiveStartLine = Math.max(1, query.startLine);
+      const effectiveEndLine = Math.min(query.endLine, totalLines);
+
+      if (effectiveStartLine > totalLines) {
+        return {
+          status: 'empty',
+          path: query.path,
+          totalLines,
+          errorCode: ERROR_CODES.NO_MATCHES,
+          researchGoal: query.researchGoal,
+          reasoning: query.reasoning,
+          hints: [
+            ...getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'empty'),
+            `Requested startLine ${query.startLine} exceeds file length (${totalLines} lines)`,
+            `Use startLine=1 to ${totalLines} for valid range`,
+          ],
+        };
+      }
+
+      const selectedLines = lines.slice(
+        effectiveStartLine - 1,
+        effectiveEndLine
+      );
+      resultContent = selectedLines.join('\n');
+      actualStartLine = effectiveStartLine;
+      actualEndLine = effectiveEndLine;
+      isPartial = true;
+
+      // Warn if range was adjusted
+      if (query.endLine > totalLines) {
+        warnings.push(
+          `Requested endLine ${query.endLine} adjusted to ${totalLines} (file end)`
+        );
+      }
+
+      resultContent = applyMinification(
+        resultContent,
+        query.path,
+        query.minified !== false
+      );
     } else {
       resultContent = content;
       isPartial = false;
@@ -290,31 +336,33 @@ export async function fetchContent(
       };
     }
 
+    // Smart auto-pagination: Instead of error, auto-paginate large content
+    let effectiveCharLength = query.charLength;
+    let autoPaginated = false;
+
     if (!query.charLength && resultContent.length > DEFAULTS.MAX_OUTPUT_CHARS) {
-      const toolError = ToolErrors.paginationRequired(resultContent.length);
-      return createErrorResult(toolError, query, {
-        toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
-        extra: { path: query.path, totalLines },
-        customHints: [
-          `RECOMMENDED: charLength=${RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH} (paginate results)`,
-          'ALTERNATIVE: Use matchString for targeted extraction',
-          `NOTE: Results >10K chars require pagination for safety`,
-        ],
-      }) as FetchContentResult;
+      // Auto-apply recommended pagination instead of returning error
+      effectiveCharLength = RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH;
+      autoPaginated = true;
+      warnings.push(
+        `Auto-paginated: Content (${resultContent.length} chars) exceeds ${DEFAULTS.MAX_OUTPUT_CHARS} char limit`
+      );
     }
 
     const pagination = applyPagination(
       resultContent,
       query.charOffset ?? 0,
-      query.charLength
+      effectiveCharLength
     );
 
     const baseHints = getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'hasResults');
-    const paginationHints = query.charLength
-      ? generatePaginationHints(pagination, {
-          toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
-        })
-      : [];
+    // Generate pagination hints when explicitly requested OR when auto-paginated
+    const paginationHints =
+      effectiveCharLength || autoPaginated
+        ? generatePaginationHints(pagination, {
+            toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+          })
+        : [];
 
     return {
       status: 'hasResults',
@@ -324,11 +372,19 @@ export async function fetchContent(
       contentLength: pagination.paginatedContent.length,
       isPartial,
       totalLines,
-      ...(query.charLength && {
+      // Line extraction info (when startLine/endLine used)
+      ...(actualStartLine !== undefined && {
+        startLine: actualStartLine,
+        endLine: actualEndLine,
+        extractedLines: actualEndLine! - actualStartLine + 1,
+      }),
+      // Include pagination info when explicitly requested OR auto-paginated
+      ...((effectiveCharLength || autoPaginated) && {
         pagination: createPaginationInfo(pagination),
       }),
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
+      ...(warnings.length > 0 && { warnings }),
       hints: [...baseHints, ...paginationHints],
     };
   } catch (error) {

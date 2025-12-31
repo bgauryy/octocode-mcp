@@ -606,6 +606,10 @@ export const LOCAL_FETCH_CONTENT = createSchemaHelper(
   scope: {
     path: string;
   };
+  range: {
+    startLine: string;
+    endLine: string;
+  };
   options: {
     fullContent: string;
     matchString: string;

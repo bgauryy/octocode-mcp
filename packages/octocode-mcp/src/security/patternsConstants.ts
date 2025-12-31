@@ -1,13 +1,16 @@
 /**
  * Security Pattern Constants for Path and File Filtering
  *
- * Philosophy: BALANCED SECURITY FOR CODE UNDERSTANDING
+ * Philosophy: MINIMAL BLOCKING - Only block ACTUAL SECRETS
  * - Block actual secrets: credentials, private keys, API tokens
  * - Block sensitive user data: password managers, cryptocurrency wallets
  * - Block credential stores: browser passwords, cloud provider keys
- * - Allow code artifacts: configs, logs, databases, backups, notebooks
  *
- * Coverage includes:
+ * IMPORTANT: This is for LOCAL tool access where the user controls their machine.
+ * We should ONLY block files that contain actual secrets, not files that MIGHT
+ * contain secrets. Users need to explore their codebase freely.
+ *
+ * Coverage (BLOCKED):
  * ✓ Environment files with secrets (.env*)
  * ✓ Private SSH keys (id_rsa, id_ed25519, etc.)
  * ✓ Cloud provider credential files (AWS, GCP, Azure)
@@ -18,10 +21,11 @@
  * ✓ Token files with actual tokens
  * ✓ Explicit secret files (secrets.yml, credentials, etc.)
  *
- * Explicitly allows (removed from blocking):
+ * Explicitly ALLOWED for code exploration:
  * ✓ Config files (config.json, settings.json, *.conf)
  * ✓ Log files (*.log)
- * ✓ Database files (*.sql, *.db, *.sqlite)
+ * ✓ Database schema files (*.sql)
+ * ✓ SQLite databases (*.db, *.sqlite) - content sanitized
  * ✓ Backups (*.bak, *.old, *~)
  * ✓ Public certificates (*.crt, *.cer)
  * ✓ Jupyter notebooks (*.ipynb)
@@ -255,8 +259,8 @@ export const IGNORED_FILE_PATTERNS: RegExp[] = [
   /^bearer_token$/,
   /^auth_token$/,
 
-  // VPN configs
-  /\.ovpn$/,
+  // VPN configs - moved to group with other VPN patterns below
+  // /\.ovpn$/, // Moved to VPN section
 
   // OAuth/SAML (specific files)
   /^client_secret.*\.json$/,
@@ -387,49 +391,50 @@ export const IGNORED_FILE_PATTERNS: RegExp[] = [
   /^\.electrum\/wallets\/.*$/,
   /\/keystore\/UTC--.*$/,
 
-  // Database dump files (often contain credentials/sensitive data)
-  /\.sql$/,
-  /\.dump$/,
-  /\.db$/,
-  /\.sqlite$/,
-  /\.sqlite3$/,
-  /^dump\.rdb$/, // Redis dump
-  /^mongodb\.dump$/,
-  /\.bson$/,
+  // Database dump files - ONLY block actual database dumps, allow schema files
+  // /\.sql$/, // ALLOWED - SQL schema files are useful for code understanding
+  // /\.db$/, // ALLOWED - SQLite databases may contain app data
+  // /\.sqlite$/, // ALLOWED - content is sanitized for secrets
+  // /\.sqlite3$/, // ALLOWED - content is sanitized for secrets
+  /^dump\.rdb$/, // Redis dump (actual data)
+  /^mongodb\.dump$/, // MongoDB dump (actual data)
+  /\.bson$/, // MongoDB binary (actual data)
+  /\.dump$/, // Generic dump files
 
-  // Backup files (may contain original sensitive data)
-  /~$/, // Unix backup files (file~)
-  /\.bak$/,
-  /\.backup$/,
-  /\.old$/,
-  /\.orig$/,
-  /\.save$/,
+  // Backup files - ALLOWED for code exploration
+  // /~$/, // ALLOWED - Unix backup files useful for understanding changes
+  // /\.bak$/, // ALLOWED - backup files useful for diff analysis
+  // /\.backup$/, // ALLOWED
+  // /\.old$/, // ALLOWED
+  // /\.orig$/, // ALLOWED
+  // /\.save$/, // ALLOWED
 
-  // Editor temporary/swap files (may contain unsaved sensitive data)
-  /\.swp$/, // Vim swap
-  /\.swo$/, // Vim swap
-  /\.swn$/, // Vim swap
-  /^\.#.*$/, // Emacs lock files
-  /^\.#.+$/, // Emacs auto-save
+  // Editor temporary/swap files - ALLOWED (contain code being edited)
+  // /\.swp$/, // ALLOWED - Vim swap files
+  // /\.swo$/, // ALLOWED
+  // /\.swn$/, // ALLOWED
+  // /^\.#.*$/, // ALLOWED - Emacs lock files
+  // /^\.#.+$/, // ALLOWED
 
-  // IDE configuration with potential secrets
-  /^\.vscode\/settings\.json$/,
-  /^\.vscode\/launch\.json$/,
-  /^\.idea\/workspace\.xml$/,
-  /^\.idea\/dataSources\.xml$/,
-  /^\.idea\/webServers\.xml$/,
-  /^\.idea\/deployment\.xml$/,
+  // IDE configuration - ALLOWED (visible in repos anyway)
+  // Note: dataSources.xml may contain DB passwords - keep blocked
+  /^\.idea\/dataSources\.xml$/, // May contain database passwords
+  /^\.idea\/webServers\.xml$/, // May contain server credentials
+  /^\.idea\/deployment\.xml$/, // May contain deployment credentials
+  // /^\.vscode\/settings\.json$/, // ALLOWED
+  // /^\.vscode\/launch\.json$/, // ALLOWED
 
-  // CI/CD configuration files (can contain encrypted secrets)
-  /^\.travis\.yml$/,
-  /^\.gitlab-ci\.yml$/,
-  /^bitbucket-pipelines\.yml$/,
-  /^\.circleci\/config\.yml$/,
-  /^\.github\/workflows\/.*\.yml$/,
-  /^\.github\/workflows\/.*\.yaml$/,
-  /^azure-pipelines\.yml$/,
-  /^Jenkinsfile$/,
-  /^\.drone\.yml$/,
+  // CI/CD configuration files - ALLOWED (public in repos anyway)
+  // Encrypted secrets in these files are safe - only blocked explicitly named secret files
+  // /^\.travis\.yml$/, // ALLOWED
+  // /^\.gitlab-ci\.yml$/, // ALLOWED
+  // /^bitbucket-pipelines\.yml$/, // ALLOWED
+  // /^\.circleci\/config\.yml$/, // ALLOWED
+  // /^\.github\/workflows\/.*\.yml$/, // ALLOWED
+  // /^\.github\/workflows\/.*\.yaml$/, // ALLOWED
+  // /^azure-pipelines\.yml$/, // ALLOWED
+  // /^Jenkinsfile$/, // ALLOWED
+  // /^\.drone\.yml$/, // ALLOWED
 
   // Vagrant/VM private keys
   /^\.vagrant\/machines\/.*\/private_key$/,
@@ -449,26 +454,28 @@ export const IGNORED_FILE_PATTERNS: RegExp[] = [
   /\.dmp$/, // Windows crash dump
   /\.mdmp$/, // Windows minidump
 
-  // Jupyter notebooks (often contain hardcoded API keys)
-  /\.ipynb$/,
-  /\.ipynb_checkpoints\//,
+  // Jupyter notebooks - ALLOWED (content is sanitized for secrets)
+  // /\.ipynb$/, // ALLOWED - notebooks are code, sanitizer handles secrets
+  // /\.ipynb_checkpoints\//, // ALLOWED
 
-  // Generic configuration files (often contain secrets)
-  /^config\.json$/,
-  /^config\.yaml$/,
-  /^config\.yml$/,
-  /^settings\.json$/,
-  /^configuration\.json$/,
-  /^app\.config$/,
-  /^appsettings\.json$/,
-  /^appsettings\..*\.json$/,
+  // Generic configuration files - ALLOWED for code exploration
+  // Note: Content sanitizer will redact any actual secrets found
+  // /^config\.json$/, // ALLOWED - often just settings, not secrets
+  // /^config\.yaml$/, // ALLOWED
+  // /^config\.yml$/, // ALLOWED
+  // /^settings\.json$/, // ALLOWED
+  // /^configuration\.json$/, // ALLOWED
+  // /^app\.config$/, // ALLOWED
+  // /^appsettings\.json$/, // ALLOWED
+  // /^appsettings\..*\.json$/, // ALLOWED
 
-  // Log files (may contain accidentally logged secrets)
-  /\.log$/,
-  /\.out$/,
-  /^debug\.log$/,
-  /^error\.log$/,
-  /^access\.log$/,
+  // Log files - ALLOWED for debugging
+  // Note: Content sanitizer will redact any secrets logged accidentally
+  // /\.log$/, // ALLOWED - logs are essential for debugging
+  // /\.out$/, // ALLOWED
+  // /^debug\.log$/, // ALLOWED
+  // /^error\.log$/, // ALLOWED
+  // /^access\.log$/, // ALLOWED
 
   // Windows credential files
   /^Credentials$/,
@@ -508,10 +515,11 @@ export const IGNORED_FILE_PATTERNS: RegExp[] = [
   /^\.msmtprc$/,
   /^\.fetchmailrc$/,
 
-  // Additional VPN files
-  /\.conf$/, // Can be VPN configs
-  /^wireguard\.conf$/,
-  /^wg[0-9]+\.conf$/,
+  // VPN config files - ONLY block specific VPN configs, not all .conf
+  // /\.conf$/, // REMOVED - too broad, blocks all config files
+  /^wireguard\.conf$/, // WireGuard VPN config
+  /^wg[0-9]+\.conf$/, // WireGuard interface configs
+  /\.ovpn$/, // OpenVPN configs (moved here for grouping)
 
   // Private documentation (sometimes contains passwords)
   /^PASSWORDS\.md$/,

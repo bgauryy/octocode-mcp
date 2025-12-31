@@ -178,10 +178,24 @@ describe('PathValidator - Extended', () => {
   });
 
   describe('validate - Path traversal protection', () => {
-    it('should block parent traversal attempts', () => {
-      const result = validator.validate(`${testWorkspace}/../../../etc/passwd`);
+    it('should block parent traversal attempts to system paths', () => {
+      // Create a strict validator that doesn't include home directory
+      const strictValidator = new PathValidator({
+        workspaceRoot: testWorkspace,
+        includeHomeDir: false,
+      });
+      const result = strictValidator.validate(
+        `${testWorkspace}/../../../etc/passwd`
+      );
 
       expect(result.isValid).toBe(false);
+    });
+
+    it('should allow parent traversal within home directory (default mode)', () => {
+      // Default validator includes home directory
+      const result = validator.validate(`${testWorkspace}/../`);
+      // This should be allowed since it's within home directory
+      expect(result.isValid).toBe(true);
     });
 
     it('should allow valid paths with ../ that stay within workspace', () => {
