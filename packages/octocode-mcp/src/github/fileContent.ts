@@ -41,7 +41,10 @@ interface FileTimestampInfo {
 /** Raw content result for caching (before line/match processing) */
 interface RawContentResult {
   rawContent: string;
+  /** Resolved branch name (only set when we know the actual branch) */
   branch?: string;
+  /** The ref that was actually used to fetch (branch name, tag, or the requested ref) */
+  resolvedRef: string;
 }
 
 /**
@@ -110,11 +113,15 @@ export async function fetchGitHubFileContentAPI(
     return rawResult as GitHubAPIResponse<ContentResult>;
   }
 
+  // Use resolvedRef for processing, but prefer known branch name for user-facing output
+  const branchForProcessing =
+    rawResult.data.branch || rawResult.data.resolvedRef || params.branch || '';
+
   const processedResult = await processFileContentAPI(
     rawResult.data.rawContent,
     params.owner,
     params.repo,
-    rawResult.data.branch || params.branch || '',
+    branchForProcessing,
     params.path,
     params.fullContent || false,
     params.startLine,
@@ -352,7 +359,10 @@ async function fetchRawGitHubFileContent(
       return {
         data: {
           rawContent: decodedContent,
-          branch: actualBranch || data.sha,
+          // Only set branch when we know the actual branch name (not a SHA)
+          branch: actualBranch || undefined,
+          // resolvedRef is what was actually used to fetch - either the resolved branch or the original request
+          resolvedRef: actualBranch || branch || 'HEAD',
         },
         status: 200,
       };
