@@ -791,6 +791,46 @@ describe('localGetFileContent', () => {
       expect(result.warnings?.[0]).toContain('2000');
       expect(result.warnings?.[0]).toContain('Truncated to first 50 matches');
     });
+
+    it('should return line numbers for matchString extraction', async () => {
+      const testContent = 'line 1\nline 2\nMATCH\nline 4\nline 5';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        matchString: 'MATCH',
+        matchStringContextLines: 1,
+      });
+
+      expect(result.status).toBe('hasResults');
+      // MATCH is on line 3, with contextLines=1, should return lines 2-4
+      expect(result.startLine).toBe(2);
+      expect(result.endLine).toBe(4);
+      expect(result.matchRanges).toEqual([{ start: 2, end: 4 }]);
+    });
+
+    it('should return line numbers for multiple match ranges', async () => {
+      // Lines: 1=line1, 2=MATCH_A, 3=line3, 4=line4, 5=line5, 6=line6, 7=MATCH_B, 8=line8
+      const testContent =
+        'line1\nMATCH_A\nline3\nline4\nline5\nline6\nMATCH_B\nline8';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        matchString: 'MATCH',
+        matchStringContextLines: 1,
+      });
+
+      expect(result.status).toBe('hasResults');
+      // First match at line 2 with context 1: range [1,3]
+      // Second match at line 7 with context 1: range [6,8]
+      expect(result.startLine).toBe(1); // First range start
+      expect(result.endLine).toBe(8); // Last range end
+      expect(result.matchRanges).toEqual([
+        { start: 1, end: 3 },
+        { start: 6, end: 8 },
+      ]);
+    });
   });
 
   describe('Pagination hints', () => {

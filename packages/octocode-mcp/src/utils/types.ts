@@ -337,10 +337,12 @@ export interface FetchContentResult extends BaseQuery {
   hints?: readonly string[];
   warnings?: string[];
 
-  // Line extraction info (when startLine/endLine used)
+  // Line extraction info (when startLine/endLine or matchString used)
   startLine?: number;
   endLine?: number;
   extractedLines?: number;
+  // Match ranges (only present when matchString is used)
+  matchRanges?: Array<{ start: number; end: number }>;
 
   // Pagination metadata (only present when pagination is active)
   pagination?: PaginationInfo;

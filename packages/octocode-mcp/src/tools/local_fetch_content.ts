@@ -145,6 +145,7 @@ export async function fetchContent(
     let isPartial = false;
     let actualStartLine: number | undefined;
     let actualEndLine: number | undefined;
+    let matchRanges: Array<{ start: number; end: number }> | undefined;
     const warnings: string[] = [];
 
     // Priority: matchString > startLine/endLine > fullContent
@@ -203,6 +204,13 @@ export async function fetchContent(
 
       resultContent = applyMinification(resultContent, query.path);
 
+      // Extract line numbers from matchRanges for response
+      if (result.matchRanges.length > 0) {
+        actualStartLine = result.matchRanges[0]!.start;
+        actualEndLine = result.matchRanges[result.matchRanges.length - 1]!.end;
+        matchRanges = result.matchRanges;
+      }
+
       if (result.matchCount > 50) {
         return {
           status: 'hasResults',
@@ -212,6 +220,11 @@ export async function fetchContent(
           contentLength: resultContent.length,
           isPartial: true,
           totalLines,
+          ...(actualStartLine !== undefined && {
+            startLine: actualStartLine,
+            endLine: actualEndLine,
+            matchRanges,
+          }),
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           warnings: [
@@ -243,6 +256,11 @@ export async function fetchContent(
           contentLength: autoPagination.paginatedContent.length,
           isPartial: true,
           totalLines,
+          ...(actualStartLine !== undefined && {
+            startLine: actualStartLine,
+            endLine: actualEndLine,
+            matchRanges,
+          }),
           pagination: createPaginationInfo(autoPagination),
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
@@ -351,11 +369,14 @@ export async function fetchContent(
       contentLength: pagination.paginatedContent.length,
       isPartial,
       totalLines,
-      // Line extraction info (when startLine/endLine used)
+      // Line extraction info (when startLine/endLine or matchString used)
       ...(actualStartLine !== undefined && {
         startLine: actualStartLine,
         endLine: actualEndLine,
-        extractedLines: actualEndLine! - actualStartLine + 1,
+        ...(matchRanges === undefined && {
+          extractedLines: actualEndLine! - actualStartLine + 1,
+        }),
+        ...(matchRanges !== undefined && { matchRanges }),
       }),
       // Include pagination info when explicitly requested OR auto-paginated
       ...((effectiveCharLength || autoPaginated) && {
