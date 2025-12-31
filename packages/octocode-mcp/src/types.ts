@@ -1,9 +1,4 @@
-import type {
-  GitHubAPIError,
-  OctokitRateLimit,
-  OctokitPrivateUser,
-} from './github/githubAPI.js';
-// Note: OctokitRateLimitOverview is available from './github/githubAPI.js' for full rate limit response
+import type { GitHubAPIError } from './github/githubAPI.js';
 import type { PaginationInfo } from './utils/types.js';
 
 export type { PaginationInfo };
@@ -40,95 +35,6 @@ export interface ToolSuccessResult<
   data?: T;
 }
 
-/** Hint context for GitHub API error handling */
-export interface GitHubHintContext {
-  resultType: 'hasResults' | 'empty' | 'failed';
-  apiError?: GitHubAPIError;
-}
-
-export interface OrganizedHints {
-  hasResults?: string[];
-  empty?: string[];
-  failed?: string[];
-}
-
-// ============================================================================
-// GITHUB USER & RATE LIMIT TYPES
-// These types are derived from Octokit's OpenAPI schemas with customizations.
-// ============================================================================
-
-/**
- * GitHub user information for authenticated user.
- *
- * Derived from Octokit's OctokitPrivateUser (components['schemas']['private-user'])
- * but with a simplified subset of fields for our use cases.
- *
- * @see OctokitPrivateUser for the full Octokit type
- */
-export interface GitHubUserInfo {
-  login: string;
-  id: number;
-  name: string | null;
-  email: string | null;
-  company: string | null;
-  type: 'User' | 'Organization';
-  plan?: {
-    name: string;
-    space: number;
-    private_repos: number;
-  };
-}
-
-/**
- * Type helper to verify GitHubUserInfo is compatible with OctokitPrivateUser.
- * This ensures our custom type stays in sync with Octokit's schema.
- */
-type _AssertUserInfoCompatible =
-  GitHubUserInfo extends Pick<
-    OctokitPrivateUser,
-    'login' | 'id' | 'name' | 'email' | 'company' | 'type'
-  >
-    ? true
-    : never;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _userInfoCheck: _AssertUserInfoCompatible = true;
-
-/**
- * Rate limit information for a single resource category.
- *
- * This is equivalent to Octokit's OctokitRateLimit (components['schemas']['rate-limit']).
- * We keep a local alias for backwards compatibility and explicit documentation.
- *
- * @see OctokitRateLimit for the official Octokit type
- */
-export type RateLimitResource = OctokitRateLimit;
-
-/**
- * GitHub rate limit information across resource categories.
- *
- * Derived from Octokit's OctokitRateLimitOverview (components['schemas']['rate-limit-overview']).
- * This is a simplified subset focusing on the main rate limit categories we use.
- *
- * @see OctokitRateLimitOverview for the full Octokit type with all resource categories
- */
-export interface GitHubRateLimitInfo {
-  /** Core API rate limit (REST API calls) */
-  core: RateLimitResource;
-  /** Search API rate limit (code/repo/issue search) */
-  search: RateLimitResource;
-  /** GraphQL API rate limit */
-  graphql: RateLimitResource;
-}
-
-/**
- * Type helper to verify GitHubRateLimitInfo resources are compatible with Octokit's rate-limit schema.
- * OctokitRateLimitOverview.resources contains 'core', 'search', 'graphql' among others.
- */
-type _AssertRateLimitCompatible =
-  GitHubRateLimitInfo['core'] extends OctokitRateLimit ? true : never;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _rateLimitCheck: _AssertRateLimitCompatible = true;
-
 export interface GitHubCodeSearchQuery {
   keywordsToSearch: string[];
   owner?: string;
@@ -138,6 +44,7 @@ export interface GitHubCodeSearchQuery {
   path?: string;
   match?: 'file' | 'path';
   limit?: number;
+  page?: number;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -161,10 +68,25 @@ export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
     /** File last modified timestamp */
     lastModifiedAt?: string;
   }>;
-  /** When all files are from the same repo, this provides the owner and repo separately */
+  /** When all files are from the same repo, this provides the owner, repo, and branch separately */
   repositoryContext?: {
     owner: string;
     repo: string;
+    /** Default branch of the repository (for use with githubGetFileContent) */
+    branch?: string;
+  };
+  /** Pagination info for navigating through results */
+  pagination?: {
+    /** Current page number (1-based) */
+    currentPage: number;
+    /** Total number of available pages */
+    totalPages: number;
+    /** Number of results per page */
+    perPage: number;
+    /** Total number of matching results (capped at 1000 by GitHub) */
+    totalMatches: number;
+    /** Whether more pages are available */
+    hasMore: boolean;
   };
 }
 
@@ -213,11 +135,15 @@ export interface ContentResultData {
   minificationFailed?: boolean;
   minificationType?: string;
   originalQuery?: FileContentQuery;
-  securityWarnings?: string[];
+  matchLocations?: string[];
   sampling?: SamplingInfo;
   lastModified?: string;
   lastModifiedBy?: string;
   pagination?: PaginationInfo;
+  /** True when matchString was provided but not found in file (not an error, just no match) */
+  matchNotFound?: boolean;
+  /** The matchString that was searched for (when matchNotFound is true) */
+  searchedFor?: string;
 }
 
 /** Complete file content result */
@@ -238,6 +164,7 @@ export interface GitHubReposSearchQuery {
   match?: Array<'name' | 'description' | 'readme'>;
   sort?: 'forks' | 'stars' | 'updated' | 'best-match';
   limit?: number;
+  page?: number;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -267,6 +194,19 @@ export interface SimplifiedRepository {
 /** Repository search result */
 export interface RepoSearchResult extends BaseToolResult<GitHubReposSearchQuery> {
   repositories: SimplifiedRepository[];
+  /** Pagination info for navigating through results */
+  pagination?: {
+    /** Current page number (1-based) */
+    currentPage: number;
+    /** Total number of available pages */
+    totalPages: number;
+    /** Number of results per page */
+    perPage: number;
+    /** Total number of matching results (capped at 1000 by GitHub) */
+    totalMatches: number;
+    /** Whether more pages are available */
+    hasMore: boolean;
+  };
 }
 
 // ─── Repository Structure (github_view_repo_structure) ──────────────────────
@@ -477,6 +417,15 @@ export interface PullRequestInfo {
   }>;
 }
 
+/** Pagination info for pull request search results */
+export interface PRSearchPagination {
+  currentPage: number;
+  totalPages: number;
+  perPage: number;
+  totalMatches: number;
+  hasMore: boolean;
+}
+
 /** Pull request search result data */
 export interface PullRequestSearchResultData {
   owner?: string;
@@ -484,6 +433,7 @@ export interface PullRequestSearchResultData {
   pull_requests?: PullRequestInfo[];
   total_count?: number;
   incomplete_results?: boolean;
+  pagination?: PRSearchPagination;
 }
 
 /** Complete pull request search result */
@@ -522,7 +472,7 @@ export interface ProcessedBulkResult<
   error?: string | GitHubAPIError;
   status: QueryStatus;
   query?: TQuery;
-  hints?: string[];
+  hints?: readonly string[] | string[];
   [key: string]: unknown; // Tool-specific fields
 }
 
@@ -597,19 +547,6 @@ export interface ToolResponse {
   [key: string]: unknown; // Allow additional tool-specific fields
 }
 
-// ─── Sampling (sampling.ts) ─────────────────────────────────────────────────
-
-/** LLM sampling response with token usage */
-export interface SamplingResponse {
-  content: string;
-  stopReason?: string;
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
-}
-
 // ============================================================================
 // INFRASTRUCTURE - Server, security, and session management
 // ============================================================================
@@ -639,15 +576,6 @@ export interface ValidationResult {
   isValid: boolean;
   hasSecrets: boolean;
   warnings: string[];
-}
-
-/** User context for authenticated operations */
-export interface UserContext {
-  userId: string;
-  userLogin: string;
-  organizationId?: string;
-  isEnterpriseMode: boolean;
-  sessionId?: string;
 }
 
 // ─── Server Configuration (serverConfig.ts) ─────────────────────────────────

@@ -1,5 +1,5 @@
 // Must mock before any imports that use these modules
-vi.mock('../src/utils/exec.js', () => ({
+vi.mock('../src/utils/exec/index.js', () => ({
   getGithubCLIToken: vi.fn(() => Promise.resolve('mock-token')),
 }));
 

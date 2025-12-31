@@ -61,10 +61,6 @@ export function jsonToYamlString(
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error';
-    //eslint-disable-next-line no-console
-    console.warn(
-      `YAML conversion failed (${errorMessage}), falling back to JSON`
-    );
 
     try {
       return JSON.stringify(jsonObject, null, 2);

@@ -4,6 +4,8 @@ import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
 import { CompleteMetadata, ToolNames } from '../types/metadata.js';
+import { LOCAL_BASE_HINTS } from './hints/localBaseHints.js';
+import { STATIC_TOOL_NAMES, isLocalTool } from './toolNames.js';
 
 export type {
   CompleteMetadata,
@@ -19,18 +21,8 @@ export type ToolName = ToolNamesValue;
 let METADATA_JSON: CompleteMetadata | null = null;
 let initializationPromise: Promise<void> | null = null;
 
-const STATIC_TOOL_NAMES: ToolNamesMap = {
-  GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-  GITHUB_SEARCH_CODE: 'githubSearchCode',
-  GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-  GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-  GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-  PACKAGE_SEARCH: 'packageSearch',
-  LOCAL_RIPGREP: 'localSearchCode',
-  LOCAL_FETCH_CONTENT: 'localGetFileContent',
-  LOCAL_FIND_FILES: 'localFindFiles',
-  LOCAL_VIEW_STRUCTURE: 'localViewStructure',
-};
+// Re-export STATIC_TOOL_NAMES for backward compatibility
+export { STATIC_TOOL_NAMES };
 
 // Zod schemas for validation
 const PromptArgumentSchema = z.object({
@@ -182,7 +174,11 @@ export async function loadToolContent(): Promise<CompleteMetadata> {
 export const TOOL_NAMES = new Proxy({} as CompleteMetadata['toolNames'], {
   get(_target, prop: string) {
     if (METADATA_JSON) {
-      return (METADATA_JSON.toolNames as unknown as ToolNamesMap)[prop];
+      const value = (METADATA_JSON.toolNames as unknown as ToolNamesMap)[prop];
+      // Fall back to STATIC_TOOL_NAMES if not in remote metadata (e.g., local tools)
+      if (value !== undefined) {
+        return value;
+      }
     }
     return STATIC_TOOL_NAMES[prop as keyof typeof STATIC_TOOL_NAMES];
   },
@@ -247,7 +243,7 @@ export const GENERIC_ERROR_HINTS: readonly string[] = new Proxy(
   }
 ) as readonly string[];
 
-export function isToolAvailableSync(toolName: string): boolean {
+export function isToolInMetadata(toolName: string): boolean {
   if (!METADATA_JSON) {
     return false;
   }
@@ -262,7 +258,12 @@ export function getToolHintsSync(
   if (!METADATA_JSON || !METADATA_JSON.tools[toolName]) {
     return [];
   }
-  const baseHints = METADATA_JSON.baseHints[resultType] ?? [];
+
+  // Use separated hints for local tools to avoid GitHub-specific context
+  const baseHints = isLocalTool(toolName)
+    ? (LOCAL_BASE_HINTS[resultType] ?? [])
+    : (METADATA_JSON.baseHints[resultType] ?? []);
+
   const toolHints = METADATA_JSON.tools[toolName]?.hints[resultType] ?? [];
   return [...baseHints, ...toolHints];
 }
@@ -387,6 +388,10 @@ export const GITHUB_FETCH_CONTENT = createSchemaHelper(
     matchString: string;
     matchStringContextLines: string;
   };
+  pagination: {
+    charOffset: string;
+    charLength: string;
+  };
   validation: {
     parameterConflict: string;
   };
@@ -410,6 +415,9 @@ export const GITHUB_SEARCH_CODE = createSchemaHelper(
   };
   resultLimit: {
     limit: string;
+  };
+  pagination: {
+    page: string;
   };
   processing: {
     sanitize: string;
@@ -439,6 +447,9 @@ export const GITHUB_SEARCH_REPOS = createSchemaHelper(
   };
   resultLimit: {
     limit: string;
+  };
+  pagination: {
+    page: string;
   };
 };
 
@@ -487,6 +498,9 @@ export const GITHUB_SEARCH_PULL_REQUESTS = createSchemaHelper(
   resultLimit: {
     limit: string;
   };
+  pagination: {
+    page: string;
+  };
   outputShaping: {
     withComments: string;
     withCommits: string;
@@ -506,6 +520,10 @@ export const GITHUB_VIEW_REPO_STRUCTURE = createSchemaHelper(
   };
   range: {
     depth: string;
+  };
+  pagination: {
+    entriesPerPage: string;
+    entryPageNumber: string;
   };
 };
 
@@ -573,6 +591,19 @@ export const LOCAL_RIPGREP = createSchemaHelper(TOOL_NAMES.LOCAL_RIPGREP) as {
     maxFiles: string;
     maxMatchesPerFile: string;
   };
+  advanced: {
+    threads: string;
+    mmap: string;
+    noUnicode: string;
+    encoding: string;
+    sort: string;
+    sortReverse: string;
+    noMessages: string;
+    lineRegexp: string;
+    passthru: string;
+    debug: string;
+    showFileLastModified: string;
+  };
 };
 
 export const LOCAL_FETCH_CONTENT = createSchemaHelper(
@@ -580,6 +611,10 @@ export const LOCAL_FETCH_CONTENT = createSchemaHelper(
 ) as {
   scope: {
     path: string;
+  };
+  range: {
+    startLine: string;
+    endLine: string;
   };
   options: {
     fullContent: string;

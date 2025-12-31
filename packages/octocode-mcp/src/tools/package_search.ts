@@ -20,8 +20,9 @@ import {
   handleCatchError,
   createSuccessResult,
   createErrorResult,
+  invokeCallbackSafely,
 } from './utils.js';
-import { checkNpmAvailability } from '../utils/exec.js';
+import { checkNpmAvailability } from '../utils/exec/index.js';
 
 export async function registerPackageSearchTool(
   server: McpServer,
@@ -36,8 +37,10 @@ export async function registerPackageSearchTool(
     TOOL_NAMES.PACKAGE_SEARCH,
     {
       description: DESCRIPTIONS[TOOL_NAMES.PACKAGE_SEARCH],
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- breaks deep type inference from discriminatedUnion
-      inputSchema: PackageSearchBulkQuerySchema as any,
+      // Type assertion needed: Zod discriminatedUnion types don't fully align with MCP SDK's expected schema type
+      inputSchema: PackageSearchBulkQuerySchema as Parameters<
+        typeof server.registerTool
+      >[1]['inputSchema'],
       annotations: {
         title: 'Package Search',
         readOnlyHint: true,
@@ -57,12 +60,11 @@ export async function registerPackageSearchTool(
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
-        if (callback) {
-          try {
-            await callback(TOOL_NAMES.PACKAGE_SEARCH, queries);
-            // eslint-disable-next-line no-empty
-          } catch {}
-        }
+        await invokeCallbackSafely(
+          callback,
+          TOOL_NAMES.PACKAGE_SEARCH,
+          queries
+        );
 
         return searchPackages(queries);
       }
@@ -115,7 +117,7 @@ async function searchPackages(
         const apiResult = await searchPackage(query);
 
         if (isPackageSearchError(apiResult)) {
-          return createErrorResult(query, apiResult.error);
+          return createErrorResult(apiResult.error, query);
         }
 
         const packages = (apiResult.packages as PackageResult[]).map(pkg => {
@@ -141,16 +143,18 @@ async function searchPackages(
           );
         }
 
-        const customHints = hasContent
+        // Generate context-specific hints for package search
+        const extraHints = hasContent
           ? generateSuccessHints(result, query.ecosystem, deprecationInfo)
           : generateEmptyHints(query);
 
+        // Use unified pattern with extraHints for package-specific guidance
         return createSuccessResult(
           query,
           result,
           hasContent,
           TOOL_NAMES.PACKAGE_SEARCH,
-          customHints
+          { extraHints }
         );
       } catch (error) {
         return handleCatchError(error, query);

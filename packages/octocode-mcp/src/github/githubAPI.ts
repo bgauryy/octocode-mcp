@@ -12,6 +12,17 @@ import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-meth
 /** Full repository details. Schema: components['schemas']['full-repository'] */
 export type Repository = components['schemas']['full-repository'];
 
+// ─── Content Types ──────────────────────────────────────────────────────────
+/**
+ * Content directory entry (single item from directory listing).
+ * Schema: components['schemas']['content-directory'][number]
+ *
+ * Note: The 'content-directory' schema is an array type, so we index into it
+ * to get the type of a single entry.
+ */
+export type ContentDirectoryEntry =
+  components['schemas']['content-directory'][number];
+
 // ─── Search Result Types ────────────────────────────────────────────────────
 /** Code search result item. Schema: components['schemas']['code-search-result-item'] */
 export type CodeSearchResultItem =
@@ -165,7 +176,7 @@ export type OptimizedCodeSearchResult = {
     updatedAt?: string;
     pushedAt?: string;
   };
-  securityWarnings?: string[];
+  matchLocations?: string[];
   minified?: boolean;
   minificationFailed?: boolean;
   minificationTypes?: string[];
@@ -174,7 +185,15 @@ export type OptimizedCodeSearchResult = {
     repositoryContext?: {
       owner: string;
       repo: string;
+      branch?: string;
     };
+  };
+  pagination?: {
+    currentPage: number;
+    totalPages: number;
+    perPage: number;
+    totalMatches: number;
+    hasMore: boolean;
   };
 };
 
@@ -189,6 +208,18 @@ export type OptimizedCodeSearchResult = {
  * - PullRequestItem: components['schemas']['pull-request'] (full PR details)
  * - DiffEntry: components['schemas']['diff-entry'] (file changes)
  */
+/**
+ * Comment structure from GitHub REST API (issues.listComments).
+ * Note: This uses snake_case to match REST API conventions.
+ */
+export interface PRCommentItem {
+  id: string;
+  user: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type GitHubPullRequestItem = Pick<
   IssueSearchResultItem,
   | 'number'
@@ -204,21 +235,7 @@ export type GitHubPullRequestItem = Pick<
   author: string;
   labels: string[];
   merged_at?: string;
-  comments?: Array<{
-    id: string;
-    author: {
-      login: string;
-    };
-    authorAssociation: string;
-    body: string;
-    createdAt: string;
-    includesCreatedEdit: boolean;
-    isMinimized: boolean;
-    minimizedReason: string;
-    reactionGroups: unknown[];
-    url: string;
-    viewerDidAuthor: boolean;
-  }>;
+  comments?: PRCommentItem[];
   reactions: number;
   head?: string;
   base?: string;
@@ -276,6 +293,7 @@ export interface GitHubPullRequestsSearchParams {
   exhaustive?: boolean;
   maxPages?: number;
   pageSize?: number;
+  page?: number;
 }
 
 export function isGitHubAPIError(obj: unknown): obj is GitHubAPIError {

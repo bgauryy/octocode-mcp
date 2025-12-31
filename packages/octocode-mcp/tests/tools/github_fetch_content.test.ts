@@ -494,7 +494,7 @@ End of file.`;
           startLine: 8,
           endLine: 14,
           minified: false,
-          securityWarnings: ['Found "function main" on line 11'],
+          matchLocations: ['Found "function main" on line 11'],
         },
         status: 200,
       });
@@ -524,7 +524,7 @@ End of file.`;
       expect(responseText).toContain('contentLength: 50');
       expect(responseText).toContain('startLine: 8');
       expect(responseText).toContain('endLine: 14');
-      expect(responseText).toContain('securityWarnings:');
+      expect(responseText).toContain('matchLocations:');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -685,7 +685,7 @@ End of file.`;
           content: 'API_KEY=[REDACTED]\nDATABASE_URL=[REDACTED]',
           contentLength: 2,
           minified: false,
-          securityWarnings: [
+          matchLocations: [
             'Secrets detected and redacted: API_KEY, DATABASE_URL',
             'Potentially sensitive configuration file detected',
           ],
@@ -714,7 +714,7 @@ End of file.`;
       expect(responseText).toContain('status: "hasResults"');
       // path is in query, not duplicated in response
       expect(responseText).toContain('contentLength: 2');
-      expect(responseText).toContain('securityWarnings:');
+      expect(responseText).toContain('matchLocations:');
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
@@ -752,7 +752,7 @@ End of file.`;
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('Public content');
       // No security warnings expected
-      expect(responseText).not.toContain('securityWarnings:');
+      expect(responseText).not.toContain('matchLocations:');
     });
   });
 

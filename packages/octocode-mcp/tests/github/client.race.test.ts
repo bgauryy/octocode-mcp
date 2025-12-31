@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getOctokit, clearCachedToken } from '../../src/github/client.js';
+import { getOctokit, clearOctokitInstances } from '../../src/github/client.js';
 
 vi.mock('../../src/serverConfig.js', () => ({
   getGitHubToken: vi.fn(function () {}),
@@ -47,7 +47,7 @@ const mockOctokit = vi.mocked(Octokit);
 describe('GitHub Client Race Conditions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    clearCachedToken();
+    clearOctokitInstances();
 
     // Simulate async token retrieval delay to exacerbate race conditions
     mockGetGitHubToken.mockImplementation(async () => {
@@ -57,7 +57,7 @@ describe('GitHub Client Race Conditions', () => {
   });
 
   afterEach(() => {
-    clearCachedToken();
+    clearOctokitInstances();
   });
 
   it('should handle concurrent default instance creation without race condition', async () => {

@@ -4,35 +4,19 @@
  */
 
 import { z } from 'zod';
+import { BaseQuerySchemaLocal, createBulkQuerySchema } from './baseSchema.js';
 import {
-  BaseQuerySchemaLocal,
-  createBulkQuerySchemaLocal,
-  COMMON_PAGINATION_DESCRIPTIONS,
-} from './baseSchema.js';
-import { TOOL_NAMES } from '../utils/constants.js';
+  LOCAL_RIPGREP,
+  TOOL_NAMES,
+  DESCRIPTIONS,
+} from '../tools/toolMetadata.js';
 
 /**
- * Tool description for MCP registration
+ * Tool description for localSearchCode
  */
-export const LOCAL_RIPGREP_DESCRIPTION = `Purpose: Fast pattern/code search with structured matches and byte offsets.
-
-Use when: You know a pattern; need paths + limited context.
-Avoid when: Only name/time filters (use find_files).
-Workflow:
-- Discovery: filesOnly=true, add type/include/excludeDir → inspect → refine
-- Targeted: small matchesPerPage; use location.charOffset with fetch_content
-Output: files[{path, matchCount, matches?, modified, pagination}], totals.
-Notes: Offsets are bytes; fetch_content uses the same.
-Tips: Prefer type/include filters; smartCase=true; perlRegex for lookaheads; fixedString for literals; multiline is slow.
-
-IMPORTANT: ripgrep respects .gitignore by default. To search node_modules, use noIgnore=true.
-
-Examples:
-- pattern: "export function", type: "ts", filesOnly: true
-- pattern: "AuthService", include: ["*.{ts,tsx}"], excludeDir: ["node_modules"], matchesPerPage: 5
-- pattern: "useEffect(", smartCase: true
-- pattern: "express", path: "node_modules/express", noIgnore: true (search inside node_modules)
-`;
+export const LOCAL_RIPGREP_DESCRIPTION =
+  DESCRIPTIONS[TOOL_NAMES.LOCAL_RIPGREP] ||
+  'Search local files using ripgrep (rg) with grep fallback';
 
 /**
  * Ripgrep search content query schema
@@ -40,119 +24,78 @@ Examples:
  */
 export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
   // REQUIRED FIELDS
-  pattern: z
-    .string()
-    .min(1)
-    .describe('Pattern or regex to search (use fixedString for literals)'),
-  path: z.string().describe('Root directory to search'),
+  pattern: z.string().min(1).describe(LOCAL_RIPGREP.search.pattern),
+  path: z.string().describe(LOCAL_RIPGREP.search.path),
 
   // WORKFLOW MODE (recommended presets)
   mode: z
     .enum(['discovery', 'paginated', 'detailed'])
     .optional()
-    .describe(
-      'Search workflow:\n' +
-        '- discovery: filesOnly=true (fast)\n' +
-        '- paginated: charLength=10000, maxMatchesPerFile=3\n' +
-        '- detailed: contextLines=3, charLength=10000\n' +
-        'Manual params override mode.'
-    ),
+    .describe(LOCAL_RIPGREP.search.mode),
 
   // PATTERN MODES (mutually exclusive - validated at runtime)
   fixedString: z
     .boolean()
     .optional()
-    .describe('Treat pattern as literal (fast; -F). No regex interpretation.'),
-  perlRegex: z
-    .boolean()
-    .optional()
-    .describe('Use PCRE2 (lookahead, backrefs, named groups).'),
+    .describe(LOCAL_RIPGREP.options.fixedString),
+  perlRegex: z.boolean().optional().describe(LOCAL_RIPGREP.options.perlRegex),
 
   // CASE SENSITIVITY (smart case recommended)
   smartCase: z
     .boolean()
     .optional()
     .default(true)
-    .describe(
-      'Smart case: lowercase=insensitive, mixed=case-sensitive (default).'
-    ),
+    .describe(LOCAL_RIPGREP.options.smartCase),
   caseInsensitive: z
     .boolean()
     .optional()
-    .describe('Always case-insensitive (overrides smartCase).'),
+    .describe(LOCAL_RIPGREP.options.caseInsensitive),
   caseSensitive: z
     .boolean()
     .optional()
-    .describe('Always case-sensitive (overrides smartCase/caseInsensitive).'),
+    .describe(LOCAL_RIPGREP.options.caseSensitive),
 
   // MATCH BEHAVIOR
-  wholeWord: z
-    .boolean()
-    .optional()
-    .describe('Match whole words only (equivalent to \\b boundaries)'),
+  wholeWord: z.boolean().optional().describe(LOCAL_RIPGREP.options.wholeWord),
   invertMatch: z
     .boolean()
     .optional()
-    .describe(
-      "Invert matching PER-LINE: show lines that DON'T match. " +
-        'NOTE: Files may still contain the pattern on other lines. ' +
-        'For FILE-level inversion (files without ANY matches), use filesWithoutMatch instead.'
-    ),
+    .describe(LOCAL_RIPGREP.options.invertMatch),
 
   // FILE FILTERING (optimized strategies)
-  type: z
-    .string()
-    .optional()
-    .describe(
-      'File type filter (ts, js, py, rust…). Prefer over globs. See rg --type-list.'
-    ),
+  type: z.string().optional().describe(LOCAL_RIPGREP.filters.type),
   include: z
     .array(z.string())
     .optional()
-    .describe('Include globs. Prefer ["*.{ts,tsx}"] over separate globs.'),
+    .describe(LOCAL_RIPGREP.filters.include),
   exclude: z
     .array(z.string())
     .optional()
-    .describe('Exclude globs (e.g., ["*.test.*","*.spec.*"]).'),
+    .describe(LOCAL_RIPGREP.filters.exclude),
   excludeDir: z
     .array(z.string())
     .optional()
-    .describe('Exclude dirs (e.g., ["node_modules",".git","dist"]).'),
+    .describe(LOCAL_RIPGREP.filters.excludeDir),
 
   // IGNORE CONTROL (gitignore behavior)
-  // NOTE: ripgrep respects .gitignore by default. To search node_modules, use noIgnore=true
-  noIgnore: z
-    .boolean()
-    .optional()
-    .describe(
-      'Ignore .gitignore (search everything). REQUIRED for searching node_modules since it is typically in .gitignore.'
-    ),
-  hidden: z
-    .boolean()
-    .optional()
-    .describe('Search hidden files and directories.'),
+  noIgnore: z.boolean().optional().describe(LOCAL_RIPGREP.filters.noIgnore),
+  hidden: z.boolean().optional().describe(LOCAL_RIPGREP.filters.hidden),
   followSymlinks: z
     .boolean()
     .optional()
-    .describe('Follow symbolic links (default false for security).'),
+    .describe(LOCAL_RIPGREP.filters.followSymlinks),
 
   // OUTPUT CONTROL (critical for performance)
-  filesOnly: z
-    .boolean()
-    .optional()
-    .describe('List matching files only (best for discovery).'),
+  filesOnly: z.boolean().optional().describe(LOCAL_RIPGREP.output.filesOnly),
   filesWithoutMatch: z
     .boolean()
     .optional()
-    .describe('List files WITHOUT matches (inverse of filesOnly).'),
-  count: z
-    .boolean()
-    .optional()
-    .describe('Count matches per file ("file:count").'),
+    .describe(LOCAL_RIPGREP.output.filesWithoutMatch),
+  count: z.boolean().optional().describe(LOCAL_RIPGREP.output.count),
   countMatches: z
     .boolean()
     .optional()
-    .describe('Count total matches across occurrences (vs per-line count).'),
+    .describe(LOCAL_RIPGREP.output.countMatches),
 
   // CONTEXT & LINE CONTROL (semantic: defines WHAT to extract)
   contextLines: z
@@ -161,23 +104,21 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .min(0)
     .max(50)
     .optional()
-    .describe(
-      'Context lines around matches (0–50). Large values increase output; prefer charLength for pagination.'
-    ),
+    .describe(LOCAL_RIPGREP.context.contextLines),
   beforeContext: z
     .number()
     .int()
     .min(0)
     .max(50)
     .optional()
-    .describe('Lines before match (0–50).'),
+    .describe(LOCAL_RIPGREP.context.beforeContext),
   afterContext: z
     .number()
     .int()
     .min(0)
     .max(50)
     .optional()
-    .describe('Lines after match (0–50).'),
+    .describe(LOCAL_RIPGREP.context.afterContext),
   matchContentLength: z
     .number()
     .int()
@@ -185,13 +126,13 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .max(800)
     .optional()
     .default(200)
-    .describe('Max chars per match (1–800, default 200). Controls truncation.'),
+    .describe(LOCAL_RIPGREP.context.matchContentLength),
   lineNumbers: z
     .boolean()
     .optional()
     .default(true)
-    .describe('Show line numbers (default: true)'),
-  column: z.boolean().optional().describe('Show column numbers.'),
+    .describe(LOCAL_RIPGREP.context.lineNumbers),
+  column: z.boolean().optional().describe(LOCAL_RIPGREP.context.column),
 
   // MATCH LIMITING (prevents output explosion)
   maxMatchesPerFile: z
@@ -200,14 +141,14 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .min(1)
     .max(100)
     .optional()
-    .describe('Max matches per file (legacy; prefer matchesPerPage).'),
+    .describe(LOCAL_RIPGREP.pagination.maxMatchesPerFile),
   maxFiles: z
     .number()
     .int()
     .min(1)
     .max(1000)
     .optional()
-    .describe('Max files to search (1–1000).'),
+    .describe(LOCAL_RIPGREP.pagination.maxFiles),
 
   // TWO-LEVEL PAGINATION (file-level + per-file matches)
   filesPerPage: z
@@ -217,14 +158,14 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .max(20)
     .optional()
     .default(10)
-    .describe(COMMON_PAGINATION_DESCRIPTIONS.filesPerPage),
+    .describe(LOCAL_RIPGREP.pagination.filesPerPage),
   filePageNumber: z
     .number()
     .int()
     .min(1)
     .optional()
     .default(1)
-    .describe(COMMON_PAGINATION_DESCRIPTIONS.filePageNumber),
+    .describe(LOCAL_RIPGREP.pagination.filePageNumber),
   matchesPerPage: z
     .number()
     .int()
@@ -232,111 +173,81 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .max(100)
     .optional()
     .default(10)
-    .describe('Matches per file (default 10, max 100).'),
+    .describe(LOCAL_RIPGREP.pagination.matchesPerPage),
 
   // ADVANCED FEATURES (use with caution)
-  multiline: z
-    .boolean()
-    .optional()
-    .describe(
-      'Enable multiline (slow, memory-heavy). Use only if pattern spans lines.'
-    ),
+  multiline: z.boolean().optional().describe(LOCAL_RIPGREP.options.multiline),
   multilineDotall: z
     .boolean()
     .optional()
-    .describe('Make . match newlines (use with multiline=true).'),
+    .describe(LOCAL_RIPGREP.options.multilineDotall),
   binaryFiles: z
     .enum(['text', 'without-match', 'binary'])
     .optional()
     .default('without-match')
-    .describe(
-      'Binary handling: "text" (search as text), "without-match" (default), "binary" (detect).'
-    ),
+    .describe(LOCAL_RIPGREP.filters.binaryFiles),
 
   // OUTPUT FORMAT & METADATA
   includeStats: z
     .boolean()
     .optional()
     .default(true)
-    .describe('Include search stats (matches, files, bytes, time).'),
-  jsonOutput: z.boolean().optional().describe('Output NDJSON (structured).'),
+    .describe(LOCAL_RIPGREP.output.includeStats),
+  jsonOutput: z.boolean().optional().describe(LOCAL_RIPGREP.output.jsonOutput),
   vimgrepFormat: z
     .boolean()
     .optional()
-    .describe('vim-compatible format (file:line:col:text).'),
+    .describe(LOCAL_RIPGREP.output.vimgrepFormat),
   includeDistribution: z
     .boolean()
     .optional()
     .default(true)
-    .describe('Include match distribution across files.'),
+    .describe(LOCAL_RIPGREP.output.includeDistribution),
+
+  // ADVANCED OPTIONS
   threads: z
     .number()
     .int()
     .min(1)
     .max(32)
     .optional()
-    .describe('Number of threads (default: auto).'),
-  mmap: z
-    .boolean()
-    .optional()
-    .describe('Use memory mapping (faster on large files).'),
-  noUnicode: z
-    .boolean()
-    .optional()
-    .describe(
-      'Disable Unicode mode. Faster on ASCII codebases; \\w matches ASCII only.'
-    ),
-  encoding: z
-    .string()
-    .optional()
-    .describe(
-      'Text encoding: "auto" (default), "none" (raw bytes), or specific (e.g., "utf-8", "utf-16le"). See: https://encoding.spec.whatwg.org/#names'
-    ),
+    .describe(LOCAL_RIPGREP.advanced.threads),
+  mmap: z.boolean().optional().describe(LOCAL_RIPGREP.advanced.mmap),
+  noUnicode: z.boolean().optional().describe(LOCAL_RIPGREP.advanced.noUnicode),
+  encoding: z.string().optional().describe(LOCAL_RIPGREP.advanced.encoding),
   sort: z
     .enum(['path', 'modified', 'accessed', 'created'])
     .optional()
     .default('path')
-    .describe(
-      'Sort results: "path" (default), "modified", "accessed", "created". Sorting can be slower; use only when needed.'
-    ),
-  sortReverse: z.boolean().optional().describe('Reverse sort order.'),
+    .describe(LOCAL_RIPGREP.advanced.sort),
+  sortReverse: z
+    .boolean()
+    .optional()
+    .describe(LOCAL_RIPGREP.advanced.sortReverse),
   noMessages: z
     .boolean()
     .optional()
-    .describe(
-      'Suppress error messages (permission denied, file too large, etc.).'
-    ),
+    .describe(LOCAL_RIPGREP.advanced.noMessages),
   lineRegexp: z
     .boolean()
     .optional()
-    .describe(
-      'Match entire lines only (equivalent to ^...$). "foo" matches only "foo", not "foobar".'
-    ),
-  passthru: z
-    .boolean()
-    .optional()
-    .describe(
-      'Print all lines with highlights (can be huge). Conflicts with filesOnly.'
-    ),
-  debug: z
-    .boolean()
-    .optional()
-    .describe(
-      'Show debug info (ignores, config, strategy, performance). Output to stderr.'
-    ),
+    .describe(LOCAL_RIPGREP.advanced.lineRegexp),
+  passthru: z.boolean().optional().describe(LOCAL_RIPGREP.advanced.passthru),
+  debug: z.boolean().optional().describe(LOCAL_RIPGREP.advanced.debug),
 
   showFileLastModified: z
     .boolean()
     .default(false)
-    .describe('Show file last modified timestamps in results (default false).'),
+    .describe(LOCAL_RIPGREP.advanced.showFileLastModified),
 });
 
 /**
  * Bulk ripgrep search schema (1–5 queries per call)
  */
-export const BulkRipgrepQuerySchema = createBulkQuerySchemaLocal(
-  TOOL_NAMES.LOCAL_RIPGREP || 'localSearchCode',
-  RipgrepQuerySchema
+export const BulkRipgrepQuerySchema = createBulkQuerySchema(
+  TOOL_NAMES.LOCAL_RIPGREP,
+  RipgrepQuerySchema,
+  { maxQueries: 5 }
 );
 
 export type RipgrepQuery = z.infer<typeof RipgrepQuerySchema>;

@@ -88,8 +88,9 @@ async function startServer() {
 
         try {
           await server.close();
-          // eslint-disable-next-line no-empty
-        } catch {}
+        } catch {
+          // Server close may fail if already disconnected - safe to ignore during shutdown
+        }
 
         if (shutdownTimeout) {
           clearTimeout(shutdownTimeout);
@@ -102,6 +103,7 @@ async function startServer() {
 
         process.exit(0);
       } catch {
+        // Shutdown errors are non-recoverable - exit with error code
         if (shutdownTimeout) {
           clearTimeout(shutdownTimeout);
           shutdownTimeout = null;

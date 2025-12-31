@@ -1,14 +1,4 @@
 /**
- * Tool names for the MCP server
- */
-export const TOOL_NAMES = {
-  LOCAL_RIPGREP: 'localSearchCode',
-  LOCAL_VIEW_STRUCTURE: 'localViewStructure',
-  LOCAL_FIND_FILES: 'localFindFiles',
-  LOCAL_FETCH_CONTENT: 'localGetFileContent',
-} as const;
-
-/**
  * Default configuration values
  */
 export const DEFAULTS = {

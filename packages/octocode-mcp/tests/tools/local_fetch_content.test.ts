@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ERROR_CODES } from '../../src/errorCodes.js';
 import { fetchContent } from '../../src/tools/local_fetch_content.js';
+import { FetchContentQuerySchema } from '../../src/scheme/local_fetch_content.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 import * as fs from 'fs/promises';
 
@@ -51,18 +52,17 @@ describe('localGetFileContent', () => {
       expect(result.totalLines).toBe(3);
     });
 
-    it('should apply minification when requested', async () => {
+    it('should apply minification by default', async () => {
       const testContent = 'function test() {\n  return true;\n}';
       mockReadFile.mockResolvedValue(testContent);
 
       const result = await fetchContent({
         path: 'test.js',
         fullContent: true,
-        minified: true,
       });
 
       expect(result.status).toBe('hasResults');
-      // Note: minified field removed - minification still happens but not tracked
+      // Minification is always applied for token efficiency
     });
   });
 
@@ -109,7 +109,7 @@ describe('localGetFileContent', () => {
 
       expect(result.status).toBe('empty');
       expect(result.hints).toBeDefined();
-      expect(result.hints?.some(h => h.includes('Regex pattern'))).toBe(true);
+      expect(result.hints?.some(h => h.includes('per-line'))).toBe(true);
     });
 
     it('should show case-sensitive hint when enabled and no matches', async () => {
@@ -139,6 +139,69 @@ describe('localGetFileContent', () => {
 
       expect(result.status).toBe('hasResults');
       expect(result.content).toContain('export function');
+    });
+
+    // Issue verification: export.*const patterns
+    describe('regex .* pattern behavior', () => {
+      it('should match export.*const when content has "export const" on same line', async () => {
+        const testContent = 'line 1\nexport const foo = 1;\nline 3';
+        mockReadFile.mockResolvedValue(testContent);
+
+        const result = await fetchContent({
+          path: 'test.ts',
+          matchString: 'export.*const',
+          matchStringIsRegex: true,
+        });
+
+        expect(result.status).toBe('hasResults');
+        expect(result.content).toContain('export const');
+      });
+
+      it('should NOT match export.*const when file has export function only', async () => {
+        // This is the scenario from the issue - file has export function but not export const
+        const testContent =
+          'line 1\nexport function test() {}\nexport async function foo() {}\nline 4';
+        mockReadFile.mockResolvedValue(testContent);
+
+        const result = await fetchContent({
+          path: 'test.ts',
+          matchString: 'export.*const',
+          matchStringIsRegex: true,
+        });
+
+        // Expected: no matches because file doesn't contain "export const"
+        expect(result.status).toBe('empty');
+        expect(result.errorCode).toBe(ERROR_CODES.NO_MATCHES);
+      });
+
+      it('should match patterns line-by-line (not multiline)', async () => {
+        // Pattern won't match across lines even if keywords exist
+        const testContent = 'export\nconst foo = 1;';
+        mockReadFile.mockResolvedValue(testContent);
+
+        const result = await fetchContent({
+          path: 'test.ts',
+          matchString: 'export.*const',
+          matchStringIsRegex: true,
+        });
+
+        // export and const are on different lines - regex matches per line
+        expect(result.status).toBe('empty');
+      });
+
+      it('should work with greedy .* when content exists on same line', async () => {
+        const testContent = 'export type MyType = { const: string };';
+        mockReadFile.mockResolvedValue(testContent);
+
+        const result = await fetchContent({
+          path: 'test.ts',
+          matchString: 'export.*const',
+          matchStringIsRegex: true,
+        });
+
+        // "export" ... "const" on same line matches
+        expect(result.status).toBe('hasResults');
+      });
     });
 
     it('should match case-sensitively when matchStringCaseSensitive is true', async () => {
@@ -286,7 +349,7 @@ describe('localGetFileContent', () => {
       expect(result.hints!.length).toBeGreaterThan(0);
     });
 
-    it('should require pagination for content exceeding MAX_OUTPUT_CHARS', async () => {
+    it('should auto-paginate content exceeding MAX_OUTPUT_CHARS', async () => {
       // Create content larger than MAX_OUTPUT_CHARS (10000)
       const largeContent = 'x'.repeat(15000);
       mockStat.mockResolvedValue({ size: 15000 } as unknown as Awaited<
@@ -296,12 +359,17 @@ describe('localGetFileContent', () => {
 
       const result = await fetchContent({
         path: 'medium-file.txt',
-        // No charLength - should trigger pagination required error
+        // No charLength - should auto-paginate instead of error
       });
 
-      expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.PAGINATION_REQUIRED);
-      expect(result.hints).toBeDefined();
+      // Now auto-paginates instead of returning error
+      expect(result.status).toBe('hasResults');
+      expect(result.pagination).toBeDefined();
+      expect(result.pagination?.hasMore).toBe(true);
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings?.some(w => w.includes('Auto-paginated'))).toBe(
+        true
+      );
     });
 
     it('should allow large file with charLength pagination', async () => {
@@ -723,6 +791,46 @@ describe('localGetFileContent', () => {
       expect(result.warnings?.[0]).toContain('2000');
       expect(result.warnings?.[0]).toContain('Truncated to first 50 matches');
     });
+
+    it('should return line numbers for matchString extraction', async () => {
+      const testContent = 'line 1\nline 2\nMATCH\nline 4\nline 5';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        matchString: 'MATCH',
+        matchStringContextLines: 1,
+      });
+
+      expect(result.status).toBe('hasResults');
+      // MATCH is on line 3, with contextLines=1, should return lines 2-4
+      expect(result.startLine).toBe(2);
+      expect(result.endLine).toBe(4);
+      expect(result.matchRanges).toEqual([{ start: 2, end: 4 }]);
+    });
+
+    it('should return line numbers for multiple match ranges', async () => {
+      // Lines: 1=line1, 2=MATCH_A, 3=line3, 4=line4, 5=line5, 6=line6, 7=MATCH_B, 8=line8
+      const testContent =
+        'line1\nMATCH_A\nline3\nline4\nline5\nline6\nMATCH_B\nline8';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        matchString: 'MATCH',
+        matchStringContextLines: 1,
+      });
+
+      expect(result.status).toBe('hasResults');
+      // First match at line 2 with context 1: range [1,3]
+      // Second match at line 7 with context 1: range [6,8]
+      expect(result.startLine).toBe(1); // First range start
+      expect(result.endLine).toBe(8); // Last range end
+      expect(result.matchRanges).toEqual([
+        { start: 1, end: 3 },
+        { start: 6, end: 8 },
+      ]);
+    });
   });
 
   describe('Pagination hints', () => {
@@ -826,6 +934,542 @@ describe('localGetFileContent', () => {
         );
         expect(hasNavigationHint).toBe(true);
       }
+    });
+  });
+
+  describe('Line range extraction (startLine/endLine)', () => {
+    it('should extract lines by range', async () => {
+      const testContent = 'line 1\nline 2\nline 3\nline 4\nline 5';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        startLine: 2,
+        endLine: 4,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.content).toBe('line 2\nline 3\nline 4');
+      expect(result.isPartial).toBe(true);
+      expect(result.totalLines).toBe(5);
+      expect(result.startLine).toBe(2);
+      expect(result.endLine).toBe(4);
+      expect(result.extractedLines).toBe(3);
+    });
+
+    it('should extract first line when startLine=1', async () => {
+      const testContent = 'first\nsecond\nthird';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        startLine: 1,
+        endLine: 1,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.content).toBe('first');
+      expect(result.startLine).toBe(1);
+      expect(result.endLine).toBe(1);
+      expect(result.extractedLines).toBe(1);
+    });
+
+    it('should handle endLine beyond file length', async () => {
+      const testContent = 'line 1\nline 2\nline 3';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        startLine: 2,
+        endLine: 100,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.content).toBe('line 2\nline 3');
+      expect(result.endLine).toBe(3); // Adjusted to file end
+      expect(result.extractedLines).toBe(2);
+      expect(result.warnings).toContain(
+        'Requested endLine 100 adjusted to 3 (file end)'
+      );
+    });
+
+    it('should return empty when startLine exceeds file length', async () => {
+      const testContent = 'line 1\nline 2\nline 3';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        startLine: 10,
+        endLine: 20,
+      });
+
+      expect(result.status).toBe('empty');
+      expect(result.errorCode).toBe(ERROR_CODES.NO_MATCHES);
+      expect(result.hints).toBeDefined();
+      expect(result.hints?.some(h => h.includes('exceeds file length'))).toBe(
+        true
+      );
+    });
+
+    it('should apply minification to extracted lines', async () => {
+      const testContent =
+        'const x = 1;\nfunction test() {\n  return true;\n}\nconst y = 2;';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.js',
+        startLine: 2,
+        endLine: 4,
+      });
+
+      expect(result.status).toBe('hasResults');
+      // Minification is always applied for token efficiency
+    });
+
+    it('should work with character pagination on extracted lines', async () => {
+      const lines = [];
+      for (let i = 1; i <= 100; i++) {
+        lines.push(`line ${i}: ${'x'.repeat(50)}`);
+      }
+      const testContent = lines.join('\n');
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        startLine: 10,
+        endLine: 50,
+        charLength: 500,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.startLine).toBe(10);
+      expect(result.endLine).toBe(50);
+      expect(result.pagination).toBeDefined();
+      expect(result.pagination?.hasMore).toBe(true);
+    });
+
+    it('should handle single-line file', async () => {
+      const testContent = 'single line content';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        startLine: 1,
+        endLine: 1,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.content).toBe('single line content');
+      expect(result.totalLines).toBe(1);
+      expect(result.extractedLines).toBe(1);
+    });
+
+    it('should handle empty lines in range', async () => {
+      const testContent = 'line 1\n\nline 3\n\nline 5';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        startLine: 1,
+        endLine: 5,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.content).toBe(testContent);
+      expect(result.totalLines).toBe(5);
+    });
+
+    it('should preserve research context in response', async () => {
+      const testContent = 'line 1\nline 2\nline 3';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        startLine: 1,
+        endLine: 2,
+        researchGoal: 'Extract header',
+        reasoning: 'Checking file header',
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.researchGoal).toBe('Extract header');
+      expect(result.reasoning).toBe('Checking file header');
+    });
+  });
+
+  describe('byte/character offset separation', () => {
+    it('should return both byte and char offsets in pagination', async () => {
+      const largeContent = 'x'.repeat(20000);
+      mockStat.mockResolvedValue({ size: 20000 } as unknown as Awaited<
+        ReturnType<typeof fs.stat>
+      >);
+      mockReadFile.mockResolvedValue(largeContent);
+
+      const result = await fetchContent({
+        path: 'large.txt',
+        charLength: 5000,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.pagination).toBeDefined();
+
+      // Should have byte fields
+      expect(result.pagination?.byteOffset).toBeDefined();
+      expect(result.pagination?.byteLength).toBeDefined();
+      expect(result.pagination?.totalBytes).toBeDefined();
+
+      // Should have char fields
+      expect(result.pagination?.charOffset).toBeDefined();
+      expect(result.pagination?.charLength).toBeDefined();
+      expect(result.pagination?.totalChars).toBeDefined();
+
+      // For ASCII content, bytes and chars should be equal
+      expect(result.pagination?.byteOffset).toBe(result.pagination?.charOffset);
+      expect(result.pagination?.byteLength).toBe(result.pagination?.charLength);
+      expect(result.pagination?.totalBytes).toBe(result.pagination?.totalChars);
+    });
+
+    it('should handle UTF-8 content with correct byte/char separation', async () => {
+      // Content with emojis: each emoji is 4 bytes, 2 JS chars
+      const emojiContent = '👋'.repeat(5000) + 'x'.repeat(5000);
+      // 5000 emojis * 4 bytes + 5000 'x' = 25000 bytes
+      // 5000 emojis * 2 chars + 5000 'x' = 15000 chars
+      mockStat.mockResolvedValue({ size: 25000 } as unknown as Awaited<
+        ReturnType<typeof fs.stat>
+      >);
+      mockReadFile.mockResolvedValue(emojiContent);
+
+      const result = await fetchContent({
+        path: 'emoji.txt',
+        charLength: 5000,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.pagination).toBeDefined();
+
+      // Total bytes should differ from total chars
+      expect(result.pagination?.totalBytes).toBe(25000);
+      expect(result.pagination?.totalChars).toBe(15000);
+
+      // Local tools use character mode, so charLength should be 5000
+      expect(result.pagination?.charLength).toBe(5000);
+      // Byte length should be different for emoji content
+      // First 5000 chars = all emojis (2 chars each = 2500 emojis = 10000 bytes)
+      expect(result.pagination?.byteLength).toBeGreaterThan(
+        result.pagination?.charLength ?? 0
+      );
+    });
+
+    it('should use character offsets for navigation hints in local tools', async () => {
+      const largeContent = 'x'.repeat(20000);
+      mockStat.mockResolvedValue({ size: 20000 } as unknown as Awaited<
+        ReturnType<typeof fs.stat>
+      >);
+      mockReadFile.mockResolvedValue(largeContent);
+
+      const result = await fetchContent({
+        path: 'large.txt',
+        charLength: 5000,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.hints).toBeDefined();
+
+      // Local tools should use charOffset in hints
+      const hasCharOffsetHint = result.hints?.some(h =>
+        h.includes('charOffset=5000')
+      );
+      expect(hasCharOffsetHint).toBe(true);
+    });
+
+    it('should allow sequential pagination with nextCharOffset', async () => {
+      const content = '👋🚀🌍💻'.repeat(1000); // 8000 chars, 16000 bytes
+      mockStat.mockResolvedValue({ size: 16000 } as unknown as Awaited<
+        ReturnType<typeof fs.stat>
+      >);
+      mockReadFile.mockResolvedValue(content);
+
+      // First page
+      const page1 = await fetchContent({
+        path: 'emoji.txt',
+        charLength: 2000,
+        charOffset: 0,
+      });
+
+      expect(page1.status).toBe('hasResults');
+      expect(page1.pagination?.hasMore).toBe(true);
+      expect(page1.pagination?.charOffset).toBe(0);
+      expect(page1.pagination?.charLength).toBe(2000);
+
+      // Second page using character offset from hints
+      // (nextCharOffset would be 2000 for chars mode)
+      const page2 = await fetchContent({
+        path: 'emoji.txt',
+        charLength: 2000,
+        charOffset: 2000,
+      });
+
+      expect(page2.status).toBe('hasResults');
+      expect(page2.pagination?.charOffset).toBe(2000);
+    });
+
+    it('should correctly handle CJK content pagination', async () => {
+      // CJK content: each char is 3 bytes
+      const cjkContent = '你好世界'.repeat(1000); // 4000 chars, 12000 bytes
+      mockStat.mockResolvedValue({ size: 12000 } as unknown as Awaited<
+        ReturnType<typeof fs.stat>
+      >);
+      mockReadFile.mockResolvedValue(cjkContent);
+
+      const result = await fetchContent({
+        path: 'cjk.txt',
+        charLength: 1000,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.pagination?.totalBytes).toBe(12000);
+      expect(result.pagination?.totalChars).toBe(4000);
+      expect(result.pagination?.charLength).toBe(1000);
+      // 1000 CJK chars = 3000 bytes
+      expect(result.pagination?.byteLength).toBe(3000);
+    });
+  });
+
+  describe('Smart auto-pagination (no charLength specified)', () => {
+    it('should auto-paginate when extracted content exceeds MAX_OUTPUT_CHARS', async () => {
+      // Create content larger than MAX_OUTPUT_CHARS (10000)
+      const largeContent = 'x'.repeat(15000);
+      mockStat.mockResolvedValue({ size: 15000 } as unknown as Awaited<
+        ReturnType<typeof fs.stat>
+      >);
+      mockReadFile.mockResolvedValue(largeContent);
+
+      const result = await fetchContent({
+        path: 'large-file.txt',
+        // NO charLength specified - should auto-paginate instead of error
+      });
+
+      // Should NOT return error, should auto-paginate
+      expect(result.status).toBe('hasResults');
+      expect(result.pagination).toBeDefined();
+      expect(result.pagination?.hasMore).toBe(true);
+      expect(result.pagination?.totalPages).toBeGreaterThan(1);
+      expect(result.warnings).toBeDefined();
+      expect(
+        result.warnings?.some(w => w.toLowerCase().includes('auto-paginated'))
+      ).toBe(true);
+    });
+
+    it('should auto-paginate line extraction when extracted lines exceed limit', async () => {
+      // Create content with many lines that exceeds limit
+      const lines = Array.from(
+        { length: 500 },
+        (_, i) => `line ${i}: ${'x'.repeat(50)}`
+      );
+      const largeContent = lines.join('\n');
+      mockStat.mockResolvedValue({
+        size: largeContent.length,
+      } as unknown as Awaited<ReturnType<typeof fs.stat>>);
+      mockReadFile.mockResolvedValue(largeContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        startLine: 1,
+        endLine: 500,
+        // NO charLength - should auto-paginate extracted lines
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.startLine).toBe(1);
+      expect(result.endLine).toBe(500);
+      expect(result.pagination).toBeDefined();
+      expect(result.pagination?.hasMore).toBe(true);
+    });
+
+    it('should include context-aware hints for navigation', async () => {
+      const largeContent = 'x'.repeat(15000);
+      mockStat.mockResolvedValue({ size: 15000 } as unknown as Awaited<
+        ReturnType<typeof fs.stat>
+      >);
+      mockReadFile.mockResolvedValue(largeContent);
+
+      const result = await fetchContent({
+        path: 'large.txt',
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.hints).toBeDefined();
+      // Should have navigation hints
+      expect(
+        result.hints?.some(h => h.includes('charOffset') || h.includes('Next'))
+      ).toBe(true);
+    });
+
+    it('should not auto-paginate when content is under limit', async () => {
+      const smallContent = 'small content under 10K';
+      mockReadFile.mockResolvedValue(smallContent);
+
+      const result = await fetchContent({
+        path: 'small.txt',
+      });
+
+      expect(result.status).toBe('hasResults');
+      // Should NOT have pagination when content is small
+      expect(result.pagination).toBeUndefined();
+      expect(result.warnings).toBeUndefined();
+    });
+
+    it('should show total chars/lines in auto-paginated response', async () => {
+      const lines = Array.from({ length: 200 }, (_, i) => `line ${i + 1}`);
+      const content = lines.join('\n');
+      mockStat.mockResolvedValue({ size: content.length } as unknown as Awaited<
+        ReturnType<typeof fs.stat>
+      >);
+      mockReadFile.mockResolvedValue(content);
+
+      // Content is ~1600 chars, under 10K - but let's test with larger
+      const largeLines = Array.from(
+        { length: 500 },
+        (_, i) => `line ${i}: ${'data'.repeat(20)}`
+      );
+      const largeContent = largeLines.join('\n');
+      mockStat.mockResolvedValue({
+        size: largeContent.length,
+      } as unknown as Awaited<ReturnType<typeof fs.stat>>);
+      mockReadFile.mockResolvedValue(largeContent);
+
+      const result = await fetchContent({
+        path: 'large.txt',
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.totalLines).toBe(500);
+      expect(result.pagination?.totalChars).toBeDefined();
+    });
+  });
+
+  describe('Schema validation for startLine/endLine', () => {
+    it('should require both startLine and endLine together', () => {
+      const result = FetchContentQuerySchema.safeParse({
+        path: 'test.txt',
+        startLine: 1,
+        // Missing endLine
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const firstIssue = result.error.issues[0];
+        expect(firstIssue?.message).toBe(
+          'startLine and endLine must be used together'
+        );
+      }
+    });
+
+    it('should reject endLine without startLine', () => {
+      const result = FetchContentQuerySchema.safeParse({
+        path: 'test.txt',
+        endLine: 10,
+        // Missing startLine
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const firstIssue = result.error.issues[0];
+        expect(firstIssue?.message).toBe(
+          'startLine and endLine must be used together'
+        );
+      }
+    });
+
+    it('should reject startLine > endLine', () => {
+      const result = FetchContentQuerySchema.safeParse({
+        path: 'test.txt',
+        startLine: 10,
+        endLine: 5,
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const firstIssue = result.error.issues[0];
+        expect(firstIssue?.message).toBe(
+          'startLine must be less than or equal to endLine'
+        );
+      }
+    });
+
+    it('should reject combining startLine/endLine with matchString', () => {
+      const result = FetchContentQuerySchema.safeParse({
+        path: 'test.txt',
+        startLine: 1,
+        endLine: 10,
+        matchString: 'test',
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const firstIssue = result.error.issues[0];
+        expect(firstIssue?.message).toContain(
+          'Cannot use startLine/endLine with matchString'
+        );
+      }
+    });
+
+    it('should reject combining startLine/endLine with fullContent=true', () => {
+      const result = FetchContentQuerySchema.safeParse({
+        path: 'test.txt',
+        startLine: 1,
+        endLine: 10,
+        fullContent: true,
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const firstIssue = result.error.issues[0];
+        expect(firstIssue?.message).toContain(
+          'Cannot use startLine/endLine with fullContent'
+        );
+      }
+    });
+
+    it('should accept valid startLine/endLine range', () => {
+      const result = FetchContentQuerySchema.safeParse({
+        path: 'test.txt',
+        startLine: 1,
+        endLine: 10,
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('should accept startLine/endLine with charLength pagination', () => {
+      const result = FetchContentQuerySchema.safeParse({
+        path: 'test.txt',
+        startLine: 1,
+        endLine: 100,
+        charLength: 5000,
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject startLine < 1', () => {
+      const result = FetchContentQuerySchema.safeParse({
+        path: 'test.txt',
+        startLine: 0,
+        endLine: 10,
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('should accept startLine equal to endLine (single line)', () => {
+      const result = FetchContentQuerySchema.safeParse({
+        path: 'test.txt',
+        startLine: 5,
+        endLine: 5,
+      });
+
+      expect(result.success).toBe(true);
     });
   });
 });

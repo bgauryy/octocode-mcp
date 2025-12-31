@@ -6,12 +6,16 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ERROR_CODES } from '../../src/errorCodes.js';
 import { findFiles } from '../../src/tools/local_find_files.js';
 import type { FindFilesResult } from '../../src/utils/types.js';
-import * as exec from '../../src/utils/local/utils/exec.js';
+import * as exec from '../../src/utils/exec/index.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 
 // Mock dependencies
-vi.mock('../../src/utils/local/utils/exec.js', () => ({
+vi.mock('../../src/utils/exec/index.js', () => ({
   safeExec: vi.fn(),
+  checkCommandAvailability: vi
+    .fn()
+    .mockResolvedValue({ available: true, command: 'find' }),
+  getMissingCommandError: vi.fn().mockReturnValue('Command not available'),
 }));
 
 vi.mock('../../src/security/pathValidator.js', () => ({
@@ -21,11 +25,19 @@ vi.mock('../../src/security/pathValidator.js', () => ({
 }));
 
 // Mock fs for file details
-vi.mock('fs', () => ({
-  promises: {
-    lstat: vi.fn(),
-  },
-}));
+vi.mock('fs', () => {
+  const lstat = vi.fn();
+  return {
+    promises: {
+      lstat,
+    },
+    default: {
+      promises: {
+        lstat,
+      },
+    },
+  };
+});
 const mockFs = vi.mocked(await import('fs')) as unknown as {
   promises: { lstat: ReturnType<typeof vi.fn> };
 };
@@ -65,6 +77,39 @@ describe('localFindFiles', () => {
       const files = expectDefinedFiles(result);
       expect(files).toHaveLength(2);
       expect(files[0]!.path).toBe('/test/path/file1.js');
+    });
+
+    it('should include metadata by default', async () => {
+      const modified = new Date('2025-01-01T00:00:00Z');
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '/test/path/file1.js\0',
+        stderr: '',
+      });
+
+      vi.mocked(mockFs.promises.lstat).mockResolvedValue({
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+        isFile: () => true,
+        size: 123,
+        mode: parseInt('100644', 8),
+        mtime: modified,
+      } as unknown as import('fs').Stats);
+
+      const result = await findFiles({ path: '/test/path' });
+
+      expect(result.status).toBe('hasResults');
+
+      const files = expectDefinedFiles(result);
+
+      expect(files[0]).toMatchObject({
+        path: '/test/path/file1.js',
+        type: 'file',
+        size: 123,
+        permissions: '644',
+      });
     });
 
     it('should handle case-insensitive search', async () => {
@@ -245,10 +290,18 @@ describe('localFindFiles', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(mockSafeExec).toHaveBeenCalledWith(
-        'find',
-        expect.arrayContaining(['-executable'])
-      );
+      // Platform-specific: Linux uses -executable, macOS uses -perm +111
+      if (process.platform === 'linux') {
+        expect(mockSafeExec).toHaveBeenCalledWith(
+          'find',
+          expect.arrayContaining(['-executable'])
+        );
+      } else {
+        expect(mockSafeExec).toHaveBeenCalledWith(
+          'find',
+          expect.arrayContaining(['-perm', '+111'])
+        );
+      }
     });
 
     it('should filter by permissions', async () => {

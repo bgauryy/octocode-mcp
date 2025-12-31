@@ -2,14 +2,33 @@ import { BaseCommandBuilder } from './BaseCommandBuilder.js';
 import type { FindFilesQuery } from '../utils/types.js';
 
 export class FindCommandBuilder extends BaseCommandBuilder {
+  private isMacOS: boolean;
+  private isLinux: boolean;
+  private isWindows: boolean;
+
   constructor() {
     super('find');
+    this.isMacOS = process.platform === 'darwin';
+    this.isLinux = process.platform === 'linux';
+    this.isWindows = process.platform === 'win32';
   }
 
   fromQuery(query: FindFilesQuery): this {
+    // Windows is not supported - find command doesn't exist
+    if (this.isWindows) {
+      throw new Error(
+        'Windows is not supported for localFindFiles. Use localViewStructure or localSearchCode instead.'
+      );
+    }
+
+    // macOS requires -E flag BEFORE path for extended regex
+    if (this.isMacOS && query.regex) {
+      this.addFlag('-E');
+    }
+
     this.addArg(query.path);
 
-    if (process.platform === 'linux') {
+    if (this.isLinux) {
       this.addFlag('-O3');
     }
 
@@ -21,6 +40,44 @@ export class FindCommandBuilder extends BaseCommandBuilder {
       this.addOption('-mindepth', query.minDepth);
     }
 
+    const hasExcludeDir = query.excludeDir && query.excludeDir.length > 0;
+    if (hasExcludeDir) {
+      this.buildExcludeDirPrune(query.excludeDir!);
+      this.addArg('-o'); // Connect prune to filters with OR
+    }
+
+    this.addFilters(query);
+    this.addArg('-print0');
+
+    return this;
+  }
+
+  /**
+   * Builds the excludeDir prune block:
+   * ( -path "*\/dir" -o -path "*\/dir/*" ) -prune
+   * Repeated for each directory
+   */
+  private buildExcludeDirPrune(excludeDirs: string[]): void {
+    this.addArg('(');
+    excludeDirs.forEach((dir, index) => {
+      if (index > 0) {
+        this.addArg('-o');
+      }
+      this.addArg('-path');
+      this.addArg(`*/${dir}`);
+      this.addArg('-o');
+      this.addArg('-path');
+      this.addArg(`*/${dir}/*`);
+    });
+    this.addArg(')');
+    this.addArg('-prune');
+  }
+
+  /**
+   * Adds all filter options (type, names, size, time, etc.)
+   * These must come AFTER the prune block when excludeDir is used
+   */
+  private addFilters(query: FindFilesQuery): void {
     if (query.type) {
       this.addOption('-type', query.type);
     }
@@ -51,9 +108,11 @@ export class FindCommandBuilder extends BaseCommandBuilder {
     }
 
     if (query.regex) {
-      if (query.regexType) {
+      if (this.isLinux && query.regexType) {
+        // GNU find uses -regextype
         this.addOption('-regextype', query.regexType);
       }
+      // macOS -E flag was added at the beginning
       this.addOption('-regex', query.regex);
     }
 
@@ -89,35 +148,31 @@ export class FindCommandBuilder extends BaseCommandBuilder {
     }
 
     if (query.executable) {
-      this.addFlag('-executable');
+      if (this.isLinux) {
+        this.addFlag('-executable');
+      } else {
+        // macOS: use -perm +111 (any execute bit)
+        this.addOption('-perm', '+111');
+      }
     }
 
     if (query.readable) {
-      this.addFlag('-readable');
+      if (this.isLinux) {
+        this.addFlag('-readable');
+      } else {
+        // macOS: use -perm +444 (any read bit)
+        this.addOption('-perm', '+444');
+      }
     }
 
     if (query.writable) {
-      this.addFlag('-writable');
-    }
-
-    if (query.excludeDir && query.excludeDir.length > 0) {
-      for (const dir of query.excludeDir) {
-        this.addArg('(');
-        this.addArg('-path');
-        this.addArg(`*/${dir}`);
-        this.addArg('-o');
-        this.addArg('-path');
-        this.addArg(`*/${dir}/*`);
-        this.addArg(')');
-        this.addArg('-prune');
-        this.addArg('-o');
+      if (this.isLinux) {
+        this.addFlag('-writable');
+      } else {
+        // macOS: use -perm +222 (any write bit)
+        this.addOption('-perm', '+222');
       }
-      this.addArg('-print0');
-    } else {
-      this.addArg('-print0');
     }
-
-    return this;
   }
 
   simple(path: string, name: string): this {

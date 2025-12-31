@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { generateCacheKey, withDataCache } from './cache.js';
 import {
   PackageSearchAPIResult,
   PackageSearchError,
@@ -9,7 +10,7 @@ import {
 const MAX_DESCRIPTION_LENGTH = 200;
 const MAX_KEYWORDS = 10;
 
-export async function searchPythonPackage(
+async function searchPythonPackageInternal(
   packageName: string,
   fetchMetadata: boolean
 ): Promise<PackageSearchAPIResult | PackageSearchError> {
@@ -158,4 +159,24 @@ export async function searchPythonPackage(
     ecosystem: 'python',
     totalFound: 0,
   };
+}
+
+export async function searchPythonPackage(
+  packageName: string,
+  fetchMetadata: boolean
+): Promise<PackageSearchAPIResult | PackageSearchError> {
+  const cacheKey = generateCacheKey('pypi-search', {
+    name: packageName,
+    metadata: fetchMetadata,
+  });
+
+  return withDataCache(
+    cacheKey,
+    async () => {
+      return searchPythonPackageInternal(packageName, fetchMetadata);
+    },
+    {
+      shouldCache: result => !('error' in result),
+    }
+  );
 }

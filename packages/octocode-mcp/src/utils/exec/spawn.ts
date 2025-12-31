@@ -1,5 +1,5 @@
 /**
- * Shared base module for spawn-based command execution
+ * Core spawn utilities for command execution
  * Provides common patterns for timeout handling, output collection, and process management
  */
 

@@ -10,8 +10,8 @@ describe('GitHub Index Exports', () => {
       expect(githubIndex.OctokitWithThrottling).toBeDefined();
       expect(typeof githubIndex.OctokitWithThrottling).toBe('function');
 
-      expect(githubIndex.clearCachedToken).toBeDefined();
-      expect(typeof githubIndex.clearCachedToken).toBe('function');
+      expect(githubIndex.clearOctokitInstances).toBeDefined();
+      expect(typeof githubIndex.clearOctokitInstances).toBe('function');
     });
   });
 
@@ -80,7 +80,7 @@ describe('GitHub Index Exports', () => {
       const expectedFunctions = [
         'getOctokit',
         'OctokitWithThrottling',
-        'clearCachedToken',
+        'clearOctokitInstances',
         'handleGitHubAPIError',
         'buildCodeSearchQuery',
         'buildRepoSearchQuery',
@@ -114,7 +114,7 @@ describe('GitHub Index Exports', () => {
       // Test that all exported functions are actually functions
       const functionExports = [
         'getOctokit',
-        'clearCachedToken',
+        'clearOctokitInstances',
         'handleGitHubAPIError',
         'buildCodeSearchQuery',
         'buildRepoSearchQuery',

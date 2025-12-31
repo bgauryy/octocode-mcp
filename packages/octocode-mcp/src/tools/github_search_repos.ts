@@ -8,7 +8,11 @@ import type {
   RepoSearchResult,
 } from '../types.js';
 import { searchGitHubReposAPI } from '../github/repoSearch.js';
-import { TOOL_NAMES, DESCRIPTIONS, getDynamicHints } from './toolMetadata.js';
+import {
+  TOOL_NAMES,
+  DESCRIPTIONS,
+  getDynamicHints as getMetadataDynamicHints,
+} from './toolMetadata.js';
 import { GitHubReposSearchQuerySchema } from '../scheme/github_search_repos.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
@@ -16,6 +20,7 @@ import {
   handleApiError,
   handleCatchError,
   createSuccessResult,
+  invokeCallbackSafely,
 } from './utils.js';
 
 export function registerSearchGitHubReposTool(
@@ -46,12 +51,11 @@ export function registerSearchGitHubReposTool(
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
-        if (callback) {
-          try {
-            await callback(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, queries);
-            // eslint-disable-next-line no-empty
-          } catch {}
-        }
+        await invokeCallbackSafely(
+          callback,
+          TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+          queries
+        );
 
         return searchMultipleGitHubRepos(queries, authInfo, sessionId);
       }
@@ -140,17 +144,56 @@ async function searchMultipleGitHubRepos(
             ? apiResult.data.repositories || []
             : ([] satisfies SimplifiedRepository[]);
 
-        const customHints = generateSearchSpecificHints(
+        const pagination =
+          'data' in apiResult ? apiResult.data.pagination : undefined;
+
+        // Generate pagination hints with full context for navigation
+        const paginationHints: string[] = [];
+        if (pagination) {
+          const { currentPage, totalPages, totalMatches, perPage, hasMore } =
+            pagination;
+          const startItem = (currentPage - 1) * perPage + 1;
+          const endItem = Math.min(currentPage * perPage, totalMatches);
+
+          // Main pagination summary
+          paginationHints.push(
+            `Page ${currentPage}/${totalPages} (showing ${startItem}-${endItem} of ${totalMatches} repos)`
+          );
+
+          // Navigation hints
+          if (hasMore) {
+            paginationHints.push(`Next: page=${currentPage + 1}`);
+          }
+          if (currentPage > 1) {
+            paginationHints.push(`Previous: page=${currentPage - 1}`);
+          }
+          if (!hasMore) {
+            paginationHints.push('Final page');
+          }
+
+          // Quick navigation hint for multi-page results
+          if (totalPages > 2) {
+            paginationHints.push(
+              `Jump to: page=1 (first) or page=${totalPages} (last)`
+            );
+          }
+        }
+
+        // Generate search-type specific hints from metadata
+        const searchHints = generateSearchSpecificHints(
           query,
           repositories.length > 0
         );
 
+        // Use unified pattern: extraHints for pagination and search-specific hints
         return createSuccessResult(
           query,
-          { repositories },
+          { repositories, pagination },
           repositories.length > 0,
           TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-          customHints
+          {
+            extraHints: [...paginationHints, ...(searchHints || [])],
+          }
         );
       } catch (error) {
         return handleCatchError(error, query);
@@ -158,13 +201,16 @@ async function searchMultipleGitHubRepos(
     },
     {
       toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-      keysPriority: ['repositories', 'error'] satisfies Array<
+      keysPriority: ['repositories', 'pagination', 'error'] satisfies Array<
         keyof RepoSearchResult
       >,
     }
   );
 }
 
+/**
+ * Generate search-type specific hints from metadata dynamic hints
+ */
 function generateSearchSpecificHints(
   query: GitHubReposSearchQuery,
   hasResults: boolean
@@ -175,18 +221,24 @@ function generateSearchSpecificHints(
 
   if (hasTopics && hasResults) {
     hints.push(
-      ...getDynamicHints(
+      ...getMetadataDynamicHints(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         'topicsHasResults'
       )
     );
   } else if (hasTopics && !hasResults) {
     hints.push(
-      ...getDynamicHints(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, 'topicsEmpty')
+      ...getMetadataDynamicHints(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        'topicsEmpty'
+      )
     );
   } else if (hasKeywords && !hasResults && !hasTopics) {
     hints.push(
-      ...getDynamicHints(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, 'keywordsEmpty')
+      ...getMetadataDynamicHints(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        'keywordsEmpty'
+      )
     );
   }
 

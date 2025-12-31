@@ -1,4 +1,8 @@
-export { getOctokit, OctokitWithThrottling, clearCachedToken } from './client';
+export {
+  getOctokit,
+  OctokitWithThrottling,
+  clearOctokitInstances,
+} from './client';
 export { handleGitHubAPIError } from './errors';
 
 export type {

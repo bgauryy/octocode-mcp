@@ -121,7 +121,7 @@ describe('🔍 Investigating Potential Bypasses', () => {
       console.log('\n🔍 Testing with actual command execution:');
 
       // Import safeExec
-      const { safeExec } = await import('../../src/utils/local/utils/exec.js');
+      const { safeExec } = await import('../../src/utils/exec/index.js');
 
       // Try to use ls with URL encoded path
       try {

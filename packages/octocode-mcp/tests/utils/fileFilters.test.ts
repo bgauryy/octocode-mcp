@@ -5,6 +5,7 @@ import {
   IGNORED_FILE_EXTENSIONS,
   shouldIgnoreDir,
   shouldIgnoreFile,
+  getExtension,
 } from '../../src/utils/fileFilters.js';
 
 describe('fileFilters', () => {
@@ -372,6 +373,147 @@ describe('fileFilters', () => {
       it('should ignore source maps', () => {
         expect(shouldIgnoreFile('app.js.map')).toBe(true);
         expect(shouldIgnoreFile('types.d.ts.map')).toBe(true);
+      });
+    });
+  });
+
+  describe('getExtension', () => {
+    describe('Basic Extension Extraction', () => {
+      it('should extract extension from simple file names', () => {
+        expect(getExtension('file.txt')).toBe('txt');
+        expect(getExtension('script.js')).toBe('js');
+        expect(getExtension('styles.css')).toBe('css');
+        expect(getExtension('data.json')).toBe('json');
+      });
+
+      it('should extract extension from paths with directories', () => {
+        expect(getExtension('src/utils/file.ts')).toBe('ts');
+        expect(getExtension('/absolute/path/to/file.py')).toBe('py');
+        expect(getExtension('deeply/nested/dir/script.rb')).toBe('rb');
+      });
+
+      it('should handle files with multiple dots', () => {
+        expect(getExtension('config.test.ts')).toBe('ts');
+        expect(getExtension('bundle.min.js')).toBe('js');
+        expect(getExtension('types.d.ts')).toBe('ts');
+        expect(getExtension('data.backup.json')).toBe('json');
+      });
+
+      it('should return empty string for files without extension', () => {
+        expect(getExtension('Makefile')).toBe('');
+        expect(getExtension('Dockerfile')).toBe('');
+        expect(getExtension('LICENSE')).toBe('');
+        expect(getExtension('README')).toBe('');
+      });
+
+      it('should return empty string for dotfiles without extension', () => {
+        expect(getExtension('.gitignore')).toBe('');
+        expect(getExtension('.eslintrc')).toBe('');
+        expect(getExtension('.env')).toBe('');
+        expect(getExtension('.dockerignore')).toBe('');
+      });
+
+      it('should handle dotfiles with extension', () => {
+        expect(getExtension('.eslintrc.json')).toBe('json');
+        expect(getExtension('.prettierrc.yaml')).toBe('yaml');
+        expect(getExtension('.env.local')).toBe('local');
+      });
+    });
+
+    describe('Lowercase Option', () => {
+      it('should preserve original case by default', () => {
+        expect(getExtension('file.TXT')).toBe('TXT');
+        expect(getExtension('file.JSON')).toBe('JSON');
+        expect(getExtension('file.PyThOn')).toBe('PyThOn');
+      });
+
+      it('should convert to lowercase when option is set', () => {
+        expect(getExtension('file.TXT', { lowercase: true })).toBe('txt');
+        expect(getExtension('file.JSON', { lowercase: true })).toBe('json');
+        expect(getExtension('file.PyThOn', { lowercase: true })).toBe('python');
+      });
+
+      it('should not affect already lowercase extensions', () => {
+        expect(getExtension('file.txt', { lowercase: true })).toBe('txt');
+        expect(getExtension('file.js', { lowercase: true })).toBe('js');
+      });
+    });
+
+    describe('Fallback Option', () => {
+      it('should return empty string by default when no extension', () => {
+        expect(getExtension('Makefile')).toBe('');
+        expect(getExtension('.gitignore')).toBe('');
+      });
+
+      it('should return fallback value when no extension and fallback is set', () => {
+        expect(getExtension('Makefile', { fallback: 'txt' })).toBe('txt');
+        expect(getExtension('.gitignore', { fallback: 'txt' })).toBe('txt');
+        expect(getExtension('noext', { fallback: 'unknown' })).toBe('unknown');
+      });
+
+      it('should not use fallback when extension exists', () => {
+        expect(getExtension('file.js', { fallback: 'txt' })).toBe('js');
+        expect(getExtension('data.json', { fallback: 'txt' })).toBe('json');
+      });
+    });
+
+    describe('Combined Options', () => {
+      it('should apply both lowercase and fallback', () => {
+        expect(
+          getExtension('file.TXT', { lowercase: true, fallback: 'unknown' })
+        ).toBe('txt');
+        expect(
+          getExtension('Makefile', { lowercase: true, fallback: 'txt' })
+        ).toBe('txt');
+        expect(
+          getExtension('.gitignore', { lowercase: true, fallback: 'txt' })
+        ).toBe('txt');
+      });
+
+      it('should match minifier behavior with lowercase: true, fallback: txt', () => {
+        const minifierOptions = { lowercase: true, fallback: 'txt' };
+
+        expect(getExtension('script.JS', minifierOptions)).toBe('js');
+        expect(getExtension('styles.CSS', minifierOptions)).toBe('css');
+        expect(getExtension('Makefile', minifierOptions)).toBe('txt');
+        expect(getExtension('.gitignore', minifierOptions)).toBe('txt');
+      });
+    });
+
+    describe('Edge Cases', () => {
+      it('should handle empty string', () => {
+        expect(getExtension('')).toBe('');
+        expect(getExtension('', { fallback: 'txt' })).toBe('txt');
+      });
+
+      it('should handle paths ending with dot', () => {
+        // file. has an empty extension (empty string after the dot)
+        expect(getExtension('file.')).toBe('');
+        // Empty extension is still technically an extension, so no fallback
+        expect(getExtension('file.', { fallback: 'txt' })).toBe('');
+      });
+
+      it('should handle multiple consecutive dots', () => {
+        expect(getExtension('file..txt')).toBe('txt');
+        expect(getExtension('file...js')).toBe('js');
+      });
+
+      it('should handle very long extensions', () => {
+        expect(getExtension('file.typescript')).toBe('typescript');
+        expect(getExtension('file.someVeryLongExtension')).toBe(
+          'someVeryLongExtension'
+        );
+      });
+
+      it('should handle single character extensions', () => {
+        expect(getExtension('file.c')).toBe('c');
+        expect(getExtension('file.h')).toBe('h');
+        expect(getExtension('file.r')).toBe('r');
+      });
+
+      it('should handle numeric extensions', () => {
+        expect(getExtension('file.123')).toBe('123');
+        expect(getExtension('backup.2024')).toBe('2024');
       });
     });
   });

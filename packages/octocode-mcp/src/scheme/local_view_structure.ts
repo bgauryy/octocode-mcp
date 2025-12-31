@@ -3,52 +3,47 @@
  */
 
 import { z } from 'zod';
+import { BaseQuerySchemaLocal, createBulkQuerySchema } from './baseSchema.js';
 import {
-  BaseQuerySchemaLocal,
-  createBulkQuerySchemaLocal,
-  COMMON_PAGINATION_DESCRIPTIONS,
-} from './baseSchema.js';
-import { TOOL_NAMES } from '../utils/constants.js';
+  LOCAL_VIEW_STRUCTURE,
+  TOOL_NAMES,
+  DESCRIPTIONS,
+} from '../tools/toolMetadata.js';
 
 /**
- * Tool description for MCP registration
+ * Tool description for localViewStructure
  */
-export const LOCAL_VIEW_STRUCTURE_DESCRIPTION = `Purpose: Overview directory contents, sizes, and structure.
-
-Use when: New codebase or unknown locations.
-Avoid when: Content/pattern search (use ripgrep/fetch_content).
-Workflow: depth=1–2 → filter (pattern/extensions) → drill deeper or switch tools.
-Pagination: entriesPerPage + entryPageNumber (sorted by modified time).
-Tips: hidden=true for dotfiles; exclude node_modules for brevity.
-
-Examples:
-- depth: 1, entriesPerPage: 20
-- pattern: "*.ts", filesOnly: true
-- extensions: ["ts","tsx"], hidden: true
-- path: "node_modules/express", depth: 1 (explore inside node_modules)
-`;
+export const LOCAL_VIEW_STRUCTURE_DESCRIPTION =
+  DESCRIPTIONS[TOOL_NAMES.LOCAL_VIEW_STRUCTURE] ||
+  'View directory structure and list files';
 
 /**
  * View structure query schema
  */
 export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
-  path: z.string().describe('Directory path (required).'),
+  path: z.string().describe(LOCAL_VIEW_STRUCTURE.scope.path),
 
   details: z
     .boolean()
     .default(false)
-    .describe('Show details (perms, size, dates).'),
-  hidden: z.boolean().default(false).describe('Show hidden files.'),
+    .describe(LOCAL_VIEW_STRUCTURE.options.details),
+  hidden: z
+    .boolean()
+    .default(false)
+    .describe(LOCAL_VIEW_STRUCTURE.filters.hidden),
   humanReadable: z
     .boolean()
     .default(true)
-    .describe('Human-readable sizes (KB, MB, GB)'),
+    .describe(LOCAL_VIEW_STRUCTURE.options.humanReadable),
   sortBy: z
     .enum(['name', 'size', 'time', 'extension'])
     .optional()
     .default('time')
-    .describe('Sort by name/size/time/extension (default: time).'),
-  reverse: z.boolean().optional().describe('Reverse sort.'),
+    .describe(LOCAL_VIEW_STRUCTURE.sorting.sortBy),
+  reverse: z
+    .boolean()
+    .optional()
+    .describe(LOCAL_VIEW_STRUCTURE.sorting.reverse),
 
   entriesPerPage: z
     .number()
@@ -57,66 +52,81 @@ export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
     .max(20)
     .optional()
     .default(20)
-    .describe(COMMON_PAGINATION_DESCRIPTIONS.entriesPerPage),
+    .describe(LOCAL_VIEW_STRUCTURE.pagination.entriesPerPage),
   entryPageNumber: z
     .number()
     .int()
     .min(1)
     .optional()
     .default(1)
-    .describe(COMMON_PAGINATION_DESCRIPTIONS.entryPageNumber),
+    .describe(LOCAL_VIEW_STRUCTURE.pagination.entryPageNumber),
 
-  pattern: z
+  pattern: z.string().optional().describe(LOCAL_VIEW_STRUCTURE.filters.pattern),
+  directoriesOnly: z
+    .boolean()
+    .optional()
+    .describe(LOCAL_VIEW_STRUCTURE.filters.directoriesOnly),
+  filesOnly: z
+    .boolean()
+    .optional()
+    .describe(LOCAL_VIEW_STRUCTURE.filters.filesOnly),
+  extension: z
     .string()
     .optional()
-    .describe('Name filter: globs (*.js, @*, test*) or substring (user).'),
-  directoriesOnly: z.boolean().optional().describe('Directories only.'),
-  filesOnly: z.boolean().optional().describe('Files only.'),
-  extension: z.string().optional().describe('Extension filter (js, ts).'),
+    .describe(LOCAL_VIEW_STRUCTURE.filters.extension),
   extensions: z
     .array(z.string())
     .optional()
-    .describe('Multiple extensions (["js", "ts", "tsx"]).'),
+    .describe(LOCAL_VIEW_STRUCTURE.filters.extensions),
 
-  depth: z.number().min(1).max(5).optional().describe('Recursive depth (1–5).'),
-  recursive: z.boolean().optional().describe('Recursive listing.'),
+  depth: z
+    .number()
+    .min(1)
+    .max(5)
+    .optional()
+    .describe(LOCAL_VIEW_STRUCTURE.options.depth),
+  recursive: z
+    .boolean()
+    .optional()
+    .describe(LOCAL_VIEW_STRUCTURE.options.recursive),
 
   limit: z
     .number()
     .min(1)
     .max(10000)
     .optional()
-    .describe('Max entries (1–10000).'),
+    .describe(LOCAL_VIEW_STRUCTURE.pagination.limit),
   summary: z
     .boolean()
     .default(true)
-    .describe('Include summary (files, dirs, size).'),
+    .describe(LOCAL_VIEW_STRUCTURE.options.summary),
 
   charOffset: z
     .number()
     .min(0)
     .optional()
-    .describe(COMMON_PAGINATION_DESCRIPTIONS.charOffset),
+    .describe(LOCAL_VIEW_STRUCTURE.pagination.charOffset),
 
   charLength: z
     .number()
     .min(1)
     .max(10000)
     .optional()
-    .describe(COMMON_PAGINATION_DESCRIPTIONS.charLength),
+    .describe(LOCAL_VIEW_STRUCTURE.pagination.charLength),
 
   showFileLastModified: z
     .boolean()
     .default(false)
-    .describe('Show file last modified timestamps in results (default false).'),
+    .describe(LOCAL_VIEW_STRUCTURE.options.showFileLastModified),
 });
 
 /**
  * Bulk view structure schema
  */
-export const BulkViewStructureSchema = createBulkQuerySchemaLocal(
+export const BulkViewStructureSchema = createBulkQuerySchema(
   TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
-  ViewStructureQuerySchema
+  ViewStructureQuerySchema,
+  { maxQueries: 5 }
 );
 
 export type ViewStructureQuery = z.infer<typeof ViewStructureQuerySchema>;

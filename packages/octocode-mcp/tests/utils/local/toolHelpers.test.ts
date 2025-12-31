@@ -1,10 +1,228 @@
 /**
  * Tests for toolHelpers.ts
  */
-import { describe, it, expect } from 'vitest';
-import { checkLargeOutputSafety } from '../../../src/utils/local/utils/toolHelpers.js';
+import { describe, it, expect, afterEach } from 'vitest';
+import {
+  checkLargeOutputSafety,
+  validateToolPath,
+} from '../../../src/utils/local/utils/toolHelpers.js';
 
 describe('toolHelpers', () => {
+  describe('validateToolPath', () => {
+    const originalCwd = process.cwd();
+
+    afterEach(() => {
+      process.chdir(originalCwd);
+    });
+
+    describe('successful validation', () => {
+      it('should return valid result with sanitizedPath for valid paths', () => {
+        const query = {
+          path: process.cwd(),
+          researchGoal: 'test',
+          reasoning: 'test reasoning',
+        };
+
+        const result = validateToolPath(query, 'LOCAL_FIND_FILES');
+
+        expect(result.isValid).toBe(true);
+        expect(result.sanitizedPath).toBeDefined();
+        expect(result.errorResult).toBeUndefined();
+      });
+
+      it('should accept paths within workspace using relative notation', () => {
+        const query = {
+          path: '.',
+          researchGoal: 'test',
+          reasoning: 'test reasoning',
+        };
+
+        const result = validateToolPath(query, 'LOCAL_VIEW_STRUCTURE');
+
+        expect(result.isValid).toBe(true);
+        expect(result.sanitizedPath).toBeDefined();
+      });
+    });
+
+    describe('error context and debugging info', () => {
+      it('should include CWD in error result for invalid paths', () => {
+        const query = {
+          path: '/some/invalid/outside/path',
+          researchGoal: 'test',
+          reasoning: 'test reasoning',
+        };
+
+        const result = validateToolPath(query, 'LOCAL_FIND_FILES');
+
+        expect(result.isValid).toBe(false);
+        expect(result.errorResult).toBeDefined();
+        expect(result.errorResult?.cwd).toBe(process.cwd());
+      });
+
+      it('should include resolvedPath in error result', () => {
+        const query = {
+          path: '/some/invalid/outside/path',
+          researchGoal: 'test',
+          reasoning: 'test reasoning',
+        };
+
+        const result = validateToolPath(query, 'LOCAL_FIND_FILES');
+
+        expect(result.isValid).toBe(false);
+        expect(result.errorResult?.resolvedPath).toBe(
+          '/some/invalid/outside/path'
+        );
+      });
+
+      it('should show resolved path when relative path differs from input', () => {
+        // Use a path that resolves outside home directory (truly invalid)
+        const query = {
+          path: '/var/log/system.log',
+          researchGoal: 'test',
+          reasoning: 'test reasoning',
+        };
+
+        const result = validateToolPath(query, 'LOCAL_VIEW_STRUCTURE');
+
+        // This should fail because /var is outside home directory
+        expect(result.isValid).toBe(false);
+        expect(result.errorResult?.hints).toBeDefined();
+
+        const hints = result.errorResult?.hints as string[];
+        // Should show CWD context
+        expect(hints.some(h => h.includes('Current working directory'))).toBe(
+          true
+        );
+      });
+
+      it('should NOT show "resolved to" hint when input equals resolved path', () => {
+        // Absolute path - input equals resolved
+        const query = {
+          path: '/etc/passwd',
+          researchGoal: 'test',
+          reasoning: 'test reasoning',
+        };
+
+        const result = validateToolPath(query, 'LOCAL_FETCH_CONTENT');
+
+        expect(result.isValid).toBe(false);
+        const hints = result.errorResult?.hints as string[];
+        // Should NOT have "resolved to" since input === resolved
+        expect(hints.some(h => h.includes('resolved to'))).toBe(false);
+        // But should still have CWD
+        expect(hints.some(h => h.includes('Current working directory'))).toBe(
+          true
+        );
+      });
+
+      it('should preserve research context in error result', () => {
+        const query = {
+          path: '/invalid/path',
+          researchGoal: 'Find config files',
+          reasoning: 'Need to check configuration',
+          mainResearchGoal: 'Understand project setup',
+        };
+
+        const result = validateToolPath(query, 'LOCAL_FIND_FILES');
+
+        expect(result.isValid).toBe(false);
+        expect(result.errorResult?.researchGoal).toBe('Find config files');
+        expect(result.errorResult?.reasoning).toBe(
+          'Need to check configuration'
+        );
+        expect(result.errorResult?.mainResearchGoal).toBe(
+          'Understand project setup'
+        );
+      });
+    });
+
+    describe('hint quality for different error types', () => {
+      it('should provide fix suggestions for path outside allowed directories', () => {
+        const query = {
+          path: '/etc/passwd',
+          researchGoal: 'test',
+          reasoning: 'test reasoning',
+        };
+
+        const result = validateToolPath(query, 'LOCAL_FETCH_CONTENT');
+
+        expect(result.isValid).toBe(false);
+        const hints = result.errorResult?.hints as string[];
+        // Should suggest a fix with emoji marker
+        expect(hints.some(h => h.includes('🔧 Fix'))).toBe(true);
+        // Should suggest using workspace root
+        expect(hints.some(h => h.includes(process.cwd()))).toBe(true);
+      });
+
+      it('should include helpful hints about using absolute paths', () => {
+        // Use a path that's truly outside allowed directories
+        const query = {
+          path: '/var/tmp/test',
+          researchGoal: 'test',
+          reasoning: 'test reasoning',
+        };
+
+        const result = validateToolPath(query, 'LOCAL_FIND_FILES');
+
+        expect(result.isValid).toBe(false);
+        const hints = result.errorResult?.hints as string[];
+
+        // Should include TIP about absolute paths
+        expect(hints.some(h => h.includes('💡 TIP'))).toBe(true);
+        expect(hints.some(h => h.toLowerCase().includes('absolute'))).toBe(
+          true
+        );
+        expect(hints.some(h => h.includes('prefer absolute paths'))).toBe(true);
+      });
+
+      it('should include example fix syntax', () => {
+        const query = {
+          path: '/outside/path',
+          researchGoal: 'test',
+          reasoning: 'test reasoning',
+        };
+
+        const result = validateToolPath(query, 'LOCAL_RIPGREP');
+
+        expect(result.isValid).toBe(false);
+        const hints = result.errorResult?.hints as string[];
+
+        // Should show example with path= syntax
+        expect(hints.some(h => h.includes('path="'))).toBe(true);
+        expect(hints.some(h => h.includes('Instead of:'))).toBe(true);
+        expect(hints.some(h => h.includes('Try:'))).toBe(true);
+      });
+    });
+
+    describe('error code and status', () => {
+      it('should include errorCode in error result', () => {
+        const query = {
+          path: '/invalid/path',
+          researchGoal: 'test',
+          reasoning: 'test reasoning',
+        };
+
+        const result = validateToolPath(query, 'LOCAL_FIND_FILES');
+
+        expect(result.isValid).toBe(false);
+        expect(result.errorResult?.errorCode).toBe('pathValidationFailed');
+      });
+
+      it('should set status to error', () => {
+        const query = {
+          path: '/invalid/path',
+          researchGoal: 'test',
+          reasoning: 'test reasoning',
+        };
+
+        const result = validateToolPath(query, 'LOCAL_FIND_FILES');
+
+        expect(result.isValid).toBe(false);
+        expect(result.errorResult?.status).toBe('error');
+      });
+    });
+  });
+
   describe('checkLargeOutputSafety', () => {
     it('should not block when hasCharLength is true', () => {
       const result = checkLargeOutputSafety(1000, true);

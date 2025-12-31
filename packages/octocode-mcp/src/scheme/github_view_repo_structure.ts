@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_VIEW_REPO_STRUCTURE, TOOL_NAMES } from '../tools/toolMetadata';
 import type { DirectoryEntry, PaginationInfo } from '../types.js';
+import type { ContentDirectoryEntry } from '../github/githubAPI.js';
 
 /** Default entries per page for GitHub repo structure pagination */
 export const GITHUB_STRUCTURE_DEFAULTS = {
@@ -43,15 +44,13 @@ export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
     .max(GITHUB_STRUCTURE_DEFAULTS.MAX_ENTRIES_PER_PAGE)
     .default(GITHUB_STRUCTURE_DEFAULTS.ENTRIES_PER_PAGE)
     .optional()
-    .describe(
-      'Number of entries (files + folders) per page. Default: 50, Max: 200'
-    ),
+    .describe(GITHUB_VIEW_REPO_STRUCTURE.pagination.entriesPerPage),
   entryPageNumber: z
     .number()
     .min(1)
     .default(1)
     .optional()
-    .describe('Page number to retrieve (1-based). Default: 1'),
+    .describe(GITHUB_VIEW_REPO_STRUCTURE.pagination.entryPageNumber),
 });
 
 export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(
@@ -59,22 +58,12 @@ export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(
   GitHubViewRepoStructureQuerySchema
 );
 
-export interface GitHubApiFileItem {
-  name: string;
-  path: string;
-  sha: string;
-  size: number;
-  type: 'file' | 'dir';
-  url: string;
-  html_url: string;
-  git_url: string;
-  download_url: string | null;
-  _links: {
-    self: string;
-    git: string;
-    html: string;
-  };
-}
+/**
+ * GitHub API file/directory item from content listing.
+ * Re-exported from Octokit's OpenAPI types for proper type safety.
+ * Schema: components['schemas']['content-directory'][number]
+ */
+export type GitHubApiFileItem = ContentDirectoryEntry;
 
 export interface GitHubRepositoryContentsResult {
   path: string;
@@ -90,6 +79,12 @@ export interface GitHubRepositoryContentsResult {
     used: string;
     message: string;
   };
+}
+
+/** Internal item for caching (pre-pagination) */
+export interface CachedStructureItem {
+  path: string;
+  type: 'file' | 'dir';
 }
 
 export interface GitHubRepositoryStructureResult {
@@ -110,6 +105,8 @@ export interface GitHubRepositoryStructureResult {
   pagination?: PaginationInfo;
   /** Hints for next steps (including pagination hints) */
   hints?: string[];
+  /** Internal: raw items for post-cache pagination (not serialized in responses) */
+  _cachedItems?: CachedStructureItem[];
 }
 
 export interface GitHubRepositoryStructureError {

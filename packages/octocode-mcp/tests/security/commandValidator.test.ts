@@ -1,0 +1,382 @@
+/**
+ * Tests for command validation - validates command injection prevention
+ */
+
+import { describe, it, expect } from 'vitest';
+import { validateCommand } from '../../src/security/commandValidator.js';
+
+describe('commandValidator', () => {
+  describe('validateCommand', () => {
+    describe('command whitelist', () => {
+      it('should allow whitelisted commands', () => {
+        expect(validateCommand('rg', ['pattern', 'path'])).toEqual({
+          isValid: true,
+        });
+        expect(validateCommand('find', ['.', '-name', '*.ts'])).toEqual({
+          isValid: true,
+        });
+        expect(validateCommand('ls', ['-la'])).toEqual({ isValid: true });
+      });
+
+      it('should reject non-whitelisted commands', () => {
+        const result = validateCommand('rm', ['-rf', '/']);
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain("Command 'rm' is not allowed");
+        expect(result.error).toContain('Allowed commands');
+      });
+
+      it('should reject unknown commands', () => {
+        const result = validateCommand('curl', ['http://example.com']);
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain("Command 'curl' is not allowed");
+      });
+    });
+
+    describe('ripgrep pattern detection', () => {
+      it('should allow regex patterns in search position', () => {
+        // Pattern with pipe (OR) should be allowed in pattern position
+        const result = validateCommand('rg', ['foo|bar', './src']);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should allow patterns with parentheses', () => {
+        const result = validateCommand('rg', ['(foo|bar)+', './src']);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should allow glob patterns with -g flag', () => {
+        const result = validateCommand('rg', [
+          '-g',
+          '*.{ts,tsx}',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should allow glob patterns with --glob flag', () => {
+        const result = validateCommand('rg', [
+          '--glob',
+          '*.{ts,tsx}',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should allow glob patterns with --include flag', () => {
+        const result = validateCommand('rg', [
+          '--include',
+          '*.ts',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should allow glob patterns with --exclude flag', () => {
+        const result = validateCommand('rg', [
+          '--exclude',
+          'node_modules',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should allow glob patterns with --exclude-dir flag', () => {
+        const result = validateCommand('rg', [
+          '--exclude-dir',
+          'dist',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for -A context lines', () => {
+        const result = validateCommand('rg', ['-A', '5', 'pattern', './src']);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for -B context lines', () => {
+        const result = validateCommand('rg', ['-B', '3', 'pattern', './src']);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for -C context lines', () => {
+        const result = validateCommand('rg', ['-C', '2', 'pattern', './src']);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for -m max count', () => {
+        const result = validateCommand('rg', ['-m', '10', 'pattern', './src']);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for -t type', () => {
+        const result = validateCommand('rg', ['-t', 'ts', 'pattern', './src']);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for --type', () => {
+        const result = validateCommand('rg', [
+          '--type',
+          'rust',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for -T type-not', () => {
+        const result = validateCommand('rg', [
+          '-T',
+          'json',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for --type-not', () => {
+        const result = validateCommand('rg', [
+          '--type-not',
+          'html',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for -j threads', () => {
+        const result = validateCommand('rg', ['-j', '4', 'pattern', './src']);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for --threads', () => {
+        const result = validateCommand('rg', [
+          '--threads',
+          '8',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for --sort', () => {
+        const result = validateCommand('rg', [
+          '--sort',
+          'path',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for --sortr', () => {
+        const result = validateCommand('rg', [
+          '--sortr',
+          'modified',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for --max-filesize', () => {
+        const result = validateCommand('rg', [
+          '--max-filesize',
+          '1M',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for -E encoding', () => {
+        const result = validateCommand('rg', [
+          '-E',
+          'utf-8',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for --encoding', () => {
+        const result = validateCommand('rg', [
+          '--encoding',
+          'utf-8',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should skip flag values for --color', () => {
+        const result = validateCommand('rg', [
+          '--color',
+          'never',
+          'pattern',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should handle multiple flags with values', () => {
+        const result = validateCommand('rg', [
+          '-A',
+          '5',
+          '-B',
+          '3',
+          '-m',
+          '10',
+          '-t',
+          'ts',
+          '--glob',
+          '*.ts',
+          'foo|bar',
+          './src',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+    });
+
+    describe('find pattern detection', () => {
+      it('should allow patterns after -name', () => {
+        const result = validateCommand('find', ['.', '-name', '*.ts']);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should allow patterns after -iname', () => {
+        const result = validateCommand('find', ['.', '-iname', '*.TEST.ts']);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should allow patterns after -path', () => {
+        const result = validateCommand('find', [
+          '.',
+          '-path',
+          '*/node_modules/*',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should allow patterns after -regex', () => {
+        const result = validateCommand('find', [
+          '.',
+          '-regex',
+          '.*\\.test\\.ts$',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should allow patterns after -size', () => {
+        const result = validateCommand('find', ['.', '-size', '+1M']);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should allow patterns after -perm', () => {
+        const result = validateCommand('find', ['.', '-perm', '755']);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should allow parentheses for grouping', () => {
+        const result = validateCommand('find', [
+          '.',
+          '(',
+          '-name',
+          '*.ts',
+          '-o',
+          '-name',
+          '*.tsx',
+          ')',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should allow -o for OR expressions', () => {
+        const result = validateCommand('find', [
+          '.',
+          '-name',
+          '*.ts',
+          '-o',
+          '-name',
+          '*.js',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should handle complex find expressions', () => {
+        const result = validateCommand('find', [
+          '.',
+          '(',
+          '-name',
+          '*.ts',
+          '-o',
+          '-iname',
+          '*.tsx',
+          ')',
+          '-path',
+          '*/src/*',
+          '-size',
+          '+10k',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+    });
+
+    describe('dangerous pattern detection', () => {
+      it('should reject shell execution patterns in non-pattern args', () => {
+        // Path argument with command substitution
+        const result = validateCommand('ls', ['-la', '$(rm -rf /)']);
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('Dangerous pattern detected');
+      });
+
+      it('should reject backtick command substitution', () => {
+        const result = validateCommand('ls', ['-la', '`whoami`']);
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('Dangerous pattern detected');
+      });
+    });
+  });
+});

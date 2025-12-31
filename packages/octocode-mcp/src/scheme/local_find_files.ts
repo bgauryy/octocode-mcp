@@ -3,100 +3,104 @@
  */
 
 import { z } from 'zod';
+import { BaseQuerySchemaLocal, createBulkQuerySchema } from './baseSchema.js';
 import {
-  BaseQuerySchemaLocal,
-  createBulkQuerySchemaLocal,
-  COMMON_PAGINATION_DESCRIPTIONS,
-} from './baseSchema.js';
-import { TOOL_NAMES } from '../utils/constants.js';
+  LOCAL_FIND_FILES,
+  TOOL_NAMES,
+  DESCRIPTIONS,
+} from '../tools/toolMetadata.js';
 
 /**
- * Tool description for MCP registration
+ * Tool description for localFindFiles
  */
-export const LOCAL_FIND_FILES_DESCRIPTION = `Purpose: Locate files by name, time, size, permissions.
-
-Use when: You need paths or recency; not content search.
-Workflow: Filter by metadata → fetch_content or ripgrep.
-Pagination: Sorted by modified time; filesPerPage + filePageNumber.
-Tips: modifiedWithin "7d"; sizeGreater "10M"; perms like "755".
-
-Examples:
-- name: "*.test.ts", modifiedWithin: "7d"
-- iname: "readme", type: "f"
-- type: "d", pathPattern: "src/**"
-- path: "node_modules", name: "package.json", maxDepth: 2 (find packages in node_modules)
-`;
+export const LOCAL_FIND_FILES_DESCRIPTION =
+  DESCRIPTIONS[TOOL_NAMES.LOCAL_FIND_FILES] ||
+  'Find files by name, pattern, or metadata';
 
 /**
  * Find files query schema
  */
 export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
-  path: z.string().describe('Starting directory (required).'),
+  path: z.string().describe(LOCAL_FIND_FILES.scope.path),
 
   maxDepth: z
     .number()
     .min(1)
     .max(10)
     .optional()
-    .describe('Max depth (1–10, default 5).'),
-  minDepth: z.number().min(0).max(10).optional().describe('Min depth (0–10).'),
+    .describe(LOCAL_FIND_FILES.options.maxDepth),
+  minDepth: z
+    .number()
+    .min(0)
+    .max(10)
+    .optional()
+    .describe(LOCAL_FIND_FILES.options.minDepth),
 
-  name: z.string().optional().describe('Name pattern (*.js, *config*).'),
-  iname: z.string().optional().describe('Case-insensitive name pattern.'),
+  name: z.string().optional().describe(LOCAL_FIND_FILES.filters.name),
+  iname: z.string().optional().describe(LOCAL_FIND_FILES.filters.iname),
   names: z
     .array(z.string())
     .optional()
-    .describe('Multiple patterns (OR logic), e.g., ["*.ts","*.js"].'),
-  pathPattern: z.string().optional().describe('Path pattern.'),
-  regex: z.string().optional().describe('Regex pattern.'),
+    .describe(LOCAL_FIND_FILES.filters.names),
+  pathPattern: z
+    .string()
+    .optional()
+    .describe(LOCAL_FIND_FILES.filters.pathPattern),
+  regex: z.string().optional().describe(LOCAL_FIND_FILES.filters.regex),
   regexType: z
     .enum(['posix-egrep', 'posix-extended', 'posix-basic'])
     .optional()
-    .describe('Regex type (default: posix-egrep).'),
+    .describe(LOCAL_FIND_FILES.filters.regexType),
 
   type: z
     .enum(['f', 'd', 'l', 'b', 'c', 'p', 's'])
     .optional()
-    .describe('Type: f=file, d=dir, l=symlink.'),
+    .describe(LOCAL_FIND_FILES.filters.type),
 
-  empty: z.boolean().optional().describe('Empty files/dirs only.'),
+  empty: z.boolean().optional().describe(LOCAL_FIND_FILES.filters.empty),
 
   modifiedWithin: z
     .string()
     .optional()
-    .describe('Modified within (7d, 2h, 30m).'),
+    .describe(LOCAL_FIND_FILES.time.modifiedWithin),
   modifiedBefore: z
     .string()
     .optional()
-    .describe('Modified before (e.g., 30d).'),
-  accessedWithin: z.string().optional().describe('Accessed within (e.g., 1d).'),
+    .describe(LOCAL_FIND_FILES.time.modifiedBefore),
+  accessedWithin: z
+    .string()
+    .optional()
+    .describe(LOCAL_FIND_FILES.time.accessedWithin),
 
-  sizeGreater: z.string().optional().describe('Size > (10M, 100k, 1G).'),
-  sizeLess: z.string().optional().describe('Size < (1M, 500k).'),
+  sizeGreater: z
+    .string()
+    .optional()
+    .describe(LOCAL_FIND_FILES.size.sizeGreater),
+  sizeLess: z.string().optional().describe(LOCAL_FIND_FILES.size.sizeLess),
 
   permissions: z
     .string()
     .optional()
-    .describe('Permission pattern (e.g., 755, 644).'),
-  executable: z.boolean().optional().describe('Executable only.'),
-  readable: z.boolean().optional().describe('Readable only.'),
-  writable: z.boolean().optional().describe('Writable only.'),
+    .describe(LOCAL_FIND_FILES.options.permissions),
+  executable: z
+    .boolean()
+    .optional()
+    .describe(LOCAL_FIND_FILES.filters.executable),
+  readable: z.boolean().optional().describe(LOCAL_FIND_FILES.filters.readable),
+  writable: z.boolean().optional().describe(LOCAL_FIND_FILES.filters.writable),
 
   excludeDir: z
     .array(z.string())
     .optional()
-    .describe('Exclude dirs (["node_modules",".git"]).'),
+    .describe(LOCAL_FIND_FILES.filters.excludeDir),
 
   limit: z
     .number()
     .min(1)
     .max(10000)
     .optional()
-    .describe('Max results (1–10000, default 1000).'),
-  details: z
-    .boolean()
-    .default(false)
-    .describe('Include size/perms (default false).'),
+    .describe(LOCAL_FIND_FILES.pagination.limit),
+  details: z.boolean().default(true).describe(LOCAL_FIND_FILES.options.details),
 
   filesPerPage: z
     .number()
@@ -105,40 +109,41 @@ export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
     .max(20)
     .optional()
     .default(20)
-    .describe(COMMON_PAGINATION_DESCRIPTIONS.filesPerPage),
+    .describe(LOCAL_FIND_FILES.pagination.filesPerPage),
   filePageNumber: z
     .number()
     .int()
     .min(1)
     .optional()
     .default(1)
-    .describe(COMMON_PAGINATION_DESCRIPTIONS.filePageNumber),
+    .describe(LOCAL_FIND_FILES.pagination.filePageNumber),
 
   charOffset: z
     .number()
     .min(0)
     .optional()
-    .describe(COMMON_PAGINATION_DESCRIPTIONS.charOffset),
+    .describe(LOCAL_FIND_FILES.pagination.charOffset),
 
   charLength: z
     .number()
     .min(1)
     .max(10000)
     .optional()
-    .describe(COMMON_PAGINATION_DESCRIPTIONS.charLength),
+    .describe(LOCAL_FIND_FILES.pagination.charLength),
 
   showFileLastModified: z
     .boolean()
-    .default(false)
-    .describe('Show file last modified timestamps in results (default false).'),
+    .default(true)
+    .describe(LOCAL_FIND_FILES.options.showFileLastModified),
 });
 
 /**
  * Bulk find files schema
  */
-export const BulkFindFilesSchema = createBulkQuerySchemaLocal(
+export const BulkFindFilesSchema = createBulkQuerySchema(
   TOOL_NAMES.LOCAL_FIND_FILES,
-  FindFilesQuerySchema
+  FindFilesQuerySchema,
+  { maxQueries: 5 }
 );
 
 export type FindFilesQuery = z.infer<typeof FindFilesQuerySchema>;

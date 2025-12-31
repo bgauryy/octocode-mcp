@@ -20,7 +20,6 @@ export function validateCommand(
   command: string,
   args: string[]
 ): CommandValidationResult {
-  // Check if command is in the whitelist
   if (
     !ALLOWED_COMMANDS.includes(command as (typeof ALLOWED_COMMANDS)[number])
   ) {
@@ -46,7 +45,6 @@ function validateCommandArgs(
   // Patterns can safely contain |, (), etc. as they're regex/search patterns
   const patternPositions = getPatternArgPositions(command, args);
 
-  // Check each argument for dangerous patterns
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     const isPattern = patternPositions.has(i);
@@ -56,7 +54,6 @@ function validateCommandArgs(
       continue;
     }
 
-    // Validate non-pattern arguments strictly
     for (const dangerousPattern of DANGEROUS_PATTERNS) {
       if (dangerousPattern.test(arg)) {
         return {

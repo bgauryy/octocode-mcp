@@ -17,6 +17,7 @@ import {
   handleApiError,
   handleCatchError,
   createSuccessResult,
+  invokeCallbackSafely,
 } from './utils.js';
 
 export function registerViewGitHubRepoStructureTool(
@@ -47,12 +48,11 @@ export function registerViewGitHubRepoStructureTool(
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
-        if (callback) {
-          try {
-            await callback(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, queries);
-            // eslint-disable-next-line no-empty
-          } catch {}
-        }
+        await invokeCallbackSafely(
+          callback,
+          TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+          queries
+        );
 
         return exploreMultipleRepositoryStructures(
           queries,
@@ -190,12 +190,22 @@ async function exploreMultipleRepositoryStructures(
         // Extract API-generated hints (pagination hints, etc.)
         const apiHints = apiResult.hints || [];
 
+        // Count entries for context-aware hints
+        const entryCount = Object.values(filteredStructure).reduce(
+          (sum, entry) => sum + entry.files.length + entry.folders.length,
+          0
+        );
+
+        // Use unified pattern: context for dynamic hints, extraHints for API pagination hints
         return createSuccessResult(
           query,
           resultData,
           hasContent,
           TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-          apiHints
+          {
+            hintContext: { entryCount },
+            extraHints: apiHints,
+          }
         );
       } catch (error) {
         const catchError = handleCatchError(

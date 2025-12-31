@@ -1,65 +1,75 @@
 import type { GitHubAPIError } from '../github/githubAPI';
-import type { ToolErrorResult, ToolSuccessResult } from '../types.js';
-import { getToolHintsSync } from './toolMetadata.js';
+import type {
+  ToolErrorResult,
+  ToolSuccessResult,
+  ToolInvocationCallback,
+} from '../types.js';
+import type { HintContext } from '../types/metadata.js';
+import { getHints } from './hints/index.js';
 import { logSessionError } from '../session.js';
 import { TOOL_ERRORS } from '../errorCodes.js';
+import { createErrorResult } from '../utils/errorResult.js';
 
-function extractApiErrorHints(apiError: GitHubAPIError): string[] {
-  const hints: string[] = [];
+export { createErrorResult };
 
-  hints.push(`GitHub Octokit API Error: ${apiError.error}`);
-
-  if (apiError.scopesSuggestion) {
-    hints.push(apiError.scopesSuggestion);
-  }
-
-  if (
-    apiError.rateLimitRemaining !== undefined &&
-    apiError.rateLimitReset !== undefined
-  ) {
-    const resetDate = new Date(apiError.rateLimitReset);
-    hints.push(
-      `Rate limit: ${apiError.rateLimitRemaining} remaining, resets at ${resetDate.toLocaleTimeString()}`
+/**
+ * Safely invoke a tool invocation callback with error logging.
+ * Errors are logged but not thrown - callback failures shouldn't block tool execution.
+ */
+export async function invokeCallbackSafely(
+  callback: ToolInvocationCallback | undefined,
+  toolName: string,
+  queries: unknown[]
+): Promise<void> {
+  if (!callback) return;
+  try {
+    await callback(toolName, queries);
+  } catch {
+    // Log callback failure to session for monitoring
+    logSessionError(toolName, TOOL_ERRORS.EXECUTION_FAILED.code).catch(
+      () => {}
     );
   }
-
-  if (apiError.retryAfter !== undefined) {
-    hints.push(`Retry after ${apiError.retryAfter} seconds`);
-  }
-
-  return hints;
 }
 
 /**
- * Create error result for GitHub API tools
- * Handles GitHub API errors with rate limits, scopes suggestions, etc.
+ * Options for createSuccessResult hint generation
  */
-export function createErrorResult(
-  query: {
-    mainResearchGoal?: string;
-    researchGoal?: string;
-    reasoning?: string;
-  },
-  error: string | GitHubAPIError,
-  apiError?: GitHubAPIError
-): ToolErrorResult {
-  const hints = apiError ? extractApiErrorHints(apiError) : undefined;
-
-  const result: ToolErrorResult = {
-    status: 'error',
-    mainResearchGoal: query.mainResearchGoal,
-    researchGoal: query.researchGoal,
-    reasoning: query.reasoning,
-    error,
-  };
-
-  if (hints && hints.length > 0) {
-    result.hints = hints;
-  }
-
-  return result;
+export interface SuccessResultOptions {
+  /** Context for generating dynamic hints */
+  hintContext?: HintContext;
+  /** Additional custom hints to append (e.g., pagination hints) */
+  extraHints?: string[];
 }
 
+/**
+ * Create a success result with unified hint generation.
+ * Uses getHints() to combine static hints from metadata + dynamic context-aware hints.
+ *
+ * @param query - The original query with research context
+ * @param data - The result data
+ * @param hasContent - Whether the result has content (determines hasResults vs empty status)
+ * @param toolName - The tool name for hint lookup
+ * @param options - Options for hint generation (context and extra hints)
+ * @returns Formatted success result with hints
+ *
+ * @example
+ * // Basic usage (static hints only)
+ * createSuccessResult(query, data, true, 'githubSearchCode');
+ *
+ * @example
+ * // With context for dynamic hints
+ * createSuccessResult(query, data, true, 'githubSearchCode', {
+ *   hintContext: { hasOwnerRepo: true, match: 'file' }
+ * });
+ *
+ * @example
+ * // With extra hints (e.g., pagination)
+ * createSuccessResult(query, data, true, 'githubSearchCode', {
+ *   hintContext: { hasOwnerRepo: true },
+ *   extraHints: ['Page 1/5', 'Next: page=2']
+ * });
+ */
 export function createSuccessResult<T extends Record<string, unknown>>(
   query: {
     mainResearchGoal?: string;
@@ -69,7 +79,7 @@ export function createSuccessResult<T extends Record<string, unknown>>(
   data: T,
   hasContent: boolean,
   toolName: string,
-  customHints?: string[]
+  options?: SuccessResultOptions
 ): ToolSuccessResult<T> & T {
   const status = hasContent ? ('hasResults' as const) : ('empty' as const);
 
@@ -81,8 +91,14 @@ export function createSuccessResult<T extends Record<string, unknown>>(
     ...data,
   };
 
-  const staticHints = getToolHintsSync(toolName, status);
-  const allHints = [...staticHints, ...(customHints || [])];
+  // Use unified getHints() which combines static + dynamic hints
+  const hints = getHints(toolName, status, options?.hintContext);
+  const extraHints = options?.extraHints || [];
+
+  // Combine, deduplicate, and filter empty/whitespace-only hints
+  const allHints = [...new Set([...hints, ...extraHints])].filter(
+    h => h && h.trim().length > 0
+  );
 
   if (allHints.length > 0) {
     result.hints = allHints;
@@ -133,20 +149,14 @@ export function handleApiError(
     retryAfter: apiResult.retryAfter,
   };
 
-  const apiHints = apiResult.hints;
+  const externalHints = apiResult.hints || [];
 
-  const combinedHints = [
-    ...(apiHints || []),
-    ...extractApiErrorHints(apiError),
-  ];
+  const errorResult = createErrorResult(apiError, query, {
+    hintSourceError: apiError,
+    customHints: externalHints,
+  });
 
-  const errorResult = createErrorResult(query, apiError, apiError);
-
-  if (combinedHints.length > 0) {
-    errorResult.hints = combinedHints;
-  }
-
-  return errorResult;
+  return errorResult as ToolErrorResult;
 }
 
 export function handleCatchError(
@@ -171,5 +181,5 @@ export function handleCatchError(
     () => {}
   );
 
-  return createErrorResult(query, fullErrorMessage);
+  return createErrorResult(fullErrorMessage, query) as ToolErrorResult;
 }

@@ -241,7 +241,7 @@ describe('GitHubReposSearchQuerySchema', () => {
         queries: [
           withBaseFields({
             keywordsToSearch: ['test'],
-            limit: 21,
+            limit: 101, // Max is 100
           }),
         ],
       };

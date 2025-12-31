@@ -28,10 +28,18 @@ const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
     .number()
     .int()
     .min(1)
-    .max(10)
+    .max(100)
     .default(10)
     .optional()
     .describe(GITHUB_SEARCH_REPOS.resultLimit.limit),
+  page: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .default(1)
+    .optional()
+    .describe(GITHUB_SEARCH_REPOS.pagination.page),
 }).refine(
   data =>
     (data.keywordsToSearch && data.keywordsToSearch.length > 0) ||

@@ -7,6 +7,100 @@ export class RipgrepCommandBuilder extends BaseCommandBuilder {
     super('rg');
   }
 
+  /**
+   * Simple convenience method to set pattern and path with default flags
+   */
+  simple(pattern: string, path: string): this {
+    this.addFlag('-n');
+    this.addFlag('--column');
+    this.addFlag('-S'); // smart case by default
+    this.addOption('--color', 'never');
+    this.addOption('--sort', 'path');
+    this.addArg(pattern);
+    this.addArg(path);
+    return this;
+  }
+
+  /**
+   * Enable smart case sensitivity
+   */
+  smartCase(): this {
+    this.addFlag('-S');
+    return this;
+  }
+
+  /**
+   * Only show filenames with matches
+   */
+  filesOnly(): this {
+    this.addFlag('-l');
+    return this;
+  }
+
+  /**
+   * Show context lines around matches
+   */
+  context(lines: number): this {
+    this.addOption('-C', lines);
+    return this;
+  }
+
+  /**
+   * Include only files matching glob pattern
+   */
+  include(pattern: string): this {
+    this.addOption('-g', pattern);
+    return this;
+  }
+
+  /**
+   * Exclude files matching glob pattern
+   */
+  exclude(pattern: string): this {
+    this.addOption('-g', `!${pattern}`);
+    return this;
+  }
+
+  /**
+   * Exclude directory from search
+   */
+  excludeDir(dir: string): this {
+    this.addOption('-g', `!${dir}/`);
+    return this;
+  }
+
+  /**
+   * Filter by file type
+   */
+  type(fileType: string): this {
+    this.addOption('-t', fileType);
+    return this;
+  }
+
+  /**
+   * Treat pattern as fixed string (not regex)
+   */
+  fixedString(): this {
+    this.addFlag('-F');
+    return this;
+  }
+
+  /**
+   * Use Perl-compatible regex
+   */
+  perlRegex(): this {
+    this.addFlag('-P');
+    return this;
+  }
+
+  /**
+   * Limit max matches per file
+   */
+  maxMatches(count: number): this {
+    this.addOption('-m', count);
+    return this;
+  }
+
   fromQuery(query: RipgrepQuery): this {
     if (query.fixedString) {
       this.addFlag('-F');
@@ -200,68 +294,6 @@ export class RipgrepCommandBuilder extends BaseCommandBuilder {
     result.push(...complexGlobs);
 
     return result;
-  }
-
-  simple(pattern: string, path: string): this {
-    this.addFlag('-n');
-    this.addFlag('--column');
-    this.addFlag('-S');
-    this.addFlag('--json');
-    this.addOption('--sort', 'path');
-    this.addOption('--color', 'never');
-    this.addArg(pattern);
-    this.addArg(path);
-    return this;
-  }
-
-  smartCase(): this {
-    this.addFlag('-S');
-    return this;
-  }
-
-  filesOnly(): this {
-    this.addFlag('-l');
-    return this;
-  }
-
-  context(lines: number): this {
-    this.addOption('-C', lines);
-    return this;
-  }
-
-  include(pattern: string): this {
-    this.addOption('-g', pattern);
-    return this;
-  }
-
-  exclude(pattern: string): this {
-    this.addOption('-g', `!${pattern}`);
-    return this;
-  }
-
-  excludeDir(dir: string): this {
-    this.addOption('-g', `!${dir}/`);
-    return this;
-  }
-
-  type(fileType: string): this {
-    this.addOption('-t', fileType);
-    return this;
-  }
-
-  fixedString(): this {
-    this.addFlag('-F');
-    return this;
-  }
-
-  perlRegex(): this {
-    this.addFlag('-P');
-    return this;
-  }
-
-  maxMatches(count: number): this {
-    this.addOption('-m', count);
-    return this;
   }
 
   /**

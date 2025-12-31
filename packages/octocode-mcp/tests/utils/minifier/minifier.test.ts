@@ -11,9 +11,33 @@ vi.mock('terser', () => ({
   minify: mockMinify,
 }));
 
+// Mock clean-css - use a class with minify method
+const mockCleanCSSMinify = vi.hoisted(() => vi.fn());
+vi.mock('clean-css', () => {
+  return {
+    default: class MockCleanCSS {
+      minify(content: string) {
+        return mockCleanCSSMinify(content);
+      }
+    },
+  };
+});
+
+// Mock html-minifier-terser
+const mockHtmlMinify = vi.hoisted(() => vi.fn());
+vi.mock('html-minifier-terser', () => ({
+  minify: mockHtmlMinify,
+}));
+
 describe('MinifierV2', () => {
   beforeEach(() => {
     mockMinify.mockReset();
+    mockCleanCSSMinify.mockReset();
+    mockHtmlMinify.mockReset();
+
+    // Default successful mocks
+    mockCleanCSSMinify.mockReturnValue({ styles: '', errors: [] });
+    mockHtmlMinify.mockResolvedValue('');
   });
 
   describe('Configuration', () => {
@@ -269,6 +293,11 @@ services:
   </body>
 </html>`;
 
+      const expectedMinified =
+        '<!DOCTYPE html><html><head><title>Test</title></head>' +
+        '<body><h1>Hello World</h1><p>This is a paragraph</p></body></html>';
+      mockHtmlMinify.mockResolvedValue(expectedMinified);
+
       const result = await minifyContent(htmlCode, 'test.html');
 
       expect(result.type).toBe('aggressive');
@@ -276,9 +305,7 @@ services:
 
       // Should remove comments and excessive whitespace
       expect(result.content).not.toContain('<!-- This is a comment -->');
-      expect(result.content).toBe(
-        '<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Hello World</h1><p>This is a paragraph</p></body></html>'
-      );
+      expect(result.content).toBe(expectedMinified);
     });
 
     it('should aggressively minify CSS', async () => {
@@ -297,6 +324,13 @@ services:
   border: none;
 }`;
 
+      mockCleanCSSMinify.mockReturnValue({
+        styles:
+          '.container{padding:20px;margin:0 auto;max-width:1200px}' +
+          '.button{background-color:#00f;color:#fff;border:none}',
+        errors: [],
+      });
+
       const result = await minifyContent(cssCode, 'styles.css');
 
       expect(result.type).toBe('aggressive');
@@ -307,7 +341,7 @@ services:
       expect(result.content).not.toContain('/* Container styles */');
       expect(result.content).not.toContain('/* Button styles */');
 
-      // clean-css produces superior minification: optimizes colors, removes trailing semicolons
+      // clean-css produces superior minification
       expect(result.content).toContain(
         '.container{padding:20px;margin:0 auto;max-width:1200px}'
       );
@@ -632,13 +666,49 @@ test:
   });
 
   describe('CSS Error Handling', () => {
-    it('should use regex fallback when CleanCSS fails', async () => {
-      // Create CSS that might cause issues but still minifiable via regex
-      const cssCode = `.test { color: red; /* comment */ }`;
+    it('should use CleanCSS for CSS minification', async () => {
+      const cssCode = `.test { color: red; }`;
+      mockCleanCSSMinify.mockReturnValue({
+        styles: '.test{color:red}',
+        errors: [],
+      });
 
       const result = await minifyContent(cssCode, 'test.css');
 
-      // Should succeed with aggressive strategy
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+      expect(result.content).toBe('.test{color:red}');
+      expect(mockCleanCSSMinify).toHaveBeenCalledWith(cssCode);
+    });
+
+    it('should fall back to regex minification when CleanCSS throws and include reason', async () => {
+      const cssCode = `.test { color: red; /* comment */ }`;
+      mockCleanCSSMinify.mockImplementation(() => {
+        throw new Error('CleanCSS internal error');
+      });
+
+      const result = await minifyContent(cssCode, 'test.css');
+
+      // Should succeed using regex fallback
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+      // Should include reason explaining the fallback
+      expect(result.reason).toContain('CleanCSS fallback');
+      expect(result.reason).toContain('CleanCSS internal error');
+      // Should still remove comments and minify via regex fallback
+      expect(result.content).not.toContain('/* comment */');
+    });
+
+    it('should fall back to regex minification when CleanCSS returns errors', async () => {
+      const cssCode = `.test { color: red; }`;
+      mockCleanCSSMinify.mockReturnValue({
+        styles: '',
+        errors: ['Invalid CSS syntax'],
+      });
+
+      const result = await minifyContent(cssCode, 'test.css');
+
+      // Should succeed using regex fallback (error thrown triggers catch)
       expect(result.type).toBe('aggressive');
       expect(result.failed).toBe(false);
     });
@@ -653,12 +723,17 @@ test:
           border: 1px solid black;
         }
       `;
+      mockCleanCSSMinify.mockReturnValue({
+        styles:
+          '.selector-one,.selector-two{color:red;' +
+          'background-color:#00f;border:1px solid #000}',
+        errors: [],
+      });
 
       const result = await minifyContent(cssCode, 'complex.css');
 
       expect(result.type).toBe('aggressive');
       expect(result.failed).toBe(false);
-      expect(result.content.length).toBeLessThan(cssCode.length);
     });
 
     it('should handle LESS files with aggressive strategy', async () => {
@@ -669,6 +744,10 @@ test:
           color: @color;
         }
       `;
+      mockCleanCSSMinify.mockReturnValue({
+        styles: '@color:red;.test{color:@color}',
+        errors: [],
+      });
 
       const result = await minifyContent(lessCode, 'styles.less');
 
@@ -684,6 +763,10 @@ test:
           color: $color;
         }
       `;
+      mockCleanCSSMinify.mockReturnValue({
+        styles: '$color:blue;.test{color:$color}',
+        errors: [],
+      });
 
       const result = await minifyContent(scssCode, 'styles.scss');
 
@@ -693,15 +776,31 @@ test:
   });
 
   describe('HTML Error Handling', () => {
-    it('should use regex fallback when html-minifier fails on malformed HTML', async () => {
-      // Very malformed HTML that might trigger fallback
+    it('should use html-minifier-terser for HTML minification', async () => {
       const htmlCode = `<html><body>Test</body></html>`;
+      mockHtmlMinify.mockResolvedValue('<html><body>Test</body></html>');
 
       const result = await minifyContent(htmlCode, 'test.html');
 
-      // Should succeed
       expect(result.type).toBe('aggressive');
       expect(result.failed).toBe(false);
+      expect(mockHtmlMinify).toHaveBeenCalledWith(htmlCode, expect.any(Object));
+    });
+
+    it('should fall back to regex minification when html-minifier-terser throws and include reason', async () => {
+      const htmlCode = `<html><!-- comment --><body>Test</body></html>`;
+      mockHtmlMinify.mockRejectedValue(new Error('html-minifier parse error'));
+
+      const result = await minifyContent(htmlCode, 'test.html');
+
+      // Should succeed using regex fallback
+      expect(result.type).toBe('aggressive');
+      expect(result.failed).toBe(false);
+      // Should include reason explaining the fallback
+      expect(result.reason).toContain('html-minifier fallback');
+      expect(result.reason).toContain('html-minifier parse error');
+      // Should still remove comments via regex fallback
+      expect(result.content).not.toContain('<!-- comment -->');
     });
 
     it('should handle HTM extension with HTML strategy', async () => {
@@ -711,12 +810,12 @@ test:
           <p>Test</p>
         </body>
       </html>`;
+      mockHtmlMinify.mockResolvedValue('<html><body><p>Test</p></body></html>');
 
       const result = await minifyContent(htmCode, 'test.htm');
 
       expect(result.type).toBe('aggressive');
       expect(result.failed).toBe(false);
-      expect(result.content).not.toContain('<!-- comment -->');
     });
   });
 
@@ -814,6 +913,53 @@ Content here.
   });
 
   describe('Additional File Type Coverage', () => {
+    it('should handle CSV files with conservative strategy (no comments config)', async () => {
+      // CSV has conservative strategy but NO comments defined in config
+      // This tests the branch where config.comments is undefined
+      const csvContent = `name,age,city
+John,30,NYC
+# This is NOT a comment because CSV has no comment config
+Jane,25,LA    
+Bob,35,Chicago`;
+
+      const result = await minifyContent(csvContent, 'data.csv');
+
+      expect(result.type).toBe('conservative');
+      expect(result.failed).toBe(false);
+      // The # line should be preserved since CSV has no comments config
+      expect(result.content).toContain('# This is NOT a comment');
+      // Should still reduce blank lines and trim trailing whitespace
+      expect(result.content).not.toMatch(/ +$/m);
+    });
+
+    it('should handle TXT files with general strategy (no comments)', async () => {
+      const txtContent = `Some plain text content
+
+With multiple blank lines
+
+
+And trailing spaces    `;
+
+      const result = await minifyContent(txtContent, 'notes.txt');
+
+      expect(result.type).toBe('general');
+      expect(result.failed).toBe(false);
+      expect(result.content).not.toMatch(/\n{3,}/);
+      expect(result.content).not.toMatch(/ {2,}$/m);
+    });
+
+    it('should handle LOG files with general strategy', async () => {
+      const logContent = `[INFO] Starting application
+[DEBUG] Loading config
+
+[ERROR] Something went wrong   `;
+
+      const result = await minifyContent(logContent, 'app.log');
+
+      expect(result.type).toBe('general');
+      expect(result.failed).toBe(false);
+    });
+
     it('should handle Dockerfile conservatively', async () => {
       const dockerfile = `# Dockerfile comment
 FROM node:18

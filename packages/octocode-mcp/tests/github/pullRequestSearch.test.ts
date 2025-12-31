@@ -186,6 +186,7 @@ describe('Pull Request Search', () => {
         repo: 'repo',
         state: 'open',
         per_page: 30,
+        page: 1,
         sort: 'created',
         direction: 'desc',
       });

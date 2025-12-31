@@ -1,4 +1,5 @@
-import { executeNpmCommand } from './exec.js';
+import { executeNpmCommand } from './exec/index.js';
+import { generateCacheKey, withDataCache } from './cache.js';
 import {
   PackageSearchAPIResult,
   PackageSearchError,
@@ -282,12 +283,26 @@ export async function searchNpmPackage(
   limit: number,
   fetchMetadata: boolean
 ): Promise<PackageSearchAPIResult | PackageSearchError> {
-  // If limit is > 1, we want to see alternatives, so force a search
-  // even if the name looks like an exact match.
-  if (limit === 1 && isExactPackageName(packageName)) {
-    return fetchNpmPackageByView(packageName, fetchMetadata);
-  }
-  return searchNpmPackageViaSearch(packageName, limit, fetchMetadata);
+  const cacheKey = generateCacheKey('npm-search', {
+    name: packageName,
+    limit,
+    metadata: fetchMetadata,
+  });
+
+  return withDataCache(
+    cacheKey,
+    async () => {
+      // If limit is > 1, we want to see alternatives, so force a search
+      // even if the name looks like an exact match.
+      if (limit === 1 && isExactPackageName(packageName)) {
+        return fetchNpmPackageByView(packageName, fetchMetadata);
+      }
+      return searchNpmPackageViaSearch(packageName, limit, fetchMetadata);
+    },
+    {
+      shouldCache: result => !('error' in result),
+    }
+  );
 }
 
 export async function checkNpmDeprecation(

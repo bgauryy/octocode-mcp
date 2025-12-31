@@ -7,28 +7,15 @@
  * Error codes for internal tracking and testing
  */
 export const ERROR_CODES = {
-  // Authentication Errors (401)
   AUTH_REQUIRED: 'AUTH_REQUIRED',
-
-  // Forbidden Errors (403)
   RATE_LIMIT_PRIMARY: 'RATE_LIMIT_PRIMARY',
   RATE_LIMIT_SECONDARY: 'RATE_LIMIT_SECONDARY',
   FORBIDDEN_PERMISSIONS: 'FORBIDDEN_PERMISSIONS',
-
-  // Not Found Errors (404)
   NOT_FOUND: 'NOT_FOUND',
-
-  // Validation Errors (422)
   INVALID_REQUEST: 'INVALID_REQUEST',
-
-  // Server Errors (502, 503, 504)
   SERVER_UNAVAILABLE: 'SERVER_UNAVAILABLE',
-
-  // Network Errors
   NETWORK_CONNECTION_FAILED: 'NETWORK_CONNECTION_FAILED',
   REQUEST_TIMEOUT: 'REQUEST_TIMEOUT',
-
-  // Unknown Errors
   UNKNOWN: 'UNKNOWN',
 } as const;
 

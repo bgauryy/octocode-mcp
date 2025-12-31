@@ -64,7 +64,7 @@
  *
  * // Step 2: Apply mocks
  * vi.mock('fs', () => fsMocks);
- * vi.mock('../../src/utils/local/utils/exec.js', () => execMocks);
+ * vi.mock('../../src/utils/exec/index.js', () => execMocks);
  * vi.mock('../../src/security/pathValidator.js', () => pathValidatorMocks);
  *
  * // Step 3: Import module under test
@@ -408,7 +408,7 @@ const { fsMocks, execMocks, pathValidatorMocks, mocks, createStats, helpers } = 
 
 // Step 2: Apply mocks
 vi.mock('fs', () => fsMocks);
-vi.mock('../../src/utils/local/utils/exec.js', () => execMocks);
+vi.mock('../../src/utils/exec/index.js', () => execMocks);
 vi.mock('../../src/security/pathValidator.js', () => pathValidatorMocks);
 
 // Step 3: Import module under test

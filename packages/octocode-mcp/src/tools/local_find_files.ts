@@ -1,12 +1,18 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { FindCommandBuilder } from '../commands/FindCommandBuilder.js';
-import { safeExec } from '../utils/local/utils/exec.js';
-import { getToolHints } from './hints.js';
+import {
+  safeExec,
+  checkCommandAvailability,
+  getMissingCommandError,
+} from '../utils/exec/index.js';
+import { getHints } from './hints/index.js';
 import {
   generatePaginationHints,
   serializeForPagination,
   createPaginationInfo,
   type PaginationMetadata,
-} from '../utils/local/utils/pagination.js';
+} from '../utils/pagination/index.js';
 import {
   validateToolPath,
   createErrorResult,
@@ -19,12 +25,61 @@ import type {
 } from '../utils/types.js';
 import fs from 'fs';
 import { ToolErrors, type LocalToolErrorCode } from '../errorCodes.js';
+import { TOOL_NAMES } from './toolMetadata.js';
+import { executeBulkOperation } from '../utils/bulkOperations.js';
+import {
+  BulkFindFilesSchema,
+  LOCAL_FIND_FILES_DESCRIPTION,
+} from '../scheme/local_find_files.js';
+
+/**
+ * Register the local find files tool with the MCP server.
+ * Follows the same pattern as GitHub tools for consistency.
+ */
+export function registerLocalFindFilesTool(server: McpServer) {
+  return server.registerTool(
+    TOOL_NAMES.LOCAL_FIND_FILES,
+    {
+      description: LOCAL_FIND_FILES_DESCRIPTION,
+      inputSchema: BulkFindFilesSchema,
+      annotations: {
+        title: 'Local Find Files',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (args: { queries: FindFilesQuery[] }): Promise<CallToolResult> => {
+      return executeBulkOperation<FindFilesQuery, Record<string, unknown>>(
+        args.queries || [],
+        async query => await findFiles(query),
+        { toolName: TOOL_NAMES.LOCAL_FIND_FILES }
+      );
+    }
+  );
+}
 
 export async function findFiles(
   query: FindFilesQuery
 ): Promise<FindFilesResult> {
+  const details = query.details ?? true;
+  const showLastModified = query.showFileLastModified ?? false;
+
   try {
-    const validation = validateToolPath(query, 'LOCAL_FIND_FILES');
+    // Check if find command is available
+    const findAvailability = await checkCommandAvailability('find');
+    if (!findAvailability.available) {
+      const toolError = ToolErrors.commandNotAvailable(
+        'find',
+        getMissingCommandError('find')
+      );
+      return createErrorResult(toolError, query, {
+        toolName: TOOL_NAMES.LOCAL_FIND_FILES,
+      }) as FindFilesResult;
+    }
+
+    const validation = validateToolPath(query, TOOL_NAMES.LOCAL_FIND_FILES);
     if (!validation.isValid) {
       return validation.errorResult as FindFilesResult;
     }
@@ -35,15 +90,17 @@ export async function findFiles(
     const result = await safeExec(command, args);
 
     if (!result.success) {
+      // Provide more detailed error message including stderr
+      const stderrMsg = result.stderr?.trim();
       const toolError = ToolErrors.commandExecutionFailed(
         'find',
-        new Error(result.stderr)
+        new Error(stderrMsg || 'Unknown error'),
+        stderrMsg
       );
-      return createErrorResult(
-        toolError,
-        'LOCAL_FIND_FILES',
-        query
-      ) as FindFilesResult;
+      return createErrorResult(toolError, query, {
+        toolName: TOOL_NAMES.LOCAL_FIND_FILES,
+        extra: { stderr: stderrMsg },
+      }) as FindFilesResult;
     }
 
     let filePaths = result.stdout
@@ -56,11 +113,36 @@ export async function findFiles(
 
     const files: FoundFile[] = await getFileDetails(
       filePaths,
-      query.showFileLastModified
+      showLastModified
     );
 
+    if (details) {
+      await Promise.all(
+        files.map(async file => {
+          if (
+            file.size === undefined ||
+            !file.permissions ||
+            (showLastModified && !file.modified)
+          ) {
+            try {
+              const stats = await fs.promises.lstat(file.path);
+              if (file.size === undefined) file.size = stats.size;
+              if (!file.permissions) {
+                file.permissions = stats.mode.toString(8).slice(-3);
+              }
+              if (showLastModified && !file.modified) {
+                file.modified = stats.mtime.toISOString();
+              }
+            } catch {
+              // ignore fallback failures; proceed with available data
+            }
+          }
+        })
+      );
+    }
+
     files.sort((a, b) => {
-      if (query.showFileLastModified && a.modified && b.modified) {
+      if (showLastModified && a.modified && b.modified) {
         return new Date(b.modified).getTime() - new Date(a.modified).getTime();
       }
       // Fallback to path sorting when modified is not available
@@ -72,11 +154,11 @@ export async function findFiles(
         path: f.path,
         type: f.type,
       };
-      if (query.details) {
+      if (details) {
         if (f.size !== undefined) result.size = f.size;
         if (f.permissions) result.permissions = f.permissions;
       }
-      if (query.showFileLastModified && f.modified) {
+      if (showLastModified && f.modified) {
         result.modified = f.modified;
       }
       return result;
@@ -96,7 +178,7 @@ export async function findFiles(
       {
         threshold: 100,
         itemType: 'file',
-        detailed: query.details,
+        detailed: details,
       }
     );
     if (safetyCheck.shouldBlock) {
@@ -149,8 +231,6 @@ export async function findFiles(
           const itemStart = currentPos;
           const itemEnd = itemStart + itemLen;
 
-          // Logic: Include item if it overlaps with the requested window
-          // [startOffset, endLimit]
           const overlaps = itemStart < endLimit && itemEnd > startOffset;
 
           if (overlaps) {
@@ -189,7 +269,7 @@ export async function findFiles(
       filePageNumber < totalPages
         ? `Next: filePageNumber=${filePageNumber + 1}`
         : 'Final page',
-      query.showFileLastModified
+      showLastModified
         ? 'Sorted by modification time (most recent first)'
         : 'Sorted by path',
     ];
@@ -213,20 +293,18 @@ export async function findFiles(
       reasoning: query.reasoning,
       hints: [
         ...filePaginationHints,
-        ...getToolHints('LOCAL_FIND_FILES', status),
+        ...getHints(TOOL_NAMES.LOCAL_FIND_FILES, status),
         ...(paginationMetadata
           ? generatePaginationHints(paginationMetadata, {
-              toolName: 'localFindFiles',
+              toolName: TOOL_NAMES.LOCAL_FIND_FILES,
             })
           : []),
       ],
     };
   } catch (error) {
-    return createErrorResult(
-      error,
-      'LOCAL_FIND_FILES',
-      query
-    ) as FindFilesResult;
+    return createErrorResult(error, query, {
+      toolName: TOOL_NAMES.LOCAL_FIND_FILES,
+    }) as FindFilesResult;
   }
 }
 

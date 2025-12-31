@@ -3,59 +3,56 @@
  */
 
 import { z } from 'zod';
+import { BaseQuerySchemaLocal, createBulkQuerySchema } from './baseSchema.js';
 import {
-  BaseQuerySchemaLocal,
-  createBulkQuerySchemaLocal,
-  COMMON_PAGINATION_DESCRIPTIONS,
-} from './baseSchema.js';
-import { TOOL_NAMES } from '../utils/constants.js';
+  LOCAL_FETCH_CONTENT,
+  TOOL_NAMES,
+  DESCRIPTIONS,
+} from '../tools/toolMetadata.js';
 
 /**
- * Tool description for MCP registration
+ * Tool description for localGetFileContent
  */
-export const LOCAL_FETCH_CONTENT_DESCRIPTION = `Purpose: Read targeted file sections or paginated content.
-
-Use when: You have a path (from ripgrep/find_files). Not for discovery.
-Workflow: Prefer matchString (+context). For full file, use charLength.
-Large files: Avoid fullContent without charLength; prefer matchString.
-Tips: minified=true (default) to reduce tokens; batch queries when safe.
-
-Examples:
-- matchString: "class UserService", matchStringContextLines: 5
-- matchString: "export.*function", matchStringIsRegex: true
-- fullContent: true, charLength: 5000, charOffset: 0
-`;
+export const LOCAL_FETCH_CONTENT_DESCRIPTION =
+  DESCRIPTIONS[TOOL_NAMES.LOCAL_FETCH_CONTENT] ||
+  'Read file content with optional pattern matching';
 
 /**
- * Schema descriptions for fetch content parameters
+ * Base schema for fetching file content (before refinement)
  */
-const FETCH_CONTENT_DESCRIPTIONS = {
-  path: 'File path (absolute or relative).',
-  fullContent:
-    'Return entire file (token-expensive; prefer matchString for sections).',
-  matchString:
-    'Search pattern — returns matches with context (token-efficient; pairs well with ripgrep).',
-  matchStringContextLines: 'Context lines around matches (1–50, default 5).',
-  minified: 'Minify content for token efficiency (default true).',
-} as const;
-
-/**
- * Single query schema for fetching file content
- */
-export const FetchContentQuerySchema = BaseQuerySchemaLocal.extend({
-  path: z.string().min(1).describe(FETCH_CONTENT_DESCRIPTIONS.path),
+const FetchContentBaseSchema = BaseQuerySchemaLocal.extend({
+  path: z.string().min(1).describe(LOCAL_FETCH_CONTENT.scope.path),
 
   fullContent: z
     .boolean()
     .default(false)
+    .describe(LOCAL_FETCH_CONTENT.options.fullContent),
+
+  // Line range extraction (aligned with GitHub's githubGetFileContent)
+  startLine: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
     .describe(
-      'Return entire file. For large files, use with charLength for pagination.'
+      LOCAL_FETCH_CONTENT.range?.startLine ??
+        'Start line (1-indexed). Use with endLine for line range extraction.'
+    ),
+
+  endLine: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe(
+      LOCAL_FETCH_CONTENT.range?.endLine ??
+        'End line (1-indexed, inclusive). Use with startLine for line range extraction.'
     ),
 
   matchString: z
     .string()
     .optional()
-    .describe(FETCH_CONTENT_DESCRIPTIONS.matchString),
+    .describe(LOCAL_FETCH_CONTENT.options.matchString),
 
   matchStringContextLines: z
     .number()
@@ -63,46 +60,99 @@ export const FetchContentQuerySchema = BaseQuerySchemaLocal.extend({
     .min(1)
     .max(50)
     .default(5)
-    .describe(FETCH_CONTENT_DESCRIPTIONS.matchStringContextLines),
+    .describe(LOCAL_FETCH_CONTENT.options.matchStringContextLines),
 
   matchStringIsRegex: z
     .boolean()
     .optional()
     .default(false)
-    .describe('Treat matchString as regex (default: false for literal).'),
+    .describe(LOCAL_FETCH_CONTENT.options.matchStringIsRegex),
 
   matchStringCaseSensitive: z
     .boolean()
     .optional()
     .default(false)
-    .describe('Case-sensitive matching (default: false).'),
-
-  minified: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe(FETCH_CONTENT_DESCRIPTIONS.minified),
+    .describe(LOCAL_FETCH_CONTENT.options.matchStringCaseSensitive),
 
   charOffset: z
     .number()
     .min(0)
     .optional()
-    .describe(COMMON_PAGINATION_DESCRIPTIONS.charOffset),
+    .describe(LOCAL_FETCH_CONTENT.pagination.charOffset),
 
   charLength: z
     .number()
     .min(1)
     .max(10000)
     .optional()
-    .describe(COMMON_PAGINATION_DESCRIPTIONS.charLength),
+    .describe(LOCAL_FETCH_CONTENT.pagination.charLength),
 });
+
+/**
+ * Single query schema for fetching file content with validation
+ */
+export const FetchContentQuerySchema = FetchContentBaseSchema.superRefine(
+  (data, ctx) => {
+    // startLine and endLine must be used together
+    if (
+      (data.startLine !== undefined && data.endLine === undefined) ||
+      (data.startLine === undefined && data.endLine !== undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'startLine and endLine must be used together',
+        path: ['startLine'],
+      });
+    }
+
+    // startLine must be <= endLine
+    if (
+      data.startLine !== undefined &&
+      data.endLine !== undefined &&
+      data.startLine > data.endLine
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'startLine must be less than or equal to endLine',
+        path: ['startLine'],
+      });
+    }
+
+    // Cannot use startLine/endLine with matchString
+    if (
+      (data.startLine !== undefined || data.endLine !== undefined) &&
+      data.matchString !== undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Cannot use startLine/endLine with matchString - choose one extraction method',
+        path: ['startLine'],
+      });
+    }
+
+    // Cannot use startLine/endLine with fullContent
+    if (
+      (data.startLine !== undefined || data.endLine !== undefined) &&
+      data.fullContent === true
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Cannot use startLine/endLine with fullContent - line extraction is partial by definition',
+        path: ['fullContent'],
+      });
+    }
+  }
+);
 
 /**
  * Bulk query schema for fetching multiple file contents
  */
-export const BulkFetchContentSchema = createBulkQuerySchemaLocal(
+export const BulkFetchContentSchema = createBulkQuerySchema(
   TOOL_NAMES.LOCAL_FETCH_CONTENT,
-  FetchContentQuerySchema
+  FetchContentQuerySchema,
+  { maxQueries: 5 }
 );
 
 export type FetchContentQuery = z.infer<typeof FetchContentQuerySchema>;

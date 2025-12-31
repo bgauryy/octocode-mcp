@@ -88,7 +88,6 @@ export function printWelcome(): void {
   console.log();
   printTitle();
   console.log();
-  console.log(dim('      Install and configure octocode-mcp'));
   console.log();
 
   try {

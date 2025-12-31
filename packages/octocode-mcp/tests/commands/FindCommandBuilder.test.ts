@@ -151,7 +151,8 @@ describe('FindCommandBuilder', () => {
       expect(args).toContain('.*\\.test\\.ts$');
     });
 
-    it('should handle regex with custom type', () => {
+    it('should handle regex with custom type (platform-aware)', () => {
+      // This test is platform-aware - regexType only works on Linux
       const builder = new FindCommandBuilder();
       const { args } = builder
         .fromQuery({
@@ -161,10 +162,17 @@ describe('FindCommandBuilder', () => {
         })
         .build();
 
-      expect(args).toContain('-regextype');
-      expect(args).toContain('posix-extended');
       expect(args).toContain('-regex');
       expect(args).toContain('.*test.*');
+
+      // Platform-specific assertions
+      if (process.platform === 'linux') {
+        expect(args).toContain('-regextype');
+        expect(args).toContain('posix-extended');
+      } else if (process.platform === 'darwin') {
+        expect(args).toContain('-E');
+        expect(args).not.toContain('-regextype');
+      }
     });
 
     it('should handle empty flag', () => {
@@ -296,31 +304,47 @@ describe('FindCommandBuilder', () => {
       expect(args).toContain('755');
     });
 
-    it('should handle executable flag', () => {
+    it('should handle executable flag (platform-aware)', () => {
       const builder = new FindCommandBuilder();
       const { args } = builder
         .fromQuery({ path: '/test', executable: true })
         .build();
 
-      expect(args).toContain('-executable');
+      // Platform-specific: Linux uses -executable, macOS uses -perm
+      if (process.platform === 'linux') {
+        expect(args).toContain('-executable');
+      } else {
+        expect(args).toContain('-perm');
+        expect(args).toContain('+111');
+      }
     });
 
-    it('should handle readable flag', () => {
+    it('should handle readable flag (platform-aware)', () => {
       const builder = new FindCommandBuilder();
       const { args } = builder
         .fromQuery({ path: '/test', readable: true })
         .build();
 
-      expect(args).toContain('-readable');
+      if (process.platform === 'linux') {
+        expect(args).toContain('-readable');
+      } else {
+        expect(args).toContain('-perm');
+        expect(args).toContain('+444');
+      }
     });
 
-    it('should handle writable flag', () => {
+    it('should handle writable flag (platform-aware)', () => {
       const builder = new FindCommandBuilder();
       const { args } = builder
         .fromQuery({ path: '/test', writable: true })
         .build();
 
-      expect(args).toContain('-writable');
+      if (process.platform === 'linux') {
+        expect(args).toContain('-writable');
+      } else {
+        expect(args).toContain('-perm');
+        expect(args).toContain('+222');
+      }
     });
 
     it('should handle excludeDir', () => {
@@ -438,6 +462,209 @@ describe('FindCommandBuilder', () => {
 
       const originalArgs = builder.getArgs();
       expect(originalArgs).not.toContain('modified');
+    });
+  });
+
+  describe('cross-platform regex handling', () => {
+    it('should use -E flag for regex on macOS (before path)', () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({ path: '/test', regex: '.*\\.test\\.ts$' })
+        .build();
+
+      // -E must come before path on macOS
+      const eIndex = args.indexOf('-E');
+      const pathIndex = args.indexOf('/test');
+      expect(eIndex).toBeGreaterThanOrEqual(0);
+      expect(eIndex).toBeLessThan(pathIndex);
+      expect(args).not.toContain('-regextype');
+    });
+
+    it('should use -regextype for regex on Linux', () => {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({
+          path: '/test',
+          regex: '.*\\.test\\.ts$',
+          regexType: 'posix-egrep',
+        })
+        .build();
+
+      expect(args).toContain('-regextype');
+      expect(args).toContain('posix-egrep');
+      expect(args).not.toContain('-E');
+    });
+
+    it('should not add -regextype on macOS even if specified', () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({
+          path: '/test',
+          regex: '.*test.*',
+          regexType: 'posix-extended',
+        })
+        .build();
+
+      expect(args).toContain('-E');
+      expect(args).not.toContain('-regextype');
+    });
+  });
+
+  describe('command structure with excludeDir (BUG-002 fix)', () => {
+    it('should place type filter AFTER prune when excludeDir is used', () => {
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({
+          path: '/test',
+          type: 'f',
+          excludeDir: ['node_modules'],
+        })
+        .build();
+
+      const pruneIndex = args.indexOf('-prune');
+      const typeIndex = args.indexOf('-type');
+      const print0Index = args.indexOf('-print0');
+
+      expect(pruneIndex).toBeGreaterThan(-1);
+      expect(typeIndex).toBeGreaterThan(-1);
+      // -type must come AFTER -prune -o
+      expect(typeIndex).toBeGreaterThan(pruneIndex);
+      // -print0 must be at the end
+      expect(print0Index).toBe(args.length - 1);
+    });
+
+    it('should place name filters AFTER prune when excludeDir is used', () => {
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({
+          path: '/test',
+          names: ['*.json', '*.md'],
+          excludeDir: ['node_modules', 'dist'],
+        })
+        .build();
+
+      const pruneIndex = args.lastIndexOf('-prune');
+      const nameIndex = args.indexOf('-name');
+
+      expect(pruneIndex).toBeGreaterThan(-1);
+      expect(nameIndex).toBeGreaterThan(-1);
+      // -name must come AFTER the last -prune
+      expect(nameIndex).toBeGreaterThan(pruneIndex);
+    });
+
+    it('should have -o between prune and filters', () => {
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({
+          path: '/test',
+          type: 'f',
+          name: '*.ts',
+          excludeDir: ['node_modules'],
+        })
+        .build();
+
+      const pruneIndex = args.indexOf('-prune');
+      const typeIndex = args.indexOf('-type');
+
+      // There must be an -o between prune and type
+      const oBetween = args.slice(pruneIndex, typeIndex).includes('-o');
+      expect(oBetween).toBe(true);
+    });
+
+    it('should correctly structure complex query with multiple filters and excludes', () => {
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({
+          path: '/test',
+          type: 'f',
+          names: ['*.json', '*.md'],
+          excludeDir: ['node_modules', 'coverage', 'dist'],
+          maxDepth: 5,
+        })
+        .build();
+
+      // Verify structure: path, depth, prune block, -o, filters, -print0
+      const pathIndex = args.indexOf('/test');
+      const maxDepthIndex = args.indexOf('-maxdepth');
+      const lastPruneIndex = args.lastIndexOf('-prune');
+      const typeIndex = args.indexOf('-type');
+      const print0Index = args.indexOf('-print0');
+
+      expect(pathIndex).toBe(0);
+      expect(maxDepthIndex).toBeGreaterThan(pathIndex);
+      expect(lastPruneIndex).toBeGreaterThan(maxDepthIndex);
+      expect(typeIndex).toBeGreaterThan(lastPruneIndex);
+      expect(print0Index).toBe(args.length - 1);
+    });
+  });
+
+  describe('GNU-only flags on macOS', () => {
+    it('should not use -executable on macOS (use -perm alternative)', () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({ path: '/test', executable: true })
+        .build();
+
+      // Should NOT contain -executable (GNU-only)
+      expect(args).not.toContain('-executable');
+      // Should use -perm +111 or -perm /111 as alternative
+      expect(args).toContain('-perm');
+    });
+
+    it('should not use -readable on macOS (use -perm alternative)', () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({ path: '/test', readable: true })
+        .build();
+
+      expect(args).not.toContain('-readable');
+      expect(args).toContain('-perm');
+    });
+
+    it('should not use -writable on macOS (use -perm alternative)', () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({ path: '/test', writable: true })
+        .build();
+
+      expect(args).not.toContain('-writable');
+      expect(args).toContain('-perm');
+    });
+
+    it('should use -executable on Linux', () => {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({ path: '/test', executable: true })
+        .build();
+
+      expect(args).toContain('-executable');
+    });
+  });
+
+  describe('Windows platform handling', () => {
+    it('should throw error or return empty on Windows', () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+
+      const builder = new FindCommandBuilder();
+
+      // Either throw an error or return a result indicating unsupported
+      expect(() => {
+        builder.fromQuery({ path: 'C:\\test' }).build();
+      }).toThrow(/windows|unsupported|not supported/i);
     });
   });
 });

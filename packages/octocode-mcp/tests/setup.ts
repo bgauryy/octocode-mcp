@@ -1,11 +1,92 @@
 import { beforeEach, afterAll, vi } from 'vitest';
 import { initializeToolMetadata } from '../src/tools/toolMetadata';
-import content from '../src/tools/content.json';
+
+// Minimal mock content for tests - metadata is fetched from API in production
+// Schema requires: instructions, prompts, toolNames, baseSchema, tools, baseHints, genericErrorHints
+const mockToolHints = {
+  hasResults: ['Test hint for hasResults 1', 'Test hint for hasResults 2'],
+  empty: ['Test hint for empty 1', 'Test hint for empty 2'],
+};
+
+const mockToolSchema = {
+  name: 'mockTool',
+  description: 'Mock tool for testing',
+  schema: {},
+  hints: mockToolHints,
+};
+
+// githubGetFileContent needs specific schema fields for validation messages
+// Schema is a flat object with string values
+const githubFetchContentSchema = {
+  name: 'githubGetFileContent',
+  description: 'Read file content from GitHub',
+  schema: {
+    owner: 'GitHub owner',
+    repo: 'Repository name',
+    branch: 'Branch name',
+    path: 'File path',
+    startLine: 'Start line number',
+    endLine: 'End line number',
+    fullContent: 'Fetch full content',
+    matchString: 'Match string',
+    parameterConflict:
+      'parameterConflict: Cannot use fullContent with other range parameters',
+    lineRangeMismatch:
+      'lineRangeMismatch: startLine and endLine must be used together',
+  },
+  hints: mockToolHints,
+};
+
+const mockContent = {
+  instructions: 'Test instructions',
+  prompts: {},
+  toolNames: {
+    GITHUB_FETCH_CONTENT: 'githubGetFileContent',
+    GITHUB_SEARCH_CODE: 'githubSearchCode',
+    GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
+    GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
+    GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
+    PACKAGE_SEARCH: 'packageSearch',
+    LOCAL_RIPGREP: 'localSearchCode',
+    LOCAL_FETCH_CONTENT: 'localGetFileContent',
+    LOCAL_FIND_FILES: 'localFindFiles',
+    LOCAL_VIEW_STRUCTURE: 'localViewStructure',
+  },
+  baseSchema: {
+    mainResearchGoal: 'Main research goal description',
+    researchGoal: 'Research goal description',
+    reasoning: 'Reasoning description',
+    bulkQueryTemplate: 'Research queries for {toolName}',
+  },
+  tools: {
+    githubGetFileContent: githubFetchContentSchema,
+    githubSearchCode: mockToolSchema,
+    githubSearchPullRequests: mockToolSchema,
+    githubSearchRepositories: mockToolSchema,
+    githubViewRepoStructure: mockToolSchema,
+    packageSearch: mockToolSchema,
+    localSearchCode: mockToolSchema,
+    localGetFileContent: mockToolSchema,
+    localFindFiles: mockToolSchema,
+    localViewStructure: mockToolSchema,
+  },
+  baseHints: {
+    hasResults: ['Base hint for hasResults'],
+    empty: ['Base hint for empty'],
+  },
+  genericErrorHints: [
+    'Generic error hint 1',
+    'Generic error hint 2',
+    'Generic error hint 3',
+    'Generic error hint 4',
+    'Generic error hint 5',
+  ],
+};
 
 // Mock global fetch for metadata loading - MUST be done before any imports that use metadata
 global.fetch = vi.fn().mockResolvedValue({
   ok: true,
-  json: async () => content,
+  json: async () => mockContent,
 });
 
 // Mock axios for session logging - MUST be done before any session imports

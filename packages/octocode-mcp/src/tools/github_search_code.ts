@@ -11,11 +11,11 @@ import { GitHubCodeSearchBulkQuerySchema } from '../scheme/github_search_code.js
 import { searchGitHubCodeAPI } from '../github/codeSearch.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { getToolHints } from './hints.js';
 import {
   handleApiError,
   handleCatchError,
   createSuccessResult,
+  invokeCallbackSafely,
 } from './utils.js';
 
 export function registerGitHubSearchCodeTool(
@@ -46,12 +46,11 @@ export function registerGitHubSearchCodeTool(
       ): Promise<CallToolResult> => {
         const queries = args.queries || [];
 
-        if (callback) {
-          try {
-            await callback(TOOL_NAMES.GITHUB_SEARCH_CODE, queries);
-            // eslint-disable-next-line no-empty
-          } catch {}
-        }
+        await invokeCallbackSafely(
+          callback,
+          TOOL_NAMES.GITHUB_SEARCH_CODE,
+          queries
+        );
 
         return searchMultipleGitHubCode(queries, authInfo, sessionId);
       }
@@ -106,22 +105,54 @@ async function searchMultipleGitHubCode(
           result.repositoryContext = repoContext;
         }
 
+        // Add pagination info if available
+        const pagination = apiResult.data.pagination;
+        if (pagination) {
+          result.pagination = pagination;
+        }
+
         const hasContent = files.length > 0;
-        // Determine if specific owner/repo was requested (context for hints)
+        // Build context for dynamic hints
         const hasOwnerRepo = !!(query.owner && query.repo);
 
-        const customHints = getToolHints(
-          TOOL_NAMES.GITHUB_SEARCH_CODE,
-          hasContent ? 'hasResults' : 'empty',
-          { hasOwnerRepo }
-        );
+        // Generate pagination hints
+        const paginationHints: string[] = [];
+        if (pagination) {
+          const { currentPage, totalPages, totalMatches, perPage, hasMore } =
+            pagination;
+          const startItem = (currentPage - 1) * perPage + 1;
+          const endItem = Math.min(currentPage * perPage, totalMatches);
 
+          paginationHints.push(
+            `Page ${currentPage}/${totalPages} (showing ${startItem}-${endItem} of ${totalMatches} matches)`
+          );
+
+          if (hasMore) {
+            paginationHints.push(`Next: page=${currentPage + 1}`);
+          }
+          if (currentPage > 1) {
+            paginationHints.push(`Previous: page=${currentPage - 1}`);
+          }
+          if (!hasMore) {
+            paginationHints.push('Final page');
+          }
+          if (totalPages > 2) {
+            paginationHints.push(
+              `Jump to: page=1 (first) or page=${totalPages} (last)`
+            );
+          }
+        }
+
+        // Use unified pattern: context for dynamic hints, extraHints for pagination
         return createSuccessResult(
           query,
           result as unknown as Record<string, unknown>,
           hasContent,
           TOOL_NAMES.GITHUB_SEARCH_CODE,
-          customHints
+          {
+            hintContext: { hasOwnerRepo, match: query.match },
+            extraHints: paginationHints,
+          }
         );
       } catch (error) {
         return handleCatchError(error, query);
@@ -129,9 +160,12 @@ async function searchMultipleGitHubCode(
     },
     {
       toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-      keysPriority: ['files', 'repositoryContext', 'error'] satisfies Array<
-        keyof SearchResult
-      >,
+      keysPriority: [
+        'files',
+        'pagination',
+        'repositoryContext',
+        'error',
+      ] satisfies Array<keyof SearchResult>,
     }
   );
 }

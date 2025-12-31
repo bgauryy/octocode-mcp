@@ -24,10 +24,18 @@ export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
     .number()
     .int()
     .min(1)
-    .max(10)
+    .max(100)
     .default(10)
     .optional()
     .describe(GITHUB_SEARCH_CODE.resultLimit.limit),
+  page: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .default(1)
+    .optional()
+    .describe(GITHUB_SEARCH_CODE.pagination.page),
 });
 
 export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(

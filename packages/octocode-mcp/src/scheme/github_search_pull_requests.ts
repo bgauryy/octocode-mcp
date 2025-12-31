@@ -151,6 +151,14 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .default(5)
     .optional()
     .describe(GITHUB_SEARCH_PULL_REQUESTS.resultLimit.limit),
+  page: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .default(1)
+    .optional()
+    .describe(GITHUB_SEARCH_PULL_REQUESTS.pagination.page),
   withComments: z
     .boolean()
     .default(false)

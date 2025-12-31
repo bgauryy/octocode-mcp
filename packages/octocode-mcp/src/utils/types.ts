@@ -39,6 +39,7 @@ export interface PathValidationResult {
  * Base query schema fields (inherited from octocode-mcp)
  */
 export interface BaseQuery {
+  mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
@@ -46,6 +47,12 @@ export interface BaseQuery {
 /**
  * Pagination information for all tools
  * Supports both character-based and entity-based pagination
+ *
+ * Contains both byte-based and character-based offsets:
+ * - Byte offsets: For GitHub API compatibility and binary operations
+ * - Character offsets: For JavaScript string operations (substring, slice)
+ *
+ * IMPORTANT: These are NOT interchangeable for multi-byte UTF-8 content (emojis, CJK, etc.)
  */
 export interface PaginationInfo {
   /** Current page number (1-based) - REQUIRED */
@@ -55,10 +62,18 @@ export interface PaginationInfo {
   /** More pages available - REQUIRED */
   hasMore: boolean;
 
-  // Character-based pagination (for all tools when using charLength)
-  /** Current character offset */
+  // Byte-based pagination (for GitHub API compatibility)
+  /** Current byte offset */
+  byteOffset?: number;
+  /** Page size in bytes */
+  byteLength?: number;
+  /** Total size in bytes */
+  totalBytes?: number;
+
+  // Character-based pagination (for JavaScript string operations)
+  /** Current character offset (for use with string.substring) */
   charOffset?: number;
-  /** Page size in characters */
+  /** Page size in characters (for use with string.length) */
   charLength?: number;
   /** Total size in characters */
   totalChars?: number;
@@ -104,7 +119,7 @@ export interface SearchContentResult extends BaseQuery {
   };
 
   // Optional metadata
-  searchEngine?: 'rg'; // Which search engine was used
+  searchEngine?: 'rg' | 'grep'; // Which search engine was used
 }
 
 /**
@@ -168,41 +183,6 @@ export interface RipgrepFileMatches {
     totalMatches: number; // Total matches in this file
     hasMore: boolean; // More matches available in this file
   };
-}
-
-/**
- * Metadata about the search that was performed
- */
-export interface SearchMetadata {
-  pattern: string; // Search pattern
-  path: string; // Search root path
-  mode?: 'discovery' | 'paginated' | 'detailed';
-
-  // Search parameters
-  caseSensitivity: 'smart' | 'sensitive' | 'insensitive';
-  regexType: 'fixed' | 'basic' | 'perl';
-
-  // Filtering
-  fileFilters?: string[]; // Include/exclude patterns
-  excludeDirs?: string[]; // Excluded directories
-
-  // Output control
-  contextLines: number; // Lines of context requested
-  maxMatchesPerFile: number; // Limit per file
-  filesOnly: boolean; // Whether only filenames returned
-
-  // Execution info
-  timestamp: string; // When search was executed
-}
-
-/**
- * Distribution analysis of matches across files
- */
-export interface MatchDistribution {
-  file: string; // File path
-  matchCount: number; // Total matches in this file
-  percentage: number; // Percentage of total matches
-  lines: number[]; // Line numbers with matches
 }
 
 /**
@@ -331,7 +311,10 @@ export interface FetchContentQuery extends BaseQuery {
   matchStringContextLines?: number;
   matchStringIsRegex?: boolean;
   matchStringCaseSensitive?: boolean;
-  minified?: boolean;
+
+  // Line-based extraction (aligned with GitHub's githubGetFileContent)
+  startLine?: number;
+  endLine?: number;
 
   // Character-based pagination (universal mechanism)
   charOffset?: number;
@@ -353,6 +336,13 @@ export interface FetchContentResult extends BaseQuery {
   errorCode?: ErrorCode;
   hints?: readonly string[];
   warnings?: string[];
+
+  // Line extraction info (when startLine/endLine or matchString used)
+  startLine?: number;
+  endLine?: number;
+  extractedLines?: number;
+  // Match ranges (only present when matchString is used)
+  matchRanges?: Array<{ start: number; end: number }>;
 
   // Pagination metadata (only present when pagination is active)
   pagination?: PaginationInfo;

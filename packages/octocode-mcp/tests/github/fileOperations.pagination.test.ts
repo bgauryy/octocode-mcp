@@ -459,4 +459,117 @@ describe('GitHub File Operations - Pagination', () => {
       }
     });
   });
+
+  describe('byte/character offset separation', () => {
+    it('should return both byte and char offsets in pagination', async () => {
+      const largeContent = 'x'.repeat(70000);
+      const mockOctokit = createMockOctokit(largeContent);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+      vi.mocked(minifierModule.minifyContent).mockImplementation(
+        async content => ({
+          content,
+          failed: false,
+          type: 'general',
+        })
+      );
+
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'large.ts',
+      });
+
+      expect(result).toHaveProperty('data');
+      if ('data' in result && result.data && !('error' in result.data)) {
+        // Should have byte fields
+        expect(result.data.pagination?.byteOffset).toBeDefined();
+        expect(result.data.pagination?.byteLength).toBeDefined();
+        expect(result.data.pagination?.totalBytes).toBeDefined();
+
+        // Should have char fields
+        expect(result.data.pagination?.charOffset).toBeDefined();
+        expect(result.data.pagination?.charLength).toBeDefined();
+        expect(result.data.pagination?.totalChars).toBeDefined();
+
+        // For ASCII content, bytes and chars should be equal
+        expect(result.data.pagination?.byteOffset).toBe(
+          result.data.pagination?.charOffset
+        );
+        expect(result.data.pagination?.byteLength).toBe(
+          result.data.pagination?.charLength
+        );
+        expect(result.data.pagination?.totalBytes).toBe(
+          result.data.pagination?.totalChars
+        );
+      }
+    });
+
+    it('should return correct byte/char offsets for UTF-8 content', async () => {
+      // Create content with emojis - each emoji is 4 bytes, 2 JS chars
+      const emojiContent = '👋'.repeat(10000) + 'x'.repeat(10000);
+      // 10000 emojis * 4 bytes + 10000 'x' = 50000 bytes
+      // 10000 emojis * 2 chars + 10000 'x' = 30000 chars
+      const mockOctokit = createMockOctokit(emojiContent);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+      vi.mocked(minifierModule.minifyContent).mockImplementation(
+        async content => ({
+          content,
+          failed: false,
+          type: 'general',
+        })
+      );
+
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'emoji.ts',
+      });
+
+      expect(result).toHaveProperty('data');
+      if ('data' in result && result.data && !('error' in result.data)) {
+        // Total bytes should be different from total chars for UTF-8
+        expect(result.data.pagination?.totalBytes).toBe(50000);
+        expect(result.data.pagination?.totalChars).toBe(30000);
+
+        // Byte length should be greater than char length for emoji content
+        expect(result.data.pagination?.byteLength).toBeGreaterThan(0);
+        // The first 20000 bytes contains emojis (4 bytes each = 5000 emojis = 10000 chars)
+        // So byteLength (20000) > charLength (10000)
+      }
+    });
+
+    it('should include byte info in hints for GitHub', async () => {
+      const largeContent = 'x'.repeat(70000);
+      const mockOctokit = createMockOctokit(largeContent);
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+      vi.mocked(minifierModule.minifyContent).mockImplementation(
+        async content => ({
+          content,
+          failed: false,
+          type: 'general',
+        })
+      );
+
+      const result = await fetchGitHubFileContentAPI({
+        owner: 'test',
+        repo: 'repo',
+        path: 'large.ts',
+      });
+
+      expect(result).toHaveProperty('data');
+      if ('data' in result && result.data && !('error' in result.data)) {
+        // Hints should mention bytes for GitHub API
+        expect(result.data.hints?.some(h => h.includes('bytes'))).toBe(true);
+      }
+    });
+  });
 });

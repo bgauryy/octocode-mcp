@@ -16,6 +16,7 @@ import {
   handleCatchError,
   createSuccessResult,
   createErrorResult,
+  invokeCallbackSafely,
 } from './utils.js';
 
 const VALIDATION_MESSAGES = {
@@ -77,12 +78,11 @@ export function registerSearchGitHubPullRequestsTool(
       ): Promise<CallToolResult> => {
         let queries = args.queries || [];
 
-        if (callback) {
-          try {
-            await callback(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, queries);
-            // eslint-disable-next-line no-empty
-          } catch {}
-        }
+        await invokeCallbackSafely(
+          callback,
+          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+          queries
+        );
 
         const longQueryIndex = queries.findIndex(hasQueryLengthError);
         if (longQueryIndex !== -1) {
@@ -122,7 +122,7 @@ async function searchMultipleGitHubPullRequests(
         const validationError = (query as unknown as Record<string, unknown>)
           ?._validationError;
         if (validationError && typeof validationError === 'string') {
-          return createErrorResult(query, validationError);
+          return createErrorResult(validationError, query);
         }
 
         const apiResult = await searchGitHubPullRequestsAPI(
@@ -138,6 +138,31 @@ async function searchMultipleGitHubPullRequests(
 
         const hasContent = pullRequests.length > 0;
 
+        // Generate pagination hints
+        const paginationHints: string[] = [];
+        if (apiResult.pagination) {
+          const { currentPage, totalPages, totalMatches, hasMore } =
+            apiResult.pagination;
+          paginationHints.push(
+            `Page ${currentPage}/${totalPages} (showing ${pullRequests.length} of ${totalMatches} PRs)`
+          );
+          if (hasMore) {
+            paginationHints.push(`Next: page=${currentPage + 1}`);
+          }
+          if (currentPage > 1) {
+            paginationHints.push(`Previous: page=${currentPage - 1}`);
+          }
+          if (!hasMore) {
+            paginationHints.push('Final page');
+          }
+          if (totalPages > 2) {
+            paginationHints.push(
+              `Jump to: page=1 (first) or page=${totalPages} (last)`
+            );
+          }
+        }
+
+        // Use unified pattern: context for dynamic hints, extraHints for pagination
         return createSuccessResult(
           query,
           {
@@ -145,9 +170,14 @@ async function searchMultipleGitHubPullRequests(
             repo: query.repo,
             pull_requests: pullRequests,
             total_count: apiResult.total_count || pullRequests.length,
+            ...(apiResult.pagination && { pagination: apiResult.pagination }),
           },
           hasContent,
-          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
+          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+          {
+            hintContext: { matchCount: pullRequests.length },
+            extraHints: paginationHints,
+          }
         );
       } catch (error) {
         return handleCatchError(error, query);
@@ -159,6 +189,7 @@ async function searchMultipleGitHubPullRequests(
         'owner',
         'repo',
         'pull_requests',
+        'pagination',
         'total_count',
         'error',
       ] satisfies Array<keyof PullRequestSearchResult>,

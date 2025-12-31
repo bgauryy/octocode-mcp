@@ -1,10 +1,19 @@
 import { Octokit } from 'octokit';
 import { throttling } from '@octokit/plugin-throttling';
 import type { OctokitOptions } from '@octokit/core';
+import { createHash } from 'crypto';
 import { getGitHubToken } from '../serverConfig.js';
 import { getServerConfig } from '../serverConfig.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { version } from '../../package.json';
+
+/**
+ * Hash a token for use as a Map key.
+ * Prevents raw tokens from appearing in memory dumps or debug output.
+ */
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex').substring(0, 16);
+}
 
 export const OctokitWithThrottling = Octokit.plugin(throttling);
 
@@ -54,9 +63,10 @@ export async function getOctokit(
 ): Promise<InstanceType<typeof OctokitWithThrottling>> {
   // Case 1: Specific Auth Info provided
   if (authInfo?.token) {
-    const key = authInfo.token;
+    // Use hashed token as key to avoid storing raw tokens in memory
+    const key = hashToken(authInfo.token);
     if (!instances.has(key)) {
-      instances.set(key, createOctokitInstance(key));
+      instances.set(key, createOctokitInstance(authInfo.token));
     }
     return instances.get(key)!;
   }
@@ -86,7 +96,7 @@ export async function getOctokit(
   return pendingDefaultPromise;
 }
 
-export function clearCachedToken(): void {
+export function clearOctokitInstances(): void {
   instances.clear();
   pendingDefaultPromise = null;
 }

@@ -184,11 +184,14 @@ export function getInstallPreview(
 // MCPClient-based Installation (New API)
 // ============================================================================
 
+import type { OctocodeEnvOptions } from '../utils/mcp-config.js';
+
 export interface ClientInstallOptions {
   client: MCPClient;
   method: InstallMethod;
   customPath?: string;
   force?: boolean;
+  envOptions?: OctocodeEnvOptions;
 }
 
 export interface ClientInstallPreview {
@@ -239,7 +242,7 @@ export function checkExistingClientInstallation(
 export function installOctocodeForClient(
   options: ClientInstallOptions
 ): InstallResult {
-  const { client, method, customPath, force = false } = options;
+  const { client, method, customPath, force = false, envOptions } = options;
   const configPath =
     client === 'custom' && customPath
       ? customPath
@@ -258,8 +261,8 @@ export function installOctocodeForClient(
     };
   }
 
-  // Merge octocode config
-  config = mergeOctocodeConfig(config, method);
+  // Merge octocode config with env options
+  config = mergeOctocodeConfig(config, method, envOptions);
 
   // Write config
   const writeResult = writeMCPConfig(configPath, config);
@@ -285,7 +288,8 @@ export function installOctocodeForClient(
 export function getInstallPreviewForClient(
   client: MCPClient,
   method: InstallMethod,
-  customPath?: string
+  customPath?: string,
+  envOptions?: OctocodeEnvOptions
 ): ClientInstallPreview {
   const configPath =
     client === 'custom' && customPath
@@ -294,8 +298,8 @@ export function getInstallPreviewForClient(
   const existing = checkExistingClientInstallation(client, customPath);
   const existingConfig = readMCPConfig(configPath);
   const serverConfig = isWindows
-    ? getOctocodeServerConfigWindows(method)
-    : getOctocodeServerConfig(method);
+    ? getOctocodeServerConfigWindows(method, envOptions)
+    : getOctocodeServerConfig(method, envOptions);
 
   let action: ClientInstallPreview['action'] = 'create';
   if (existing.installed) {

@@ -3,14 +3,22 @@
  * Validates hint propagation, error handling, and result creation
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   createSuccessResult,
   createErrorResult,
   handleApiError,
   handleCatchError,
+  invokeCallbackSafely,
 } from '../../src/tools/utils.js';
 import type { GitHubAPIError } from '../../src/github/githubAPI.js';
+import type { ToolInvocationCallback } from '../../src/types.js';
+import { logSessionError } from '../../src/session.js';
+
+// Mock session logging
+vi.mock('../../src/session.js', () => ({
+  logSessionError: vi.fn().mockResolvedValue(undefined),
+}));
 
 describe('Tools Utils', () => {
   describe('createSuccessResult', () => {
@@ -54,13 +62,13 @@ describe('Tools Utils', () => {
       expect(result.files).toEqual([]);
     });
 
-    it('should propagate custom hints to the final result', () => {
+    it('should propagate extra hints to the final result', () => {
       const query = {
         researchGoal: 'Find repositories',
         reasoning: 'Searching for repos',
       };
       const data = { repositories: ['repo1', 'repo2'] };
-      const customHints = [
+      const extraHints = [
         'Try narrowing your search with topics',
         'Consider using stars filter',
       ];
@@ -70,31 +78,28 @@ describe('Tools Utils', () => {
         data,
         true,
         'GITHUB_SEARCH_REPOSITORIES',
-        customHints
+        { extraHints }
       );
 
       expect(result.status).toBe('hasResults');
       expect(result.hints).toBeDefined();
-      expect(result.hints).toEqual(customHints);
-      expect(result.hints).toHaveLength(2);
       expect(result.hints).toContain('Try narrowing your search with topics');
       expect(result.hints).toContain('Consider using stars filter');
     });
 
-    it('should NOT include hints property when customHints is empty array', () => {
+    it('should NOT include hints property when extraHints is empty array', () => {
       const query = {
         researchGoal: 'Find files',
         reasoning: 'Searching',
       };
       const data = { files: ['file1.ts'] };
-      const customHints: string[] = [];
 
       const result = createSuccessResult(
         query,
         data,
         true,
         'GITHUB_SEARCH_CODE',
-        customHints
+        { extraHints: [] }
       );
 
       expect(result.status).toBe('hasResults');
@@ -125,7 +130,7 @@ describe('Tools Utils', () => {
         reasoning: 'Searching for repos',
       };
       const data = { repositories: [] };
-      const customHints = [
+      const extraHints = [
         'Try broader search terms',
         'Remove filters to expand results',
       ];
@@ -135,13 +140,13 @@ describe('Tools Utils', () => {
         data,
         false,
         'GITHUB_SEARCH_REPOSITORIES',
-        customHints
+        { extraHints }
       );
 
       expect(result.status).toBe('empty');
       expect(result.hints).toBeDefined();
-      expect(result.hints).toEqual(customHints);
-      expect(result.hints).toHaveLength(2);
+      expect(result.hints).toContain('Try broader search terms');
+      expect(result.hints).toContain('Remove filters to expand results');
     });
 
     it('should propagate single hint', () => {
@@ -150,20 +155,18 @@ describe('Tools Utils', () => {
         reasoning: 'Fetching file',
       };
       const data = { content: 'file content' };
-      const customHints = ['File found successfully'];
 
       const result = createSuccessResult(
         query,
         data,
         true,
         'GITHUB_FETCH_CONTENT',
-        customHints
+        { extraHints: ['File found successfully'] }
       );
 
       expect(result.status).toBe('hasResults');
       expect(result.hints).toBeDefined();
-      expect(result.hints).toEqual(['File found successfully']);
-      expect(result.hints).toHaveLength(1);
+      expect(result.hints).toContain('File found successfully');
     });
 
     it('should propagate multiple hints', () => {
@@ -172,7 +175,7 @@ describe('Tools Utils', () => {
         reasoning: 'Searching pull requests',
       };
       const data = { pull_requests: [{ number: 1 }] };
-      const customHints = [
+      const extraHints = [
         'First hint',
         'Second hint',
         'Third hint',
@@ -184,13 +187,14 @@ describe('Tools Utils', () => {
         data,
         true,
         'GITHUB_SEARCH_PULL_REQUESTS',
-        customHints
+        { extraHints }
       );
 
       expect(result.status).toBe('hasResults');
       expect(result.hints).toBeDefined();
-      expect(result.hints).toHaveLength(4);
-      expect(result.hints).toEqual(customHints);
+      extraHints.forEach(hint => {
+        expect(result.hints).toContain(hint);
+      });
     });
 
     it('should merge data properties correctly with hints', () => {
@@ -203,14 +207,13 @@ describe('Tools Utils', () => {
         total: 1,
         metadata: { page: 1 },
       };
-      const customHints = ['Custom hint'];
 
       const result = createSuccessResult(
         query,
         data,
         true,
         'GITHUB_SEARCH_REPOSITORIES',
-        customHints
+        { extraHints: ['Custom hint'] }
       );
 
       expect(result.status).toBe('hasResults');
@@ -219,7 +222,82 @@ describe('Tools Utils', () => {
       expect(result.repositories).toEqual(['repo1']);
       expect(result.total).toBe(1);
       expect(result.metadata).toEqual({ page: 1 });
-      expect(result.hints).toEqual(['Custom hint']);
+      expect(result.hints).toContain('Custom hint');
+    });
+
+    it('should deduplicate hints from extraHints', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Testing' };
+      const data = { files: [] };
+      const extraHints = [
+        'Duplicate hint',
+        'Unique hint',
+        'Duplicate hint', // duplicate
+        'Another unique',
+        'Duplicate hint', // duplicate again
+      ];
+
+      const result = createSuccessResult(query, data, true, 'localSearchCode', {
+        extraHints,
+      });
+
+      expect(result.hints).toBeDefined();
+      // Count occurrences of "Duplicate hint"
+      const duplicateCount = result.hints!.filter(
+        h => h === 'Duplicate hint'
+      ).length;
+      expect(duplicateCount).toBe(1);
+      expect(result.hints).toContain('Unique hint');
+      expect(result.hints).toContain('Another unique');
+    });
+
+    it('should filter out empty string hints', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Testing' };
+      const data = { files: [] };
+      const extraHints = ['Valid hint', '', 'Another valid', ''];
+
+      const result = createSuccessResult(query, data, true, 'localSearchCode', {
+        extraHints,
+      });
+
+      expect(result.hints).toBeDefined();
+      expect(result.hints).toContain('Valid hint');
+      expect(result.hints).toContain('Another valid');
+      expect(result.hints).not.toContain('');
+    });
+
+    it('should filter out whitespace-only hints', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Testing' };
+      const data = { files: [] };
+      const extraHints = [
+        'Valid hint',
+        '   ',
+        '\t\n',
+        '  \n  ',
+        'Another valid',
+      ];
+
+      const result = createSuccessResult(query, data, true, 'localSearchCode', {
+        extraHints,
+      });
+
+      expect(result.hints).toBeDefined();
+      expect(result.hints).toContain('Valid hint');
+      expect(result.hints).toContain('Another valid');
+      expect(result.hints!.some(h => h.trim() === '')).toBe(false);
+    });
+
+    it('should handle all empty/whitespace extraHints', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Testing' };
+      const data = { files: [] };
+      const extraHints = ['', '   ', '\t'];
+
+      const result = createSuccessResult(query, data, true, 'localSearchCode', {
+        extraHints,
+      });
+
+      // Should still have static hints from getHints(), just no extraHints
+      expect(result.hints).toBeDefined();
+      expect(result.hints!.every(h => h.trim().length > 0)).toBe(true);
     });
   });
 
@@ -231,7 +309,8 @@ describe('Tools Utils', () => {
       };
       const error = 'API error occurred';
 
-      const result = createErrorResult(query, error);
+      // Uses unified signature: createErrorResult(error, query, options?)
+      const result = createErrorResult(error, query);
 
       expect(result.status).toBe('error');
       expect(result.error).toBe('API error occurred');
@@ -253,7 +332,10 @@ describe('Tools Utils', () => {
         rateLimitReset: Date.now() + 3600000,
       };
 
-      const result = createErrorResult(query, 'Rate limit error', apiError);
+      // Uses unified signature with hintSourceError option
+      const result = createErrorResult('Rate limit error', query, {
+        hintSourceError: apiError,
+      });
 
       expect(result.status).toBe('error');
       expect(result.error).toBe('Rate limit error');
@@ -274,7 +356,10 @@ describe('Tools Utils', () => {
         retryAfter: 60,
       };
 
-      const result = createErrorResult(query, 'Too many requests', apiError);
+      // Uses unified signature with hintSourceError option
+      const result = createErrorResult('Too many requests', query, {
+        hintSourceError: apiError,
+      });
 
       expect(result.status).toBe('error');
       expect(result.hints).toBeDefined();
@@ -293,7 +378,10 @@ describe('Tools Utils', () => {
         scopesSuggestion: 'Required scopes: repo, read:org',
       };
 
-      const result = createErrorResult(query, 'Permission denied', apiError);
+      // Uses unified signature with hintSourceError option
+      const result = createErrorResult('Permission denied', query, {
+        hintSourceError: apiError,
+      });
 
       expect(result.status).toBe('error');
       expect(result.hints).toBeDefined();
@@ -317,6 +405,36 @@ describe('Tools Utils', () => {
       const result = handleApiError(apiResult, query);
 
       expect(result).toBeNull();
+    });
+
+    it('should return null for null values', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Test' };
+      expect(handleApiError(null, query)).toBeNull();
+    });
+
+    it('should return null for undefined values', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Test' };
+      expect(handleApiError(undefined, query)).toBeNull();
+    });
+
+    it('should return null when error field is not a string', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Test' };
+      expect(handleApiError({ error: 123 }, query)).toBeNull();
+      expect(handleApiError({ error: null }, query)).toBeNull();
+      expect(handleApiError({ error: {} }, query)).toBeNull();
+    });
+
+    it('should return null for objects without error field', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Test' };
+      expect(handleApiError({ status: 200 }, query)).toBeNull();
+      expect(handleApiError({ message: 'OK' }, query)).toBeNull();
+    });
+
+    it('should return null for primitive values', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Test' };
+      expect(handleApiError('string', query)).toBeNull();
+      expect(handleApiError(42, query)).toBeNull();
+      expect(handleApiError(true, query)).toBeNull();
     });
 
     it('should return error result for error responses', () => {
@@ -389,6 +507,127 @@ describe('Tools Utils', () => {
       expect(result?.hints).toContain('Custom API hint');
       expect(result?.hints!.some(h => h.includes('Rate limit'))).toBe(true);
     });
+
+    it('should NOT produce duplicate hints for rate limit errors', () => {
+      const query = {
+        researchGoal: 'Find files',
+        reasoning: 'Searching',
+      };
+      const apiResult = {
+        error: 'Rate limit exceeded',
+        type: 'http' as const,
+        status: 429,
+        rateLimitRemaining: 0,
+        rateLimitReset: Date.now() + 3600000,
+      };
+
+      const result = handleApiError(apiResult, query);
+
+      expect(result).not.toBeNull();
+      expect(result?.hints).toBeDefined();
+
+      // Count how many times each EXACT hint appears (looking for true duplicates)
+      const hintCounts = new Map<string, number>();
+      for (const hint of result?.hints || []) {
+        hintCounts.set(hint, (hintCounts.get(hint) || 0) + 1);
+      }
+
+      // No hint should appear more than once
+      for (const [hint, count] of hintCounts) {
+        expect(count).toBe(1);
+        if (count > 1) {
+          throw new Error(
+            `Duplicate hint found: "${hint}" appears ${count} times`
+          );
+        }
+      }
+
+      // Verify expected hints are present
+      expect(
+        result?.hints!.some(h => h.includes('GitHub Octokit API Error'))
+      ).toBe(true);
+      expect(
+        result?.hints!.some(
+          h => h.startsWith('Rate limit:') && h.includes('remaining')
+        )
+      ).toBe(true);
+    });
+
+    it('should NOT produce duplicate hints for retry after errors', () => {
+      const query = {
+        researchGoal: 'Find files',
+        reasoning: 'Searching',
+      };
+      const apiResult = {
+        error: 'Too many requests',
+        type: 'http' as const,
+        status: 429,
+        retryAfter: 60,
+      };
+
+      const result = handleApiError(apiResult, query);
+
+      expect(result).not.toBeNull();
+      expect(result?.hints).toBeDefined();
+
+      // Count how many times each EXACT hint appears (looking for true duplicates)
+      const hintCounts = new Map<string, number>();
+      for (const hint of result?.hints || []) {
+        hintCounts.set(hint, (hintCounts.get(hint) || 0) + 1);
+      }
+
+      // No hint should appear more than once
+      for (const [hint, count] of hintCounts) {
+        expect(count).toBe(1);
+        if (count > 1) {
+          throw new Error(
+            `Duplicate hint found: "${hint}" appears ${count} times`
+          );
+        }
+      }
+
+      // Verify retry hint is present
+      expect(result?.hints!.some(h => h.includes('Retry after 60'))).toBe(true);
+    });
+
+    it('should NOT produce duplicate hints for scopes suggestion', () => {
+      const query = {
+        researchGoal: 'Find files',
+        reasoning: 'Searching',
+      };
+      const apiResult = {
+        error: 'Insufficient permissions',
+        type: 'http' as const,
+        status: 403,
+        scopesSuggestion: 'Required scopes: repo, read:org',
+      };
+
+      const result = handleApiError(apiResult, query);
+
+      expect(result).not.toBeNull();
+      expect(result?.hints).toBeDefined();
+
+      // Count how many times each EXACT hint appears (looking for true duplicates)
+      const hintCounts = new Map<string, number>();
+      for (const hint of result?.hints || []) {
+        hintCounts.set(hint, (hintCounts.get(hint) || 0) + 1);
+      }
+
+      // No hint should appear more than once
+      for (const [hint, count] of hintCounts) {
+        expect(count).toBe(1);
+        if (count > 1) {
+          throw new Error(
+            `Duplicate hint found: "${hint}" appears ${count} times`
+          );
+        }
+      }
+
+      // Verify scopes hint is present
+      expect(
+        result?.hints!.some(h => h.includes('Required scopes: repo, read:org'))
+      ).toBe(true);
+    });
   });
 
   describe('handleCatchError', () => {
@@ -449,7 +688,7 @@ describe('Tools Utils', () => {
   });
 
   describe('Integration - Hints propagation in full flow', () => {
-    it('should propagate custom hints through createSuccessResult for all tool types', () => {
+    it('should propagate extra hints through createSuccessResult for all tool types', () => {
       const toolNames = [
         'GITHUB_SEARCH_CODE',
         'GITHUB_SEARCH_REPOSITORIES',
@@ -464,42 +703,176 @@ describe('Tools Utils', () => {
           reasoning: 'Testing hints',
         };
         const data = { testData: 'value' };
-        const customHints = [`Hint for ${toolName}`];
+        const extraHints = [`Hint for ${toolName}`];
 
-        const result = createSuccessResult(
-          query,
-          data,
-          true,
-          toolName,
-          customHints
-        );
+        const result = createSuccessResult(query, data, true, toolName, {
+          extraHints,
+        });
 
         expect(result.status).toBe('hasResults');
         expect(result.hints).toBeDefined();
-        expect(result.hints).toEqual(customHints);
+        expect(result.hints).toContain(`Hint for ${toolName}`);
       });
     });
 
-    it('should reference the same hints array (not create a copy)', () => {
+    it('should include extra hints in the result', () => {
       const query = {
         researchGoal: 'Test',
         reasoning: 'Testing',
       };
       const data = { items: [] };
-      const customHints = ['Hint 1', 'Hint 2'];
+      const extraHints = ['Hint 1', 'Hint 2'];
 
       const result = createSuccessResult(
         query,
         data,
         true,
         'GITHUB_SEARCH_CODE',
-        customHints
+        {
+          extraHints,
+        }
       );
 
-      // Custom hints are included in the result (may be merged with static hints)
-      expect(result.hints).toStrictEqual(customHints);
-      expect(result.hints).toHaveLength(2);
-      expect(result.hints).toEqual(['Hint 1', 'Hint 2']);
+      // Extra hints are included in the result (may be merged with static hints)
+      expect(result.hints).toContain('Hint 1');
+      expect(result.hints).toContain('Hint 2');
+    });
+  });
+
+  describe('invokeCallbackSafely', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it('should do nothing when callback is undefined', async () => {
+      await expect(
+        invokeCallbackSafely(undefined, 'TEST_TOOL', [{ query: 'test' }])
+      ).resolves.toBeUndefined();
+
+      expect(logSessionError).not.toHaveBeenCalled();
+    });
+
+    it('should invoke callback with correct arguments', async () => {
+      const mockCallback: ToolInvocationCallback = vi
+        .fn()
+        .mockResolvedValue(undefined);
+      const queries = [{ query: 'test1' }, { query: 'test2' }];
+
+      await invokeCallbackSafely(mockCallback, 'GITHUB_SEARCH_CODE', queries);
+
+      expect(mockCallback).toHaveBeenCalledTimes(1);
+      expect(mockCallback).toHaveBeenCalledWith('GITHUB_SEARCH_CODE', queries);
+      expect(logSessionError).not.toHaveBeenCalled();
+    });
+
+    it('should catch and log synchronous errors from callback', async () => {
+      const mockCallback: ToolInvocationCallback = vi
+        .fn()
+        .mockImplementation(() => {
+          throw new Error('Sync callback error');
+        });
+
+      await expect(
+        invokeCallbackSafely(mockCallback, 'GITHUB_FETCH_CONTENT', [])
+      ).resolves.toBeUndefined();
+
+      expect(mockCallback).toHaveBeenCalledTimes(1);
+      expect(logSessionError).toHaveBeenCalledTimes(1);
+      expect(logSessionError).toHaveBeenCalledWith(
+        'GITHUB_FETCH_CONTENT',
+        'TOOL_EXECUTION_FAILED'
+      );
+    });
+
+    it('should catch and log async rejected promises from callback', async () => {
+      const mockCallback: ToolInvocationCallback = vi
+        .fn()
+        .mockRejectedValue(new Error('Async callback error'));
+
+      await expect(
+        invokeCallbackSafely(mockCallback, 'GITHUB_SEARCH_REPOSITORIES', [
+          { name: 'test' },
+        ])
+      ).resolves.toBeUndefined();
+
+      expect(mockCallback).toHaveBeenCalledTimes(1);
+      expect(logSessionError).toHaveBeenCalledTimes(1);
+      expect(logSessionError).toHaveBeenCalledWith(
+        'GITHUB_SEARCH_REPOSITORIES',
+        'TOOL_EXECUTION_FAILED'
+      );
+    });
+
+    it('should not propagate errors to caller', async () => {
+      const mockCallback: ToolInvocationCallback = vi
+        .fn()
+        .mockRejectedValue(new Error('Should not propagate'));
+
+      // This should NOT throw
+      await invokeCallbackSafely(
+        mockCallback,
+        'GITHUB_VIEW_REPO_STRUCTURE',
+        []
+      );
+
+      expect(logSessionError).toHaveBeenCalled();
+    });
+
+    it('should handle callback that returns rejected promise', async () => {
+      const mockCallback: ToolInvocationCallback = vi
+        .fn()
+        .mockImplementation(async () => {
+          return Promise.reject(new Error('Promise rejection'));
+        });
+
+      await expect(
+        invokeCallbackSafely(mockCallback, 'GITHUB_SEARCH_PULL_REQUESTS', [])
+      ).resolves.toBeUndefined();
+
+      expect(logSessionError).toHaveBeenCalledWith(
+        'GITHUB_SEARCH_PULL_REQUESTS',
+        'TOOL_EXECUTION_FAILED'
+      );
+    });
+
+    it('should handle non-Error thrown values', async () => {
+      const mockCallback: ToolInvocationCallback = vi
+        .fn()
+        .mockImplementation(() => {
+          throw 'string error'; // eslint-disable-line no-throw-literal
+        });
+
+      await expect(
+        invokeCallbackSafely(mockCallback, 'PACKAGE_SEARCH', [])
+      ).resolves.toBeUndefined();
+
+      expect(logSessionError).toHaveBeenCalledWith(
+        'PACKAGE_SEARCH',
+        'TOOL_EXECUTION_FAILED'
+      );
+    });
+
+    it('should work with all tool types', async () => {
+      const toolNames = [
+        'GITHUB_SEARCH_CODE',
+        'GITHUB_FETCH_CONTENT',
+        'GITHUB_SEARCH_REPOSITORIES',
+        'GITHUB_SEARCH_PULL_REQUESTS',
+        'GITHUB_VIEW_REPO_STRUCTURE',
+        'PACKAGE_SEARCH',
+      ];
+
+      for (const toolName of toolNames) {
+        vi.clearAllMocks();
+        const mockCallback: ToolInvocationCallback = vi
+          .fn()
+          .mockResolvedValue(undefined);
+
+        await invokeCallbackSafely(mockCallback, toolName, [{ test: true }]);
+
+        expect(mockCallback).toHaveBeenCalledWith(toolName, [{ test: true }]);
+        expect(logSessionError).not.toHaveBeenCalled();
+      }
     });
   });
 });

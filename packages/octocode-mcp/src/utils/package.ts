@@ -1,4 +1,3 @@
-import { generateCacheKey, withDataCache } from './cache.js';
 import { searchNpmPackage, checkNpmDeprecation } from './npmPackage.js';
 import { searchPythonPackage } from './pythonPackage.js';
 import { tryInferRepoUrl } from './githubRepoFallback.js';
@@ -86,40 +85,28 @@ export async function searchPackage(
 
   const searchLimit = query.searchLimit ?? 1;
 
-  const cacheKey = generateCacheKey(
-    query.ecosystem === 'npm' ? 'npm-search' : 'pypi-search',
-    { name: query.name, limit: searchLimit, metadata: fetchMetadata }
-  );
+  // Call cached API functions (caching is done at the API layer)
+  if (query.ecosystem === 'npm') {
+    const result = await searchNpmPackage(
+      query.name,
+      searchLimit,
+      fetchMetadata
+    );
 
-  return withDataCache(
-    cacheKey,
-    async () => {
-      if (query.ecosystem === 'npm') {
-        const result = await searchNpmPackage(
-          query.name,
-          searchLimit,
-          fetchMetadata
-        );
-
-        if (!('error' in result) && result.packages.length > 0) {
-          result.packages = result.packages.map(pkg => {
-            if ('repoUrl' in pkg && !pkg.repoUrl) {
-              return tryInferRepoUrl(pkg.path, pkg);
-            }
-            return pkg;
-          });
+    // Post-processing: infer repo URL if not found (done AFTER cache)
+    if (!('error' in result) && result.packages.length > 0) {
+      result.packages = result.packages.map(pkg => {
+        if ('repoUrl' in pkg && !pkg.repoUrl) {
+          return tryInferRepoUrl(pkg.path, pkg);
         }
-
-        return result;
-      } else {
-        return searchPythonPackage(query.name, fetchMetadata);
-      }
-    },
-    {
-      ttl: 14400, // 4 hours
-      shouldCache: result => !('error' in result),
+        return pkg;
+      });
     }
-  );
+
+    return result;
+  } else {
+    return searchPythonPackage(query.name, fetchMetadata);
+  }
 }
 
 export { checkNpmDeprecation };

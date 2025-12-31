@@ -15,12 +15,10 @@ function getWorkspaceRoot(workspaceRoot?: string): string {
     return path.resolve(workspaceRoot);
   }
 
-  // Check for WORKSPACE_ROOT environment variable
   if (process.env.WORKSPACE_ROOT) {
     return path.resolve(process.env.WORKSPACE_ROOT);
   }
 
-  // Default to current working directory
   return process.cwd();
 }
 
@@ -38,13 +36,10 @@ export function validateExecutionContext(
 ): PathValidationResult {
   const workspace = getWorkspaceRoot(workspaceRoot);
 
-  // If cwd is undefined, it will default to the current process.cwd() in spawn()
-  // which is safe since the process itself is running in the workspace
   if (cwd === undefined) {
     return { isValid: true };
   }
 
-  // Empty string is not a valid cwd
   if (cwd.trim() === '') {
     return {
       isValid: false,
@@ -52,12 +47,8 @@ export function validateExecutionContext(
     };
   }
 
-  // Resolve to absolute path
   const absoluteCwd = path.resolve(cwd);
 
-  // Check if cwd is within workspace
-  // Must be the workspace itself OR start with workspace + path separator
-  // This prevents "/workspace-evil" from matching "/workspace"
   if (
     absoluteCwd !== workspace &&
     !absoluteCwd.startsWith(workspace + path.sep)
@@ -69,12 +60,9 @@ export function validateExecutionContext(
   }
 
   try {
-    // If path exists, resolve and validate symlink target
     fs.lstatSync(absoluteCwd);
     const realPath = fs.realpathSync(absoluteCwd);
 
-    // Verify the real path is still within workspace
-    // Must be the workspace itself OR start with workspace + path separator
     if (realPath !== workspace && !realPath.startsWith(workspace + path.sep)) {
       return {
         isValid: false,
@@ -82,7 +70,6 @@ export function validateExecutionContext(
       };
     }
   } catch (error) {
-    // If path doesn't exist yet, allow within workspace
     if (
       error &&
       typeof error === 'object' &&
@@ -94,7 +81,6 @@ export function validateExecutionContext(
         sanitizedPath: absoluteCwd,
       };
     }
-    // Otherwise, reject with detailed message
     return {
       isValid: false,
       error: `Cannot validate execution context: ${error instanceof Error ? error.message : String(error)}`,

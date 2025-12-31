@@ -232,7 +232,6 @@ function printWelcome() {
   console.log();
   printTitle();
   console.log();
-  console.log(dim("      Install and configure octocode-mcp"));
   console.log();
   try {
     const ctx = getAppContext();
@@ -693,39 +692,68 @@ function writeMCPConfig(configPath, config, createBackup = true) {
     };
   }
 }
-function getOctocodeServerConfig(method) {
+function getOctocodeServerConfig(method, envOptions) {
+  let config;
   switch (method) {
     case "direct":
-      return {
+      config = {
         command: "bash",
         args: [
           "-c",
           "curl -sL https://octocodeai.com/octocode/latest/index.js -o /tmp/index.js && node /tmp/index.js"
         ]
       };
+      break;
     case "npx":
-      return {
+      config = {
         command: "npx",
         args: ["octocode-mcp@latest"]
       };
+      break;
     default:
       throw new Error(`Unknown install method: ${method}`);
   }
+  if (envOptions) {
+    const env = {};
+    if (envOptions.enableLocal) {
+      env.ENABLE_LOCAL = "true";
+    }
+    if (envOptions.githubToken) {
+      env.GITHUB_TOKEN = envOptions.githubToken;
+    }
+    if (Object.keys(env).length > 0) {
+      config.env = env;
+    }
+  }
+  return config;
 }
-function getOctocodeServerConfigWindows(method) {
+function getOctocodeServerConfigWindows(method, envOptions) {
   if (method === "direct") {
-    return {
+    const config = {
       command: "powershell",
       args: [
         "-Command",
         "Invoke-WebRequest -Uri 'https://octocodeai.com/octocode/latest/index.js' -OutFile $env:TEMP\\index.js; node $env:TEMP\\index.js"
       ]
     };
+    if (envOptions) {
+      const env = {};
+      if (envOptions.enableLocal) {
+        env.ENABLE_LOCAL = "true";
+      }
+      if (envOptions.githubToken) {
+        env.GITHUB_TOKEN = envOptions.githubToken;
+      }
+      if (Object.keys(env).length > 0) {
+        config.env = env;
+      }
+    }
+    return config;
   }
-  return getOctocodeServerConfig(method);
+  return getOctocodeServerConfig(method, envOptions);
 }
-function mergeOctocodeConfig(config, method) {
-  const serverConfig = isWindows ? getOctocodeServerConfigWindows(method) : getOctocodeServerConfig(method);
+function mergeOctocodeConfig(config, method, envOptions) {
+  const serverConfig = isWindows ? getOctocodeServerConfigWindows(method, envOptions) : getOctocodeServerConfig(method, envOptions);
   return {
     ...config,
     mcpServers: {
@@ -766,6 +794,19 @@ function getClientInstallStatus(client, customPath) {
     configPath
   };
 }
+function getAllClientInstallStatus() {
+  const clients = [
+    "cursor",
+    "claude-desktop",
+    "claude-code",
+    "vscode-cline",
+    "vscode-roo",
+    "vscode-continue",
+    "windsurf",
+    "zed"
+  ];
+  return clients.map((client) => getClientInstallStatus(client));
+}
 function getClientStatusIndicator(status) {
   if (status.octocodeInstalled) {
     return c("green", "✓ Installed");
@@ -778,9 +819,7 @@ function getClientStatusIndicator(status) {
   }
   return c("dim", "○ Not found");
 }
-async function selectMCPClient() {
-  const currentClient = detectCurrentClient();
-  const choices = [];
+function getAllClientsWithStatus() {
   const clientOrder = [
     "cursor",
     "claude-desktop",
@@ -793,31 +832,90 @@ async function selectMCPClient() {
     "vscode-roo",
     "vscode-continue"
   ];
-  for (const clientId of clientOrder) {
+  return clientOrder.map((clientId) => ({
+    clientId,
+    status: getClientInstallStatus(clientId),
+    isAvailable: clientConfigExists(clientId)
+  }));
+}
+async function selectMCPClient() {
+  const currentClient = detectCurrentClient();
+  const allClients = getAllClientsWithStatus();
+  const installedClients = allClients.filter((c2) => c2.status.octocodeInstalled);
+  const availableClients = allClients.filter(
+    (c2) => c2.isAvailable && !c2.status.octocodeInstalled
+  );
+  if (installedClients.length === 0) {
+    return await promptNoConfigurationsFound(availableClients, currentClient);
+  }
+  return await promptExistingConfigurations(
+    installedClients,
+    availableClients,
+    currentClient
+  );
+}
+async function promptNoConfigurationsFound(availableClients, currentClient) {
+  console.log();
+  console.log(c("yellow", "  ┌" + "─".repeat(60) + "┐"));
+  console.log(
+    c("yellow", "  │ ") + `${c("yellow", "ℹ")} No octocode configurations found` + " ".repeat(24) + c("yellow", "│")
+  );
+  console.log(c("yellow", "  └" + "─".repeat(60) + "┘"));
+  console.log();
+  console.log(`  ${dim("Octocode is not configured in any MCP client yet.")}`);
+  console.log();
+  if (availableClients.length === 0) {
+    console.log(
+      `  ${c("red", "✗")} ${dim("No MCP clients detected on this system.")}`
+    );
+    console.log();
+    console.log(`  ${dim("Supported clients:")}`);
+    console.log(`    ${dim("• Cursor, Claude Desktop, Claude Code")}`);
+    console.log(`    ${dim("• Windsurf, Zed, VS Code (Cline/Roo/Continue)")}`);
+    console.log();
+    console.log(`  ${dim("Install a supported client and try again,")}`);
+    console.log(`  ${dim('or use "Custom Path" to specify a config file.')}`);
+    console.log();
+    const choices2 = [
+      {
+        name: `${c("cyan", "⚙")} Custom Path - ${dim("Specify your own MCP config path")}`,
+        value: "custom"
+      },
+      new Separator(),
+      {
+        name: `${c("dim", "← Back")}`,
+        value: "back"
+      }
+    ];
+    const selected2 = await select({
+      message: "What would you like to do?",
+      choices: choices2,
+      loop: false
+    });
+    if (selected2 === "back") return null;
+    if (selected2 === "custom") {
+      const customPath = await promptCustomPath();
+      if (!customPath) return null;
+      return { client: "custom", customPath };
+    }
+    return null;
+  }
+  const choices = [];
+  for (const { clientId, status } of availableClients) {
     const client = MCP_CLIENTS[clientId];
-    const status = getClientInstallStatus(clientId);
-    const statusIndicator = getClientStatusIndicator(status);
-    const isAvailable = clientConfigExists(clientId);
     let name = `${client.name} - ${dim(client.description)}`;
-    name += ` ${statusIndicator}`;
+    name += ` ${getClientStatusIndicator(status)}`;
     if (currentClient === clientId) {
       name = `${c("green", "★")} ${name} ${c("yellow", "(Current)")}`;
     }
     choices.push({
       name,
-      value: clientId,
-      disabled: !isAvailable ? "Not installed" : void 0
+      value: clientId
     });
   }
   choices.sort((a, b) => {
-    if (a.disabled && !b.disabled) return 1;
-    if (!a.disabled && b.disabled) return -1;
-    const aStatus = getClientInstallStatus(a.value);
-    const bStatus = getClientInstallStatus(b.value);
     if (currentClient === a.value) return -1;
     if (currentClient === b.value) return 1;
-    if (aStatus.octocodeInstalled && !bStatus.octocodeInstalled) return -1;
-    if (!aStatus.octocodeInstalled && bStatus.octocodeInstalled) return 1;
     return 0;
   });
   choices.push(new Separator());
@@ -831,7 +929,7 @@ async function selectMCPClient() {
     value: "back"
   });
   const selected = await select({
-    message: "Select MCP client to configure:",
+    message: "Select a client to install octocode:",
     choices,
     loop: false
   });
@@ -840,6 +938,105 @@ async function selectMCPClient() {
     const customPath = await promptCustomPath();
     if (!customPath) return null;
     return { client: "custom", customPath };
+  }
+  return { client: selected };
+}
+async function promptExistingConfigurations(installedClients, availableClients, currentClient) {
+  console.log();
+  console.log(
+    `  ${c("green", "✓")} Found ${bold(String(installedClients.length))} octocode configuration${installedClients.length > 1 ? "s" : ""}`
+  );
+  console.log();
+  const choices = [];
+  for (const { clientId } of installedClients) {
+    const client = MCP_CLIENTS[clientId];
+    let name = `${c("green", "✓")} ${client.name} - ${dim("View/Edit configuration")}`;
+    if (currentClient === clientId) {
+      name += ` ${c("yellow", "(Current)")}`;
+    }
+    choices.push({
+      name,
+      value: clientId
+    });
+  }
+  choices.sort((a, b) => {
+    if (currentClient === a.value) return -1;
+    if (currentClient === b.value) return 1;
+    return 0;
+  });
+  if (availableClients.length > 0) {
+    choices.push(new Separator());
+    choices.push({
+      name: `${c("blue", "+")} Install to another client - ${dim(`${availableClients.length} available`)}`,
+      value: "install-new"
+    });
+  }
+  choices.push(new Separator());
+  choices.push({
+    name: `${c("cyan", "⚙")} Custom Path - ${dim("Specify your own MCP config path")}`,
+    value: "custom"
+  });
+  choices.push(new Separator());
+  choices.push({
+    name: `${c("dim", "← Back")}`,
+    value: "back"
+  });
+  const selected = await select({
+    message: "Select configuration to manage:",
+    choices,
+    loop: false
+  });
+  if (selected === "back") return null;
+  if (selected === "install-new") {
+    return await promptInstallToNewClient(availableClients, currentClient);
+  }
+  if (selected === "custom") {
+    const customPath = await promptCustomPath();
+    if (!customPath) return null;
+    return { client: "custom", customPath };
+  }
+  return { client: selected };
+}
+async function promptInstallToNewClient(availableClients, currentClient) {
+  console.log();
+  console.log(`  ${c("blue", "ℹ")} Select a client for new installation:`);
+  console.log();
+  const choices = [];
+  for (const { clientId, status } of availableClients) {
+    const client = MCP_CLIENTS[clientId];
+    let name = `${client.name} - ${dim(client.description)}`;
+    name += ` ${getClientStatusIndicator(status)}`;
+    if (currentClient === clientId) {
+      name = `${c("green", "★")} ${name} ${c("yellow", "(Current)")}`;
+    }
+    choices.push({
+      name,
+      value: clientId
+    });
+  }
+  choices.sort((a, b) => {
+    if (currentClient === a.value) return -1;
+    if (currentClient === b.value) return 1;
+    return 0;
+  });
+  choices.push(new Separator());
+  choices.push({
+    name: `${c("dim", "← Back to configurations")}`,
+    value: "back"
+  });
+  const selected = await select({
+    message: "Select client to install octocode:",
+    choices,
+    loop: false
+  });
+  if (selected === "back") {
+    const allClients = getAllClientsWithStatus();
+    const installedClients = allClients.filter((c2) => c2.status.octocodeInstalled);
+    return await promptExistingConfigurations(
+      installedClients,
+      availableClients,
+      currentClient
+    );
   }
   return { client: selected };
 }
@@ -893,29 +1090,109 @@ Create it first or choose a different location.`;
   if (!customPath || !customPath.trim()) return null;
   return expandPath(customPath);
 }
-async function selectInstallMethod() {
-  const selected = await select({
-    message: "Select installation method:",
+async function promptLocalTools() {
+  console.log();
+  console.log(`  ${c("blue", "ℹ")} ${bold("Local Tools")}`);
+  console.log(
+    `  ${dim("Enable local filesystem tools for searching and reading files")}`
+  );
+  console.log(`  ${dim("in your local codebase.")}`);
+  console.log();
+  const choice = await select({
+    message: "Enable local tools?",
     choices: [
       {
-        name: `${INSTALL_METHOD_INFO.npx.name} - ${dim(INSTALL_METHOD_INFO.npx.description)}`,
-        value: "npx",
-        description: INSTALL_METHOD_INFO.npx.pros.join(", ")
+        name: `${c("yellow", "○")} Disable ${dim("(Recommended)")} - ${dim("Use only GitHub tools")}`,
+        value: "disable"
       },
       {
-        name: `${INSTALL_METHOD_INFO.direct.name} - ${dim(INSTALL_METHOD_INFO.direct.description)}`,
-        value: "direct",
-        description: INSTALL_METHOD_INFO.direct.pros.join(", ")
+        name: `${c("green", "●")} Enable - ${dim("Allow local file exploration")}`,
+        value: "enable"
       },
-      { type: "separator", separator: "" },
+      new Separator(),
       {
         name: `${c("dim", "← Back")}`,
         value: "back"
       }
-    ]
+    ],
+    loop: false
   });
-  if (selected === "back") return null;
-  return selected;
+  if (choice === "back") return null;
+  return choice === "enable";
+}
+async function promptGitHubAuth() {
+  console.log();
+  console.log(`  ${c("blue", "ℹ")} ${bold("GitHub Authentication")}`);
+  console.log(`  ${dim("Required for accessing GitHub repositories.")}`);
+  console.log();
+  const method = await select({
+    message: "How would you like to authenticate with GitHub?",
+    choices: [
+      {
+        name: `${c("green", "●")} gh CLI ${dim("(Recommended)")} - ${dim("Uses existing gh auth")}`,
+        value: "gh-cli"
+      },
+      {
+        name: `${c("yellow", "●")} GITHUB_TOKEN - ${dim("Enter personal access token")}`,
+        value: "token"
+      },
+      {
+        name: `${c("dim", "○")} Skip - ${dim("Configure manually later")}`,
+        value: "skip"
+      },
+      new Separator(),
+      {
+        name: `${c("dim", "← Back")}`,
+        value: "back"
+      }
+    ],
+    loop: false
+  });
+  if (method === "back") return null;
+  if (method === "gh-cli") {
+    console.log();
+    console.log(
+      `  ${c("cyan", "→")} Make sure gh CLI is installed and authenticated:`
+    );
+    console.log(`    ${dim("https://cli.github.com/")}`);
+    console.log();
+    console.log(
+      `  ${dim("Run")} ${c("cyan", "gh auth login")} ${dim("if not already authenticated.")}`
+    );
+    console.log();
+    return { method: "gh-cli" };
+  }
+  if (method === "token") {
+    console.log();
+    console.log(`  ${dim("Leave empty and press Enter to go back")}`);
+    console.log();
+    const token = await input({
+      message: "Enter your GitHub personal access token:",
+      validate: (value) => {
+        if (!value.trim()) {
+          return true;
+        }
+        if (value.length < 20) {
+          return "Token appears too short";
+        }
+        return true;
+      }
+    });
+    if (!token || !token.trim()) {
+      return null;
+    }
+    console.log();
+    console.log(`  ${c("yellow", "⚠")} ${bold("Security Note:")}`);
+    console.log(
+      `  ${dim("Your token will be saved in the MCP configuration file.")}`
+    );
+    console.log(
+      `  ${dim("Make sure this file is not committed to version control.")}`
+    );
+    console.log();
+    return { method: "token", token };
+  }
+  return { method: "skip" };
 }
 const GH_CLI_URL = "https://cli.github.com/";
 function isGitHubCLIInstalled() {
@@ -958,85 +1235,28 @@ function getGitHubCLIVersion() {
 function getAuthLoginCommand() {
   return "gh auth login";
 }
-async function showGitHubAuthGuidance() {
-  await loadInquirer();
-  console.log();
-  console.log(c("blue", "━".repeat(66)));
-  console.log(`  🔐 ${bold("GitHub CLI Authentication")}`);
-  console.log(c("blue", "━".repeat(66)));
-  console.log();
+function printGitHubAuthStatus() {
   const status = checkGitHubAuth();
   if (!status.installed) {
     console.log(
-      `  ${c("red", "✗")} GitHub CLI (gh) is ${c("red", "not installed")}`
+      `  ${c("yellow", "⚠")} GitHub: ${c("yellow", "gh CLI not found")}`
     );
-    console.log();
     console.log(
-      `  ${bold("Option 1: Install GitHub CLI")} ${dim("(Recommended)")}`
+      `    ${c("yellow", "Authenticate using gh CLI")} (${c("underscore", GH_CLI_URL)}) ${c("yellow", "OR use GITHUB_TOKEN configuration")}`
     );
-    console.log(`    ${c("cyan", "→")} Visit: ${c("underscore", GH_CLI_URL)}`);
-    console.log();
-    console.log(`    ${dim("macOS:")}     ${c("yellow", "brew install gh")}`);
+  } else if (!status.authenticated) {
     console.log(
-      `    ${dim("Windows:")}   ${c("yellow", "winget install GitHub.cli")}`
+      `  ${c("yellow", "⚠")} GitHub CLI not authenticated - run ${c("yellow", getAuthLoginCommand())}`
     );
-    console.log(`    ${dim("Linux:")}     ${c("yellow", "See " + GH_CLI_URL)}`);
-    console.log();
-    console.log(`  ${bold("Option 2: Set GITHUB_TOKEN")}`);
-    console.log(`    ${dim("Add to your MCP config env section:")}`);
-    console.log(`    ${c("yellow", '"GITHUB_TOKEN": "ghp_your_token_here"')}`);
-    console.log();
-    console.log(
-      `    ${dim("Get a token at:")} ${c("underscore", "https://github.com/settings/tokens")}`
-    );
-    console.log();
-    await promptContinue();
-    return;
-  }
-  const version = getGitHubCLIVersion();
-  console.log(
-    `  ${c("green", "✓")} GitHub CLI is ${c("green", "installed")}` + (version ? dim(` (v${version})`) : "")
-  );
-  if (status.authenticated) {
-    console.log(
-      `  ${c("green", "✓")} Authenticated as ${c("cyan", status.username || "unknown")}`
-    );
-    console.log();
-    console.log(
-      `  ${c("green", "✓")} ${bold("You're all set!")} Octocode can access GitHub.`
-    );
+    console.log(`      ${dim("or set GITHUB_TOKEN in MCP config")}`);
   } else {
-    console.log(`  ${c("yellow", "⚠")} ${c("yellow", "Not authenticated")}`);
-    console.log();
     console.log(
-      `  ${bold("Option 1: Login with GitHub CLI")} ${dim("(Recommended)")}`
-    );
-    console.log(
-      `    ${c("cyan", "→")} Run: ${c("yellow", getAuthLoginCommand())}`
-    );
-    console.log();
-    console.log(
-      `    ${dim("This will open a browser to authenticate with GitHub.")}`
-    );
-    console.log();
-    console.log(`  ${bold("Option 2: Set GITHUB_TOKEN")}`);
-    console.log(`    ${dim("Add to your MCP config env section:")}`);
-    console.log(`    ${c("yellow", '"GITHUB_TOKEN": "ghp_your_token_here"')}`);
-    console.log();
-    console.log(
-      `    ${dim("Get a token at:")} ${c("underscore", "https://github.com/settings/tokens")}`
+      `  ${c("green", "✓")} GitHub: Authenticated as ${c("cyan", status.username || "unknown")}`
     );
   }
-  console.log();
-  await promptContinue();
-}
-async function promptContinue() {
-  await select({
-    message: "Press Enter to continue...",
-    choices: [{ name: "→ Continue", value: "continue" }]
-  });
 }
 function printConfigPreview(config) {
+  const hasEnv = config.env && Object.keys(config.env).length > 0;
   console.log();
   console.log(c("dim", "  {"));
   console.log(c("dim", '    "mcpServers": {'));
@@ -1049,10 +1269,24 @@ function printConfigPreview(config) {
     const isLast = i === config.args.length - 1;
     const truncated = arg.length > 50 ? arg.slice(0, 47) + "..." : arg;
     console.log(
-      c("dim", "          ") + c("green", `"${truncated}"`) + (isLast ? "" : c("dim", ","))
+      c("dim", "          ") + c("green", `"${truncated}"`) + (isLast && !hasEnv ? "" : c("dim", ","))
     );
   });
-  console.log(c("dim", "        ]"));
+  console.log(c("dim", "        ]") + (hasEnv ? c("dim", ",") : ""));
+  if (hasEnv && config.env) {
+    console.log(c("dim", '        "env": {'));
+    const envEntries = Object.entries(config.env);
+    envEntries.forEach(([key, value], i) => {
+      const isLast = i === envEntries.length - 1;
+      const lowerKey = key.toLowerCase();
+      const isSensitive = lowerKey.includes("token") || lowerKey.includes("secret");
+      const displayValue = isSensitive ? "***" : value;
+      console.log(
+        c("dim", "          ") + c("cyan", `"${key}"`) + c("dim", ": ") + c("green", `"${displayValue}"`) + (isLast ? "" : c("dim", ","))
+      );
+    });
+    console.log(c("dim", "        }"));
+  }
   console.log(c("dim", "      }"));
   console.log(c("dim", "    }"));
   console.log(c("dim", "  }"));
@@ -1066,33 +1300,35 @@ function printInstallError(result) {
   }
   console.log();
 }
-function printExistingMCPConfig(config) {
-  const servers = config.mcpServers || {};
-  const serverNames = Object.keys(servers);
-  if (serverNames.length === 0) {
-    return;
-  }
-  const boxWidth = 62;
+function printExistingOctocodeConfig(server) {
+  const boxWidth = 60;
   console.log();
   console.log(c("cyan", "  ┌" + "─".repeat(boxWidth) + "┐"));
-  for (const name of serverNames) {
-    const server = servers[name];
-    if (!server) continue;
-    const command = server.command;
-    const args = server.args.join(" ");
-    const fullCommand = `${command} ${args}`;
-    const maxContentWidth = boxWidth - 4;
-    const displayName = c("magenta", name);
-    const separator = dim(": ");
-    const nameLen = name.length;
-    const availableForCommand = maxContentWidth - nameLen - 2;
-    const truncatedCommand = fullCommand.length > availableForCommand ? fullCommand.slice(0, availableForCommand - 3) + "..." : fullCommand;
-    const line = `${displayName}${separator}${dim(truncatedCommand)}`;
-    const visibleLen = name.length + 2 + truncatedCommand.length;
-    const padding = Math.max(0, boxWidth - visibleLen);
+  const commandLine = `${server.command} ${server.args.join(" ")}`;
+  const maxLen = boxWidth - 4;
+  const displayCommand = commandLine.length > maxLen ? commandLine.slice(0, maxLen - 3) + "..." : commandLine;
+  const cmdPadding = Math.max(0, boxWidth - 2 - displayCommand.length);
+  console.log(
+    c("cyan", "  │ ") + dim(displayCommand) + " ".repeat(cmdPadding) + c("cyan", "│")
+  );
+  if (server.env && Object.keys(server.env).length > 0) {
+    console.log(c("cyan", "  │") + " ".repeat(boxWidth) + c("cyan", "│"));
+    const envLabel = "Environment:";
+    const envPadding = boxWidth - 2 - envLabel.length;
     console.log(
-      c("cyan", "  │ ") + line + " ".repeat(padding) + c("cyan", " │")
+      c("cyan", "  │ ") + bold(envLabel) + " ".repeat(envPadding) + c("cyan", "│")
     );
+    for (const [key, value] of Object.entries(server.env)) {
+      const lowerKey = key.toLowerCase();
+      const isSensitive = lowerKey.includes("token") || lowerKey.includes("secret");
+      const displayValue = isSensitive ? "***" : value;
+      const envLine = `  ${key}: ${displayValue}`;
+      const truncatedEnv = envLine.length > maxLen ? envLine.slice(0, maxLen - 3) + "..." : envLine;
+      const padding = Math.max(0, boxWidth - 2 - truncatedEnv.length);
+      console.log(
+        c("cyan", "  │ ") + dim(truncatedEnv) + " ".repeat(padding) + c("cyan", "│")
+      );
+    }
   }
   console.log(c("cyan", "  └" + "─".repeat(boxWidth) + "┘"));
 }
@@ -1186,7 +1422,7 @@ function checkExistingClientInstallation(client, customPath) {
   };
 }
 function installOctocodeForClient(options) {
-  const { client, method, customPath, force = false } = options;
+  const { client, method, customPath, force = false, envOptions } = options;
   const configPath = client === "custom" && customPath ? customPath : getMCPConfigPath(client, customPath);
   let config = readMCPConfig(configPath) || { mcpServers: {} };
   if (isOctocodeConfigured(config) && !force) {
@@ -1197,7 +1433,7 @@ function installOctocodeForClient(options) {
       error: "Octocode is already configured. Use --force to overwrite."
     };
   }
-  config = mergeOctocodeConfig(config, method);
+  config = mergeOctocodeConfig(config, method, envOptions);
   const writeResult = writeMCPConfig(configPath, config);
   if (!writeResult.success) {
     return {
@@ -1212,11 +1448,11 @@ function installOctocodeForClient(options) {
     backupPath: writeResult.backupPath
   };
 }
-function getInstallPreviewForClient(client, method, customPath) {
+function getInstallPreviewForClient(client, method, customPath, envOptions) {
   const configPath = client === "custom" && customPath ? customPath : getMCPConfigPath(client, customPath);
   const existing = checkExistingClientInstallation(client, customPath);
   const existingConfig = readMCPConfig(configPath);
-  const serverConfig = isWindows ? getOctocodeServerConfigWindows(method) : getOctocodeServerConfig(method);
+  const serverConfig = isWindows ? getOctocodeServerConfigWindows(method, envOptions) : getOctocodeServerConfig(method, envOptions);
   let action = "create";
   if (existing.installed) {
     action = "override";
@@ -1239,41 +1475,130 @@ async function runInstallFlow() {
   console.log(`  📦 ${bold("Configure MCP server for your environment")}`);
   console.log(c("blue", "━".repeat(66)));
   console.log();
-  const selection = await selectMCPClient();
-  if (!selection) return;
-  const { client, customPath } = selection;
-  const clientInfo = MCP_CLIENTS[client];
-  const configPath = customPath || getMCPConfigPath(client);
-  const existingConfig = readMCPConfig(configPath);
-  if (existingConfig && existingConfig.mcpServers && Object.keys(existingConfig.mcpServers).length > 0) {
-    console.log();
-    console.log(`  ${bold("Current MCP Configuration:")}`);
-    printExistingMCPConfig(existingConfig);
-  }
-  const method = await selectInstallMethod();
-  if (!method) return;
-  const preview = getInstallPreviewForClient(client, method, customPath);
-  console.log();
-  console.log(`  ${dim("📁 Config file:")} ${c("cyan", preview.configPath)}`);
-  if (preview.action === "override") {
-    console.log();
-    console.log(c("yellow", "  ┌" + "─".repeat(60) + "┐"));
-    console.log(
-      c("yellow", "  │ ") + `${c("yellow", "⚠")} ${bold("Octocode is already configured!")}` + " ".repeat(28) + c("yellow", "│")
-    );
-    console.log(c("yellow", "  │") + " ".repeat(60) + c("yellow", "│"));
-    console.log(
-      c("yellow", "  │ ") + `Current method: ${bold(preview.existingMethod || "unknown")}` + " ".repeat(60 - 18 - (preview.existingMethod?.length || 7)) + c("yellow", "│")
-    );
-    console.log(c("yellow", "  └" + "─".repeat(60) + "┘"));
-    const overwrite = await confirm({
-      message: `${c("yellow", "OVERRIDE")} existing configuration?`,
-      default: false
-    });
-    if (!overwrite) {
-      console.log(`  ${dim("Configuration unchanged.")}`);
-      return;
+  const state = {
+    client: null,
+    hasExistingOctocode: false,
+    enableLocal: false,
+    githubAuth: { method: "skip" }
+  };
+  let currentStep = "client";
+  while (currentStep !== "done") {
+    switch (currentStep) {
+      case "client": {
+        const selection = await selectMCPClient();
+        if (!selection) {
+          return;
+        }
+        state.client = selection.client;
+        state.customPath = selection.customPath;
+        const configPath = state.customPath || getMCPConfigPath(state.client);
+        const existingConfig = readMCPConfig(configPath);
+        state.hasExistingOctocode = !!existingConfig?.mcpServers?.octocode;
+        if (state.hasExistingOctocode) {
+          currentStep = "updateConfirm";
+        } else {
+          currentStep = "localTools";
+        }
+        break;
+      }
+      case "updateConfirm": {
+        const configPath = state.customPath || getMCPConfigPath(state.client);
+        const existingConfig = readMCPConfig(configPath);
+        console.log();
+        console.log(c("yellow", "  ┌" + "─".repeat(60) + "┐"));
+        console.log(
+          c("yellow", "  │ ") + `${c("yellow", "⚠")} ${bold("Octocode is already configured!")}` + " ".repeat(28) + c("yellow", "│")
+        );
+        console.log(c("yellow", "  └" + "─".repeat(60) + "┘"));
+        console.log();
+        console.log(`  ${bold("Current octocode configuration:")}`);
+        printExistingOctocodeConfig(existingConfig.mcpServers.octocode);
+        console.log();
+        console.log(`  ${dim("Config file:")} ${c("cyan", configPath)}`);
+        console.log();
+        const updateChoice = await select({
+          message: "What would you like to do?",
+          choices: [
+            {
+              name: `${c("green", "✓")} Update existing configuration`,
+              value: "update"
+            },
+            new Separator(),
+            {
+              name: `${c("dim", "← Back to client selection")}`,
+              value: "back"
+            }
+          ],
+          loop: false
+        });
+        if (updateChoice === "back") {
+          currentStep = "client";
+        } else {
+          currentStep = "localTools";
+        }
+        break;
+      }
+      case "localTools": {
+        const enableLocal = await promptLocalTools();
+        if (enableLocal === null) {
+          currentStep = state.hasExistingOctocode ? "updateConfirm" : "client";
+        } else {
+          state.enableLocal = enableLocal;
+          currentStep = "githubAuth";
+        }
+        break;
+      }
+      case "githubAuth": {
+        const githubAuth = await promptGitHubAuth();
+        if (githubAuth === null) {
+          currentStep = "localTools";
+        } else {
+          state.githubAuth = githubAuth;
+          currentStep = "confirm";
+        }
+        break;
+      }
+      case "confirm": {
+        const shouldProceed = await showConfirmationAndPrompt(state);
+        if (shouldProceed === "proceed") {
+          currentStep = "install";
+        } else if (shouldProceed === "back") {
+          currentStep = "githubAuth";
+        } else {
+          console.log(`  ${dim("Configuration cancelled.")}`);
+          return;
+        }
+        break;
+      }
+      case "install": {
+        await performInstall(state);
+        currentStep = "done";
+        break;
+      }
     }
+  }
+}
+async function showConfirmationAndPrompt(state) {
+  const clientInfo = MCP_CLIENTS[state.client];
+  const method = "npx";
+  const envOptions = {};
+  if (state.enableLocal) {
+    envOptions.enableLocal = true;
+  }
+  if (state.githubAuth.method === "token" && state.githubAuth.token) {
+    envOptions.githubToken = state.githubAuth.token;
+  }
+  const preview = getInstallPreviewForClient(
+    state.client,
+    method,
+    state.customPath,
+    envOptions
+  );
+  console.log();
+  if (state.hasExistingOctocode) {
+    console.log(
+      `  ${c("yellow", "⚠")} Will ${c("yellow", "UPDATE")} existing octocode configuration`
+    );
   } else if (preview.action === "add") {
     console.log(
       `  ${c("blue", "ℹ")} Config file exists, will ${c("green", "ADD")} octocode entry`
@@ -1292,38 +1617,89 @@ async function runInstallFlow() {
   printConfigPreview(preview.serverConfig);
   console.log();
   console.log(`  ${bold("Summary:")}`);
-  console.log(`    ${dim("Client:")}   ${clientInfo.name}`);
-  console.log(`    ${dim("Method:")}   ${INSTALL_METHOD_INFO[method].name}`);
-  console.log(`    ${dim("Config:")}   ${preview.configPath}`);
-  console.log(
-    `    ${dim("Action:")}   ${preview.action === "override" ? c("yellow", "OVERRIDE") : preview.action === "add" ? c("green", "ADD") : c("green", "CREATE")}`
-  );
-  console.log();
-  const proceed = await confirm({
-    message: "Proceed with configuration?",
-    default: true
-  });
-  if (!proceed) {
-    console.log(`  ${dim("Configuration cancelled.")}`);
-    return;
+  console.log(`    ${dim("Client:")}       ${clientInfo.name}`);
+  console.log(`    ${dim("Method:")}       npx (octocode-mcp@latest)`);
+  const localStatus = state.enableLocal ? c("green", "Enabled") : c("dim", "Disabled");
+  console.log(`    ${dim("Local Tools:")} ${localStatus}`);
+  let authStatus;
+  if (state.githubAuth.method === "token") {
+    authStatus = c("green", "Token configured");
+  } else if (state.githubAuth.method === "gh-cli") {
+    authStatus = c("cyan", "Using gh CLI");
+  } else {
+    authStatus = c("dim", "Not configured");
   }
+  console.log(`    ${dim("GitHub Auth:")} ${authStatus}`);
+  let actionStatus;
+  if (state.hasExistingOctocode) {
+    actionStatus = c("yellow", "UPDATE");
+  } else if (preview.action === "add") {
+    actionStatus = c("green", "ADD");
+  } else {
+    actionStatus = c("green", "CREATE");
+  }
+  console.log(`    ${dim("Action:")}       ${actionStatus}`);
+  console.log();
+  console.log(`  ${c("yellow", "⚠")} ${bold("Note:")}`);
+  console.log(
+    `  ${dim("Nothing is saved to any server. Configuration is stored locally at:")}`
+  );
+  console.log(`  ${c("cyan", preview.configPath)}`);
+  console.log();
+  const choice = await select({
+    message: "What would you like to do?",
+    choices: [
+      {
+        name: `${c("green", "✓")} Proceed with configuration`,
+        value: "proceed"
+      },
+      new Separator(),
+      {
+        name: `${c("dim", "← Back to edit options")}`,
+        value: "back"
+      },
+      {
+        name: `${c("dim", "✗ Cancel")}`,
+        value: "cancel"
+      }
+    ],
+    loop: false
+  });
+  return choice;
+}
+async function performInstall(state) {
+  const method = "npx";
+  const envOptions = {};
+  if (state.enableLocal) {
+    envOptions.enableLocal = true;
+  }
+  if (state.githubAuth.method === "token" && state.githubAuth.token) {
+    envOptions.githubToken = state.githubAuth.token;
+  }
+  const preview = getInstallPreviewForClient(
+    state.client,
+    method,
+    state.customPath,
+    envOptions
+  );
   const spinner = new Spinner("Configuring octocode-mcp...").start();
   await new Promise((resolve) => setTimeout(resolve, 500));
   const result = installOctocodeForClient({
-    client,
+    client: state.client,
     method,
-    customPath,
-    force: preview.action === "override"
+    customPath: state.customPath,
+    force: state.hasExistingOctocode,
+    envOptions
   });
   if (result.success) {
     spinner.succeed("Octocode configured successfully!");
-    printInstallSuccessForClient(result, client);
+    printInstallSuccessForClient(result, state.client, preview.configPath);
   } else {
     spinner.fail("Configuration failed");
     printInstallError(result);
   }
 }
-function printInstallSuccessForClient(result, client) {
+function printInstallSuccessForClient(result, client, configPath) {
   const clientInfo = MCP_CLIENTS[client];
   console.log();
   console.log(c("green", "  ┌" + "─".repeat(60) + "┐"));
@@ -1332,18 +1708,19 @@ function printInstallSuccessForClient(result, client) {
   );
   console.log(c("green", "  └" + "─".repeat(60) + "┘"));
   console.log();
-  console.log(`  ${dim("Config saved to:")} ${result.configPath}`);
+  console.log(`  ${bold("Configuration saved to:")}`);
+  console.log(`  ${c("cyan", configPath)}`);
+  console.log();
   if (result.backupPath) {
     console.log(`  ${dim("Backup saved to:")} ${result.backupPath}`);
+    console.log();
   }
-  console.log();
   console.log(`  ${bold("Next steps:")}`);
   console.log(`    1. Restart ${clientInfo?.name || client}`);
   console.log(`    2. Look for ${c("cyan", "octocode")} in MCP servers`);
   console.log();
 }
 function printNodeEnvironmentStatus(status) {
-  console.log();
   if (status.nodeInstalled) {
     console.log(
       `  ${c("green", "✓")} Node.js: ${bold(status.nodeVersion || "unknown")}`
@@ -1365,7 +1742,6 @@ function printNodeEnvironmentStatus(status) {
     status.octocodePackageAvailable,
     status.octocodePackageVersion
   );
-  console.log();
 }
 function printRegistryStatus(status, latency) {
   const latencyStr = latency !== null ? `(${latency}ms)` : "";
@@ -1399,11 +1775,9 @@ function printOctocodePackageStatus(available, version) {
   }
 }
 function printNodeDoctorHint() {
-  console.log();
   console.log(
     `  ${dim("For deeper diagnostics:")} ${c("cyan", "npx node-doctor")}`
   );
-  console.log();
 }
 function hasEnvironmentIssues(status) {
   return !status.nodeInstalled || !status.npmInstalled || status.registryStatus === "slow" || status.registryStatus === "failed" || !status.octocodePackageAvailable;
@@ -2299,42 +2673,164 @@ function showConfigInfo() {
     console.log();
   }
 }
-async function showMainMenu() {
+function getSkillsState() {
+  const srcDir = getSkillsSourceDir$1();
+  const destDir = getSkillsDestDir$1();
+  if (!dirExists(srcDir)) {
+    return {
+      sourceExists: false,
+      destDir,
+      skills: [],
+      installedCount: 0,
+      notInstalledCount: 0,
+      allInstalled: false,
+      hasSkills: false
+    };
+  }
+  const availableSkills = listSubdirectories(srcDir).filter(
+    (name) => !name.startsWith(".")
+  );
+  const skills = availableSkills.map((skill) => ({
+    name: skill,
+    installed: dirExists(path.join(destDir, skill)),
+    srcPath: path.join(srcDir, skill),
+    destPath: path.join(destDir, skill)
+  }));
+  const installedCount = skills.filter((s) => s.installed).length;
+  const notInstalledCount = skills.filter((s) => !s.installed).length;
+  return {
+    sourceExists: true,
+    destDir,
+    skills,
+    installedCount,
+    notInstalledCount,
+    allInstalled: notInstalledCount === 0 && skills.length > 0,
+    hasSkills: skills.length > 0
+  };
+}
+function getOctocodeState() {
+  const allClients = getAllClientInstallStatus();
+  const installedClients = allClients.filter((c2) => c2.octocodeInstalled);
+  const availableClients = allClients.filter(
+    (c2) => c2.configExists && !c2.octocodeInstalled
+  );
+  return {
+    installedClients,
+    availableClients,
+    isInstalled: installedClients.length > 0,
+    hasMoreToInstall: availableClients.length > 0
+  };
+}
+function getAppState() {
+  return {
+    octocode: getOctocodeState(),
+    skills: getSkillsState(),
+    currentClient: detectCurrentClient(),
+    githubAuth: checkGitHubAuth()
+  };
+}
+function getClientNames(clients) {
+  return clients.map((c2) => MCP_CLIENTS[c2.client]?.name || c2.client).join(", ");
+}
+function formatPath(p) {
+  if (p.startsWith(HOME)) {
+    return "~" + p.slice(HOME.length);
+  }
+  return p;
+}
+function buildSkillsMenuItem(skills) {
+  if (!skills.sourceExists || !skills.hasSkills) {
+    return {
+      name: "📚 Skills",
+      value: "skills",
+      description: "No skills available"
+    };
+  }
+  if (skills.allInstalled) {
+    return {
+      name: `📚 Skills ${c("green", "✓")}`,
+      value: "skills",
+      description: formatPath(skills.destDir)
+    };
+  }
+  if (skills.installedCount > 0) {
+    return {
+      name: "📚 Skills",
+      value: "skills",
+      description: `${skills.installedCount} installed, ${skills.notInstalledCount} available`
+    };
+  }
+  return {
+    name: "📚 Install Skills",
+    value: "skills",
+    description: "Install Octocode skills for Claude Code"
+  };
+}
+async function showMainMenu(state) {
+  if (state.octocode.isInstalled) {
+    const names = getClientNames(state.octocode.installedClients);
+    console.log(`  ${c("green", "✓")} Installed in: ${c("cyan", names)}`);
+  }
+  if (state.githubAuth.authenticated) {
+    console.log(
+      `  ${c("green", "✓")} GitHub: ${c("cyan", state.githubAuth.username || "authenticated")}`
+    );
+  } else if (state.githubAuth.installed) {
+    console.log(
+      `  ${c("yellow", "⚠")} GitHub: ${c("yellow", "not authenticated")}`
+    );
+  } else {
+    console.log(
+      `  ${c("yellow", "⚠")} GitHub CLI: ${c("yellow", "not installed")}`
+    );
+  }
+  const choices = [];
+  if (state.octocode.isInstalled) {
+    choices.push({
+      name: "⚙️  Configure Options",
+      value: "conf"
+    });
+    if (state.octocode.hasMoreToInstall) {
+      const availableNames = getClientNames(state.octocode.availableClients);
+      choices.push({
+        name: "📦 Install to more clients",
+        value: "install",
+        description: `Available: ${availableNames}`
+      });
+    }
+  } else {
+    choices.push({
+      name: "📦 Install octocode-mcp",
+      value: "install",
+      description: "Install MCP server for Cursor, Claude Desktop, and more"
+    });
+  }
+  choices.push(buildSkillsMenuItem(state.skills));
+  choices.push(
+    new Separator()
+  );
+  choices.push({
+    name: "🚪 Exit",
+    value: "exit",
+    description: "Quit the application"
+  });
+  choices.push(
+    new Separator(" ")
+  );
+  choices.push(
+    new Separator(
+      `  ${c("yellow", "For checking node status in your system use")} ${c("cyan", "npx node-doctor")}`
+    )
+  );
+  choices.push(
+    new Separator(
+      c("magenta", `  ─── 🔍🐙 ${bold("https://octocode.ai")} ───`)
+    )
+  );
   console.log();
   const choice = await select({
     message: "What would you like to do?",
-    choices: [
-      {
-        name: "📦 Install octocode-mcp",
-        value: "install",
-        description: "Install MCP server for Cursor, Claude Desktop, and more"
-      },
-      {
-        name: "📚 Install Skills",
-        value: "skills",
-        description: "Install Octocode skills for Claude Code"
-      },
-      {
-        name: "⚙️  Configure Options",
-        value: "conf",
-        description: "View/edit octocode settings (local tools, timeout, etc.)"
-      },
-      {
-        name: "🔐 Check GitHub authentication",
-        value: "gh-auth",
-        description: "Verify GitHub CLI is installed and authenticated"
-      },
-      new Separator(),
-      {
-        name: "🚪 Exit",
-        value: "exit",
-        description: "Quit the application"
-      },
-      new Separator(" "),
-      new Separator(
-        c("magenta", `  ─── 🔍🐙 ${bold("https://octocode.ai")} ───`)
-      )
-    ],
+    choices,
     pageSize: 10,
     loop: false,
     theme: {
@@ -2464,7 +2960,7 @@ async function installSkills(info) {
     console.log(`  ${c("cyan", destDir)}`);
     console.log();
     await pressEnterToContinue();
-    return;
+    return true;
   }
   console.log(`  ${bold("Skills to install:")}`);
   console.log();
@@ -2475,15 +2971,23 @@ async function installSkills(info) {
   console.log(`  ${bold("Installation path:")}`);
   console.log(`  ${c("cyan", destDir)}`);
   console.log();
-  const shouldInstall = await confirm({
+  const choice = await select({
     message: `Install ${notInstalled.length} skill(s)?`,
-    default: true
+    choices: [
+      {
+        name: `${c("green", "✓")} Yes, install skills`,
+        value: "install"
+      },
+      new Separator(),
+      {
+        name: `${c("dim", "← Back to skills menu")}`,
+        value: "back"
+      }
+    ],
+    loop: false
   });
-  if (!shouldInstall) {
-    console.log();
-    console.log(`  ${dim("Installation cancelled.")}`);
-    console.log();
-    return;
+  if (choice === "back") {
+    return false;
   }
   console.log();
   const spinner = new Spinner("Installing skills...").start();
@@ -2515,6 +3019,7 @@ async function installSkills(info) {
     console.log();
   }
   await pressEnterToContinue();
+  return true;
 }
 async function runSkillsFlow() {
   await loadInquirer();
@@ -2523,7 +3028,7 @@ async function runSkillsFlow() {
   console.log(`  📚 ${bold("Octocode Skills for Claude Code")}`);
   console.log(c("blue", "━".repeat(66)));
   console.log();
-  const info = getSkillsInfo();
+  let info = getSkillsInfo();
   if (!info.sourceExists) {
     console.log(`  ${c("yellow", "⚠")} Skills source directory not found.`);
     console.log(`  ${dim("This may happen if running from source.")}`);
@@ -2537,15 +3042,27 @@ async function runSkillsFlow() {
     await pressEnterToContinue();
     return;
   }
-  const choice = await showSkillsMenu(info.notInstalled.length > 0);
-  switch (choice) {
-    case "install":
-      await installSkills(info);
-      break;
-    case "view":
-      showSkillsStatus(info);
-      await pressEnterToContinue();
-      break;
+  let inSkillsMenu = true;
+  while (inSkillsMenu) {
+    info = getSkillsInfo();
+    const choice = await showSkillsMenu(info.notInstalled.length > 0);
+    switch (choice) {
+      case "install": {
+        const installed = await installSkills(info);
+        if (installed) {
+          continue;
+        }
+        break;
+      }
+      case "view":
+        showSkillsStatus(info);
+        await pressEnterToContinue();
+        break;
+      case "back":
+      default:
+        inSkillsMenu = false;
+        break;
+    }
   }
 }
 async function handleMenuChoice(choice) {
@@ -2558,9 +3075,6 @@ async function handleMenuChoice(choice) {
       return true;
     case "conf":
       await runConfigOptionsFlow();
-      return true;
-    case "gh-auth":
-      await showGitHubAuthGuidance();
       return true;
     case "exit":
       printGoodbye();
@@ -2578,7 +3092,8 @@ async function runMenuLoop() {
       printWelcome();
     }
     firstRun = false;
-    const choice = await showMainMenu();
+    const state = getAppState();
+    const choice = await showMainMenu(state);
     running = await handleMenuChoice(choice);
   }
 }
@@ -3045,6 +3560,7 @@ async function runInteractiveMode() {
   console.log(c("blue", "━".repeat(66)));
   const envStatus = await checkNodeEnvironment();
   printNodeEnvironmentStatus(envStatus);
+  printGitHubAuthStatus();
   if (hasEnvironmentIssues(envStatus)) {
     printNodeDoctorHint();
   }

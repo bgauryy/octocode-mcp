@@ -1,6 +1,19 @@
+/**
+ * Unified content minification utilities for token optimization
+ *
+ * Provides both sync and async minification:
+ * - minifyContentSync: Fast, regex-based, no external dependencies
+ * - minifyContent: Async, uses terser/clean-css/html-minifier for better quality
+ */
+
 import { minify } from 'terser';
 import CleanCSS from 'clean-css';
 import { minify as htmlMinifierTerser } from 'html-minifier-terser';
+import { getExtension } from '../fileFilters.js';
+
+// ============================================================================
+// Types
+// ============================================================================
 
 type CommentPatternGroup =
   | 'c-style'
@@ -33,8 +46,18 @@ interface MinifyConfig {
   };
 }
 
+interface MinifyResult {
+  content: string;
+  failed: boolean;
+  type: Strategy | 'failed';
+  reason?: string;
+}
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
 const MINIFY_CONFIG: MinifyConfig = {
-  // Comment removal patterns by language family
   commentPatterns: {
     'c-style': [
       /\/\*[\s\S]*?\*\//g, // /* block comments */
@@ -42,8 +65,8 @@ const MINIFY_CONFIG: MinifyConfig = {
       /\s+\/\/.*$/gm, // // inline comments with space before
     ],
     hash: [
-      /^\s*#(?!!).*$/gm, // # comments at start of line (but not shebangs #!)
-      /\s+#.*$/gm, // # inline comments with space before
+      /^\s*#(?!!).*$/gm, // # comments (but not shebangs #!)
+      /\s+#.*$/gm, // # inline comments
     ],
     html: [
       /<!--[\s\S]*?-->/g, // <!-- HTML comments -->
@@ -56,34 +79,31 @@ const MINIFY_CONFIG: MinifyConfig = {
       /^\s*--.*$/gm, // -- line comments
       /--\[\[[\s\S]*?\]\]/g, // --[[ block comments ]]
     ],
-    // Template comment patterns
     template: [
-      /\{\{!--[\s\S]*?--\}\}/g, // {{!-- Handlebars comments --}}
-      /\{\{![\s\S]*?\}\}/g, // {{! Handlebars comments }}
-      /<%#[\s\S]*?%>/g, // <%# EJS comments %>
-      /\{#[\s\S]*?#\}/g, // {# Twig/Jinja comments #}
+      /\{\{!--[\s\S]*?--\}\}/g, // {{!-- Handlebars --}}
+      /\{\{![\s\S]*?\}\}/g, // {{! Handlebars }}
+      /<%#[\s\S]*?%>/g, // <%# EJS %>
+      /\{#[\s\S]*?#\}/g, // {# Twig/Jinja #}
     ],
-    // Haskell comment patterns
     haskell: [
-      /^\s*--.*$/gm, // -- line comments at start of line
-      /\s+--.*$/gm, // -- inline comments with space before
+      /^\s*--.*$/gm, // -- line comments
+      /\s+--.*$/gm, // -- inline comments
       /\{-[\s\S]*?-\}/g, // {- block comments -}
     ],
   },
 
-  // File type mappings - much simpler than 50+ case statements
   fileTypes: {
-    // JavaScript family - use terser
+    // JavaScript family - use terser (async) or aggressive (sync)
     js: { strategy: 'terser' },
     jsx: { strategy: 'terser' },
     mjs: { strategy: 'terser' },
     cjs: { strategy: 'terser' },
 
-    // TypeScript - use aggressive (terser doesn't support TS syntax)
+    // TypeScript - aggressive with c-style comments
     ts: { strategy: 'aggressive', comments: 'c-style' },
     tsx: { strategy: 'aggressive', comments: 'c-style' },
 
-    // Indentation-sensitive languages - conservative approach
+    // Indentation-sensitive languages - conservative
     py: { strategy: 'conservative', comments: 'hash' },
     yaml: { strategy: 'conservative', comments: 'hash' },
     yml: { strategy: 'conservative', comments: 'hash' },
@@ -108,14 +128,14 @@ const MINIFY_CONFIG: MinifyConfig = {
     // Data formats
     json: { strategy: 'json' },
 
-    // Programming languages with C-style comments
+    // C-style comment languages
     go: { strategy: 'aggressive', comments: 'c-style' },
     java: { strategy: 'aggressive', comments: 'c-style' },
     c: { strategy: 'aggressive', comments: 'c-style' },
     cpp: { strategy: 'aggressive', comments: 'c-style' },
     cs: { strategy: 'aggressive', comments: 'c-style' },
     rust: { strategy: 'aggressive', comments: 'c-style' },
-    rs: { strategy: 'aggressive', comments: 'c-style' }, // Rust extension
+    rs: { strategy: 'aggressive', comments: 'c-style' },
     swift: { strategy: 'aggressive', comments: 'c-style' },
     kotlin: { strategy: 'aggressive', comments: 'c-style' },
     scala: { strategy: 'aggressive', comments: 'c-style' },
@@ -125,8 +145,8 @@ const MINIFY_CONFIG: MinifyConfig = {
     php: { strategy: 'aggressive', comments: ['c-style', 'hash'] },
     rb: { strategy: 'aggressive', comments: 'hash' },
     perl: { strategy: 'aggressive', comments: 'hash' },
-    sh: { strategy: 'aggressive', comments: 'hash' },
-    bash: { strategy: 'aggressive', comments: 'hash' },
+    sh: { strategy: 'conservative', comments: 'hash' },
+    bash: { strategy: 'conservative', comments: 'hash' },
 
     // Query languages
     sql: { strategy: 'aggressive', comments: 'sql' },
@@ -135,11 +155,11 @@ const MINIFY_CONFIG: MinifyConfig = {
     lua: { strategy: 'aggressive', comments: 'lua' },
     r: { strategy: 'aggressive', comments: 'hash' },
 
-    // Template languages (missing from V2)
+    // Template languages
     hbs: { strategy: 'aggressive', comments: 'template' },
     handlebars: { strategy: 'aggressive', comments: 'template' },
     ejs: { strategy: 'aggressive', comments: 'template' },
-    pug: { strategy: 'conservative', comments: 'c-style' }, // Indentation-sensitive
+    pug: { strategy: 'conservative', comments: 'c-style' },
     jade: { strategy: 'conservative', comments: 'c-style' },
     mustache: { strategy: 'aggressive', comments: 'template' },
     twig: { strategy: 'aggressive', comments: 'template' },
@@ -155,7 +175,7 @@ const MINIFY_CONFIG: MinifyConfig = {
     graphql: { strategy: 'aggressive', comments: 'hash' },
     gql: { strategy: 'aggressive', comments: 'hash' },
     proto: { strategy: 'aggressive', comments: 'c-style' },
-    csv: { strategy: 'conservative' }, // No comments, just whitespace
+    csv: { strategy: 'conservative' },
     toml: { strategy: 'aggressive', comments: 'hash' },
     ini: { strategy: 'aggressive', comments: 'hash' },
     conf: { strategy: 'aggressive', comments: 'hash' },
@@ -166,95 +186,297 @@ const MINIFY_CONFIG: MinifyConfig = {
     // Infrastructure
     tf: { strategy: 'aggressive', comments: ['hash', 'c-style'] },
     tfvars: { strategy: 'aggressive', comments: ['hash', 'c-style'] },
-    pp: { strategy: 'aggressive', comments: 'hash' }, // Puppet
+    pp: { strategy: 'aggressive', comments: 'hash' },
 
     // Documentation
-    md: { strategy: 'markdown' }, // Markdown - specialized minification
+    md: { strategy: 'markdown' },
     markdown: { strategy: 'markdown' },
     rst: { strategy: 'conservative', comments: 'hash' },
 
     // Build systems
-    star: { strategy: 'conservative', comments: 'hash' }, // Starlark - Python-like
+    star: { strategy: 'conservative', comments: 'hash' },
     bzl: { strategy: 'conservative', comments: 'hash' },
     cmake: { strategy: 'conservative', comments: 'hash' },
 
-    // Additional top development languages
-    pl: { strategy: 'aggressive', comments: 'hash' }, // Perl
-    pm: { strategy: 'aggressive', comments: 'hash' }, // Perl modules
-    fs: { strategy: 'conservative', comments: 'c-style' }, // F#
-    fsx: { strategy: 'conservative', comments: 'c-style' }, // F# script
-    hs: { strategy: 'conservative', comments: 'haskell' }, // Haskell
-    lhs: { strategy: 'conservative', comments: 'haskell' }, // Literate Haskell
-    elm: { strategy: 'conservative', comments: 'c-style' }, // Elm
-    clj: { strategy: 'aggressive', comments: 'hash' }, // Clojure
-    cljs: { strategy: 'aggressive', comments: 'hash' }, // ClojureScript
-    ex: { strategy: 'aggressive', comments: 'hash' }, // Elixir
-    exs: { strategy: 'aggressive', comments: 'hash' }, // Elixir script
-    erl: { strategy: 'aggressive', comments: 'hash' }, // Erlang
-    hrl: { strategy: 'aggressive', comments: 'hash' }, // Erlang header
-    // Plain text and documentation files
-    txt: { strategy: 'general' }, // Plain text - general minification
-    log: { strategy: 'general' }, // Log files
-    cfg: { strategy: 'aggressive', comments: 'hash' }, // Config files
+    // Additional languages
+    pl: { strategy: 'aggressive', comments: 'hash' },
+    pm: { strategy: 'aggressive', comments: 'hash' },
+    fs: { strategy: 'conservative', comments: 'c-style' },
+    fsx: { strategy: 'conservative', comments: 'c-style' },
+    hs: { strategy: 'conservative', comments: 'haskell' },
+    lhs: { strategy: 'conservative', comments: 'haskell' },
+    elm: { strategy: 'conservative', comments: 'c-style' },
+    clj: { strategy: 'aggressive', comments: 'hash' },
+    cljs: { strategy: 'aggressive', comments: 'hash' },
+    ex: { strategy: 'aggressive', comments: 'hash' },
+    exs: { strategy: 'aggressive', comments: 'hash' },
+    erl: { strategy: 'aggressive', comments: 'hash' },
+    hrl: { strategy: 'aggressive', comments: 'hash' },
+
+    // Plain text and misc
+    txt: { strategy: 'general' },
+    log: { strategy: 'general' },
+    cfg: { strategy: 'aggressive', comments: 'hash' },
     gitignore: { strategy: 'aggressive', comments: 'hash' },
     dockerignore: { strategy: 'aggressive', comments: 'hash' },
   },
 };
 
-// Helper functions
-function getFileExtension(filePath: string): string {
-  return filePath.split('.').pop()?.toLowerCase() || 'txt';
-}
+// Indentation-sensitive filenames (no extension)
+const INDENTATION_SENSITIVE_NAMES = new Set([
+  'makefile',
+  'dockerfile',
+  'procfile',
+  'justfile',
+  'rakefile',
+  'gemfile',
+  'podfile',
+  'fastfile',
+  'vagrantfile',
+  'jenkinsfile',
+  'cakefile',
+  'pipfile',
+  'buildfile',
+  'capfile',
+  'brewfile',
+]);
 
-function getFileConfig(filePath: string) {
-  const ext = getFileExtension(filePath);
+// ============================================================================
+// Shared Utilities
+// ============================================================================
 
-  // Filename-based detection for indentation/whitespace sensitive files
-  // Many infra/devtool files have no extension and rely on indentation/tabs
-  const baseName = filePath.split('/').pop() || '';
-  const baseNameLower = baseName.toLowerCase();
-  const indentationSensitiveNames = new Set([
-    'makefile',
-    'dockerfile',
-    'procfile',
-    'justfile',
-    'rakefile',
-    'gemfile',
-    'podfile',
-    'fastfile',
-    'vagrantfile',
-    'jenkinsfile',
-    'cakefile',
-    'pipfile',
-    'buildfile',
-    'capfile',
-    'brewfile',
-  ]);
+/** Extension options for minifier: lowercase with 'txt' fallback */
+const MINIFIER_EXT_OPTIONS = { lowercase: true, fallback: 'txt' } as const;
 
-  if (indentationSensitiveNames.has(baseNameLower)) {
-    return {
-      strategy: 'conservative',
-      comments: 'hash',
-    } as FileTypeMinifyConfig;
+function getFileConfig(filePath: string): FileTypeMinifyConfig {
+  const ext = getExtension(filePath, MINIFIER_EXT_OPTIONS);
+  const baseName = (filePath.split('/').pop() || '').toLowerCase();
+
+  if (INDENTATION_SENSITIVE_NAMES.has(baseName)) {
+    return { strategy: 'conservative', comments: 'hash' };
   }
 
-  return (
-    MINIFY_CONFIG.fileTypes[ext] || {
-      strategy: 'general', // Default to general minification for unknown extensions
-    }
-  );
+  return MINIFY_CONFIG.fileTypes[ext] || { strategy: 'general' };
 }
 
-// Minification strategies with comprehensive error protection
+function removeComments(
+  content: string,
+  commentTypes: CommentPatternGroup | CommentPatternGroup[]
+): string {
+  try {
+    let result = content;
+    const types = Array.isArray(commentTypes) ? commentTypes : [commentTypes];
+
+    for (const type of types) {
+      const patterns = MINIFY_CONFIG.commentPatterns[type];
+      if (patterns) {
+        for (const pattern of patterns) {
+          try {
+            result = result.replace(pattern, '');
+          } /* v8 ignore start */ catch {
+            continue;
+          } /* v8 ignore stop */
+        }
+      }
+    }
+    return result;
+  } /* v8 ignore start */ catch {
+    return content;
+  } /* v8 ignore stop */
+}
+
+// ============================================================================
+// Core Minification Functions (Shared by sync and async)
+// ============================================================================
+
+function minifyConservativeCore(
+  content: string,
+  config: FileTypeMinifyConfig
+): string {
+  try {
+    let result = content;
+
+    if (config.comments) {
+      result = removeComments(
+        result,
+        config.comments as CommentPatternGroup | CommentPatternGroup[]
+      );
+    }
+
+    return result
+      .replace(/[ \t]+$/gm, '') // Remove trailing whitespace
+      .replace(/\n\s*\n\s*\n+/g, '\n\n') // Collapse 3+ empty lines to 2
+      .trim();
+  } /* v8 ignore start */ catch {
+    return content;
+  } /* v8 ignore stop */
+}
+
+function minifyAggressiveCore(
+  content: string,
+  config: FileTypeMinifyConfig
+): string {
+  try {
+    let result = content;
+
+    if (config.comments) {
+      result = removeComments(
+        result,
+        config.comments as CommentPatternGroup | CommentPatternGroup[]
+      );
+    }
+
+    return result
+      .replace(/\s+/g, ' ') // Collapse all whitespace
+      .replace(/\s*([{}:;,])\s*/g, '$1') // Remove spaces around syntax
+      .replace(/>\s+</g, '><') // Remove whitespace between tags
+      .trim();
+  } /* v8 ignore start */ catch {
+    return content;
+  } /* v8 ignore stop */
+}
+
+function minifyJsonCore(content: string): {
+  content: string;
+  failed: boolean;
+  reason?: string;
+} {
+  try {
+    return { content: JSON.stringify(JSON.parse(content)), failed: false };
+  } catch {
+    try {
+      // Try JSONC (JSON with comments)
+      const cleaned = removeComments(content, 'c-style');
+      return { content: JSON.stringify(JSON.parse(cleaned)), failed: false };
+    } catch {
+      return { content: content.trim(), failed: false };
+    }
+  }
+}
+
+function minifyGeneralCore(content: string): string {
+  try {
+    return content
+      .replace(/[ \t]+$/gm, '') // Remove trailing whitespace
+      .replace(/\r\n/g, '\n') // Normalize line endings
+      .replace(/\n\s*\n\s*\n+/g, '\n\n') // Collapse 3+ empty lines
+      .replace(/[ \t]{3,}/g, ' ') // Collapse excessive inline whitespace
+      .trim();
+  } /* v8 ignore start */ catch {
+    return content;
+  } /* v8 ignore stop */
+}
+
+function minifyMarkdownCore(content: string): string {
+  try {
+    return content
+      .replace(/<!--[\s\S]*?-->/g, '') // Remove HTML comments
+      .replace(/[ \t]+$/gm, '') // Remove trailing whitespace
+      .replace(/\r\n/g, '\n') // Normalize line endings
+      .replace(/\n\s*\n\s*\n+/g, '\n\n') // Collapse empty lines
+      .replace(/([^\n])[ \t]{5,}([^\n])/g, '$1 $2') // Collapse inline spaces
+      .replace(/\s*\|\s*/g, ' | ') // Normalize table pipes
+      .replace(/^(#{1,6})[ \t]+/gm, '$1 ') // Normalize headings
+      .replace(/^(\s*)([-*+]|\d+\.)[ \t]+/gm, '$1$2 ') // Normalize lists
+      .replace(/\n{3,}(```)/g, '\n\n$1') // Normalize before code blocks
+      .replace(/(```)\n{3,}/g, '$1\n\n') // Normalize after code blocks
+      .trim();
+  } /* v8 ignore start */ catch {
+    return content;
+  } /* v8 ignore stop */
+}
+
+function minifyCSSCore(content: string): string {
+  try {
+    return removeComments(content, 'c-style')
+      .replace(/\s+/g, ' ')
+      .replace(/\s*([{}:;,])\s*/g, '$1')
+      .trim();
+  } /* v8 ignore start */ catch {
+    return content;
+  } /* v8 ignore stop */
+}
+
+function minifyHTMLCore(content: string): string {
+  try {
+    return removeComments(content, 'html')
+      .replace(/\s+/g, ' ')
+      .replace(/>\s+</g, '><')
+      .trim();
+  } /* v8 ignore start */ catch {
+    return content;
+  } /* v8 ignore stop */
+}
+
+function minifyJavaScriptCore(content: string): string {
+  try {
+    return removeComments(content, 'c-style')
+      .replace(/\s+/g, ' ')
+      .replace(/\s*([{}();,:])\s*/g, '$1')
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .join('\n');
+  } /* v8 ignore start */ catch {
+    return content;
+  } /* v8 ignore stop */
+}
+
+// ============================================================================
+// Synchronous Minification (regex-based, no external deps)
+// ============================================================================
+
+/**
+ * Synchronous content minification - fast, regex-based, no external dependencies.
+ * Preferred for local file operations where simplicity and performance matter.
+ */
+export function minifyContentSync(content: string, filePath: string): string {
+  const config = getFileConfig(filePath);
+  const ext = getExtension(filePath, MINIFIER_EXT_OPTIONS);
+
+  try {
+    switch (config.strategy) {
+      case 'terser':
+        // Sync version uses regex-based JS minification
+        return minifyJavaScriptCore(content);
+
+      case 'json':
+        return minifyJsonCore(content).content;
+
+      case 'conservative':
+        return minifyConservativeCore(content, config);
+
+      case 'markdown':
+        return minifyMarkdownCore(content);
+
+      case 'aggressive':
+        if (['css', 'less', 'scss'].includes(ext)) {
+          return minifyCSSCore(content);
+        }
+        if (['html', 'htm', 'xml', 'svg'].includes(ext)) {
+          return minifyHTMLCore(content);
+        }
+        return minifyAggressiveCore(content, config);
+
+      case 'general':
+      default:
+        return minifyGeneralCore(content);
+    }
+  } /* v8 ignore start */ catch {
+    return content;
+  } /* v8 ignore stop */
+}
+
+// ============================================================================
+// Async Minification (uses external libs for better quality)
+// ============================================================================
+
 async function minifyWithTerser(
   content: string
 ): Promise<{ content: string; failed: boolean; reason?: string }> {
   try {
     if (!content.trim()) {
-      return {
-        content: content,
-        failed: false,
-      };
+      return { content, failed: false };
     }
 
     const result = await minify(content, {
@@ -280,78 +502,25 @@ async function minifyWithTerser(
       sourceMap: false,
     });
 
-    return {
-      content: result.code || content,
-      failed: false,
-    };
+    return { content: result.code || content, failed: false };
   } catch (error: unknown) {
     return {
-      content: content,
+      content,
       failed: true,
       reason: `Terser minification failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
 }
 
-function removeComments(
-  content: string,
-  commentTypes: string | string[]
-): string {
-  try {
-    let result = content;
-    const types = Array.isArray(commentTypes) ? commentTypes : [commentTypes];
-
-    for (const type of types) {
-      const patterns =
-        MINIFY_CONFIG.commentPatterns[type as CommentPatternGroup];
-      if (patterns) {
-        for (const pattern of patterns) {
-          try {
-            result = result.replace(pattern, '');
-          } catch {
-            continue;
-          }
-        }
-      }
-    }
-
-    return result;
-  } catch {
-    return content;
-  }
-}
-
-function minifyConservative(
-  content: string,
-  config: FileTypeMinifyConfig
-): string {
-  try {
-    let result = content;
-
-    if (config.comments) {
-      result = removeComments(result, config.comments as string | string[]);
-    }
-
-    result = result
-      .replace(/[ \t]+$/gm, '') // Remove trailing whitespace
-      .replace(/\n\s*\n\s*\n+/g, '\n\n') // Collapse excessive empty lines (3+ -> 2)
-      .trim();
-
-    return result;
-  } catch {
-    return content;
-  }
-}
-
-async function minifyCSS(
+async function minifyCSSAsync(
   content: string
 ): Promise<{ content: string; failed: boolean; reason?: string }> {
   try {
     const cleanCSS = new CleanCSS({
-      level: 2, // More aggressive optimization
-      format: false, // Minify completely (no beautification)
-      inline: false, // Don't inline imports
-      rebase: false, // Don't rebase URLs
+      level: 2,
+      format: false,
+      inline: false,
+      rebase: false,
     });
 
     const result = cleanCSS.minify(content);
@@ -360,34 +529,18 @@ async function minifyCSS(
       throw new Error(result.errors.join(', '));
     }
 
+    return { content: result.styles, failed: false };
+  } catch (error: unknown) {
+    // Gracefully fallback to regex minification
     return {
-      content: result.styles,
+      content: minifyCSSCore(content),
       failed: false,
+      reason: `CleanCSS fallback: ${error instanceof Error ? error.message : 'unknown'}`,
     };
-  } catch {
-    try {
-      let result = content;
-      result = removeComments(result, 'c-style');
-      result = result
-        .replace(/\s+/g, ' ')
-        .replace(/\s*([{}:;,])\s*/g, '$1')
-        .trim();
-
-      return {
-        content: result,
-        failed: false,
-      };
-    } catch {
-      return {
-        content: content,
-        failed: true,
-        reason: `CSS minification failed: CleanCSS error and regex fallback failed`,
-      };
-    }
   }
 }
 
-async function minifyHTML(
+async function minifyHTMLAsync(
   content: string
 ): Promise<{ content: string; failed: boolean; reason?: string }> {
   try {
@@ -397,149 +550,37 @@ async function minifyHTML(
       removeRedundantAttributes: true,
       removeScriptTypeAttributes: true,
       removeStyleLinkTypeAttributes: true,
-      minifyCSS: false, // Don't minify embedded CSS (we handle separately)
-      minifyJS: false, // Don't minify embedded JS (we handle separately)
+      minifyCSS: false,
+      minifyJS: false,
       caseSensitive: false,
     });
 
+    return { content: result, failed: false };
+  } catch (error: unknown) {
+    // Gracefully fallback to regex minification
     return {
-      content: result,
+      content: minifyHTMLCore(content),
       failed: false,
+      reason: `html-minifier fallback: ${error instanceof Error ? error.message : 'unknown'}`,
     };
-  } catch {
-    try {
-      let result = content;
-      result = removeComments(result, 'html');
-      result = result.replace(/\s+/g, ' ').replace(/>\s+</g, '><').trim();
-
-      return {
-        content: result,
-        failed: false,
-      };
-    } catch {
-      return {
-        content: content,
-        failed: true,
-        reason: `HTML minification failed: html-minifier-terser error and regex fallback failed`,
-      };
-    }
   }
 }
 
-function minifyAggressive(
-  content: string,
-  config: FileTypeMinifyConfig
-): string {
-  try {
-    let result = content;
-
-    if (config.comments) {
-      result = removeComments(result, config.comments as string | string[]);
-    }
-
-    result = result
-      .replace(/\s+/g, ' ') // Collapse all whitespace to single spaces
-      .replace(/\s*([{}:;,])\s*/g, '$1') // Remove spaces around CSS/code syntax
-      .replace(/>\s+</g, '><') // Remove whitespace between HTML tags
-      .trim();
-
-    return result;
-  } catch {
-    return content;
-  }
-}
-
-function minifyJson(content: string): {
-  content: string;
-  failed: boolean;
-  reason?: string;
-} {
-  try {
-    const parsed = JSON.parse(content);
-    return {
-      content: JSON.stringify(parsed),
-      failed: false,
-    };
-  } catch {
-    try {
-      // Try JSONC (JSON with comments)
-      const contentWithoutComments = removeComments(content, 'c-style');
-      const parsed = JSON.parse(contentWithoutComments);
-      return {
-        content: JSON.stringify(parsed),
-        failed: false,
-      };
-    } catch {
-      return {
-        content: content.trim(),
-        failed: false,
-      };
-    }
-  }
-}
-
-function minifyGeneral(content: string): string {
-  try {
-    let result = content;
-
-    result = result
-      .replace(/[ \t]+$/gm, '') // Remove trailing whitespace
-      .replace(/\r\n/g, '\n') // Normalize line endings
-      .replace(/\n\s*\n\s*\n+/g, '\n\n') // Collapse excessive empty lines (3+ -> 2)
-      .replace(/[ \t]{3,}/g, ' ') // Collapse excessive inline whitespace (3+ spaces/tabs -> 1 space)
-      .trim();
-
-    return result;
-  } catch {
-    return content;
-  }
-}
-
-function minifyMarkdown(content: string): string {
-  try {
-    let result = content;
-
-    result = result.replace(/<!--[\s\S]*?-->/g, '');
-    result = result.replace(/[ \t]+$/gm, '');
-    result = result.replace(/\r\n/g, '\n');
-    result = result.replace(/\n\s*\n\s*\n+/g, '\n\n');
-    result = result.replace(/([^\n])[ \t]{5,}([^\n])/g, '$1 $2');
-    result = result.replace(/\s*\|\s*/g, ' | ');
-    result = result.replace(/^(#{1,6})[ \t]+/gm, '$1 ');
-    result = result.replace(/^(\s*)([-*+]|\d+\.)[ \t]+/gm, '$1$2 ');
-    result = result.replace(/\n{3,}(```)/g, '\n\n$1');
-    result = result.replace(/(```)\n{3,}/g, '$1\n\n');
-    result = result.trim();
-
-    return result;
-  } catch {
-    return content;
-  }
-}
-
+/**
+ * Async content minification - uses terser/clean-css/html-minifier for better quality.
+ * Preferred for GitHub API operations where minification quality matters.
+ */
 export async function minifyContent(
   content: string,
   filePath: string
-): Promise<{
-  content: string;
-  failed: boolean;
-  type:
-    | 'terser'
-    | 'conservative'
-    | 'aggressive'
-    | 'json'
-    | 'general'
-    | 'markdown'
-    | 'failed';
-  reason?: string;
-}> {
+): Promise<MinifyResult> {
   try {
-    const MAX_SIZE = 1024 * 1024;
+    const MAX_SIZE = 1024 * 1024; // 1MB
     const contentSize = Buffer.byteLength(content, 'utf8');
 
     if (contentSize > MAX_SIZE) {
       return {
-        content: content,
+        content,
         failed: true,
         type: 'failed',
         reason: `File too large: ${(contentSize / 1024 / 1024).toFixed(2)}MB exceeds 1MB limit`,
@@ -547,6 +588,7 @@ export async function minifyContent(
     }
 
     const config = getFileConfig(filePath);
+    const ext = getExtension(filePath, MINIFIER_EXT_OPTIONS);
 
     switch (config.strategy) {
       case 'terser': {
@@ -560,7 +602,7 @@ export async function minifyContent(
       }
 
       case 'json': {
-        const result = minifyJson(content);
+        const result = minifyJsonCore(content);
         return {
           content: result.content,
           failed: result.failed,
@@ -569,76 +611,58 @@ export async function minifyContent(
         };
       }
 
-      case 'conservative': {
-        const result = minifyConservative(content, config);
+      case 'conservative':
         return {
-          content: result,
+          content: minifyConservativeCore(content, config),
           failed: false,
           type: 'conservative',
         };
-      }
 
-      case 'general': {
-        const result = minifyGeneral(content);
+      case 'general':
         return {
-          content: result,
+          content: minifyGeneralCore(content),
           failed: false,
           type: 'general',
         };
-      }
 
-      case 'markdown': {
-        const result = minifyMarkdown(content);
+      case 'markdown':
         return {
-          content: result,
+          content: minifyMarkdownCore(content),
           failed: false,
           type: 'markdown',
         };
-      }
 
       case 'aggressive': {
-        const ext = getFileExtension(filePath);
-
         if (['css', 'less', 'scss'].includes(ext)) {
-          const result = await minifyCSS(content);
+          const result = await minifyCSSAsync(content);
           return {
             content: result.content,
-            failed: result.failed,
-            type: result.failed ? 'failed' : 'aggressive',
+            failed: false,
+            type: 'aggressive',
             ...(result.reason && { reason: result.reason }),
           };
         }
 
         if (['html', 'htm'].includes(ext)) {
-          const result = await minifyHTML(content);
+          const result = await minifyHTMLAsync(content);
           return {
             content: result.content,
-            failed: result.failed,
-            type: result.failed ? 'failed' : 'aggressive',
+            failed: false,
+            type: 'aggressive',
             ...(result.reason && { reason: result.reason }),
           };
         }
 
-        const result = minifyAggressive(content, config);
         return {
-          content: result,
+          content: minifyAggressiveCore(content, config),
           failed: false,
           type: 'aggressive',
-        };
-      }
-
-      default: {
-        const result = minifyGeneral(content);
-        return {
-          content: result,
-          failed: false,
-          type: 'general',
         };
       }
     }
   } catch (error: unknown) {
     return {
-      content: content,
+      content,
       failed: true,
       type: 'failed',
       reason: `Unexpected minification error: ${error instanceof Error ? error.message : 'Unknown error'}`,

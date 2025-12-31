@@ -882,6 +882,233 @@ describe('GitHub Search Pull Requests Tool', () => {
     });
   });
 
+  describe('Pagination Hints Integration', () => {
+    it('should include pagination hints when API returns pagination data', async () => {
+      mockSearchGitHubPullRequestsAPI.mockResolvedValue({
+        ...createMockPRResponse(),
+        pagination: {
+          currentPage: 1,
+          totalPages: 5,
+          perPage: 10,
+          totalMatches: 50,
+          hasMore: true,
+        },
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'facebook',
+              repo: 'react',
+              state: 'open',
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('Page 1/5');
+      expect(responseText).toContain('Next: page=2');
+      expect(responseText).toContain(
+        'Jump to: page=1 (first) or page=5 (last)'
+      );
+      // Should NOT have Previous (on first page) or Final page (hasMore=true)
+      expect(responseText).not.toContain('Previous:');
+      expect(responseText).not.toContain('Final page');
+    });
+
+    it('should include Previous hint when not on first page', async () => {
+      mockSearchGitHubPullRequestsAPI.mockResolvedValue({
+        ...createMockPRResponse(),
+        pagination: {
+          currentPage: 3,
+          totalPages: 5,
+          perPage: 10,
+          totalMatches: 50,
+          hasMore: true,
+        },
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'facebook',
+              repo: 'react',
+              state: 'open',
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('Page 3/5');
+      expect(responseText).toContain('Next: page=4');
+      expect(responseText).toContain('Previous: page=2');
+      expect(responseText).toContain(
+        'Jump to: page=1 (first) or page=5 (last)'
+      );
+      // Should NOT have Final page (hasMore=true)
+      expect(responseText).not.toContain('Final page');
+    });
+
+    it('should include Final page hint when on last page', async () => {
+      mockSearchGitHubPullRequestsAPI.mockResolvedValue({
+        ...createMockPRResponse(),
+        pagination: {
+          currentPage: 5,
+          totalPages: 5,
+          perPage: 10,
+          totalMatches: 50,
+          hasMore: false,
+        },
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'facebook',
+              repo: 'react',
+              state: 'open',
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('Page 5/5');
+      expect(responseText).toContain('Final page');
+      expect(responseText).toContain('Previous: page=4');
+      expect(responseText).toContain(
+        'Jump to: page=1 (first) or page=5 (last)'
+      );
+      expect(responseText).not.toContain('Next: page=6');
+    });
+
+    it('should not include Jump hint when totalPages <= 2', async () => {
+      mockSearchGitHubPullRequestsAPI.mockResolvedValue({
+        ...createMockPRResponse(),
+        pagination: {
+          currentPage: 1,
+          totalPages: 2,
+          perPage: 10,
+          totalMatches: 15,
+          hasMore: true,
+        },
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'facebook',
+              repo: 'react',
+              state: 'open',
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('Page 1/2');
+      expect(responseText).toContain('Next: page=2');
+      expect(responseText).not.toContain('Jump to:');
+    });
+
+    it('should not include pagination hints when no pagination data', async () => {
+      // Default createMockPRResponse() doesn't include pagination
+      mockSearchGitHubPullRequestsAPI.mockResolvedValue(createMockPRResponse());
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'facebook',
+              repo: 'react',
+              state: 'open',
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      // Should NOT have any pagination hints
+      expect(responseText).not.toContain('Page ');
+      expect(responseText).not.toContain('Next:');
+      expect(responseText).not.toContain('Previous:');
+      expect(responseText).not.toContain('Final page');
+      expect(responseText).not.toContain('Jump to:');
+    });
+
+    it('should include pagination object in result data', async () => {
+      mockSearchGitHubPullRequestsAPI.mockResolvedValue({
+        ...createMockPRResponse(),
+        pagination: {
+          currentPage: 2,
+          totalPages: 10,
+          perPage: 5,
+          totalMatches: 50,
+          hasMore: true,
+        },
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'facebook',
+              repo: 'react',
+              state: 'open',
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('pagination:');
+      expect(responseText).toContain('currentPage: 2');
+      expect(responseText).toContain('totalPages: 10');
+    });
+  });
+
   describe('Additional Coverage', () => {
     it('should handle callback errors gracefully', async () => {
       const errorCallback = vi

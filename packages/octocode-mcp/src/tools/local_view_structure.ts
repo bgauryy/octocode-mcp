@@ -1,13 +1,22 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { LsCommandBuilder } from '../commands/LsCommandBuilder.js';
-import { safeExec } from '../utils/local/utils/exec.js';
-import { pathValidator } from '../security/pathValidator.js';
+import {
+  safeExec,
+  checkCommandAvailability,
+  getMissingCommandError,
+} from '../utils/exec/index.js';
 import { getExtension } from '../utils/fileFilters.js';
-import { getToolHints } from './hints.js';
+import { getHints } from './hints/index.js';
+import { STATIC_TOOL_NAMES, TOOL_NAMES } from './toolMetadata.js';
+import {
+  validateToolPath,
+  createErrorResult,
+} from '../utils/local/utils/toolHelpers.js';
 import {
   applyPagination,
   generatePaginationHints,
-  createPaginationInfo,
-} from '../utils/local/utils/pagination.js';
+} from '../utils/pagination/index.js';
 import {
   formatFileSize,
   parseFileSize,
@@ -19,7 +28,42 @@ import type {
 } from '../utils/types.js';
 import fs from 'fs';
 import path from 'path';
-import { ERROR_CODES, ToolErrors } from '../errorCodes.js';
+import { ToolErrors } from '../errorCodes.js';
+import { executeBulkOperation } from '../utils/bulkOperations.js';
+import {
+  BulkViewStructureSchema,
+  LOCAL_VIEW_STRUCTURE_DESCRIPTION,
+} from '../scheme/local_view_structure.js';
+
+/**
+ * Register the local view structure tool with the MCP server.
+ * Follows the same pattern as GitHub tools for consistency.
+ */
+export function registerLocalViewStructureTool(server: McpServer) {
+  return server.registerTool(
+    TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
+    {
+      description: LOCAL_VIEW_STRUCTURE_DESCRIPTION,
+      inputSchema: BulkViewStructureSchema,
+      annotations: {
+        title: 'Local View Structure',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (args: {
+      queries: ViewStructureQuery[];
+    }): Promise<CallToolResult> => {
+      return executeBulkOperation<ViewStructureQuery, Record<string, unknown>>(
+        args.queries || [],
+        async query => await viewStructure(query),
+        { toolName: TOOL_NAMES.LOCAL_VIEW_STRUCTURE }
+      );
+    }
+  );
+}
 
 /**
  * Internal directory entry for processing
@@ -141,17 +185,15 @@ export async function viewStructure(
   query: ViewStructureQuery
 ): Promise<ViewStructureResult> {
   try {
-    const pathValidation = pathValidator.validate(query.path);
+    const pathValidation = validateToolPath(
+      query,
+      TOOL_NAMES.LOCAL_VIEW_STRUCTURE
+    );
     if (!pathValidation.isValid) {
-      return {
-        status: 'error',
-        errorCode: ERROR_CODES.PATH_VALIDATION_FAILED,
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
-        hints: getToolHints('LOCAL_VIEW_STRUCTURE', 'error'),
-      };
+      return pathValidation.errorResult as ViewStructureResult;
     }
 
+    // For recursive mode, we use Node.js fs directly (no external command needed)
     if (query.depth || query.recursive) {
       return await viewStructureRecursive(
         query,
@@ -160,22 +202,40 @@ export async function viewStructure(
       );
     }
 
+    // For non-recursive mode, check if ls is available
+    const lsAvailability = await checkCommandAvailability('ls');
+    if (!lsAvailability.available) {
+      const toolError = ToolErrors.commandNotAvailable(
+        'ls',
+        getMissingCommandError('ls')
+      );
+      return createErrorResult(toolError, query, {
+        toolName: TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
+      }) as ViewStructureResult;
+    }
+
     const builder = new LsCommandBuilder();
     const { command, args } = builder.fromQuery(query).build();
 
     const result = await safeExec(command, args);
 
     if (!result.success) {
+      // Provide more detailed error message including stderr
+      const stderrMsg = result.stderr?.trim();
       const toolError = ToolErrors.commandExecutionFailed(
         'ls',
-        new Error(result.stderr)
+        new Error(stderrMsg || 'Unknown error'),
+        stderrMsg
       );
       return {
         status: 'error',
         errorCode: toolError.errorCode,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
-        hints: getToolHints('LOCAL_VIEW_STRUCTURE', 'error'),
+        hints: [
+          stderrMsg ? `Error: ${stderrMsg}` : 'ls command failed',
+          ...getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
+        ],
       };
     }
 
@@ -302,10 +362,10 @@ export async function viewStructure(
       reasoning: query.reasoning,
       hints: [
         ...entryPaginationHints,
-        ...getToolHints('LOCAL_VIEW_STRUCTURE', status),
+        ...getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, status),
         ...(paginationMetadata
           ? generatePaginationHints(paginationMetadata, {
-              toolName: 'localViewStructure',
+              toolName: STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
             })
           : []),
       ],
@@ -320,7 +380,7 @@ export async function viewStructure(
       errorCode: toolError.errorCode,
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
-      hints: getToolHints('LOCAL_VIEW_STRUCTURE', 'error'),
+      hints: getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
     };
   }
 }
@@ -481,11 +541,32 @@ async function viewStructureRecursive(
   }
   const totalSize = totalSizeBytes;
 
+  const totalEntries = filteredEntries.length;
+
+  // Apply entry-based pagination
+  const entriesPerPage =
+    query.entriesPerPage || RESOURCE_LIMITS.DEFAULT_ENTRIES_PER_PAGE;
+  const entryPageNumber = query.entryPageNumber || 1;
+  const totalPages = Math.ceil(totalEntries / entriesPerPage);
+  const startIdx = (entryPageNumber - 1) * entriesPerPage;
+  const endIdx = Math.min(startIdx + entriesPerPage, totalEntries);
+
+  const paginatedEntries = filteredEntries.slice(startIdx, endIdx);
+
+  const entryPaginationInfo = {
+    currentPage: entryPageNumber,
+    totalPages,
+    entriesPerPage,
+    totalEntries,
+    hasMore: entryPageNumber < totalPages,
+  };
+
   if (
     !query.charLength &&
-    filteredEntries.length > RESOURCE_LIMITS.MAX_ENTRIES_BEFORE_PAGINATION
+    totalEntries > RESOURCE_LIMITS.MAX_ENTRIES_BEFORE_PAGINATION &&
+    !query.entriesPerPage
   ) {
-    const estimatedSize = filteredEntries.length * 150;
+    const estimatedSize = totalEntries * 150;
     const toolError = ToolErrors.outputTooLarge(
       estimatedSize,
       RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH
@@ -500,15 +581,15 @@ async function viewStructureRecursive(
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
       hints: [
-        `Recursive listing found ${filteredEntries.length} entries - too much to process at once`,
-        'Options: Use charLength to paginate through the tree, or limit to reduce scope',
+        `Recursive listing found ${totalEntries} entries - too much to process at once`,
+        'Options: Use entriesPerPage to paginate through results, or limit to reduce scope',
         'Alternative: Start with depth=1 to get overview, then drill into specific subdirectories',
         'Why this matters: Large trees overwhelm context and make it hard to find what you need',
       ],
     };
   }
 
-  const structuredLines = filteredEntries.map(entry => {
+  const structuredLines = paginatedEntries.map(entry => {
     // Fallback to path splitting if depth not present (e.g. from ls parsing)
     const depth = entry.depth ?? entry.name.split(path.sep).length - 1;
     return formatEntryString(entry, depth);
@@ -526,13 +607,38 @@ async function viewStructureRecursive(
     structuredOutput = paginationMetadata.paginatedContent;
   }
 
-  const status = filteredEntries.length > 0 ? 'hasResults' : 'empty';
-  const baseHints = getToolHints('LOCAL_VIEW_STRUCTURE', status);
+  const status = totalEntries > 0 ? 'hasResults' : 'empty';
+  const baseHints = getHints(
+    STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE as 'localViewStructure',
+    status
+  );
+
+  const entryPaginationHints = [
+    `Page ${entryPageNumber}/${totalPages} (showing ${paginatedEntries.length} of ${totalEntries})`,
+    `Total: ${totalFiles} files, ${totalDirectories} directories`,
+    entryPaginationInfo.hasMore
+      ? `Next: entryPageNumber=${entryPageNumber + 1}`
+      : 'Final page',
+  ];
+
   const paginationHints = paginationMetadata
     ? generatePaginationHints(paginationMetadata, {
-        toolName: 'localViewStructure',
+        toolName: STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
       })
     : [];
+
+  const pagination = {
+    currentPage: entryPaginationInfo.currentPage,
+    totalPages: entryPaginationInfo.totalPages,
+    entriesPerPage: entryPaginationInfo.entriesPerPage,
+    totalEntries: entryPaginationInfo.totalEntries,
+    hasMore: entryPaginationInfo.hasMore,
+    ...(paginationMetadata && {
+      charOffset: paginationMetadata.charOffset,
+      charLength: paginationMetadata.charLength,
+      totalChars: paginationMetadata.totalChars,
+    }),
+  };
 
   return {
     status,
@@ -541,12 +647,10 @@ async function viewStructureRecursive(
     totalFiles,
     totalDirectories,
     totalSize,
-    ...(paginationMetadata && {
-      pagination: createPaginationInfo(paginationMetadata),
-    }),
+    pagination,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
-    hints: [...baseHints, ...paginationHints],
+    hints: [...baseHints, ...entryPaginationHints, ...paginationHints],
   };
 }
 

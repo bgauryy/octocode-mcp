@@ -94,10 +94,10 @@ vi.mock('../../src/utils/minifier/index.js', () => ({
 
 vi.mock('../../src/github/client.js', () => ({
   getOctokit: vi.fn(() => Promise.resolve(mockOctokit)),
-  clearCachedToken: vi.fn(),
+  clearOctokitInstances: vi.fn(),
 }));
 
-vi.mock('../../src/utils/exec.js', () => ({
+vi.mock('../../src/utils/exec/index.js', () => ({
   getGithubCLIToken: vi.fn().mockResolvedValue('mocked-cli-token'),
 }));
 
@@ -653,6 +653,7 @@ describe('GitHub API Utils', () => {
               {
                 owner: 'facebook',
                 repo: 'react',
+                defaultBranch: undefined,
                 stars: 50000,
                 description:
                   'A declarative, efficient, and flexible JavaScript library for building user interfaces.',
@@ -660,8 +661,16 @@ describe('GitHub API Utils', () => {
                 createdAt: '2013-05-24T10:00:00Z',
                 updatedAt: '2023-12-01T10:00:00Z',
                 pushedAt: '2023-12-01T08:00:00Z',
+                visibility: undefined,
               },
             ],
+            pagination: {
+              currentPage: 1,
+              totalPages: 1,
+              perPage: 30,
+              totalMatches: 1,
+              hasMore: false,
+            },
           },
           status: 200,
           headers: undefined,

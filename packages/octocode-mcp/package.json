@@ -78,10 +78,20 @@
   "exports": {
     ".": {
       "import": "./dist/index.js"
+    },
+    "./public": {
+      "types": "./dist/public.d.ts",
+      "import": "./dist/public.js"
+    },
+    "./types": {
+      "types": "./dist/public.d.ts",
+      "import": "./dist/public.js"
     }
   },
   "files": [
     "dist/index.js",
+    "dist/public.js",
+    "dist/public.d.ts",
     "manifest.json",
     "server.json",
     "LICENSE"

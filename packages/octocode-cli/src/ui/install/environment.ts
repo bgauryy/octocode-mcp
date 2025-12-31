@@ -11,8 +11,6 @@ import type { NodeEnvironmentStatus } from '../../features/node-check.js';
 export function printNodeEnvironmentStatus(
   status: NodeEnvironmentStatus
 ): void {
-  console.log();
-
   // Node.js check
   if (status.nodeInstalled) {
     console.log(
@@ -41,8 +39,6 @@ export function printNodeEnvironmentStatus(
     status.octocodePackageAvailable,
     status.octocodePackageVersion
   );
-
-  console.log();
 }
 
 /**
@@ -95,11 +91,9 @@ function printOctocodePackageStatus(
  * Print node-doctor hint for deeper diagnostics
  */
 export function printNodeDoctorHint(): void {
-  console.log();
   console.log(
     `  ${dim('For deeper diagnostics:')} ${c('cyan', 'npx node-doctor')}`
   );
-  console.log();
 }
 
 /**

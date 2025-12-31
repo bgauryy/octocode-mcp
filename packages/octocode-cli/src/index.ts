@@ -23,6 +23,7 @@ import {
   hasEnvironmentIssues,
 } from './ui/install/index.js';
 import { checkNodeEnvironment } from './features/node-check.js';
+import { printGitHubAuthStatus } from './ui/gh-guidance.js';
 import { runMenuLoop } from './ui/menu.js';
 import { runCLI } from './cli/index.js';
 
@@ -45,6 +46,9 @@ async function runInteractiveMode(): Promise<void> {
 
   const envStatus = await checkNodeEnvironment();
   printNodeEnvironmentStatus(envStatus);
+
+  // GitHub authentication check
+  printGitHubAuthStatus();
 
   // Show node-doctor hint if issues detected
   if (hasEnvironmentIssues(envStatus)) {

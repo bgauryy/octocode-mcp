@@ -1,32 +1,87 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { readFile, stat } from 'fs/promises';
-import { resolve, isAbsolute } from 'path';
-import { minifyContentSync } from '../utils/minifier/minifierSync.js';
-import { getToolHints } from './hints.js';
+import { minifyContentSync } from '../utils/minifier/index.js';
+import { getHints } from './hints/index.js';
 import {
   applyPagination,
   generatePaginationHints,
   createPaginationInfo,
-} from '../utils/local/utils/pagination.js';
+} from '../utils/pagination/index.js';
 import { RESOURCE_LIMITS, DEFAULTS } from '../utils/constants.js';
+import { TOOL_NAMES } from './toolMetadata.js';
 import {
   validateToolPath,
   createErrorResult,
 } from '../utils/local/utils/toolHelpers.js';
 import type { FetchContentQuery, FetchContentResult } from '../utils/types.js';
 import { ToolErrors, ERROR_CODES } from '../errorCodes.js';
+import { executeBulkOperation } from '../utils/bulkOperations.js';
+import {
+  BulkFetchContentSchema,
+  LOCAL_FETCH_CONTENT_DESCRIPTION,
+} from '../scheme/local_fetch_content.js';
+
+/**
+ * Register the local fetch content tool with the MCP server.
+ * Follows the same pattern as GitHub tools for consistency.
+ */
+export function registerLocalFetchContentTool(server: McpServer) {
+  return server.registerTool(
+    TOOL_NAMES.LOCAL_FETCH_CONTENT,
+    {
+      description: LOCAL_FETCH_CONTENT_DESCRIPTION,
+      inputSchema: BulkFetchContentSchema,
+      annotations: {
+        title: 'Local Fetch Content',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (args: { queries: FetchContentQuery[] }): Promise<CallToolResult> => {
+      return executeBulkOperation<FetchContentQuery, Record<string, unknown>>(
+        args.queries || [],
+        async query => await fetchContent(query),
+        { toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT }
+      );
+    }
+  );
+}
+
+/**
+ * Apply minification to content (always enabled for token efficiency)
+ * Only replaces content if minification reduces size
+ *
+ * @param content - The content to minify
+ * @param filePath - File path for determining minification strategy
+ * @returns Minified content if smaller, otherwise original
+ */
+function applyMinification(content: string, filePath: string): string {
+  try {
+    const minifiedContent = minifyContentSync(content, filePath);
+    // Only use minified version if it's actually smaller
+    return minifiedContent.length < content.length ? minifiedContent : content;
+  } catch {
+    // Keep original if minification fails
+    return content;
+  }
+}
 
 export async function fetchContent(
   query: FetchContentQuery
 ): Promise<FetchContentResult> {
   try {
-    const pathValidation = validateToolPath(query, 'LOCAL_FETCH_CONTENT');
+    const pathValidation = validateToolPath(
+      query,
+      TOOL_NAMES.LOCAL_FETCH_CONTENT
+    );
     if (!pathValidation.isValid) {
       return pathValidation.errorResult as FetchContentResult;
     }
 
-    const absolutePath = isAbsolute(query.path)
-      ? query.path
-      : resolve(process.cwd(), query.path);
+    const absolutePath = pathValidation.sanitizedPath!;
 
     let fileStats;
     try {
@@ -36,8 +91,12 @@ export async function fetchContent(
         query.path,
         error instanceof Error ? error : undefined
       );
-      return createErrorResult(toolError, 'LOCAL_FETCH_CONTENT', query, {
-        path: query.path,
+      return createErrorResult(toolError, query, {
+        toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+        extra: {
+          path: query.path,
+          resolvedPath: absolutePath,
+        },
       }) as FetchContentResult;
     }
 
@@ -53,9 +112,10 @@ export async function fetchContent(
         fileSizeKB,
         RESOURCE_LIMITS.LARGE_FILE_THRESHOLD_KB
       );
-      return createErrorResult(toolError, 'LOCAL_FETCH_CONTENT', query, {
-        path: query.path,
-        hints: [
+      return createErrorResult(toolError, query, {
+        toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+        extra: { path: query.path },
+        customHints: [
           'Best approach: Use matchString to extract specific functions/classes you actually need',
           'Alternative: Use charLength for pagination if you need to browse through the file systematically',
           'Why matchString works better: Gets only relevant sections, faster, and uses fewer tokens',
@@ -72,8 +132,9 @@ export async function fetchContent(
         query.path,
         error instanceof Error ? error : undefined
       );
-      return createErrorResult(toolError, 'LOCAL_FETCH_CONTENT', query, {
-        path: query.path,
+      return createErrorResult(toolError, query, {
+        toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+        extra: { path: query.path },
       }) as FetchContentResult;
     }
 
@@ -82,7 +143,12 @@ export async function fetchContent(
 
     let resultContent: string;
     let isPartial = false;
+    let actualStartLine: number | undefined;
+    let actualEndLine: number | undefined;
+    let matchRanges: Array<{ start: number; end: number }> | undefined;
+    const warnings: string[] = [];
 
+    // Priority: matchString > startLine/endLine > fullContent
     if (query.matchString) {
       const result = extractMatchingLines(
         lines,
@@ -101,7 +167,7 @@ export async function fetchContent(
         // Add pattern-specific hints
         if (query.matchStringIsRegex) {
           contextHints.push(
-            'TIP: Regex pattern may be too specific - try simplifying'
+            'TIP: Regex matches per-line only (not multiline). Verify pattern exists on a single line.'
           );
         } else {
           contextHints.push(
@@ -127,7 +193,7 @@ export async function fetchContent(
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           hints: [
-            ...getToolHints('LOCAL_FETCH_CONTENT', 'empty'),
+            ...getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'empty'),
             '',
             ...contextHints,
           ],
@@ -136,17 +202,13 @@ export async function fetchContent(
 
       resultContent = result.lines.join('\n');
 
-      // Apply minification BEFORE size check (fixes patternTooBroad false positives)
-      if (query.minified !== false) {
-        try {
-          const originalLength = resultContent.length;
-          const minifiedContent = minifyContentSync(resultContent, query.path);
-          if (minifiedContent.length < originalLength) {
-            resultContent = minifiedContent;
-          }
-        } catch {
-          // Keep original if minification fails
-        }
+      resultContent = applyMinification(resultContent, query.path);
+
+      // Extract line numbers from matchRanges for response
+      if (result.matchRanges.length > 0) {
+        actualStartLine = result.matchRanges[0]!.start;
+        actualEndLine = result.matchRanges[result.matchRanges.length - 1]!.end;
+        matchRanges = result.matchRanges;
       }
 
       if (result.matchCount > 50) {
@@ -158,6 +220,11 @@ export async function fetchContent(
           contentLength: resultContent.length,
           isPartial: true,
           totalLines,
+          ...(actualStartLine !== undefined && {
+            startLine: actualStartLine,
+            endLine: actualEndLine,
+            matchRanges,
+          }),
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           warnings: [
@@ -189,6 +256,11 @@ export async function fetchContent(
           contentLength: autoPagination.paginatedContent.length,
           isPartial: true,
           totalLines,
+          ...(actualStartLine !== undefined && {
+            startLine: actualStartLine,
+            endLine: actualEndLine,
+            matchRanges,
+          }),
           pagination: createPaginationInfo(autoPagination),
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
@@ -196,30 +268,58 @@ export async function fetchContent(
             `Auto-paginated: ${result.matchCount} matches exceeded display limit`,
           ],
           hints: [
-            ...getToolHints('LOCAL_FETCH_CONTENT', 'hasResults'),
+            ...getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'hasResults'),
             ...generatePaginationHints(autoPagination, {
-              toolName: 'localGetFileContent',
+              toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
             }),
           ],
         };
       }
 
       isPartial = true;
+    } else if (query.startLine !== undefined && query.endLine !== undefined) {
+      // Line range extraction (aligned with GitHub's githubGetFileContent)
+      const effectiveStartLine = Math.max(1, query.startLine);
+      const effectiveEndLine = Math.min(query.endLine, totalLines);
+
+      if (effectiveStartLine > totalLines) {
+        return {
+          status: 'empty',
+          path: query.path,
+          totalLines,
+          errorCode: ERROR_CODES.NO_MATCHES,
+          researchGoal: query.researchGoal,
+          reasoning: query.reasoning,
+          hints: [
+            ...getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'empty'),
+            `Requested startLine ${query.startLine} exceeds file length (${totalLines} lines)`,
+            `Use startLine=1 to ${totalLines} for valid range`,
+          ],
+        };
+      }
+
+      const selectedLines = lines.slice(
+        effectiveStartLine - 1,
+        effectiveEndLine
+      );
+      resultContent = selectedLines.join('\n');
+      actualStartLine = effectiveStartLine;
+      actualEndLine = effectiveEndLine;
+      isPartial = true;
+
+      // Warn if range was adjusted
+      if (query.endLine > totalLines) {
+        warnings.push(
+          `Requested endLine ${query.endLine} adjusted to ${totalLines} (file end)`
+        );
+      }
+
+      resultContent = applyMinification(resultContent, query.path);
     } else {
       resultContent = content;
       isPartial = false;
 
-      if (query.minified !== false) {
-        try {
-          const originalLength = resultContent.length;
-          const minifiedContent = minifyContentSync(resultContent, query.path);
-          if (minifiedContent.length < originalLength) {
-            resultContent = minifiedContent;
-          }
-        } catch {
-          // Keep original if minification fails
-        }
-      }
+      resultContent = applyMinification(resultContent, query.path);
     }
 
     if (!resultContent || resultContent.trim().length === 0) {
@@ -229,33 +329,37 @@ export async function fetchContent(
         totalLines,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
-        hints: getToolHints('LOCAL_FETCH_CONTENT', 'empty'),
+        hints: getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'empty'),
       };
     }
 
+    // Smart auto-pagination: Instead of error, auto-paginate large content
+    let effectiveCharLength = query.charLength;
+    let autoPaginated = false;
+
     if (!query.charLength && resultContent.length > DEFAULTS.MAX_OUTPUT_CHARS) {
-      const toolError = ToolErrors.paginationRequired(resultContent.length);
-      return createErrorResult(toolError, 'LOCAL_FETCH_CONTENT', query, {
-        path: query.path,
-        totalLines,
-        hints: [
-          `RECOMMENDED: charLength=${RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH} (paginate results)`,
-          'ALTERNATIVE: Use matchString for targeted extraction',
-          `NOTE: Results >10K chars require pagination for safety`,
-        ],
-      }) as FetchContentResult;
+      // Auto-apply recommended pagination instead of returning error
+      effectiveCharLength = RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH;
+      autoPaginated = true;
+      warnings.push(
+        `Auto-paginated: Content (${resultContent.length} chars) exceeds ${DEFAULTS.MAX_OUTPUT_CHARS} char limit`
+      );
     }
 
     const pagination = applyPagination(
       resultContent,
       query.charOffset ?? 0,
-      query.charLength
+      effectiveCharLength
     );
 
-    const baseHints = getToolHints('LOCAL_FETCH_CONTENT', 'hasResults');
-    const paginationHints = query.charLength
-      ? generatePaginationHints(pagination, { toolName: 'localGetFileContent' })
-      : [];
+    const baseHints = getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'hasResults');
+    // Generate pagination hints when explicitly requested OR when auto-paginated
+    const paginationHints =
+      effectiveCharLength || autoPaginated
+        ? generatePaginationHints(pagination, {
+            toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+          })
+        : [];
 
     return {
       status: 'hasResults',
@@ -265,16 +369,28 @@ export async function fetchContent(
       contentLength: pagination.paginatedContent.length,
       isPartial,
       totalLines,
-      ...(query.charLength && {
+      // Line extraction info (when startLine/endLine or matchString used)
+      ...(actualStartLine !== undefined && {
+        startLine: actualStartLine,
+        endLine: actualEndLine,
+        ...(matchRanges === undefined && {
+          extractedLines: actualEndLine! - actualStartLine + 1,
+        }),
+        ...(matchRanges !== undefined && { matchRanges }),
+      }),
+      // Include pagination info when explicitly requested OR auto-paginated
+      ...((effectiveCharLength || autoPaginated) && {
         pagination: createPaginationInfo(pagination),
       }),
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
+      ...(warnings.length > 0 && { warnings }),
       hints: [...baseHints, ...paginationHints],
     };
   } catch (error) {
-    return createErrorResult(error, 'LOCAL_FETCH_CONTENT', query, {
-      path: query.path,
+    return createErrorResult(error, query, {
+      toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+      extra: { path: query.path },
     }) as FetchContentResult;
   }
 }

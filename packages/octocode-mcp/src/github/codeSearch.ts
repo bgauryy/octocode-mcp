@@ -23,7 +23,23 @@ export async function searchGitHubCodeAPI(
   authInfo?: AuthInfo,
   sessionId?: string
 ): Promise<GitHubAPIResponse<OptimizedCodeSearchResult>> {
-  const cacheKey = generateCacheKey('gh-api-code', params, sessionId);
+  // Cache key excludes context fields (mainResearchGoal, researchGoal, reasoning)
+  // as they don't affect the API response
+  const cacheKey = generateCacheKey(
+    'gh-api-code',
+    {
+      keywordsToSearch: params.keywordsToSearch,
+      owner: params.owner,
+      repo: params.repo,
+      extension: params.extension,
+      filename: params.filename,
+      path: params.path,
+      match: params.match,
+      limit: params.limit,
+      page: params.page,
+    },
+    sessionId
+  );
 
   const result = await withDataCache<
     GitHubAPIResponse<OptimizedCodeSearchResult>
@@ -79,13 +95,16 @@ async function searchGitHubCodeAPIInternal(
       };
     }
 
+    const perPage = Math.min(
+      typeof params.limit === 'number' ? params.limit : 30,
+      100
+    );
+    const currentPage = params.page || 1;
+
     const searchParams: SearchCodeParameters = {
       q: query,
-      per_page: Math.min(
-        typeof params.limit === 'number' ? params.limit : 30,
-        100
-      ),
-      page: 1,
+      per_page: perPage,
+      page: currentPage,
       headers: {
         Accept: 'application/vnd.github.v3.text-match+json',
       },
@@ -95,16 +114,28 @@ async function searchGitHubCodeAPIInternal(
 
     const optimizedResult = await convertCodeSearchResult(result);
 
+    // GitHub caps at 1000 total results
+    const totalMatches = Math.min(optimizedResult.total_count, 1000);
+    const totalPages = Math.min(Math.ceil(totalMatches / perPage), 10);
+    const hasMore = currentPage < totalPages;
+
     return {
       data: {
         total_count: optimizedResult.total_count,
         items: optimizedResult.items,
         repository: optimizedResult.repository,
-        securityWarnings: optimizedResult.securityWarnings,
+        matchLocations: optimizedResult.matchLocations,
         minified: optimizedResult.minified,
         minificationFailed: optimizedResult.minificationFailed,
         minificationTypes: optimizedResult.minificationTypes,
         _researchContext: optimizedResult._researchContext,
+        pagination: {
+          currentPage,
+          totalPages,
+          perPage,
+          totalMatches,
+          hasMore,
+        },
       },
       status: 200,
       headers: result.headers,
@@ -129,7 +160,7 @@ async function transformToOptimizedFormat(
 ): Promise<OptimizedCodeSearchResult> {
   const singleRepo = extractSingleRepository(items);
 
-  const allSecurityWarningsSet = new Set<string>();
+  const allMatchLocationsSet = new Set<string>();
   let hasMinificationFailures = false;
   const minificationTypes: string[] = [];
 
@@ -151,13 +182,13 @@ async function transformToOptimizedFormat(
           processedFragment = sanitizationResult.content;
 
           if (sanitizationResult.hasSecrets) {
-            allSecurityWarningsSet.add(
+            allMatchLocationsSet.add(
               `Secrets detected in ${item.path}: ${sanitizationResult.secretsDetected.join(', ')}`
             );
           }
           if (sanitizationResult.warnings.length > 0) {
             sanitizationResult.warnings.forEach(w =>
-              allSecurityWarningsSet.add(`${item.path}: ${w}`)
+              allMatchLocationsSet.add(`${item.path}: ${w}`)
             );
           }
 
@@ -219,7 +250,11 @@ async function transformToOptimizedFormat(
         ? (() => {
             const parts = singleRepo.full_name.split('/');
             return parts.length === 2 && parts[0] && parts[1]
-              ? { owner: parts[0], repo: parts[1] }
+              ? {
+                  owner: parts[0],
+                  repo: parts[1],
+                  branch: singleRepo.default_branch || undefined,
+                }
               : undefined;
           })()
         : undefined,
@@ -236,8 +271,8 @@ async function transformToOptimizedFormat(
     };
   }
 
-  if (allSecurityWarningsSet.size > 0) {
-    result.securityWarnings = Array.from(allSecurityWarningsSet);
+  if (allMatchLocationsSet.size > 0) {
+    result.matchLocations = Array.from(allMatchLocationsSet);
   }
 
   result.minified = !hasMinificationFailures;

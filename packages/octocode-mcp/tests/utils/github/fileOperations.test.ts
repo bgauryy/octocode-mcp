@@ -95,6 +95,8 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     rest: {
       repos: {
         getContent: ReturnType<typeof vi.fn>;
+        get: ReturnType<typeof vi.fn>;
+        listCommits: ReturnType<typeof vi.fn>;
       };
     };
   };
@@ -194,7 +196,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'abc123',
+          branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
           contentLength: 34,
           minified: true,
@@ -215,7 +217,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'abc123',
+          branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
           contentLength: 34,
           minified: true,
@@ -239,7 +241,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'abc123',
+          branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
           contentLength: 34,
           minified: true,
@@ -264,7 +266,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'abc123',
+          branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
           contentLength: 34,
           minified: true,
@@ -289,7 +291,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'abc123',
+          branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
           contentLength: 34,
           minified: true,
@@ -419,7 +421,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         expect(result.data.content).toBe('line 8\nline 9\nline 10');
         expect(result.data.startLine).toBe(8);
         expect(result.data.endLine).toBe(10);
-        expect(result.data.securityWarnings).toContain(
+        expect(result.data.matchLocations).toContain(
           'Requested endLine 15 adjusted to 10 (file end)'
         );
       }
@@ -466,7 +468,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         expect(result.data.content).toContain('import React from "react"'); // Context before
         expect(result.data.content).toContain('export default MyComponent'); // Context after
         expect(result.data.isPartial).toBe(true);
-        expect(result.data.securityWarnings).toContain(
+        expect(result.data.matchLocations).toContain(
           'Found "function MyComponent()" on line 5'
         );
       }
@@ -582,23 +584,26 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           'Copyright (c) Meta Platforms'
         );
 
-        expect(result.data.securityWarnings).toContain(
+        expect(result.data.matchLocations).toContain(
           'Found "export function createRef" on line 12'
         );
       }
     });
 
-    it('should return error when matchString not found', async () => {
+    it('should return success with matchNotFound when matchString not found', async () => {
       const params = createTestParams({ matchString: 'nonexistent string' });
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      // The result should be a direct error response
-      expect('error' in result).toBe(true);
-      if ('error' in result) {
-        expect(result.error).toContain(
-          'Match string "nonexistent string" not found in file'
-        );
+      // The result should be a 200 success with matchNotFound flag
+      // "Match not found" is a normal scenario, NOT an error
+      expect(result.status).toBe(200);
+      expect('data' in result).toBe(true);
+      if ('data' in result) {
+        expect(result.data.matchNotFound).toBe(true);
+        expect(result.data.searchedFor).toBe('nonexistent string');
+        expect(result.data.content).toBe('');
+        expect(result.data.contentLength).toBe(0);
       }
     });
 
@@ -614,7 +619,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       if ('data' in result) {
         // Should use the first match and indicate multiple matches
         expect(result.data.content).toContain('import React from "react"');
-        expect(result.data.securityWarnings).toContain(
+        expect(result.data.matchLocations).toContain(
           'Found "import" on line 2 (and 1 other locations)'
         );
       }
@@ -722,6 +727,8 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       await fetchGitHubFileContentAPI(params);
 
+      // Cache key only includes GitHub API params (owner, repo, path, branch)
+      // Processing params (startLine, endLine, matchString) are applied post-cache
       expect(mockGenerateCacheKey).toHaveBeenCalledWith(
         'gh-api-file-content',
         {
@@ -729,16 +736,12 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           repo: 'repo',
           path: 'test.txt',
           branch: 'feature',
-          startLine: 5,
-          endLine: 10,
-          matchString: 'search term',
-          matchStringContextLines: 3,
         },
         undefined
       );
     });
 
-    it('should generate different cache keys for different parameters', async () => {
+    it('should generate same cache key for same file with different line params', async () => {
       const baseParams = createTestParams();
 
       // Mock file response
@@ -754,14 +757,15 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       // Call with base params
       await fetchGitHubFileContentAPI(baseParams);
 
-      // Call with additional params
+      // Call with additional params (different startLine/endLine)
       await fetchGitHubFileContentAPI({
         ...baseParams,
         startLine: 1,
         endLine: 5,
       });
 
-      // Should have been called twice with different parameter sets
+      // Cache key only includes GitHub API params - so SAME key for same file!
+      // Processing params are applied post-cache for efficiency
       expect(mockGenerateCacheKey).toHaveBeenCalledTimes(2);
       expect(mockGenerateCacheKey).toHaveBeenNthCalledWith(
         1,
@@ -771,13 +775,10 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           repo: 'repo',
           path: 'test.txt',
           branch: undefined,
-          startLine: undefined,
-          endLine: undefined,
-          matchString: undefined,
-          matchStringContextLines: 5,
         },
         undefined
       );
+      // Same cache key for second call - different processing applied post-cache
       expect(mockGenerateCacheKey).toHaveBeenNthCalledWith(
         2,
         'gh-api-file-content',
@@ -786,10 +787,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           repo: 'repo',
           path: 'test.txt',
           branch: undefined,
-          startLine: 1,
-          endLine: 5,
-          matchString: undefined,
-          matchStringContextLines: 5,
         },
         undefined
       );
@@ -978,7 +975,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       expect(result.status).toBe(200);
       if ('data' in result) {
-        expect(result.data.securityWarnings).toContain(
+        expect(result.data.matchLocations).toContain(
           'Secrets detected and redacted: github-token'
         );
       }
@@ -998,8 +995,8 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       expect(result.status).toBe(200);
       if ('data' in result) {
-        expect(result.data.securityWarnings).toContain('Custom warning 1');
-        expect(result.data.securityWarnings).toContain('Custom warning 2');
+        expect(result.data.matchLocations).toContain('Custom warning 1');
+        expect(result.data.matchLocations).toContain('Custom warning 2');
       }
     });
   });

@@ -59,27 +59,20 @@ export class LsCommandBuilder extends BaseCommandBuilder {
           break;
         case 'name':
         default:
-          // Default sort is by name
           break;
       }
     }
 
-    // Better UX: directories first when sorting by name (Linux only)
     if (!query.sortBy || query.sortBy === 'name') {
       if (process.platform === 'linux') {
         this.addFlag('--group-directories-first');
       }
     }
 
-    // Directories only - don't use -d flag, filter after parsing instead
-    // The -d flag lists the directory itself, not its contents
-
-    // Force single-column output for consistent parsing
     if (!query.details) {
       this.addFlag('-1');
     }
 
-    // Add the path
     this.addArg(query.path);
 
     return this;
