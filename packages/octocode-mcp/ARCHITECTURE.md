@@ -1,473 +1,909 @@
-# 🏗️ octocode-mcp Architecture
+# Octocode MCP Architecture
 
-MCP Server for GitHub code research AND local filesystem exploration with security-first design.
+> Model Context Protocol (MCP) server for GitHub and local code research, built in TypeScript.
 
-## 📁 Package Structure
+## Overview
+
+Octocode MCP is an MCP server that provides AI agents with powerful code exploration capabilities. It exposes tools for:
+
+- **GitHub Research**: Search code, repositories, pull requests, view repo structure, and fetch file content
+- **Local Research**: Search local codebases using ripgrep, browse directory structure, find files, and read content
+- **Package Discovery**: Search NPM and PyPI for package information and repository URLs
+
+The server follows the [Model Context Protocol](https://modelcontextprotocol.io/) specification and integrates with MCP-compatible clients like Cursor, Claude Desktop, and others.
+
+---
+
+## Project Structure
 
 ```
-packages/octocode-mcp/
-├── src/
-│   ├── index.ts              ← MCP Server entry point
-│   ├── serverConfig.ts       ← Configuration & token management
-│   ├── session.ts            ← Session tracking & logging
-│   ├── types.ts              ← Core TypeScript types
-│   ├── errorCodes.ts         ← Structured error definitions
-│   ├── responses.ts          ← YAML response formatting
-│   │
-│   ├── github/               ← GitHub API Integration Layer
-│   │   ├── client.ts         ← Octokit client with throttling
-│   │   ├── codeSearch.ts     ← Code search API + filtering
-│   │   ├── repoSearch.ts     ← Repository search API
-│   │   ├── pullRequestSearch.ts ← PR search API (883 lines!)
-│   │   ├── fileOperations.ts ← File content & structure
-│   │   ├── queryBuilders.ts  ← Search query construction
-│   │   └── errors.ts         ← GitHub error handling
-│   │
-│   ├── tools/                ← MCP Tool Implementations (11 tools)
-│   │   ├── toolConfig.ts     ← Tool registry & defaults
-│   │   ├── toolsManager.ts   ← Tool registration logic
-│   │   ├── toolMetadata.ts   ← Descriptions, schemas & hints proxy
-│   │   ├── utils.ts          ← Shared tool utilities (GitHub)
-│   │   ├── hints.ts          ← Context-aware hints (Local)
-│   │   │
-│   │   ├── github_search_code.ts        ← GitHub code search
-│   │   ├── github_fetch_content.ts      ← GitHub file content
-│   │   ├── github_search_repos.ts       ← GitHub repo search
-│   │   ├── github_search_pull_requests.ts ← GitHub PR search
-│   │   ├── github_view_repo_structure.ts  ← GitHub repo structure
-│   │   │
-│   │   ├── local_ripgrep.ts      ← Local code search (ripgrep)
-│   │   ├── local_fetch_content.ts ← Local file content
-│   │   ├── local_find_files.ts   ← Local file finder
-│   │   ├── local_view_structure.ts ← Local directory structure
-│   │   │
-│   │   └── package_search.ts     ← NPM/Python package search
-│   │
-│   ├── commands/             ← CLI Command Builders (Local Tools)
-│   │   ├── BaseCommandBuilder.ts   ← Abstract base class
-│   │   ├── RipgrepCommandBuilder.ts ← rg command construction
-│   │   ├── FindCommandBuilder.ts   ← find command construction
-│   │   └── LsCommandBuilder.ts     ← ls command construction
-│   │
-│   ├── scheme/               ← Zod Validation Schemas (12 schemas)
-│   │   ├── baseSchema.ts           ← Shared schema utilities
-│   │   ├── responsePriority.ts     ← YAML key ordering
-│   │   ├── github_*.ts             ← GitHub tool schemas
-│   │   ├── local_*.ts              ← Local tool schemas
-│   │   └── package_search.ts       ← Package tool schema
-│   │
-│   ├── security/             ← Security Layer (10 modules)
-│   │   ├── withSecurityValidation.ts   ← Tool handler wrapper
-│   │   ├── contentSanitizer.ts         ← I/O sanitization
-│   │   ├── commandValidator.ts         ← CLI command validation
-│   │   ├── executionContextValidator.ts ← CWD validation
-│   │   ├── pathValidator.ts            ← Path traversal prevention
-│   │   ├── ignoredPathFilter.ts        ← .gitignore-like filtering
-│   │   ├── regexes.ts                  ← Secret detection patterns
-│   │   ├── patternsConstants.ts        ← Pattern definitions
-│   │   ├── securityConstants.ts        ← Security limits
-│   │   └── mask.ts                     ← Data masking utilities
-│   │
-│   ├── utils/                ← Shared Utilities (24+ modules)
-│   │   ├── bulkOperations.ts     ← Parallel query execution
-│   │   ├── promiseUtils.ts       ← Error isolation & retries
-│   │   ├── cache.ts              ← Response caching
-│   │   ├── constants.ts          ← Resource limits
-│   │   ├── fetchWithRetries.ts   ← HTTP retry logic
-│   │   ├── fileFilters.ts        ← File ignore patterns
-│   │   ├── types.ts              ← Local tool types
-│   │   │
-│   │   ├── exec/                 ← Command Execution (Shared)
-│   │   │   ├── base.ts           ← spawnWithTimeout core
-│   │   │   └── index.ts          ← npm/gh CLI helpers
-│   │   │
-│   │   ├── exec.ts               ← Legacy exec exports
-│   │   │
-│   │   ├── local/utils/          ← Local Tool Utilities
-│   │   │   ├── exec.ts           ← safeExec with validation
-│   │   │   ├── pagination.ts     ← Char & entity pagination
-│   │   │   ├── fileSize.ts       ← Human-readable sizes
-│   │   │   └── toolHelpers.ts    ← Error & validation helpers
-│   │   │
-│   │   ├── minifier/             ← Content Minification
-│   │   │   ├── index.ts          ← Async minifier
-│   │   │   ├── minifierSync.ts   ← Sync minifier
-│   │   │   └── jsonToYamlString.ts ← YAML conversion
-│   │   │
-│   │   ├── package.ts            ← Package search orchestrator
-│   │   ├── npmPackage.ts         ← NPM registry API
-│   │   └── pythonPackage.ts      ← PyPI registry API
-│   │
-│   ├── types/                ← Additional Type Definitions
-│   │   ├── metadata.ts       ← Tool metadata types
-│   │   └── markdown.d.ts     ← Markdown module declaration
-│   │
-│   └── prompts/              ← MCP Prompts
-│       └── prompts.ts        ← Prompt definitions
+src/
+├── index.ts                 # Entry point - server initialization
+├── serverConfig.ts          # Configuration & GitHub token management
+├── session.ts               # Session tracking & telemetry
+├── responses.ts             # Response formatting utilities
+├── errorCodes.ts            # Centralized error definitions
+├── types.ts                 # Shared TypeScript types
 │
-└── tests/                    ← Comprehensive Test Suite (2490 tests)
-    ├── tools/                ← Tool layer tests
-    ├── github/               ← GitHub API tests
-    ├── security/             ← Security layer tests
-    ├── utils/                ← Utility tests
-    ├── scheme/               ← Schema validation tests
-    └── commands/             ← Command builder tests
+├── scheme/                  # 📐 Input validation schemas (Zod)
+│   ├── baseSchema.ts        # Common schema patterns & bulk query builder
+│   ├── github_*.ts          # GitHub tool schemas
+│   ├── local_*.ts           # Local tool schemas
+│   ├── package_search.ts    # Package search schema
+│   └── responsePriority.ts  # Response field ordering
+│
+├── tools/                   # 🔧 Tool implementations
+│   ├── toolConfig.ts        # Tool registry & configuration
+│   ├── toolMetadata.ts      # Dynamic metadata from API
+│   ├── toolNames.ts         # Static tool name constants
+│   ├── toolsManager.ts      # Tool registration orchestrator
+│   ├── github_*.ts          # GitHub tool implementations
+│   ├── local_*.ts           # Local tool implementations
+│   ├── package_search.ts    # Package search implementation
+│   ├── utils.ts             # Tool-specific utilities
+│   └── hints/               # Dynamic hint generation
+│
+├── github/                  # 🐙 GitHub API layer
+│   ├── client.ts            # Octokit client with throttling
+│   ├── githubAPI.ts         # Core API types & interfaces
+│   ├── codeSearch.ts        # Code search operations
+│   ├── fileContent.ts       # File content retrieval
+│   ├── repoSearch.ts        # Repository search
+│   ├── repoStructure.ts     # Repository tree exploration
+│   ├── pullRequestSearch.ts # PR search & diff retrieval
+│   ├── queryBuilders.ts     # GitHub search query construction
+│   ├── errors.ts            # GitHub error handling
+│   └── errorConstants.ts    # GitHub-specific error codes
+│
+├── security/                # 🔒 Security layer
+│   ├── withSecurityValidation.ts  # Security wrapper for tools
+│   ├── contentSanitizer.ts  # Secret detection & redaction
+│   ├── pathValidator.ts     # Path traversal prevention
+│   ├── commandValidator.ts  # Command injection prevention
+│   ├── ignoredPathFilter.ts # Sensitive path filtering
+│   ├── regexes.ts           # Secret detection patterns
+│   ├── mask.ts              # Data masking utilities
+│   └── patternsConstants.ts # Security pattern definitions
+│
+├── commands/                # 🖥️ CLI command builders
+│   ├── BaseCommandBuilder.ts    # Abstract command builder
+│   ├── RipgrepCommandBuilder.ts # ripgrep (rg) command builder
+│   ├── GrepCommandBuilder.ts    # grep fallback builder
+│   ├── FindCommandBuilder.ts    # find command builder
+│   └── LsCommandBuilder.ts      # ls command builder
+│
+├── utils/                   # 🛠️ Shared utilities
+│   ├── bulkOperations.ts    # Bulk query execution
+│   ├── cache.ts             # Response caching
+│   ├── constants.ts         # Global constants
+│   ├── fetchWithRetries.ts  # HTTP fetch with retry logic
+│   ├── promiseUtils.ts      # Async utilities
+│   ├── logger.ts            # MCP logging integration
+│   ├── types.ts             # Utility types
+│   ├── exec/                # Command execution utilities
+│   ├── local/               # Local filesystem utilities
+│   ├── minifier/            # Content minification
+│   └── pagination/          # Pagination utilities
+│
+├── prompts/                 # 💬 MCP prompts
+│   └── prompts.ts           # Prompt registration
+│
+└── types/                   # 📝 Type definitions
+    ├── metadata.ts          # Metadata types
+    └── markdown.d.ts        # Markdown type declarations
 ```
 
 ---
 
-## 🔄 Data Flow
+## Core Components
 
-### GitHub Tools Flow
+### 1. Entry Point (`index.ts`)
+
+The server starts by:
+
+1. **Initializing configuration** - Load environment variables, resolve GitHub token
+2. **Loading tool metadata** - Fetch dynamic metadata from Octocode API
+3. **Creating MCP server** - Initialize `McpServer` with capabilities
+4. **Registering tools** - Register all enabled tools with security wrappers
+5. **Registering prompts** - Register available prompts
+6. **Connecting transport** - Start stdio transport for MCP communication
+7. **Setting up shutdown handlers** - Graceful shutdown on SIGINT/SIGTERM
+
+```mermaid
+graph TD
+    A[Start Server] --> B[Initialize Config]
+    B --> C[Load Tool Metadata]
+    C --> D[Create MCP Server]
+    D --> E[Register Tools]
+    E --> F[Register Prompts]
+    F --> G[Connect Transport]
+    G --> H[Listen for Requests]
+    H --> I{Request Type}
+    I -->|Tool Call| J[Execute Tool]
+    I -->|Prompt| K[Return Prompt]
+    I -->|Shutdown| L[Graceful Shutdown]
+```
+
+### 2. Tool Registration Flow
+
+Tools follow a layered architecture: **Schema → Implementation → Security**
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         MCP Client Request                          │
 └─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
+                                    │
+                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  index.ts → StdioServerTransport → McpServer                        │
-│  • Receives tool invocation                                         │
-│  • Routes to registered tool handler                                │
+│                     1. Schema Validation (Zod)                      │
+│                        scheme/github_*.ts                           │
+│                        scheme/local_*.ts                            │
 └─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
+                                    │
+                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  withSecurityValidation() wrapper                                   │
-│  • ContentSanitizer.validateInputParameters()                       │
-│  • Blocks prototype pollution (__proto__, constructor)              │
-│  • Enforces size limits (10K chars, 100 array items)                │
-│  • Sanitizes nested objects recursively                             │
+│                   2. Security Validation Wrapper                    │
+│                 security/withSecurityValidation.ts                  │
+│   • Input parameter validation                                      │
+│   • Secret detection in parameters                                  │
+│   • Session logging                                                 │
 └─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
+                                    │
+                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Tool Handler (e.g., github_search_code.ts)                         │
-│  • Uses shared utils: handleApiError, createSuccessResult           │
-│  • Calls executeBulkOperation() for parallel processing             │
-│  • Delegates to GitHub API layer                                    │
+│                     3. Bulk Operations Handler                      │
+│                     utils/bulkOperations.ts                         │
+│   • Execute 1-5 queries in parallel                                 │
+│   • Isolate errors per query                                        │
+│   • Aggregate results & hints                                       │
 └─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
+                                    │
+                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  executeBulkOperation() (utils/bulkOperations.ts)                   │
-│  • Parallel query execution with error isolation                    │
-│  • 60s timeout, 3 concurrent requests                               │
-│  • Aggregates results with status hints                             │
+│                      4. Tool Implementation                         │
+│                       tools/github_*.ts                             │
+│                       tools/local_*.ts                              │
+│   • Business logic                                                  │
+│   • API calls / Command execution                                   │
+│   • Result transformation                                           │
 └─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
+                                    │
+                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  GitHub API Layer (github/*.ts)                                     │
-│  • getOctokit() with throttling                                     │
-│  • Query building (queryBuilders.ts)                                │
-│  • File filtering (shouldIgnoreFile)                                │
-│  • Error handling (errors.ts)                                       │
+│                     5. Content Sanitization                         │
+│                  security/contentSanitizer.ts                       │
+│   • Detect secrets in output                                        │
+│   • Redact sensitive data                                           │
+│   • Minify content for tokens                                       │
 └─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
+                                    │
+                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Response Processing                                                │
-│  • ContentSanitizer.sanitizeContent() (secrets)                     │
-│  • minifyContent() (token efficiency)                               │
-│  • createResponseFormat() → YAML output                             │
-│  • Dynamic hints based on results                                   │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### Local Tools Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         MCP Client Request                          │
-└─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  toolsManager.ts → registerLocalToolsDirectly()                     │
-│  • Registered when ENABLE_LOCAL=true                                │
-│  • Direct registration without withSecurityValidation               │
-└─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  executeBulkOperation() wrapper                                     │
-│  • Same parallel execution as GitHub tools                          │
-│  • Error isolation per query                                        │
-└─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  Local Tool Implementation (e.g., local_ripgrep.ts)                 │
-│  • validateToolPath() - path security                               │
-│  • Command builder pattern (RipgrepCommandBuilder)                  │
-│  • safeExec() for command execution                                 │
-└─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  Security Validation Stack                                          │
-│  ┌───────────────────────────────────────────────────────────┐     │
-│  │  pathValidator.validate()                                  │     │
-│  │  • No path traversal (../)                                 │     │
-│  │  • No absolute paths outside workspace                     │     │
-│  │  • No symlink attacks                                      │     │
-│  └───────────────────────────────────────────────────────────┘     │
-│                            │                                        │
-│                            ▼                                        │
-│  ┌───────────────────────────────────────────────────────────┐     │
-│  │  commandValidator.validateCommand()                        │     │
-│  │  • Allowlist: rg, ls, find                                 │     │
-│  │  • Argument validation                                     │     │
-│  │  • No shell injection                                      │     │
-│  └───────────────────────────────────────────────────────────┘     │
-│                            │                                        │
-│                            ▼                                        │
-│  ┌───────────────────────────────────────────────────────────┐     │
-│  │  executionContextValidator.validateExecutionContext()      │     │
-│  │  • CWD must be within workspace                           │     │
-│  │  • No system directory access                              │     │
-│  └───────────────────────────────────────────────────────────┘     │
-└─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  spawnWithTimeout() (utils/exec/base.ts)                            │
-│  • 30s default timeout                                              │
-│  • 10MB max output size                                             │
-│  • NODE_OPTIONS removal                                             │
-│  • Proper signal handling (SIGTERM/SIGKILL)                         │
-└─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  Result Processing                                                  │
-│  • Pagination (char-based + entity-based)                           │
-│  • Context-aware hints (hints.ts)                                   │
-│  • Structured output format                                         │
+│                     6. Response Formatting                          │
+│                        responses.ts                                 │
+│   • YAML formatting                                                 │
+│   • Field prioritization                                            │
+│   • Final masking                                                   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
----
+### 3. Tool Configuration (`toolConfig.ts`)
 
-## 🛠️ Tool Registration Patterns
-
-### Pattern 1: GitHub Tools (with Security Wrapper)
+Each tool is defined with:
 
 ```typescript
-// github_search_code.ts
-export function registerGitHubSearchCodeTool(server: McpServer) {
-  return server.registerTool(
-    TOOL_NAMES.GITHUB_SEARCH_CODE,
-    {
-      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_CODE],
-      inputSchema: GitHubCodeSearchBulkQuerySchema,
-      annotations: {
-        title: 'GitHub Code Search',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,  // ← Network access
-      },
-    },
-    withSecurityValidation(  // ← Security wrapper
-      TOOL_NAMES.GITHUB_SEARCH_CODE,
-      async (args, authInfo, sessionId) => {
-        return searchMultipleGitHubCode(args.queries, authInfo, sessionId);
+interface ToolConfig {
+  name: string;        // Tool identifier (e.g., 'githubSearchCode')
+  description: string; // Human-readable description
+  isDefault: boolean;  // Enabled by default
+  isLocal: boolean;    // Requires local filesystem access
+  type: 'search' | 'content' | 'history' | 'debug';
+  fn: (server, callback?) => RegisteredTool;
+}
+```
+
+**Available Tools:**
+
+| Tool | Type | Local | Description |
+|------|------|-------|-------------|
+| `githubSearchCode` | search | ❌ | Search code across GitHub |
+| `githubGetFileContent` | content | ❌ | Fetch file content from repos |
+| `githubViewRepoStructure` | content | ❌ | Browse repository tree |
+| `githubSearchRepositories` | search | ❌ | Search GitHub repositories |
+| `githubSearchPullRequests` | history | ❌ | Search PRs and view diffs |
+| `packageSearch` | search | ❌ | Search NPM/PyPI packages |
+| `localSearchCode` | search | ✅ | Search code with ripgrep |
+| `localViewStructure` | content | ✅ | Browse local directories |
+| `localFindFiles` | search | ✅ | Find files by metadata |
+| `localGetFileContent` | content | ✅ | Read local file content |
+
+---
+
+## Schema Layer (`scheme/`)
+
+Schemas use [Zod](https://zod.dev/) for runtime validation and TypeScript type inference.
+
+### Base Schema Pattern
+
+All queries inherit from `BaseQuerySchema`:
+
+```typescript
+// Required research context for all queries
+const BaseQuerySchema = z.object({
+  mainResearchGoal: z.string(),  // High-level research objective
+  researchGoal: z.string(),      // Specific query goal
+  reasoning: z.string(),         // Why this query helps
+});
+
+// Bulk query wrapper (default: 3 for GitHub, 5 for local tools)
+function createBulkQuerySchema(toolName, singleQuerySchema, options?) {
+  const { maxQueries = 3 } = options;
+  return z.object({
+    queries: z.array(singleQuerySchema).min(1).max(maxQueries),
+  });
+}
+```
+
+### Example: GitHub Code Search Schema
+
+```typescript
+const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
+  keywordsToSearch: z.array(z.string()).min(1).max(5),
+  owner: z.string().optional(),
+  repo: z.string().optional(),
+  extension: z.string().optional(),
+  filename: z.string().optional(),
+  path: z.string().optional(),
+  match: z.enum(['file', 'path']).optional(),
+  limit: z.number().int().min(1).max(100).default(10),
+  page: z.number().int().min(1).max(10).default(1),
+});
+```
+
+---
+
+## Security Layer (`security/`)
+
+### Security Wrapper (`withSecurityValidation.ts`)
+
+Wraps all tool handlers with security checks:
+
+```typescript
+function withSecurityValidation<T>(
+  toolName: string,
+  toolHandler: (sanitizedArgs: T, authInfo?, sessionId?) => Promise<CallToolResult>
+) {
+  return async (args, { authInfo, sessionId }) => {
+    // 1. Validate input parameters
+    const validation = ContentSanitizer.validateInputParameters(args);
+    if (!validation.isValid) {
+      return createResult({ data: { error: validation.warnings }, isError: true });
+    }
+    
+    // 2. Log tool call for analytics
+    if (isLoggingEnabled()) {
+      logToolCall(toolName, repos, researchGoal, reasoning);
+    }
+    
+    // 3. Execute tool with sanitized params
+    return await toolHandler(validation.sanitizedParams, authInfo, sessionId);
+  };
+}
+```
+
+### Content Sanitizer (`contentSanitizer.ts`)
+
+Detects and redacts secrets using regex patterns:
+
+- API keys, tokens, passwords
+- AWS credentials, private keys
+- Database connection strings
+- OAuth tokens, JWTs
+- And 100+ other patterns
+
+```typescript
+class ContentSanitizer {
+  static sanitizeContent(content: string): SanitizationResult {
+    // Detect and redact secrets
+    const secretsResult = this.detectSecrets(content);
+    return {
+      content: secretsResult.sanitizedContent,
+      hasSecrets: secretsResult.hasSecrets,
+      secretsDetected: secretsResult.secretsDetected,
+    };
+  }
+  
+  static validateInputParameters(params): ValidationResult {
+    // Block prototype pollution
+    // Validate parameter types
+    // Detect secrets in inputs
+    // Enforce length limits
+  }
+}
+```
+
+### Path Validator (`pathValidator.ts`)
+
+Prevents directory traversal attacks for local tools:
+
+```typescript
+class PathValidator {
+  private allowedRoots: string[];
+  
+  validate(inputPath: string): PathValidationResult {
+    // 1. Expand ~ to home directory
+    // 2. Resolve to absolute path
+    // 3. Check against allowed roots
+    // 4. Verify symlink targets
+    // 5. Filter ignored paths (.git, node_modules, etc.)
+  }
+}
+```
+
+---
+
+## GitHub Token Management
+
+### Token Resolution (`serverConfig.ts`)
+
+The server resolves GitHub tokens in priority order:
+
+```
+1. GITHUB_TOKEN environment variable
+2. GitHub CLI token (gh auth token)
+```
+
+```typescript
+async function resolveGitHubToken(): Promise<string | null> {
+  // Priority 1: Environment variable
+  if (process.env.GITHUB_TOKEN) {
+    return process.env.GITHUB_TOKEN;
+  }
+  
+  // Priority 2: GitHub CLI
+  try {
+    const cliToken = await getGithubCLIToken();
+    if (cliToken?.trim()) {
+      return cliToken.trim();
+    }
+  } catch (error) {
+    // Mask any sensitive data in error messages
+    error.message = maskSensitiveData(error.message);
+  }
+  
+  return null;
+}
+```
+
+### Octokit Client (`github/client.ts`)
+
+Octokit is configured with:
+
+- **Throttling plugin** - Handles rate limits gracefully
+- **Custom user agent** - `octocode-mcp/{version}`
+- **Configurable base URL** - For GitHub Enterprise
+- **Request timeout** - Default 30s
+- **Instance caching** - Reuse authenticated clients
+
+```typescript
+const OctokitWithThrottling = Octokit.plugin(throttling);
+
+function createOctokitInstance(token?: string) {
+  return new OctokitWithThrottling({
+    userAgent: `octocode-mcp/${version}`,
+    baseUrl: config.githubApiUrl,
+    request: { timeout: config.timeout },
+    throttle: { /* rate limit handlers */ },
+    ...(token && { auth: token }),
+  });
+}
+
+// Instances are cached by token hash
+async function getOctokit(authInfo?: AuthInfo) {
+  if (authInfo?.token) {
+    const key = hashToken(authInfo.token);
+    if (!instances.has(key)) {
+      instances.set(key, createOctokitInstance(authInfo.token));
+    }
+    return instances.get(key)!;
+  }
+  // Return default instance with resolved token
+  return instances.get('DEFAULT');
+}
+```
+
+---
+
+## Bulk Operations (`utils/bulkOperations.ts`)
+
+All tools support bulk queries for efficiency:
+- **GitHub tools**: 1-3 queries per request
+- **Local tools**: 1-5 queries per request
+
+```typescript
+async function executeBulkOperation<TQuery, TData>(
+  queries: TQuery[],
+  processor: (query: TQuery, index: number) => Promise<ProcessedBulkResult>,
+  config: BulkResponseConfig
+): Promise<CallToolResult> {
+  // Execute queries with:
+  // - Parallel execution (concurrency: 3)
+  // - Error isolation (one failure doesn't stop others)
+  // - Per-query timeout (60s)
+  // - Result aggregation
+  
+  const { results, errors } = await processBulkQueries(queries, processor);
+  return createBulkResponse(config, results, errors, queries);
+}
+```
+
+**Response Structure:**
+
+```yaml
+instructions: "Bulk response with 3 results: 2 hasResults, 1 empty..."
+results:
+  - id: 1
+    status: "hasResults"
+    data: { ... }
+    researchGoal: "..."
+  - id: 2
+    status: "empty"
+    data: {}
+    researchGoal: "..."
+hasResultsStatusHints: ["Next steps when results found..."]
+emptyStatusHints: ["Try semantic variants..."]
+errorStatusHints: ["Error recovery suggestions..."]
+```
+
+---
+
+## Session Management (`session.ts`)
+
+Anonymous telemetry for usage analytics (opt-out via `LOG=false`):
+
+```typescript
+class SessionManager {
+  private sessionId: string;  // UUID per server instance
+  
+  async logToolCall(toolName, repos, researchGoal, reasoning);
+  async logPromptCall(promptName);
+  async logError(toolName, errorCode);
+  async logRateLimit(data);
+}
+```
+
+Logged events:
+
+- `init` - Server startup
+- `tool_call` - Tool invocation with research context
+- `prompt_call` - Prompt usage
+- `error` - Error occurrences
+- `rate_limit` - GitHub API rate limit events
+
+---
+
+## Command Builders (`commands/`)
+
+Local tools use command builders for safe CLI execution:
+
+```typescript
+abstract class BaseCommandBuilder {
+  protected args: string[] = [];
+  
+  abstract build(): { command: string; args: string[] };
+}
+
+// Example: RipgrepCommandBuilder
+class RipgrepCommandBuilder extends BaseCommandBuilder {
+  fromQuery(query: RipgrepQuery) {
+    this.addPattern(query.pattern);
+    this.addPath(query.path);
+    this.addOptions(query);
+    return this;
+  }
+  
+  build() {
+    return { command: 'rg', args: this.args };
+  }
+}
+```
+
+**Fallback Chain:**
+
+```
+ripgrep (rg) → grep (fallback) → error
+```
+
+---
+
+## Local Tools Architecture
+
+A detailed breakdown of how local filesystem tools work, from input validation to response formatting.
+
+### 1. Schema Definitions (`src/scheme/local_*.ts`)
+
+Zod validation schemas provide type safety and input validation for all local tools:
+
+- **Base schema**: Extends `BaseQuerySchemaLocal` with research fields (`mainResearchGoal`, `researchGoal`, `reasoning`)
+- **Bulk queries**: Support 1-5 queries per call for efficient batch processing
+- **Validation warnings**: `validateRipgrepQuery()` detects conflicting options before execution
+
+```typescript
+// Local tools use BaseQuerySchemaLocal (reasoning optional for local tools)
+const BaseQuerySchemaLocal = z.object({
+  mainResearchGoal: z.string().optional(),
+  researchGoal: z.string().optional(),
+  reasoning: z.string().optional(),
+});
+
+// Example: localSearchCode schema with ripgrep options
+const LocalSearchCodeQuerySchema = BaseQuerySchemaLocal.extend({
+  pattern: z.string().min(1),
+  path: z.string(),
+  contextLines: z.number().int().min(0).max(50).optional(),
+  caseSensitive: z.boolean().optional(),
+  wholeWord: z.boolean().optional(),
+  // ... many more ripgrep options
+});
+```
+
+### 2. Tool Implementations (`src/tools/local_*.ts`)
+
+Four local tools are available:
+
+| Tool | Purpose | Key Features |
+|------|---------|--------------|
+| `localSearchCode` | Search code with ripgrep | Pattern matching, context lines, file type filtering |
+| `localViewStructure` | Browse directory structure | Depth control, sorting, file/dir filtering |
+| `localFindFiles` | Find files by metadata | Name patterns, size, modified time, permissions |
+| `localGetFileContent` | Read file content | Line ranges, pattern matching, minification |
+
+Each tool follows the same pattern:
+
+```typescript
+export function registerLocalSearchCode(server: McpServer) {
+  return server.tool(
+    TOOL_NAMES.LOCAL_SEARCH_CODE,
+    toolDescription,
+    LocalSearchCodeBulkSchema.shape.queries.element.shape,
+    withSecurityValidation(
+      TOOL_NAMES.LOCAL_SEARCH_CODE,
+      async (args) => {
+        // 1. Path validation via validateToolPath()
+        // 2. Build command via RipgrepCommandBuilder
+        // 3. Execute via executeBulkOperation()
+        // 4. Parse and return results with hints
       }
     )
   );
 }
 ```
 
-### Pattern 2: Local Tools (Direct Registration)
+### 3. Security Flow
+
+```
+Input Request
+     │
+     ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              withSecurityValidation() Wrapper                    │
+│  security/withSecurityValidation.ts                             │
+└─────────────────────────────────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────────────────────────────────┐
+│           ContentSanitizer.validateInputParameters()             │
+│  • Block prototype pollution (__proto__, constructor)           │
+│  • Validate parameter types and lengths                         │
+│  • Detect secrets in input values                               │
+└─────────────────────────────────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  PathValidator.validate()                        │
+│  • Expand ~ to home directory                                   │
+│  • Resolve to absolute path                                      │
+│  • Check against allowed roots (workspace directories)          │
+│  • Verify symlink targets stay within bounds                    │
+│  • Block directory traversal attacks (../)                      │
+└─────────────────────────────────────────────────────────────────┘
+     │
+     ▼
+Tool Execution
+```
+
+### 4. Content Sanitization (`src/security/contentSanitizer.ts`)
+
+Input and output sanitization protects against data leakage:
+
+**Input Validation:**
+- Maximum string length: 10,000 characters
+- Maximum array length: 100 items
+- Blocked keys: `__proto__`, `constructor`, `prototype`
+
+**Secret Detection:**
+- Uses `allRegexPatterns` from `regexes.ts` (100+ patterns)
+- Detects: API keys, tokens, passwords, AWS credentials, private keys, connection strings
+- Automatic redaction: `[REDACTED-<TYPE>]` replacement
 
 ```typescript
-// toolsManager.ts
-server.registerTool(
-  LOCAL_TOOL_NAMES.LOCAL_RIPGREP,
-  {
-    description: LOCAL_RIPGREP_DESCRIPTION,
-    inputSchema: BulkRipgrepQuerySchema,
-    annotations: {
-      title: 'Local Ripgrep Search',
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,  // ← Local only
-    },
-  },
-  async (args: { queries: RipgrepQuery[] }): Promise<CallToolResult> => {
-    return executeBulkOperation(
-      args.queries || [],
-      async (query: RipgrepQuery) => searchContentRipgrep(query),
-      { toolName: LOCAL_TOOL_NAMES.LOCAL_RIPGREP }
-    );
+// Example: Secret detection in content
+const result = ContentSanitizer.sanitizeContent(fileContent);
+// result.content: "const apiKey = [REDACTED-GENERIC_API_KEY]"
+// result.secretsDetected: ["GENERIC_API_KEY"]
+```
+
+### 5. Content Minification (`src/utils/minifier/`)
+
+File-type aware minification reduces token usage:
+
+| Strategy | Used For | Approach |
+|----------|----------|----------|
+| `terser` | JavaScript, TypeScript | Full minification via terser |
+| `aggressive` | JSON with comments | Remove all whitespace |
+| `conservative` | Python, YAML, Shell | Preserve structure, remove comments |
+| `json` | JSON files | Compact JSON formatting |
+| `markdown` | Markdown files | Minimal processing |
+| `general` | Unknown types | Basic whitespace normalization |
+
+**Comment Removal by Language:**
+- C-style: `//`, `/* */` (JS, TS, Java, C, Go)
+- Hash: `#` (Python, Ruby, Shell, YAML)
+- HTML: `<!-- -->` (HTML, XML)
+- SQL: `--`, `/* */` (SQL)
+- Lua: `--`, `--[[ ]]` (Lua)
+- Haskell: `--`, `{- -}` (Haskell)
+
+### 6. Bulk Operations (`src/utils/bulkOperations.ts`)
+
+Parallel query execution with error isolation:
+
+```typescript
+// Configuration
+const BULK_CONFIG = {
+  concurrency: 3,           // Max parallel queries
+  queryTimeout: 60000,      // 60s per query
+  maxQueries: 5,            // For local tools (3 for GitHub)
+};
+
+// Error isolation ensures one failure doesn't crash others
+async function executeWithErrorIsolation<T>(
+  fn: () => Promise<T>,
+  queryIndex: number
+): Promise<{ success: true; data: T } | { success: false; error: Error }> {
+  try {
+    return { success: true, data: await fn() };
+  } catch (error) {
+    return { success: false, error };
   }
-);
+}
 ```
 
----
+**Status Tracking:**
+- `hasResults` - Query returned data
+- `empty` - Query succeeded but found nothing
+- `error` - Query failed with error
 
-## 🔐 Security Layer
+### 7. Response Formatting (`src/responses.ts`)
 
-### Input Validation (`ContentSanitizer.validateInputParameters`)
-
-| Check | Action |
-|-------|--------|
-| Invalid params | Return `isValid: false` |
-| Prototype pollution | Block `__proto__`, `constructor`, `prototype` |
-| String > 10K chars | Truncate |
-| Array > 100 items | Slice |
-| Nested objects | Recursive validation |
-
-### Output Sanitization (`ContentSanitizer.sanitizeContent`)
-
-| Pattern Type | Examples |
-|--------------|----------|
-| API Keys | AWS, GitHub, Stripe, Google, Azure |
-| Tokens | JWT, OAuth, session, bearer tokens |
-| Credentials | Passwords, connection strings, DSNs |
-| Secrets | Private keys, certificates, RSA keys |
-| Database | MongoDB URIs, Redis URLs, SQL creds |
-
-Detected secrets replaced with `[REDACTED-PATTERN_NAME]`.
-
-### Local Tool Security Stack
-
-| Layer | Module | Protection |
-|-------|--------|------------|
-| Path | `pathValidator.ts` | No traversal, symlink protection |
-| Command | `commandValidator.ts` | Allowlist (rg, ls, find), arg validation |
-| Context | `executionContextValidator.ts` | Workspace-only execution |
-| Execution | `exec/base.ts` | Timeout, output limits, env sanitization |
-
----
-
-## 📊 All 11 Tools
-
-### GitHub Tools (6)
-
-| Tool | Purpose | Key Features |
-|------|---------|--------------|
-| `githubSearchCode` | Search code across GitHub | Keywords, path/file match, extensions |
-| `githubGetFileContent` | Fetch file content | Line ranges, matchString, pagination |
-| `githubSearchRepositories` | Find repositories | Topics, keywords, stars filter |
-| `githubSearchPullRequests` | Search PRs | State, author, labels, diff content |
-| `githubViewRepoStructure` | Browse repo tree | Depth control, auto-filtering |
-| `packageSearch` | NPM/PyPI lookup | Deprecation check, repo URL extraction |
-
-### Local Tools (4) - Requires `ENABLE_LOCAL=true`
-
-| Tool | Purpose | Key Features |
-|------|---------|--------------|
-| `localSearchCode` | ripgrep search | Regex, file types, context lines |
-| `localGetFileContent` | Read local files | matchString, minification, pagination |
-| `localFindFiles` | Find by metadata | Time, size, permissions, name patterns |
-| `localViewStructure` | Directory listing | Recursive, sorting, extensions filter |
-
----
-
-## ⚙️ Configuration Options
-
-Environment variables handled in `serverConfig.ts`:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GITHUB_API_URL` | `https://api.github.com` | GitHub API endpoint |
-| `GITHUB_TOKEN` | - | GitHub authentication token |
-| `ENABLE_LOCAL` | `false` | Enable local filesystem tools |
-| `WORKSPACE_ROOT` | `process.cwd()` | Root for local tool operations |
-| `TOOLS_TO_RUN` | - | Exclusive tool whitelist |
-| `ENABLE_TOOLS` | - | Additional tools to enable |
-| `DISABLE_TOOLS` | - | Tools to disable |
-| `REQUEST_TIMEOUT` | `30000` | Request timeout in ms |
-| `MAX_RETRIES` | `3` | Maximum retry attempts |
-| `LOG` | `true` | Enable session logging |
-
-### Token Resolution Order
-
-1. GitHub CLI (`gh auth token`)
-2. `GITHUB_TOKEN` environment variable
-
----
-
-## 📊 Key Types
+All responses are formatted as YAML for efficient LLM consumption:
 
 ```typescript
-// Query status for all results
-type QueryStatus = 'hasResults' | 'empty' | 'error';
-
-// Base structure for all tool results
-interface ToolResult {
-  status: QueryStatus;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-  hints?: string[];
+function createResponseFormat(data: unknown): CallToolResult {
+  // 1. Clean and sanitize JSON
+  const cleanedData = cleanJson(data);
+  
+  // 2. Sanitize content for secrets
+  const sanitized = ContentSanitizer.sanitizeContent(JSON.stringify(cleanedData));
+  
+  // 3. Convert to YAML with priority ordering
+  const yaml = jsonToYamlString(cleanedData, keyPriority);
+  
+  // 4. Final masking pass
+  return { content: [{ type: 'text', text: maskSensitiveData(yaml) }] };
 }
+```
 
-// Bulk operation response (all tools)
-interface ToolResponse {
-  instructions: string;
-  results: FlatQueryResult[];
-  hasResultsStatusHints: string[];
-  emptyStatusHints: string[];
-  errorStatusHints: string[];
-}
+**Key Priority Ordering:**
+Fields are ordered for optimal LLM comprehension:
+1. `instructions`, `status`, `summary` (context first)
+2. `data`, `results`, `files`, `matches` (main content)
+3. `hints`, `pagination`, `metadata` (supplementary)
 
-// Pagination (local tools)
-interface PaginationInfo {
-  currentPage: number;
-  totalPages: number;
-  hasMore: boolean;
-  charOffset?: number;
-  charLength?: number;
-  totalChars?: number;
+### 8. Error Handling (`src/errorCodes.ts`, `src/utils/errorResult.ts`)
+
+Centralized error handling with recovery hints:
+
+```typescript
+// Error categories for local tools
+const LOCAL_TOOL_ERROR_CODES = {
+  FILE_SYSTEM: {
+    FILE_NOT_FOUND: { code: 'FILE_NOT_FOUND', recoverable: true },
+    PERMISSION_DENIED: { code: 'PERMISSION_DENIED', recoverable: false },
+    PATH_TRAVERSAL: { code: 'PATH_TRAVERSAL', recoverable: false },
+  },
+  VALIDATION: {
+    INVALID_PATH: { code: 'INVALID_PATH', recoverable: true },
+    INVALID_PATTERN: { code: 'INVALID_PATTERN', recoverable: true },
+  },
+  SEARCH: {
+    NO_MATCHES: { code: 'NO_MATCHES', recoverable: true },
+    BINARY_FILE: { code: 'BINARY_FILE', recoverable: false },
+  },
+  EXECUTION: {
+    COMMAND_TIMEOUT: { code: 'COMMAND_TIMEOUT', recoverable: true },
+    COMMAND_FAILED: { code: 'COMMAND_FAILED', recoverable: true },
+  },
+};
+
+// Unified error response with hints
+function createErrorResult(error: ToolError): CallToolResult {
+  return {
+    content: [{
+      type: 'text',
+      text: jsonToYamlString({
+        status: 'error',
+        error: {
+          code: error.code,
+          message: error.message,
+          category: error.category,
+          recoverable: error.recoverable,
+        },
+        hints: getErrorHints(error.code),
+      }),
+    }],
+    isError: true,
+  };
 }
 ```
 
 ---
 
-## 🧪 Test Coverage
+## Configuration
 
-**2490 tests across 118 test files**
+### Environment Variables
 
-| Area | Files | Coverage |
-|------|-------|----------|
-| Tools | 33 files | Tool layer integration |
-| GitHub | 19 files | API layer & filtering |
-| Security | 14 files | All security modules |
-| Utils | 29 files | Shared utilities |
-| Schemes | 4 files | Schema validation |
-| Commands | 3 files | CLI builders |
-| Core | 10+ files | Server, session, prompts |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GITHUB_TOKEN` | GitHub personal access token | - |
+| `GITHUB_API_URL` | GitHub API base URL | `https://api.github.com` |
+| `ENABLE_LOCAL` or `LOCAL` | Enable local filesystem tools | `false` |
+| `LOG` | Enable session logging | `true` |
+| `REQUEST_TIMEOUT` | API request timeout (ms) | `30000` |
+| `MAX_RETRIES` | Maximum retry attempts | `3` |
+| `TOOLS_TO_RUN` | Comma-separated tool whitelist | - |
+| `ENABLE_TOOLS` | Comma-separated tools to enable | - |
+| `DISABLE_TOOLS` | Comma-separated tools to disable | - |
+
+### Tool Filtering Logic
+
+```typescript
+function isToolEnabled(tool, localEnabled, config) {
+  // 1. Check if local tool and local is disabled
+  if (tool.isLocal && !localEnabled) return false;
+  
+  // 2. If TOOLS_TO_RUN is set, only allow those
+  if (config.toolsToRun.length > 0) {
+    return config.toolsToRun.includes(tool.name);
+  }
+  
+  // 3. Check disable list
+  if (config.disableTools.includes(tool.name)) return false;
+  
+  // 4. Enable if in enable list or is default
+  return config.enableTools.includes(tool.name) || tool.isDefault;
+}
+```
 
 ---
 
-## 📌 Design Principles
+## Data Flow Diagrams
 
-1. **Unified Security** - All GitHub tools use `withSecurityValidation()`, all local tools use triple validation (path, command, context)
-2. **Bulk Operations** - All tools support `queries[]` array for batch processing with error isolation
-3. **Consistent Response Format** - All results include `status`, `hints[]`, and research fields
-4. **Token Efficiency** - YAML output format, content minification, smart pagination
-5. **Output Sanitization** - 1000+ regex patterns for secret detection
-6. **Defense in Depth** - Multiple validation layers, fail-safe defaults
+### GitHub Code Search Flow
+
+```mermaid
+sequenceDiagram
+    participant Client as MCP Client
+    participant Server as Octocode MCP
+    participant Security as Security Layer
+    participant Cache as Cache
+    participant GitHub as GitHub API
+
+    Client->>Server: tool_call(githubSearchCode, queries)
+    Server->>Security: validateInputParameters(args)
+    Security-->>Server: sanitizedParams
+    
+    loop For each query (parallel)
+        Server->>Cache: check(cacheKey)
+        alt Cache Hit
+            Cache-->>Server: cachedResult
+        else Cache Miss
+            Server->>GitHub: search.code(query)
+            GitHub-->>Server: results
+            Server->>Security: sanitizeContent(results)
+            Security-->>Server: sanitizedResults
+            Server->>Cache: set(cacheKey, sanitizedResults)
+        end
+    end
+    
+    Server->>Server: aggregateBulkResults()
+    Server-->>Client: CallToolResult(YAML)
+```
+
+### Local Code Search Flow
+
+```mermaid
+sequenceDiagram
+    participant Client as MCP Client
+    participant Server as Octocode MCP
+    participant Path as Path Validator
+    participant Cmd as Command Builder
+    participant Shell as Shell (rg/grep)
+
+    Client->>Server: tool_call(localSearchCode, queries)
+    Server->>Path: validate(query.path)
+    
+    alt Invalid Path
+        Path-->>Server: error (outside allowed roots)
+        Server-->>Client: error result
+    else Valid Path
+        Path-->>Server: sanitizedPath
+        Server->>Cmd: RipgrepCommandBuilder.fromQuery(query)
+        Cmd-->>Server: { command: 'rg', args: [...] }
+        Server->>Shell: safeExec(command, args)
+        Shell-->>Server: stdout, stderr, exitCode
+        Server->>Server: parseResults(), addHints()
+        Server-->>Client: CallToolResult(YAML)
+    end
+```
 
 ---
 
-## 🎯 Quality Metrics
+## Testing
 
-- **Test Coverage**: 90%+ (enforced by vitest config)
-- **TypeScript**: Strict mode, no `any` types
-- **Linting**: ESLint with strict rules
-- **Architecture**: Clean separation of concerns
+Tests are located in `tests/` and use Vitest:
+
+```
+tests/
+├── index.test.ts              # Server startup/shutdown
+├── github/                    # GitHub API tests
+├── tools/                     # Tool implementation tests
+├── security/                  # Security layer tests
+├── commands/                  # Command builder tests
+├── utils/                     # Utility tests
+├── scheme/                    # Schema validation tests
+└── helpers/                   # Test utilities
+```
+
+Run tests:
+
+```bash
+yarn test           # Run with coverage
+yarn test:quiet     # Minimal output
+```
+
+Coverage requirement: **90%** across all metrics.
 
 ---
 
-## 🔗 Related
+## Key Design Decisions
 
-- [Configuration Guide](../../docs/CONFIGURATION.md)
-- [Authentication Guide](../../docs/AUTH_GUIDE.md)
-- [Root AGENTS.md](../../AGENTS.md)
+1. **Bulk Queries** - All tools accept 1-5 queries per request to minimize round trips
+2. **Research Context** - Every query requires `mainResearchGoal`, `researchGoal`, `reasoning` for better AI agent guidance
+3. **Security First** - All inputs sanitized, all outputs checked for secrets, paths validated
+4. **Graceful Degradation** - Local tools fall back from ripgrep to grep, errors isolated per query
+5. **Token Efficiency** - Content minification, YAML output, response prioritization
+6. **Dynamic Metadata** - Tool descriptions and hints fetched from API for easy updates
+7. **Caching** - Response caching reduces GitHub API calls and improves latency
+
+---
+
+## Related Documentation
+
+- [README.md](./README.md) - Installation and usage
+- [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification
+- [GitHub REST API](https://docs.github.com/en/rest) - GitHub API reference
+
+---
+
+*Architecture document generated for Octocode MCP v1.x*

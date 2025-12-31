@@ -122,9 +122,9 @@ For package-specific commands, `cd packages/<name>` first.
 
 ### Dependencies
 
-- **Node.js**: `octocode-mcp` >= 20.0.0
-- **VS Code**: `octocode-vscode` >= 1.85.0
-- **Shared**: `@modelcontextprotocol/sdk`, `zod`, `vitest`, `rollup`.
+- **Node.js**: >= 18.0.0 (check each package's `engines` field)
+- **VS Code**: `octocode-vscode` requires >= 1.85.0
+- **Shared**: `@modelcontextprotocol/sdk`, `zod`, `vitest`
 
 ## 🧪 Testing Protocol
 
@@ -139,12 +139,17 @@ packages/<name>/tests/
 └── security/              # Security-focused tests
 ```
 
-## 📦 Package Guidelines
+## 📦 Package-Level AGENTS.md
 
-1. **Security First**: Validate all inputs and paths.
-2. **Bulk Operations**: Support 1-5 items per tool call for efficiency.
-3. **Token Efficiency**: Minimize response size for LLMs.
-4. **Graceful Degradation**: Always return usable results; avoid crashing.
+Each package may have its own `AGENTS.md` with specific guidelines:
+
+| Package | Location | Purpose |
+|---------|----------|---------|
+| `octocode-mcp` | [`packages/octocode-mcp/AGENTS.md`](./packages/octocode-mcp/AGENTS.md) | MCP server tools, security, bulk operations |
+| `octocode-vscode` | `packages/octocode-vscode/` | VS Code extension |
+| `octocode-cli` | `packages/octocode-cli/` | CLI installer |
+
+Package-level files **override** this root file for work within that package.
 
 ## 🤖 Agent Compatibility
 
