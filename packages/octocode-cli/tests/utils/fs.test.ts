@@ -2,406 +2,425 @@
  * File System Utilities Tests
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
-
-// Mock node:fs module
-vi.mock('node:fs', () => ({
-  default: {
-    existsSync: vi.fn(),
-    statSync: vi.fn(),
-    readFileSync: vi.fn(),
-    writeFileSync: vi.fn(),
-    mkdirSync: vi.fn(),
-    copyFileSync: vi.fn(),
-    readdirSync: vi.fn(),
-  },
-  existsSync: vi.fn(),
-  statSync: vi.fn(),
-  readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
-  mkdirSync: vi.fn(),
-  copyFileSync: vi.fn(),
-  readdirSync: vi.fn(),
-}));
+import path from 'node:path';
+import os from 'node:os';
+import {
+  dirExists,
+  fileExists,
+  readFileContent,
+  writeFileContent,
+  backupFile,
+  readJsonFile,
+  writeJsonFile,
+  copyDirectory,
+  listSubdirectories,
+} from '../../src/utils/fs.js';
 
 describe('File System Utilities', () => {
+  let tempDir: string;
+
   beforeEach(() => {
-    vi.resetModules();
-    vi.clearAllMocks();
+    // Create a unique temp directory for each test
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-test-'));
+  });
+
+  afterEach(() => {
+    // Clean up temp directory
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
   });
 
   describe('dirExists', () => {
-    it('should return true for existing directory', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isDirectory: () => true,
-      } as fs.Stats);
-
-      const { dirExists } = await import('../../src/utils/fs.js');
-      expect(dirExists('/path/to/dir')).toBe(true);
+    it('should return true for existing directory', () => {
+      expect(dirExists(tempDir)).toBe(true);
     });
 
-    it('should return false for non-existing path', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { dirExists } = await import('../../src/utils/fs.js');
-      expect(dirExists('/path/to/nonexistent')).toBe(false);
+    it('should return false for non-existing path', () => {
+      expect(dirExists(path.join(tempDir, 'nonexistent'))).toBe(false);
     });
 
-    it('should return false for file (not directory)', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isDirectory: () => false,
-      } as fs.Stats);
-
-      const { dirExists } = await import('../../src/utils/fs.js');
-      expect(dirExists('/path/to/file')).toBe(false);
+    it('should return false for file (not directory)', () => {
+      const filePath = path.join(tempDir, 'file.txt');
+      fs.writeFileSync(filePath, 'content');
+      expect(dirExists(filePath)).toBe(false);
     });
 
-    it('should return false on error', async () => {
-      vi.mocked(fs.existsSync).mockImplementation(() => {
-        throw new Error('Permission denied');
-      });
-
-      const { dirExists } = await import('../../src/utils/fs.js');
-      expect(dirExists('/path/to/protected')).toBe(false);
+    it('should return false on error (invalid path)', () => {
+      // Test with null byte which is invalid on most systems
+      expect(dirExists('\0')).toBe(false);
     });
   });
 
   describe('fileExists', () => {
-    it('should return true for existing file', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isFile: () => true,
-      } as fs.Stats);
-
-      const { fileExists } = await import('../../src/utils/fs.js');
-      expect(fileExists('/path/to/file.txt')).toBe(true);
+    it('should return true for existing file', () => {
+      const filePath = path.join(tempDir, 'file.txt');
+      fs.writeFileSync(filePath, 'content');
+      expect(fileExists(filePath)).toBe(true);
     });
 
-    it('should return false for non-existing file', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { fileExists } = await import('../../src/utils/fs.js');
-      expect(fileExists('/path/to/nonexistent.txt')).toBe(false);
+    it('should return false for non-existing file', () => {
+      expect(fileExists(path.join(tempDir, 'nonexistent.txt'))).toBe(false);
     });
 
-    it('should return false for directory (not file)', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isFile: () => false,
-      } as fs.Stats);
-
-      const { fileExists } = await import('../../src/utils/fs.js');
-      expect(fileExists('/path/to/dir')).toBe(false);
+    it('should return false for directory (not file)', () => {
+      expect(fileExists(tempDir)).toBe(false);
     });
 
-    it('should return false on error', async () => {
-      vi.mocked(fs.existsSync).mockImplementation(() => {
-        throw new Error('Permission denied');
-      });
-
-      const { fileExists } = await import('../../src/utils/fs.js');
-      expect(fileExists('/path/to/protected.txt')).toBe(false);
+    it('should return false on error (invalid path)', () => {
+      expect(fileExists('\0')).toBe(false);
     });
   });
 
   describe('readFileContent', () => {
-    it('should return file content for existing file', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isFile: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.readFileSync).mockReturnValue('file content');
-
-      const { readFileContent } = await import('../../src/utils/fs.js');
-      expect(readFileContent('/path/to/file.txt')).toBe('file content');
+    it('should return file content for existing file', () => {
+      const filePath = path.join(tempDir, 'file.txt');
+      fs.writeFileSync(filePath, 'file content');
+      expect(readFileContent(filePath)).toBe('file content');
     });
 
-    it('should return null for non-existing file', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { readFileContent } = await import('../../src/utils/fs.js');
-      expect(readFileContent('/path/to/nonexistent.txt')).toBeNull();
+    it('should return null for non-existing file', () => {
+      expect(readFileContent(path.join(tempDir, 'nonexistent.txt'))).toBeNull();
     });
 
-    it('should return null on read error', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isFile: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.readFileSync).mockImplementation(() => {
-        throw new Error('Read error');
-      });
-
-      const { readFileContent } = await import('../../src/utils/fs.js');
-      expect(readFileContent('/path/to/file.txt')).toBeNull();
+    it('should return null for directory', () => {
+      expect(readFileContent(tempDir)).toBeNull();
     });
   });
 
   describe('writeFileContent', () => {
-    it('should write content to file', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isDirectory: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.writeFileSync).mockImplementation(() => {});
-
-      const { writeFileContent } = await import('../../src/utils/fs.js');
-      const result = writeFileContent('/path/to/file.txt', 'new content');
+    it('should write content to file', () => {
+      const filePath = path.join(tempDir, 'file.txt');
+      const result = writeFileContent(filePath, 'new content');
 
       expect(result).toBe(true);
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
-        '/path/to/file.txt',
-        'new content',
-        'utf8'
-      );
+      expect(fs.readFileSync(filePath, 'utf8')).toBe('new content');
     });
 
-    it('should create directory if it does not exist', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-      vi.mocked(fs.mkdirSync).mockImplementation(() => '');
-      vi.mocked(fs.writeFileSync).mockImplementation(() => {});
-
-      const { writeFileContent } = await import('../../src/utils/fs.js');
-      const result = writeFileContent('/path/to/new/file.txt', 'content');
+    it('should create directory if it does not exist', () => {
+      const filePath = path.join(tempDir, 'new', 'nested', 'file.txt');
+      const result = writeFileContent(filePath, 'content');
 
       expect(result).toBe(true);
-      expect(fs.mkdirSync).toHaveBeenCalledWith('/path/to/new', {
-        recursive: true,
-      });
+      expect(fs.existsSync(path.join(tempDir, 'new', 'nested'))).toBe(true);
+      expect(fs.readFileSync(filePath, 'utf8')).toBe('content');
     });
 
-    it('should return false on write error', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isDirectory: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.writeFileSync).mockImplementation(() => {
-        throw new Error('Write error');
-      });
+    it('should overwrite existing file', () => {
+      const filePath = path.join(tempDir, 'file.txt');
+      fs.writeFileSync(filePath, 'old content');
+      const result = writeFileContent(filePath, 'new content');
 
-      const { writeFileContent } = await import('../../src/utils/fs.js');
-      const result = writeFileContent('/path/to/file.txt', 'content');
+      expect(result).toBe(true);
+      expect(fs.readFileSync(filePath, 'utf8')).toBe('new content');
+    });
 
+    it('should return false on write error (invalid path)', () => {
+      const result = writeFileContent('\0', 'content');
       expect(result).toBe(false);
     });
   });
 
   describe('backupFile', () => {
-    it('should create backup of existing file', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isFile: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.copyFileSync).mockImplementation(() => {});
+    it('should create backup of existing file', () => {
+      const filePath = path.join(tempDir, 'file.txt');
+      fs.writeFileSync(filePath, 'original content');
 
-      const { backupFile } = await import('../../src/utils/fs.js');
-      const result = backupFile('/path/to/file.txt');
+      const backupPath = backupFile(filePath);
 
-      // Should return a backup path with timestamp format
-      expect(result).toMatch(
-        /\/path\/to\/file\.txt\.backup-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z/
+      expect(backupPath).not.toBeNull();
+      expect(backupPath).toMatch(
+        /file\.txt\.backup-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/
       );
-      expect(fs.copyFileSync).toHaveBeenCalled();
+      expect(fs.existsSync(backupPath!)).toBe(true);
+      expect(fs.readFileSync(backupPath!, 'utf8')).toBe('original content');
     });
 
-    it('should return null for non-existing file', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { backupFile } = await import('../../src/utils/fs.js');
-      const result = backupFile('/path/to/nonexistent.txt');
-
+    it('should return null for non-existing file', () => {
+      const result = backupFile(path.join(tempDir, 'nonexistent.txt'));
       expect(result).toBeNull();
     });
 
-    it('should return null on copy error', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isFile: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.copyFileSync).mockImplementation(() => {
-        throw new Error('Copy error');
-      });
-
-      const { backupFile } = await import('../../src/utils/fs.js');
-      const result = backupFile('/path/to/file.txt');
-
+    it('should return null for directory', () => {
+      const result = backupFile(tempDir);
       expect(result).toBeNull();
     });
   });
 
   describe('readJsonFile', () => {
-    it('should parse and return JSON content', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isFile: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.readFileSync).mockReturnValue('{"key": "value"}');
+    it('should parse and return JSON content', () => {
+      const filePath = path.join(tempDir, 'file.json');
+      fs.writeFileSync(filePath, '{"key": "value"}');
 
-      const { readJsonFile } = await import('../../src/utils/fs.js');
-      const result = readJsonFile<{ key: string }>('/path/to/file.json');
-
+      const result = readJsonFile<{ key: string }>(filePath);
       expect(result).toEqual({ key: 'value' });
     });
 
-    it('should return null for invalid JSON', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isFile: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.readFileSync).mockReturnValue('not valid json');
+    it('should handle complex JSON structures', () => {
+      const filePath = path.join(tempDir, 'complex.json');
+      const data = { arr: [1, 2, 3], nested: { a: true, b: null } };
+      fs.writeFileSync(filePath, JSON.stringify(data));
 
-      const { readJsonFile } = await import('../../src/utils/fs.js');
-      const result = readJsonFile('/path/to/file.json');
+      const result = readJsonFile<typeof data>(filePath);
+      expect(result).toEqual(data);
+    });
 
+    it('should return null for invalid JSON', () => {
+      const filePath = path.join(tempDir, 'invalid.json');
+      fs.writeFileSync(filePath, 'not valid json');
+
+      const result = readJsonFile(filePath);
       expect(result).toBeNull();
     });
 
-    it('should return null for non-existing file', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+    it('should return null for non-existing file', () => {
+      const result = readJsonFile(path.join(tempDir, 'nonexistent.json'));
+      expect(result).toBeNull();
+    });
 
-      const { readJsonFile } = await import('../../src/utils/fs.js');
-      const result = readJsonFile('/path/to/nonexistent.json');
+    it('should return null for empty file', () => {
+      const filePath = path.join(tempDir, 'empty.json');
+      fs.writeFileSync(filePath, '');
 
+      const result = readJsonFile(filePath);
       expect(result).toBeNull();
     });
   });
 
   describe('writeJsonFile', () => {
-    it('should write formatted JSON to file', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isDirectory: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.writeFileSync).mockImplementation(() => {});
-
-      const { writeJsonFile } = await import('../../src/utils/fs.js');
-      const result = writeJsonFile('/path/to/file.json', { key: 'value' });
+    it('should write formatted JSON to file', () => {
+      const filePath = path.join(tempDir, 'file.json');
+      const result = writeJsonFile(filePath, { key: 'value' });
 
       expect(result).toBe(true);
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
-        '/path/to/file.json',
-        '{\n  "key": "value"\n}\n',
-        'utf8'
+      expect(fs.readFileSync(filePath, 'utf8')).toBe(
+        '{\n  "key": "value"\n}\n'
       );
     });
 
-    it('should return false on write error', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isDirectory: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.writeFileSync).mockImplementation(() => {
-        throw new Error('Write error');
-      });
+    it('should handle arrays', () => {
+      const filePath = path.join(tempDir, 'array.json');
+      const result = writeJsonFile(filePath, [1, 2, 3]);
 
-      const { writeJsonFile } = await import('../../src/utils/fs.js');
-      const result = writeJsonFile('/path/to/file.json', { key: 'value' });
+      expect(result).toBe(true);
+      expect(fs.readFileSync(filePath, 'utf8')).toBe('[\n  1,\n  2,\n  3\n]\n');
+    });
 
+    it('should create directory if it does not exist', () => {
+      const filePath = path.join(tempDir, 'new', 'file.json');
+      const result = writeJsonFile(filePath, { key: 'value' });
+
+      expect(result).toBe(true);
+      expect(fs.existsSync(filePath)).toBe(true);
+    });
+
+    it('should return false on write error (invalid path)', () => {
+      const result = writeJsonFile('\0', { key: 'value' });
+      expect(result).toBe(false);
+    });
+
+    it('should return false for circular reference', () => {
+      const circular: Record<string, unknown> = {};
+      circular.self = circular;
+
+      const filePath = path.join(tempDir, 'circular.json');
+      const result = writeJsonFile(filePath, circular);
       expect(result).toBe(false);
     });
   });
 
   describe('copyDirectory', () => {
-    it('should copy directory recursively', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isDirectory: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.readdirSync).mockReturnValue([
-        { name: 'file.txt', isDirectory: () => false },
-        { name: 'subdir', isDirectory: () => true },
-      ] as unknown as fs.Dirent[]);
-      vi.mocked(fs.copyFileSync).mockImplementation(() => {});
-      vi.mocked(fs.mkdirSync).mockImplementation(() => '');
+    it('should copy directory recursively', () => {
+      // Create source structure
+      const srcDir = path.join(tempDir, 'src');
+      fs.mkdirSync(srcDir);
+      fs.writeFileSync(path.join(srcDir, 'file1.txt'), 'content1');
+      fs.mkdirSync(path.join(srcDir, 'subdir'));
+      fs.writeFileSync(path.join(srcDir, 'subdir', 'file2.txt'), 'content2');
 
-      const { copyDirectory } = await import('../../src/utils/fs.js');
-      const result = copyDirectory('/src', '/dest');
+      const destDir = path.join(tempDir, 'dest');
+      const result = copyDirectory(srcDir, destDir);
 
       expect(result).toBe(true);
+      expect(fs.existsSync(destDir)).toBe(true);
+      expect(fs.readFileSync(path.join(destDir, 'file1.txt'), 'utf8')).toBe(
+        'content1'
+      );
+      expect(
+        fs.readFileSync(path.join(destDir, 'subdir', 'file2.txt'), 'utf8')
+      ).toBe('content2');
     });
 
-    it('should return false if source does not exist', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { copyDirectory } = await import('../../src/utils/fs.js');
-      const result = copyDirectory('/nonexistent', '/dest');
-
+    it('should return false if source does not exist', () => {
+      const result = copyDirectory(
+        path.join(tempDir, 'nonexistent'),
+        path.join(tempDir, 'dest')
+      );
       expect(result).toBe(false);
     });
 
-    it('should create destination directory if it does not exist', async () => {
-      vi.mocked(fs.existsSync).mockImplementation(p => p === '/src');
-      vi.mocked(fs.statSync).mockReturnValue({
-        isDirectory: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.readdirSync).mockReturnValue([]);
-      vi.mocked(fs.mkdirSync).mockImplementation(() => '');
+    it('should create destination directory if it does not exist', () => {
+      const srcDir = path.join(tempDir, 'src');
+      fs.mkdirSync(srcDir);
+      fs.writeFileSync(path.join(srcDir, 'file.txt'), 'content');
 
-      const { copyDirectory } = await import('../../src/utils/fs.js');
-      copyDirectory('/src', '/dest');
+      const destDir = path.join(tempDir, 'new', 'dest');
+      const result = copyDirectory(srcDir, destDir);
 
-      expect(fs.mkdirSync).toHaveBeenCalledWith('/dest', { recursive: true });
+      expect(result).toBe(true);
+      expect(fs.existsSync(destDir)).toBe(true);
     });
 
-    it('should return false on error', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isDirectory: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.readdirSync).mockImplementation(() => {
-        throw new Error('Read error');
-      });
+    it('should handle empty directories', () => {
+      const srcDir = path.join(tempDir, 'empty-src');
+      fs.mkdirSync(srcDir);
 
-      const { copyDirectory } = await import('../../src/utils/fs.js');
-      const result = copyDirectory('/src', '/dest');
+      const destDir = path.join(tempDir, 'empty-dest');
+      const result = copyDirectory(srcDir, destDir);
 
+      expect(result).toBe(true);
+      expect(fs.existsSync(destDir)).toBe(true);
+    });
+
+    it('should return false when source is a file', () => {
+      const srcFile = path.join(tempDir, 'file.txt');
+      fs.writeFileSync(srcFile, 'content');
+
+      const result = copyDirectory(srcFile, path.join(tempDir, 'dest'));
       expect(result).toBe(false);
+    });
+
+    it('should work when destination directory already exists', () => {
+      // Create source structure
+      const srcDir = path.join(tempDir, 'existing-src');
+      fs.mkdirSync(srcDir);
+      fs.writeFileSync(path.join(srcDir, 'file.txt'), 'content');
+
+      // Create destination directory beforehand
+      const destDir = path.join(tempDir, 'existing-dest');
+      fs.mkdirSync(destDir);
+
+      const result = copyDirectory(srcDir, destDir);
+
+      expect(result).toBe(true);
+      expect(fs.readFileSync(path.join(destDir, 'file.txt'), 'utf8')).toBe(
+        'content'
+      );
     });
   });
 
   describe('listSubdirectories', () => {
-    it('should return list of subdirectories', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isDirectory: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.readdirSync).mockReturnValue([
-        { name: 'dir1', isDirectory: () => true },
-        { name: 'file.txt', isDirectory: () => false },
-        { name: 'dir2', isDirectory: () => true },
-      ] as unknown as fs.Dirent[]);
+    it('should return list of subdirectories', () => {
+      fs.mkdirSync(path.join(tempDir, 'dir1'));
+      fs.mkdirSync(path.join(tempDir, 'dir2'));
+      fs.writeFileSync(path.join(tempDir, 'file.txt'), 'content');
 
-      const { listSubdirectories } = await import('../../src/utils/fs.js');
-      const result = listSubdirectories('/path/to/dir');
+      const result = listSubdirectories(tempDir);
 
-      expect(result).toEqual(['dir1', 'dir2']);
+      expect(result).toContain('dir1');
+      expect(result).toContain('dir2');
+      expect(result).not.toContain('file.txt');
+      expect(result).toHaveLength(2);
     });
 
-    it('should return empty array for non-existing directory', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { listSubdirectories } = await import('../../src/utils/fs.js');
-      const result = listSubdirectories('/nonexistent');
-
+    it('should return empty array for non-existing directory', () => {
+      const result = listSubdirectories(path.join(tempDir, 'nonexistent'));
       expect(result).toEqual([]);
     });
 
-    it('should return empty array on error', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.statSync).mockReturnValue({
-        isDirectory: () => true,
-      } as fs.Stats);
-      vi.mocked(fs.readdirSync).mockImplementation(() => {
-        throw new Error('Read error');
+    it('should return empty array for empty directory', () => {
+      const emptyDir = path.join(tempDir, 'empty');
+      fs.mkdirSync(emptyDir);
+
+      const result = listSubdirectories(emptyDir);
+      expect(result).toEqual([]);
+    });
+
+    it('should return empty array for file (not directory)', () => {
+      const filePath = path.join(tempDir, 'file.txt');
+      fs.writeFileSync(filePath, 'content');
+
+      const result = listSubdirectories(filePath);
+      expect(result).toEqual([]);
+    });
+
+    it('should return empty array on error (invalid path)', () => {
+      const result = listSubdirectories('\0');
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('error handling with mocks', () => {
+    it('dirExists should return false when statSync throws', () => {
+      const existsSyncSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+      const statSyncSpy = vi.spyOn(fs, 'statSync').mockImplementation(() => {
+        throw new Error('Permission denied');
       });
 
-      const { listSubdirectories } = await import('../../src/utils/fs.js');
-      const result = listSubdirectories('/path/to/dir');
+      expect(dirExists('/some/path')).toBe(false);
 
-      expect(result).toEqual([]);
+      existsSyncSpy.mockRestore();
+      statSyncSpy.mockRestore();
+    });
+
+    it('fileExists should return false when statSync throws', () => {
+      const existsSyncSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+      const statSyncSpy = vi.spyOn(fs, 'statSync').mockImplementation(() => {
+        throw new Error('Permission denied');
+      });
+
+      expect(fileExists('/some/path')).toBe(false);
+
+      existsSyncSpy.mockRestore();
+      statSyncSpy.mockRestore();
+    });
+
+    it('backupFile should return null when copyFileSync throws', () => {
+      const filePath = path.join(tempDir, 'backup-test.txt');
+      fs.writeFileSync(filePath, 'content');
+
+      const copyFileSyncSpy = vi
+        .spyOn(fs, 'copyFileSync')
+        .mockImplementation(() => {
+          throw new Error('Copy failed');
+        });
+
+      expect(backupFile(filePath)).toBeNull();
+
+      copyFileSyncSpy.mockRestore();
+    });
+
+    it('copyDirectory should return false when readdirSync throws', () => {
+      const srcDir = path.join(tempDir, 'copy-error-src');
+      fs.mkdirSync(srcDir);
+
+      const readdirSyncSpy = vi
+        .spyOn(fs, 'readdirSync')
+        .mockImplementation(() => {
+          throw new Error('Read failed');
+        });
+
+      expect(copyDirectory(srcDir, path.join(tempDir, 'copy-error-dest'))).toBe(
+        false
+      );
+
+      readdirSyncSpy.mockRestore();
+    });
+
+    it('listSubdirectories should return empty array when readdirSync throws', () => {
+      const readdirSyncSpy = vi
+        .spyOn(fs, 'readdirSync')
+        .mockImplementation(() => {
+          throw new Error('Read failed');
+        });
+
+      expect(listSubdirectories(tempDir)).toEqual([]);
+
+      readdirSyncSpy.mockRestore();
     });
   });
 });

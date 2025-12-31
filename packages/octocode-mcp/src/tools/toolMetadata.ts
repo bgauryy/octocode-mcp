@@ -4,6 +4,7 @@ import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
 import { CompleteMetadata, ToolNames } from '../types/metadata.js';
+import { LOCAL_BASE_HINTS } from './hints/localBaseHints.js';
 import { STATIC_TOOL_NAMES, isLocalTool } from './toolNames.js';
 
 export type {
@@ -250,28 +251,6 @@ export function isToolInMetadata(toolName: string): boolean {
   return Object.prototype.hasOwnProperty.call(tools, toolName);
 }
 
-/**
- * Keywords that indicate GitHub-specific hints.
- * These hints mention GitHub API parameters that don't apply to local tools.
- */
-const GITHUB_SPECIFIC_HINT_PATTERNS = [
-  /'owner'/i,
-  /'repo'/i,
-  /'branch'/i,
-  /"owner"/i,
-  /"repo"/i,
-  /"branch"/i,
-  /\bpushedAt\b/i,
-];
-
-/**
- * Check if a hint is GitHub-specific (mentions owner, repo, branch).
- * Used to filter out irrelevant hints for local tools.
- */
-function isGitHubSpecificHint(hint: string): boolean {
-  return GITHUB_SPECIFIC_HINT_PATTERNS.some(pattern => pattern.test(hint));
-}
-
 export function getToolHintsSync(
   toolName: string,
   resultType: 'hasResults' | 'empty'
@@ -279,12 +258,11 @@ export function getToolHintsSync(
   if (!METADATA_JSON || !METADATA_JSON.tools[toolName]) {
     return [];
   }
-  let baseHints: readonly string[] = METADATA_JSON.baseHints[resultType] ?? [];
 
-  // Filter out GitHub-specific hints for local tools
-  if (isLocalTool(toolName)) {
-    baseHints = baseHints.filter(hint => !isGitHubSpecificHint(hint));
-  }
+  // Use separated hints for local tools to avoid GitHub-specific context
+  const baseHints = isLocalTool(toolName)
+    ? (LOCAL_BASE_HINTS[resultType] ?? [])
+    : (METADATA_JSON.baseHints[resultType] ?? []);
 
   const toolHints = METADATA_JSON.tools[toolName]?.hints[resultType] ?? [];
   return [...baseHints, ...toolHints];

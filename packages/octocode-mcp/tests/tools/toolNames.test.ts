@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 // Import the actual modules without mocking
 import { TOOL_NAMES, STATIC_TOOL_NAMES } from '../../src/tools/toolMetadata.js';
+import { isLocalTool } from '../../src/tools/toolNames.js';
 
 describe('TOOL_NAMES proxy (TDD for local tools registration)', () => {
   describe('before metadata initialization', () => {
@@ -71,6 +72,58 @@ describe('TOOL_NAMES proxy (TDD for local tools registration)', () => {
       expect(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE).toBe('localViewStructure');
       expect(STATIC_TOOL_NAMES.LOCAL_FIND_FILES).toBe('localFindFiles');
       expect(STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT).toBe('localGetFileContent');
+    });
+  });
+});
+
+describe('isLocalTool', () => {
+  describe('local tools', () => {
+    it('should return true for localSearchCode', () => {
+      expect(isLocalTool('localSearchCode')).toBe(true);
+    });
+
+    it('should return true for localGetFileContent', () => {
+      expect(isLocalTool('localGetFileContent')).toBe(true);
+    });
+
+    it('should return true for localFindFiles', () => {
+      expect(isLocalTool('localFindFiles')).toBe(true);
+    });
+
+    it('should return true for localViewStructure', () => {
+      expect(isLocalTool('localViewStructure')).toBe(true);
+    });
+  });
+
+  describe('GitHub tools', () => {
+    it('should return false for githubSearchCode', () => {
+      expect(isLocalTool('githubSearchCode')).toBe(false);
+    });
+
+    it('should return false for githubGetFileContent', () => {
+      expect(isLocalTool('githubGetFileContent')).toBe(false);
+    });
+
+    it('should return false for githubViewRepoStructure', () => {
+      expect(isLocalTool('githubViewRepoStructure')).toBe(false);
+    });
+
+    it('should return false for githubSearchRepositories', () => {
+      expect(isLocalTool('githubSearchRepositories')).toBe(false);
+    });
+
+    it('should return false for githubSearchPullRequests', () => {
+      expect(isLocalTool('githubSearchPullRequests')).toBe(false);
+    });
+  });
+
+  describe('other tools', () => {
+    it('should return false for packageSearch', () => {
+      expect(isLocalTool('packageSearch')).toBe(false);
+    });
+
+    it('should return false for unknown tool names', () => {
+      expect(isLocalTool('unknownTool')).toBe(false);
     });
   });
 });
