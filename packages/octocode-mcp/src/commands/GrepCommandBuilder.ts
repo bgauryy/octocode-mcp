@@ -5,38 +5,7 @@
 
 import { BaseCommandBuilder } from './BaseCommandBuilder.js';
 import type { RipgrepQuery } from '../scheme/local_ripgrep.js';
-
-/**
- * Maps ripgrep file types to glob patterns for grep --include
- */
-const TYPE_TO_EXTENSIONS: Record<string, string[]> = {
-  ts: ['ts', 'tsx'],
-  js: ['js', 'jsx', 'mjs', 'cjs'],
-  py: ['py', 'pyi'],
-  rust: ['rs'],
-  go: ['go'],
-  java: ['java'],
-  cpp: ['cpp', 'cc', 'cxx', 'hpp', 'h'],
-  c: ['c', 'h'],
-  css: ['css', 'scss', 'sass', 'less'],
-  html: ['html', 'htm'],
-  json: ['json'],
-  yaml: ['yaml', 'yml'],
-  md: ['md', 'markdown'],
-  xml: ['xml'],
-  sh: ['sh', 'bash', 'zsh'],
-  rb: ['rb'],
-  php: ['php'],
-  swift: ['swift'],
-  kt: ['kt', 'kts'],
-  scala: ['scala'],
-  sql: ['sql'],
-  vim: ['vim'],
-  lua: ['lua'],
-  r: ['r', 'R'],
-  dockerfile: ['Dockerfile'],
-  make: ['Makefile', 'makefile', 'mk'],
-};
+import { TYPE_TO_EXTENSIONS } from '../utils/fileTypes.js';
 
 /**
  * Features not supported by grep (will generate warnings)
@@ -121,6 +90,76 @@ export function getGrepFeatureWarnings(query: RipgrepQuery): string[] {
 export class GrepCommandBuilder extends BaseCommandBuilder {
   constructor() {
     super('grep');
+  }
+
+  /**
+   * Simple convenience method to set pattern and path with default flags
+   */
+  simple(pattern: string, path: string): this {
+    this.addFlag('-r');
+    this.addFlag('-n');
+    this.addFlag('-H');
+    this.addFlag('-I');
+    this.addOption('--color', 'never');
+    this.addArg(pattern);
+    this.addArg(path);
+    return this;
+  }
+
+  /**
+   * Enable case-insensitive search
+   */
+  caseInsensitive(): this {
+    this.addFlag('-i');
+    return this;
+  }
+
+  /**
+   * Only show filenames with matches
+   */
+  filesOnly(): this {
+    this.addFlag('-l');
+    return this;
+  }
+
+  /**
+   * Show context lines around matches
+   */
+  context(lines: number): this {
+    this.addOption('-C', lines);
+    return this;
+  }
+
+  /**
+   * Include only files matching pattern
+   */
+  include(pattern: string): this {
+    this.addOption('--include', pattern);
+    return this;
+  }
+
+  /**
+   * Exclude files matching pattern
+   */
+  exclude(pattern: string): this {
+    this.addOption('--exclude', pattern);
+    return this;
+  }
+
+  /**
+   * Exclude directory from search
+   */
+  excludeDir(dir: string): this {
+    this.addOption('--exclude-dir', dir);
+    return this;
+  }
+
+  /**
+   * Treat pattern as fixed string (not regex)
+   */
+  fixedString(): this {
+    this.addFlag('-F');
+    return this;
   }
 
   /**
@@ -253,84 +292,6 @@ export class GrepCommandBuilder extends BaseCommandBuilder {
     // Add the search path
     this.addArg(query.path);
 
-    return this;
-  }
-
-  /**
-   * Simple grep search builder
-   */
-  simple(pattern: string, path: string): this {
-    this.addFlag('-r');
-    this.addFlag('-n');
-    this.addFlag('-H');
-    this.addFlag('-I');
-    this.addOption('--color', 'never');
-    this.addArg(pattern);
-    this.addArg(path);
-    return this;
-  }
-
-  /**
-   * Case insensitive search
-   */
-  caseInsensitive(): this {
-    this.addFlag('-i');
-    return this;
-  }
-
-  /**
-   * Files only (like ripgrep -l)
-   */
-  filesOnly(): this {
-    this.addFlag('-l');
-    return this;
-  }
-
-  /**
-   * Add context lines
-   */
-  context(lines: number): this {
-    this.addOption('-C', lines);
-    return this;
-  }
-
-  /**
-   * Include pattern
-   */
-  include(pattern: string): this {
-    this.addOption('--include', pattern);
-    return this;
-  }
-
-  /**
-   * Exclude pattern
-   */
-  exclude(pattern: string): this {
-    this.addOption('--exclude', pattern);
-    return this;
-  }
-
-  /**
-   * Exclude directory
-   */
-  excludeDir(dir: string): this {
-    this.addOption('--exclude-dir', dir);
-    return this;
-  }
-
-  /**
-   * Fixed string search (no regex)
-   */
-  fixedString(): this {
-    this.addFlag('-F');
-    return this;
-  }
-
-  /**
-   * Extended regex
-   */
-  extendedRegex(): this {
-    this.addFlag('-E');
     return this;
   }
 }

@@ -254,8 +254,9 @@ async function viewGitHubRepositoryStructureAPIInternal(
                 foundBranch = tryBranch;
                 workingBranch = tryBranch;
                 break;
-                // eslint-disable-next-line no-empty
-              } catch {}
+              } catch {
+                // Branch not found - try next one in the list
+              }
             }
 
             if (!foundBranch) {

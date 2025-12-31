@@ -37,8 +37,10 @@ export async function registerPackageSearchTool(
     TOOL_NAMES.PACKAGE_SEARCH,
     {
       description: DESCRIPTIONS[TOOL_NAMES.PACKAGE_SEARCH],
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- breaks deep type inference from discriminatedUnion
-      inputSchema: PackageSearchBulkQuerySchema as any,
+      // Type assertion needed: Zod discriminatedUnion types don't fully align with MCP SDK's expected schema type
+      inputSchema: PackageSearchBulkQuerySchema as Parameters<
+        typeof server.registerTool
+      >[1]['inputSchema'],
       annotations: {
         title: 'Package Search',
         readOnlyHint: true,

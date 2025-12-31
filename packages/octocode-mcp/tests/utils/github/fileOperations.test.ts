@@ -95,6 +95,8 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     rest: {
       repos: {
         getContent: ReturnType<typeof vi.fn>;
+        get: ReturnType<typeof vi.fn>;
+        listCommits: ReturnType<typeof vi.fn>;
       };
     };
   };
@@ -194,7 +196,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'abc123',
+          branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
           contentLength: 34,
           minified: true,
@@ -215,7 +217,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'abc123',
+          branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
           contentLength: 34,
           minified: true,
@@ -239,7 +241,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'abc123',
+          branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
           contentLength: 34,
           minified: true,
@@ -264,7 +266,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'abc123',
+          branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
           contentLength: 34,
           minified: true,
@@ -289,7 +291,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'abc123',
+          branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
           contentLength: 34,
           minified: true,

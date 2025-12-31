@@ -4,17 +4,6 @@ export {
   clearOctokitInstances,
 } from './client';
 export { handleGitHubAPIError } from './errors';
-import { clearConfigCachedToken } from '../serverConfig.js';
-import { clearOctokitInstances } from './client.js';
-
-/**
- * Unified function to clear all authentication state.
- * Clears both the config cached token and Octokit instances.
- */
-export function clearAllAuthState(): void {
-  clearOctokitInstances();
-  clearConfigCachedToken();
-}
 
 export type {
   GitHubAPIError,

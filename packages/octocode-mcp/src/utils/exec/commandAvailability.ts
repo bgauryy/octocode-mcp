@@ -149,7 +149,8 @@ export function getMissingCommandError(command: CommandName): string {
 }
 
 /**
- * Clear the availability cache (useful for testing)
+ * Clear the availability cache.
+ * @internal Used primarily for testing - not part of public API
  */
 export function clearAvailabilityCache(): void {
   availabilityCache.clear();

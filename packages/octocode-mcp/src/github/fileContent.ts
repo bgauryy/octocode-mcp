@@ -58,6 +58,10 @@ const defaultBranchCache = new NodeCache({
   useClones: false,
 });
 
+/**
+ * Clear the default branch cache.
+ * @internal Used primarily for testing - not part of public API
+ */
 export function clearDefaultBranchCache(): void {
   defaultBranchCache.flushAll();
 }

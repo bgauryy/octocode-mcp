@@ -114,8 +114,9 @@ export async function withDataCache<T>(
         cacheStats.hits++;
         return cached;
       }
-      // eslint-disable-next-line no-empty
-    } catch {}
+    } catch {
+      // Cache read failure - proceed with fresh operation
+    }
   }
 
   if (pendingRequests.has(cacheKey)) {
@@ -142,8 +143,9 @@ export async function withDataCache<T>(
           cache.set(cacheKey, result, ttl);
           cacheStats.sets++;
           cacheStats.totalKeys = cache.keys().length;
-          // eslint-disable-next-line no-empty
-        } catch {}
+        } catch {
+          // Cache write failure - result is still valid, just not cached
+        }
       }
 
       return result;
@@ -171,7 +173,8 @@ export function clearAllCache(): void {
 }
 
 /**
- * Get cache statistics
+ * Get cache statistics.
+ * @internal Used primarily for testing and debugging - not part of public API
  */
 export function getCacheStats(): CacheStats & {
   hitRate: number;
