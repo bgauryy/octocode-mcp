@@ -1,7 +1,8 @@
 import { defineConfig } from 'tsdown';
 import { builtinModules } from 'module';
 
-export default defineConfig({
+// Main server entry - bundled CLI with no types
+const serverConfig = defineConfig({
   entry: ['src/index.ts'],
   format: ['esm'],
   outDir: 'dist',
@@ -48,3 +49,33 @@ export default defineConfig({
     'process.env.NODE_ENV': '"production"',
   },
 });
+
+// Public API entry - exports types and utilities for package consumers
+const publicConfig = defineConfig({
+  entry: ['src/public.ts'],
+  format: ['esm'],
+  outDir: 'dist',
+  clean: false, // Don't clean - server build runs first
+  target: 'node18',
+  platform: 'node',
+
+  // Bundle dependencies for standalone use
+  noExternal: [/.*/],
+  external: [...builtinModules, ...builtinModules.map(m => `node:${m}`)],
+
+  treeshake: true,
+  minify: true,
+  shims: true,
+
+  // Generate type declarations for public API
+  dts: true,
+
+  sourcemap: false,
+  outExtensions: () => ({ js: '.js' }),
+
+  define: {
+    'process.env.NODE_ENV': '"production"',
+  },
+});
+
+export default [serverConfig, publicConfig];
