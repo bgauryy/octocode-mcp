@@ -458,9 +458,9 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
         expect(result.data.isPartial).toBe(true);
         expect(result.data.startLine).toBeLessThanOrEqual(2);
         expect(result.data.endLine).toBeGreaterThanOrEqual(2);
-        expect(result.data.securityWarnings).toBeDefined();
+        expect(result.data.matchLocations).toBeDefined();
         expect(
-          result.data.securityWarnings?.some(w =>
+          result.data.matchLocations?.some(w =>
             w.includes('Found "Target Line"')
           )
         ).toBe(true);
@@ -651,9 +651,9 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
       if ('data' in result && !('error' in result.data)) {
         expect(result.data.isPartial).toBe(true);
         expect(result.data.endLine).toBe(3); // Adjusted to file end
-        expect(result.data.securityWarnings).toBeDefined();
+        expect(result.data.matchLocations).toBeDefined();
         expect(
-          result.data.securityWarnings?.some(w => w.includes('adjusted to 3'))
+          result.data.matchLocations?.some(w => w.includes('adjusted to 3'))
         ).toBe(true);
       }
     });

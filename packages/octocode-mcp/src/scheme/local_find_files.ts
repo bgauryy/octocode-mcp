@@ -100,10 +100,7 @@ export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
     .max(10000)
     .optional()
     .describe(LOCAL_FIND_FILES.pagination.limit),
-  details: z
-    .boolean()
-    .default(false)
-    .describe(LOCAL_FIND_FILES.options.details),
+  details: z.boolean().default(true).describe(LOCAL_FIND_FILES.options.details),
 
   filesPerPage: z
     .number()
@@ -136,7 +133,7 @@ export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
 
   showFileLastModified: z
     .boolean()
-    .default(false)
+    .default(true)
     .describe(LOCAL_FIND_FILES.options.showFileLastModified),
 });
 

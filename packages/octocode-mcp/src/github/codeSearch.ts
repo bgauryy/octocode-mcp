@@ -124,7 +124,7 @@ async function searchGitHubCodeAPIInternal(
         total_count: optimizedResult.total_count,
         items: optimizedResult.items,
         repository: optimizedResult.repository,
-        securityWarnings: optimizedResult.securityWarnings,
+        matchLocations: optimizedResult.matchLocations,
         minified: optimizedResult.minified,
         minificationFailed: optimizedResult.minificationFailed,
         minificationTypes: optimizedResult.minificationTypes,
@@ -160,7 +160,7 @@ async function transformToOptimizedFormat(
 ): Promise<OptimizedCodeSearchResult> {
   const singleRepo = extractSingleRepository(items);
 
-  const allSecurityWarningsSet = new Set<string>();
+  const allMatchLocationsSet = new Set<string>();
   let hasMinificationFailures = false;
   const minificationTypes: string[] = [];
 
@@ -182,13 +182,13 @@ async function transformToOptimizedFormat(
           processedFragment = sanitizationResult.content;
 
           if (sanitizationResult.hasSecrets) {
-            allSecurityWarningsSet.add(
+            allMatchLocationsSet.add(
               `Secrets detected in ${item.path}: ${sanitizationResult.secretsDetected.join(', ')}`
             );
           }
           if (sanitizationResult.warnings.length > 0) {
             sanitizationResult.warnings.forEach(w =>
-              allSecurityWarningsSet.add(`${item.path}: ${w}`)
+              allMatchLocationsSet.add(`${item.path}: ${w}`)
             );
           }
 
@@ -271,8 +271,8 @@ async function transformToOptimizedFormat(
     };
   }
 
-  if (allSecurityWarningsSet.size > 0) {
-    result.securityWarnings = Array.from(allSecurityWarningsSet);
+  if (allMatchLocationsSet.size > 0) {
+    result.matchLocations = Array.from(allMatchLocationsSet);
   }
 
   result.minified = !hasMinificationFailures;

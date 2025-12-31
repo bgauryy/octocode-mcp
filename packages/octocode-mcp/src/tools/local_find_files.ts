@@ -63,6 +63,9 @@ export function registerLocalFindFilesTool(server: McpServer) {
 export async function findFiles(
   query: FindFilesQuery
 ): Promise<FindFilesResult> {
+  const details = query.details ?? true;
+  const showLastModified = query.showFileLastModified ?? false;
+
   try {
     // Check if find command is available
     const findAvailability = await checkCommandAvailability('find');
@@ -110,11 +113,36 @@ export async function findFiles(
 
     const files: FoundFile[] = await getFileDetails(
       filePaths,
-      query.showFileLastModified
+      showLastModified
     );
 
+    if (details) {
+      await Promise.all(
+        files.map(async file => {
+          if (
+            file.size === undefined ||
+            !file.permissions ||
+            (showLastModified && !file.modified)
+          ) {
+            try {
+              const stats = await fs.promises.lstat(file.path);
+              if (file.size === undefined) file.size = stats.size;
+              if (!file.permissions) {
+                file.permissions = stats.mode.toString(8).slice(-3);
+              }
+              if (showLastModified && !file.modified) {
+                file.modified = stats.mtime.toISOString();
+              }
+            } catch {
+              // ignore fallback failures; proceed with available data
+            }
+          }
+        })
+      );
+    }
+
     files.sort((a, b) => {
-      if (query.showFileLastModified && a.modified && b.modified) {
+      if (showLastModified && a.modified && b.modified) {
         return new Date(b.modified).getTime() - new Date(a.modified).getTime();
       }
       // Fallback to path sorting when modified is not available
@@ -126,11 +154,11 @@ export async function findFiles(
         path: f.path,
         type: f.type,
       };
-      if (query.details) {
+      if (details) {
         if (f.size !== undefined) result.size = f.size;
         if (f.permissions) result.permissions = f.permissions;
       }
-      if (query.showFileLastModified && f.modified) {
+      if (showLastModified && f.modified) {
         result.modified = f.modified;
       }
       return result;
@@ -150,7 +178,7 @@ export async function findFiles(
       {
         threshold: 100,
         itemType: 'file',
-        detailed: query.details,
+        detailed: details,
       }
     );
     if (safetyCheck.shouldBlock) {
@@ -241,7 +269,7 @@ export async function findFiles(
       filePageNumber < totalPages
         ? `Next: filePageNumber=${filePageNumber + 1}`
         : 'Final page',
-      query.showFileLastModified
+      showLastModified
         ? 'Sorted by modification time (most recent first)'
         : 'Sorted by path',
     ];

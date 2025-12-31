@@ -419,7 +419,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         expect(result.data.content).toBe('line 8\nline 9\nline 10');
         expect(result.data.startLine).toBe(8);
         expect(result.data.endLine).toBe(10);
-        expect(result.data.securityWarnings).toContain(
+        expect(result.data.matchLocations).toContain(
           'Requested endLine 15 adjusted to 10 (file end)'
         );
       }
@@ -466,7 +466,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         expect(result.data.content).toContain('import React from "react"'); // Context before
         expect(result.data.content).toContain('export default MyComponent'); // Context after
         expect(result.data.isPartial).toBe(true);
-        expect(result.data.securityWarnings).toContain(
+        expect(result.data.matchLocations).toContain(
           'Found "function MyComponent()" on line 5'
         );
       }
@@ -582,7 +582,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           'Copyright (c) Meta Platforms'
         );
 
-        expect(result.data.securityWarnings).toContain(
+        expect(result.data.matchLocations).toContain(
           'Found "export function createRef" on line 12'
         );
       }
@@ -617,7 +617,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       if ('data' in result) {
         // Should use the first match and indicate multiple matches
         expect(result.data.content).toContain('import React from "react"');
-        expect(result.data.securityWarnings).toContain(
+        expect(result.data.matchLocations).toContain(
           'Found "import" on line 2 (and 1 other locations)'
         );
       }
@@ -973,7 +973,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       expect(result.status).toBe(200);
       if ('data' in result) {
-        expect(result.data.securityWarnings).toContain(
+        expect(result.data.matchLocations).toContain(
           'Secrets detected and redacted: github-token'
         );
       }
@@ -993,8 +993,8 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       expect(result.status).toBe(200);
       if ('data' in result) {
-        expect(result.data.securityWarnings).toContain('Custom warning 1');
-        expect(result.data.securityWarnings).toContain('Custom warning 2');
+        expect(result.data.matchLocations).toContain('Custom warning 1');
+        expect(result.data.matchLocations).toContain('Custom warning 2');
       }
     });
   });

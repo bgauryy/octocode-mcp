@@ -119,7 +119,7 @@ async function fetchMultipleGitHubFileContents(
         'endLine',
         'lastModified',
         'lastModifiedBy',
-        'securityWarnings',
+        'matchLocations',
         'error',
       ],
     }

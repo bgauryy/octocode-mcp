@@ -461,7 +461,7 @@ async function processFileContentAPI(
   matchStringContextLines: number = 5,
   matchString?: string
 ): Promise<ContentResult> {
-  const securityWarningsSet = new Set<string>();
+  const matchLocationsSet = new Set<string>();
 
   // IMPORTANT: Search on ORIGINAL content first, sanitize OUTPUT later
   // This prevents false "not found" when searching for patterns that get redacted
@@ -524,7 +524,7 @@ async function processFileContentAPI(
     actualEndLine = matchEndLine;
     isPartial = true;
 
-    securityWarningsSet.add(
+    matchLocationsSet.add(
       `Found "${matchString}" on line ${firstMatch}${matchingLines.length > 1 ? ` (and ${matchingLines.length - 1} other locations)` : ''}`
     );
   } else if (startLine !== undefined || endLine !== undefined) {
@@ -553,7 +553,7 @@ async function processFileContentAPI(
       finalContent = selectedLines.join('\n');
 
       if (effectiveEndLine > totalLines) {
-        securityWarningsSet.add(
+        matchLocationsSet.add(
           `Requested endLine ${effectiveEndLine} adjusted to ${totalLines} (file end)`
         );
       }
@@ -565,13 +565,13 @@ async function processFileContentAPI(
   finalContent = sanitizationResult.content;
 
   if (sanitizationResult.hasSecrets) {
-    securityWarningsSet.add(
+    matchLocationsSet.add(
       `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
     );
   }
   if (sanitizationResult.warnings.length > 0) {
     sanitizationResult.warnings.forEach(warning =>
-      securityWarningsSet.add(warning)
+      matchLocationsSet.add(warning)
     );
   }
 
@@ -580,7 +580,7 @@ async function processFileContentAPI(
   const minificationFailed = minifyResult.failed;
   const minificationType = minifyResult.type;
 
-  const securityWarnings = Array.from(securityWarningsSet);
+  const matchLocations = Array.from(matchLocationsSet);
 
   return {
     owner,
@@ -597,8 +597,8 @@ async function processFileContentAPI(
     minified: !minificationFailed,
     minificationFailed: minificationFailed,
     minificationType: minificationType,
-    ...(securityWarnings.length > 0 && {
-      securityWarnings,
+    ...(matchLocations.length > 0 && {
+      matchLocations,
     }),
   } as ContentResult;
 }

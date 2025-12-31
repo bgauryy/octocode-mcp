@@ -135,7 +135,7 @@ export interface ContentResultData {
   minificationFailed?: boolean;
   minificationType?: string;
   originalQuery?: FileContentQuery;
-  securityWarnings?: string[];
+  matchLocations?: string[];
   sampling?: SamplingInfo;
   lastModified?: string;
   lastModifiedBy?: string;

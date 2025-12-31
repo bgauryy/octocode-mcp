@@ -795,10 +795,10 @@ describe('File Operations - Additional Coverage Tests', () => {
 
       expect(result).toHaveProperty('data');
       if ('data' in result && result.data) {
-        expect(result.data.securityWarnings).toBeDefined();
+        expect(result.data.matchLocations).toBeDefined();
         // Should mention multiple locations
         expect(
-          result.data.securityWarnings?.some(
+          result.data.matchLocations?.some(
             w => w.includes('2 other locations') || w.includes('other location')
           )
         ).toBe(true);

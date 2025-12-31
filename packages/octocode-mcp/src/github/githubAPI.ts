@@ -176,7 +176,7 @@ export type OptimizedCodeSearchResult = {
     updatedAt?: string;
     pushedAt?: string;
   };
-  securityWarnings?: string[];
+  matchLocations?: string[];
   minified?: boolean;
   minificationFailed?: boolean;
   minificationTypes?: string[];

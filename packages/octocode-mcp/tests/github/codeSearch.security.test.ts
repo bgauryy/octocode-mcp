@@ -163,7 +163,7 @@ describe('Code Search - Security Warnings', () => {
     });
 
     if ('data' in result) {
-      expect(result.data.securityWarnings).toBeUndefined();
+      expect(result.data.matchLocations).toBeUndefined();
     } else {
       expect.fail('Expected successful result');
     }
@@ -216,8 +216,8 @@ describe('Code Search - Security Warnings', () => {
     });
 
     if ('data' in result) {
-      expect(result.data.securityWarnings).toBeDefined();
-      expect(result.data.securityWarnings?.length).toBeGreaterThan(0);
+      expect(result.data.matchLocations).toBeDefined();
+      expect(result.data.matchLocations?.length).toBeGreaterThan(0);
     } else {
       expect.fail('Expected successful result');
     }
@@ -354,7 +354,7 @@ describe('Code Search - Security Warnings Array Creation', () => {
     }
   });
 
-  it('should not create securityWarnings array when sanitize is false', async () => {
+  it('should not create matchLocations array when sanitize is false', async () => {
     const mockResponse = {
       data: {
         total_count: 1,
@@ -387,7 +387,7 @@ describe('Code Search - Security Warnings Array Creation', () => {
     });
 
     if ('data' in result) {
-      expect(result.data.securityWarnings).toBeUndefined();
+      expect(result.data.matchLocations).toBeUndefined();
     } else {
       expect.fail('Expected successful result');
     }
@@ -446,8 +446,8 @@ describe('Code Search - Security Warning Structure', () => {
     });
 
     if ('data' in result) {
-      expect(result.data.securityWarnings).toBeDefined();
-      expect(result.data.securityWarnings?.length).toBeGreaterThan(0);
+      expect(result.data.matchLocations).toBeDefined();
+      expect(result.data.matchLocations?.length).toBeGreaterThan(0);
     } else {
       expect.fail('Expected successful result');
     }
@@ -487,8 +487,8 @@ describe('Code Search - Security Warning Structure', () => {
     });
 
     if ('data' in result) {
-      expect(result.data.securityWarnings).toBeDefined();
-      const warnings = result.data.securityWarnings || [];
+      expect(result.data.matchLocations).toBeDefined();
+      const warnings = result.data.matchLocations || [];
       expect(warnings.some((w: string) => w.includes('multi-secret.js'))).toBe(
         true
       );
