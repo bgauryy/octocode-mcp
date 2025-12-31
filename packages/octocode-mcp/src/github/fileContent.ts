@@ -53,8 +53,8 @@ interface RawContentResult {
  * while still providing good performance.
  */
 const defaultBranchCache = new NodeCache({
-  stdTTL: 3600, // 1 hour TTL
-  checkperiod: 600, // Check for expired keys every 10 minutes
+  stdTTL: 3600,
+  checkperiod: 600,
   useClones: false,
 });
 
@@ -207,7 +207,6 @@ async function fetchRawGitHubFileContent(
         // Smart Fallback Logic
         const defaultBranch = await getDefaultBranch(octokit, owner, repo);
 
-        // If user requested 'main' or 'master' but it's not the default, try the default
         const isCommonDefaultGuess = branch === 'main' || branch === 'master';
 
         if (isCommonDefaultGuess && branch !== defaultBranch) {
@@ -503,8 +502,6 @@ async function processFileContentAPI(
     }
 
     if (matchingLines.length === 0) {
-      // Return success with matchNotFound flag - this is NOT an error,
-      // just a normal scenario where the search pattern wasn't found
       return {
         owner,
         repo,

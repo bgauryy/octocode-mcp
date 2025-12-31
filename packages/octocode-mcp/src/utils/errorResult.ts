@@ -137,8 +137,6 @@ export function createErrorResult(
   // Collect hints from various sources
   const hints: string[] = [];
 
-  // If a separate hint source error is provided, extract hints from it
-  // This supports the GitHub API pattern where error and hint source differ
   if (hintSourceError) {
     hints.push(...extractGitHubApiHints(hintSourceError));
   }

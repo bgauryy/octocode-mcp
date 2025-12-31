@@ -20,19 +20,13 @@
 // ============================================================================
 
 export type {
-  // Complete metadata structure returned by API
   CompleteMetadata,
   RawCompleteMetadata,
-  // Tool metadata for individual tools
   ToolMetadata,
-  // Tool name mappings
   ToolNames,
-  // Base schema structure
   BaseSchema,
-  // Prompt definitions
   PromptMetadata,
   PromptArgument,
-  // Hint system types
   HintStatus,
   HintContext,
   HintGenerator,
@@ -60,18 +54,13 @@ export { STATIC_TOOL_NAMES } from './tools/toolNames.js';
 // ============================================================================
 
 export {
-  // Initialization
   initializeToolMetadata,
   loadToolContent,
-  // Tool name proxy (requires initialization)
   TOOL_NAMES,
-  // Schema proxies (requires initialization)
   BASE_SCHEMA,
-  // Tool content accessors
   DESCRIPTIONS,
   TOOL_HINTS,
   GENERIC_ERROR_HINTS,
-  // Schema helpers for each tool
   GITHUB_FETCH_CONTENT,
   GITHUB_SEARCH_CODE,
   GITHUB_SEARCH_REPOS,
@@ -82,7 +71,6 @@ export {
   LOCAL_FETCH_CONTENT,
   LOCAL_FIND_FILES,
   LOCAL_VIEW_STRUCTURE,
-  // Utility functions
   isToolInMetadata,
   getToolHintsSync,
   getGenericErrorHintsSync,

@@ -167,10 +167,8 @@ export class GrepCommandBuilder extends BaseCommandBuilder {
    * Maps compatible options and ignores unsupported ones
    */
   fromQuery(query: RipgrepQuery): this {
-    // Always recursive for directory searches
     this.addFlag('-r');
 
-    // Pattern handling
     if (query.fixedString) {
       this.addFlag('-F');
     } else if (query.perlRegex) {
@@ -179,24 +177,18 @@ export class GrepCommandBuilder extends BaseCommandBuilder {
       this.addFlag('-E');
     }
 
-    // Case sensitivity
-    // Note: grep doesn't have smart case, so we fall back to case-insensitive
     if (query.caseInsensitive || query.smartCase) {
       this.addFlag('-i');
     }
-    // caseSensitive is the default for grep, no flag needed
 
-    // Word matching
     if (query.wholeWord) {
       this.addFlag('-w');
     }
 
-    // Invert match
     if (query.invertMatch) {
       this.addFlag('-v');
     }
 
-    // Context lines
     if (query.contextLines !== undefined && query.contextLines > 0) {
       this.addOption('-C', query.contextLines);
     } else {
@@ -208,10 +200,8 @@ export class GrepCommandBuilder extends BaseCommandBuilder {
       }
     }
 
-    // Line numbers (always include for parsing)
     this.addFlag('-n');
 
-    // Output modes
     if (query.filesOnly) {
       this.addFlag('-l');
     } else if (query.filesWithoutMatch) {
@@ -221,7 +211,6 @@ export class GrepCommandBuilder extends BaseCommandBuilder {
       this.addFlag('-c');
     }
 
-    // File type filtering (convert ripgrep type to grep --include)
     if (query.type) {
       const extensions = TYPE_TO_EXTENSIONS[query.type];
       if (extensions) {
@@ -234,62 +223,42 @@ export class GrepCommandBuilder extends BaseCommandBuilder {
       }
     }
 
-    // Include patterns (glob filtering)
     if (query.include && query.include.length > 0) {
       for (const pattern of query.include) {
         this.addOption('--include', pattern);
       }
     }
 
-    // Exclude patterns
     if (query.exclude && query.exclude.length > 0) {
       for (const pattern of query.exclude) {
         this.addOption('--exclude', pattern);
       }
     }
 
-    // Exclude directories
     if (query.excludeDir && query.excludeDir.length > 0) {
       for (const dir of query.excludeDir) {
         this.addOption('--exclude-dir', dir);
       }
     }
 
-    // Binary files handling
     if (query.binaryFiles) {
       if (query.binaryFiles === 'text') {
-        this.addFlag('-a'); // Treat binary as text
+        this.addFlag('-a');
       } else if (query.binaryFiles === 'without-match') {
-        this.addFlag('-I'); // Ignore binary files
+        this.addFlag('-I');
       }
-      // 'binary' mode has no direct grep equivalent
     } else {
-      // Default: ignore binary files
       this.addFlag('-I');
     }
 
-    // Follow symlinks (grep -r follows by default, use -R to not dereference)
-    // Note: This is opposite of ripgrep behavior
-    // query.followSymlinks = true means follow, which is grep's default with -r
-
-    // Hidden files: grep searches hidden files by default with -r
-    // No flag needed for hidden files
-
-    // Color output disabled for parsing
     this.addOption('--color', 'never');
-
-    // Show filename (needed for multi-file results)
     this.addFlag('-H');
 
-    // Line-level regex match (like ripgrep -x)
     if (query.lineRegexp) {
       this.addFlag('-x');
     }
 
-    // Add the pattern
     this.addArg(query.pattern);
-
-    // Add the search path
     this.addArg(query.path);
 
     return this;

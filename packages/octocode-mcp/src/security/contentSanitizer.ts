@@ -89,7 +89,6 @@ export class ContentSanitizer {
           );
           sanitizedValue = value.substring(0, 10000);
         }
-        // Check string values for secrets
         const secretsResult = this.detectSecrets(sanitizedValue);
         if (secretsResult.hasSecrets) {
           hasSecrets = true;

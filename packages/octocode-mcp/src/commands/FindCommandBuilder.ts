@@ -26,15 +26,12 @@ export class FindCommandBuilder extends BaseCommandBuilder {
       this.addFlag('-E');
     }
 
-    // Add path first
     this.addArg(query.path);
 
-    // Linux optimization flag
     if (this.isLinux) {
       this.addFlag('-O3');
     }
 
-    // Depth options come early (global constraints)
     if (query.maxDepth !== undefined) {
       this.addOption('-maxdepth', query.maxDepth);
     }
@@ -43,17 +40,13 @@ export class FindCommandBuilder extends BaseCommandBuilder {
       this.addOption('-mindepth', query.minDepth);
     }
 
-    // Build excludeDir prune block BEFORE filters
     const hasExcludeDir = query.excludeDir && query.excludeDir.length > 0;
     if (hasExcludeDir) {
       this.buildExcludeDirPrune(query.excludeDir!);
       this.addArg('-o'); // Connect prune to filters with OR
     }
 
-    // Now add all filters (after prune block)
     this.addFilters(query);
-
-    // End with -print0
     this.addArg('-print0');
 
     return this;
@@ -85,12 +78,10 @@ export class FindCommandBuilder extends BaseCommandBuilder {
    * These must come AFTER the prune block when excludeDir is used
    */
   private addFilters(query: FindFilesQuery): void {
-    // Type filter
     if (query.type) {
       this.addOption('-type', query.type);
     }
 
-    // Name filters
     if (query.names && query.names.length > 0) {
       if (query.names.length === 1) {
         this.addOption('-name', query.names[0]!);
@@ -116,7 +107,6 @@ export class FindCommandBuilder extends BaseCommandBuilder {
       this.addOption('-path', query.pathPattern);
     }
 
-    // Regex handling - platform specific
     if (query.regex) {
       if (this.isLinux && query.regexType) {
         // GNU find uses -regextype
@@ -130,7 +120,6 @@ export class FindCommandBuilder extends BaseCommandBuilder {
       this.addFlag('-empty');
     }
 
-    // Size filters
     if (query.sizeGreater) {
       this.addOption('-size', `+${query.sizeGreater}`);
     }
@@ -139,7 +128,6 @@ export class FindCommandBuilder extends BaseCommandBuilder {
       this.addOption('-size', `-${query.sizeLess}`);
     }
 
-    // Time filters
     if (query.modifiedWithin) {
       const parsed = this.parseTimeString(query.modifiedWithin);
       this.addOption(parsed.unit, `-${parsed.value}`);
@@ -155,12 +143,10 @@ export class FindCommandBuilder extends BaseCommandBuilder {
       this.addOption(parsed.unit, `-${parsed.value}`);
     }
 
-    // Permission filters
     if (query.permissions) {
       this.addOption('-perm', query.permissions);
     }
 
-    // Executable/readable/writable - platform specific
     if (query.executable) {
       if (this.isLinux) {
         this.addFlag('-executable');

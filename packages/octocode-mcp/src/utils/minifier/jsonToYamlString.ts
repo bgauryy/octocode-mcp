@@ -61,8 +61,6 @@ export function jsonToYamlString(
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error';
-    // YAML conversion failed - fall back to JSON silently
-    // This is expected for complex objects that js-yaml can't handle
 
     try {
       return JSON.stringify(jsonObject, null, 2);

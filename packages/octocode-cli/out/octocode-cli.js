@@ -2827,6 +2827,7 @@ async function showMainMenu(state) {
       c("magenta", `  ─── 🔍🐙 ${bold("https://octocode.ai")} ───`)
     )
   );
+  console.log();
   const choice = await select({
     message: "What would you like to do?",
     choices,

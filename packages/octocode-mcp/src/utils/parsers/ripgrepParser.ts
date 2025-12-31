@@ -179,8 +179,6 @@ export function parseRipgrepJson(
         }
 
         let value = contextLines.join('\n');
-        // Use Array.from/spread to split by code points (handles surrogate pairs correctly)
-        // This prevents splitting multi-byte characters like emojis
         const charArray = [...value];
         if (charArray.length > maxLength) {
           // Slice to maxLength - 3 to leave room for '...'
@@ -240,11 +238,7 @@ export function parseGrepOutput(
       }
     }
   } else {
-    // Parse filename:lineNumber:content format
     for (const line of lines) {
-      // Handle the case where filename might contain colons
-      // Format is: path:lineNumber:content
-      // We need to find the first colon after the path (line number is always numeric)
       const match = line.match(/^(.+?):(\d+):(.*)$/);
       if (match) {
         const [, matchPath, lineNumStr, matchContent] = match;
