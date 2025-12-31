@@ -301,6 +301,7 @@ yarn test:ui
 | Document | Description |
 |----------|-------------|
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Deep dive into system design, data flows, security |
+| [`HINTS_ARCHITECTURE.md`](./docs/HINTS_ARCHITECTURE.md) | Hints system: flow, sources, types, implementation |
 | [`README.md`](./README.md) | Installation, usage, configuration |
 | [`../../AGENTS.md`](../../AGENTS.md) | Root monorepo guidelines |
 | [MCP Spec](https://modelcontextprotocol.io/) | Model Context Protocol specification |
@@ -315,6 +316,7 @@ yarn test:ui
 | Entry point | `src/index.ts` |
 | Tool registration | `src/tools/toolsManager.ts`, `src/tools/toolConfig.ts` |
 | Schema definitions | `src/scheme/*.ts` |
+| Hints system | `src/tools/hints/` ([docs](./docs/HINTS_ARCHITECTURE.md)) |
 | Security wrapper | `src/security/withSecurityValidation.ts` |
 | Secret detection | `src/security/contentSanitizer.ts`, `src/security/regexes.ts` |
 | Path validation | `src/security/pathValidator.ts` |

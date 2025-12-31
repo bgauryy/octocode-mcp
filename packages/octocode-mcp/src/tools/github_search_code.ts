@@ -17,7 +17,6 @@ import {
   createSuccessResult,
   invokeCallbackSafely,
 } from './utils.js';
-import { getDynamicHints, hasDynamicHints } from './hints/dynamic.js';
 
 export function registerGitHubSearchCodeTool(
   server: McpServer,
@@ -113,10 +112,10 @@ async function searchMultipleGitHubCode(
         }
 
         const hasContent = files.length > 0;
-        // Determine if specific owner/repo was requested (context for hints)
+        // Build context for dynamic hints
         const hasOwnerRepo = !!(query.owner && query.repo);
 
-        // Generate pagination hints with full context for navigation
+        // Generate pagination hints
         const paginationHints: string[] = [];
         if (pagination) {
           const { currentPage, totalPages, totalMatches, perPage, hasMore } =
@@ -124,12 +123,10 @@ async function searchMultipleGitHubCode(
           const startItem = (currentPage - 1) * perPage + 1;
           const endItem = Math.min(currentPage * perPage, totalMatches);
 
-          // Main pagination summary
           paginationHints.push(
             `Page ${currentPage}/${totalPages} (showing ${startItem}-${endItem} of ${totalMatches} matches)`
           );
 
-          // Navigation hints
           if (hasMore) {
             paginationHints.push(`Next: page=${currentPage + 1}`);
           }
@@ -139,8 +136,6 @@ async function searchMultipleGitHubCode(
           if (!hasMore) {
             paginationHints.push('Final page');
           }
-
-          // Quick navigation hint for multi-page results
           if (totalPages > 2) {
             paginationHints.push(
               `Jump to: page=1 (first) or page=${totalPages} (last)`
@@ -148,22 +143,16 @@ async function searchMultipleGitHubCode(
           }
         }
 
-        // Combine pagination hints with dynamic hints (static hints added by createSuccessResult)
-        const dynamicHints = hasDynamicHints(TOOL_NAMES.GITHUB_SEARCH_CODE)
-          ? getDynamicHints(
-              TOOL_NAMES.GITHUB_SEARCH_CODE,
-              hasContent ? 'hasResults' : 'empty',
-              { hasOwnerRepo, match: query.match }
-            )
-          : [];
-        const customHints = [...paginationHints, ...dynamicHints];
-
+        // Use unified pattern: context for dynamic hints, extraHints for pagination
         return createSuccessResult(
           query,
           result as unknown as Record<string, unknown>,
           hasContent,
           TOOL_NAMES.GITHUB_SEARCH_CODE,
-          customHints
+          {
+            hintContext: { hasOwnerRepo, match: query.match },
+            extraHints: paginationHints,
+          }
         );
       } catch (error) {
         return handleCatchError(error, query);

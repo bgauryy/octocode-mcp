@@ -249,6 +249,27 @@ export const HINTS: Record<string, ToolHintGenerators> = {
     empty: (_ctx: HintContext = {}) => [],
     error: (_ctx: HintContext = {}) => [],
   },
+
+  [STATIC_TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: {
+    hasResults: (_ctx: HintContext = {}) => [
+      // Context-aware hints - static hints cover generic cases
+      // Metadata dynamic hints (topicsHasResults, etc.) are loaded separately via extraHints
+    ],
+    empty: (_ctx: HintContext = {}) => [
+      // Static hints cover "Try broader terms", metadata dynamic hints cover topics/keywords
+    ],
+    error: (_ctx: HintContext = {}) => [],
+  },
+
+  [STATIC_TOOL_NAMES.PACKAGE_SEARCH]: {
+    hasResults: (_ctx: HintContext = {}) => [
+      // Package-specific hints are generated in the tool itself (deprecation, install, explore)
+    ],
+    empty: (_ctx: HintContext = {}) => [
+      // Package-specific empty hints are generated in the tool itself
+    ],
+    error: (_ctx: HintContext = {}) => [],
+  },
 };
 
 /**

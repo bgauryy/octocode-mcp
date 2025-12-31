@@ -4,7 +4,8 @@ import type {
   ToolSuccessResult,
   ToolInvocationCallback,
 } from '../types.js';
-import { getToolHintsSync } from './toolMetadata.js';
+import type { HintContext } from '../types/metadata.js';
+import { getHints } from './hints/index.js';
 import { logSessionError } from '../session.js';
 import { TOOL_ERRORS } from '../errorCodes.js';
 import { createErrorResult } from '../utils/errorResult.js';
@@ -31,6 +32,44 @@ export async function invokeCallbackSafely(
   }
 }
 
+/**
+ * Options for createSuccessResult hint generation
+ */
+export interface SuccessResultOptions {
+  /** Context for generating dynamic hints */
+  hintContext?: HintContext;
+  /** Additional custom hints to append (e.g., pagination hints) */
+  extraHints?: string[];
+}
+
+/**
+ * Create a success result with unified hint generation.
+ * Uses getHints() to combine static hints from metadata + dynamic context-aware hints.
+ *
+ * @param query - The original query with research context
+ * @param data - The result data
+ * @param hasContent - Whether the result has content (determines hasResults vs empty status)
+ * @param toolName - The tool name for hint lookup
+ * @param options - Options for hint generation (context and extra hints)
+ * @returns Formatted success result with hints
+ *
+ * @example
+ * // Basic usage (static hints only)
+ * createSuccessResult(query, data, true, 'githubSearchCode');
+ *
+ * @example
+ * // With context for dynamic hints
+ * createSuccessResult(query, data, true, 'githubSearchCode', {
+ *   hintContext: { hasOwnerRepo: true, match: 'file' }
+ * });
+ *
+ * @example
+ * // With extra hints (e.g., pagination)
+ * createSuccessResult(query, data, true, 'githubSearchCode', {
+ *   hintContext: { hasOwnerRepo: true },
+ *   extraHints: ['Page 1/5', 'Next: page=2']
+ * });
+ */
 export function createSuccessResult<T extends Record<string, unknown>>(
   query: {
     mainResearchGoal?: string;
@@ -40,7 +79,7 @@ export function createSuccessResult<T extends Record<string, unknown>>(
   data: T,
   hasContent: boolean,
   toolName: string,
-  customHints?: string[]
+  options?: SuccessResultOptions
 ): ToolSuccessResult<T> & T {
   const status = hasContent ? ('hasResults' as const) : ('empty' as const);
 
@@ -52,8 +91,14 @@ export function createSuccessResult<T extends Record<string, unknown>>(
     ...data,
   };
 
-  const staticHints = getToolHintsSync(toolName, status);
-  const allHints = [...staticHints, ...(customHints || [])];
+  // Use unified getHints() which combines static + dynamic hints
+  const hints = getHints(toolName, status, options?.hintContext);
+  const extraHints = options?.extraHints || [];
+
+  // Combine, deduplicate, and filter empty/whitespace-only hints
+  const allHints = [...new Set([...hints, ...extraHints])].filter(
+    h => h && h.trim().length > 0
+  );
 
   if (allHints.length > 0) {
     result.hints = allHints;

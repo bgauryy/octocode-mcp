@@ -67,7 +67,7 @@ describe('githubSearchPullRequests Tool Handler - Pagination Fix', () => {
         },
         true,
         'GITHUB_SEARCH_PULL_REQUESTS',
-        paginationHints
+        { extraHints: paginationHints }
       );
 
       expect(result.status).toBe('hasResults');
@@ -114,7 +114,7 @@ describe('githubSearchPullRequests Tool Handler - Pagination Fix', () => {
         { pull_requests: pullRequests, pagination },
         true,
         'GITHUB_SEARCH_PULL_REQUESTS',
-        paginationHints
+        { extraHints: paginationHints }
       );
 
       expect(result.hints).toContain('Previous: page=2');
@@ -154,7 +154,7 @@ describe('githubSearchPullRequests Tool Handler - Pagination Fix', () => {
         { pull_requests: pullRequests, pagination },
         true,
         'GITHUB_SEARCH_PULL_REQUESTS',
-        paginationHints
+        { extraHints: paginationHints }
       );
 
       expect(result.hints).toContain('Final page');
@@ -196,7 +196,7 @@ describe('githubSearchPullRequests Tool Handler - Pagination Fix', () => {
         { pull_requests: pullRequests, pagination },
         true,
         'GITHUB_SEARCH_PULL_REQUESTS',
-        paginationHints
+        { extraHints: paginationHints }
       );
 
       // Verify no jump hint is present
@@ -222,7 +222,7 @@ describe('githubSearchPullRequests Tool Handler - Pagination Fix', () => {
         { pull_requests: pullRequests, total_count: 1 },
         true,
         'GITHUB_SEARCH_PULL_REQUESTS',
-        paginationHints
+        { extraHints: paginationHints }
       );
 
       // Hints should be undefined when empty array is passed
@@ -254,7 +254,7 @@ describe('githubSearchPullRequests Tool Handler - Pagination Fix', () => {
         },
         false,
         'GITHUB_SEARCH_PULL_REQUESTS',
-        []
+        { extraHints: [] }
       );
 
       expect(result.pagination).toBeDefined();

@@ -8,7 +8,11 @@ import type {
   RepoSearchResult,
 } from '../types.js';
 import { searchGitHubReposAPI } from '../github/repoSearch.js';
-import { TOOL_NAMES, DESCRIPTIONS, getDynamicHints } from './toolMetadata.js';
+import {
+  TOOL_NAMES,
+  DESCRIPTIONS,
+  getDynamicHints as getMetadataDynamicHints,
+} from './toolMetadata.js';
 import { GitHubReposSearchQuerySchema } from '../scheme/github_search_repos.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
@@ -175,19 +179,21 @@ async function searchMultipleGitHubRepos(
           }
         }
 
+        // Generate search-type specific hints from metadata
         const searchHints = generateSearchSpecificHints(
           query,
           repositories.length > 0
         );
 
-        const customHints = [...paginationHints, ...(searchHints || [])];
-
+        // Use unified pattern: extraHints for pagination and search-specific hints
         return createSuccessResult(
           query,
           { repositories, pagination },
           repositories.length > 0,
           TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-          customHints.length > 0 ? customHints : undefined
+          {
+            extraHints: [...paginationHints, ...(searchHints || [])],
+          }
         );
       } catch (error) {
         return handleCatchError(error, query);
@@ -202,6 +208,9 @@ async function searchMultipleGitHubRepos(
   );
 }
 
+/**
+ * Generate search-type specific hints from metadata dynamic hints
+ */
 function generateSearchSpecificHints(
   query: GitHubReposSearchQuery,
   hasResults: boolean
@@ -212,18 +221,24 @@ function generateSearchSpecificHints(
 
   if (hasTopics && hasResults) {
     hints.push(
-      ...getDynamicHints(
+      ...getMetadataDynamicHints(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         'topicsHasResults'
       )
     );
   } else if (hasTopics && !hasResults) {
     hints.push(
-      ...getDynamicHints(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, 'topicsEmpty')
+      ...getMetadataDynamicHints(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        'topicsEmpty'
+      )
     );
   } else if (hasKeywords && !hasResults && !hasTopics) {
     hints.push(
-      ...getDynamicHints(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, 'keywordsEmpty')
+      ...getMetadataDynamicHints(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        'keywordsEmpty'
+      )
     );
   }
 

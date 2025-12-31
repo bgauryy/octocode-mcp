@@ -62,13 +62,13 @@ describe('Tools Utils', () => {
       expect(result.files).toEqual([]);
     });
 
-    it('should propagate custom hints to the final result', () => {
+    it('should propagate extra hints to the final result', () => {
       const query = {
         researchGoal: 'Find repositories',
         reasoning: 'Searching for repos',
       };
       const data = { repositories: ['repo1', 'repo2'] };
-      const customHints = [
+      const extraHints = [
         'Try narrowing your search with topics',
         'Consider using stars filter',
       ];
@@ -78,31 +78,28 @@ describe('Tools Utils', () => {
         data,
         true,
         'GITHUB_SEARCH_REPOSITORIES',
-        customHints
+        { extraHints }
       );
 
       expect(result.status).toBe('hasResults');
       expect(result.hints).toBeDefined();
-      expect(result.hints).toEqual(customHints);
-      expect(result.hints).toHaveLength(2);
       expect(result.hints).toContain('Try narrowing your search with topics');
       expect(result.hints).toContain('Consider using stars filter');
     });
 
-    it('should NOT include hints property when customHints is empty array', () => {
+    it('should NOT include hints property when extraHints is empty array', () => {
       const query = {
         researchGoal: 'Find files',
         reasoning: 'Searching',
       };
       const data = { files: ['file1.ts'] };
-      const customHints: string[] = [];
 
       const result = createSuccessResult(
         query,
         data,
         true,
         'GITHUB_SEARCH_CODE',
-        customHints
+        { extraHints: [] }
       );
 
       expect(result.status).toBe('hasResults');
@@ -133,7 +130,7 @@ describe('Tools Utils', () => {
         reasoning: 'Searching for repos',
       };
       const data = { repositories: [] };
-      const customHints = [
+      const extraHints = [
         'Try broader search terms',
         'Remove filters to expand results',
       ];
@@ -143,13 +140,13 @@ describe('Tools Utils', () => {
         data,
         false,
         'GITHUB_SEARCH_REPOSITORIES',
-        customHints
+        { extraHints }
       );
 
       expect(result.status).toBe('empty');
       expect(result.hints).toBeDefined();
-      expect(result.hints).toEqual(customHints);
-      expect(result.hints).toHaveLength(2);
+      expect(result.hints).toContain('Try broader search terms');
+      expect(result.hints).toContain('Remove filters to expand results');
     });
 
     it('should propagate single hint', () => {
@@ -158,20 +155,18 @@ describe('Tools Utils', () => {
         reasoning: 'Fetching file',
       };
       const data = { content: 'file content' };
-      const customHints = ['File found successfully'];
 
       const result = createSuccessResult(
         query,
         data,
         true,
         'GITHUB_FETCH_CONTENT',
-        customHints
+        { extraHints: ['File found successfully'] }
       );
 
       expect(result.status).toBe('hasResults');
       expect(result.hints).toBeDefined();
-      expect(result.hints).toEqual(['File found successfully']);
-      expect(result.hints).toHaveLength(1);
+      expect(result.hints).toContain('File found successfully');
     });
 
     it('should propagate multiple hints', () => {
@@ -180,7 +175,7 @@ describe('Tools Utils', () => {
         reasoning: 'Searching pull requests',
       };
       const data = { pull_requests: [{ number: 1 }] };
-      const customHints = [
+      const extraHints = [
         'First hint',
         'Second hint',
         'Third hint',
@@ -192,13 +187,14 @@ describe('Tools Utils', () => {
         data,
         true,
         'GITHUB_SEARCH_PULL_REQUESTS',
-        customHints
+        { extraHints }
       );
 
       expect(result.status).toBe('hasResults');
       expect(result.hints).toBeDefined();
-      expect(result.hints).toHaveLength(4);
-      expect(result.hints).toEqual(customHints);
+      extraHints.forEach(hint => {
+        expect(result.hints).toContain(hint);
+      });
     });
 
     it('should merge data properties correctly with hints', () => {
@@ -211,14 +207,13 @@ describe('Tools Utils', () => {
         total: 1,
         metadata: { page: 1 },
       };
-      const customHints = ['Custom hint'];
 
       const result = createSuccessResult(
         query,
         data,
         true,
         'GITHUB_SEARCH_REPOSITORIES',
-        customHints
+        { extraHints: ['Custom hint'] }
       );
 
       expect(result.status).toBe('hasResults');
@@ -227,7 +222,82 @@ describe('Tools Utils', () => {
       expect(result.repositories).toEqual(['repo1']);
       expect(result.total).toBe(1);
       expect(result.metadata).toEqual({ page: 1 });
-      expect(result.hints).toEqual(['Custom hint']);
+      expect(result.hints).toContain('Custom hint');
+    });
+
+    it('should deduplicate hints from extraHints', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Testing' };
+      const data = { files: [] };
+      const extraHints = [
+        'Duplicate hint',
+        'Unique hint',
+        'Duplicate hint', // duplicate
+        'Another unique',
+        'Duplicate hint', // duplicate again
+      ];
+
+      const result = createSuccessResult(query, data, true, 'localSearchCode', {
+        extraHints,
+      });
+
+      expect(result.hints).toBeDefined();
+      // Count occurrences of "Duplicate hint"
+      const duplicateCount = result.hints!.filter(
+        h => h === 'Duplicate hint'
+      ).length;
+      expect(duplicateCount).toBe(1);
+      expect(result.hints).toContain('Unique hint');
+      expect(result.hints).toContain('Another unique');
+    });
+
+    it('should filter out empty string hints', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Testing' };
+      const data = { files: [] };
+      const extraHints = ['Valid hint', '', 'Another valid', ''];
+
+      const result = createSuccessResult(query, data, true, 'localSearchCode', {
+        extraHints,
+      });
+
+      expect(result.hints).toBeDefined();
+      expect(result.hints).toContain('Valid hint');
+      expect(result.hints).toContain('Another valid');
+      expect(result.hints).not.toContain('');
+    });
+
+    it('should filter out whitespace-only hints', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Testing' };
+      const data = { files: [] };
+      const extraHints = [
+        'Valid hint',
+        '   ',
+        '\t\n',
+        '  \n  ',
+        'Another valid',
+      ];
+
+      const result = createSuccessResult(query, data, true, 'localSearchCode', {
+        extraHints,
+      });
+
+      expect(result.hints).toBeDefined();
+      expect(result.hints).toContain('Valid hint');
+      expect(result.hints).toContain('Another valid');
+      expect(result.hints!.some(h => h.trim() === '')).toBe(false);
+    });
+
+    it('should handle all empty/whitespace extraHints', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Testing' };
+      const data = { files: [] };
+      const extraHints = ['', '   ', '\t'];
+
+      const result = createSuccessResult(query, data, true, 'localSearchCode', {
+        extraHints,
+      });
+
+      // Should still have static hints from getHints(), just no extraHints
+      expect(result.hints).toBeDefined();
+      expect(result.hints!.every(h => h.trim().length > 0)).toBe(true);
     });
   });
 
@@ -618,7 +688,7 @@ describe('Tools Utils', () => {
   });
 
   describe('Integration - Hints propagation in full flow', () => {
-    it('should propagate custom hints through createSuccessResult for all tool types', () => {
+    it('should propagate extra hints through createSuccessResult for all tool types', () => {
       const toolNames = [
         'GITHUB_SEARCH_CODE',
         'GITHUB_SEARCH_REPOSITORIES',
@@ -633,42 +703,39 @@ describe('Tools Utils', () => {
           reasoning: 'Testing hints',
         };
         const data = { testData: 'value' };
-        const customHints = [`Hint for ${toolName}`];
+        const extraHints = [`Hint for ${toolName}`];
 
-        const result = createSuccessResult(
-          query,
-          data,
-          true,
-          toolName,
-          customHints
-        );
+        const result = createSuccessResult(query, data, true, toolName, {
+          extraHints,
+        });
 
         expect(result.status).toBe('hasResults');
         expect(result.hints).toBeDefined();
-        expect(result.hints).toEqual(customHints);
+        expect(result.hints).toContain(`Hint for ${toolName}`);
       });
     });
 
-    it('should reference the same hints array (not create a copy)', () => {
+    it('should include extra hints in the result', () => {
       const query = {
         researchGoal: 'Test',
         reasoning: 'Testing',
       };
       const data = { items: [] };
-      const customHints = ['Hint 1', 'Hint 2'];
+      const extraHints = ['Hint 1', 'Hint 2'];
 
       const result = createSuccessResult(
         query,
         data,
         true,
         'GITHUB_SEARCH_CODE',
-        customHints
+        {
+          extraHints,
+        }
       );
 
-      // Custom hints are included in the result (may be merged with static hints)
-      expect(result.hints).toStrictEqual(customHints);
-      expect(result.hints).toHaveLength(2);
-      expect(result.hints).toEqual(['Hint 1', 'Hint 2']);
+      // Extra hints are included in the result (may be merged with static hints)
+      expect(result.hints).toContain('Hint 1');
+      expect(result.hints).toContain('Hint 2');
     });
   });
 

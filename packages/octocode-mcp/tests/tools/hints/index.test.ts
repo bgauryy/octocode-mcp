@@ -157,8 +157,15 @@ describe('Unified Hints System', () => {
       expect(hasDynamicHints(STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE)).toBe(true);
     });
 
-    it('should return false for tools without dynamic hints', () => {
-      expect(hasDynamicHints(STATIC_TOOL_NAMES.PACKAGE_SEARCH)).toBe(false);
+    it('should return true for all registered tools', () => {
+      // All tools now have dynamic hint generators
+      expect(hasDynamicHints(STATIC_TOOL_NAMES.PACKAGE_SEARCH)).toBe(true);
+      expect(
+        hasDynamicHints(STATIC_TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES)
+      ).toBe(true);
+    });
+
+    it('should return false for unknown tools', () => {
       expect(hasDynamicHints('unknown_tool')).toBe(false);
     });
   });

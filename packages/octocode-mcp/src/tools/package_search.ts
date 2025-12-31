@@ -143,16 +143,18 @@ async function searchPackages(
           );
         }
 
-        const customHints = hasContent
+        // Generate context-specific hints for package search
+        const extraHints = hasContent
           ? generateSuccessHints(result, query.ecosystem, deprecationInfo)
           : generateEmptyHints(query);
 
+        // Use unified pattern with extraHints for package-specific guidance
         return createSuccessResult(
           query,
           result,
           hasContent,
           TOOL_NAMES.PACKAGE_SEARCH,
-          customHints
+          { extraHints }
         );
       } catch (error) {
         return handleCatchError(error, query);
