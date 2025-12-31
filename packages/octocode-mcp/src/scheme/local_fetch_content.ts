@@ -74,12 +74,6 @@ const FetchContentBaseSchema = BaseQuerySchemaLocal.extend({
     .default(false)
     .describe(LOCAL_FETCH_CONTENT.options.matchStringCaseSensitive),
 
-  minified: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe(LOCAL_FETCH_CONTENT.options.minified),
-
   charOffset: z
     .number()
     .min(0)

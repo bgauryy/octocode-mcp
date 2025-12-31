@@ -51,23 +51,14 @@ export function registerLocalFetchContentTool(server: McpServer) {
 }
 
 /**
- * Apply minification to content if enabled (minified !== false)
+ * Apply minification to content (always enabled for token efficiency)
  * Only replaces content if minification reduces size
  *
- * @param content - The content to potentially minify
+ * @param content - The content to minify
  * @param filePath - File path for determining minification strategy
- * @param shouldMinify - Whether minification is enabled (default true)
  * @returns Minified content if smaller, otherwise original
  */
-function applyMinification(
-  content: string,
-  filePath: string,
-  shouldMinify: boolean = true
-): string {
-  if (!shouldMinify) {
-    return content;
-  }
-
+function applyMinification(content: string, filePath: string): string {
   try {
     const minifiedContent = minifyContentSync(content, filePath);
     // Only use minified version if it's actually smaller
@@ -210,11 +201,7 @@ export async function fetchContent(
 
       resultContent = result.lines.join('\n');
 
-      resultContent = applyMinification(
-        resultContent,
-        query.path,
-        query.minified !== false
-      );
+      resultContent = applyMinification(resultContent, query.path);
 
       if (result.matchCount > 50) {
         return {
@@ -309,20 +296,12 @@ export async function fetchContent(
         );
       }
 
-      resultContent = applyMinification(
-        resultContent,
-        query.path,
-        query.minified !== false
-      );
+      resultContent = applyMinification(resultContent, query.path);
     } else {
       resultContent = content;
       isPartial = false;
 
-      resultContent = applyMinification(
-        resultContent,
-        query.path,
-        query.minified !== false
-      );
+      resultContent = applyMinification(resultContent, query.path);
     }
 
     if (!resultContent || resultContent.trim().length === 0) {

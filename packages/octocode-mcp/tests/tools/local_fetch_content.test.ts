@@ -52,18 +52,17 @@ describe('localGetFileContent', () => {
       expect(result.totalLines).toBe(3);
     });
 
-    it('should apply minification when requested', async () => {
+    it('should apply minification by default', async () => {
       const testContent = 'function test() {\n  return true;\n}';
       mockReadFile.mockResolvedValue(testContent);
 
       const result = await fetchContent({
         path: 'test.js',
         fullContent: true,
-        minified: true,
       });
 
       expect(result.status).toBe('hasResults');
-      // Note: minified field removed - minification still happens but not tracked
+      // Minification is always applied for token efficiency
     });
   });
 
@@ -981,26 +980,10 @@ describe('localGetFileContent', () => {
         path: 'test.js',
         startLine: 2,
         endLine: 4,
-        minified: true,
       });
 
       expect(result.status).toBe('hasResults');
-      // Minification may reduce whitespace
-    });
-
-    it('should preserve content when minified=false', async () => {
-      const testContent = 'line 1\n  line 2\n    line 3';
-      mockReadFile.mockResolvedValue(testContent);
-
-      const result = await fetchContent({
-        path: 'test.txt',
-        startLine: 1,
-        endLine: 3,
-        minified: false,
-      });
-
-      expect(result.status).toBe('hasResults');
-      expect(result.content).toBe(testContent);
+      // Minification is always applied for token efficiency
     });
 
     it('should work with character pagination on extracted lines', async () => {

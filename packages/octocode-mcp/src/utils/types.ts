@@ -311,7 +311,6 @@ export interface FetchContentQuery extends BaseQuery {
   matchStringContextLines?: number;
   matchStringIsRegex?: boolean;
   matchStringCaseSensitive?: boolean;
-  minified?: boolean;
 
   // Line-based extraction (aligned with GitHub's githubGetFileContent)
   startLine?: number;

@@ -19,3 +19,22 @@ export const STATIC_TOOL_NAMES = {
   LOCAL_FIND_FILES: 'localFindFiles',
   LOCAL_VIEW_STRUCTURE: 'localViewStructure',
 } as const satisfies ToolNamesMap;
+
+/**
+ * Set of local tool names for quick lookup.
+ * Used to filter GitHub-specific hints from local tool responses.
+ */
+const LOCAL_TOOL_NAMES_SET = new Set<string>([
+  STATIC_TOOL_NAMES.LOCAL_RIPGREP,
+  STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT,
+  STATIC_TOOL_NAMES.LOCAL_FIND_FILES,
+  STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
+]);
+
+/**
+ * Check if a tool is a local filesystem tool.
+ * Local tools don't have GitHub-specific fields (owner, repo, branch).
+ */
+export function isLocalTool(toolName: string): boolean {
+  return LOCAL_TOOL_NAMES_SET.has(toolName);
+}
