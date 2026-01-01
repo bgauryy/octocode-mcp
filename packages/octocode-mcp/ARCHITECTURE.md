@@ -857,6 +857,85 @@ sequenceDiagram
     end
 ```
 
+### Tool Execution Lifecycle
+
+The following flowchart illustrates the complete lifecycle of a tool request, including security validation, bulk processing, and the feedback loop.
+
+```mermaid
+flowchart TD
+    %% Actors
+    Agent[🤖 AI Agent / Client]
+    
+    %% Request Phase
+    subgraph Request_Phase [1. Request & Validation]
+        direction TB
+        Call[Tool Call]
+        Context[Research Context<br/>mainResearchGoal, researchGoal, reasoning]
+        Schema{Schema Check<br/>Zod}
+        SecurityIn{Security Wrapper<br/>Input Validation}
+        
+        Call --> Context
+        Context --> Schema
+        Schema -- Invalid --> Error[Return Error]
+        Schema -- Valid --> SecurityIn
+        SecurityIn -- Secrets Detected --> Error
+        SecurityIn -- Safe --> Bulk[Bulk Splitter]
+    end
+
+    %% Execution Phase
+    subgraph Execution_Phase [2. Execution (Bulk 1-5)]
+        direction TB
+        Bulk --> Query1[Query 1]
+        Bulk --> Query2[Query N...]
+        
+        Query1 --> Exec{Execute Tool}
+        Query2 --> Exec
+        
+        Exec -- GitHub --> API[GitHub API / Cache]
+        Exec -- Local --> Shell[Local Shell / FS]
+    end
+
+    %% Processing Phase
+    subgraph Processing_Phase [3. Processing & Safety]
+        direction TB
+        RawData[Raw Results]
+        Sanitizer[Content Sanitizer<br/>Redact Secrets]
+        Minifier[Minifier<br/>Reduce Tokens]
+        
+        API --> RawData
+        Shell --> RawData
+        RawData --> Sanitizer
+        Sanitizer --> Minifier
+    end
+
+    %% Response Phase
+    subgraph Response_Phase [4. Response & Guidance]
+        direction TB
+        Hints[Hints Generator<br/>Dynamic Suggestions]
+        Format[Response Formatter<br/>JSON → YAML]
+        Result[Final Result]
+        
+        Minifier --> Hints
+        Hints --> Format
+        Format --> Result
+    end
+
+    %% Flow Connections
+    Agent --> Call
+    Result --> Agent
+    
+    %% Feedback Loop
+    Agent -.->|Reads Hints & Data| Decision{Next Step?}
+    Decision -.->|Follow Hint| NextTool[Next Tool Call]
+    Decision -.->|Refine| RefinedQuery[Refined Query]
+    
+    %% Styling
+    style SecurityIn fill:#ffcccc,stroke:#cc0000
+    style Sanitizer fill:#ffcccc,stroke:#cc0000
+    style Context fill:#e1f5fe,stroke:#01579b
+    style Hints fill:#e6fffa,stroke:#009688
+```
+
 ---
 
 ## Testing
