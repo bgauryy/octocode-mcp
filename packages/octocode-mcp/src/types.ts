@@ -387,7 +387,7 @@ export interface PullRequestInfo {
   deletions?: number;
   changed_files?: number;
   comment_details?: Array<{
-    id: number;
+    id: string;
     user: string;
     body: string;
     created_at: string;
