@@ -378,6 +378,10 @@ export function formatPRForResponse(pr: GitHubPullRequestItem) {
     ...(pr.commits && {
       commit_details: pr.commits,
     }),
+    ...(pr.comments &&
+      pr.comments.length > 0 && {
+        comment_details: pr.comments,
+      }),
     ...(pr._sanitization_warnings && {
       _sanitization_warnings: pr._sanitization_warnings,
     }),
