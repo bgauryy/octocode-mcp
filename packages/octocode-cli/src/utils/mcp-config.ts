@@ -8,6 +8,7 @@ import type {
   InstallMethod,
   MCPClient,
 } from '../types/index.js';
+import type { MCPRegistryEntry } from '../configs/mcp-registry.js';
 import { isWindows } from './platform.js';
 
 // Re-exports for backward compatibility
@@ -231,4 +232,141 @@ export function getAllClientInstallStatus(): ClientInstallStatus[] {
  */
 export function findInstalledClients(): ClientInstallStatus[] {
   return getAllClientInstallStatus().filter(status => status.octocodeInstalled);
+}
+
+// ============================================================================
+// External MCP Server Configuration (from Registry)
+// ============================================================================
+
+/**
+ * Convert a registry entry to an MCP server config
+ * Replaces ${VAR_NAME} placeholders with actual environment variable values
+ */
+export function registryEntryToServerConfig(
+  entry: MCPRegistryEntry,
+  envValues?: Record<string, string>
+): MCPServer {
+  const config: MCPServer = {
+    command: entry.installConfig.command,
+    args: [...entry.installConfig.args],
+  };
+
+  // Replace placeholders in args with actual values
+  if (envValues) {
+    config.args = config.args.map(arg => {
+      // Replace ${VAR_NAME} patterns
+      return arg.replace(/\$\{(\w+)\}/g, (_, varName) => {
+        return envValues[varName] || `\${${varName}}`;
+      });
+    });
+  }
+
+  // Merge env from install config and provided values
+  const env: Record<string, string> = {};
+
+  // Add env from installConfig
+  if (entry.installConfig.env) {
+    Object.assign(env, entry.installConfig.env);
+  }
+
+  // Add required env vars from provided values
+  if (envValues) {
+    for (const [key, value] of Object.entries(envValues)) {
+      if (value) {
+        env[key] = value;
+      }
+    }
+  }
+
+  if (Object.keys(env).length > 0) {
+    config.env = env;
+  }
+
+  return config;
+}
+
+/**
+ * Add or update an external MCP server in the config
+ */
+export function mergeExternalMCPConfig(
+  config: MCPConfig,
+  entry: MCPRegistryEntry,
+  envValues?: Record<string, string>
+): MCPConfig {
+  const serverConfig = registryEntryToServerConfig(entry, envValues);
+
+  return {
+    ...config,
+    mcpServers: {
+      ...config.mcpServers,
+      [entry.id]: serverConfig,
+    },
+  };
+}
+
+/**
+ * Check if an external MCP server is already configured
+ */
+export function isExternalMCPConfigured(
+  config: MCPConfig,
+  entryId: string
+): boolean {
+  return Boolean(config.mcpServers?.[entryId]);
+}
+
+/**
+ * Remove an external MCP server from the config
+ */
+export function removeExternalMCPConfig(
+  config: MCPConfig,
+  entryId: string
+): MCPConfig {
+  if (!config.mcpServers?.[entryId]) {
+    return config;
+  }
+
+  const remainingServers = Object.fromEntries(
+    Object.entries(config.mcpServers).filter(([key]) => key !== entryId)
+  );
+
+  return {
+    ...config,
+    mcpServers: remainingServers,
+  };
+}
+
+/**
+ * Get list of installed external MCPs from config
+ */
+export function getInstalledExternalMCPs(
+  config: MCPConfig,
+  registry: MCPRegistryEntry[]
+): MCPRegistryEntry[] {
+  if (!config.mcpServers) return [];
+
+  const installedIds = new Set(Object.keys(config.mcpServers));
+  return registry.filter(entry => installedIds.has(entry.id));
+}
+
+/**
+ * Validate that all required env vars have values
+ */
+export function validateRequiredEnvVars(
+  entry: MCPRegistryEntry,
+  envValues: Record<string, string>
+): { valid: boolean; missing: string[] } {
+  const missing: string[] = [];
+
+  if (entry.requiredEnvVars) {
+    for (const envVar of entry.requiredEnvVars) {
+      if (!envValues[envVar.name]) {
+        missing.push(envVar.name);
+      }
+    }
+  }
+
+  return {
+    valid: missing.length === 0,
+    missing,
+  };
 }

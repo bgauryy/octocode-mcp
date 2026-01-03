@@ -1,12 +1,3 @@
-/**
- * MCP Registry - Top 100 MCP Servers
- * Curated list of popular MCP servers for installation
- * Sources: awesome-mcp-servers, modelcontextprotocol/registry, GitHub stars
- */
-
-/**
- * MCP Server category for grouping in UI
- */
 export type MCPCategory =
   | 'browser-automation'
   | 'database'
@@ -28,9 +19,6 @@ export type MCPCategory =
   | 'aggregator'
   | 'other';
 
-/**
- * Installation type for MCP server
- */
 export type InstallationType =
   | 'npm'
   | 'npx'
@@ -39,56 +27,47 @@ export type InstallationType =
   | 'binary'
   | 'source';
 
-/**
- * MCP Server registry entry
- */
 export interface MCPRegistryEntry {
-  /** Unique identifier (npm package name or GitHub repo slug) */
   id: string;
-  /** Display name */
+
   name: string;
-  /** Short description */
+
   description: string;
-  /** Category for grouping */
+
   category: MCPCategory;
-  /** GitHub repository URL */
+
   repository: string;
-  /** Website or documentation URL */
+
   website?: string;
-  /** GitHub stars count (approximate, for sorting) */
+
   stars?: number;
-  /** Installation type */
+
   installationType: InstallationType;
-  /** NPM package name (if npm/npx installation) */
+
   npmPackage?: string;
-  /** PyPI package name (if pip installation) */
+
   pipPackage?: string;
-  /** Docker image (if docker installation) */
+
   dockerImage?: string;
-  /** Installation configuration for MCP clients */
+
   installConfig: {
     command: string;
     args: string[];
     env?: Record<string, string>;
   };
-  /** Required environment variables that user must provide */
+
   requiredEnvVars?: Array<{
     name: string;
     description: string;
     example?: string;
   }>;
-  /** Is this an official implementation (from vendor/org) */
+
   official?: boolean;
-  /** Tags for search/filter */
+
   tags?: string[];
 }
 
-/**
- * Top 100 MCP Servers Registry
- * Sorted by popularity (stars) and utility
- */
 export const MCP_REGISTRY: MCPRegistryEntry[] = [
-  // === BROWSER AUTOMATION ===
   {
     id: 'playwright-mcp',
     name: 'Playwright MCP',
@@ -168,7 +147,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['chrome', 'devtools', 'debugging', 'official'],
   },
 
-  // === VERSION CONTROL ===
   {
     id: 'github-mcp-server',
     name: 'GitHub MCP',
@@ -200,7 +178,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['github', 'git', 'repository', 'official'],
   },
 
-  // === DATABASES ===
   {
     id: 'sqlite-mcp',
     name: 'SQLite MCP',
@@ -375,7 +352,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['database', 'bigquery', 'google', 'analytics'],
   },
 
-  // === CLOUD PLATFORMS ===
   {
     id: 'cloudflare-mcp',
     name: 'Cloudflare MCP',
@@ -424,7 +400,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['docker', 'containers', 'devops'],
   },
 
-  // === FILE SYSTEMS ===
   {
     id: 'filesystem-mcp',
     name: 'Filesystem MCP',
@@ -453,7 +428,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     ],
     tags: ['filesystem', 'files', 'local', 'official'],
   },
-  // === SEARCH & WEB ===
   {
     id: 'exa-mcp',
     name: 'Exa Search MCP',
@@ -491,7 +465,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['search', 'tavily', 'ai', 'official'],
   },
 
-  // === COMMUNICATION ===
   {
     id: 'slack-mcp',
     name: 'Slack MCP',
@@ -528,27 +501,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
       { name: 'DISCORD_TOKEN', description: 'Discord Bot Token' },
     ],
     tags: ['discord', 'chat', 'community'],
-  },
-  {
-    id: 'gmail-mcp',
-    name: 'Gmail MCP',
-    description: 'Gmail integration via Inbox Zero for email management',
-    category: 'communication',
-    repository: 'https://github.com/elie222/inbox-zero',
-    website: 'https://getinboxzero.com',
-    installationType: 'pip',
-    pipPackage: 'inbox-zero-mcp',
-    installConfig: {
-      command: 'uvx',
-      args: ['inbox-zero-mcp'],
-    },
-    requiredEnvVars: [
-      {
-        name: 'GOOGLE_APPLICATION_CREDENTIALS',
-        description: 'Path to Google credentials',
-      },
-    ],
-    tags: ['email', 'gmail', 'google'],
   },
   {
     id: 'linear-mcp',
@@ -590,26 +542,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['atlassian', 'jira', 'confluence'],
   },
 
-  // === PRODUCTIVITY ===
-  {
-    id: 'notion-mcp',
-    name: 'Notion MCP',
-    description:
-      'Notion API integration for managing personal todo lists and notes',
-    category: 'productivity',
-    repository: 'https://github.com/danhilse/notion_mcp',
-    website: 'https://notion.so',
-    installationType: 'pip',
-    pipPackage: 'notion-mcp',
-    installConfig: {
-      command: 'uvx',
-      args: ['notion-mcp'],
-    },
-    requiredEnvVars: [
-      { name: 'NOTION_API_KEY', description: 'Notion Integration Token' },
-    ],
-    tags: ['notion', 'notes', 'productivity'],
-  },
   {
     id: 'obsidian-mcp',
     name: 'Obsidian MCP',
@@ -670,7 +602,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['google', 'workspace', 'gmail', 'docs'],
   },
 
-  // === DEVELOPER TOOLS ===
   {
     id: 'context7-mcp',
     name: 'Context7 MCP',
@@ -731,10 +662,14 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     category: 'coding-agents',
     repository: 'https://github.com/oraios/serena',
     installationType: 'pip',
-    pipPackage: 'serena',
     installConfig: {
       command: 'uvx',
-      args: ['serena'],
+      args: [
+        '--from',
+        'git+https://github.com/oraios/serena',
+        'serena',
+        'start-mcp-server',
+      ],
     },
     tags: ['coding', 'agent', 'language-server'],
   },
@@ -767,10 +702,10 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     repository: 'https://github.com/grab/cursor-talk-to-figma-mcp',
     website: 'https://figma.com',
     installationType: 'npx',
-    npmPackage: '@anthropic-ai/talk-to-figma-mcp',
+    npmPackage: 'cursor-talk-to-figma-mcp',
     installConfig: {
       command: 'npx',
-      args: ['-y', '@anthropic-ai/talk-to-figma-mcp'],
+      args: ['-y', 'cursor-talk-to-figma-mcp'],
     },
     requiredEnvVars: [
       {
@@ -795,7 +730,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['lsp', 'language-server', 'semantic'],
   },
 
-  // === AI SERVICES ===
   {
     id: 'openai-mcp',
     name: 'OpenAI MCP',
@@ -842,10 +776,10 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     repository: 'https://github.com/evalstate/mcp-hfspace',
     website: 'https://huggingface.co/spaces',
     installationType: 'npx',
-    npmPackage: 'mcp-hfspace',
+    npmPackage: '@llmindset/mcp-hfspace',
     installConfig: {
       command: 'npx',
-      args: ['-y', 'mcp-hfspace'],
+      args: ['-y', '@llmindset/mcp-hfspace'],
     },
     requiredEnvVars: [
       { name: 'HF_TOKEN', description: 'HuggingFace API token' },
@@ -853,7 +787,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['huggingface', 'spaces', 'models'],
   },
 
-  // === WORKFLOW AUTOMATION ===
   {
     id: 'n8n-mcp',
     name: 'n8n MCP',
@@ -875,21 +808,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['n8n', 'automation', 'workflows'],
   },
 
-  // === DATA VISUALIZATION ===
-  {
-    id: 'vegalite-mcp',
-    name: 'VegaLite MCP',
-    description: 'Generate visualizations from data using VegaLite format',
-    category: 'data-visualization',
-    repository: 'https://github.com/isaacwasserman/mcp-vegalite-server',
-    installationType: 'pip',
-    pipPackage: 'mcp-vegalite-server',
-    installConfig: {
-      command: 'uvx',
-      args: ['mcp-vegalite-server'],
-    },
-    tags: ['visualization', 'charts', 'vegalite'],
-  },
   {
     id: 'echarts-mcp',
     name: 'ECharts MCP',
@@ -921,7 +839,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['diagrams', 'mermaid', 'flowcharts'],
   },
 
-  // === MONITORING ===
   {
     id: 'datadog-mcp',
     name: 'Datadog MCP',
@@ -943,7 +860,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['datadog', 'monitoring', 'observability', 'official'],
   },
 
-  // === FINANCE ===
   {
     id: 'stripe-mcp',
     name: 'Stripe MCP',
@@ -984,7 +900,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['paypal', 'payments', 'finance', 'official'],
   },
 
-  // === SECURITY ===
   {
     id: 'semgrep-mcp',
     name: 'Semgrep MCP',
@@ -1016,7 +931,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['osv', 'vulnerabilities', 'security'],
   },
 
-  // === AGGREGATORS ===
   {
     id: 'pipedream-mcp',
     name: 'Pipedream MCP',
@@ -1037,25 +951,7 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     ],
     tags: ['pipedream', 'integrations', 'apis', 'official'],
   },
-  {
-    id: 'mindsdb-mcp',
-    name: 'MindsDB MCP',
-    description:
-      'Connect and unify data across platforms as a single MCP server',
-    category: 'aggregator',
-    repository: 'https://github.com/mindsdb/mindsdb',
-    website: 'https://mindsdb.com',
-    installationType: 'pip',
-    pipPackage: 'mindsdb-mcp',
-    official: true,
-    installConfig: {
-      command: 'uvx',
-      args: ['mindsdb-mcp'],
-    },
-    tags: ['mindsdb', 'data', 'ml', 'official'],
-  },
 
-  // === FRAMEWORKS ===
   {
     id: 'fastmcp',
     name: 'FastMCP',
@@ -1085,7 +981,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['framework', 'agents', 'python'],
   },
 
-  // === GAMING ===
   {
     id: 'unity-mcp',
     name: 'Unity MCP',
@@ -1102,7 +997,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['unity', 'game-dev', 'editor'],
   },
 
-  // === RESEARCH ===
   {
     id: 'arxiv-mcp',
     name: 'ArXiv MCP',
@@ -1118,22 +1012,7 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     },
     tags: ['arxiv', 'research', 'papers'],
   },
-  {
-    id: 'gpt-researcher-mcp',
-    name: 'GPT Researcher MCP',
-    description: 'LLM agent for deep research on any topic with citations',
-    category: 'other',
-    repository: 'https://github.com/assafelovic/gpt-researcher',
-    installationType: 'pip',
-    pipPackage: 'gpt-researcher',
-    installConfig: {
-      command: 'uvx',
-      args: ['gpt-researcher-mcp'],
-    },
-    tags: ['research', 'agent', 'citations'],
-  },
 
-  // === OTHER POPULAR ===
   {
     id: 'apple-shortcuts-mcp',
     name: 'Apple Shortcuts MCP',
@@ -1170,23 +1049,14 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
   },
 ];
 
-/**
- * Get MCPs by category
- */
 export function getMCPsByCategory(category: MCPCategory): MCPRegistryEntry[] {
   return MCP_REGISTRY.filter(mcp => mcp.category === category);
 }
 
-/**
- * Get MCPs sorted by stars (popularity)
- */
 export function getMCPsByPopularity(): MCPRegistryEntry[] {
   return [...MCP_REGISTRY].sort((a, b) => (b.stars ?? 0) - (a.stars ?? 0));
 }
 
-/**
- * Search MCPs by name, description, or tags
- */
 export function searchMCPs(query: string): MCPRegistryEntry[] {
   const lowerQuery = query.toLowerCase();
   return MCP_REGISTRY.filter(
@@ -1197,30 +1067,18 @@ export function searchMCPs(query: string): MCPRegistryEntry[] {
   );
 }
 
-/**
- * Get only official MCPs
- */
 export function getOfficialMCPs(): MCPRegistryEntry[] {
   return MCP_REGISTRY.filter(mcp => mcp.official);
 }
 
-/**
- * Get all unique categories
- */
 export function getAllCategories(): MCPCategory[] {
   return Array.from(new Set(MCP_REGISTRY.map(mcp => mcp.category)));
 }
 
-/**
- * Get MCP by ID
- */
 export function getMCPById(id: string): MCPRegistryEntry | undefined {
   return MCP_REGISTRY.find(mcp => mcp.id === id);
 }
 
-/**
- * Get total count
- */
 export function getMCPCount(): number {
   return MCP_REGISTRY.length;
 }
