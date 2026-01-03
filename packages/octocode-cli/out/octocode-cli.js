@@ -1,9 +1,14 @@
 #!/usr/bin/env node
-import fs from "node:fs";
+import fs, { existsSync, unlinkSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import os, { homedir } from "node:os";
-import path from "node:path";
-import { spawnSync, execSync } from "node:child_process";
+import path, { join } from "node:path";
+import childProcess, { spawnSync, execFile as execFile$2, execSync } from "node:child_process";
+import { createDecipheriv, randomBytes, createCipheriv } from "node:crypto";
+import process$1 from "node:process";
 import { fileURLToPath } from "node:url";
+import fs$1, { constants } from "node:fs/promises";
+import { promisify } from "node:util";
+import { Buffer as Buffer$1 } from "node:buffer";
 const colors = {
   reset: "\x1B[0m",
   bright: "\x1B[1m",
@@ -151,11 +156,6 @@ function runCommand(command, args = []) {
     };
   }
 }
-function commandExists(command) {
-  const checkCommand = process.platform === "win32" ? "where" : "which";
-  const result = runCommand(checkCommand, [command]);
-  return result.success;
-}
 function getAppContext() {
   return {
     cwd: getShortCwd(),
@@ -253,6 +253,11 @@ function printGoodbye() {
   console.log(c("magenta", "  Thanks for using Octocode CLI! 👋"));
   console.log(c("magenta", `  🔍🐙 ${c("underscore", "https://octocode.ai")}`));
   console.log(c("magenta", "─".repeat(66)));
+  console.log();
+}
+function printFooter() {
+  console.log();
+  console.log(c("magenta", `  ─── 🔍🐙 ${bold("https://octocode.ai")} ───`));
   console.log();
 }
 const activeSpinners = /* @__PURE__ */ new Set();
@@ -450,6 +455,17 @@ function listSubdirectories(dirPath) {
     return fs.readdirSync(dirPath, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
   } catch {
     return [];
+  }
+}
+function removeDirectory(dirPath) {
+  try {
+    if (!dirExists(dirPath)) {
+      return false;
+    }
+    fs.rmSync(dirPath, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
   }
 }
 function getAppSupportDir() {
@@ -894,7 +910,7 @@ async function promptNoConfigurationsFound(availableClients, currentClient) {
     });
     if (selected2 === "back") return null;
     if (selected2 === "custom") {
-      const customPath = await promptCustomPath();
+      const customPath = await promptCustomPath$1();
       if (!customPath) return null;
       return { client: "custom", customPath };
     }
@@ -935,7 +951,7 @@ async function promptNoConfigurationsFound(availableClients, currentClient) {
   });
   if (selected === "back") return null;
   if (selected === "custom") {
-    const customPath = await promptCustomPath();
+    const customPath = await promptCustomPath$1();
     if (!customPath) return null;
     return { client: "custom", customPath };
   }
@@ -991,7 +1007,7 @@ async function promptExistingConfigurations(installedClients, availableClients, 
     return await promptInstallToNewClient(availableClients, currentClient);
   }
   if (selected === "custom") {
-    const customPath = await promptCustomPath();
+    const customPath = await promptCustomPath$1();
     if (!customPath) return null;
     return { client: "custom", customPath };
   }
@@ -1046,7 +1062,7 @@ function expandPath(inputPath) {
   }
   return inputPath;
 }
-async function promptCustomPath() {
+async function promptCustomPath$1() {
   console.log();
   console.log(
     `  ${c("blue", "ℹ")} Enter the full path to your MCP config file (JSON)`
@@ -1194,66 +1210,1717 @@ async function promptGitHubAuth() {
   }
   return { method: "skip" };
 }
-const GH_CLI_URL = "https://cli.github.com/";
-function isGitHubCLIInstalled() {
-  return commandExists("gh");
+function getUserAgent() {
+  if (typeof navigator === "object" && "userAgent" in navigator) {
+    return navigator.userAgent;
+  }
+  if (typeof process === "object" && process.version !== void 0) {
+    return `Node.js/${process.version.substr(1)} (${process.platform}; ${process.arch})`;
+  }
+  return "<environment undetectable>";
 }
-function checkGitHubAuth() {
-  if (!isGitHubCLIInstalled()) {
-    return {
-      installed: false,
-      authenticated: false,
-      error: "GitHub CLI (gh) is not installed"
-    };
+var VERSION$2 = "0.0.0-development";
+var userAgent = `octokit-endpoint.js/${VERSION$2} ${getUserAgent()}`;
+var DEFAULTS = {
+  method: "GET",
+  baseUrl: "https://api.github.com",
+  headers: {
+    accept: "application/vnd.github.v3+json",
+    "user-agent": userAgent
+  },
+  mediaType: {
+    format: ""
   }
-  const result = runCommand("gh", ["auth", "status"]);
-  if (result.success) {
-    const usernameMatch = result.stdout.match(
-      /Logged in to github\.com.*account\s+(\S+)/i
-    );
-    const username = usernameMatch ? usernameMatch[1] : void 0;
-    return {
-      installed: true,
-      authenticated: true,
-      username
-    };
+};
+function lowercaseKeys(object) {
+  if (!object) {
+    return {};
   }
+  return Object.keys(object).reduce((newObj, key) => {
+    newObj[key.toLowerCase()] = object[key];
+    return newObj;
+  }, {});
+}
+function isPlainObject$1(value) {
+  if (typeof value !== "object" || value === null) return false;
+  if (Object.prototype.toString.call(value) !== "[object Object]") return false;
+  const proto = Object.getPrototypeOf(value);
+  if (proto === null) return true;
+  const Ctor = Object.prototype.hasOwnProperty.call(proto, "constructor") && proto.constructor;
+  return typeof Ctor === "function" && Ctor instanceof Ctor && Function.prototype.call(Ctor) === Function.prototype.call(value);
+}
+function mergeDeep(defaults, options) {
+  const result = Object.assign({}, defaults);
+  Object.keys(options).forEach((key) => {
+    if (isPlainObject$1(options[key])) {
+      if (!(key in defaults)) Object.assign(result, { [key]: options[key] });
+      else result[key] = mergeDeep(defaults[key], options[key]);
+    } else {
+      Object.assign(result, { [key]: options[key] });
+    }
+  });
+  return result;
+}
+function removeUndefinedProperties(obj) {
+  for (const key in obj) {
+    if (obj[key] === void 0) {
+      delete obj[key];
+    }
+  }
+  return obj;
+}
+function merge(defaults, route, options) {
+  if (typeof route === "string") {
+    let [method, url] = route.split(" ");
+    options = Object.assign(url ? { method, url } : { url: method }, options);
+  } else {
+    options = Object.assign({}, route);
+  }
+  options.headers = lowercaseKeys(options.headers);
+  removeUndefinedProperties(options);
+  removeUndefinedProperties(options.headers);
+  const mergedOptions = mergeDeep(defaults || {}, options);
+  if (options.url === "/graphql") {
+    if (defaults && defaults.mediaType.previews?.length) {
+      mergedOptions.mediaType.previews = defaults.mediaType.previews.filter(
+        (preview) => !mergedOptions.mediaType.previews.includes(preview)
+      ).concat(mergedOptions.mediaType.previews);
+    }
+    mergedOptions.mediaType.previews = (mergedOptions.mediaType.previews || []).map((preview) => preview.replace(/-preview/, ""));
+  }
+  return mergedOptions;
+}
+function addQueryParameters(url, parameters) {
+  const separator = /\?/.test(url) ? "&" : "?";
+  const names = Object.keys(parameters);
+  if (names.length === 0) {
+    return url;
+  }
+  return url + separator + names.map((name) => {
+    if (name === "q") {
+      return "q=" + parameters.q.split("+").map(encodeURIComponent).join("+");
+    }
+    return `${name}=${encodeURIComponent(parameters[name])}`;
+  }).join("&");
+}
+var urlVariableRegex = /\{[^{}}]+\}/g;
+function removeNonChars(variableName) {
+  return variableName.replace(/(?:^\W+)|(?:(?<!\W)\W+$)/g, "").split(/,/);
+}
+function extractUrlVariableNames(url) {
+  const matches = url.match(urlVariableRegex);
+  if (!matches) {
+    return [];
+  }
+  return matches.map(removeNonChars).reduce((a, b) => a.concat(b), []);
+}
+function omit(object, keysToOmit) {
+  const result = { __proto__: null };
+  for (const key of Object.keys(object)) {
+    if (keysToOmit.indexOf(key) === -1) {
+      result[key] = object[key];
+    }
+  }
+  return result;
+}
+function encodeReserved(str) {
+  return str.split(/(%[0-9A-Fa-f]{2})/g).map(function(part) {
+    if (!/%[0-9A-Fa-f]/.test(part)) {
+      part = encodeURI(part).replace(/%5B/g, "[").replace(/%5D/g, "]");
+    }
+    return part;
+  }).join("");
+}
+function encodeUnreserved(str) {
+  return encodeURIComponent(str).replace(/[!'()*]/g, function(c2) {
+    return "%" + c2.charCodeAt(0).toString(16).toUpperCase();
+  });
+}
+function encodeValue(operator, value, key) {
+  value = operator === "+" || operator === "#" ? encodeReserved(value) : encodeUnreserved(value);
+  if (key) {
+    return encodeUnreserved(key) + "=" + value;
+  } else {
+    return value;
+  }
+}
+function isDefined(value) {
+  return value !== void 0 && value !== null;
+}
+function isKeyOperator(operator) {
+  return operator === ";" || operator === "&" || operator === "?";
+}
+function getValues(context, operator, key, modifier) {
+  var value = context[key], result = [];
+  if (isDefined(value) && value !== "") {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      value = value.toString();
+      if (modifier && modifier !== "*") {
+        value = value.substring(0, parseInt(modifier, 10));
+      }
+      result.push(
+        encodeValue(operator, value, isKeyOperator(operator) ? key : "")
+      );
+    } else {
+      if (modifier === "*") {
+        if (Array.isArray(value)) {
+          value.filter(isDefined).forEach(function(value2) {
+            result.push(
+              encodeValue(operator, value2, isKeyOperator(operator) ? key : "")
+            );
+          });
+        } else {
+          Object.keys(value).forEach(function(k) {
+            if (isDefined(value[k])) {
+              result.push(encodeValue(operator, value[k], k));
+            }
+          });
+        }
+      } else {
+        const tmp = [];
+        if (Array.isArray(value)) {
+          value.filter(isDefined).forEach(function(value2) {
+            tmp.push(encodeValue(operator, value2));
+          });
+        } else {
+          Object.keys(value).forEach(function(k) {
+            if (isDefined(value[k])) {
+              tmp.push(encodeUnreserved(k));
+              tmp.push(encodeValue(operator, value[k].toString()));
+            }
+          });
+        }
+        if (isKeyOperator(operator)) {
+          result.push(encodeUnreserved(key) + "=" + tmp.join(","));
+        } else if (tmp.length !== 0) {
+          result.push(tmp.join(","));
+        }
+      }
+    }
+  } else {
+    if (operator === ";") {
+      if (isDefined(value)) {
+        result.push(encodeUnreserved(key));
+      }
+    } else if (value === "" && (operator === "&" || operator === "?")) {
+      result.push(encodeUnreserved(key) + "=");
+    } else if (value === "") {
+      result.push("");
+    }
+  }
+  return result;
+}
+function parseUrl(template) {
   return {
-    installed: true,
-    authenticated: false,
-    error: result.stderr || "Not authenticated"
+    expand: expand.bind(null, template)
   };
 }
-function getGitHubCLIVersion() {
-  const result = runCommand("gh", ["--version"]);
-  if (result.success) {
-    const match = result.stdout.match(/gh version ([\d.]+)/);
-    return match ? match[1] : result.stdout.split("\n")[0];
-  }
-  return null;
-}
-function getAuthLoginCommand() {
-  return "gh auth login";
-}
-function printGitHubAuthStatus() {
-  const status = checkGitHubAuth();
-  if (!status.installed) {
-    console.log(
-      `  ${c("yellow", "⚠")} GitHub: ${c("yellow", "gh CLI not found")}`
-    );
-    console.log(
-      `    ${c("yellow", "Authenticate using gh CLI")} (${c("underscore", GH_CLI_URL)}) ${c("yellow", "OR use GITHUB_TOKEN configuration")}`
-    );
-  } else if (!status.authenticated) {
-    console.log(
-      `  ${c("yellow", "⚠")} GitHub CLI not authenticated - run ${c("yellow", getAuthLoginCommand())}`
-    );
-    console.log(`      ${dim("or set GITHUB_TOKEN in MCP config")}`);
+function expand(template, context) {
+  var operators = ["+", "#", ".", "/", ";", "?", "&"];
+  template = template.replace(
+    /\{([^\{\}]+)\}|([^\{\}]+)/g,
+    function(_, expression, literal) {
+      if (expression) {
+        let operator = "";
+        const values = [];
+        if (operators.indexOf(expression.charAt(0)) !== -1) {
+          operator = expression.charAt(0);
+          expression = expression.substr(1);
+        }
+        expression.split(/,/g).forEach(function(variable) {
+          var tmp = /([^:\*]*)(?::(\d+)|(\*))?/.exec(variable);
+          values.push(getValues(context, operator, tmp[1], tmp[2] || tmp[3]));
+        });
+        if (operator && operator !== "+") {
+          var separator = ",";
+          if (operator === "?") {
+            separator = "&";
+          } else if (operator !== "#") {
+            separator = operator;
+          }
+          return (values.length !== 0 ? operator : "") + values.join(separator);
+        } else {
+          return values.join(",");
+        }
+      } else {
+        return encodeReserved(literal);
+      }
+    }
+  );
+  if (template === "/") {
+    return template;
   } else {
-    console.log(
-      `  ${c("green", "✓")} GitHub: Authenticated as ${c("cyan", status.username || "unknown")}`
+    return template.replace(/\/$/, "");
+  }
+}
+function parse(options) {
+  let method = options.method.toUpperCase();
+  let url = (options.url || "/").replace(/:([a-z]\w+)/g, "{$1}");
+  let headers = Object.assign({}, options.headers);
+  let body;
+  let parameters = omit(options, [
+    "method",
+    "baseUrl",
+    "url",
+    "headers",
+    "request",
+    "mediaType"
+  ]);
+  const urlVariableNames = extractUrlVariableNames(url);
+  url = parseUrl(url).expand(parameters);
+  if (!/^http/.test(url)) {
+    url = options.baseUrl + url;
+  }
+  const omittedParameters = Object.keys(options).filter((option) => urlVariableNames.includes(option)).concat("baseUrl");
+  const remainingParameters = omit(parameters, omittedParameters);
+  const isBinaryRequest = /application\/octet-stream/i.test(headers.accept);
+  if (!isBinaryRequest) {
+    if (options.mediaType.format) {
+      headers.accept = headers.accept.split(/,/).map(
+        (format) => format.replace(
+          /application\/vnd(\.\w+)(\.v3)?(\.\w+)?(\+json)?$/,
+          `application/vnd$1$2.${options.mediaType.format}`
+        )
+      ).join(",");
+    }
+    if (url.endsWith("/graphql")) {
+      if (options.mediaType.previews?.length) {
+        const previewsFromAcceptHeader = headers.accept.match(/(?<![\w-])[\w-]+(?=-preview)/g) || [];
+        headers.accept = previewsFromAcceptHeader.concat(options.mediaType.previews).map((preview) => {
+          const format = options.mediaType.format ? `.${options.mediaType.format}` : "+json";
+          return `application/vnd.github.${preview}-preview${format}`;
+        }).join(",");
+      }
+    }
+  }
+  if (["GET", "HEAD"].includes(method)) {
+    url = addQueryParameters(url, remainingParameters);
+  } else {
+    if ("data" in remainingParameters) {
+      body = remainingParameters.data;
+    } else {
+      if (Object.keys(remainingParameters).length) {
+        body = remainingParameters;
+      }
+    }
+  }
+  if (!headers["content-type"] && typeof body !== "undefined") {
+    headers["content-type"] = "application/json; charset=utf-8";
+  }
+  if (["PATCH", "PUT"].includes(method) && typeof body === "undefined") {
+    body = "";
+  }
+  return Object.assign(
+    { method, url, headers },
+    typeof body !== "undefined" ? { body } : null,
+    options.request ? { request: options.request } : null
+  );
+}
+function endpointWithDefaults(defaults, route, options) {
+  return parse(merge(defaults, route, options));
+}
+function withDefaults$1(oldDefaults, newDefaults) {
+  const DEFAULTS2 = merge(oldDefaults, newDefaults);
+  const endpoint2 = endpointWithDefaults.bind(null, DEFAULTS2);
+  return Object.assign(endpoint2, {
+    DEFAULTS: DEFAULTS2,
+    defaults: withDefaults$1.bind(null, DEFAULTS2),
+    merge: merge.bind(null, DEFAULTS2),
+    parse
+  });
+}
+var endpoint = withDefaults$1(null, DEFAULTS);
+var fastContentTypeParse = {};
+var hasRequiredFastContentTypeParse;
+function requireFastContentTypeParse() {
+  if (hasRequiredFastContentTypeParse) return fastContentTypeParse;
+  hasRequiredFastContentTypeParse = 1;
+  const NullObject = function NullObject2() {
+  };
+  NullObject.prototype = /* @__PURE__ */ Object.create(null);
+  const paramRE = /; *([!#$%&'*+.^\w`|~-]+)=("(?:[\v\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\u00ff]|\\[\v\u0020-\u00ff])*"|[!#$%&'*+.^\w`|~-]+) */gu;
+  const quotedPairRE = /\\([\v\u0020-\u00ff])/gu;
+  const mediaTypeRE = /^[!#$%&'*+.^\w|~-]+\/[!#$%&'*+.^\w|~-]+$/u;
+  const defaultContentType = { type: "", parameters: new NullObject() };
+  Object.freeze(defaultContentType.parameters);
+  Object.freeze(defaultContentType);
+  function parse2(header) {
+    if (typeof header !== "string") {
+      throw new TypeError("argument header is required and must be a string");
+    }
+    let index = header.indexOf(";");
+    const type = index !== -1 ? header.slice(0, index).trim() : header.trim();
+    if (mediaTypeRE.test(type) === false) {
+      throw new TypeError("invalid media type");
+    }
+    const result = {
+      type: type.toLowerCase(),
+      parameters: new NullObject()
+    };
+    if (index === -1) {
+      return result;
+    }
+    let key;
+    let match;
+    let value;
+    paramRE.lastIndex = index;
+    while (match = paramRE.exec(header)) {
+      if (match.index !== index) {
+        throw new TypeError("invalid parameter format");
+      }
+      index += match[0].length;
+      key = match[1].toLowerCase();
+      value = match[2];
+      if (value[0] === '"') {
+        value = value.slice(1, value.length - 1);
+        quotedPairRE.test(value) && (value = value.replace(quotedPairRE, "$1"));
+      }
+      result.parameters[key] = value;
+    }
+    if (index !== header.length) {
+      throw new TypeError("invalid parameter format");
+    }
+    return result;
+  }
+  function safeParse(header) {
+    if (typeof header !== "string") {
+      return defaultContentType;
+    }
+    let index = header.indexOf(";");
+    const type = index !== -1 ? header.slice(0, index).trim() : header.trim();
+    if (mediaTypeRE.test(type) === false) {
+      return defaultContentType;
+    }
+    const result = {
+      type: type.toLowerCase(),
+      parameters: new NullObject()
+    };
+    if (index === -1) {
+      return result;
+    }
+    let key;
+    let match;
+    let value;
+    paramRE.lastIndex = index;
+    while (match = paramRE.exec(header)) {
+      if (match.index !== index) {
+        return defaultContentType;
+      }
+      index += match[0].length;
+      key = match[1].toLowerCase();
+      value = match[2];
+      if (value[0] === '"') {
+        value = value.slice(1, value.length - 1);
+        quotedPairRE.test(value) && (value = value.replace(quotedPairRE, "$1"));
+      }
+      result.parameters[key] = value;
+    }
+    if (index !== header.length) {
+      return defaultContentType;
+    }
+    return result;
+  }
+  fastContentTypeParse.default = { parse: parse2, safeParse };
+  fastContentTypeParse.parse = parse2;
+  fastContentTypeParse.safeParse = safeParse;
+  fastContentTypeParse.defaultContentType = defaultContentType;
+  return fastContentTypeParse;
+}
+var fastContentTypeParseExports = requireFastContentTypeParse();
+class RequestError extends Error {
+  name;
+  /**
+   * http status code
+   */
+  status;
+  /**
+   * Request options that lead to the error.
+   */
+  request;
+  /**
+   * Response object if a response was received
+   */
+  response;
+  constructor(message, statusCode, options) {
+    super(message, { cause: options.cause });
+    this.name = "HttpError";
+    this.status = Number.parseInt(statusCode);
+    if (Number.isNaN(this.status)) {
+      this.status = 0;
+    }
+    /* v8 ignore else -- @preserve -- Bug with vitest coverage where it sees an else branch that doesn't exist */
+    if ("response" in options) {
+      this.response = options.response;
+    }
+    const requestCopy = Object.assign({}, options.request);
+    if (options.request.headers.authorization) {
+      requestCopy.headers = Object.assign({}, options.request.headers, {
+        authorization: options.request.headers.authorization.replace(
+          /(?<! ) .*$/,
+          " [REDACTED]"
+        )
+      });
+    }
+    requestCopy.url = requestCopy.url.replace(/\bclient_secret=\w+/g, "client_secret=[REDACTED]").replace(/\baccess_token=\w+/g, "access_token=[REDACTED]");
+    this.request = requestCopy;
+  }
+}
+var VERSION$1 = "10.0.7";
+var defaults_default = {
+  headers: {
+    "user-agent": `octokit-request.js/${VERSION$1} ${getUserAgent()}`
+  }
+};
+function isPlainObject(value) {
+  if (typeof value !== "object" || value === null) return false;
+  if (Object.prototype.toString.call(value) !== "[object Object]") return false;
+  const proto = Object.getPrototypeOf(value);
+  if (proto === null) return true;
+  const Ctor = Object.prototype.hasOwnProperty.call(proto, "constructor") && proto.constructor;
+  return typeof Ctor === "function" && Ctor instanceof Ctor && Function.prototype.call(Ctor) === Function.prototype.call(value);
+}
+var noop = () => "";
+async function fetchWrapper(requestOptions) {
+  const fetch2 = requestOptions.request?.fetch || globalThis.fetch;
+  if (!fetch2) {
+    throw new Error(
+      "fetch is not set. Please pass a fetch implementation as new Octokit({ request: { fetch }}). Learn more at https://github.com/octokit/octokit.js/#fetch-missing"
     );
   }
+  const log = requestOptions.request?.log || console;
+  const parseSuccessResponseBody = requestOptions.request?.parseSuccessResponseBody !== false;
+  const body = isPlainObject(requestOptions.body) || Array.isArray(requestOptions.body) ? JSON.stringify(requestOptions.body) : requestOptions.body;
+  const requestHeaders = Object.fromEntries(
+    Object.entries(requestOptions.headers).map(([name, value]) => [
+      name,
+      String(value)
+    ])
+  );
+  let fetchResponse;
+  try {
+    fetchResponse = await fetch2(requestOptions.url, {
+      method: requestOptions.method,
+      body,
+      redirect: requestOptions.request?.redirect,
+      headers: requestHeaders,
+      signal: requestOptions.request?.signal,
+      // duplex must be set if request.body is ReadableStream or Async Iterables.
+      // See https://fetch.spec.whatwg.org/#dom-requestinit-duplex.
+      ...requestOptions.body && { duplex: "half" }
+    });
+  } catch (error) {
+    let message = "Unknown Error";
+    if (error instanceof Error) {
+      if (error.name === "AbortError") {
+        error.status = 500;
+        throw error;
+      }
+      message = error.message;
+      if (error.name === "TypeError" && "cause" in error) {
+        if (error.cause instanceof Error) {
+          message = error.cause.message;
+        } else if (typeof error.cause === "string") {
+          message = error.cause;
+        }
+      }
+    }
+    const requestError = new RequestError(message, 500, {
+      request: requestOptions
+    });
+    requestError.cause = error;
+    throw requestError;
+  }
+  const status = fetchResponse.status;
+  const url = fetchResponse.url;
+  const responseHeaders = {};
+  for (const [key, value] of fetchResponse.headers) {
+    responseHeaders[key] = value;
+  }
+  const octokitResponse = {
+    url,
+    status,
+    headers: responseHeaders,
+    data: ""
+  };
+  if ("deprecation" in responseHeaders) {
+    const matches = responseHeaders.link && responseHeaders.link.match(/<([^<>]+)>; rel="deprecation"/);
+    const deprecationLink = matches && matches.pop();
+    log.warn(
+      `[@octokit/request] "${requestOptions.method} ${requestOptions.url}" is deprecated. It is scheduled to be removed on ${responseHeaders.sunset}${deprecationLink ? `. See ${deprecationLink}` : ""}`
+    );
+  }
+  if (status === 204 || status === 205) {
+    return octokitResponse;
+  }
+  if (requestOptions.method === "HEAD") {
+    if (status < 400) {
+      return octokitResponse;
+    }
+    throw new RequestError(fetchResponse.statusText, status, {
+      response: octokitResponse,
+      request: requestOptions
+    });
+  }
+  if (status === 304) {
+    octokitResponse.data = await getResponseData(fetchResponse);
+    throw new RequestError("Not modified", status, {
+      response: octokitResponse,
+      request: requestOptions
+    });
+  }
+  if (status >= 400) {
+    octokitResponse.data = await getResponseData(fetchResponse);
+    throw new RequestError(toErrorMessage(octokitResponse.data), status, {
+      response: octokitResponse,
+      request: requestOptions
+    });
+  }
+  octokitResponse.data = parseSuccessResponseBody ? await getResponseData(fetchResponse) : fetchResponse.body;
+  return octokitResponse;
+}
+async function getResponseData(response) {
+  const contentType = response.headers.get("content-type");
+  if (!contentType) {
+    return response.text().catch(noop);
+  }
+  const mimetype = fastContentTypeParseExports.safeParse(contentType);
+  if (isJSONResponse(mimetype)) {
+    let text = "";
+    try {
+      text = await response.text();
+      return JSON.parse(text);
+    } catch (err) {
+      return text;
+    }
+  } else if (mimetype.type.startsWith("text/") || mimetype.parameters.charset?.toLowerCase() === "utf-8") {
+    return response.text().catch(noop);
+  } else {
+    return response.arrayBuffer().catch(
+      /* v8 ignore next -- @preserve */
+      () => new ArrayBuffer(0)
+    );
+  }
+}
+function isJSONResponse(mimetype) {
+  return mimetype.type === "application/json" || mimetype.type === "application/scim+json";
+}
+function toErrorMessage(data) {
+  if (typeof data === "string") {
+    return data;
+  }
+  if (data instanceof ArrayBuffer) {
+    return "Unknown error";
+  }
+  if ("message" in data) {
+    const suffix = "documentation_url" in data ? ` - ${data.documentation_url}` : "";
+    return Array.isArray(data.errors) ? `${data.message}: ${data.errors.map((v) => JSON.stringify(v)).join(", ")}${suffix}` : `${data.message}${suffix}`;
+  }
+  return `Unknown error: ${JSON.stringify(data)}`;
+}
+function withDefaults(oldEndpoint, newDefaults) {
+  const endpoint2 = oldEndpoint.defaults(newDefaults);
+  const newApi = function(route, parameters) {
+    const endpointOptions = endpoint2.merge(route, parameters);
+    if (!endpointOptions.request || !endpointOptions.request.hook) {
+      return fetchWrapper(endpoint2.parse(endpointOptions));
+    }
+    const request2 = (route2, parameters2) => {
+      return fetchWrapper(
+        endpoint2.parse(endpoint2.merge(route2, parameters2))
+      );
+    };
+    Object.assign(request2, {
+      endpoint: endpoint2,
+      defaults: withDefaults.bind(null, endpoint2)
+    });
+    return endpointOptions.request.hook(request2, endpointOptions);
+  };
+  return Object.assign(newApi, {
+    endpoint: endpoint2,
+    defaults: withDefaults.bind(null, endpoint2)
+  });
+}
+var request = withDefaults(endpoint, defaults_default);
+/* v8 ignore next -- @preserve */
+/* v8 ignore else -- @preserve */
+function requestToOAuthBaseUrl(request2) {
+  const endpointDefaults = request2.endpoint.DEFAULTS;
+  return /^https:\/\/(api\.)?github\.com$/.test(endpointDefaults.baseUrl) ? "https://github.com" : endpointDefaults.baseUrl.replace("/api/v3", "");
+}
+async function oauthRequest(request2, route, parameters) {
+  const withOAuthParameters = {
+    baseUrl: requestToOAuthBaseUrl(request2),
+    headers: {
+      accept: "application/json"
+    },
+    ...parameters
+  };
+  const response = await request2(route, withOAuthParameters);
+  if ("error" in response.data) {
+    const error = new RequestError(
+      `${response.data.error_description} (${response.data.error}, ${response.data.error_uri})`,
+      400,
+      {
+        request: request2.endpoint.merge(
+          route,
+          withOAuthParameters
+        )
+      }
+    );
+    error.response = response;
+    throw error;
+  }
+  return response;
+}
+async function createDeviceCode(options) {
+  const request$1 = options.request || request;
+  const parameters = {
+    client_id: options.clientId
+  };
+  if ("scopes" in options && Array.isArray(options.scopes)) {
+    parameters.scope = options.scopes.join(" ");
+  }
+  return oauthRequest(request$1, "POST /login/device/code", parameters);
+}
+async function exchangeDeviceCode(options) {
+  const request$1 = options.request || request;
+  const response = await oauthRequest(
+    request$1,
+    "POST /login/oauth/access_token",
+    {
+      client_id: options.clientId,
+      device_code: options.code,
+      grant_type: "urn:ietf:params:oauth:grant-type:device_code"
+    }
+  );
+  const authentication = {
+    clientType: options.clientType,
+    clientId: options.clientId,
+    token: response.data.access_token,
+    scopes: response.data.scope.split(/\s+/).filter(Boolean)
+  };
+  if ("clientSecret" in options) {
+    authentication.clientSecret = options.clientSecret;
+  }
+  if (options.clientType === "github-app") {
+    if ("refresh_token" in response.data) {
+      const apiTimeInMs = new Date(response.headers.date).getTime();
+      authentication.refreshToken = response.data.refresh_token, authentication.expiresAt = toTimestamp2(
+        apiTimeInMs,
+        response.data.expires_in
+      ), authentication.refreshTokenExpiresAt = toTimestamp2(
+        apiTimeInMs,
+        response.data.refresh_token_expires_in
+      );
+    }
+    delete authentication.scopes;
+  }
+  return { ...response, authentication };
+}
+function toTimestamp2(apiTimeInMs, expirationInSeconds) {
+  return new Date(apiTimeInMs + expirationInSeconds * 1e3).toISOString();
+}
+async function deleteToken(options) {
+  const request$1 = options.request || request;
+  const auth2 = btoa(`${options.clientId}:${options.clientSecret}`);
+  return request$1(
+    "DELETE /applications/{client_id}/token",
+    {
+      headers: {
+        authorization: `basic ${auth2}`
+      },
+      client_id: options.clientId,
+      access_token: options.token
+    }
+  );
+}
+async function getOAuthAccessToken(state, options) {
+  const cachedAuthentication = getCachedAuthentication(state, options.auth);
+  if (cachedAuthentication) return cachedAuthentication;
+  const { data: verification } = await createDeviceCode({
+    clientType: state.clientType,
+    clientId: state.clientId,
+    request: options.request || state.request,
+    // @ts-expect-error the extra code to make TS happy is not worth it
+    scopes: options.auth.scopes || state.scopes
+  });
+  await state.onVerification(verification);
+  const authentication = await waitForAccessToken(
+    options.request || state.request,
+    state.clientId,
+    state.clientType,
+    verification
+  );
+  state.authentication = authentication;
+  return authentication;
+}
+function getCachedAuthentication(state, auth2) {
+  if (auth2.refresh === true) return false;
+  if (!state.authentication) return false;
+  if (state.clientType === "github-app") {
+    return state.authentication;
+  }
+  const authentication = state.authentication;
+  const newScope = ("scopes" in auth2 && auth2.scopes || state.scopes).join(
+    " "
+  );
+  const currentScope = authentication.scopes.join(" ");
+  return newScope === currentScope ? authentication : false;
+}
+async function wait(seconds) {
+  await new Promise((resolve) => setTimeout(resolve, seconds * 1e3));
+}
+async function waitForAccessToken(request2, clientId, clientType, verification) {
+  try {
+    const options = {
+      clientId,
+      request: request2,
+      code: verification.device_code
+    };
+    const { authentication } = clientType === "oauth-app" ? await exchangeDeviceCode({
+      ...options,
+      clientType: "oauth-app"
+    }) : await exchangeDeviceCode({
+      ...options,
+      clientType: "github-app"
+    });
+    return {
+      type: "token",
+      tokenType: "oauth",
+      ...authentication
+    };
+  } catch (error) {
+    if (!error.response) throw error;
+    const errorType = error.response.data.error;
+    if (errorType === "authorization_pending") {
+      await wait(verification.interval);
+      return waitForAccessToken(request2, clientId, clientType, verification);
+    }
+    if (errorType === "slow_down") {
+      await wait(verification.interval + 7);
+      return waitForAccessToken(request2, clientId, clientType, verification);
+    }
+    throw error;
+  }
+}
+async function auth(state, authOptions) {
+  return getOAuthAccessToken(state, {
+    auth: authOptions
+  });
+}
+async function hook(state, request2, route, parameters) {
+  let endpoint2 = request2.endpoint.merge(
+    route,
+    parameters
+  );
+  if (/\/login\/(oauth\/access_token|device\/code)$/.test(endpoint2.url)) {
+    return request2(endpoint2);
+  }
+  const { token } = await getOAuthAccessToken(state, {
+    request: request2,
+    auth: { type: "oauth" }
+  });
+  endpoint2.headers.authorization = `token ${token}`;
+  return request2(endpoint2);
+}
+var VERSION = "0.0.0-development";
+function createOAuthDeviceAuth(options) {
+  const requestWithDefaults = options.request || request.defaults({
+    headers: {
+      "user-agent": `octokit-auth-oauth-device.js/${VERSION} ${getUserAgent()}`
+    }
+  });
+  const { request: request$1 = requestWithDefaults, ...otherOptions } = options;
+  const state = options.clientType === "github-app" ? {
+    ...otherOptions,
+    clientType: "github-app",
+    request: request$1
+  } : {
+    ...otherOptions,
+    clientType: "oauth-app",
+    request: request$1,
+    scopes: options.scopes || []
+  };
+  if (!options.clientId) {
+    throw new Error(
+      '[@octokit/auth-oauth-device] "clientId" option must be set (https://github.com/octokit/auth-oauth-device.js#usage)'
+    );
+  }
+  if (!options.onVerification) {
+    throw new Error(
+      '[@octokit/auth-oauth-device] "onVerification" option must be a function (https://github.com/octokit/auth-oauth-device.js#usage)'
+    );
+  }
+  return Object.assign(auth.bind(null, state), {
+    hook: hook.bind(null, state)
+  });
+}
+let isDockerCached;
+function hasDockerEnv() {
+  try {
+    fs.statSync("/.dockerenv");
+    return true;
+  } catch {
+    return false;
+  }
+}
+function hasDockerCGroup() {
+  try {
+    return fs.readFileSync("/proc/self/cgroup", "utf8").includes("docker");
+  } catch {
+    return false;
+  }
+}
+function isDocker() {
+  if (isDockerCached === void 0) {
+    isDockerCached = hasDockerEnv() || hasDockerCGroup();
+  }
+  return isDockerCached;
+}
+let cachedResult;
+const hasContainerEnv = () => {
+  try {
+    fs.statSync("/run/.containerenv");
+    return true;
+  } catch {
+    return false;
+  }
+};
+function isInsideContainer() {
+  if (cachedResult === void 0) {
+    cachedResult = hasContainerEnv() || isDocker();
+  }
+  return cachedResult;
+}
+const isWsl = () => {
+  if (process$1.platform !== "linux") {
+    return false;
+  }
+  if (os.release().toLowerCase().includes("microsoft")) {
+    if (isInsideContainer()) {
+      return false;
+    }
+    return true;
+  }
+  try {
+    return fs.readFileSync("/proc/version", "utf8").toLowerCase().includes("microsoft") ? !isInsideContainer() : false;
+  } catch {
+    return false;
+  }
+};
+const isWsl$1 = process$1.env.__IS_WSL_TEST__ ? isWsl : isWsl();
+const execFile$1 = promisify(childProcess.execFile);
+const powerShellPath$1 = () => `${process$1.env.SYSTEMROOT || process$1.env.windir || String.raw`C:\Windows`}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+const executePowerShell = async (command, options = {}) => {
+  const {
+    powerShellPath: psPath,
+    ...execFileOptions
+  } = options;
+  const encodedCommand = executePowerShell.encodeCommand(command);
+  return execFile$1(
+    psPath ?? powerShellPath$1(),
+    [
+      ...executePowerShell.argumentsPrefix,
+      encodedCommand
+    ],
+    {
+      encoding: "utf8",
+      ...execFileOptions
+    }
+  );
+};
+executePowerShell.argumentsPrefix = [
+  "-NoProfile",
+  "-NonInteractive",
+  "-ExecutionPolicy",
+  "Bypass",
+  "-EncodedCommand"
+];
+executePowerShell.encodeCommand = (command) => Buffer$1.from(command, "utf16le").toString("base64");
+executePowerShell.escapeArgument = (value) => `'${String(value).replaceAll("'", "''")}'`;
+function parseMountPointFromConfig(content) {
+  for (const line of content.split("\n")) {
+    if (/^\s*#/.test(line)) {
+      continue;
+    }
+    const match = /^\s*root\s*=\s*(?<mountPoint>"[^"]*"|'[^']*'|[^#]*)/.exec(line);
+    if (!match) {
+      continue;
+    }
+    return match.groups.mountPoint.trim().replaceAll(/^["']|["']$/g, "");
+  }
+}
+const execFile = promisify(childProcess.execFile);
+const wslDrivesMountPoint = /* @__PURE__ */ (() => {
+  const defaultMountPoint = "/mnt/";
+  let mountPoint;
+  return async function() {
+    if (mountPoint) {
+      return mountPoint;
+    }
+    const configFilePath = "/etc/wsl.conf";
+    let isConfigFileExists = false;
+    try {
+      await fs$1.access(configFilePath, constants.F_OK);
+      isConfigFileExists = true;
+    } catch {
+    }
+    if (!isConfigFileExists) {
+      return defaultMountPoint;
+    }
+    const configContent = await fs$1.readFile(configFilePath, { encoding: "utf8" });
+    const parsedMountPoint = parseMountPointFromConfig(configContent);
+    if (parsedMountPoint === void 0) {
+      return defaultMountPoint;
+    }
+    mountPoint = parsedMountPoint;
+    mountPoint = mountPoint.endsWith("/") ? mountPoint : `${mountPoint}/`;
+    return mountPoint;
+  };
+})();
+const powerShellPathFromWsl = async () => {
+  const mountPoint = await wslDrivesMountPoint();
+  return `${mountPoint}c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`;
+};
+const powerShellPath = isWsl$1 ? powerShellPathFromWsl : powerShellPath$1;
+let canAccessPowerShellPromise;
+const canAccessPowerShell = async () => {
+  canAccessPowerShellPromise ??= (async () => {
+    try {
+      const psPath = await powerShellPath();
+      await fs$1.access(psPath, constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  return canAccessPowerShellPromise;
+};
+const wslDefaultBrowser = async () => {
+  const psPath = await powerShellPath();
+  const command = String.raw`(Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice").ProgId`;
+  const { stdout } = await executePowerShell(command, { powerShellPath: psPath });
+  return stdout.trim();
+};
+const convertWslPathToWindows = async (path2) => {
+  if (/^[a-z]+:\/\//i.test(path2)) {
+    return path2;
+  }
+  try {
+    const { stdout } = await execFile("wslpath", ["-aw", path2], { encoding: "utf8" });
+    return stdout.trim();
+  } catch {
+    return path2;
+  }
+};
+function defineLazyProperty(object, propertyName, valueGetter) {
+  const define = (value) => Object.defineProperty(object, propertyName, { value, enumerable: true, writable: true });
+  Object.defineProperty(object, propertyName, {
+    configurable: true,
+    enumerable: true,
+    get() {
+      const result = valueGetter();
+      define(result);
+      return result;
+    },
+    set(value) {
+      define(value);
+    }
+  });
+  return object;
+}
+const execFileAsync$3 = promisify(execFile$2);
+async function defaultBrowserId() {
+  if (process$1.platform !== "darwin") {
+    throw new Error("macOS only");
+  }
+  const { stdout } = await execFileAsync$3("defaults", ["read", "com.apple.LaunchServices/com.apple.launchservices.secure", "LSHandlers"]);
+  const match = /LSHandlerRoleAll = "(?!-)(?<id>[^"]+?)";\s+?LSHandlerURLScheme = (?:http|https);/.exec(stdout);
+  const browserId = match?.groups.id ?? "com.apple.Safari";
+  if (browserId === "com.apple.safari") {
+    return "com.apple.Safari";
+  }
+  return browserId;
+}
+const execFileAsync$2 = promisify(execFile$2);
+async function runAppleScript(script, { humanReadableOutput = true, signal } = {}) {
+  if (process$1.platform !== "darwin") {
+    throw new Error("macOS only");
+  }
+  const outputArguments = humanReadableOutput ? [] : ["-ss"];
+  const execOptions = {};
+  if (signal) {
+    execOptions.signal = signal;
+  }
+  const { stdout } = await execFileAsync$2("osascript", ["-e", script, outputArguments], execOptions);
+  return stdout.trim();
+}
+async function bundleName(bundleId) {
+  return runAppleScript(`tell application "Finder" to set app_path to application file id "${bundleId}" as string
+tell application "System Events" to get value of property list item "CFBundleName" of property list file (app_path & ":Contents:Info.plist")`);
+}
+const execFileAsync$1 = promisify(execFile$2);
+const windowsBrowserProgIds = {
+  MSEdgeHTM: { name: "Edge", id: "com.microsoft.edge" },
+  // The missing `L` is correct.
+  MSEdgeBHTML: { name: "Edge Beta", id: "com.microsoft.edge.beta" },
+  MSEdgeDHTML: { name: "Edge Dev", id: "com.microsoft.edge.dev" },
+  AppXq0fevzme2pys62n3e0fbqa7peapykr8v: { name: "Edge", id: "com.microsoft.edge.old" },
+  ChromeHTML: { name: "Chrome", id: "com.google.chrome" },
+  ChromeBHTML: { name: "Chrome Beta", id: "com.google.chrome.beta" },
+  ChromeDHTML: { name: "Chrome Dev", id: "com.google.chrome.dev" },
+  ChromiumHTM: { name: "Chromium", id: "org.chromium.Chromium" },
+  BraveHTML: { name: "Brave", id: "com.brave.Browser" },
+  BraveBHTML: { name: "Brave Beta", id: "com.brave.Browser.beta" },
+  BraveDHTML: { name: "Brave Dev", id: "com.brave.Browser.dev" },
+  BraveSSHTM: { name: "Brave Nightly", id: "com.brave.Browser.nightly" },
+  FirefoxURL: { name: "Firefox", id: "org.mozilla.firefox" },
+  OperaStable: { name: "Opera", id: "com.operasoftware.Opera" },
+  VivaldiHTM: { name: "Vivaldi", id: "com.vivaldi.Vivaldi" },
+  "IE.HTTP": { name: "Internet Explorer", id: "com.microsoft.ie" }
+};
+const _windowsBrowserProgIdMap = new Map(Object.entries(windowsBrowserProgIds));
+class UnknownBrowserError extends Error {
+}
+async function defaultBrowser$1(_execFileAsync = execFileAsync$1) {
+  const { stdout } = await _execFileAsync("reg", [
+    "QUERY",
+    " HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\http\\UserChoice",
+    "/v",
+    "ProgId"
+  ]);
+  const match = /ProgId\s*REG_SZ\s*(?<id>\S+)/.exec(stdout);
+  if (!match) {
+    throw new UnknownBrowserError(`Cannot find Windows browser in stdout: ${JSON.stringify(stdout)}`);
+  }
+  const { id } = match.groups;
+  const browser = windowsBrowserProgIds[id];
+  if (!browser) {
+    throw new UnknownBrowserError(`Unknown browser ID: ${id}`);
+  }
+  return browser;
+}
+const execFileAsync = promisify(execFile$2);
+const titleize = (string) => string.toLowerCase().replaceAll(/(?:^|\s|-)\S/g, (x) => x.toUpperCase());
+async function defaultBrowser() {
+  if (process$1.platform === "darwin") {
+    const id = await defaultBrowserId();
+    const name = await bundleName(id);
+    return { name, id };
+  }
+  if (process$1.platform === "linux") {
+    const { stdout } = await execFileAsync("xdg-mime", ["query", "default", "x-scheme-handler/http"]);
+    const id = stdout.trim();
+    const name = titleize(id.replace(/.desktop$/, "").replace("-", " "));
+    return { name, id };
+  }
+  if (process$1.platform === "win32") {
+    return defaultBrowser$1();
+  }
+  throw new Error("Only macOS, Linux, and Windows are supported");
+}
+const isInSsh = Boolean(process$1.env.SSH_CONNECTION || process$1.env.SSH_CLIENT || process$1.env.SSH_TTY);
+const fallbackAttemptSymbol = Symbol("fallbackAttempt");
+const __dirname$1 = import.meta.url ? path.dirname(fileURLToPath(import.meta.url)) : "";
+const localXdgOpenPath = path.join(__dirname$1, "xdg-open");
+const { platform, arch } = process$1;
+const tryEachApp = async (apps2, opener) => {
+  if (apps2.length === 0) {
+    return;
+  }
+  const errors = [];
+  for (const app of apps2) {
+    try {
+      return await opener(app);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  throw new AggregateError(errors, "Failed to open in all supported apps");
+};
+const baseOpen = async (options) => {
+  options = {
+    wait: false,
+    background: false,
+    newInstance: false,
+    allowNonzeroExitCode: false,
+    ...options
+  };
+  const isFallbackAttempt = options[fallbackAttemptSymbol] === true;
+  delete options[fallbackAttemptSymbol];
+  if (Array.isArray(options.app)) {
+    return tryEachApp(options.app, (singleApp) => baseOpen({
+      ...options,
+      app: singleApp,
+      [fallbackAttemptSymbol]: true
+    }));
+  }
+  let { name: app, arguments: appArguments = [] } = options.app ?? {};
+  appArguments = [...appArguments];
+  if (Array.isArray(app)) {
+    return tryEachApp(app, (appName) => baseOpen({
+      ...options,
+      app: {
+        name: appName,
+        arguments: appArguments
+      },
+      [fallbackAttemptSymbol]: true
+    }));
+  }
+  if (app === "browser" || app === "browserPrivate") {
+    const ids = {
+      "com.google.chrome": "chrome",
+      "google-chrome.desktop": "chrome",
+      "com.brave.browser": "brave",
+      "org.mozilla.firefox": "firefox",
+      "firefox.desktop": "firefox",
+      "com.microsoft.msedge": "edge",
+      "com.microsoft.edge": "edge",
+      "com.microsoft.edgemac": "edge",
+      "microsoft-edge.desktop": "edge",
+      "com.apple.safari": "safari"
+    };
+    const flags = {
+      chrome: "--incognito",
+      brave: "--incognito",
+      firefox: "--private-window",
+      edge: "--inPrivate"
+      // Safari doesn't support private mode via command line
+    };
+    let browser;
+    if (isWsl$1) {
+      const progId = await wslDefaultBrowser();
+      const browserInfo = _windowsBrowserProgIdMap.get(progId);
+      browser = browserInfo ?? {};
+    } else {
+      browser = await defaultBrowser();
+    }
+    if (browser.id in ids) {
+      const browserName = ids[browser.id.toLowerCase()];
+      if (app === "browserPrivate") {
+        if (browserName === "safari") {
+          throw new Error("Safari doesn't support opening in private mode via command line");
+        }
+        appArguments.push(flags[browserName]);
+      }
+      return baseOpen({
+        ...options,
+        app: {
+          name: apps[browserName],
+          arguments: appArguments
+        }
+      });
+    }
+    throw new Error(`${browser.name} is not supported as a default browser`);
+  }
+  let command;
+  const cliArguments = [];
+  const childProcessOptions = {};
+  let shouldUseWindowsInWsl = false;
+  if (isWsl$1 && !isInsideContainer() && !isInSsh && !app) {
+    shouldUseWindowsInWsl = await canAccessPowerShell();
+  }
+  if (platform === "darwin") {
+    command = "open";
+    if (options.wait) {
+      cliArguments.push("--wait-apps");
+    }
+    if (options.background) {
+      cliArguments.push("--background");
+    }
+    if (options.newInstance) {
+      cliArguments.push("--new");
+    }
+    if (app) {
+      cliArguments.push("-a", app);
+    }
+  } else if (platform === "win32" || shouldUseWindowsInWsl) {
+    command = await powerShellPath();
+    cliArguments.push(...executePowerShell.argumentsPrefix);
+    if (!isWsl$1) {
+      childProcessOptions.windowsVerbatimArguments = true;
+    }
+    if (isWsl$1 && options.target) {
+      options.target = await convertWslPathToWindows(options.target);
+    }
+    const encodedArguments = ["$ProgressPreference = 'SilentlyContinue';", "Start"];
+    if (options.wait) {
+      encodedArguments.push("-Wait");
+    }
+    if (app) {
+      encodedArguments.push(executePowerShell.escapeArgument(app));
+      if (options.target) {
+        appArguments.push(options.target);
+      }
+    } else if (options.target) {
+      encodedArguments.push(executePowerShell.escapeArgument(options.target));
+    }
+    if (appArguments.length > 0) {
+      appArguments = appArguments.map((argument) => executePowerShell.escapeArgument(argument));
+      encodedArguments.push("-ArgumentList", appArguments.join(","));
+    }
+    options.target = executePowerShell.encodeCommand(encodedArguments.join(" "));
+    if (!options.wait) {
+      childProcessOptions.stdio = "ignore";
+    }
+  } else {
+    if (app) {
+      command = app;
+    } else {
+      const isBundled = !__dirname$1 || __dirname$1 === "/";
+      let exeLocalXdgOpen = false;
+      try {
+        await fs$1.access(localXdgOpenPath, constants.X_OK);
+        exeLocalXdgOpen = true;
+      } catch {
+      }
+      const useSystemXdgOpen = process$1.versions.electron ?? (platform === "android" || isBundled || !exeLocalXdgOpen);
+      command = useSystemXdgOpen ? "xdg-open" : localXdgOpenPath;
+    }
+    if (appArguments.length > 0) {
+      cliArguments.push(...appArguments);
+    }
+    if (!options.wait) {
+      childProcessOptions.stdio = "ignore";
+      childProcessOptions.detached = true;
+    }
+  }
+  if (platform === "darwin" && appArguments.length > 0) {
+    cliArguments.push("--args", ...appArguments);
+  }
+  if (options.target) {
+    cliArguments.push(options.target);
+  }
+  const subprocess = childProcess.spawn(command, cliArguments, childProcessOptions);
+  if (options.wait) {
+    return new Promise((resolve, reject) => {
+      subprocess.once("error", reject);
+      subprocess.once("close", (exitCode) => {
+        if (!options.allowNonzeroExitCode && exitCode !== 0) {
+          reject(new Error(`Exited with code ${exitCode}`));
+          return;
+        }
+        resolve(subprocess);
+      });
+    });
+  }
+  if (isFallbackAttempt) {
+    return new Promise((resolve, reject) => {
+      subprocess.once("error", reject);
+      subprocess.once("spawn", () => {
+        subprocess.once("close", (exitCode) => {
+          subprocess.off("error", reject);
+          if (exitCode !== 0) {
+            reject(new Error(`Exited with code ${exitCode}`));
+            return;
+          }
+          subprocess.unref();
+          resolve(subprocess);
+        });
+      });
+    });
+  }
+  subprocess.unref();
+  return new Promise((resolve, reject) => {
+    subprocess.once("error", reject);
+    subprocess.once("spawn", () => {
+      subprocess.off("error", reject);
+      resolve(subprocess);
+    });
+  });
+};
+const open = (target, options) => {
+  if (typeof target !== "string") {
+    throw new TypeError("Expected a `target`");
+  }
+  return baseOpen({
+    ...options,
+    target
+  });
+};
+function detectArchBinary(binary) {
+  if (typeof binary === "string" || Array.isArray(binary)) {
+    return binary;
+  }
+  const { [arch]: archBinary } = binary;
+  if (!archBinary) {
+    throw new Error(`${arch} is not supported`);
+  }
+  return archBinary;
+}
+function detectPlatformBinary({ [platform]: platformBinary }, { wsl } = {}) {
+  if (wsl && isWsl$1) {
+    return detectArchBinary(wsl);
+  }
+  if (!platformBinary) {
+    throw new Error(`${platform} is not supported`);
+  }
+  return detectArchBinary(platformBinary);
+}
+const apps = {
+  browser: "browser",
+  browserPrivate: "browserPrivate"
+};
+defineLazyProperty(apps, "chrome", () => detectPlatformBinary({
+  darwin: "google chrome",
+  win32: "chrome",
+  // `chromium-browser` is the older deb package name used by Ubuntu/Debian before snap.
+  linux: ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"]
+}, {
+  wsl: {
+    ia32: "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+    x64: ["/mnt/c/Program Files/Google/Chrome/Application/chrome.exe", "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe"]
+  }
+}));
+defineLazyProperty(apps, "brave", () => detectPlatformBinary({
+  darwin: "brave browser",
+  win32: "brave",
+  linux: ["brave-browser", "brave"]
+}, {
+  wsl: {
+    ia32: "/mnt/c/Program Files (x86)/BraveSoftware/Brave-Browser/Application/brave.exe",
+    x64: ["/mnt/c/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe", "/mnt/c/Program Files (x86)/BraveSoftware/Brave-Browser/Application/brave.exe"]
+  }
+}));
+defineLazyProperty(apps, "firefox", () => detectPlatformBinary({
+  darwin: "firefox",
+  win32: String.raw`C:\Program Files\Mozilla Firefox\firefox.exe`,
+  linux: "firefox"
+}, {
+  wsl: "/mnt/c/Program Files/Mozilla Firefox/firefox.exe"
+}));
+defineLazyProperty(apps, "edge", () => detectPlatformBinary({
+  darwin: "microsoft edge",
+  win32: "msedge",
+  linux: ["microsoft-edge", "microsoft-edge-dev"]
+}, {
+  wsl: "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
+}));
+defineLazyProperty(apps, "safari", () => detectPlatformBinary({
+  darwin: "Safari"
+}));
+let keytar = null;
+async function loadKeytar() {
+  if (keytar !== null) return keytar;
+  try {
+    const module = await import("keytar");
+    keytar = module.default || module;
+    return keytar;
+  } catch {
+    return null;
+  }
+}
+loadKeytar().catch(() => {
+});
+const KEYCHAIN_SERVICE = "octocode-cli";
+const OCTOCODE_DIR = join(HOME, ".octocode");
+const CREDENTIALS_FILE = join(OCTOCODE_DIR, "credentials.json");
+const KEY_FILE = join(OCTOCODE_DIR, ".key");
+const ALGORITHM = "aes-256-gcm";
+const IV_LENGTH = 16;
+let _useSecureStorage = null;
+function isSecureStorageAvailable() {
+  if (_useSecureStorage !== null) {
+    return _useSecureStorage;
+  }
+  _useSecureStorage = keytar !== null;
+  return _useSecureStorage;
+}
+async function keytarStore(hostname, credentials) {
+  if (!keytar) throw new Error("Keytar not available");
+  const data = JSON.stringify(credentials);
+  await keytar.setPassword(KEYCHAIN_SERVICE, hostname, data);
+}
+async function keytarGet(hostname) {
+  if (!keytar) return null;
+  try {
+    const data = await keytar.getPassword(KEYCHAIN_SERVICE, hostname);
+    if (!data) return null;
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+async function keytarDelete(hostname) {
+  if (!keytar) return false;
+  try {
+    return await keytar.deletePassword(KEYCHAIN_SERVICE, hostname);
+  } catch {
+    return false;
+  }
+}
+function getOrCreateKey() {
+  ensureOctocodeDir();
+  if (existsSync(KEY_FILE)) {
+    return Buffer.from(readFileSync(KEY_FILE, "utf8"), "hex");
+  }
+  const key = randomBytes(32);
+  writeFileSync(KEY_FILE, key.toString("hex"), { mode: 384 });
+  return key;
+}
+function encrypt(data) {
+  const key = getOrCreateKey();
+  const iv = randomBytes(IV_LENGTH);
+  const cipher = createCipheriv(ALGORITHM, key, iv);
+  let encrypted = cipher.update(data, "utf8", "hex");
+  encrypted += cipher.final("hex");
+  const authTag = cipher.getAuthTag();
+  return `${iv.toString("hex")}:${authTag.toString("hex")}:${encrypted}`;
+}
+function decrypt(encryptedData) {
+  const key = getOrCreateKey();
+  const [ivHex, authTagHex, encrypted] = encryptedData.split(":");
+  if (!ivHex || !authTagHex || !encrypted) {
+    throw new Error("Invalid encrypted data format");
+  }
+  const iv = Buffer.from(ivHex, "hex");
+  const authTag = Buffer.from(authTagHex, "hex");
+  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+  let decrypted = decipher.update(encrypted, "hex", "utf8");
+  decrypted += decipher.final("utf8");
+  return decrypted;
+}
+function ensureOctocodeDir() {
+  if (!existsSync(OCTOCODE_DIR)) {
+    mkdirSync(OCTOCODE_DIR, { recursive: true, mode: 448 });
+  }
+}
+function readCredentialsStore() {
+  ensureOctocodeDir();
+  if (!existsSync(CREDENTIALS_FILE)) {
+    return { version: 1, credentials: {} };
+  }
+  try {
+    const encryptedContent = readFileSync(CREDENTIALS_FILE, "utf8");
+    const decrypted = decrypt(encryptedContent);
+    return JSON.parse(decrypted);
+  } catch (error) {
+    console.error(
+      "\n  ⚠ Warning: Could not read credentials file. You may need to login again."
+    );
+    console.error(`  File: ${CREDENTIALS_FILE}`);
+    if (error instanceof Error && error.message) {
+      console.error(`  Reason: ${error.message}
+`);
+    }
+    return { version: 1, credentials: {} };
+  }
+}
+function writeCredentialsStore(store) {
+  ensureOctocodeDir();
+  const encrypted = encrypt(JSON.stringify(store, null, 2));
+  writeFileSync(CREDENTIALS_FILE, encrypted, { mode: 384 });
+}
+async function migrateLegacyCredentials() {
+  if (!isSecureStorageAvailable()) return;
+  if (!existsSync(CREDENTIALS_FILE)) return;
+  try {
+    const store = readCredentialsStore();
+    const hostnames = Object.keys(store.credentials);
+    if (hostnames.length === 0) return;
+    for (const hostname of hostnames) {
+      const existing = await keytarGet(hostname);
+      if (!existing) {
+        await keytarStore(hostname, store.credentials[hostname]);
+      }
+    }
+    try {
+      unlinkSync(CREDENTIALS_FILE);
+      if (existsSync(KEY_FILE)) {
+        unlinkSync(KEY_FILE);
+      }
+    } catch {
+    }
+  } catch {
+  }
+}
+migrateLegacyCredentials().catch(() => {
+});
+function normalizeHostname(hostname) {
+  return hostname.toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
+}
+function storeCredentials(credentials) {
+  const hostname = normalizeHostname(credentials.hostname);
+  const normalizedCredentials = {
+    ...credentials,
+    hostname,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (isSecureStorageAvailable()) {
+    keytarStore(hostname, normalizedCredentials).catch(() => {
+      const store = readCredentialsStore();
+      store.credentials[hostname] = normalizedCredentials;
+      writeCredentialsStore(store);
+    });
+  } else {
+    const store = readCredentialsStore();
+    store.credentials[hostname] = normalizedCredentials;
+    writeCredentialsStore(store);
+  }
+}
+function getCredentials(hostname = "github.com") {
+  const normalizedHostname = normalizeHostname(hostname);
+  if (!isSecureStorageAvailable()) {
+    const store2 = readCredentialsStore();
+    return store2.credentials[normalizedHostname] || null;
+  }
+  const store = readCredentialsStore();
+  return store.credentials[normalizedHostname] || null;
+}
+function deleteCredentials(hostname = "github.com") {
+  const normalizedHostname = normalizeHostname(hostname);
+  if (isSecureStorageAvailable()) {
+    keytarDelete(normalizedHostname).catch(() => {
+    });
+  }
+  const store = readCredentialsStore();
+  if (store.credentials[normalizedHostname]) {
+    delete store.credentials[normalizedHostname];
+    writeCredentialsStore(store);
+    return true;
+  }
+  return isSecureStorageAvailable();
+}
+function getCredentialsFilePath() {
+  if (isSecureStorageAvailable()) {
+    return "System Keychain (secure)";
+  }
+  return CREDENTIALS_FILE;
+}
+function isTokenExpired(credentials) {
+  if (!credentials.token.expiresAt) {
+    return false;
+  }
+  const expiresAt = new Date(credentials.token.expiresAt);
+  if (isNaN(expiresAt.getTime())) {
+    return true;
+  }
+  const now = /* @__PURE__ */ new Date();
+  return expiresAt.getTime() - now.getTime() < 5 * 60 * 1e3;
+}
+const DEFAULT_CLIENT_ID = "178c6fc778ccc68e1d6a";
+const DEFAULT_SCOPES = ["repo", "read:org", "gist"];
+const DEFAULT_HOSTNAME = "github.com";
+function getApiBaseUrl(hostname) {
+  if (hostname === "github.com" || hostname === DEFAULT_HOSTNAME) {
+    return "https://api.github.com";
+  }
+  return `https://${hostname}/api/v3`;
+}
+async function getCurrentUser(token, hostname) {
+  const baseUrl = getApiBaseUrl(hostname);
+  const response = await request("GET /user", {
+    headers: {
+      authorization: `token ${token}`
+    },
+    baseUrl
+  });
+  return response.data.login;
+}
+async function login(options = {}) {
+  const {
+    hostname = DEFAULT_HOSTNAME,
+    scopes = DEFAULT_SCOPES,
+    gitProtocol = "https",
+    clientId = DEFAULT_CLIENT_ID,
+    onVerification,
+    openBrowser = true
+  } = options;
+  try {
+    const auth2 = createOAuthDeviceAuth({
+      clientType: "oauth-app",
+      clientId,
+      scopes,
+      onVerification: async (verification) => {
+        if (onVerification) {
+          onVerification(verification);
+        }
+        if (openBrowser) {
+          try {
+            await open(verification.verification_uri);
+          } catch {
+          }
+        }
+      },
+      request: request.defaults({
+        baseUrl: getApiBaseUrl(hostname)
+      })
+    });
+    const tokenAuth = await auth2({ type: "oauth" });
+    const username = await getCurrentUser(tokenAuth.token, hostname);
+    const token = {
+      token: tokenAuth.token,
+      tokenType: "oauth",
+      scopes: "scopes" in tokenAuth ? tokenAuth.scopes : void 0
+    };
+    if ("refreshToken" in tokenAuth && tokenAuth.refreshToken) {
+      token.refreshToken = tokenAuth.refreshToken;
+      token.expiresAt = "expiresAt" in tokenAuth ? tokenAuth.expiresAt : void 0;
+      token.refreshTokenExpiresAt = "refreshTokenExpiresAt" in tokenAuth ? tokenAuth.refreshTokenExpiresAt : void 0;
+    }
+    const credentials = {
+      hostname,
+      username,
+      token,
+      gitProtocol,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    storeCredentials(credentials);
+    return {
+      success: true,
+      username,
+      hostname
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Authentication failed"
+    };
+  }
+}
+async function logout(hostname = DEFAULT_HOSTNAME) {
+  const credentials = getCredentials(hostname);
+  if (!credentials) {
+    return {
+      success: false,
+      error: `Not logged in to ${hostname}`
+    };
+  }
+  try {
+    await deleteToken({
+      clientType: "oauth-app",
+      clientId: DEFAULT_CLIENT_ID,
+      clientSecret: "",
+      // We don't have this for public clients
+      token: credentials.token.token,
+      request: request.defaults({
+        baseUrl: getApiBaseUrl(hostname)
+      })
+    });
+  } catch {
+  }
+  deleteCredentials(hostname);
+  return { success: true };
+}
+function getAuthStatus(hostname = DEFAULT_HOSTNAME) {
+  const credentials = getCredentials(hostname);
+  if (!credentials) {
+    return {
+      authenticated: false
+    };
+  }
+  const tokenExpired = isTokenExpired(credentials);
+  return {
+    authenticated: !tokenExpired,
+    hostname: credentials.hostname,
+    username: credentials.username,
+    tokenExpired
+  };
+}
+function getStoragePath() {
+  return getCredentialsFilePath();
 }
 function printConfigPreview(config) {
   const hasEnv = config.env && Object.keys(config.env).length > 0;
@@ -1292,7 +2959,7 @@ function printConfigPreview(config) {
   console.log(c("dim", "  }"));
   console.log();
 }
-function printInstallError(result) {
+function printInstallError$1(result) {
   console.log();
   console.log(`  ${c("red", "✗")} ${bold("Installation failed")}`);
   if (result.error) {
@@ -1696,7 +3363,7 @@ async function performInstall(state) {
     printInstallSuccessForClient(result, state.client, preview.configPath);
   } else {
     spinner.fail("Configuration failed");
-    printInstallError(result);
+    printInstallError$1(result);
   }
 }
 function printInstallSuccessForClient(result, client, configPath) {
@@ -2079,7 +3746,7 @@ async function runConfigOptionsFlow() {
   switch (choice) {
     case "view":
       showConfigInfo();
-      await pressEnterToContinue$1();
+      await pressEnterToContinue$2();
       break;
     case "edit":
       await runEditConfigFlow();
@@ -2089,7 +3756,7 @@ async function runConfigOptionsFlow() {
       break;
   }
 }
-async function pressEnterToContinue$1() {
+async function pressEnterToContinue$2() {
   const { input: input2 } = await Promise.resolve().then(() => prompts);
   console.log();
   await input2({
@@ -2673,6 +4340,1689 @@ function showConfigInfo() {
     console.log();
   }
 }
+const MCP_REGISTRY = [
+  // === BROWSER AUTOMATION ===
+  {
+    id: "playwright-mcp",
+    name: "Playwright MCP",
+    description: "Official Microsoft Playwright MCP server for browser automation via accessibility snapshots",
+    category: "browser-automation",
+    repository: "https://github.com/microsoft/playwright-mcp",
+    website: "https://playwright.dev",
+    installationType: "npx",
+    npmPackage: "@playwright/mcp",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: ["-y", "@playwright/mcp@latest"]
+    },
+    tags: ["browser", "automation", "testing", "microsoft", "official"]
+  },
+  {
+    id: "firecrawl-mcp-server",
+    name: "Firecrawl MCP",
+    description: "Powerful web scraping and search for Claude, Cursor and LLM clients",
+    category: "browser-automation",
+    repository: "https://github.com/firecrawl/firecrawl-mcp-server",
+    website: "https://firecrawl.dev",
+    installationType: "npx",
+    npmPackage: "firecrawl-mcp",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: ["-y", "firecrawl-mcp"]
+    },
+    requiredEnvVars: [
+      {
+        name: "FIRECRAWL_API_KEY",
+        description: "Firecrawl API key",
+        example: "fc-xxxxx"
+      }
+    ],
+    tags: ["scraping", "web", "search", "official"]
+  },
+  {
+    id: "browserbase-mcp",
+    name: "Browserbase MCP",
+    description: "Cloud browser automation for web navigation, data extraction, form filling",
+    category: "browser-automation",
+    repository: "https://github.com/browserbase/mcp-server-browserbase",
+    website: "https://browserbase.com",
+    installationType: "npx",
+    npmPackage: "@browserbasehq/mcp-server-browserbase",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: ["-y", "@browserbasehq/mcp-server-browserbase"]
+    },
+    requiredEnvVars: [
+      { name: "BROWSERBASE_API_KEY", description: "Browserbase API key" },
+      { name: "BROWSERBASE_PROJECT_ID", description: "Browserbase project ID" }
+    ],
+    tags: ["browser", "cloud", "automation", "official"]
+  },
+  {
+    id: "chrome-devtools-mcp",
+    name: "Chrome DevTools MCP",
+    description: "Chrome DevTools for coding agents - debugging and browser control",
+    category: "browser-automation",
+    repository: "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+    installationType: "npx",
+    npmPackage: "chrome-devtools-mcp",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: ["-y", "chrome-devtools-mcp"]
+    },
+    tags: ["chrome", "devtools", "debugging", "official"]
+  },
+  // === VERSION CONTROL ===
+  {
+    id: "github-mcp-server",
+    name: "GitHub MCP",
+    description: "GitHub's official MCP Server for repository management, PRs, issues, and more",
+    category: "version-control",
+    repository: "https://github.com/github/github-mcp-server",
+    website: "https://github.com",
+    installationType: "docker",
+    dockerImage: "ghcr.io/github/github-mcp-server",
+    official: true,
+    installConfig: {
+      command: "docker",
+      args: [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "ghcr.io/github/github-mcp-server"
+      ]
+    },
+    requiredEnvVars: [
+      {
+        name: "GITHUB_PERSONAL_ACCESS_TOKEN",
+        description: "GitHub Personal Access Token"
+      }
+    ],
+    tags: ["github", "git", "repository", "official"]
+  },
+  // === DATABASES ===
+  {
+    id: "sqlite-mcp",
+    name: "SQLite MCP",
+    description: "SQLite database operations with built-in analysis features",
+    category: "database",
+    repository: "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/sqlite",
+    installationType: "pip",
+    pipPackage: "mcp-server-sqlite",
+    official: true,
+    installConfig: {
+      command: "uvx",
+      args: ["mcp-server-sqlite", "--db-path", "${DATABASE_PATH}"]
+    },
+    requiredEnvVars: [
+      {
+        name: "DATABASE_PATH",
+        description: "Path to SQLite database file",
+        example: "/path/to/database.db"
+      }
+    ],
+    tags: ["database", "sqlite", "sql", "official"]
+  },
+  {
+    id: "mysql-mcp",
+    name: "MySQL MCP",
+    description: "MySQL database integration with configurable access controls and schema inspection",
+    category: "database",
+    repository: "https://github.com/designcomputer/mysql_mcp_server",
+    installationType: "pip",
+    pipPackage: "mysql-mcp-server",
+    installConfig: {
+      command: "uvx",
+      args: ["mysql-mcp-server"]
+    },
+    requiredEnvVars: [
+      { name: "MYSQL_HOST", description: "MySQL host" },
+      { name: "MYSQL_USER", description: "MySQL username" },
+      { name: "MYSQL_PASSWORD", description: "MySQL password" },
+      { name: "MYSQL_DATABASE", description: "MySQL database name" }
+    ],
+    tags: ["database", "mysql", "sql"]
+  },
+  {
+    id: "mongodb-mcp",
+    name: "MongoDB MCP",
+    description: "MongoDB integration for querying and analyzing collections",
+    category: "database",
+    repository: "https://github.com/kiliczsh/mcp-mongo-server",
+    installationType: "npx",
+    npmPackage: "mcp-mongo-server",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "mcp-mongo-server"]
+    },
+    requiredEnvVars: [
+      {
+        name: "MONGODB_URI",
+        description: "MongoDB connection URI",
+        example: "mongodb://localhost:27017/mydb"
+      }
+    ],
+    tags: ["database", "mongodb", "nosql"]
+  },
+  {
+    id: "redis-mcp",
+    name: "Redis MCP",
+    description: "Natural language interface for managing and searching data in Redis",
+    category: "database",
+    repository: "https://github.com/redis/mcp-redis",
+    website: "https://redis.io",
+    installationType: "pip",
+    pipPackage: "redis-mcp-server",
+    official: true,
+    installConfig: {
+      command: "uvx",
+      args: ["redis-mcp-server"]
+    },
+    requiredEnvVars: [
+      {
+        name: "REDIS_URL",
+        description: "Redis connection URL",
+        example: "redis://localhost:6379"
+      }
+    ],
+    tags: ["database", "redis", "cache", "official"]
+  },
+  {
+    id: "neon-mcp",
+    name: "Neon MCP",
+    description: "Neon Serverless Postgres - create and manage databases with natural language",
+    category: "database",
+    repository: "https://github.com/neondatabase/mcp-server-neon",
+    website: "https://neon.tech",
+    installationType: "npx",
+    npmPackage: "@neondatabase/mcp-server-neon",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: ["-y", "@neondatabase/mcp-server-neon"]
+    },
+    requiredEnvVars: [{ name: "NEON_API_KEY", description: "Neon API key" }],
+    tags: ["database", "postgres", "serverless", "official"]
+  },
+  {
+    id: "qdrant-mcp",
+    name: "Qdrant MCP",
+    description: "Vector search engine for keeping and retrieving memories",
+    category: "database",
+    repository: "https://github.com/qdrant/mcp-server-qdrant",
+    website: "https://qdrant.tech",
+    installationType: "pip",
+    pipPackage: "mcp-server-qdrant",
+    official: true,
+    installConfig: {
+      command: "uvx",
+      args: ["mcp-server-qdrant"]
+    },
+    requiredEnvVars: [
+      { name: "QDRANT_URL", description: "Qdrant server URL" },
+      { name: "QDRANT_API_KEY", description: "Qdrant API key (optional)" }
+    ],
+    tags: ["database", "vector", "search", "official"]
+  },
+  {
+    id: "snowflake-mcp",
+    name: "Snowflake MCP",
+    description: "Snowflake data warehouse integration with read/write capabilities",
+    category: "database",
+    repository: "https://github.com/isaacwasserman/mcp-snowflake-server",
+    website: "https://snowflake.com",
+    installationType: "pip",
+    pipPackage: "mcp-snowflake-server",
+    installConfig: {
+      command: "uvx",
+      args: ["mcp-snowflake-server"]
+    },
+    requiredEnvVars: [
+      {
+        name: "SNOWFLAKE_ACCOUNT",
+        description: "Snowflake account identifier"
+      },
+      { name: "SNOWFLAKE_USER", description: "Snowflake username" },
+      { name: "SNOWFLAKE_PASSWORD", description: "Snowflake password" }
+    ],
+    tags: ["database", "snowflake", "data-warehouse"]
+  },
+  {
+    id: "bigquery-mcp",
+    name: "BigQuery MCP",
+    description: "Google BigQuery integration for schema inspection and queries",
+    category: "database",
+    repository: "https://github.com/LucasHild/mcp-server-bigquery",
+    website: "https://cloud.google.com/bigquery",
+    installationType: "pip",
+    pipPackage: "mcp-server-bigquery",
+    installConfig: {
+      command: "uvx",
+      args: ["mcp-server-bigquery"]
+    },
+    requiredEnvVars: [
+      {
+        name: "GOOGLE_APPLICATION_CREDENTIALS",
+        description: "Path to GCP service account JSON"
+      }
+    ],
+    tags: ["database", "bigquery", "google", "analytics"]
+  },
+  // === CLOUD PLATFORMS ===
+  {
+    id: "cloudflare-mcp",
+    name: "Cloudflare MCP",
+    description: "Integration with Cloudflare Workers, KV, R2, and D1",
+    category: "cloud-platform",
+    repository: "https://github.com/cloudflare/mcp-server-cloudflare",
+    website: "https://cloudflare.com",
+    installationType: "npx",
+    npmPackage: "@cloudflare/mcp-server-cloudflare",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: ["-y", "@cloudflare/mcp-server-cloudflare"]
+    },
+    requiredEnvVars: [
+      { name: "CLOUDFLARE_API_TOKEN", description: "Cloudflare API Token" },
+      { name: "CLOUDFLARE_ACCOUNT_ID", description: "Cloudflare Account ID" }
+    ],
+    tags: ["cloudflare", "cloud", "workers", "official"]
+  },
+  {
+    id: "kubernetes-mcp",
+    name: "Kubernetes MCP",
+    description: "Kubernetes cluster operations through MCP",
+    category: "cloud-platform",
+    repository: "https://github.com/strowk/mcp-k8s-go",
+    installationType: "binary",
+    installConfig: {
+      command: "mcp-k8s",
+      args: []
+    },
+    tags: ["kubernetes", "k8s", "containers", "devops"]
+  },
+  {
+    id: "docker-mcp",
+    name: "Docker MCP",
+    description: "Docker operations for container and compose stack management",
+    category: "cloud-platform",
+    repository: "https://github.com/sondt2709/docker-mcp",
+    installationType: "npx",
+    npmPackage: "docker-mcp",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "docker-mcp"]
+    },
+    tags: ["docker", "containers", "devops"]
+  },
+  // === FILE SYSTEMS ===
+  {
+    id: "filesystem-mcp",
+    name: "Filesystem MCP",
+    description: "Direct local file system access with configurable permissions",
+    category: "file-system",
+    repository: "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+    installationType: "npx",
+    npmPackage: "@modelcontextprotocol/server-filesystem",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "${ALLOWED_DIRECTORIES}"
+      ]
+    },
+    requiredEnvVars: [
+      {
+        name: "ALLOWED_DIRECTORIES",
+        description: "Comma-separated list of allowed directories",
+        example: "/home/user/projects,/tmp"
+      }
+    ],
+    tags: ["filesystem", "files", "local", "official"]
+  },
+  // === SEARCH & WEB ===
+  {
+    id: "exa-mcp",
+    name: "Exa Search MCP",
+    description: "Exa AI Search API for real-time web information retrieval",
+    category: "search-web",
+    repository: "https://github.com/exa-labs/exa-mcp-server",
+    website: "https://exa.ai",
+    installationType: "npx",
+    npmPackage: "exa-mcp-server",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: ["-y", "exa-mcp-server"]
+    },
+    requiredEnvVars: [{ name: "EXA_API_KEY", description: "Exa API key" }],
+    tags: ["search", "exa", "ai", "official"]
+  },
+  {
+    id: "tavily-mcp",
+    name: "Tavily MCP",
+    description: "Tavily AI search API for intelligent web search",
+    category: "search-web",
+    repository: "https://github.com/tavily-ai/tavily-mcp",
+    website: "https://tavily.com",
+    installationType: "npx",
+    npmPackage: "tavily-mcp",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: ["-y", "tavily-mcp"]
+    },
+    requiredEnvVars: [
+      { name: "TAVILY_API_KEY", description: "Tavily API key" }
+    ],
+    tags: ["search", "tavily", "ai", "official"]
+  },
+  // === COMMUNICATION ===
+  {
+    id: "slack-mcp",
+    name: "Slack MCP",
+    description: "Most powerful MCP server for Slack with Stdio and SSE transports",
+    category: "communication",
+    repository: "https://github.com/korotovsky/slack-mcp-server",
+    website: "https://slack.com",
+    installationType: "npx",
+    npmPackage: "slack-mcp-server",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "slack-mcp-server"]
+    },
+    requiredEnvVars: [
+      { name: "SLACK_BOT_TOKEN", description: "Slack Bot OAuth Token" }
+    ],
+    tags: ["slack", "chat", "team"]
+  },
+  {
+    id: "discord-mcp",
+    name: "Discord MCP",
+    description: "Discord integration for AI assistants",
+    category: "communication",
+    repository: "https://github.com/olivierdebeufderijcker/discord-mcp",
+    website: "https://discord.com",
+    installationType: "npx",
+    npmPackage: "discord-mcp",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "discord-mcp"]
+    },
+    requiredEnvVars: [
+      { name: "DISCORD_TOKEN", description: "Discord Bot Token" }
+    ],
+    tags: ["discord", "chat", "community"]
+  },
+  {
+    id: "gmail-mcp",
+    name: "Gmail MCP",
+    description: "Gmail integration via Inbox Zero for email management",
+    category: "communication",
+    repository: "https://github.com/elie222/inbox-zero",
+    website: "https://getinboxzero.com",
+    installationType: "pip",
+    pipPackage: "inbox-zero-mcp",
+    installConfig: {
+      command: "uvx",
+      args: ["inbox-zero-mcp"]
+    },
+    requiredEnvVars: [
+      {
+        name: "GOOGLE_APPLICATION_CREDENTIALS",
+        description: "Path to Google credentials"
+      }
+    ],
+    tags: ["email", "gmail", "google"]
+  },
+  {
+    id: "linear-mcp",
+    name: "Linear MCP",
+    description: "Linear issue tracking integration",
+    category: "communication",
+    repository: "https://github.com/jerhadf/linear-mcp-server",
+    website: "https://linear.app",
+    installationType: "npx",
+    npmPackage: "linear-mcp-server",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "linear-mcp-server"]
+    },
+    requiredEnvVars: [
+      { name: "LINEAR_API_KEY", description: "Linear API key" }
+    ],
+    tags: ["linear", "issues", "project-management"]
+  },
+  {
+    id: "atlassian-mcp",
+    name: "Atlassian MCP",
+    description: "Confluence and Jira integration for documentation and issue tracking",
+    category: "communication",
+    repository: "https://github.com/sooperset/mcp-atlassian",
+    website: "https://atlassian.com",
+    installationType: "pip",
+    pipPackage: "mcp-atlassian",
+    installConfig: {
+      command: "uvx",
+      args: ["mcp-atlassian"]
+    },
+    requiredEnvVars: [
+      { name: "ATLASSIAN_URL", description: "Atlassian instance URL" },
+      { name: "ATLASSIAN_EMAIL", description: "Atlassian email" },
+      { name: "ATLASSIAN_API_TOKEN", description: "Atlassian API token" }
+    ],
+    tags: ["atlassian", "jira", "confluence"]
+  },
+  // === PRODUCTIVITY ===
+  {
+    id: "notion-mcp",
+    name: "Notion MCP",
+    description: "Notion API integration for managing personal todo lists and notes",
+    category: "productivity",
+    repository: "https://github.com/danhilse/notion_mcp",
+    website: "https://notion.so",
+    installationType: "pip",
+    pipPackage: "notion-mcp",
+    installConfig: {
+      command: "uvx",
+      args: ["notion-mcp"]
+    },
+    requiredEnvVars: [
+      { name: "NOTION_API_KEY", description: "Notion Integration Token" }
+    ],
+    tags: ["notion", "notes", "productivity"]
+  },
+  {
+    id: "obsidian-mcp",
+    name: "Obsidian MCP",
+    description: "Obsidian vault integration for file management, search, and manipulation",
+    category: "productivity",
+    repository: "https://github.com/MarkusPfundstein/mcp-obsidian",
+    website: "https://obsidian.md",
+    installationType: "npx",
+    npmPackage: "mcp-obsidian",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "mcp-obsidian"]
+    },
+    requiredEnvVars: [
+      { name: "OBSIDIAN_VAULT_PATH", description: "Path to Obsidian vault" }
+    ],
+    tags: ["obsidian", "notes", "markdown"]
+  },
+  {
+    id: "todoist-mcp",
+    name: "Todoist MCP",
+    description: "Natural language task management with Todoist",
+    category: "productivity",
+    repository: "https://github.com/stevengonsalvez/todoist-mcp",
+    website: "https://todoist.com",
+    installationType: "npx",
+    npmPackage: "todoist-mcp-server",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "todoist-mcp-server"]
+    },
+    requiredEnvVars: [
+      { name: "TODOIST_API_TOKEN", description: "Todoist API token" }
+    ],
+    tags: ["todoist", "tasks", "productivity"]
+  },
+  {
+    id: "google-workspace-mcp",
+    name: "Google Workspace MCP",
+    description: "Control Gmail, Calendar, Docs, Sheets, Slides, Chat, Drive and more",
+    category: "productivity",
+    repository: "https://github.com/taylorwilsdon/google_workspace_mcp",
+    website: "https://workspace.google.com",
+    installationType: "pip",
+    pipPackage: "google-workspace-mcp",
+    installConfig: {
+      command: "uvx",
+      args: ["google-workspace-mcp"]
+    },
+    requiredEnvVars: [
+      {
+        name: "GOOGLE_APPLICATION_CREDENTIALS",
+        description: "Path to Google credentials"
+      }
+    ],
+    tags: ["google", "workspace", "gmail", "docs"]
+  },
+  // === DEVELOPER TOOLS ===
+  {
+    id: "context7-mcp",
+    name: "Context7 MCP",
+    description: "Up-to-date code documentation for LLMs and AI code editors",
+    category: "developer-tools",
+    repository: "https://github.com/upstash/context7",
+    website: "https://context7.com",
+    installationType: "npx",
+    npmPackage: "@upstash/context7-mcp",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: ["-y", "@upstash/context7-mcp"]
+    },
+    tags: ["documentation", "context", "code", "official"]
+  },
+  {
+    id: "sentry-mcp",
+    name: "Sentry MCP",
+    description: "Sentry.io integration for error tracking and performance monitoring",
+    category: "developer-tools",
+    repository: "https://github.com/getsentry/sentry-mcp",
+    website: "https://sentry.io",
+    installationType: "npx",
+    npmPackage: "@sentry/mcp-server",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: ["-y", "@sentry/mcp-server"]
+    },
+    requiredEnvVars: [
+      { name: "SENTRY_AUTH_TOKEN", description: "Sentry Auth Token" },
+      { name: "SENTRY_ORG", description: "Sentry Organization Slug" }
+    ],
+    tags: ["sentry", "errors", "monitoring", "official"]
+  },
+  {
+    id: "mcp-memory-service",
+    name: "Memory Service MCP",
+    description: "Automatic context memory for Claude, VS Code, Cursor - stop re-explaining",
+    category: "developer-tools",
+    repository: "https://github.com/doobidoo/mcp-memory-service",
+    installationType: "pip",
+    pipPackage: "mcp-memory-service",
+    installConfig: {
+      command: "uvx",
+      args: ["mcp-memory-service"]
+    },
+    tags: ["memory", "context", "persistence"]
+  },
+  {
+    id: "serena-mcp",
+    name: "Serena MCP",
+    description: "Powerful coding agent with semantic retrieval and editing via language servers",
+    category: "coding-agents",
+    repository: "https://github.com/oraios/serena",
+    installationType: "pip",
+    pipPackage: "serena",
+    installConfig: {
+      command: "uvx",
+      args: ["serena"]
+    },
+    tags: ["coding", "agent", "language-server"]
+  },
+  {
+    id: "figma-mcp",
+    name: "Figma MCP",
+    description: "Get Figma design data in ready-to-implement format",
+    category: "developer-tools",
+    repository: "https://github.com/tianmuji/Figma-Context-MCP",
+    website: "https://figma.com",
+    installationType: "npx",
+    npmPackage: "figma-context-mcp",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "figma-context-mcp"]
+    },
+    requiredEnvVars: [
+      {
+        name: "FIGMA_ACCESS_TOKEN",
+        description: "Figma Personal Access Token"
+      }
+    ],
+    tags: ["figma", "design", "ui"]
+  },
+  {
+    id: "talk-to-figma-mcp",
+    name: "Talk to Figma MCP",
+    description: "Cursor + Figma integration for reading and modifying designs",
+    category: "developer-tools",
+    repository: "https://github.com/grab/cursor-talk-to-figma-mcp",
+    website: "https://figma.com",
+    installationType: "npx",
+    npmPackage: "@anthropic-ai/talk-to-figma-mcp",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "@anthropic-ai/talk-to-figma-mcp"]
+    },
+    requiredEnvVars: [
+      {
+        name: "FIGMA_ACCESS_TOKEN",
+        description: "Figma Personal Access Token"
+      }
+    ],
+    tags: ["figma", "cursor", "design"]
+  },
+  {
+    id: "mcp-language-server",
+    name: "Language Server MCP",
+    description: "Semantic tools like get definition, references, rename, diagnostics",
+    category: "developer-tools",
+    repository: "https://github.com/isaacphi/mcp-language-server",
+    installationType: "binary",
+    installConfig: {
+      command: "mcp-language-server",
+      args: []
+    },
+    tags: ["lsp", "language-server", "semantic"]
+  },
+  // === AI SERVICES ===
+  {
+    id: "openai-mcp",
+    name: "OpenAI MCP",
+    description: "Query OpenAI models directly from Claude using MCP protocol",
+    category: "ai-services",
+    repository: "https://github.com/pierrebrunelle/mcp-server-openai",
+    website: "https://openai.com",
+    installationType: "pip",
+    pipPackage: "mcp-server-openai",
+    installConfig: {
+      command: "uvx",
+      args: ["mcp-server-openai"]
+    },
+    requiredEnvVars: [
+      { name: "OPENAI_API_KEY", description: "OpenAI API key" }
+    ],
+    tags: ["openai", "gpt", "llm"]
+  },
+  {
+    id: "llamacloud-mcp",
+    name: "LlamaCloud MCP",
+    description: "Connect to managed indices on LlamaCloud",
+    category: "ai-services",
+    repository: "https://github.com/run-llama/mcp-server-llamacloud",
+    website: "https://cloud.llamaindex.ai",
+    installationType: "npx",
+    npmPackage: "@llamaindex/mcp-server-llamacloud",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: ["-y", "@llamaindex/mcp-server-llamacloud"]
+    },
+    requiredEnvVars: [
+      { name: "LLAMA_CLOUD_API_KEY", description: "LlamaCloud API key" }
+    ],
+    tags: ["llamaindex", "rag", "index", "official"]
+  },
+  {
+    id: "huggingface-spaces-mcp",
+    name: "HuggingFace Spaces MCP",
+    description: "Use HuggingFace Spaces from your MCP Client - images, audio, text",
+    category: "ai-services",
+    repository: "https://github.com/evalstate/mcp-hfspace",
+    website: "https://huggingface.co/spaces",
+    installationType: "npx",
+    npmPackage: "mcp-hfspace",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "mcp-hfspace"]
+    },
+    requiredEnvVars: [
+      { name: "HF_TOKEN", description: "HuggingFace API token" }
+    ],
+    tags: ["huggingface", "spaces", "models"]
+  },
+  // === WORKFLOW AUTOMATION ===
+  {
+    id: "n8n-mcp",
+    name: "n8n MCP",
+    description: "Build n8n workflows using Claude Desktop, Cursor, or Windsurf",
+    category: "workflow-automation",
+    repository: "https://github.com/czlonkowski/n8n-mcp",
+    website: "https://n8n.io",
+    installationType: "npx",
+    npmPackage: "n8n-mcp",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "n8n-mcp"]
+    },
+    requiredEnvVars: [
+      { name: "N8N_API_URL", description: "n8n instance URL" },
+      { name: "N8N_API_KEY", description: "n8n API key" }
+    ],
+    tags: ["n8n", "automation", "workflows"]
+  },
+  // === DATA VISUALIZATION ===
+  {
+    id: "vegalite-mcp",
+    name: "VegaLite MCP",
+    description: "Generate visualizations from data using VegaLite format",
+    category: "data-visualization",
+    repository: "https://github.com/isaacwasserman/mcp-vegalite-server",
+    installationType: "pip",
+    pipPackage: "mcp-vegalite-server",
+    installConfig: {
+      command: "uvx",
+      args: ["mcp-vegalite-server"]
+    },
+    tags: ["visualization", "charts", "vegalite"]
+  },
+  {
+    id: "echarts-mcp",
+    name: "ECharts MCP",
+    description: "Generate visual charts using Apache ECharts dynamically",
+    category: "data-visualization",
+    repository: "https://github.com/hustcc/mcp-echarts",
+    website: "https://echarts.apache.org",
+    installationType: "npx",
+    npmPackage: "mcp-echarts",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "mcp-echarts"]
+    },
+    tags: ["visualization", "charts", "echarts"]
+  },
+  {
+    id: "mermaid-mcp",
+    name: "Mermaid MCP",
+    description: "Generate Mermaid diagrams and charts dynamically",
+    category: "data-visualization",
+    repository: "https://github.com/hustcc/mcp-mermaid",
+    website: "https://mermaid.js.org",
+    installationType: "npx",
+    npmPackage: "mcp-mermaid",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "mcp-mermaid"]
+    },
+    tags: ["diagrams", "mermaid", "flowcharts"]
+  },
+  // === MONITORING ===
+  {
+    id: "datadog-mcp",
+    name: "Datadog MCP",
+    description: "Datadog monitoring and observability integration",
+    category: "monitoring",
+    repository: "https://github.com/datadog/mcp-server-datadog",
+    website: "https://datadoghq.com",
+    installationType: "pip",
+    pipPackage: "datadog-mcp",
+    official: true,
+    installConfig: {
+      command: "uvx",
+      args: ["datadog-mcp"]
+    },
+    requiredEnvVars: [
+      { name: "DD_API_KEY", description: "Datadog API key" },
+      { name: "DD_APP_KEY", description: "Datadog Application key" }
+    ],
+    tags: ["datadog", "monitoring", "observability", "official"]
+  },
+  // === FINANCE ===
+  {
+    id: "stripe-mcp",
+    name: "Stripe MCP",
+    description: "Official Stripe Agent Toolkit for payment integration",
+    category: "finance",
+    repository: "https://github.com/stripe/agent-toolkit",
+    website: "https://stripe.com",
+    installationType: "npx",
+    npmPackage: "@stripe/agent-toolkit",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: ["-y", "@stripe/agent-toolkit", "mcp"]
+    },
+    requiredEnvVars: [
+      { name: "STRIPE_SECRET_KEY", description: "Stripe Secret Key" }
+    ],
+    tags: ["stripe", "payments", "finance", "official"]
+  },
+  {
+    id: "paypal-mcp",
+    name: "PayPal MCP",
+    description: "PayPal Agent Toolkit for payment integration",
+    category: "finance",
+    repository: "https://github.com/paypal/agent-toolkit",
+    website: "https://paypal.com",
+    installationType: "npx",
+    npmPackage: "@paypal/agent-toolkit",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: ["-y", "@paypal/agent-toolkit"]
+    },
+    requiredEnvVars: [
+      { name: "PAYPAL_CLIENT_ID", description: "PayPal Client ID" },
+      { name: "PAYPAL_CLIENT_SECRET", description: "PayPal Client Secret" }
+    ],
+    tags: ["paypal", "payments", "finance", "official"]
+  },
+  // === SECURITY ===
+  {
+    id: "semgrep-mcp",
+    name: "Semgrep MCP",
+    description: "Scan code for security vulnerabilities using Semgrep",
+    category: "security",
+    repository: "https://github.com/semgrep/mcp",
+    website: "https://semgrep.dev",
+    installationType: "pip",
+    pipPackage: "semgrep-mcp",
+    official: true,
+    installConfig: {
+      command: "uvx",
+      args: ["semgrep-mcp"]
+    },
+    tags: ["semgrep", "security", "sast", "official"]
+  },
+  {
+    id: "osv-mcp",
+    name: "OSV MCP",
+    description: "Access Open Source Vulnerabilities database",
+    category: "security",
+    repository: "https://github.com/StacklokLabs/osv-mcp",
+    website: "https://osv.dev",
+    installationType: "binary",
+    installConfig: {
+      command: "osv-mcp",
+      args: []
+    },
+    tags: ["osv", "vulnerabilities", "security"]
+  },
+  // === AGGREGATORS ===
+  {
+    id: "pipedream-mcp",
+    name: "Pipedream MCP",
+    description: "Connect with 2,500+ APIs with 8,000+ prebuilt tools",
+    category: "aggregator",
+    repository: "https://github.com/PipedreamHQ/pipedream/tree/master/modelcontextprotocol",
+    website: "https://pipedream.com",
+    installationType: "npx",
+    npmPackage: "@pipedream/mcp",
+    official: true,
+    installConfig: {
+      command: "npx",
+      args: ["-y", "@pipedream/mcp"]
+    },
+    requiredEnvVars: [
+      { name: "PIPEDREAM_API_KEY", description: "Pipedream API key" }
+    ],
+    tags: ["pipedream", "integrations", "apis", "official"]
+  },
+  {
+    id: "mindsdb-mcp",
+    name: "MindsDB MCP",
+    description: "Connect and unify data across platforms as a single MCP server",
+    category: "aggregator",
+    repository: "https://github.com/mindsdb/mindsdb",
+    website: "https://mindsdb.com",
+    installationType: "pip",
+    pipPackage: "mindsdb-mcp",
+    official: true,
+    installConfig: {
+      command: "uvx",
+      args: ["mindsdb-mcp"]
+    },
+    tags: ["mindsdb", "data", "ml", "official"]
+  },
+  // === FRAMEWORKS ===
+  {
+    id: "fastmcp",
+    name: "FastMCP",
+    description: "The fast, Pythonic way to build MCP servers and clients",
+    category: "developer-tools",
+    repository: "https://github.com/jlowin/fastmcp",
+    installationType: "pip",
+    pipPackage: "fastmcp",
+    installConfig: {
+      command: "pip",
+      args: ["install", "fastmcp"]
+    },
+    tags: ["framework", "python", "sdk"]
+  },
+  {
+    id: "mcp-use",
+    name: "MCP Use",
+    description: "Easiest way to interact with MCP servers with custom agents",
+    category: "developer-tools",
+    repository: "https://github.com/mcp-use/mcp-use",
+    installationType: "pip",
+    pipPackage: "mcp-use",
+    installConfig: {
+      command: "pip",
+      args: ["install", "mcp-use"]
+    },
+    tags: ["framework", "agents", "python"]
+  },
+  // === GAMING ===
+  {
+    id: "unity-mcp",
+    name: "Unity MCP",
+    description: "MCP server for Unity Editor control and game development",
+    category: "other",
+    repository: "https://github.com/Artmann/unity-mcp",
+    website: "https://unity.com",
+    installationType: "npx",
+    npmPackage: "unity-mcp",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "unity-mcp"]
+    },
+    tags: ["unity", "game-dev", "editor"]
+  },
+  // === RESEARCH ===
+  {
+    id: "arxiv-mcp",
+    name: "ArXiv MCP",
+    description: "Search ArXiv research papers",
+    category: "other",
+    repository: "https://github.com/blazickjp/arxiv-mcp-server",
+    website: "https://arxiv.org",
+    installationType: "pip",
+    pipPackage: "arxiv-mcp-server",
+    installConfig: {
+      command: "uvx",
+      args: ["arxiv-mcp-server"]
+    },
+    tags: ["arxiv", "research", "papers"]
+  },
+  {
+    id: "gpt-researcher-mcp",
+    name: "GPT Researcher MCP",
+    description: "LLM agent for deep research on any topic with citations",
+    category: "other",
+    repository: "https://github.com/assafelovic/gpt-researcher",
+    installationType: "pip",
+    pipPackage: "gpt-researcher",
+    installConfig: {
+      command: "uvx",
+      args: ["gpt-researcher-mcp"]
+    },
+    tags: ["research", "agent", "citations"]
+  },
+  // === OTHER POPULAR ===
+  {
+    id: "apple-shortcuts-mcp",
+    name: "Apple Shortcuts MCP",
+    description: "Integration with Apple Shortcuts on macOS",
+    category: "other",
+    repository: "https://github.com/recursechat/mcp-server-apple-shortcuts",
+    installationType: "npx",
+    npmPackage: "mcp-server-apple-shortcuts",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "mcp-server-apple-shortcuts"]
+    },
+    tags: ["apple", "shortcuts", "macos", "automation"]
+  },
+  {
+    id: "octocode-mcp",
+    name: "Octocode MCP",
+    description: "AI-powered developer assistant for GitHub and NPM research",
+    category: "developer-tools",
+    repository: "https://github.com/bgauryy/octocode-mcp",
+    installationType: "npx",
+    npmPackage: "octocode-mcp",
+    installConfig: {
+      command: "npx",
+      args: ["-y", "octocode-mcp"]
+    },
+    requiredEnvVars: [
+      {
+        name: "GITHUB_PERSONAL_ACCESS_TOKEN",
+        description: "GitHub Personal Access Token"
+      }
+    ],
+    tags: ["github", "npm", "research", "code"]
+  }
+];
+function getMCPsByCategory(category) {
+  return MCP_REGISTRY.filter((mcp) => mcp.category === category);
+}
+function searchMCPs$1(query) {
+  const lowerQuery = query.toLowerCase();
+  return MCP_REGISTRY.filter(
+    (mcp) => mcp.name.toLowerCase().includes(lowerQuery) || mcp.description.toLowerCase().includes(lowerQuery) || mcp.tags?.some((tag) => tag.toLowerCase().includes(lowerQuery))
+  );
+}
+function getAllCategories() {
+  return Array.from(new Set(MCP_REGISTRY.map((mcp) => mcp.category)));
+}
+function formatCategory(category) {
+  return category.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+function getCategoryIcon(category) {
+  const icons = {
+    "browser-automation": "🌐",
+    database: "🗄️",
+    "cloud-platform": "☁️",
+    "developer-tools": "🛠️",
+    "file-system": "📁",
+    communication: "💬",
+    "search-web": "🔍",
+    "ai-services": "🤖",
+    "workflow-automation": "⚡",
+    "version-control": "📝",
+    "data-visualization": "📊",
+    "coding-agents": "🧑‍💻",
+    security: "🔒",
+    productivity: "📋",
+    monitoring: "📈",
+    finance: "💰",
+    "social-media": "📱",
+    aggregator: "🔗",
+    other: "📦"
+  };
+  return icons[category] || "📦";
+}
+function formatMCPChoice(mcp) {
+  let name = `${getCategoryIcon(mcp.category)} ${mcp.name}`;
+  if (mcp.official) {
+    name += ` ${c("green", "✓")}`;
+  }
+  name += ` - ${dim(mcp.description.slice(0, 45))}${mcp.description.length > 45 ? "..." : ""}`;
+  return name;
+}
+async function selectTargetClient() {
+  const currentClient = detectCurrentClient();
+  console.log();
+  console.log(c("blue", " ┌" + "─".repeat(60) + "┐"));
+  console.log(
+    c("blue", " │ ") + bold("Select Target Client") + " ".repeat(40) + c("blue", "│")
+  );
+  console.log(c("blue", " └" + "─".repeat(60) + "┘"));
+  console.log();
+  const clientOrder = [
+    "cursor",
+    "claude-desktop",
+    "claude-code",
+    "windsurf",
+    "trae",
+    "antigravity",
+    "zed",
+    "vscode-cline",
+    "vscode-roo",
+    "vscode-continue"
+  ];
+  const choices = [];
+  for (const clientId of clientOrder) {
+    const client = MCP_CLIENTS[clientId];
+    const isAvailable = clientConfigExists(clientId);
+    let name = `${client.name} - ${dim(client.description)}`;
+    if (isAvailable) {
+      name += ` ${c("green", "○")}`;
+    } else {
+      name += ` ${c("dim", "✗")}`;
+    }
+    if (currentClient === clientId) {
+      name = `${c("green", "★")} ${name} ${c("yellow", "(Current)")}`;
+    }
+    choices.push({
+      name,
+      value: clientId,
+      disabled: !isAvailable ? "Not installed" : false
+    });
+  }
+  choices.sort((a, b) => {
+    if (a.disabled && !b.disabled) return 1;
+    if (!a.disabled && b.disabled) return -1;
+    if (currentClient === a.value) return -1;
+    if (currentClient === b.value) return 1;
+    return 0;
+  });
+  choices.push(new Separator());
+  choices.push({
+    name: `${c("cyan", "⚙")} Custom Path - ${dim("Specify your own config path")}`,
+    value: "custom"
+  });
+  choices.push(new Separator());
+  choices.push({
+    name: `${c("dim", "← Back to main menu")}`,
+    value: "back"
+  });
+  const selected = await select({
+    message: "Where would you like to install the MCP?",
+    choices,
+    loop: false,
+    pageSize: 15
+  });
+  if (selected === "back") return null;
+  if (selected === "custom") {
+    const customPath = await promptCustomPath();
+    if (!customPath) return null;
+    return { client: "custom", customPath };
+  }
+  return { client: selected };
+}
+async function promptCustomPath() {
+  console.log();
+  console.log(
+    `  ${c("blue", "ℹ")} Enter the full path to your MCP config file`
+  );
+  console.log(`  ${dim("Leave empty to go back")}`);
+  console.log();
+  const customPath = await input({
+    message: "Config path (or Enter to go back):",
+    validate: (value) => {
+      if (!value.trim()) return true;
+      if (!value.endsWith(".json")) {
+        return "Path must be a .json file";
+      }
+      return true;
+    }
+  });
+  if (!customPath || !customPath.trim()) return null;
+  if (customPath.startsWith("~")) {
+    return customPath.replace("~", process.env.HOME || "");
+  }
+  return customPath;
+}
+async function selectBrowseMode() {
+  console.log();
+  const choices = [
+    {
+      name: `🔍 Search MCPs - ${dim("Find by name, description, or tags")}`,
+      value: "search"
+    },
+    {
+      name: `📂 Browse by Category - ${dim(`${getAllCategories().length} categories`)}`,
+      value: "category"
+    },
+    {
+      name: `⭐ Popular MCPs - ${dim("Top 20 most popular")}`,
+      value: "popular"
+    },
+    {
+      name: `📋 Full List (A-Z) - ${dim(`All ${MCP_REGISTRY.length} MCPs alphabetically`)}`,
+      value: "all"
+    },
+    new Separator(),
+    {
+      name: `${c("dim", "← Back to client selection")}`,
+      value: "back"
+    }
+  ];
+  const choice = await select({
+    message: "How would you like to find MCPs?",
+    choices,
+    loop: false
+  });
+  return choice;
+}
+async function searchMCPs() {
+  console.log();
+  console.log(
+    `  ${c("blue", "ℹ")} Enter search terms (name, description, or tags)`
+  );
+  console.log(`  ${dim("Leave empty to go back")}`);
+  console.log();
+  const query = await input({
+    message: "Search:"
+  });
+  if (!query || !query.trim()) return "back";
+  const results = searchMCPs$1(query.trim());
+  if (results.length === 0) {
+    console.log();
+    console.log(`  ${c("yellow", "⚠")} No MCPs found matching "${query}"`);
+    console.log(`  ${dim("Try different keywords or browse by category")}`);
+    console.log();
+    return null;
+  }
+  console.log();
+  console.log(
+    `  ${c("green", "✓")} Found ${bold(String(results.length))} MCP${results.length > 1 ? "s" : ""}`
+  );
+  console.log();
+  return await selectFromList(results, `Search: "${query}"`);
+}
+async function selectByCategory() {
+  const categories = getAllCategories();
+  const choices = categories.map((cat) => ({
+    name: `${getCategoryIcon(cat)} ${formatCategory(cat)} (${getMCPsByCategory(cat).length})`,
+    value: cat
+  }));
+  choices.sort((a, b) => {
+    const countA = getMCPsByCategory(a.value).length;
+    const countB = getMCPsByCategory(b.value).length;
+    return countB - countA;
+  });
+  choices.push(new Separator());
+  choices.push({
+    name: `${c("dim", "← Back")}`,
+    value: "back"
+  });
+  const category = await select({
+    message: "Select a category:",
+    choices,
+    loop: false,
+    pageSize: 15
+  });
+  if (category === "back") return "back";
+  const mcps = getMCPsByCategory(category);
+  return await selectFromList(mcps, formatCategory(category));
+}
+async function selectPopular() {
+  const popular = MCP_REGISTRY.slice(0, 20);
+  return await selectFromList(popular, "Popular MCPs");
+}
+async function selectAll() {
+  const allMcps = [...MCP_REGISTRY].sort(
+    (a, b) => a.name.localeCompare(b.name)
+  );
+  return await selectFromList(
+    allMcps,
+    `All MCPs (A-Z) - ${allMcps.length} total`
+  );
+}
+async function selectFromList(mcps, title) {
+  console.log();
+  console.log(`  ${bold(title)}`);
+  console.log();
+  const choices = mcps.map((mcp) => ({
+    name: formatMCPChoice(mcp),
+    value: mcp
+  }));
+  choices.push(new Separator());
+  choices.push({
+    name: `${c("dim", "← Back")}`,
+    value: "back"
+  });
+  const selected = await select({
+    message: "Select an MCP to install:",
+    choices,
+    loop: false,
+    pageSize: 15
+  });
+  return selected;
+}
+async function promptEnvVars(mcp) {
+  const envVars = mcp.requiredEnvVars;
+  if (!envVars || envVars.length === 0) {
+    return {};
+  }
+  console.log();
+  console.log(c("yellow", " ┌" + "─".repeat(60) + "┐"));
+  console.log(
+    c("yellow", " │ ") + `${c("yellow", "⚠")} ${bold("Environment Variables Required")}` + " ".repeat(26) + c("yellow", "│")
+  );
+  console.log(c("yellow", " └" + "─".repeat(60) + "┘"));
+  console.log();
+  console.log(
+    `  ${dim("This MCP requires the following environment variables:")}`
+  );
+  console.log();
+  for (const env of envVars) {
+    console.log(`  ${c("cyan", env.name)}`);
+    console.log(`    ${dim(env.description)}`);
+    if (env.example) {
+      console.log(`    ${dim("Example:")} ${c("dim", env.example)}`);
+    }
+    console.log();
+  }
+  const proceed = await select({
+    message: "Would you like to configure these now?",
+    choices: [
+      {
+        name: `${c("green", "✓")} Configure environment variables`,
+        value: "configure"
+      },
+      {
+        name: `${c("yellow", "○")} Skip - ${dim("Configure later manually")}`,
+        value: "skip"
+      },
+      new Separator(),
+      {
+        name: `${c("dim", "← Back")}`,
+        value: "back"
+      }
+    ],
+    loop: false
+  });
+  if (proceed === "back") return "back";
+  if (proceed === "skip") return {};
+  const values = {};
+  for (const env of envVars) {
+    console.log();
+    console.log(`  ${c("cyan", env.name)}: ${dim(env.description)}`);
+    if (env.example) {
+      console.log(`  ${dim("Example:")} ${env.example}`);
+    }
+    const value = await input({
+      message: `${env.name}:`,
+      validate: (val) => {
+        if (!val.trim() && !env.name.includes("OPTIONAL")) {
+          return `${env.name} is required`;
+        }
+        return true;
+      }
+    });
+    if (value.trim()) {
+      values[env.name] = value.trim();
+    }
+  }
+  return values;
+}
+async function confirmInstall(mcp, client) {
+  const clientInfo = MCP_CLIENTS[client];
+  console.log();
+  const choice = await select({
+    message: `Install ${mcp.name} to ${clientInfo?.name || client}?`,
+    choices: [
+      {
+        name: `${c("green", "✓")} Proceed with installation`,
+        value: "proceed"
+      },
+      new Separator(),
+      {
+        name: `${c("dim", "← Back to edit options")}`,
+        value: "back"
+      },
+      {
+        name: `${c("dim", "✗ Cancel")}`,
+        value: "cancel"
+      }
+    ],
+    loop: false
+  });
+  return choice;
+}
+function printMCPDetails(mcp) {
+  console.log();
+  console.log(c("blue", " ┌" + "─".repeat(60) + "┐"));
+  console.log(
+    c("blue", " │ ") + bold(mcp.name) + (mcp.official ? ` ${c("green", "✓ Official")}` : "") + " ".repeat(Math.max(0, 60 - mcp.name.length - (mcp.official ? 12 : 0))) + c("blue", "│")
+  );
+  console.log(c("blue", " └" + "─".repeat(60) + "┘"));
+  console.log();
+  console.log(`  ${dim("Description:")} ${mcp.description}`);
+  console.log(`  ${dim("Category:")} ${c("cyan", mcp.category)}`);
+  console.log(`  ${dim("Installation:")} ${c("yellow", mcp.installationType)}`);
+  if (mcp.website) {
+    console.log(`  ${dim("Website:")} ${c("blue", mcp.website)}`);
+  }
+  console.log(`  ${dim("Repository:")} ${c("blue", mcp.repository)}`);
+  if (mcp.tags && mcp.tags.length > 0) {
+    console.log(
+      `  ${dim("Tags:")} ${mcp.tags.map((t) => c("dim", t)).join(", ")}`
+    );
+  }
+  console.log();
+}
+function printInstallPreview(mcp, client, configPath, envValues) {
+  const clientInfo = MCP_CLIENTS[client];
+  console.log(c("blue", " ┌" + "─".repeat(60) + "┐"));
+  console.log(
+    c("blue", " │ ") + bold("Configuration Preview") + " ".repeat(39) + c("blue", "│")
+  );
+  console.log(c("blue", " └" + "─".repeat(60) + "┘"));
+  console.log();
+  const serverConfig = {
+    command: mcp.installConfig.command,
+    args: [...mcp.installConfig.args],
+    ...Object.keys(envValues).length > 0 && { env: envValues }
+  };
+  console.log(`  ${dim("Server ID:")} ${c("cyan", mcp.id)}`);
+  console.log(`  ${dim("Command:")} ${c("green", serverConfig.command)}`);
+  console.log(`  ${dim("Args:")} ${c("yellow", serverConfig.args.join(" "))}`);
+  if (Object.keys(envValues).length > 0) {
+    console.log(`  ${dim("Environment Variables:")}`);
+    for (const [key, value] of Object.entries(envValues)) {
+      const displayValue = value.length > 30 ? value.slice(0, 27) + "..." : value;
+      console.log(`    ${c("cyan", key)}: ${dim(displayValue)}`);
+    }
+  }
+  console.log();
+  console.log(`  ${bold("Target:")}`);
+  console.log(`  ${dim("Client:")} ${clientInfo?.name || client}`);
+  console.log(`  ${dim("Config:")} ${c("cyan", configPath)}`);
+  console.log();
+}
+function printInstallSuccess(mcp, client, configPath, backupPath) {
+  const clientInfo = MCP_CLIENTS[client];
+  console.log();
+  console.log(c("green", " ┌" + "─".repeat(60) + "┐"));
+  console.log(
+    c("green", " │ ") + `${c("green", "✓")} ${bold("MCP installed successfully!")}` + " ".repeat(30) + c("green", "│")
+  );
+  console.log(c("green", " └" + "─".repeat(60) + "┘"));
+  console.log();
+  console.log(`  ${bold("Installed:")} ${mcp.name}`);
+  console.log(`  ${bold("To:")} ${clientInfo?.name || client}`);
+  console.log(`  ${dim("Config:")} ${c("cyan", configPath)}`);
+  if (backupPath) {
+    console.log(`  ${dim("Backup:")} ${backupPath}`);
+  }
+  console.log();
+  console.log(`  ${bold("Next steps:")}`);
+  console.log(`  1. Restart ${clientInfo?.name || client}`);
+  console.log(`  2. Look for ${c("cyan", mcp.id)} in MCP servers`);
+  if (mcp.website) {
+    console.log(`  3. Check ${c("blue", mcp.website)} for usage docs`);
+  }
+  console.log();
+}
+function printInstallError(error) {
+  console.log();
+  console.log(c("red", " ┌" + "─".repeat(60) + "┐"));
+  console.log(
+    c("red", " │ ") + `${c("red", "✗")} ${bold("Installation failed")}` + " ".repeat(38) + c("red", "│")
+  );
+  console.log(c("red", " └" + "─".repeat(60) + "┘"));
+  console.log();
+  console.log(`  ${c("red", "Error:")} ${error}`);
+  console.log();
+}
+function buildServerConfig(mcp, envValues) {
+  const config = {
+    command: mcp.installConfig.command,
+    args: [...mcp.installConfig.args]
+  };
+  const allEnv = {
+    ...mcp.installConfig.env || {},
+    ...envValues
+  };
+  if (Object.keys(allEnv).length > 0) {
+    config.env = allEnv;
+  }
+  return config;
+}
+function installExternalMCP(mcp, client, customPath, envValues) {
+  const configPath = client === "custom" && customPath ? customPath : getMCPConfigPath(client, customPath);
+  let config = readMCPConfig(configPath) || { mcpServers: {} };
+  const serverConfig = buildServerConfig(mcp, envValues);
+  config = {
+    ...config,
+    mcpServers: {
+      ...config.mcpServers,
+      [mcp.id]: serverConfig
+    }
+  };
+  const writeResult = writeMCPConfig(configPath, config);
+  if (!writeResult.success) {
+    return {
+      success: false,
+      configPath,
+      error: writeResult.error || "Failed to write config"
+    };
+  }
+  return {
+    success: true,
+    configPath,
+    backupPath: writeResult.backupPath
+  };
+}
+async function pressEnterToContinue$1() {
+  console.log();
+  await input({
+    message: dim("Press Enter to continue..."),
+    default: ""
+  });
+}
+async function runExternalMCPFlow() {
+  await loadInquirer();
+  console.log();
+  console.log(c("blue", "━".repeat(66)));
+  console.log(` 🔌 ${bold("Install External MCP")}`);
+  console.log(c("blue", "━".repeat(66)));
+  console.log();
+  console.log(`  ${dim("Browse and install from 70+ community MCP servers")}`);
+  const state = {
+    client: null,
+    browseMode: null,
+    selectedMCP: null,
+    envValues: {}
+  };
+  let currentStep = "client";
+  while (currentStep !== "done") {
+    switch (currentStep) {
+      // Step 1: Select target client (IDE)
+      case "client": {
+        const selection = await selectTargetClient();
+        if (!selection) {
+          return;
+        }
+        state.client = selection.client;
+        state.customPath = selection.customPath;
+        currentStep = "browse";
+        break;
+      }
+      // Step 2: Select browse mode
+      case "browse": {
+        const mode = await selectBrowseMode();
+        if (mode === "back" || mode === null) {
+          currentStep = "client";
+          break;
+        }
+        state.browseMode = mode;
+        currentStep = "selectMCP";
+        break;
+      }
+      // Step 3: Select MCP based on browse mode
+      case "selectMCP": {
+        let result = null;
+        switch (state.browseMode) {
+          case "search":
+            result = await searchMCPs();
+            break;
+          case "category":
+            result = await selectByCategory();
+            break;
+          case "popular":
+            result = await selectPopular();
+            break;
+          case "all":
+            result = await selectAll();
+            break;
+        }
+        if (result === "back") {
+          currentStep = "browse";
+          break;
+        }
+        if (result === null) {
+          currentStep = "browse";
+          break;
+        }
+        state.selectedMCP = result;
+        currentStep = "details";
+        break;
+      }
+      // Step 4: Show MCP details
+      case "details": {
+        printMCPDetails(state.selectedMCP);
+        const { select: select2, Separator: Separator2 } = await Promise.resolve().then(() => prompts);
+        const choice = await select2({
+          message: "What would you like to do?",
+          choices: [
+            {
+              name: `${c("green", "✓")} Continue to install`,
+              value: "continue"
+            },
+            new Separator2(),
+            {
+              name: `${c("dim", "← Back to MCP list")}`,
+              value: "back"
+            }
+          ],
+          loop: false
+        });
+        if (choice === "back") {
+          currentStep = "selectMCP";
+          break;
+        }
+        currentStep = "envVars";
+        break;
+      }
+      // Step 5: Configure environment variables
+      case "envVars": {
+        const envResult = await promptEnvVars(state.selectedMCP);
+        if (envResult === "back") {
+          currentStep = "details";
+          break;
+        }
+        if (envResult === null) {
+          currentStep = "details";
+          break;
+        }
+        state.envValues = envResult;
+        currentStep = "confirm";
+        break;
+      }
+      // Step 6: Confirm installation
+      case "confirm": {
+        const configPath = state.client === "custom" && state.customPath ? state.customPath : getMCPConfigPath(state.client, state.customPath);
+        printInstallPreview(
+          state.selectedMCP,
+          state.client,
+          configPath,
+          state.envValues
+        );
+        const confirmation = await confirmInstall(
+          state.selectedMCP,
+          state.client
+        );
+        if (confirmation === "back") {
+          currentStep = "envVars";
+          break;
+        }
+        if (confirmation === "cancel") {
+          console.log();
+          console.log(`  ${dim("Installation cancelled.")}`);
+          return;
+        }
+        currentStep = "install";
+        break;
+      }
+      // Step 7: Perform installation
+      case "install": {
+        const spinner = new Spinner("Installing MCP...").start();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const result = installExternalMCP(
+          state.selectedMCP,
+          state.client,
+          state.customPath,
+          state.envValues
+        );
+        if (result.success) {
+          spinner.succeed("MCP installed successfully!");
+          printInstallSuccess(
+            state.selectedMCP,
+            state.client,
+            result.configPath,
+            result.backupPath
+          );
+        } else {
+          spinner.fail("Installation failed");
+          printInstallError(result.error || "Unknown error");
+        }
+        await pressEnterToContinue$1();
+        currentStep = "done";
+        break;
+      }
+    }
+  }
+}
 function getSkillsState() {
   const srcDir = getSkillsSourceDir$1();
   const destDir = getSkillsDestDir$1();
@@ -2726,112 +6076,111 @@ function getAppState() {
     octocode: getOctocodeState(),
     skills: getSkillsState(),
     currentClient: detectCurrentClient(),
-    githubAuth: checkGitHubAuth()
+    githubAuth: getAuthStatus()
   };
 }
 function getClientNames(clients) {
   return clients.map((c2) => MCP_CLIENTS[c2.client]?.name || c2.client).join(", ");
 }
-function formatPath(p) {
-  if (p.startsWith(HOME)) {
-    return "~" + p.slice(HOME.length);
-  }
-  return p;
-}
 function buildSkillsMenuItem(skills) {
   if (!skills.sourceExists || !skills.hasSkills) {
     return {
-      name: "📚 Skills",
+      name: "📚 Manage Skills",
       value: "skills",
-      description: "No skills available"
+      description: dim("No skills available")
     };
   }
   if (skills.allInstalled) {
     return {
-      name: `📚 Skills ${c("green", "✓")}`,
+      name: `📚 Manage Skills ${c("green", "✓")}`,
       value: "skills",
-      description: formatPath(skills.destDir)
+      description: `${skills.installedCount} installed · Claude Code`
     };
   }
   if (skills.installedCount > 0) {
     return {
-      name: "📚 Skills",
+      name: "📚 Manage Skills",
       value: "skills",
-      description: `${skills.installedCount} installed, ${skills.notInstalledCount} available`
+      description: `${skills.installedCount}/${skills.skills.length} installed`
     };
   }
   return {
     name: "📚 Install Skills",
     value: "skills",
-    description: "Install Octocode skills for Claude Code"
+    description: "Add Octocode skills to Claude Code"
+  };
+}
+function buildAuthMenuItem(auth2) {
+  if (auth2.authenticated) {
+    return {
+      name: `🔑 GitHub Account ${c("green", "✓")}`,
+      value: "auth",
+      description: `@${auth2.username || "connected"}`
+    };
+  }
+  return {
+    name: "🔑 Connect GitHub",
+    value: "auth",
+    description: "Required for private repos"
   };
 }
 async function showMainMenu(state) {
+  const statusParts = [];
   if (state.octocode.isInstalled) {
     const names = getClientNames(state.octocode.installedClients);
-    console.log(`  ${c("green", "✓")} Installed in: ${c("cyan", names)}`);
+    statusParts.push(`${c("green", "✓")} ${c("cyan", names)}`);
   }
   if (state.githubAuth.authenticated) {
-    console.log(
-      `  ${c("green", "✓")} GitHub: ${c("cyan", state.githubAuth.username || "authenticated")}`
-    );
-  } else if (state.githubAuth.installed) {
-    console.log(
-      `  ${c("yellow", "⚠")} GitHub: ${c("yellow", "not authenticated")}`
+    statusParts.push(
+      `${c("green", "✓")} @${c("cyan", state.githubAuth.username || "github")}`
     );
   } else {
-    console.log(
-      `  ${c("yellow", "⚠")} GitHub CLI: ${c("yellow", "not installed")}`
-    );
+    statusParts.push(`${c("yellow", "○")} ${dim("GitHub")}`);
+  }
+  if (statusParts.length > 0) {
+    console.log(`  ${statusParts.join(dim("  ·  "))}`);
   }
   const choices = [];
   if (state.octocode.isInstalled) {
     choices.push({
-      name: "⚙️  Configure Options",
-      value: "conf"
+      name: "⚙️  Settings",
+      value: "conf",
+      description: "Configure octocode-mcp options"
     });
     if (state.octocode.hasMoreToInstall) {
       const availableNames = getClientNames(state.octocode.availableClients);
       choices.push({
-        name: "📦 Install to more clients",
+        name: "📦 Add to Client",
         value: "install",
-        description: `Available: ${availableNames}`
+        description: `Install to ${availableNames}`
       });
     }
   } else {
     choices.push({
-      name: "📦 Install octocode-mcp",
+      name: "📦 Install Octocode",
       value: "install",
-      description: "Install MCP server for Cursor, Claude Desktop, and more"
+      description: "Setup MCP server for your AI client"
     });
   }
+  choices.push({
+    name: "🔌 MCP Marketplace",
+    value: "external-mcp",
+    description: "70+ servers · Playwright, Postgres, Stripe..."
+  });
+  choices.push(buildAuthMenuItem(state.githubAuth));
   choices.push(buildSkillsMenuItem(state.skills));
   choices.push(
     new Separator()
   );
   choices.push({
-    name: "🚪 Exit",
-    value: "exit",
-    description: "Quit the application"
+    name: dim("Exit"),
+    value: "exit"
   });
-  choices.push(
-    new Separator(" ")
-  );
-  choices.push(
-    new Separator(
-      `  ${c("yellow", "For checking node status in your system use")} ${c("cyan", "npx node-doctor")}`
-    )
-  );
-  choices.push(
-    new Separator(
-      c("magenta", `  ─── 🔍🐙 ${bold("https://octocode.ai")} ───`)
-    )
-  );
   console.log();
   const choice = await select({
     message: "What would you like to do?",
     choices,
-    pageSize: 10,
+    pageSize: 12,
     loop: false,
     theme: {
       prefix: "  ",
@@ -2849,6 +6198,10 @@ function getSkillsSourceDir$1() {
   return path.resolve(__dirname, "..", "skills");
 }
 function getSkillsDestDir$1() {
+  if (isWindows) {
+    const appData = getAppDataPath();
+    return path.join(appData, "Claude", "skills");
+  }
   return path.join(HOME, ".claude", "skills");
 }
 async function pressEnterToContinue() {
@@ -2858,13 +6211,20 @@ async function pressEnterToContinue() {
     default: ""
   });
 }
-async function showSkillsMenu(hasUninstalled) {
+async function showSkillsMenu(hasUninstalled, hasInstalled) {
   const choices = [];
   if (hasUninstalled) {
     choices.push({
       name: "📥 Install skills",
       value: "install",
       description: "Install Octocode skills to Claude Code"
+    });
+  }
+  if (hasInstalled) {
+    choices.push({
+      name: "🗑️  Uninstall skills",
+      value: "uninstall",
+      description: "Remove installed Octocode skills"
     });
   }
   choices.push({
@@ -3021,6 +6381,226 @@ async function installSkills(info) {
   await pressEnterToContinue();
   return true;
 }
+async function uninstallSkills(info) {
+  const { destDir, skillsStatus } = info;
+  const installed = skillsStatus.filter((s) => s.installed);
+  if (installed.length === 0) {
+    console.log(`  ${c("yellow", "⚠")} No skills are installed.`);
+    console.log();
+    await pressEnterToContinue();
+    return false;
+  }
+  console.log(`  ${bold("Skills to uninstall:")}`);
+  console.log();
+  for (const skill of installed) {
+    console.log(`    ${c("yellow", "○")} ${skill.name}`);
+  }
+  console.log();
+  console.log(`  ${bold("Installation path:")}`);
+  console.log(`  ${c("cyan", destDir)}`);
+  console.log();
+  const choice = await select({
+    message: `Uninstall ${installed.length} skill(s)?`,
+    choices: [
+      {
+        name: `${c("red", "🗑️")} Yes, uninstall skills`,
+        value: "uninstall"
+      },
+      new Separator(),
+      {
+        name: `${c("dim", "← Back to skills menu")}`,
+        value: "back"
+      }
+    ],
+    loop: false
+  });
+  if (choice === "back") {
+    return false;
+  }
+  console.log();
+  const spinner = new Spinner("Uninstalling skills...").start();
+  let uninstalledCount = 0;
+  const failed = [];
+  for (const skill of installed) {
+    if (removeDirectory(skill.destPath)) {
+      uninstalledCount++;
+    } else {
+      failed.push(skill.name);
+    }
+  }
+  if (failed.length === 0) {
+    spinner.succeed("Skills uninstalled!");
+  } else {
+    spinner.warn("Some skills failed to uninstall");
+  }
+  console.log();
+  if (uninstalledCount > 0) {
+    console.log(
+      `  ${c("green", "✓")} Uninstalled ${uninstalledCount} skill(s)`
+    );
+    console.log(`  ${dim("Location:")} ${c("cyan", destDir)}`);
+  }
+  if (failed.length > 0) {
+    console.log(`  ${c("red", "✗")} Failed: ${failed.join(", ")}`);
+  }
+  console.log();
+  await pressEnterToContinue();
+  return true;
+}
+async function showAuthMenu(isAuthenticated, username) {
+  const choices = [];
+  if (isAuthenticated) {
+    choices.push({
+      name: "🔓 Logout from GitHub",
+      value: "logout",
+      description: `Currently logged in as ${username || "unknown"}`
+    });
+    choices.push({
+      name: "🔄 Switch account",
+      value: "switch",
+      description: "Logout and login with a different account"
+    });
+  } else {
+    choices.push({
+      name: "🔐 Login to GitHub",
+      value: "login",
+      description: "Authenticate using browser"
+    });
+  }
+  choices.push(
+    new Separator()
+  );
+  choices.push({
+    name: `${c("dim", "← Back to main menu")}`,
+    value: "back"
+  });
+  const choice = await select({
+    message: "GitHub Authentication:",
+    choices,
+    pageSize: 10,
+    loop: false,
+    theme: {
+      prefix: "  ",
+      style: {
+        highlight: (text) => c("magenta", text),
+        message: (text) => bold(text)
+      }
+    }
+  });
+  return choice;
+}
+async function runLoginFlow() {
+  console.log();
+  console.log(`  ${bold("🔐 GitHub Authentication")}`);
+  console.log();
+  console.log(
+    `  ${dim("This will open your browser to authenticate with GitHub.")}`
+  );
+  console.log();
+  let verificationShown = false;
+  const spinner = new Spinner("Connecting to GitHub...").start();
+  const result = await login({
+    onVerification: (verification) => {
+      spinner.stop();
+      verificationShown = true;
+      console.log(
+        `  ${c("yellow", "!")} First copy your one-time code: ${bold(verification.user_code)}`
+      );
+      console.log();
+      console.log(
+        `  ${bold("Press Enter")} to open ${c("cyan", verification.verification_uri)} in your browser...`
+      );
+      console.log();
+      console.log(`  ${dim("Waiting for authentication...")}`);
+    }
+  });
+  if (!verificationShown) {
+    spinner.stop();
+  }
+  console.log();
+  if (result.success) {
+    console.log(`  ${c("green", "✓")} Authentication complete!`);
+    console.log(
+      `  ${c("green", "✓")} Logged in as ${c("cyan", result.username || "unknown")}`
+    );
+    console.log();
+    console.log(`  ${dim("Credentials stored in:")} ${getStoragePath()}`);
+  } else {
+    console.log(
+      `  ${c("red", "✗")} Authentication failed: ${result.error || "Unknown error"}`
+    );
+  }
+  console.log();
+  await pressEnterToContinue();
+  return result.success;
+}
+async function runLogoutFlow() {
+  const status = getAuthStatus();
+  console.log();
+  console.log(`  ${bold("🔓 GitHub Logout")}`);
+  console.log(
+    `  ${dim("Currently logged in as:")} ${c("cyan", status.username || "unknown")}`
+  );
+  console.log();
+  const result = await logout();
+  if (result.success) {
+    console.log(`  ${c("green", "✓")} Successfully logged out`);
+  } else {
+    console.log(
+      `  ${c("red", "✗")} Logout failed: ${result.error || "Unknown error"}`
+    );
+  }
+  console.log();
+  await pressEnterToContinue();
+  return result.success;
+}
+async function runAuthFlow() {
+  await loadInquirer();
+  console.log();
+  console.log(c("blue", "━".repeat(66)));
+  console.log(`  🔐 ${bold("GitHub Authentication")}`);
+  console.log(c("blue", "━".repeat(66)));
+  console.log();
+  let inAuthMenu = true;
+  while (inAuthMenu) {
+    const status = getAuthStatus();
+    if (status.authenticated) {
+      console.log(
+        `  ${c("green", "✓")} Logged in as ${c("cyan", status.username || "unknown")}`
+      );
+      if (status.tokenExpired) {
+        console.log(
+          `  ${c("yellow", "⚠")} Token has expired - please login again`
+        );
+      }
+    } else {
+      console.log(`  ${c("yellow", "⚠")} Not authenticated`);
+    }
+    console.log(`  ${dim("Credentials:")} ${getStoragePath()}`);
+    console.log();
+    const choice = await showAuthMenu(status.authenticated, status.username);
+    switch (choice) {
+      case "login":
+        await runLoginFlow();
+        break;
+      case "logout":
+        await runLogoutFlow();
+        break;
+      case "switch":
+        console.log();
+        console.log(`  ${dim("Logging out...")}`);
+        await logout();
+        console.log(`  ${c("green", "✓")} Logged out`);
+        console.log();
+        await runLoginFlow();
+        break;
+      case "back":
+      default:
+        inAuthMenu = false;
+        break;
+    }
+  }
+}
 async function runSkillsFlow() {
   await loadInquirer();
   console.log();
@@ -3045,11 +6625,20 @@ async function runSkillsFlow() {
   let inSkillsMenu = true;
   while (inSkillsMenu) {
     info = getSkillsInfo();
-    const choice = await showSkillsMenu(info.notInstalled.length > 0);
+    const hasUninstalled = info.notInstalled.length > 0;
+    const hasInstalled = info.skillsStatus.filter((s) => s.installed).length > 0;
+    const choice = await showSkillsMenu(hasUninstalled, hasInstalled);
     switch (choice) {
       case "install": {
         const installed = await installSkills(info);
         if (installed) {
+          continue;
+        }
+        break;
+      }
+      case "uninstall": {
+        const uninstalled = await uninstallSkills(info);
+        if (uninstalled) {
           continue;
         }
         break;
@@ -3070,11 +6659,17 @@ async function handleMenuChoice(choice) {
     case "install":
       await runInstallFlow();
       return true;
+    case "auth":
+      await runAuthFlow();
+      return true;
     case "skills":
       await runSkillsFlow();
       return true;
     case "conf":
       await runConfigOptionsFlow();
+      return true;
+    case "external-mcp":
+      await runExternalMCPFlow();
       return true;
     case "exit":
       printGoodbye();
@@ -3097,7 +6692,16 @@ async function runMenuLoop() {
     running = await handleMenuChoice(choice);
   }
 }
-const OPTIONS_WITH_VALUES = /* @__PURE__ */ new Set(["ide", "method", "output", "o"]);
+const OPTIONS_WITH_VALUES = /* @__PURE__ */ new Set([
+  "ide",
+  "method",
+  "output",
+  "o",
+  "hostname",
+  "h",
+  "git-protocol",
+  "p"
+]);
 function parseArgs(argv = process.argv.slice(2)) {
   const result = {
     command: null,
@@ -3153,7 +6757,7 @@ const installCommand = {
   name: "install",
   aliases: ["i"],
   description: "Install octocode-mcp for an IDE",
-  usage: "octocode install --ide <cursor|claude> --method <npx|direct>",
+  usage: "octocode-cli install --ide <cursor|claude> --method <npx|direct>",
   options: [
     {
       name: "ide",
@@ -3289,48 +6893,202 @@ const installCommand = {
     }
   }
 };
+const loginCommand = {
+  name: "login",
+  aliases: ["l"],
+  description: "Authenticate with GitHub",
+  usage: "octocode-cli login [--hostname <host>] [--git-protocol <ssh|https>]",
+  options: [
+    {
+      name: "hostname",
+      short: "h",
+      description: "GitHub Enterprise hostname (default: github.com)",
+      hasValue: true
+    },
+    {
+      name: "git-protocol",
+      short: "p",
+      description: "Git protocol to use (ssh or https)",
+      hasValue: true
+    }
+  ],
+  handler: async (args) => {
+    const hostname = args.options["hostname"] || "github.com";
+    const status = getAuthStatus(hostname);
+    if (status.authenticated) {
+      console.log();
+      console.log(
+        `  ${c("green", "✓")} Already authenticated as ${c("cyan", status.username || "unknown")}`
+      );
+      console.log();
+      console.log(`  ${dim("To switch accounts, logout first:")}`);
+      console.log(`    ${c("cyan", "→")} ${c("yellow", "octocode logout")}`);
+      console.log();
+      return;
+    }
+    console.log();
+    console.log(`  ${bold("🔐 GitHub Authentication")}`);
+    console.log();
+    const gitProtocol = args.options["git-protocol"] || "https";
+    let verificationShown = false;
+    const spinner = new Spinner("Waiting for GitHub authentication...").start();
+    const result = await login({
+      hostname,
+      gitProtocol,
+      onVerification: (verification) => {
+        spinner.stop();
+        verificationShown = true;
+        console.log(
+          `  ${c("yellow", "!")} First copy your one-time code: ${bold(verification.user_code)}`
+        );
+        console.log();
+        console.log(
+          `  ${bold("Press Enter")} to open ${c("cyan", verification.verification_uri)} in your browser...`
+        );
+        console.log();
+        console.log(`  ${dim("Waiting for authentication...")}`);
+      }
+    });
+    if (!verificationShown) {
+      spinner.stop();
+    }
+    console.log();
+    if (result.success) {
+      console.log(`  ${c("green", "✓")} Authentication complete!`);
+      console.log(
+        `  ${c("green", "✓")} Logged in as ${c("cyan", result.username || "unknown")}`
+      );
+      console.log();
+      console.log(`  ${dim("Credentials stored in:")} ${getStoragePath()}`);
+    } else {
+      console.log(
+        `  ${c("red", "✗")} Authentication failed: ${result.error || "Unknown error"}`
+      );
+      process.exitCode = 1;
+    }
+    console.log();
+  }
+};
+const logoutCommand = {
+  name: "logout",
+  description: "Sign out from GitHub",
+  usage: "octocode-cli logout [--hostname <host>]",
+  options: [
+    {
+      name: "hostname",
+      short: "h",
+      description: "GitHub Enterprise hostname",
+      hasValue: true
+    }
+  ],
+  handler: async (args) => {
+    const hostname = args.options["hostname"] || "github.com";
+    const status = getAuthStatus(hostname);
+    if (!status.authenticated) {
+      console.log();
+      console.log(
+        `  ${c("yellow", "⚠")} Not currently authenticated to ${hostname}`
+      );
+      console.log();
+      console.log(`  ${dim("To login:")}`);
+      console.log(`    ${c("cyan", "→")} ${c("yellow", "octocode-cli login")}`);
+      console.log();
+      return;
+    }
+    console.log();
+    console.log(`  ${bold("🔐 GitHub Logout")}`);
+    console.log(
+      `  ${dim("Currently authenticated as:")} ${c("cyan", status.username || "unknown")}`
+    );
+    console.log();
+    const result = await logout(hostname);
+    if (result.success) {
+      console.log(
+        `  ${c("green", "✓")} Successfully logged out from ${hostname}`
+      );
+    } else {
+      console.log(
+        `  ${c("red", "✗")} Logout failed: ${result.error || "Unknown error"}`
+      );
+      process.exitCode = 1;
+    }
+    console.log();
+  }
+};
 const authCommand = {
   name: "auth",
   aliases: ["a", "gh"],
-  description: "Check GitHub CLI authentication status",
-  usage: "octocode auth",
-  handler: async () => {
-    console.log();
-    console.log(`  ${bold("🔐 GitHub CLI Authentication")}`);
-    console.log();
-    const status = checkGitHubAuth();
-    if (!status.installed) {
-      console.log(
-        `  ${c("red", "✗")} GitHub CLI is ${c("red", "not installed")}`
-      );
-      console.log();
-      console.log(`  ${bold("To install:")}`);
-      console.log(`    ${c("cyan", "→")} ${c("underscore", GH_CLI_URL)}`);
-      console.log();
-      process.exitCode = 1;
-      return;
+  description: "Manage GitHub authentication",
+  usage: "octocode-cli auth [login|logout|status]",
+  handler: async (args) => {
+    const subcommand = args.args[0];
+    if (subcommand === "login") {
+      return loginCommand.handler(args);
     }
-    const version = getGitHubCLIVersion();
-    console.log(
-      `  ${c("green", "✓")} GitHub CLI installed` + (version ? dim(` (v${version})`) : "")
-    );
-    if (status.authenticated) {
-      console.log(
-        `  ${c("green", "✓")} Authenticated as ${c("cyan", status.username || "unknown")}`
-      );
+    if (subcommand === "logout") {
+      return logoutCommand.handler(args);
+    }
+    if (subcommand === "status") {
+      return showAuthStatus();
+    }
+    const status = getAuthStatus();
+    await showAuthStatus();
+    await loadInquirer();
+    const choices = status.authenticated ? [
+      { name: "🔓 Logout from GitHub", value: "logout" },
+      { name: "🔄 Switch account (logout & login)", value: "switch" },
+      { name: "← Back", value: "back" }
+    ] : [
+      { name: "🔐 Login to GitHub", value: "login" },
+      { name: "← Back", value: "back" }
+    ];
+    const action = await select({
+      message: "What would you like to do?",
+      choices
+    });
+    if (action === "login") {
+      await loginCommand.handler({ command: "login", args: [], options: {} });
+    } else if (action === "logout") {
+      await logout();
       console.log();
-    } else {
-      console.log(`  ${c("yellow", "⚠")} ${c("yellow", "Not authenticated")}`);
+      console.log(`  ${c("green", "✓")} Successfully logged out`);
       console.log();
-      console.log(`  ${bold("To authenticate:")}`);
-      console.log(
-        `    ${c("cyan", "→")} ${c("yellow", getAuthLoginCommand())}`
-      );
+    } else if (action === "switch") {
       console.log();
-      process.exitCode = 1;
+      console.log(`  ${dim("Logging out...")}`);
+      await logout();
+      console.log(`  ${c("green", "✓")} Logged out`);
+      console.log();
+      console.log(`  ${dim("Starting new login...")}`);
+      await loginCommand.handler({ command: "login", args: [], options: {} });
     }
   }
 };
+async function showAuthStatus(hostname = "github.com") {
+  console.log();
+  console.log(`  ${bold("🔐 GitHub Authentication")}`);
+  console.log();
+  const status = getAuthStatus(hostname);
+  if (status.authenticated) {
+    console.log(
+      `  ${c("green", "✓")} Authenticated as ${c("cyan", status.username || "unknown")}`
+    );
+    if (status.tokenExpired) {
+      console.log(
+        `  ${c("yellow", "⚠")} Token has expired - please login again`
+      );
+    }
+    console.log(`  ${dim("Host:")} ${status.hostname}`);
+  } else {
+    console.log(`  ${c("yellow", "⚠")} ${c("yellow", "Not authenticated")}`);
+    console.log();
+    console.log(`  ${bold("To authenticate:")}`);
+    console.log(`    ${c("cyan", "→")} ${c("yellow", "octocode-cli login")}`);
+  }
+  console.log();
+  console.log(`  ${dim("Credentials stored in:")} ${getStoragePath()}`);
+  console.log();
+}
 function getSkillsSourceDir() {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
@@ -3343,7 +7101,7 @@ const skillsCommand = {
   name: "skills",
   aliases: ["sk"],
   description: "Install Octocode skills for Claude Code",
-  usage: "octocode skills [install|list]",
+  usage: "octocode-cli skills [install|list]",
   options: [
     {
       name: "force",
@@ -3436,10 +7194,79 @@ const skillsCommand = {
     process.exitCode = 1;
   }
 };
+const tokenCommand = {
+  name: "token",
+  aliases: ["t"],
+  description: "Print the stored GitHub OAuth token",
+  usage: "octocode-cli token [--hostname <host>]",
+  options: [
+    {
+      name: "hostname",
+      short: "h",
+      description: "GitHub Enterprise hostname (default: github.com)",
+      hasValue: true
+    }
+  ],
+  handler: async (args) => {
+    const hostname = args.options["hostname"] || "github.com";
+    const credentials = getCredentials(hostname);
+    if (!credentials) {
+      console.log();
+      console.log(`  ${c("yellow", "⚠")} Not authenticated to ${hostname}`);
+      console.log();
+      console.log(`  ${dim("To login:")}`);
+      console.log(`    ${c("cyan", "→")} ${c("yellow", "octocode-cli login")}`);
+      console.log();
+      process.exitCode = 1;
+      return;
+    }
+    console.log(credentials.token.token);
+  }
+};
+const statusCommand = {
+  name: "status",
+  aliases: ["s"],
+  description: "Show GitHub authentication status",
+  usage: "octocode-cli status [--hostname <host>]",
+  options: [
+    {
+      name: "hostname",
+      short: "h",
+      description: "GitHub Enterprise hostname (default: github.com)",
+      hasValue: true
+    }
+  ],
+  handler: async (args) => {
+    const hostname = args.options["hostname"] || "github.com";
+    const status = getAuthStatus(hostname);
+    console.log();
+    if (status.authenticated) {
+      console.log(
+        `  ${c("green", "✓")} Logged in as ${c("cyan", status.username || "unknown")}`
+      );
+      console.log(`  ${dim("Host:")} ${status.hostname}`);
+      if (status.tokenExpired) {
+        console.log(
+          `  ${c("yellow", "⚠")} Token has expired - please login again`
+        );
+      }
+    } else {
+      console.log(`  ${c("yellow", "⚠")} Not logged in`);
+      console.log();
+      console.log(`  ${dim("To login:")}`);
+      console.log(`    ${c("cyan", "→")} ${c("yellow", "octocode-cli login")}`);
+    }
+    console.log();
+  }
+};
 const commands = [
   installCommand,
   authCommand,
-  skillsCommand
+  loginCommand,
+  logoutCommand,
+  skillsCommand,
+  tokenCommand,
+  statusCommand
 ];
 function findCommand(name) {
   return commands.find((cmd) => cmd.name === name || cmd.aliases?.includes(name));
@@ -3458,7 +7285,15 @@ function showHelp() {
     `    ${c("magenta", "install")}     Configure octocode-mcp for an IDE`
   );
   console.log(
-    `    ${c("magenta", "auth")}        Check GitHub CLI authentication status`
+    `    ${c("magenta", "auth")}        Manage GitHub authentication`
+  );
+  console.log(`    ${c("magenta", "login")}       Authenticate with GitHub`);
+  console.log(`    ${c("magenta", "logout")}      Sign out from GitHub`);
+  console.log(
+    `    ${c("magenta", "status")}      Show GitHub authentication status`
+  );
+  console.log(
+    `    ${c("magenta", "token")}       Print the stored GitHub OAuth token`
   );
   console.log();
   console.log(`  ${bold("OPTIONS")}`);
@@ -3480,7 +7315,7 @@ function showHelp() {
   );
   console.log();
   console.log(`    ${dim("# Check GitHub authentication")}`);
-  console.log(`    ${c("yellow", "octocode auth")}`);
+  console.log(`    ${c("yellow", "octocode-cli auth")}`);
   console.log();
   console.log(c("magenta", `  ─── 🔍🐙 ${bold("https://octocode.ai")} ───`));
   console.log();
@@ -3551,20 +7386,26 @@ async function runCLI(argv) {
   await command.handler(args);
   return true;
 }
+function printEnvHeader() {
+  console.log(c("blue", "━".repeat(66)));
+  console.log(`  🔍 ${bold("Environment")}`);
+  console.log(c("blue", "━".repeat(66)));
+}
 async function runInteractiveMode() {
   await loadInquirer();
   clearScreen();
   printWelcome();
-  console.log(c("blue", "━".repeat(66)));
-  console.log(`  🔍 ${bold("Environment Check")}`);
-  console.log(c("blue", "━".repeat(66)));
+  printEnvHeader();
   const envStatus = await checkNodeEnvironment();
   printNodeEnvironmentStatus(envStatus);
-  printGitHubAuthStatus();
   if (hasEnvironmentIssues(envStatus)) {
-    printNodeDoctorHint();
+    console.log();
+    console.log(
+      `  ${dim("💡")} ${dim("Run")} ${c("cyan", "npx node-doctor")} ${dim("for diagnostics")}`
+    );
   }
   if (!envStatus.nodeInstalled) {
+    console.log();
     console.log(
       `  ${c("red", "✗")} ${bold("Node.js is required to run octocode-mcp")}`
     );
@@ -3572,6 +7413,7 @@ async function runInteractiveMode() {
     printGoodbye();
     return;
   }
+  printFooter();
   await runMenuLoop();
 }
 async function main() {

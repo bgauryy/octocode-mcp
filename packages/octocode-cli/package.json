@@ -51,7 +51,12 @@
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "PolyForm-Small-Business-1.0.0",
   "dependencies": {
-    "@inquirer/prompts": "^7.2.1"
+    "@inquirer/prompts": "^7.2.1",
+    "@octokit/auth-oauth-device": "^8.0.3",
+    "@octokit/oauth-methods": "^6.0.2",
+    "@octokit/request": "^10.0.7",
+    "keytar": "^7.9.0",
+    "open": "^11.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",

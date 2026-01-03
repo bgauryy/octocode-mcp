@@ -169,4 +169,226 @@ describe('GitHub Auth', () => {
       expect(getAuthLoginCommand()).toBe('gh auth login');
     });
   });
+
+  describe('runGitHubAuthLogin', () => {
+    it('should call gh auth login with no options', async () => {
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { runGitHubAuthLogin } =
+        await import('../../src/features/gh-auth.js');
+      const result = runGitHubAuthLogin();
+
+      expect(result.success).toBe(true);
+      expect(spawnSync).toHaveBeenCalledWith(
+        'gh',
+        ['auth', 'login'],
+        expect.any(Object)
+      );
+    });
+
+    it('should add --web flag when web option is true', async () => {
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { runGitHubAuthLogin } =
+        await import('../../src/features/gh-auth.js');
+      runGitHubAuthLogin({ web: true });
+
+      expect(spawnSync).toHaveBeenCalledWith(
+        'gh',
+        ['auth', 'login', '--web'],
+        expect.any(Object)
+      );
+    });
+
+    it('should add --hostname flag when hostname is provided', async () => {
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { runGitHubAuthLogin } =
+        await import('../../src/features/gh-auth.js');
+      runGitHubAuthLogin({ hostname: 'github.enterprise.com' });
+
+      expect(spawnSync).toHaveBeenCalledWith(
+        'gh',
+        ['auth', 'login', '--hostname', 'github.enterprise.com'],
+        expect.any(Object)
+      );
+    });
+
+    it('should add --git-protocol flag when gitProtocol is provided', async () => {
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { runGitHubAuthLogin } =
+        await import('../../src/features/gh-auth.js');
+      runGitHubAuthLogin({ gitProtocol: 'ssh' });
+
+      expect(spawnSync).toHaveBeenCalledWith(
+        'gh',
+        ['auth', 'login', '--git-protocol', 'ssh'],
+        expect.any(Object)
+      );
+    });
+
+    it('should add --skip-ssh-key flag when skipSshKey is true', async () => {
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { runGitHubAuthLogin } =
+        await import('../../src/features/gh-auth.js');
+      runGitHubAuthLogin({ skipSshKey: true });
+
+      expect(spawnSync).toHaveBeenCalledWith(
+        'gh',
+        ['auth', 'login', '--skip-ssh-key'],
+        expect.any(Object)
+      );
+    });
+
+    it('should combine multiple options', async () => {
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { runGitHubAuthLogin } =
+        await import('../../src/features/gh-auth.js');
+      runGitHubAuthLogin({
+        web: true,
+        hostname: 'enterprise.github.com',
+        gitProtocol: 'https',
+      });
+
+      expect(spawnSync).toHaveBeenCalledWith(
+        'gh',
+        [
+          'auth',
+          'login',
+          '--web',
+          '--hostname',
+          'enterprise.github.com',
+          '--git-protocol',
+          'https',
+        ],
+        expect.any(Object)
+      );
+    });
+
+    it('should return failure when login fails', async () => {
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 1,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { runGitHubAuthLogin } =
+        await import('../../src/features/gh-auth.js');
+      const result = runGitHubAuthLogin();
+
+      expect(result.success).toBe(false);
+      expect(result.exitCode).toBe(1);
+    });
+  });
+
+  describe('runGitHubAuthLogout', () => {
+    it('should call gh auth logout with no hostname', async () => {
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { runGitHubAuthLogout } =
+        await import('../../src/features/gh-auth.js');
+      const result = runGitHubAuthLogout();
+
+      expect(result.success).toBe(true);
+      expect(spawnSync).toHaveBeenCalledWith(
+        'gh',
+        ['auth', 'logout'],
+        expect.any(Object)
+      );
+    });
+
+    it('should add --hostname flag when hostname is provided', async () => {
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { runGitHubAuthLogout } =
+        await import('../../src/features/gh-auth.js');
+      runGitHubAuthLogout('github.enterprise.com');
+
+      expect(spawnSync).toHaveBeenCalledWith(
+        'gh',
+        ['auth', 'logout', '--hostname', 'github.enterprise.com'],
+        expect.any(Object)
+      );
+    });
+
+    it('should return failure when logout fails', async () => {
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 1,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { runGitHubAuthLogout } =
+        await import('../../src/features/gh-auth.js');
+      const result = runGitHubAuthLogout();
+
+      expect(result.success).toBe(false);
+      expect(result.exitCode).toBe(1);
+    });
+  });
 });

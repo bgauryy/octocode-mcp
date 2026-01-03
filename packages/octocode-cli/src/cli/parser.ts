@@ -5,7 +5,16 @@
 import type { ParsedArgs } from './types.js';
 
 // Options that take values
-const OPTIONS_WITH_VALUES = new Set(['ide', 'method', 'output', 'o']);
+const OPTIONS_WITH_VALUES = new Set([
+  'ide',
+  'method',
+  'output',
+  'o',
+  'hostname',
+  'h',
+  'git-protocol',
+  'p',
+]);
 
 /**
  * Parse command line arguments

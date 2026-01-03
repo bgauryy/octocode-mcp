@@ -20,8 +20,9 @@ That's it! The interactive wizard will guide you through everything.
 
 - 🎯 **Zero Config** - Interactive prompts handle everything
 - 🔍 **Auto-Detection** - Finds installed IDEs automatically
-- ✅ **Environment Check** - Validates Node.js, npm & GitHub CLI
+- 🔐 **Built-in Auth** - GitHub OAuth authentication included
 - 🛡️ **Safe Updates** - Preserves existing MCP configurations
+- 🔌 **MCP Marketplace** - Browse & install 70+ community MCP servers
 
 ## 📦 Installation
 
@@ -42,6 +43,40 @@ npm install -g octocode-cli
 octocode
 ```
 
+## 🔌 MCP Marketplace
+
+Easily browse and install from **70+ community MCP servers** directly to your IDE.
+
+### Features
+
+- 🔍 **Search** - Find MCPs by name, description, or tags
+- 📂 **Browse by Category** - 19 categories (databases, browser automation, AI services, etc.)
+- ⭐ **Popular MCPs** - Quick access to top 20 most popular servers
+- 📋 **Full List (A-Z)** - Browse all MCPs sorted alphabetically
+- ⚙️ **Easy Setup** - Configure required API keys/tokens during install
+- ↩️ **Back Navigation** - Go back at any step to change your selection
+
+### Available Categories
+
+| Category | Examples |
+|----------|----------|
+| Browser Automation | Playwright, Puppeteer, Firecrawl |
+| Databases | PostgreSQL, MongoDB, Redis, Supabase |
+| Cloud Platforms | AWS, Cloudflare, Vercel, Docker |
+| Developer Tools | Sentry, Figma, Context7 |
+| Communication | Slack, Discord, Linear, Atlassian |
+| AI Services | OpenAI, LlamaCloud, HuggingFace |
+| And more... | 70+ servers across 19 categories |
+
+### How to Use
+
+1. Run `npx octocode-cli`
+2. Select **"Browse & Install MCPs"** from the menu
+3. Choose your target IDE
+4. Search or browse for an MCP
+5. Configure any required environment variables
+6. Confirm and install!
+
 ## 🖥️ Supported Clients
 
 | Client | Description | Status |
@@ -59,16 +94,22 @@ For automation or CI/CD, use CLI flags:
 
 ```bash
 # Install for Cursor using NPX method
-octocode install --ide cursor --method npx
+octocode-cli install --ide cursor --method npx
 
 # Install for Claude Desktop
-octocode install --ide claude --method direct
+octocode-cli install --ide claude --method direct
 
 # Force overwrite existing config
-octocode install --ide cursor --method npx --force
+octocode-cli install --ide cursor --method npx --force
 
-# Check GitHub authentication
-octocode auth
+# Check GitHub authentication status
+octocode-cli status
+
+# Get your GitHub token (for scripting)
+octocode-cli token
+
+# Manage GitHub authentication
+octocode-cli auth
 ```
 
 ### Commands
@@ -76,7 +117,11 @@ octocode auth
 | Command | Description |
 |---------|-------------|
 | `install` | Install octocode-mcp for an IDE |
-| `auth` | Check GitHub CLI authentication status |
+| `auth` | Manage GitHub authentication (interactive) |
+| `login` | Authenticate with GitHub |
+| `logout` | Sign out from GitHub |
+| `status` | Show GitHub authentication status |
+| `token` | Print the stored GitHub OAuth token |
 
 ### Options
 
@@ -84,6 +129,7 @@ octocode auth
 |--------|-------------|
 | `--ide <ide>` | IDE to configure: `cursor`, `claude`, `claude-code`, `windsurf`, `zed`, `cline` |
 | `--method <method>` | Installation method: `npx` or `direct` |
+| `--hostname <host>` | GitHub Enterprise hostname (default: `github.com`) |
 | `-f, --force` | Overwrite existing configuration |
 | `-h, --help` | Show help message |
 | `-v, --version` | Show version number |
@@ -103,29 +149,83 @@ The CLI automatically updates the correct config file for each IDE:
 
 ## 🔐 GitHub Authentication
 
-Octocode uses GitHub CLI (`gh`) for secure authentication:
+Octocode CLI includes built-in GitHub OAuth authentication with **secure encrypted storage**.
+
+### Quick Auth Commands
 
 ```bash
+# Login to GitHub (opens browser for OAuth)
+octocode-cli login
+
 # Check your auth status
-octocode auth
+octocode-cli status
 
-# Install GitHub CLI if needed
-# macOS
-brew install gh
+# Interactive auth menu (login/logout/switch)
+octocode-cli auth
 
-# Windows
-winget install GitHub.cli
+# Get your token (useful for scripts)
+octocode-cli token
 
-# Then authenticate
-gh auth login
+# Logout from GitHub
+octocode-cli logout
+
+# For GitHub Enterprise
+octocode-cli login --hostname github.mycompany.com
+octocode-cli status --hostname github.mycompany.com
 ```
+
+### Authentication Methods
+
+During installation, you can choose how to authenticate:
+
+| Method | Description | Best For |
+|--------|-------------|----------|
+| **gh CLI** (Recommended) | Uses existing `gh auth` credentials | Users with GitHub CLI installed |
+| **OAuth Device Flow** | Opens browser for secure login | Most users |
+| **Personal Access Token** | Manual PAT entry | Automation, CI/CD |
+| **Skip** | Configure manually later | Advanced users |
+
+### Secure Credential Storage
+
+Your credentials are **encrypted at rest** using AES-256-GCM:
+
+```
+~/.octocode/
+├── credentials.json   # Encrypted credentials (per hostname)
+└── .key               # Encryption key (mode 0600)
+```
+
+- Credentials are stored per hostname (supports multiple GitHub instances)
+- Tokens auto-refresh when expired (if refresh token available)
+- File permissions are set to user-only (mode 0600/0700)
+
+### Token Management
+
+```bash
+# Check if token is valid and not expired
+octocode-cli status
+
+# Force re-authentication
+octocode-cli logout && octocode-cli login
+
+# Switch GitHub accounts
+octocode-cli auth  # Select "Switch account"
+```
+
+### Required Scopes
+
+The OAuth flow requests these GitHub scopes:
+- `repo` - Full repository access
+- `read:org` - Read organization membership
+- `gist` - Gist access
 
 ## 📋 Requirements
 
 - **Node.js** >= 18.0.0
-- **GitHub CLI** (recommended for best experience)
 
 ## 🔧 Troubleshooting
+
+### Node.js Issues
 
 If you encounter issues with Node.js or npm, run the following command to diagnose problems:
 
@@ -134,6 +234,33 @@ npx node-doctor
 ```
 
 This will check your Node.js environment and help identify common issues with your installation.
+
+### Authentication Issues
+
+| Issue | Solution |
+|-------|----------|
+| "Token expired" | Run `octocode-cli login` to re-authenticate |
+| "Not authenticated" | Run `octocode-cli login` |
+| "Refresh token expired" | Run `octocode-cli logout && octocode-cli login` |
+| Browser doesn't open | Copy the URL shown in terminal and open manually |
+| GitHub Enterprise issues | Use `--hostname your-ghe.com` flag |
+
+**Reset credentials completely:**
+
+```bash
+# Remove stored credentials
+rm -rf ~/.octocode
+
+# Re-authenticate
+octocode-cli login
+```
+
+**Check credential file location:**
+
+```bash
+octocode-cli status
+# Shows: Credentials: ~/.octocode/credentials.json
+```
 
 ## 🔗 Links
 

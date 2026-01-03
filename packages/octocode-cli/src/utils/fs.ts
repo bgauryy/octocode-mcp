@@ -150,3 +150,18 @@ export function listSubdirectories(dirPath: string): string[] {
     return [];
   }
 }
+
+/**
+ * Remove a directory recursively
+ */
+export function removeDirectory(dirPath: string): boolean {
+  try {
+    if (!dirExists(dirPath)) {
+      return false;
+    }
+    fs.rmSync(dirPath, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}

@@ -73,6 +73,28 @@ describe('CLI Parser', () => {
       expect(result.command).toBe('install');
       expect(result.options).toEqual({ help: true });
     });
+
+    it('should parse --hostname option', () => {
+      const result = parseArgs([
+        'status',
+        '--hostname',
+        'github.enterprise.com',
+      ]);
+      expect(result.command).toBe('status');
+      expect(result.options).toEqual({ hostname: 'github.enterprise.com' });
+    });
+
+    it('should parse -h option with value for hostname', () => {
+      const result = parseArgs(['token', '-h', 'github.enterprise.com']);
+      expect(result.command).toBe('token');
+      expect(result.options).toEqual({ h: 'github.enterprise.com' });
+    });
+
+    it('should parse --git-protocol option', () => {
+      const result = parseArgs(['login', '--git-protocol', 'ssh']);
+      expect(result.command).toBe('login');
+      expect(result.options).toEqual({ 'git-protocol': 'ssh' });
+    });
   });
 
   describe('hasHelpFlag', () => {
