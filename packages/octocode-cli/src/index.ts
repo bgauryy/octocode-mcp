@@ -25,6 +25,7 @@ import {
 import { checkNodeEnvironment } from './features/node-check.js';
 import { runMenuLoop } from './ui/menu.js';
 import { runCLI } from './cli/index.js';
+import { initializeSecureStorage } from './utils/token-storage.js';
 
 // ─────────────────────────────────────────────────────────────
 // Interactive Mode
@@ -84,6 +85,10 @@ async function runInteractiveMode(): Promise<void> {
 // ─────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Initialize secure storage (keytar) early to avoid race conditions
+  // This ensures isSecureStorageAvailable() returns accurate results
+  await initializeSecureStorage();
+
   // Check for CLI commands first
   const handled = await runCLI();
 

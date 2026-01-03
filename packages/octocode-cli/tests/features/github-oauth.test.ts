@@ -33,6 +33,7 @@ vi.mock('../../src/utils/token-storage.js', () => ({
   isRefreshTokenExpired: vi.fn(),
   updateToken: vi.fn(),
   getCredentialsFilePath: vi.fn().mockReturnValue('/home/test/.octocode/credentials.json'),
+  isUsingSecureStorage: vi.fn().mockReturnValue(false),
 }));
 
 describe('GitHub OAuth', () => {

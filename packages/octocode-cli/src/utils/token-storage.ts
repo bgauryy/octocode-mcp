@@ -55,16 +55,37 @@ const IV_LENGTH = 16;
 
 // Track storage mode
 let _useSecureStorage: boolean | null = null;
+let _keytarInitialized = false;
+
+/**
+ * Initialize secure storage by loading keytar
+ * Call this before using any credential functions to ensure keytar is loaded
+ * @returns true if secure storage (keytar) is available
+ */
+export async function initializeSecureStorage(): Promise<boolean> {
+  if (_keytarInitialized) {
+    return _useSecureStorage ?? false;
+  }
+
+  await loadKeytar();
+  _keytarInitialized = true;
+  _useSecureStorage = keytar !== null;
+  return _useSecureStorage;
+}
 
 /**
  * Check if secure storage (keytar) is available
+ * Note: This may return false before initializeSecureStorage() is called
+ * due to the async nature of keytar loading.
  */
 export function isSecureStorageAvailable(): boolean {
   if (_useSecureStorage !== null) {
     return _useSecureStorage;
   }
 
-  // Check if keytar was successfully loaded
+  // If keytar hasn't been initialized yet, check current state
+  // This may return false even if keytar is available (race condition)
+  // Use initializeSecureStorage() for reliable detection
   _useSecureStorage = keytar !== null;
   return _useSecureStorage;
 }
@@ -75,9 +96,20 @@ export function isSecureStorageAvailable(): boolean {
  */
 export function _setSecureStorageAvailable(available: boolean): void {
   _useSecureStorage = available;
+  _keytarInitialized = true; // Mark as initialized to prevent re-initialization
   if (!available) {
     keytar = null;
   }
+}
+
+/**
+ * Reset secure storage state (for testing)
+ * @internal
+ */
+export function _resetSecureStorageState(): void {
+  _useSecureStorage = null;
+  _keytarInitialized = false;
+  keytar = null;
 }
 
 /**

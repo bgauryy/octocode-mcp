@@ -28,6 +28,7 @@ import {
   isRefreshTokenExpired,
   updateToken,
   getCredentialsFilePath,
+  isUsingSecureStorage as tokenStorageIsUsingSecureStorage,
 } from '../utils/token-storage.js';
 
 // Default OAuth App Client ID (same as gh CLI - public client)
@@ -203,11 +204,20 @@ export async function login(options: LoginOptions = {}): Promise<LoginResult> {
  * Logout from GitHub
  *
  * Behaves like `gh auth logout`:
- * 1. Revokes token on GitHub (if possible)
- * 2. Removes stored credentials
+ * 1. Revokes token on GitHub (if possible - requires client secret)
+ * 2. Removes stored credentials locally
+ *
+ * Note: For public OAuth apps (like this CLI), server-side token revocation
+ * is not possible without the client secret. The token remains valid on
+ * GitHub's side until it expires or is manually revoked by the user at:
+ * https://github.com/settings/applications
+ *
+ * To enable server-side token revocation, configure a custom OAuth App
+ * with both clientId and clientSecret in the login options.
  */
 export async function logout(
-  hostname: string = DEFAULT_HOSTNAME
+  hostname: string = DEFAULT_HOSTNAME,
+  options?: { clientSecret?: string }
 ): Promise<LogoutResult> {
   const credentials = getCredentials(hostname);
 
@@ -218,22 +228,23 @@ export async function logout(
     };
   }
 
-  try {
-    // Try to revoke the token on GitHub
-    // This requires the client secret, which we don't have for public clients
-    // So we just delete the local credentials
-    await deleteToken({
-      clientType: 'oauth-app',
-      clientId: DEFAULT_CLIENT_ID,
-      clientSecret: '', // We don't have this for public clients
-      token: credentials.token.token,
-      request: request.defaults({
-        baseUrl: getApiBaseUrl(hostname),
-      }),
-    });
-  } catch {
-    // Token revocation may fail without client secret
-    // That's okay, we'll still delete local credentials
+  // Only attempt server-side revocation if we have a client secret
+  // Public OAuth apps cannot revoke tokens without it
+  if (options?.clientSecret) {
+    try {
+      await deleteToken({
+        clientType: 'oauth-app',
+        clientId: DEFAULT_CLIENT_ID,
+        clientSecret: options.clientSecret,
+        token: credentials.token.token,
+        request: request.defaults({
+          baseUrl: getApiBaseUrl(hostname),
+        }),
+      });
+    } catch {
+      // Token revocation failed - continue with local deletion
+      // User can manually revoke at https://github.com/settings/applications
+    }
   }
 
   // Delete local credentials
@@ -397,9 +408,8 @@ export function getStoragePath(): string {
 
 /**
  * Check if using secure storage (keychain) vs file fallback
- * Currently we only use file storage with encryption
+ * Returns true if keytar is available and initialized
  */
 export function isUsingSecureStorage(): boolean {
-  // Future: return true if keytar is available
-  return false;
+  return tokenStorageIsUsingSecureStorage();
 }
