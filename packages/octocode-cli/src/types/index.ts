@@ -91,10 +91,40 @@ export interface CLIOption {
   default?: string | boolean;
 }
 
-// GitHub auth status
+// GitHub auth status (legacy - for gh CLI check)
 export interface GitHubAuthStatus {
   installed: boolean;
   authenticated: boolean;
   username?: string;
+  error?: string;
+}
+
+// OAuth token types
+export interface OAuthToken {
+  token: string;
+  tokenType: 'oauth';
+  scopes?: string[];
+  // For GitHub Apps with expiring tokens
+  refreshToken?: string;
+  expiresAt?: string;
+  refreshTokenExpiresAt?: string;
+}
+
+// Stored credentials for a host
+export interface StoredCredentials {
+  hostname: string;
+  username: string;
+  token: OAuthToken;
+  gitProtocol: 'ssh' | 'https';
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Auth status from our OAuth implementation
+export interface OctocodeAuthStatus {
+  authenticated: boolean;
+  hostname?: string;
+  username?: string;
+  tokenExpired?: boolean;
   error?: string;
 }

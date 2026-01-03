@@ -16,20 +16,29 @@
 import { c, bold, dim } from './utils/colors.js';
 import { clearScreen } from './utils/platform.js';
 import { loadInquirer } from './utils/prompts.js';
-import { printWelcome, printGoodbye } from './ui/header.js';
+import { printWelcome, printGoodbye, printFooter } from './ui/header.js';
 import {
   printNodeEnvironmentStatus,
   printNodeDoctorHint,
   hasEnvironmentIssues,
 } from './ui/install/index.js';
 import { checkNodeEnvironment } from './features/node-check.js';
-import { printGitHubAuthStatus } from './ui/gh-guidance.js';
 import { runMenuLoop } from './ui/menu.js';
 import { runCLI } from './cli/index.js';
+import { initializeSecureStorage } from './utils/token-storage.js';
 
 // ─────────────────────────────────────────────────────────────
 // Interactive Mode
 // ─────────────────────────────────────────────────────────────
+
+/**
+ * Print the environment check section header
+ */
+function printEnvHeader(): void {
+  console.log(c('blue', '━'.repeat(66)));
+  console.log(`  🔍 ${bold('Environment')}`);
+  console.log(c('blue', '━'.repeat(66)));
+}
 
 async function runInteractiveMode(): Promise<void> {
   // Load inquirer dynamically
@@ -39,24 +48,23 @@ async function runInteractiveMode(): Promise<void> {
   clearScreen();
   printWelcome();
 
-  // Environment check section (once at startup)
-  console.log(c('blue', '━'.repeat(66)));
-  console.log(`  🔍 ${bold('Environment Check')}`);
-  console.log(c('blue', '━'.repeat(66)));
+  // Environment check section
+  printEnvHeader();
 
   const envStatus = await checkNodeEnvironment();
   printNodeEnvironmentStatus(envStatus);
 
-  // GitHub authentication check
-  printGitHubAuthStatus();
-
   // Show node-doctor hint if issues detected
   if (hasEnvironmentIssues(envStatus)) {
-    printNodeDoctorHint();
+    console.log();
+    console.log(
+      `  ${dim('💡')} ${dim('Run')} ${c('cyan', 'npx node-doctor')} ${dim('for diagnostics')}`
+    );
   }
 
   // Fatal check: Node.js is required
   if (!envStatus.nodeInstalled) {
+    console.log();
     console.log(
       `  ${c('red', '✗')} ${bold('Node.js is required to run octocode-mcp')}`
     );
@@ -64,6 +72,9 @@ async function runInteractiveMode(): Promise<void> {
     printGoodbye();
     return;
   }
+
+  // Show footer with octocode.ai link
+  printFooter();
 
   // Go to menu loop
   await runMenuLoop();
@@ -74,6 +85,10 @@ async function runInteractiveMode(): Promise<void> {
 // ─────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Initialize secure storage (keytar) early to avoid race conditions
+  // This ensures isSecureStorageAvailable() returns accurate results
+  await initializeSecureStorage();
+
   // Check for CLI commands first
   const handled = await runCLI();
 

@@ -24,7 +24,15 @@ export function showHelp(): void {
     `    ${c('magenta', 'install')}     Configure octocode-mcp for an IDE`
   );
   console.log(
-    `    ${c('magenta', 'auth')}        Check GitHub CLI authentication status`
+    `    ${c('magenta', 'auth')}        Manage GitHub authentication`
+  );
+  console.log(`    ${c('magenta', 'login')}       Authenticate with GitHub`);
+  console.log(`    ${c('magenta', 'logout')}      Sign out from GitHub`);
+  console.log(
+    `    ${c('magenta', 'status')}      Show GitHub authentication status`
+  );
+  console.log(
+    `    ${c('magenta', 'token')}       Print the stored GitHub OAuth token`
   );
   console.log();
   console.log(`  ${bold('OPTIONS')}`);
@@ -46,7 +54,7 @@ export function showHelp(): void {
   );
   console.log();
   console.log(`    ${dim('# Check GitHub authentication')}`);
-  console.log(`    ${c('yellow', 'octocode auth')}`);
+  console.log(`    ${c('yellow', 'octocode-cli auth')}`);
   console.log();
   console.log(c('magenta', `  ─── 🔍🐙 ${bold('https://octocode.ai')} ───`));
   console.log();

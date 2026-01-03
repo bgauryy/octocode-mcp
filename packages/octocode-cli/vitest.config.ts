@@ -20,6 +20,7 @@ export default defineConfig({
         'src/cli/help.ts', // Help text output
         'src/cli/index.ts', // CLI entry point
         'src/configs/**', // Static config objects
+        'src/features/github-oauth.ts', // OAuth flow - requires network mocking
       ],
     },
     testTimeout: 10000,

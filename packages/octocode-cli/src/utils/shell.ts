@@ -72,3 +72,37 @@ export function getCommandVersion(
   }
   return null;
 }
+
+export interface InteractiveCommandResult {
+  success: boolean;
+  exitCode: number | null;
+}
+
+/**
+ * Run an interactive command that needs terminal access (stdin/stdout/stderr)
+ * Used for commands like `gh auth login` that require user interaction
+ * @param command - The command to run
+ * @param args - Array of arguments
+ * @returns Result with success status and exit code
+ */
+export function runInteractiveCommand(
+  command: string,
+  args: string[] = []
+): InteractiveCommandResult {
+  try {
+    const result = spawnSync(command, args, {
+      stdio: 'inherit', // Pass through stdin/stdout/stderr to terminal
+      shell: false,
+    });
+
+    return {
+      success: result.status === 0,
+      exitCode: result.status,
+    };
+  } catch {
+    return {
+      success: false,
+      exitCode: null,
+    };
+  }
+}

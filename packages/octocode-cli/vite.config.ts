@@ -21,6 +21,7 @@ export default defineConfig({
         ...builtinModules,
         ...builtinModules.map((m) => `node:${m}`),
         '@inquirer/prompts',
+        'keytar', // Native addon - must be external
       ],
       output: {
         banner: '#!/usr/bin/env node',

@@ -275,4 +275,87 @@ describe('Shell Utilities', () => {
       expect(spawnSync).toHaveBeenCalledWith('cmd', ['-v'], expect.any(Object));
     });
   });
+
+  describe('runInteractiveCommand', () => {
+    it('should return success when command succeeds', async () => {
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { runInteractiveCommand } = await import('../../src/utils/shell.js');
+      const result = runInteractiveCommand('gh', ['auth', 'login']);
+
+      expect(result.success).toBe(true);
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('should return failure when command fails', async () => {
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 1,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { runInteractiveCommand } = await import('../../src/utils/shell.js');
+      const result = runInteractiveCommand('gh', ['auth', 'login']);
+
+      expect(result.success).toBe(false);
+      expect(result.exitCode).toBe(1);
+    });
+
+    it('should use inherit stdio for interactive terminal access', async () => {
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { runInteractiveCommand } = await import('../../src/utils/shell.js');
+      runInteractiveCommand('gh', ['auth', 'login']);
+
+      expect(spawnSync).toHaveBeenCalledWith('gh', ['auth', 'login'], {
+        stdio: 'inherit',
+        shell: false,
+      });
+    });
+
+    it('should handle exceptions gracefully', async () => {
+      vi.mocked(spawnSync).mockImplementation(() => {
+        throw new Error('Command failed');
+      });
+
+      const { runInteractiveCommand } = await import('../../src/utils/shell.js');
+      const result = runInteractiveCommand('invalid', []);
+
+      expect(result.success).toBe(false);
+      expect(result.exitCode).toBeNull();
+    });
+
+    it('should use empty args array by default', async () => {
+      vi.mocked(spawnSync).mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+
+      const { runInteractiveCommand } = await import('../../src/utils/shell.js');
+      runInteractiveCommand('cmd');
+
+      expect(spawnSync).toHaveBeenCalledWith('cmd', [], expect.any(Object));
+    });
+  });
 });
