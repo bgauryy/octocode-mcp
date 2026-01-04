@@ -344,6 +344,10 @@ function normalizeHostname(hostname: string): string {
 /**
  * Store credentials for a hostname
  * Uses keychain if available, falls back to encrypted file
+ *
+ * NOTE: This sync function always writes to file storage for sync API compatibility.
+ * When keytar is available, it also writes to keytar asynchronously.
+ * For async-only environments, prefer storeCredentialsAsync().
  */
 export function storeCredentials(credentials: StoredCredentials): void {
   const hostname = normalizeHostname(credentials.hostname);
@@ -353,23 +357,37 @@ export function storeCredentials(credentials: StoredCredentials): void {
     updatedAt: new Date().toISOString(),
   };
 
-  if (isSecureStorageAvailable()) {
-    // Fire and forget - keytar operations are fast
-    keytarStore(hostname, normalizedCredentials).catch(() => {
-      // Fallback to file on keychain error
-      const store = readCredentialsStore();
-      store.credentials[hostname] = normalizedCredentials;
-      writeCredentialsStore(store);
-    });
-  } else {
+  // Always write to file for sync API compatibility (getCredentials reads from file)
+  try {
     const store = readCredentialsStore();
     store.credentials[hostname] = normalizedCredentials;
     writeCredentialsStore(store);
+  } catch (fileError) {
+    console.error(
+      `[token-storage] CRITICAL: Failed to store credentials to file!`
+    );
+    console.error(
+      `  Error: ${fileError instanceof Error ? fileError.message : String(fileError)}`
+    );
+    throw new Error('Failed to store credentials to file storage');
+  }
+
+  // Also write to keytar if available (async, for getCredentialsAsync)
+  if (isSecureStorageAvailable()) {
+    keytarStore(hostname, normalizedCredentials).catch(keytarError => {
+      // Keytar failed, but file storage succeeded - log warning
+      console.warn(
+        `[token-storage] Keytar storage failed (file storage OK): ${keytarError instanceof Error ? keytarError.message : String(keytarError)}`
+      );
+    });
   }
 }
 
 /**
  * Store credentials for a hostname (async version)
+ *
+ * Always writes to file storage for sync API compatibility.
+ * Also writes to keytar when available.
  */
 export async function storeCredentialsAsync(
   credentials: StoredCredentials
@@ -381,39 +399,53 @@ export async function storeCredentialsAsync(
     updatedAt: new Date().toISOString(),
   };
 
-  if (isSecureStorageAvailable()) {
-    try {
-      await keytarStore(hostname, normalizedCredentials);
-    } catch {
-      // Fallback to file on keychain error
-      const store = readCredentialsStore();
-      store.credentials[hostname] = normalizedCredentials;
-      writeCredentialsStore(store);
-    }
-  } else {
+  // Always write to file for sync API compatibility
+  try {
     const store = readCredentialsStore();
     store.credentials[hostname] = normalizedCredentials;
     writeCredentialsStore(store);
+  } catch (fileError) {
+    console.error(
+      `[token-storage] CRITICAL: Failed to store credentials to file!`
+    );
+    console.error(
+      `  Error: ${fileError instanceof Error ? fileError.message : String(fileError)}`
+    );
+    throw new Error('Failed to store credentials to file storage');
+  }
+
+  // Also write to keytar if available
+  if (isSecureStorageAvailable()) {
+    try {
+      await keytarStore(hostname, normalizedCredentials);
+    } catch (keytarError) {
+      // Keytar failed, but file storage succeeded - log warning
+      console.warn(
+        `[token-storage] Keytar storage failed (file storage OK): ${keytarError instanceof Error ? keytarError.message : String(keytarError)}`
+      );
+    }
   }
 }
 
 /**
- * Get credentials for a hostname
- * Tries keychain first, then falls back to file
+ * Get credentials for a hostname (sync version)
+ *
+ * Reads from file storage only (keytar is async and cannot be called synchronously).
+ * Since storeCredentials() always writes to file storage, this will find credentials
+ * stored via either sync or async methods.
+ *
+ * For async contexts, prefer getCredentialsAsync() which also checks keytar.
+ *
+ * @param hostname - GitHub hostname (default: 'github.com')
+ * @returns Stored credentials or null if not found
  */
 export function getCredentials(
   hostname: string = 'github.com'
 ): StoredCredentials | null {
   const normalizedHostname = normalizeHostname(hostname);
 
-  // For sync API, we check file first as keytar is async
-  // The async version should be preferred for keytar access
-  if (!isSecureStorageAvailable()) {
-    const store = readCredentialsStore();
-    return store.credentials[normalizedHostname] || null;
-  }
-
-  // Check file store as sync fallback
+  // Sync API reads from file only - keytar requires async
+  // This works because storeCredentials() always writes to file for sync compatibility
   const store = readCredentialsStore();
   return store.credentials[normalizedHostname] || null;
 }

@@ -31,11 +31,36 @@ import {
   isUsingSecureStorage as tokenStorageIsUsingSecureStorage,
 } from '../utils/token-storage.js';
 
-// Default OAuth App Client ID (same as gh CLI - public client)
-// You can replace this with your own OAuth App's client ID
+/**
+ * Default OAuth App Client ID
+ *
+ * IMPORTANT: This uses the same client ID as the `gh` CLI (public OAuth app).
+ *
+ * Considerations:
+ * - Rate limits are shared with all `gh` CLI users globally
+ * - If GitHub revokes this client ID, authentication will break
+ * - No audit trail or analytics for octocode-specific usage
+ *
+ * For production deployments, consider registering a dedicated OAuth App at:
+ * https://github.com/settings/developers
+ *
+ * Then pass your custom clientId to login():
+ *   login({ clientId: 'your-client-id', ... })
+ */
 const DEFAULT_CLIENT_ID = '178c6fc778ccc68e1d6a';
 
-// Default scopes required for Octocode MCP
+/**
+ * Default OAuth scopes for Octocode MCP
+ *
+ * Scope breakdown:
+ * - 'repo': Full access to private and public repositories
+ *           Required for reading private repo code in MCP research
+ * - 'read:org': Read org membership (needed for org repo access)
+ * - 'gist': Read/write gists (optional, can be removed if not needed)
+ *
+ * For minimal permissions (public repos only), pass custom scopes:
+ *   login({ scopes: ['public_repo', 'read:org'], ... })
+ */
 const DEFAULT_SCOPES = ['repo', 'read:org', 'gist'];
 
 // Default hostname
@@ -44,11 +69,23 @@ const DEFAULT_HOSTNAME = 'github.com';
 export interface LoginOptions {
   /** GitHub hostname (default: github.com) */
   hostname?: string;
-  /** OAuth scopes to request */
+  /**
+   * OAuth scopes to request.
+   * Default: ['repo', 'read:org', 'gist']
+   *
+   * Common scope configurations:
+   * - Full access: ['repo', 'read:org'] (default behavior)
+   * - Public repos only: ['public_repo', 'read:org']
+   * - Read-only: ['read:user', 'read:org']
+   */
   scopes?: string[];
   /** Git protocol to configure */
   gitProtocol?: 'ssh' | 'https';
-  /** Custom OAuth App client ID */
+  /**
+   * Custom OAuth App client ID.
+   * Default uses the gh CLI's public client ID.
+   * For production, register your own at: https://github.com/settings/developers
+   */
   clientId?: string;
   /** Callback when verification code is ready */
   onVerification?: (verification: VerificationInfo) => void;
@@ -142,7 +179,12 @@ export async function login(options: LoginOptions = {}): Promise<LoginResult> {
           try {
             await open(verification.verification_uri);
           } catch {
-            // Browser opening failed, user will need to open manually
+            // Browser opening failed - inform user to open manually
+            console.log();
+            console.log('  \u26A0 Could not open browser automatically.');
+            console.log('  \u2192 Please open this URL manually:');
+            console.log(`    ${verification.verification_uri}`);
+            console.log();
           }
         }
       },

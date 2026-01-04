@@ -41,12 +41,77 @@ interface FlowState {
 }
 
 /**
+ * Allowlist of safe commands for MCP servers
+ * These are standard package runners and interpreters
+ */
+const ALLOWED_COMMANDS = [
+  'npx',
+  'node',
+  'python',
+  'python3',
+  'uvx',
+  'uv',
+  'docker',
+  'deno',
+  'bun',
+  'bunx',
+  'pnpm',
+  'yarn',
+  'npm',
+];
+
+/**
+ * Validate command is in allowlist
+ */
+function validateCommand(command: string): boolean {
+  // Extract base command (handle paths like /usr/bin/node)
+  const baseCommand = command.split('/').pop()?.split(' ')[0] || '';
+  return ALLOWED_COMMANDS.includes(baseCommand);
+}
+
+/**
+ * Validate args don't contain shell injection characters
+ */
+function validateArgs(args: string[]): {
+  valid: boolean;
+  problematic?: string;
+} {
+  // Shell metacharacters that could enable injection
+  const dangerousPattern = /[;&|`$(){}[\]<>!]/;
+
+  for (const arg of args) {
+    if (dangerousPattern.test(arg)) {
+      return { valid: false, problematic: arg };
+    }
+  }
+  return { valid: true };
+}
+
+/**
  * Build MCP server config from registry entry
+ * Validates command and args for security
  */
 function buildServerConfig(
   mcp: MCPRegistryEntry,
   envValues: Record<string, string>
 ): MCPServer {
+  // Validate command is in allowlist
+  if (!validateCommand(mcp.installConfig.command)) {
+    throw new Error(
+      `Untrusted command: "${mcp.installConfig.command}". ` +
+        `Allowed commands: ${ALLOWED_COMMANDS.join(', ')}`
+    );
+  }
+
+  // Validate args don't contain shell injection
+  const argsValidation = validateArgs(mcp.installConfig.args);
+  if (!argsValidation.valid) {
+    throw new Error(
+      `Potentially unsafe argument detected: "${argsValidation.problematic}". ` +
+        `Arguments cannot contain shell metacharacters.`
+    );
+  }
+
   const config: MCPServer = {
     command: mcp.installConfig.command,
     args: [...mcp.installConfig.args],
@@ -63,6 +128,27 @@ function buildServerConfig(
   }
 
   return config;
+}
+
+/**
+ * Check if MCP already exists in config
+ */
+function checkMCPExists(
+  mcpId: string,
+  client: MCPClient,
+  customPath: string | undefined
+): boolean {
+  const configPath =
+    client === 'custom' && customPath
+      ? customPath
+      : getMCPConfigPath(client, customPath);
+
+  const config = readMCPConfig(configPath);
+  if (!config || !config.mcpServers) {
+    return false;
+  }
+
+  return mcpId in config.mcpServers;
 }
 
 /**
@@ -269,6 +355,64 @@ export async function runExternalMCPFlow(): Promise<void> {
             ? state.customPath
             : getMCPConfigPath(state.client!, state.customPath);
 
+        // Check if MCP already exists
+        const mcpExists = checkMCPExists(
+          state.selectedMCP!.id,
+          state.client!,
+          state.customPath
+        );
+
+        if (mcpExists) {
+          console.log();
+          console.log(
+            `  ${c('yellow', '\u26A0')} MCP "${bold(state.selectedMCP!.name)}" is already installed.`
+          );
+          console.log();
+
+          type DuplicateChoice = 'update' | 'skip' | 'back';
+          const { select: selectPrompt, Separator } =
+            await import('../../utils/prompts.js');
+          const duplicateChoice = await selectPrompt<DuplicateChoice>({
+            message: 'What would you like to do?',
+            choices: [
+              {
+                name: `${c('blue', '\u21BB')} Update configuration`,
+                value: 'update' as const,
+              },
+              {
+                name: `${c('dim', '\u23ED')} Skip (keep existing)`,
+                value: 'skip' as const,
+              },
+              new Separator() as unknown as {
+                name: string;
+                value: DuplicateChoice;
+              },
+              {
+                name: `${c('dim', '\u2190 Back')}`,
+                value: 'back' as const,
+              },
+            ],
+            loop: false,
+          });
+
+          if (duplicateChoice === 'skip') {
+            console.log();
+            console.log(
+              `  ${dim('Skipped - keeping existing configuration.')}`
+            );
+            return;
+          }
+
+          if (duplicateChoice === 'back') {
+            currentStep = 'envVars';
+            break;
+          }
+
+          // 'update' continues to installation
+          console.log();
+          console.log(`  ${c('blue', '\u2192')} Updating MCP configuration...`);
+        }
+
         printInstallPreview(
           state.selectedMCP!,
           state.client!,
@@ -299,9 +443,6 @@ export async function runExternalMCPFlow(): Promise<void> {
       // Step 7: Perform installation
       case 'install': {
         const spinner = new Spinner('Installing MCP...').start();
-
-        // Small delay for UX
-        await new Promise(resolve => setTimeout(resolve, 500));
 
         const result = installExternalMCP(
           state.selectedMCP!,
