@@ -51,7 +51,7 @@ vi.mock('../../src/utils/fs.js', () => ({
 
 describe('CLI Commands', () => {
   let consoleSpy: ReturnType<typeof vi.spyOn>;
-  let originalExitCode: number | undefined;
+  let originalExitCode: typeof process.exitCode;
 
   beforeEach(() => {
     vi.resetModules();

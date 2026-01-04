@@ -22,7 +22,7 @@ vi.mock('@octokit/request', () => {
     status: 200,
     headers: {},
     url: 'https://api.github.com/user',
-  });
+  }) as ReturnType<typeof vi.fn> & { defaults: ReturnType<typeof vi.fn> };
   // Add defaults method that returns itself
   mockRequestFn.defaults = vi.fn().mockReturnValue(mockRequestFn);
   return {
@@ -217,6 +217,54 @@ describe('GitHub OAuth', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('Refresh token has expired');
     });
+
+    it('should use oauth-app clientType when refreshing token (Bug #1 fix)', async () => {
+      const { getCredentials, isRefreshTokenExpired, updateToken } =
+        await import('../../src/utils/token-storage.js');
+      const { refreshToken } = await import('@octokit/oauth-methods');
+
+      vi.mocked(getCredentials).mockReturnValue({
+        hostname: 'github.com',
+        username: 'testuser',
+        token: {
+          token: 'test-token',
+          tokenType: 'oauth',
+          refreshToken: 'refresh-token',
+          expiresAt: '2020-01-01T00:00:00.000Z',
+          refreshTokenExpiresAt: '2030-01-01T00:00:00.000Z',
+        },
+        gitProtocol: 'https',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      });
+      vi.mocked(isRefreshTokenExpired).mockReturnValue(false);
+      vi.mocked(refreshToken).mockResolvedValue({
+        authentication: {
+          token: 'new-token',
+          refreshToken: 'new-refresh-token',
+          expiresAt: '2030-06-01T00:00:00.000Z',
+          refreshTokenExpiresAt: '2030-12-01T00:00:00.000Z',
+          clientType: 'github-app',
+        },
+        headers: {},
+        status: 200,
+        url: '',
+        data: {} as never,
+      } as unknown as Awaited<ReturnType<typeof refreshToken>>);
+      vi.mocked(updateToken).mockReturnValue(true);
+
+      const { refreshAuthToken } =
+        await import('../../src/features/github-oauth.js');
+      const result = await refreshAuthToken('github.com');
+
+      expect(result.success).toBe(true);
+      // Verify refreshToken was called with correct clientType
+      expect(refreshToken).toHaveBeenCalledWith(
+        expect.objectContaining({
+          clientType: 'github-app', // Must match refreshAuthToken() clientType
+        })
+      );
+    });
   });
 
   describe('getValidToken', () => {
@@ -312,7 +360,9 @@ describe('GitHub OAuth', () => {
         tokenType: 'oauth',
         scopes: ['repo', 'read:org'],
       });
-      vi.mocked(createOAuthDeviceAuth).mockReturnValue(mockAuth);
+      vi.mocked(createOAuthDeviceAuth).mockReturnValue(
+        mockAuth as unknown as ReturnType<typeof createOAuthDeviceAuth>
+      );
 
       // Import login after mocks are set up
       const { login } = await import('../../src/features/github-oauth.js');
@@ -357,7 +407,9 @@ describe('GitHub OAuth', () => {
 
       // Mock auth to throw an error
       const mockAuth = vi.fn().mockRejectedValue(new Error('Auth timeout'));
-      vi.mocked(createOAuthDeviceAuth).mockReturnValue(mockAuth);
+      vi.mocked(createOAuthDeviceAuth).mockReturnValue(
+        mockAuth as unknown as ReturnType<typeof createOAuthDeviceAuth>
+      );
 
       const { login } = await import('../../src/features/github-oauth.js');
 
@@ -378,15 +430,17 @@ describe('GitHub OAuth', () => {
       let capturedOnVerification: ((v: unknown) => void) | undefined;
 
       // Capture the onVerification callback
-      vi.mocked(createOAuthDeviceAuth).mockImplementation((options) => {
-        capturedOnVerification = options.onVerification as (v: unknown) => void;
+      vi.mocked(createOAuthDeviceAuth).mockImplementation(((options: {
+        onVerification?: (v: unknown) => void;
+      }) => {
+        capturedOnVerification = options.onVerification;
         return vi.fn().mockResolvedValue({
           token: 'gho_test_token',
           type: 'token',
           tokenType: 'oauth',
           scopes: ['repo'],
         });
-      });
+      }) as unknown as typeof createOAuthDeviceAuth);
 
       const { login } = await import('../../src/features/github-oauth.js');
 

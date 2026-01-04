@@ -287,7 +287,8 @@ describe('Shell Utilities', () => {
         signal: null,
       });
 
-      const { runInteractiveCommand } = await import('../../src/utils/shell.js');
+      const { runInteractiveCommand } =
+        await import('../../src/utils/shell.js');
       const result = runInteractiveCommand('gh', ['auth', 'login']);
 
       expect(result.success).toBe(true);
@@ -304,7 +305,8 @@ describe('Shell Utilities', () => {
         signal: null,
       });
 
-      const { runInteractiveCommand } = await import('../../src/utils/shell.js');
+      const { runInteractiveCommand } =
+        await import('../../src/utils/shell.js');
       const result = runInteractiveCommand('gh', ['auth', 'login']);
 
       expect(result.success).toBe(false);
@@ -321,7 +323,8 @@ describe('Shell Utilities', () => {
         signal: null,
       });
 
-      const { runInteractiveCommand } = await import('../../src/utils/shell.js');
+      const { runInteractiveCommand } =
+        await import('../../src/utils/shell.js');
       runInteractiveCommand('gh', ['auth', 'login']);
 
       expect(spawnSync).toHaveBeenCalledWith('gh', ['auth', 'login'], {
@@ -335,7 +338,8 @@ describe('Shell Utilities', () => {
         throw new Error('Command failed');
       });
 
-      const { runInteractiveCommand } = await import('../../src/utils/shell.js');
+      const { runInteractiveCommand } =
+        await import('../../src/utils/shell.js');
       const result = runInteractiveCommand('invalid', []);
 
       expect(result.success).toBe(false);
@@ -352,7 +356,8 @@ describe('Shell Utilities', () => {
         signal: null,
       });
 
-      const { runInteractiveCommand } = await import('../../src/utils/shell.js');
+      const { runInteractiveCommand } =
+        await import('../../src/utils/shell.js');
       runInteractiveCommand('cmd');
 
       expect(spawnSync).toHaveBeenCalledWith('cmd', [], expect.any(Object));

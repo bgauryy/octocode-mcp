@@ -12,7 +12,7 @@
  */
 
 import { createOAuthDeviceAuth } from '@octokit/auth-oauth-device';
-import { refreshToken, deleteToken, checkToken } from '@octokit/oauth-methods';
+import { refreshToken, deleteToken } from '@octokit/oauth-methods';
 import { request } from '@octokit/request';
 import open from 'open';
 import type {
@@ -208,7 +208,7 @@ export async function login(options: LoginOptions = {}): Promise<LoginResult> {
 
     // Handle GitHub App expiring tokens
     if ('refreshToken' in tokenAuth && tokenAuth.refreshToken) {
-      token.refreshToken = tokenAuth.refreshToken;
+      token.refreshToken = tokenAuth.refreshToken as string;
       token.expiresAt =
         'expiresAt' in tokenAuth ? (tokenAuth.expiresAt as string) : undefined;
       token.refreshTokenExpiresAt =
@@ -327,14 +327,17 @@ export async function refreshAuthToken(
   }
 
   try {
+    // Note: For GitHub Apps with expiring tokens, clientSecret is normally required.
+    // However, tokens from the device flow may work without it in some cases.
     const response = await refreshToken({
       clientType: 'github-app',
       clientId: DEFAULT_CLIENT_ID,
+      clientSecret: '', // Not available for public OAuth apps
       refreshToken: credentials.token.refreshToken,
       request: request.defaults({
         baseUrl: getApiBaseUrl(hostname),
       }),
-    });
+    } as Parameters<typeof refreshToken>[0]);
 
     // Update stored token
     const newToken: OAuthToken = {
@@ -416,6 +419,10 @@ export async function getValidToken(
 
 /**
  * Verify the stored token is still valid by making a test API call
+ *
+ * Note: For public OAuth apps (like this CLI), we cannot use checkToken()
+ * as it requires clientSecret. Instead, we make a simple API call to verify
+ * the token works.
  */
 export async function verifyToken(
   hostname: string = DEFAULT_HOSTNAME
@@ -427,13 +434,12 @@ export async function verifyToken(
   }
 
   try {
-    await checkToken({
-      clientType: 'oauth-app',
-      clientId: DEFAULT_CLIENT_ID,
-      token: credentials.token.token,
-      request: request.defaults({
-        baseUrl: getApiBaseUrl(hostname),
-      }),
+    // Verify token by making a simple API call
+    await request('GET /user', {
+      headers: {
+        authorization: `token ${credentials.token.token}`,
+      },
+      baseUrl: getApiBaseUrl(hostname),
     });
     return true;
   } catch {

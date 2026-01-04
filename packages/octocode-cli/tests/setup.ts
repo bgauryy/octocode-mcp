@@ -2,7 +2,7 @@
  * Vitest Test Setup
  */
 
-import { vi } from 'vitest';
+import { vi, beforeEach } from 'vitest';
 
 // Mock process.exit to prevent tests from exiting
 vi.spyOn(process, 'exit').mockImplementation(code => {

@@ -3,8 +3,6 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import os from 'node:os';
-import fs from 'node:fs';
 
 // Mock platform module
 vi.mock('../../src/utils/platform.js', () => ({
@@ -149,9 +147,8 @@ describe('MCP Paths Utilities', () => {
       const { dirExists } = await import('../../src/utils/fs.js');
       vi.mocked(dirExists).mockReturnValue(true);
 
-      const { clientConfigExists } = await import(
-        '../../src/utils/mcp-paths.js'
-      );
+      const { clientConfigExists } =
+        await import('../../src/utils/mcp-paths.js');
       const result = clientConfigExists('cursor');
 
       expect(result).toBe(true);
@@ -161,9 +158,8 @@ describe('MCP Paths Utilities', () => {
       const { dirExists } = await import('../../src/utils/fs.js');
       vi.mocked(dirExists).mockReturnValue(false);
 
-      const { clientConfigExists } = await import(
-        '../../src/utils/mcp-paths.js'
-      );
+      const { clientConfigExists } =
+        await import('../../src/utils/mcp-paths.js');
       const result = clientConfigExists('cursor');
 
       expect(result).toBe(false);
@@ -175,9 +171,8 @@ describe('MCP Paths Utilities', () => {
         throw new Error('Permission denied');
       });
 
-      const { clientConfigExists } = await import(
-        '../../src/utils/mcp-paths.js'
-      );
+      const { clientConfigExists } =
+        await import('../../src/utils/mcp-paths.js');
       const result = clientConfigExists('cursor');
 
       expect(result).toBe(false);
@@ -223,9 +218,8 @@ describe('MCP Paths Utilities', () => {
       const originalEnv = { ...process.env };
       process.env.CURSOR_AGENT = 'true';
 
-      const { detectCurrentClient } = await import(
-        '../../src/utils/mcp-paths.js'
-      );
+      const { detectCurrentClient } =
+        await import('../../src/utils/mcp-paths.js');
       const result = detectCurrentClient();
 
       expect(result).toBe('cursor');
@@ -237,9 +231,8 @@ describe('MCP Paths Utilities', () => {
       process.env = {};
       process.env.WINDSURF_SESSION = 'session123';
 
-      const { detectCurrentClient } = await import(
-        '../../src/utils/mcp-paths.js'
-      );
+      const { detectCurrentClient } =
+        await import('../../src/utils/mcp-paths.js');
       const result = detectCurrentClient();
 
       expect(result).toBe('windsurf');
@@ -251,9 +244,8 @@ describe('MCP Paths Utilities', () => {
       process.env = {};
       process.env.CLAUDE_CODE = 'true';
 
-      const { detectCurrentClient } = await import(
-        '../../src/utils/mcp-paths.js'
-      );
+      const { detectCurrentClient } =
+        await import('../../src/utils/mcp-paths.js');
       const result = detectCurrentClient();
 
       expect(result).toBe('claude-code');
@@ -265,9 +257,8 @@ describe('MCP Paths Utilities', () => {
       process.env = {};
       process.env.ZED_TERM = 'true';
 
-      const { detectCurrentClient } = await import(
-        '../../src/utils/mcp-paths.js'
-      );
+      const { detectCurrentClient } =
+        await import('../../src/utils/mcp-paths.js');
       const result = detectCurrentClient();
 
       expect(result).toBe('zed');
@@ -279,9 +270,8 @@ describe('MCP Paths Utilities', () => {
       process.env = {};
       process.env.VSCODE_PID = '12345';
 
-      const { detectCurrentClient } = await import(
-        '../../src/utils/mcp-paths.js'
-      );
+      const { detectCurrentClient } =
+        await import('../../src/utils/mcp-paths.js');
       const result = detectCurrentClient();
 
       expect(result).toBe('vscode-cline');
@@ -292,9 +282,8 @@ describe('MCP Paths Utilities', () => {
       const originalEnv = { ...process.env };
       process.env = {};
 
-      const { detectCurrentClient } = await import(
-        '../../src/utils/mcp-paths.js'
-      );
+      const { detectCurrentClient } =
+        await import('../../src/utils/mcp-paths.js');
       const result = detectCurrentClient();
 
       expect(result).toBeNull();
@@ -307,9 +296,8 @@ describe('MCP Paths Utilities', () => {
       const { dirExists } = await import('../../src/utils/fs.js');
       vi.mocked(dirExists).mockReturnValue(false);
 
-      const { detectAvailableClients } = await import(
-        '../../src/utils/mcp-paths.js'
-      );
+      const { detectAvailableClients } =
+        await import('../../src/utils/mcp-paths.js');
       const result = detectAvailableClients();
 
       expect(result).toEqual([]);
@@ -321,9 +309,8 @@ describe('MCP Paths Utilities', () => {
         return path?.includes('.cursor') || path?.includes('Claude');
       });
 
-      const { detectAvailableClients } = await import(
-        '../../src/utils/mcp-paths.js'
-      );
+      const { detectAvailableClients } =
+        await import('../../src/utils/mcp-paths.js');
       const result = detectAvailableClients();
 
       expect(result).toContain('cursor');
@@ -333,9 +320,8 @@ describe('MCP Paths Utilities', () => {
 
   describe('getClientsByCategory', () => {
     it('should group clients by category', async () => {
-      const { getClientsByCategory } = await import(
-        '../../src/utils/mcp-paths.js'
-      );
+      const { getClientsByCategory } =
+        await import('../../src/utils/mcp-paths.js');
       const result = getClientsByCategory();
 
       expect(result.ide.length).toBeGreaterThan(0);
@@ -350,9 +336,8 @@ describe('MCP Paths Utilities', () => {
     });
 
     it('should not include custom in any category', async () => {
-      const { getClientsByCategory } = await import(
-        '../../src/utils/mcp-paths.js'
-      );
+      const { getClientsByCategory } =
+        await import('../../src/utils/mcp-paths.js');
       const result = getClientsByCategory();
 
       const allClients = [
@@ -391,4 +376,3 @@ describe('MCP Paths Utilities', () => {
     });
   });
 });
-

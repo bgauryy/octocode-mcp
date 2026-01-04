@@ -2,9 +2,7 @@
  * MCP Config Utilities Tests
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import fs from 'node:fs';
-import path from 'node:path';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import os from 'node:os';
 
 // Mock modules

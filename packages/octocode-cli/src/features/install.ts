@@ -24,6 +24,16 @@ import {
 import { fileExists } from '../utils/fs.js';
 import { isWindows } from '../utils/platform.js';
 
+/**
+ * Convert legacy IDE type to MCPClient
+ */
+function ideToMCPClient(ide: IDE): MCPClient {
+  if (ide === 'claude') {
+    return 'claude-desktop';
+  }
+  return ide;
+}
+
 export interface InstallOptions {
   ide: IDE;
   method: InstallMethod;
@@ -71,7 +81,7 @@ export function checkExistingInstallation(ide: IDE): {
   configPath: string;
   configExists: boolean;
 } {
-  const configPath = getMCPConfigPath(ide);
+  const configPath = getMCPConfigPath(ideToMCPClient(ide));
   const configExists = fileExists(configPath);
 
   if (!configExists) {
@@ -95,7 +105,7 @@ export function checkExistingInstallation(ide: IDE): {
  */
 export function installOctocode(options: InstallOptions): InstallResult {
   const { ide, method, force = false } = options;
-  const configPath = getMCPConfigPath(ide);
+  const configPath = getMCPConfigPath(ideToMCPClient(ide));
 
   // Read existing config or create new
   let config: MCPConfig = readMCPConfig(configPath) || { mcpServers: {} };
@@ -156,7 +166,7 @@ export function getInstallPreview(
   ide: IDE,
   method: InstallMethod
 ): InstallPreview {
-  const configPath = getMCPConfigPath(ide);
+  const configPath = getMCPConfigPath(ideToMCPClient(ide));
   const existing = checkExistingInstallation(ide);
   const existingConfig = readMCPConfig(configPath);
   const serverConfig = isWindows

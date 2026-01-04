@@ -41,12 +41,11 @@ describe('Token Storage', () => {
     vi.clearAllMocks();
 
     // Setup crypto mocks
-    vi.mocked(crypto.randomBytes).mockReturnValue(mockIv);
+    vi.mocked(crypto.randomBytes).mockReturnValue(mockIv as unknown as void);
 
     // Ensure keytar is disabled for file fallback tests
-    const { _setSecureStorageAvailable } = await import(
-      '../../src/utils/token-storage.js'
-    );
+    const { _setSecureStorageAvailable } =
+      await import('../../src/utils/token-storage.js');
     _setSecureStorageAvailable(false);
   });
 
@@ -68,9 +67,8 @@ describe('Token Storage', () => {
         mockCipher as unknown as crypto.CipherGCM
       );
 
-      const { storeCredentials } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { storeCredentials } =
+        await import('../../src/utils/token-storage.js');
 
       storeCredentials({
         hostname: 'github.com',
@@ -96,9 +94,8 @@ describe('Token Storage', () => {
     it('should return null when credentials file does not exist', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
-      const { getCredentials } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { getCredentials } =
+        await import('../../src/utils/token-storage.js');
       const result = getCredentials('github.com');
 
       expect(result).toBeNull();
@@ -120,9 +117,8 @@ describe('Token Storage', () => {
         throw new Error('Decryption failed');
       });
 
-      const { getCredentials } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { getCredentials } =
+        await import('../../src/utils/token-storage.js');
       const result = getCredentials('github.com');
 
       expect(result).toBeNull();
@@ -133,9 +129,8 @@ describe('Token Storage', () => {
     it('should return false when no credentials exist in file storage', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
-      const { deleteCredentials } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { deleteCredentials } =
+        await import('../../src/utils/token-storage.js');
       const result = deleteCredentials('github.com');
 
       // With keytar unavailable, only file storage is used
@@ -147,9 +142,8 @@ describe('Token Storage', () => {
     it('should return false when no credentials exist', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
-      const { hasCredentials } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { hasCredentials } =
+        await import('../../src/utils/token-storage.js');
       const result = hasCredentials('github.com');
 
       expect(result).toBe(false);
@@ -160,9 +154,8 @@ describe('Token Storage', () => {
     it('should normalize hostnames correctly via getCredentials', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
-      const { getCredentials } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { getCredentials } =
+        await import('../../src/utils/token-storage.js');
 
       // These should all be treated as the same host
       getCredentials('github.com');
@@ -177,9 +170,8 @@ describe('Token Storage', () => {
 
   describe('getCredentialsFilePath', () => {
     it('should return file path when keytar unavailable', async () => {
-      const { getCredentialsFilePath, isUsingSecureStorage } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { getCredentialsFilePath, isUsingSecureStorage } =
+        await import('../../src/utils/token-storage.js');
       const path = getCredentialsFilePath();
 
       // With keytar mocked as null, should fall back to file
@@ -193,9 +185,8 @@ describe('Token Storage', () => {
 
   describe('isUsingSecureStorage', () => {
     it('should report storage mode', async () => {
-      const { isUsingSecureStorage } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { isUsingSecureStorage } =
+        await import('../../src/utils/token-storage.js');
 
       // With keytar mocked as null, should return false
       const result = isUsingSecureStorage();
@@ -205,9 +196,8 @@ describe('Token Storage', () => {
 
   describe('isTokenExpired', () => {
     it('should return false for non-expiring tokens', async () => {
-      const { isTokenExpired } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { isTokenExpired } =
+        await import('../../src/utils/token-storage.js');
 
       const credentials = {
         hostname: 'github.com',
@@ -225,9 +215,8 @@ describe('Token Storage', () => {
     });
 
     it('should return true for expired tokens', async () => {
-      const { isTokenExpired } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { isTokenExpired } =
+        await import('../../src/utils/token-storage.js');
 
       const credentials = {
         hostname: 'github.com',
@@ -246,9 +235,8 @@ describe('Token Storage', () => {
     });
 
     it('should return false for tokens with plenty of time remaining', async () => {
-      const { isTokenExpired } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { isTokenExpired } =
+        await import('../../src/utils/token-storage.js');
 
       const futureDate = new Date();
       futureDate.setHours(futureDate.getHours() + 1); // 1 hour from now
@@ -272,9 +260,8 @@ describe('Token Storage', () => {
 
   describe('isRefreshTokenExpired', () => {
     it('should return false when no refresh token expiry', async () => {
-      const { isRefreshTokenExpired } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { isRefreshTokenExpired } =
+        await import('../../src/utils/token-storage.js');
 
       const credentials = {
         hostname: 'github.com',
@@ -293,9 +280,8 @@ describe('Token Storage', () => {
     });
 
     it('should return true for expired refresh tokens', async () => {
-      const { isRefreshTokenExpired } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { isRefreshTokenExpired } =
+        await import('../../src/utils/token-storage.js');
 
       const credentials = {
         hostname: 'github.com',
@@ -319,9 +305,8 @@ describe('Token Storage', () => {
     it('should return empty array when no credentials exist', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
-      const { listStoredHosts } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { listStoredHosts } =
+        await import('../../src/utils/token-storage.js');
       const hosts = listStoredHosts();
 
       expect(hosts).toEqual([]);
@@ -353,9 +338,8 @@ describe('Token Storage', () => {
     it('getCredentialsAsync should return null when no credentials exist', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
-      const { getCredentialsAsync } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { getCredentialsAsync } =
+        await import('../../src/utils/token-storage.js');
       const result = await getCredentialsAsync('github.com');
 
       expect(result).toBeNull();
@@ -364,9 +348,8 @@ describe('Token Storage', () => {
     it('hasCredentialsAsync should return false when no credentials exist', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
-      const { hasCredentialsAsync } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { hasCredentialsAsync } =
+        await import('../../src/utils/token-storage.js');
       const result = await hasCredentialsAsync('github.com');
 
       expect(result).toBe(false);
@@ -375,9 +358,8 @@ describe('Token Storage', () => {
     it('listStoredHostsAsync should return empty array when no credentials', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
-      const { listStoredHostsAsync } = await import(
-        '../../src/utils/token-storage.js'
-      );
+      const { listStoredHostsAsync } =
+        await import('../../src/utils/token-storage.js');
       const hosts = await listStoredHostsAsync();
 
       expect(hosts).toEqual([]);

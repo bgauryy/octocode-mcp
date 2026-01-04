@@ -38,7 +38,7 @@ async function loadKeytar(): Promise<typeof import('keytar') | null> {
 
 // Try to load keytar on module init (non-blocking)
 loadKeytar().catch(() => {
-  // Ignore initialization errors
+  // Ignore - will use file fallback
 });
 
 // Service name for keychain storage (like gh uses "gh:github.com")
@@ -324,7 +324,7 @@ async function migrateLegacyCredentials(): Promise<void> {
 
 // Run migration on module load
 migrateLegacyCredentials().catch(() => {
-  // Ignore migration errors
+  // Ignore - keep using current storage
 });
 
 // ============================================================================

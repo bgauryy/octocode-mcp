@@ -2,7 +2,16 @@
  * Spinner Utility Tests
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+  beforeAll,
+  afterAll,
+} from 'vitest';
 
 describe('Spinner', () => {
   let originalWrite: typeof process.stdout.write;
@@ -58,9 +67,9 @@ describe('Spinner', () => {
 
       expect(writtenOutput.length).toBeGreaterThan(0);
       // Should contain the text
-      expect(
-        writtenOutput.some(output => output.includes('Loading...'))
-      ).toBe(true);
+      expect(writtenOutput.some(output => output.includes('Loading...'))).toBe(
+        true
+      );
 
       spinner.stop();
     });
@@ -72,9 +81,9 @@ describe('Spinner', () => {
       spinner.start();
 
       // Should contain cursor hide sequence
-      expect(
-        writtenOutput.some(output => output.includes('\x1B[?25l'))
-      ).toBe(true);
+      expect(writtenOutput.some(output => output.includes('\x1B[?25l'))).toBe(
+        true
+      );
 
       spinner.stop();
     });
@@ -87,9 +96,9 @@ describe('Spinner', () => {
       spinner.stop();
 
       // Should contain cursor show sequence
-      expect(
-        writtenOutput.some(output => output.includes('\x1B[?25h'))
-      ).toBe(true);
+      expect(writtenOutput.some(output => output.includes('\x1B[?25h'))).toBe(
+        true
+      );
     });
 
     it('should allow changing text on start', async () => {
@@ -137,9 +146,9 @@ describe('Spinner', () => {
       spinner.start();
       spinner.info('Information');
 
-      expect(
-        writtenOutput.some(output => output.includes('Information'))
-      ).toBe(true);
+      expect(writtenOutput.some(output => output.includes('Information'))).toBe(
+        true
+      );
       expect(writtenOutput.some(output => output.includes('ℹ'))).toBe(true);
     });
 
