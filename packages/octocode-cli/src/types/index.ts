@@ -120,11 +120,22 @@ export interface StoredCredentials {
   updatedAt: string;
 }
 
+// Token source for auth status display
+export type TokenSource = 'octocode' | 'gh-cli' | 'none';
+
 // Auth status from our OAuth implementation
 export interface OctocodeAuthStatus {
   authenticated: boolean;
   hostname?: string;
   username?: string;
   tokenExpired?: boolean;
+  tokenSource?: TokenSource;
   error?: string;
+}
+
+// Token result with source information
+export interface TokenResult {
+  token: string | null;
+  source: TokenSource;
+  username?: string;
 }

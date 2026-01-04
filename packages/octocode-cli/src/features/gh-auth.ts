@@ -141,3 +141,26 @@ export function runGitHubAuthLogout(hostname?: string): GitHubAuthResult {
 
   return runInteractiveCommand('gh', args);
 }
+
+/**
+ * Get GitHub token from gh CLI
+ * Runs `gh auth token` and returns the token or null if not authenticated
+ */
+export function getGitHubCLIToken(hostname?: string): string | null {
+  if (!isGitHubCLIInstalled()) {
+    return null;
+  }
+
+  const args = ['auth', 'token'];
+  if (hostname) {
+    args.push('--hostname', hostname);
+  }
+
+  const result = runCommand('gh', args);
+
+  if (result.success && result.stdout.trim()) {
+    return result.stdout.trim();
+  }
+
+  return null;
+}

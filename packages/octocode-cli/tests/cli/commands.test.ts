@@ -9,6 +9,7 @@ vi.mock('../../src/features/github-oauth.js', () => ({
   login: vi.fn(),
   logout: vi.fn(),
   getAuthStatus: vi.fn(),
+  getToken: vi.fn(),
   getStoragePath: vi
     .fn()
     .mockReturnValue('/home/test/.octocode/credentials.json'),
@@ -67,19 +68,12 @@ describe('CLI Commands', () => {
   });
 
   describe('tokenCommand', () => {
-    it('should output the token when authenticated', async () => {
-      const { getCredentials } =
-        await import('../../src/utils/token-storage.js');
-      vi.mocked(getCredentials).mockReturnValue({
-        hostname: 'github.com',
+    it('should output the token when authenticated via octocode', async () => {
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: 'gho_test_token_12345',
+        source: 'octocode',
         username: 'testuser',
-        token: {
-          token: 'gho_test_token_12345',
-          tokenType: 'oauth',
-        },
-        gitProtocol: 'https',
-        createdAt: '2024-01-01T00:00:00.000Z',
-        updatedAt: '2024-01-01T00:00:00.000Z',
       });
 
       const { findCommand } = await import('../../src/cli/commands.js');
@@ -96,10 +90,33 @@ describe('CLI Commands', () => {
       expect(process.exitCode).toBeUndefined();
     });
 
+    it('should output the token when authenticated via gh-cli', async () => {
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: 'gho_ghcli_token_12345',
+        source: 'gh-cli',
+        username: 'ghuser',
+      });
+
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const tokenCmd = findCommand('token');
+
+      await tokenCmd!.handler({
+        command: 'token',
+        args: [],
+        options: {},
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith('gho_ghcli_token_12345');
+      expect(process.exitCode).toBeUndefined();
+    });
+
     it('should show error when not authenticated', async () => {
-      const { getCredentials } =
-        await import('../../src/utils/token-storage.js');
-      vi.mocked(getCredentials).mockReturnValue(null);
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: null,
+        source: 'none',
+      });
 
       const { findCommand } = await import('../../src/cli/commands.js');
       const tokenCmd = findCommand('token');
@@ -123,18 +140,11 @@ describe('CLI Commands', () => {
     });
 
     it('should use custom hostname when provided', async () => {
-      const { getCredentials } =
-        await import('../../src/utils/token-storage.js');
-      vi.mocked(getCredentials).mockReturnValue({
-        hostname: 'github.enterprise.com',
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: 'gho_enterprise_token',
+        source: 'octocode',
         username: 'enterpriseuser',
-        token: {
-          token: 'gho_enterprise_token',
-          tokenType: 'oauth',
-        },
-        gitProtocol: 'https',
-        createdAt: '2024-01-01T00:00:00.000Z',
-        updatedAt: '2024-01-01T00:00:00.000Z',
       });
 
       const { findCommand } = await import('../../src/cli/commands.js');
@@ -146,8 +156,33 @@ describe('CLI Commands', () => {
         options: { hostname: 'github.enterprise.com' },
       });
 
-      expect(getCredentials).toHaveBeenCalledWith('github.enterprise.com');
+      expect(getToken).toHaveBeenCalledWith('github.enterprise.com');
       expect(consoleSpy).toHaveBeenCalledWith('gho_enterprise_token');
+    });
+
+    it('should show source info when --source flag is used', async () => {
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: 'gho_test_token',
+        source: 'gh-cli',
+        username: 'testuser',
+      });
+
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const tokenCmd = findCommand('token');
+
+      await tokenCmd!.handler({
+        command: 'token',
+        args: [],
+        options: { source: true },
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Token found')
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Source:')
+      );
     });
 
     it('should be findable by alias "t"', async () => {

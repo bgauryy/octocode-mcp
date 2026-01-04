@@ -19,7 +19,9 @@ import type {
   OAuthToken,
   StoredCredentials,
   OctocodeAuthStatus,
+  TokenResult,
 } from '../types/index.js';
+import { getGitHubCLIToken, checkGitHubAuth } from './gh-auth.js';
 import {
   storeCredentials,
   getCredentials,
@@ -368,25 +370,39 @@ export async function refreshAuthToken(
 
 /**
  * Get current authentication status
+ * Checks octocode storage first, then falls back to gh CLI
  */
 export function getAuthStatus(
   hostname: string = DEFAULT_HOSTNAME
 ): OctocodeAuthStatus {
+  // First check octocode's own storage
   const credentials = getCredentials(hostname);
 
-  if (!credentials) {
+  if (credentials) {
+    const tokenExpired = isTokenExpired(credentials);
     return {
-      authenticated: false,
+      authenticated: !tokenExpired,
+      hostname: credentials.hostname,
+      username: credentials.username,
+      tokenExpired,
+      tokenSource: 'octocode',
     };
   }
 
-  const tokenExpired = isTokenExpired(credentials);
+  // Fallback to gh CLI
+  const ghAuth = checkGitHubAuth();
+  if (ghAuth.authenticated) {
+    return {
+      authenticated: true,
+      hostname,
+      username: ghAuth.username,
+      tokenSource: 'gh-cli',
+    };
+  }
 
   return {
-    authenticated: !tokenExpired,
-    hostname: credentials.hostname,
-    username: credentials.username,
-    tokenExpired,
+    authenticated: false,
+    tokenSource: 'none',
   };
 }
 
@@ -418,6 +434,60 @@ export async function getValidToken(
   }
 
   return credentials.token.token;
+}
+
+/**
+ * Get token with source information
+ * Checks octocode storage first, then falls back to gh CLI
+ */
+export async function getToken(
+  hostname: string = DEFAULT_HOSTNAME
+): Promise<TokenResult> {
+  // First try octocode's own storage
+  const credentials = getCredentials(hostname);
+
+  if (credentials) {
+    // Check if token is expired
+    if (isTokenExpired(credentials)) {
+      // Try to refresh
+      if (credentials.token.refreshToken) {
+        const result = await refreshAuthToken(hostname);
+        if (result.success) {
+          const updated = getCredentials(hostname);
+          if (updated?.token.token) {
+            return {
+              token: updated.token.token,
+              source: 'octocode',
+              username: updated.username,
+            };
+          }
+        }
+      }
+      // Token expired and can't refresh - fall through to gh CLI
+    } else {
+      return {
+        token: credentials.token.token,
+        source: 'octocode',
+        username: credentials.username,
+      };
+    }
+  }
+
+  // Fallback to gh CLI
+  const ghToken = getGitHubCLIToken(hostname);
+  if (ghToken) {
+    const ghAuth = checkGitHubAuth();
+    return {
+      token: ghToken,
+      source: 'gh-cli',
+      username: ghAuth.username,
+    };
+  }
+
+  return {
+    token: null,
+    source: 'none',
+  };
 }
 
 /**

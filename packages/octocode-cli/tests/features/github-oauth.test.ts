@@ -47,6 +47,14 @@ vi.mock('../../src/utils/token-storage.js', () => ({
   isUsingSecureStorage: vi.fn().mockReturnValue(false),
 }));
 
+vi.mock('../../src/features/gh-auth.js', () => ({
+  getGitHubCLIToken: vi.fn().mockReturnValue(null),
+  checkGitHubAuth: vi.fn().mockReturnValue({
+    installed: false,
+    authenticated: false,
+  }),
+}));
+
 describe('GitHub OAuth', () => {
   beforeEach(() => {
     vi.resetModules();

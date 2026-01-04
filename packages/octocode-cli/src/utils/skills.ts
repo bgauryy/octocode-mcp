@@ -4,8 +4,9 @@
  */
 
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { copyDirectory, dirExists, listSubdirectories } from './fs.js';
+import { HOME, isWindows, getAppDataPath } from './platform.js';
 
 /**
  * Get the path to the bundled skills directory
@@ -68,4 +69,29 @@ export function getAvailableSkills(): string[] {
   return listSubdirectories(skillsSource).filter(name =>
     name.startsWith('octocode-')
   );
+}
+
+/**
+ * Get skills source directory (simple version for bundled output)
+ * From built output: out/octocode-cli.js -> ../skills
+ * @returns Resolved path to skills directory
+ */
+export function getSkillsSourceDir(): string {
+  const currentFile = fileURLToPath(import.meta.url);
+  const currentDir = dirname(currentFile);
+  return resolve(currentDir, '..', 'skills');
+}
+
+/**
+ * Get Claude skills destination directory
+ * Windows: %APPDATA%\Claude\skills\
+ * macOS/Linux: ~/.claude/skills/
+ * @returns Path to user's Claude skills directory
+ */
+export function getSkillsDestDir(): string {
+  if (isWindows) {
+    const appData = getAppDataPath();
+    return join(appData, 'Claude', 'skills');
+  }
+  return join(HOME, '.claude', 'skills');
 }

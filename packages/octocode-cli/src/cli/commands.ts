@@ -15,17 +15,17 @@ import {
   logout as oauthLogout,
   getAuthStatus,
   getStoragePath,
+  getToken,
   type VerificationInfo,
 } from '../features/github-oauth.js';
-import { getCredentials } from '../utils/token-storage.js';
+import type { TokenSource } from '../types/index.js';
 import { loadInquirer, select } from '../utils/prompts.js';
 import { checkNodeInPath, checkNpmInPath } from '../features/node-check.js';
 import { IDE_INFO, INSTALL_METHOD_INFO } from '../ui/constants.js';
 import { Spinner } from '../utils/spinner.js';
 import { copyDirectory, dirExists, listSubdirectories } from '../utils/fs.js';
-import { HOME, isWindows, getAppDataPath } from '../utils/platform.js';
+import { getSkillsSourceDir, getSkillsDestDir } from '../utils/skills.js';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 /**
  * Print node-doctor hint for CLI mode
@@ -35,6 +35,20 @@ function printNodeDoctorHintCLI(): void {
     `  ${dim('For deeper diagnostics:')} ${c('cyan', 'npx node-doctor')}`
   );
   console.log();
+}
+
+/**
+ * Format token source for display
+ */
+function formatTokenSource(source: TokenSource): string {
+  switch (source) {
+    case 'octocode':
+      return c('cyan', 'octocode');
+    case 'gh-cli':
+      return c('magenta', 'gh cli');
+    default:
+      return dim('none');
+  }
 }
 
 /**
@@ -436,38 +450,20 @@ async function showAuthStatus(hostname: string = 'github.com'): Promise<void> {
       );
     }
     console.log(`  ${dim('Host:')} ${status.hostname}`);
+    console.log(
+      `  ${dim('Source:')} ${formatTokenSource(status.tokenSource || 'none')}`
+    );
   } else {
     console.log(`  ${c('yellow', '⚠')} ${c('yellow', 'Not authenticated')}`);
     console.log();
     console.log(`  ${bold('To authenticate:')}`);
     console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode-cli login')}`);
+    console.log(`    ${dim('or')}`);
+    console.log(`    ${c('cyan', '→')} ${c('yellow', 'gh auth login')}`);
   }
   console.log();
   console.log(`  ${dim('Credentials stored in:')} ${getStoragePath()}`);
   console.log();
-}
-
-/**
- * Get skills source directory
- * From built output: out/octocode-cli.js -> ../skills
- */
-function getSkillsSourceDir(): string {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
-  return path.resolve(__dirname, '..', 'skills');
-}
-
-/**
- * Get Claude skills destination directory
- * Windows: %APPDATA%\Claude\skills\
- * macOS/Linux: ~/.claude/skills/
- */
-function getSkillsDestDir(): string {
-  if (isWindows) {
-    const appData = getAppDataPath();
-    return path.join(appData, 'Claude', 'skills');
-  }
-  return path.join(HOME, '.claude', 'skills');
 }
 
 /**
@@ -598,7 +594,7 @@ const tokenCommand: CLICommand = {
   name: 'token',
   aliases: ['t'],
   description: 'Print the stored GitHub OAuth token',
-  usage: 'octocode-cli token [--hostname <host>]',
+  usage: 'octocode-cli token [--hostname <host>] [--source]',
   options: [
     {
       name: 'hostname',
@@ -606,25 +602,46 @@ const tokenCommand: CLICommand = {
       description: 'GitHub Enterprise hostname (default: github.com)',
       hasValue: true,
     },
+    {
+      name: 'source',
+      short: 's',
+      description: 'Show token source (octocode or gh-cli)',
+    },
   ],
   handler: async (args: ParsedArgs) => {
     const hostname =
       (args.options['hostname'] as string | undefined) || 'github.com';
-    const credentials = getCredentials(hostname);
+    const showSource = Boolean(args.options['source'] || args.options['s']);
 
-    if (!credentials) {
+    const result = await getToken(hostname);
+
+    if (!result.token) {
       console.log();
       console.log(`  ${c('yellow', '⚠')} Not authenticated to ${hostname}`);
       console.log();
       console.log(`  ${dim('To login:')}`);
       console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode-cli login')}`);
+      console.log(`    ${dim('or')}`);
+      console.log(`    ${c('cyan', '→')} ${c('yellow', 'gh auth login')}`);
       console.log();
       process.exitCode = 1;
       return;
     }
 
-    // Output just the token for easy piping/scripting
-    console.log(credentials.token.token);
+    if (showSource) {
+      console.log();
+      console.log(`  ${c('green', '✓')} Token found`);
+      console.log(`  ${dim('Source:')} ${formatTokenSource(result.source)}`);
+      if (result.username) {
+        console.log(`  ${dim('User:')} ${c('cyan', result.username)}`);
+      }
+      console.log();
+      console.log(`  ${dim('Token:')} ${result.token}`);
+      console.log();
+    } else {
+      // Output just the token for easy piping/scripting
+      console.log(result.token);
+    }
   },
 };
 
@@ -655,6 +672,9 @@ const statusCommand: CLICommand = {
         `  ${c('green', '✓')} Logged in as ${c('cyan', status.username || 'unknown')}`
       );
       console.log(`  ${dim('Host:')} ${status.hostname}`);
+      console.log(
+        `  ${dim('Source:')} ${formatTokenSource(status.tokenSource || 'none')}`
+      );
       if (status.tokenExpired) {
         console.log(
           `  ${c('yellow', '⚠')} Token has expired - please login again`
@@ -665,6 +685,8 @@ const statusCommand: CLICommand = {
       console.log();
       console.log(`  ${dim('To login:')}`);
       console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode-cli login')}`);
+      console.log(`    ${dim('or')}`);
+      console.log(`    ${c('cyan', '→')} ${c('yellow', 'gh auth login')}`);
     }
     console.log();
   },
