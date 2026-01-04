@@ -258,10 +258,11 @@ describe('GitHub OAuth', () => {
       const result = await refreshAuthToken('github.com');
 
       expect(result.success).toBe(true);
-      // Verify refreshToken was called with correct clientType
+      // Verify refreshToken was called with github-app clientType
+      // Note: refreshToken API requires github-app (OAuth apps don't have refresh tokens)
       expect(refreshToken).toHaveBeenCalledWith(
         expect.objectContaining({
-          clientType: 'github-app', // Must match refreshAuthToken() clientType
+          clientType: 'github-app',
         })
       );
     });

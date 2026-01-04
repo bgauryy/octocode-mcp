@@ -283,9 +283,12 @@ export async function logout(
           baseUrl: getApiBaseUrl(hostname),
         }),
       });
-    } catch {
+    } catch (error) {
       // Token revocation failed - continue with local deletion
       // User can manually revoke at https://github.com/settings/applications
+      console.error(
+        `[github-oauth] Token revocation failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
@@ -330,7 +333,7 @@ export async function refreshAuthToken(
     // Note: For GitHub Apps with expiring tokens, clientSecret is normally required.
     // However, tokens from the device flow may work without it in some cases.
     const response = await refreshToken({
-      clientType: 'github-app',
+      clientType: 'github-app', // Required: refreshToken API only works with GitHub Apps
       clientId: DEFAULT_CLIENT_ID,
       clientSecret: '', // Not available for public OAuth apps
       refreshToken: credentials.token.refreshToken,
@@ -442,7 +445,10 @@ export async function verifyToken(
       baseUrl: getApiBaseUrl(hostname),
     });
     return true;
-  } catch {
+  } catch (error) {
+    console.error(
+      `[github-oauth] Token verification failed: ${error instanceof Error ? error.message : String(error)}`
+    );
     return false;
   }
 }

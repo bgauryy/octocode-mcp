@@ -37,8 +37,10 @@ async function loadKeytar(): Promise<typeof import('keytar') | null> {
 }
 
 // Try to load keytar on module init (non-blocking)
-loadKeytar().catch(() => {
-  // Ignore - will use file fallback
+loadKeytar().catch(error => {
+  console.error(
+    `[token-storage] Keytar load failed (using file fallback): ${error instanceof Error ? error.message : String(error)}`
+  );
 });
 
 // Service name for keychain storage (like gh uses "gh:github.com")
@@ -314,17 +316,23 @@ async function migrateLegacyCredentials(): Promise<void> {
       if (existsSync(KEY_FILE)) {
         unlinkSync(KEY_FILE);
       }
-    } catch {
-      // Ignore cleanup errors
+    } catch (cleanupError) {
+      console.error(
+        `[token-storage] Legacy file cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`
+      );
     }
-  } catch {
-    // Migration failed - keep using file storage
+  } catch (migrationError) {
+    console.error(
+      `[token-storage] Credential migration failed: ${migrationError instanceof Error ? migrationError.message : String(migrationError)}`
+    );
   }
 }
 
 // Run migration on module load
-migrateLegacyCredentials().catch(() => {
-  // Ignore - keep using current storage
+migrateLegacyCredentials().catch(error => {
+  console.error(
+    `[token-storage] Migration failed (keeping current storage): ${error instanceof Error ? error.message : String(error)}`
+  );
 });
 
 // ============================================================================
@@ -476,8 +484,10 @@ export function deleteCredentials(hostname: string = 'github.com'): boolean {
 
   if (isSecureStorageAvailable()) {
     // Fire and forget for keychain
-    keytarDelete(normalizedHostname).catch(() => {
-      // Ignore errors
+    keytarDelete(normalizedHostname).catch(error => {
+      console.error(
+        `[token-storage] Keytar delete failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     });
   }
 
