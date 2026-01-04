@@ -111,7 +111,7 @@ describe('CLI Commands', () => {
       expect(process.exitCode).toBeUndefined();
     });
 
-    it('should show error when not authenticated', async () => {
+    it('should show error when no octocode token found (default type)', async () => {
       const { getToken } = await import('../../src/features/github-oauth.js');
       vi.mocked(getToken).mockResolvedValue({
         token: null,
@@ -132,9 +132,9 @@ describe('CLI Commands', () => {
       expect(consoleSpy).not.toHaveBeenCalledWith(
         expect.stringMatching(/^gho_/)
       );
-      // Should show warning message
+      // Should show warning about no octocode token (default type)
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Not authenticated')
+        expect.stringContaining('No octocode token found')
       );
       expect(process.exitCode).toBe(1);
     });
@@ -156,7 +156,11 @@ describe('CLI Commands', () => {
         options: { hostname: 'github.enterprise.com' },
       });
 
-      expect(getToken).toHaveBeenCalledWith('github.enterprise.com');
+      // getToken is now called with hostname and tokenSource ('octocode' is default)
+      expect(getToken).toHaveBeenCalledWith(
+        'github.enterprise.com',
+        'octocode'
+      );
       expect(consoleSpy).toHaveBeenCalledWith('gho_enterprise_token');
     });
 
@@ -190,6 +194,64 @@ describe('CLI Commands', () => {
       const tokenCmd = findCommand('t');
       expect(tokenCmd).toBeDefined();
       expect(tokenCmd!.name).toBe('token');
+    });
+
+    it('should use gh type when --type=gh is provided', async () => {
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: 'gho_gh_cli_token',
+        source: 'gh-cli',
+        username: 'ghuser',
+      });
+
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const tokenCmd = findCommand('token');
+
+      await tokenCmd!.handler({
+        command: 'token',
+        args: [],
+        options: { type: 'gh' },
+      });
+
+      expect(getToken).toHaveBeenCalledWith('github.com', 'gh');
+      expect(consoleSpy).toHaveBeenCalledWith('gho_gh_cli_token');
+    });
+
+    it('should use auto type when --type=auto is provided', async () => {
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: 'gho_auto_token',
+        source: 'octocode',
+        username: 'autouser',
+      });
+
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const tokenCmd = findCommand('token');
+
+      await tokenCmd!.handler({
+        command: 'token',
+        args: [],
+        options: { type: 'auto' },
+      });
+
+      expect(getToken).toHaveBeenCalledWith('github.com', 'auto');
+      expect(consoleSpy).toHaveBeenCalledWith('gho_auto_token');
+    });
+
+    it('should show error for invalid --type value', async () => {
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const tokenCmd = findCommand('token');
+
+      await tokenCmd!.handler({
+        command: 'token',
+        args: [],
+        options: { type: 'invalid' },
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid token type')
+      );
+      expect(process.exitCode).toBe(1);
     });
   });
 

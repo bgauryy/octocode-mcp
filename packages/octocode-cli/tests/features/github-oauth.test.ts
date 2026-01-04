@@ -35,12 +35,19 @@ vi.mock('open', () => ({
 }));
 
 vi.mock('../../src/utils/token-storage.js', () => ({
-  storeCredentials: vi.fn(),
-  getCredentials: vi.fn(),
-  deleteCredentials: vi.fn(),
+  storeCredentials: vi
+    .fn()
+    .mockResolvedValue({ success: true, insecureStorageUsed: false }),
+  getCredentials: vi.fn().mockResolvedValue(null),
+  getCredentialsSync: vi.fn().mockReturnValue(null),
+  deleteCredentials: vi.fn().mockResolvedValue({
+    success: true,
+    deletedFromKeyring: false,
+    deletedFromFile: true,
+  }),
   isTokenExpired: vi.fn(),
   isRefreshTokenExpired: vi.fn(),
-  updateToken: vi.fn(),
+  updateToken: vi.fn().mockResolvedValue(true),
   getCredentialsFilePath: vi
     .fn()
     .mockReturnValue('/home/test/.octocode/credentials.json'),
@@ -63,9 +70,9 @@ describe('GitHub OAuth', () => {
 
   describe('getAuthStatus', () => {
     it('should return not authenticated when no credentials exist', async () => {
-      const { getCredentials } =
+      const { getCredentialsSync } =
         await import('../../src/utils/token-storage.js');
-      vi.mocked(getCredentials).mockReturnValue(null);
+      vi.mocked(getCredentialsSync).mockReturnValue(null);
 
       const { getAuthStatus } =
         await import('../../src/features/github-oauth.js');
@@ -76,9 +83,9 @@ describe('GitHub OAuth', () => {
     });
 
     it('should return authenticated when valid credentials exist', async () => {
-      const { getCredentials, isTokenExpired } =
+      const { getCredentialsSync, isTokenExpired } =
         await import('../../src/utils/token-storage.js');
-      vi.mocked(getCredentials).mockReturnValue({
+      vi.mocked(getCredentialsSync).mockReturnValue({
         hostname: 'github.com',
         username: 'testuser',
         token: {
@@ -101,9 +108,9 @@ describe('GitHub OAuth', () => {
     });
 
     it('should indicate token expired when token is expired', async () => {
-      const { getCredentials, isTokenExpired } =
+      const { getCredentialsSync, isTokenExpired } =
         await import('../../src/utils/token-storage.js');
-      vi.mocked(getCredentials).mockReturnValue({
+      vi.mocked(getCredentialsSync).mockReturnValue({
         hostname: 'github.com',
         username: 'testuser',
         token: {
@@ -130,7 +137,7 @@ describe('GitHub OAuth', () => {
     it('should return error when not logged in', async () => {
       const { getCredentials } =
         await import('../../src/utils/token-storage.js');
-      vi.mocked(getCredentials).mockReturnValue(null);
+      vi.mocked(getCredentials).mockResolvedValue(null);
 
       const { logout } = await import('../../src/features/github-oauth.js');
       const result = await logout('github.com');
@@ -142,7 +149,7 @@ describe('GitHub OAuth', () => {
     it('should delete credentials on logout', async () => {
       const { getCredentials, deleteCredentials } =
         await import('../../src/utils/token-storage.js');
-      vi.mocked(getCredentials).mockReturnValue({
+      vi.mocked(getCredentials).mockResolvedValue({
         hostname: 'github.com',
         username: 'testuser',
         token: {
@@ -166,7 +173,7 @@ describe('GitHub OAuth', () => {
     it('should return error when not logged in', async () => {
       const { getCredentials } =
         await import('../../src/utils/token-storage.js');
-      vi.mocked(getCredentials).mockReturnValue(null);
+      vi.mocked(getCredentials).mockResolvedValue(null);
 
       const { refreshAuthToken } =
         await import('../../src/features/github-oauth.js');
@@ -179,7 +186,7 @@ describe('GitHub OAuth', () => {
     it('should return error when token does not support refresh', async () => {
       const { getCredentials } =
         await import('../../src/utils/token-storage.js');
-      vi.mocked(getCredentials).mockReturnValue({
+      vi.mocked(getCredentials).mockResolvedValue({
         hostname: 'github.com',
         username: 'testuser',
         token: {
@@ -203,7 +210,7 @@ describe('GitHub OAuth', () => {
     it('should return error when refresh token is expired', async () => {
       const { getCredentials, isRefreshTokenExpired } =
         await import('../../src/utils/token-storage.js');
-      vi.mocked(getCredentials).mockReturnValue({
+      vi.mocked(getCredentials).mockResolvedValue({
         hostname: 'github.com',
         username: 'testuser',
         token: {
@@ -231,7 +238,7 @@ describe('GitHub OAuth', () => {
         await import('../../src/utils/token-storage.js');
       const { refreshToken } = await import('@octokit/oauth-methods');
 
-      vi.mocked(getCredentials).mockReturnValue({
+      vi.mocked(getCredentials).mockResolvedValue({
         hostname: 'github.com',
         username: 'testuser',
         token: {
@@ -259,7 +266,7 @@ describe('GitHub OAuth', () => {
         url: '',
         data: {} as never,
       } as unknown as Awaited<ReturnType<typeof refreshToken>>);
-      vi.mocked(updateToken).mockReturnValue(true);
+      vi.mocked(updateToken).mockResolvedValue(true);
 
       const { refreshAuthToken } =
         await import('../../src/features/github-oauth.js');
@@ -280,7 +287,7 @@ describe('GitHub OAuth', () => {
     it('should return null when not logged in', async () => {
       const { getCredentials } =
         await import('../../src/utils/token-storage.js');
-      vi.mocked(getCredentials).mockReturnValue(null);
+      vi.mocked(getCredentials).mockResolvedValue(null);
 
       const { getValidToken } =
         await import('../../src/features/github-oauth.js');
@@ -292,7 +299,7 @@ describe('GitHub OAuth', () => {
     it('should return token when not expired', async () => {
       const { getCredentials, isTokenExpired } =
         await import('../../src/utils/token-storage.js');
-      vi.mocked(getCredentials).mockReturnValue({
+      vi.mocked(getCredentials).mockResolvedValue({
         hostname: 'github.com',
         username: 'testuser',
         token: {
@@ -315,7 +322,7 @@ describe('GitHub OAuth', () => {
     it('should return null when token is expired and no refresh token', async () => {
       const { getCredentials, isTokenExpired } =
         await import('../../src/utils/token-storage.js');
-      vi.mocked(getCredentials).mockReturnValue({
+      vi.mocked(getCredentials).mockResolvedValue({
         hostname: 'github.com',
         username: 'testuser',
         token: {
@@ -378,6 +385,12 @@ describe('GitHub OAuth', () => {
       const { storeCredentials } =
         await import('../../src/utils/token-storage.js');
 
+      // Re-mock storeCredentials to return proper StoreResult
+      vi.mocked(storeCredentials).mockResolvedValue({
+        success: true,
+        insecureStorageUsed: false,
+      });
+
       const result = await login({
         hostname: 'github.com',
         scopes: ['repo'],
@@ -435,6 +448,14 @@ describe('GitHub OAuth', () => {
     it('should call onVerification callback when provided', async () => {
       const { createOAuthDeviceAuth } =
         await import('@octokit/auth-oauth-device');
+      const { storeCredentials } =
+        await import('../../src/utils/token-storage.js');
+
+      // Re-mock storeCredentials
+      vi.mocked(storeCredentials).mockResolvedValue({
+        success: true,
+        insecureStorageUsed: false,
+      });
 
       let capturedOnVerification: ((v: unknown) => void) | undefined;
 

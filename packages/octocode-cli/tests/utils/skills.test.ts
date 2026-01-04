@@ -9,6 +9,8 @@ vi.mock('../../src/utils/fs.js', () => ({
   dirExists: vi.fn(),
   copyDirectory: vi.fn(),
   listSubdirectories: vi.fn(),
+  fileExists: vi.fn(),
+  readFileContent: vi.fn(),
 }));
 
 // Import the mocked module
@@ -16,12 +18,16 @@ import {
   dirExists,
   copyDirectory,
   listSubdirectories,
+  fileExists,
+  readFileContent,
 } from '../../src/utils/fs.js';
 import {
   getSkillsSourcePath,
   copySkills,
   copySkill,
   getAvailableSkills,
+  getSkillMetadata,
+  getAllSkillsMetadata,
 } from '../../src/utils/skills.js';
 
 describe('Skills Utilities', () => {
@@ -281,6 +287,159 @@ describe('Skills Utilities', () => {
 
       expect(result1).toBe(true);
       expect(result2).toBe(false);
+    });
+  });
+
+  describe('getSkillMetadata', () => {
+    const validSkillMd = `---
+name: octocode-research
+description: Answers questions about codebases, implementations, dependencies.
+---
+
+# Octocode Research
+
+Some content here.`;
+
+    it('should parse valid SKILL.md frontmatter', () => {
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent).mockReturnValue(validSkillMd);
+
+      const result = getSkillMetadata('/path/to/octocode-research');
+
+      expect(result).toEqual({
+        name: 'octocode-research',
+        description:
+          'Answers questions about codebases, implementations, dependencies.',
+        folder: 'octocode-research',
+      });
+    });
+
+    it('should return null when SKILL.md does not exist', () => {
+      vi.mocked(fileExists).mockReturnValue(false);
+
+      const result = getSkillMetadata('/path/to/missing-skill');
+
+      expect(result).toBeNull();
+      expect(readFileContent).not.toHaveBeenCalled();
+    });
+
+    it('should return null when file content is null', () => {
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent).mockReturnValue(null);
+
+      const result = getSkillMetadata('/path/to/skill');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when frontmatter is missing', () => {
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent).mockReturnValue('# No frontmatter here');
+
+      const result = getSkillMetadata('/path/to/skill');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when name is missing', () => {
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent).mockReturnValue(`---
+description: Only description, no name
+---`);
+
+      const result = getSkillMetadata('/path/to/skill');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when description is missing', () => {
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent).mockReturnValue(`---
+name: only-name
+---`);
+
+      const result = getSkillMetadata('/path/to/skill');
+
+      expect(result).toBeNull();
+    });
+
+    it('should extract folder name from path', () => {
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent).mockReturnValue(validSkillMd);
+
+      const result = getSkillMetadata('/some/long/path/octocode-plan');
+
+      expect(result?.folder).toBe('octocode-plan');
+    });
+  });
+
+  describe('getAllSkillsMetadata', () => {
+    it('should return metadata for all octocode- skills', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(listSubdirectories).mockReturnValue([
+        'octocode-research',
+        'octocode-plan',
+        'other-dir',
+      ]);
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent).mockReturnValueOnce(`---
+name: octocode-research
+description: Research skill description
+---`).mockReturnValueOnce(`---
+name: octocode-plan
+description: Plan skill description
+---`);
+
+      const result = getAllSkillsMetadata();
+
+      expect(result).toHaveLength(2);
+      expect(result[0].name).toBe('octocode-research');
+      expect(result[1].name).toBe('octocode-plan');
+    });
+
+    it('should skip skills with invalid SKILL.md', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(listSubdirectories).mockReturnValue([
+        'octocode-valid',
+        'octocode-invalid',
+      ]);
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent)
+        .mockReturnValueOnce(
+          `---
+name: octocode-valid
+description: Valid skill
+---`
+        )
+        .mockReturnValueOnce('# No frontmatter');
+
+      const result = getAllSkillsMetadata();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('octocode-valid');
+    });
+
+    it('should return empty array when no skills exist', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(listSubdirectories).mockReturnValue([]);
+
+      const result = getAllSkillsMetadata();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should filter non-octocode directories', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(listSubdirectories).mockReturnValue([
+        'some-other-dir',
+        '.git',
+        'node_modules',
+      ]);
+
+      const result = getAllSkillsMetadata();
+
+      expect(result).toEqual([]);
+      expect(fileExists).not.toHaveBeenCalled();
     });
   });
 });

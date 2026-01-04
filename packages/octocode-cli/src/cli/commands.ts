@@ -25,7 +25,25 @@ import { IDE_INFO, INSTALL_METHOD_INFO } from '../ui/constants.js';
 import { Spinner } from '../utils/spinner.js';
 import { copyDirectory, dirExists, listSubdirectories } from '../utils/fs.js';
 import { getSkillsSourceDir, getSkillsDestDir } from '../utils/skills.js';
+import { quickSync } from '../ui/sync/index.js';
+import {
+  readAllClientConfigs,
+  analyzeSyncState,
+  getClientDisplayName,
+} from '../features/sync.js';
 import path from 'node:path';
+import {
+  runAgentFlow,
+  quickAgentRun,
+  type AgentMode,
+} from '../ui/agent/index.js';
+import {
+  discoverAPIKey,
+  isClaudeCodeAuthenticated,
+  getClaudeCodeSubscriptionInfo,
+} from '../features/api-keys.js';
+
+type GetTokenSource = 'octocode' | 'gh' | 'auto';
 
 /**
  * Print node-doctor hint for CLI mode
@@ -594,8 +612,17 @@ const tokenCommand: CLICommand = {
   name: 'token',
   aliases: ['t'],
   description: 'Print the stored GitHub OAuth token',
-  usage: 'octocode-cli token [--hostname <host>] [--source]',
+  usage:
+    'octocode-cli token [--type <octocode|gh|auto>] [--hostname <host>] [--source]',
   options: [
+    {
+      name: 'type',
+      short: 't',
+      description:
+        'Token source: octocode (default), gh (gh CLI), auto (try both)',
+      hasValue: true,
+      default: 'octocode',
+    },
     {
       name: 'hostname',
       short: 'h',
@@ -605,24 +632,80 @@ const tokenCommand: CLICommand = {
     {
       name: 'source',
       short: 's',
-      description: 'Show token source (octocode or gh-cli)',
+      description: 'Show token source and user info',
     },
   ],
   handler: async (args: ParsedArgs) => {
     const hostname =
       (args.options['hostname'] as string | undefined) || 'github.com';
     const showSource = Boolean(args.options['source'] || args.options['s']);
+    const typeArg = (args.options['type'] as string | undefined) || 'octocode';
 
-    const result = await getToken(hostname);
+    // Validate and map type argument
+    let tokenSource: GetTokenSource;
+    switch (typeArg.toLowerCase()) {
+      case 'octocode':
+      case 'o':
+        tokenSource = 'octocode';
+        break;
+      case 'gh':
+      case 'gh-cli':
+      case 'g':
+        tokenSource = 'gh';
+        break;
+      case 'auto':
+      case 'a':
+        tokenSource = 'auto';
+        break;
+      default:
+        console.log();
+        console.log(`  ${c('red', '✗')} Invalid token type: ${typeArg}`);
+        console.log(`  ${dim('Valid options:')} octocode, gh, auto`);
+        console.log();
+        process.exitCode = 1;
+        return;
+    }
+
+    const result = await getToken(hostname, tokenSource);
 
     if (!result.token) {
       console.log();
-      console.log(`  ${c('yellow', '⚠')} Not authenticated to ${hostname}`);
-      console.log();
-      console.log(`  ${dim('To login:')}`);
-      console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode-cli login')}`);
-      console.log(`    ${dim('or')}`);
-      console.log(`    ${c('cyan', '→')} ${c('yellow', 'gh auth login')}`);
+      if (tokenSource === 'octocode') {
+        console.log(
+          `  ${c('yellow', '⚠')} No octocode token found for ${hostname}`
+        );
+        console.log();
+        console.log(`  ${dim('To login with octocode-cli:')}`);
+        console.log(
+          `    ${c('cyan', '→')} ${c('yellow', 'octocode-cli login')}`
+        );
+        console.log();
+        console.log(`  ${dim('Or use gh CLI token:')}`);
+        console.log(
+          `    ${c('cyan', '→')} ${c('yellow', 'octocode-cli token --type=gh')}`
+        );
+      } else if (tokenSource === 'gh') {
+        console.log(
+          `  ${c('yellow', '⚠')} No gh CLI token found for ${hostname}`
+        );
+        console.log();
+        console.log(`  ${dim('To login with gh CLI:')}`);
+        console.log(`    ${c('cyan', '→')} ${c('yellow', 'gh auth login')}`);
+        console.log();
+        console.log(`  ${dim('Or use octocode token:')}`);
+        console.log(
+          `    ${c('cyan', '→')} ${c('yellow', 'octocode-cli token --type=octocode')}`
+        );
+      } else {
+        console.log(`  ${c('yellow', '⚠')} Not authenticated to ${hostname}`);
+        console.log();
+        console.log(`  ${dim('To login:')}`);
+        console.log(
+          `    ${c('cyan', '→')} ${c('yellow', 'octocode-cli login')}`
+        );
+        console.log(`    ${dim('or')}`);
+        console.log(`    ${c('cyan', '→')} ${c('yellow', 'gh auth login')}`);
+      }
       console.log();
       process.exitCode = 1;
       return;
@@ -633,7 +716,7 @@ const tokenCommand: CLICommand = {
       console.log(`  ${c('green', '✓')} Token found`);
       console.log(`  ${dim('Source:')} ${formatTokenSource(result.source)}`);
       if (result.username) {
-        console.log(`  ${dim('User:')} ${c('cyan', result.username)}`);
+        console.log(`  ${dim('User:')} ${c('cyan', '@' + result.username)}`);
       }
       console.log();
       console.log(`  ${dim('Token:')} ${result.token}`);
@@ -693,6 +776,325 @@ const statusCommand: CLICommand = {
 };
 
 /**
+ * Sync command - synchronize MCP configs across all clients
+ */
+const syncCommand: CLICommand = {
+  name: 'sync',
+  aliases: ['sy'],
+  description: 'Sync MCP configurations across all IDE clients',
+  usage: 'octocode-cli sync [--force] [--dry-run] [--status]',
+  options: [
+    {
+      name: 'force',
+      short: 'f',
+      description: 'Auto-resolve conflicts (use first variant)',
+    },
+    {
+      name: 'dry-run',
+      short: 'n',
+      description: 'Show what would be synced without making changes',
+    },
+    {
+      name: 'status',
+      short: 's',
+      description: 'Show sync status without syncing',
+    },
+  ],
+  handler: async (args: ParsedArgs) => {
+    const force = Boolean(args.options['force'] || args.options['f']);
+    const dryRun = Boolean(args.options['dry-run'] || args.options['n']);
+    const statusOnly = Boolean(args.options['status'] || args.options['s']);
+
+    // Status-only mode
+    if (statusOnly) {
+      console.log();
+      console.log(`  ${bold('🔄 MCP Sync Status')}`);
+      console.log();
+
+      const spinner = new Spinner('Scanning configurations...').start();
+      const snapshots = readAllClientConfigs();
+      const analysis = analyzeSyncState(snapshots);
+      spinner.stop();
+
+      // Show client summary
+      console.log(
+        `  ${bold('Clients:')} ${analysis.summary.clientsWithConfig} with MCP configs`
+      );
+      console.log();
+
+      for (const snapshot of analysis.clients) {
+        const name = getClientDisplayName(snapshot.client);
+        const icon = snapshot.exists ? c('green', '●') : c('dim', '○');
+        const mcpInfo = snapshot.exists
+          ? `${snapshot.mcpCount} MCPs`
+          : dim('no config');
+        console.log(`    ${icon} ${name}: ${mcpInfo}`);
+      }
+
+      console.log();
+      console.log(`  ${bold('MCPs:')}`);
+      console.log(
+        `    ${c('cyan', '•')} ${analysis.summary.totalUniqueMCPs} unique MCPs`
+      );
+
+      if (analysis.summary.consistentMCPs > 0) {
+        console.log(
+          `    ${c('green', '✓')} ${analysis.summary.consistentMCPs} fully synced`
+        );
+      }
+      if (analysis.summary.needsSyncCount > 0) {
+        console.log(
+          `    ${c('yellow', '○')} ${analysis.summary.needsSyncCount} can be auto-synced`
+        );
+      }
+      if (analysis.summary.conflictCount > 0) {
+        console.log(
+          `    ${c('red', '!')} ${analysis.summary.conflictCount} have conflicts`
+        );
+      }
+
+      console.log();
+
+      if (
+        analysis.summary.needsSyncCount > 0 ||
+        analysis.summary.conflictCount > 0
+      ) {
+        console.log(
+          `  ${dim('Run')} ${c('cyan', 'octocode sync')} ${dim('to synchronize.')}`
+        );
+        if (analysis.summary.conflictCount > 0) {
+          console.log(
+            `  ${dim('Use')} ${c('cyan', '--force')} ${dim('to auto-resolve conflicts.')}`
+          );
+        }
+        console.log();
+      }
+
+      return;
+    }
+
+    // Sync mode
+    console.log();
+    console.log(`  ${bold('🔄 MCP Sync')}`);
+    console.log();
+
+    const spinner = new Spinner('Analyzing configurations...').start();
+
+    const result = await quickSync({ force, dryRun });
+
+    if (result.syncPerformed) {
+      if (result.success) {
+        spinner.succeed(result.message);
+        console.log();
+        console.log(`  ${bold('Next:')} Restart your IDEs to apply changes.`);
+      } else {
+        spinner.fail(result.message);
+        process.exitCode = 1;
+      }
+    } else {
+      spinner.stop();
+      if (result.success) {
+        console.log(`  ${c('green', '✓')} ${result.message}`);
+      } else {
+        console.log(`  ${c('yellow', '⚠')} ${result.message}`);
+        if (!force && result.message.includes('conflict')) {
+          console.log();
+          console.log(`  ${dim('Options:')}`);
+          console.log(
+            `    ${c('cyan', '•')} Run ${c('cyan', 'octocode')} for interactive mode`
+          );
+          console.log(
+            `    ${c('cyan', '•')} Use ${c('cyan', '--force')} to auto-resolve`
+          );
+        }
+        process.exitCode = 1;
+      }
+    }
+
+    console.log();
+  },
+};
+
+/**
+ * Agent command - run AI agent with Octocode tools
+ */
+const agentCommand: CLICommand = {
+  name: 'agent',
+  aliases: ['ag', 'ai'],
+  description: 'Run an AI agent with Octocode tools',
+  usage:
+    'octocode-cli agent [task] [--mode <mode>] [--model <model>] [--think]',
+  options: [
+    {
+      name: 'mode',
+      short: 'm',
+      description: 'Agent mode: research, coding, full, planning, custom',
+      hasValue: true,
+      default: 'research',
+    },
+    {
+      name: 'model',
+      description: 'Model to use: opus, sonnet, haiku',
+      hasValue: true,
+      default: 'sonnet',
+    },
+    {
+      name: 'think',
+      short: 't',
+      description: 'Enable extended thinking (ultrathink)',
+    },
+    {
+      name: 'verbose',
+      short: 'v',
+      description: 'Enable verbose output',
+    },
+    {
+      name: 'status',
+      short: 's',
+      description: 'Show agent readiness status',
+    },
+    {
+      name: 'interactive',
+      short: 'i',
+      description: 'Run in interactive mode',
+    },
+  ],
+  handler: async (args: ParsedArgs) => {
+    const showStatus = Boolean(args.options['status'] || args.options['s']);
+    const interactive = Boolean(
+      args.options['interactive'] || args.options['i']
+    );
+    const task = args.args.join(' ');
+
+    // Status mode
+    if (showStatus) {
+      await showAgentStatus();
+      return;
+    }
+
+    // Interactive mode
+    if (interactive || !task) {
+      await runAgentFlow();
+      return;
+    }
+
+    // Quick mode with task
+    const mode = (args.options['mode'] as AgentMode) || 'research';
+    const model = args.options['model'] as
+      | 'opus'
+      | 'sonnet'
+      | 'haiku'
+      | undefined;
+    const enableThinking = Boolean(args.options['think'] || args.options['t']);
+    const verbose = Boolean(args.options['verbose'] || args.options['v']);
+
+    // Validate mode
+    const validModes = ['research', 'coding', 'full', 'planning', 'custom'];
+    if (!validModes.includes(mode)) {
+      console.log();
+      console.log(`  ${c('red', '✗')} Invalid mode: ${mode}`);
+      console.log(`  ${dim('Valid modes:')} ${validModes.join(', ')}`);
+      console.log();
+      process.exitCode = 1;
+      return;
+    }
+
+    // Validate model
+    if (model && !['opus', 'sonnet', 'haiku'].includes(model)) {
+      console.log();
+      console.log(`  ${c('red', '✗')} Invalid model: ${model}`);
+      console.log(`  ${dim('Valid models:')} opus, sonnet, haiku`);
+      console.log();
+      process.exitCode = 1;
+      return;
+    }
+
+    await quickAgentRun(task, {
+      mode,
+      model,
+      enableThinking,
+      verbose,
+    });
+  },
+};
+
+/**
+ * Show agent status
+ */
+async function showAgentStatus(): Promise<void> {
+  console.log();
+  console.log(`  ${bold('🤖 Agent Status')}`);
+  console.log();
+
+  // Check Claude Code authentication
+  const claudeCodeAuth = isClaudeCodeAuthenticated();
+  if (claudeCodeAuth) {
+    const info = getClaudeCodeSubscriptionInfo();
+    console.log(`  ${c('green', '✓')} Claude Code authenticated`);
+    if (info.subscriptionType) {
+      console.log(`    ${dim('Plan:')} ${info.subscriptionType}`);
+    }
+    if (info.expiresInMinutes !== undefined) {
+      console.log(
+        `    ${dim('Token expires:')} in ${info.expiresInMinutes} minutes`
+      );
+    }
+  } else {
+    console.log(`  ${c('yellow', '○')} Claude Code not authenticated`);
+  }
+
+  // Check for API keys
+  const anthropicKey = await discoverAPIKey('anthropic');
+  if (anthropicKey.key) {
+    console.log(
+      `  ${c('green', '✓')} Anthropic API key found (${anthropicKey.source})`
+    );
+  } else if (!claudeCodeAuth) {
+    console.log(`  ${c('yellow', '○')} No Anthropic API key found`);
+  }
+
+  // Check SDK
+  let sdkInstalled = false;
+  try {
+    await import('@anthropic-ai/claude-agent-sdk');
+    sdkInstalled = true;
+    console.log(`  ${c('green', '✓')} Claude Agent SDK installed`);
+  } catch {
+    console.log(`  ${c('yellow', '○')} Claude Agent SDK not installed`);
+  }
+
+  console.log();
+
+  // Overall status
+  const ready = sdkInstalled && (claudeCodeAuth || anthropicKey.key !== null);
+  if (ready) {
+    console.log(`  ${c('green', '●')} Agent is ready to use`);
+    console.log();
+    console.log(`  ${bold('Usage:')}`);
+    console.log(`    ${c('cyan', '→')} octocode agent "your task here"`);
+    console.log(`    ${c('cyan', '→')} octocode agent --interactive`);
+  } else {
+    console.log(`  ${c('red', '●')} Agent is not ready`);
+    console.log();
+    if (!sdkInstalled) {
+      console.log(`  ${bold('To install SDK:')}`);
+      console.log(
+        `    ${c('cyan', '→')} npm install @anthropic-ai/claude-agent-sdk`
+      );
+    }
+    if (!claudeCodeAuth && !anthropicKey.key) {
+      console.log(`  ${bold('To authenticate:')}`);
+      console.log(`    ${c('cyan', '→')} Install and login to Claude Code`);
+      console.log(`    ${dim('or')}`);
+      console.log(
+        `    ${c('cyan', '→')} Set ANTHROPIC_API_KEY environment variable`
+      );
+    }
+  }
+  console.log();
+}
+
+/**
  * All available commands
  */
 export const commands: CLICommand[] = [
@@ -703,6 +1105,8 @@ export const commands: CLICommand[] = [
   skillsCommand,
   tokenCommand,
   statusCommand,
+  syncCommand,
+  agentCommand,
 ];
 
 /**

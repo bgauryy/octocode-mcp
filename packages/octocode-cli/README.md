@@ -16,6 +16,15 @@ npx octocode-cli
 
 That's it! The interactive wizard will guide you through everything.
 
+## 🎯 Main Menu
+
+| Option | Description |
+|--------|-------------|
+| **🐙 Octocode Configuration** | Install, configure, and manage GitHub authentication |
+| **🤖 Run Agent** | AI agent with Octocode tools |
+| **🧠 Manage System Skills** | Install and manage Octocode skills for Claude Code |
+| **⚡ Manage System MCP** | Sync configs, browse MCP marketplace, open config files |
+
 ## ✨ Features
 
 - 🎯 **Zero Config** - Interactive prompts handle everything
@@ -71,11 +80,12 @@ Easily browse and install from **70+ community MCP servers** directly to your ID
 ### How to Use
 
 1. Run `npx octocode-cli`
-2. Select **"Browse & Install MCPs"** from the menu
-3. Choose your target IDE
-4. Search or browse for an MCP
-5. Configure any required environment variables
-6. Confirm and install!
+2. Select **"⚡ Manage System MCP"** from the main menu
+3. Select **"🔌 MCP Marketplace"**
+4. Choose your target IDE
+5. Search or browse for an MCP
+6. Configure any required environment variables
+7. Confirm and install!
 
 ## 🖥️ Supported Clients
 
@@ -106,7 +116,9 @@ octocode-cli install --ide cursor --method npx --force
 octocode-cli status
 
 # Get your GitHub token (for scripting)
-octocode-cli token
+octocode-cli token                   # From octocode-cli (default)
+octocode-cli token --type=gh         # From gh CLI
+octocode-cli token --type=auto       # Try both, octocode first
 
 # Manage GitHub authentication
 octocode-cli auth
@@ -118,10 +130,10 @@ octocode-cli auth
 |---------|-------------|
 | `install` | Install octocode-mcp for an IDE |
 | `auth` | Manage GitHub authentication (interactive) |
-| `login` | Authenticate with GitHub |
+| `login` | Sign in to GitHub |
 | `logout` | Sign out from GitHub |
 | `status` | Show GitHub authentication status |
-| `token` | Print the stored GitHub OAuth token |
+| `token` | Print the stored GitHub OAuth token (see `--type`) |
 
 ### Options
 
@@ -130,6 +142,7 @@ octocode-cli auth
 | `--ide <ide>` | IDE to configure: `cursor`, `claude`, `claude-code`, `windsurf`, `zed`, `cline` |
 | `--method <method>` | Installation method: `npx` or `direct` |
 | `--hostname <host>` | GitHub Enterprise hostname (default: `github.com`) |
+| `--type <type>` | Token source for `token` command: `octocode`, `gh`, `auto` |
 | `-f, --force` | Overwrite existing configuration |
 | `-h, --help` | Show help message |
 | `-v, --version` | Show version number |
@@ -154,19 +167,19 @@ Octocode CLI includes built-in GitHub OAuth authentication with **secure encrypt
 ### Quick Auth Commands
 
 ```bash
-# Login to GitHub (opens browser for OAuth)
+# Sign in to GitHub (opens browser for OAuth)
 octocode-cli login
 
 # Check your auth status
 octocode-cli status
 
-# Interactive auth menu (login/logout/switch)
+# Interactive auth menu (sign in/out/switch)
 octocode-cli auth
 
 # Get your token (useful for scripts)
 octocode-cli token
 
-# Logout from GitHub
+# Sign out from GitHub
 octocode-cli logout
 
 # For GitHub Enterprise
@@ -205,12 +218,33 @@ Your credentials are **encrypted at rest** using AES-256-GCM:
 # Check if token is valid and not expired
 octocode-cli status
 
+# Get your token (defaults to octocode-cli)
+octocode-cli token
+
+# Get token from specific source
+octocode-cli token --type=octocode    # From octocode-cli only
+octocode-cli token --type=gh          # From gh CLI only
+octocode-cli token --type=auto        # Try octocode-cli first, then gh CLI
+
+# Show token with source info
+octocode-cli token --source
+
 # Force re-authentication
 octocode-cli logout && octocode-cli login
 
 # Switch GitHub accounts
 octocode-cli auth  # Select "Switch account"
 ```
+
+### Token Sources
+
+Octocode CLI manages its own tokens separately from the `gh` CLI:
+
+| Source | Description | When to Use |
+|--------|-------------|-------------|
+| `octocode` (default) | Token stored by `octocode-cli login` | Most users |
+| `gh` | Token from `gh auth login` | If using gh CLI already |
+| `auto` | Tries octocode first, falls back to gh CLI | Scripting/automation |
 
 ### Required Scopes
 

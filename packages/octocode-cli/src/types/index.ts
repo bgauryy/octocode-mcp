@@ -45,6 +45,7 @@ export type MCPClient =
   | 'trae' // Trae IDE
   | 'antigravity' // Antigravity IDE
   | 'zed' // Zed editor
+  | 'opencode' // Opencode CLI
   | 'custom'; // Custom path
 
 // Legacy alias for backward compatibility
@@ -138,4 +139,18 @@ export interface TokenResult {
   token: string | null;
   source: TokenSource;
   username?: string;
+}
+
+// Result from storing credentials (keyring-first strategy)
+export interface StoreResult {
+  success: boolean;
+  /** True if fallback to encrypted file was used (keyring unavailable/failed) */
+  insecureStorageUsed: boolean;
+}
+
+// Result from deleting credentials
+export interface DeleteResult {
+  success: boolean;
+  deletedFromKeyring: boolean;
+  deletedFromFile: boolean;
 }

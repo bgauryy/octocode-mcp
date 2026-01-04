@@ -17,8 +17,43 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import type { StoredCredentials } from '../types/index.js';
+import type {
+  StoredCredentials,
+  StoreResult,
+  DeleteResult,
+} from '../types/index.js';
 import { HOME } from './platform.js';
+
+// ============================================================================
+// TIMEOUT UTILITIES (like gh CLI's 3 second timeout)
+// ============================================================================
+
+const KEYRING_TIMEOUT_MS = 3000;
+
+/**
+ * Timeout error for keyring operations
+ */
+export class TimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TimeoutError';
+  }
+}
+
+/**
+ * Wrap a promise with a timeout (like gh CLI's keyring timeout)
+ */
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new TimeoutError(`Operation timed out after ${ms}ms`)),
+        ms
+      )
+    ),
+  ]);
+}
 
 // Keytar is optional - will fallback to file storage if not available
 let keytar: typeof import('keytar') | null = null;
@@ -286,11 +321,59 @@ function writeCredentialsStore(store: CredentialsStore): void {
 }
 
 // ============================================================================
+// FILE CLEANUP HELPERS (for keyring-first strategy)
+// ============================================================================
+
+/**
+ * Remove credentials from file storage (used after successful keyring store)
+ */
+function removeFromFileStorage(hostname: string): boolean {
+  try {
+    const store = readCredentialsStore();
+    if (store.credentials[hostname]) {
+      delete store.credentials[hostname];
+
+      // Clean up files if no more credentials remain
+      if (Object.keys(store.credentials).length === 0) {
+        cleanupKeyFile();
+      } else {
+        writeCredentialsStore(store);
+      }
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn(
+      `[token-storage] Failed to remove from file storage: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+    return false;
+  }
+}
+
+/**
+ * Clean up key file and credentials file (best effort)
+ */
+function cleanupKeyFile(): void {
+  try {
+    if (existsSync(CREDENTIALS_FILE)) {
+      unlinkSync(CREDENTIALS_FILE);
+    }
+    if (existsSync(KEY_FILE)) {
+      unlinkSync(KEY_FILE);
+    }
+  } catch {
+    // Best effort cleanup - ignore errors
+  }
+}
+
+// ============================================================================
 // MIGRATION: Legacy file to keychain
 // ============================================================================
 
 /**
- * Check for and migrate legacy credentials to keychain
+ * Check for and migrate legacy credentials to keychain (with timeout protection)
  */
 async function migrateLegacyCredentials(): Promise<void> {
   if (!isSecureStorageAvailable()) return;
@@ -302,24 +385,40 @@ async function migrateLegacyCredentials(): Promise<void> {
 
     if (hostnames.length === 0) return;
 
-    // Migrate each credential to keychain
+    let migratedCount = 0;
+
+    // Migrate each credential to keychain with timeout
     for (const hostname of hostnames) {
-      const existing = await keytarGet(hostname);
-      if (!existing) {
-        await keytarStore(hostname, store.credentials[hostname]);
+      try {
+        // Check if already in keyring (with timeout)
+        const existing = await withTimeout(
+          keytarGet(hostname),
+          KEYRING_TIMEOUT_MS
+        );
+        if (!existing) {
+          await withTimeout(
+            keytarStore(hostname, store.credentials[hostname]),
+            KEYRING_TIMEOUT_MS
+          );
+        }
+        // Remove from file after successful migration
+        delete store.credentials[hostname];
+        migratedCount++;
+      } catch (err) {
+        console.warn(
+          `[token-storage] Migration failed for ${hostname}: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+        // Keep in file storage if migration fails
       }
     }
 
-    // Remove legacy files after successful migration
-    try {
-      unlinkSync(CREDENTIALS_FILE);
-      if (existsSync(KEY_FILE)) {
-        unlinkSync(KEY_FILE);
-      }
-    } catch (cleanupError) {
-      console.error(
-        `[token-storage] Legacy file cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`
-      );
+    // Update file storage (may be empty now)
+    if (Object.keys(store.credentials).length === 0) {
+      cleanupKeyFile();
+    } else if (migratedCount > 0) {
+      writeCredentialsStore(store);
     }
   } catch (migrationError) {
     console.error(
@@ -350,205 +449,213 @@ function normalizeHostname(hostname: string): string {
 }
 
 /**
- * Store credentials for a hostname
- * Uses keychain if available, falls back to encrypted file
+ * Store credentials using keyring-first strategy (like gh CLI)
  *
- * NOTE: This sync function always writes to file storage for sync API compatibility.
- * When keytar is available, it also writes to keytar asynchronously.
- * For async-only environments, prefer storeCredentialsAsync().
- */
-export function storeCredentials(credentials: StoredCredentials): void {
-  const hostname = normalizeHostname(credentials.hostname);
-  const normalizedCredentials = {
-    ...credentials,
-    hostname,
-    updatedAt: new Date().toISOString(),
-  };
-
-  // Always write to file for sync API compatibility (getCredentials reads from file)
-  try {
-    const store = readCredentialsStore();
-    store.credentials[hostname] = normalizedCredentials;
-    writeCredentialsStore(store);
-  } catch (fileError) {
-    console.error(
-      `[token-storage] CRITICAL: Failed to store credentials to file!`
-    );
-    console.error(
-      `  Error: ${fileError instanceof Error ? fileError.message : String(fileError)}`
-    );
-    throw new Error('Failed to store credentials to file storage');
-  }
-
-  // Also write to keytar if available (async, for getCredentialsAsync)
-  if (isSecureStorageAvailable()) {
-    keytarStore(hostname, normalizedCredentials).catch(keytarError => {
-      // Keytar failed, but file storage succeeded - log warning
-      console.warn(
-        `[token-storage] Keytar storage failed (file storage OK): ${keytarError instanceof Error ? keytarError.message : String(keytarError)}`
-      );
-    });
-  }
-}
-
-/**
- * Store credentials for a hostname (async version)
+ * Flow:
+ * 1. Try keyring with timeout
+ * 2. On success: remove from file storage (clean migration)
+ * 3. On failure: fallback to encrypted file storage
  *
- * Always writes to file storage for sync API compatibility.
- * Also writes to keytar when available.
+ * @returns StoreResult with insecureStorageUsed flag
  */
-export async function storeCredentialsAsync(
+export async function storeCredentials(
   credentials: StoredCredentials
-): Promise<void> {
+): Promise<StoreResult> {
   const hostname = normalizeHostname(credentials.hostname);
-  const normalizedCredentials = {
+  const normalizedCredentials: StoredCredentials = {
     ...credentials,
     hostname,
     updatedAt: new Date().toISOString(),
   };
 
-  // Always write to file for sync API compatibility
-  try {
-    const store = readCredentialsStore();
-    store.credentials[hostname] = normalizedCredentials;
-    writeCredentialsStore(store);
-  } catch (fileError) {
-    console.error(
-      `[token-storage] CRITICAL: Failed to store credentials to file!`
-    );
-    console.error(
-      `  Error: ${fileError instanceof Error ? fileError.message : String(fileError)}`
-    );
-    throw new Error('Failed to store credentials to file storage');
-  }
-
-  // Also write to keytar if available
+  // 1. Try keyring FIRST (with timeout) - like gh CLI
   if (isSecureStorageAvailable()) {
     try {
-      await keytarStore(hostname, normalizedCredentials);
-    } catch (keytarError) {
-      // Keytar failed, but file storage succeeded - log warning
+      await withTimeout(
+        keytarStore(hostname, normalizedCredentials),
+        KEYRING_TIMEOUT_MS
+      );
+
+      // 2. SUCCESS: Clean up file storage (single source of truth)
+      removeFromFileStorage(hostname);
+
+      return { success: true, insecureStorageUsed: false };
+    } catch (err) {
       console.warn(
-        `[token-storage] Keytar storage failed (file storage OK): ${keytarError instanceof Error ? keytarError.message : String(keytarError)}`
+        `[token-storage] Keyring storage failed, using file fallback: ${
+          err instanceof Error ? err.message : String(err)
+        }`
       );
     }
   }
+
+  // 3. FALLBACK: Encrypted file storage
+  try {
+    const store = readCredentialsStore();
+    store.credentials[hostname] = normalizedCredentials;
+    writeCredentialsStore(store);
+
+    return { success: true, insecureStorageUsed: true };
+  } catch (fileError) {
+    console.error(`[token-storage] CRITICAL: All storage methods failed!`);
+    console.error(
+      `  Error: ${fileError instanceof Error ? fileError.message : String(fileError)}`
+    );
+    throw new Error('Failed to store credentials');
+  }
 }
 
 /**
- * Get credentials for a hostname (sync version)
+ * Store credentials (async alias for backward compatibility)
+ * @deprecated Use storeCredentials() directly - it's now async
+ */
+export const storeCredentialsAsync = storeCredentials;
+
+/**
+ * Get credentials using keyring-first strategy (like gh CLI)
  *
- * Reads from file storage only (keytar is async and cannot be called synchronously).
- * Since storeCredentials() always writes to file storage, this will find credentials
- * stored via either sync or async methods.
- *
- * For async contexts, prefer getCredentialsAsync() which also checks keytar.
+ * Flow:
+ * 1. Try keyring with timeout
+ * 2. Fallback to file storage
  *
  * @param hostname - GitHub hostname (default: 'github.com')
  * @returns Stored credentials or null if not found
  */
-export function getCredentials(
-  hostname: string = 'github.com'
-): StoredCredentials | null {
-  const normalizedHostname = normalizeHostname(hostname);
-
-  // Sync API reads from file only - keytar requires async
-  // This works because storeCredentials() always writes to file for sync compatibility
-  const store = readCredentialsStore();
-  return store.credentials[normalizedHostname] || null;
-}
-
-/**
- * Get credentials for a hostname (async version - preferred)
- */
-export async function getCredentialsAsync(
+export async function getCredentials(
   hostname: string = 'github.com'
 ): Promise<StoredCredentials | null> {
   const normalizedHostname = normalizeHostname(hostname);
 
+  // 1. Try keyring first (with timeout)
   if (isSecureStorageAvailable()) {
-    const creds = await keytarGet(normalizedHostname);
-    if (creds) return creds;
+    try {
+      const creds = await withTimeout(
+        keytarGet(normalizedHostname),
+        KEYRING_TIMEOUT_MS
+      );
+      if (creds) return creds;
+    } catch (err) {
+      // Timeout or error - try file fallback
+      if (!(err instanceof TimeoutError)) {
+        console.warn(
+          `[token-storage] Keyring read failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      }
+    }
   }
 
-  // Fallback to file
+  // 2. Fallback to file storage
   const store = readCredentialsStore();
   return store.credentials[normalizedHostname] || null;
 }
 
 /**
- * Delete credentials for a hostname
+ * Get credentials (async alias for backward compatibility)
+ * @deprecated Use getCredentials() directly - it's now async
  */
-export function deleteCredentials(hostname: string = 'github.com'): boolean {
-  const normalizedHostname = normalizeHostname(hostname);
-
-  if (isSecureStorageAvailable()) {
-    // Fire and forget for keychain
-    keytarDelete(normalizedHostname).catch(error => {
-      console.error(
-        `[token-storage] Keytar delete failed: ${error instanceof Error ? error.message : String(error)}`
-      );
-    });
-  }
-
-  // Always try to delete from file store too
-  const store = readCredentialsStore();
-  if (store.credentials[normalizedHostname]) {
-    delete store.credentials[normalizedHostname];
-    writeCredentialsStore(store);
-    return true;
-  }
-
-  return isSecureStorageAvailable(); // Return true if keychain delete was attempted
-}
+export const getCredentialsAsync = getCredentials;
 
 /**
- * Delete credentials for a hostname (async version)
+ * Get credentials synchronously (file storage only)
+ *
+ * ⚠️ WARNING: This only reads from file storage, not keyring.
+ * Use getCredentials() (async) for the full keyring-first lookup.
+ * This sync version is kept for backward compatibility only.
+ *
+ * @param hostname - GitHub hostname (default: 'github.com')
+ * @returns Stored credentials from file or null if not found
  */
-export async function deleteCredentialsAsync(
+export function getCredentialsSync(
   hostname: string = 'github.com'
-): Promise<boolean> {
+): StoredCredentials | null {
   const normalizedHostname = normalizeHostname(hostname);
-  let deleted = false;
+  const store = readCredentialsStore();
+  return store.credentials[normalizedHostname] || null;
+}
 
+/**
+ * Delete credentials from both keyring and file storage
+ *
+ * Flow:
+ * 1. Delete from keyring (with timeout, best-effort)
+ * 2. Delete from file storage
+ * 3. Return combined result with details
+ *
+ * @returns DeleteResult with details about what was deleted
+ */
+export async function deleteCredentials(
+  hostname: string = 'github.com'
+): Promise<DeleteResult> {
+  const normalizedHostname = normalizeHostname(hostname);
+  let deletedFromKeyring = false;
+  let deletedFromFile = false;
+
+  // 1. Delete from keyring (best-effort with timeout)
   if (isSecureStorageAvailable()) {
-    deleted = await keytarDelete(normalizedHostname);
+    try {
+      deletedFromKeyring = await withTimeout(
+        keytarDelete(normalizedHostname),
+        KEYRING_TIMEOUT_MS
+      );
+    } catch (err) {
+      console.warn(
+        `[token-storage] Keyring delete failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    }
   }
 
-  // Always try to delete from file store too
+  // 2. Delete from file storage
   const store = readCredentialsStore();
   if (store.credentials[normalizedHostname]) {
     delete store.credentials[normalizedHostname];
-    writeCredentialsStore(store);
-    deleted = true;
+
+    // Clean up files if no more credentials remain
+    if (Object.keys(store.credentials).length === 0) {
+      cleanupKeyFile();
+    } else {
+      writeCredentialsStore(store);
+    }
+    deletedFromFile = true;
   }
 
-  return deleted;
+  return {
+    success: deletedFromKeyring || deletedFromFile,
+    deletedFromKeyring,
+    deletedFromFile,
+  };
 }
 
 /**
- * List all stored hostnames
+ * Delete credentials (async alias for backward compatibility)
+ * @deprecated Use deleteCredentials() directly - it's now async
  */
-export function listStoredHosts(): string[] {
-  if (!isSecureStorageAvailable()) {
-    const store = readCredentialsStore();
-    return Object.keys(store.credentials);
-  }
-
-  // Sync fallback - just return file-based hosts
-  const store = readCredentialsStore();
-  return Object.keys(store.credentials);
-}
+export const deleteCredentialsAsync = deleteCredentials;
 
 /**
- * List all stored hostnames (async version - preferred)
+ * List all stored hostnames (from both keyring and file)
  */
-export async function listStoredHostsAsync(): Promise<string[]> {
+export async function listStoredHosts(): Promise<string[]> {
   const hosts = new Set<string>();
 
+  // Try keyring first (with timeout)
   if (isSecureStorageAvailable()) {
-    const keychainHosts = await keytarList();
-    keychainHosts.forEach(h => hosts.add(h));
+    try {
+      const keychainHosts = await withTimeout(keytarList(), KEYRING_TIMEOUT_MS);
+      keychainHosts.forEach(h => hosts.add(h));
+    } catch (err) {
+      // Timeout or error - continue with file
+      if (!(err instanceof TimeoutError)) {
+        console.warn(
+          `[token-storage] Keyring list failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      }
+    }
   }
 
   // Also include file-based hosts
@@ -559,29 +666,55 @@ export async function listStoredHostsAsync(): Promise<string[]> {
 }
 
 /**
- * Check if credentials exist for a hostname
+ * List stored hosts (alias for backward compatibility)
+ * @deprecated Use listStoredHosts() directly
  */
-export function hasCredentials(hostname: string = 'github.com'): boolean {
-  return getCredentials(hostname) !== null;
+export const listStoredHostsAsync = listStoredHosts;
+
+/**
+ * List stored hosts synchronously (file storage only)
+ *
+ * ⚠️ WARNING: This only lists file storage, not keyring.
+ * Use listStoredHosts() (async) for full list.
+ */
+export function listStoredHostsSync(): string[] {
+  const store = readCredentialsStore();
+  return Object.keys(store.credentials);
 }
 
 /**
- * Check if credentials exist for a hostname (async version)
+ * Check if credentials exist for a hostname
  */
-export async function hasCredentialsAsync(
+export async function hasCredentials(
   hostname: string = 'github.com'
 ): Promise<boolean> {
-  return (await getCredentialsAsync(hostname)) !== null;
+  return (await getCredentials(hostname)) !== null;
+}
+
+/**
+ * Check if credentials exist (alias for backward compatibility)
+ * @deprecated Use hasCredentials() directly
+ */
+export const hasCredentialsAsync = hasCredentials;
+
+/**
+ * Check if credentials exist synchronously (file storage only)
+ *
+ * ⚠️ WARNING: This only checks file storage, not keyring.
+ * Use hasCredentials() (async) for full check.
+ */
+export function hasCredentialsSync(hostname: string = 'github.com'): boolean {
+  return getCredentialsSync(hostname) !== null;
 }
 
 /**
  * Update token for a hostname (used for refresh)
  */
-export function updateToken(
+export async function updateToken(
   hostname: string,
   token: StoredCredentials['token']
-): boolean {
-  const credentials = getCredentials(hostname);
+): Promise<boolean> {
+  const credentials = await getCredentials(hostname);
 
   if (!credentials) {
     return false;
@@ -589,30 +722,16 @@ export function updateToken(
 
   credentials.token = token;
   credentials.updatedAt = new Date().toISOString();
-  storeCredentials(credentials);
+  await storeCredentials(credentials);
 
   return true;
 }
 
 /**
- * Update token for a hostname (async version)
+ * Update token (alias for backward compatibility)
+ * @deprecated Use updateToken() directly
  */
-export async function updateTokenAsync(
-  hostname: string,
-  token: StoredCredentials['token']
-): Promise<boolean> {
-  const credentials = await getCredentialsAsync(hostname);
-
-  if (!credentials) {
-    return false;
-  }
-
-  credentials.token = token;
-  credentials.updatedAt = new Date().toISOString();
-  await storeCredentialsAsync(credentials);
-
-  return true;
-}
+export const updateTokenAsync = updateToken;
 
 /**
  * Get the credentials storage location (for display purposes)

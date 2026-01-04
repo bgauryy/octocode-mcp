@@ -5,8 +5,23 @@
 
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { copyDirectory, dirExists, listSubdirectories } from './fs.js';
+import {
+  copyDirectory,
+  dirExists,
+  listSubdirectories,
+  fileExists,
+  readFileContent,
+} from './fs.js';
 import { HOME, isWindows, getAppDataPath } from './platform.js';
+
+/**
+ * Skill metadata from SKILL.md frontmatter
+ */
+export interface SkillMetadata {
+  name: string;
+  description: string;
+  folder: string;
+}
 
 /**
  * Get the path to the bundled skills directory
@@ -94,4 +109,86 @@ export function getSkillsDestDir(): string {
     return join(appData, 'Claude', 'skills');
   }
   return join(HOME, '.claude', 'skills');
+}
+
+/**
+ * Parse YAML frontmatter from SKILL.md content
+ * Extracts name and description from ---delimited frontmatter
+ */
+function parseSkillFrontmatter(
+  content: string
+): { name: string; description: string } | null {
+  // Match YAML frontmatter between --- delimiters
+  const frontmatterMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (!frontmatterMatch) {
+    return null;
+  }
+
+  const frontmatter = frontmatterMatch[1];
+
+  // Extract name field
+  const nameMatch = frontmatter.match(/^name:\s*(.+)$/m);
+  // Extract description field (may span multiple lines if quoted)
+  const descMatch = frontmatter.match(/^description:\s*(.+)$/m);
+
+  if (!nameMatch || !descMatch) {
+    return null;
+  }
+
+  return {
+    name: nameMatch[1].trim(),
+    description: descMatch[1].trim(),
+  };
+}
+
+/**
+ * Get metadata for a single skill from its SKILL.md file
+ * @param skillPath - Path to the skill directory
+ * @returns Skill metadata or null if not found/invalid
+ */
+export function getSkillMetadata(skillPath: string): SkillMetadata | null {
+  const skillMdPath = join(skillPath, 'SKILL.md');
+
+  if (!fileExists(skillMdPath)) {
+    return null;
+  }
+
+  const content = readFileContent(skillMdPath);
+  if (!content) {
+    return null;
+  }
+
+  const parsed = parseSkillFrontmatter(content);
+  if (!parsed) {
+    return null;
+  }
+
+  return {
+    name: parsed.name,
+    description: parsed.description,
+    folder: skillPath.split('/').pop() || '',
+  };
+}
+
+/**
+ * Get metadata for all available skills
+ * @returns Array of skill metadata
+ */
+export function getAllSkillsMetadata(): SkillMetadata[] {
+  const skillsSource = getSkillsSourcePath();
+  const skillDirs = listSubdirectories(skillsSource).filter(name =>
+    name.startsWith('octocode-')
+  );
+
+  const skills: SkillMetadata[] = [];
+
+  for (const skillDir of skillDirs) {
+    const skillPath = join(skillsSource, skillDir);
+    const metadata = getSkillMetadata(skillPath);
+    if (metadata) {
+      skills.push(metadata);
+    }
+  }
+
+  return skills;
 }

@@ -31,6 +31,7 @@ import {
   updateToken,
   getCredentialsFilePath,
   isUsingSecureStorage as tokenStorageIsUsingSecureStorage,
+  getCredentialsSync,
 } from '../utils/token-storage.js';
 
 /**
@@ -219,7 +220,7 @@ export async function login(options: LoginOptions = {}): Promise<LoginResult> {
           : undefined;
     }
 
-    // Store credentials
+    // Store credentials (keyring-first with file fallback)
     const credentials: StoredCredentials = {
       hostname,
       username,
@@ -229,7 +230,17 @@ export async function login(options: LoginOptions = {}): Promise<LoginResult> {
       updatedAt: new Date().toISOString(),
     };
 
-    storeCredentials(credentials);
+    const storeResult = await storeCredentials(credentials);
+
+    // Warn user if fallback to file storage was used
+    if (storeResult.insecureStorageUsed) {
+      console.warn(
+        '\n  ⚠️  Credentials stored in encrypted file (keyring unavailable).'
+      );
+      console.warn(
+        '     For better security, ensure your system keyring is accessible.\n'
+      );
+    }
 
     return {
       success: true,
@@ -263,7 +274,7 @@ export async function logout(
   hostname: string = DEFAULT_HOSTNAME,
   options?: { clientSecret?: string }
 ): Promise<LogoutResult> {
-  const credentials = getCredentials(hostname);
+  const credentials = await getCredentials(hostname);
 
   if (!credentials) {
     return {
@@ -294,8 +305,8 @@ export async function logout(
     }
   }
 
-  // Delete local credentials
-  deleteCredentials(hostname);
+  // Delete local credentials (from both keyring and file)
+  await deleteCredentials(hostname);
 
   return { success: true };
 }
@@ -308,7 +319,7 @@ export async function logout(
 export async function refreshAuthToken(
   hostname: string = DEFAULT_HOSTNAME
 ): Promise<LoginResult> {
-  const credentials = getCredentials(hostname);
+  const credentials = await getCredentials(hostname);
 
   if (!credentials) {
     return {
@@ -353,7 +364,7 @@ export async function refreshAuthToken(
       refreshTokenExpiresAt: response.authentication.refreshTokenExpiresAt,
     };
 
-    updateToken(hostname, newToken);
+    await updateToken(hostname, newToken);
 
     return {
       success: true,
@@ -369,14 +380,56 @@ export async function refreshAuthToken(
 }
 
 /**
- * Get current authentication status
+ * Get current authentication status (sync version - file storage only)
+ *
+ * ⚠️ Note: This sync version only checks file storage, not keyring.
+ * For full async check including keyring, use getAuthStatusAsync().
+ *
  * Checks octocode storage first, then falls back to gh CLI
  */
 export function getAuthStatus(
   hostname: string = DEFAULT_HOSTNAME
 ): OctocodeAuthStatus {
-  // First check octocode's own storage
-  const credentials = getCredentials(hostname);
+  // First check octocode's own storage (file only for sync)
+  const credentials = getCredentialsSync(hostname);
+
+  if (credentials) {
+    const tokenExpired = isTokenExpired(credentials);
+    return {
+      authenticated: !tokenExpired,
+      hostname: credentials.hostname,
+      username: credentials.username,
+      tokenExpired,
+      tokenSource: 'octocode',
+    };
+  }
+
+  // Fallback to gh CLI
+  const ghAuth = checkGitHubAuth();
+  if (ghAuth.authenticated) {
+    return {
+      authenticated: true,
+      hostname,
+      username: ghAuth.username,
+      tokenSource: 'gh-cli',
+    };
+  }
+
+  return {
+    authenticated: false,
+    tokenSource: 'none',
+  };
+}
+
+/**
+ * Get current authentication status (async - preferred)
+ * Checks keyring first, then file storage, then gh CLI
+ */
+export async function getAuthStatusAsync(
+  hostname: string = DEFAULT_HOSTNAME
+): Promise<OctocodeAuthStatus> {
+  // First check octocode's own storage (keyring-first)
+  const credentials = await getCredentials(hostname);
 
   if (credentials) {
     const tokenExpired = isTokenExpired(credentials);
@@ -412,7 +465,7 @@ export function getAuthStatus(
 export async function getValidToken(
   hostname: string = DEFAULT_HOSTNAME
 ): Promise<string | null> {
-  const credentials = getCredentials(hostname);
+  const credentials = await getCredentials(hostname);
 
   if (!credentials) {
     return null;
@@ -427,7 +480,7 @@ export async function getValidToken(
         return null;
       }
       // Get updated credentials
-      const updated = getCredentials(hostname);
+      const updated = await getCredentials(hostname);
       return updated?.token.token || null;
     }
     return null;
@@ -437,14 +490,12 @@ export async function getValidToken(
 }
 
 /**
- * Get token with source information
- * Checks octocode storage first, then falls back to gh CLI
+ * Get token from octocode storage only (keyring-first)
  */
-export async function getToken(
+export async function getOctocodeToken(
   hostname: string = DEFAULT_HOSTNAME
 ): Promise<TokenResult> {
-  // First try octocode's own storage
-  const credentials = getCredentials(hostname);
+  const credentials = await getCredentials(hostname);
 
   if (credentials) {
     // Check if token is expired
@@ -453,7 +504,7 @@ export async function getToken(
       if (credentials.token.refreshToken) {
         const result = await refreshAuthToken(hostname);
         if (result.success) {
-          const updated = getCredentials(hostname);
+          const updated = await getCredentials(hostname);
           if (updated?.token.token) {
             return {
               token: updated.token.token,
@@ -463,18 +514,34 @@ export async function getToken(
           }
         }
       }
-      // Token expired and can't refresh - fall through to gh CLI
-    } else {
+      // Token expired and can't refresh
       return {
-        token: credentials.token.token,
-        source: 'octocode',
-        username: credentials.username,
+        token: null,
+        source: 'none',
       };
     }
+
+    return {
+      token: credentials.token.token,
+      source: 'octocode',
+      username: credentials.username,
+    };
   }
 
-  // Fallback to gh CLI
+  return {
+    token: null,
+    source: 'none',
+  };
+}
+
+/**
+ * Get token from gh CLI only
+ */
+export function getGhCliToken(
+  hostname: string = DEFAULT_HOSTNAME
+): TokenResult {
   const ghToken = getGitHubCLIToken(hostname);
+
   if (ghToken) {
     const ghAuth = checkGitHubAuth();
     return {
@@ -490,6 +557,40 @@ export async function getToken(
   };
 }
 
+/** Token source type for getToken */
+export type GetTokenSource = 'octocode' | 'gh' | 'auto';
+
+/**
+ * Get token with source information
+ *
+ * @param hostname - GitHub hostname (default: github.com)
+ * @param preferredSource - Token source preference:
+ *   - 'octocode': Only return octocode-cli token
+ *   - 'gh': Only return gh CLI token
+ *   - 'auto': Try octocode first, then fall back to gh CLI (default)
+ */
+export async function getToken(
+  hostname: string = DEFAULT_HOSTNAME,
+  preferredSource: GetTokenSource = 'auto'
+): Promise<TokenResult> {
+  // Specific source requested
+  if (preferredSource === 'octocode') {
+    return getOctocodeToken(hostname);
+  }
+
+  if (preferredSource === 'gh') {
+    return getGhCliToken(hostname);
+  }
+
+  // Auto mode: octocode first, then gh CLI
+  const octocodeResult = await getOctocodeToken(hostname);
+  if (octocodeResult.token) {
+    return octocodeResult;
+  }
+
+  return getGhCliToken(hostname);
+}
+
 /**
  * Verify the stored token is still valid by making a test API call
  *
@@ -500,7 +601,7 @@ export async function getToken(
 export async function verifyToken(
   hostname: string = DEFAULT_HOSTNAME
 ): Promise<boolean> {
-  const credentials = getCredentials(hostname);
+  const credentials = await getCredentials(hostname);
 
   if (!credentials) {
     return false;

@@ -24,6 +24,9 @@ export function showHelp(): void {
     `    ${c('magenta', 'install')}     Configure octocode-mcp for an IDE`
   );
   console.log(
+    `    ${c('magenta', 'agent')}       Run AI agent with Octocode tools`
+  );
+  console.log(
     `    ${c('magenta', 'auth')}        Manage GitHub authentication`
   );
   console.log(`    ${c('magenta', 'login')}       Authenticate with GitHub`);
@@ -55,6 +58,23 @@ export function showHelp(): void {
   console.log();
   console.log(`    ${dim('# Check GitHub authentication')}`);
   console.log(`    ${c('yellow', 'octocode-cli auth')}`);
+  console.log();
+  console.log(`    ${dim('# Get token from octocode-cli (default)')}`);
+  console.log(`    ${c('yellow', 'octocode-cli token')}`);
+  console.log();
+  console.log(`    ${dim('# Get token from gh CLI')}`);
+  console.log(`    ${c('yellow', 'octocode-cli token --type=gh')}`);
+  console.log();
+  console.log(`    ${dim('# Run agent interactively')}`);
+  console.log(`    ${c('yellow', 'octocode agent --interactive')}`);
+  console.log();
+  console.log(`    ${dim('# Run agent with a task')}`);
+  console.log(`    ${c('yellow', 'octocode agent "Explore this codebase"')}`);
+  console.log();
+  console.log(`    ${dim('# Run agent with extended thinking')}`);
+  console.log(
+    `    ${c('yellow', 'octocode agent --think "Complex analysis task"')}`
+  );
   console.log();
   console.log(c('magenta', `  ─── 🔍🐙 ${bold('https://octocode.ai')} ───`));
   console.log();

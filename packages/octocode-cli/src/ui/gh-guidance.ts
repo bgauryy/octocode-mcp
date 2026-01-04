@@ -20,7 +20,7 @@ export function printGitHubAuthStatus(): void {
       `  ${c('yellow', '⚠')} GitHub: ${c('yellow', 'not authenticated')}`
     );
     console.log(
-      `    ${dim('Use')} ${c('yellow', 'octocode-cli login')} ${dim('or select "Login to GitHub" from menu')}`
+      `    ${dim('Use')} ${c('yellow', 'octocode-cli login')} ${dim('or select "Sign in to GitHub" from menu')}`
     );
   }
 }

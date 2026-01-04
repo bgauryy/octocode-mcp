@@ -1,6 +1,7 @@
 import { c, bold, dim } from '../../utils/colors.js';
 import { loadInquirer, input } from '../../utils/prompts.js';
 import { Spinner } from '../../utils/spinner.js';
+import { assertDefined } from '../../utils/assert.js';
 import {
   selectTargetClient,
   promptEnvVars,
@@ -58,69 +59,204 @@ const ALLOWED_COMMANDS = [
   'pnpm',
   'yarn',
   'npm',
-];
+] as const;
 
 /**
  * Validate command is in allowlist
+ * Performs strict validation to prevent command injection via path traversal
  */
-function validateCommand(command: string): boolean {
-  // Extract base command (handle paths like /usr/bin/node)
-  const baseCommand = command.split('/').pop()?.split(' ')[0] || '';
-  return ALLOWED_COMMANDS.includes(baseCommand);
+function validateCommand(command: string): {
+  valid: boolean;
+  error?: string;
+} {
+  // Reject empty commands
+  if (!command || typeof command !== 'string') {
+    return { valid: false, error: 'Command is required' };
+  }
+
+  // Normalize and extract base command
+  const trimmed = command.trim();
+
+  // Reject commands with suspicious patterns
+  if (trimmed.includes('..') || trimmed.includes('\0')) {
+    return { valid: false, error: 'Command contains invalid characters' };
+  }
+
+  // Extract base command name (handle paths like /usr/bin/node)
+  const segments = trimmed.split(/[/\\]/);
+  const baseCommand = segments[segments.length - 1]?.split(/\s+/)[0] || '';
+
+  // Must be exact match (case-sensitive)
+  if (
+    !ALLOWED_COMMANDS.includes(baseCommand as (typeof ALLOWED_COMMANDS)[number])
+  ) {
+    return {
+      valid: false,
+      error: `Untrusted command: "${baseCommand}". Allowed: ${ALLOWED_COMMANDS.join(', ')}`,
+    };
+  }
+
+  return { valid: true };
 }
 
 /**
+ * Shell metacharacters and patterns that could enable injection
+ */
+const DANGEROUS_PATTERNS = [
+  /[;&|`$]/, // Command chaining and substitution
+  /[(){}[\]]/, // Subshells and braces
+  /[<>]/, // Redirects
+  /[!^]/, // History expansion and negation
+  /\\(?!["'\\])/, // Backslash (except escaped quotes)
+  /[\n\r\x00]/, // Newlines and null bytes
+  /^-/, // Leading dash (could be interpreted as flag)
+  /'.*'/, // Single quotes (potential quoting issues)
+  /".*\$.*"/, // Double quotes with variable expansion
+];
+
+/**
  * Validate args don't contain shell injection characters
+ * More comprehensive check than simple regex
  */
 function validateArgs(args: string[]): {
   valid: boolean;
   problematic?: string;
+  error?: string;
 } {
-  // Shell metacharacters that could enable injection
-  const dangerousPattern = /[;&|`$(){}[\]<>!]/;
+  if (!Array.isArray(args)) {
+    return { valid: false, error: 'Arguments must be an array' };
+  }
 
   for (const arg of args) {
-    if (dangerousPattern.test(arg)) {
-      return { valid: false, problematic: arg };
+    if (typeof arg !== 'string') {
+      return {
+        valid: false,
+        problematic: String(arg),
+        error: 'Argument must be a string',
+      };
+    }
+
+    // Check against dangerous patterns
+    for (const pattern of DANGEROUS_PATTERNS) {
+      if (pattern.test(arg)) {
+        return {
+          valid: false,
+          problematic: arg,
+          error: `Potentially unsafe argument: "${arg.slice(0, 50)}${arg.length > 50 ? '...' : ''}"`,
+        };
+      }
+    }
+
+    // Check for excessively long arguments (potential buffer overflow)
+    if (arg.length > 4096) {
+      return {
+        valid: false,
+        problematic: arg.slice(0, 50) + '...',
+        error: 'Argument exceeds maximum length (4096 chars)',
+      };
     }
   }
+
+  return { valid: true };
+}
+
+/**
+ * Validate environment variable names and values
+ */
+function validateEnvVars(env: Record<string, string>): {
+  valid: boolean;
+  problematic?: string;
+  error?: string;
+} {
+  if (!env || typeof env !== 'object') {
+    return { valid: true }; // Empty env is OK
+  }
+
+  // Valid env var name pattern (POSIX: letters, digits, underscores, not starting with digit)
+  const validNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+  for (const [name, value] of Object.entries(env)) {
+    // Validate name
+    if (!validNamePattern.test(name)) {
+      return {
+        valid: false,
+        problematic: name,
+        error: `Invalid environment variable name: "${name}"`,
+      };
+    }
+
+    // Validate value (no null bytes or control characters except tab/newline)
+    if (typeof value !== 'string') {
+      return {
+        valid: false,
+        problematic: name,
+        error: `Environment variable value must be a string: "${name}"`,
+      };
+    }
+
+    // Check for dangerous control characters
+    if (/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(value)) {
+      return {
+        valid: false,
+        problematic: name,
+        error: `Environment variable "${name}" contains invalid control characters`,
+      };
+    }
+
+    // Check for excessively long values
+    if (value.length > 32768) {
+      return {
+        valid: false,
+        problematic: name,
+        error: `Environment variable "${name}" exceeds maximum length (32KB)`,
+      };
+    }
+  }
+
   return { valid: true };
 }
 
 /**
  * Build MCP server config from registry entry
- * Validates command and args for security
+ * Validates command, args, and environment variables for security
  */
 function buildServerConfig(
   mcp: MCPRegistryEntry,
   envValues: Record<string, string>
 ): MCPServer {
   // Validate command is in allowlist
-  if (!validateCommand(mcp.installConfig.command)) {
-    throw new Error(
-      `Untrusted command: "${mcp.installConfig.command}". ` +
-        `Allowed commands: ${ALLOWED_COMMANDS.join(', ')}`
-    );
+  const cmdValidation = validateCommand(mcp.installConfig.command);
+  if (!cmdValidation.valid) {
+    throw new Error(cmdValidation.error || 'Invalid command');
   }
 
   // Validate args don't contain shell injection
   const argsValidation = validateArgs(mcp.installConfig.args);
   if (!argsValidation.valid) {
     throw new Error(
-      `Potentially unsafe argument detected: "${argsValidation.problematic}". ` +
-        `Arguments cannot contain shell metacharacters.`
+      argsValidation.error ||
+        `Potentially unsafe argument: "${argsValidation.problematic}"`
+    );
+  }
+
+  // Merge install config env with user-provided values
+  const allEnv: Record<string, string> = {
+    ...(mcp.installConfig.env || {}),
+    ...envValues,
+  };
+
+  // Validate environment variables (both from registry and user input)
+  const envValidation = validateEnvVars(allEnv);
+  if (!envValidation.valid) {
+    throw new Error(
+      envValidation.error ||
+        `Invalid environment variable: "${envValidation.problematic}"`
     );
   }
 
   const config: MCPServer = {
     command: mcp.installConfig.command,
     args: [...mcp.installConfig.args],
-  };
-
-  // Merge install config env with user-provided values
-  const allEnv: Record<string, string> = {
-    ...(mcp.installConfig.env || {}),
-    ...envValues,
   };
 
   if (Object.keys(allEnv).length > 0) {
@@ -300,7 +436,11 @@ export async function runExternalMCPFlow(): Promise<void> {
 
       // Step 4: Show MCP details
       case 'details': {
-        printMCPDetails(state.selectedMCP!);
+        const selectedMCP = assertDefined(
+          state.selectedMCP,
+          'selectedMCP should be set before details step'
+        );
+        printMCPDetails(selectedMCP);
 
         type DetailChoice = 'continue' | 'back';
         const { select, Separator } = await import('../../utils/prompts.js');
@@ -331,7 +471,11 @@ export async function runExternalMCPFlow(): Promise<void> {
 
       // Step 5: Configure environment variables
       case 'envVars': {
-        const envResult = await promptEnvVars(state.selectedMCP!);
+        const selectedMCP = assertDefined(
+          state.selectedMCP,
+          'selectedMCP should be set before envVars step'
+        );
+        const envResult = await promptEnvVars(selectedMCP);
 
         if (envResult === 'back') {
           currentStep = 'details';
@@ -350,22 +494,31 @@ export async function runExternalMCPFlow(): Promise<void> {
 
       // Step 6: Confirm installation
       case 'confirm': {
+        const selectedMCP = assertDefined(
+          state.selectedMCP,
+          'selectedMCP should be set before confirm step'
+        );
+        const client = assertDefined(
+          state.client,
+          'client should be set before confirm step'
+        );
+
         const configPath =
-          state.client === 'custom' && state.customPath
+          client === 'custom' && state.customPath
             ? state.customPath
-            : getMCPConfigPath(state.client!, state.customPath);
+            : getMCPConfigPath(client, state.customPath);
 
         // Check if MCP already exists
         const mcpExists = checkMCPExists(
-          state.selectedMCP!.id,
-          state.client!,
+          selectedMCP.id,
+          client,
           state.customPath
         );
 
         if (mcpExists) {
           console.log();
           console.log(
-            `  ${c('yellow', '\u26A0')} MCP "${bold(state.selectedMCP!.name)}" is already installed.`
+            `  ${c('yellow', '\u26A0')} MCP "${bold(selectedMCP.name)}" is already installed.`
           );
           console.log();
 
@@ -413,17 +566,9 @@ export async function runExternalMCPFlow(): Promise<void> {
           console.log(`  ${c('blue', '\u2192')} Updating MCP configuration...`);
         }
 
-        printInstallPreview(
-          state.selectedMCP!,
-          state.client!,
-          configPath,
-          state.envValues
-        );
+        printInstallPreview(selectedMCP, client, configPath, state.envValues);
 
-        const confirmation = await confirmInstall(
-          state.selectedMCP!,
-          state.client!
-        );
+        const confirmation = await confirmInstall(selectedMCP, client);
 
         if (confirmation === 'back') {
           currentStep = 'envVars';
@@ -442,11 +587,20 @@ export async function runExternalMCPFlow(): Promise<void> {
 
       // Step 7: Perform installation
       case 'install': {
+        const selectedMCP = assertDefined(
+          state.selectedMCP,
+          'selectedMCP should be set before install step'
+        );
+        const client = assertDefined(
+          state.client,
+          'client should be set before install step'
+        );
+
         const spinner = new Spinner('Installing MCP...').start();
 
         const result = installExternalMCP(
-          state.selectedMCP!,
-          state.client!,
+          selectedMCP,
+          client,
           state.customPath,
           state.envValues
         );
@@ -454,8 +608,8 @@ export async function runExternalMCPFlow(): Promise<void> {
         if (result.success) {
           spinner.succeed('MCP installed successfully!');
           printInstallSuccess(
-            state.selectedMCP!,
-            state.client!,
+            selectedMCP,
+            client,
             result.configPath,
             result.backupPath
           );
