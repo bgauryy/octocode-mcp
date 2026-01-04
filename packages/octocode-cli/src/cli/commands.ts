@@ -23,7 +23,7 @@ import { checkNodeInPath, checkNpmInPath } from '../features/node-check.js';
 import { IDE_INFO, INSTALL_METHOD_INFO } from '../ui/constants.js';
 import { Spinner } from '../utils/spinner.js';
 import { copyDirectory, dirExists, listSubdirectories } from '../utils/fs.js';
-import { HOME } from '../utils/platform.js';
+import { HOME, isWindows, getAppDataPath } from '../utils/platform.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -449,19 +449,24 @@ async function showAuthStatus(hostname: string = 'github.com'): Promise<void> {
 
 /**
  * Get skills source directory
+ * From built output: out/octocode-cli.js -> ../skills
  */
 function getSkillsSourceDir(): string {
-  // Get the directory where this file is located
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-  // Navigate from out/cli/ to skills/
-  return path.resolve(__dirname, '..', '..', 'skills');
+  return path.resolve(__dirname, '..', 'skills');
 }
 
 /**
  * Get Claude skills destination directory
+ * Windows: %APPDATA%\Claude\skills\
+ * macOS/Linux: ~/.claude/skills/
  */
 function getSkillsDestDir(): string {
+  if (isWindows) {
+    const appData = getAppDataPath();
+    return path.join(appData, 'Claude', 'skills');
+  }
   return path.join(HOME, '.claude', 'skills');
 }
 

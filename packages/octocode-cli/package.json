@@ -10,6 +10,7 @@
   },
   "files": [
     "out/octocode-cli.js",
+    "skills",
     "assets/example.png",
     "README.md",
     "LICENSE"
@@ -18,8 +19,8 @@
     "build": "yarn lint && vite build",
     "build:dev": "vite build",
     "clean": "rm -rf out/",
-    "lint": "eslint src/**/*.ts",
-    "lint:fix": "eslint src/**/*.ts --fix",
+    "lint": "eslint src/**/*.ts tests/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts tests/**/*.ts --fix",
     "start": "node ./out/octocode-cli.js",
     "test": "vitest run --coverage",
     "test:quiet": "vitest run --reporter=dot --silent",
