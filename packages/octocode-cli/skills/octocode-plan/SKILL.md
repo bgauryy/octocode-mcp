@@ -1,7 +1,6 @@
 ---
 name: octocode-plan
-description: This skill should be used when planning complex implementations that require research, multiple steps, or architectural decisions.
-version: 1.0.0
+description: Plans complex implementations with research-driven analysis and step-by-step breakdowns. Use when planning features, making architectural decisions, designing systems, or implementing multi-step changes.
 ---
 
 # Octocode Plan

@@ -1,7 +1,6 @@
 ---
 name: octocode-research
-description: This skill should be used when answering questions about codebases, implementations, dependencies, or bugs that require evidence from actual code.
-version: 1.0.0
+description: Answers questions about codebases, implementations, dependencies, or bugs using evidence from actual code. Use when researching code, debugging issues, understanding implementations, tracing dependencies, or exploring unfamiliar codebases.
 ---
 
 # Octocode Research

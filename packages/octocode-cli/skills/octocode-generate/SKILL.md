@@ -1,7 +1,6 @@
 ---
 name: octocode-generate
-description: This skill should be used when scaffolding new applications, selecting tech stacks, or setting up project boilerplate.
-version: 1.0.0
+description: Scaffolds new applications with optimal tech stack selection and project boilerplate. Use when creating new projects, setting up frameworks, generating boilerplate, or starting new applications.
 ---
 
 # Octocode Generate

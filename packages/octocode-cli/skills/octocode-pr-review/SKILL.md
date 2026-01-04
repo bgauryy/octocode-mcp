@@ -1,7 +1,6 @@
 ---
 name: octocode-pr-review
-description: This skill should be used when reviewing pull requests for bugs, security, architecture, performance, and code quality issues.
-version: 1.0.0
+description: Reviews pull requests for bugs, security vulnerabilities, architecture problems, performance issues, and code quality. Use when reviewing PRs, analyzing diffs, checking code changes, or performing code review.
 ---
 
 # Octocode PR Review
