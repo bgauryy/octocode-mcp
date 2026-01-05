@@ -124,7 +124,6 @@ describe('SessionManager', () => {
         promptPreview: 'Get test prompt',
         mode: 'coding',
         status: 'completed',
-        totalCost: 0.05,
         totalTokens: 1000,
         cwd: '/test/path',
       };
@@ -135,7 +134,7 @@ describe('SessionManager', () => {
       expect(retrieved).not.toBeNull();
       expect(retrieved?.id).toBe('get-test-session');
       expect(retrieved?.mode).toBe('coding');
-      expect(retrieved?.totalCost).toBe(0.05);
+      expect(retrieved?.totalTokens).toBe(1000);
     });
 
     it('should return null for non-existent session', async () => {
@@ -268,14 +267,12 @@ describe('SessionManager', () => {
 
       const result = await sessionManager.updateSession('to-update', {
         status: 'completed',
-        totalCost: 0.1,
       });
 
       expect(result).toBe(true);
 
       const updated = await sessionManager.getSession('to-update');
       expect(updated?.status).toBe('completed');
-      expect(updated?.totalCost).toBe(0.1);
     });
 
     it('should return false for non-existent session', async () => {
@@ -319,13 +316,11 @@ describe('SessionManager', () => {
       });
 
       await sessionManager.completeSession('completing', {
-        totalCost: 0.25,
         totalTokens: 5000,
       });
 
       const session = await sessionManager.getSession('completing');
       expect(session?.status).toBe('completed');
-      expect(session?.totalCost).toBe(0.25);
       expect(session?.totalTokens).toBe(5000);
     });
   });
@@ -403,7 +398,8 @@ describe('formatSessionForDisplay', () => {
       promptPreview: 'Test prompt preview',
       mode: 'research',
       status: 'completed',
-      totalCost: 0.0542,
+      totalInputTokens: 500,
+      totalOutputTokens: 200,
       cwd: '/test',
     };
 
@@ -412,11 +408,11 @@ describe('formatSessionForDisplay', () => {
     expect(display.id).toBe('abcdef12'); // First 8 chars
     expect(display.mode).toBe('research');
     expect(display.status).toBe('completed');
-    expect(display.cost).toBe('$0.0542');
+    expect(display.tokens).toBe('700');
     expect(display.preview).toBe('Test prompt preview');
   });
 
-  it('should show dash for undefined cost', () => {
+  it('should show dash for undefined tokens', () => {
     const session: SessionInfo = {
       id: 'test',
       startedAt: '2025-01-05T10:00:00.000Z',
@@ -429,6 +425,6 @@ describe('formatSessionForDisplay', () => {
     };
 
     const display = formatSessionForDisplay(session);
-    expect(display.cost).toBe('-');
+    expect(display.tokens).toBe('-');
   });
 });

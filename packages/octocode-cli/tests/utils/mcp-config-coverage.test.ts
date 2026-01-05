@@ -14,7 +14,6 @@ vi.mock('../../src/utils/platform.js', () => ({
 // Mock mcp-paths
 vi.mock('../../src/utils/mcp-paths.js', () => ({
   getMCPConfigPath: vi.fn(),
-  ideConfigExists: vi.fn(),
   clientConfigExists: vi.fn(),
   configFileExists: vi.fn(),
   detectCurrentClient: vi.fn(),
@@ -204,7 +203,9 @@ describe('MCP Config Coverage Tests', () => {
       id: 'test-mcp',
       name: 'Test MCP',
       description: 'A test MCP server',
-      category: 'development',
+      category: 'developer-tools',
+      repository: 'https://github.com/test/test-mcp',
+      installationType: 'npx',
       installConfig: {
         command: 'node',
         args: ['--api-key', '${API_KEY}', '--endpoint', '${ENDPOINT}'],
@@ -319,7 +320,9 @@ describe('MCP Config Coverage Tests', () => {
       id: 'external-server',
       name: 'External Server',
       description: 'An external MCP server',
-      category: 'development',
+      category: 'developer-tools',
+      repository: 'https://github.com/test/external-server',
+      installationType: 'npx',
       installConfig: {
         command: 'npx',
         args: ['external-mcp@latest'],
@@ -513,21 +516,27 @@ describe('MCP Config Coverage Tests', () => {
         id: 'mcp-1',
         name: 'MCP 1',
         description: 'First MCP',
-        category: 'development',
+        category: 'developer-tools',
+        repository: 'https://github.com/test/mcp-1',
+        installationType: 'npx',
         installConfig: { command: 'npx', args: ['mcp-1'] },
       },
       {
         id: 'mcp-2',
         name: 'MCP 2',
         description: 'Second MCP',
-        category: 'development',
+        category: 'developer-tools',
+        repository: 'https://github.com/test/mcp-2',
+        installationType: 'npx',
         installConfig: { command: 'npx', args: ['mcp-2'] },
       },
       {
         id: 'mcp-3',
         name: 'MCP 3',
         description: 'Third MCP',
-        category: 'development',
+        category: 'developer-tools',
+        repository: 'https://github.com/test/mcp-3',
+        installationType: 'npx',
         installConfig: { command: 'npx', args: ['mcp-3'] },
       },
     ];
@@ -615,7 +624,9 @@ describe('MCP Config Coverage Tests', () => {
       id: 'test-mcp',
       name: 'Test MCP',
       description: 'A test MCP',
-      category: 'development',
+      category: 'developer-tools',
+      repository: 'https://github.com/test/test-mcp',
+      installationType: 'npx',
       installConfig: { command: 'npx', args: [] },
       requiredEnvVars: [
         { name: 'API_KEY', description: 'API Key' },
@@ -668,7 +679,9 @@ describe('MCP Config Coverage Tests', () => {
         id: 'simple-mcp',
         name: 'Simple MCP',
         description: 'A simple MCP',
-        category: 'development',
+        category: 'developer-tools',
+        repository: 'https://github.com/test/simple-mcp',
+        installationType: 'npx',
         installConfig: { command: 'npx', args: [] },
       };
 
@@ -686,7 +699,9 @@ describe('MCP Config Coverage Tests', () => {
         id: 'simple-mcp',
         name: 'Simple MCP',
         description: 'A simple MCP',
-        category: 'development',
+        category: 'developer-tools',
+        repository: 'https://github.com/test/simple-mcp',
+        installationType: 'npx',
         installConfig: { command: 'npx', args: [] },
         requiredEnvVars: [],
       };
@@ -783,7 +798,7 @@ describe('MCP Config Coverage Tests', () => {
       vi.mocked(configFileExists).mockReturnValue(true);
 
       let callIndex = 0;
-      vi.mocked(readMCPConfig).mockImplementation(() => {
+      vi.mocked(readMCPConfig).mockImplementation((): MCPConfig | null => {
         callIndex++;
         // cursor (1st) and claude-code (3rd) have octocode installed
         if (callIndex === 1 || callIndex === 3) {
@@ -858,7 +873,6 @@ describe('MCP Config Coverage Tests', () => {
 
       vi.mock('../../src/utils/mcp-paths.js', () => ({
         getMCPConfigPath: vi.fn(),
-        ideConfigExists: vi.fn(),
         clientConfigExists: vi.fn(),
         configFileExists: vi.fn(),
         detectCurrentClient: vi.fn(),

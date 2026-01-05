@@ -2,7 +2,8 @@
  * Tests for Provider Factory
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { execSync } from 'node:child_process';
 import {
   getProviderApiKey,
   isProviderConfigured,
@@ -11,16 +12,27 @@ import {
   detectDefaultModelId,
 } from '../../../src/features/providers/provider-factory.js';
 
+// Mock execSync to prevent keychain checks from interfering with tests
+vi.mock('node:child_process', () => ({
+  execSync: vi.fn(),
+}));
+
 describe('Provider Factory', () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
     // Reset environment
     process.env = { ...originalEnv };
+    // Mock execSync to throw (simulating no keychain access)
+    // This ensures tests only check environment variables
+    vi.mocked(execSync).mockImplementation(() => {
+      throw new Error('Keychain access failed');
+    });
   });
 
   afterEach(() => {
     process.env = originalEnv;
+    vi.clearAllMocks();
   });
 
   describe('getProviderApiKey', () => {

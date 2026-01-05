@@ -60,11 +60,13 @@ const DEFAULT_CONFIG: AgentIOConfig = {
 
 const STATE_ICONS: Record<AgentStateType, string> = {
   idle: '⏸',
+  waiting_for_input: '✏️',
   initializing: '🔄',
   connecting_mcp: '🔌',
   executing: '⚡',
   thinking: '🧠',
   tool_use: '🔧',
+  formulating_answer: '✍️',
   waiting_permission: '⏳',
   completed: '✅',
   error: '❌',
@@ -72,11 +74,13 @@ const STATE_ICONS: Record<AgentStateType, string> = {
 
 const STATE_LABELS: Record<AgentStateType, string> = {
   idle: 'Idle',
+  waiting_for_input: 'Ready',
   initializing: 'Initializing',
   connecting_mcp: 'Connecting MCP',
   executing: 'Executing',
   thinking: 'Thinking',
   tool_use: 'Using Tool',
+  formulating_answer: 'Preparing Answer',
   waiting_permission: 'Awaiting Permission',
   completed: 'Completed',
   error: 'Error',
@@ -149,13 +153,11 @@ export class AgentIO {
 
   /**
    * Assistant/LLM output
+   * Note: No longer truncated - full output is important for debugging and context
    */
   assistantOutput(message: string): void {
     if (!this.config.verbose) return;
-    // Truncate long messages
-    const truncated =
-      message.length > 500 ? message.slice(0, 500) + '...' : message;
-    console.log(`\n💭 ${truncated}`);
+    console.log(`\n💭 ${message}`);
   }
 
   /**
@@ -200,15 +202,15 @@ export class AgentIO {
     if (!this.config.verbose) return;
 
     const displayName = this.formatToolName(toolName);
-    const color = this.getToolColor(toolName);
+    const colorName = this.getToolColorName(toolName);
 
-    console.log(`\n\x1b[${color}m[${toolIndex}]\x1b[0m 🔧 ${displayName}`);
+    console.log(`\n${c(colorName, `[${toolIndex}]`)} 🔧 ${displayName}`);
 
     // Show compact input
     if (input) {
       const compactInput = this.formatToolInput(toolName, input);
       if (compactInput) {
-        console.log(`   → ${compactInput}`);
+        console.log(`   ${dim('→')} ${dim(compactInput)}`);
       }
     }
   }
@@ -218,8 +220,8 @@ export class AgentIO {
    */
   toolComplete(durationMs: number): void {
     if (!this.config.verbose) return;
-    const durationStr = durationMs > 0 ? ` (${durationMs}ms)` : '';
-    console.log(`   \x1b[32m✓\x1b[0m completed${durationStr}`);
+    const durationStr = durationMs > 0 ? ` ${dim(`(${durationMs}ms)`)}` : '';
+    console.log(`   ${c('green', '✓')} completed${durationStr}`);
   }
 
   /**
@@ -227,7 +229,7 @@ export class AgentIO {
    */
   toolFailed(error: string): void {
     if (!this.config.verbose) return;
-    console.log(`   \x1b[31m✗\x1b[0m failed: ${error}`);
+    console.log(`   ${c('red', '✗')} failed: ${error}`);
   }
 
   /**
@@ -244,15 +246,15 @@ export class AgentIO {
   }
 
   /**
-   * Get ANSI color code for tool type
+   * Get color name for tool type (uses named colors instead of ANSI codes)
    */
-  private getToolColor(toolName: string): string {
-    if (toolName.startsWith('mcp__')) return '36'; // cyan for MCP
-    if (['Read', 'Glob', 'Grep'].includes(toolName)) return '34'; // blue for read
-    if (['Write', 'Edit'].includes(toolName)) return '33'; // yellow for write
-    if (toolName === 'Bash') return '35'; // magenta for bash
-    if (['WebSearch', 'WebFetch'].includes(toolName)) return '32'; // green for web
-    return '37'; // white default
+  private getToolColorName(toolName: string): string {
+    if (toolName.startsWith('mcp__')) return 'cyan'; // cyan for MCP
+    if (['Read', 'Glob', 'Grep'].includes(toolName)) return 'blue'; // blue for read
+    if (['Write', 'Edit'].includes(toolName)) return 'yellow'; // yellow for write
+    if (toolName === 'Bash') return 'magenta'; // magenta for bash
+    if (['WebSearch', 'WebFetch'].includes(toolName)) return 'green'; // green for web
+    return 'white'; // white default
   }
 
   /**
@@ -298,7 +300,9 @@ export class AgentIO {
     // Only show significant state changes
     if (['executing', 'thinking', 'completed', 'error'].includes(state.state)) {
       console.log(
-        `\x1b[90m   ${icon} ${label} | ${elapsed}s | ${tokens.toLocaleString()} tokens\x1b[0m`
+        dim(
+          `   ${icon} ${label} | ${elapsed}s | ${tokens.toLocaleString()} tokens`
+        )
       );
     }
   }
@@ -366,10 +370,8 @@ export class AgentIO {
     console.log('\n🔌 MCP Server Status:');
     for (const server of servers) {
       const icon = server.status === 'connected' ? '✓' : '✗';
-      const color = server.status === 'connected' ? '32' : '31';
-      console.log(
-        `   \x1b[${color}m${icon}\x1b[0m ${server.name}: ${server.status}`
-      );
+      const colorName = server.status === 'connected' ? 'green' : 'red';
+      console.log(`   ${c(colorName, icon)} ${server.name}: ${server.status}`);
     }
   }
 
@@ -390,7 +392,6 @@ export class AgentIO {
       outputTokens?: number;
       cacheReadTokens?: number;
       cacheWriteTokens?: number;
-      cost?: number;
       sessionId?: string;
     }
   ): void {
@@ -447,7 +448,6 @@ export class AgentIO {
     outputTokens?: number;
     cacheReadTokens?: number;
     cacheWriteTokens?: number;
-    cost?: number;
     sessionId?: string;
   }): void {
     console.log();
@@ -481,12 +481,6 @@ export class AgentIO {
           `    ${c('green', '💾')} ${dim('Cache:')}   ${(stats.cacheReadTokens || 0).toLocaleString()} read / ${(stats.cacheWriteTokens || 0).toLocaleString()} write`
         );
       }
-    }
-
-    if (stats.cost !== undefined && stats.cost > 0) {
-      console.log(
-        `    ${c('green', '💰')} ${dim('Cost:')}    $${stats.cost.toFixed(4)}`
-      );
     }
 
     if (stats.sessionId) {

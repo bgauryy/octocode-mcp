@@ -15,7 +15,6 @@ import {
   writeMCPConfig,
   mergeOctocodeConfig,
   isOctocodeConfigured,
-  ideConfigExists,
   clientConfigExists,
   getOctocodeServerConfig,
   getOctocodeServerConfigWindows,
@@ -63,10 +62,10 @@ export interface InstallPreview {
 export function detectAvailableIDEs(): IDE[] {
   const available: IDE[] = [];
 
-  if (ideConfigExists('cursor')) {
+  if (clientConfigExists('cursor')) {
     available.push('cursor');
   }
-  if (ideConfigExists('claude')) {
+  if (clientConfigExists('claude-desktop')) {
     available.push('claude');
   }
 

@@ -2,6 +2,20 @@
  * Shared Types
  */
 
+// Re-export task types
+export type {
+  TaskStatus,
+  BackgroundTask,
+  TaskConfig,
+  TaskEventType,
+  TaskEvent,
+  TaskEventListener,
+  ITaskManager,
+  AgentToolInput,
+  TaskOutputToolInput,
+  TaskListToolInput,
+} from './tasks.js';
+
 // Re-export provider types
 export type {
   LLMProvider,

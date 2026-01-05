@@ -13,7 +13,6 @@ vi.mock('../../src/utils/platform.js', () => ({
 // Mock mcp-paths
 vi.mock('../../src/utils/mcp-paths.js', () => ({
   getMCPConfigPath: vi.fn(),
-  ideConfigExists: vi.fn(),
   clientConfigExists: vi.fn(),
   configFileExists: vi.fn(),
   detectCurrentClient: vi.fn(),

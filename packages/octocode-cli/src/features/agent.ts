@@ -62,55 +62,16 @@ import {
 import { getConfigForMode } from './agent-config.js';
 
 // System prompts are also available from './system-prompts.js' for external use
-// import { OCTOCODE_RESEARCH_PROMPT, SUBAGENT_PROMPTS } from './system-prompts.js';
+import {
+  OCTOCODE_FULL_AGENT_PROMPT,
+  SUBAGENT_PROMPTS,
+} from './system-prompts.js';
 
 // ============================================
 // Octocode System Prompt
 // ============================================
 
-const OCTOCODE_SYSTEM_PROMPT = `You are an expert AI coding assistant powered by Octocode.
-
-## Octocode MCP Tools (ALWAYS USE THESE FOR RESEARCH)
-
-You have access to powerful Octocode MCP tools. Use these tools with the exact names:
-
-### GitHub Research Tools
-- \`mcp__octocode-local__githubSearchCode\` - Search code patterns across GitHub repositories
-- \`mcp__octocode-local__githubGetFileContent\` - Read file contents from GitHub repos
-- \`mcp__octocode-local__githubViewRepoStructure\` - Explore repository directory structure
-- \`mcp__octocode-local__githubSearchRepositories\` - Find repositories by keywords/topics
-- \`mcp__octocode-local__githubSearchPullRequests\` - Search PR history and changes
-- \`mcp__octocode-local__packageSearch\` - Find npm/Python packages and their repos
-
-### Local Codebase Tools
-- \`mcp__octocode-local__localSearchCode\` - Search patterns in local codebase (replaces grep)
-- \`mcp__octocode-local__localGetFileContent\` - Read local file contents with targeting
-- \`mcp__octocode-local__localViewStructure\` - View directory structure (replaces ls/tree)
-- \`mcp__octocode-local__localFindFiles\` - Find files by name/metadata (replaces find)
-
-## Research Workflow
-
-1. **Start with Structure**: Use \`localViewStructure\` or \`githubViewRepoStructure\` to understand layout
-2. **Search for Patterns**: Use \`localSearchCode\` or \`githubSearchCode\` to find implementations
-3. **Read Context**: Use \`localGetFileContent\` or \`githubGetFileContent\` with \`matchString\` for targeted reading
-4. **Trace Dependencies**: Follow imports and usages across files
-5. **Cite Evidence**: Always provide file paths and line numbers for findings
-
-## Task Breakdown
-
-For complex tasks:
-1. Use the Task tool to spawn specialized subagents for parallel work
-2. Use TodoWrite to track progress on multi-step tasks
-3. Break large requests into focused, actionable items
-4. Complete each item before moving to the next
-
-## Best Practices
-- **Research First**: Explore and understand before making changes
-- **Plan Complex Tasks**: Break down large tasks into smaller steps
-- **Use Subagents**: Delegate specialized tasks via Task tool
-- **Verify Changes**: Run tests after code modifications
-- **Be Concise**: Show reasoning but keep responses focused
-`;
+const OCTOCODE_SYSTEM_PROMPT = OCTOCODE_FULL_AGENT_PROMPT;
 
 // ============================================
 // Octocode Subagent Definitions
@@ -123,24 +84,7 @@ export const OCTOCODE_SUBAGENTS: OctocodeSubagents = {
   researcher: {
     description:
       'Expert code researcher for exploring codebases, finding implementations, and understanding code patterns. Use for any research or exploration task.',
-    prompt: `You are a code research specialist with access to Octocode MCP tools.
-
-## Your MCP Tools (use exact names):
-- \`mcp__octocode-local__localSearchCode\` - Search patterns in local codebase
-- \`mcp__octocode-local__localGetFileContent\` - Read local files with matchString targeting
-- \`mcp__octocode-local__localViewStructure\` - View directory structure
-- \`mcp__octocode-local__githubSearchCode\` - Search GitHub repositories
-- \`mcp__octocode-local__githubGetFileContent\` - Read GitHub file contents
-- \`mcp__octocode-local__packageSearch\` - Find npm/Python packages
-
-## Research Process:
-1. Start with structure (localViewStructure) to understand layout
-2. Search for patterns (localSearchCode) to find implementations
-3. Read with context (localGetFileContent + matchString) for details
-4. Trace imports and dependencies across files
-5. Cite file paths and line numbers in findings
-
-Be thorough but concise. Provide evidence-based summaries.`,
+    prompt: SUBAGENT_PROMPTS.researcher,
     tools: [
       'Read',
       'Glob',
@@ -156,14 +100,7 @@ Be thorough but concise. Provide evidence-based summaries.`,
   codeReviewer: {
     description:
       'Expert code reviewer for quality, security, and best practices analysis. Use for code review tasks.',
-    prompt: `You are a senior code reviewer. Analyze code for:
-- Security vulnerabilities and risks
-- Performance issues and optimizations
-- Code quality and maintainability
-- Adherence to best practices
-- Potential bugs and edge cases
-
-Provide specific, actionable feedback with file paths and line numbers. Prioritize issues by severity.`,
+    prompt: SUBAGENT_PROMPTS.codeReviewer,
     tools: ['Read', 'Glob', 'Grep'],
     model: 'sonnet',
   },
@@ -171,13 +108,7 @@ Provide specific, actionable feedback with file paths and line numbers. Prioriti
   testRunner: {
     description:
       'Test execution specialist for running tests and analyzing results. Use for test-related tasks.',
-    prompt: `You are a testing specialist. Your role is to:
-- Run test suites and analyze results
-- Identify failing tests and their causes
-- Suggest fixes for test failures
-- Ensure adequate test coverage
-
-Execute tests using appropriate commands (npm test, pytest, etc.) and provide clear analysis of results.`,
+    prompt: SUBAGENT_PROMPTS.testRunner,
     tools: ['Bash', 'Read', 'Grep', 'Glob'],
     model: 'haiku',
   },
@@ -185,13 +116,7 @@ Execute tests using appropriate commands (npm test, pytest, etc.) and provide cl
   docWriter: {
     description:
       'Documentation specialist for generating and updating documentation. Use for documentation tasks.',
-    prompt: `You are a technical documentation specialist. Your role is to:
-- Write clear, concise documentation
-- Generate API documentation from code
-- Create README files and guides
-- Update existing documentation
-
-Write documentation that is helpful for both new and experienced developers.`,
+    prompt: SUBAGENT_PROMPTS.docWriter,
     tools: ['Read', 'Write', 'Edit', 'Glob', 'Grep'],
     model: 'sonnet',
   },
@@ -199,14 +124,7 @@ Write documentation that is helpful for both new and experienced developers.`,
   securityAuditor: {
     description:
       'Security specialist for vulnerability analysis and security audits. Use for security-related tasks.',
-    prompt: `You are a security auditor. Analyze code for:
-- OWASP Top 10 vulnerabilities
-- Authentication and authorization issues
-- Input validation problems
-- Secrets and credential exposure
-- Dependency vulnerabilities
-
-Provide detailed security reports with remediation recommendations.`,
+    prompt: SUBAGENT_PROMPTS.securityAuditor,
     tools: ['Read', 'Glob', 'Grep', 'Bash', 'WebSearch'],
     model: 'opus',
   },
@@ -214,14 +132,7 @@ Provide detailed security reports with remediation recommendations.`,
   refactorer: {
     description:
       'Refactoring specialist for code improvements and modernization. Use for refactoring tasks.',
-    prompt: `You are a refactoring specialist. Your role is to:
-- Identify code that needs refactoring
-- Apply design patterns appropriately
-- Improve code readability and maintainability
-- Modernize legacy code patterns
-- Ensure refactoring doesn't break functionality
-
-Make incremental, safe changes with clear explanations.`,
+    prompt: SUBAGENT_PROMPTS.refactorer,
     tools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
     model: 'sonnet',
   },
@@ -658,7 +569,6 @@ export async function runAgent(options: AgentOptions): Promise<AgentResult> {
         cacheReadTokens: finalState.cacheReadTokens,
         cacheWriteTokens: finalState.cacheWriteTokens,
       },
-      cost: stats.totalCost,
     };
   } catch (error) {
     setAgentState('error');
@@ -858,6 +768,7 @@ function buildQueryOptions(options: AgentOptions): Record<string, unknown> {
 
 /**
  * Log message for verbose mode - interactive console output
+ * Note: No truncation - full output is shown to preserve context
  */
 function logMessage(msg: SDKMessage): void {
   if (msg.type === 'assistant') {
@@ -865,14 +776,9 @@ function logMessage(msg: SDKMessage): void {
     if (content && Array.isArray(content)) {
       for (const block of content) {
         if (block.type === 'text') {
-          // Show assistant text with formatting
+          // Show assistant text with formatting (full text, no truncation)
           const text = block.text as string;
-          // Truncate very long texts
-          if (text.length > 500) {
-            console.log(`\n\x1b[90m💭 ${text.slice(0, 500)}...\x1b[0m`);
-          } else {
-            console.log(`\n💭 ${text}`);
-          }
+          console.log(`\n💭 ${text}`);
         }
         // tool_use is handled by verboseLoggingHook
       }
@@ -1147,7 +1053,6 @@ export function coderResultToAgentResult(result: CoderResult): AgentResult {
     sessionId: result.sessionId,
     duration: result.duration,
     usage: result.usage,
-    cost: result.cost,
   };
 }
 

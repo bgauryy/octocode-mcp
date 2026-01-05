@@ -19,8 +19,8 @@ import {
 } from './types.js';
 import { AgentIO, createAgentIO } from '../agent-io.js';
 import {
-  resetCostTracker,
-  getCostStats,
+  resetStats,
+  getStats,
   resetToolCounter,
   setAgentState,
   getAgentState,
@@ -351,7 +351,7 @@ export class UnifiedCoder {
    * Reset tracking state
    */
   protected resetTracking(): void {
-    resetCostTracker();
+    resetStats();
     resetToolCounter();
     this.turnState = createTurnState();
     this.results = [];
@@ -363,7 +363,7 @@ export class UnifiedCoder {
    * Create success result
    */
   protected createSuccessResult(result: AgentLoopResult): CoderResult {
-    const stats = getCostStats();
+    const stats = getStats();
     const state = getAgentState();
 
     return {
@@ -377,7 +377,6 @@ export class UnifiedCoder {
         cacheReadTokens: state.cacheReadTokens,
         cacheWriteTokens: state.cacheWriteTokens,
       },
-      cost: stats.totalCost,
       stats: {
         toolCalls: result.toolCalls.length,
         reflections: this.turnState.reflectionCount,
@@ -391,7 +390,7 @@ export class UnifiedCoder {
    * Create error result
    */
   protected createErrorResult(error: string): CoderResult {
-    const stats = getCostStats();
+    const stats = getStats();
 
     return {
       success: false,
@@ -401,7 +400,6 @@ export class UnifiedCoder {
         inputTokens: stats.totalInputTokens,
         outputTokens: stats.totalOutputTokens,
       },
-      cost: stats.totalCost,
       stats: {
         toolCalls: 0,
         reflections: 0,

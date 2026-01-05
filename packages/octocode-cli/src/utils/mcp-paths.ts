@@ -384,33 +384,3 @@ export function getClientsByCategory(): Record<
 
   return grouped;
 }
-
-// ============================================================================
-// Legacy compatibility (for IDE type)
-// ============================================================================
-
-import type { IDE } from '../types/index.js';
-
-/**
- * Legacy function for backward compatibility
- * @deprecated Use getMCPConfigPath with MCPClient instead
- */
-export function getIDEConfigPath(ide: IDE): string {
-  const clientMap: Record<IDE, MCPClient> = {
-    cursor: 'cursor',
-    claude: 'claude-desktop',
-  };
-  return getMCPConfigPath(clientMap[ide]);
-}
-
-/**
- * Legacy function for backward compatibility
- * @deprecated Use clientConfigExists with MCPClient instead
- */
-export function ideConfigExists(ide: IDE): boolean {
-  const clientMap: Record<IDE, MCPClient> = {
-    cursor: 'cursor',
-    claude: 'claude-desktop',
-  };
-  return clientConfigExists(clientMap[ide]);
-}

@@ -248,11 +248,13 @@ export type CanUseTool = (
 
 export type AgentStateType =
   | 'idle'
+  | 'waiting_for_input'
   | 'initializing'
   | 'connecting_mcp'
   | 'executing'
   | 'thinking'
   | 'tool_use'
+  | 'formulating_answer'
   | 'waiting_permission'
   | 'completed'
   | 'error';
@@ -280,7 +282,6 @@ export interface AgentResult {
   sessionId?: string;
   usage?: AgentUsage;
   duration?: number;
-  cost?: number;
 }
 
 export interface AgentUsage {
@@ -376,7 +377,17 @@ export type SessionCoderMode =
   | 'coding'
   | 'full'
   | 'planning'
-  | 'custom';
+  | 'custom'
+  | 'interactive';
+
+/** Session status */
+export type SessionStatus = 'active' | 'completed' | 'error';
+
+/** Message role in conversation */
+export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
+
+/** Tool call status */
+export type ToolCallStatus = 'pending' | 'completed' | 'error';
 
 export interface SessionInfo {
   /** Unique session ID from SDK */
@@ -392,34 +403,81 @@ export interface SessionInfo {
   /** Coder mode used */
   mode: SessionCoderMode;
   /** Session status */
-  status: 'active' | 'completed' | 'error';
-  /** Total cost in USD */
-  totalCost?: number;
+  status: SessionStatus;
   /** Total tokens used */
   totalTokens?: number;
+  /** Total input tokens */
+  totalInputTokens?: number;
+  /** Total output tokens */
+  totalOutputTokens?: number;
   /** Path to SDK transcript file */
   transcriptPath?: string;
   /** Working directory */
   cwd: string;
   /** AI provider used */
   provider?: AIProvider;
+  /** Model used */
+  model?: string;
+  /** Number of messages in session */
+  messageCount?: number;
+  /** Session title (auto-generated) */
+  title?: string;
+  /** Claude Agent SDK session ID */
+  sdkSessionId?: string;
 }
 
-/** @deprecated Use SessionInfo instead */
-export interface AgentSession {
+/** Stored message in a session */
+export interface StoredMessage {
+  /** Unique message ID */
   id: string;
-  startedAt: Date;
-  lastActiveAt: Date;
-  provider: AIProvider;
-  prompt: string;
-  status: 'active' | 'completed' | 'error';
-  totalCost?: number;
-  totalTokens?: number;
+  /** Session this message belongs to */
+  sessionId: string;
+  /** Message role */
+  role: MessageRole;
+  /** Message content */
+  content: string;
+  /** When the message was created */
+  createdAt: Date;
+  /** Token count for this message */
+  tokenCount?: number;
+  /** Turn index for ordering */
+  turnIndex: number;
+  /** Message index within turn */
+  messageIndex: number;
+  /** Tool call ID if this is a tool result */
+  toolCallId?: string;
+  /** Parent message ID for threading */
+  parentMessageId?: string;
 }
 
-export interface SessionStore {
-  sessions: SessionInfo[];
-  activeSessionId?: string;
+/** Stored tool call */
+export interface StoredToolCall {
+  /** Unique tool call ID */
+  id: string;
+  /** Message this tool call belongs to */
+  messageId: string;
+  /** Session this tool call belongs to */
+  sessionId: string;
+  /** Tool name */
+  name: string;
+  /** JSON-encoded arguments */
+  args?: string;
+  /** JSON-encoded result */
+  result?: string;
+  /** Tool call status */
+  status: ToolCallStatus;
+  /** When the tool call started */
+  startedAt?: Date;
+  /** When the tool call completed */
+  completedAt?: Date;
+  /** Duration in milliseconds */
+  durationMs?: number;
+}
+
+/** Session with messages for resume */
+export interface SessionWithMessages {
+  session: SessionInfo;
+  messages: StoredMessage[];
 }
 
 // ============================================

@@ -12,6 +12,7 @@
 import type { CoreTool } from 'ai';
 import { fileTools } from './file-tools.js';
 import { shellTools } from './shell-tools.js';
+import { taskTools } from './task-tools.js';
 
 // ============================================
 // Built-in Tool Registry
@@ -31,6 +32,12 @@ export const BUILTIN_TOOLS: Record<string, CoreTool> = {
   // Shell operations
   Bash: shellTools.Bash,
   Grep: shellTools.Grep,
+
+  // Task/Agent operations
+  Agent: taskTools.Agent,
+  TaskOutput: taskTools.TaskOutput,
+  TaskList: taskTools.TaskList,
+  TaskKill: taskTools.TaskKill,
 };
 
 /**
@@ -103,3 +110,4 @@ export const READONLY_TOOLS: Record<string, CoreTool> = getTools([
 
 export { fileTools } from './file-tools.js';
 export { shellTools } from './shell-tools.js';
+export { taskTools } from './task-tools.js';

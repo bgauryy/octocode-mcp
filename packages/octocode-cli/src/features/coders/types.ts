@@ -103,8 +103,6 @@ export interface TurnState {
   executedCommands: string[];
   /** Reflection count for this turn */
   reflectionCount: number;
-  /** Cost for this turn */
-  turnCost: number;
   /** Tokens for this turn */
   turnTokens: {
     input: number;
@@ -123,7 +121,6 @@ export function createTurnState(): TurnState {
     editedFiles: new Set(),
     executedCommands: [],
     reflectionCount: 0,
-    turnCost: 0,
     turnTokens: { input: 0, output: 0 },
     lintOutcome: null,
     testOutcome: null,
@@ -166,7 +163,6 @@ export interface CoderResult {
     cacheReadTokens?: number;
     cacheWriteTokens?: number;
   };
-  cost: number;
   stats: {
     toolCalls: number;
     reflections: number;

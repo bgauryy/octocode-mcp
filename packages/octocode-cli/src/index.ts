@@ -16,7 +16,7 @@
 import { c, bold, dim } from './utils/colors.js';
 import { clearScreen } from './utils/platform.js';
 import { loadInquirer } from './utils/prompts.js';
-import { printWelcome, printGoodbye, printFooter } from './ui/header.js';
+import { printWelcome, printGoodbye } from './ui/header.js';
 import {
   printNodeEnvironmentStatus,
   printNodeDoctorHint,
@@ -72,9 +72,6 @@ async function runInteractiveMode(): Promise<void> {
     printGoodbye();
     return;
   }
-
-  // Show footer with octocode.ai link
-  printFooter();
 
   // Go to menu loop
   await runMenuLoop();

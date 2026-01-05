@@ -14,7 +14,6 @@ import { isWindows } from './platform.js';
 // Re-exports for backward compatibility
 export {
   getMCPConfigPath,
-  ideConfigExists,
   clientConfigExists,
   configFileExists,
   detectCurrentClient,

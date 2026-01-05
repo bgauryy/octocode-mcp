@@ -506,12 +506,6 @@ export async function storeCredentials(
 }
 
 /**
- * Store credentials (async alias for backward compatibility)
- * @deprecated Use storeCredentials() directly - it's now async
- */
-export const storeCredentialsAsync = storeCredentials;
-
-/**
  * Get credentials using keyring-first strategy (like gh CLI)
  *
  * Flow:
@@ -550,12 +544,6 @@ export async function getCredentials(
   const store = readCredentialsStore();
   return store.credentials[normalizedHostname] || null;
 }
-
-/**
- * Get credentials (async alias for backward compatibility)
- * @deprecated Use getCredentials() directly - it's now async
- */
-export const getCredentialsAsync = getCredentials;
 
 /**
  * Get credentials synchronously (file storage only)
@@ -630,12 +618,6 @@ export async function deleteCredentials(
 }
 
 /**
- * Delete credentials (async alias for backward compatibility)
- * @deprecated Use deleteCredentials() directly - it's now async
- */
-export const deleteCredentialsAsync = deleteCredentials;
-
-/**
  * List all stored hostnames (from both keyring and file)
  */
 export async function listStoredHosts(): Promise<string[]> {
@@ -666,12 +648,6 @@ export async function listStoredHosts(): Promise<string[]> {
 }
 
 /**
- * List stored hosts (alias for backward compatibility)
- * @deprecated Use listStoredHosts() directly
- */
-export const listStoredHostsAsync = listStoredHosts;
-
-/**
  * List stored hosts synchronously (file storage only)
  *
  * ⚠️ WARNING: This only lists file storage, not keyring.
@@ -690,12 +666,6 @@ export async function hasCredentials(
 ): Promise<boolean> {
   return (await getCredentials(hostname)) !== null;
 }
-
-/**
- * Check if credentials exist (alias for backward compatibility)
- * @deprecated Use hasCredentials() directly
- */
-export const hasCredentialsAsync = hasCredentials;
 
 /**
  * Check if credentials exist synchronously (file storage only)
@@ -726,12 +696,6 @@ export async function updateToken(
 
   return true;
 }
-
-/**
- * Update token (alias for backward compatibility)
- * @deprecated Use updateToken() directly
- */
-export const updateTokenAsync = updateToken;
 
 /**
  * Get the credentials storage location (for display purposes)

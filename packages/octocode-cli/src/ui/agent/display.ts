@@ -137,11 +137,7 @@ export function printAgentResult(result: AgentResult): void {
     }
 
     // Show usage stats if available
-    if (
-      result.usage ||
-      result.cost !== undefined ||
-      result.duration !== undefined
-    ) {
+    if (result.usage || result.duration !== undefined) {
       console.log();
       console.log(c('blue', '  ┌' + '─'.repeat(40) + '┐'));
       console.log(
@@ -177,13 +173,6 @@ export function printAgentResult(result: AgentResult): void {
             `    ${c('green', '💾')} ${dim('Cache:')}   ${(result.usage.cacheReadTokens || 0).toLocaleString()} read / ${(result.usage.cacheWriteTokens || 0).toLocaleString()} write`
           );
         }
-      }
-
-      // Cost
-      if (result.cost !== undefined && result.cost > 0) {
-        console.log(
-          `    ${c('green', '💰')} ${dim('Cost:')}    $${result.cost.toFixed(4)}`
-        );
       }
 
       // Session ID

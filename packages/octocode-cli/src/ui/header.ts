@@ -131,15 +131,6 @@ export function printGoodbye(): void {
   console.log();
 }
 
-/**
- * Print footer with link
- */
-export function printFooter(): void {
-  console.log();
-  console.log(c('magenta', `  ─── 🔍🐙 ${bold('https://octocode.ai')} ───`));
-  console.log();
-}
-
 // Helper functions
 function getVisualWidth(str: string): number {
   // Remove ANSI codes for width calculation

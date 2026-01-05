@@ -2,34 +2,27 @@
  * Agent Flow - Main agent orchestration
  *
  * Interactive flow for configuring and running agents.
+ * Now uses Ink-based UI for rich terminal experience.
+ * Opens the UI immediately - task input is within the UI.
  */
 
 import { c, bold, dim } from '../../utils/colors.js';
-import { loadInquirer, input } from '../../utils/prompts.js';
+import { input } from '../../utils/prompts.js';
 import { Spinner } from '../../utils/spinner.js';
+import { classifyTask, getModeDisplayInfo, type AgentMode } from './prompts.js';
+import { printAgentResult } from './display.js';
 import {
-  promptAgentTask,
-  classifyTask,
-  getModeDisplayInfo,
-  type AgentMode,
-} from './prompts.js';
-import { printAgentReadiness, printAgentResult } from './display.js';
-import {
-  checkAgentReadiness,
-  runResearchAgent,
-  runCodingAgent,
-  runFullAgent,
-  runPlanningAgent,
-  runDelegateAgent,
-  runInteractiveAgent,
+  getOctocodeMCPConfig,
+  OCTOCODE_SUBAGENTS,
 } from '../../features/agent.js';
-import type { AgentModel, AgentPermissionMode } from '../../types/agent.js';
+import type {
+  AgentModel,
+  AgentPermissionMode,
+  AgentTool,
+} from '../../types/agent.js';
 import { getCurrentDefaultModel } from '../ai-providers/index.js';
-import {
-  getConfiguredProviders,
-  type ModelId,
-} from '../../features/providers/index.js';
-import { BUILTIN_TOOLS } from '../../features/tools/index.js';
+import { type ModelId } from '../../features/providers/index.js';
+import { runAgentUI } from '../agent-ink/index.js';
 
 /**
  * Wait for user to press enter
@@ -43,216 +36,158 @@ async function pressEnterToContinue(): Promise<void> {
 }
 
 /**
- * Flow state for agent configuration
- */
-interface AgentFlowState {
-  mode: AgentMode | null;
-  task: string | null;
-  verbose: boolean;
-  model: ModelId | null;
-}
-
-/**
- * Flow step identifiers
- * Simplified flow: task → auto-detect → execute
- */
-type FlowStep =
-  | 'check-readiness'
-  | 'enter-task' // Just get the task
-  | 'execute' // Run immediately with auto-detected mode
-  | 'done';
-
-/**
  * Run the interactive agent flow
+ *
+ * Opens the agent UI immediately - the user enters their task within the UI.
+ * This provides a smoother UX than prompting before showing the interface.
  */
 export async function runAgentFlow(): Promise<void> {
-  await loadInquirer();
-
-  // Section header
-  console.log();
-  console.log(c('blue', '━'.repeat(66)));
-  console.log(`  🤖 ${bold('Octocode Agent')}`);
-  console.log(c('blue', '━'.repeat(66)));
-  console.log();
-
-  // Initialize state with current default model
+  // Get current model for the UI
   const currentModel = getCurrentDefaultModel();
-  const configuredProviders = getConfiguredProviders();
-  const toolCount = Object.keys(BUILTIN_TOOLS).length;
 
-  // Display current configuration
-  if (currentModel) {
-    console.log(
-      `  ${dim('Model:')} ${c('cyan', currentModel)}    ${dim('Tools:')} ${toolCount} built-in`
-    );
-  } else if (configuredProviders.length > 0) {
-    console.log(
-      `  ${dim('Providers:')} ${configuredProviders.length} configured    ${dim('Tools:')} ${toolCount} built-in`
-    );
-  }
-  console.log();
+  // Run the agent UI directly - it will prompt for task within the interface
+  // Note: AgentView displays results inline - we skip printAgentResult to avoid duplication
+  await runAgentUI({
+    model: currentModel || undefined,
+    uiConfig: {
+      verbose: true,
+      showToolCalls: true,
+      showThinking: true,
+    },
+  });
 
-  const state: AgentFlowState = {
-    mode: null,
-    task: null,
-    verbose: true,
-    model: currentModel,
-  };
-
-  let currentStep: FlowStep = 'check-readiness';
-
-  // Step-based flow with back navigation
-  while (currentStep !== 'done') {
-    switch (currentStep) {
-      case 'check-readiness': {
-        const spinner = new Spinner('Checking agent readiness...').start();
-        const readiness = await checkAgentReadiness();
-        spinner.stop();
-
-        printAgentReadiness(readiness);
-
-        if (!readiness.ready) {
-          console.log();
-          console.log(`  ${c('yellow', '⚠')} Agent is not ready.`);
-          console.log();
-
-          if (!readiness.sdkInstalled) {
-            console.log(`  ${bold('To install Claude Agent SDK:')}`);
-            console.log(
-              `    ${c('cyan', '→')} npm install @anthropic-ai/claude-agent-sdk`
-            );
-            console.log();
-          }
-
-          if (!readiness.claudeCodeAuth && !readiness.hasAPIKey) {
-            console.log(`  ${bold('To authenticate:')}`);
-            console.log(`    ${c('cyan', '→')} Install Claude Code`);
-            console.log(`    ${dim('or')}`);
-            console.log(
-              `    ${c('cyan', '→')} Set ANTHROPIC_API_KEY environment variable`
-            );
-            console.log();
-          }
-
-          await pressEnterToContinue();
-          return;
-        }
-
-        // Smart flow: go to task first, then auto-detect mode
-        currentStep = 'enter-task';
-        break;
-      }
-
-      case 'enter-task': {
-        const task = await promptAgentTask();
-        if (task === null) {
-          // User chose back - exit flow
-          return;
-        }
-        state.task = task;
-
-        // Auto-detect mode silently
-        const { mode } = await classifyTask(task);
-        state.mode = mode;
-
-        // Show what we detected
-        const modeInfo = getModeDisplayInfo(mode);
-        console.log();
-        console.log(
-          `  ${c('green', '●')} Detected: ${modeInfo.icon} ${bold(modeInfo.name)}`
-        );
-
-        // Go directly to execution - no confirmation needed
-        currentStep = 'execute';
-        break;
-      }
-
-      case 'execute': {
-        await executeAgent(state);
-        currentStep = 'done';
-        break;
-      }
-    }
-  }
-}
-
-/**
- * Execute agent based on configured state
- */
-async function executeAgent(state: AgentFlowState): Promise<void> {
-  console.log();
-  console.log(c('blue', '━'.repeat(66)));
-  console.log(`  🚀 ${bold('Running Agent...')}`);
-  console.log(c('blue', '━'.repeat(66)));
-  console.log();
-
-  // Don't use spinner in verbose mode - it overwrites tool execution logs
-  const spinner = state.verbose
-    ? null
-    : new Spinner('Agent is working...').start();
-
-  let result;
-
-  try {
-    // Use appropriate agent based on mode
-    switch (state.mode) {
-      case 'research':
-        result = await runResearchAgent(state.task!, {
-          verbose: state.verbose,
-        });
-        break;
-
-      case 'planning':
-        result = await runPlanningAgent(state.task!, {
-          verbose: state.verbose,
-        });
-        break;
-
-      case 'coding':
-        result = await runCodingAgent(state.task!, {
-          verbose: state.verbose,
-        });
-        break;
-
-      case 'full':
-        result = await runFullAgent(state.task!, {
-          verbose: state.verbose,
-        });
-        break;
-
-      case 'delegate':
-        result = await runDelegateAgent(state.task!, {
-          verbose: state.verbose,
-        });
-        break;
-
-      case 'interactive':
-        result = await runInteractiveAgent(state.task!, {
-          verbose: state.verbose,
-        });
-        break;
-
-      default:
-        // Default to research mode
-        result = await runResearchAgent(state.task!, {
-          verbose: state.verbose,
-        });
-    }
-  } catch (error) {
-    result = {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-
-  spinner?.stop();
-  printAgentResult(result);
-
+  // Result is already displayed in the UI - just wait for user acknowledgment
   await pressEnterToContinue();
 }
 
 /**
- * Quick agent run (non-interactive)
+ * Get agent options based on mode
+ */
+function getAgentOptionsForMode(
+  mode: AgentMode,
+  verbose: boolean
+): Record<string, unknown> {
+  const mcpServers = getOctocodeMCPConfig();
+
+  const RESEARCH_TOOLS: AgentTool[] = [
+    'Read',
+    'Glob',
+    'Grep',
+    'WebSearch',
+    'WebFetch',
+    'Task',
+    'ListMcpResources',
+    'ReadMcpResource',
+  ];
+
+  const CODING_TOOLS: AgentTool[] = [
+    'Read',
+    'Write',
+    'Edit',
+    'Bash',
+    'Glob',
+    'Grep',
+    'Task',
+    'TodoWrite',
+    'AskUserQuestion',
+  ];
+
+  const ALL_TOOLS: AgentTool[] = [
+    'Read',
+    'Write',
+    'Edit',
+    'Bash',
+    'Glob',
+    'Grep',
+    'WebSearch',
+    'WebFetch',
+    'Task',
+    'TodoWrite',
+    'AskUserQuestion',
+    'NotebookEdit',
+    'ListMcpResources',
+    'ReadMcpResource',
+  ];
+
+  switch (mode) {
+    case 'research':
+      return {
+        tools: RESEARCH_TOOLS,
+        agents: { researcher: OCTOCODE_SUBAGENTS.researcher },
+        mcpServers,
+        loadProjectSettings: true,
+        verbose,
+      };
+
+    case 'planning':
+      return {
+        tools: RESEARCH_TOOLS,
+        mcpServers,
+        permissionMode: 'plan',
+        loadProjectSettings: true,
+        enableThinking: true,
+        verbose,
+      };
+
+    case 'coding':
+      return {
+        tools: CODING_TOOLS,
+        agents: {
+          codeReviewer: OCTOCODE_SUBAGENTS.codeReviewer,
+          testRunner: OCTOCODE_SUBAGENTS.testRunner,
+        },
+        useClaudeCodePrompt: true,
+        loadProjectSettings: true,
+        verbose,
+      };
+
+    case 'full':
+      return {
+        tools: ALL_TOOLS,
+        agents: OCTOCODE_SUBAGENTS,
+        mcpServers,
+        useClaudeCodePrompt: true,
+        loadProjectSettings: true,
+        enableThinking: true,
+        verbose,
+      };
+
+    case 'delegate':
+      return {
+        tools: ['Task', 'TodoWrite'] as AgentTool[],
+        agents: OCTOCODE_SUBAGENTS,
+        mcpServers,
+        permissionMode: 'delegate',
+        loadProjectSettings: true,
+        enableThinking: true,
+        verbose,
+      };
+
+    case 'interactive':
+      return {
+        tools: ALL_TOOLS,
+        agents: OCTOCODE_SUBAGENTS,
+        mcpServers,
+        useClaudeCodePrompt: true,
+        loadProjectSettings: true,
+        enableThinking: true,
+        interactive: true,
+        verbose,
+      };
+
+    default:
+      return {
+        tools: RESEARCH_TOOLS,
+        agents: { researcher: OCTOCODE_SUBAGENTS.researcher },
+        mcpServers,
+        loadProjectSettings: true,
+        verbose,
+      };
+  }
+}
+
+/**
+ * Quick agent run (non-interactive) with Ink UI
  */
 export async function quickAgentRun(
   task: string,
@@ -264,6 +199,7 @@ export async function quickAgentRun(
     verbose?: boolean;
     persistSession?: boolean;
     resumeSession?: string;
+    useInkUI?: boolean;
   } = {}
 ): Promise<void> {
   // Auto-detect mode if not specified
@@ -277,7 +213,46 @@ export async function quickAgentRun(
   const modeInfo = getModeDisplayInfo(mode);
   const verbose = options.verbose ?? true;
   const currentModel = options.model ?? getCurrentDefaultModel();
+  const useInkUI = options.useInkUI ?? true; // Default to Ink UI
 
+  // Use Ink UI for rich terminal experience
+  if (useInkUI) {
+    const agentOptions = getAgentOptionsForMode(mode, verbose);
+
+    // Add session options
+    if (options.persistSession) {
+      (agentOptions as Record<string, unknown>).persistSession = true;
+    }
+    if (options.resumeSession) {
+      (agentOptions as Record<string, unknown>).resumeSession =
+        options.resumeSession;
+    }
+    if (options.enableThinking) {
+      (agentOptions as Record<string, unknown>).enableThinking = true;
+    }
+    if (options.permissionMode) {
+      (agentOptions as Record<string, unknown>).permissionMode =
+        options.permissionMode;
+    }
+
+    // Result is displayed inline in AgentView - no need to call printAgentResult
+    await runAgentUI({
+      task,
+      mode,
+      model: currentModel || undefined,
+      agentOptions,
+      uiConfig: {
+        verbose,
+        showToolCalls: true,
+        showThinking: true,
+      },
+    });
+
+    // Result already displayed in UI
+    return;
+  }
+
+  // Fallback to simple console output (legacy mode)
   console.log();
   console.log(`  ${bold('🤖 Running Agent')}`);
   console.log(`  ${dim('Mode:')} ${modeInfo.icon} ${modeInfo.name}`);
@@ -292,8 +267,18 @@ export async function quickAgentRun(
   // Don't use spinner in verbose mode - it overwrites tool execution logs
   const spinner = verbose ? null : new Spinner('Agent is working...').start();
 
+  // Import agent functions for legacy mode
+  const {
+    runResearchAgent,
+    runCodingAgent,
+    runFullAgent,
+    runPlanningAgent,
+    runDelegateAgent,
+    runInteractiveAgent,
+  } = await import('../../features/agent.js');
+
   // Build agent options with session support
-  const agentOptions = {
+  const legacyOptions = {
     verbose,
     persistSession: options.persistSession,
     resumeSession: options.resumeSession,
@@ -305,32 +290,32 @@ export async function quickAgentRun(
     // Use appropriate agent based on mode
     switch (mode) {
       case 'research':
-        result = await runResearchAgent(task, agentOptions);
+        result = await runResearchAgent(task, legacyOptions);
         break;
 
       case 'planning':
-        result = await runPlanningAgent(task, agentOptions);
+        result = await runPlanningAgent(task, legacyOptions);
         break;
 
       case 'coding':
-        result = await runCodingAgent(task, agentOptions);
+        result = await runCodingAgent(task, legacyOptions);
         break;
 
       case 'full':
-        result = await runFullAgent(task, agentOptions);
+        result = await runFullAgent(task, legacyOptions);
         break;
 
       case 'delegate':
-        result = await runDelegateAgent(task, agentOptions);
+        result = await runDelegateAgent(task, legacyOptions);
         break;
 
       case 'interactive':
-        result = await runInteractiveAgent(task, agentOptions);
+        result = await runInteractiveAgent(task, legacyOptions);
         break;
 
       default:
         // Default to research
-        result = await runResearchAgent(task, agentOptions);
+        result = await runResearchAgent(task, legacyOptions);
     }
   } catch (error) {
     result = {

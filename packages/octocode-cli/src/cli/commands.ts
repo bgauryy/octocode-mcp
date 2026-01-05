@@ -52,6 +52,8 @@ import {
   getSessionManager,
   formatSessionForDisplay,
 } from '../features/session-manager.js';
+import { getSessionStore } from '../features/session-store.js';
+import { closeDatabase } from '../db/index.js';
 
 type GetTokenSource = 'octocode' | 'gh' | 'auto';
 
@@ -1180,12 +1182,36 @@ const sessionsCommand: CLICommand = {
   name: 'sessions',
   aliases: ['sess'],
   description: 'List and manage agent sessions',
-  usage: 'octocode-cli sessions [list|delete <id>|clear]',
+  usage: 'octocode-cli sessions [list|resume <id>|delete <id>|clear]',
   options: [
     {
       name: 'delete',
       short: 'd',
       description: 'Delete a session by ID',
+      hasValue: true,
+    },
+    {
+      name: 'resume',
+      short: 'r',
+      description: 'Resume a session by ID',
+      hasValue: true,
+    },
+    {
+      name: 'limit',
+      short: 'l',
+      description: 'Number of sessions to show',
+      hasValue: true,
+    },
+    {
+      name: 'mode',
+      short: 'm',
+      description: 'Filter by mode',
+      hasValue: true,
+    },
+    {
+      name: 'search',
+      short: 's',
+      description: 'Search in prompts',
       hasValue: true,
     },
     {
@@ -1197,28 +1223,150 @@ const sessionsCommand: CLICommand = {
       short: 'j',
       description: 'Output as JSON',
     },
+    {
+      name: 'sqlite',
+      description: 'Use new SQLite store (default)',
+    },
+    {
+      name: 'legacy',
+      description: 'Use legacy JSON store',
+    },
   ],
   handler: async (args: ParsedArgs) => {
-    const sessionManager = getSessionManager();
     const subcommand = args.args[0];
-    const deleteId =
-      args.args[0] === 'delete'
-        ? args.args[1]
-        : (args.options['delete'] as string | undefined);
-    const clearAll = Boolean(args.options['clear']) || subcommand === 'clear';
+    const useLegacy = Boolean(args.options['legacy']);
     const jsonOutput = Boolean(args.options['json'] || args.options['j']);
 
-    // Clear all sessions
-    if (clearAll) {
+    // Use legacy JSON store if requested
+    if (useLegacy) {
+      const sessionManager = getSessionManager();
+      const deleteId =
+        args.args[0] === 'delete'
+          ? args.args[1]
+          : (args.options['delete'] as string | undefined);
+      const clearAll = Boolean(args.options['clear']) || subcommand === 'clear';
+
+      if (clearAll) {
+        const sessions = await sessionManager.listSessions();
+        if (sessions.length === 0) {
+          console.log(`  ${c('yellow', '⚠')} No legacy sessions to clear`);
+          return;
+        }
+
+        await loadInquirer();
+        const confirm = await select({
+          message: `Delete ${sessions.length} legacy session(s)?`,
+          choices: [
+            { name: 'No, cancel', value: false },
+            { name: 'Yes, delete all', value: true },
+          ],
+        });
+
+        if (confirm) {
+          const deleted = await sessionManager.clearAllSessions();
+          console.log(
+            `  ${c('green', '✓')} Deleted ${deleted} legacy session(s)`
+          );
+        }
+        return;
+      }
+
+      if (deleteId) {
+        const success = await sessionManager.deleteSession(deleteId);
+        if (success) {
+          console.log(
+            `  ${c('green', '✓')} Deleted legacy session: ${deleteId}`
+          );
+        } else {
+          console.log(
+            `  ${c('red', '✗')} Legacy session not found: ${deleteId}`
+          );
+        }
+        return;
+      }
+
       const sessions = await sessionManager.listSessions();
+      if (jsonOutput) {
+        console.log(JSON.stringify(sessions, null, 2));
+        return;
+      }
+
+      console.log();
+      console.log(`  ${bold('📋 Legacy Sessions (JSON)')}`);
+      console.log();
+
       if (sessions.length === 0) {
-        console.log();
-        console.log(`  ${c('yellow', '⚠')} No sessions to clear`);
+        console.log(`  ${dim('No legacy sessions.')}`);
         console.log();
         return;
       }
 
-      // Confirm
+      for (const session of sessions) {
+        const display = formatSessionForDisplay(session);
+        const statusIcon =
+          session.status === 'completed'
+            ? c('green', '✓')
+            : session.status === 'error'
+              ? c('red', '✗')
+              : c('yellow', '○');
+        console.log(
+          `  ${statusIcon} ${c('cyan', display.id)} ${dim(display.date)}`
+        );
+        console.log(`    ${display.preview}`);
+        console.log();
+      }
+      return;
+    }
+
+    // Use new SQLite store
+    const store = getSessionStore();
+    const deleteId =
+      subcommand === 'delete'
+        ? args.args[1]
+        : (args.options['delete'] as string | undefined);
+    const resumeId =
+      subcommand === 'resume'
+        ? args.args[1]
+        : (args.options['resume'] as string | undefined);
+    const clearAll = Boolean(args.options['clear']) || subcommand === 'clear';
+
+    // Resume session
+    if (resumeId) {
+      const session = await store.getSession(resumeId);
+      if (!session) {
+        // Try to find by partial ID
+        const sessions = await store.listSessions({ limit: 100 });
+        const match = sessions.find(s => s.id.startsWith(resumeId));
+        if (!match) {
+          console.log(`  ${c('red', '✗')} Session not found: ${resumeId}`);
+          process.exitCode = 1;
+          closeDatabase();
+          return;
+        }
+        // Found a match, launch chat with resume
+        closeDatabase();
+        const { runChat } = await import('../ui/chat/runChat.js');
+        await runChat({ resumeSessionId: match.id });
+        return;
+      }
+
+      closeDatabase();
+      const { runChat } = await import('../ui/chat/runChat.js');
+      await runChat({ resumeSessionId: session.id });
+      return;
+    }
+
+    // Clear all sessions
+    if (clearAll) {
+      const sessions = await store.listSessions();
+      if (sessions.length === 0) {
+        console.log();
+        console.log(`  ${c('yellow', '⚠')} No sessions to clear`);
+        console.log();
+        closeDatabase();
+        return;
+      }
+
       if (!jsonOutput) {
         console.log();
         console.log(
@@ -1240,10 +1388,11 @@ const sessionsCommand: CLICommand = {
         console.log();
         console.log(`  ${dim('Cancelled')}`);
         console.log();
+        closeDatabase();
         return;
       }
 
-      const deleted = await sessionManager.clearAllSessions();
+      const deleted = await store.clearAllSessions();
       if (jsonOutput) {
         console.log(JSON.stringify({ deleted }));
       } else {
@@ -1251,12 +1400,13 @@ const sessionsCommand: CLICommand = {
         console.log(`  ${c('green', '✓')} Deleted ${deleted} session(s)`);
         console.log();
       }
+      closeDatabase();
       return;
     }
 
     // Delete specific session
     if (deleteId) {
-      const success = await sessionManager.deleteSession(deleteId);
+      const success = await store.deleteSession(deleteId);
       if (jsonOutput) {
         console.log(JSON.stringify({ deleted: success, id: deleteId }));
       } else if (success) {
@@ -1269,54 +1419,136 @@ const sessionsCommand: CLICommand = {
         console.log();
         process.exitCode = 1;
       }
+      closeDatabase();
       return;
     }
 
     // List sessions (default)
-    const sessions = await sessionManager.listSessions();
+    const limit = parseInt(args.options['limit'] as string) || 20;
+    const mode = args.options['mode'] as string | undefined;
+    const search = args.options['search'] as string | undefined;
+
+    const sessions = await store.listSessions({ limit, mode, search });
 
     if (jsonOutput) {
       console.log(JSON.stringify(sessions, null, 2));
+      closeDatabase();
       return;
     }
 
     console.log();
-    console.log(`  ${bold('📋 Agent Sessions')}`);
+    console.log(`  ${bold('📋 Chat Sessions')}`);
     console.log();
 
     if (sessions.length === 0) {
       console.log(`  ${dim('No saved sessions.')}`);
       console.log();
-      const hint = `${dim('Run with')} ${c('cyan', '--persist')} ${dim('to save:')}`;
-      console.log(`  ${hint}`);
-      console.log(`    ${c('cyan', '→')} octocode agent --persist "task"`);
+      console.log(`  ${dim('Start a chat to create a session:')}`);
+      console.log(`    ${c('cyan', '→')} octocode chat`);
       console.log();
+      closeDatabase();
       return;
     }
 
     // Display sessions in a table-like format
     for (const session of sessions) {
-      const display = formatSessionForDisplay(session);
+      const date = session.updatedAt
+        ? new Date(session.updatedAt).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        : '';
+      const totalTokens =
+        (session.totalInputTokens ?? 0) + (session.totalOutputTokens ?? 0);
+      const tokens = totalTokens > 0 ? totalTokens.toLocaleString() : '-';
       const statusIcon =
         session.status === 'completed'
           ? c('green', '✓')
           : session.status === 'error'
             ? c('red', '✗')
             : c('yellow', '○');
+      const shortId = session.id.slice(0, 8);
+      const title =
+        session.title || session.promptPreview || session.prompt.slice(0, 50);
+      const msgCount = session.messageCount ?? 0;
 
-      const header = `${statusIcon} ${c('cyan', display.id)} ${dim(display.date)}`;
+      const header = `${statusIcon} ${c('cyan', shortId)} ${dim(date)}`;
       console.log(`  ${header}`);
-      const meta = `${dim('Mode:')} ${display.mode}  ${dim('Cost:')} ${display.cost}`;
+      const meta = `${dim('Mode:')} ${session.mode}  ${dim('Msgs:')} ${msgCount}  ${dim('Tokens:')} ${tokens}`;
       console.log(`    ${meta}`);
-      console.log(`    ${display.preview}`);
+      console.log(`    ${title}`);
       console.log();
     }
 
-    console.log(`  ${dim('Total:')} ${sessions.length} session(s)`);
+    console.log(`  ${dim('Showing:')} ${sessions.length} session(s)`);
     console.log();
-    console.log(`  ${dim('To resume:')} octocode agent --resume <id>`);
+    console.log(`  ${dim('To resume:')} octocode sessions resume <id>`);
     console.log(`  ${dim('To delete:')} octocode sessions --delete <id>`);
     console.log();
+
+    closeDatabase();
+  },
+};
+
+/**
+ * Chat command - Interactive chat interface using Ink
+ */
+const chatCommand: CLICommand = {
+  name: 'chat',
+  aliases: ['c'],
+  description: 'Start an interactive chat session with Octocode',
+  usage: 'octocode-cli chat [--model <provider:model>] [--resume <id>]',
+  options: [
+    {
+      name: 'model',
+      description:
+        'Model to use: provider:model (e.g., anthropic:claude-4-sonnet)',
+      hasValue: true,
+    },
+    {
+      name: 'resume',
+      short: 'r',
+      description: 'Resume a previous session by ID',
+      hasValue: true,
+    },
+    {
+      name: 'no-persist',
+      description: 'Disable session persistence',
+    },
+    {
+      name: 'verbose',
+      short: 'v',
+      description: 'Enable verbose output',
+    },
+  ],
+  handler: async (args: ParsedArgs) => {
+    const modelArg = args.options['model'] as string | undefined;
+    const resumeSessionId = args.options['resume'] as string | undefined;
+    const persistSession = !args.options['no-persist'];
+    const verbose = Boolean(args.options['verbose'] || args.options['v']);
+
+    // Parse model if provided
+    let model: ModelId | undefined;
+    if (modelArg) {
+      const parsed = parseModelId(modelArg);
+      if (!parsed) {
+        console.log();
+        console.log(`  ${c('red', '✗')} Invalid model format: ${modelArg}`);
+        console.log(
+          `  ${dim('Expected format:')} provider:model (e.g., anthropic:claude-4-sonnet)`
+        );
+        console.log();
+        process.exitCode = 1;
+        return;
+      }
+      model = modelArg as ModelId;
+    }
+
+    // Dynamic import to avoid loading React/Ink unless needed
+    const { runChat } = await import('../ui/chat/runChat.js');
+    await runChat({ model, verbose, resumeSessionId, persistSession });
   },
 };
 
@@ -1333,6 +1565,7 @@ export const commands: CLICommand[] = [
   statusCommand,
   syncCommand,
   agentCommand,
+  chatCommand,
   sessionsCommand,
 ];
 

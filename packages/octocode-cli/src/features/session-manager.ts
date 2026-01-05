@@ -201,7 +201,6 @@ export class SessionManager {
   async completeSession(
     sessionId: string,
     stats?: {
-      totalCost?: number;
       totalTokens?: number;
       transcriptPath?: string;
     }
@@ -274,7 +273,7 @@ export function formatSessionForDisplay(session: SessionInfo): {
   mode: string;
   status: string;
   date: string;
-  cost: string;
+  tokens: string;
 } {
   const date = new Date(session.lastActiveAt);
   const formattedDate = date.toLocaleDateString('en-US', {
@@ -284,16 +283,16 @@ export function formatSessionForDisplay(session: SessionInfo): {
     minute: '2-digit',
   });
 
+  const totalTokens =
+    (session.totalInputTokens ?? 0) + (session.totalOutputTokens ?? 0);
+
   return {
     id: session.id.slice(0, 8), // Show first 8 chars of ID
     preview: session.promptPreview,
     mode: session.mode,
     status: session.status,
     date: formattedDate,
-    cost:
-      session.totalCost !== undefined
-        ? `$${session.totalCost.toFixed(4)}`
-        : '-',
+    tokens: totalTokens > 0 ? totalTokens.toLocaleString() : '-',
   };
 }
 

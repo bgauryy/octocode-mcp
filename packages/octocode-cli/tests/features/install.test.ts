@@ -11,7 +11,6 @@ vi.mock('../../src/utils/mcp-config.js', () => ({
   writeMCPConfig: vi.fn(),
   mergeOctocodeConfig: vi.fn(),
   isOctocodeConfigured: vi.fn(),
-  ideConfigExists: vi.fn(),
   clientConfigExists: vi.fn(),
   getOctocodeServerConfig: vi.fn(),
   getOctocodeServerConfigWindows: vi.fn(),
@@ -34,8 +33,9 @@ describe('Install Feature', () => {
 
   describe('detectAvailableIDEs', () => {
     it('should return empty array when no IDEs are available', async () => {
-      const { ideConfigExists } = await import('../../src/utils/mcp-config.js');
-      vi.mocked(ideConfigExists).mockReturnValue(false);
+      const { clientConfigExists } =
+        await import('../../src/utils/mcp-config.js');
+      vi.mocked(clientConfigExists).mockReturnValue(false);
 
       const { detectAvailableIDEs } =
         await import('../../src/features/install.js');
@@ -45,8 +45,11 @@ describe('Install Feature', () => {
     });
 
     it('should return cursor when cursor is available', async () => {
-      const { ideConfigExists } = await import('../../src/utils/mcp-config.js');
-      vi.mocked(ideConfigExists).mockImplementation(ide => ide === 'cursor');
+      const { clientConfigExists } =
+        await import('../../src/utils/mcp-config.js');
+      vi.mocked(clientConfigExists).mockImplementation(
+        client => client === 'cursor'
+      );
 
       const { detectAvailableIDEs } =
         await import('../../src/features/install.js');
@@ -57,8 +60,9 @@ describe('Install Feature', () => {
     });
 
     it('should return both when both are available', async () => {
-      const { ideConfigExists } = await import('../../src/utils/mcp-config.js');
-      vi.mocked(ideConfigExists).mockReturnValue(true);
+      const { clientConfigExists } =
+        await import('../../src/utils/mcp-config.js');
+      vi.mocked(clientConfigExists).mockReturnValue(true);
 
       const { detectAvailableIDEs } =
         await import('../../src/features/install.js');

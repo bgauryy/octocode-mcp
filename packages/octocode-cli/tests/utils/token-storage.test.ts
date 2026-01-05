@@ -335,57 +335,6 @@ describe('Token Storage', () => {
   });
 
   // ============================================================================
-  // storeCredentialsAsync Tests (alias for storeCredentials)
-  // ============================================================================
-  describe('storeCredentialsAsync', () => {
-    it('should be an alias for storeCredentials', async () => {
-      const { storeCredentials, storeCredentialsAsync } =
-        await import('../../src/utils/token-storage.js');
-
-      expect(storeCredentialsAsync).toBe(storeCredentials);
-    });
-
-    it('should store credentials and return StoreResult', async () => {
-      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
-        if (String(path).includes('.key')) return true;
-        return false;
-      });
-      vi.mocked(fs.readFileSync).mockReturnValue(mockKey.toString('hex'));
-
-      const mockCipher = createMockCipher();
-      vi.mocked(crypto.createCipheriv).mockReturnValue(
-        mockCipher as unknown as crypto.CipherGCM
-      );
-
-      const { storeCredentialsAsync } =
-        await import('../../src/utils/token-storage.js');
-
-      const result = await storeCredentialsAsync(createTestCredentials());
-
-      expect(result.success).toBe(true);
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
-        '/home/testuser/.octocode/credentials.json',
-        expect.any(String),
-        expect.objectContaining({ mode: 0o600 })
-      );
-    });
-
-    it('should throw error when file storage fails async', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-      vi.mocked(fs.mkdirSync).mockImplementation(() => {
-        throw new Error('Permission denied');
-      });
-
-      const { storeCredentialsAsync } =
-        await import('../../src/utils/token-storage.js');
-
-      await expect(
-        storeCredentialsAsync(createTestCredentials())
-      ).rejects.toThrow('Failed to store credentials');
-    });
-  });
-
-  // ============================================================================
   // getCredentials Tests (async, keyring-first)
   // ============================================================================
   describe('getCredentials', () => {
@@ -491,40 +440,6 @@ describe('Token Storage', () => {
       expect(await getCredentials('GITHUB.COM')).toEqual(storedCreds);
       expect(await getCredentials('https://github.com')).toEqual(storedCreds);
       expect(await getCredentials('https://github.com/')).toEqual(storedCreds);
-    });
-  });
-
-  // ============================================================================
-  // getCredentialsAsync Tests (alias)
-  // ============================================================================
-  describe('getCredentialsAsync', () => {
-    it('should be an alias for getCredentials', async () => {
-      const { getCredentials, getCredentialsAsync } =
-        await import('../../src/utils/token-storage.js');
-
-      expect(getCredentialsAsync).toBe(getCredentials);
-    });
-
-    it('should return null when no credentials exist', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { getCredentialsAsync } =
-        await import('../../src/utils/token-storage.js');
-      const result = await getCredentialsAsync('github.com');
-
-      expect(result).toBeNull();
-    });
-
-    it('should fallback to file when keytar unavailable', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { getCredentialsAsync, _setSecureStorageAvailable } =
-        await import('../../src/utils/token-storage.js');
-
-      _setSecureStorageAvailable(false);
-      const result = await getCredentialsAsync('github.com');
-
-      expect(result).toBeNull();
     });
   });
 
@@ -640,64 +555,6 @@ describe('Token Storage', () => {
   });
 
   // ============================================================================
-  // deleteCredentialsAsync Tests (alias)
-  // ============================================================================
-  describe('deleteCredentialsAsync', () => {
-    it('should be an alias for deleteCredentials', async () => {
-      const { deleteCredentials, deleteCredentialsAsync } =
-        await import('../../src/utils/token-storage.js');
-
-      expect(deleteCredentialsAsync).toBe(deleteCredentials);
-    });
-
-    it('should return DeleteResult when no credentials exist', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { deleteCredentialsAsync } =
-        await import('../../src/utils/token-storage.js');
-      const result = await deleteCredentialsAsync('github.com');
-
-      expect(result.success).toBe(false);
-    });
-
-    it('should delete from file storage and return DeleteResult', async () => {
-      const storedCreds = createTestCredentials();
-      const store = { version: 1, credentials: { 'github.com': storedCreds } };
-
-      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
-        if (String(path).includes('.key')) return true;
-        if (String(path).includes('credentials.json')) return true;
-        return false;
-      });
-      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
-        if (String(path).includes('.key')) return mockKey.toString('hex');
-        return 'iv:authtag:encrypted';
-      });
-
-      const mockDecipher = {
-        update: vi.fn().mockReturnValue(JSON.stringify(store)),
-        final: vi.fn().mockReturnValue(''),
-        setAuthTag: vi.fn(),
-      };
-      vi.mocked(crypto.createDecipheriv).mockReturnValue(
-        mockDecipher as unknown as crypto.DecipherGCM
-      );
-
-      const mockCipher = createMockCipher();
-      vi.mocked(crypto.createCipheriv).mockReturnValue(
-        mockCipher as unknown as crypto.CipherGCM
-      );
-
-      const { deleteCredentialsAsync } =
-        await import('../../src/utils/token-storage.js');
-      const result = await deleteCredentialsAsync('github.com');
-
-      expect(result.success).toBe(true);
-      expect(result.deletedFromFile).toBe(true);
-    });
-  });
-
-  // ============================================================================
   // hasCredentials Tests (async)
   // ============================================================================
   describe('hasCredentials', () => {
@@ -739,28 +596,6 @@ describe('Token Storage', () => {
       const result = await hasCredentials('github.com');
 
       expect(result).toBe(true);
-    });
-  });
-
-  // ============================================================================
-  // hasCredentialsAsync Tests (alias)
-  // ============================================================================
-  describe('hasCredentialsAsync', () => {
-    it('should be an alias for hasCredentials', async () => {
-      const { hasCredentials, hasCredentialsAsync } =
-        await import('../../src/utils/token-storage.js');
-
-      expect(hasCredentialsAsync).toBe(hasCredentials);
-    });
-
-    it('should return false when no credentials exist', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { hasCredentialsAsync } =
-        await import('../../src/utils/token-storage.js');
-      const result = await hasCredentialsAsync('github.com');
-
-      expect(result).toBe(false);
     });
   });
 
@@ -865,69 +700,6 @@ describe('Token Storage', () => {
   });
 
   // ============================================================================
-  // updateTokenAsync Tests (alias)
-  // ============================================================================
-  describe('updateTokenAsync', () => {
-    it('should be an alias for updateToken', async () => {
-      const { updateToken, updateTokenAsync } =
-        await import('../../src/utils/token-storage.js');
-
-      expect(updateTokenAsync).toBe(updateToken);
-    });
-
-    it('should return false when no credentials exist', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { updateTokenAsync } =
-        await import('../../src/utils/token-storage.js');
-      const result = await updateTokenAsync('github.com', {
-        token: 'new-token',
-        tokenType: 'oauth',
-      });
-
-      expect(result).toBe(false);
-    });
-
-    it('should update token async when credentials exist', async () => {
-      const storedCreds = createTestCredentials();
-      const store = { version: 1, credentials: { 'github.com': storedCreds } };
-
-      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
-        if (String(path).includes('.key')) return true;
-        if (String(path).includes('credentials.json')) return true;
-        return false;
-      });
-      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
-        if (String(path).includes('.key')) return mockKey.toString('hex');
-        return 'iv:authtag:encrypted';
-      });
-
-      const mockDecipher = {
-        update: vi.fn().mockReturnValue(JSON.stringify(store)),
-        final: vi.fn().mockReturnValue(''),
-        setAuthTag: vi.fn(),
-      };
-      vi.mocked(crypto.createDecipheriv).mockReturnValue(
-        mockDecipher as unknown as crypto.DecipherGCM
-      );
-
-      const mockCipher = createMockCipher();
-      vi.mocked(crypto.createCipheriv).mockReturnValue(
-        mockCipher as unknown as crypto.CipherGCM
-      );
-
-      const { updateTokenAsync } =
-        await import('../../src/utils/token-storage.js');
-      const result = await updateTokenAsync('github.com', {
-        token: 'new-token',
-        tokenType: 'oauth',
-      });
-
-      expect(result).toBe(true);
-    });
-  });
-
-  // ============================================================================
   // listStoredHosts Tests (async)
   // ============================================================================
   describe('listStoredHosts', () => {
@@ -978,64 +750,6 @@ describe('Token Storage', () => {
       expect(hosts).toContain('github.com');
       expect(hosts).toContain('github.enterprise.com');
       expect(hosts.length).toBe(2);
-    });
-  });
-
-  // ============================================================================
-  // listStoredHostsAsync Tests (alias)
-  // ============================================================================
-  describe('listStoredHostsAsync', () => {
-    it('should be an alias for listStoredHosts', async () => {
-      const { listStoredHosts, listStoredHostsAsync } =
-        await import('../../src/utils/token-storage.js');
-
-      expect(listStoredHostsAsync).toBe(listStoredHosts);
-    });
-
-    it('should return empty array when no credentials exist', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { listStoredHostsAsync } =
-        await import('../../src/utils/token-storage.js');
-      const hosts = await listStoredHostsAsync();
-
-      expect(hosts).toEqual([]);
-    });
-
-    it('should return unique hosts from file storage', async () => {
-      const store = {
-        version: 1,
-        credentials: {
-          'github.com': createTestCredentials(),
-          'gitlab.com': createTestCredentials({ hostname: 'gitlab.com' }),
-        },
-      };
-
-      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
-        if (String(path).includes('.key')) return true;
-        if (String(path).includes('credentials.json')) return true;
-        return false;
-      });
-      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
-        if (String(path).includes('.key')) return mockKey.toString('hex');
-        return 'iv:authtag:encrypted';
-      });
-
-      const mockDecipher = {
-        update: vi.fn().mockReturnValue(JSON.stringify(store)),
-        final: vi.fn().mockReturnValue(''),
-        setAuthTag: vi.fn(),
-      };
-      vi.mocked(crypto.createDecipheriv).mockReturnValue(
-        mockDecipher as unknown as crypto.DecipherGCM
-      );
-
-      const { listStoredHostsAsync } =
-        await import('../../src/utils/token-storage.js');
-      const hosts = await listStoredHostsAsync();
-
-      expect(hosts).toContain('github.com');
-      expect(hosts).toContain('gitlab.com');
     });
   });
 
@@ -1600,61 +1314,6 @@ describe('Token Storage', () => {
 
       expect(github?.token.token).toBe('github-token');
       expect(gitlab?.token.token).toBe('gitlab-token');
-    });
-  });
-
-  // ============================================================================
-  // Async API Tests
-  // ============================================================================
-  describe('async API', () => {
-    it('should have async versions of credential operations', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const {
-        getCredentialsAsync,
-        storeCredentialsAsync,
-        deleteCredentialsAsync,
-        hasCredentialsAsync,
-        listStoredHostsAsync,
-        updateTokenAsync,
-      } = await import('../../src/utils/token-storage.js');
-
-      expect(typeof getCredentialsAsync).toBe('function');
-      expect(typeof storeCredentialsAsync).toBe('function');
-      expect(typeof deleteCredentialsAsync).toBe('function');
-      expect(typeof hasCredentialsAsync).toBe('function');
-      expect(typeof listStoredHostsAsync).toBe('function');
-      expect(typeof updateTokenAsync).toBe('function');
-    });
-
-    it('getCredentialsAsync should return null when no credentials exist', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { getCredentialsAsync } =
-        await import('../../src/utils/token-storage.js');
-      const result = await getCredentialsAsync('github.com');
-
-      expect(result).toBeNull();
-    });
-
-    it('hasCredentialsAsync should return false when no credentials exist', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { hasCredentialsAsync } =
-        await import('../../src/utils/token-storage.js');
-      const result = await hasCredentialsAsync('github.com');
-
-      expect(result).toBe(false);
-    });
-
-    it('listStoredHostsAsync should return empty array when no credentials', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      const { listStoredHostsAsync } =
-        await import('../../src/utils/token-storage.js');
-      const hosts = await listStoredHostsAsync();
-
-      expect(hosts).toEqual([]);
     });
   });
 

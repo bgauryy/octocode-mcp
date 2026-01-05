@@ -255,7 +255,7 @@ export const octocodeContextHook: HookCallback = async (
 };
 
 // ============================================
-// Performance & Cost Tracking Hooks
+// Performance & State Tracking
 // ============================================
 
 /** In-memory agent state tracker */
@@ -271,9 +271,8 @@ const agentState: AgentStateInfo = {
   cacheWriteTokens: 0,
 };
 
-/** In-memory cost tracker */
-const costTracker = {
-  totalCost: 0,
+/** In-memory stats tracker */
+const statsTracker = {
   totalInputTokens: 0,
   totalOutputTokens: 0,
   toolCalls: 0,
@@ -331,11 +330,11 @@ export function updateTokenUsage(usage: {
 }): void {
   if (usage.input_tokens) {
     agentState.inputTokens += usage.input_tokens;
-    costTracker.totalInputTokens += usage.input_tokens;
+    statsTracker.totalInputTokens += usage.input_tokens;
   }
   if (usage.output_tokens) {
     agentState.outputTokens += usage.output_tokens;
-    costTracker.totalOutputTokens += usage.output_tokens;
+    statsTracker.totalOutputTokens += usage.output_tokens;
   }
   if (usage.cache_read_input_tokens) {
     agentState.cacheReadTokens += usage.cache_read_input_tokens;
@@ -348,13 +347,13 @@ export function updateTokenUsage(usage: {
 }
 
 /**
- * Cost tracking hook - monitors API usage
+ * Stats tracking hook - monitors tool usage
  */
-export const costTrackingHook: HookCallback = async (
+export const statsTrackingHook: HookCallback = async (
   input: HookInput
 ): Promise<HookOutput> => {
   if (input.hook_event_name === 'PreToolUse') {
-    costTracker.toolCalls++;
+    statsTracker.toolCalls++;
     agentState.toolCount++;
     setAgentState('tool_use', input.tool_name);
   } else if (input.hook_event_name === 'PostToolUse') {
@@ -365,24 +364,23 @@ export const costTrackingHook: HookCallback = async (
 };
 
 /**
- * Get current cost tracking stats
+ * Get current stats
  */
-export function getCostStats(): typeof costTracker & { durationMs: number } {
+export function getStats(): typeof statsTracker & { durationMs: number } {
   return {
-    ...costTracker,
-    durationMs: Date.now() - costTracker.startTime,
+    ...statsTracker,
+    durationMs: Date.now() - statsTracker.startTime,
   };
 }
 
 /**
- * Reset cost tracker and agent state
+ * Reset stats tracker and agent state
  */
-export function resetCostTracker(): void {
-  costTracker.totalCost = 0;
-  costTracker.totalInputTokens = 0;
-  costTracker.totalOutputTokens = 0;
-  costTracker.toolCalls = 0;
-  costTracker.startTime = Date.now();
+export function resetStats(): void {
+  statsTracker.totalInputTokens = 0;
+  statsTracker.totalOutputTokens = 0;
+  statsTracker.toolCalls = 0;
+  statsTracker.startTime = Date.now();
 
   // Reset agent state
   agentState.state = 'idle';
@@ -537,7 +535,7 @@ export const permissionRequestHook: HookCallback = async (
 
 /**
  * Default hooks for general agent usage
- * Includes: audit logging, security, cost tracking
+ * Includes: audit logging, security, stats tracking
  */
 export function getDefaultHooks(): Partial<
   Record<HookEventName, HookMatcher[]>
@@ -547,7 +545,7 @@ export function getDefaultHooks(): Partial<
       { matcher: 'Bash', hooks: [blockDangerousCommandsHook] },
       { matcher: 'Read|Write|Edit', hooks: [sensitiveFileAccessHook] },
       { matcher: 'Write|Edit', hooks: [preventSecretLeakHook] },
-      { hooks: [auditLoggerHook, costTrackingHook] },
+      { hooks: [auditLoggerHook, statsTrackingHook] },
     ],
     PostToolUse: [{ hooks: [auditLoggerHook] }],
     UserPromptSubmit: [{ hooks: [octocodeContextHook] }],
@@ -783,3 +781,16 @@ export function getInteractiveHooks(): Partial<
     SubagentStop: [{ hooks: [subagentStopHook] }],
   };
 }
+
+// ============================================
+// Backwards Compatibility Aliases
+// ============================================
+
+/** @deprecated Use getStats instead */
+export const getCostStats = getStats;
+
+/** @deprecated Use resetStats instead */
+export const resetCostTracker = resetStats;
+
+/** @deprecated Use statsTrackingHook instead */
+export const costTrackingHook = statsTrackingHook;

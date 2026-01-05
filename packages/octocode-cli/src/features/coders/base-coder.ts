@@ -22,8 +22,8 @@ import { DEFAULT_CODER_CONFIG, createTurnState } from './types.js';
 import type { SDKMessage } from '../../types/agent.js';
 import { AgentIO, createAgentIO } from '../agent-io.js';
 import {
-  resetCostTracker,
-  getCostStats,
+  resetStats,
+  getStats,
   resetToolCounter,
   setAgentState,
   updateTokenUsage,
@@ -156,7 +156,7 @@ export abstract class BaseCoder implements ICoder {
    * Reset all tracking for new session
    */
   protected resetTracking(): void {
-    resetCostTracker();
+    resetStats();
     resetToolCounter();
     this.resetTurn();
     this.results = [];
@@ -259,7 +259,6 @@ export abstract class BaseCoder implements ICoder {
 
     try {
       const sessionManager = getSessionManager();
-      const stats = getCostStats();
       const state = getAgentState();
 
       const sessionInfo = sessionManager.createSessionInfo({
@@ -271,7 +270,6 @@ export abstract class BaseCoder implements ICoder {
 
       // Update with final stats
       sessionInfo.status = hasError ? 'error' : 'completed';
-      sessionInfo.totalCost = stats.totalCost;
       sessionInfo.totalTokens =
         (state.inputTokens || 0) + (state.outputTokens || 0);
 
@@ -480,7 +478,7 @@ export abstract class BaseCoder implements ICoder {
    * Create success result
    */
   protected createSuccessResult(result: string): CoderResult {
-    const stats = getCostStats();
+    const stats = getStats();
     const state = getAgentState();
 
     return {
@@ -494,7 +492,6 @@ export abstract class BaseCoder implements ICoder {
         cacheReadTokens: state.cacheReadTokens,
         cacheWriteTokens: state.cacheWriteTokens,
       },
-      cost: stats.totalCost,
       stats: {
         toolCalls: state.toolCount,
         reflections: this.turnState.reflectionCount,
@@ -508,7 +505,7 @@ export abstract class BaseCoder implements ICoder {
    * Create error result
    */
   protected createErrorResult(error: string): CoderResult {
-    const stats = getCostStats();
+    const stats = getStats();
 
     return {
       success: false,
@@ -518,7 +515,6 @@ export abstract class BaseCoder implements ICoder {
         inputTokens: stats.totalInputTokens,
         outputTokens: stats.totalOutputTokens,
       },
-      cost: stats.totalCost,
       stats: {
         toolCalls: 0,
         reflections: 0,

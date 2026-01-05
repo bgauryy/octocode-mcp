@@ -349,30 +349,4 @@ describe('MCP Paths Utilities', () => {
       expect(allClients.some(c => c.id === 'custom')).toBe(false);
     });
   });
-
-  describe('Legacy functions', () => {
-    it('should getIDEConfigPath for cursor', async () => {
-      const { getIDEConfigPath } = await import('../../src/utils/mcp-paths.js');
-
-      const result = getIDEConfigPath('cursor');
-      expect(result).toBe('/Users/test/.cursor/mcp.json');
-    });
-
-    it('should getIDEConfigPath for claude', async () => {
-      const { getIDEConfigPath } = await import('../../src/utils/mcp-paths.js');
-
-      const result = getIDEConfigPath('claude');
-      expect(result).toContain('Claude');
-    });
-
-    it('should ideConfigExists return correct value', async () => {
-      const { dirExists } = await import('../../src/utils/fs.js');
-      vi.mocked(dirExists).mockReturnValue(true);
-
-      const { ideConfigExists } = await import('../../src/utils/mcp-paths.js');
-
-      expect(ideConfigExists('cursor')).toBe(true);
-      expect(ideConfigExists('claude')).toBe(true);
-    });
-  });
 });
