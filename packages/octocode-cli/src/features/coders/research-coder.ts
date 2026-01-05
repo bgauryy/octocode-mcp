@@ -28,6 +28,7 @@ const RESEARCH_TOOLS: AgentTool[] = [
   'WebSearch',
   'WebFetch',
   'Task',
+  'TodoWrite', // Added for tracking multi-step research tasks
   'ListMcpResources',
   'ReadMcpResource',
 ];
@@ -52,7 +53,8 @@ const RESEARCHER_AGENT: AgentDefinition = {
 4. Trace imports and dependencies across files
 5. Cite file paths and line numbers in findings
 
-Be thorough but concise. Provide evidence-based summaries.`,
+Be thorough but concise. Provide evidence-based summaries.
+Use TodoWrite to track multi-step research tasks and findings.`,
   tools: RESEARCH_TOOLS,
   model: 'sonnet',
 };
@@ -96,6 +98,7 @@ You have access to powerful Octocode MCP tools:
 - **Cite Precisely**: Include file paths and line numbers
 - **Be Thorough**: Explore all relevant aspects
 - **Be Concise**: Summarize findings clearly
+- **Track Progress**: Use TodoWrite for multi-step research tasks
 `;
 
 // ============================================

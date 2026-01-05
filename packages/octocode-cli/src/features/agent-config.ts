@@ -47,6 +47,9 @@ export const DEFAULT_RUNTIME_CONFIG: AgentRuntimeConfig = {
   showLiveStats: true,
   statsUpdateInterval: 500,
   modeOverrides: {
+    research: {
+      enableThinking: true, // Enable thinking for complex research tasks
+    },
     planning: {
       enableThinking: true,
       permissionMode: 'plan',

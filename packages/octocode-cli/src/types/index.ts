@@ -2,6 +2,18 @@
  * Shared Types
  */
 
+// Re-export provider types
+export type {
+  LLMProvider,
+  ModelId,
+  ModelDefinition,
+  ModelCapabilities,
+  ModelPricing,
+  ProviderStatus,
+  ResolvedModel,
+  AIConfig,
+} from './provider.js';
+
 // Color names for terminal output
 export type ColorName =
   | 'reset'

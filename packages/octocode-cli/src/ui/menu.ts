@@ -18,6 +18,10 @@ import {
 } from './skills-menu/index.js';
 import { runAgentFlow } from './agent/index.js';
 import {
+  runAIProvidersFlow,
+  getCurrentDefaultModel,
+} from './ai-providers/index.js';
+import {
   getAllClientInstallStatus,
   MCP_CLIENTS,
   type ClientInstallStatus,
@@ -50,6 +54,7 @@ type MenuChoice =
   | 'octocode'
   | 'agent'
   | 'skills'
+  | 'ai-providers'
   | 'auth'
   | 'mcp-config'
   | 'exit';
@@ -207,6 +212,12 @@ function buildStatusLine(state: AppState): string {
     }
   }
 
+  // AI model status
+  const currentModel = getCurrentDefaultModel();
+  if (currentModel) {
+    parts.push(`${c('green', '●')} ${c('cyan', currentModel)}`);
+  }
+
   return parts.join(dim('  │  '));
 }
 
@@ -263,6 +274,14 @@ export async function showMainMenu(state: AppState): Promise<MenuChoice> {
 
   // ─── SKILLS ───
   choices.push(buildSkillsMenuItem(state.skills));
+
+  // ─── AI PROVIDERS ───
+  const currentModel = getCurrentDefaultModel();
+  choices.push({
+    name: '🧪 AI Provider Settings',
+    value: 'ai-providers',
+    description: currentModel ? `${currentModel}` : 'Configure AI models',
+  });
 
   // ─── MCP CONFIGURATION ───
   choices.push({
@@ -1087,6 +1106,10 @@ export async function handleMenuChoice(choice: MenuChoice): Promise<boolean> {
 
     case 'skills':
       await runSkillsMenu();
+      return true;
+
+    case 'ai-providers':
+      await runAIProvidersFlow();
       return true;
 
     case 'auth':

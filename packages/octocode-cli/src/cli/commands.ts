@@ -42,6 +42,12 @@ import {
   isClaudeCodeAuthenticated,
   getClaudeCodeSubscriptionInfo,
 } from '../features/api-keys.js';
+import {
+  getProviderStatuses,
+  getConfiguredProviders,
+  parseModelId,
+  type ModelId,
+} from '../features/providers/index.js';
 
 type GetTokenSource = 'octocode' | 'gh' | 'auto';
 
@@ -923,7 +929,7 @@ const agentCommand: CLICommand = {
   aliases: ['ag', 'ai'],
   description: 'Run an AI agent with Octocode tools',
   usage:
-    'octocode-cli agent [task] [--mode <mode>] [--model <model>] [--think]',
+    'octocode-cli agent [task] [--mode <mode>] [--model <provider:model>] [--think]',
   options: [
     {
       name: 'mode',
@@ -934,9 +940,9 @@ const agentCommand: CLICommand = {
     },
     {
       name: 'model',
-      description: 'Model to use: opus, sonnet, haiku',
+      description:
+        'Model to use: provider:model (e.g., anthropic:claude-4-sonnet, openai:gpt-4o)',
       hasValue: true,
-      default: 'sonnet',
     },
     {
       name: 'think',
@@ -964,9 +970,17 @@ const agentCommand: CLICommand = {
     const interactive = Boolean(
       args.options['interactive'] || args.options['i']
     );
+
+    // Handle "agent status" as a subcommand
+    const firstArg = args.args[0]?.toLowerCase();
+    if (firstArg === 'status') {
+      await showAgentStatus();
+      return;
+    }
+
     const task = args.args.join(' ');
 
-    // Status mode
+    // Status mode (via --status flag)
     if (showStatus) {
       await showAgentStatus();
       return;
@@ -980,11 +994,7 @@ const agentCommand: CLICommand = {
 
     // Quick mode with task
     const mode = (args.options['mode'] as AgentMode) || 'research';
-    const model = args.options['model'] as
-      | 'opus'
-      | 'sonnet'
-      | 'haiku'
-      | undefined;
+    const modelArg = args.options['model'] as string | undefined;
     const enableThinking = Boolean(args.options['think'] || args.options['t']);
     const verbose = Boolean(args.options['verbose'] || args.options['v']);
 
@@ -999,14 +1009,45 @@ const agentCommand: CLICommand = {
       return;
     }
 
-    // Validate model
-    if (model && !['opus', 'sonnet', 'haiku'].includes(model)) {
-      console.log();
-      console.log(`  ${c('red', '✗')} Invalid model: ${model}`);
-      console.log(`  ${dim('Valid models:')} opus, sonnet, haiku`);
-      console.log();
-      process.exitCode = 1;
-      return;
+    // Parse and validate model
+    let model: ModelId | 'opus' | 'sonnet' | 'haiku' | undefined;
+    if (modelArg) {
+      // Support legacy format (opus, sonnet, haiku)
+      if (['opus', 'sonnet', 'haiku'].includes(modelArg)) {
+        model = modelArg as 'opus' | 'sonnet' | 'haiku';
+      } else {
+        // New format: provider:model
+        const parsed = parseModelId(modelArg);
+        if (!parsed) {
+          console.log();
+          console.log(`  ${c('red', '✗')} Invalid model format: ${modelArg}`);
+          console.log(
+            `  ${dim('Expected format:')} provider:model (e.g., anthropic:claude-4-sonnet)`
+          );
+          console.log();
+          console.log(`  ${dim('Available providers:')}`);
+          const configured = getConfiguredProviders();
+          if (configured.length > 0) {
+            for (const p of configured) {
+              console.log(`    ${c('green', '●')} ${p}`);
+            }
+          } else {
+            console.log(
+              `    ${c('yellow', '○')} No providers configured. Set API keys first.`
+            );
+          }
+          console.log();
+          console.log(`  ${dim('Examples:')}`);
+          console.log(`    ${c('cyan', 'anthropic:claude-4-sonnet')}`);
+          console.log(`    ${c('cyan', 'openai:gpt-4o')}`);
+          console.log(`    ${c('cyan', 'google:gemini-2.0-flash')}`);
+          console.log(`    ${c('cyan', 'groq:llama-3.3-70b')}`);
+          console.log();
+          process.exitCode = 1;
+          return;
+        }
+        model = modelArg as ModelId;
+      }
     }
 
     await quickAgentRun(task, {
@@ -1026,31 +1067,41 @@ async function showAgentStatus(): Promise<void> {
   console.log(`  ${bold('🤖 Agent Status')}`);
   console.log();
 
-  // Check Claude Code authentication
+  // Show configured providers
+  console.log(`  ${bold('AI Providers:')}`);
+  const providerStatuses = getProviderStatuses();
+  const configured = providerStatuses.filter(s => s.configured);
+  const notConfigured = providerStatuses.filter(s => !s.configured);
+
+  if (configured.length > 0) {
+    for (const status of configured) {
+      console.log(
+        `    ${c('green', '●')} ${status.displayName} ${dim(`(${status.envVar})`)}`
+      );
+    }
+  }
+
+  if (notConfigured.length > 0 && configured.length < 3) {
+    for (const status of notConfigured.slice(0, 3 - configured.length)) {
+      console.log(
+        `    ${c('dim', '○')} ${status.displayName} ${dim('Not configured')}`
+      );
+    }
+  }
+
+  console.log();
+
+  // Check Claude Code authentication (for legacy SDK mode)
+  console.log(`  ${bold('Legacy (Claude Agent SDK):')}`);
   const claudeCodeAuth = isClaudeCodeAuthenticated();
   if (claudeCodeAuth) {
     const info = getClaudeCodeSubscriptionInfo();
-    console.log(`  ${c('green', '✓')} Claude Code authenticated`);
+    console.log(`    ${c('green', '✓')} Claude Code authenticated`);
     if (info.subscriptionType) {
-      console.log(`    ${dim('Plan:')} ${info.subscriptionType}`);
-    }
-    if (info.expiresInMinutes !== undefined) {
-      console.log(
-        `    ${dim('Token expires:')} in ${info.expiresInMinutes} minutes`
-      );
+      console.log(`      ${dim('Plan:')} ${info.subscriptionType}`);
     }
   } else {
-    console.log(`  ${c('yellow', '○')} Claude Code not authenticated`);
-  }
-
-  // Check for API keys
-  const anthropicKey = await discoverAPIKey('anthropic');
-  if (anthropicKey.key) {
-    console.log(
-      `  ${c('green', '✓')} Anthropic API key found (${anthropicKey.source})`
-    );
-  } else if (!claudeCodeAuth) {
-    console.log(`  ${c('yellow', '○')} No Anthropic API key found`);
+    console.log(`    ${c('dim', '○')} Claude Code not authenticated`);
   }
 
   // Check SDK
@@ -1058,38 +1109,43 @@ async function showAgentStatus(): Promise<void> {
   try {
     await import('@anthropic-ai/claude-agent-sdk');
     sdkInstalled = true;
-    console.log(`  ${c('green', '✓')} Claude Agent SDK installed`);
+    console.log(`    ${c('green', '✓')} Claude Agent SDK installed`);
   } catch {
-    console.log(`  ${c('yellow', '○')} Claude Agent SDK not installed`);
+    console.log(`    ${c('dim', '○')} Claude Agent SDK not installed`);
   }
 
   console.log();
 
-  // Overall status
-  const ready = sdkInstalled && (claudeCodeAuth || anthropicKey.key !== null);
+  // Overall status - now supports multi-provider
+  const hasAnyProvider = configured.length > 0;
+  const anthropicKey = await discoverAPIKey('anthropic');
+  const hasLegacyAuth =
+    sdkInstalled && (claudeCodeAuth || anthropicKey.key !== null);
+  const ready = hasAnyProvider || hasLegacyAuth;
+
   if (ready) {
     console.log(`  ${c('green', '●')} Agent is ready to use`);
     console.log();
     console.log(`  ${bold('Usage:')}`);
     console.log(`    ${c('cyan', '→')} octocode agent "your task here"`);
     console.log(`    ${c('cyan', '→')} octocode agent --interactive`);
+    if (configured.length > 1) {
+      console.log();
+      console.log(`  ${bold('Model selection:')}`);
+      console.log(
+        `    ${c('cyan', '→')} octocode agent --model anthropic:claude-4-sonnet "task"`
+      );
+      console.log(
+        `    ${c('cyan', '→')} octocode agent --model openai:gpt-4o "task"`
+      );
+    }
   } else {
     console.log(`  ${c('red', '●')} Agent is not ready`);
     console.log();
-    if (!sdkInstalled) {
-      console.log(`  ${bold('To install SDK:')}`);
-      console.log(
-        `    ${c('cyan', '→')} npm install @anthropic-ai/claude-agent-sdk`
-      );
-    }
-    if (!claudeCodeAuth && !anthropicKey.key) {
-      console.log(`  ${bold('To authenticate:')}`);
-      console.log(`    ${c('cyan', '→')} Install and login to Claude Code`);
-      console.log(`    ${dim('or')}`);
-      console.log(
-        `    ${c('cyan', '→')} Set ANTHROPIC_API_KEY environment variable`
-      );
-    }
+    console.log(`  ${bold('To configure a provider, set an API key:')}`);
+    console.log(`    ${c('cyan', '→')} export ANTHROPIC_API_KEY="your-key"`);
+    console.log(`    ${c('cyan', '→')} export OPENAI_API_KEY="your-key"`);
+    console.log(`    ${c('cyan', '→')} export GEMINI_API_KEY="your-key"`);
   }
   console.log();
 }

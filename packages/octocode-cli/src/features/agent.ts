@@ -420,6 +420,10 @@ export async function isAgentSDKAvailable(): Promise<boolean> {
 
 /**
  * Check if agent functionality is ready to use
+ *
+ * Supports two modes:
+ * 1. New multi-provider (Vercel AI SDK): Any configured provider works
+ * 2. Legacy (Claude Agent SDK): Requires SDK + Anthropic auth
  */
 export async function checkAgentReadiness(): Promise<{
   ready: boolean;
@@ -428,20 +432,33 @@ export async function checkAgentReadiness(): Promise<{
   hasAPIKey: boolean;
   message: string;
 }> {
+  // Check multi-provider support (new approach)
+  const { isProviderConfigured } = await import('./providers/index.js');
+  const hasAnyProvider =
+    isProviderConfigured('anthropic') ||
+    isProviderConfigured('openai') ||
+    isProviderConfigured('google') ||
+    isProviderConfigured('groq');
+
+  // Check legacy SDK support
   const sdkInstalled = await isAgentSDKAvailable();
   const claudeCodeAuth = isClaudeCodeAuthenticated();
   const apiKeyResult = await discoverAPIKey('anthropic');
   const hasAPIKey = apiKeyResult.key !== null;
 
-  const ready = sdkInstalled && (claudeCodeAuth || hasAPIKey);
+  // Ready if ANY provider is configured (new) OR legacy SDK + auth
+  const legacyReady = sdkInstalled && (claudeCodeAuth || hasAPIKey);
+  const ready = hasAnyProvider || legacyReady;
 
   let message = '';
-  if (!sdkInstalled) {
+  if (ready) {
+    message = 'Agent ready';
+  } else if (!hasAnyProvider && !sdkInstalled) {
     message =
-      'Claude Agent SDK not installed. Run: npm install @anthropic-ai/claude-agent-sdk';
-  } else if (!claudeCodeAuth && !hasAPIKey) {
+      'No AI provider configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or another provider API key.';
+  } else if (!hasAnyProvider) {
     message =
-      'No API credentials found. Install Claude Code or set ANTHROPIC_API_KEY';
+      'No AI provider configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or another provider API key.';
   } else {
     message = 'Agent ready';
   }

@@ -3,52 +3,60 @@
  *
  * Exports all coder types and factory functions for creating
  * specialized agent instances.
+ *
+ * Two approaches available:
+ * 1. Legacy: Claude SDK-based coders (BaseCoder, ResearchCoder, etc.)
+ * 2. Unified: Provider-agnostic coders (UnifiedCoder) - works with any LLM
  */
 
 // Types
 export * from './types.js';
 
-// Base coder
+// Base coder (legacy - Claude SDK)
 export { BaseCoder } from './base-coder.js';
 
-// Specialized coders
+// Specialized coders (legacy - Claude SDK)
 export { ResearchCoder, createResearchCoder } from './research-coder.js';
 export { CodingCoder, createCodingCoder } from './coding-coder.js';
 export { FullCoder, createFullCoder } from './full-coder.js';
 export { PlanningCoder, createPlanningCoder } from './planning-coder.js';
+
+// Unified coder (provider-agnostic - works with any LLM)
+export {
+  UnifiedCoder,
+  createResearchCoder as createUnifiedResearchCoder,
+  createCodingCoder as createUnifiedCodingCoder,
+  createFullCoder as createUnifiedFullCoder,
+  createPlanningCoder as createUnifiedPlanningCoder,
+  type UnifiedCoderConfig,
+} from './unified-coder.js';
 
 // ============================================
 // Coder Factory
 // ============================================
 
 import type { CoderMode, CoderConfig, ICoder } from './types.js';
-import { ResearchCoder } from './research-coder.js';
-import { CodingCoder } from './coding-coder.js';
-import { FullCoder } from './full-coder.js';
-import { PlanningCoder } from './planning-coder.js';
+import { UnifiedCoder, type UnifiedCoderConfig } from './unified-coder.js';
 
 /**
  * Create a coder instance based on mode
+ *
+ * Now uses UnifiedCoder (provider-agnostic) which works with:
+ * - Claude Code OAuth (automatic detection)
+ * - ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, etc.
+ * - Any Vercel AI SDK compatible provider
  */
 export function createCoder(
   mode: CoderMode,
   config: Partial<CoderConfig> = {}
 ): ICoder {
-  switch (mode) {
-    case 'research':
-      return new ResearchCoder(config);
-    case 'coding':
-      return new CodingCoder(config);
-    case 'full':
-      return new FullCoder(config);
-    case 'planning':
-      return new PlanningCoder(config);
-    case 'custom':
-      // Custom mode uses full coder with custom config
-      return new FullCoder(config);
-    default:
-      throw new Error(`Unknown coder mode: ${mode}`);
-  }
+  // Convert CoderConfig to UnifiedCoderConfig
+  const unifiedConfig: Partial<UnifiedCoderConfig> = {
+    ...config,
+    mode,
+  };
+
+  return new UnifiedCoder(mode, unifiedConfig);
 }
 
 /**

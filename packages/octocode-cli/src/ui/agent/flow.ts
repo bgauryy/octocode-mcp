@@ -24,6 +24,12 @@ import {
   runInteractiveAgent,
 } from '../../features/agent.js';
 import type { AgentModel, AgentPermissionMode } from '../../types/agent.js';
+import { getCurrentDefaultModel } from '../ai-providers/index.js';
+import {
+  getConfiguredProviders,
+  type ModelId,
+} from '../../features/providers/index.js';
+import { BUILTIN_TOOLS } from '../../features/tools/index.js';
 
 /**
  * Wait for user to press enter
@@ -43,6 +49,7 @@ interface AgentFlowState {
   mode: AgentMode | null;
   task: string | null;
   verbose: boolean;
+  model: ModelId | null;
 }
 
 /**
@@ -68,11 +75,28 @@ export async function runAgentFlow(): Promise<void> {
   console.log(c('blue', '━'.repeat(66)));
   console.log();
 
-  // Initialize state
+  // Initialize state with current default model
+  const currentModel = getCurrentDefaultModel();
+  const configuredProviders = getConfiguredProviders();
+  const toolCount = Object.keys(BUILTIN_TOOLS).length;
+
+  // Display current configuration
+  if (currentModel) {
+    console.log(
+      `  ${dim('Model:')} ${c('cyan', currentModel)}    ${dim('Tools:')} ${toolCount} built-in`
+    );
+  } else if (configuredProviders.length > 0) {
+    console.log(
+      `  ${dim('Providers:')} ${configuredProviders.length} configured    ${dim('Tools:')} ${toolCount} built-in`
+    );
+  }
+  console.log();
+
   const state: AgentFlowState = {
     mode: null,
     task: null,
     verbose: true,
+    model: currentModel,
   };
 
   let currentStep: FlowStep = 'check-readiness';
@@ -234,7 +258,7 @@ export async function quickAgentRun(
   task: string,
   options: {
     mode?: AgentMode;
-    model?: AgentModel;
+    model?: AgentModel | ModelId;
     permissionMode?: AgentPermissionMode;
     enableThinking?: boolean;
     verbose?: boolean;
@@ -250,10 +274,14 @@ export async function quickAgentRun(
 
   const modeInfo = getModeDisplayInfo(mode);
   const verbose = options.verbose ?? true;
+  const currentModel = options.model ?? getCurrentDefaultModel();
 
   console.log();
   console.log(`  ${bold('🤖 Running Agent')}`);
   console.log(`  ${dim('Mode:')} ${modeInfo.icon} ${modeInfo.name}`);
+  if (currentModel) {
+    console.log(`  ${dim('Model:')} ${c('cyan', String(currentModel))}`);
+  }
   console.log(
     `  ${dim('Task:')} ${task.slice(0, 50)}${task.length > 50 ? '...' : ''}`
   );
