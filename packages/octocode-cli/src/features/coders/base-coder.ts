@@ -36,6 +36,7 @@ import {
   getDefaultHooks,
   getPermissiveHooks,
 } from '../agent-hooks.js';
+import { getSessionManager } from '../session-manager.js';
 import { existsSync } from 'fs';
 import { execSync } from 'child_process';
 
@@ -209,6 +210,7 @@ export abstract class BaseCoder implements ICoder {
     setAgentState('connecting_mcp');
 
     let result = '';
+    let hasError = false;
 
     // Start live stats if enabled
     if (this.config.verbose) {
@@ -229,13 +231,54 @@ export abstract class BaseCoder implements ICoder {
           setAgentState('completed');
         }
       }
+    } catch (error) {
+      hasError = true;
+      throw error;
     } finally {
       // Stop live stats
       this.io.stopLiveStats();
       setStateChangeCallback(null);
+
+      // Auto-save session if persistence is enabled
+      if (this.config.persistSession && this.sessionId) {
+        await this.saveSessionInfo(prompt, hasError);
+      }
     }
 
     return this.createSuccessResult(result);
+  }
+
+  /**
+   * Save session info to session manager
+   */
+  protected async saveSessionInfo(
+    prompt: string,
+    hasError: boolean
+  ): Promise<void> {
+    if (!this.sessionId) return;
+
+    try {
+      const sessionManager = getSessionManager();
+      const stats = getCostStats();
+      const state = getAgentState();
+
+      const sessionInfo = sessionManager.createSessionInfo({
+        id: this.sessionId,
+        prompt,
+        mode: this.mode,
+        cwd: this.config.cwd,
+      });
+
+      // Update with final stats
+      sessionInfo.status = hasError ? 'error' : 'completed';
+      sessionInfo.totalCost = stats.totalCost;
+      sessionInfo.totalTokens =
+        (state.inputTokens || 0) + (state.outputTokens || 0);
+
+      await sessionManager.saveSession(sessionInfo);
+    } catch {
+      // Silently fail session save - don't interrupt main flow
+    }
   }
 
   /**
@@ -375,6 +418,16 @@ export abstract class BaseCoder implements ICoder {
     // Extended thinking
     if (this.config.enableThinking) {
       options.maxThinkingTokens = this.config.maxThinkingTokens;
+    }
+
+    // Session persistence
+    if (this.config.persistSession) {
+      options.persistSession = true;
+    }
+
+    // Session resume
+    if (this.config.resumeSession) {
+      options.resume = this.config.resumeSession;
     }
 
     // Import hooks

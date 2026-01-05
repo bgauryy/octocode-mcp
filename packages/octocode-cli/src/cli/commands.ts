@@ -48,6 +48,10 @@ import {
   parseModelId,
   type ModelId,
 } from '../features/providers/index.js';
+import {
+  getSessionManager,
+  formatSessionForDisplay,
+} from '../features/session-manager.js';
 
 type GetTokenSource = 'octocode' | 'gh' | 'auto';
 
@@ -929,7 +933,7 @@ const agentCommand: CLICommand = {
   aliases: ['ag', 'ai'],
   description: 'Run an AI agent with Octocode tools',
   usage:
-    'octocode-cli agent [task] [--mode <mode>] [--model <provider:model>] [--think]',
+    'octocode-cli agent [task] [--mode <mode>] [--model <provider:model>] [--think] [--persist] [--resume <id>]',
   options: [
     {
       name: 'mode',
@@ -963,6 +967,17 @@ const agentCommand: CLICommand = {
       name: 'interactive',
       short: 'i',
       description: 'Run in interactive mode',
+    },
+    {
+      name: 'persist',
+      short: 'p',
+      description: 'Persist session for later resume',
+    },
+    {
+      name: 'resume',
+      short: 'r',
+      description: 'Resume a previous session by ID',
+      hasValue: true,
     },
   ],
   handler: async (args: ParsedArgs) => {
@@ -1050,11 +1065,19 @@ const agentCommand: CLICommand = {
       }
     }
 
+    // Session options
+    const persistSession = Boolean(
+      args.options['persist'] || args.options['p']
+    );
+    const resumeSession = args.options['resume'] as string | undefined;
+
     await quickAgentRun(task, {
       mode,
       model,
       enableThinking,
       verbose,
+      persistSession,
+      resumeSession,
     });
   },
 };
@@ -1151,6 +1174,153 @@ async function showAgentStatus(): Promise<void> {
 }
 
 /**
+ * Sessions command - list and manage agent sessions
+ */
+const sessionsCommand: CLICommand = {
+  name: 'sessions',
+  aliases: ['sess'],
+  description: 'List and manage agent sessions',
+  usage: 'octocode-cli sessions [list|delete <id>|clear]',
+  options: [
+    {
+      name: 'delete',
+      short: 'd',
+      description: 'Delete a session by ID',
+      hasValue: true,
+    },
+    {
+      name: 'clear',
+      description: 'Clear all sessions',
+    },
+    {
+      name: 'json',
+      short: 'j',
+      description: 'Output as JSON',
+    },
+  ],
+  handler: async (args: ParsedArgs) => {
+    const sessionManager = getSessionManager();
+    const subcommand = args.args[0];
+    const deleteId =
+      args.args[0] === 'delete'
+        ? args.args[1]
+        : (args.options['delete'] as string | undefined);
+    const clearAll = Boolean(args.options['clear']) || subcommand === 'clear';
+    const jsonOutput = Boolean(args.options['json'] || args.options['j']);
+
+    // Clear all sessions
+    if (clearAll) {
+      const sessions = await sessionManager.listSessions();
+      if (sessions.length === 0) {
+        console.log();
+        console.log(`  ${c('yellow', '⚠')} No sessions to clear`);
+        console.log();
+        return;
+      }
+
+      // Confirm
+      if (!jsonOutput) {
+        console.log();
+        console.log(
+          `  ${c('yellow', '⚠')} This will delete ${sessions.length} session(s)`
+        );
+        console.log();
+      }
+
+      await loadInquirer();
+      const confirm = await select({
+        message: 'Are you sure?',
+        choices: [
+          { name: 'No, cancel', value: false },
+          { name: 'Yes, delete all', value: true },
+        ],
+      });
+
+      if (!confirm) {
+        console.log();
+        console.log(`  ${dim('Cancelled')}`);
+        console.log();
+        return;
+      }
+
+      const deleted = await sessionManager.clearAllSessions();
+      if (jsonOutput) {
+        console.log(JSON.stringify({ deleted }));
+      } else {
+        console.log();
+        console.log(`  ${c('green', '✓')} Deleted ${deleted} session(s)`);
+        console.log();
+      }
+      return;
+    }
+
+    // Delete specific session
+    if (deleteId) {
+      const success = await sessionManager.deleteSession(deleteId);
+      if (jsonOutput) {
+        console.log(JSON.stringify({ deleted: success, id: deleteId }));
+      } else if (success) {
+        console.log();
+        console.log(`  ${c('green', '✓')} Deleted session: ${deleteId}`);
+        console.log();
+      } else {
+        console.log();
+        console.log(`  ${c('red', '✗')} Session not found: ${deleteId}`);
+        console.log();
+        process.exitCode = 1;
+      }
+      return;
+    }
+
+    // List sessions (default)
+    const sessions = await sessionManager.listSessions();
+
+    if (jsonOutput) {
+      console.log(JSON.stringify(sessions, null, 2));
+      return;
+    }
+
+    console.log();
+    console.log(`  ${bold('📋 Agent Sessions')}`);
+    console.log();
+
+    if (sessions.length === 0) {
+      console.log(`  ${dim('No saved sessions.')}`);
+      console.log();
+      const hint = `${dim('Run with')} ${c('cyan', '--persist')} ${dim('to save:')}`;
+      console.log(`  ${hint}`);
+      console.log(`    ${c('cyan', '→')} octocode agent --persist "task"`);
+      console.log();
+      return;
+    }
+
+    // Display sessions in a table-like format
+    for (const session of sessions) {
+      const display = formatSessionForDisplay(session);
+      const statusIcon =
+        session.status === 'completed'
+          ? c('green', '✓')
+          : session.status === 'error'
+            ? c('red', '✗')
+            : c('yellow', '○');
+
+      const header = `${statusIcon} ${c('cyan', display.id)} ${dim(display.date)}`;
+      console.log(`  ${header}`);
+      const meta = `${dim('Mode:')} ${display.mode}  ${dim('Cost:')} ${display.cost}`;
+      console.log(`    ${meta}`);
+      console.log(`    ${display.preview}`);
+      console.log();
+    }
+
+    console.log(`  ${dim('Total:')} ${sessions.length} session(s)`);
+    console.log();
+    console.log(`  ${dim('To resume:')} octocode agent --resume <id>`);
+    console.log(`  ${dim('To delete:')} octocode sessions --delete <id>`);
+    console.log();
+  },
+};
+
+/**
  * All available commands
  */
 export const commands: CLICommand[] = [
@@ -1163,6 +1333,7 @@ export const commands: CLICommand[] = [
   statusCommand,
   syncCommand,
   agentCommand,
+  sessionsCommand,
 ];
 
 /**

@@ -28,6 +28,12 @@ import type {
 } from '../types/agent.js';
 import { HOME } from '../utils/platform.js';
 import { c, bold, dim } from '../utils/colors.js';
+import {
+  appendResearchFinding,
+  summarizeQuery,
+  summarizeResponse,
+  isOctocodeResearchTool,
+} from '../utils/research-output.js';
 
 // ============================================
 // Audit Logging Hooks
@@ -582,7 +588,40 @@ export function getPermissiveHooks(): Partial<
 }
 
 /**
+ * Research output hook - captures Octocode MCP tool findings to file
+ * Appends findings to .octocode/research/findings.md in the project
+ */
+export const researchOutputHook: HookCallback = async (
+  input: HookInput
+): Promise<HookOutput> => {
+  // Only run on PostToolUse
+  if (input.hook_event_name !== 'PostToolUse') return {};
+
+  // Only capture Octocode research tools
+  const toolName = input.tool_name || '';
+  if (!isOctocodeResearchTool(toolName)) return {};
+
+  // Build finding entry
+  const finding = {
+    tool: toolName,
+    timestamp: new Date().toISOString(),
+    query: summarizeQuery(input.tool_input),
+    summary: summarizeResponse(input.tool_response),
+  };
+
+  // Append to findings file (silently fail if errors)
+  try {
+    await appendResearchFinding(input.cwd, finding);
+  } catch {
+    // Don't interrupt agent on research output errors
+  }
+
+  return {};
+};
+
+/**
  * Research-focused hooks (optimized for code exploration)
+ * Now includes research output hook for auto-capturing findings
  */
 export function getResearchHooks(): Partial<
   Record<HookEventName, HookMatcher[]>
@@ -595,7 +634,10 @@ export function getResearchHooks(): Partial<
       { matcher: 'Bash', hooks: [blockDangerousCommandsHook] },
     ],
     UserPromptSubmit: [{ hooks: [octocodeContextHook] }],
-    PostToolUse: [{ hooks: [auditLoggerHook] }],
+    PostToolUse: [
+      // Capture research findings and audit log
+      { hooks: [researchOutputHook, auditLoggerHook] },
+    ],
   };
 }
 

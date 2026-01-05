@@ -262,6 +262,8 @@ export async function quickAgentRun(
     permissionMode?: AgentPermissionMode;
     enableThinking?: boolean;
     verbose?: boolean;
+    persistSession?: boolean;
+    resumeSession?: string;
   } = {}
 ): Promise<void> {
   // Auto-detect mode if not specified
@@ -290,38 +292,45 @@ export async function quickAgentRun(
   // Don't use spinner in verbose mode - it overwrites tool execution logs
   const spinner = verbose ? null : new Spinner('Agent is working...').start();
 
+  // Build agent options with session support
+  const agentOptions = {
+    verbose,
+    persistSession: options.persistSession,
+    resumeSession: options.resumeSession,
+  };
+
   let result;
 
   try {
     // Use appropriate agent based on mode
     switch (mode) {
       case 'research':
-        result = await runResearchAgent(task, { verbose });
+        result = await runResearchAgent(task, agentOptions);
         break;
 
       case 'planning':
-        result = await runPlanningAgent(task, { verbose });
+        result = await runPlanningAgent(task, agentOptions);
         break;
 
       case 'coding':
-        result = await runCodingAgent(task, { verbose });
+        result = await runCodingAgent(task, agentOptions);
         break;
 
       case 'full':
-        result = await runFullAgent(task, { verbose });
+        result = await runFullAgent(task, agentOptions);
         break;
 
       case 'delegate':
-        result = await runDelegateAgent(task, { verbose });
+        result = await runDelegateAgent(task, agentOptions);
         break;
 
       case 'interactive':
-        result = await runInteractiveAgent(task, { verbose });
+        result = await runInteractiveAgent(task, agentOptions);
         break;
 
       default:
         // Default to research
-        result = await runResearchAgent(task, { verbose });
+        result = await runResearchAgent(task, agentOptions);
     }
   } catch (error) {
     result = {

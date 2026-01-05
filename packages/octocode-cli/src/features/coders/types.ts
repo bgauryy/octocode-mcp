@@ -47,6 +47,10 @@ export interface CoderConfig {
   useClaudeCodePrompt: boolean;
   /** Load project settings (CLAUDE.md) */
   loadProjectSettings: boolean;
+  /** Persist session for later resume */
+  persistSession?: boolean;
+  /** Session ID to resume */
+  resumeSession?: string;
 }
 
 export const DEFAULT_CODER_CONFIG: CoderConfig = {

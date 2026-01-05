@@ -140,6 +140,8 @@ export interface AgentOptions {
   interactive?: boolean;
   /** Enable file checkpointing for rewind capability */
   enableFileCheckpointing?: boolean;
+  /** Persist session for later resume */
+  persistSession?: boolean;
 }
 
 export interface MCPServerConfig {
@@ -368,6 +370,42 @@ export interface OctocodeSubagents extends Record<string, AgentDefinition> {
 // Session Management Types
 // ============================================
 
+/** Coder mode type (duplicated to avoid circular import) */
+export type SessionCoderMode =
+  | 'research'
+  | 'coding'
+  | 'full'
+  | 'planning'
+  | 'custom';
+
+export interface SessionInfo {
+  /** Unique session ID from SDK */
+  id: string;
+  /** When the session was started */
+  startedAt: string;
+  /** Last activity timestamp */
+  lastActiveAt: string;
+  /** Initial prompt that started the session */
+  prompt: string;
+  /** Truncated prompt for display (max 100 chars) */
+  promptPreview: string;
+  /** Coder mode used */
+  mode: SessionCoderMode;
+  /** Session status */
+  status: 'active' | 'completed' | 'error';
+  /** Total cost in USD */
+  totalCost?: number;
+  /** Total tokens used */
+  totalTokens?: number;
+  /** Path to SDK transcript file */
+  transcriptPath?: string;
+  /** Working directory */
+  cwd: string;
+  /** AI provider used */
+  provider?: AIProvider;
+}
+
+/** @deprecated Use SessionInfo instead */
 export interface AgentSession {
   id: string;
   startedAt: Date;
@@ -380,7 +418,7 @@ export interface AgentSession {
 }
 
 export interface SessionStore {
-  sessions: AgentSession[];
+  sessions: SessionInfo[];
   activeSessionId?: string;
 }
 
