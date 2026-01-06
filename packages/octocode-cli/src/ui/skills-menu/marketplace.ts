@@ -100,6 +100,7 @@ async function selectMarketplace(
     choices.push({
       name: formatMarketplace(source, starsMap.get(source.id)),
       value: source,
+      description: dim(source.url),
     });
   }
 

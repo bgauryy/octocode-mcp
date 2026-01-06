@@ -5,6 +5,8 @@
  * Configurations are saved as environment variables in the MCP server config.
  */
 
+export { runInspectFlow } from './inspect-flow.js';
+
 import { c, bold, dim } from '../../utils/colors.js';
 import {
   loadInquirer,

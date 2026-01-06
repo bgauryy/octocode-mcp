@@ -3,11 +3,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { execSync } from 'node:child_process';
+import { execSync, exec } from 'node:child_process';
 
 // Mock child_process
 vi.mock('node:child_process', () => ({
   execSync: vi.fn(),
+  exec: vi.fn(),
 }));
 
 // Mock fetch for registry tests
@@ -131,6 +132,44 @@ describe('Node Check', () => {
       const { checkOctocodePackage } =
         await import('../../src/features/node-check.js');
       const result = checkOctocodePackage();
+
+      expect(result.available).toBe(false);
+      expect(result.version).toBeNull();
+    });
+  });
+
+  describe('checkOctocodePackageAsync', () => {
+    it('should return available true with version', async () => {
+      vi.mocked(exec).mockImplementation(
+        (_cmd: string, _opts: unknown, callback?: unknown) => {
+          if (typeof callback === 'function') {
+            callback(null, { stdout: '1.2.3\n', stderr: '' });
+          }
+          return {} as ReturnType<typeof exec>;
+        }
+      );
+
+      const { checkOctocodePackageAsync } =
+        await import('../../src/features/node-check.js');
+      const result = await checkOctocodePackageAsync();
+
+      expect(result.available).toBe(true);
+      expect(result.version).toBe('1.2.3');
+    });
+
+    it('should return available false when package not found', async () => {
+      vi.mocked(exec).mockImplementation(
+        (_cmd: string, _opts: unknown, callback?: unknown) => {
+          if (typeof callback === 'function') {
+            callback(new Error('Not found'), { stdout: '', stderr: '' });
+          }
+          return {} as ReturnType<typeof exec>;
+        }
+      );
+
+      const { checkOctocodePackageAsync } =
+        await import('../../src/features/node-check.js');
+      const result = await checkOctocodePackageAsync();
 
       expect(result.available).toBe(false);
       expect(result.version).toBeNull();

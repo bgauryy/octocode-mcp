@@ -22,6 +22,8 @@ import {
 import path from 'node:path';
 import { Spinner } from '../../utils/spinner.js';
 import { runMarketplaceFlow } from './marketplace.js';
+// Re-export state types from centralized state module
+export { type SkillInfo, type SkillsState, getSkillsState } from '../state.js';
 
 // ============================================================================
 // Installed Skill Types (agentskills.io protocol)
@@ -41,33 +43,6 @@ export interface InstalledSkill {
   path: string;
   /** Whether this is an Octocode bundled skill */
   isBundled: boolean;
-}
-
-// ============================================================================
-// Types
-// ============================================================================
-
-/**
- * Skill installation info
- */
-export interface SkillInfo {
-  name: string;
-  installed: boolean;
-  srcPath: string;
-  destPath: string;
-}
-
-/**
- * Skills state
- */
-export interface SkillsState {
-  sourceExists: boolean;
-  destDir: string;
-  skills: SkillInfo[];
-  installedCount: number;
-  notInstalledCount: number;
-  allInstalled: boolean;
-  hasSkills: boolean;
 }
 
 type SkillsMenuChoice =
@@ -175,52 +150,8 @@ function getAllInstalledSkills(): InstalledSkill[] {
 }
 
 // ============================================================================
-// State Builders
+// Local State Helpers (use state.ts for shared state)
 // ============================================================================
-
-/**
- * Get skills state
- */
-export function getSkillsState(): SkillsState {
-  const srcDir = getSkillsSourceDir();
-  const destDir = getSkillsDestDir();
-
-  if (!dirExists(srcDir)) {
-    return {
-      sourceExists: false,
-      destDir,
-      skills: [],
-      installedCount: 0,
-      notInstalledCount: 0,
-      allInstalled: false,
-      hasSkills: false,
-    };
-  }
-
-  const availableSkills = listSubdirectories(srcDir).filter(
-    name => !name.startsWith('.')
-  );
-
-  const skills: SkillInfo[] = availableSkills.map(skill => ({
-    name: skill,
-    installed: dirExists(path.join(destDir, skill)),
-    srcPath: path.join(srcDir, skill),
-    destPath: path.join(destDir, skill),
-  }));
-
-  const installedCount = skills.filter(s => s.installed).length;
-  const notInstalledCount = skills.filter(s => !s.installed).length;
-
-  return {
-    sourceExists: true,
-    destDir,
-    skills,
-    installedCount,
-    notInstalledCount,
-    allInstalled: notInstalledCount === 0 && skills.length > 0,
-    hasSkills: skills.length > 0,
-  };
-}
 
 /**
  * Get skills status info

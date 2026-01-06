@@ -11,6 +11,7 @@ export {
 } from './display.js';
 export {
   printNodeEnvironmentStatus,
+  checkAndPrintEnvironmentWithLoader,
   printNodeDoctorHint,
   hasEnvironmentIssues,
   printAuthStatus,

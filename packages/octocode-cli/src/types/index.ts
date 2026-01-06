@@ -21,10 +21,14 @@ export type ColorName =
   | 'bgBlue'
   | 'bgMagenta';
 
-// MCP Server configuration
+// MCP Server configuration (supports both stdio and SSE transports)
 export interface MCPServer {
-  command: string;
-  args: string[];
+  // Stdio transport
+  command?: string;
+  args?: string[];
+  // SSE transport
+  url?: string;
+  // Shared
   env?: Record<string, string>;
 }
 
@@ -170,16 +174,6 @@ export type AIProvider =
   | 'vertex';
 
 /**
- * Session/coder mode types
- */
-export type SessionCoderMode =
-  | 'research'
-  | 'coding'
-  | 'full'
-  | 'planning'
-  | 'delegate';
-
-/**
  * Source of API key discovery
  */
 export type APIKeySource =
@@ -219,29 +213,4 @@ export interface ClaudeCodeOAuthCredentials {
     subscriptionType?: string;
     rateLimitTier?: string;
   };
-}
-
-/**
- * Session info for session manager
- */
-export interface SessionInfo {
-  id: string;
-  mode: SessionCoderMode | 'interactive';
-  prompt: string;
-  promptPreview: string;
-  provider?: AIProvider;
-  model?: string;
-  status: 'running' | 'completed' | 'error' | 'interrupted' | 'active';
-  createdAt?: string;
-  updatedAt?: string;
-  startedAt?: string;
-  lastActiveAt?: string;
-  cwd: string;
-  sdkSessionId?: string;
-  transcriptPath?: string;
-  totalTokens?: number;
-  totalInputTokens?: number;
-  totalOutputTokens?: number;
-  result?: string;
-  error?: string;
 }

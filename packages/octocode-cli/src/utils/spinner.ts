@@ -49,7 +49,7 @@ export class Spinner {
     this.timer = null;
   }
 
-  start(text?: string): this {
+  start(text?: string, indent: number = 0): this {
     if (text) this.text = text;
 
     // Register cleanup handlers on first spinner start
@@ -61,11 +61,31 @@ export class Spinner {
     // Hide cursor
     process.stdout.write('\x1B[?25l');
 
+    const indentStr = ' '.repeat(indent);
+
     this.timer = setInterval(() => {
       const frame = this.frames[this.i++ % this.frames.length];
       // Clear line and print frame + text
-      process.stdout.write(`\r${c('cyan', frame)} ${this.text}`);
+      process.stdout.write(`\r${indentStr}${c('cyan', frame)} ${this.text}`);
     }, 80);
+
+    return this;
+  }
+
+  clear(): this {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+
+    // Remove from active spinners
+    activeSpinners.delete(this);
+
+    // Clear entire line
+    process.stdout.write('\r\x1B[2K');
+
+    // Show cursor
+    process.stdout.write('\x1B[?25h');
 
     return this;
   }

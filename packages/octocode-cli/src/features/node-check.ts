@@ -2,7 +2,10 @@
  * Node.js Environment Health Checks
  */
 
-import { execSync } from 'node:child_process';
+import { execSync, exec } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execAsync = promisify(exec);
 
 export interface NodeEnvironmentStatus {
   nodeInstalled: boolean;
@@ -103,7 +106,8 @@ export async function checkNpmRegistry(): Promise<{
 }
 
 /**
- * Check if octocode-mcp package is available in npm registry
+ * Check if octocode-mcp package is available in npm registry (sync - blocks event loop)
+ * @deprecated Use checkOctocodePackageAsync for UI flows with spinners
  */
 export function checkOctocodePackage(): {
   available: boolean;
@@ -116,6 +120,24 @@ export function checkOctocodePackage(): {
       stdio: ['pipe', 'pipe', 'pipe'],
     }).trim();
     return { available: true, version: result };
+  } catch {
+    return { available: false, version: null };
+  }
+}
+
+/**
+ * Check if octocode-mcp package is available in npm registry (async - non-blocking)
+ * Use this version for UI flows to allow spinner animations
+ */
+export async function checkOctocodePackageAsync(): Promise<{
+  available: boolean;
+  version: string | null;
+}> {
+  try {
+    const { stdout } = await execAsync('npm view octocode-mcp version', {
+      timeout: 10000,
+    });
+    return { available: true, version: stdout.trim() };
   } catch {
     return { available: false, version: null };
   }

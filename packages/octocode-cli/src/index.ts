@@ -17,13 +17,14 @@ import { c, bold, dim } from './utils/colors.js';
 import { clearScreen } from './utils/platform.js';
 import { loadInquirer } from './utils/prompts.js';
 import { printWelcome, printGoodbye } from './ui/header.js';
+import { Spinner } from './utils/spinner.js';
 import {
-  printNodeEnvironmentStatus,
+  checkAndPrintEnvironmentWithLoader,
   printNodeDoctorHint,
   hasEnvironmentIssues,
   printAuthStatus,
 } from './ui/install/index.js';
-import { checkNodeEnvironment } from './features/node-check.js';
+// import { checkNodeEnvironment } from './features/node-check.js'; // Removed
 import { runMenuLoop } from './ui/menu.js';
 import { runCLI } from './cli/index.js';
 import { initializeSecureStorage } from './utils/token-storage.js';
@@ -43,8 +44,10 @@ function printEnvHeader(): void {
 }
 
 async function runInteractiveMode(): Promise<void> {
-  // Load inquirer dynamically
+  // Load inquirer dynamically (with loading indicator)
+  const loadingSpinner = new Spinner('  Starting...').start();
   await loadInquirer();
+  loadingSpinner.clear();
 
   // Clear screen and show welcome
   clearScreen();
@@ -53,11 +56,12 @@ async function runInteractiveMode(): Promise<void> {
   // Environment check section
   printEnvHeader();
 
-  const envStatus = await checkNodeEnvironment();
-  printNodeEnvironmentStatus(envStatus);
+  const envStatus = await checkAndPrintEnvironmentWithLoader();
 
-  // Auth status check
+  // Auth status check (with loading indicator)
+  const authSpinner = new Spinner('  Auth: Checking...').start();
   const authStatus = await getAuthStatusAsync();
+  authSpinner.clear();
   printAuthStatus(authStatus);
 
   // Show node-doctor hint if issues detected

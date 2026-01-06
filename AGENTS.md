@@ -32,6 +32,7 @@
     - Adhere to "Clean Code" principles.
     - Add only critical comments.
     - Run linter (`yarn lint`) and tests (`yarn test`) after substantive changes.
+    - Run dead code detection (`npx knip`) to identify unused exports or files.
     - **Never** leave the codebase in a broken state.
 
 ## 📂 Repository Structure

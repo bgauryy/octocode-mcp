@@ -7,26 +7,19 @@ import { loadInquirer, select, Separator, input } from '../utils/prompts.js';
 import { clearScreen } from '../utils/platform.js';
 import {
   runInstallFlow,
-  printNodeEnvironmentStatus,
+  // printNodeEnvironmentStatus, // Removed
+  checkAndPrintEnvironmentWithLoader,
   printAuthStatus,
   hasEnvironmentIssues,
 } from './install/index.js';
-import { runConfigOptionsFlow } from './config/index.js';
+import { runConfigOptionsFlow, runInspectFlow } from './config/index.js';
 import { runExternalMCPFlow } from './external-mcp/index.js';
 import { runSyncFlow } from './sync/index.js';
 import { printGoodbye, printWelcome } from './header.js';
 import { Spinner } from '../utils/spinner.js';
-import {
-  runSkillsMenu,
-  getSkillsState,
-  type SkillsState,
-} from './skills-menu/index.js';
-import {
-  getAllClientInstallStatus,
-  MCP_CLIENTS,
-  type ClientInstallStatus,
-} from '../utils/mcp-config.js';
-import { detectCurrentClient, getMCPConfigPath } from '../utils/mcp-paths.js';
+import { runSkillsMenu } from './skills-menu/index.js';
+import { getAppState, type AppState, type SkillsState } from './state.js';
+import { MCP_CLIENTS, type ClientInstallStatus } from '../utils/mcp-config.js';
 import {
   login as oauthLogin,
   logout as oauthLogout,
@@ -38,7 +31,7 @@ import {
 import type { OctocodeAuthStatus } from '../types/index.js';
 import { checkGitHubAuth, runGitHubAuthLogout } from '../features/gh-auth.js';
 import { getCredentials } from '../utils/token-storage.js';
-import { checkNodeEnvironment } from '../features/node-check.js';
+// import { checkNodeEnvironment } from '../features/node-check.js'; // Removed
 import open from 'open';
 
 /**
@@ -56,69 +49,29 @@ type MenuChoice = 'octocode' | 'skills' | 'auth' | 'mcp-config' | 'exit';
 
 type OctocodeMenuChoice = 'configure' | 'install' | 'auth' | 'back';
 
-// ============================================================================
-// App State Types
-// ============================================================================
-
-/**
- * Octocode installation state
- */
-interface OctocodeState {
-  installedClients: ClientInstallStatus[];
-  availableClients: ClientInstallStatus[];
-  isInstalled: boolean;
-  hasMoreToInstall: boolean;
-}
-
-/**
- * Unified application state for all views
- */
-interface AppState {
-  octocode: OctocodeState;
-  skills: SkillsState;
-  currentClient: string | null;
-  githubAuth: OctocodeAuthStatus;
-}
-
-// ============================================================================
-// State Builders
-// ============================================================================
-
-/**
- * Get octocode installation state
- */
-function getOctocodeState(): OctocodeState {
-  const allClients = getAllClientInstallStatus();
-  const installedClients = allClients.filter(c => c.octocodeInstalled);
-  const availableClients = allClients.filter(
-    c => c.configExists && !c.octocodeInstalled
-  );
-
-  return {
-    installedClients,
-    availableClients,
-    isInstalled: installedClients.length > 0,
-    hasMoreToInstall: availableClients.length > 0,
-  };
-}
-
-/**
- * Get unified application state (async for accurate keyring-first auth check)
- */
-async function getAppState(): Promise<AppState> {
-  return {
-    octocode: getOctocodeState(),
-    skills: getSkillsState(),
-    currentClient: detectCurrentClient(),
-    githubAuth: await getAuthStatusAsync(),
-  };
-}
-
 /**
  * Get friendly client names for display
  */
 function getClientNames(clients: ClientInstallStatus[]): string {
   return clients.map(c => MCP_CLIENTS[c.client]?.name || c.client).join(', ');
+}
+
+/**
+ * Print installed IDEs with their config paths
+ */
+function printInstalledIDEs(installedClients: ClientInstallStatus[]): void {
+  if (installedClients.length === 0) {
+    console.log(`  ${dim('No IDEs configured yet')}`);
+    return;
+  }
+
+  console.log(`  ${dim('Installed on:')}`);
+  for (const client of installedClients) {
+    const clientName = MCP_CLIENTS[client.client]?.name || client.client;
+    console.log(
+      `    ${dim('•')} ${dim(clientName)} ${dim('→')} ${c('cyan', client.configPath)}`
+    );
+  }
 }
 
 /**
@@ -141,15 +94,15 @@ function buildSkillsMenuItem(skills: SkillsState): {
     return {
       name: `🧠 Manage System Skills ${c('green', '✓')}`,
       value: 'skills',
-      description: `install skills. ${skills.installedCount} installed • ${skills.destDir}`,
+      description: `install skills. ${skills.totalInstalledCount} installed • ${skills.destDir}`,
     };
   }
 
-  if (skills.installedCount > 0) {
+  if (skills.totalInstalledCount > 0) {
     return {
       name: '🧠 Manage System Skills',
       value: 'skills',
-      description: `install skills. ${skills.installedCount} installed • ${skills.destDir}`,
+      description: `install skills. ${skills.totalInstalledCount} installed • ${skills.destDir}`,
     };
   }
 
@@ -187,26 +140,27 @@ function buildAuthMenuItem(auth: OctocodeAuthStatus): {
 
 /**
  * Build status line for display
+ * Uses centralized state counts for consistency
  */
 function buildStatusLine(state: AppState): string {
   const parts: string[] = [];
 
-  // Octocode installation status
+  // Octocode installation status - use installedCount from centralized state
   if (state.octocode.isInstalled) {
-    const clientCount = state.octocode.installedClients.length;
-    const clientLabel = clientCount === 1 ? 'client' : 'clients';
-    parts.push(`${c('green', '●')} ${clientCount} ${clientLabel}`);
+    const clientLabel =
+      state.octocode.installedCount === 1 ? 'client' : 'clients';
+    parts.push(
+      `${c('green', '●')} ${state.octocode.installedCount} ${clientLabel}`
+    );
   } else {
     parts.push(`${c('yellow', '○')} Not installed`);
   }
 
-  // Skills status
-  if (state.skills.sourceExists && state.skills.hasSkills) {
-    if (state.skills.installedCount > 0) {
-      parts.push(`${c('green', '●')} ${state.skills.installedCount} skills`);
-    } else {
-      parts.push(`${c('yellow', '○')} ${state.skills.skills.length} skills`);
-    }
+  // Skills status - use totalInstalledCount from centralized state
+  if (state.skills.totalInstalledCount > 0) {
+    parts.push(`${c('green', '●')} ${state.skills.totalInstalledCount} skills`);
+  } else if (state.skills.sourceExists && state.skills.hasSkills) {
+    parts.push(`${c('yellow', '○')} ${state.skills.skills.length} skills`);
   }
 
   return parts.join(dim('  │  '));
@@ -216,6 +170,7 @@ function buildStatusLine(state: AppState): string {
  * Build Octocode menu item based on state
  * Shows ✓ only if both installed AND auth is working
  * Shows ✗ if installed but no auth
+ * Uses centralized state counts for consistency
  */
 function buildOctocodeMenuItem(state: AppState): {
   name: string;
@@ -223,15 +178,14 @@ function buildOctocodeMenuItem(state: AppState): {
   description: string;
 } {
   if (state.octocode.isInstalled) {
-    const clientCount = state.octocode.installedClients.length;
-    const clientLabel = clientCount === 1 ? 'IDE' : 'IDEs';
+    const clientLabel = state.octocode.installedCount === 1 ? 'IDE' : 'IDEs';
 
     // Show ✓ only if both installed AND authenticated
     if (state.githubAuth.authenticated) {
       return {
         name: `🐙 Octocode Configuration ${c('green', '✓')}`,
         value: 'octocode',
-        description: `Configure Octocode MCP - ${clientCount} ${clientLabel} configured`,
+        description: `Configure Octocode MCP - ${state.octocode.installedCount} ${clientLabel} configured`,
       };
     }
 
@@ -239,7 +193,7 @@ function buildOctocodeMenuItem(state: AppState): {
     return {
       name: `🐙 Octocode Configuration ${c('red', '✗')}`,
       value: 'octocode',
-      description: `Configure Octocode MCP - ${clientCount} ${clientLabel} configured`,
+      description: `Configure Octocode MCP - ${state.octocode.installedCount} ${clientLabel} configured`,
     };
   }
 
@@ -397,17 +351,31 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
 async function runOctocodeFlow(): Promise<void> {
   await loadInquirer();
 
-  // Section header
+  // Get initial state before showing header
+  let state = await getAppState();
+
+  // Section header with installed IDEs info
   console.log();
   console.log(c('blue', '━'.repeat(66)));
-  console.log(`  🐙 ${bold('Octocode Configuration')}`);
+  console.log(
+    `  🐙 ${bold('Octocode Configuration')} ${state.octocode.isInstalled ? c('green', '✓') : ''}`
+  );
   console.log(c('blue', '━'.repeat(66)));
+  printInstalledIDEs(state.octocode.installedClients);
   console.log();
 
   let inMenu = true;
+  let firstRun = true;
   while (inMenu) {
-    // Refresh state on each iteration
-    const state = await getAppState();
+    // Refresh state on each iteration (with loading indicator on subsequent runs)
+    if (firstRun) {
+      // State already fetched above
+      firstRun = false;
+    } else {
+      const spinner = new Spinner('  Refreshing...').start();
+      state = await getAppState();
+      spinner.clear();
+    }
 
     const choice = await showOctocodeMenu(state);
 
@@ -439,51 +407,7 @@ async function runOctocodeFlow(): Promise<void> {
 // MCP Configuration Flow
 // ============================================================================
 
-type MCPConfigChoice = 'sync' | 'marketplace' | 'back';
-
-/**
- * Get config file info for display
- */
-function getConfigFileInfo(): Array<{
-  client: string;
-  name: string;
-  path: string;
-  exists: boolean;
-  hasOctocode: boolean;
-}> {
-  const allClients = getAllClientInstallStatus();
-  return allClients
-    .filter(c => c.configExists)
-    .map(c => ({
-      client: c.client,
-      name: MCP_CLIENTS[c.client]?.name || c.client,
-      path: getMCPConfigPath(c.client),
-      exists: c.configExists,
-      hasOctocode: c.octocodeInstalled,
-    }));
-}
-
-/**
- * Display config files section
- */
-function displayConfigFiles(): void {
-  const configs = getConfigFileInfo();
-
-  if (configs.length === 0) {
-    console.log(`  ${dim('No MCP config files found')}`);
-    console.log();
-    return;
-  }
-
-  console.log(`  ${dim('Config Files:')}`);
-  for (const config of configs) {
-    const status = config.hasOctocode ? c('green', '●') : c('yellow', '○');
-    const ideName = c('cyan', config.name);
-    console.log(`  ${status} ${ideName}`);
-    console.log(`    ${dim(config.path)}`);
-  }
-  console.log();
-}
+type MCPConfigChoice = 'sync' | 'marketplace' | 'inspect' | 'back';
 
 /**
  * Show MCP configuration submenu
@@ -494,6 +418,12 @@ async function showMCPConfigMenu(): Promise<MCPConfigChoice> {
     value: MCPConfigChoice;
     description?: string;
   }> = [];
+
+  choices.push({
+    name: 'ℹ Show MCP details',
+    value: 'inspect',
+    description: 'View and manage configured MCP servers',
+  });
 
   choices.push({
     name: '🔄 Sync Configurations',
@@ -550,19 +480,18 @@ async function runMCPConfigFlow(): Promise<void> {
   console.log(c('blue', '━'.repeat(66)));
   console.log();
 
-  // Display config files
-  displayConfigFiles();
-
   let inMenu = true;
   while (inMenu) {
     const choice = await showMCPConfigMenu();
 
     switch (choice) {
+      case 'inspect':
+        await runInspectFlow();
+        break;
+
       case 'sync':
         await runSyncFlow();
         console.log();
-        // Re-display config files after sync
-        displayConfigFiles();
         break;
 
       case 'marketplace':
@@ -981,8 +910,8 @@ async function displayEnvironmentStatus(
 ): Promise<void> {
   printEnvHeader();
 
-  const envStatus = await checkNodeEnvironment();
-  printNodeEnvironmentStatus(envStatus);
+  const envStatus = await checkAndPrintEnvironmentWithLoader();
+  // printNodeEnvironmentStatus(envStatus); // Handled by checkAndPrintEnvironmentWithLoader
 
   // Use pre-fetched auth status to ensure consistency
   printAuthStatus(authStatus);
@@ -1006,7 +935,15 @@ export async function runMenuLoop(): Promise<void> {
   while (running) {
     // Get unified app state FIRST (refreshed on each iteration for accurate status)
     // This ensures consistency between environment display and menu items
-    const state = await getAppState();
+    // Show loading indicator on subsequent iterations (first run shows env status)
+    let state;
+    if (firstRun) {
+      state = await getAppState();
+    } else {
+      const spinner = new Spinner('  Loading...').start();
+      state = await getAppState();
+      spinner.clear();
+    }
 
     // Clear screen and show welcome when returning to menu (not on first run)
     if (!firstRun) {

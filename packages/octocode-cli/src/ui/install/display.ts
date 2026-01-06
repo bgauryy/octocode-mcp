@@ -13,6 +13,7 @@ import type { InstallResult } from '../../features/install.js';
  */
 export function printConfigPreview(config: MCPServer): void {
   const hasEnv = config.env && Object.keys(config.env).length > 0;
+  const args = config.args ?? [];
 
   console.log();
   console.log(c('dim', '  {'));
@@ -24,8 +25,8 @@ export function printConfigPreview(config: MCPServer): void {
       c('dim', ',')
   );
   console.log(c('dim', '        "args": ['));
-  config.args.forEach((arg, i) => {
-    const isLast = i === config.args.length - 1;
+  args.forEach((arg, i) => {
+    const isLast = i === args.length - 1;
     const truncated = arg.length > 50 ? arg.slice(0, 47) + '...' : arg;
     console.log(
       c('dim', '          ') +
@@ -110,8 +111,16 @@ export function printExistingOctocodeConfig(server: MCPServer): void {
   console.log();
   console.log(c('cyan', '  ┌' + '─'.repeat(boxWidth) + '┐'));
 
-  // Command line
-  const commandLine = `${server.command} ${server.args.join(' ')}`;
+  // Command line or URL
+  let commandLine: string;
+  if (server.url) {
+    commandLine = server.url;
+  } else {
+    const args = server.args ?? [];
+    commandLine = server.command
+      ? `${server.command} ${args.join(' ')}`.trim()
+      : '(no command configured)';
+  }
   const maxLen = boxWidth - 4;
   const displayCommand =
     commandLine.length > maxLen
@@ -181,10 +190,15 @@ export function printExistingMCPConfig(config: MCPConfig): void {
     const server = servers[name];
     if (!server) continue;
 
-    // Format: "name: command args..."
-    const command = server.command;
-    const args = server.args.join(' ');
-    const fullCommand = `${command} ${args}`;
+    // Format: "name: command args..." or "name: url"
+    let fullCommand: string;
+    if (server.url) {
+      fullCommand = server.url;
+    } else {
+      const command = server.command ?? '';
+      const args = (server.args ?? []).join(' ');
+      fullCommand = `${command} ${args}`.trim() || '(no command)';
+    }
 
     // Calculate available space for command
     const nameLen = name.length;

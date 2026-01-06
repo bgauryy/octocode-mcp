@@ -3,8 +3,15 @@
  */
 
 import { c, bold, dim } from '../../utils/colors.js';
-import type { NodeEnvironmentStatus } from '../../features/node-check.js';
+import {
+  type NodeEnvironmentStatus,
+  checkNodeInPath,
+  checkNpmInPath,
+  checkNpmRegistry,
+  checkOctocodePackageAsync,
+} from '../../features/node-check.js';
 import type { OctocodeAuthStatus } from '../../types/index.js';
+import { Spinner } from '../../utils/spinner.js';
 
 /**
  * Print Node.js environment status
@@ -13,24 +20,10 @@ export function printNodeEnvironmentStatus(
   status: NodeEnvironmentStatus
 ): void {
   // Node.js check
-  if (status.nodeInstalled) {
-    console.log(
-      `  ${c('green', '✓')} Node.js: ${bold(status.nodeVersion || 'unknown')}`
-    );
-  } else {
-    console.log(`  ${c('red', '✗')} Node.js: ${c('red', 'Not found in PATH')}`);
-  }
+  printNodeStatus(status.nodeInstalled, status.nodeVersion);
 
   // npm check
-  if (status.npmInstalled) {
-    console.log(
-      `  ${c('green', '✓')} npm: ${bold(status.npmVersion || 'unknown')}`
-    );
-  } else {
-    console.log(
-      `  ${c('yellow', '⚠')} npm: ${c('yellow', 'Not found in PATH')}`
-    );
-  }
+  printNpmStatus(status.npmInstalled, status.npmVersion);
 
   // Registry check
   printRegistryStatus(status.registryStatus, status.registryLatency);
@@ -43,9 +36,39 @@ export function printNodeEnvironmentStatus(
 }
 
 /**
+ * Print Node.js status
+ */
+export function printNodeStatus(
+  installed: boolean,
+  version: string | null
+): void {
+  if (installed) {
+    console.log(`  ${c('green', '✓')} Node.js: ${bold(version || 'unknown')}`);
+  } else {
+    console.log(`  ${c('red', '✗')} Node.js: ${c('red', 'Not found in PATH')}`);
+  }
+}
+
+/**
+ * Print npm status
+ */
+export function printNpmStatus(
+  installed: boolean,
+  version: string | null
+): void {
+  if (installed) {
+    console.log(`  ${c('green', '✓')} npm: ${bold(version || 'unknown')}`);
+  } else {
+    console.log(
+      `  ${c('yellow', '⚠')} npm: ${c('yellow', 'Not found in PATH')}`
+    );
+  }
+}
+
+/**
  * Print npm registry status
  */
-function printRegistryStatus(
+export function printRegistryStatus(
   status: 'ok' | 'slow' | 'failed',
   latency: number | null
 ): void {
@@ -73,7 +96,7 @@ function printRegistryStatus(
 /**
  * Print octocode-mcp package availability status
  */
-function printOctocodePackageStatus(
+export function printOctocodePackageStatus(
   available: boolean,
   version: string | null
 ): void {
@@ -86,6 +109,42 @@ function printOctocodePackageStatus(
       `  ${c('red', '✗')} octocode-mcp: ${c('red', 'Not found in registry')}`
     );
   }
+}
+
+/**
+ * Check and print environment status with loader for slow operations
+ */
+export async function checkAndPrintEnvironmentWithLoader(): Promise<NodeEnvironmentStatus> {
+  // 1. Check Node.js (Sync - fast local check)
+  const nodeCheck = checkNodeInPath();
+  printNodeStatus(nodeCheck.installed, nodeCheck.version);
+
+  // 2. Check npm (Sync - fast local check)
+  const npmCheck = checkNpmInPath();
+  printNpmStatus(npmCheck.installed, npmCheck.version);
+
+  // 3. Check Registry (Async - network call)
+  const registrySpinner = new Spinner('  Registry: Checking...').start();
+  const registryCheck = await checkNpmRegistry();
+  registrySpinner.clear();
+  printRegistryStatus(registryCheck.status, registryCheck.latency);
+
+  // 4. Check Octocode Package (Async - network call via npm view)
+  const octocodeSpinner = new Spinner('  octocode-mcp: Checking...').start();
+  const octocodeCheck = await checkOctocodePackageAsync();
+  octocodeSpinner.clear();
+  printOctocodePackageStatus(octocodeCheck.available, octocodeCheck.version);
+
+  return {
+    nodeInstalled: nodeCheck.installed,
+    nodeVersion: nodeCheck.version,
+    npmInstalled: npmCheck.installed,
+    npmVersion: npmCheck.version,
+    registryStatus: registryCheck.status,
+    registryLatency: registryCheck.latency,
+    octocodePackageAvailable: octocodeCheck.available,
+    octocodePackageVersion: octocodeCheck.version,
+  };
 }
 
 /**
