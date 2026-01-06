@@ -214,33 +214,48 @@ function getCurrentValue(
 }
 
 /**
- * Format display value for config option
+ * Format display value for config option with clear state indicators
+ * @param option - The config option
+ * @param value - Current value
+ * @param isModified - Whether the value has been modified in this session
  */
-function formatDisplayValue(option: ConfigOption, value: string): string {
+function formatDisplayValue(
+  option: ConfigOption,
+  value: string,
+  isModified = false
+): string {
+  const modifiedMarker = isModified ? c('yellow', ' •') : '';
+
   if (option.type === 'boolean') {
     const isEnabled = value === '1' || value.toLowerCase() === 'true';
-    return isEnabled ? c('green', 'enabled') : c('dim', 'disabled');
+    const icon = isEnabled ? c('green', '✓') : c('dim', '○');
+    const label = isEnabled ? c('green', 'enabled') : c('dim', 'disabled');
+    return `${icon} ${label}${modifiedMarker}`;
   }
   if (option.type === 'array') {
     if (!value || value === '') {
-      return c('dim', option.id === 'toolsToRun' ? '(all tools)' : '(none)');
+      const defaultLabel =
+        option.id === 'toolsToRun' ? '(all tools)' : '(none)';
+      return `${c('dim', '○')} ${c('dim', defaultLabel)}${modifiedMarker}`;
     }
     const tools = value.split(',').filter(t => t.trim());
-    return tools.length > 2
-      ? `${tools.slice(0, 2).join(', ')} ${c('dim', `+${tools.length - 2} more`)}`
-      : tools.join(', ');
+    const toolsDisplay =
+      tools.length > 2
+        ? `${tools.slice(0, 2).join(', ')} ${c('dim', `+${tools.length - 2} more`)}`
+        : tools.join(', ');
+    return `${c('green', '●')} ${toolsDisplay}${modifiedMarker}`;
   }
   if (option.type === 'number') {
     if (value === option.defaultValue) {
-      return `${value} ${c('dim', '(default)')}`;
+      return `${c('dim', '○')} ${value} ${c('dim', '(default)')}${modifiedMarker}`;
     }
-    return value;
+    return `${c('cyan', '●')} ${c('cyan', value)}${modifiedMarker}`;
   }
   // string
   if (value === option.defaultValue) {
-    return `${c('dim', value)}`;
+    return `${c('dim', '○')} ${c('dim', value)}${modifiedMarker}`;
   }
-  return c('cyan', value);
+  return `${c('cyan', '●')} ${c('cyan', value)}${modifiedMarker}`;
 }
 
 /**
@@ -651,13 +666,29 @@ async function editArrayOption(
     });
   }
 
+  // Add cancel option at the end
+  choices.push({
+    name: c('dim', '── Actions ──'),
+    value: '__separator_actions__',
+    disabled: true,
+  } as unknown as (typeof choices)[number]);
+
+  choices.push({
+    name: `${c('dim', '← Cancel (keep current)')}`,
+    value: '__cancel__',
+    checked: false,
+    description: 'Go back without changes',
+  });
+
   console.log();
-  console.log(`  ${dim('Use Space to select/deselect, Enter to confirm')}`);
+  console.log(
+    `  ${dim('Use Space to select/deselect, Enter to confirm, or select Cancel')}`
+  );
 
   const selected = await checkbox<string>({
     message: `Select tools for ${option.name}:`,
     choices,
-    pageSize: 15,
+    pageSize: 16,
     loop: false,
     theme: {
       prefix: '  ',
@@ -668,16 +699,53 @@ async function editArrayOption(
     },
   });
 
+  // Check if user selected cancel
+  if (selected.includes('__cancel__')) {
+    return null; // Return null to indicate no change
+  }
+
   // Filter out separator values
-  const validTools = selected.filter(t => !t.startsWith('__separator'));
+  const validTools = selected.filter(
+    t => !t.startsWith('__separator') && t !== '__cancel__'
+  );
   return validTools.length > 0 ? validTools.join(',') : '';
+}
+
+/**
+ * Check if a value has been modified from original
+ */
+function isValueModified(
+  originalEnv: Record<string, string>,
+  currentEnv: Record<string, string>,
+  option: ConfigOption
+): boolean {
+  const originalValue = originalEnv[option.envVar] ?? '';
+  const currentValue = currentEnv[option.envVar] ?? '';
+  return originalValue !== currentValue;
+}
+
+/**
+ * Count how many options have been modified
+ */
+function countModifiedOptions(
+  originalEnv: Record<string, string>,
+  currentEnv: Record<string, string>
+): number {
+  let count = 0;
+  for (const option of ALL_CONFIG_OPTIONS) {
+    if (isValueModified(originalEnv, currentEnv, option)) {
+      count++;
+    }
+  }
+  return count;
 }
 
 /**
  * Show config editing menu with all options and current values
  */
 async function showEditConfigMenu(
-  env: Record<string, string>
+  workingEnv: Record<string, string>,
+  originalEnv: Record<string, string>
 ): Promise<EditConfigChoice> {
   const choices: Array<{
     name: string;
@@ -691,15 +759,28 @@ async function showEditConfigMenu(
   const numberOptions = ALL_CONFIG_OPTIONS.filter(o => o.type === 'number');
   const arrayOptions = ALL_CONFIG_OPTIONS.filter(o => o.type === 'array');
 
-  // Boolean options
+  // Count modifications for header
+  const modifiedCount = countModifiedOptions(originalEnv, workingEnv);
+  const statusHeader =
+    modifiedCount > 0
+      ? `${c('yellow', '●')} ${modifiedCount} unsaved ${modifiedCount === 1 ? 'change' : 'changes'}`
+      : `${c('green', '●')} No unsaved changes`;
+
+  choices.push({
+    name: `${c('dim', '──')} ${statusHeader} ${c('dim', '──')}`,
+    value: '__status__',
+  });
+
+  // Boolean options (Features)
   if (booleanOptions.length > 0) {
     choices.push({
       name: c('dim', '── Features ──'),
       value: '__sep1__',
     });
     for (const option of booleanOptions) {
-      const value = getCurrentValue(env, option);
-      const displayValue = formatDisplayValue(option, value);
+      const value = getCurrentValue(workingEnv, option);
+      const isModified = isValueModified(originalEnv, workingEnv, option);
+      const displayValue = formatDisplayValue(option, value, isModified);
       choices.push({
         name: `${option.name}: ${displayValue}`,
         value: option.id,
@@ -708,15 +789,16 @@ async function showEditConfigMenu(
     }
   }
 
-  // String options
+  // String options (Endpoints)
   if (stringOptions.length > 0) {
     choices.push({
       name: c('dim', '── Endpoints ──'),
       value: '__sep2__',
     });
     for (const option of stringOptions) {
-      const value = getCurrentValue(env, option);
-      const displayValue = formatDisplayValue(option, value);
+      const value = getCurrentValue(workingEnv, option);
+      const isModified = isValueModified(originalEnv, workingEnv, option);
+      const displayValue = formatDisplayValue(option, value, isModified);
       choices.push({
         name: `${option.name}: ${displayValue}`,
         value: option.id,
@@ -725,15 +807,16 @@ async function showEditConfigMenu(
     }
   }
 
-  // Number options
+  // Number options (Performance)
   if (numberOptions.length > 0) {
     choices.push({
       name: c('dim', '── Performance ──'),
       value: '__sep3__',
     });
     for (const option of numberOptions) {
-      const value = getCurrentValue(env, option);
-      const displayValue = formatDisplayValue(option, value);
+      const value = getCurrentValue(workingEnv, option);
+      const isModified = isValueModified(originalEnv, workingEnv, option);
+      const displayValue = formatDisplayValue(option, value, isModified);
       choices.push({
         name: `${option.name}: ${displayValue}`,
         value: option.id,
@@ -742,15 +825,16 @@ async function showEditConfigMenu(
     }
   }
 
-  // Array options
+  // Array options (Tool Selection)
   if (arrayOptions.length > 0) {
     choices.push({
       name: c('dim', '── Tool Selection ──'),
       value: '__sep4__',
     });
     for (const option of arrayOptions) {
-      const value = getCurrentValue(env, option);
-      const displayValue = formatDisplayValue(option, value);
+      const value = getCurrentValue(workingEnv, option);
+      const isModified = isValueModified(originalEnv, workingEnv, option);
+      const displayValue = formatDisplayValue(option, value, isModified);
       choices.push({
         name: `${option.name}: ${displayValue}`,
         value: option.id,
@@ -764,11 +848,22 @@ async function showEditConfigMenu(
     name: c('dim', '── Actions ──'),
     value: '__sep5__',
   });
-  choices.push({
-    name: `${c('green', '💾')} Save changes`,
-    value: 'save',
-    description: 'Save configuration and exit',
-  });
+
+  // Show save button with indication if there are changes
+  if (modifiedCount > 0) {
+    choices.push({
+      name: `${c('green', '💾')} Save changes ${c('yellow', `(${modifiedCount})`)}`,
+      value: 'save',
+      description: 'Save configuration and exit',
+    });
+  } else {
+    choices.push({
+      name: `${c('dim', '💾')} Save changes`,
+      value: 'save',
+      description: dim('No changes to save'),
+    });
+  }
+
   choices.push({
     name: `${c('yellow', '↺')} Reset to defaults`,
     value: 'reset',
@@ -782,7 +877,7 @@ async function showEditConfigMenu(
   const choice = await select<EditConfigChoice>({
     message: 'Select option to configure:',
     choices,
-    pageSize: 18,
+    pageSize: 20,
     loop: false,
     theme: {
       prefix: '  ',
@@ -821,10 +916,10 @@ async function runEditConfigFlow(): Promise<void> {
   if (!isOctocodeConfigured(config)) {
     console.log();
     console.log(
-      `  ${c('yellow', '⚠')} Octocode is not configured for ${clientInfo.name}`
+      `  ${c('yellow', '⚠')} Octocode is not configured for ${clientInfo.name}.`
     );
     console.log(
-      `  ${dim('Please install octocode first using "Install octocode-mcp".')}`
+      `  ${dim('Please install Octocode first using "Install octocode-mcp".')}`
     );
     console.log();
     return;
@@ -843,10 +938,10 @@ async function runEditConfigFlow(): Promise<void> {
   // Edit loop
   let editing = true;
   while (editing) {
-    const choice = await showEditConfigMenu(workingEnv);
+    const choice = await showEditConfigMenu(workingEnv, originalEnv);
 
-    // Handle separators - skip them
-    if (choice.startsWith('__sep')) {
+    // Handle separators and status line - skip them
+    if (choice.startsWith('__sep') || choice === '__status__') {
       continue;
     }
 
@@ -1012,10 +1107,10 @@ async function showCurrentJsonConfig(): Promise<void> {
   if (!isOctocodeConfigured(config)) {
     console.log();
     console.log(
-      `  ${c('yellow', '⚠')} Octocode is not configured for ${clientInfo.name}`
+      `  ${c('yellow', '⚠')} Octocode is not configured for ${clientInfo.name}.`
     );
     console.log(
-      `  ${dim('Please install octocode first using "Install octocode-mcp".')}`
+      `  ${dim('Please install Octocode first using "Install octocode-mcp".')}`
     );
     console.log();
     return;

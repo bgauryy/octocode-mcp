@@ -5,6 +5,7 @@
 
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import {
   copyDirectory,
   dirExists,
@@ -13,6 +14,80 @@ import {
   readFileContent,
 } from './fs.js';
 import { HOME, isWindows, getAppDataPath } from './platform.js';
+
+// ============================================================================
+// Config Storage
+// ============================================================================
+
+const OCTOCODE_DIR = join(HOME, '.octocode');
+const CONFIG_FILE = join(OCTOCODE_DIR, 'config.json');
+
+interface OctocodeConfig {
+  skillsDestDir?: string;
+}
+
+/**
+ * Load CLI config from ~/.octocode/config.json
+ */
+function loadConfig(): OctocodeConfig {
+  try {
+    if (existsSync(CONFIG_FILE)) {
+      const content = readFileSync(CONFIG_FILE, 'utf-8');
+      return JSON.parse(content) as OctocodeConfig;
+    }
+  } catch {
+    // Ignore errors, return empty config
+  }
+  return {};
+}
+
+/**
+ * Save CLI config to ~/.octocode/config.json
+ */
+function saveConfig(config: OctocodeConfig): void {
+  try {
+    if (!existsSync(OCTOCODE_DIR)) {
+      mkdirSync(OCTOCODE_DIR, { recursive: true });
+    }
+    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  } catch {
+    // Ignore errors
+  }
+}
+
+/**
+ * Set custom skills destination directory
+ * @param path - Custom path or null to reset to default
+ */
+export function setCustomSkillsDestDir(path: string | null): void {
+  const config = loadConfig();
+  if (path) {
+    config.skillsDestDir = path;
+  } else {
+    delete config.skillsDestDir;
+  }
+  saveConfig(config);
+}
+
+/**
+ * Get custom skills destination directory if set
+ * @returns Custom path or null if using default
+ */
+export function getCustomSkillsDestDir(): string | null {
+  const config = loadConfig();
+  return config.skillsDestDir || null;
+}
+
+/**
+ * Get default skills destination directory (without custom override)
+ */
+export function getDefaultSkillsDestDir(): string {
+  if (isWindows) {
+    const appData = getAppDataPath();
+    return join(appData, 'Claude', 'skills');
+  }
+  return join(HOME, '.claude', 'skills');
+}
 
 /**
  * Skill metadata from SKILL.md frontmatter
@@ -99,16 +174,17 @@ export function getSkillsSourceDir(): string {
 
 /**
  * Get Claude skills destination directory
- * Windows: %APPDATA%\Claude\skills\
- * macOS/Linux: ~/.claude/skills/
+ * Checks for custom path first, falls back to default:
+ * - Windows: %APPDATA%\Claude\skills\
+ * - macOS/Linux: ~/.claude/skills/
  * @returns Path to user's Claude skills directory
  */
 export function getSkillsDestDir(): string {
-  if (isWindows) {
-    const appData = getAppDataPath();
-    return join(appData, 'Claude', 'skills');
+  const customPath = getCustomSkillsDestDir();
+  if (customPath) {
+    return customPath;
   }
-  return join(HOME, '.claude', 'skills');
+  return getDefaultSkillsDestDir();
 }
 
 /**

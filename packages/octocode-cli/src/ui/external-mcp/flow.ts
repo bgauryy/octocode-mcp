@@ -362,6 +362,10 @@ export async function runExternalMCPFlow(): Promise<void> {
   console.log(c('blue', '━'.repeat(66)));
   console.log();
   console.log(`  ${dim('Browse and install from 70+ community MCP servers')}`);
+  console.log();
+  console.log(
+    `  ${c('yellow', '⚠')} ${c('yellow', 'This is a public community list. MCPs install on your behalf.')}`
+  );
 
   const state: FlowState = {
     client: null,

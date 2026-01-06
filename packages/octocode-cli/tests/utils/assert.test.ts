@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { assertDefined, assert, assertNever } from '../../src/utils/assert.js';
+import { assertDefined, assertNever } from '../../src/utils/assert.js';
 
 describe('Assert Utilities', () => {
   describe('assertDefined', () => {
@@ -35,26 +35,6 @@ describe('Assert Utilities', () => {
     it('should include custom message in error', () => {
       expect(() => assertDefined(null, 'Analysis should be populated')).toThrow(
         'Assertion failed: Analysis should be populated'
-      );
-    });
-  });
-
-  describe('assert', () => {
-    it('should not throw when condition is true', () => {
-      expect(() => assert(true, 'should pass')).not.toThrow();
-      expect(() => assert(1 === 1, 'should pass')).not.toThrow();
-      expect(() => assert(Boolean('truthy'), 'should pass')).not.toThrow();
-    });
-
-    it('should throw when condition is false', () => {
-      expect(() => assert(false, 'condition was false')).toThrow(
-        'Assertion failed: condition was false'
-      );
-    });
-
-    it('should throw with custom message', () => {
-      expect(() => assert(1 > 2, 'math is broken')).toThrow(
-        'Assertion failed: math is broken'
       );
     });
   });

@@ -2,7 +2,7 @@
  * Tools Module
  *
  * Provider-agnostic tools that work with any LLM model.
- * These tools are used by the unified agent loop regardless of which
+ * These tools are used by chat regardless of which
  * AI provider (Anthropic, OpenAI, Google, etc.) is selected.
  *
  * Core Principle: Same tools for all models.
@@ -12,14 +12,13 @@
 import type { CoreTool } from 'ai';
 import { fileTools } from './file-tools.js';
 import { shellTools } from './shell-tools.js';
-import { taskTools } from './task-tools.js';
 
 // ============================================
 // Built-in Tool Registry
 // ============================================
 
 /**
- * All built-in tools available to agents
+ * All built-in tools available
  */
 export const BUILTIN_TOOLS: Record<string, CoreTool> = {
   // File operations
@@ -32,12 +31,6 @@ export const BUILTIN_TOOLS: Record<string, CoreTool> = {
   // Shell operations
   Bash: shellTools.Bash,
   Grep: shellTools.Grep,
-
-  // Task/Agent operations
-  Agent: taskTools.Agent,
-  TaskOutput: taskTools.TaskOutput,
-  TaskList: taskTools.TaskList,
-  TaskKill: taskTools.TaskKill,
 };
 
 /**
@@ -110,4 +103,3 @@ export const READONLY_TOOLS: Record<string, CoreTool> = getTools([
 
 export { fileTools } from './file-tools.js';
 export { shellTools } from './shell-tools.js';
-export { taskTools } from './task-tools.js';

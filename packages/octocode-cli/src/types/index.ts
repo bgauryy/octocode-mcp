@@ -2,32 +2,6 @@
  * Shared Types
  */
 
-// Re-export task types
-export type {
-  TaskStatus,
-  BackgroundTask,
-  TaskConfig,
-  TaskEventType,
-  TaskEvent,
-  TaskEventListener,
-  ITaskManager,
-  AgentToolInput,
-  TaskOutputToolInput,
-  TaskListToolInput,
-} from './tasks.js';
-
-// Re-export provider types
-export type {
-  LLMProvider,
-  ModelId,
-  ModelDefinition,
-  ModelCapabilities,
-  ModelPricing,
-  ProviderStatus,
-  ResolvedModel,
-  AIConfig,
-} from './provider.js';
-
 // Color names for terminal output
 export type ColorName =
   | 'reset'
@@ -148,7 +122,7 @@ export interface StoredCredentials {
 }
 
 // Token source for auth status display
-export type TokenSource = 'octocode' | 'gh-cli' | 'none';
+export type TokenSource = 'octocode' | 'gh-cli' | 'env' | 'none';
 
 // Auth status from our OAuth implementation
 export interface OctocodeAuthStatus {
@@ -179,4 +153,95 @@ export interface DeleteResult {
   success: boolean;
   deletedFromKeyring: boolean;
   deletedFromFile: boolean;
+}
+
+// ============================================
+// AI Provider Types
+// ============================================
+
+/**
+ * AI Provider identifier
+ */
+export type AIProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'google'
+  | 'bedrock'
+  | 'vertex';
+
+/**
+ * Session/coder mode types
+ */
+export type SessionCoderMode =
+  | 'research'
+  | 'coding'
+  | 'full'
+  | 'planning'
+  | 'delegate';
+
+/**
+ * Source of API key discovery
+ */
+export type APIKeySource =
+  | 'environment'
+  | 'keychain'
+  | 'keychain-oauth'
+  | 'config'
+  | 'config-file'
+  | 'manual'
+  | 'sdk'
+  | 'none';
+
+/**
+ * Result from API key discovery
+ */
+export interface APIKeyResult {
+  key: string | null;
+  source: APIKeySource | null;
+  provider: AIProvider;
+  expiresAt?: number;
+  isOAuth?: boolean;
+  scopes?: string[];
+}
+
+/**
+ * Claude Code OAuth credentials structure (from keychain)
+ */
+export interface ClaudeCodeOAuthCredentials {
+  accessToken?: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  claudeAiOauth?: {
+    accessToken: string;
+    refreshToken?: string;
+    expiresAt?: number;
+    scopes?: string[];
+    subscriptionType?: string;
+    rateLimitTier?: string;
+  };
+}
+
+/**
+ * Session info for session manager
+ */
+export interface SessionInfo {
+  id: string;
+  mode: SessionCoderMode | 'interactive';
+  prompt: string;
+  promptPreview: string;
+  provider?: AIProvider;
+  model?: string;
+  status: 'running' | 'completed' | 'error' | 'interrupted' | 'active';
+  createdAt?: string;
+  updatedAt?: string;
+  startedAt?: string;
+  lastActiveAt?: string;
+  cwd: string;
+  sdkSessionId?: string;
+  transcriptPath?: string;
+  totalTokens?: number;
+  totalInputTokens?: number;
+  totalOutputTokens?: number;
+  result?: string;
+  error?: string;
 }

@@ -1,12 +1,12 @@
 /**
- * System Prompts for Octocode Agents
+ * System Prompts for Octocode AI
  *
- * Centralized system prompts for different agent types.
+ * Centralized system prompts for different AI modes.
  * Extracted for maintainability and reusability.
  */
 
 // ============================================
-// Octocode Research Agent Prompt
+// Octocode Research Prompt
 // ============================================
 
 export const OCTOCODE_RESEARCH_PROMPT = `You are an expert code research and exploration agent powered by Octocode.
@@ -69,7 +69,7 @@ Broad Search → Narrow Results → Deep Dive → Cite Evidence
 `;
 
 // ============================================
-// Full-Featured Agent Prompt
+// Full-Featured AI Prompt
 // ============================================
 
 export const OCTOCODE_FULL_AGENT_PROMPT = `You are an expert AI coding assistant powered by Octocode.

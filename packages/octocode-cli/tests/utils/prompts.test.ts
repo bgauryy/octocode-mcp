@@ -60,6 +60,17 @@ describe('Prompts Utilities', () => {
         'Inquirer not loaded. Call loadInquirer() first.'
       );
     });
+
+    it('should throw error when search is called before loadInquirer', async () => {
+      const { search } = await import('../../src/utils/prompts.js');
+
+      expect(() =>
+        search({
+          message: 'Search:',
+          source: () => [],
+        })
+      ).toThrow('Inquirer not loaded. Call loadInquirer() first.');
+    });
   });
 
   describe('isInquirerLoaded', () => {
@@ -76,6 +87,7 @@ describe('Prompts Utilities', () => {
         confirm: vi.fn().mockResolvedValue(true),
         input: vi.fn().mockResolvedValue('input value'),
         checkbox: vi.fn().mockResolvedValue(['option1']),
+        search: vi.fn().mockResolvedValue('searched'),
         Separator: class {
           type = 'separator' as const;
           separator = '---';
@@ -98,6 +110,7 @@ describe('Prompts Utilities', () => {
         confirm: vi.fn(),
         input: vi.fn(),
         checkbox: vi.fn(),
+        search: vi.fn(),
         Separator: class {
           type = 'separator' as const;
           separator = '';
@@ -156,6 +169,7 @@ describe('Prompts Utilities', () => {
       expect(typeof prompts.confirm).toBe('function');
       expect(typeof prompts.input).toBe('function');
       expect(typeof prompts.checkbox).toBe('function');
+      expect(typeof prompts.search).toBe('function');
       expect(typeof prompts.loadInquirer).toBe('function');
       expect(typeof prompts.isInquirerLoaded).toBe('function');
       expect(prompts.Separator).toBeDefined();

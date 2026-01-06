@@ -24,13 +24,16 @@ import { fileExists } from '../utils/fs.js';
 import { isWindows } from '../utils/platform.js';
 
 /**
- * Convert legacy IDE type to MCPClient
+ * Convert IDE string to MCPClient
+ * Handles legacy 'claude' alias and all MCPClient types
  */
-function ideToMCPClient(ide: IDE): MCPClient {
+function ideToMCPClient(ide: string): MCPClient {
+  // Legacy alias
   if (ide === 'claude') {
     return 'claude-desktop';
   }
-  return ide;
+  // Direct MCPClient types
+  return ide as MCPClient;
 }
 
 export interface InstallOptions {
@@ -337,10 +340,13 @@ export function detectAvailableClients(): MCPClient[] {
     'cursor',
     'claude-desktop',
     'claude-code',
+    'opencode',
     'vscode-cline',
     'vscode-roo',
     'vscode-continue',
     'windsurf',
+    'trae',
+    'antigravity',
     'zed',
   ];
 

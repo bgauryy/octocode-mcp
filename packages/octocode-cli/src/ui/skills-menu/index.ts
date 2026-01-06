@@ -16,8 +16,8 @@ import {
 import {
   getSkillsSourceDir,
   getSkillsDestDir,
-  getAllSkillsMetadata,
-  type SkillMetadata,
+  getDefaultSkillsDestDir,
+  setCustomSkillsDestDir,
 } from '../../utils/skills.js';
 import path from 'node:path';
 import { Spinner } from '../../utils/spinner.js';
@@ -74,8 +74,8 @@ type SkillsMenuChoice =
   | 'install'
   | 'manage'
   | 'view'
-  | 'view-all'
   | 'marketplace'
+  | 'change-path'
   | 'back';
 type InstallSkillsChoice = 'install' | 'select' | 'back';
 type ManageSkillsChoice = InstalledSkill | 'back';
@@ -301,7 +301,7 @@ async function showSkillsMenu(
   choices.push({
     name: '🌐 Browse Marketplace',
     value: 'marketplace',
-    description: 'Discover skills from community',
+    description: 'Community skills • installs on your behalf',
   });
 
   if (hasUninstalled) {
@@ -312,11 +312,11 @@ async function showSkillsMenu(
     });
   }
 
-  // View all available skills
+  // Change default skills path option
   choices.push({
-    name: '🧠 View all bundled skills',
-    value: 'view-all',
-    description: 'Show all available Octocode skills',
+    name: '📁 Change default skills path',
+    value: 'change-path',
+    description: 'Set custom installation directory',
   });
 
   choices.push(
@@ -402,86 +402,6 @@ function formatSkillName(name: string): string {
     .split('-')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
-}
-
-/**
- * Wrap text at specified width
- */
-function wrapText(text: string, maxWidth: number, indent: string): string {
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let currentLine = '';
-
-  for (const word of words) {
-    if (currentLine.length + word.length + 1 <= maxWidth) {
-      currentLine += (currentLine ? ' ' : '') + word;
-    } else {
-      if (currentLine) {
-        lines.push(currentLine);
-      }
-      currentLine = word;
-    }
-  }
-
-  if (currentLine) {
-    lines.push(currentLine);
-  }
-
-  return lines.join('\n' + indent);
-}
-
-/**
- * Show all available skills with their descriptions
- */
-function showAllSkills(
-  skills: SkillMetadata[],
-  info: ReturnType<typeof getSkillsInfo>
-): void {
-  if (skills.length === 0) {
-    console.log(`  ${dim('No skills available.')}`);
-    console.log();
-    return;
-  }
-
-  console.log(`  ${bold('Available Octocode Skills')}`);
-  console.log();
-
-  for (const skill of skills) {
-    // Check if installed
-    const isInstalled = info.skillsStatus.some(
-      s => s.name === skill.folder && s.installed
-    );
-    const statusIcon = isInstalled ? c('green', '✓') : c('yellow', '○');
-    const statusText = isInstalled
-      ? c('green', 'installed')
-      : dim('not installed');
-
-    // Display skill name
-    const displayName = formatSkillName(skill.name);
-    console.log(
-      `  ${statusIcon} ${bold(c('cyan', displayName))} ${statusText}`
-    );
-
-    // Display description (wrapped for readability)
-    const wrappedDesc = wrapText(skill.description, 60, '      ');
-    console.log(`      ${dim(wrappedDesc)}`);
-    console.log();
-  }
-
-  // Show summary
-  const installedCount = info.skillsStatus.filter(s => s.installed).length;
-  console.log(
-    `  ${dim('Total:')} ${skills.length} skills, ${installedCount} installed`
-  );
-  console.log();
-
-  // Show how to use
-  console.log(`  ${bold('How to use:')}`);
-  console.log(
-    `  ${dim('Skills are prompts for Claude Code. Install them, then use')}`
-  );
-  console.log(`  ${dim('the /command in Claude Code to trigger the skill.')}`);
-  console.log();
 }
 
 // ============================================================================
@@ -886,9 +806,6 @@ export async function runSkillsMenu(): Promise<void> {
     return;
   }
 
-  // Get all skills metadata for descriptions
-  const allSkillsMetadata = getAllSkillsMetadata();
-
   // Skills menu loop - allows going back from install
   let inSkillsMenu = true;
   while (inSkillsMenu) {
@@ -906,11 +823,6 @@ export async function runSkillsMenu(): Promise<void> {
     switch (choice) {
       case 'manage':
         await manageInstalledSkills();
-        break;
-
-      case 'view-all':
-        showAllSkills(allSkillsMetadata, info);
-        await pressEnterToContinue();
         break;
 
       case 'marketplace':
@@ -932,6 +844,107 @@ export async function runSkillsMenu(): Promise<void> {
         showSkillsStatus(info);
         await pressEnterToContinue();
         break;
+
+      case 'change-path': {
+        const defaultPath = getDefaultSkillsDestDir();
+
+        console.log();
+        console.log(c('blue', '━'.repeat(66)));
+        console.log(`  📁 ${bold('Skills Installation Path')}`);
+        console.log(c('blue', '━'.repeat(66)));
+        console.log();
+        console.log(`  ${dim(`Leave empty to use default: ${defaultPath}`)}`);
+        console.log();
+
+        const newPath = await input({
+          message: '  Skills path:',
+          default: info.destDir,
+          validate: (value: string) => {
+            const trimmed = value.trim();
+            // Empty is allowed - means reset to default
+            if (!trimmed) {
+              return true;
+            }
+            // Expand ~ to home directory
+            const expanded = trimmed.startsWith('~')
+              ? trimmed.replace('~', process.env.HOME || '')
+              : trimmed;
+            // Check if it's an absolute path
+            if (!path.isAbsolute(expanded)) {
+              return 'Enter an absolute path (e.g., ~/.claude/skills)';
+            }
+            return true;
+          },
+        });
+
+        const trimmedPath = newPath.trim();
+
+        // If empty, reset to default
+        if (!trimmedPath) {
+          setCustomSkillsDestDir(null);
+          console.log();
+          console.log(`  ${c('green', '✓')} Skills path reset to default:`);
+          console.log(`  ${c('cyan', defaultPath)}`);
+          console.log();
+          await pressEnterToContinue();
+          break;
+        }
+
+        // Expand ~ and normalize path
+        const expandedPath = trimmedPath.startsWith('~')
+          ? trimmedPath.replace('~', process.env.HOME || '')
+          : trimmedPath;
+        const normalizedPath = path.resolve(expandedPath);
+
+        // If same as current, no change needed
+        if (normalizedPath === info.destDir) {
+          console.log();
+          console.log(`  ${dim('No change - path is already set.')}`);
+          console.log();
+          await pressEnterToContinue();
+          break;
+        }
+
+        // Create directory if it doesn't exist
+        if (!dirExists(normalizedPath)) {
+          const { mkdirSync } = await import('node:fs');
+          try {
+            mkdirSync(normalizedPath, { recursive: true });
+            console.log();
+            console.log(
+              `  ${c('green', '✓')} Created directory: ${c('cyan', normalizedPath)}`
+            );
+          } catch (error) {
+            console.log();
+            const errMsg =
+              error instanceof Error ? error.message : String(error);
+            console.log(`  ${c('red', '✗')} Failed to create directory:`);
+            console.log(`  ${dim(errMsg)}`);
+            await pressEnterToContinue();
+            break;
+          }
+        }
+
+        // Save the custom path (or reset if it's the default)
+        if (normalizedPath === defaultPath) {
+          setCustomSkillsDestDir(null);
+        } else {
+          setCustomSkillsDestDir(normalizedPath);
+        }
+        console.log();
+        console.log(`  ${c('green', '✓')} Skills path updated to:`);
+        console.log(`  ${c('cyan', normalizedPath)}`);
+        console.log();
+        console.log(
+          `  ${dim('Note: Existing skills are not moved automatically.')}`
+        );
+        console.log(
+          `  ${dim('You may need to reinstall skills to the new location.')}`
+        );
+        console.log();
+        await pressEnterToContinue();
+        break;
+      }
 
       case 'back':
       default:

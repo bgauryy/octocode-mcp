@@ -16,13 +16,32 @@ import {
   getAuthStatus,
   getStoragePath,
   getToken,
+  getOctocodeToken,
+  getGhCliToken,
   type VerificationInfo,
 } from '../features/github-oauth.js';
+import { GH_CLI_URL } from '../features/gh-auth.js';
 import type { TokenSource } from '../types/index.js';
 import { loadInquirer, select } from '../utils/prompts.js';
 import { checkNodeInPath, checkNpmInPath } from '../features/node-check.js';
-import { IDE_INFO, INSTALL_METHOD_INFO } from '../ui/constants.js';
+import { IDE_INFO, CLIENT_INFO, INSTALL_METHOD_INFO } from '../ui/constants.js';
 import { Spinner } from '../utils/spinner.js';
+
+/**
+ * Get display name for an IDE/client
+ */
+function getIDEDisplayName(ide: string): string {
+  // Check CLIENT_INFO first (comprehensive)
+  if (ide in CLIENT_INFO) {
+    return CLIENT_INFO[ide as keyof typeof CLIENT_INFO].name;
+  }
+  // Fallback to IDE_INFO (legacy)
+  if (ide in IDE_INFO) {
+    return IDE_INFO[ide as keyof typeof IDE_INFO].name;
+  }
+  // Capitalize as fallback
+  return ide.charAt(0).toUpperCase() + ide.slice(1);
+}
 import { copyDirectory, dirExists, listSubdirectories } from '../utils/fs.js';
 import { getSkillsSourceDir, getSkillsDestDir } from '../utils/skills.js';
 import { quickSync } from '../ui/sync/index.js';
@@ -32,28 +51,6 @@ import {
   getClientDisplayName,
 } from '../features/sync.js';
 import path from 'node:path';
-import {
-  runAgentFlow,
-  quickAgentRun,
-  type AgentMode,
-} from '../ui/agent/index.js';
-import {
-  discoverAPIKey,
-  isClaudeCodeAuthenticated,
-  getClaudeCodeSubscriptionInfo,
-} from '../features/api-keys.js';
-import {
-  getProviderStatuses,
-  getConfiguredProviders,
-  parseModelId,
-  type ModelId,
-} from '../features/providers/index.js';
-import {
-  getSessionManager,
-  formatSessionForDisplay,
-} from '../features/session-manager.js';
-import { getSessionStore } from '../features/session-store.js';
-import { closeDatabase } from '../db/index.js';
 
 type GetTokenSource = 'octocode' | 'gh' | 'auto';
 
@@ -76,6 +73,8 @@ function formatTokenSource(source: TokenSource): string {
       return c('cyan', 'octocode');
     case 'gh-cli':
       return c('magenta', 'gh cli');
+    case 'env':
+      return c('green', 'GITHUB_TOKEN');
     default:
       return dim('none');
   }
@@ -88,7 +87,7 @@ const installCommand: CLICommand = {
   name: 'install',
   aliases: ['i'],
   description: 'Install octocode-mcp for an IDE',
-  usage: 'octocode-cli install --ide <cursor|claude> --method <npx|direct>',
+  usage: 'octocode install --ide <cursor|claude> --method <npx|direct>',
   options: [
     {
       name: 'ide',
@@ -173,10 +172,22 @@ const installCommand: CLICommand = {
       return;
     }
 
-    if (!['cursor', 'claude'].includes(ide)) {
+    // Supported IDEs: legacy (cursor, claude) + all MCPClient types
+    const supportedIDEs = [
+      'cursor',
+      'claude', // Legacy alias for claude-desktop
+      'claude-desktop',
+      'claude-code',
+      'windsurf',
+      'zed',
+      'vscode-cline',
+      'vscode-roo',
+      'vscode-continue',
+    ];
+    if (!supportedIDEs.includes(ide)) {
       console.log();
       console.log(`  ${c('red', '✗')} Invalid IDE: ${ide}`);
-      console.log(`  ${dim('Supported:')} cursor, claude`);
+      console.log(`  ${dim('Supported:')} ${supportedIDEs.join(', ')}`);
       console.log();
       process.exitCode = 1;
       return;
@@ -210,7 +221,7 @@ const installCommand: CLICommand = {
     // Install
     console.log();
     console.log(`  ${bold('Installing octocode-mcp')}`);
-    console.log(`    ${dim('IDE:')}    ${IDE_INFO[ide].name}`);
+    console.log(`    ${dim('IDE:')}    ${getIDEDisplayName(ide)}`);
     console.log(`    ${dim('Method:')} ${INSTALL_METHOD_INFO[method].name}`);
     console.log(`    ${dim('Action:')} ${preview.action.toUpperCase()}`);
     console.log();
@@ -230,7 +241,7 @@ const installCommand: CLICommand = {
       }
       console.log();
       console.log(
-        `  ${bold('Next:')} Restart ${IDE_INFO[ide].name} to activate.`
+        `  ${bold('Next:')} Restart ${getIDEDisplayName(ide)} to activate.`
       );
       console.log();
     } else {
@@ -252,11 +263,11 @@ const loginCommand: CLICommand = {
   name: 'login',
   aliases: ['l'],
   description: 'Authenticate with GitHub',
-  usage: 'octocode-cli login [--hostname <host>] [--git-protocol <ssh|https>]',
+  usage: 'octocode login [--hostname <host>] [--git-protocol <ssh|https>]',
   options: [
     {
       name: 'hostname',
-      short: 'h',
+      short: 'H',
       description: 'GitHub Enterprise hostname (default: github.com)',
       hasValue: true,
     },
@@ -268,8 +279,10 @@ const loginCommand: CLICommand = {
     },
   ],
   handler: async (args: ParsedArgs) => {
+    const hostnameOpt = args.options['hostname'] ?? args.options['H'];
     const hostname =
-      (args.options['hostname'] as string | undefined) || 'github.com';
+      (typeof hostnameOpt === 'string' ? hostnameOpt : undefined) ||
+      'github.com';
     const status = getAuthStatus(hostname);
 
     if (status.authenticated) {
@@ -288,8 +301,10 @@ const loginCommand: CLICommand = {
     console.log(`  ${bold('🔐 GitHub Authentication')}`);
     console.log();
 
-    const gitProtocol =
-      (args.options['git-protocol'] as 'ssh' | 'https') || 'https';
+    const gitProtocolOpt = args.options['git-protocol'];
+    const gitProtocol = (
+      typeof gitProtocolOpt === 'string' ? gitProtocolOpt : 'https'
+    ) as 'ssh' | 'https';
 
     // Show verification code and open browser
     let verificationShown = false;
@@ -343,18 +358,20 @@ const loginCommand: CLICommand = {
 const logoutCommand: CLICommand = {
   name: 'logout',
   description: 'Sign out from GitHub',
-  usage: 'octocode-cli logout [--hostname <host>]',
+  usage: 'octocode logout [--hostname <host>]',
   options: [
     {
       name: 'hostname',
-      short: 'h',
+      short: 'H',
       description: 'GitHub Enterprise hostname',
       hasValue: true,
     },
   ],
   handler: async (args: ParsedArgs) => {
+    const hostnameOpt = args.options['hostname'] ?? args.options['H'];
     const hostname =
-      (args.options['hostname'] as string | undefined) || 'github.com';
+      (typeof hostnameOpt === 'string' ? hostnameOpt : undefined) ||
+      'github.com';
     const status = getAuthStatus(hostname);
 
     if (!status.authenticated) {
@@ -364,7 +381,7 @@ const logoutCommand: CLICommand = {
       );
       console.log();
       console.log(`  ${dim('To login:')}`);
-      console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode-cli login')}`);
+      console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode login')}`);
       console.log();
       return;
     }
@@ -399,9 +416,11 @@ const authCommand: CLICommand = {
   name: 'auth',
   aliases: ['a', 'gh'],
   description: 'Manage GitHub authentication',
-  usage: 'octocode-cli auth [login|logout|status]',
+  usage: 'octocode auth [login|logout|status|token]',
   handler: async (args: ParsedArgs) => {
     const subcommand = args.args[0];
+    const hostname =
+      (args.options['hostname'] as string | undefined) || 'github.com';
 
     // Handle subcommands
     if (subcommand === 'login') {
@@ -412,6 +431,43 @@ const authCommand: CLICommand = {
     }
     if (subcommand === 'status') {
       return showAuthStatus();
+    }
+    if (subcommand === 'token') {
+      // Priority: octocode first, then gh CLI (for auth token subcommand)
+      const octocodeResult = await getOctocodeToken(hostname);
+      if (octocodeResult.token) {
+        console.log(octocodeResult.token);
+        return;
+      }
+
+      // Fallback to gh CLI
+      const ghResult = getGhCliToken(hostname);
+      if (ghResult.token) {
+        console.log(ghResult.token);
+        return;
+      }
+
+      // No token found - show helpful guidance
+      console.log();
+      console.log(`  ${c('yellow', '⚠')} No GitHub token found.`);
+      console.log();
+      console.log(
+        `  ${dim('GitHub authentication is required to access private repositories.')}`
+      );
+      console.log();
+      console.log(`  ${bold('To authenticate, choose one of:')}`);
+      console.log();
+      console.log(
+        `    ${c('cyan', 'octocode auth login')}    ${dim('Recommended - stores token securely')}`
+      );
+      console.log(
+        `    ${c('cyan', 'gh auth login')}              ${dim('Use existing GitHub CLI')}`
+      );
+      console.log();
+      console.log(`  ${dim('Learn more:')} ${c('blue', GH_CLI_URL)}`);
+      console.log();
+      process.exitCode = 1;
+      return;
     }
 
     const status = getAuthStatus();
@@ -487,7 +543,7 @@ async function showAuthStatus(hostname: string = 'github.com'): Promise<void> {
     console.log(`  ${c('yellow', '⚠')} ${c('yellow', 'Not authenticated')}`);
     console.log();
     console.log(`  ${bold('To authenticate:')}`);
-    console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode-cli login')}`);
+    console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode login')}`);
     console.log(`    ${dim('or')}`);
     console.log(`    ${c('cyan', '→')} ${c('yellow', 'gh auth login')}`);
   }
@@ -503,7 +559,7 @@ const skillsCommand: CLICommand = {
   name: 'skills',
   aliases: ['sk'],
   description: 'Install Octocode skills for Claude Code',
-  usage: 'octocode-cli skills [install|list]',
+  usage: 'octocode skills [install|list]',
   options: [
     {
       name: 'force',
@@ -623,21 +679,21 @@ const skillsCommand: CLICommand = {
 const tokenCommand: CLICommand = {
   name: 'token',
   aliases: ['t'],
-  description: 'Print the stored GitHub OAuth token',
+  description: 'Print the GitHub token (matches octocode-mcp priority)',
   usage:
-    'octocode-cli token [--type <octocode|gh|auto>] [--hostname <host>] [--source]',
+    'octocode token [--type <auto|octocode|gh>] [--hostname <host>] [--source]',
   options: [
     {
       name: 'type',
       short: 't',
       description:
-        'Token source: octocode (default), gh (gh CLI), auto (try both)',
+        'Token source: auto (default: env→gh→octocode), octocode, gh',
       hasValue: true,
-      default: 'octocode',
+      default: 'auto',
     },
     {
       name: 'hostname',
-      short: 'h',
+      short: 'H',
       description: 'GitHub Enterprise hostname (default: github.com)',
       hasValue: true,
     },
@@ -648,10 +704,14 @@ const tokenCommand: CLICommand = {
     },
   ],
   handler: async (args: ParsedArgs) => {
+    const hostnameOpt = args.options['hostname'] ?? args.options['H'];
     const hostname =
-      (args.options['hostname'] as string | undefined) || 'github.com';
+      (typeof hostnameOpt === 'string' ? hostnameOpt : undefined) ||
+      'github.com';
     const showSource = Boolean(args.options['source'] || args.options['s']);
-    const typeArg = (args.options['type'] as string | undefined) || 'octocode';
+    const typeOpt = args.options['type'] ?? args.options['t'];
+    const typeArg =
+      (typeof typeOpt === 'string' ? typeOpt : undefined) || 'auto';
 
     // Validate and map type argument
     let tokenSource: GetTokenSource;
@@ -684,17 +744,15 @@ const tokenCommand: CLICommand = {
       console.log();
       if (tokenSource === 'octocode') {
         console.log(
-          `  ${c('yellow', '⚠')} No octocode token found for ${hostname}`
+          `  ${c('yellow', '⚠')} No Octocode token found for ${hostname}`
         );
         console.log();
-        console.log(`  ${dim('To login with octocode-cli:')}`);
-        console.log(
-          `    ${c('cyan', '→')} ${c('yellow', 'octocode-cli login')}`
-        );
+        console.log(`  ${dim('To login with Octocode:')}`);
+        console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode login')}`);
         console.log();
         console.log(`  ${dim('Or use gh CLI token:')}`);
         console.log(
-          `    ${c('cyan', '→')} ${c('yellow', 'octocode-cli token --type=gh')}`
+          `    ${c('cyan', '→')} ${c('yellow', 'octocode token --type=gh')}`
         );
       } else if (tokenSource === 'gh') {
         console.log(
@@ -704,17 +762,15 @@ const tokenCommand: CLICommand = {
         console.log(`  ${dim('To login with gh CLI:')}`);
         console.log(`    ${c('cyan', '→')} ${c('yellow', 'gh auth login')}`);
         console.log();
-        console.log(`  ${dim('Or use octocode token:')}`);
+        console.log(`  ${dim('Or use Octocode token:')}`);
         console.log(
-          `    ${c('cyan', '→')} ${c('yellow', 'octocode-cli token --type=octocode')}`
+          `    ${c('cyan', '→')} ${c('yellow', 'octocode token --type=octocode')}`
         );
       } else {
         console.log(`  ${c('yellow', '⚠')} Not authenticated to ${hostname}`);
         console.log();
         console.log(`  ${dim('To login:')}`);
-        console.log(
-          `    ${c('cyan', '→')} ${c('yellow', 'octocode-cli login')}`
-        );
+        console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode login')}`);
         console.log(`    ${dim('or')}`);
         console.log(`    ${c('cyan', '→')} ${c('yellow', 'gh auth login')}`);
       }
@@ -747,18 +803,20 @@ const statusCommand: CLICommand = {
   name: 'status',
   aliases: ['s'],
   description: 'Show GitHub authentication status',
-  usage: 'octocode-cli status [--hostname <host>]',
+  usage: 'octocode status [--hostname <host>]',
   options: [
     {
       name: 'hostname',
-      short: 'h',
+      short: 'H',
       description: 'GitHub Enterprise hostname (default: github.com)',
       hasValue: true,
     },
   ],
   handler: async (args: ParsedArgs) => {
+    const hostnameOpt = args.options['hostname'] ?? args.options['H'];
     const hostname =
-      (args.options['hostname'] as string | undefined) || 'github.com';
+      (typeof hostnameOpt === 'string' ? hostnameOpt : undefined) ||
+      'github.com';
     const status = getAuthStatus(hostname);
 
     console.log();
@@ -779,7 +837,7 @@ const statusCommand: CLICommand = {
       console.log(`  ${c('yellow', '⚠')} Not logged in`);
       console.log();
       console.log(`  ${dim('To login:')}`);
-      console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode-cli login')}`);
+      console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode login')}`);
       console.log(`    ${dim('or')}`);
       console.log(`    ${c('cyan', '→')} ${c('yellow', 'gh auth login')}`);
     }
@@ -794,7 +852,7 @@ const syncCommand: CLICommand = {
   name: 'sync',
   aliases: ['sy'],
   description: 'Sync MCP configurations across all IDE clients',
-  usage: 'octocode-cli sync [--force] [--dry-run] [--status]',
+  usage: 'octocode sync [--force] [--dry-run] [--status]',
   options: [
     {
       name: 'force',
@@ -928,631 +986,6 @@ const syncCommand: CLICommand = {
 };
 
 /**
- * Agent command - run AI agent with Octocode tools
- */
-const agentCommand: CLICommand = {
-  name: 'agent',
-  aliases: ['ag', 'ai'],
-  description: 'Run an AI agent with Octocode tools',
-  usage:
-    'octocode-cli agent [task] [--mode <mode>] [--model <provider:model>] [--think] [--persist] [--resume <id>]',
-  options: [
-    {
-      name: 'mode',
-      short: 'm',
-      description: 'Agent mode: research, coding, full, planning, custom',
-      hasValue: true,
-      default: 'research',
-    },
-    {
-      name: 'model',
-      description:
-        'Model to use: provider:model (e.g., anthropic:claude-4-sonnet, openai:gpt-4o)',
-      hasValue: true,
-    },
-    {
-      name: 'think',
-      short: 't',
-      description: 'Enable extended thinking (ultrathink)',
-    },
-    {
-      name: 'verbose',
-      short: 'v',
-      description: 'Enable verbose output',
-    },
-    {
-      name: 'status',
-      short: 's',
-      description: 'Show agent readiness status',
-    },
-    {
-      name: 'interactive',
-      short: 'i',
-      description: 'Run in interactive mode',
-    },
-    {
-      name: 'persist',
-      short: 'p',
-      description: 'Persist session for later resume',
-    },
-    {
-      name: 'resume',
-      short: 'r',
-      description: 'Resume a previous session by ID',
-      hasValue: true,
-    },
-  ],
-  handler: async (args: ParsedArgs) => {
-    const showStatus = Boolean(args.options['status'] || args.options['s']);
-    const interactive = Boolean(
-      args.options['interactive'] || args.options['i']
-    );
-
-    // Handle "agent status" as a subcommand
-    const firstArg = args.args[0]?.toLowerCase();
-    if (firstArg === 'status') {
-      await showAgentStatus();
-      return;
-    }
-
-    const task = args.args.join(' ');
-
-    // Status mode (via --status flag)
-    if (showStatus) {
-      await showAgentStatus();
-      return;
-    }
-
-    // Interactive mode
-    if (interactive || !task) {
-      await runAgentFlow();
-      return;
-    }
-
-    // Quick mode with task
-    const mode = (args.options['mode'] as AgentMode) || 'research';
-    const modelArg = args.options['model'] as string | undefined;
-    const enableThinking = Boolean(args.options['think'] || args.options['t']);
-    const verbose = Boolean(args.options['verbose'] || args.options['v']);
-
-    // Validate mode
-    const validModes = ['research', 'coding', 'full', 'planning', 'custom'];
-    if (!validModes.includes(mode)) {
-      console.log();
-      console.log(`  ${c('red', '✗')} Invalid mode: ${mode}`);
-      console.log(`  ${dim('Valid modes:')} ${validModes.join(', ')}`);
-      console.log();
-      process.exitCode = 1;
-      return;
-    }
-
-    // Parse and validate model
-    let model: ModelId | 'opus' | 'sonnet' | 'haiku' | undefined;
-    if (modelArg) {
-      // Support legacy format (opus, sonnet, haiku)
-      if (['opus', 'sonnet', 'haiku'].includes(modelArg)) {
-        model = modelArg as 'opus' | 'sonnet' | 'haiku';
-      } else {
-        // New format: provider:model
-        const parsed = parseModelId(modelArg);
-        if (!parsed) {
-          console.log();
-          console.log(`  ${c('red', '✗')} Invalid model format: ${modelArg}`);
-          console.log(
-            `  ${dim('Expected format:')} provider:model (e.g., anthropic:claude-4-sonnet)`
-          );
-          console.log();
-          console.log(`  ${dim('Available providers:')}`);
-          const configured = getConfiguredProviders();
-          if (configured.length > 0) {
-            for (const p of configured) {
-              console.log(`    ${c('green', '●')} ${p}`);
-            }
-          } else {
-            console.log(
-              `    ${c('yellow', '○')} No providers configured. Set API keys first.`
-            );
-          }
-          console.log();
-          console.log(`  ${dim('Examples:')}`);
-          console.log(`    ${c('cyan', 'anthropic:claude-4-sonnet')}`);
-          console.log(`    ${c('cyan', 'openai:gpt-4o')}`);
-          console.log(`    ${c('cyan', 'google:gemini-2.0-flash')}`);
-          console.log(`    ${c('cyan', 'groq:llama-3.3-70b')}`);
-          console.log();
-          process.exitCode = 1;
-          return;
-        }
-        model = modelArg as ModelId;
-      }
-    }
-
-    // Session options
-    const persistSession = Boolean(
-      args.options['persist'] || args.options['p']
-    );
-    const resumeSession = args.options['resume'] as string | undefined;
-
-    await quickAgentRun(task, {
-      mode,
-      model,
-      enableThinking,
-      verbose,
-      persistSession,
-      resumeSession,
-    });
-  },
-};
-
-/**
- * Show agent status
- */
-async function showAgentStatus(): Promise<void> {
-  console.log();
-  console.log(`  ${bold('🤖 Agent Status')}`);
-  console.log();
-
-  // Show configured providers
-  console.log(`  ${bold('AI Providers:')}`);
-  const providerStatuses = getProviderStatuses();
-  const configured = providerStatuses.filter(s => s.configured);
-  const notConfigured = providerStatuses.filter(s => !s.configured);
-
-  if (configured.length > 0) {
-    for (const status of configured) {
-      console.log(
-        `    ${c('green', '●')} ${status.displayName} ${dim(`(${status.envVar})`)}`
-      );
-    }
-  }
-
-  if (notConfigured.length > 0 && configured.length < 3) {
-    for (const status of notConfigured.slice(0, 3 - configured.length)) {
-      console.log(
-        `    ${c('dim', '○')} ${status.displayName} ${dim('Not configured')}`
-      );
-    }
-  }
-
-  console.log();
-
-  // Check Claude Code authentication (for legacy SDK mode)
-  console.log(`  ${bold('Legacy (Claude Agent SDK):')}`);
-  const claudeCodeAuth = isClaudeCodeAuthenticated();
-  if (claudeCodeAuth) {
-    const info = getClaudeCodeSubscriptionInfo();
-    console.log(`    ${c('green', '✓')} Claude Code authenticated`);
-    if (info.subscriptionType) {
-      console.log(`      ${dim('Plan:')} ${info.subscriptionType}`);
-    }
-  } else {
-    console.log(`    ${c('dim', '○')} Claude Code not authenticated`);
-  }
-
-  // Check SDK
-  let sdkInstalled = false;
-  try {
-    await import('@anthropic-ai/claude-agent-sdk');
-    sdkInstalled = true;
-    console.log(`    ${c('green', '✓')} Claude Agent SDK installed`);
-  } catch {
-    console.log(`    ${c('dim', '○')} Claude Agent SDK not installed`);
-  }
-
-  console.log();
-
-  // Overall status - now supports multi-provider
-  const hasAnyProvider = configured.length > 0;
-  const anthropicKey = await discoverAPIKey('anthropic');
-  const hasLegacyAuth =
-    sdkInstalled && (claudeCodeAuth || anthropicKey.key !== null);
-  const ready = hasAnyProvider || hasLegacyAuth;
-
-  if (ready) {
-    console.log(`  ${c('green', '●')} Agent is ready to use`);
-    console.log();
-    console.log(`  ${bold('Usage:')}`);
-    console.log(`    ${c('cyan', '→')} octocode agent "your task here"`);
-    console.log(`    ${c('cyan', '→')} octocode agent --interactive`);
-    if (configured.length > 1) {
-      console.log();
-      console.log(`  ${bold('Model selection:')}`);
-      console.log(
-        `    ${c('cyan', '→')} octocode agent --model anthropic:claude-4-sonnet "task"`
-      );
-      console.log(
-        `    ${c('cyan', '→')} octocode agent --model openai:gpt-4o "task"`
-      );
-    }
-  } else {
-    console.log(`  ${c('red', '●')} Agent is not ready`);
-    console.log();
-    console.log(`  ${bold('To configure a provider, set an API key:')}`);
-    console.log(`    ${c('cyan', '→')} export ANTHROPIC_API_KEY="your-key"`);
-    console.log(`    ${c('cyan', '→')} export OPENAI_API_KEY="your-key"`);
-    console.log(`    ${c('cyan', '→')} export GEMINI_API_KEY="your-key"`);
-  }
-  console.log();
-}
-
-/**
- * Sessions command - list and manage agent sessions
- */
-const sessionsCommand: CLICommand = {
-  name: 'sessions',
-  aliases: ['sess'],
-  description: 'List and manage agent sessions',
-  usage: 'octocode-cli sessions [list|resume <id>|delete <id>|clear]',
-  options: [
-    {
-      name: 'delete',
-      short: 'd',
-      description: 'Delete a session by ID',
-      hasValue: true,
-    },
-    {
-      name: 'resume',
-      short: 'r',
-      description: 'Resume a session by ID',
-      hasValue: true,
-    },
-    {
-      name: 'limit',
-      short: 'l',
-      description: 'Number of sessions to show',
-      hasValue: true,
-    },
-    {
-      name: 'mode',
-      short: 'm',
-      description: 'Filter by mode',
-      hasValue: true,
-    },
-    {
-      name: 'search',
-      short: 's',
-      description: 'Search in prompts',
-      hasValue: true,
-    },
-    {
-      name: 'clear',
-      description: 'Clear all sessions',
-    },
-    {
-      name: 'json',
-      short: 'j',
-      description: 'Output as JSON',
-    },
-    {
-      name: 'sqlite',
-      description: 'Use new SQLite store (default)',
-    },
-    {
-      name: 'legacy',
-      description: 'Use legacy JSON store',
-    },
-  ],
-  handler: async (args: ParsedArgs) => {
-    const subcommand = args.args[0];
-    const useLegacy = Boolean(args.options['legacy']);
-    const jsonOutput = Boolean(args.options['json'] || args.options['j']);
-
-    // Use legacy JSON store if requested
-    if (useLegacy) {
-      const sessionManager = getSessionManager();
-      const deleteId =
-        args.args[0] === 'delete'
-          ? args.args[1]
-          : (args.options['delete'] as string | undefined);
-      const clearAll = Boolean(args.options['clear']) || subcommand === 'clear';
-
-      if (clearAll) {
-        const sessions = await sessionManager.listSessions();
-        if (sessions.length === 0) {
-          console.log(`  ${c('yellow', '⚠')} No legacy sessions to clear`);
-          return;
-        }
-
-        await loadInquirer();
-        const confirm = await select({
-          message: `Delete ${sessions.length} legacy session(s)?`,
-          choices: [
-            { name: 'No, cancel', value: false },
-            { name: 'Yes, delete all', value: true },
-          ],
-        });
-
-        if (confirm) {
-          const deleted = await sessionManager.clearAllSessions();
-          console.log(
-            `  ${c('green', '✓')} Deleted ${deleted} legacy session(s)`
-          );
-        }
-        return;
-      }
-
-      if (deleteId) {
-        const success = await sessionManager.deleteSession(deleteId);
-        if (success) {
-          console.log(
-            `  ${c('green', '✓')} Deleted legacy session: ${deleteId}`
-          );
-        } else {
-          console.log(
-            `  ${c('red', '✗')} Legacy session not found: ${deleteId}`
-          );
-        }
-        return;
-      }
-
-      const sessions = await sessionManager.listSessions();
-      if (jsonOutput) {
-        console.log(JSON.stringify(sessions, null, 2));
-        return;
-      }
-
-      console.log();
-      console.log(`  ${bold('📋 Legacy Sessions (JSON)')}`);
-      console.log();
-
-      if (sessions.length === 0) {
-        console.log(`  ${dim('No legacy sessions.')}`);
-        console.log();
-        return;
-      }
-
-      for (const session of sessions) {
-        const display = formatSessionForDisplay(session);
-        const statusIcon =
-          session.status === 'completed'
-            ? c('green', '✓')
-            : session.status === 'error'
-              ? c('red', '✗')
-              : c('yellow', '○');
-        console.log(
-          `  ${statusIcon} ${c('cyan', display.id)} ${dim(display.date)}`
-        );
-        console.log(`    ${display.preview}`);
-        console.log();
-      }
-      return;
-    }
-
-    // Use new SQLite store
-    const store = getSessionStore();
-    const deleteId =
-      subcommand === 'delete'
-        ? args.args[1]
-        : (args.options['delete'] as string | undefined);
-    const resumeId =
-      subcommand === 'resume'
-        ? args.args[1]
-        : (args.options['resume'] as string | undefined);
-    const clearAll = Boolean(args.options['clear']) || subcommand === 'clear';
-
-    // Resume session
-    if (resumeId) {
-      const session = await store.getSession(resumeId);
-      if (!session) {
-        // Try to find by partial ID
-        const sessions = await store.listSessions({ limit: 100 });
-        const match = sessions.find(s => s.id.startsWith(resumeId));
-        if (!match) {
-          console.log(`  ${c('red', '✗')} Session not found: ${resumeId}`);
-          process.exitCode = 1;
-          closeDatabase();
-          return;
-        }
-        // Found a match, launch chat with resume
-        closeDatabase();
-        const { runChat } = await import('../ui/chat/runChat.js');
-        await runChat({ resumeSessionId: match.id });
-        return;
-      }
-
-      closeDatabase();
-      const { runChat } = await import('../ui/chat/runChat.js');
-      await runChat({ resumeSessionId: session.id });
-      return;
-    }
-
-    // Clear all sessions
-    if (clearAll) {
-      const sessions = await store.listSessions();
-      if (sessions.length === 0) {
-        console.log();
-        console.log(`  ${c('yellow', '⚠')} No sessions to clear`);
-        console.log();
-        closeDatabase();
-        return;
-      }
-
-      if (!jsonOutput) {
-        console.log();
-        console.log(
-          `  ${c('yellow', '⚠')} This will delete ${sessions.length} session(s)`
-        );
-        console.log();
-      }
-
-      await loadInquirer();
-      const confirm = await select({
-        message: 'Are you sure?',
-        choices: [
-          { name: 'No, cancel', value: false },
-          { name: 'Yes, delete all', value: true },
-        ],
-      });
-
-      if (!confirm) {
-        console.log();
-        console.log(`  ${dim('Cancelled')}`);
-        console.log();
-        closeDatabase();
-        return;
-      }
-
-      const deleted = await store.clearAllSessions();
-      if (jsonOutput) {
-        console.log(JSON.stringify({ deleted }));
-      } else {
-        console.log();
-        console.log(`  ${c('green', '✓')} Deleted ${deleted} session(s)`);
-        console.log();
-      }
-      closeDatabase();
-      return;
-    }
-
-    // Delete specific session
-    if (deleteId) {
-      const success = await store.deleteSession(deleteId);
-      if (jsonOutput) {
-        console.log(JSON.stringify({ deleted: success, id: deleteId }));
-      } else if (success) {
-        console.log();
-        console.log(`  ${c('green', '✓')} Deleted session: ${deleteId}`);
-        console.log();
-      } else {
-        console.log();
-        console.log(`  ${c('red', '✗')} Session not found: ${deleteId}`);
-        console.log();
-        process.exitCode = 1;
-      }
-      closeDatabase();
-      return;
-    }
-
-    // List sessions (default)
-    const limit = parseInt(args.options['limit'] as string) || 20;
-    const mode = args.options['mode'] as string | undefined;
-    const search = args.options['search'] as string | undefined;
-
-    const sessions = await store.listSessions({ limit, mode, search });
-
-    if (jsonOutput) {
-      console.log(JSON.stringify(sessions, null, 2));
-      closeDatabase();
-      return;
-    }
-
-    console.log();
-    console.log(`  ${bold('📋 Chat Sessions')}`);
-    console.log();
-
-    if (sessions.length === 0) {
-      console.log(`  ${dim('No saved sessions.')}`);
-      console.log();
-      console.log(`  ${dim('Start a chat to create a session:')}`);
-      console.log(`    ${c('cyan', '→')} octocode chat`);
-      console.log();
-      closeDatabase();
-      return;
-    }
-
-    // Display sessions in a table-like format
-    for (const session of sessions) {
-      const date = session.updatedAt
-        ? new Date(session.updatedAt).toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          })
-        : '';
-      const totalTokens =
-        (session.totalInputTokens ?? 0) + (session.totalOutputTokens ?? 0);
-      const tokens = totalTokens > 0 ? totalTokens.toLocaleString() : '-';
-      const statusIcon =
-        session.status === 'completed'
-          ? c('green', '✓')
-          : session.status === 'error'
-            ? c('red', '✗')
-            : c('yellow', '○');
-      const shortId = session.id.slice(0, 8);
-      const title =
-        session.title || session.promptPreview || session.prompt.slice(0, 50);
-      const msgCount = session.messageCount ?? 0;
-
-      const header = `${statusIcon} ${c('cyan', shortId)} ${dim(date)}`;
-      console.log(`  ${header}`);
-      const meta = `${dim('Mode:')} ${session.mode}  ${dim('Msgs:')} ${msgCount}  ${dim('Tokens:')} ${tokens}`;
-      console.log(`    ${meta}`);
-      console.log(`    ${title}`);
-      console.log();
-    }
-
-    console.log(`  ${dim('Showing:')} ${sessions.length} session(s)`);
-    console.log();
-    console.log(`  ${dim('To resume:')} octocode sessions resume <id>`);
-    console.log(`  ${dim('To delete:')} octocode sessions --delete <id>`);
-    console.log();
-
-    closeDatabase();
-  },
-};
-
-/**
- * Chat command - Interactive chat interface using Ink
- */
-const chatCommand: CLICommand = {
-  name: 'chat',
-  aliases: ['c'],
-  description: 'Start an interactive chat session with Octocode',
-  usage: 'octocode-cli chat [--model <provider:model>] [--resume <id>]',
-  options: [
-    {
-      name: 'model',
-      description:
-        'Model to use: provider:model (e.g., anthropic:claude-4-sonnet)',
-      hasValue: true,
-    },
-    {
-      name: 'resume',
-      short: 'r',
-      description: 'Resume a previous session by ID',
-      hasValue: true,
-    },
-    {
-      name: 'no-persist',
-      description: 'Disable session persistence',
-    },
-    {
-      name: 'verbose',
-      short: 'v',
-      description: 'Enable verbose output',
-    },
-  ],
-  handler: async (args: ParsedArgs) => {
-    const modelArg = args.options['model'] as string | undefined;
-    const resumeSessionId = args.options['resume'] as string | undefined;
-    const persistSession = !args.options['no-persist'];
-    const verbose = Boolean(args.options['verbose'] || args.options['v']);
-
-    // Parse model if provided
-    let model: ModelId | undefined;
-    if (modelArg) {
-      const parsed = parseModelId(modelArg);
-      if (!parsed) {
-        console.log();
-        console.log(`  ${c('red', '✗')} Invalid model format: ${modelArg}`);
-        console.log(
-          `  ${dim('Expected format:')} provider:model (e.g., anthropic:claude-4-sonnet)`
-        );
-        console.log();
-        process.exitCode = 1;
-        return;
-      }
-      model = modelArg as ModelId;
-    }
-
-    // Dynamic import to avoid loading React/Ink unless needed
-    const { runChat } = await import('../ui/chat/runChat.js');
-    await runChat({ model, verbose, resumeSessionId, persistSession });
-  },
-};
-
-/**
  * All available commands
  */
 export const commands: CLICommand[] = [
@@ -1564,9 +997,7 @@ export const commands: CLICommand[] = [
   tokenCommand,
   statusCommand,
   syncCommand,
-  agentCommand,
-  chatCommand,
-  sessionsCommand,
+  // chatCommand - Disabled: AI Provider Settings have been removed
 ];
 
 /**

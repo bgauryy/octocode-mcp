@@ -389,6 +389,10 @@ export async function runMarketplaceFlow(): Promise<void> {
   console.log(c('blue', '━'.repeat(66)));
   console.log();
   console.log(`  ${dim('Browse and install skills from the community')}`);
+  console.log();
+  console.log(
+    `  ${c('yellow', '⚠')} ${c('yellow', 'This is a public community list. Skills install on your behalf.')}`
+  );
 
   // Fetch stars for all marketplaces
   const starsSpinner = new Spinner('Fetching marketplace info...').start();

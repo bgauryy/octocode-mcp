@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { tool, jsonSchema, type CoreTool, type ToolExecutionOptions } from 'ai';
-import { getOctocodeMCPConfig } from '../agent.js';
+import { OCTOCODE_NPX } from '../../configs/octocode.js';
 
 /**
  * JSON Schema type (subset used by MCP tools)
@@ -30,20 +30,9 @@ export class OctocodeMCPClient {
   async connect(): Promise<void> {
     if (this.client) return;
 
-    const config = getOctocodeMCPConfig();
-    const serverConfig = config['octocode-local'];
-
-    if (
-      !serverConfig ||
-      serverConfig.type !== 'stdio' ||
-      !serverConfig.command
-    ) {
-      throw new Error('Invalid Octocode MCP configuration');
-    }
-
     this.transport = new StdioClientTransport({
-      command: serverConfig.command,
-      args: serverConfig.args ?? [],
+      command: OCTOCODE_NPX.command,
+      args: OCTOCODE_NPX.args ?? [],
     });
 
     this.client = new Client(

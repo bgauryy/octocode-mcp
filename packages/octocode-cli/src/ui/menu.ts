@@ -4,8 +4,13 @@
 
 import { c, bold, dim } from '../utils/colors.js';
 import { loadInquirer, select, Separator, input } from '../utils/prompts.js';
-import { clearScreen, openInEditor } from '../utils/platform.js';
-import { runInstallFlow } from './install/index.js';
+import { clearScreen } from '../utils/platform.js';
+import {
+  runInstallFlow,
+  printNodeEnvironmentStatus,
+  printAuthStatus,
+  hasEnvironmentIssues,
+} from './install/index.js';
 import { runConfigOptionsFlow } from './config/index.js';
 import { runExternalMCPFlow } from './external-mcp/index.js';
 import { runSyncFlow } from './sync/index.js';
@@ -16,11 +21,6 @@ import {
   getSkillsState,
   type SkillsState,
 } from './skills-menu/index.js';
-import { runAgentFlow } from './agent/index.js';
-import {
-  runAIProvidersFlow,
-  getCurrentDefaultModel,
-} from './ai-providers/index.js';
 import {
   getAllClientInstallStatus,
   MCP_CLIENTS,
@@ -38,6 +38,8 @@ import {
 import type { OctocodeAuthStatus } from '../types/index.js';
 import { checkGitHubAuth, runGitHubAuthLogout } from '../features/gh-auth.js';
 import { getCredentials } from '../utils/token-storage.js';
+import { checkNodeEnvironment } from '../features/node-check.js';
+import open from 'open';
 
 /**
  * Wait for user to press enter
@@ -50,14 +52,7 @@ async function pressEnterToContinue(): Promise<void> {
   });
 }
 
-type MenuChoice =
-  | 'octocode'
-  | 'agent'
-  | 'skills'
-  | 'ai-providers'
-  | 'auth'
-  | 'mcp-config'
-  | 'exit';
+type MenuChoice = 'octocode' | 'skills' | 'auth' | 'mcp-config' | 'exit';
 
 type OctocodeMenuChoice = 'configure' | 'install' | 'auth' | 'back';
 
@@ -146,7 +141,7 @@ function buildSkillsMenuItem(skills: SkillsState): {
     return {
       name: `🧠 Manage System Skills ${c('green', '✓')}`,
       value: 'skills',
-      description: `All ${skills.installedCount} installed`,
+      description: `install skills. ${skills.installedCount} installed • ${skills.destDir}`,
     };
   }
 
@@ -154,14 +149,14 @@ function buildSkillsMenuItem(skills: SkillsState): {
     return {
       name: '🧠 Manage System Skills',
       value: 'skills',
-      description: `${skills.installedCount}/${skills.skills.length} installed`,
+      description: `install skills. ${skills.installedCount} installed • ${skills.destDir}`,
     };
   }
 
   return {
     name: '🧠 Manage System Skills',
     value: 'skills',
-    description: `${skills.skills.length} prompts for Claude Code`,
+    description: `install skills. 0 installed • ${skills.destDir}`,
   };
 }
 
@@ -174,17 +169,19 @@ function buildAuthMenuItem(auth: OctocodeAuthStatus): {
   description: string;
 } {
   if (auth.authenticated) {
+    const source = auth.tokenSource === 'gh-cli' ? 'gh CLI' : 'Octocode';
     return {
-      name: `🔑 GitHub ${c('green', '✓')}`,
+      name: `🔑 Auth ${c('green', '✓')}`,
       value: 'auth',
-      description: `Signed in as @${auth.username || 'unknown'}`,
+      description: `@${auth.username || 'unknown'} via ${source}`,
     };
   }
 
+  // Not authenticated - show X to indicate setup needed
   return {
-    name: '🔑 GitHub',
+    name: `🔑 Auth ${c('red', '✗')}`,
     value: 'auth',
-    description: 'Sign in for private repos',
+    description: 'Not configured - set up auth',
   };
 }
 
@@ -212,17 +209,13 @@ function buildStatusLine(state: AppState): string {
     }
   }
 
-  // AI model status
-  const currentModel = getCurrentDefaultModel();
-  if (currentModel) {
-    parts.push(`${c('green', '●')} ${c('cyan', currentModel)}`);
-  }
-
   return parts.join(dim('  │  '));
 }
 
 /**
  * Build Octocode menu item based on state
+ * Shows ✓ only if both installed AND auth is working
+ * Shows ✗ if installed but no auth
  */
 function buildOctocodeMenuItem(state: AppState): {
   name: string;
@@ -232,17 +225,28 @@ function buildOctocodeMenuItem(state: AppState): {
   if (state.octocode.isInstalled) {
     const clientCount = state.octocode.installedClients.length;
     const clientLabel = clientCount === 1 ? 'IDE' : 'IDEs';
+
+    // Show ✓ only if both installed AND authenticated
+    if (state.githubAuth.authenticated) {
+      return {
+        name: `🐙 Octocode Configuration ${c('green', '✓')}`,
+        value: 'octocode',
+        description: `Configure Octocode MCP - ${clientCount} ${clientLabel} configured`,
+      };
+    }
+
+    // Installed but not authenticated - show ✗ to indicate setup needed
     return {
-      name: `🐙 Octocode Configuration ${c('green', '✓')}`,
+      name: `🐙 Octocode Configuration ${c('red', '✗')}`,
       value: 'octocode',
-      description: `${clientCount} ${clientLabel} configured`,
+      description: `Configure Octocode MCP - ${clientCount} ${clientLabel} configured`,
     };
   }
 
   return {
     name: `🐙 ${bold('Octocode Configuration')}`,
     value: 'octocode',
-    description: 'Install & configure MCP server',
+    description: 'Configure Octocode MCP - 0 IDEs configured',
   };
 }
 
@@ -265,29 +269,14 @@ export async function showMainMenu(state: AppState): Promise<MenuChoice> {
   // ─── OCTOCODE ───
   choices.push(buildOctocodeMenuItem(state));
 
-  // ─── AGENT ───
-  choices.push({
-    name: '🤖 Run Agent',
-    value: 'agent',
-    description: 'AI agent with Octocode tools',
-  });
-
   // ─── SKILLS ───
   choices.push(buildSkillsMenuItem(state.skills));
-
-  // ─── AI PROVIDERS ───
-  const currentModel = getCurrentDefaultModel();
-  choices.push({
-    name: '🧪 AI Provider Settings',
-    value: 'ai-providers',
-    description: currentModel ? `${currentModel}` : 'Configure AI models',
-  });
 
   // ─── MCP CONFIGURATION ───
   choices.push({
     name: '⚡ Manage System MCP',
     value: 'mcp-config',
-    description: 'Sync, marketplace & config files',
+    description: 'Add, sync and configure MCP across all IDEs',
   });
 
   // ─── EXIT ───
@@ -346,9 +335,9 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
       });
     }
   } else {
-    // Install is the main action when not installed
+    // Install is the main action when not installed - show ✗ indicator
     choices.push({
-      name: `📦 ${bold('Install')}`,
+      name: `📦 ${bold('Install')} ${c('red', '✗')}`,
       value: 'install',
       description: 'Setup for Cursor, Claude, Windsurf...',
     });
@@ -450,7 +439,7 @@ async function runOctocodeFlow(): Promise<void> {
 // MCP Configuration Flow
 // ============================================================================
 
-type MCPConfigChoice = 'sync' | 'marketplace' | 'open-config' | 'back';
+type MCPConfigChoice = 'sync' | 'marketplace' | 'back';
 
 /**
  * Get config file info for display
@@ -515,17 +504,8 @@ async function showMCPConfigMenu(): Promise<MCPConfigChoice> {
   choices.push({
     name: '🔌 MCP Marketplace',
     value: 'marketplace',
-    description: '70+ community servers',
+    description: '70+ community servers • installs on your behalf',
   });
-
-  const configs = getConfigFileInfo();
-  if (configs.length > 0) {
-    choices.push({
-      name: '📂 Open Config File',
-      value: 'open-config',
-      description: `${configs.length} config file${configs.length > 1 ? 's' : ''} available`,
-    });
-  }
 
   choices.push(
     new Separator() as unknown as {
@@ -555,131 +535,6 @@ async function showMCPConfigMenu(): Promise<MCPConfigChoice> {
   });
 
   return choice;
-}
-
-type ConfigFileChoice = string | 'back';
-
-/**
- * Show config file selection menu
- */
-async function showConfigFileMenu(): Promise<ConfigFileChoice> {
-  const configs = getConfigFileInfo();
-
-  const choices: Array<{
-    name: string;
-    value: ConfigFileChoice;
-    description?: string;
-  }> = [];
-
-  for (const config of configs) {
-    const status = config.hasOctocode ? c('green', '✓') : '';
-    choices.push({
-      name: `📄 ${config.name} ${status}`,
-      value: config.path,
-      description: config.path,
-    });
-  }
-
-  choices.push(
-    new Separator() as unknown as {
-      name: string;
-      value: ConfigFileChoice;
-      description?: string;
-    }
-  );
-
-  choices.push({
-    name: `${c('dim', '← Back')}`,
-    value: 'back',
-  });
-
-  const choice = await select<ConfigFileChoice>({
-    message: 'Select config file to open:',
-    choices,
-    pageSize: 12,
-    loop: false,
-    theme: {
-      prefix: '  ',
-      style: {
-        highlight: (text: string) => c('magenta', text),
-        message: (text: string) => bold(text),
-      },
-    },
-  });
-
-  return choice;
-}
-
-type EditorChoice = 'cursor' | 'vscode' | 'default' | 'back';
-
-/**
- * Show editor selection menu
- */
-async function showEditorMenu(filePath: string): Promise<void> {
-  const choices: Array<{
-    name: string;
-    value: EditorChoice;
-    description?: string;
-  }> = [
-    {
-      name: '📝 Open in Cursor',
-      value: 'cursor',
-      description: 'Open with Cursor IDE',
-    },
-    {
-      name: '📝 Open in VS Code',
-      value: 'vscode',
-      description: 'Open with Visual Studio Code',
-    },
-    {
-      name: '📄 Open in Default App',
-      value: 'default',
-      description: 'Open with system default',
-    },
-  ];
-
-  choices.push(
-    new Separator() as unknown as {
-      name: string;
-      value: EditorChoice;
-      description?: string;
-    }
-  );
-
-  choices.push({
-    name: `${c('dim', '← Back')}`,
-    value: 'back',
-  });
-
-  const choice = await select<EditorChoice>({
-    message: 'Open with:',
-    choices,
-    pageSize: 10,
-    loop: false,
-    theme: {
-      prefix: '  ',
-      style: {
-        highlight: (text: string) => c('magenta', text),
-        message: (text: string) => bold(text),
-      },
-    },
-  });
-
-  if (choice === 'back') {
-    return;
-  }
-
-  const success = openInEditor(filePath, choice);
-  if (success) {
-    console.log();
-    console.log(`  ${c('green', '✓')} Opened ${filePath}`);
-  } else {
-    console.log();
-    console.log(`  ${c('yellow', '⚠')} Could not open file automatically`);
-    console.log(`  ${dim('Try opening manually:')} ${c('cyan', filePath)}`);
-  }
-  console.log();
-  await pressEnterToContinue();
 }
 
 /**
@@ -715,14 +570,6 @@ async function runMCPConfigFlow(): Promise<void> {
         console.log();
         break;
 
-      case 'open-config': {
-        const configChoice = await showConfigFileMenu();
-        if (configChoice !== 'back') {
-          await showEditorMenu(configChoice);
-        }
-        break;
-      }
-
       case 'back':
       default:
         inMenu = false;
@@ -735,17 +582,10 @@ async function runMCPConfigFlow(): Promise<void> {
 // Auth Flow
 // ============================================================================
 
-type AuthMenuChoice =
-  | 'login'
-  | 'logout'
-  | 'switch'
-  | 'use-octocode'
-  | 'use-gh'
-  | 'gh-logout'
-  | 'back';
+type AuthMenuChoice = 'login' | 'gh-guidance' | 'logout' | 'gh-logout' | 'back';
 
 /**
- * Show auth submenu with accurate state
+ * Show auth submenu - simplified to single action based on state
  */
 async function showAuthMenu(
   status: OctocodeAuthStatus,
@@ -757,73 +597,37 @@ async function showAuthMenu(
     description?: string;
   }> = [];
 
-  const ghAuth = checkGitHubAuth();
-  const hasGhToken = ghAuth.authenticated;
   const isUsingOctocode = status.tokenSource === 'octocode';
   const isUsingGhCli = status.tokenSource === 'gh-cli';
   const isAuthenticated = status.authenticated;
 
   if (isAuthenticated) {
-    // === SIGN OUT ===
-    if (isUsingOctocode) {
-      choices.push({
-        name: '🔓 Sign Out',
-        value: 'logout',
-        description: 'Sign out of GitHub',
-      });
-    }
-
+    // Show sign out based on current auth source
     if (isUsingGhCli) {
       choices.push({
         name: '🔓 Sign Out (gh CLI)',
         value: 'gh-logout',
         description: 'Opens gh auth logout',
       });
-    }
-
-    // === SWITCH ACCOUNT ===
-    if (isUsingOctocode) {
+    } else if (isUsingOctocode) {
       choices.push({
-        name: '🔄 Switch Account',
-        value: 'switch',
-        description: 'Sign in with a different GitHub account',
-      });
-    }
-
-    // === ALTERNATIVE AUTH SOURCES ===
-    // Show option to use gh CLI if available and using octocode
-    if (isUsingOctocode && hasGhToken) {
-      choices.push({
-        name: `🔀 Use gh CLI Instead`,
-        value: 'use-gh',
-        description: `Switch to @${ghAuth.username || 'unknown'}`,
-      });
-    }
-
-    // Show option to login with Octocode if using gh-cli
-    if (isUsingGhCli) {
-      choices.push({
-        name: '🔐 Sign in with Octocode',
-        value: 'use-octocode',
-        description: 'Store credentials separately',
+        name: '🔓 Sign Out',
+        value: 'logout',
+        description: 'Sign out of GitHub',
       });
     }
   } else {
-    // === NOT AUTHENTICATED ===
+    // Not authenticated - show sign in options with version note
     choices.push({
-      name: '🔐 Sign in to GitHub',
+      name: `🔐 Sign In via Octocode ${c('green', '(Recommended)')}`,
       value: 'login',
-      description: 'Opens browser to authenticate',
+      description: 'Quick browser sign in • requires octocode-mcp >= 11.0.1',
     });
-
-    // If gh CLI is available, show option to use it
-    if (hasGhToken) {
-      choices.push({
-        name: `🔗 Use gh CLI (@${ghAuth.username || 'unknown'})`,
-        value: 'use-gh',
-        description: 'Already authenticated via terminal',
-      });
-    }
+    choices.push({
+      name: `🔐 Sign In via gh CLI`,
+      value: 'gh-guidance',
+      description: 'Requires installing GitHub CLI separately',
+    });
   }
 
   choices.push(
@@ -840,7 +644,7 @@ async function showAuthMenu(
   });
 
   const choice = await select<AuthMenuChoice>({
-    message: 'GitHub Authentication:',
+    message: 'Authentication:',
     choices,
     pageSize: 12,
     loop: false,
@@ -947,8 +751,74 @@ async function runLogoutFlow(): Promise<boolean> {
   return result.success;
 }
 
+type GhGuidanceChoice = 'open-site' | 'back';
+
 /**
- * Display auth status details
+ * Show gh CLI setup guidance
+ */
+async function showGhCliGuidance(): Promise<void> {
+  const GH_CLI_URL = 'https://cli.github.com/';
+
+  // Show instructions upfront
+  console.log();
+  console.log(`  ${bold('Setup Instructions:')}`);
+  console.log();
+  console.log(`  1. Install GitHub CLI from:`);
+  console.log(`     ${c('cyan', GH_CLI_URL)}`);
+  console.log();
+  console.log(`  2. Run the following command to authenticate:`);
+  console.log(`     ${c('cyan', 'gh auth login')}`);
+  console.log();
+  console.log(`  ${dim('Once authenticated, octocode will automatically')}`);
+  console.log(`  ${dim('use your gh CLI token.')}`);
+  console.log();
+
+  const choice = await select<GhGuidanceChoice>({
+    message: '',
+    choices: [
+      {
+        name: '🌐 Open GitHub CLI website',
+        value: 'open-site',
+      },
+      new Separator() as unknown as {
+        name: string;
+        value: GhGuidanceChoice;
+      },
+      {
+        name: `${c('dim', '← Back')}`,
+        value: 'back',
+      },
+    ],
+    pageSize: 10,
+    loop: false,
+    theme: {
+      prefix: '  ',
+      style: {
+        highlight: (text: string) => c('cyan', text),
+        message: (text: string) => text,
+      },
+    },
+  });
+
+  if (choice === 'open-site') {
+    try {
+      await open(GH_CLI_URL);
+      console.log();
+      console.log(
+        `  ${c('green', '✓')} Opened ${c('cyan', GH_CLI_URL)} in browser`
+      );
+    } catch {
+      console.log();
+      console.log(`  ${c('yellow', '!')} Could not open browser automatically`);
+      console.log(`  ${dim('Please visit:')} ${c('cyan', GH_CLI_URL)}`);
+    }
+    console.log();
+    await pressEnterToContinue();
+  }
+}
+
+/**
+ * Display auth status details with contextual guidance
  */
 function displayAuthStatus(status: OctocodeAuthStatus): void {
   const ghAuth = checkGitHubAuth();
@@ -981,15 +851,16 @@ function displayAuthStatus(status: OctocodeAuthStatus): void {
       );
     }
   } else {
+    // Contextual explanation for unauthenticated users
     console.log(`  ${c('yellow', '○')} Not signed in`);
-    console.log(`  ${dim('Sign in to access private repositories')}`);
-
-    // Show if gh CLI is available
-    if (ghAuth.authenticated) {
-      console.log(
-        `  ${dim('Tip:')} gh CLI detected (@${ghAuth.username || 'unknown'})`
-      );
-    }
+    console.log();
+    console.log(`  ${dim('Sign in to access private repositories.')}`);
+    console.log();
+    console.log(`  ${bold('Choose one authentication method:')}`);
+    console.log(
+      `  ${c('cyan', '1.')} Sign In via Octocode ${c('dim', '(requires octocode-mcp >= 11.0.1)')}`
+    );
+    console.log(`  ${c('cyan', '2.')} Sign In via gh CLI`);
   }
   console.log();
 }
@@ -1028,6 +899,10 @@ async function runAuthFlow(): Promise<void> {
         console.log();
         break;
 
+      case 'gh-guidance':
+        await showGhCliGuidance();
+        break;
+
       case 'logout':
         await runLogoutFlow();
         console.log();
@@ -1050,39 +925,6 @@ async function runAuthFlow(): Promise<void> {
         break;
       }
 
-      case 'switch':
-        console.log();
-        console.log(`  ${dim('Signing out...')}`);
-        await oauthLogout();
-        console.log(`  ${c('green', '✓')} Signed out`);
-        console.log();
-        await runLoginFlow();
-        console.log();
-        break;
-
-      case 'use-octocode':
-        // Login with Octocode (new login flow)
-        await runLoginFlow();
-        console.log();
-        break;
-
-      case 'use-gh': {
-        // Switch to gh CLI
-        const ghAuth = checkGitHubAuth();
-        if (status.tokenSource === 'octocode') {
-          console.log();
-          console.log(`  ${dim('Switching to gh CLI...')}`);
-          await oauthLogout();
-        }
-        console.log();
-        console.log(
-          `  ${c('green', '✓')} Now using gh CLI (@${ghAuth.username || 'unknown'})`
-        );
-        console.log();
-        await pressEnterToContinue();
-        break;
-      }
-
       case 'back':
       default:
         inAuthMenu = false;
@@ -1100,16 +942,8 @@ export async function handleMenuChoice(choice: MenuChoice): Promise<boolean> {
       await runOctocodeFlow();
       return true;
 
-    case 'agent':
-      await runAgentFlow();
-      return true;
-
     case 'skills':
       await runSkillsMenu();
-      return true;
-
-    case 'ai-providers':
-      await runAIProvidersFlow();
       return true;
 
     case 'auth':
@@ -1130,25 +964,58 @@ export async function handleMenuChoice(choice: MenuChoice): Promise<boolean> {
 }
 
 /**
+ * Print the environment check section header
+ */
+function printEnvHeader(): void {
+  console.log(c('blue', '━'.repeat(66)));
+  console.log(`  🔍 ${bold('Environment')}`);
+  console.log(c('blue', '━'.repeat(66)));
+}
+
+/**
+ * Display environment status section
+ * Uses pre-fetched auth status to ensure consistency with menu items
+ */
+async function displayEnvironmentStatus(
+  authStatus: OctocodeAuthStatus
+): Promise<void> {
+  printEnvHeader();
+
+  const envStatus = await checkNodeEnvironment();
+  printNodeEnvironmentStatus(envStatus);
+
+  // Use pre-fetched auth status to ensure consistency
+  printAuthStatus(authStatus);
+
+  // Show node-doctor hint if issues detected
+  if (hasEnvironmentIssues(envStatus)) {
+    console.log();
+    console.log(
+      `  ${dim('💡')} ${dim('Run')} ${c('cyan', 'npx node-doctor')} ${dim('for diagnostics')}`
+    );
+  }
+}
+
+/**
  * Run the interactive menu loop
  */
 export async function runMenuLoop(): Promise<void> {
-  // Environment check is done once at startup (in index.ts)
-  // This loop just handles menu navigation
-
   let firstRun = true;
   let running = true;
 
   while (running) {
+    // Get unified app state FIRST (refreshed on each iteration for accurate status)
+    // This ensures consistency between environment display and menu items
+    const state = await getAppState();
+
     // Clear screen and show welcome when returning to menu (not on first run)
     if (!firstRun) {
       clearScreen();
       printWelcome();
+      // Show environment status using pre-fetched state for consistency
+      await displayEnvironmentStatus(state.githubAuth);
     }
     firstRun = false;
-
-    // Get unified app state (refreshed on each iteration for accurate auth status)
-    const state = await getAppState();
 
     const choice = await showMainMenu(state);
     running = await handleMenuChoice(choice);

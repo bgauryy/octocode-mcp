@@ -24,7 +24,10 @@ export function showHelp(): void {
     `    ${c('magenta', 'install')}     Configure octocode-mcp for an IDE`
   );
   console.log(
-    `    ${c('magenta', 'agent')}       Run AI agent with Octocode tools`
+    `    ${c('magenta', 'skills')}      Install Octocode skills for Claude Code`
+  );
+  console.log(
+    `    ${c('magenta', 'sync')}        Sync MCP configurations across all IDEs`
   );
   console.log(
     `    ${c('magenta', 'auth')}        Manage GitHub authentication`
@@ -57,24 +60,16 @@ export function showHelp(): void {
   );
   console.log();
   console.log(`    ${dim('# Check GitHub authentication')}`);
-  console.log(`    ${c('yellow', 'octocode-cli auth')}`);
+  console.log(`    ${c('yellow', 'octocode auth')}`);
   console.log();
-  console.log(`    ${dim('# Get token from octocode-cli (default)')}`);
-  console.log(`    ${c('yellow', 'octocode-cli token')}`);
+  console.log(`    ${dim('# Get token from Octocode (default)')}`);
+  console.log(`    ${c('yellow', 'octocode token')}`);
   console.log();
   console.log(`    ${dim('# Get token from gh CLI')}`);
-  console.log(`    ${c('yellow', 'octocode-cli token --type=gh')}`);
+  console.log(`    ${c('yellow', 'octocode token --type=gh')}`);
   console.log();
-  console.log(`    ${dim('# Run agent interactively')}`);
-  console.log(`    ${c('yellow', 'octocode agent --interactive')}`);
-  console.log();
-  console.log(`    ${dim('# Run agent with a task')}`);
-  console.log(`    ${c('yellow', 'octocode agent "Explore this codebase"')}`);
-  console.log();
-  console.log(`    ${dim('# Run agent with extended thinking')}`);
-  console.log(
-    `    ${c('yellow', 'octocode agent --think "Complex analysis task"')}`
-  );
+  console.log(`    ${dim('# Install Octocode skills')}`);
+  console.log(`    ${c('yellow', 'octocode skills install')}`);
   console.log();
   console.log(c('magenta', `  ─── 🔍🐙 ${bold('https://octocode.ai')} ───`));
   console.log();
@@ -118,6 +113,6 @@ export function showCommandHelp(command: CLICommand): void {
  */
 export function showVersion(): void {
   const version =
-    typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.0';
-  console.log(`octocode-cli v${version}`);
+    typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'unknown';
+  console.log(`octocode v${version}`);
 }

@@ -1,5 +1,5 @@
 import { c, bold, dim } from '../../utils/colors.js';
-import { select, Separator, input } from '../../utils/prompts.js';
+import { select, Separator, input, search } from '../../utils/prompts.js';
 import {
   MCP_REGISTRY,
   getAllCategories,
@@ -106,6 +106,7 @@ export async function selectTargetClient(): Promise<{
     'cursor',
     'claude-desktop',
     'claude-code',
+    'opencode',
     'windsurf',
     'trae',
     'antigravity',
@@ -253,39 +254,67 @@ export async function selectBrowseMode(): Promise<
 }
 
 /**
- * Search MCPs by query
+ * Search MCPs by query - interactive search as you type
  */
 export async function searchMCPs(): Promise<MCPRegistryEntry | 'back' | null> {
   console.log();
   console.log(
-    `  ${c('blue', 'ℹ')} Enter search terms (name, description, or tags)`
+    `  ${c('blue', 'ℹ')} Type to search by name, description, or tags`
   );
-  console.log(`  ${dim('Leave empty to go back')}`);
+  console.log(`  ${dim('Press Esc to go back')}`);
   console.log();
 
-  const query = await input({
-    message: 'Search:',
+  type SearchResult = MCPRegistryEntry | 'back';
+
+  const selected = await search<SearchResult>({
+    message: 'Search MCPs:',
+    source: term => {
+      const backOption = {
+        name: `${c('dim', '← Back to browse options')}`,
+        value: 'back' as const,
+      };
+
+      // If no search term, show all MCPs with back option
+      if (!term || !term.trim()) {
+        return [
+          ...MCP_REGISTRY.slice(0, 15).map(mcp => ({
+            name: formatMCPChoice(mcp),
+            value: mcp,
+            description: mcp.tags?.slice(0, 3).join(', '),
+          })),
+          { name: '─'.repeat(40), value: 'back' as const, disabled: true },
+          backOption,
+        ];
+      }
+
+      // Search with the term
+      const results = searchRegistry(term.trim());
+
+      if (results.length === 0) {
+        return [
+          {
+            name: `${c('yellow', '⚠')} No MCPs found matching "${term}"`,
+            value: 'back' as const,
+            disabled: 'Try different keywords',
+          },
+          backOption,
+        ];
+      }
+
+      return [
+        ...results.map(mcp => ({
+          name: formatMCPChoice(mcp),
+          value: mcp,
+          description: mcp.tags?.slice(0, 3).join(', '),
+        })),
+        { name: '─'.repeat(40), value: 'back' as const, disabled: true },
+        backOption,
+      ];
+    },
+    pageSize: 12,
   });
 
-  if (!query || !query.trim()) return 'back';
-
-  const results = searchRegistry(query.trim());
-
-  if (results.length === 0) {
-    console.log();
-    console.log(`  ${c('yellow', '⚠')} No MCPs found matching "${query}"`);
-    console.log(`  ${dim('Try different keywords or browse by category')}`);
-    console.log();
-    return null;
-  }
-
-  console.log();
-  console.log(
-    `  ${c('green', '✓')} Found ${bold(String(results.length))} MCP${results.length > 1 ? 's' : ''}`
-  );
-  console.log();
-
-  return await selectFromList(results, `Search: "${query}"`);
+  return selected;
 }
 
 /**
@@ -403,6 +432,8 @@ export async function selectMCPFromRegistry(): Promise<
       return await selectByCategory();
     case 'popular':
       return await selectPopular();
+    case 'all':
+      return await selectAll();
     default:
       return null;
   }

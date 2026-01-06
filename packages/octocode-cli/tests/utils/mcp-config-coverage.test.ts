@@ -777,15 +777,18 @@ describe('MCP Config Coverage Tests', () => {
         await import('../../src/utils/mcp-config.js');
       const result = getAllClientInstallStatus();
 
-      expect(result.length).toBe(8);
+      expect(result.length).toBe(11);
       const clients = result.map(s => s.client);
       expect(clients).toContain('cursor');
       expect(clients).toContain('claude-desktop');
       expect(clients).toContain('claude-code');
+      expect(clients).toContain('opencode');
       expect(clients).toContain('vscode-cline');
       expect(clients).toContain('vscode-roo');
       expect(clients).toContain('vscode-continue');
       expect(clients).toContain('windsurf');
+      expect(clients).toContain('trae');
+      expect(clients).toContain('antigravity');
       expect(clients).toContain('zed');
     });
 

@@ -21,11 +21,13 @@ import {
   printNodeEnvironmentStatus,
   printNodeDoctorHint,
   hasEnvironmentIssues,
+  printAuthStatus,
 } from './ui/install/index.js';
 import { checkNodeEnvironment } from './features/node-check.js';
 import { runMenuLoop } from './ui/menu.js';
 import { runCLI } from './cli/index.js';
 import { initializeSecureStorage } from './utils/token-storage.js';
+import { getAuthStatusAsync } from './features/github-oauth.js';
 
 // ─────────────────────────────────────────────────────────────
 // Interactive Mode
@@ -53,6 +55,10 @@ async function runInteractiveMode(): Promise<void> {
 
   const envStatus = await checkNodeEnvironment();
   printNodeEnvironmentStatus(envStatus);
+
+  // Auth status check
+  const authStatus = await getAuthStatusAsync();
+  printAuthStatus(authStatus);
 
   // Show node-doctor hint if issues detected
   if (hasEnvironmentIssues(envStatus)) {

@@ -55,6 +55,36 @@ type CheckboxFunction = <T>(config: {
   };
 }) => Promise<T[]>;
 
+type SearchFunction = <T>(config: {
+  message: string;
+  source: (
+    term: string | undefined,
+    opt: { signal: AbortSignal }
+  ) =>
+    | Promise<
+        Array<{
+          value: T;
+          name?: string;
+          description?: string;
+          disabled?: boolean | string;
+        }>
+      >
+    | Array<{
+        value: T;
+        name?: string;
+        description?: string;
+        disabled?: boolean | string;
+      }>;
+  pageSize?: number;
+  theme?: {
+    prefix?: string;
+    style?: {
+      highlight?: (text: string) => string;
+      message?: (text: string) => string;
+    };
+  };
+}) => Promise<T>;
+
 // Separator is a class that can be instantiated with optional text
 interface SeparatorInstance {
   type: 'separator';
@@ -76,6 +106,7 @@ export let confirm: ConfirmFunction =
 export let input: InputFunction = notLoadedError as unknown as InputFunction;
 export let checkbox: CheckboxFunction =
   notLoadedError as unknown as CheckboxFunction;
+export let search: SearchFunction = notLoadedError as unknown as SearchFunction;
 export let Separator: SeparatorClass = class {
   type = 'separator' as const;
   separator = '';
@@ -97,6 +128,7 @@ export async function loadInquirer(): Promise<void> {
     confirm = inquirer.confirm as ConfirmFunction;
     input = inquirer.input as InputFunction;
     checkbox = inquirer.checkbox as CheckboxFunction;
+    search = inquirer.search as SearchFunction;
     Separator = inquirer.Separator as SeparatorClass;
     loaded = true;
   } catch {

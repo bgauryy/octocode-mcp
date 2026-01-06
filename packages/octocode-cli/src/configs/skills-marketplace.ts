@@ -193,15 +193,3 @@ export async function fetchAllMarketplaceStars(): Promise<Map<string, number>> {
   await Promise.all(promises);
   return results;
 }
-
-/**
- * Get all marketplace sources sorted by stars
- * Requires stars map from fetchAllMarketplaceStars()
- */
-export function getMarketplacesSortedByStars(
-  starsMap: Map<string, number>
-): MarketplaceSource[] {
-  return [...SKILLS_MARKETPLACES].sort(
-    (a, b) => (starsMap.get(b.id) ?? 0) - (starsMap.get(a.id) ?? 0)
-  );
-}

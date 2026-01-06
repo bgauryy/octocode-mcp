@@ -22,7 +22,7 @@ import {
   type SessionStatus,
   type ToolCallStatus,
 } from '../db/index.js';
-import type { SessionCoderMode, AIProvider } from '../types/agent.js';
+import type { SessionCoderMode, AIProvider } from '../types/index.js';
 
 // ============================================
 // Types
@@ -521,11 +521,4 @@ export function getSessionStore(): SessionStore {
     storeInstance = new SessionStore();
   }
   return storeInstance;
-}
-
-/**
- * Create a new session store instance (for testing)
- */
-export function createSessionStore(): SessionStore {
-  return new SessionStore();
 }

@@ -95,8 +95,10 @@ let _useSecureStorage: boolean | null = null;
 let _keytarInitialized = false;
 
 /**
- * Initialize secure storage by loading keytar
+ * Initialize secure storage by loading keytar and migrating legacy credentials
  * Call this before using any credential functions to ensure keytar is loaded
+ * and any legacy file-based credentials are migrated to keychain.
+ *
  * @returns true if secure storage (keytar) is available
  */
 export async function initializeSecureStorage(): Promise<boolean> {
@@ -107,6 +109,13 @@ export async function initializeSecureStorage(): Promise<boolean> {
   await loadKeytar();
   _keytarInitialized = true;
   _useSecureStorage = keytar !== null;
+
+  // Migrate legacy credentials if keytar is available
+  // This ensures migration completes before any credential operations
+  if (_useSecureStorage) {
+    await migrateLegacyCredentials();
+  }
+
   return _useSecureStorage;
 }
 
@@ -427,12 +436,9 @@ async function migrateLegacyCredentials(): Promise<void> {
   }
 }
 
-// Run migration on module load
-migrateLegacyCredentials().catch(error => {
-  console.error(
-    `[token-storage] Migration failed (keeping current storage): ${error instanceof Error ? error.message : String(error)}`
-  );
-});
+// Note: Migration is now run in initializeSecureStorage() to avoid race conditions.
+// The async migration was previously running here on module load, but this caused
+// potential race conditions if credentials were accessed before migration completed.
 
 // ============================================================================
 // PUBLIC API (Sync wrappers for compatibility)

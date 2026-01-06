@@ -15,10 +15,8 @@ import { tmpdir } from 'node:os';
 import {
   SessionManager,
   truncatePrompt,
-  formatSessionForDisplay,
-  createSessionManager,
 } from '../../src/features/session-manager.js';
-import type { SessionInfo } from '../../src/types/agent.js';
+import type { SessionInfo } from '../../src/types/index.js';
 
 describe('SessionManager', () => {
   let tempDir: string;
@@ -27,7 +25,7 @@ describe('SessionManager', () => {
   beforeEach(() => {
     // Create a temporary directory for tests
     tempDir = mkdtempSync(join(tmpdir(), 'octocode-test-'));
-    sessionManager = createSessionManager(tempDir);
+    sessionManager = new SessionManager(tempDir);
   });
 
   afterEach(() => {
@@ -40,7 +38,7 @@ describe('SessionManager', () => {
   describe('constructor', () => {
     it('should create sessions directory if it does not exist', () => {
       const newDir = join(tempDir, 'nested', 'sessions');
-      const manager = createSessionManager(newDir);
+      const manager = new SessionManager(newDir);
       expect(existsSync(newDir)).toBe(true);
       expect(manager.getSessionsDirectory()).toBe(newDir);
     });
@@ -385,46 +383,5 @@ describe('truncatePrompt', () => {
   it('should collapse whitespace', () => {
     const result = truncatePrompt('Hello   \n\t  World', 100);
     expect(result).toBe('Hello World');
-  });
-});
-
-describe('formatSessionForDisplay', () => {
-  it('should format session for display', () => {
-    const session: SessionInfo = {
-      id: 'abcdef123456789',
-      startedAt: '2025-01-05T10:00:00.000Z',
-      lastActiveAt: '2025-01-05T14:30:00.000Z',
-      prompt: 'Test prompt',
-      promptPreview: 'Test prompt preview',
-      mode: 'research',
-      status: 'completed',
-      totalInputTokens: 500,
-      totalOutputTokens: 200,
-      cwd: '/test',
-    };
-
-    const display = formatSessionForDisplay(session);
-
-    expect(display.id).toBe('abcdef12'); // First 8 chars
-    expect(display.mode).toBe('research');
-    expect(display.status).toBe('completed');
-    expect(display.tokens).toBe('700');
-    expect(display.preview).toBe('Test prompt preview');
-  });
-
-  it('should show dash for undefined tokens', () => {
-    const session: SessionInfo = {
-      id: 'test',
-      startedAt: '2025-01-05T10:00:00.000Z',
-      lastActiveAt: '2025-01-05T10:00:00.000Z',
-      prompt: 'Test',
-      promptPreview: 'Test',
-      mode: 'research',
-      status: 'active',
-      cwd: '/test',
-    };
-
-    const display = formatSessionForDisplay(session);
-    expect(display.tokens).toBe('-');
   });
 });

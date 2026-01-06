@@ -4,6 +4,7 @@
 
 import { c, bold, dim } from '../../utils/colors.js';
 import type { NodeEnvironmentStatus } from '../../features/node-check.js';
+import type { OctocodeAuthStatus } from '../../types/index.js';
 
 /**
  * Print Node.js environment status
@@ -84,6 +85,25 @@ function printOctocodePackageStatus(
     console.log(
       `  ${c('red', '✗')} octocode-mcp: ${c('red', 'Not found in registry')}`
     );
+  }
+}
+
+/**
+ * Print GitHub authentication status
+ */
+export function printAuthStatus(status: OctocodeAuthStatus): void {
+  if (status.authenticated) {
+    const source =
+      status.tokenSource === 'gh-cli'
+        ? 'gh CLI'
+        : status.tokenSource === 'octocode'
+          ? 'Octocode'
+          : 'env';
+    console.log(
+      `  ${c('green', '✓')} Auth: ${c('cyan', '@' + (status.username || 'unknown'))} ${dim(`(${source})`)}`
+    );
+  } else {
+    console.log(`  ${c('yellow', '○')} Auth: ${c('dim', 'Not signed in')}`);
   }
 }
 

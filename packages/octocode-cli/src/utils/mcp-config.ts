@@ -216,10 +216,13 @@ export function getAllClientInstallStatus(): ClientInstallStatus[] {
     'cursor',
     'claude-desktop',
     'claude-code',
+    'opencode',
     'vscode-cline',
     'vscode-roo',
     'vscode-continue',
     'windsurf',
+    'trae',
+    'antigravity',
     'zed',
   ];
 

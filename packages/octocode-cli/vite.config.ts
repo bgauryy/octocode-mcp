@@ -25,7 +25,6 @@ export default defineConfig({
         '@inquirer/prompts',
         'keytar', // Native addon - must be external
         'better-sqlite3', // Native addon - must be external
-        '@anthropic-ai/claude-agent-sdk', // Spawns CLI process - must be external
         'react', // External for ink
         'ink', // Ink runtime
         '@inkjs/ui', // Ink UI components

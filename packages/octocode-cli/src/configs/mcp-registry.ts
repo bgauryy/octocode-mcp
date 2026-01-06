@@ -19,13 +19,7 @@ export type MCPCategory =
   | 'aggregator'
   | 'other';
 
-export type InstallationType =
-  | 'npm'
-  | 'npx'
-  | 'pip'
-  | 'docker'
-  | 'binary'
-  | 'source';
+export type InstallationType = 'npm' | 'npx' | 'pip' | 'docker' | 'source';
 
 export interface MCPRegistryEntry {
   id: string;
@@ -181,16 +175,15 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
   {
     id: 'sqlite-mcp',
     name: 'SQLite MCP',
-    description: 'SQLite database operations with built-in analysis features',
+    description:
+      'Comprehensive SQLite database interaction capabilities for Cursor, Windsurf, and AI tools',
     category: 'database',
-    repository:
-      'https://github.com/modelcontextprotocol/servers-archived/tree/main/src/sqlite',
-    installationType: 'pip',
-    pipPackage: 'mcp-server-sqlite',
-    official: true,
+    repository: 'https://github.com/jparkerweb/mcp-sqlite',
+    installationType: 'npx',
+    npmPackage: 'mcp-sqlite',
     installConfig: {
-      command: 'uvx',
-      args: ['mcp-server-sqlite', '--db-path', '${DATABASE_PATH}'],
+      command: 'npx',
+      args: ['-y', 'mcp-sqlite', '${DATABASE_PATH}'],
     },
     requiredEnvVars: [
       {
@@ -199,7 +192,7 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
         example: '/path/to/database.db',
       },
     ],
-    tags: ['database', 'sqlite', 'sql', 'official'],
+    tags: ['database', 'sqlite', 'sql', 'cursor', 'windsurf'],
   },
   {
     id: 'mysql-mcp',
@@ -351,7 +344,52 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     ],
     tags: ['database', 'bigquery', 'google', 'analytics'],
   },
-
+  {
+    id: 'dbhub-mcp',
+    name: 'DBHub MCP',
+    description:
+      'Zero-dependency, token-efficient database MCP for Postgres, MySQL, SQL Server, MariaDB, SQLite',
+    category: 'database',
+    repository: 'https://github.com/bytebase/dbhub',
+    installationType: 'npx',
+    npmPackage: 'dbhub',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', 'dbhub'],
+    },
+    requiredEnvVars: [
+      {
+        name: 'DATABASE_URL',
+        description: 'Database connection URL',
+        example: 'postgres://user:pass@localhost:5432/db',
+      },
+    ],
+    tags: [
+      'database',
+      'postgres',
+      'mysql',
+      'sqlite',
+      'mariadb',
+      'sqlserver',
+      'multi-database',
+    ],
+  },
+  {
+    id: 'pg-aiguide-mcp',
+    name: 'PostgreSQL AI Guide MCP',
+    description:
+      'PostgreSQL documentation and best practices through semantic search and curated skills',
+    category: 'database',
+    repository: 'https://github.com/timescale/pg-aiguide',
+    website: 'https://tigerdata.com',
+    installationType: 'npx',
+    npmPackage: '@tigerdata/pg-aiguide',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@tigerdata/pg-aiguide'],
+    },
+    tags: ['database', 'postgres', 'postgresql', 'documentation', 'timescale'],
+  },
   {
     id: 'cloudflare-mcp',
     name: 'Cloudflare MCP',
@@ -371,19 +409,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
       { name: 'CLOUDFLARE_ACCOUNT_ID', description: 'Cloudflare Account ID' },
     ],
     tags: ['cloudflare', 'cloud', 'workers', 'official'],
-  },
-  {
-    id: 'kubernetes-mcp',
-    name: 'Kubernetes MCP',
-    description: 'Kubernetes cluster operations through MCP',
-    category: 'cloud-platform',
-    repository: 'https://github.com/strowk/mcp-k8s-go',
-    installationType: 'binary',
-    installConfig: {
-      command: 'mcp-k8s',
-      args: [],
-    },
-    tags: ['kubernetes', 'k8s', 'containers', 'devops'],
   },
   {
     id: 'docker-mcp',
@@ -429,6 +454,106 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['filesystem', 'files', 'local', 'official'],
   },
   {
+    id: 'git-mcp-official',
+    name: 'Git MCP',
+    description:
+      'Official Git integration for repository operations, commits, and history',
+    category: 'version-control',
+    repository:
+      'https://github.com/modelcontextprotocol/servers/tree/main/src/git',
+    installationType: 'pip',
+    pipPackage: 'mcp-server-git',
+    official: true,
+    installConfig: {
+      command: 'uvx',
+      args: ['mcp-server-git'],
+    },
+    tags: ['git', 'version-control', 'repository', 'official'],
+  },
+  {
+    id: 'memory-mcp',
+    name: 'Memory MCP',
+    description:
+      'Official memory/persistence server for maintaining context across sessions',
+    category: 'developer-tools',
+    repository:
+      'https://github.com/modelcontextprotocol/servers/tree/main/src/memory',
+    installationType: 'npx',
+    npmPackage: '@modelcontextprotocol/server-memory',
+    official: true,
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-memory'],
+    },
+    tags: ['memory', 'persistence', 'context', 'official'],
+  },
+  {
+    id: 'fetch-mcp',
+    name: 'Fetch MCP',
+    description: 'Official HTTP fetch server for making web requests',
+    category: 'developer-tools',
+    repository:
+      'https://github.com/modelcontextprotocol/servers/tree/main/src/fetch',
+    installationType: 'pip',
+    pipPackage: 'mcp-server-fetch',
+    official: true,
+    installConfig: {
+      command: 'uvx',
+      args: ['mcp-server-fetch'],
+    },
+    tags: ['fetch', 'http', 'web', 'requests', 'official'],
+  },
+  {
+    id: 'time-mcp',
+    name: 'Time MCP',
+    description: 'Official time server for date/time operations and timezones',
+    category: 'developer-tools',
+    repository:
+      'https://github.com/modelcontextprotocol/servers/tree/main/src/time',
+    installationType: 'pip',
+    pipPackage: 'mcp-server-time',
+    official: true,
+    installConfig: {
+      command: 'uvx',
+      args: ['mcp-server-time'],
+    },
+    tags: ['time', 'date', 'timezone', 'official'],
+  },
+  {
+    id: 'sequential-thinking-mcp',
+    name: 'Sequential Thinking MCP',
+    description:
+      'Official server for step-by-step reasoning and problem solving',
+    category: 'developer-tools',
+    repository:
+      'https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking',
+    installationType: 'npx',
+    npmPackage: '@modelcontextprotocol/server-sequential-thinking',
+    official: true,
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-sequential-thinking'],
+    },
+    tags: ['reasoning', 'thinking', 'problem-solving', 'official'],
+  },
+  {
+    id: 'everything-mcp',
+    name: 'Everything MCP',
+    description:
+      'Official demo server showcasing all MCP capabilities in one package',
+    category: 'developer-tools',
+    repository:
+      'https://github.com/modelcontextprotocol/servers/tree/main/src/everything',
+    installationType: 'npx',
+    npmPackage: '@modelcontextprotocol/server-everything',
+    official: true,
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-everything'],
+    },
+    tags: ['demo', 'all-in-one', 'example', 'official'],
+  },
+  {
     id: 'exa-mcp',
     name: 'Exa Search MCP',
     description: 'Exa AI Search API for real-time web information retrieval',
@@ -444,6 +569,42 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     },
     requiredEnvVars: [{ name: 'EXA_API_KEY', description: 'Exa API key' }],
     tags: ['search', 'exa', 'ai', 'official'],
+  },
+  {
+    id: 'perplexity-mcp',
+    name: 'Perplexity MCP',
+    description: 'Official Perplexity AI search and research integration',
+    category: 'search-web',
+    repository: 'https://github.com/perplexityai/modelcontextprotocol',
+    website: 'https://perplexity.ai',
+    installationType: 'npx',
+    npmPackage: '@perplexity-ai/mcp-server',
+    official: true,
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@perplexity-ai/mcp-server'],
+    },
+    requiredEnvVars: [
+      { name: 'PERPLEXITY_API_KEY', description: 'Perplexity API key' },
+    ],
+    tags: ['search', 'perplexity', 'ai', 'research', 'official'],
+  },
+  {
+    id: 'kagi-mcp',
+    name: 'Kagi MCP',
+    description: 'Official Kagi search and tools integration',
+    category: 'search-web',
+    repository: 'https://github.com/kagisearch/kagi-mcp',
+    website: 'https://kagi.com',
+    installationType: 'pip',
+    pipPackage: 'kagimcp',
+    official: true,
+    installConfig: {
+      command: 'uvx',
+      args: ['kagimcp'],
+    },
+    requiredEnvVars: [{ name: 'KAGI_API_KEY', description: 'Kagi API key' }],
+    tags: ['search', 'kagi', 'official'],
   },
   {
     id: 'tavily-mcp',
@@ -487,33 +648,48 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
   {
     id: 'discord-mcp',
     name: 'Discord MCP',
-    description: 'Discord integration for AI assistants',
+    description:
+      'Discord API integration via JDA for seamless bot interaction with MCP clients',
     category: 'communication',
-    repository: 'https://github.com/olivierdebeufderijcker/discord-mcp',
+    repository: 'https://github.com/SaseQ/discord-mcp',
     website: 'https://discord.com',
-    installationType: 'npx',
-    npmPackage: 'discord-mcp',
+    installationType: 'docker',
+    dockerImage: 'saseq/discord-mcp:latest',
     installConfig: {
-      command: 'npx',
-      args: ['-y', 'discord-mcp'],
+      command: 'docker',
+      args: [
+        'run',
+        '--rm',
+        '-i',
+        '-e',
+        'DISCORD_TOKEN',
+        '-e',
+        'DISCORD_GUILD_ID',
+        'saseq/discord-mcp:latest',
+      ],
     },
     requiredEnvVars: [
       { name: 'DISCORD_TOKEN', description: 'Discord Bot Token' },
+      {
+        name: 'DISCORD_GUILD_ID',
+        description: 'Default Discord Server ID (optional)',
+      },
     ],
-    tags: ['discord', 'chat', 'community'],
+    tags: ['discord', 'chat', 'community', 'bot'],
   },
   {
     id: 'linear-mcp',
     name: 'Linear MCP',
-    description: 'Linear issue tracking integration',
+    description:
+      'Linear project management integration for issues, projects, and teams',
     category: 'communication',
-    repository: 'https://github.com/jerhadf/linear-mcp-server',
+    repository: 'https://github.com/tacticlaunch/mcp-linear',
     website: 'https://linear.app',
     installationType: 'npx',
-    npmPackage: 'linear-mcp-server',
+    npmPackage: '@tacticlaunch/mcp-linear',
     installConfig: {
       command: 'npx',
-      args: ['-y', 'linear-mcp-server'],
+      args: ['-y', '@tacticlaunch/mcp-linear'],
     },
     requiredEnvVars: [
       { name: 'LINEAR_API_KEY', description: 'Linear API key' },
@@ -542,6 +718,25 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['atlassian', 'jira', 'confluence'],
   },
 
+  {
+    id: 'notion-mcp',
+    name: 'Notion MCP',
+    description: 'Official Notion integration for pages, databases, and blocks',
+    category: 'productivity',
+    repository: 'https://github.com/makenotion/notion-mcp-server',
+    website: 'https://notion.so',
+    installationType: 'npx',
+    npmPackage: '@notionhq/notion-mcp-server',
+    official: true,
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@notionhq/notion-mcp-server'],
+    },
+    requiredEnvVars: [
+      { name: 'NOTION_API_KEY', description: 'Notion API integration token' },
+    ],
+    tags: ['notion', 'productivity', 'notes', 'database', 'official'],
+  },
   {
     id: 'obsidian-mcp',
     name: 'Obsidian MCP',
@@ -619,6 +814,36 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['documentation', 'context', 'code', 'official'],
   },
   {
+    id: 'desktop-commander-mcp',
+    name: 'Desktop Commander MCP',
+    description:
+      'Terminal control, file system search, and diff file editing capabilities',
+    category: 'developer-tools',
+    repository: 'https://github.com/wonderwhy-er/DesktopCommanderMCP',
+    installationType: 'npx',
+    npmPackage: '@wonderwhy-er/desktop-commander',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@wonderwhy-er/desktop-commander'],
+    },
+    tags: ['terminal', 'file-editing', 'diff', 'command-line', 'process'],
+  },
+  {
+    id: 'gemini-mcp-tool',
+    name: 'Gemini MCP Tool',
+    description:
+      'Interact with Google Gemini CLI for large file analysis and codebase exploration',
+    category: 'ai-services',
+    repository: 'https://github.com/jamubc/gemini-mcp-tool',
+    installationType: 'npx',
+    npmPackage: 'gemini-mcp-tool',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', 'gemini-mcp-tool'],
+    },
+    tags: ['gemini', 'google', 'ai', 'file-analysis', 'codebase'],
+  },
+  {
     id: 'sentry-mcp',
     name: 'Sentry MCP',
     description:
@@ -675,10 +900,10 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
   },
   {
     id: 'figma-mcp',
-    name: 'Figma MCP',
+    name: 'Figma Context MCP',
     description: 'Get Figma design data in ready-to-implement format',
     category: 'developer-tools',
-    repository: 'https://github.com/tianmuji/Figma-Context-MCP',
+    repository: 'https://github.com/GLips/Figma-Context-MCP',
     website: 'https://figma.com',
     installationType: 'npx',
     npmPackage: 'figma-context-mcp',
@@ -716,20 +941,57 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['figma', 'cursor', 'design'],
   },
   {
-    id: 'mcp-language-server',
-    name: 'Language Server MCP',
+    id: 'xcodebuild-mcp',
+    name: 'XcodeBuild MCP',
     description:
-      'Semantic tools like get definition, references, rename, diagnostics',
+      'Xcode-related tools for building, testing, and managing iOS/macOS projects',
     category: 'developer-tools',
-    repository: 'https://github.com/isaacphi/mcp-language-server',
-    installationType: 'binary',
+    repository: 'https://github.com/cameroncooke/XcodeBuildMCP',
+    website: 'https://developer.apple.com/xcode',
+    installationType: 'npx',
+    npmPackage: 'xcodebuildmcp',
     installConfig: {
-      command: 'mcp-language-server',
-      args: [],
+      command: 'npx',
+      args: ['-y', 'xcodebuildmcp'],
     },
-    tags: ['lsp', 'language-server', 'semantic'],
+    tags: ['xcode', 'ios', 'macos', 'apple', 'swift'],
+  },
+  {
+    id: 'markdownify-mcp',
+    name: 'Markdownify MCP',
+    description:
+      'Convert almost anything to Markdown - PDFs, URLs, images, and more',
+    category: 'developer-tools',
+    repository: 'https://github.com/zcaceres/markdownify-mcp',
+    installationType: 'npx',
+    npmPackage: 'mcp-markdownify-server',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', 'mcp-markdownify-server'],
+    },
+    tags: ['markdown', 'converter', 'pdf', 'ocr'],
   },
 
+  {
+    id: 'elevenlabs-mcp',
+    name: 'ElevenLabs MCP',
+    description:
+      'Official ElevenLabs text-to-speech, voice cloning, and audio generation',
+    category: 'ai-services',
+    repository: 'https://github.com/elevenlabs/elevenlabs-mcp',
+    website: 'https://elevenlabs.io',
+    installationType: 'pip',
+    pipPackage: 'elevenlabs-mcp',
+    official: true,
+    installConfig: {
+      command: 'uvx',
+      args: ['elevenlabs-mcp'],
+    },
+    requiredEnvVars: [
+      { name: 'ELEVENLABS_API_KEY', description: 'ElevenLabs API key' },
+    ],
+    tags: ['elevenlabs', 'tts', 'voice', 'audio', 'official'],
+  },
   {
     id: 'openai-mcp',
     name: 'OpenAI MCP',
@@ -844,20 +1106,63 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     name: 'Datadog MCP',
     description: 'Datadog monitoring and observability integration',
     category: 'monitoring',
-    repository: 'https://github.com/datadog/mcp-server-datadog',
+    repository: 'https://github.com/winor30/mcp-server-datadog',
     website: 'https://datadoghq.com',
-    installationType: 'pip',
-    pipPackage: 'datadog-mcp',
-    official: true,
+    installationType: 'npx',
+    npmPackage: '@winor30/mcp-server-datadog',
     installConfig: {
-      command: 'uvx',
-      args: ['datadog-mcp'],
+      command: 'npx',
+      args: ['-y', '@winor30/mcp-server-datadog'],
     },
     requiredEnvVars: [
       { name: 'DD_API_KEY', description: 'Datadog API key' },
       { name: 'DD_APP_KEY', description: 'Datadog Application key' },
     ],
-    tags: ['datadog', 'monitoring', 'observability', 'official'],
+    tags: ['datadog', 'monitoring', 'observability'],
+  },
+  {
+    id: 'browserstack-mcp',
+    name: 'BrowserStack MCP',
+    description: 'Official BrowserStack testing and automation integration',
+    category: 'developer-tools',
+    repository: 'https://github.com/browserstack/mcp-server',
+    website: 'https://browserstack.com',
+    installationType: 'npx',
+    npmPackage: '@browserstack/mcp-server',
+    official: true,
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@browserstack/mcp-server'],
+    },
+    requiredEnvVars: [
+      { name: 'BROWSERSTACK_USERNAME', description: 'BrowserStack username' },
+      {
+        name: 'BROWSERSTACK_ACCESS_KEY',
+        description: 'BrowserStack access key',
+      },
+    ],
+    tags: ['browserstack', 'testing', 'automation', 'official'],
+  },
+  {
+    id: 'tableau-mcp',
+    name: 'Tableau MCP',
+    description:
+      'Official Tableau data visualization and analytics integration',
+    category: 'data-visualization',
+    repository: 'https://github.com/tableau/tableau-mcp',
+    website: 'https://tableau.com',
+    installationType: 'npx',
+    npmPackage: '@tableau/mcp-server',
+    official: true,
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@tableau/mcp-server'],
+    },
+    requiredEnvVars: [
+      { name: 'TABLEAU_TOKEN', description: 'Tableau API token' },
+      { name: 'TABLEAU_SITE', description: 'Tableau site name' },
+    ],
+    tags: ['tableau', 'visualization', 'analytics', 'official'],
   },
 
   {
@@ -878,6 +1183,27 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
       { name: 'STRIPE_SECRET_KEY', description: 'Stripe Secret Key' },
     ],
     tags: ['stripe', 'payments', 'finance', 'official'],
+  },
+  {
+    id: 'alpaca-mcp',
+    name: 'Alpaca MCP',
+    description:
+      'Official Alpaca trading - stocks, ETFs, crypto, and options in plain English',
+    category: 'finance',
+    repository: 'https://github.com/alpacahq/alpaca-mcp-server',
+    website: 'https://alpaca.markets',
+    installationType: 'pip',
+    pipPackage: 'alpaca-mcp-server',
+    official: true,
+    installConfig: {
+      command: 'uvx',
+      args: ['alpaca-mcp-server'],
+    },
+    requiredEnvVars: [
+      { name: 'ALPACA_API_KEY', description: 'Alpaca API key' },
+      { name: 'ALPACA_SECRET_KEY', description: 'Alpaca secret key' },
+    ],
+    tags: ['alpaca', 'trading', 'stocks', 'crypto', 'finance', 'official'],
   },
   {
     id: 'paypal-mcp',
@@ -903,34 +1229,19 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
   {
     id: 'semgrep-mcp',
     name: 'Semgrep MCP',
-    description: 'Scan code for security vulnerabilities using Semgrep',
+    description:
+      'Static code analysis and security scanning with Semgrep integration',
     category: 'security',
-    repository: 'https://github.com/semgrep/mcp',
+    repository: 'https://github.com/Szowesgad/mcp-server-semgrep',
     website: 'https://semgrep.dev',
-    installationType: 'pip',
-    pipPackage: 'semgrep-mcp',
-    official: true,
+    installationType: 'npx',
+    npmPackage: 'mcp-server-semgrep',
     installConfig: {
-      command: 'uvx',
-      args: ['semgrep-mcp'],
+      command: 'npx',
+      args: ['-y', 'mcp-server-semgrep'],
     },
-    tags: ['semgrep', 'security', 'sast', 'official'],
+    tags: ['semgrep', 'security', 'sast', 'static-analysis'],
   },
-  {
-    id: 'osv-mcp',
-    name: 'OSV MCP',
-    description: 'Access Open Source Vulnerabilities database',
-    category: 'security',
-    repository: 'https://github.com/StacklokLabs/osv-mcp',
-    website: 'https://osv.dev',
-    installationType: 'binary',
-    installConfig: {
-      command: 'osv-mcp',
-      args: [],
-    },
-    tags: ['osv', 'vulnerabilities', 'security'],
-  },
-
   {
     id: 'pipedream-mcp',
     name: 'Pipedream MCP',
@@ -984,17 +1295,21 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
   {
     id: 'unity-mcp',
     name: 'Unity MCP',
-    description: 'MCP server for Unity Editor control and game development',
-    category: 'other',
-    repository: 'https://github.com/Artmann/unity-mcp',
+    description:
+      'MCP server for Unity Editor - designed for Claude, Cursor, Gemini and more',
+    category: 'developer-tools',
+    repository: 'https://github.com/CoplayDev/unity-mcp',
     website: 'https://unity.com',
-    installationType: 'npx',
-    npmPackage: 'unity-mcp',
+    installationType: 'pip',
     installConfig: {
-      command: 'npx',
-      args: ['-y', 'unity-mcp'],
+      command: 'uvx',
+      args: [
+        '--from',
+        'git+https://github.com/CoplayDev/unity-mcp',
+        'unity-mcp',
+      ],
     },
-    tags: ['unity', 'game-dev', 'editor'],
+    tags: ['unity', 'game-dev', 'editor', 'gamedev'],
   },
 
   {

@@ -21,7 +21,7 @@ import type {
   APIKeyResult,
   APIKeySource,
   ClaudeCodeOAuthCredentials,
-} from '../types/agent.js';
+} from '../types/index.js';
 import { HOME, isMac, isWindows } from '../utils/platform.js';
 
 // ============================================

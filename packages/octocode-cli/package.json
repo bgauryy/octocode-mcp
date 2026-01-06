@@ -25,7 +25,11 @@
     "test": "vitest run --coverage",
     "test:quiet": "vitest run --reporter=dot --silent",
     "test:watch": "vitest --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "validate:mcp": "npx tsx scripts/validate-mcp-registry.ts",
+    "validate:mcp:json": "npx tsx scripts/validate-mcp-registry.ts --json",
+    "validate:skills": "npx tsx scripts/validate-skills-marketplace.ts",
+    "validate:skills:json": "npx tsx scripts/validate-skills-marketplace.ts --json"
   },
   "keywords": [
     "octocode",
@@ -55,9 +59,6 @@
     "@ai-sdk/anthropic": "^1.0.0",
     "@ai-sdk/google": "^1.0.0",
     "@ai-sdk/openai": "^1.0.0",
-    "@ai-sdk/openai-compatible": "^0.0.1",
-    "@anthropic-ai/claude-agent-sdk": "^0.1.76",
-    "@anthropic-ai/sdk": "^0.71.2",
     "@inkjs/ui": "^2.0.0",
     "@inquirer/prompts": "^7.2.1",
     "@modelcontextprotocol/sdk": "^1.0.0",

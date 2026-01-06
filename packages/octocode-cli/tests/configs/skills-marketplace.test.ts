@@ -6,7 +6,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   SKILLS_MARKETPLACES,
   getMarketplaceById,
-  getMarketplacesSortedByStars,
   getMarketplaceCount,
   fetchMarketplaceStars,
   fetchAllMarketplaceStars,
@@ -83,51 +82,6 @@ describe('Skills Marketplace Registry', () => {
     });
   });
 
-  describe('getMarketplacesSortedByStars', () => {
-    it('should return all marketplaces', () => {
-      const starsMap = new Map([
-        ['buildwithclaude', 2000],
-        ['claude-code-plugins-plus-skills', 800],
-      ]);
-      const sorted = getMarketplacesSortedByStars(starsMap);
-      expect(sorted.length).toBe(SKILLS_MARKETPLACES.length);
-    });
-
-    it('should return marketplaces sorted by stars descending', () => {
-      const starsMap = new Map([
-        ['buildwithclaude', 2000],
-        ['claude-code-plugins-plus-skills', 800],
-        ['claude-skills-marketplace', 150],
-        ['daymade-claude-code-skills', 100],
-      ]);
-      const sorted = getMarketplacesSortedByStars(starsMap);
-
-      for (let i = 0; i < sorted.length - 1; i++) {
-        const currentStars = starsMap.get(sorted[i].id) ?? 0;
-        const nextStars = starsMap.get(sorted[i + 1].id) ?? 0;
-        expect(currentStars).toBeGreaterThanOrEqual(nextStars);
-      }
-    });
-
-    it('should not modify original array', () => {
-      const originalFirst = SKILLS_MARKETPLACES[0];
-      const starsMap = new Map<string, number>();
-      const sorted = getMarketplacesSortedByStars(starsMap);
-
-      // Original should still be the same
-      expect(SKILLS_MARKETPLACES[0]).toBe(originalFirst);
-
-      // Sorted may have different order
-      expect(sorted).not.toBe(SKILLS_MARKETPLACES);
-    });
-
-    it('should handle empty stars map', () => {
-      const starsMap = new Map<string, number>();
-      const sorted = getMarketplacesSortedByStars(starsMap);
-      expect(sorted.length).toBe(SKILLS_MARKETPLACES.length);
-    });
-  });
-
   describe('getMarketplaceCount', () => {
     it('should return correct count', () => {
       expect(getMarketplaceCount()).toBe(SKILLS_MARKETPLACES.length);
@@ -143,12 +97,11 @@ describe('Skills Marketplace Registry', () => {
 
     beforeEach(() => {
       vi.resetAllMocks();
-      clearStarsCache();
+      clearStarsCache(); // Clear cache between tests
     });
 
     afterEach(() => {
       global.fetch = originalFetch;
-      clearStarsCache();
     });
 
     it('should fetch stars from GitHub API', async () => {
@@ -219,12 +172,11 @@ describe('Skills Marketplace Registry', () => {
     const originalFetch = global.fetch;
 
     beforeEach(() => {
-      clearStarsCache();
+      clearStarsCache(); // Clear cache between tests
     });
 
     afterEach(() => {
       global.fetch = originalFetch;
-      clearStarsCache();
     });
 
     it('should fetch stars for all marketplaces', async () => {

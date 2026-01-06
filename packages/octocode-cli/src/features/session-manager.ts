@@ -1,8 +1,8 @@
 /**
- * Session Manager - Handles persistence and retrieval of agent sessions
+ * Session Manager - Handles persistence and retrieval of chat sessions
  *
  * Sessions are stored in ~/.octocode/sessions/ as JSON files.
- * Each session file contains metadata about the agent run for later resume.
+ * Each session file contains metadata about the chat session for later resume.
  */
 
 import {
@@ -18,7 +18,7 @@ import type {
   SessionInfo,
   SessionCoderMode,
   AIProvider,
-} from '../types/agent.js';
+} from '../types/index.js';
 import { HOME } from '../utils/platform.js';
 
 // ============================================
@@ -264,38 +264,6 @@ export function truncatePrompt(prompt: string, maxLength: number): string {
   return cleaned.slice(0, maxLength - 3) + '...';
 }
 
-/**
- * Format a session for display
- */
-export function formatSessionForDisplay(session: SessionInfo): {
-  id: string;
-  preview: string;
-  mode: string;
-  status: string;
-  date: string;
-  tokens: string;
-} {
-  const date = new Date(session.lastActiveAt);
-  const formattedDate = date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-
-  const totalTokens =
-    (session.totalInputTokens ?? 0) + (session.totalOutputTokens ?? 0);
-
-  return {
-    id: session.id.slice(0, 8), // Show first 8 chars of ID
-    preview: session.promptPreview,
-    mode: session.mode,
-    status: session.status,
-    date: formattedDate,
-    tokens: totalTokens > 0 ? totalTokens.toLocaleString() : '-',
-  };
-}
-
 // ============================================
 // Singleton Export
 // ============================================
@@ -310,11 +278,4 @@ export function getSessionManager(): SessionManager {
     defaultManager = new SessionManager();
   }
   return defaultManager;
-}
-
-/**
- * Create a new session manager with custom directory
- */
-export function createSessionManager(baseDir?: string): SessionManager {
-  return new SessionManager(baseDir);
 }

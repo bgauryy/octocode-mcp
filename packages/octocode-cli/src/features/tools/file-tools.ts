@@ -1,7 +1,7 @@
 /**
  * File Tools
  *
- * Provider-agnostic file operation tools for the unified agent loop.
+ * Provider-agnostic file operation tools for the AI chat.
  * Compatible with Vercel AI SDK tool format.
  */
 

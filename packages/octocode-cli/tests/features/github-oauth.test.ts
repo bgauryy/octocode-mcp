@@ -506,4 +506,184 @@ describe('GitHub OAuth', () => {
       );
     });
   });
+
+  describe('getToken', () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      // Reset env before each test
+      process.env = { ...originalEnv };
+      delete process.env.GITHUB_TOKEN;
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    it('should return GITHUB_TOKEN env var first in auto mode', async () => {
+      // Set environment variable
+      process.env.GITHUB_TOKEN = 'env-token-123';
+
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      const result = await getToken('github.com', 'auto');
+
+      expect(result.token).toBe('env-token-123');
+      expect(result.source).toBe('env');
+    });
+
+    it('should return gh CLI token second when no env var (auto mode)', async () => {
+      const { getGitHubCLIToken } =
+        await import('../../src/features/gh-auth.js');
+      vi.mocked(getGitHubCLIToken).mockReturnValue('gh-cli-token-456');
+
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      const result = await getToken('github.com', 'auto');
+
+      expect(result.token).toBe('gh-cli-token-456');
+      expect(result.source).toBe('gh-cli');
+    });
+
+    it('should return octocode token third as fallback (auto mode)', async () => {
+      const { getGitHubCLIToken } =
+        await import('../../src/features/gh-auth.js');
+      vi.mocked(getGitHubCLIToken).mockReturnValue(null);
+
+      const { getCredentials, isTokenExpired } =
+        await import('../../src/utils/token-storage.js');
+      vi.mocked(getCredentials).mockResolvedValue({
+        hostname: 'github.com',
+        username: 'octocode-user',
+        token: {
+          token: 'octocode-token-789',
+          tokenType: 'oauth',
+        },
+        gitProtocol: 'https',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      });
+      vi.mocked(isTokenExpired).mockReturnValue(false);
+
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      const result = await getToken('github.com', 'auto');
+
+      expect(result.token).toBe('octocode-token-789');
+      expect(result.source).toBe('octocode');
+    });
+
+    it('should return none when no token sources available (auto mode)', async () => {
+      const { getGitHubCLIToken } =
+        await import('../../src/features/gh-auth.js');
+      vi.mocked(getGitHubCLIToken).mockReturnValue(null);
+
+      const { getCredentials } =
+        await import('../../src/utils/token-storage.js');
+      vi.mocked(getCredentials).mockResolvedValue(null);
+
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      const result = await getToken('github.com', 'auto');
+
+      expect(result.token).toBeNull();
+      expect(result.source).toBe('none');
+    });
+
+    it('should only check octocode storage when source is octocode', async () => {
+      // Set env var that should be ignored
+      process.env.GITHUB_TOKEN = 'env-token-ignored';
+
+      const { getGitHubCLIToken } =
+        await import('../../src/features/gh-auth.js');
+      vi.mocked(getGitHubCLIToken).mockReturnValue('gh-token-ignored');
+
+      const { getCredentials, isTokenExpired } =
+        await import('../../src/utils/token-storage.js');
+      vi.mocked(getCredentials).mockResolvedValue({
+        hostname: 'github.com',
+        username: 'octocode-user',
+        token: {
+          token: 'octocode-only-token',
+          tokenType: 'oauth',
+        },
+        gitProtocol: 'https',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      });
+      vi.mocked(isTokenExpired).mockReturnValue(false);
+
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      const result = await getToken('github.com', 'octocode');
+
+      expect(result.token).toBe('octocode-only-token');
+      expect(result.source).toBe('octocode');
+    });
+
+    it('should only check gh CLI when source is gh', async () => {
+      // Set env var that should be ignored
+      process.env.GITHUB_TOKEN = 'env-token-ignored';
+
+      const { getGitHubCLIToken, checkGitHubAuth } =
+        await import('../../src/features/gh-auth.js');
+      vi.mocked(getGitHubCLIToken).mockReturnValue('gh-only-token');
+      vi.mocked(checkGitHubAuth).mockReturnValue({
+        installed: true,
+        authenticated: true,
+        username: 'gh-user',
+      });
+
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      const result = await getToken('github.com', 'gh');
+
+      expect(result.token).toBe('gh-only-token');
+      expect(result.source).toBe('gh-cli');
+    });
+
+    it('should prioritize GITHUB_TOKEN over gh CLI in auto mode', async () => {
+      // Both env var and gh CLI available
+      process.env.GITHUB_TOKEN = 'env-wins';
+
+      const { getGitHubCLIToken } =
+        await import('../../src/features/gh-auth.js');
+      vi.mocked(getGitHubCLIToken).mockReturnValue('gh-loses');
+
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      const result = await getToken('github.com', 'auto');
+
+      // Env should win
+      expect(result.token).toBe('env-wins');
+      expect(result.source).toBe('env');
+    });
+
+    it('should prioritize gh CLI over octocode in auto mode', async () => {
+      // Both gh CLI and octocode available, no env var
+      const { getGitHubCLIToken, checkGitHubAuth } =
+        await import('../../src/features/gh-auth.js');
+      vi.mocked(getGitHubCLIToken).mockReturnValue('gh-wins');
+      vi.mocked(checkGitHubAuth).mockReturnValue({
+        installed: true,
+        authenticated: true,
+        username: 'gh-user',
+      });
+
+      const { getCredentials, isTokenExpired } =
+        await import('../../src/utils/token-storage.js');
+      vi.mocked(getCredentials).mockResolvedValue({
+        hostname: 'github.com',
+        username: 'octocode-user',
+        token: {
+          token: 'octocode-loses',
+          tokenType: 'oauth',
+        },
+        gitProtocol: 'https',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      });
+      vi.mocked(isTokenExpired).mockReturnValue(false);
+
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      const result = await getToken('github.com', 'auto');
+
+      // gh CLI should win over octocode
+      expect(result.token).toBe('gh-wins');
+      expect(result.source).toBe('gh-cli');
+    });
+  });
 });

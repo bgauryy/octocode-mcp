@@ -111,7 +111,7 @@ describe('CLI Commands', () => {
       expect(process.exitCode).toBeUndefined();
     });
 
-    it('should show error when no octocode token found (default type)', async () => {
+    it('should show error when not authenticated (default auto type)', async () => {
       const { getToken } = await import('../../src/features/github-oauth.js');
       vi.mocked(getToken).mockResolvedValue({
         token: null,
@@ -132,9 +132,9 @@ describe('CLI Commands', () => {
       expect(consoleSpy).not.toHaveBeenCalledWith(
         expect.stringMatching(/^gho_/)
       );
-      // Should show warning about no octocode token (default type)
+      // Should show warning about not authenticated (default type is now 'auto')
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('No octocode token found')
+        expect.stringContaining('Not authenticated')
       );
       expect(process.exitCode).toBe(1);
     });
@@ -156,11 +156,8 @@ describe('CLI Commands', () => {
         options: { hostname: 'github.enterprise.com' },
       });
 
-      // getToken is now called with hostname and tokenSource ('octocode' is default)
-      expect(getToken).toHaveBeenCalledWith(
-        'github.enterprise.com',
-        'octocode'
-      );
+      // getToken is now called with hostname and tokenSource ('auto' is the new default)
+      expect(getToken).toHaveBeenCalledWith('github.enterprise.com', 'auto');
       expect(consoleSpy).toHaveBeenCalledWith('gho_enterprise_token');
     });
 

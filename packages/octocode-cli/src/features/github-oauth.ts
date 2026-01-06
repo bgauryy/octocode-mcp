@@ -567,7 +567,7 @@ export type GetTokenSource = 'octocode' | 'gh' | 'auto';
  * @param preferredSource - Token source preference:
  *   - 'octocode': Only return octocode-cli token
  *   - 'gh': Only return gh CLI token
- *   - 'auto': Try octocode first, then fall back to gh CLI (default)
+ *   - 'auto': Match octocode-mcp priority: GITHUB_TOKEN env → gh CLI → octocode
  */
 export async function getToken(
   hostname: string = DEFAULT_HOSTNAME,
@@ -582,13 +582,24 @@ export async function getToken(
     return getGhCliToken(hostname);
   }
 
-  // Auto mode: octocode first, then gh CLI
-  const octocodeResult = await getOctocodeToken(hostname);
-  if (octocodeResult.token) {
-    return octocodeResult;
+  // Auto mode: Match octocode-mcp priority
+  // 1. GITHUB_TOKEN environment variable (explicit override)
+  if (process.env.GITHUB_TOKEN) {
+    return {
+      token: process.env.GITHUB_TOKEN,
+      source: 'env',
+      username: undefined,
+    };
   }
 
-  return getGhCliToken(hostname);
+  // 2. gh CLI token (most common for developers)
+  const ghResult = getGhCliToken(hostname);
+  if (ghResult.token) {
+    return ghResult;
+  }
+
+  // 3. octocode storage (fallback)
+  return getOctocodeToken(hostname);
 }
 
 /**

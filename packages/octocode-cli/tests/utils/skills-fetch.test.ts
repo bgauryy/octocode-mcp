@@ -39,7 +39,6 @@ const mockSource: MarketplaceSource = {
   skillsPath: 'commands',
   skillPattern: 'flat-md',
   description: 'Test marketplace',
-  stars: 100,
   url: 'https://github.com/test-owner/test-repo',
 };
 

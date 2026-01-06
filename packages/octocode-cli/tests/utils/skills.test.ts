@@ -443,3 +443,161 @@ description: Valid skill
     });
   });
 });
+
+// Separate describe block for config-related tests since they use different mocks
+describe('Skills Config', () => {
+  // Mock node:fs for config tests
+  vi.mock('node:fs', () => ({
+    existsSync: vi.fn(),
+    readFileSync: vi.fn(),
+    writeFileSync: vi.fn(),
+    mkdirSync: vi.fn(),
+  }));
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  describe('getCustomSkillsDestDir', () => {
+    it('should return null when config file does not exist', async () => {
+      const { existsSync } = await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      const { getCustomSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      const result = getCustomSkillsDestDir();
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when config has no skillsDestDir', async () => {
+      const { existsSync, readFileSync } = await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('{}');
+
+      const { getCustomSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      const result = getCustomSkillsDestDir();
+
+      expect(result).toBeNull();
+    });
+
+    it('should return custom path when set in config', async () => {
+      const { existsSync, readFileSync } = await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({ skillsDestDir: '/custom/path' })
+      );
+
+      const { getCustomSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      const result = getCustomSkillsDestDir();
+
+      expect(result).toBe('/custom/path');
+    });
+
+    it('should return null when config file is invalid JSON', async () => {
+      const { existsSync, readFileSync } = await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('invalid json');
+
+      const { getCustomSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      const result = getCustomSkillsDestDir();
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('setCustomSkillsDestDir', () => {
+    it('should create config directory if it does not exist', async () => {
+      const { existsSync, mkdirSync, readFileSync } = await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(false);
+      vi.mocked(readFileSync).mockReturnValue('{}');
+
+      const { setCustomSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      setCustomSkillsDestDir('/new/path');
+
+      expect(mkdirSync).toHaveBeenCalledWith(
+        expect.stringContaining('.octocode'),
+        { recursive: true }
+      );
+    });
+
+    it('should save custom path to config file', async () => {
+      const { existsSync, readFileSync, writeFileSync } =
+        await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('{}');
+
+      const { setCustomSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      setCustomSkillsDestDir('/custom/skills/path');
+
+      expect(writeFileSync).toHaveBeenCalledWith(
+        expect.stringContaining('config.json'),
+        expect.stringContaining('/custom/skills/path'),
+        'utf-8'
+      );
+    });
+
+    it('should remove skillsDestDir from config when null is passed', async () => {
+      const { existsSync, readFileSync, writeFileSync } =
+        await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({ skillsDestDir: '/old/path', otherSetting: true })
+      );
+
+      const { setCustomSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      setCustomSkillsDestDir(null);
+
+      expect(writeFileSync).toHaveBeenCalledWith(
+        expect.stringContaining('config.json'),
+        expect.not.stringContaining('skillsDestDir'),
+        'utf-8'
+      );
+    });
+  });
+
+  describe('getDefaultSkillsDestDir', () => {
+    it('should return default path', async () => {
+      const { getDefaultSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      const result = getDefaultSkillsDestDir();
+
+      // Should end with .claude/skills or Claude/skills
+      expect(result).toMatch(/[Cc]laude.*skills$/);
+    });
+  });
+
+  describe('getSkillsDestDir', () => {
+    it('should return custom path when set', async () => {
+      const { existsSync, readFileSync } = await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({ skillsDestDir: '/custom/path' })
+      );
+
+      const { getSkillsDestDir } = await import('../../src/utils/skills.js');
+      const result = getSkillsDestDir();
+
+      expect(result).toBe('/custom/path');
+    });
+
+    it('should return default path when no custom path set', async () => {
+      const { existsSync } = await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      const { getSkillsDestDir, getDefaultSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      const result = getSkillsDestDir();
+      const defaultPath = getDefaultSkillsDestDir();
+
+      expect(result).toBe(defaultPath);
+    });
+  });
+});

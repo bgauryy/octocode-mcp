@@ -22,17 +22,6 @@ export function assertDefined<T>(
 }
 
 /**
- * Asserts that a condition is true.
- *
- * @throws Error if condition is false
- */
-export function assert(condition: boolean, message: string): asserts condition {
-  if (!condition) {
-    throw new Error(`Assertion failed: ${message}`);
-  }
-}
-
-/**
  * Asserts that code path should never be reached.
  * Useful for exhaustive switch statements.
  *

@@ -201,6 +201,8 @@ async function showConfirmationAndPrompt(
   state: InstallFlowState
 ): Promise<FinalChoice> {
   const clientInfo = MCP_CLIENTS[state.client! as keyof typeof MCP_CLIENTS];
+  // Interactive flow uses NPX (recommended method)
+  // For 'direct' method, use CLI: octocode install --ide <id> --method direct
   const method = 'npx' as const;
 
   // Build environment options

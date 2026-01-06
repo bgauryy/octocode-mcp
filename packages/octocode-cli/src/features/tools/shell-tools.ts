@@ -1,7 +1,7 @@
 /**
  * Shell Tools
  *
- * Provider-agnostic shell/command execution tools for the unified agent loop.
+ * Provider-agnostic shell/command execution tools for the AI chat.
  * Compatible with Vercel AI SDK tool format.
  */
 
