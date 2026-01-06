@@ -94,6 +94,28 @@ export const SKILLS_MARKETPLACES: MarketplaceSource[] = [
     description: 'Production-ready development skills',
     url: 'https://github.com/daymade/claude-code-skills',
   },
+  {
+    id: 'superpowers',
+    name: 'Superpowers',
+    owner: 'obra',
+    repo: 'superpowers',
+    branch: 'main',
+    skillsPath: 'skills',
+    skillPattern: 'skill-folders',
+    description: 'TDD, debugging, git worktrees, code review skills',
+    url: 'https://github.com/obra/superpowers',
+  },
+  {
+    id: 'claude-scientific-skills',
+    name: 'Claude Scientific Skills',
+    owner: 'K-Dense-AI',
+    repo: 'claude-scientific-skills',
+    branch: 'main',
+    skillsPath: 'scientific-skills',
+    skillPattern: 'skill-folders',
+    description: 'Scientific computing - biopython, astropy, deepchem & more',
+    url: 'https://github.com/K-Dense-AI/claude-scientific-skills',
+  },
 ];
 
 /**
