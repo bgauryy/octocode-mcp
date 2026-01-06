@@ -2,7 +2,16 @@
  * Dynamic Import for ES Module (@inquirer/prompts)
  */
 
-type SelectFunction = <T>(config: {
+/**
+ * Error thrown when user cancels a prompt (e.g., presses Escape)
+ * This is distinct from ExitPromptError (Ctrl+C) which exits the app
+ */
+export class CancelPromptError extends Error {
+  override name = 'CancelPromptError';
+  override message = 'Prompt was canceled';
+}
+
+type SelectConfig<T> = {
   message: string;
   choices: Array<
     | {
@@ -21,7 +30,9 @@ type SelectFunction = <T>(config: {
       message?: (text: string) => string;
     };
   };
-}) => Promise<T>;
+};
+
+type SelectFunction = <T>(config: SelectConfig<T>) => Promise<T>;
 
 type ConfirmFunction = (config: {
   message: string;
@@ -55,6 +66,36 @@ type CheckboxFunction = <T>(config: {
   };
 }) => Promise<T[]>;
 
+type SearchFunction = <T>(config: {
+  message: string;
+  source: (
+    term: string | undefined,
+    opt: { signal: AbortSignal }
+  ) =>
+    | Promise<
+        Array<{
+          value: T;
+          name?: string;
+          description?: string;
+          disabled?: boolean | string;
+        }>
+      >
+    | Array<{
+        value: T;
+        name?: string;
+        description?: string;
+        disabled?: boolean | string;
+      }>;
+  pageSize?: number;
+  theme?: {
+    prefix?: string;
+    style?: {
+      highlight?: (text: string) => string;
+      message?: (text: string) => string;
+    };
+  };
+}) => Promise<T>;
+
 // Separator is a class that can be instantiated with optional text
 interface SeparatorInstance {
   type: 'separator';
@@ -76,6 +117,7 @@ export let confirm: ConfirmFunction =
 export let input: InputFunction = notLoadedError as unknown as InputFunction;
 export let checkbox: CheckboxFunction =
   notLoadedError as unknown as CheckboxFunction;
+export let search: SearchFunction = notLoadedError as unknown as SearchFunction;
 export let Separator: SeparatorClass = class {
   type = 'separator' as const;
   separator = '';
@@ -97,6 +139,7 @@ export async function loadInquirer(): Promise<void> {
     confirm = inquirer.confirm as ConfirmFunction;
     input = inquirer.input as InputFunction;
     checkbox = inquirer.checkbox as CheckboxFunction;
+    search = inquirer.search as SearchFunction;
     Separator = inquirer.Separator as SeparatorClass;
     loaded = true;
   } catch {
@@ -109,4 +152,30 @@ export async function loadInquirer(): Promise<void> {
 
 export function isInquirerLoaded(): boolean {
   return loaded;
+}
+
+/**
+ * Select wrapper (alias for select)
+ *
+ * @example
+ * const value = await selectWithCancel({ message: 'Choose:', choices });
+ * // Use value directly
+ */
+export async function selectWithCancel<T>(config: SelectConfig<T>): Promise<T> {
+  // Import inquirer functions dynamically
+  const inquirer = await import('@inquirer/prompts');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (await inquirer.select(config as any)) as T;
+}
+
+/**
+ * Helper to format step indicator for menu messages
+ * @example formatStep(1, 3, 'Select client') => '[Step 1/3] Select client'
+ */
+export function formatStep(
+  current: number,
+  total: number,
+  message: string
+): string {
+  return `[Step ${current}/${total}] ${message}`;
 }

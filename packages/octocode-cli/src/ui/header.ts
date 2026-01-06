@@ -6,8 +6,6 @@ import { c, bold, dim } from '../utils/colors.js';
 import { getPlatformName, getArchitecture, HOME } from '../utils/platform.js';
 import { getAppContext } from '../utils/context.js';
 
-declare const __APP_VERSION__: string;
-
 /**
  * Print the main header
  */
@@ -111,32 +109,14 @@ export function printWelcome(): void {
 }
 
 /**
- * Print version
- */
-export function printVersion(): void {
-  const version =
-    typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.0';
-  console.log(`octocode-cli v${version}`);
-}
-
-/**
  * Print goodbye message
  */
 export function printGoodbye(): void {
   console.log();
   console.log(c('magenta', '─'.repeat(66)));
-  console.log(c('magenta', '  Thanks for using Octocode CLI! 👋'));
+  console.log(c('magenta', '  Thanks for using Octocode CLI'));
   console.log(c('magenta', `  🔍🐙 ${c('underscore', 'https://octocode.ai')}`));
   console.log(c('magenta', '─'.repeat(66)));
-  console.log();
-}
-
-/**
- * Print footer with link
- */
-export function printFooter(): void {
-  console.log();
-  console.log(c('magenta', `  ─── 🔍🐙 ${bold('https://octocode.ai')} ───`));
   console.log();
 }
 

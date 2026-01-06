@@ -2,9 +2,7 @@
  * MCP Config Utilities Tests
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import fs from 'node:fs';
-import path from 'node:path';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import os from 'node:os';
 
 // Mock modules
@@ -105,8 +103,9 @@ describe('MCP Config Utilities', () => {
 
       const config = getOctocodeServerConfig('direct');
       expect(config.command).toBe('bash');
-      expect(config.args[0]).toBe('-c');
-      expect(config.args[1]).toContain('curl');
+      expect(config.args).toBeDefined();
+      expect(config.args![0]).toBe('-c');
+      expect(config.args![1]).toContain('curl');
     });
   });
 

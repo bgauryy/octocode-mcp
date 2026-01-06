@@ -15,7 +15,6 @@ import {
   writeMCPConfig,
   mergeOctocodeConfig,
   isOctocodeConfigured,
-  ideConfigExists,
   clientConfigExists,
   getOctocodeServerConfig,
   getOctocodeServerConfigWindows,
@@ -23,6 +22,19 @@ import {
 } from '../utils/mcp-config.js';
 import { fileExists } from '../utils/fs.js';
 import { isWindows } from '../utils/platform.js';
+
+/**
+ * Convert IDE string to MCPClient
+ * Handles legacy 'claude' alias and all MCPClient types
+ */
+function ideToMCPClient(ide: string): MCPClient {
+  // Legacy alias
+  if (ide === 'claude') {
+    return 'claude-desktop';
+  }
+  // Direct MCPClient types
+  return ide as MCPClient;
+}
 
 export interface InstallOptions {
   ide: IDE;
@@ -53,10 +65,10 @@ export interface InstallPreview {
 export function detectAvailableIDEs(): IDE[] {
   const available: IDE[] = [];
 
-  if (ideConfigExists('cursor')) {
+  if (clientConfigExists('cursor')) {
     available.push('cursor');
   }
-  if (ideConfigExists('claude')) {
+  if (clientConfigExists('claude-desktop')) {
     available.push('claude');
   }
 
@@ -71,7 +83,7 @@ export function checkExistingInstallation(ide: IDE): {
   configPath: string;
   configExists: boolean;
 } {
-  const configPath = getMCPConfigPath(ide);
+  const configPath = getMCPConfigPath(ideToMCPClient(ide));
   const configExists = fileExists(configPath);
 
   if (!configExists) {
@@ -95,7 +107,7 @@ export function checkExistingInstallation(ide: IDE): {
  */
 export function installOctocode(options: InstallOptions): InstallResult {
   const { ide, method, force = false } = options;
-  const configPath = getMCPConfigPath(ide);
+  const configPath = getMCPConfigPath(ideToMCPClient(ide));
 
   // Read existing config or create new
   let config: MCPConfig = readMCPConfig(configPath) || { mcpServers: {} };
@@ -156,7 +168,7 @@ export function getInstallPreview(
   ide: IDE,
   method: InstallMethod
 ): InstallPreview {
-  const configPath = getMCPConfigPath(ide);
+  const configPath = getMCPConfigPath(ideToMCPClient(ide));
   const existing = checkExistingInstallation(ide);
   const existingConfig = readMCPConfig(configPath);
   const serverConfig = isWindows
@@ -328,10 +340,13 @@ export function detectAvailableClients(): MCPClient[] {
     'cursor',
     'claude-desktop',
     'claude-code',
+    'opencode',
     'vscode-cline',
     'vscode-roo',
     'vscode-continue',
     'windsurf',
+    'trae',
+    'antigravity',
     'zed',
   ];
 

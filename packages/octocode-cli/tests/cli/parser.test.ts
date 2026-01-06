@@ -73,6 +73,45 @@ describe('CLI Parser', () => {
       expect(result.command).toBe('install');
       expect(result.options).toEqual({ help: true });
     });
+
+    it('should parse --hostname option', () => {
+      const result = parseArgs([
+        'status',
+        '--hostname',
+        'github.enterprise.com',
+      ]);
+      expect(result.command).toBe('status');
+      expect(result.options).toEqual({ hostname: 'github.enterprise.com' });
+    });
+
+    it('should parse -H option with value for hostname', () => {
+      const result = parseArgs(['token', '-H', 'github.enterprise.com']);
+      expect(result.command).toBe('token');
+      expect(result.options).toEqual({ H: 'github.enterprise.com' });
+    });
+
+    it('should parse -h as help flag (boolean), not hostname', () => {
+      const result = parseArgs(['-h']);
+      expect(result.options).toEqual({ h: true });
+    });
+
+    it('should parse --type option with value', () => {
+      const result = parseArgs(['token', '--type', 'gh']);
+      expect(result.command).toBe('token');
+      expect(result.options).toEqual({ type: 'gh' });
+    });
+
+    it('should parse -t option with value for type', () => {
+      const result = parseArgs(['token', '-t', 'octocode']);
+      expect(result.command).toBe('token');
+      expect(result.options).toEqual({ t: 'octocode' });
+    });
+
+    it('should parse --git-protocol option', () => {
+      const result = parseArgs(['login', '--git-protocol', 'ssh']);
+      expect(result.command).toBe('login');
+      expect(result.options).toEqual({ 'git-protocol': 'ssh' });
+    });
   });
 
   describe('hasHelpFlag', () => {

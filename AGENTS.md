@@ -32,6 +32,7 @@
     - Adhere to "Clean Code" principles.
     - Add only critical comments.
     - Run linter (`yarn lint`) and tests (`yarn test`) after substantive changes.
+    - Run dead code detection (`npx knip`) to identify unused exports or files.
     - **Never** leave the codebase in a broken state.
 
 ## 📂 Repository Structure
@@ -98,9 +99,15 @@ For package-specific commands, `cd packages/<name>` first.
 
 ### File Actions
 
-- **String Replacement**: **MUST use `sed`** for changing strings across multiple files.
-- **Simplify Flows**: Write and run scripts (e.g., Node.js, Shell) to automate complex sequences instead of looping through tool calls.
-- **Repetitive Tasks**: Prefer CLI commands over manual edits for bulk/repetitive operations.
+- **String Replacement**: Use `sed` for changing strings across multiple files.
+  - `sed -i '' 's/old/new/g' src/**/*.ts` — replace in all TS files
+- **Move/Copy Files**: Use `mv`, `cp`, `rsync` for file operations.
+  - `mv src/old.ts src/new.ts` — rename file
+  - `cp -r src/utils/ src/helpers/` — duplicate directory
+  - `head -n 50 src/file.ts > src/extract.ts` — extract first 50 lines
+  - `tail -n +10 src/file.ts | head -n 20 >> dest.ts` — extract lines 10-30
+- **Simplify Flows**: Write scripts (Node.js, Shell) for complex sequences
+- **Repetitive Tasks**: Use scripts and Linux commands over manual edits for bulk operations.
 
 ## 📏 Development Standards
 

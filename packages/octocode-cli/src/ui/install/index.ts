@@ -3,7 +3,6 @@
  */
 
 export { runInstallFlow } from './flow.js';
-export { selectIDE, selectInstallMethod } from './prompts.js';
 export {
   printConfigPreview,
   printInstallSuccess,
@@ -12,6 +11,8 @@ export {
 } from './display.js';
 export {
   printNodeEnvironmentStatus,
+  checkAndPrintEnvironmentWithLoader,
   printNodeDoctorHint,
   hasEnvironmentIssues,
+  printAuthStatus,
 } from './environment.js';

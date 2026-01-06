@@ -24,7 +24,21 @@ export function showHelp(): void {
     `    ${c('magenta', 'install')}     Configure octocode-mcp for an IDE`
   );
   console.log(
-    `    ${c('magenta', 'auth')}        Check GitHub CLI authentication status`
+    `    ${c('magenta', 'skills')}      Install Octocode skills for Claude Code`
+  );
+  console.log(
+    `    ${c('magenta', 'sync')}        Sync MCP configurations across all IDEs`
+  );
+  console.log(
+    `    ${c('magenta', 'auth')}        Manage GitHub authentication`
+  );
+  console.log(`    ${c('magenta', 'login')}       Authenticate with GitHub`);
+  console.log(`    ${c('magenta', 'logout')}      Sign out from GitHub`);
+  console.log(
+    `    ${c('magenta', 'status')}      Show GitHub authentication status`
+  );
+  console.log(
+    `    ${c('magenta', 'token')}       Print the stored GitHub OAuth token`
   );
   console.log();
   console.log(`  ${bold('OPTIONS')}`);
@@ -47,6 +61,15 @@ export function showHelp(): void {
   console.log();
   console.log(`    ${dim('# Check GitHub authentication')}`);
   console.log(`    ${c('yellow', 'octocode auth')}`);
+  console.log();
+  console.log(`    ${dim('# Get token from Octocode (default)')}`);
+  console.log(`    ${c('yellow', 'octocode token')}`);
+  console.log();
+  console.log(`    ${dim('# Get token from gh CLI')}`);
+  console.log(`    ${c('yellow', 'octocode token --type=gh')}`);
+  console.log();
+  console.log(`    ${dim('# Install Octocode skills')}`);
+  console.log(`    ${c('yellow', 'octocode skills install')}`);
   console.log();
   console.log(c('magenta', `  ─── 🔍🐙 ${bold('https://octocode.ai')} ───`));
   console.log();
@@ -90,6 +113,6 @@ export function showCommandHelp(command: CLICommand): void {
  */
 export function showVersion(): void {
   const version =
-    typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.0';
-  console.log(`octocode-cli v${version}`);
+    typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'unknown';
+  console.log(`octocode v${version}`);
 }

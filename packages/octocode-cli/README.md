@@ -1,147 +1,147 @@
 # 🐙 Octocode CLI
 
-**The easiest way to set up [octocode-mcp](https://www.npmjs.com/package/octocode-mcp) for your AI coding assistant.**
+<div align="center">
 
-One command. Interactive setup. Done in seconds.
+[![npm version](https://img.shields.io/npm/v/octocode-cli.svg?style=flat-square)](https://www.npmjs.com/package/octocode-cli)
+[![npm downloads](https://img.shields.io/npm/dm/octocode-cli.svg?style=flat-square)](https://www.npmjs.com/package/octocode-cli)
+[![License](https://img.shields.io/badge/license-PolyForm--Small--Business-blue.svg?style=flat-square)](LICENSE)
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/packages/octocode-cli/assets/example.png" alt="Octocode CLI" width="700">
-</p>
+**The unified installer and management hub for Octocode MCP servers and AI skills.**
 
-## ⚡ Quick Start
+[Website](https://octocode.ai) • [Documentation](https://docs.octocode.ai) • [GitHub](https://github.com/bgauryy/octocode-mcp)
+
+<img src="https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/packages/octocode-cli/assets/example.png" alt="Octocode CLI Demo" width="700" style="border-radius: 8px; margin: 20px 0;">
+
+</div>
+
+**Octocode CLI** is the essential companion for AI-assisted development. It streamlines the installation of [octocode-mcp](https://www.npmjs.com/package/octocode-mcp), manages authentication across multiple AI clients, and keeps your MCP configurations synchronized.
+
+---
+
+## ✨ Key Features
+
+- **🚀 One-Step Installation**: Instantly configure `octocode-mcp` for Cursor, Claude Desktop, Windsurf, Zed, and more.
+- **🔌 MCP Marketplace**: Browse and install over 70+ community-vetted MCP servers directly from your terminal.
+- **🧠 AI Skills Manager**: Install and update specialized AI coding skills for Claude Code (`research`, `plan`, `pr-review`).
+- **🔄 Universal Sync**: Keep your MCP configurations and authentication states synchronized across all your IDEs.
+- **🔐 Secure Authentication**: Enterprise-grade token management with encrypted storage and multiple auth providers.
+
+---
+
+## 🚀 Quick Start
+
+Get up and running in seconds. The interactive wizard will guide you through installation and authentication.
 
 ```bash
 npx octocode-cli
 ```
 
-That's it! The interactive wizard will guide you through everything.
+---
 
-## ✨ Features
+## 📦 Installation & Usage
 
-- 🎯 **Zero Config** - Interactive prompts handle everything
-- 🔍 **Auto-Detection** - Finds installed IDEs automatically
-- ✅ **Environment Check** - Validates Node.js, npm & GitHub CLI
-- 🛡️ **Safe Updates** - Preserves existing MCP configurations
-
-## 📦 Installation
-
-### Run Directly (Recommended)
-
-No installation needed - just run:
+### Interactive Mode
+The recommended way to use Octocode CLI. Access all features through a unified menu:
+- **Octocode Configuration**: Setup MCP servers and GitHub auth.
+- **Manage System Skills**: Install AI capabilities.
+- **Manage System MCP**: Sync configs and browse the marketplace.
 
 ```bash
 npx octocode-cli
 ```
 
-### Global Install
+### CLI Commands
+For automation and power users, Octocode CLI offers a comprehensive command-line interface.
 
-For frequent use:
+#### 1. Install Octocode MCP
+Install the GitHub MCP server for your preferred IDE.
 
 ```bash
-npm install -g octocode-cli
-octocode
+# Interactive install
+octocode-cli install
+
+# Specific IDEs
+octocode-cli install --ide cursor --method npx
+octocode-cli install --ide claude-desktop --method direct
+octocode-cli install --ide windsurf
 ```
+
+#### 2. Manage Authentication
+Securely authenticate with GitHub. Credentials are encrypted (AES-256-GCM) and stored in `~/.octocode/`.
+
+```bash
+# Interactive login
+octocode-cli login
+
+# Check status
+octocode-cli status
+
+# Enterprise Login
+octocode-cli login --hostname github.mycompany.com
+```
+
+#### 3. Sync Configurations
+Keep your MCP settings consistent across different editors.
+
+```bash
+# Sync all IDEs
+octocode-cli sync
+
+# Preview changes
+octocode-cli sync --dry-run
+```
+
+#### 4. Manage Skills
+Install AI skills for Claude Code.
+
+```bash
+# List available skills
+octocode-cli skills list
+
+# Install all standard skills
+octocode-cli skills install
+```
+
+---
 
 ## 🖥️ Supported Clients
 
-| Client | Description | Status |
-|--------|-------------|--------|
-| **Cursor** | AI-first code editor | ✅ Supported |
-| **Claude Desktop** | Anthropic's desktop app | ✅ Supported |
-| **Claude Code** | Claude CLI for terminal | ✅ Supported |
-| **Windsurf** | Codeium AI IDE | ✅ Supported |
-| **Zed** | High-performance editor | ✅ Supported |
-| **Cline** | VS Code AI extension | ✅ Supported |
+Octocode CLI supports a wide range of AI-first editors and tools.
 
-## 🔧 CLI Mode
+| Client | Description | Config Location (macOS) |
+|--------|-------------|-------------------------|
+| **Cursor** | AI-first code editor | `~/.cursor/mcp.json` |
+| **Claude Desktop** | Anthropic's desktop app | `~/Library/Application Support/Claude/` |
+| **Windsurf** | Codeium AI IDE | `~/.codeium/windsurf/mcp_config.json` |
+| **Zed** | High-performance editor | `~/.config/zed/settings.json` |
+| **Claude Code** | CLI Assistant | `~/.claude.json` |
+| **VS Code Extensions** | Cline, Roo-Cline, Continue | *(Varies by extension)* |
 
-For automation or CI/CD, use CLI flags:
-
-```bash
-# Install for Cursor using NPX method
-octocode install --ide cursor --method npx
-
-# Install for Claude Desktop
-octocode install --ide claude --method direct
-
-# Force overwrite existing config
-octocode install --ide cursor --method npx --force
-
-# Check GitHub authentication
-octocode auth
-```
-
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `install` | Install octocode-mcp for an IDE |
-| `auth` | Check GitHub CLI authentication status |
-
-### Options
-
-| Option | Description |
-|--------|-------------|
-| `--ide <ide>` | IDE to configure: `cursor`, `claude`, `claude-code`, `windsurf`, `zed`, `cline` |
-| `--method <method>` | Installation method: `npx` or `direct` |
-| `-f, --force` | Overwrite existing configuration |
-| `-h, --help` | Show help message |
-| `-v, --version` | Show version number |
-
-## 📁 Configuration Files
-
-The CLI automatically updates the correct config file for each IDE:
-
-| IDE | macOS | Windows |
-|-----|-------|---------|
-| Cursor | `~/.cursor/mcp.json` | `%APPDATA%\Cursor\mcp.json` |
-| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` | `%APPDATA%\Claude\claude_desktop_config.json` |
-| Claude Code | `~/.claude.json` | `%USERPROFILE%\.claude.json` |
-| Windsurf | `~/.codeium/windsurf/mcp_config.json` | `%APPDATA%\Codeium\windsurf\mcp_config.json` |
-| Zed | `~/.config/zed/settings.json` | `%APPDATA%\Zed\settings.json` |
-| Cline | VS Code settings | VS Code settings |
-
-## 🔐 GitHub Authentication
-
-Octocode uses GitHub CLI (`gh`) for secure authentication:
-
-```bash
-# Check your auth status
-octocode auth
-
-# Install GitHub CLI if needed
-# macOS
-brew install gh
-
-# Windows
-winget install GitHub.cli
-
-# Then authenticate
-gh auth login
-```
-
-## 📋 Requirements
-
-- **Node.js** >= 18.0.0
-- **GitHub CLI** (recommended for best experience)
+---
 
 ## 🔧 Troubleshooting
 
-If you encounter issues with Node.js or npm, run the following command to diagnose problems:
+If you encounter issues, try the following commands:
 
 ```bash
+# Diagnose environment issues
 npx node-doctor
+
+# Reset local credentials
+rm -rf ~/.octocode && octocode-cli login
+
+# Verify auth status
+octocode-cli status
 ```
 
-This will check your Node.js environment and help identify common issues with your installation.
+**Common Issues:**
+- **Token Expired**: Run `octocode-cli login` to refresh credentials.
+- **Browser Not Opening**: Copy the authorization URL manually from the terminal.
 
-## 🔗 Links
-
-- [Octocode Website](https://octocode.ai)
-- [octocode-cli on NPM](https://www.npmjs.com/package/octocode-cli)
-- [octocode-mcp on NPM](https://www.npmjs.com/package/octocode-mcp)
-- [GitHub Repository](https://github.com/bgauryy/octocode-mcp)
+---
 
 ## 📄 License
 
-PolyForm-Small-Business-1.0.0
+This project is licensed under the **PolyForm Small Business License 1.0.0**.
+
+Copyright © 2024 Octocode AI.

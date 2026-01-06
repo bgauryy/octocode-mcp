@@ -136,6 +136,14 @@ export const MCP_CLIENTS: Record<MCPClient, MCPClientInfo> = {
     url: 'https://zed.dev',
     envVars: ['ZED_TERM'],
   },
+  opencode: {
+    id: 'opencode',
+    name: 'Opencode',
+    description: 'AI coding agent CLI',
+    category: 'cli',
+    url: 'https://opencode.ai',
+    envVars: ['OPENCODE'],
+  },
   custom: {
     id: 'custom',
     name: 'Custom Path',
@@ -229,6 +237,14 @@ export function getMCPConfigPath(
       // Linux
       return path.join(appSupport, 'zed', 'settings.json');
 
+    case 'opencode':
+      // Opencode uses XDG Base Directory: ~/.config/opencode/config.json
+      if (isWindows) {
+        return path.join(getAppDataPath(), 'opencode', 'config.json');
+      }
+      // macOS and Linux use XDG_CONFIG_HOME
+      return path.join(appSupport, 'opencode', 'config.json');
+
     case 'custom':
       throw new Error('Custom path requires customPath parameter');
 
@@ -303,6 +319,11 @@ export function detectCurrentClient(): MCPClient | null {
     return 'zed';
   }
 
+  // Check Opencode
+  if (env.OPENCODE) {
+    return 'opencode';
+  }
+
   // Check VS Code (could be Cline, Roo, or Continue)
   if (env.VSCODE_PID || env.TERM_PROGRAM === 'vscode') {
     // Default to Cline as it's more common
@@ -329,6 +350,7 @@ export function detectAvailableClients(): MCPClient[] {
     'trae',
     'antigravity',
     'zed',
+    'opencode',
   ];
 
   for (const client of clients) {
@@ -361,34 +383,4 @@ export function getClientsByCategory(): Record<
   }
 
   return grouped;
-}
-
-// ============================================================================
-// Legacy compatibility (for IDE type)
-// ============================================================================
-
-import type { IDE } from '../types/index.js';
-
-/**
- * Legacy function for backward compatibility
- * @deprecated Use getMCPConfigPath with MCPClient instead
- */
-export function getIDEConfigPath(ide: IDE): string {
-  const clientMap: Record<IDE, MCPClient> = {
-    cursor: 'cursor',
-    claude: 'claude-desktop',
-  };
-  return getMCPConfigPath(clientMap[ide]);
-}
-
-/**
- * Legacy function for backward compatibility
- * @deprecated Use clientConfigExists with MCPClient instead
- */
-export function ideConfigExists(ide: IDE): boolean {
-  const clientMap: Record<IDE, MCPClient> = {
-    cursor: 'cursor',
-    claude: 'claude-desktop',
-  };
-  return clientConfigExists(clientMap[ide]);
 }

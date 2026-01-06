@@ -1,0 +1,603 @@
+/**
+ * Skills Utilities Tests
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// Mock the fs utilities module
+vi.mock('../../src/utils/fs.js', () => ({
+  dirExists: vi.fn(),
+  copyDirectory: vi.fn(),
+  listSubdirectories: vi.fn(),
+  fileExists: vi.fn(),
+  readFileContent: vi.fn(),
+}));
+
+// Import the mocked module
+import {
+  dirExists,
+  copyDirectory,
+  listSubdirectories,
+  fileExists,
+  readFileContent,
+} from '../../src/utils/fs.js';
+import {
+  getSkillsSourcePath,
+  copySkills,
+  copySkill,
+  getAvailableSkills,
+  getSkillMetadata,
+  getAllSkillsMetadata,
+} from '../../src/utils/skills.js';
+
+describe('Skills Utilities', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('getSkillsSourcePath', () => {
+    it('should return fromOut path when it exists', () => {
+      vi.mocked(dirExists).mockImplementation((p: string) => {
+        // Check if path ends with 'skills' and parent is one level up (fromOut pattern)
+        return p.includes('skills') && !p.includes('../..');
+      });
+
+      const result = getSkillsSourcePath();
+      expect(result).toMatch(/skills$/);
+      expect(dirExists).toHaveBeenCalled();
+    });
+
+    it('should return fromSrc path when fromOut does not exist', () => {
+      let callCount = 0;
+      vi.mocked(dirExists).mockImplementation(() => {
+        callCount++;
+        // First call (fromOut) returns false, second call (fromSrc) returns true
+        return callCount === 2;
+      });
+
+      const result = getSkillsSourcePath();
+      expect(result).toMatch(/skills$/);
+      expect(dirExists).toHaveBeenCalledTimes(2);
+    });
+
+    it('should throw error when neither path exists', () => {
+      vi.mocked(dirExists).mockReturnValue(false);
+
+      expect(() => getSkillsSourcePath()).toThrow('Skills directory not found');
+      expect(dirExists).toHaveBeenCalledTimes(2);
+    });
+
+    it('should check fromOut path first', () => {
+      const checkedPaths: string[] = [];
+      vi.mocked(dirExists).mockImplementation((p: string) => {
+        checkedPaths.push(p);
+        return true; // Return true on first call
+      });
+
+      getSkillsSourcePath();
+
+      // Should only check one path since first one exists
+      expect(checkedPaths).toHaveLength(1);
+      expect(checkedPaths[0]).toMatch(/skills$/);
+    });
+  });
+
+  describe('copySkills', () => {
+    it('should copy skills directory to destination', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(copyDirectory).mockReturnValue(true);
+
+      const result = copySkills('/dest/skills');
+
+      expect(result).toBe(true);
+      expect(copyDirectory).toHaveBeenCalledWith(
+        expect.stringMatching(/skills$/),
+        '/dest/skills'
+      );
+    });
+
+    it('should return false when copy fails', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(copyDirectory).mockReturnValue(false);
+
+      const result = copySkills('/dest/skills');
+
+      expect(result).toBe(false);
+    });
+
+    it('should throw when source path not found', () => {
+      vi.mocked(dirExists).mockReturnValue(false);
+
+      expect(() => copySkills('/dest/skills')).toThrow(
+        'Skills directory not found'
+      );
+    });
+  });
+
+  describe('copySkill', () => {
+    it('should copy specific skill to destination', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(copyDirectory).mockReturnValue(true);
+
+      const result = copySkill('octocode-research', '/dest/skills');
+
+      expect(result).toBe(true);
+      expect(copyDirectory).toHaveBeenCalledWith(
+        expect.stringMatching(/octocode-research$/),
+        expect.stringMatching(/octocode-research$/)
+      );
+    });
+
+    it('should return false when skill directory does not exist', () => {
+      // First call for getSkillsSourcePath succeeds
+      // Second call for skill path check fails
+      let callCount = 0;
+      vi.mocked(dirExists).mockImplementation(() => {
+        callCount++;
+        return callCount === 1; // Only source path exists, skill path doesn't
+      });
+
+      const result = copySkill('nonexistent-skill', '/dest/skills');
+
+      expect(result).toBe(false);
+      expect(copyDirectory).not.toHaveBeenCalled();
+    });
+
+    it('should return false when copy fails', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(copyDirectory).mockReturnValue(false);
+
+      const result = copySkill('octocode-research', '/dest/skills');
+
+      expect(result).toBe(false);
+    });
+
+    it('should construct correct destination path', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(copyDirectory).mockReturnValue(true);
+
+      copySkill('octocode-plan', '/home/user/.claude/skills');
+
+      expect(copyDirectory).toHaveBeenCalledWith(
+        expect.any(String),
+        '/home/user/.claude/skills/octocode-plan'
+      );
+    });
+
+    it('should throw when source path not found', () => {
+      vi.mocked(dirExists).mockReturnValue(false);
+
+      expect(() => copySkill('octocode-research', '/dest')).toThrow(
+        'Skills directory not found'
+      );
+    });
+  });
+
+  describe('getAvailableSkills', () => {
+    it('should return skills starting with octocode-', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(listSubdirectories).mockReturnValue([
+        'octocode-research',
+        'octocode-plan',
+        'octocode-generate',
+        'other-skill',
+        'random-dir',
+      ]);
+
+      const result = getAvailableSkills();
+
+      expect(result).toEqual([
+        'octocode-research',
+        'octocode-plan',
+        'octocode-generate',
+      ]);
+      expect(result).not.toContain('other-skill');
+      expect(result).not.toContain('random-dir');
+    });
+
+    it('should return empty array when no skills found', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(listSubdirectories).mockReturnValue([]);
+
+      const result = getAvailableSkills();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should return empty array when no octocode- prefixed skills', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(listSubdirectories).mockReturnValue([
+        'other-skill',
+        'random-dir',
+      ]);
+
+      const result = getAvailableSkills();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should filter out non-octocode prefixed directories', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(listSubdirectories).mockReturnValue([
+        'octocode-pr-review',
+        '.git',
+        'node_modules',
+        'octocode-test',
+      ]);
+
+      const result = getAvailableSkills();
+
+      expect(result).toEqual(['octocode-pr-review', 'octocode-test']);
+      expect(result).toHaveLength(2);
+    });
+
+    it('should call listSubdirectories with correct source path', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(listSubdirectories).mockReturnValue([]);
+
+      getAvailableSkills();
+
+      expect(listSubdirectories).toHaveBeenCalledWith(
+        expect.stringMatching(/skills$/)
+      );
+    });
+
+    it('should throw when source path not found', () => {
+      vi.mocked(dirExists).mockReturnValue(false);
+
+      expect(() => getAvailableSkills()).toThrow('Skills directory not found');
+    });
+  });
+
+  describe('integration scenarios', () => {
+    it('should handle typical install workflow', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(listSubdirectories).mockReturnValue([
+        'octocode-research',
+        'octocode-plan',
+        'octocode-generate',
+        'octocode-pr-review',
+      ]);
+      vi.mocked(copyDirectory).mockReturnValue(true);
+
+      // Get available skills
+      const skills = getAvailableSkills();
+      expect(skills).toHaveLength(4);
+
+      // Copy all skills
+      const copyAllResult = copySkills('/home/user/.claude/skills');
+      expect(copyAllResult).toBe(true);
+
+      // Copy individual skill
+      const copyOneResult = copySkill(
+        'octocode-research',
+        '/home/user/.claude/skills'
+      );
+      expect(copyOneResult).toBe(true);
+    });
+
+    it('should handle partial failure gracefully', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(copyDirectory)
+        .mockReturnValueOnce(true) // First copy succeeds
+        .mockReturnValueOnce(false); // Second copy fails
+
+      const result1 = copySkill('octocode-research', '/dest');
+      const result2 = copySkill('octocode-plan', '/dest');
+
+      expect(result1).toBe(true);
+      expect(result2).toBe(false);
+    });
+  });
+
+  describe('getSkillMetadata', () => {
+    const validSkillMd = `---
+name: octocode-research
+description: Answers questions about codebases, implementations, dependencies.
+---
+
+# Octocode Research
+
+Some content here.`;
+
+    it('should parse valid SKILL.md frontmatter', () => {
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent).mockReturnValue(validSkillMd);
+
+      const result = getSkillMetadata('/path/to/octocode-research');
+
+      expect(result).toEqual({
+        name: 'octocode-research',
+        description:
+          'Answers questions about codebases, implementations, dependencies.',
+        folder: 'octocode-research',
+      });
+    });
+
+    it('should return null when SKILL.md does not exist', () => {
+      vi.mocked(fileExists).mockReturnValue(false);
+
+      const result = getSkillMetadata('/path/to/missing-skill');
+
+      expect(result).toBeNull();
+      expect(readFileContent).not.toHaveBeenCalled();
+    });
+
+    it('should return null when file content is null', () => {
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent).mockReturnValue(null);
+
+      const result = getSkillMetadata('/path/to/skill');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when frontmatter is missing', () => {
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent).mockReturnValue('# No frontmatter here');
+
+      const result = getSkillMetadata('/path/to/skill');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when name is missing', () => {
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent).mockReturnValue(`---
+description: Only description, no name
+---`);
+
+      const result = getSkillMetadata('/path/to/skill');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when description is missing', () => {
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent).mockReturnValue(`---
+name: only-name
+---`);
+
+      const result = getSkillMetadata('/path/to/skill');
+
+      expect(result).toBeNull();
+    });
+
+    it('should extract folder name from path', () => {
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent).mockReturnValue(validSkillMd);
+
+      const result = getSkillMetadata('/some/long/path/octocode-plan');
+
+      expect(result?.folder).toBe('octocode-plan');
+    });
+  });
+
+  describe('getAllSkillsMetadata', () => {
+    it('should return metadata for all octocode- skills', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(listSubdirectories).mockReturnValue([
+        'octocode-research',
+        'octocode-plan',
+        'other-dir',
+      ]);
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent).mockReturnValueOnce(`---
+name: octocode-research
+description: Research skill description
+---`).mockReturnValueOnce(`---
+name: octocode-plan
+description: Plan skill description
+---`);
+
+      const result = getAllSkillsMetadata();
+
+      expect(result).toHaveLength(2);
+      expect(result[0].name).toBe('octocode-research');
+      expect(result[1].name).toBe('octocode-plan');
+    });
+
+    it('should skip skills with invalid SKILL.md', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(listSubdirectories).mockReturnValue([
+        'octocode-valid',
+        'octocode-invalid',
+      ]);
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readFileContent)
+        .mockReturnValueOnce(
+          `---
+name: octocode-valid
+description: Valid skill
+---`
+        )
+        .mockReturnValueOnce('# No frontmatter');
+
+      const result = getAllSkillsMetadata();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('octocode-valid');
+    });
+
+    it('should return empty array when no skills exist', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(listSubdirectories).mockReturnValue([]);
+
+      const result = getAllSkillsMetadata();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should filter non-octocode directories', () => {
+      vi.mocked(dirExists).mockReturnValue(true);
+      vi.mocked(listSubdirectories).mockReturnValue([
+        'some-other-dir',
+        '.git',
+        'node_modules',
+      ]);
+
+      const result = getAllSkillsMetadata();
+
+      expect(result).toEqual([]);
+      expect(fileExists).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// Separate describe block for config-related tests since they use different mocks
+describe('Skills Config', () => {
+  // Mock node:fs for config tests
+  vi.mock('node:fs', () => ({
+    existsSync: vi.fn(),
+    readFileSync: vi.fn(),
+    writeFileSync: vi.fn(),
+    mkdirSync: vi.fn(),
+  }));
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  describe('getCustomSkillsDestDir', () => {
+    it('should return null when config file does not exist', async () => {
+      const { existsSync } = await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      const { getCustomSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      const result = getCustomSkillsDestDir();
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when config has no skillsDestDir', async () => {
+      const { existsSync, readFileSync } = await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('{}');
+
+      const { getCustomSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      const result = getCustomSkillsDestDir();
+
+      expect(result).toBeNull();
+    });
+
+    it('should return custom path when set in config', async () => {
+      const { existsSync, readFileSync } = await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({ skillsDestDir: '/custom/path' })
+      );
+
+      const { getCustomSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      const result = getCustomSkillsDestDir();
+
+      expect(result).toBe('/custom/path');
+    });
+
+    it('should return null when config file is invalid JSON', async () => {
+      const { existsSync, readFileSync } = await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('invalid json');
+
+      const { getCustomSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      const result = getCustomSkillsDestDir();
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('setCustomSkillsDestDir', () => {
+    it('should create config directory if it does not exist', async () => {
+      const { existsSync, mkdirSync, readFileSync } = await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(false);
+      vi.mocked(readFileSync).mockReturnValue('{}');
+
+      const { setCustomSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      setCustomSkillsDestDir('/new/path');
+
+      expect(mkdirSync).toHaveBeenCalledWith(
+        expect.stringContaining('.octocode'),
+        { recursive: true }
+      );
+    });
+
+    it('should save custom path to config file', async () => {
+      const { existsSync, readFileSync, writeFileSync } =
+        await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('{}');
+
+      const { setCustomSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      setCustomSkillsDestDir('/custom/skills/path');
+
+      expect(writeFileSync).toHaveBeenCalledWith(
+        expect.stringContaining('config.json'),
+        expect.stringContaining('/custom/skills/path'),
+        'utf-8'
+      );
+    });
+
+    it('should remove skillsDestDir from config when null is passed', async () => {
+      const { existsSync, readFileSync, writeFileSync } =
+        await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({ skillsDestDir: '/old/path', otherSetting: true })
+      );
+
+      const { setCustomSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      setCustomSkillsDestDir(null);
+
+      expect(writeFileSync).toHaveBeenCalledWith(
+        expect.stringContaining('config.json'),
+        expect.not.stringContaining('skillsDestDir'),
+        'utf-8'
+      );
+    });
+  });
+
+  describe('getDefaultSkillsDestDir', () => {
+    it('should return default path', async () => {
+      const { getDefaultSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      const result = getDefaultSkillsDestDir();
+
+      // Should end with .claude/skills or Claude/skills
+      expect(result).toMatch(/[Cc]laude.*skills$/);
+    });
+  });
+
+  describe('getSkillsDestDir', () => {
+    it('should return custom path when set', async () => {
+      const { existsSync, readFileSync } = await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({ skillsDestDir: '/custom/path' })
+      );
+
+      const { getSkillsDestDir } = await import('../../src/utils/skills.js');
+      const result = getSkillsDestDir();
+
+      expect(result).toBe('/custom/path');
+    });
+
+    it('should return default path when no custom path set', async () => {
+      const { existsSync } = await import('node:fs');
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      const { getSkillsDestDir, getDefaultSkillsDestDir } =
+        await import('../../src/utils/skills.js');
+      const result = getSkillsDestDir();
+      const defaultPath = getDefaultSkillsDestDir();
+
+      expect(result).toBe(defaultPath);
+    });
+  });
+});

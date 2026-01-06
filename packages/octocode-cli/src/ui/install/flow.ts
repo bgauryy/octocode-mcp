@@ -24,7 +24,8 @@ import {
   getMCPConfigPath,
   MCP_CLIENTS,
 } from '../../utils/mcp-config.js';
-import type { OctocodeEnvOptions, MCPClient } from '../../utils/mcp-config.js';
+import type { OctocodeEnvOptions } from '../../utils/mcp-config.js';
+import type { MCPClient } from '../../types/index.js';
 
 type FinalChoice = 'proceed' | 'back' | 'cancel';
 
@@ -115,7 +116,7 @@ export async function runInstallFlow(): Promise<void> {
         console.log();
 
         console.log(`  ${bold('Current octocode configuration:')}`);
-        printExistingOctocodeConfig(existingConfig!.mcpServers.octocode);
+        printExistingOctocodeConfig(existingConfig!.mcpServers!.octocode);
 
         console.log();
         console.log(`  ${dim('Config file:')} ${c('cyan', configPath)}`);
@@ -199,7 +200,9 @@ export async function runInstallFlow(): Promise<void> {
 async function showConfirmationAndPrompt(
   state: InstallFlowState
 ): Promise<FinalChoice> {
-  const clientInfo = MCP_CLIENTS[state.client!];
+  const clientInfo = MCP_CLIENTS[state.client! as keyof typeof MCP_CLIENTS];
+  // Interactive flow uses NPX (recommended method)
+  // For 'direct' method, use CLI: octocode install --ide <id> --method direct
   const method = 'npx' as const;
 
   // Build environment options

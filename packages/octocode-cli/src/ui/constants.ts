@@ -2,21 +2,7 @@
  * UI Constants - Display text for IDEs and install methods
  */
 
-// Legacy IDE info (for backward compatibility)
-export const IDE_INFO = {
-  cursor: {
-    name: 'Cursor',
-    description: 'AI-first code editor',
-    url: 'https://cursor.sh',
-  },
-  claude: {
-    name: 'Claude Desktop',
-    description: "Anthropic's Claude desktop app",
-    url: 'https://claude.ai/download',
-  },
-} as const;
-
-// Comprehensive client info (used by new API)
+// Comprehensive client info (single source of truth)
 export const CLIENT_INFO = {
   cursor: {
     name: 'Cursor',
@@ -32,6 +18,11 @@ export const CLIENT_INFO = {
     name: 'Claude Code',
     description: 'Claude CLI for terminal',
     url: 'https://docs.anthropic.com/claude-code',
+  },
+  opencode: {
+    name: 'Opencode',
+    description: 'AI coding agent CLI',
+    url: 'https://opencode.ai',
   },
   'vscode-cline': {
     name: 'Cline (VS Code)',
@@ -53,6 +44,16 @@ export const CLIENT_INFO = {
     description: 'Codeium AI IDE',
     url: 'https://codeium.com/windsurf',
   },
+  trae: {
+    name: 'Trae',
+    description: 'Adaptive AI IDE',
+    url: 'https://trae.ai',
+  },
+  antigravity: {
+    name: 'Antigravity',
+    description: 'Gemini-powered AI IDE',
+    url: 'https://antigravity.dev',
+  },
   zed: {
     name: 'Zed',
     description: 'High-performance code editor',
@@ -63,12 +64,25 @@ export const CLIENT_INFO = {
     description: 'Specify your own MCP config path',
     url: '',
   },
+  // Legacy alias for backward compatibility
+  claude: {
+    name: 'Claude Desktop',
+    description: "Anthropic's Claude desktop app",
+    url: 'https://claude.ai/download',
+  },
+} as const;
+
+// Legacy IDE info - alias for backward compatibility
+// Points to CLIENT_INFO entries to maintain single source of truth
+export const IDE_INFO = {
+  cursor: CLIENT_INFO.cursor,
+  claude: CLIENT_INFO.claude,
 } as const;
 
 export const INSTALL_METHOD_INFO = {
   direct: {
     name: 'Direct (curl)',
-    description: 'Download and run directly from octocodeai.com',
+    description: 'Download and run directly from octocode.ai',
     pros: ['Always latest version', 'No npm required'],
     cons: ['Requires curl (or PowerShell on Windows)', 'Slower startup'],
   },

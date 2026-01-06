@@ -17,46 +17,63 @@ import { c, bold, dim } from './utils/colors.js';
 import { clearScreen } from './utils/platform.js';
 import { loadInquirer } from './utils/prompts.js';
 import { printWelcome, printGoodbye } from './ui/header.js';
+import { Spinner } from './utils/spinner.js';
 import {
-  printNodeEnvironmentStatus,
+  checkAndPrintEnvironmentWithLoader,
   printNodeDoctorHint,
   hasEnvironmentIssues,
+  printAuthStatus,
 } from './ui/install/index.js';
-import { checkNodeEnvironment } from './features/node-check.js';
-import { printGitHubAuthStatus } from './ui/gh-guidance.js';
 import { runMenuLoop } from './ui/menu.js';
 import { runCLI } from './cli/index.js';
+import { initializeSecureStorage } from './utils/token-storage.js';
+import { getAuthStatusAsync } from './features/github-oauth.js';
 
 // ─────────────────────────────────────────────────────────────
 // Interactive Mode
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * Print the environment check section header
+ */
+function printEnvHeader(): void {
+  console.log(c('blue', '━'.repeat(66)));
+  console.log(`  🔍 ${bold('Environment')}`);
+  console.log(c('blue', '━'.repeat(66)));
+}
+
 async function runInteractiveMode(): Promise<void> {
-  // Load inquirer dynamically
+  // Load inquirer dynamically (with loading indicator)
+  const loadingSpinner = new Spinner('  Starting...').start();
   await loadInquirer();
+  loadingSpinner.clear();
 
   // Clear screen and show welcome
   clearScreen();
   printWelcome();
 
-  // Environment check section (once at startup)
-  console.log(c('blue', '━'.repeat(66)));
-  console.log(`  🔍 ${bold('Environment Check')}`);
-  console.log(c('blue', '━'.repeat(66)));
+  // Environment check section
+  printEnvHeader();
 
-  const envStatus = await checkNodeEnvironment();
-  printNodeEnvironmentStatus(envStatus);
+  const envStatus = await checkAndPrintEnvironmentWithLoader();
 
-  // GitHub authentication check
-  printGitHubAuthStatus();
+  // Auth status check (with loading indicator)
+  const authSpinner = new Spinner('  Auth: Checking...').start();
+  const authStatus = await getAuthStatusAsync();
+  authSpinner.clear();
+  printAuthStatus(authStatus);
 
   // Show node-doctor hint if issues detected
   if (hasEnvironmentIssues(envStatus)) {
-    printNodeDoctorHint();
+    console.log();
+    console.log(
+      `  ${dim('💡')} ${dim('Run')} ${c('cyan', 'npx node-doctor')} ${dim('for diagnostics')}`
+    );
   }
 
   // Fatal check: Node.js is required
   if (!envStatus.nodeInstalled) {
+    console.log();
     console.log(
       `  ${c('red', '✗')} ${bold('Node.js is required to run octocode-mcp')}`
     );
@@ -74,6 +91,10 @@ async function runInteractiveMode(): Promise<void> {
 // ─────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Initialize secure storage (keytar) early to avoid race conditions
+  // This ensures isSecureStorageAvailable() returns accurate results
+  await initializeSecureStorage();
+
   // Check for CLI commands first
   const handled = await runCLI();
 

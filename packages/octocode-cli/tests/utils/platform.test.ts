@@ -206,7 +206,7 @@ describe('Platform Utilities', () => {
     it('should return true when .git exists in current directory', async () => {
       vi.mocked(os.platform).mockReturnValue('darwin');
       vi.mocked(os.homedir).mockReturnValue('/Users/test');
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
+      vi.mocked(fs.existsSync).mockImplementation(p => {
         return p === '/Users/test/project/.git';
       });
 
@@ -217,7 +217,7 @@ describe('Platform Utilities', () => {
     it('should return true when .git exists in parent directory', async () => {
       vi.mocked(os.platform).mockReturnValue('darwin');
       vi.mocked(os.homedir).mockReturnValue('/Users/test');
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
+      vi.mocked(fs.existsSync).mockImplementation(p => {
         return p === '/Users/test/project/.git';
       });
 
@@ -239,7 +239,7 @@ describe('Platform Utilities', () => {
     it('should return the git root directory', async () => {
       vi.mocked(os.platform).mockReturnValue('darwin');
       vi.mocked(os.homedir).mockReturnValue('/Users/test');
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
+      vi.mocked(fs.existsSync).mockImplementation(p => {
         return p === '/Users/test/project/.git';
       });
 
@@ -274,7 +274,8 @@ describe('Platform Utilities', () => {
       vi.mocked(os.platform).mockReturnValue('darwin');
       vi.mocked(os.homedir).mockReturnValue('/Users/test');
 
-      const { getLocalAppDataPath } = await import('../../src/utils/platform.js');
+      const { getLocalAppDataPath } =
+        await import('../../src/utils/platform.js');
       expect(getLocalAppDataPath()).toBe('/Users/test');
     });
   });

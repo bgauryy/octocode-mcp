@@ -2,11 +2,9 @@
  * Install Prompt Components
  */
 
-import type { IDE, InstallMethod, MCPClient } from '../../types/index.js';
+import type { MCPClient } from '../../types/index.js';
 import { c, dim, bold } from '../../utils/colors.js';
 import { select, Separator, input } from '../../utils/prompts.js';
-import { IDE_INFO } from '../constants.js';
-import { getAppContext } from '../../utils/context.js';
 import {
   MCP_CLIENTS,
   detectCurrentClient,
@@ -57,6 +55,7 @@ function getAllClientsWithStatus(): Array<{
     'cursor',
     'claude-desktop',
     'claude-code',
+    'opencode',
     'windsurf',
     'trae',
     'antigravity',
@@ -212,7 +211,7 @@ async function promptNoConfigurationsFound(
   });
 
   const selected = await select<MCPClient | 'back'>({
-    message: 'Select a client to install octocode:',
+    message: 'Select a client to install Octocode:',
     choices: choices as Array<{ name: string; value: MCPClient | 'back' }>,
     loop: false,
   });
@@ -371,7 +370,7 @@ async function promptInstallToNewClient(
   });
 
   const selected = await select<MCPClient | 'back'>({
-    message: 'Select client to install octocode:',
+    message: 'Select client to install Octocode:',
     choices: choices as Array<{ name: string; value: MCPClient | 'back' }>,
     loop: false,
   });
@@ -418,7 +417,16 @@ async function promptCustomPath(): Promise<string | null> {
   console.log(`      ${dim('(Claude Desktop)')}`);
   console.log(`    ${dim('•')} ~/.claude.json ${dim('(Claude Code)')}`);
   console.log(
+    `    ${dim('•')} ~/.config/opencode/config.json ${dim('(Opencode)')}`
+  );
+  console.log(
     `    ${dim('•')} ~/.codeium/windsurf/mcp_config.json ${dim('(Windsurf)')}`
+  );
+  console.log(
+    `    ${dim('•')} ~/Library/Application Support/Trae/mcp.json ${dim('(Trae)')}`
+  );
+  console.log(
+    `    ${dim('•')} ~/.gemini/antigravity/mcp_config.json ${dim('(Antigravity)')}`
   );
   console.log(`    ${dim('•')} ~/.config/zed/settings.json ${dim('(Zed)')}`);
   console.log(`    ${dim('•')} ~/.continue/config.json ${dim('(Continue)')}`);
@@ -458,65 +466,6 @@ async function promptCustomPath(): Promise<string | null> {
   if (!customPath || !customPath.trim()) return null;
 
   return expandPath(customPath);
-}
-
-// ============================================================================
-// Legacy IDE Selection (for backward compatibility)
-// ============================================================================
-
-/**
- * Select IDE prompt (legacy)
- * @deprecated Use selectMCPClient instead
- */
-export async function selectIDE(availableIDEs: IDE[]): Promise<IDE | null> {
-  const ctx = getAppContext();
-  const currentIde = ctx.ide.toLowerCase(); // 'cursor' | 'vs code' ...
-
-  const choices = availableIDEs.map(ide => {
-    let name = `${IDE_INFO[ide].name} - ${dim(IDE_INFO[ide].description)}`;
-
-    // Highlight if it matches current environment
-    if (currentIde.includes(ide)) {
-      name = `${c('green', '★')} ${name} ${c('green', '(Current)')}`;
-    }
-
-    return {
-      name,
-      value: ide,
-    };
-  });
-
-  // Sort to put current IDE first
-  choices.sort((a, b) => {
-    const aCurrent = a.name.includes('(Current)');
-    const bCurrent = b.name.includes('(Current)');
-    if (aCurrent && !bCurrent) return -1;
-    if (!aCurrent && bCurrent) return 1;
-    return 0;
-  });
-
-  choices.push(new Separator() as unknown as (typeof choices)[0]);
-  choices.push({
-    name: `${c('dim', '← Back')}`,
-    value: 'back' as unknown as IDE,
-  });
-
-  const selected = await select<IDE | 'back'>({
-    message: 'Select IDE to configure:',
-    choices: choices as Array<{ name: string; value: IDE | 'back' }>,
-  });
-
-  if (selected === 'back') return null;
-  return selected;
-}
-
-/**
- * Select install method prompt
- * @deprecated Only npx is now supported, this function is kept for backward compatibility
- */
-export async function selectInstallMethod(): Promise<InstallMethod | null> {
-  // Only npx method is now supported
-  return 'npx';
 }
 
 // ============================================================================

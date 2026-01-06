@@ -3,7 +3,11 @@
  */
 
 import type { GitHubAuthStatus } from '../types/index.js';
-import { runCommand, commandExists } from '../utils/shell.js';
+import {
+  runCommand,
+  commandExists,
+  runInteractiveCommand,
+} from '../utils/shell.js';
 
 /**
  * GitHub CLI download URL
@@ -81,4 +85,82 @@ export function getAuthLoginCommand(): string {
  */
 export function getAuthStatusCommand(): string {
   return 'gh auth status';
+}
+
+export interface GitHubAuthLoginOptions {
+  /** Use web browser flow directly */
+  web?: boolean;
+  /** Hostname for GitHub Enterprise */
+  hostname?: string;
+  /** Git protocol to configure (ssh or https) */
+  gitProtocol?: 'ssh' | 'https';
+  /** Skip SSH key generation prompt */
+  skipSshKey?: boolean;
+}
+
+export interface GitHubAuthResult {
+  success: boolean;
+  exitCode: number | null;
+}
+
+/**
+ * Run `gh auth login` interactively
+ * Opens browser for OAuth or prompts for token
+ */
+export function runGitHubAuthLogin(
+  options?: GitHubAuthLoginOptions
+): GitHubAuthResult {
+  const args = ['auth', 'login'];
+
+  if (options?.web) {
+    args.push('--web');
+  }
+  if (options?.hostname) {
+    args.push('--hostname', options.hostname);
+  }
+  if (options?.gitProtocol) {
+    args.push('--git-protocol', options.gitProtocol);
+  }
+  if (options?.skipSshKey) {
+    args.push('--skip-ssh-key');
+  }
+
+  return runInteractiveCommand('gh', args);
+}
+
+/**
+ * Run `gh auth logout` interactively
+ * Logs out from GitHub CLI
+ */
+export function runGitHubAuthLogout(hostname?: string): GitHubAuthResult {
+  const args = ['auth', 'logout'];
+
+  if (hostname) {
+    args.push('--hostname', hostname);
+  }
+
+  return runInteractiveCommand('gh', args);
+}
+
+/**
+ * Get GitHub token from gh CLI
+ * Runs `gh auth token` and returns the token or null if not authenticated
+ */
+export function getGitHubCLIToken(hostname?: string): string | null {
+  if (!isGitHubCLIInstalled()) {
+    return null;
+  }
+
+  const args = ['auth', 'token'];
+  if (hostname) {
+    args.push('--hostname', hostname);
+  }
+
+  const result = runCommand('gh', args);
+
+  if (result.success && result.stdout.trim()) {
+    return result.stdout.trim();
+  }
+
+  return null;
 }

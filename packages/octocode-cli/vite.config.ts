@@ -19,8 +19,9 @@ export default defineConfig({
     rollupOptions: {
       external: [
         ...builtinModules,
-        ...builtinModules.map((m) => `node:${m}`),
+        ...builtinModules.map(m => `node:${m}`),
         '@inquirer/prompts',
+        'keytar', // Native addon - must be external
       ],
       output: {
         banner: '#!/usr/bin/env node',
@@ -30,4 +31,3 @@ export default defineConfig({
     emptyOutDir: true,
   },
 });
-

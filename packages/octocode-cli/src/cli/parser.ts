@@ -5,7 +5,22 @@
 import type { ParsedArgs } from './types.js';
 
 // Options that take values
-const OPTIONS_WITH_VALUES = new Set(['ide', 'method', 'output', 'o']);
+// Note: -h is reserved for --help, use -H for --hostname
+const OPTIONS_WITH_VALUES = new Set([
+  'ide',
+  'method',
+  'output',
+  'o',
+  'hostname',
+  'H', // Short for --hostname (uppercase to avoid conflict with -h for help)
+  'git-protocol',
+  'p',
+  'type', // For token command
+  't', // Short for --type
+  'model', // For chat command
+  'resume', // For chat command
+  'r', // Short for --resume
+]);
 
 /**
  * Parse command line arguments
