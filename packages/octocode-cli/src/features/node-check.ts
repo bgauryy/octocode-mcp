@@ -21,6 +21,7 @@ export interface NodeEnvironmentStatus {
 // Latency thresholds in milliseconds
 const REGISTRY_OK_THRESHOLD = 1000;
 const REGISTRY_SLOW_THRESHOLD = 3000;
+const CHECK_TIMEOUT = 4000; // 4 second timeout for all network checks
 
 /**
  * Check if Node.js is installed and get version
@@ -73,10 +74,7 @@ export async function checkNpmRegistry(): Promise<{
     const start = Date.now();
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(
-      () => controller.abort(),
-      REGISTRY_SLOW_THRESHOLD
-    );
+    const timeoutId = setTimeout(() => controller.abort(), CHECK_TIMEOUT);
 
     const response = await fetch(registryUrl, {
       method: 'HEAD',
@@ -92,7 +90,7 @@ export async function checkNpmRegistry(): Promise<{
     }
 
     if (latency > REGISTRY_SLOW_THRESHOLD) {
-      return { status: 'failed', latency };
+      return { status: 'slow', latency };
     }
 
     if (latency > REGISTRY_OK_THRESHOLD) {
@@ -128,6 +126,7 @@ export function checkOctocodePackage(): {
 /**
  * Check if octocode-mcp package is available in npm registry (async - non-blocking)
  * Use this version for UI flows to allow spinner animations
+ * Times out after 4 seconds to prevent menu from getting stuck
  */
 export async function checkOctocodePackageAsync(): Promise<{
   available: boolean;
@@ -135,7 +134,7 @@ export async function checkOctocodePackageAsync(): Promise<{
 }> {
   try {
     const { stdout } = await execAsync('npm view octocode-mcp version', {
-      timeout: 10000,
+      timeout: CHECK_TIMEOUT,
     });
     return { available: true, version: stdout.trim() };
   } catch {

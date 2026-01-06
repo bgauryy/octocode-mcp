@@ -993,24 +993,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
     tags: ['elevenlabs', 'tts', 'voice', 'audio', 'official'],
   },
   {
-    id: 'openai-mcp',
-    name: 'OpenAI MCP',
-    description: 'Query OpenAI models directly from Claude using MCP protocol',
-    category: 'ai-services',
-    repository: 'https://github.com/pierrebrunelle/mcp-server-openai',
-    website: 'https://openai.com',
-    installationType: 'pip',
-    pipPackage: 'mcp-server-openai',
-    installConfig: {
-      command: 'uvx',
-      args: ['mcp-server-openai'],
-    },
-    requiredEnvVars: [
-      { name: 'OPENAI_API_KEY', description: 'OpenAI API key' },
-    ],
-    tags: ['openai', 'gpt', 'llm'],
-  },
-  {
     id: 'llamacloud-mcp',
     name: 'LlamaCloud MCP',
     description: 'Connect to managed indices on LlamaCloud',
@@ -1329,20 +1311,6 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
   },
 
   {
-    id: 'apple-shortcuts-mcp',
-    name: 'Apple Shortcuts MCP',
-    description: 'Integration with Apple Shortcuts on macOS',
-    category: 'other',
-    repository: 'https://github.com/recursechat/mcp-server-apple-shortcuts',
-    installationType: 'npx',
-    npmPackage: 'mcp-server-apple-shortcuts',
-    installConfig: {
-      command: 'npx',
-      args: ['-y', 'mcp-server-apple-shortcuts'],
-    },
-    tags: ['apple', 'shortcuts', 'macos', 'automation'],
-  },
-  {
     id: 'octocode-mcp',
     name: 'Octocode MCP',
     description: 'AI-powered developer assistant for GitHub and NPM research',
@@ -1361,6 +1329,901 @@ export const MCP_REGISTRY: MCPRegistryEntry[] = [
       },
     ],
     tags: ['github', 'npm', 'research', 'code'],
+  },
+  {
+    id: 'gpt-researcher-mcp',
+    name: 'GPT Researcher MCP',
+    description:
+      'Deep research agent with MCP support for comprehensive web research and report generation',
+    category: 'search-web',
+    repository: 'https://github.com/assafelovic/gptr-mcp',
+    website: 'https://gptr.dev',
+    stars: 24750,
+    installationType: 'source',
+    installConfig: {
+      command: 'python',
+      args: ['server.py'],
+    },
+    requiredEnvVars: [
+      {
+        name: 'OPENAI_API_KEY',
+        description: 'OpenAI API key for LLM capabilities',
+        example: 'sk-xxxxx',
+      },
+      {
+        name: 'TAVILY_API_KEY',
+        description: 'Tavily API key for web search',
+        example: 'tvly-xxxxx',
+      },
+    ],
+    tags: ['research', 'web-search', 'deep-research', 'ai', 'tavily'],
+  },
+  {
+    id: 'mcp-chrome',
+    name: 'Chrome MCP',
+    description:
+      'Chrome extension-based MCP server for browser automation, screenshots, and content analysis',
+    category: 'browser-automation',
+    repository: 'https://github.com/hangwin/mcp-chrome',
+    stars: 9803,
+    installationType: 'npx',
+    npmPackage: 'mcp-chrome-bridge',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', 'mcp-chrome-bridge'],
+    },
+    tags: ['chrome', 'browser', 'automation', 'extension', 'screenshot'],
+  },
+  {
+    id: 'aws-mcp',
+    name: 'AWS Core MCP',
+    description:
+      'AWS MCP Servers - dynamic orchestrator for specialized AWS services including Bedrock, Lambda, S3, and CloudWatch',
+    category: 'cloud-platform',
+    repository: 'https://github.com/awslabs/mcp',
+    website: 'https://awslabs.github.io/mcp/',
+    stars: 7801,
+    installationType: 'pip',
+    pipPackage: 'awslabs.core-mcp-server',
+    official: true,
+    installConfig: {
+      command: 'uvx',
+      args: ['awslabs.core-mcp-server@latest'],
+    },
+    requiredEnvVars: [
+      {
+        name: 'AWS_PROFILE',
+        description: 'AWS profile name for credentials',
+        example: 'default',
+      },
+      {
+        name: 'AWS_REGION',
+        description: 'AWS region',
+        example: 'us-east-1',
+      },
+    ],
+    tags: ['aws', 'cloud', 'bedrock', 'lambda', 's3', 'cloudwatch', 'official'],
+  },
+  {
+    id: 'git-mcp',
+    name: 'GitMCP',
+    description:
+      'Remote MCP server that transforms GitHub projects into documentation hubs for AI tools',
+    category: 'version-control',
+    repository: 'https://github.com/idosal/git-mcp',
+    website: 'https://gitmcp.io',
+    stars: 7328,
+    installationType: 'npx',
+    npmPackage: 'mcp-remote',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', 'mcp-remote', 'https://gitmcp.io/docs'],
+    },
+    tags: ['git', 'github', 'documentation', 'remote', 'version-control'],
+  },
+  {
+    id: 'browser-tools-mcp',
+    name: 'BrowserTools MCP',
+    description:
+      'Monitor browser logs and capture browser data from Cursor and MCP-compatible IDEs via Chrome extension',
+    category: 'browser-automation',
+    repository: 'https://github.com/AgentDeskAI/browser-tools-mcp',
+    website: 'https://browsertools.agentdesk.ai',
+    stars: 6961,
+    installationType: 'npx',
+    npmPackage: '@agentdeskai/browser-tools-mcp',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@agentdeskai/browser-tools-mcp@latest'],
+    },
+    tags: ['browser', 'devtools', 'chrome', 'logs', 'debugging'],
+  },
+  {
+    id: 'hexstrike-ai',
+    name: 'HexStrike AI',
+    description:
+      'Advanced MCP server for AI agents to run 150+ cybersecurity tools for pentesting and vulnerability discovery',
+    category: 'security',
+    repository: 'https://github.com/0x4m4/hexstrike-ai',
+    stars: 5690,
+    installationType: 'source',
+    installConfig: {
+      command: 'python3',
+      args: ['hexstrike_mcp.py', '--server', 'http://localhost:8888'],
+    },
+    requiredEnvVars: [
+      {
+        name: 'HEXSTRIKE_PATH',
+        description: 'Path to cloned hexstrike-ai repository',
+        example: '/path/to/hexstrike-ai',
+      },
+    ],
+    tags: ['security', 'pentesting', 'cybersecurity', 'vulnerability'],
+  },
+
+  {
+    id: 'spec-workflow-mcp',
+    name: 'Spec Workflow MCP',
+    description:
+      'Structured spec-driven development workflow tools for AI-assisted software development with real-time web dashboard',
+    category: 'developer-tools',
+    repository: 'https://github.com/Pimzino/spec-workflow-mcp',
+    stars: 3569,
+    installationType: 'npx',
+    npmPackage: '@pimzino/spec-workflow-mcp',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@pimzino/spec-workflow-mcp@latest', '${PROJECT_PATH}'],
+    },
+    requiredEnvVars: [
+      {
+        name: 'PROJECT_PATH',
+        description: 'Path to your project directory',
+        example: '/path/to/your/project',
+      },
+    ],
+    tags: ['workflow', 'spec-driven', 'dashboard', 'vscode', 'development'],
+  },
+  {
+    id: 'excel-mcp-server',
+    name: 'Excel MCP',
+    description:
+      'Manipulate Excel files without Microsoft Excel - create, read, modify workbooks with formulas, formatting, and charts',
+    category: 'productivity',
+    repository: 'https://github.com/haris-musa/excel-mcp-server',
+    stars: 3079,
+    installationType: 'pip',
+    pipPackage: 'excel-mcp-server',
+    installConfig: {
+      command: 'uvx',
+      args: ['excel-mcp-server', 'stdio'],
+    },
+    tags: ['excel', 'spreadsheet', 'office', 'xlsx', 'formulas', 'charts'],
+  },
+  {
+    id: 'mcp-context-forge',
+    name: 'MCP Context Forge',
+    description:
+      'IBM MCP Gateway & Registry - federates MCP and REST services with discovery, auth, rate-limiting, and observability',
+    category: 'aggregator',
+    repository: 'https://github.com/IBM/mcp-context-forge',
+    website: 'https://ibm.github.io/mcp-context-forge/',
+    stars: 3056,
+    installationType: 'pip',
+    pipPackage: 'mcp-contextforge-gateway',
+    official: true,
+    installConfig: {
+      command: 'uvx',
+      args: [
+        '--from',
+        'mcp-contextforge-gateway',
+        'mcpgateway',
+        '--host',
+        '0.0.0.0',
+        '--port',
+        '4444',
+      ],
+    },
+    requiredEnvVars: [
+      {
+        name: 'JWT_SECRET_KEY',
+        description: 'JWT secret key for authentication',
+        example: 'my-secret-key',
+      },
+    ],
+    tags: [
+      'ibm',
+      'gateway',
+      'registry',
+      'federation',
+      'proxy',
+      'official',
+      'enterprise',
+    ],
+  },
+  {
+    id: 'mobile-mcp',
+    name: 'Mobile MCP',
+    description:
+      'Scalable mobile automation and development through a platform-agnostic interface for iOS and Android devices',
+    category: 'developer-tools',
+    repository: 'https://github.com/mobile-next/mobile-mcp',
+    stars: 2969,
+    installationType: 'npx',
+    npmPackage: '@mobilenext/mobile-mcp',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@mobilenext/mobile-mcp@latest'],
+    },
+    tags: [
+      'mobile',
+      'ios',
+      'android',
+      'automation',
+      'simulator',
+      'emulator',
+      'testing',
+    ],
+  },
+  {
+    id: 'claude-code-mcp',
+    name: 'Claude Code MCP',
+    description:
+      'Run Claude Code in one-shot mode with permissions bypassed for direct agent access to file editing and terminal',
+    category: 'coding-agents',
+    repository: 'https://github.com/steipete/claude-code-mcp',
+    stars: 989,
+    installationType: 'npx',
+    npmPackage: '@steipete/claude-code-mcp',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@steipete/claude-code-mcp@latest'],
+    },
+    tags: ['claude', 'coding', 'agent', 'cursor', 'windsurf'],
+  },
+  {
+    id: 'ros-mcp-server',
+    name: 'ROS MCP Server',
+    description:
+      'Connect LLMs with ROS/ROS2 robots for natural language robot commanding and real-time sensor visibility',
+    category: 'other',
+    repository: 'https://github.com/robotmcp/ros-mcp-server',
+    stars: 913,
+    installationType: 'pip',
+    pipPackage: 'ros-mcp-server',
+    official: true,
+    installConfig: {
+      command: 'python',
+      args: ['-m', 'ros_mcp_server.server'],
+    },
+    tags: ['ros', 'ros2', 'robotics', 'robots', 'sensors'],
+  },
+  {
+    id: 'gmail-mcp',
+    name: 'Gmail MCP',
+    description:
+      'Gmail integration with auto authentication for AI assistants to manage email through natural language',
+    category: 'communication',
+    repository: 'https://github.com/GongRzhe/Gmail-MCP-Server',
+    website: 'https://gmail.google.com',
+    stars: 895,
+    installationType: 'npx',
+    npmPackage: '@gongrzhe/server-gmail-autoauth-mcp',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@gongrzhe/server-gmail-autoauth-mcp'],
+    },
+    requiredEnvVars: [
+      {
+        name: 'GMAIL_OAUTH_PATH',
+        description: 'Path to GCP OAuth credentials JSON file',
+        example: '/path/to/gcp-oauth.keys.json',
+      },
+      {
+        name: 'GMAIL_CREDENTIALS_PATH',
+        description: 'Path where authenticated tokens are stored',
+        example: '/path/to/credentials.json',
+      },
+    ],
+    tags: ['gmail', 'email', 'google', 'communication', 'oauth'],
+  },
+  {
+    id: 'mcp-knowledge-graph',
+    name: 'MCP Knowledge Graph',
+    description:
+      'Persistent memory for AI models through a local knowledge graph with entities, relations, and observations',
+    category: 'developer-tools',
+    repository: 'https://github.com/shaneholloman/mcp-knowledge-graph',
+    stars: 764,
+    installationType: 'npx',
+    npmPackage: 'mcp-knowledge-graph',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', 'mcp-knowledge-graph', '--memory-path', '${MEMORY_PATH}'],
+    },
+    requiredEnvVars: [
+      {
+        name: 'MEMORY_PATH',
+        description: 'Directory path where memory files are stored',
+        example: '/Users/username/.aim',
+      },
+    ],
+    tags: ['memory', 'knowledge-graph', 'persistence', 'context', 'entities'],
+  },
+  {
+    id: 'kubectl-mcp',
+    name: 'kubectl MCP',
+    description:
+      'Kubernetes cluster management for AI assistants with pod, service, Helm, and monitoring capabilities',
+    category: 'cloud-platform',
+    repository: 'https://github.com/rohitg00/kubectl-mcp-server',
+    stars: 750,
+    installationType: 'pip',
+    pipPackage: 'kubectl-mcp-tool',
+    installConfig: {
+      command: 'python',
+      args: ['-m', 'kubectl_mcp_tool.mcp_server'],
+    },
+    requiredEnvVars: [
+      {
+        name: 'KUBECONFIG',
+        description: 'Path to Kubernetes config file',
+        example: '~/.kube/config',
+      },
+    ],
+    tags: ['kubernetes', 'k8s', 'kubectl', 'helm', 'cloud', 'devops'],
+  },
+  {
+    id: 'apple-docs-mcp',
+    name: 'Apple Docs MCP',
+    description:
+      'Access Apple developer documentation, frameworks, APIs, SwiftUI, UIKit, and WWDC videos through MCP',
+    category: 'developer-tools',
+    repository: 'https://github.com/kimsungwhee/apple-docs-mcp',
+    website: 'https://developer.apple.com',
+    stars: 697,
+    installationType: 'npx',
+    npmPackage: '@kimsungwhee/apple-docs-mcp',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@kimsungwhee/apple-docs-mcp'],
+    },
+    tags: [
+      'apple',
+      'documentation',
+      'swiftui',
+      'uikit',
+      'wwdc',
+      'ios',
+      'macos',
+    ],
+  },
+  {
+    id: 'linkedin-mcp',
+    name: 'LinkedIn MCP',
+    description:
+      'LinkedIn integration for AI assistants to scrape profiles, companies, and search jobs',
+    category: 'social-media',
+    repository: 'https://github.com/stickerdaniel/linkedin-mcp-server',
+    website: 'https://linkedin.com',
+    stars: 685,
+    installationType: 'docker',
+    dockerImage: 'stickerdaniel/linkedin-mcp-server:latest',
+    installConfig: {
+      command: 'docker',
+      args: [
+        'run',
+        '--rm',
+        '-i',
+        '-e',
+        'LINKEDIN_COOKIE',
+        'stickerdaniel/linkedin-mcp-server:latest',
+      ],
+    },
+    requiredEnvVars: [
+      {
+        name: 'LINKEDIN_COOKIE',
+        description: 'LinkedIn session cookie for authentication',
+        example: 'li_at=YOUR_COOKIE_VALUE',
+      },
+    ],
+    tags: ['linkedin', 'social', 'jobs', 'profiles', 'scraping'],
+  },
+  {
+    id: 'mcp-proxy',
+    name: 'MCP Proxy',
+    description:
+      'Aggregates multiple MCP servers behind a single HTTP entrypoint with SSE and streamable HTTP support',
+    category: 'aggregator',
+    repository: 'https://github.com/TBXark/mcp-proxy',
+    stars: 612,
+    installationType: 'docker',
+    dockerImage: 'ghcr.io/tbxark/mcp-proxy:latest',
+    installConfig: {
+      command: 'docker',
+      args: [
+        'run',
+        '-i',
+        '--rm',
+        '-p',
+        '9090:9090',
+        '-v',
+        '${MCP_PROXY_CONFIG}:/config/config.json',
+        'ghcr.io/tbxark/mcp-proxy:latest',
+      ],
+    },
+    requiredEnvVars: [
+      {
+        name: 'MCP_PROXY_CONFIG',
+        description: 'Path to MCP proxy configuration JSON file',
+        example: '/path/to/config.json',
+      },
+    ],
+    tags: ['proxy', 'aggregator', 'sse', 'http', 'multi-server'],
+  },
+  {
+    id: 'iterm-mcp',
+    name: 'iTerm MCP',
+    description:
+      'Execute commands in active iTerm sessions with REPL interactions and CLI assistance',
+    category: 'developer-tools',
+    repository: 'https://github.com/ferrislucas/iterm-mcp',
+    stars: 505,
+    installationType: 'npx',
+    npmPackage: 'iterm-mcp',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', 'iterm-mcp'],
+    },
+    tags: ['iterm', 'terminal', 'macos', 'repl', 'cli'],
+  },
+  {
+    id: 'genai-toolbox-mcp',
+    name: 'GenAI Toolbox MCP',
+    description:
+      "Google's official MCP Toolbox for Databases - Postgres, MySQL, MongoDB, Redis, BigQuery, Spanner, and more",
+    category: 'database',
+    repository: 'https://github.com/googleapis/genai-toolbox',
+    website: 'https://googleapis.github.io/genai-toolbox/',
+    stars: 12234,
+    installationType: 'pip',
+    pipPackage: 'toolbox-core',
+    official: true,
+    installConfig: {
+      command: 'uvx',
+      args: ['toolbox-langchain'],
+    },
+    tags: [
+      'google',
+      'database',
+      'postgres',
+      'mysql',
+      'mongodb',
+      'redis',
+      'bigquery',
+      'spanner',
+      'official',
+    ],
+  },
+  {
+    id: 'fastapi-mcp',
+    name: 'FastAPI MCP',
+    description:
+      'Expose FastAPI endpoints as MCP tools with authentication and authorization support',
+    category: 'developer-tools',
+    repository: 'https://github.com/tadata-org/fastapi_mcp',
+    stars: 11346,
+    installationType: 'pip',
+    pipPackage: 'fastapi-mcp',
+    installConfig: {
+      command: 'pip',
+      args: ['install', 'fastapi-mcp'],
+    },
+    tags: ['fastapi', 'api', 'rest', 'python', 'authentication', 'framework'],
+  },
+  {
+    id: 'claude-flow-mcp',
+    name: 'Claude Flow MCP',
+    description:
+      'Agent orchestration platform for Claude - deploy multi-agent swarms and coordinate autonomous workflows',
+    category: 'coding-agents',
+    repository: 'https://github.com/ruvnet/claude-flow',
+    stars: 11184,
+    installationType: 'npx',
+    npmPackage: 'claude-flow',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', 'claude-flow@alpha', 'init'],
+    },
+    tags: [
+      'claude',
+      'multi-agent',
+      'swarm',
+      'orchestration',
+      'workflow',
+      'autonomous',
+    ],
+  },
+  {
+    id: 'pal-mcp-server',
+    name: 'PAL MCP Server',
+    description:
+      'Multi-model support for Claude Code - use Gemini, OpenAI, OpenRouter, Azure, Grok, Ollama together',
+    category: 'ai-services',
+    repository: 'https://github.com/BeehiveInnovations/pal-mcp-server',
+    stars: 10758,
+    installationType: 'source',
+    installConfig: {
+      command: 'python',
+      args: ['-m', 'pal_mcp_server'],
+    },
+    requiredEnvVars: [
+      {
+        name: 'OPENROUTER_API_KEY',
+        description: 'OpenRouter API key (optional)',
+        example: 'sk-or-xxxxx',
+      },
+    ],
+    tags: [
+      'multi-model',
+      'gemini',
+      'openai',
+      'ollama',
+      'azure',
+      'grok',
+      'openrouter',
+    ],
+  },
+  {
+    id: 'browser-mcp',
+    name: 'Browser MCP',
+    description:
+      'Browser control MCP server via Chrome extension - navigate, click, type, and extract data',
+    category: 'browser-automation',
+    repository: 'https://github.com/BrowserMCP/mcp',
+    stars: 5362,
+    installationType: 'npx',
+    npmPackage: '@anthropic/browser-mcp',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@anthropic/browser-mcp'],
+    },
+    tags: ['browser', 'chrome', 'extension', 'automation', 'web'],
+  },
+  {
+    id: 'mcp-playwright-ea',
+    name: 'Playwright MCP (ExecuteAutomation)',
+    description:
+      'Alternative Playwright MCP server for browser and API automation in Claude, Cursor, and more',
+    category: 'browser-automation',
+    repository: 'https://github.com/executeautomation/mcp-playwright',
+    stars: 5116,
+    installationType: 'npx',
+    npmPackage: '@executeautomation/playwright-mcp-server',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@executeautomation/playwright-mcp-server'],
+    },
+    tags: ['playwright', 'browser', 'automation', 'testing', 'api'],
+  },
+  {
+    id: 'claude-context-mcp',
+    name: 'Claude Context MCP',
+    description:
+      'Code search MCP for Claude Code using vector database - make entire codebase the context',
+    category: 'developer-tools',
+    repository: 'https://github.com/zilliztech/claude-context',
+    stars: 4955,
+    installationType: 'npx',
+    npmPackage: '@anthropic/claude-context',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@anthropic/claude-context'],
+    },
+    tags: [
+      'code-search',
+      'vector-db',
+      'context',
+      'semantic-search',
+      'zilliz',
+      'milvus',
+    ],
+  },
+  {
+    id: 'ida-pro-mcp',
+    name: 'IDA Pro MCP',
+    description:
+      'AI-powered reverse engineering assistant bridging IDA Pro with language models',
+    category: 'security',
+    repository: 'https://github.com/mrexodia/ida-pro-mcp',
+    stars: 4906,
+    installationType: 'pip',
+    pipPackage: 'ida-pro-mcp',
+    installConfig: {
+      command: 'pip',
+      args: ['install', 'ida-pro-mcp'],
+    },
+    tags: [
+      'ida-pro',
+      'reverse-engineering',
+      'binary-analysis',
+      'security',
+      'malware',
+    ],
+  },
+  {
+    id: 'deep-research-mcp',
+    name: 'Deep Research MCP',
+    description:
+      'Use any LLM for deep research with SSE API and MCP server support',
+    category: 'search-web',
+    repository: 'https://github.com/u14app/deep-research',
+    stars: 4302,
+    installationType: 'pip',
+    pipPackage: 'deep-research',
+    installConfig: {
+      command: 'uvx',
+      args: ['deep-research'],
+    },
+    requiredEnvVars: [
+      {
+        name: 'OPENAI_API_KEY',
+        description: 'OpenAI API key for LLM',
+      },
+    ],
+    tags: ['research', 'deep-research', 'llm', 'sse', 'web-search'],
+  },
+  {
+    id: 'cipher-mcp',
+    name: 'Cipher MCP',
+    description:
+      'Memory layer for coding agents - persistent context for Cursor, Claude Code, Windsurf, and Cline',
+    category: 'developer-tools',
+    repository: 'https://github.com/campfirein/cipher',
+    stars: 3399,
+    installationType: 'npx',
+    npmPackage: '@byterover/cipher-mcp',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@byterover/cipher-mcp'],
+    },
+    tags: ['memory', 'context', 'persistence', 'coding-agents', 'byterover'],
+  },
+  {
+    id: 'metorial-mcp',
+    name: 'Metorial MCP',
+    description:
+      'Connect any AI model to 600+ integrations powered by MCP with containerized security',
+    category: 'aggregator',
+    repository: 'https://github.com/metorial/metorial',
+    stars: 3201,
+    installationType: 'docker',
+    dockerImage: 'metorial/metorial:latest',
+    installConfig: {
+      command: 'docker',
+      args: ['run', '-i', '--rm', 'metorial/metorial:latest'],
+    },
+    tags: ['integrations', 'aggregator', 'docker', 'multi-tool', 'security'],
+  },
+  {
+    id: 'osaurus-mcp',
+    name: 'Osaurus MCP',
+    description:
+      'macOS LLM server - run local or cloud models with OpenAI/Anthropic compatible APIs',
+    category: 'ai-services',
+    repository: 'https://github.com/dinoki-ai/osaurus',
+    stars: 2962,
+    installationType: 'source',
+    installConfig: {
+      command: 'osaurus',
+      args: ['serve'],
+    },
+    tags: [
+      'macos',
+      'local-llm',
+      'mlx',
+      'apple-silicon',
+      'openai-compatible',
+      'swift',
+    ],
+  },
+  {
+    id: 'shadcn-ui-mcp',
+    name: 'shadcn/ui MCP',
+    description:
+      'Context about shadcn/ui components for LLMs - React, Vue, Svelte, and React Native support',
+    category: 'developer-tools',
+    repository: 'https://github.com/Jpisnice/shadcn-ui-mcp-server',
+    stars: 2582,
+    installationType: 'npx',
+    npmPackage: 'shadcn-ui-mcp',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', 'shadcn-ui-mcp'],
+    },
+    tags: [
+      'shadcn',
+      'ui',
+      'react',
+      'vue',
+      'svelte',
+      'react-native',
+      'tailwind',
+    ],
+  },
+  {
+    id: 'shippie-mcp',
+    name: 'Shippie MCP',
+    description:
+      'Extendable code review and QA agent for CI/CD pipelines and GitHub',
+    category: 'developer-tools',
+    repository: 'https://github.com/mattzcarey/shippie',
+    stars: 2317,
+    installationType: 'npx',
+    npmPackage: 'shippie',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', 'shippie'],
+    },
+    tags: ['code-review', 'qa', 'ci-cd', 'github', 'agent'],
+  },
+  {
+    id: 'devdocs-mcp',
+    name: 'DevDocs MCP',
+    description:
+      'Free, private, UI-based tech documentation MCP server for coders and developers',
+    category: 'developer-tools',
+    repository: 'https://github.com/cyberagiinc/DevDocs',
+    stars: 2003,
+    installationType: 'source',
+    installConfig: {
+      command: 'python',
+      args: ['-m', 'devdocs'],
+    },
+    tags: ['documentation', 'docs', 'reference', 'api-docs', 'crawler'],
+  },
+  {
+    id: 'brightdata-mcp',
+    name: 'Bright Data MCP',
+    description:
+      'Official Bright Data MCP for web scraping, data extraction, and anti-bot bypass',
+    category: 'browser-automation',
+    repository: 'https://github.com/brightdata/brightdata-mcp',
+    website: 'https://brightdata.com',
+    stars: 1845,
+    installationType: 'npx',
+    npmPackage: '@anthropic/brightdata-mcp',
+    official: true,
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@anthropic/brightdata-mcp'],
+    },
+    requiredEnvVars: [
+      {
+        name: 'BRIGHTDATA_API_KEY',
+        description: 'Bright Data API key',
+      },
+    ],
+    tags: [
+      'scraping',
+      'web-data',
+      'anti-bot',
+      'proxy',
+      'data-extraction',
+      'official',
+    ],
+  },
+  {
+    id: 'mcpjam-inspector',
+    name: 'MCP Inspector',
+    description:
+      'Build ChatGPT Apps and MCP servers locally with inspection and debugging tools',
+    category: 'developer-tools',
+    repository: 'https://github.com/MCPJam/inspector',
+    stars: 1545,
+    installationType: 'npx',
+    npmPackage: '@mcpjam/inspector',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@mcpjam/inspector'],
+    },
+    tags: ['inspector', 'debugging', 'chatgpt', 'development', 'testing'],
+  },
+  {
+    id: 'mcptools',
+    name: 'MCP Tools CLI',
+    description:
+      'Command-line interface for interacting with MCP servers via stdio and HTTP transport',
+    category: 'developer-tools',
+    repository: 'https://github.com/f/mcptools',
+    stars: 1426,
+    installationType: 'npx',
+    npmPackage: 'mcptools',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', 'mcptools'],
+    },
+    tags: ['cli', 'tools', 'stdio', 'http', 'debugging'],
+  },
+  {
+    id: 'mcp-scan',
+    name: 'MCP Scan',
+    description:
+      'Security vulnerability scanner for MCP connections - constrain, log, and audit',
+    category: 'security',
+    repository: 'https://github.com/invariantlabs-ai/mcp-scan',
+    stars: 1381,
+    installationType: 'pip',
+    pipPackage: 'mcp-scan',
+    installConfig: {
+      command: 'uvx',
+      args: ['mcp-scan'],
+    },
+    tags: ['security', 'vulnerability', 'audit', 'scanning', 'compliance'],
+  },
+  {
+    id: 'unreal-mcp',
+    name: 'Unreal Engine MCP',
+    description:
+      'Control Unreal Engine 5 through natural language via MCP for Cursor, Windsurf, and Claude',
+    category: 'developer-tools',
+    repository: 'https://github.com/chongdashu/unreal-mcp',
+    stars: 1239,
+    installationType: 'pip',
+    pipPackage: 'unreal-mcp',
+    installConfig: {
+      command: 'uvx',
+      args: ['unreal-mcp'],
+    },
+    tags: ['unreal-engine', 'ue5', 'game-dev', 'editor', 'blueprints'],
+  },
+  {
+    id: 'web-eval-agent',
+    name: 'Web Eval Agent MCP',
+    description:
+      'Autonomous web application evaluation and testing with Playwright integration',
+    category: 'developer-tools',
+    repository: 'https://github.com/refreshdotdev/web-eval-agent',
+    stars: 1231,
+    installationType: 'npx',
+    npmPackage: '@refreshdotdev/web-eval-agent',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', '@refreshdotdev/web-eval-agent'],
+    },
+    tags: ['testing', 'qa', 'evaluation', 'playwright', 'autonomous'],
+  },
+  {
+    id: 'mcp-unity-alt',
+    name: 'MCP Unity (CoderGamester)',
+    description:
+      'Unity Editor MCP plugin for OpenAI, Gemini, Claude, Deepseek, and Grok integration',
+    category: 'developer-tools',
+    repository: 'https://github.com/CoderGamester/mcp-unity',
+    stars: 1193,
+    installationType: 'npx',
+    npmPackage: 'mcp-unity',
+    installConfig: {
+      command: 'npx',
+      args: ['-y', 'mcp-unity'],
+    },
+    tags: ['unity', 'game-dev', 'editor', 'c-sharp', 'multi-model'],
+  },
+  {
+    id: 'xmcp-framework',
+    name: 'xMCP Framework',
+    description:
+      'TypeScript MCP framework for building MCP servers with type safety and DX focus',
+    category: 'developer-tools',
+    repository: 'https://github.com/basementstudio/xmcp',
+    stars: 1168,
+    installationType: 'npm',
+    npmPackage: 'xmcp',
+    installConfig: {
+      command: 'npm',
+      args: ['install', 'xmcp'],
+    },
+    tags: ['framework', 'typescript', 'sdk', 'type-safe', 'developer-tools'],
   },
 ];
 
@@ -1396,4 +2259,26 @@ export function getMCPById(id: string): MCPRegistryEntry | undefined {
 
 export function getMCPCount(): number {
   return MCP_REGISTRY.length;
+}
+
+export function getAllTags(): string[] {
+  const tagCounts = new Map<string, number>();
+  MCP_REGISTRY.forEach(mcp => {
+    mcp.tags?.forEach(tag => {
+      tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+    });
+  });
+  // Sort by count (descending), then alphabetically
+  return Array.from(tagCounts.keys()).sort((a, b) => {
+    const countDiff = (tagCounts.get(b) || 0) - (tagCounts.get(a) || 0);
+    return countDiff !== 0 ? countDiff : a.localeCompare(b);
+  });
+}
+
+export function getMCPsByTag(tag: string): MCPRegistryEntry[] {
+  return MCP_REGISTRY.filter(mcp => mcp.tags?.includes(tag));
+}
+
+export function getTagCount(tag: string): number {
+  return MCP_REGISTRY.filter(mcp => mcp.tags?.includes(tag)).length;
 }

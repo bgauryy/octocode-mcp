@@ -264,7 +264,7 @@ async function showSkillsMenu(
   });
 
   const choice = await select<SkillsMenuChoice>({
-    message: 'Skills Options:',
+    message: '',
     choices,
     pageSize: 10,
     loop: false,
@@ -272,7 +272,6 @@ async function showSkillsMenu(
       prefix: '  ',
       style: {
         highlight: (text: string) => c('magenta', text),
-        message: (text: string) => bold(text),
       },
     },
   });
@@ -379,7 +378,7 @@ async function selectInstalledSkill(
   });
 
   const choice = await select<ManageSkillsChoice>({
-    message: 'Select skill:',
+    message: '',
     choices,
     pageSize: 15,
     loop: false,
@@ -387,7 +386,6 @@ async function selectInstalledSkill(
       prefix: '  ',
       style: {
         highlight: (text: string) => c('magenta', text),
-        message: (text: string) => bold(text),
       },
     },
   });
@@ -403,27 +401,14 @@ type SkillActionChoice = 'remove' | 'view' | 'back';
 async function showSkillActions(
   skill: InstalledSkill
 ): Promise<SkillActionChoice> {
-  console.log();
-  console.log(c('blue', '━'.repeat(66)));
-  console.log(`  ${bold(skill.name)}`);
-  console.log(c('blue', '━'.repeat(66)));
-  console.log();
+  const sourceTag = skill.isBundled
+    ? c('cyan', '[bundled]')
+    : c('magenta', '[community]');
 
-  // Skill info
-  console.log(`  ${bold('Description:')}`);
-  console.log(`  ${skill.description}`);
   console.log();
-
-  console.log(`  ${bold('Location:')}`);
-  console.log(`  ${c('cyan', skill.path)}`);
-  console.log();
-
-  console.log(`  ${bold('Source:')}`);
-  if (skill.isBundled) {
-    console.log(`  ${c('cyan', 'Octocode bundled skill')}`);
-  } else {
-    console.log(`  ${c('magenta', 'Community / Marketplace')}`);
-  }
+  console.log(`  ${bold(skill.name)} ${sourceTag}`);
+  console.log(`  ${dim(skill.description)}`);
+  console.log(`  ${dim(skill.path)}`);
   console.log();
 
   const choices: Array<{ name: string; value: SkillActionChoice }> = [
@@ -443,14 +428,13 @@ async function showSkillActions(
   ];
 
   const choice = await select<SkillActionChoice>({
-    message: 'Action:',
+    message: '',
     choices,
     loop: false,
     theme: {
       prefix: '  ',
       style: {
         highlight: (text: string) => c('magenta', text),
-        message: (text: string) => bold(text),
       },
     },
   });
@@ -480,9 +464,7 @@ function showSkillContent(skill: InstalledSkill): void {
   }
 
   console.log();
-  console.log(c('blue', '━'.repeat(66)));
-  console.log(`  ${bold('SKILL.md')} - ${skill.name}`);
-  console.log(c('blue', '━'.repeat(66)));
+  console.log(`  ${bold('SKILL.md')} ${dim(`- ${skill.name}`)}`);
   console.log();
 
   // Show content with proper formatting (first 50 lines)
@@ -710,13 +692,6 @@ async function installSkills(
 export async function runSkillsMenu(): Promise<void> {
   await loadInquirer();
 
-  // Section header
-  console.log();
-  console.log(c('blue', '━'.repeat(66)));
-  console.log(`  📚 ${bold('Octocode Skills for Claude Code')}`);
-  console.log(c('blue', '━'.repeat(66)));
-  console.log();
-
   // Get skills info
   let info = getSkillsInfo();
 
@@ -780,11 +755,7 @@ export async function runSkillsMenu(): Promise<void> {
         const defaultPath = getDefaultSkillsDestDir();
 
         console.log();
-        console.log(c('blue', '━'.repeat(66)));
-        console.log(`  📁 ${bold('Skills Installation Path')}`);
-        console.log(c('blue', '━'.repeat(66)));
-        console.log();
-        console.log(`  ${dim(`Leave empty to use default: ${defaultPath}`)}`);
+        console.log(`  ${dim(`Leave empty for default: ${defaultPath}`)}`);
         console.log();
 
         const newPath = await input({

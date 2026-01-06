@@ -116,6 +116,18 @@ export const SKILLS_MARKETPLACES: MarketplaceSource[] = [
     description: 'Scientific computing - biopython, astropy, deepchem & more',
     url: 'https://github.com/K-Dense-AI/claude-scientific-skills',
   },
+  {
+    id: 'dev-browser',
+    name: 'Dev Browser',
+    owner: 'SawyerHood',
+    repo: 'dev-browser',
+    branch: 'main',
+    skillsPath: 'skills',
+    skillPattern: 'skill-folders',
+    description:
+      'Browser automation with persistent page state using Playwright',
+    url: 'https://github.com/SawyerHood/dev-browser',
+  },
 ];
 
 /**

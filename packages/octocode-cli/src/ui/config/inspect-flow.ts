@@ -68,7 +68,7 @@ async function inspectMCPServer(
   console.log();
 
   const choice = await select<ServerMenuChoice>({
-    message: 'Actions:',
+    message: '',
     choices: [
       {
         name: `${c('red', '🗑')} Remove Server`,
@@ -86,7 +86,6 @@ async function inspectMCPServer(
       prefix: '  ',
       style: {
         highlight: (text: string) => c('cyan', text),
-        message: (text: string) => bold(text),
       },
     },
   });

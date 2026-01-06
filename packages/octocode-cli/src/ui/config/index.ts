@@ -272,7 +272,7 @@ function parseBooleanValue(value: string): boolean {
  */
 async function showConfigMenu(): Promise<ConfigMenuChoice> {
   const choice = await select<ConfigMenuChoice>({
-    message: 'Configuration Options:',
+    message: '',
     choices: [
       {
         name: '🔧 Edit configuration',
@@ -301,7 +301,6 @@ async function showConfigMenu(): Promise<ConfigMenuChoice> {
       prefix: '  ',
       style: {
         highlight: (text: string) => c('cyan', text),
-        message: (text: string) => bold(text),
       },
     },
   });
@@ -314,13 +313,6 @@ async function showConfigMenu(): Promise<ConfigMenuChoice> {
  */
 export async function runConfigOptionsFlow(): Promise<void> {
   await loadInquirer();
-
-  // Section header
-  console.log();
-  console.log(c('blue', '━'.repeat(66)));
-  console.log(`  ⚙️  ${bold('Configure Octocode Options')}`);
-  console.log(c('blue', '━'.repeat(66)));
-  console.log();
 
   // Show submenu
   const choice = await showConfigMenu();
@@ -1122,14 +1114,9 @@ async function showCurrentJsonConfig(): Promise<void> {
   const octocodeConfig = config.mcpServers?.octocode;
 
   console.log();
-  console.log(c('blue', '━'.repeat(66)));
-  console.log(`  📄 ${bold('Current Octocode Configuration')}`);
-  console.log(c('blue', '━'.repeat(66)));
-  console.log();
-  console.log(`  ${dim('Client:')} ${c('cyan', clientInfo.name)}`);
-  console.log(`  ${dim('Config file:')} ${c('cyan', configPath)}`);
-  console.log();
-  console.log(`  ${bold('JSON Configuration:')}`);
+  console.log(
+    `  ${dim('Client:')} ${clientInfo.name} ${dim('•')} ${c('cyan', configPath)}`
+  );
   console.log();
 
   // Pretty print the octocode config
@@ -1146,7 +1133,6 @@ async function showCurrentJsonConfig(): Promise<void> {
   }
 
   console.log();
-  console.log(c('blue', '━'.repeat(66)));
 
   // Ask if user wants to open the config file
   await promptOpenConfigFile(configPath);

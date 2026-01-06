@@ -8,6 +8,7 @@ import {
   confirmInstall,
   searchMCPs,
   selectByCategory,
+  selectByTag,
   selectPopular,
   selectAll,
   selectBrowseMode,
@@ -36,7 +37,7 @@ type InstallStep =
 interface FlowState {
   client: MCPClient | null;
   customPath?: string;
-  browseMode: 'search' | 'category' | 'popular' | 'all' | null;
+  browseMode: 'search' | 'category' | 'tag' | 'popular' | 'all' | null;
   selectedMCP: MCPRegistryEntry | null;
   envValues: Record<string, string>;
 }
@@ -357,14 +358,8 @@ export async function runExternalMCPFlow(): Promise<void> {
   await loadInquirer();
 
   console.log();
-  console.log(c('blue', '━'.repeat(66)));
-  console.log(` 🔌 ${bold('Install External MCP')}`);
-  console.log(c('blue', '━'.repeat(66)));
-  console.log();
-  console.log(`  ${dim('Browse and install from 70+ community MCP servers')}`);
-  console.log();
   console.log(
-    `  ${c('yellow', '⚠')} ${c('yellow', 'This is a public community list. MCPs install on your behalf.')}`
+    `  ${c('yellow', '⚠')} ${dim('70+ community servers • MCPs install on your behalf')}`
   );
 
   const state: FlowState = {
@@ -414,6 +409,9 @@ export async function runExternalMCPFlow(): Promise<void> {
           case 'category':
             result = await selectByCategory();
             break;
+          case 'tag':
+            result = await selectByTag();
+            break;
           case 'popular':
             result = await selectPopular();
             break;
@@ -444,6 +442,8 @@ export async function runExternalMCPFlow(): Promise<void> {
           state.selectedMCP,
           'selectedMCP should be set before details step'
         );
+        console.log();
+        console.log(`  ${dim('[Step 4/6]')} ${bold('MCP Details')}`);
         printMCPDetails(selectedMCP);
 
         type DetailChoice = 'continue' | 'back';
@@ -506,6 +506,9 @@ export async function runExternalMCPFlow(): Promise<void> {
           state.client,
           'client should be set before confirm step'
         );
+
+        console.log();
+        console.log(`  ${dim('[Step 6/6]')} ${bold('Confirm Installation')}`);
 
         const configPath =
           client === 'custom' && state.customPath

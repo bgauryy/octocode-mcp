@@ -13,6 +13,9 @@ import {
 import type { OctocodeAuthStatus } from '../../types/index.js';
 import { Spinner } from '../../utils/spinner.js';
 
+// Cache for environment check results (only check once per session)
+let cachedEnvStatus: NodeEnvironmentStatus | null = null;
+
 /**
  * Print Node.js environment status
  */
@@ -113,8 +116,24 @@ export function printOctocodePackageStatus(
 
 /**
  * Check and print environment status with loader for slow operations
+ * Results are cached to avoid repeated network calls that can slow down menus
  */
 export async function checkAndPrintEnvironmentWithLoader(): Promise<NodeEnvironmentStatus> {
+  // Return cached result if available (only check once per session)
+  if (cachedEnvStatus) {
+    printNodeStatus(cachedEnvStatus.nodeInstalled, cachedEnvStatus.nodeVersion);
+    printNpmStatus(cachedEnvStatus.npmInstalled, cachedEnvStatus.npmVersion);
+    printRegistryStatus(
+      cachedEnvStatus.registryStatus,
+      cachedEnvStatus.registryLatency
+    );
+    printOctocodePackageStatus(
+      cachedEnvStatus.octocodePackageAvailable,
+      cachedEnvStatus.octocodePackageVersion
+    );
+    return cachedEnvStatus;
+  }
+
   // 1. Check Node.js (Sync - fast local check)
   const nodeCheck = checkNodeInPath();
   printNodeStatus(nodeCheck.installed, nodeCheck.version);
@@ -123,19 +142,20 @@ export async function checkAndPrintEnvironmentWithLoader(): Promise<NodeEnvironm
   const npmCheck = checkNpmInPath();
   printNpmStatus(npmCheck.installed, npmCheck.version);
 
-  // 3. Check Registry (Async - network call)
+  // 3. Check Registry (Async - network call with 4s timeout)
   const registrySpinner = new Spinner('  Registry: Checking...').start();
   const registryCheck = await checkNpmRegistry();
   registrySpinner.clear();
   printRegistryStatus(registryCheck.status, registryCheck.latency);
 
-  // 4. Check Octocode Package (Async - network call via npm view)
+  // 4. Check Octocode Package (Async - network call with 4s timeout)
   const octocodeSpinner = new Spinner('  octocode-mcp: Checking...').start();
   const octocodeCheck = await checkOctocodePackageAsync();
   octocodeSpinner.clear();
   printOctocodePackageStatus(octocodeCheck.available, octocodeCheck.version);
 
-  return {
+  // Cache the result
+  cachedEnvStatus = {
     nodeInstalled: nodeCheck.installed,
     nodeVersion: nodeCheck.version,
     npmInstalled: npmCheck.installed,
@@ -145,6 +165,8 @@ export async function checkAndPrintEnvironmentWithLoader(): Promise<NodeEnvironm
     octocodePackageAvailable: octocodeCheck.available,
     octocodePackageVersion: octocodeCheck.version,
   };
+
+  return cachedEnvStatus;
 }
 
 /**

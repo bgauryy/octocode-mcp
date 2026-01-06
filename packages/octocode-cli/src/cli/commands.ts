@@ -997,7 +997,6 @@ export const commands: CLICommand[] = [
   tokenCommand,
   statusCommand,
   syncCommand,
-  // chatCommand - Disabled: AI Provider Settings have been removed
 ];
 
 /**

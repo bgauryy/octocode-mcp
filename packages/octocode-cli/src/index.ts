@@ -24,7 +24,6 @@ import {
   hasEnvironmentIssues,
   printAuthStatus,
 } from './ui/install/index.js';
-// import { checkNodeEnvironment } from './features/node-check.js'; // Removed
 import { runMenuLoop } from './ui/menu.js';
 import { runCLI } from './cli/index.js';
 import { initializeSecureStorage } from './utils/token-storage.js';

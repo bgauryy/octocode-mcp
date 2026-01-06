@@ -4,7 +4,7 @@
  */
 
 import { c, bold, dim } from '../../utils/colors.js';
-import { select, Separator, input } from '../../utils/prompts.js';
+import { select, Separator, input, search } from '../../utils/prompts.js';
 import { Spinner } from '../../utils/spinner.js';
 import { dirExists } from '../../utils/fs.js';
 import { getSkillsDestDir } from '../../utils/skills.js';
@@ -17,7 +17,6 @@ import {
 import {
   fetchMarketplaceSkills,
   installMarketplaceSkill,
-  searchSkills,
 } from '../../utils/skills-fetch.js';
 import path from 'node:path';
 
@@ -26,7 +25,7 @@ import path from 'node:path';
 // ============================================================================
 
 type MarketplaceMenuChoice = MarketplaceSource | 'back';
-type SkillMenuChoice = MarketplaceSkill | 'search' | 'back';
+type SkillMenuChoice = MarketplaceSkill | 'back';
 type InstallChoice = 'install' | 'back';
 
 // ============================================================================
@@ -116,7 +115,7 @@ async function selectMarketplace(
   });
 
   const choice = await select<MarketplaceMenuChoice>({
-    message: 'Marketplace:',
+    message: '',
     choices,
     pageSize: 10,
     loop: false,
@@ -124,7 +123,6 @@ async function selectMarketplace(
       prefix: '  ',
       style: {
         highlight: (text: string) => c('magenta', text),
-        message: (text: string) => bold(text),
       },
     },
   });
@@ -133,7 +131,7 @@ async function selectMarketplace(
 }
 
 /**
- * Browse skills from a marketplace
+ * Browse skills from a marketplace with inline search filtering
  */
 async function browseSkills(
   source: MarketplaceSource,
@@ -144,127 +142,52 @@ async function browseSkills(
   console.log(`  ${dim(source.url)}`);
   console.log();
 
-  const choices: Array<{
-    name: string;
-    value: SkillMenuChoice;
-  }> = [];
-
-  // Add search option
-  choices.push({
-    name: `🔍 Search skills - ${dim('Filter by name or description')}`,
-    value: 'search',
+  // Create searchable choice list
+  const skillChoices = skills.map(skill => {
+    const installed = isSkillInstalled(skill.name);
+    return {
+      name: formatSkill(skill, installed),
+      value: skill as SkillMenuChoice,
+      // Include searchable fields for filtering
+      description: skill.category ? `[${skill.category}]` : undefined,
+    };
   });
 
-  choices.push(
-    new Separator() as unknown as {
-      name: string;
-      value: SkillMenuChoice;
-    }
-  );
-
-  // Add all skills (no truncation)
-  for (const skill of skills) {
-    const installed = isSkillInstalled(skill.name);
-    choices.push({
-      name: formatSkill(skill, installed),
-      value: skill,
-    });
-  }
-
-  choices.push(
-    new Separator() as unknown as {
-      name: string;
-      value: SkillMenuChoice;
-    }
-  );
-  choices.push({
+  // Static choices (back option)
+  const backChoice = {
     name: `${c('dim', '← Back to marketplaces')}`,
-    value: 'back',
-  });
+    value: 'back' as SkillMenuChoice,
+  };
 
-  const choice = await select<SkillMenuChoice>({
-    message: 'Select a skill:',
-    choices,
-    pageSize: 20,
-    loop: false,
-    theme: {
-      prefix: '  ',
-      style: {
-        highlight: (text: string) => c('magenta', text),
-        message: (text: string) => bold(text),
-      },
+  const choice = await search<SkillMenuChoice>({
+    message: `🔍 Type to filter skills (${skills.length} available)`,
+    source: (term: string | undefined) => {
+      // If no search term, show all skills + back option
+      if (!term || !term.trim()) {
+        return [...skillChoices, backChoice];
+      }
+
+      // Filter skills by search term
+      const lowerTerm = term.toLowerCase();
+      const filtered = skillChoices.filter(choice => {
+        if (typeof choice.value === 'string') return false;
+        const skill = choice.value;
+        return (
+          skill.name.toLowerCase().includes(lowerTerm) ||
+          skill.displayName.toLowerCase().includes(lowerTerm) ||
+          skill.description.toLowerCase().includes(lowerTerm) ||
+          skill.category?.toLowerCase().includes(lowerTerm)
+        );
+      });
+
+      // Always include back option
+      return [...filtered, backChoice];
     },
-  });
-
-  return choice;
-}
-
-/**
- * Search skills in a marketplace
- */
-async function searchSkillsPrompt(
-  skills: MarketplaceSkill[]
-): Promise<MarketplaceSkill | 'back' | null> {
-  console.log();
-  console.log(`  ${c('blue', 'ℹ')} Enter search terms (name or description)`);
-  console.log(`  ${dim('Leave empty to go back')}`);
-  console.log();
-
-  const query = await input({
-    message: 'Search:',
-  });
-
-  if (!query || !query.trim()) return 'back';
-
-  const results = searchSkills(skills, query.trim());
-
-  if (results.length === 0) {
-    console.log();
-    console.log(`  ${c('yellow', '⚠')} No skills found matching "${query}"`);
-    console.log();
-    return null;
-  }
-
-  console.log();
-  console.log(
-    `  ${c('green', '✓')} Found ${bold(String(results.length))} skill${results.length > 1 ? 's' : ''}`
-  );
-  console.log();
-
-  const choices: Array<{
-    name: string;
-    value: MarketplaceSkill | 'back';
-  }> = [];
-
-  for (const skill of results.slice(0, 20)) {
-    const installed = isSkillInstalled(skill.name);
-    choices.push({
-      name: formatSkill(skill, installed),
-      value: skill,
-    });
-  }
-
-  choices.push(
-    new Separator() as unknown as {
-      name: string;
-      value: MarketplaceSkill | 'back';
-    }
-  );
-  choices.push({
-    name: `${c('dim', '← Back')}`,
-    value: 'back',
-  });
-
-  const choice = await select<MarketplaceSkill | 'back'>({
-    message: 'Select a skill:',
-    choices,
-    pageSize: 15,
-    loop: false,
+    pageSize: 20,
     theme: {
       prefix: '  ',
       style: {
         highlight: (text: string) => c('magenta', text),
-        message: (text: string) => bold(text),
       },
     },
   });
@@ -282,14 +205,8 @@ async function showSkillDetails(
   const destDir = getSkillsDestDir();
 
   console.log();
-  console.log(c('blue', '━'.repeat(66)));
   console.log(`  ${bold(skill.displayName)}`);
-  console.log(c('blue', '━'.repeat(66)));
-  console.log();
-
-  // Skill info
-  console.log(`  ${bold('Description:')}`);
-  console.log(`  ${skill.description}`);
+  console.log(`  ${dim(skill.description)}`);
   console.log();
 
   if (skill.category) {
@@ -383,16 +300,9 @@ async function installSkill(skill: MarketplaceSkill): Promise<boolean> {
  * Run the marketplace browser flow
  */
 export async function runMarketplaceFlow(): Promise<void> {
-  // Section header
-  console.log();
-  console.log(c('blue', '━'.repeat(66)));
-  console.log(`  🌐 ${bold('Skills Marketplace')}`);
-  console.log(c('blue', '━'.repeat(66)));
-  console.log();
-  console.log(`  ${dim('Browse and install skills from the community')}`);
   console.log();
   console.log(
-    `  ${c('yellow', '⚠')} ${c('yellow', 'This is a public community list. Skills install on your behalf.')}`
+    `  ${c('yellow', '⚠')} ${dim('Community list • Skills install on your behalf')}`
   );
 
   // Fetch stars for all marketplaces
@@ -446,26 +356,13 @@ export async function runMarketplaceFlow(): Promise<void> {
       continue;
     }
 
-    // Browse skills loop
+    // Browse skills loop with inline search
     let inSkillsBrowser = true;
     while (inSkillsBrowser) {
       const skillChoice = await browseSkills(source, skills);
 
       if (skillChoice === 'back') {
         inSkillsBrowser = false;
-        continue;
-      }
-
-      if (skillChoice === 'search') {
-        const searchResult = await searchSkillsPrompt(skills);
-        if (searchResult === 'back' || searchResult === null) {
-          continue;
-        }
-        // Show skill details for search result
-        const detailChoice = await showSkillDetails(searchResult);
-        if (detailChoice === 'install') {
-          await installSkill(searchResult);
-        }
         continue;
       }
 

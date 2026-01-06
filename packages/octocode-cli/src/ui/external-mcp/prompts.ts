@@ -4,6 +4,9 @@ import {
   MCP_REGISTRY,
   getAllCategories,
   getMCPsByCategory,
+  getAllTags,
+  getMCPsByTag,
+  getTagCount,
   searchMCPs as searchRegistry,
   type MCPRegistryEntry,
   type MCPCategory,
@@ -95,8 +98,10 @@ export async function selectTargetClient(): Promise<{
   console.log(c('blue', ' ┌' + '─'.repeat(60) + '┐'));
   console.log(
     c('blue', ' │ ') +
+      dim('[Step 1/6]') +
+      ' ' +
       bold('Select Target Client') +
-      ' '.repeat(40) +
+      ' '.repeat(28) +
       c('blue', '│')
   );
   console.log(c('blue', ' └' + '─'.repeat(60) + '┘'));
@@ -157,7 +162,7 @@ export async function selectTargetClient(): Promise<{
   });
   choices.push(new Separator() as unknown as ClientChoice);
   choices.push({
-    name: `${c('dim', '← Back to main menu')}`,
+    name: `${c('dim', '← Back')}`,
     value: 'back',
   });
 
@@ -215,11 +220,19 @@ async function promptCustomPath(): Promise<string | null> {
  * Select how to browse MCPs
  */
 export async function selectBrowseMode(): Promise<
-  'search' | 'category' | 'popular' | 'all' | 'back' | null
+  'search' | 'category' | 'tag' | 'popular' | 'all' | 'back' | null
 > {
   console.log();
+  console.log(`  ${dim('[Step 2/6]')} ${bold('Browse Method')}`);
+  console.log();
 
-  type BrowseChoice = 'search' | 'category' | 'popular' | 'all' | 'back';
+  type BrowseChoice =
+    | 'search'
+    | 'category'
+    | 'tag'
+    | 'popular'
+    | 'all'
+    | 'back';
   const choices: Array<{ name: string; value: BrowseChoice }> = [
     {
       name: `🔍 Search MCPs - ${dim('Find by name, description, or tags')}`,
@@ -228,6 +241,10 @@ export async function selectBrowseMode(): Promise<
     {
       name: `📂 Browse by Category - ${dim(`${getAllCategories().length} categories`)}`,
       value: 'category',
+    },
+    {
+      name: `🏷️  Browse by Tag - ${dim(`${getAllTags().length} tags`)}`,
+      value: 'tag',
     },
     {
       name: `⭐ Popular MCPs - ${dim('Top 20 most popular')}`,
@@ -239,13 +256,13 @@ export async function selectBrowseMode(): Promise<
     },
     new Separator() as unknown as { name: string; value: BrowseChoice },
     {
-      name: `${c('dim', '← Back to client selection')}`,
+      name: `${c('dim', '← Back')}`,
       value: 'back',
     },
   ];
 
   const choice = await select<BrowseChoice>({
-    message: 'How would you like to find MCPs?',
+    message: '',
     choices,
     loop: false,
   });
@@ -258,10 +275,11 @@ export async function selectBrowseMode(): Promise<
  */
 export async function searchMCPs(): Promise<MCPRegistryEntry | 'back' | null> {
   console.log();
+  console.log(`  ${dim('[Step 3/6]')} ${bold('Select MCP')}`);
+  console.log();
   console.log(
     `  ${c('blue', 'ℹ')} Type to search by name, description, or tags`
   );
-  console.log(`  ${dim('Press Esc to go back')}`);
   console.log();
 
   type SearchResult = MCPRegistryEntry | 'back';
@@ -323,6 +341,10 @@ export async function searchMCPs(): Promise<MCPRegistryEntry | 'back' | null> {
 export async function selectByCategory(): Promise<
   MCPRegistryEntry | 'back' | null
 > {
+  console.log();
+  console.log(`  ${dim('[Step 3/6]')} ${bold('Select MCP')}`);
+  console.log();
+
   const categories = getAllCategories();
 
   const choices: CategoryChoice[] = categories.map(cat => ({
@@ -356,11 +378,80 @@ export async function selectByCategory(): Promise<
 }
 
 /**
+ * Format tag for display (capitalize first letter)
+ */
+function formatTag(tag: string): string {
+  return tag.charAt(0).toUpperCase() + tag.slice(1);
+}
+
+/**
+ * Select tag and then MCP - interactive search through tags
+ */
+export async function selectByTag(): Promise<MCPRegistryEntry | 'back' | null> {
+  console.log();
+  console.log(`  ${dim('[Step 3/6]')} ${bold('Select MCP')}`);
+  console.log();
+  console.log(`  ${c('blue', 'ℹ')} Type to filter ${getAllTags().length} tags`);
+  console.log();
+
+  const allTags = getAllTags();
+
+  type TagResult = string | 'back';
+
+  const selectedTag = await search<TagResult>({
+    message: 'Search tags:',
+    source: term => {
+      const backOption = {
+        name: `${c('dim', '← Back to browse options')}`,
+        value: 'back' as const,
+      };
+
+      // Filter tags based on search term
+      const filteredTags =
+        !term || !term.trim()
+          ? allTags.slice(0, 20) // Show top 20 by popularity when no search
+          : allTags.filter(tag =>
+              tag.toLowerCase().includes(term.toLowerCase().trim())
+            );
+
+      if (filteredTags.length === 0) {
+        return [
+          {
+            name: `${c('yellow', '⚠')} No tags found matching "${term}"`,
+            value: 'back' as const,
+            disabled: 'Try different keywords',
+          },
+          backOption,
+        ];
+      }
+
+      return [
+        ...filteredTags.map(tag => ({
+          name: `🏷️  ${formatTag(tag)} (${getTagCount(tag)} MCPs)`,
+          value: tag,
+        })),
+        { name: '─'.repeat(40), value: 'back' as const, disabled: true },
+        backOption,
+      ];
+    },
+    pageSize: 15,
+  });
+
+  if (selectedTag === 'back') return 'back';
+
+  const mcps = getMCPsByTag(selectedTag);
+  return await selectFromList(mcps, `Tag: ${formatTag(selectedTag)}`);
+}
+
+/**
  * Show popular MCPs
  */
 export async function selectPopular(): Promise<
   MCPRegistryEntry | 'back' | null
 > {
+  console.log();
+  console.log(`  ${dim('[Step 3/6]')} ${bold('Select MCP')}`);
+
   // Get first 20 MCPs (they're roughly sorted by popularity in registry)
   const popular = MCP_REGISTRY.slice(0, 20);
   return await selectFromList(popular, 'Popular MCPs');
@@ -370,6 +461,9 @@ export async function selectPopular(): Promise<
  * Show all MCPs sorted alphabetically
  */
 export async function selectAll(): Promise<MCPRegistryEntry | 'back' | null> {
+  console.log();
+  console.log(`  ${dim('[Step 3/6]')} ${bold('Select MCP')}`);
+
   // Sort all MCPs alphabetically by name
   const allMcps = [...MCP_REGISTRY].sort((a, b) =>
     a.name.localeCompare(b.name)
@@ -451,6 +545,8 @@ export async function promptEnvVars(
     return {};
   }
 
+  console.log();
+  console.log(`  ${dim('[Step 5/6]')} ${bold('Environment Variables')}`);
   console.log();
   console.log(c('yellow', ' ┌' + '─'.repeat(60) + '┐'));
   console.log(
