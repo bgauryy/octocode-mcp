@@ -183,6 +183,9 @@ const installCommand: CLICommand = {
       'vscode-cline',
       'vscode-roo',
       'vscode-continue',
+      'opencode',
+      'trae',
+      'antigravity',
     ];
     if (!supportedIDEs.includes(ide)) {
       console.log();

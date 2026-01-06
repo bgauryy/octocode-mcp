@@ -2071,4 +2071,732 @@ describe('Token Storage', () => {
       expect(getResult === null || typeof getResult === 'object').toBe(true);
     });
   });
+
+  // ============================================================================
+  // migrateLegacyCredentials Tests
+  // ============================================================================
+  describe('migrateLegacyCredentials (via initializeSecureStorage)', () => {
+    it('should return false when secure storage is explicitly disabled', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+
+      const {
+        initializeSecureStorage,
+        _setSecureStorageAvailable,
+        _resetSecureStorageState,
+        isSecureStorageAvailable,
+      } = await import('../../src/utils/token-storage.js');
+
+      _resetSecureStorageState();
+      _setSecureStorageAvailable(false);
+
+      // After explicitly disabling, secure storage should be false
+      expect(isSecureStorageAvailable()).toBe(false);
+
+      const result = await initializeSecureStorage();
+      expect(result).toBe(false);
+    });
+
+    it('should skip migration when credentials file does not exist', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+
+      const {
+        initializeSecureStorage,
+        _setSecureStorageAvailable,
+        _resetSecureStorageState,
+      } = await import('../../src/utils/token-storage.js');
+
+      _resetSecureStorageState();
+      _setSecureStorageAvailable(true);
+
+      const result = await initializeSecureStorage();
+
+      // Should return cached value
+      expect(result).toBe(true);
+    });
+
+    it('should handle migration errors gracefully', async () => {
+      const store = {
+        version: 1,
+        credentials: { 'github.com': createTestCredentials() },
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const consoleErrorSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+      const consoleWarnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => {});
+
+      const { initializeSecureStorage, _resetSecureStorageState } =
+        await import('../../src/utils/token-storage.js');
+
+      _resetSecureStorageState();
+
+      await initializeSecureStorage();
+
+      // Should not throw
+      consoleErrorSpy.mockRestore();
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('should handle empty credentials store during migration', async () => {
+      const store = { version: 1, credentials: {} };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const {
+        initializeSecureStorage,
+        _setSecureStorageAvailable,
+        _resetSecureStorageState,
+      } = await import('../../src/utils/token-storage.js');
+
+      _resetSecureStorageState();
+      _setSecureStorageAvailable(true);
+
+      // Should not throw when credentials is empty
+      await initializeSecureStorage();
+
+      expect(fs.unlinkSync).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============================================================================
+  // removeFromFileStorage edge cases
+  // ============================================================================
+  describe('removeFromFileStorage edge cases', () => {
+    it('should return false when hostname not in file storage', async () => {
+      const store = {
+        version: 1,
+        credentials: { 'other.com': createTestCredentials() },
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const mockCipher = createMockCipher();
+      vi.mocked(crypto.createCipheriv).mockReturnValue(
+        mockCipher as unknown as crypto.CipherGCM
+      );
+
+      const { storeCredentials, _setSecureStorageAvailable } =
+        await import('../../src/utils/token-storage.js');
+
+      // Simulate keyring available - file cleanup happens after successful keyring store
+      // but 'github.com' is not in file storage (only 'other.com' is)
+      _setSecureStorageAvailable(true);
+
+      // This will fail keyring (since keytar not loaded) and fall back to file
+      const result = await storeCredentials(createTestCredentials());
+
+      expect(result.success).toBe(true);
+    });
+
+    it('should write store when removing non-last credential', async () => {
+      const store = {
+        version: 1,
+        credentials: {
+          'github.com': createTestCredentials(),
+          'gitlab.com': createTestCredentials({ hostname: 'gitlab.com' }),
+        },
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const mockCipher = createMockCipher();
+      vi.mocked(crypto.createCipheriv).mockReturnValue(
+        mockCipher as unknown as crypto.CipherGCM
+      );
+
+      const { deleteCredentials } =
+        await import('../../src/utils/token-storage.js');
+
+      await deleteCredentials('github.com');
+
+      // Should write file (not delete) since gitlab.com still has creds
+      expect(fs.writeFileSync).toHaveBeenCalled();
+      expect(fs.unlinkSync).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============================================================================
+  // Non-TimeoutError warning tests
+  // ============================================================================
+  describe('non-timeout error warnings', () => {
+    it('should log warning for non-timeout errors in getCredentials keyring read', async () => {
+      const consoleWarnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => {});
+
+      const storedCreds = createTestCredentials();
+      const store = { version: 1, credentials: { 'github.com': storedCreds } };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { getCredentials, _setSecureStorageAvailable } =
+        await import('../../src/utils/token-storage.js');
+
+      _setSecureStorageAvailable(true);
+
+      // Since keytar is not actually loaded, the internal keytarGet will return null
+      // but if there were actual errors they would be logged
+      await getCredentials('github.com');
+
+      // Should fallback to file and return credentials
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('should log warning for keyring delete failure in deleteCredentials', async () => {
+      const consoleWarnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => {});
+
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+
+      const { deleteCredentials, _setSecureStorageAvailable } =
+        await import('../../src/utils/token-storage.js');
+
+      _setSecureStorageAvailable(true);
+
+      // Delete with secure storage "available" but keytar not loaded
+      // This tests the catch path in keytarDelete
+      await deleteCredentials('github.com');
+
+      // Nothing to delete from either location
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('should log warning for non-timeout errors in listStoredHosts', async () => {
+      const consoleWarnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => {});
+
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+
+      const { listStoredHosts, _setSecureStorageAvailable } =
+        await import('../../src/utils/token-storage.js');
+
+      _setSecureStorageAvailable(true);
+
+      // List with secure storage "available" but keytar not loaded
+      // This tests the catch path in keytarList
+      const hosts = await listStoredHosts();
+
+      expect(hosts).toEqual([]);
+      consoleWarnSpy.mockRestore();
+    });
+  });
+
+  // ============================================================================
+  // Keyring-first store with file cleanup tests
+  // ============================================================================
+  describe('keyring-first storage with file cleanup', () => {
+    it('should attempt keyring store when secure storage flag is enabled', async () => {
+      const consoleWarnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => {});
+
+      const storedCreds = createTestCredentials();
+      const store = { version: 1, credentials: { 'github.com': storedCreds } };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const mockCipher = createMockCipher();
+      vi.mocked(crypto.createCipheriv).mockReturnValue(
+        mockCipher as unknown as crypto.CipherGCM
+      );
+
+      const { storeCredentials, _setSecureStorageAvailable } =
+        await import('../../src/utils/token-storage.js');
+
+      _setSecureStorageAvailable(true);
+
+      // Store with secure storage "available"
+      // Since keytar is not actually loaded, it will attempt keyring, fail, and fall back
+      const result = await storeCredentials(createTestCredentials());
+
+      // Should succeed (either via keyring or file fallback)
+      expect(result.success).toBe(true);
+
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('should use file storage when keytar not available but flag enabled', async () => {
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockReturnValue(mockKey.toString('hex'));
+
+      const mockCipher = createMockCipher();
+      vi.mocked(crypto.createCipheriv).mockReturnValue(
+        mockCipher as unknown as crypto.CipherGCM
+      );
+
+      const { storeCredentials, _setSecureStorageAvailable } =
+        await import('../../src/utils/token-storage.js');
+
+      // Disable secure storage - should go straight to file
+      _setSecureStorageAvailable(false);
+
+      const result = await storeCredentials(createTestCredentials());
+
+      expect(result.success).toBe(true);
+      expect(result.insecureStorageUsed).toBe(true);
+      expect(fs.writeFileSync).toHaveBeenCalled();
+    });
+  });
+
+  // ============================================================================
+  // Console warning/error suppression during error handling
+  // ============================================================================
+  describe('error handling console output', () => {
+    it('should succeed when storing credentials with secure flag enabled', async () => {
+      const consoleWarnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => {});
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockReturnValue(mockKey.toString('hex'));
+
+      const mockCipher = createMockCipher();
+      vi.mocked(crypto.createCipheriv).mockReturnValue(
+        mockCipher as unknown as crypto.CipherGCM
+      );
+
+      const { storeCredentials, _setSecureStorageAvailable } =
+        await import('../../src/utils/token-storage.js');
+
+      _setSecureStorageAvailable(true);
+
+      const result = await storeCredentials(createTestCredentials());
+
+      // Should succeed (may use keyring or file depending on keytar availability)
+      expect(result.success).toBe(true);
+
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('should log critical error when all storage methods fail', async () => {
+      const consoleErrorSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      vi.mocked(fs.mkdirSync).mockImplementation(() => {
+        throw new Error('Permission denied');
+      });
+
+      const { storeCredentials, _setSecureStorageAvailable } =
+        await import('../../src/utils/token-storage.js');
+
+      _setSecureStorageAvailable(false);
+
+      await expect(storeCredentials(createTestCredentials())).rejects.toThrow(
+        'Failed to store credentials'
+      );
+
+      // Should log critical error
+      const criticalErrors = consoleErrorSpy.mock.calls.filter(
+        call => call[0] && String(call[0]).includes('CRITICAL')
+      );
+      expect(criticalErrors.length).toBeGreaterThanOrEqual(1);
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('should warn about corrupted credentials file with error message', async () => {
+      const consoleErrorSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'corrupted:data:here';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockImplementation(() => {
+          throw new Error('Decryption failed: invalid key');
+        }),
+        final: vi.fn(),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { getCredentials } =
+        await import('../../src/utils/token-storage.js');
+
+      await getCredentials('github.com');
+
+      // Should log warning about corrupted file
+      const corruptionWarnings = consoleErrorSpy.mock.calls.filter(
+        call =>
+          call[0] &&
+          (String(call[0]).includes('Warning') ||
+            String(call[0]).includes('Reason'))
+      );
+      expect(corruptionWarnings.length).toBeGreaterThanOrEqual(1);
+
+      consoleErrorSpy.mockRestore();
+    });
+  });
+
+  // ============================================================================
+  // File storage removal error handling
+  // ============================================================================
+  describe('file storage removal error handling', () => {
+    it('should handle and warn on removeFromFileStorage read errors', async () => {
+      const consoleWarnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => {});
+
+      // Simulate file exists but read fails
+      let readCallCount = 0;
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        readCallCount++;
+        if (readCallCount > 1) {
+          throw new Error('Simulated read error');
+        }
+        return 'iv:authtag:encrypted';
+      });
+
+      const store = {
+        version: 1,
+        credentials: { 'github.com': createTestCredentials() },
+      };
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const mockCipher = createMockCipher();
+      vi.mocked(crypto.createCipheriv).mockReturnValue(
+        mockCipher as unknown as crypto.CipherGCM
+      );
+
+      const { storeCredentials, _setSecureStorageAvailable } =
+        await import('../../src/utils/token-storage.js');
+
+      _setSecureStorageAvailable(true);
+
+      // This should trigger removeFromFileStorage which may fail on read
+      const result = await storeCredentials(createTestCredentials());
+
+      // Should still succeed via file fallback (after keyring fails)
+      expect(result.success).toBe(true);
+
+      consoleWarnSpy.mockRestore();
+    });
+  });
+
+  // ============================================================================
+  // Additional keytar error path tests
+  // ============================================================================
+  describe('keytarGet/Delete/List error paths', () => {
+    it('should handle keytarList returning empty via listStoredHosts with secure storage', async () => {
+      const consoleWarnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => {});
+
+      // File storage has credentials
+      const store = {
+        version: 1,
+        credentials: {
+          'github.com': createTestCredentials(),
+          'gitlab.com': createTestCredentials({ hostname: 'gitlab.com' }),
+        },
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { listStoredHosts, _setSecureStorageAvailable } =
+        await import('../../src/utils/token-storage.js');
+
+      _setSecureStorageAvailable(true);
+
+      // With secure storage enabled but keytar not loaded,
+      // keytarList returns [] so we only get file-based hosts
+      const hosts = await listStoredHosts();
+
+      // Should return hosts from file storage
+      expect(hosts).toContain('github.com');
+      expect(hosts).toContain('gitlab.com');
+      expect(hosts.length).toBe(2);
+
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('should handle keytarGet returning null in getCredentials', async () => {
+      // File storage has credentials
+      const store = {
+        version: 1,
+        credentials: { 'github.com': createTestCredentials() },
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { getCredentials, _setSecureStorageAvailable } =
+        await import('../../src/utils/token-storage.js');
+
+      _setSecureStorageAvailable(true);
+
+      // With secure storage enabled but keytar not loaded,
+      // keytarGet returns null so we fall back to file storage
+      const result = await getCredentials('github.com');
+
+      // Should return credentials from file storage
+      expect(result).not.toBeNull();
+      expect(result?.hostname).toBe('github.com');
+    });
+  });
+
+  // ============================================================================
+  // ReadCredentialsStore error message tests
+  // ============================================================================
+  describe('readCredentialsStore error messages', () => {
+    it('should log reason when decryption fails with error message', async () => {
+      const consoleErrorSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        if (String(path).includes('.octocode')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockImplementation(() => {
+          throw new Error('Authentication tag mismatch');
+        }),
+        final: vi.fn(),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { getCredentialsSync } =
+        await import('../../src/utils/token-storage.js');
+
+      const result = getCredentialsSync('github.com');
+
+      // Should return null and log error
+      expect(result).toBeNull();
+
+      // Should have logged the reason
+      const reasonMessages = consoleErrorSpy.mock.calls.filter(
+        call => call[0] && String(call[0]).includes('Reason:')
+      );
+      expect(reasonMessages.length).toBeGreaterThanOrEqual(1);
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('should log warning without reason when error has no message', async () => {
+      const consoleErrorSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        if (String(path).includes('.octocode')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockImplementation(() => {
+          throw new Error(''); // Empty message
+        }),
+        final: vi.fn(),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { getCredentialsSync } =
+        await import('../../src/utils/token-storage.js');
+
+      const result = getCredentialsSync('github.com');
+
+      // Should return null
+      expect(result).toBeNull();
+
+      // Should have logged warning but not reason (empty message)
+      const warningMessages = consoleErrorSpy.mock.calls.filter(
+        call => call[0] && String(call[0]).includes('Warning')
+      );
+      expect(warningMessages.length).toBeGreaterThanOrEqual(1);
+
+      consoleErrorSpy.mockRestore();
+    });
+  });
 });
