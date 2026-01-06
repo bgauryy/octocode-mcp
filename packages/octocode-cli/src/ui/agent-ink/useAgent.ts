@@ -5,7 +5,7 @@
  * Handles messages, tool calls, stats tracking, and state updates.
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type {
   AgentUIState,
   AgentMessage,
@@ -14,6 +14,13 @@ import type {
   AgentStateType,
 } from './types.js';
 import { useBackgroundTasks } from './useBackgroundTasks.js';
+
+/**
+ * Minimum delay between streaming UI updates (in ms).
+ * ~50ms = 20 updates/second, similar to Aider's approach.
+ * This prevents excessive re-renders during fast streaming.
+ */
+const STREAMING_MIN_DELAY_MS = 50;
 
 let messageIdCounter = 0;
 
@@ -53,6 +60,7 @@ export interface UseAgentReturn {
   addToolCall: (toolCall: Omit<AgentToolCall, 'status' | 'startTime'>) => void;
   updateToolCall: (id: string, updates: Partial<AgentToolCall>) => void;
   completeToolCall: (id: string, result?: string, error?: string) => void;
+  toggleToolCallCollapsed: (id: string) => void;
   updateStats: (updates: Partial<AgentStats>) => void;
   updateTokens: (usage: {
     input_tokens?: number;
@@ -83,6 +91,10 @@ export function useAgent(options: UseAgentOptions): UseAgentReturn {
   // Streaming text state - for accumulating text chunks in real-time
   const streamingMessageIdRef = useRef<string | null>(null);
   const streamingTextRef = useRef<string>('');
+
+  // Rate limiting state for streaming updates
+  const lastStreamingUpdateRef = useRef<number>(0);
+  const pendingStreamingUpdateRef = useRef<NodeJS.Timeout | null>(null);
 
   const setAgentState = useCallback(
     (state: AgentStateType, currentTool?: string): void => {
@@ -213,16 +225,26 @@ export function useAgent(options: UseAgentOptions): UseAgentReturn {
       // The intermediate results clutter the view - only final result matters
       // Tool call status is tracked in currentToolCalls which persists
 
-      // Keep completed tool calls visible for 3 seconds, then remove
-      // This gives user time to see the completion status
+      // Auto-collapse completed tool calls after 3 seconds
+      // They remain visible but collapsed to save space
       setTimeout(() => {
         setCurrentToolCalls(prev =>
-          prev.filter(tc => tc.id !== id || tc.status === 'running')
+          prev.map(tc =>
+            tc.id === id && tc.status !== 'running'
+              ? { ...tc, collapsed: true }
+              : tc
+          )
         );
       }, 3000);
     },
     []
   );
+
+  const toggleToolCallCollapsed = useCallback((id: string): void => {
+    setCurrentToolCalls(prev =>
+      prev.map(tc => (tc.id === id ? { ...tc, collapsed: !tc.collapsed } : tc))
+    );
+  }, []);
 
   const updateStats = useCallback((updates: Partial<AgentStats>): void => {
     setStats(prev => ({ ...prev, ...updates, lastUpdate: Date.now() }));
@@ -249,45 +271,100 @@ export function useAgent(options: UseAgentOptions): UseAgentReturn {
     []
   );
 
-  // Append streaming text - accumulates chunks and updates UI in real-time
+  /**
+   * Flush pending streaming text to the UI.
+   * Called either immediately (if enough time passed) or after rate limit delay.
+   */
+  const flushStreamingUpdate = useCallback((): void => {
+    lastStreamingUpdateRef.current = Date.now();
+
+    // Create or update the streaming message
+    if (!streamingMessageIdRef.current) {
+      // Create new streaming message
+      const id = generateMessageId();
+      streamingMessageIdRef.current = id;
+      const message: AgentMessage = {
+        id,
+        type: 'text',
+        content: streamingTextRef.current,
+        timestamp: new Date(),
+        isStreaming: true,
+      };
+      setMessages(prev => {
+        const updated = [...prev, message];
+        return maxMessages > 0 ? updated.slice(-maxMessages) : updated;
+      });
+    } else {
+      // Update existing streaming message
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === streamingMessageIdRef.current
+            ? { ...msg, content: streamingTextRef.current }
+            : msg
+        )
+      );
+    }
+  }, [maxMessages]);
+
+  /**
+   * Append streaming text with rate limiting.
+   * Accumulates chunks immediately but batches UI updates at ~50ms intervals.
+   * This prevents excessive re-renders during fast streaming while maintaining
+   * smooth visual updates (similar to Aider's MarkdownStream pattern).
+   */
   const appendStreamingText = useCallback(
     (text: string): void => {
-      // Accumulate text
+      // Always accumulate text immediately
       streamingTextRef.current += text;
 
-      // Create or update the streaming message
-      if (!streamingMessageIdRef.current) {
-        // Create new streaming message
-        const id = generateMessageId();
-        streamingMessageIdRef.current = id;
-        const message: AgentMessage = {
-          id,
-          type: 'text',
-          content: streamingTextRef.current,
-          timestamp: new Date(),
-          isStreaming: true,
-        };
-        setMessages(prev => {
-          const updated = [...prev, message];
-          return maxMessages > 0 ? updated.slice(-maxMessages) : updated;
-        });
+      const now = Date.now();
+      const timeSinceLastUpdate = now - lastStreamingUpdateRef.current;
+
+      // If enough time has passed, update immediately
+      if (timeSinceLastUpdate >= STREAMING_MIN_DELAY_MS) {
+        // Clear any pending update since we're updating now
+        if (pendingStreamingUpdateRef.current) {
+          clearTimeout(pendingStreamingUpdateRef.current);
+          pendingStreamingUpdateRef.current = null;
+        }
+        flushStreamingUpdate();
       } else {
-        // Update existing streaming message
-        setMessages(prev =>
-          prev.map(msg =>
-            msg.id === streamingMessageIdRef.current
-              ? { ...msg, content: streamingTextRef.current }
-              : msg
-          )
-        );
+        // Schedule a pending update if not already scheduled
+        if (!pendingStreamingUpdateRef.current) {
+          const delay = STREAMING_MIN_DELAY_MS - timeSinceLastUpdate;
+          pendingStreamingUpdateRef.current = setTimeout(() => {
+            pendingStreamingUpdateRef.current = null;
+            flushStreamingUpdate();
+          }, delay);
+        }
+        // If there's already a pending update, it will pick up the accumulated text
       }
     },
-    [maxMessages]
+    [flushStreamingUpdate]
   );
 
-  // Finalize streaming text - marks the streaming message as complete
+  /**
+   * Finalize streaming text - flushes any pending updates and marks message complete.
+   * Should be called when streaming is done to ensure all text is displayed.
+   */
   const finalizeStreamingText = useCallback((): void => {
-    if (streamingMessageIdRef.current) {
+    // Clear any pending update timer
+    if (pendingStreamingUpdateRef.current) {
+      clearTimeout(pendingStreamingUpdateRef.current);
+      pendingStreamingUpdateRef.current = null;
+    }
+
+    // Flush any remaining accumulated text before finalizing
+    if (streamingMessageIdRef.current && streamingTextRef.current) {
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === streamingMessageIdRef.current
+            ? { ...msg, content: streamingTextRef.current, isStreaming: false }
+            : msg
+        )
+      );
+    } else if (streamingMessageIdRef.current) {
+      // Just mark as not streaming if no pending text
       setMessages(prev =>
         prev.map(msg =>
           msg.id === streamingMessageIdRef.current
@@ -295,16 +372,34 @@ export function useAgent(options: UseAgentOptions): UseAgentReturn {
             : msg
         )
       );
-      streamingMessageIdRef.current = null;
-      streamingTextRef.current = '';
     }
+
+    // Reset streaming state
+    streamingMessageIdRef.current = null;
+    streamingTextRef.current = '';
+    lastStreamingUpdateRef.current = 0;
   }, []);
 
   const clearMessages = useCallback((): void => {
+    // Clear any pending streaming update
+    if (pendingStreamingUpdateRef.current) {
+      clearTimeout(pendingStreamingUpdateRef.current);
+      pendingStreamingUpdateRef.current = null;
+    }
     setMessages([]);
     setCurrentToolCalls([]);
     streamingMessageIdRef.current = null;
     streamingTextRef.current = '';
+    lastStreamingUpdateRef.current = 0;
+  }, []);
+
+  // Cleanup pending timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (pendingStreamingUpdateRef.current) {
+        clearTimeout(pendingStreamingUpdateRef.current);
+      }
+    };
   }, []);
 
   return {
@@ -331,6 +426,7 @@ export function useAgent(options: UseAgentOptions): UseAgentReturn {
     addToolCall,
     updateToolCall,
     completeToolCall,
+    toggleToolCallCollapsed,
     updateStats,
     updateTokens,
     appendStreamingText,

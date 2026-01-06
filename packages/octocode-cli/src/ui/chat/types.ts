@@ -97,7 +97,7 @@ export const DEFAULT_CONFIG: ChatConfig = {
   verbose: true,
   showToolCalls: true,
   showTimestamps: false,
-  maxHistorySize: 100,
+  maxHistorySize: 10000, // Input history for up arrow recall (increased from 100)
   theme: DEFAULT_THEME,
   showThinking: true,
   maxToolResultLength: 0, // 0 = unlimited (no truncation)

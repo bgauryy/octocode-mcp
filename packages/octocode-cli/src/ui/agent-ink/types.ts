@@ -26,6 +26,8 @@ export interface AgentToolCall {
   error?: string;
   duration?: number;
   startTime: number;
+  /** Whether the tool call display is collapsed (for completed tools) */
+  collapsed?: boolean;
 }
 
 export interface AgentMessage {
@@ -64,6 +66,20 @@ export interface BackgroundTaskInfo {
   error?: string;
 }
 
+/**
+ * Pending permission request for tool execution
+ */
+export interface PendingPermission {
+  /** Tool call ID */
+  toolId: string;
+  /** Tool name requiring permission */
+  toolName: string;
+  /** Tool arguments */
+  toolArgs?: Record<string, unknown>;
+  /** Human-readable description of what the tool will do */
+  description?: string;
+}
+
 export interface AgentUIState {
   state: AgentStateType;
   messages: AgentMessage[];
@@ -76,6 +92,8 @@ export interface AgentUIState {
   error?: string;
   /** Background tasks spawned by this agent */
   backgroundTasks?: BackgroundTaskInfo[];
+  /** Pending permission request when state is 'waiting_permission' */
+  pendingPermission?: PendingPermission;
 }
 
 /**
@@ -112,6 +130,25 @@ export interface AgentTheme {
   thinkingColor: string;
   toolColor: string;
 }
+
+/**
+ * Border style presets for different UI contexts.
+ * Provides visual hierarchy and semantic meaning.
+ */
+export const BORDER_STYLES = {
+  /** Primary input areas and main containers */
+  primary: 'round',
+  /** Secondary panels and tool calls */
+  secondary: 'single',
+  /** Thinking blocks (dimmed) */
+  thinking: 'single',
+  /** Error states */
+  error: 'double',
+  /** Permission dialogs (highlighted) */
+  permission: 'round',
+} as const;
+
+export type BorderStyleType = keyof typeof BORDER_STYLES;
 
 export const DEFAULT_AGENT_THEME: AgentTheme = {
   primaryColor: 'blue',

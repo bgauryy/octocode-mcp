@@ -405,7 +405,9 @@ function handleSDKMessage(
 
     // Handle content block start to identify block types
     if (event?.type === 'content_block_start') {
-      const contentBlock = event.content_block as Record<string, unknown> | undefined;
+      const contentBlock = event.content_block as
+        | Record<string, unknown>
+        | undefined;
       if (contentBlock?.type === 'text') {
         setAgentState('formulating_answer');
       } else if (contentBlock?.type === 'thinking') {
@@ -515,7 +517,9 @@ function buildQueryOptionsWithUIHooks(
     toolUseId: string | undefined
   ): Promise<HookOutput> => {
     if (input.hook_event_name === 'PreToolUse' && input.tool_name) {
-      const id = toolUseId || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const id =
+        toolUseId ||
+        `tool_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
       // Push to FIFO queue for this tool name
       const queue = toolCallMapRef.current.get(input.tool_name) || [];

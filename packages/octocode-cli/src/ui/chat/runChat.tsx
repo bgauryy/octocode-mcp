@@ -135,9 +135,17 @@ export async function runChat(options: RunChatOptions = {}): Promise<void> {
         setCurrentSessionId(session.id);
 
         // Load previous messages into conversation history
+        // Filter out tool messages as they need special handling by the AI SDK
         const resumeMessages = await store.getMessagesForResume(resumeSessionId);
         for (const msg of resumeMessages) {
-          messages.push({ role: msg.role, content: msg.content });
+          // Only include user/assistant/system messages in the core conversation
+          // Tool messages are tracked separately through tool call IDs
+          if (msg.role !== 'tool') {
+            messages.push({
+              role: msg.role as 'user' | 'assistant' | 'system',
+              content: msg.content,
+            });
+          }
         }
 
         // Get the next turn index

@@ -11,7 +11,14 @@
  * - Token counting and cost estimation
  */
 
-import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from 'react';
+import { writeFileSync } from 'fs';
 import { Box, Text, useApp, useInput, Static, useFocus } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { MessageBubble } from './MessageBubble.js';
@@ -28,7 +35,11 @@ interface ChatViewProps {
     callbacks: {
       onToken: (token: string) => void;
       onThinking: (thinking: string) => void;
-      onToolCall: (id: string, name: string, args: Record<string, unknown>) => void;
+      onToolCall: (
+        id: string,
+        name: string,
+        args: Record<string, unknown>
+      ) => void;
       onToolResult: (id: string, name: string, result: string) => void;
       onComplete: (usage?: {
         inputTokens?: number;
@@ -47,6 +58,7 @@ const COMMANDS: Record<string, string> = {
   '/clear': 'Clear chat history',
   '/help': 'Show available commands',
   '/stats': 'Show session statistics',
+  '/export [file]': 'Export chat to markdown file',
 };
 
 export function ChatView({
@@ -74,15 +86,21 @@ export function ChatView({
 
   const [error, setError] = useState<string | null>(null);
   const [, forceUpdate] = useState(0);
+  const [scrollMode, setScrollMode] = useState(false);
+
+  // Ctrl+C double-tap handling: first cancels operation, second exits
+  const cancelCountRef = useRef(0);
+  const cancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelledRef = useRef(false);
 
   // Track messages that were rendered as streaming to avoid duplicate rendering
   // When a message completes streaming, we keep it in the non-Static area to avoid duplication
   const streamedMessageIdsRef = useRef<Set<string>>(new Set());
 
-  // Focus management - input gets focus when not thinking
+  // Focus management - input gets focus when not thinking and not in scroll mode
   const { isFocused: inputFocused } = useFocus({
     autoFocus: true,
-    isActive: !state.isThinking,
+    isActive: !state.isThinking && !scrollMode,
   });
 
   // Only force update when actively thinking (streaming response)
@@ -132,7 +150,11 @@ export function ChatView({
       }, 0);
     }
 
-    return { staticMessages: staticMsgs, recentMessages: recentMsgs, streamingMessage: streaming };
+    return {
+      staticMessages: staticMsgs,
+      recentMessages: recentMsgs,
+      streamingMessage: streaming,
+    };
   }, [state.messages]);
 
   // Add welcome message on mount
@@ -152,13 +174,47 @@ export function ChatView({
   // Handle global keyboard shortcuts
   // Note: Scrolling is handled natively by terminal when using <Static>
   useInput((input, key) => {
-    // Ctrl+C to exit
+    // Ctrl+C: Double-tap to exit, single tap cancels current operation
     if (input === 'c' && key.ctrl) {
-      exit();
+      cancelCountRef.current++;
+
+      // Clear any existing timer
+      if (cancelTimerRef.current) {
+        clearTimeout(cancelTimerRef.current);
+      }
+
+      if (cancelCountRef.current === 1 && state.isThinking) {
+        // First Ctrl+C while thinking: cancel the operation
+        cancelledRef.current = true;
+        setThinking(false);
+        addSystemMessage('⚠️ Operation cancelled. Press Ctrl+C again to exit.');
+
+        // Reset cancel count after 1.5s
+        cancelTimerRef.current = setTimeout(() => {
+          cancelCountRef.current = 0;
+        }, 1500);
+      } else if (cancelCountRef.current >= 2 || !state.isThinking) {
+        // Second Ctrl+C (within timeout) or first Ctrl+C when not thinking: exit
+        exit();
+      }
+      return;
     }
+
     // Ctrl+L to clear
     if (input === 'l' && key.ctrl) {
       clearMessages();
+    }
+
+    // Ctrl+S to toggle scroll mode (allows native terminal scrolling)
+    if (input === 's' && key.ctrl) {
+      setScrollMode(prev => !prev);
+      return;
+    }
+
+    // Escape to exit scroll mode
+    if (key.escape && scrollMode) {
+      setScrollMode(false);
+      return;
     }
   });
 
@@ -214,13 +270,72 @@ export function ChatView({
             .map(([c, desc]) => `  ${c} - ${desc}`)
             .join('\n');
           addSystemMessage(
-            `Available commands:\n${helpText}\n\nKeyboard shortcuts:\n  Ctrl+C - Exit\n  Ctrl+L - Clear\n  ←/→ - Move cursor\n  ↑/↓ - Input history (when empty)\n  Ctrl+↑/↓ - Input history\n  Tab - Autocomplete placeholder\n  Scroll - Use terminal scroll (mouse/touchpad)`
+            `Available commands:\n${helpText}\n\nKeyboard shortcuts:\n  Ctrl+C - Cancel operation (while thinking) / Exit (double-tap)\n  Ctrl+L - Clear chat\n  Ctrl+S - Toggle scroll mode (enables native terminal scrolling)\n  Esc - Exit scroll mode\n  ←/→ - Move cursor\n  ↑/↓ - Input history (when empty)\n  Ctrl+↑/↓ - Input history\n  Tab - Autocomplete placeholder`
           );
           return true;
         }
 
-        default:
+        default: {
+          // Handle /export [filename] command
+          if (cmd.startsWith('/export')) {
+            const parts = command.trim().split(/\s+/);
+            const filename = parts[1] || `octocode-chat-${Date.now()}.md`;
+
+            try {
+              // Format messages as markdown
+              const markdown = [
+                `# Octocode Chat Export`,
+                ``,
+                `**Model:** ${model || 'default'}`,
+                `**Date:** ${new Date().toLocaleString()}`,
+                `**Messages:** ${state.messages.length}`,
+                ``,
+                `---`,
+                ``,
+                ...state.messages.map(msg => {
+                  const roleLabel =
+                    msg.role === 'user'
+                      ? '## 👤 User'
+                      : msg.role === 'assistant'
+                        ? '## 🤖 Assistant'
+                        : '## 📌 System';
+                  const timestamp = msg.timestamp
+                    ? `*${new Date(msg.timestamp).toLocaleTimeString()}*`
+                    : '';
+
+                  const lines = [roleLabel, timestamp, '', msg.content];
+
+                  // Include thinking if present
+                  if (msg.thinking) {
+                    lines.push(
+                      '',
+                      '<details>',
+                      '<summary>💭 Thinking</summary>',
+                      '',
+                      msg.thinking,
+                      '</details>'
+                    );
+                  }
+
+                  return lines.join('\n');
+                }),
+                ``,
+                `---`,
+                ``,
+                `*Exported from Octocode CLI*`,
+              ].join('\n');
+
+              writeFileSync(filename, markdown, 'utf-8');
+              addSystemMessage(`✅ Chat exported to: ${filename}`);
+            } catch (err) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              addSystemMessage(`❌ Export failed: ${errMsg}`);
+            }
+            return true;
+          }
+
           return false;
+        }
       }
     },
     [exit, clearMessages, addSystemMessage, state, model]
@@ -234,6 +349,9 @@ export function ChatView({
           return;
         }
       }
+
+      // Reset cancel state for new operation
+      cancelledRef.current = false;
 
       // Add user message
       addUserMessage(input);
@@ -260,7 +378,11 @@ export function ChatView({
             thinkingText += thinking;
             updateAssistantMessage(responseId, responseText, thinkingText);
           },
-          onToolCall: (id: string, name: string, args: Record<string, unknown>) => {
+          onToolCall: (
+            id: string,
+            name: string,
+            args: Record<string, unknown>
+          ) => {
             // Use the ID provided by the AI SDK (toolCallId) for exact matching
             addToolCall({
               id,
@@ -329,6 +451,20 @@ export function ChatView({
         </Text>
         <Text color={mergedConfig.theme.dimColor}>/help • Ctrl+C</Text>
       </Box>
+
+      {/* Scroll Mode Indicator */}
+      {scrollMode && (
+        <Box paddingX={2} paddingY={1}>
+          <Text backgroundColor="yellow" color="black" bold>
+            {' '}
+            SCROLL MODE{' '}
+          </Text>
+          <Text color="yellow">
+            {' '}
+            Use terminal scrolling (↑/↓/PgUp/PgDn) • Press Esc or Ctrl+S to exit
+          </Text>
+        </Box>
+      )}
 
       {/* Static Messages - Messages that were never streamed (safe for Static) */}
       {staticMessages.length > 0 && (
@@ -428,14 +564,16 @@ export function ChatView({
       <Box marginTop={1}>
         <ChatInput
           onSubmit={handleSubmit}
-          disabled={state.isThinking}
-          focus={inputFocused && !state.isThinking}
+          disabled={state.isThinking || scrollMode}
+          focus={inputFocused && !state.isThinking && !scrollMode}
           history={inputHistory}
           theme={mergedConfig.theme}
           placeholder={
-            state.isThinking
-              ? 'Waiting for response...'
-              : 'Type your message... (/help for commands)'
+            scrollMode
+              ? 'Scroll mode active - Press Esc or Ctrl+S to type'
+              : state.isThinking
+                ? 'Waiting for response...'
+                : 'Type your message... (/help for commands)'
           }
         />
       </Box>

@@ -5,7 +5,7 @@
  * Provides real-time task status updates for the AgentView.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getTaskManager } from '../../features/task-manager.js';
 import type { BackgroundTask, TaskEvent } from '../../types/tasks.js';
 import type { BackgroundTaskInfo } from './types.js';
@@ -71,10 +71,13 @@ export function useBackgroundTasks(parentId?: string): {
     };
   }, [parentId, refresh]);
 
-  // Calculate running count
-  const runningCount = tasks.filter(
-    t => t.status === 'running' || t.status === 'pending'
-  ).length;
+  // Calculate running count (memoized)
+  const runningCount = useMemo(
+    () =>
+      tasks.filter(t => t.status === 'running' || t.status === 'pending')
+        .length,
+    [tasks]
+  );
 
   return { tasks, runningCount, refresh };
 }

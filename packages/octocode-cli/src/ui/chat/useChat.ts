@@ -55,7 +55,7 @@ export interface UseChatReturn {
 }
 
 export function useChat(options: UseChatOptions = {}): UseChatReturn {
-  const { maxHistorySize = 100, model } = options;
+  const { maxHistorySize = 10000, model } = options; // 10000 entries for input history
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
@@ -226,17 +226,10 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
         );
       });
 
-      // Note: Tool results are NOT added as chat messages
-      // They are shown in ToolCallDisplay and then cleaned up
+      // Note: Tool results are kept in currentToolCalls for the session
+      // They are shown in ToolCallDisplay with collapse/expand functionality
       // The assistant's response will incorporate tool results naturally
-
-      // Remove completed tool from currentToolCalls after 3 seconds
-      // This gives user time to see completion status before cleanup
-      setTimeout(() => {
-        setCurrentToolCalls(prev =>
-          prev.filter(tc => tc.id !== id || tc.status === 'running')
-        );
-      }, 3000);
+      // Tool results persist until chat is cleared to allow user review
     },
     []
   );

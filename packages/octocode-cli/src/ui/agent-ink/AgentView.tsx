@@ -10,7 +10,7 @@
  * - Keyboard shortcuts
  */
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, memo } from 'react';
 import { Box, Text, useApp, useInput, Static } from 'ink';
 import { Spinner, TextInput } from '@inkjs/ui';
 import type {
@@ -21,7 +21,8 @@ import type {
   AgentMessage,
   BackgroundTaskInfo,
 } from './types.js';
-import { DEFAULT_AGENT_CONFIG } from './types.js';
+import { DEFAULT_AGENT_CONFIG, BORDER_STYLES } from './types.js';
+import { useTerminalSize } from './useTerminalSize.js';
 
 // ============================================
 // Animation Components
@@ -30,7 +31,7 @@ import { DEFAULT_AGENT_CONFIG } from './types.js';
 /**
  * Pulsing dot indicator for active states
  */
-function PulsingIndicator({
+const PulsingIndicator = memo(function PulsingIndicator({
   color = 'cyan',
 }: {
   color?: string;
@@ -46,12 +47,12 @@ function PulsingIndicator({
 
   const dots = ['●', '◉', '○', '◉'];
   return <Text color={color}>{dots[phase]}</Text>;
-}
+});
 
 /**
  * Typing dots animation for "preparing answer" state
  */
-function TypingDots({
+const TypingDots = memo(function TypingDots({
   color = 'white',
 }: {
   color?: string;
@@ -66,40 +67,56 @@ function TypingDots({
   }, []);
 
   return <Text color={color}>{dots.padEnd(3, ' ')}</Text>;
-}
+});
 
 /**
  * Background Tasks Panel - displays running/completed background tasks
  */
-function BackgroundTasksPanel({
+const BackgroundTasksPanel = memo(function BackgroundTasksPanel({
   tasks,
   theme,
+  width,
 }: {
   tasks: BackgroundTaskInfo[];
   theme: AgentTheme;
+  width: number;
 }): React.ReactElement | null {
   if (!tasks || tasks.length === 0) return null;
 
   // Sort by status (running first) then by start time (newest first)
-  const sortedTasks = [...tasks].sort((a, b) => {
-    const statusOrder = { running: 0, pending: 1, completed: 2, failed: 3, killed: 4 };
-    const orderA = statusOrder[a.status] ?? 5;
-    const orderB = statusOrder[b.status] ?? 5;
-    if (orderA !== orderB) return orderA - orderB;
-    return b.startTime - a.startTime;
-  });
+  const sortedTasks = useMemo(
+    () =>
+      [...tasks].sort((a, b) => {
+        const statusOrder: Record<string, number> = {
+          running: 0,
+          pending: 1,
+          completed: 2,
+          failed: 3,
+          killed: 4,
+        };
+        const orderA = statusOrder[a.status] ?? 5;
+        const orderB = statusOrder[b.status] ?? 5;
+        if (orderA !== orderB) return orderA - orderB;
+        return b.startTime - a.startTime;
+      }),
+    [tasks]
+  );
 
-  const runningCount = tasks.filter(
-    t => t.status === 'running' || t.status === 'pending'
-  ).length;
+  const runningCount = useMemo(
+    () =>
+      tasks.filter(t => t.status === 'running' || t.status === 'pending')
+        .length,
+    [tasks]
+  );
 
   return (
     <Box
       flexDirection="column"
-      borderStyle="single"
+      borderStyle={BORDER_STYLES.secondary}
       borderColor={runningCount > 0 ? theme.warningColor : theme.dimColor}
       paddingX={1}
       marginX={1}
+      width={width - 2}
     >
       <Text bold color={runningCount > 0 ? theme.warningColor : theme.dimColor}>
         📋 Background Tasks ({runningCount} running, {tasks.length} total)
@@ -108,18 +125,25 @@ function BackgroundTasksPanel({
         <BackgroundTaskLine key={task.id} task={task} theme={theme} />
       ))}
       {tasks.length > 5 && (
-        <Text color={theme.dimColor}>
-          ... and {tasks.length - 5} more tasks
-        </Text>
+        <Text dimColor>... and {tasks.length - 5} more tasks</Text>
       )}
     </Box>
   );
-}
+});
+
+// Status icons constant (outside component to avoid recreation)
+const STATUS_ICONS: Record<string, string> = {
+  pending: '⏳',
+  running: '🔄',
+  completed: '✅',
+  failed: '❌',
+  killed: '⛔',
+};
 
 /**
  * Single background task display line
  */
-function BackgroundTaskLine({
+const BackgroundTaskLine = memo(function BackgroundTaskLine({
   task,
   theme,
 }: {
@@ -131,21 +155,24 @@ function BackgroundTaskLine({
     : Date.now() - task.startTime;
   const elapsedStr = formatDuration(Math.floor(elapsed / 1000));
 
-  const statusIcons: Record<string, string> = {
-    pending: '⏳',
-    running: '🔄',
-    completed: '✅',
-    failed: '❌',
-    killed: '⛔',
-  };
+  const statusColors: Record<string, string> = useMemo(
+    () => ({
+      pending: theme.warningColor,
+      running: theme.infoColor,
+      completed: theme.successColor,
+      failed: theme.errorColor,
+      killed: theme.dimColor,
+    }),
+    [theme]
+  );
 
-  const statusColors: Record<string, string> = {
-    pending: theme.warningColor,
-    running: theme.infoColor,
-    completed: theme.successColor,
-    failed: theme.errorColor,
-    killed: theme.dimColor,
-  };
+  const promptDisplay = useMemo(
+    () =>
+      task.promptPreview.length > 60
+        ? task.promptPreview.slice(0, 60) + '...'
+        : task.promptPreview,
+    [task.promptPreview]
+  );
 
   return (
     <Box flexDirection="column" marginLeft={1}>
@@ -153,21 +180,19 @@ function BackgroundTaskLine({
         {task.status === 'running' ? (
           <Spinner />
         ) : (
-          <Text color={statusColors[task.status]}>{statusIcons[task.status]}</Text>
+          <Text color={statusColors[task.status]}>
+            {STATUS_ICONS[task.status]}
+          </Text>
         )}
         <Text> </Text>
         <Text color={statusColors[task.status]} bold>
           {task.id}
         </Text>
-        <Text color={theme.dimColor}> [{task.type}] </Text>
-        <Text color={theme.dimColor}>({elapsedStr})</Text>
+        <Text dimColor> [{task.type}] </Text>
+        <Text dimColor>({elapsedStr})</Text>
       </Box>
       <Box marginLeft={2}>
-        <Text color={theme.dimColor}>
-          {task.promptPreview.length > 60
-            ? task.promptPreview.slice(0, 60) + '...'
-            : task.promptPreview}
-        </Text>
+        <Text dimColor>{promptDisplay}</Text>
       </Box>
       {task.status === 'completed' && task.summary && (
         <Box marginLeft={2}>
@@ -181,7 +206,7 @@ function BackgroundTaskLine({
       )}
     </Box>
   );
-}
+});
 
 /**
  * Progress bar component (exported for use in other components)
@@ -208,98 +233,156 @@ export function ProgressBar({
   );
 }
 
+// State config outside component to avoid recreation
+type StateConfig = {
+  icon: string;
+  colorKey: keyof AgentTheme;
+  animated: boolean;
+  type: string;
+};
+const STATE_CONFIG: Record<AgentStateType, StateConfig> = {
+  idle: { icon: '⏸', colorKey: 'dimColor', animated: false, type: 'static' },
+  waiting_for_input: {
+    icon: '✏️',
+    colorKey: 'primaryColor',
+    animated: true,
+    type: 'pulse',
+  },
+  initializing: {
+    icon: '🔄',
+    colorKey: 'infoColor',
+    animated: true,
+    type: 'spinner',
+  },
+  connecting_mcp: {
+    icon: '🔌',
+    colorKey: 'infoColor',
+    animated: true,
+    type: 'spinner',
+  },
+  executing: {
+    icon: '⚡',
+    colorKey: 'warningColor',
+    animated: true,
+    type: 'pulse',
+  },
+  thinking: {
+    icon: '🧠',
+    colorKey: 'thinkingColor',
+    animated: true,
+    type: 'pulse',
+  },
+  tool_use: {
+    icon: '🔧',
+    colorKey: 'toolColor',
+    animated: true,
+    type: 'spinner',
+  },
+  formulating_answer: {
+    icon: '✍️',
+    colorKey: 'successColor',
+    animated: true,
+    type: 'dots',
+  },
+  waiting_permission: {
+    icon: '⏳',
+    colorKey: 'warningColor',
+    animated: true,
+    type: 'pulse',
+  },
+  completed: {
+    icon: '✅',
+    colorKey: 'successColor',
+    animated: false,
+    type: 'static',
+  },
+  error: {
+    icon: '❌',
+    colorKey: 'errorColor',
+    animated: false,
+    type: 'static',
+  },
+};
+
 /**
  * Animated state indicator based on current state
  */
-function StateIndicator({
+const StateIndicator = memo(function StateIndicator({
   state,
   theme,
 }: {
   state: AgentStateType;
   theme: AgentTheme;
 }): React.ReactElement {
-  const stateConfig: Record<
-    AgentStateType,
-    { icon: string; color: string; animated: boolean; type: string }
-  > = {
-    idle: { icon: '⏸', color: theme.dimColor, animated: false, type: 'static' },
-    waiting_for_input: {
-      icon: '✏️',
-      color: theme.primaryColor,
-      animated: true,
-      type: 'pulse',
-    },
-    initializing: {
-      icon: '🔄',
-      color: theme.infoColor,
-      animated: true,
-      type: 'spinner',
-    },
-    connecting_mcp: {
-      icon: '🔌',
-      color: theme.infoColor,
-      animated: true,
-      type: 'spinner',
-    },
-    executing: {
-      icon: '⚡',
-      color: theme.warningColor,
-      animated: true,
-      type: 'pulse',
-    },
-    thinking: {
-      icon: '🧠',
-      color: theme.thinkingColor,
-      animated: true,
-      type: 'pulse',
-    },
-    tool_use: {
-      icon: '🔧',
-      color: theme.toolColor,
-      animated: true,
-      type: 'spinner',
-    },
-    formulating_answer: {
-      icon: '✍️',
-      color: theme.successColor,
-      animated: true,
-      type: 'dots',
-    },
-    waiting_permission: {
-      icon: '⏳',
-      color: theme.warningColor,
-      animated: true,
-      type: 'pulse',
-    },
-    completed: {
-      icon: '✅',
-      color: theme.successColor,
-      animated: false,
-      type: 'static',
-    },
-    error: {
-      icon: '❌',
-      color: theme.errorColor,
-      animated: false,
-      type: 'static',
-    },
-  };
-
-  const config = stateConfig[state];
+  const config = STATE_CONFIG[state];
+  const color = theme[config.colorKey];
 
   return (
     <Box>
       <Text>{config.icon} </Text>
       {config.animated && config.type === 'pulse' && (
-        <PulsingIndicator color={config.color} />
+        <PulsingIndicator color={color} />
       )}
       {config.animated && config.type === 'spinner' && <Spinner />}
       {config.animated && config.type === 'dots' && (
-        <TypingDots color={config.color} />
+        <TypingDots color={color} />
       )}
     </Box>
   );
-}
+});
+
+/**
+ * Tool Calls Panel - displays active and recent tool calls
+ */
+const ToolCallsPanel = memo(function ToolCallsPanel({
+  toolCalls,
+  theme,
+  width,
+}: {
+  toolCalls: AgentUIState['currentToolCalls'];
+  theme: AgentTheme;
+  width: number;
+}): React.ReactElement {
+  const { runningTools, completedTools, collapsedCount } = useMemo(() => {
+    const running = toolCalls.filter(t => t.status === 'running');
+    const completed = toolCalls.filter(t => t.status !== 'running');
+    const collapsed = completed.filter(t => t.collapsed).length;
+    return {
+      runningTools: running,
+      completedTools: completed,
+      collapsedCount: collapsed,
+    };
+  }, [toolCalls]);
+
+  return (
+    <Box
+      flexDirection="column"
+      borderStyle={BORDER_STYLES.secondary}
+      borderColor={theme.toolColor}
+      paddingX={1}
+      marginX={1}
+      width={width - 2}
+    >
+      <Box justifyContent="space-between">
+        <Text bold color={theme.toolColor}>
+          🔧 Tools ({runningTools.length} active, {completedTools.length} done)
+        </Text>
+        {collapsedCount > 0 && <Text dimColor>{collapsedCount} collapsed</Text>}
+      </Box>
+      {/* Show running tools first (always expanded) */}
+      {runningTools.slice(0, 3).map(tool => (
+        <ToolCallLine key={tool.id} tool={tool} theme={theme} />
+      ))}
+      {/* Show recent completed tools */}
+      {completedTools.slice(0, 5).map(tool => (
+        <ToolCallLine key={tool.id} tool={tool} theme={theme} />
+      ))}
+      {toolCalls.length > 8 && (
+        <Text dimColor>... and {toolCalls.length - 8} more tools</Text>
+      )}
+    </Box>
+  );
+});
 
 /**
  * Safely stringify and truncate tool args for display
@@ -344,6 +427,13 @@ const STATE_LABELS: Record<string, string> = {
   error: 'Error',
 };
 
+function formatModelName(model: string | undefined): string {
+  if (!model) return '';
+  const parts = model.split(':');
+  const name = parts[parts.length - 1];
+  return name.length > 20 ? name.slice(0, 17) + '...' : name;
+}
+
 export function AgentView({
   state,
   config = {},
@@ -351,9 +441,14 @@ export function AgentView({
   onTaskSubmit,
 }: AgentViewProps): React.ReactElement {
   const { exit } = useApp();
+  const { columns } = useTerminalSize();
+  const width = Math.max(columns, 40); // Ensure minimum width
 
-  // Merge config with defaults
-  const initialConfig: AgentUIConfig = { ...DEFAULT_AGENT_CONFIG, ...config };
+  // Merge config with defaults (memoized to avoid recreation)
+  const initialConfig = useMemo<AgentUIConfig>(
+    () => ({ ...DEFAULT_AGENT_CONFIG, ...config }),
+    [config]
+  );
 
   // Local state for toggles
   const [showThinking, setShowThinking] = useState(initialConfig.showThinking);
@@ -432,15 +527,18 @@ export function AgentView({
     { isActive: state.state === 'waiting_for_input' }
   );
 
-  // Handle task submission
-  const handleTaskSubmit = (value: string) => {
-    const trimmed = value.trim();
-    if (trimmed && onTaskSubmit) {
-      onTaskSubmit(trimmed);
-      setInputValue(''); // Clear input after submit
-      setInputKey(prev => prev + 1); // Force input reset
-    }
-  };
+  // Handle task submission (memoized to prevent unnecessary re-renders)
+  const handleTaskSubmit = useCallback(
+    (value: string) => {
+      const trimmed = value.trim();
+      if (trimmed && onTaskSubmit) {
+        onTaskSubmit(trimmed);
+        setInputValue(''); // Clear input after submit
+        setInputKey(prev => prev + 1); // Force input reset
+      }
+    },
+    [onTaskSubmit]
+  );
 
   // Calculate elapsed time
   const elapsedSeconds = Math.floor(
@@ -452,42 +550,45 @@ export function AgentView({
   const totalTokens = state.stats.inputTokens + state.stats.outputTokens;
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" width={width}>
       {/* Header - NOT in Static because it contains dynamic content (animations) */}
       <Box
-        borderStyle="single"
+        borderStyle={BORDER_STYLES.secondary}
         borderColor={theme.borderColor}
         paddingX={1}
         flexDirection="row"
         justifyContent="space-between"
+        width={width}
       >
-        <Box>
+        <Box flexShrink={1} minWidth={0}>
           <Text bold color={theme.primaryColor}>
             🐙 Octocode
           </Text>
-          <Text color={theme.dimColor}> | </Text>
+          <Text dimColor> | </Text>
           <Text color={theme.infoColor}>
             {getModeIcon(state.mode)} {state.mode}
           </Text>
-          {state.model && <Text color={theme.dimColor}> | {state.model}</Text>}
+          {state.model && (
+            <Text dimColor> | {formatModelName(state.model)}</Text>
+          )}
         </Box>
 
-        <Box>
+        <Box flexShrink={0} marginLeft={1}>
           <StateIndicator state={state.state} theme={theme} />
-          <Text color={theme.dimColor}> {STATE_LABELS[state.state]}</Text>
-          <Text color={theme.dimColor}>
+          <Text dimColor> {STATE_LABELS[state.state]}</Text>
+          <Text dimColor>
             {' '}
             | Ctrl+C to{' '}
             {state.state === 'waiting_for_input' ? 'exit' : 'cancel'}
           </Text>
-          <Text color={theme.dimColor}> | [t] Think [l] Tools</Text>
+          <Text dimColor> | [t] Think [l] Tools</Text>
         </Box>
       </Box>
 
       {/* Task Display (only if running or completed) */}
       {state.task && (
         <Box paddingX={1} marginY={0}>
-          <Text color={theme.dimColor}>Task: </Text>
+          <Text dimColor>Task: </Text>
           <Text>
             {state.task.length > 80
               ? state.task.slice(0, 80) + '...'
@@ -504,10 +605,8 @@ export function AgentView({
           alignItems="center"
           paddingY={2}
         >
-          <Text color={theme.dimColor}>
-            Enter a task below to start the agent.
-          </Text>
-          <Text color={theme.dimColor}>
+          <Text dimColor>Enter a task below to start the agent.</Text>
+          <Text dimColor>
             Examples: "Explore the auth module", "Find all TODO comments"
           </Text>
         </Box>
@@ -517,7 +616,7 @@ export function AgentView({
           state.state === 'connecting_mcp' ? (
             <Spinner label="Starting agent..." />
           ) : (
-            <Text color={theme.dimColor}>Waiting for agent output...</Text>
+            <Text dimColor>Waiting for agent output...</Text>
           )}
         </Box>
       ) : (
@@ -555,37 +654,33 @@ export function AgentView({
          Keeping this box would cause duplicate display of the same text.
          The completion is indicated by the state indicator in the header. */}
 
-      {/* Active Tool Calls */}
+      {/* Tool Calls - Active and Recent */}
       {showTools && state.currentToolCalls.length > 0 && (
-        <Box
-          flexDirection="column"
-          borderStyle="single"
-          borderColor={theme.toolColor}
-          paddingX={1}
-          marginX={1}
-        >
-          <Text bold color={theme.toolColor}>
-            🔧 Active Tools
-          </Text>
-          {state.currentToolCalls.slice(0, 5).map(tool => (
-            <ToolCallLine key={tool.id} tool={tool} theme={theme} />
-          ))}
-        </Box>
+        <ToolCallsPanel
+          toolCalls={state.currentToolCalls}
+          theme={theme}
+          width={width}
+        />
       )}
 
       {/* Background Tasks Panel */}
       {state.backgroundTasks && state.backgroundTasks.length > 0 && (
-        <BackgroundTasksPanel tasks={state.backgroundTasks} theme={theme} />
+        <BackgroundTasksPanel
+          tasks={state.backgroundTasks}
+          theme={theme}
+          width={width}
+        />
       )}
 
       {/* Input Area (when waiting for input) */}
       {state.state === 'waiting_for_input' && (
         <Box
-          borderStyle="round"
+          borderStyle={BORDER_STYLES.primary}
           borderColor={theme.primaryColor}
           paddingX={1}
           paddingY={0}
           marginTop={0}
+          width={width}
         >
           <Text color={theme.primaryColor}>→ </Text>
           <TextInput
@@ -600,20 +695,21 @@ export function AgentView({
 
       {/* Status Bar */}
       <Box
-        borderStyle="single"
+        borderStyle={BORDER_STYLES.secondary}
         borderColor={theme.borderColor}
         paddingX={1}
         justifyContent="space-between"
         marginTop={state.state === 'waiting_for_input' ? 0 : 1}
+        width={width}
       >
-        <Box>
-          <Text color={theme.dimColor}>
+        <Box flexShrink={1} minWidth={0}>
+          <Text dimColor wrap="truncate-end">
             🎯 {totalTokens.toLocaleString()} tok | 🔧 {state.stats.toolCount} |
             ⏱ {elapsedStr}
           </Text>
         </Box>
-        <Box>
-          <Text color={theme.dimColor}>Scroll: mouse/touchpad</Text>
+        <Box flexShrink={0} marginLeft={1}>
+          <Text dimColor>Scroll: mouse/touchpad</Text>
         </Box>
       </Box>
     </Box>
@@ -637,7 +733,7 @@ interface MessageLineProps {
   showThinking: boolean;
 }
 
-function MessageLine({
+const MessageLine = memo(function MessageLine({
   message,
   theme,
   showThinking,
@@ -677,14 +773,14 @@ function MessageLine({
         flexDirection="column"
         marginLeft={2}
         marginBottom={0}
-        borderStyle="single"
+        borderStyle={BORDER_STYLES.thinking}
         borderColor={theme.dimColor}
         paddingX={1}
       >
         <Text color={theme.thinkingColor} italic>
           {icon} Thinking...
         </Text>
-        <Text color={theme.dimColor}>{content}</Text>
+        <Text dimColor>{content}</Text>
       </Box>
     );
   }
@@ -701,9 +797,7 @@ function MessageLine({
         </Text>
         {displayArgs && (
           <Box marginLeft={2}>
-            <Text color={theme.dimColor} dimColor>
-              Input: {displayArgs}
-            </Text>
+            <Text dimColor>Input: {displayArgs}</Text>
           </Box>
         )}
       </Box>
@@ -711,8 +805,11 @@ function MessageLine({
   }
 
   // Regular Text / Result / System
+  // Only add bottom margin for non-streaming messages to avoid extra spacing during output
+  const showMargin = !isStreaming && type !== 'system';
+
   return (
-    <Box flexDirection="column" marginBottom={1}>
+    <Box flexDirection="column" marginBottom={showMargin ? 1 : 0}>
       <Box>
         <Text color={color} bold>
           {icon}{' '}
@@ -731,7 +828,10 @@ function MessageLine({
           <Text color={theme.toolColor}>[{formatToolName(toolName)}] </Text>
         )}
         {isStreaming && (
-          <Text color={theme.primaryColor} bold> ●</Text>
+          <Text color={theme.primaryColor} bold>
+            {' '}
+            ●
+          </Text>
         )}
       </Box>
       <Box marginLeft={2}>
@@ -741,14 +841,12 @@ function MessageLine({
       </Box>
       {duration && (
         <Box marginLeft={2}>
-          <Text color={theme.dimColor} dimColor>
-            ({duration}ms)
-          </Text>
+          <Text dimColor>({duration}ms)</Text>
         </Box>
       )}
     </Box>
   );
-}
+});
 
 /**
  * Tool call line component
@@ -761,15 +859,39 @@ interface ToolCallLineProps {
     status: string;
     duration?: number;
     startTime: number;
+    collapsed?: boolean;
+    result?: string;
+    error?: string;
   };
   theme: AgentTheme;
+  onToggleCollapse?: (id: string) => void;
 }
 
-function ToolCallLine({ tool, theme }: ToolCallLineProps): React.ReactElement {
+const ToolCallLine = memo(function ToolCallLine({
+  tool,
+  theme,
+  onToggleCollapse,
+}: ToolCallLineProps): React.ReactElement {
   const elapsed = Date.now() - tool.startTime;
   const displayName = formatToolName(tool.name);
   const displayArgs = formatToolArgs(tool.args, 500);
+  const isCollapsed = tool.collapsed && tool.status !== 'running';
+  const hasResult = tool.result || tool.error;
 
+  // Collapsed view - single line summary
+  if (isCollapsed) {
+    return (
+      <Box>
+        <Text color={theme.dimColor} dimColor>
+          {tool.status === 'completed' ? '✓' : '✗'} {displayName} (
+          {tool.duration}ms)
+          {hasResult && ' [+]'}
+        </Text>
+      </Box>
+    );
+  }
+
+  // Expanded view - full details
   return (
     <Box flexDirection="column">
       <Box>
@@ -781,7 +903,7 @@ function ToolCallLine({ tool, theme }: ToolCallLineProps): React.ReactElement {
           <Text color={theme.errorColor}>✗</Text>
         )}
         <Text> {displayName}</Text>
-        <Text color={theme.dimColor}>
+        <Text dimColor>
           {' '}
           (
           {tool.status === 'running'
@@ -789,30 +911,48 @@ function ToolCallLine({ tool, theme }: ToolCallLineProps): React.ReactElement {
             : `${tool.duration}ms`}
           )
         </Text>
+        {tool.status !== 'running' && onToggleCollapse && (
+          <Text dimColor> [−]</Text>
+        )}
       </Box>
       {displayArgs && (
         <Box marginLeft={2}>
-          <Text color={theme.dimColor} dimColor>
-            Input: {displayArgs}
+          <Text dimColor>Input: {displayArgs}</Text>
+        </Box>
+      )}
+      {tool.result && (
+        <Box marginLeft={2}>
+          <Text color={theme.successColor}>
+            Result:{' '}
+            {tool.result.length > 200
+              ? tool.result.slice(0, 200) + '...'
+              : tool.result}
           </Text>
+        </Box>
+      )}
+      {tool.error && (
+        <Box marginLeft={2}>
+          <Text color={theme.errorColor}>Error: {tool.error}</Text>
         </Box>
       )}
     </Box>
   );
-}
+});
 
 /**
  * Helper functions
  */
 
 function formatToolName(name: string): string {
+  let formatted = name;
   if (name.startsWith('mcp__octocode-local__')) {
-    return '🔍 ' + name.replace('mcp__octocode-local__', '');
+    formatted = '🔍 ' + name.replace('mcp__octocode-local__', '');
+  } else if (name.startsWith('mcp__')) {
+    formatted = '🔌 ' + name.replace('mcp__', '').replace(/__/g, '/');
   }
-  if (name.startsWith('mcp__')) {
-    return '🔌 ' + name.replace('mcp__', '').replace(/__/g, '/');
-  }
-  return name;
+
+  // Truncate if too long to prevent wrapping issues
+  return formatted.length > 30 ? formatted.slice(0, 27) + '...' : formatted;
 }
 
 function formatDuration(seconds: number): string {

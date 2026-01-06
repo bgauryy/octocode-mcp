@@ -31,7 +31,7 @@ describe('Chat Types', () => {
       expect(DEFAULT_CONFIG.verbose).toBe(true);
       expect(DEFAULT_CONFIG.showToolCalls).toBe(true);
       expect(DEFAULT_CONFIG.showTimestamps).toBe(false);
-      expect(DEFAULT_CONFIG.maxHistorySize).toBe(100);
+      expect(DEFAULT_CONFIG.maxHistorySize).toBe(10000); // Increased from 100 for longer sessions
       expect(DEFAULT_CONFIG.theme).toEqual(DEFAULT_THEME);
     });
   });

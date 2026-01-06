@@ -69,8 +69,17 @@ export interface AddToolCallParams {
 }
 
 export interface ResumeMessage {
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
+  /** Tool call ID for tool messages */
+  tool_call_id?: string;
+  /** Tool name for tool messages */
+  name?: string;
+}
+
+export interface ResumeData {
+  messages: ResumeMessage[];
+  toolCalls: ToolCall[];
 }
 
 // ============================================
@@ -298,17 +307,41 @@ export class SessionStore {
 
   /**
    * Get messages formatted for session resume
-   * Excludes tool messages and returns only the content needed for AI context
+   * Includes tool messages for full context preservation
    */
   async getMessagesForResume(sessionId: string): Promise<ResumeMessage[]> {
     const msgs = await this.getMessages(sessionId);
 
-    return msgs
-      .filter(m => m.role !== 'tool')
-      .map(m => ({
-        role: m.role as 'user' | 'assistant' | 'system',
+    return msgs.map(m => {
+      const base: ResumeMessage = {
+        role: m.role as 'user' | 'assistant' | 'system' | 'tool',
         content: m.content,
-      }));
+      };
+
+      // Include tool call ID and name for tool messages
+      if (m.role === 'tool' && m.toolCallId) {
+        base.tool_call_id = m.toolCallId;
+      }
+
+      return base;
+    });
+  }
+
+  /**
+   * Get full resume data including messages and tool call history
+   * Use this for complete session context restoration
+   */
+  async getFullResumeData(sessionId: string): Promise<ResumeData | null> {
+    const session = await this.getSession(sessionId);
+    if (!session) return null;
+
+    const messages = await this.getMessagesForResume(sessionId);
+    const allToolCalls = await this.getToolCalls(sessionId);
+
+    return {
+      messages,
+      toolCalls: allToolCalls,
+    };
   }
 
   /**

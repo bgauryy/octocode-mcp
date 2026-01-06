@@ -1660,5 +1660,409 @@ See `.octocode/research/claude-sdk-integration/research.md` for full implementat
 
 ---
 
+---
+
+## Deep Dive: Sub-Agent Architecture in cli.js (January 2026 Update)
+
+### Sub-Agent Types Discovery
+
+From `cli.js` analysis, Claude Code has these **built-in agent types**:
+
+| Agent Type | Purpose | charOffset | Key Characteristics |
+|------------|---------|------------|---------------------|
+| `explore` | Codebase exploration/research | ~8582293 | Read-only tools, parallel grep/read |
+| `Plan` | Planning mode agent | ~8588402 | Cannot write/edit files, explore + plan |
+| `code` | Full code editing agent | SDK default | All tools available |
+
+### Built-in Agent Prompts (from cli.js)
+
+#### Explore Agent (`LL.agentType`)
+
+```
+Complete the user's search request efficiently and report your findings clearly.
+Wherever possible you should try to spawn multiple parallel tool calls for grepping and reading files.
+```
+
+**Location**: `cli.js:8582293` (charOffset)
+
+#### Plan Agent (`SHA.agentType`)
+
+```
+REMEMBER: You can ONLY explore and plan. You CANNOT and MUST NOT write, edit, or modify any files. 
+You do NOT have access to file editing tools.
+```
+
+**Location**: `cli.js:8588402` (charOffset)
+
+### How Sub-Agents Are Spawned
+
+1. **Model calls Agent tool** with `AgentInput`:
+   ```typescript
+   { description, prompt, subagent_type, model?, resume?, run_in_background? }
+   ```
+
+2. **CLI resolves agent definition**:
+   - Check `options.agents[subagent_type]` (SDK-provided custom agents)
+   - Check built-in agents (`explore`, `Plan`, etc.)
+   - Apply tool restrictions from agent definition
+
+3. **Fire SubagentStart hook**:
+   ```typescript
+   SubagentStartHookInput: { 
+     hook_event_name: 'SubagentStart', 
+     agent_id, 
+     agent_type 
+   }
+   ```
+
+4. **Execute sub-agent loop** with restricted tools/prompt
+
+5. **Fire SubagentStop hook** with transcript path
+
+---
+
+## AGENTS.md / Agent Configuration Loading
+
+### Agent Directory Paths
+
+From `cli.js:10378753` - function `mH1(A)`:
+
+```javascript
+function mH1(A) {
+  switch(A) {
+    case "flagSettings":
+      throw Error(`Cannot get directory path for ${A} agents`);
+    case "userSettings":
+      return nd(vQ(), rb.AGENTS_DIR);      // ~/.claude/agents/
+    case "projectSettings":
+      return nd(t1(), rb.AGENTS_DIR);      // ./.claude/agents/
+    case "localSettings":
+      return nd(t1(), rb.AGENTS_LOCAL_DIR); // ./.claude/agents.local/
+  }
+}
+```
+
+**Key Constants** (`rb.*`):
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `rb.AGENTS_DIR` | `agents` | User/project agents directory |
+| `rb.AGENTS_LOCAL_DIR` | `agents.local` | Local-only agents |
+
+### Agent File Structure
+
+Each agent is defined in a separate `.md` file:
+
+```
+~/.claude/agents/
+├── code-reviewer.md      # Custom agent definition
+├── researcher.md
+└── my-agent.md
+
+./.claude/agents/         # Project-specific agents
+├── project-agent.md
+```
+
+### Agent File Format (from cli.js:8588402)
+
+```markdown
+---
+color: blue
+model: sonnet
+forkContext: true
+---
+
+You are a specialized agent for...
+
+## Instructions
+
+Your task is to...
+```
+
+**YAML Frontmatter Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `color` | string | UI color for agent |
+| `model` | `sonnet\|opus\|haiku\|inherit` | Model to use |
+| `forkContext` | `true\|false` | Whether to fork conversation context |
+
+---
+
+## Skill System Architecture
+
+### Skill Tracking (from sdk.mjs:461584)
+
+```javascript
+// Global state structure
+var STATE = getInitialState();
+
+function getInitialState() {
+  return {
+    registeredHooks: null,
+    planSlugCache: new Map,
+    teleportedSessionInfo: null,
+    invokedSkills: new Map    // Track invoked skills
+  };
+}
+```
+
+### Skill Loading (from cli.js)
+
+Skills are loaded from:
+1. **Built-in skills**: `/skills/` directory in CLI bundle
+2. **User skills**: `~/.claude/skills/`
+3. **Project skills**: `./.claude/skills/`
+4. **Plugin skills**: Via `plugins` configuration
+
+**Skill File Structure**:
+```
+.claude/skills/
+├── my-skill/
+│   ├── SKILL.md          # Skill definition
+│   └── references/       # Optional reference files
+│       └── example.md
+```
+
+### SKILL.md Format (from cli.js:6909838)
+
+```markdown
+# Skill Name
+
+Description of what the skill does.
+
+## Prompt
+
+$ARGUMENTS placeholder is replaced with user arguments.
+
+## Instructions
+
+How to use the skill...
+```
+
+**Key Processing** (charOffset ~6909838):
+```javascript
+// If prompt contains $ARGUMENTS placeholder
+if (P.includes("$ARGUMENTS")) {
+  P = P.replaceAll("$ARGUMENTS", R);  // R = user arguments
+} else {
+  P = P + `\n\nARGUMENTS: ${R}`;       // Append at end
+}
+```
+
+---
+
+## Tool Registration & Execution Flow
+
+### Tool Definition Schema (from sdk-tools.d.ts)
+
+```typescript
+// Built-in tools available
+type ToolInputSchemas =
+  | AgentInput        // Sub-agent spawning
+  | BashInput         // Shell commands
+  | TaskOutputInput   // Background task results
+  | FileEditInput     // File modifications
+  | FileReadInput     // File reading
+  | FileWriteInput    // File writing
+  | GlobInput         // File pattern matching
+  | GrepInput         // Content search
+  | KillShellInput    // Terminate shells
+  | McpInput          // MCP tool calls
+  | TodoWriteInput    // Todo management
+  | WebFetchInput     // HTTP requests
+  | WebSearchInput    // Web search
+  | AskUserQuestionInput; // User prompts
+```
+
+### Tool Registration (from sdk.mjs:891029-891153)
+
+```javascript
+// MCP server registers tools
+this.server.assertCanSetRequestHandler(getMethodValue(ListToolsRequestSchema));
+this.server.assertCanSetRequestHandler(getMethodValue(CallToolRequestSchema));
+
+this.server.setRequestHandler(ListToolsRequestSchema, () => ({
+  tools: Object.entries(this._registeredTools)
+    .filter(([, tool]) => tool.enabled)
+    .map(([name, tool]) => ({
+      name,
+      description: tool.description,
+      inputSchema: tool.inputSchema
+    }))
+}));
+```
+
+### Tool Execution Flow (from sdk.mjs:892871-895825)
+
+```javascript
+// Tool call handler
+async handleToolCall(tool, request, extra) {
+  const taskSupport = tool.execution?.taskSupport;
+  const isTaskHandler = "createTask" in tool.handler;
+  
+  // Handle task-based execution (background)
+  if (taskSupport === "required" || isTaskHandler) {
+    return await this.handleAutomaticTaskPolling(tool, request, extra);
+  }
+  
+  // Validate input
+  const args = await this.validateToolInput(tool, request.params.arguments, name);
+  
+  // Execute handler
+  return await this.executeToolHandler(tool, args, extra);
+}
+```
+
+---
+
+## Conversation Management
+
+### Session Storage (from cli.js:6430223)
+
+```javascript
+// Session file persistence
+ensureCurrentSessionFile() {
+  if (this.sessionFile === null) {
+    const sessionPath = getSessionPath();
+    fs.statSync(sessionPath);  // Check if exists
+    // Create if needed
+  }
+}
+
+// Remote session persistence
+if (this.remoteIngressUrl) {
+  await this.persistToRemote(sessionId, message);
+}
+```
+
+**Session Storage Locations**:
+| Location | Path | Purpose |
+|----------|------|---------|
+| Local sessions | `~/.claude/projects/<hash>/sessions/` | Session transcripts |
+| Debug logs | `~/.claude/debug/` | Debug output |
+| Session metadata | `~/.claude/sessions.json` | Session index |
+
+### Message Types in Conversations
+
+```typescript
+// User message with parent context
+SDKUserMessage: {
+  type: 'user',
+  message: APIUserMessage,
+  parent_tool_use_id: string | null,  // Links to parent tool
+  isSynthetic?: boolean,              // System-generated
+  tool_use_result?: unknown           // Tool result data
+}
+
+// Result message with statistics
+SDKResultMessage: {
+  type: 'result',
+  subtype: 'success' | 'error_*',
+  duration_ms: number,
+  num_turns: number,
+  total_cost_usd: number,
+  usage: { input_tokens, output_tokens, cache_* },
+  permission_denials: SDKPermissionDenial[]
+}
+```
+
+### Session Resume Flow
+
+```typescript
+// Resume options
+{
+  resume: 'session-id',           // Session to resume
+  resumeSessionAt?: 'message-uuid', // Resume from specific point
+  forkSession?: boolean,          // Fork to new session
+  continue?: boolean              // Continue most recent
+}
+```
+
+**Resume Process**:
+1. Load session from disk (`~/.claude/projects/<hash>/sessions/<id>.json`)
+2. Reconstruct message history
+3. If `forkSession`, create new session ID
+4. If `resumeSessionAt`, truncate to that message
+5. Continue agent loop with loaded context
+
+---
+
+## Context Injection: CLAUDE.md & System Prompt
+
+### System Prompt Building (from sdk.mjs:918384-918712)
+
+```javascript
+// System prompt configuration
+if (systemPrompt === undefined) {
+  customSystemPrompt = "";
+} else if (typeof systemPrompt === "string") {
+  customSystemPrompt = systemPrompt;
+} else if (systemPrompt.type === "preset") {
+  // Use Claude Code's default + optional append
+  appendSystemPrompt = systemPrompt.append;
+}
+```
+
+### CLAUDE.md Loading (from cli.js)
+
+CLAUDE.md files are loaded from:
+1. `~/.claude/CLAUDE.md` - Global user context
+2. `./.claude/CLAUDE.md` - Project context
+3. `./CLAUDE.md` - Root project context
+
+**Loading Priority** (cli.js:7410494):
+```javascript
+// hasClaudeMdExternalIncludesApproved determines if includes are processed
+const approvedIncludes = G.hasClaudeMdExternalIncludesApproved || false;
+```
+
+### Context Structure
+
+The final context sent to Claude includes:
+1. **System prompt** (Claude Code defaults + custom)
+2. **CLAUDE.md contents** (project-specific context)
+3. **Tool definitions** (available tools)
+4. **Conversation history** (messages)
+5. **Hook-injected context** (from SessionStart/SubagentStart hooks)
+
+---
+
+## Summary: Key Architectural Patterns
+
+### 1. Subprocess Architecture
+- SDK spawns `cli.js` as child process
+- Communication via JSON-over-stdio
+- Clean separation between SDK (TypeScript/Node) and CLI (full agent runtime)
+
+### 2. Hook-Based Extensibility
+- 12 hook events cover entire lifecycle
+- Hooks can inject context, modify behavior, or abort
+- Timeout support for long-running hooks
+
+### 3. Agent Hierarchy
+- Main agent → Sub-agents via Agent tool
+- Tool restrictions per agent type
+- Transcript isolation with optional context forking
+
+### 4. Configuration Layers
+```
+Priority (highest to lowest):
+1. SDK options (programmatic)
+2. CLI arguments
+3. Local settings (.claude/settings.local.json)
+4. Project settings (.claude/settings.json)
+5. User settings (~/.claude/settings.json)
+6. Defaults
+```
+
+### 5. Context Management
+- Prompt caching for efficiency
+- Auto-compaction when context grows
+- Session persistence for resume capability
+- File checkpointing for rewind
+
+---
+
+*Updated January 2026 - Added cli.js reverse engineering findings*
+
 *Generated from reverse engineering `@anthropic-ai/claude-agent-sdk` v0.1.76*
 
