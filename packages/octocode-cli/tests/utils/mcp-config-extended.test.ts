@@ -50,8 +50,9 @@ describe('MCP Config Extended', () => {
       const result = getOctocodeServerConfig('direct');
 
       expect(result.command).toBe('bash');
-      expect(result.args[0]).toBe('-c');
-      expect(result.args[1]).toContain('curl');
+      expect(result.args).toBeDefined();
+      expect(result.args![0]).toBe('-c');
+      expect(result.args![1]).toContain('curl');
     });
 
     it('should throw error for unknown method', async () => {
@@ -72,8 +73,9 @@ describe('MCP Config Extended', () => {
       const result = getOctocodeServerConfigWindows('direct');
 
       expect(result.command).toBe('powershell');
-      expect(result.args[0]).toBe('-Command');
-      expect(result.args[1]).toContain('Invoke-WebRequest');
+      expect(result.args).toBeDefined();
+      expect(result.args![0]).toBe('-Command');
+      expect(result.args![1]).toContain('Invoke-WebRequest');
     });
 
     it('should return npx config for npx method', async () => {

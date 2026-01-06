@@ -11,6 +11,8 @@ import {
   prepareSyncPayload,
   isSyncNeeded,
   getClientDisplayName,
+  getCanonicalConfig,
+  executeSyncToClients,
   type SyncAnalysis,
   type MCPDiff,
   type ConflictResolution,
@@ -44,7 +46,7 @@ import {
   getMCPConfigPath,
   configFileExists,
 } from '../../src/utils/mcp-paths.js';
-import { readMCPConfig } from '../../src/utils/mcp-io.js';
+import { readMCPConfig, writeMCPConfig } from '../../src/utils/mcp-io.js';
 
 describe('areMCPServersEqual', () => {
   it('should return true for identical configs', () => {
@@ -483,5 +485,265 @@ describe('readAllClientConfigs', () => {
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0].exists).toBe(false);
     expect(snapshots[0].mcpCount).toBe(0);
+  });
+});
+
+describe('getCanonicalConfig', () => {
+  it('should return resolution config when provided', () => {
+    const diff: MCPDiff = {
+      mcpId: 'octocode',
+      presentIn: ['cursor', 'claude-desktop'],
+      missingIn: [],
+      hasConflict: true,
+      variants: new Map([
+        ['cursor', { command: 'npx', args: ['octocode-mcp@latest'] }],
+        ['claude-desktop', { command: 'npx', args: ['octocode-mcp@1.0.0'] }],
+      ]),
+    };
+
+    const resolution: ConflictResolution = {
+      mcpId: 'octocode',
+      chosenConfig: { command: 'npx', args: ['octocode-mcp@2.0.0'] },
+      sourceClient: 'cursor',
+    };
+
+    const result = getCanonicalConfig(diff, resolution);
+    expect(result).toEqual({ command: 'npx', args: ['octocode-mcp@2.0.0'] });
+  });
+
+  it('should return first variant when no conflict and variants exist', () => {
+    const diff: MCPDiff = {
+      mcpId: 'octocode',
+      presentIn: ['cursor'],
+      missingIn: ['claude-desktop'],
+      hasConflict: false,
+      variants: new Map([
+        ['cursor', { command: 'npx', args: ['octocode-mcp@latest'] }],
+      ]),
+    };
+
+    const result = getCanonicalConfig(diff);
+    expect(result).toEqual({ command: 'npx', args: ['octocode-mcp@latest'] });
+  });
+
+  it('should return null when there is a conflict without resolution', () => {
+    const diff: MCPDiff = {
+      mcpId: 'octocode',
+      presentIn: ['cursor', 'claude-desktop'],
+      missingIn: [],
+      hasConflict: true,
+      variants: new Map([
+        ['cursor', { command: 'npx', args: ['octocode-mcp@latest'] }],
+        ['claude-desktop', { command: 'npx', args: ['octocode-mcp@1.0.0'] }],
+      ]),
+    };
+
+    const result = getCanonicalConfig(diff);
+    expect(result).toBeNull();
+  });
+
+  it('should return null when no variants exist', () => {
+    const diff: MCPDiff = {
+      mcpId: 'octocode',
+      presentIn: [],
+      missingIn: ['cursor', 'claude-desktop'],
+      hasConflict: false,
+      variants: new Map(),
+    };
+
+    const result = getCanonicalConfig(diff);
+    expect(result).toBeNull();
+  });
+});
+
+describe('executeSyncToClients', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should sync MCPs to all existing clients successfully', () => {
+    vi.mocked(writeMCPConfig).mockReturnValue({
+      success: true,
+      backupPath: '/backup/path.json',
+    });
+
+    const snapshots: ClientConfigSnapshot[] = [
+      {
+        client: 'cursor',
+        configPath: '/path/cursor.json',
+        config: { mcpServers: {} },
+        exists: true,
+        mcpCount: 0,
+      },
+      {
+        client: 'claude-desktop',
+        configPath: '/path/claude.json',
+        config: { mcpServers: {} },
+        exists: true,
+        mcpCount: 0,
+      },
+    ];
+
+    const mcpsToSync = [
+      { mcpId: 'octocode', server: { command: 'npx', args: ['test'] } },
+    ];
+
+    const result = executeSyncToClients(snapshots, mcpsToSync);
+
+    expect(result.success).toBe(true);
+    expect(result.mcpsSynced).toContain('octocode');
+    expect(result.errors).toHaveLength(0);
+    expect(result.clientResults.get('cursor')?.success).toBe(true);
+    expect(result.clientResults.get('claude-desktop')?.success).toBe(true);
+  });
+
+  it('should handle write failures and collect errors', () => {
+    vi.mocked(writeMCPConfig).mockImplementation(path => {
+      if (path.includes('cursor')) {
+        return { success: true };
+      }
+      return { success: false, error: 'Permission denied' };
+    });
+
+    const snapshots: ClientConfigSnapshot[] = [
+      {
+        client: 'cursor',
+        configPath: '/path/cursor.json',
+        config: { mcpServers: {} },
+        exists: true,
+        mcpCount: 0,
+      },
+      {
+        client: 'claude-desktop',
+        configPath: '/path/claude.json',
+        config: { mcpServers: {} },
+        exists: true,
+        mcpCount: 0,
+      },
+    ];
+
+    const mcpsToSync = [
+      { mcpId: 'octocode', server: { command: 'npx', args: ['test'] } },
+    ];
+
+    const result = executeSyncToClients(snapshots, mcpsToSync);
+
+    expect(result.success).toBe(false);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('Permission denied');
+    expect(result.clientResults.get('cursor')?.success).toBe(true);
+    expect(result.clientResults.get('claude-desktop')?.success).toBe(false);
+  });
+
+  it('should only sync to specified target clients', () => {
+    vi.mocked(writeMCPConfig).mockReturnValue({ success: true });
+
+    const snapshots: ClientConfigSnapshot[] = [
+      {
+        client: 'cursor',
+        configPath: '/path/cursor.json',
+        config: { mcpServers: {} },
+        exists: true,
+        mcpCount: 0,
+      },
+      {
+        client: 'claude-desktop',
+        configPath: '/path/claude.json',
+        config: { mcpServers: {} },
+        exists: true,
+        mcpCount: 0,
+      },
+    ];
+
+    const mcpsToSync = [
+      { mcpId: 'octocode', server: { command: 'npx', args: ['test'] } },
+    ];
+
+    const result = executeSyncToClients(snapshots, mcpsToSync, ['cursor']);
+
+    expect(result.success).toBe(true);
+    expect(result.clientResults.size).toBe(1);
+    expect(result.clientResults.has('cursor')).toBe(true);
+    expect(result.clientResults.has('claude-desktop')).toBe(false);
+  });
+
+  it('should skip non-existing configs when no target clients specified', () => {
+    vi.mocked(writeMCPConfig).mockReturnValue({ success: true });
+
+    const snapshots: ClientConfigSnapshot[] = [
+      {
+        client: 'cursor',
+        configPath: '/path/cursor.json',
+        config: { mcpServers: {} },
+        exists: true,
+        mcpCount: 0,
+      },
+      {
+        client: 'claude-desktop',
+        configPath: '/path/claude.json',
+        config: null,
+        exists: false,
+        mcpCount: 0,
+      },
+    ];
+
+    const mcpsToSync = [
+      { mcpId: 'octocode', server: { command: 'npx', args: ['test'] } },
+    ];
+
+    const result = executeSyncToClients(snapshots, mcpsToSync);
+
+    expect(result.success).toBe(true);
+    expect(result.clientResults.size).toBe(1);
+    expect(result.clientResults.has('cursor')).toBe(true);
+  });
+
+  it('should sync multiple MCPs and deduplicate mcpsSynced', () => {
+    vi.mocked(writeMCPConfig).mockReturnValue({ success: true });
+
+    const snapshots: ClientConfigSnapshot[] = [
+      {
+        client: 'cursor',
+        configPath: '/path/cursor.json',
+        config: { mcpServers: {} },
+        exists: true,
+        mcpCount: 0,
+      },
+    ];
+
+    const mcpsToSync = [
+      { mcpId: 'octocode', server: { command: 'npx', args: ['octocode'] } },
+      { mcpId: 'github', server: { command: 'npx', args: ['github'] } },
+    ];
+
+    const result = executeSyncToClients(snapshots, mcpsToSync);
+
+    expect(result.success).toBe(true);
+    expect(result.mcpsSynced).toHaveLength(2);
+    expect(result.mcpsSynced).toContain('octocode');
+    expect(result.mcpsSynced).toContain('github');
+  });
+
+  it('should handle unknown write error gracefully', () => {
+    vi.mocked(writeMCPConfig).mockReturnValue({ success: false });
+
+    const snapshots: ClientConfigSnapshot[] = [
+      {
+        client: 'cursor',
+        configPath: '/path/cursor.json',
+        config: { mcpServers: {} },
+        exists: true,
+        mcpCount: 0,
+      },
+    ];
+
+    const mcpsToSync = [
+      { mcpId: 'octocode', server: { command: 'npx', args: ['test'] } },
+    ];
+
+    const result = executeSyncToClients(snapshots, mcpsToSync);
+
+    expect(result.success).toBe(false);
+    expect(result.errors[0]).toContain('Unknown write error');
   });
 });

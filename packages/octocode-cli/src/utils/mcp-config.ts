@@ -254,7 +254,7 @@ export function registryEntryToServerConfig(
   };
 
   // Replace placeholders in args with actual values
-  if (envValues) {
+  if (envValues && config.args) {
     config.args = config.args.map(arg => {
       // Replace ${VAR_NAME} patterns
       return arg.replace(/\$\{(\w+)\}/g, (_, varName) => {

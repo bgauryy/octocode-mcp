@@ -103,8 +103,9 @@ describe('MCP Config Utilities', () => {
 
       const config = getOctocodeServerConfig('direct');
       expect(config.command).toBe('bash');
-      expect(config.args[0]).toBe('-c');
-      expect(config.args[1]).toContain('curl');
+      expect(config.args).toBeDefined();
+      expect(config.args![0]).toBe('-c');
+      expect(config.args![1]).toContain('curl');
     });
   });
 

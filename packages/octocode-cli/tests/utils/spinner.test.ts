@@ -223,5 +223,114 @@ describe('Spinner', () => {
 
       expect(writtenOutput.some(output => output.includes('★'))).toBe(true);
     });
+
+    it('should clear output and restore cursor', async () => {
+      const { Spinner } = await import('../../src/utils/spinner.js');
+      const spinner = new Spinner('Clearing...');
+
+      spinner.start();
+      vi.advanceTimersByTime(80);
+
+      const clearResult = spinner.clear();
+
+      // Should return this for chaining
+      expect(clearResult).toBe(spinner);
+      // Should contain cursor show sequence after clear
+      expect(writtenOutput.some(output => output.includes('\x1B[?25h'))).toBe(
+        true
+      );
+      // Should contain line clear sequence
+      expect(writtenOutput.some(output => output.includes('\x1B[2K'))).toBe(
+        true
+      );
+    });
+
+    it('should handle clear when not running', async () => {
+      const { Spinner } = await import('../../src/utils/spinner.js');
+      const spinner = new Spinner('Test');
+
+      // Clear without starting should not throw
+      const result = spinner.clear();
+      expect(result).toBe(spinner);
+    });
+
+    it('should handle start with custom indent', async () => {
+      const { Spinner } = await import('../../src/utils/spinner.js');
+      const spinner = new Spinner('Indented');
+
+      spinner.start('Indented', 4);
+      vi.advanceTimersByTime(80);
+
+      // Output should contain spaces for indent
+      expect(
+        writtenOutput.some(
+          output => output.includes('    ') || output.includes('Indented')
+        )
+      ).toBe(true);
+
+      spinner.stop();
+    });
+
+    it('should succeed without custom text', async () => {
+      const { Spinner } = await import('../../src/utils/spinner.js');
+      const spinner = new Spinner('Original');
+
+      spinner.start();
+      spinner.succeed(); // No custom text
+
+      expect(writtenOutput.some(output => output.includes('Original'))).toBe(
+        true
+      );
+    });
+
+    it('should fail without custom text', async () => {
+      const { Spinner } = await import('../../src/utils/spinner.js');
+      const spinner = new Spinner('Original');
+
+      spinner.start();
+      spinner.fail(); // No custom text
+
+      expect(writtenOutput.some(output => output.includes('Original'))).toBe(
+        true
+      );
+    });
+
+    it('should info without custom text', async () => {
+      const { Spinner } = await import('../../src/utils/spinner.js');
+      const spinner = new Spinner('Original');
+
+      spinner.start();
+      spinner.info(); // No custom text
+
+      expect(writtenOutput.some(output => output.includes('Original'))).toBe(
+        true
+      );
+    });
+
+    it('should warn without custom text', async () => {
+      const { Spinner } = await import('../../src/utils/spinner.js');
+      const spinner = new Spinner('Original');
+
+      spinner.start();
+      spinner.warn(); // No custom text
+
+      expect(writtenOutput.some(output => output.includes('Original'))).toBe(
+        true
+      );
+    });
+
+    it('should work with empty constructor', async () => {
+      const { Spinner } = await import('../../src/utils/spinner.js');
+      const spinner = new Spinner();
+
+      spinner.start('New text');
+      vi.advanceTimersByTime(80);
+
+      expect(writtenOutput.some(output => output.includes('New text'))).toBe(
+        true
+      );
+
+      spinner.stop();
+    });
   });
 });

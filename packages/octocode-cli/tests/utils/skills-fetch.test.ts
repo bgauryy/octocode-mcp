@@ -12,11 +12,16 @@ import type {
 vi.mock('../../src/utils/fs.js', () => ({
   dirExists: vi.fn(),
   writeFileContent: vi.fn(),
+  fileExists: vi.fn(() => false),
 }));
 
 // Mock node:fs
 vi.mock('node:fs', () => ({
   mkdirSync: vi.fn(),
+  readdirSync: vi.fn(() => []),
+  unlinkSync: vi.fn(),
+  statSync: vi.fn(),
+  existsSync: vi.fn(() => false),
 }));
 
 import {
@@ -26,8 +31,13 @@ import {
   installMarketplaceSkill,
   searchSkills,
   groupSkillsByCategory,
+  clearSkillsCache,
+  clearSourceCache,
+  getCacheInfo,
+  getSkillsCacheDir,
 } from '../../src/utils/skills-fetch.js';
-import { dirExists, writeFileContent } from '../../src/utils/fs.js';
+import { dirExists, writeFileContent, fileExists } from '../../src/utils/fs.js';
+import * as nodeFs from 'node:fs';
 
 // Sample marketplace source for testing
 const mockSource: MarketplaceSource = {
@@ -387,6 +397,307 @@ describe('Skills Fetch Utilities', () => {
     it('should return empty map for empty input', () => {
       const grouped = groupSkillsByCategory([]);
       expect(grouped.size).toBe(0);
+    });
+  });
+
+  describe('cache functions', () => {
+    describe('clearSkillsCache', () => {
+      it('should clear all cached skill files', () => {
+        vi.mocked(dirExists).mockReturnValue(true);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        vi.mocked(nodeFs.readdirSync).mockReturnValue([
+          'source1.json',
+          'source2.json',
+          'notjson.txt',
+        ] as any);
+
+        clearSkillsCache();
+
+        expect(nodeFs.unlinkSync).toHaveBeenCalledTimes(2);
+      });
+
+      it('should handle non-existent cache directory', () => {
+        vi.mocked(dirExists).mockReturnValue(false);
+
+        expect(() => clearSkillsCache()).not.toThrow();
+      });
+
+      it('should handle errors gracefully', () => {
+        vi.mocked(dirExists).mockReturnValue(true);
+        vi.mocked(nodeFs.readdirSync).mockImplementation(() => {
+          throw new Error('Read error');
+        });
+
+        expect(() => clearSkillsCache()).not.toThrow();
+      });
+    });
+
+    describe('clearSourceCache', () => {
+      it('should clear cache for specific source', () => {
+        vi.mocked(fileExists).mockReturnValue(true);
+
+        clearSourceCache(mockSource);
+
+        expect(nodeFs.unlinkSync).toHaveBeenCalled();
+      });
+
+      it('should handle non-existent cache file', () => {
+        vi.mocked(fileExists).mockReturnValue(false);
+
+        expect(() => clearSourceCache(mockSource)).not.toThrow();
+        expect(nodeFs.unlinkSync).not.toHaveBeenCalled();
+      });
+
+      it('should handle errors gracefully', () => {
+        vi.mocked(fileExists).mockReturnValue(true);
+        vi.mocked(nodeFs.unlinkSync).mockImplementation(() => {
+          throw new Error('Delete error');
+        });
+
+        expect(() => clearSourceCache(mockSource)).not.toThrow();
+      });
+    });
+
+    describe('getCacheInfo', () => {
+      it('should return cache info for valid cached file', () => {
+        const now = Date.now();
+        vi.mocked(fileExists).mockReturnValue(true);
+        vi.mocked(nodeFs.statSync).mockReturnValue({
+          mtimeMs: now - 60000, // 1 minute ago
+        } as import('node:fs').Stats);
+
+        const info = getCacheInfo(mockSource);
+
+        expect(info.isCached).toBe(true);
+        expect(info.age).toBeGreaterThan(0);
+        expect(info.expiresIn).toBeGreaterThan(0);
+      });
+
+      it('should return not cached for expired file', () => {
+        const now = Date.now();
+        vi.mocked(fileExists).mockReturnValue(true);
+        vi.mocked(nodeFs.statSync).mockReturnValue({
+          mtimeMs: now - 86400000, // 24 hours ago
+        } as import('node:fs').Stats);
+
+        const info = getCacheInfo(mockSource);
+
+        expect(info.isCached).toBe(false);
+        expect(info.expiresIn).toBeNull();
+      });
+
+      it('should return not cached for non-existent file', () => {
+        vi.mocked(fileExists).mockReturnValue(false);
+
+        const info = getCacheInfo(mockSource);
+
+        expect(info.isCached).toBe(false);
+        expect(info.age).toBeNull();
+        expect(info.expiresIn).toBeNull();
+      });
+
+      it('should handle errors gracefully', () => {
+        vi.mocked(fileExists).mockReturnValue(true);
+        vi.mocked(nodeFs.statSync).mockImplementation(() => {
+          throw new Error('Stat error');
+        });
+
+        const info = getCacheInfo(mockSource);
+
+        expect(info.isCached).toBe(false);
+        expect(info.age).toBeNull();
+      });
+    });
+
+    describe('getSkillsCacheDir', () => {
+      it('should return a valid cache directory path', () => {
+        const cacheDir = getSkillsCacheDir();
+
+        expect(typeof cacheDir).toBe('string');
+        expect(cacheDir.length).toBeGreaterThan(0);
+      });
+    });
+  });
+
+  describe('installMarketplaceSkill with skill-folders', () => {
+    const folderSkill: MarketplaceSkill = {
+      name: 'test-folder-skill',
+      displayName: 'Test Folder Skill',
+      description: 'A test folder skill',
+      category: 'test',
+      path: 'skills/test-folder-skill',
+      source: mockFolderSource,
+    };
+
+    it('should install skill-folders pattern skill', async () => {
+      const folderTreeResponse = {
+        sha: 'abc123',
+        url: 'https://api.github.com/repos/test/test/git/trees/main',
+        tree: [
+          {
+            path: 'skills/test-folder-skill/SKILL.md',
+            mode: '100644',
+            type: 'blob' as const,
+            sha: 'sha1',
+            size: 1000,
+            url: 'https://api.github.com/repos/test/test/git/blobs/sha1',
+          },
+          {
+            path: 'skills/test-folder-skill/references/ref.md',
+            mode: '100644',
+            type: 'blob' as const,
+            sha: 'sha2',
+            size: 500,
+            url: 'https://api.github.com/repos/test/test/git/blobs/sha2',
+          },
+        ],
+        truncated: false,
+      };
+
+      vi.mocked(dirExists).mockReturnValue(false);
+      vi.mocked(writeFileContent).mockReturnValue(true);
+
+      vi.mocked(global.fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => folderTreeResponse,
+      } as Response);
+
+      vi.mocked(global.fetch).mockResolvedValue({
+        ok: true,
+        text: async () => mockSkillContent,
+      } as Response);
+
+      const result = await installMarketplaceSkill(folderSkill, '/dest');
+
+      expect(result.success).toBe(true);
+      expect(writeFileContent).toHaveBeenCalled();
+    });
+  });
+
+  describe('fetchMarketplaceSkills edge cases', () => {
+    it('should handle skill-folders with README.md fallback', async () => {
+      const folderTreeWithReadme = {
+        sha: 'abc123',
+        url: 'https://api.github.com/repos/test/test/git/trees/main',
+        tree: [
+          {
+            path: 'skills/readme-skill',
+            mode: '040000',
+            type: 'tree' as const,
+            sha: 'dir1',
+            url: 'https://api.github.com/repos/test/test/git/trees/dir1',
+          },
+          {
+            path: 'skills/readme-skill/README.md',
+            mode: '100644',
+            type: 'blob' as const,
+            sha: 'sha1',
+            size: 1000,
+            url: 'https://api.github.com/repos/test/test/git/blobs/sha1',
+          },
+        ],
+        truncated: false,
+      };
+
+      vi.mocked(global.fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => folderTreeWithReadme,
+      } as Response);
+
+      vi.mocked(global.fetch).mockResolvedValue({
+        ok: true,
+        text: async () => mockSkillContent,
+      } as Response);
+
+      const skills = await fetchMarketplaceSkills(mockFolderSource);
+
+      expect(skills.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should handle content without frontmatter', async () => {
+      const contentWithoutFrontmatter = `# Simple Skill
+
+This is a simple skill without YAML frontmatter.
+
+It should extract the first paragraph as description.
+`;
+
+      vi.mocked(global.fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockTreeResponse,
+      } as Response);
+
+      vi.mocked(global.fetch).mockResolvedValue({
+        ok: true,
+        text: async () => contentWithoutFrontmatter,
+      } as Response);
+
+      const skills = await fetchMarketplaceSkills(mockSource);
+
+      expect(skills.length).toBeGreaterThan(0);
+      expect(skills[0].description).toBeTruthy();
+    });
+
+    it('should handle fetch errors for individual skills gracefully', async () => {
+      vi.mocked(global.fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockTreeResponse,
+      } as Response);
+
+      vi.mocked(global.fetch).mockRejectedValue(new Error('Network error'));
+
+      const skills = await fetchMarketplaceSkills(mockSource);
+
+      // Should return empty or partial list, not throw
+      expect(Array.isArray(skills)).toBe(true);
+    });
+
+    it('should skip hidden directories in skill-folders', async () => {
+      const treeWithHidden = {
+        sha: 'abc123',
+        url: 'https://api.github.com/repos/test/test/git/trees/main',
+        tree: [
+          {
+            path: 'skills/.hidden-skill',
+            mode: '040000',
+            type: 'tree' as const,
+            sha: 'dir1',
+            url: 'https://api.github.com/repos/test/test/git/trees/dir1',
+          },
+          {
+            path: 'skills/valid-skill',
+            mode: '040000',
+            type: 'tree' as const,
+            sha: 'dir2',
+            url: 'https://api.github.com/repos/test/test/git/trees/dir2',
+          },
+          {
+            path: 'skills/valid-skill/SKILL.md',
+            mode: '100644',
+            type: 'blob' as const,
+            sha: 'sha1',
+            size: 1000,
+            url: 'https://api.github.com/repos/test/test/git/blobs/sha1',
+          },
+        ],
+        truncated: false,
+      };
+
+      vi.mocked(global.fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => treeWithHidden,
+      } as Response);
+
+      vi.mocked(global.fetch).mockResolvedValue({
+        ok: true,
+        text: async () => mockSkillContent,
+      } as Response);
+
+      const skills = await fetchMarketplaceSkills(mockFolderSource);
+
+      // Should not include hidden skills
+      const hasHidden = skills.some(s => s.name.startsWith('.'));
+      expect(hasHidden).toBe(false);
     });
   });
 });

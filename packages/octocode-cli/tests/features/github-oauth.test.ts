@@ -2,7 +2,7 @@
  * GitHub OAuth Tests
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock all external dependencies
 vi.mock('@octokit/auth-oauth-device', () => ({

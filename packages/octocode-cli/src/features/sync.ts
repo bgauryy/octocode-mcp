@@ -136,9 +136,11 @@ export function areMCPServersEqual(a: MCPServer, b: MCPServer): boolean {
   if (a.command !== b.command) return false;
 
   // Compare args
-  if (a.args.length !== b.args.length) return false;
-  for (let i = 0; i < a.args.length; i++) {
-    if (a.args[i] !== b.args[i]) return false;
+  const aArgs = a.args || [];
+  const bArgs = b.args || [];
+  if (aArgs.length !== bArgs.length) return false;
+  for (let i = 0; i < aArgs.length; i++) {
+    if (aArgs[i] !== bArgs[i]) return false;
   }
 
   // Compare env vars
