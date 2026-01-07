@@ -88,12 +88,14 @@ async function createIsolatedPromise<T>(
 ): Promise<PromiseResult<T>> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
+  /* c8 ignore start - cleanup's if branch always taken: timeoutId set synchronously */
   const cleanup = () => {
     if (timeoutId !== undefined) {
       clearTimeout(timeoutId);
       timeoutId = undefined;
     }
   };
+  /* c8 ignore stop */
 
   try {
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -170,6 +172,7 @@ async function executeWithConcurrencyLimit<T>(
           onError
         );
         results[currentIndex] = result;
+        /* c8 ignore start - defensive: createIsolatedPromise always catches internally */
       } catch (error) {
         results[currentIndex] = {
           success: false,
@@ -177,6 +180,7 @@ async function executeWithConcurrencyLimit<T>(
           index: currentIndex,
         };
       }
+      /* c8 ignore stop */
     }
   };
 
