@@ -2,7 +2,7 @@
  * Platform Utilities Tests for octocode-shared
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import os from 'node:os';
 
 import {
@@ -82,6 +82,146 @@ describe('Platform Utilities', () => {
       const arch = getArchitecture();
       expect(typeof arch).toBe('string');
       expect(arch).toBe(os.arch());
+    });
+  });
+});
+
+// Test Windows-specific behavior with mocks
+describe('Platform Utilities (Windows-specific)', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+    process.env = { ...originalEnv };
+  });
+
+  describe('getAppDataPath on Windows', () => {
+    it('should return APPDATA env var when set', async () => {
+      vi.doMock('node:os', () => ({
+        default: {
+          platform: () => 'win32',
+          homedir: () => 'C:\\Users\\TestUser',
+        },
+        platform: () => 'win32',
+        homedir: () => 'C:\\Users\\TestUser',
+      }));
+
+      process.env.APPDATA = 'C:\\Users\\TestUser\\AppData\\Roaming';
+
+      const { getAppDataPath } = await import('../../src/platform/platform.js');
+      expect(getAppDataPath()).toBe('C:\\Users\\TestUser\\AppData\\Roaming');
+    });
+
+    it('should return fallback path when APPDATA is not set', async () => {
+      vi.doMock('node:os', () => ({
+        default: {
+          platform: () => 'win32',
+          homedir: () => 'C:\\Users\\TestUser',
+        },
+        platform: () => 'win32',
+        homedir: () => 'C:\\Users\\TestUser',
+      }));
+
+      delete process.env.APPDATA;
+
+      const { getAppDataPath } = await import('../../src/platform/platform.js');
+      expect(getAppDataPath()).toContain('AppData');
+      expect(getAppDataPath()).toContain('Roaming');
+    });
+  });
+
+  describe('getLocalAppDataPath on Windows', () => {
+    it('should return LOCALAPPDATA env var when set', async () => {
+      vi.doMock('node:os', () => ({
+        default: {
+          platform: () => 'win32',
+          homedir: () => 'C:\\Users\\TestUser',
+        },
+        platform: () => 'win32',
+        homedir: () => 'C:\\Users\\TestUser',
+      }));
+
+      process.env.LOCALAPPDATA = 'C:\\Users\\TestUser\\AppData\\Local';
+
+      const { getLocalAppDataPath } =
+        await import('../../src/platform/platform.js');
+      expect(getLocalAppDataPath()).toBe('C:\\Users\\TestUser\\AppData\\Local');
+    });
+
+    it('should return fallback path when LOCALAPPDATA is not set', async () => {
+      vi.doMock('node:os', () => ({
+        default: {
+          platform: () => 'win32',
+          homedir: () => 'C:\\Users\\TestUser',
+        },
+        platform: () => 'win32',
+        homedir: () => 'C:\\Users\\TestUser',
+      }));
+
+      delete process.env.LOCALAPPDATA;
+
+      const { getLocalAppDataPath } =
+        await import('../../src/platform/platform.js');
+      expect(getLocalAppDataPath()).toContain('AppData');
+      expect(getLocalAppDataPath()).toContain('Local');
+    });
+  });
+
+  describe('getPlatformName for different platforms', () => {
+    it('should return "Windows" for win32', async () => {
+      vi.doMock('node:os', () => ({
+        default: {
+          platform: () => 'win32',
+          homedir: () => 'C:\\Users\\TestUser',
+          arch: () => 'x64',
+        },
+        platform: () => 'win32',
+        homedir: () => 'C:\\Users\\TestUser',
+        arch: () => 'x64',
+      }));
+
+      const { getPlatformName } =
+        await import('../../src/platform/platform.js');
+      expect(getPlatformName()).toBe('Windows');
+    });
+
+    it('should return "Linux" for linux', async () => {
+      vi.doMock('node:os', () => ({
+        default: {
+          platform: () => 'linux',
+          homedir: () => '/home/testuser',
+          arch: () => 'x64',
+        },
+        platform: () => 'linux',
+        homedir: () => '/home/testuser',
+        arch: () => 'x64',
+      }));
+
+      const { getPlatformName } =
+        await import('../../src/platform/platform.js');
+      expect(getPlatformName()).toBe('Linux');
+    });
+
+    it('should return raw platform for unknown platforms', async () => {
+      vi.doMock('node:os', () => ({
+        default: {
+          platform: () => 'freebsd',
+          homedir: () => '/home/testuser',
+          arch: () => 'x64',
+        },
+        platform: () => 'freebsd',
+        homedir: () => '/home/testuser',
+        arch: () => 'x64',
+      }));
+
+      const { getPlatformName } =
+        await import('../../src/platform/platform.js');
+      expect(getPlatformName()).toBe('freebsd');
     });
   });
 });

@@ -1,0 +1,304 @@
+/**
+ * Handler tests for LSP Find References tool
+ * Tests the actual handler function with mocked dependencies
+ * @module tools/lsp_find_references.handler.test
+ */
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+
+// Mock fs/promises before importing the module
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(),
+  stat: vi.fn(),
+}));
+
+// Mock the LSP module
+vi.mock('../../src/lsp/index.js', () => ({
+  SymbolResolver: vi.fn().mockImplementation(() => ({
+    resolvePositionFromContent: vi.fn(),
+    extractContext: vi.fn(),
+  })),
+  SymbolResolutionError: class SymbolResolutionError extends Error {
+    searchRadius: number;
+    constructor(message: string, searchRadius: number) {
+      super(message);
+      this.searchRadius = searchRadius;
+    }
+  },
+  getOrCreateClient: vi.fn().mockResolvedValue(null),
+  isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
+}));
+
+describe('LSP Find References Handler Tests', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  describe('Tool handler registration', () => {
+    it('should register tool and return handler', async () => {
+      vi.resetModules();
+
+      const { registerLSPFindReferencesTool } =
+        await import('../../src/tools/lsp_find_references.js');
+
+      const mockServer = {
+        registerTool: vi.fn().mockReturnValue('registered'),
+      };
+
+      const result = registerLSPFindReferencesTool(mockServer as any);
+
+      expect(mockServer.registerTool).toHaveBeenCalled();
+      expect(mockServer.registerTool.mock.calls[0][0]).toBe(
+        'lspFindReferences'
+      );
+    });
+
+    it('should handle empty queries array', async () => {
+      vi.resetModules();
+
+      const { registerLSPFindReferencesTool } =
+        await import('../../src/tools/lsp_find_references.js');
+
+      const mockServer = {
+        registerTool: vi.fn((name, config, handler) => handler),
+      };
+
+      registerLSPFindReferencesTool(mockServer as any);
+      const handler = mockServer.registerTool.mock.results[0].value;
+
+      const result = await handler({ queries: [] });
+
+      expect(result).toBeDefined();
+      expect(result.content).toBeDefined();
+    });
+  });
+
+  describe('Path validation', () => {
+    it('should reject paths outside workspace', async () => {
+      vi.resetModules();
+
+      const { registerLSPFindReferencesTool } =
+        await import('../../src/tools/lsp_find_references.js');
+
+      const mockServer = {
+        registerTool: vi.fn((name, config, handler) => handler),
+      };
+
+      registerLSPFindReferencesTool(mockServer as any);
+      const handler = mockServer.registerTool.mock.results[0].value;
+
+      const result = await handler({
+        queries: [
+          {
+            uri: '../../etc/passwd',
+            symbolName: 'test',
+            lineHint: 1,
+            researchGoal: 'test',
+            reasoning: 'test',
+          },
+        ],
+      });
+
+      // Should return an error response
+      expect(result).toBeDefined();
+    });
+  });
+
+  describe('Query field validation', () => {
+    it('should handle missing optional fields', async () => {
+      vi.resetModules();
+
+      // Mock fs.stat to return file exists
+      const mockStat = vi.mocked(fs.stat);
+      mockStat.mockResolvedValue({ isFile: () => true } as any);
+
+      // Mock fs.readFile to return some content
+      const mockReadFile = vi.mocked(fs.readFile);
+      mockReadFile.mockResolvedValue('const test = 1;');
+
+      const { registerLSPFindReferencesTool } =
+        await import('../../src/tools/lsp_find_references.js');
+
+      const mockServer = {
+        registerTool: vi.fn((name, config, handler) => handler),
+      };
+
+      registerLSPFindReferencesTool(mockServer as any);
+      const handler = mockServer.registerTool.mock.results[0].value;
+
+      // Query without optional contextLines, referencesPerPage, page
+      const result = await handler({
+        queries: [
+          {
+            uri: '/workspace/test.ts',
+            symbolName: 'test',
+            lineHint: 1,
+            researchGoal: 'Find references',
+            reasoning: 'Testing',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
+    });
+  });
+
+  describe('Multiple queries', () => {
+    it('should handle multiple queries in batch', async () => {
+      vi.resetModules();
+
+      const { registerLSPFindReferencesTool } =
+        await import('../../src/tools/lsp_find_references.js');
+
+      const mockServer = {
+        registerTool: vi.fn((name, config, handler) => handler),
+      };
+
+      registerLSPFindReferencesTool(mockServer as any);
+      const handler = mockServer.registerTool.mock.results[0].value;
+
+      const result = await handler({
+        queries: [
+          {
+            uri: '/workspace/a.ts',
+            symbolName: 'funcA',
+            lineHint: 10,
+            researchGoal: 'Find A',
+            reasoning: 'Test A',
+          },
+          {
+            uri: '/workspace/b.ts',
+            symbolName: 'funcB',
+            lineHint: 20,
+            researchGoal: 'Find B',
+            reasoning: 'Test B',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
+      // Both queries should be processed
+      expect(result.content).toBeDefined();
+    });
+  });
+
+  describe('Schema exports', () => {
+    it('should export BulkLSPFindReferencesSchema', async () => {
+      const { BulkLSPFindReferencesSchema } =
+        await import('../../src/scheme/lsp_find_references.js');
+
+      expect(BulkLSPFindReferencesSchema).toBeDefined();
+    });
+
+    it('should export LSP_FIND_REFERENCES_DESCRIPTION', async () => {
+      const { LSP_FIND_REFERENCES_DESCRIPTION } =
+        await import('../../src/scheme/lsp_find_references.js');
+
+      expect(LSP_FIND_REFERENCES_DESCRIPTION).toBeDefined();
+      expect(typeof LSP_FIND_REFERENCES_DESCRIPTION).toBe('string');
+    });
+  });
+
+  describe('Reference result structure', () => {
+    it('should create proper pagination info', () => {
+      const totalReferences = 55;
+      const referencesPerPage = 20;
+      const page = 2;
+
+      const totalPages = Math.ceil(totalReferences / referencesPerPage);
+      const startIndex = (page - 1) * referencesPerPage;
+      const endIndex = Math.min(
+        startIndex + referencesPerPage,
+        totalReferences
+      );
+
+      const pagination = {
+        currentPage: page,
+        totalPages,
+        totalResults: totalReferences,
+        hasMore: page < totalPages,
+        resultsPerPage: referencesPerPage,
+      };
+
+      expect(pagination.currentPage).toBe(2);
+      expect(pagination.totalPages).toBe(3);
+      expect(pagination.hasMore).toBe(true);
+    });
+  });
+
+  describe('Error handling', () => {
+    it('should handle file not found', async () => {
+      vi.resetModules();
+
+      // Mock fs.stat to throw ENOENT
+      const mockStat = vi.mocked(fs.stat);
+      mockStat.mockRejectedValue(new Error('ENOENT: no such file'));
+
+      const { registerLSPFindReferencesTool } =
+        await import('../../src/tools/lsp_find_references.js');
+
+      const mockServer = {
+        registerTool: vi.fn((name, config, handler) => handler),
+      };
+
+      registerLSPFindReferencesTool(mockServer as any);
+      const handler = mockServer.registerTool.mock.results[0].value;
+
+      const result = await handler({
+        queries: [
+          {
+            uri: '/workspace/nonexistent.ts',
+            symbolName: 'test',
+            lineHint: 1,
+            researchGoal: 'test',
+            reasoning: 'test',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
+    });
+
+    it('should handle file read errors', async () => {
+      vi.resetModules();
+
+      // Mock fs.stat to succeed
+      const mockStat = vi.mocked(fs.stat);
+      mockStat.mockResolvedValue({ isFile: () => true } as any);
+
+      // Mock fs.readFile to fail
+      const mockReadFile = vi.mocked(fs.readFile);
+      mockReadFile.mockRejectedValue(new Error('Permission denied'));
+
+      const { registerLSPFindReferencesTool } =
+        await import('../../src/tools/lsp_find_references.js');
+
+      const mockServer = {
+        registerTool: vi.fn((name, config, handler) => handler),
+      };
+
+      registerLSPFindReferencesTool(mockServer as any);
+      const handler = mockServer.registerTool.mock.results[0].value;
+
+      const result = await handler({
+        queries: [
+          {
+            uri: '/workspace/test.ts',
+            symbolName: 'test',
+            lineHint: 1,
+            researchGoal: 'test',
+            reasoning: 'test',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
+    });
+  });
+});

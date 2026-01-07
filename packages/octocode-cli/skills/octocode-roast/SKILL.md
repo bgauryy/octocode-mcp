@@ -356,4 +356,4 @@ Before delivering:
 
 ## References
 
-- **Sin Registry**: `references/sin-registry.md` (Patterns, Search Queries, Language-Specific Sins)
+- **Sin Registry**: [references/sin-registry.md](references/sin-registry.md) - Patterns, Search Queries, Language-Specific Sins

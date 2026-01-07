@@ -243,6 +243,112 @@ describe('Token Storage', () => {
 
       expect(isTokenExpired(credentials)).toBe(true);
     });
+
+    it('should return false for tokens expiring more than 5 minutes from now', async () => {
+      const { isTokenExpired } =
+        await import('../../src/credentials/storage.js');
+
+      const futureDate = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
+      const credentials = createTestCredentials({
+        token: {
+          token: 'test-token',
+          tokenType: 'oauth' as const,
+          expiresAt: futureDate.toISOString(),
+        },
+      });
+
+      expect(isTokenExpired(credentials)).toBe(false);
+    });
+
+    it('should return true for tokens expiring in less than 5 minutes', async () => {
+      const { isTokenExpired } =
+        await import('../../src/credentials/storage.js');
+
+      const nearFuture = new Date(Date.now() + 2 * 60 * 1000); // 2 minutes from now
+      const credentials = createTestCredentials({
+        token: {
+          token: 'test-token',
+          tokenType: 'oauth' as const,
+          expiresAt: nearFuture.toISOString(),
+        },
+      });
+
+      expect(isTokenExpired(credentials)).toBe(true);
+    });
+
+    it('should return true for invalid date strings', async () => {
+      const { isTokenExpired } =
+        await import('../../src/credentials/storage.js');
+
+      const credentials = createTestCredentials({
+        token: {
+          token: 'test-token',
+          tokenType: 'oauth' as const,
+          expiresAt: 'invalid-date',
+        },
+      });
+
+      expect(isTokenExpired(credentials)).toBe(true);
+    });
+  });
+
+  describe('isRefreshTokenExpired', () => {
+    it('should return false when no refresh token expiry', async () => {
+      const { isRefreshTokenExpired } =
+        await import('../../src/credentials/storage.js');
+
+      const credentials = createTestCredentials();
+      expect(isRefreshTokenExpired(credentials)).toBe(false);
+    });
+
+    it('should return true for expired refresh token', async () => {
+      const { isRefreshTokenExpired } =
+        await import('../../src/credentials/storage.js');
+
+      const credentials = createTestCredentials({
+        token: {
+          token: 'test-token',
+          tokenType: 'oauth' as const,
+          refreshToken: 'refresh-token',
+          refreshTokenExpiresAt: '2020-01-01T00:00:00.000Z',
+        },
+      });
+
+      expect(isRefreshTokenExpired(credentials)).toBe(true);
+    });
+
+    it('should return false for valid refresh token', async () => {
+      const { isRefreshTokenExpired } =
+        await import('../../src/credentials/storage.js');
+
+      const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000); // 1 day from now
+      const credentials = createTestCredentials({
+        token: {
+          token: 'test-token',
+          tokenType: 'oauth' as const,
+          refreshToken: 'refresh-token',
+          refreshTokenExpiresAt: futureDate.toISOString(),
+        },
+      });
+
+      expect(isRefreshTokenExpired(credentials)).toBe(false);
+    });
+
+    it('should return true for invalid refresh token date strings', async () => {
+      const { isRefreshTokenExpired } =
+        await import('../../src/credentials/storage.js');
+
+      const credentials = createTestCredentials({
+        token: {
+          token: 'test-token',
+          tokenType: 'oauth' as const,
+          refreshToken: 'refresh-token',
+          refreshTokenExpiresAt: 'invalid-date',
+        },
+      });
+
+      expect(isRefreshTokenExpired(credentials)).toBe(true);
+    });
   });
 
   describe('TimeoutError', () => {
@@ -264,6 +370,150 @@ describe('Token Storage', () => {
       expect(OCTOCODE_DIR).toContain('.octocode');
       expect(CREDENTIALS_FILE).toContain('credentials.json');
       expect(KEY_FILE).toContain('.key');
+    });
+  });
+
+  describe('getTokenSync', () => {
+    it('should return token string when credentials exist', async () => {
+      const storedCreds = createTestCredentials();
+      const store = { version: 1, credentials: { 'github.com': storedCreds } };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { getTokenSync } = await import('../../src/credentials/storage.js');
+      const result = getTokenSync('github.com');
+
+      expect(result).toBe('test-token');
+    });
+
+    it('should return null when credentials do not exist', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+
+      const { getTokenSync } = await import('../../src/credentials/storage.js');
+      const result = getTokenSync('github.com');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when token is expired', async () => {
+      const storedCreds = createTestCredentials({
+        token: {
+          token: 'test-token',
+          tokenType: 'oauth' as const,
+          expiresAt: '2020-01-01T00:00:00.000Z',
+        },
+      });
+      const store = { version: 1, credentials: { 'github.com': storedCreds } };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { getTokenSync } = await import('../../src/credentials/storage.js');
+      const result = getTokenSync('github.com');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when credentials exist but token is missing', async () => {
+      const storedCreds = {
+        ...createTestCredentials(),
+        token: undefined,
+      };
+      const store = { version: 1, credentials: { 'github.com': storedCreds } };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { getTokenSync } = await import('../../src/credentials/storage.js');
+      const result = getTokenSync('github.com');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getToken', () => {
+    it('should return null when token is expired', async () => {
+      const storedCreds = createTestCredentials({
+        token: {
+          token: 'test-token',
+          tokenType: 'oauth' as const,
+          expiresAt: '2020-01-01T00:00:00.000Z',
+        },
+      });
+      const store = { version: 1, credentials: { 'github.com': storedCreds } };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { getToken } = await import('../../src/credentials/storage.js');
+      const result = await getToken('github.com');
+
+      expect(result).toBeNull();
     });
   });
 });

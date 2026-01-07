@@ -365,5 +365,5 @@ Created by Octocode MCP https://octocode.ai 🔍🐙
 
 ## 9. References
 
-- **Tools**: `references/tool-reference.md` (Parameters & Tips)
-- **Workflows**: `references/workflow-patterns.md` (Recipes)
+- **Tools**: [references/tool-reference.md](references/tool-reference.md) - Parameters & Tips
+- **Workflows**: [references/workflow-patterns.md](references/workflow-patterns.md) - Research Recipes

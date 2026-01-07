@@ -393,5 +393,5 @@ Before outputting an answer:
 
 ## References
 
-- **Tools**: `references/tool-reference.md` (Parameters & Tips)
-- **Workflows**: `references/workflow-patterns.md` (Recipes)
+- **Tools**: [references/tool-reference.md](references/tool-reference.md) - Parameters & Tips
+- **Workflows**: [references/workflow-patterns.md](references/workflow-patterns.md) - Research Recipes

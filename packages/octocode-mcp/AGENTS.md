@@ -111,6 +111,12 @@ src/
 │   ├── errors.ts            # GitHub error handling
 │   └── errorConstants.ts    # GitHub-specific error codes
 │
+├── lsp/                     # 🔤 Language Server Protocol
+│   ├── index.ts             # LSP module exports
+│   ├── client.ts            # LSP client (spawns servers, JSON-RPC)
+│   ├── types.ts             # LSP type definitions
+│   └── resolver.ts          # Symbol resolution utilities
+│
 ├── security/                # 🔒 Security layer
 │   ├── withSecurityValidation.ts  # Security wrapper for tools
 │   ├── contentSanitizer.ts  # Secret detection & redaction
@@ -203,9 +209,11 @@ tests/
 ├── errorCodes.test.ts       # Error codes tests
 ├── commands/                # Command builder tests
 ├── github/                  # GitHub API tests (27 files)
+├── lsp/                     # LSP client tests
 ├── security/                # Security tests (15 files)
 ├── scheme/                  # Schema validation tests
 ├── tools/                   # Tool implementation tests (42 files)
+│   └── lsp_*.test.ts        # LSP tool tests
 ├── utils/                   # Utility tests (33 files)
 ├── integration/             # End-to-end tests
 ├── helpers/                 # Test utilities & mocks
@@ -228,6 +236,20 @@ tests/
 | `localViewStructure` | content | ✅ | Browse local directories |
 | `localFindFiles` | search | ✅ | Find files by metadata |
 | `localGetFileContent` | content | ✅ | Read local file content |
+| `lspGotoDefinition` | LSP | ✅ | Jump to symbol definition |
+| `lspFindReferences` | LSP | ✅ | Find all usages of a symbol |
+| `lspCallHierarchy` | LSP | ✅ | Trace function call relationships |
+
+### LSP Tools
+
+LSP (Language Server Protocol) tools provide **semantic** code intelligence:
+
+- **No IDE required** - Works standalone via spawned language servers
+- **TypeScript/JavaScript bundled** - Works out-of-box
+- **30+ languages supported** - Python, Go, Rust, Java, C/C++, etc. (requires server installation)
+- **Cross-platform** - macOS, Linux, Windows
+
+See [`LSP_TOOLS.md`](./docs/LSP_TOOLS.md) for full documentation.
 
 ---
 
@@ -343,10 +365,12 @@ yarn test:ui
 |----------|-------------|
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Deep dive into system design, data flows, security |
 | [`HINTS_ARCHITECTURE.md`](./docs/HINTS_ARCHITECTURE.md) | Hints system: flow, sources, types, implementation |
+| [`LSP_TOOLS.md`](./docs/LSP_TOOLS.md) | LSP tools: supported languages, usage, configuration |
 | [`README.md`](./README.md) | Installation, usage, configuration |
 | [`../../AGENTS.md`](../../AGENTS.md) | Root monorepo guidelines |
 | [MCP Spec](https://modelcontextprotocol.io/) | Model Context Protocol specification |
 | [GitHub REST API](https://docs.github.com/en/rest) | GitHub API reference |
+| [LSP Spec](https://microsoft.github.io/language-server-protocol/) | Language Server Protocol specification |
 
 ---
 
@@ -362,6 +386,8 @@ yarn test:ui
 | Secret detection | `src/security/contentSanitizer.ts`, `src/security/regexes.ts` |
 | Path validation | `src/security/pathValidator.ts` |
 | GitHub client | `src/github/client.ts` |
+| LSP client | `src/lsp/client.ts` ([docs](./docs/LSP_TOOLS.md)) |
+| LSP tools | `src/tools/lsp_*.ts` |
 | Bulk operations | `src/utils/response/bulk.ts` |
 | Response formatting | `src/responses.ts` |
 | Error codes | `src/errorCodes.ts` |
