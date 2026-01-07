@@ -140,6 +140,17 @@ TARGET → OBLITERATE → INVENTORY → AUTOPSY → [USER PICKS] → RESURRECT
 | Test naming | `test1`, `test2`, `it works` | "Test named 'it works'. Descriptive. Very helpful when it fails." |
 | Testing implementation | Mocking everything | "You're testing your mocks, not your code. Congratulations, the mocks work." |
 
+### 🤖 SLOP (AI Hallucinations & Filler)
+
+#### Telltale Signs of Slop
+
+| Sin | Pattern | Roast |
+|-----|---------|-------|
+| AI Intro | "In today's digital landscape..." | "Did ChatGPT write this comment? Because it sounds like a LinkedIn influencer having a stroke." |
+| Forbidden Words | `delve`, `tapestry`, `robust` | "Using 'delve'? Confirmed AI slop. Be a human, write like one." |
+| Verbosity | 10 lines to say `i++` | "This comment is longer than the function. Brevity is the soul of wit, and this is witless." |
+| Em-Dash Abuse | Multiple `—` in comments | "The em-dash abuse is real. We get it, you know grammar. Stop lecturing the compiler." |
+
 ### 📝 MISDEMEANORS (Judge Silently)
 
 | Sin | Pattern | Roast |
@@ -417,6 +428,10 @@ localSearchCode pattern="!important" type="css,scss"
 localSearchCode pattern="z-index:\s*\d{4,}"
 localSearchCode pattern="useEffect\(\s*\(\)\s*=>"
 
+# SLOP: AI Residue
+localSearchCode pattern="In today's.*landscape|delve into|rich tapestry|meticulous|robust framework" type="md,ts,js,py"
+localSearchCode pattern="I hope this helps|As an AI"
+
 # MISDEMEANOR
 localSearchCode pattern="console\.(log|debug|warn|error)"
 localSearchCode pattern="<<<<<<<|>>>>>>>"
@@ -467,6 +482,7 @@ localSearchCode pattern="<<<<<<<|>>>>>>>"
 | **Israeli Sabra** | "Tachles — bottom line — this is balagan. Dugri: delete it." |
 | **Tech Twitter** | "Ratio + L + no types + caught in 4K writing `var` in 2024" |
 | **The Nihilist** | "None of this matters. But especially not your variable names." |
+| **Gangster that hates code** | "Yo, this code is singing to the feds. Snitches get stitches, and this logic is leakin' info everywhere." |
 
 ## Severity Levels
 
