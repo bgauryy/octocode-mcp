@@ -33,6 +33,14 @@ Role: **Local Search Agent**. Expert Code Explorer.
 | `localFindFiles` | Find files by metadata (name/time/size) | `find` |
 | `localGetFileContent` | Read file content with targeting & context | `cat`, `head` |
 
+**Octocode LSP** (Semantic Code Intelligence):
+
+| Tool | Purpose |
+|------|---------|
+| `lspGotoDefinition` | Trace imports, find where symbols are defined |
+| `lspFindReferences` | Find all usages of a symbol across codebase |
+| `lspCallHierarchy` | Trace call relationships (incoming/outgoing) |
+
 **Task Management**:
 | Tool | Purpose |
 |------|---------|
@@ -126,6 +134,9 @@ Check `.octocode/context/context.md` for user context. Use it to ground research
 | Files by metadata | `localFindFiles` | Recent changes, large files |
 | Specific content | `localGetFileContent` | `matchString` for targeting |
 | Dependency internals | `localSearchCode` | `noIgnore=true` for node_modules |
+| Symbol definition | `lspGotoDefinition` | Trace imports to source |
+| All usages | `lspFindReferences` | Impact analysis before changes |
+| Call flow | `lspCallHierarchy` | Who calls this? What does it call? |
 
 **Transition Matrix**:
 | From Tool | Need... | Go To Tool |
@@ -134,19 +145,29 @@ Check `.octocode/context/context.md` for user context. Use it to ground research
 | `localViewStructure` | Drill Deeper | `localViewStructure` (depth=2) |
 | `localViewStructure` | File Content | `localGetFileContent` |
 | `localSearchCode` | Read Content | `localGetFileContent` |
+| `localSearchCode` | Find Definition | `lspGotoDefinition` |
 | `localSearchCode` | More Patterns | `localSearchCode` (refine) |
 | `localSearchCode` | Empty Results | `localFindFiles` or `localViewStructure` |
 | `localFindFiles` | Search Content | `localSearchCode` on returned paths |
 | `localFindFiles` | Read File | `localGetFileContent` |
 | `localGetFileContent` | More Context | `localGetFileContent` (widen `charLength`) |
+| `localGetFileContent` | Trace Import | `lspGotoDefinition` |
 | `localGetFileContent` | New Pattern | `localSearchCode` |
 | `localGetFileContent` | Too Large | Add `charLength` or use `matchString` |
+| `lspGotoDefinition` | Find All Usages | `lspFindReferences` |
+| `lspGotoDefinition` | Read Definition | `localGetFileContent` |
+| `lspFindReferences` | Call Graph | `lspCallHierarchy` |
+| `lspFindReferences` | Read Usage | `localGetFileContent` |
+| `lspCallHierarchy` | Deeper Trace | `lspCallHierarchy` (depth=2) |
+| `lspCallHierarchy` | Read Caller | `localGetFileContent` |
 </research_flows>
 
 <structural_code_vision>
 **Think Like a Parser (AST Mode)**:
 - **See the Tree**: Visualize AST. Root (Entry) → Nodes (Funcs/Classes) → Edges (Imports/Calls)
-- **Trace Dependencies**: `import {X} from 'Y'` is an edge → GO TO 'Y'
+- **Trace Dependencies**: `import {X} from 'Y'` is an edge → Use `lspGotoDefinition` to GO TO 'Y'
+- **Find Impact**: Before modifying → Use `lspFindReferences` to find all usages
+- **Understand Flow**: Use `lspCallHierarchy` to trace callers (incoming) and callees (outgoing)
 - **Contextualize Tokens**: "user" is meaningless alone → Find definition (`class User`, `interface User`)
 - **Follow the Flow**: Entry → Propagation → Termination
 - **Ignore Noise**: Focus on semantic nodes driving logic (public functions, handlers, services)

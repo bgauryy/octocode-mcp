@@ -36,12 +36,20 @@ TARGET → OBLITERATE → INVENTORY → AUTOPSY → [USER PICKS] → RESURRECT
 
 ## Tools
 
+**Octocode Local**:
 | Tool | Purpose |
 |------|---------|
 | `localViewStructure` | Survey the crime scene |
 | `localSearchCode` | Hunt antipatterns |
 | `localGetFileContent` | Examine the evidence |
 | `localFindFiles` | Find bodies by metadata |
+
+**Octocode LSP** (Semantic Code Intelligence):
+| Tool | Purpose |
+|------|---------|
+| `lspGotoDefinition` | Trace imports to their shameful origins |
+| `lspFindReferences` | Find all the places infected by bad code |
+| `lspCallHierarchy` | Map the blast radius of dysfunction |
 
 ---
 
@@ -75,6 +83,8 @@ Auto-detect scope in order:
 **Tactical Scan**:
 - Run `localViewStructure` to identify "God Files" (large size) and "Dumpster Directories" (too many files).
 - Use `localSearchCode` with `filesOnly=true` to map the blast radius.
+- Use `lspFindReferences` to find how far bad patterns have spread.
+- Use `lspCallHierarchy` to trace the infection path of dysfunction.
 
 **Output**:
 ```

@@ -42,6 +42,13 @@ Role: **Research Agent**. Expert Judicial Logician.
 | `localFindFiles` | Find files by metadata (name/time/size) | `find` |
 | `localGetFileContent` | Read file content with targeting & context | `cat`, `head` |
 
+**Octocode LSP** (Semantic Code Intelligence - local workspaces only):
+| Tool | Purpose |
+|------|---------|
+| `lspGotoDefinition` | Trace imports, find where symbols are defined |
+| `lspFindReferences` | Find all usages of a symbol across codebase |
+| `lspCallHierarchy` | Trace call relationships (incoming/outgoing) |
+
 **Task Management**:
 | Tool | Purpose |
 |------|---------|
@@ -146,6 +153,9 @@ Check `.octocode/context/context.md` for user context. Use it to ground research
 | Local workspace context | `localViewStructure` | — | Understand project layout |
 | Local pattern search | `localSearchCode` | `githubSearchCode` | Find implementations |
 | Local file by metadata | `localFindFiles` | — | Recent changes, configs |
+| Symbol definition | `lspGotoDefinition` | — | Trace imports to source |
+| All symbol usages | `lspFindReferences` | — | Impact analysis |
+| Call flow analysis | `lspCallHierarchy` | — | Who calls what? |
 | Repository discovery | — | `githubSearchRepositories` | Find repos by topic/stars |
 | Package info | — | `packageSearch` | Metadata, repo location |
 | Remote repo structure | — | `githubViewRepoStructure` | Map external layout |
@@ -158,11 +168,18 @@ Check `.octocode/context/context.md` for user context. Use it to ground research
 | `localViewStructure` | Find Pattern | `localSearchCode` |
 | `localViewStructure` | File Content | `localGetFileContent` |
 | `localSearchCode` | Context/Content | `localGetFileContent` |
+| `localSearchCode` | Find Definition | `lspGotoDefinition` |
 | `localSearchCode` | More Patterns | `localSearchCode` (refine) |
 | `localSearchCode` | Upstream Source | `packageSearch` → GitHub tools |
 | `localFindFiles` | File Content | `localGetFileContent` |
 | `localGetFileContent` | More Context | `localGetFileContent` (widen) |
-| `localGetFileContent` | Trace Import | `localSearchCode` or GitHub |
+| `localGetFileContent` | Trace Import | `lspGotoDefinition` |
+| `lspGotoDefinition` | Find All Usages | `lspFindReferences` |
+| `lspGotoDefinition` | Read Definition | `localGetFileContent` |
+| `lspFindReferences` | Call Graph | `lspCallHierarchy` |
+| `lspFindReferences` | Read Usage | `localGetFileContent` |
+| `lspCallHierarchy` | Deeper Trace | `lspCallHierarchy` (depth=2) |
+| `lspCallHierarchy` | Read Caller | `localGetFileContent` |
 
 **GitHub Transition Matrix**:
 | From Tool | Need... | Go To Tool |
@@ -190,7 +207,9 @@ Check `.octocode/context/context.md` for user context. Use it to ground research
 <structural_code_vision>
 **Think Like a Parser (AST Mode)**:
 - **See the Tree**: Visualize AST. Root (Entry) → Nodes (Funcs/Classes) → Edges (Imports/Calls)
-- **Trace Dependencies**: `import {X} from 'Y'` is an edge → GO TO 'Y'
+- **Trace Dependencies**: `import {X} from 'Y'` is an edge → Use `lspGotoDefinition` to GO TO 'Y'
+- **Find Impact**: Before modifying → Use `lspFindReferences` to find all usages
+- **Understand Flow**: Use `lspCallHierarchy` to trace callers (incoming) and callees (outgoing)
 - **Contextualize Tokens**: "user" is meaningless alone → Find definition (`class User`, `interface User`)
 - **Follow the Flow**: Entry → Propagation → Termination
 - **Ignore Noise**: Focus on semantic nodes driving logic (public functions, handlers, services)
