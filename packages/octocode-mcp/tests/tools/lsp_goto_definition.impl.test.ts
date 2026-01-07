@@ -86,7 +86,7 @@ export interface Config {
       registerTool: vi.fn((_name, _config, handler) => handler),
     };
     registerLSPGotoDefinitionTool(mockServer as any);
-    return mockServer.registerTool.mock.results[0].value;
+    return mockServer.registerTool.mock.results[0]!.value;
   };
 
   describe('Tool Registration', () => {
@@ -124,6 +124,43 @@ export interface Config {
 
       expect(result).toBeDefined();
       expect(result.content?.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Symbol resolution errors', () => {
+    it('should return empty result when symbol cannot be resolved', async () => {
+      vi.mocked(fs.readFile).mockResolvedValue('const somethingElse = 1;');
+
+      const symbolError = new (lspModule as any).SymbolResolutionError(
+        'Symbol not found',
+        2
+      );
+      vi.mocked(lspModule.SymbolResolver).mockImplementation(
+        () =>
+          ({
+            resolvePositionFromContent: vi.fn(() => {
+              throw symbolError;
+            }),
+            extractContext: vi.fn(),
+          }) as any
+      );
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: '/workspace/test.ts',
+            symbolName: 'missingSymbol',
+            lineHint: 10,
+            researchGoal: 'Find definition',
+            reasoning: 'Testing symbol resolution error',
+          },
+        ],
+      });
+
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain('status: empty');
+      expect(text).toContain('errorType: symbol_not_found');
     });
   });
 
@@ -312,6 +349,89 @@ export interface Config {
 
       expect(result).toBeDefined();
       expect(result.content?.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('LSP enhanced location formatting', () => {
+    it('should enhance locations with numbered context when LSP returns definitions', async () => {
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+        gotoDefinition: vi.fn().mockResolvedValue([
+          {
+            uri: '/workspace/defs.ts',
+            range: {
+              start: { line: 1, character: 0 },
+              end: { line: 1, character: 3 },
+            },
+            content: 'ORIGINAL_CONTENT',
+          },
+        ]),
+      } as any);
+
+      vi.mocked(fs.readFile).mockImplementation(async (p) => {
+        const filePath = typeof p === 'string' ? p : String(p);
+        if (filePath === '/workspace/test.ts')
+          return 'function test() { return 1; }';
+        if (filePath === '/workspace/defs.ts') return 'alpha\nbeta\ngamma';
+        throw new Error(`Unexpected path: ${filePath}`);
+      });
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: '/workspace/test.ts',
+            symbolName: 'test',
+            lineHint: 1,
+            contextLines: 1,
+            researchGoal: 'Find def',
+            reasoning: 'Testing LSP enhanced snippet',
+          },
+        ],
+      });
+
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain('status: hasResults');
+      expect(text).toContain('Found 1 definition(s) via Language Server');
+      expect(text).toContain('>   2| beta');
+    });
+
+    it('should fall back to raw location when reading definition file fails', async () => {
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+        gotoDefinition: vi.fn().mockResolvedValue([
+          {
+            uri: '/workspace/missing.ts',
+            range: {
+              start: { line: 0, character: 0 },
+              end: { line: 0, character: 3 },
+            },
+            content: 'RAW_LOC_CONTENT',
+          },
+        ]),
+      } as any);
+
+      vi.mocked(fs.readFile).mockImplementation(async (p) => {
+        const filePath = typeof p === 'string' ? p : String(p);
+        if (filePath === '/workspace/test.ts')
+          return 'function test() { return 1; }';
+        throw new Error('ENOENT');
+      });
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: '/workspace/test.ts',
+            symbolName: 'test',
+            lineHint: 1,
+            researchGoal: 'Find def',
+            reasoning: 'Testing LSP location fallback',
+          },
+        ],
+      });
+
+      expect(result.content?.[0]?.text ?? '').toContain('RAW_LOC_CONTENT');
     });
   });
 

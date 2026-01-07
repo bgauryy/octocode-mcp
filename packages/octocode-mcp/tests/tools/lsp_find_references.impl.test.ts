@@ -56,6 +56,7 @@ vi.mock('../../src/lsp/index.js', () => {
 
 // Import mocked modules to access them
 import * as fs from 'fs/promises';
+import * as childProcess from 'child_process';
 import * as lspModule from '../../src/lsp/index.js';
 
 // Import the module under test after mocks are set up
@@ -101,7 +102,7 @@ export function anotherFunction() {
       registerTool: vi.fn((_name, _config, handler) => handler),
     };
     registerLSPFindReferencesTool(mockServer as any);
-    return mockServer.registerTool.mock.results[0].value;
+    return mockServer.registerTool.mock.results[0]!.value;
   };
 
   describe('Tool Registration', () => {
@@ -370,6 +371,183 @@ export function anotherFunction() {
       });
 
       expect(result).toBeDefined();
+    });
+
+    it('should paginate and enhance locations when LSP returns references', async () => {
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+        findReferences: vi.fn().mockResolvedValue([
+          {
+            uri: '/workspace/test.ts',
+            range: {
+              start: { line: 3, character: 16 },
+              end: { line: 3, character: 28 },
+            },
+            content: 'export function testFunction() {}',
+          },
+          {
+            uri: '/workspace/src/other.ts',
+            range: {
+              start: { line: 10, character: 5 },
+              end: { line: 10, character: 17 },
+            },
+            content: 'const x = testFunction();',
+          },
+        ]),
+      } as any);
+
+      vi.mocked(fs.readFile).mockImplementation(async p => {
+        const filePath = typeof p === 'string' ? p : String(p);
+        if (filePath === '/workspace/test.ts') {
+          return [
+            'line1',
+            'line2',
+            'line3',
+            'export function testFunction() {}',
+            'line5',
+          ].join('\n');
+        }
+        if (filePath === '/workspace/src/other.ts') {
+          return [
+            'line9',
+            'line10',
+            'const x = testFunction();',
+            'line12',
+          ].join('\n');
+        }
+        return sampleTypeScriptContent;
+      });
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: '/workspace/test.ts',
+            symbolName: 'testFunction',
+            lineHint: 4,
+            contextLines: 1,
+            referencesPerPage: 1,
+            page: 1,
+            researchGoal: 'Find refs',
+            reasoning: 'Testing LSP pagination + enhancement',
+          },
+        ],
+      });
+
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain('status: hasResults');
+      expect(text).toContain('Found 2 reference(s) via Language Server');
+      expect(text).toContain('Showing page 1 of 2');
+    });
+  });
+
+  describe('Fallback search (ripgrep/grep)', () => {
+    it('should parse ripgrep JSON output and return references', async () => {
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
+
+      vi.mocked(childProcess.exec).mockResolvedValue({
+        stdout: [
+          JSON.stringify({
+            type: 'match',
+            data: {
+              path: { text: '/workspace/test.ts' },
+              line_number: 4,
+              lines: { text: 'export function testFunction() {}\n' },
+            },
+          }),
+          JSON.stringify({
+            type: 'match',
+            data: {
+              path: { text: '/workspace/src/other.ts' },
+              line_number: 3,
+              lines: { text: 'const x = testFunction();\n' },
+            },
+          }),
+        ].join('\n'),
+      } as any);
+
+      vi.mocked(fs.readFile).mockImplementation(async p => {
+        const filePath = typeof p === 'string' ? p : String(p);
+        if (filePath === '/workspace/test.ts') {
+          return [
+            'line1',
+            'line2',
+            'line3',
+            'export function testFunction() {}',
+            'line5',
+          ].join('\n');
+        }
+        if (filePath === '/workspace/src/other.ts') {
+          return ['a', 'b', 'const x = testFunction();', 'd'].join('\n');
+        }
+        return sampleTypeScriptContent;
+      });
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: '/workspace/test.ts',
+            symbolName: 'testFunction',
+            lineHint: 4,
+            contextLines: 1,
+            researchGoal: 'Find refs',
+            reasoning: 'Testing ripgrep JSON parsing fallback',
+          },
+        ],
+      });
+
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain('status: hasResults');
+      expect(text).toContain('Found 2 reference(s) using text search');
+      expect(text).toContain('test.ts');
+      expect(text).toContain('src/other.ts');
+    });
+
+    it('should fall back to grep when rg fails with non-1 exit code', async () => {
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
+
+      vi.mocked(childProcess.exec).mockImplementation(async (cmd: string) => {
+        if (cmd.startsWith('rg ')) {
+          const err: any = new Error('rg failed');
+          err.code = 2;
+          throw err;
+        }
+        if (cmd.startsWith('grep -rn')) {
+          return {
+            stdout: '/workspace/src/other.ts:3:const x = testFunction();\n',
+          } as any;
+        }
+        return { stdout: '' } as any;
+      });
+
+      vi.mocked(fs.readFile).mockImplementation(async p => {
+        const filePath = typeof p === 'string' ? p : String(p);
+        if (filePath === '/workspace/test.ts') return sampleTypeScriptContent;
+        if (filePath === '/workspace/src/other.ts') {
+          return ['a', 'b', 'const x = testFunction();', 'd'].join('\n');
+        }
+        return sampleTypeScriptContent;
+      });
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: '/workspace/test.ts',
+            symbolName: 'testFunction',
+            lineHint: 4,
+            contextLines: 1,
+            researchGoal: 'Find refs',
+            reasoning: 'Testing grep fallback after rg failure',
+          },
+        ],
+      });
+
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain('status: hasResults');
+      expect(text).toContain('Found 1 reference(s) using text search');
+      expect(text).toContain('src/other.ts');
     });
   });
 
