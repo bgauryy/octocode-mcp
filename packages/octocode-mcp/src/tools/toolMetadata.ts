@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fetchWithRetries } from '../utils/fetchWithRetries.js';
+import { fetchWithRetries } from '../utils/http/fetch.js';
 import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 

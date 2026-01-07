@@ -1,5 +1,5 @@
 import type { GitHubAPIError } from './github/githubAPI.js';
-import type { PaginationInfo } from './utils/types.js';
+import type { PaginationInfo } from './utils/core/types.js';
 
 export type { PaginationInfo };
 

@@ -14,7 +14,7 @@ import type { PullRequestSearchResult } from '../types';
 import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
-import { filterPatch } from '../utils/diffParser.js';
+import { filterPatch } from '../utils/parsers/diff.js';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
@@ -22,7 +22,7 @@ import {
   buildPullRequestSearchQuery,
   shouldUseSearchForPRs,
 } from './queryBuilders';
-import { generateCacheKey, withDataCache } from '../utils/cache';
+import { generateCacheKey, withDataCache } from '../utils/http/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 export async function searchGitHubPullRequestsAPI(

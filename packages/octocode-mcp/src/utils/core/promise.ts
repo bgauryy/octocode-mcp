@@ -1,6 +1,6 @@
-import type { PromiseResult, PromiseExecutionOptions } from '../types.js';
-import { VALIDATION_ERRORS, PROMISE_ERRORS } from '../errorCodes.js';
-import { logSessionError } from '../session.js';
+import type { PromiseResult, PromiseExecutionOptions } from '../../types.js';
+import { VALIDATION_ERRORS, PROMISE_ERRORS } from '../../errorCodes.js';
+import { logSessionError } from '../../session.js';
 
 export async function executeWithErrorIsolation<T>(
   promises: Array<() => Promise<T>>,

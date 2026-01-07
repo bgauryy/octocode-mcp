@@ -4,7 +4,7 @@
 
 import path from 'path';
 import fs from 'fs';
-import type { PathValidationResult } from '../utils/types.js';
+import type { PathValidationResult } from '../utils/core/types.js';
 
 /**
  * Gets the workspace root directory

@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { LoggingLevel } from '@modelcontextprotocol/sdk/types.js';
-import { version } from '../../package.json';
+import { version } from '../../../package.json';
 
 /**
  * Simple, reliable logger for Octocode MCP

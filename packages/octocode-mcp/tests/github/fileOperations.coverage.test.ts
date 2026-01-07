@@ -5,7 +5,7 @@ import {
   clearDefaultBranchCache,
 } from '../../src/github/fileOperations.js';
 import { getOctokit } from '../../src/github/client.js';
-import { clearAllCache } from '../../src/utils/cache.js';
+import { clearAllCache } from '../../src/utils/http/cache.js';
 import { RequestError } from 'octokit';
 import * as minifierModule from '../../src/utils/minifier/index.js';
 

@@ -16,7 +16,7 @@ describe('toolConfig branch coverage - getDescription fallback (line 26)', () =>
   describe('when DESCRIPTIONS returns a value (truthy branch)', () => {
     it('should use description from DESCRIPTIONS when available', async () => {
       // Mock the metadata to return actual descriptions
-      vi.doMock('../../src/utils/fetchWithRetries.js', () => ({
+      vi.doMock('../../src/utils/http/fetch.js', () => ({
         fetchWithRetries: vi.fn().mockResolvedValue({
           instructions: 'Test',
           prompts: {},

@@ -4,7 +4,7 @@ import {
   withDataCache,
   clearAllCache,
   getCacheStats,
-} from '../../src/utils/cache';
+} from '../../src/utils/http/cache.js';
 
 describe('withDataCache typed data cache', () => {
   beforeEach(() => {

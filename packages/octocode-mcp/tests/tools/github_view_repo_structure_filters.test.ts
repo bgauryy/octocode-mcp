@@ -5,7 +5,7 @@ import {
   IGNORED_FILE_EXTENSIONS,
   shouldIgnoreDir,
   shouldIgnoreFile,
-} from '../../src/utils/fileFilters';
+} from '../../src/utils/file/filters.js';
 
 describe('GitHub View Repo Structure Filters', () => {
   describe('IGNORED_FOLDER_NAMES', () => {

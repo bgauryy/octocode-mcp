@@ -31,7 +31,7 @@ vi.mock('../../src/github/queryBuilders.js', () => ({
   shouldUseSearchForPRs: mockShouldUseSearchForPRs,
 }));
 
-vi.mock('../../src/utils/cache.js', () => ({
+vi.mock('../../src/utils/http/cache.js', () => ({
   generateCacheKey: mockGenerateCacheKey,
   withDataCache: mockWithDataCache,
 }));

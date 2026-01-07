@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 // Note: We use dynamic imports in tests to allow module resetting
-import { fetchWithRetries } from '../../src/utils/fetchWithRetries.js';
+import { fetchWithRetries } from '../../src/utils/http/fetch.js';
 
-vi.mock('../../src/utils/fetchWithRetries.js');
+vi.mock('../../src/utils/http/fetch.js');
 vi.mock('../../src/session.js', () => ({
   logSessionError: vi.fn(() => Promise.resolve()),
 }));

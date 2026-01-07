@@ -10,9 +10,9 @@ import type {
 import { viewGitHubRepositoryStructureAPI } from '../github/fileOperations.js';
 import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
 import { GitHubViewRepoStructureBulkQuerySchema } from '../scheme/github_view_repo_structure.js';
-import { executeBulkOperation } from '../utils/bulkOperations.js';
+import { executeBulkOperation } from '../utils/response/bulk.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import { shouldIgnoreFile, shouldIgnoreDir } from '../utils/fileFilters.js';
+import { shouldIgnoreFile, shouldIgnoreDir } from '../utils/file/filters.js';
 import {
   handleApiError,
   handleCatchError,

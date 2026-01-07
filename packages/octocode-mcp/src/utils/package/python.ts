@@ -1,11 +1,11 @@
 import axios from 'axios';
-import { generateCacheKey, withDataCache } from './cache.js';
+import { generateCacheKey, withDataCache } from '../http/cache.js';
 import {
   PackageSearchAPIResult,
   PackageSearchError,
   MinimalPackageResult,
   PythonPackageResult,
-} from './package.js';
+} from './common.js';
 
 const MAX_DESCRIPTION_LENGTH = 200;
 const MAX_KEYWORDS = 10;

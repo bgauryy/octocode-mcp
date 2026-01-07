@@ -5,7 +5,7 @@ import type { ToolInvocationCallback, FileContentQuery } from '../types.js';
 import { fetchGitHubFileContentAPI } from '../github/fileOperations.js';
 import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
 import { FileContentBulkQuerySchema } from '../scheme/github_fetch_content.js';
-import { executeBulkOperation } from '../utils/bulkOperations.js';
+import { executeBulkOperation } from '../utils/response/bulk.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import {
   handleCatchError,

@@ -3,7 +3,7 @@ import {
   OctocodeLogger,
   createLogger,
   LoggerFactory,
-} from '../../src/utils/logger.js';
+} from '../../src/utils/core/logger.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 describe('Logger', () => {

@@ -2,9 +2,9 @@
  * Fetch with retry mechanism and exponential backoff
  */
 
-import { version } from '../../package.json';
-import { FETCH_ERRORS } from '../errorCodes.js';
-import { logSessionError } from '../session.js';
+import { version } from '../../../package.json';
+import { FETCH_ERRORS } from '../../errorCodes.js';
+import { logSessionError } from '../../session.js';
 
 interface ExtendedError extends Error {
   status?: number;

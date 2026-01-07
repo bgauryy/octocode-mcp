@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  formatFileSize,
-  parseFileSize,
-} from '../../src/utils/local/utils/fileSize.js';
+import { formatFileSize, parseFileSize } from '../../src/utils/file/size.js';
 
 describe('fileSize utils', () => {
   describe('formatFileSize', () => {

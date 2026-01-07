@@ -6,30 +6,27 @@ import {
   checkCommandAvailability,
   getMissingCommandError,
 } from '../utils/exec/index.js';
-import { getExtension } from '../utils/fileFilters.js';
+import { getExtension } from '../utils/file/filters.js';
 import { getHints } from './hints/index.js';
 import { STATIC_TOOL_NAMES, TOOL_NAMES } from './toolMetadata.js';
 import {
   validateToolPath,
   createErrorResult,
-} from '../utils/local/utils/toolHelpers.js';
+} from '../utils/file/toolHelpers.js';
 import {
   applyPagination,
   generatePaginationHints,
 } from '../utils/pagination/index.js';
-import {
-  formatFileSize,
-  parseFileSize,
-} from '../utils/local/utils/fileSize.js';
-import { RESOURCE_LIMITS } from '../utils/constants.js';
+import { formatFileSize, parseFileSize } from '../utils/file/size.js';
+import { RESOURCE_LIMITS } from '../utils/core/constants.js';
 import type {
   ViewStructureQuery,
   ViewStructureResult,
-} from '../utils/types.js';
+} from '../utils/core/types.js';
 import fs from 'fs';
 import path from 'path';
 import { ToolErrors } from '../errorCodes.js';
-import { executeBulkOperation } from '../utils/bulkOperations.js';
+import { executeBulkOperation } from '../utils/response/bulk.js';
 import {
   BulkViewStructureSchema,
   LOCAL_VIEW_STRUCTURE_DESCRIPTION,

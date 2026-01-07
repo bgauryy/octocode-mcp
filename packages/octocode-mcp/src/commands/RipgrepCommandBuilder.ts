@@ -1,5 +1,5 @@
 import { BaseCommandBuilder } from './BaseCommandBuilder.js';
-import { RESOURCE_LIMITS } from '../utils/constants.js';
+import { RESOURCE_LIMITS } from '../utils/core/constants.js';
 import type { RipgrepQuery } from '../scheme/local_ripgrep.js';
 
 export class RipgrepCommandBuilder extends BaseCommandBuilder {

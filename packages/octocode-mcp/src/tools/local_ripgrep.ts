@@ -21,23 +21,20 @@ import {
 import {
   validateToolPath,
   createErrorResult,
-} from '../utils/local/utils/toolHelpers.js';
-import { byteToCharIndex, byteSlice } from '../utils/local/utils/byteOffset.js';
-import { RESOURCE_LIMITS } from '../utils/constants.js';
+} from '../utils/file/toolHelpers.js';
+import { byteToCharIndex, byteSlice } from '../utils/file/byteOffset.js';
+import { RESOURCE_LIMITS } from '../utils/core/constants.js';
 import { TOOL_NAMES } from './toolMetadata.js';
 import type {
   SearchContentResult,
   SearchStats,
   RipgrepFileMatches,
-} from '../utils/types.js';
+} from '../utils/core/types.js';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import { ERROR_CODES, ToolErrors } from '../errorCodes.js';
-import { executeBulkOperation } from '../utils/bulkOperations.js';
-import {
-  parseRipgrepJson,
-  parseGrepOutput,
-} from '../utils/parsers/ripgrepParser.js';
+import { executeBulkOperation } from '../utils/response/bulk.js';
+import { parseRipgrepJson, parseGrepOutput } from '../utils/parsers/ripgrep.js';
 
 /**
  * Register the local ripgrep search tool with the MCP server.

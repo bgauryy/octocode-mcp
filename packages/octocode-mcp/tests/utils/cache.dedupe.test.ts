@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { withDataCache, clearAllCache } from '../../src/utils/cache.js';
+import { withDataCache, clearAllCache } from '../../src/utils/http/cache.js';
 
 describe('Cache Deduplication', () => {
   beforeEach(() => {

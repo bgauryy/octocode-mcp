@@ -1,5 +1,5 @@
-import { searchNpmPackage, checkNpmDeprecation } from './npmPackage.js';
-import { searchPythonPackage } from './pythonPackage.js';
+import { searchNpmPackage, checkNpmDeprecation } from './npm.js';
+import { searchPythonPackage } from './python.js';
 
 export interface PackageSearchInput {
   ecosystem: 'npm' | 'python';

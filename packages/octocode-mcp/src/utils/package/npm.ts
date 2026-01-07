@@ -1,11 +1,11 @@
-import { executeNpmCommand } from './exec/index.js';
-import { generateCacheKey, withDataCache } from './cache.js';
+import { executeNpmCommand } from '../exec/index.js';
+import { generateCacheKey, withDataCache } from '../http/cache.js';
 import {
   PackageSearchAPIResult,
   PackageSearchError,
   NpmPackageResult,
   DeprecationInfo,
-} from './package.js';
+} from './common.js';
 
 interface NpmViewResult {
   name: string;

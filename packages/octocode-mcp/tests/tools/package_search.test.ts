@@ -5,7 +5,7 @@ import {
   createMockMcpServer,
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
-import { clearAllCache } from '../../src/utils/cache.js';
+import { clearAllCache } from '../../src/utils/http/cache.js';
 
 // Mock axios (for Python/PyPI searches and npm registry)
 const mockAxiosGet = vi.fn();
@@ -205,7 +205,7 @@ vi.mock('../../src/utils/exec/index.js', () => ({
 }));
 
 // Mock the cache to prevent interference
-vi.mock('../../src/utils/cache.js', () => ({
+vi.mock('../../src/utils/http/cache.js', () => ({
   generateCacheKey: vi.fn(() => 'test-cache-key'),
   withDataCache: vi.fn(async (_key: string, fn: () => unknown) => {
     return await fn();
@@ -236,7 +236,7 @@ import {
   type NpmPackageResult,
   type MinimalPackageResult,
   type PythonPackageResult,
-} from '../../src/utils/package.js';
+} from '../../src/utils/package/common.js';
 import { registerPackageSearchTool } from '../../src/tools/package_search.js';
 
 describe('PackageSearchQuerySchema', () => {

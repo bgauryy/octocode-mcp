@@ -1,6 +1,6 @@
 import NodeCache from 'node-cache';
 import crypto from 'crypto';
-import type { CacheStats } from '../types.js';
+import type { CacheStats } from '../core/types.js';
 
 const VERSION = 'v1';
 

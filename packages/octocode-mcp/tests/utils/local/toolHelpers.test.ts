@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import {
   checkLargeOutputSafety,
   validateToolPath,
-} from '../../../src/utils/local/utils/toolHelpers.js';
+} from '../../../src/utils/file/toolHelpers.js';
 
 describe('toolHelpers', () => {
   describe('validateToolPath', () => {

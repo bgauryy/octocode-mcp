@@ -6,34 +6,38 @@
 
 **Follow this workflow for ALL code changes:**
 
-1.  **Task Management**:
+1.  **Task Management 📋**:
     - **Review**: Analyze requirements and existing code first.
     - **Plan**: Create a plan using the `todo` tool for any non-trivial task.
     - **Track**: Mark tasks as in-progress/completed as you work.
 
-2.  **Research & Discovery**:
+2.  **Research & Discovery 🔍**:
     - **Tools**: **Prefer `octocode-local`** and research tools for codebase exploration.
     - **Search**: Use semantic search and `grep` before reading files.
 
-3.  **TDD (Test Driven Development)**:
+3.  **TDD (Test Driven Development) 🧪**:
     - **Test**: Write a failing test case for the new feature or bug fix.
     - **Fail**: Run the test (`yarn test`) and confirm it fails (red).
     - **Fix**: Write the minimal code necessary to pass the test (green).
     - **Pass**: Verify the test passes and coverage is maintained.
     - **Refactor**: Clean up the code if needed while keeping tests passing.
 
-4.  **ReAct Loop**:
+4.  **ReAct Loop 🔄**:
     - **Reason**: Analyze the current state and decide the next step.
     - **Act**: Execute a tool call (edit file, run terminal command).
     - **Observe**: Check the tool output (linter errors, test results, file content).
     - **Loop**: Repeat until the objective is met.
 
-5.  **Quality Control**:
+5.  **Quality Control ✅**:
     - Adhere to "Clean Code" principles.
     - Add only critical comments.
     - Run linter (`yarn lint`) and tests (`yarn test`) after substantive changes.
     - Run dead code detection (`npx knip`) to identify unused exports or files.
     - **Never** leave the codebase in a broken state.
+
+6.  **Operational Efficiency ⚡**:
+    - **Native Tools**: **Use Linux commands** (`mv`, `cp`, `sed`, `find`, `grep`) for file operations and search.
+    - **Bulk Actions**: Prefer shell commands over manual edits or complex scripts for simple tasks.
 
 ## 📂 Repository Structure
 
@@ -97,17 +101,21 @@ octocode-mcp/
 **Note**: Check `package.json` scripts for each package for specific commands.
 For package-specific commands, `cd packages/<name>` first.
 
-### File Actions
+### 🐧 Linux & File Operations
 
 - **String Replacement**: Use `sed` for changing strings across multiple files.
   - `sed -i '' 's/old/new/g' src/**/*.ts` — replace in all TS files
-- **Move/Copy Files**: Use `mv`, `cp`, `rsync` for file operations.
+- **Move/Copy Files**: Use `mv`, `cp`, `rsync` for file operations. NEVER use manual copy-paste for files.
   - `mv src/old.ts src/new.ts` — rename file
   - `cp -r src/utils/ src/helpers/` — duplicate directory
+  - `find src -name "*.test.ts" -exec mv {} tests/ \;` — bulk move
+- **Content Extraction**: Use `head`, `tail`, `cat`, `grep`.
+  - `grep -r "TODO" src/` — find TODOs
   - `head -n 50 src/file.ts > src/extract.ts` — extract first 50 lines
   - `tail -n +10 src/file.ts | head -n 20 >> dest.ts` — extract lines 10-30
-- **Simplify Flows**: Write scripts (Node.js, Shell) for complex sequences
-- **Repetitive Tasks**: Use scripts and Linux commands over manual edits for bulk operations.
+- **Simplify Flows**: Write scripts (Node.js, Python, Shell) for complex sequences.
+- **Repetitive Tasks**: Use scripts (prefer Node.js or Python) for repetitive operations!
+- **Bulk Actions**: Prefer Linux one-liners for simple one-off bulk operations.
 
 ## 📏 Development Standards
 

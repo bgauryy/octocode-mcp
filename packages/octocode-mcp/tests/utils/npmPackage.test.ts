@@ -2,7 +2,7 @@
  * Tests for npmPackage.ts - specifically for uncovered branches
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { clearAllCache } from '../../src/utils/cache.js';
+import { clearAllCache } from '../../src/utils/http/cache.js';
 
 // Mock executeNpmCommand
 const mockExecuteNpmCommand = vi.fn();
@@ -14,7 +14,7 @@ vi.mock('../../src/utils/exec/index.js', () => ({
 import {
   searchNpmPackage,
   checkNpmDeprecation,
-} from '../../src/utils/npmPackage.js';
+} from '../../src/utils/package/npm.js';
 
 describe('npmPackage - branch coverage', () => {
   beforeEach(() => {

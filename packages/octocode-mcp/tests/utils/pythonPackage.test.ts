@@ -2,7 +2,7 @@
  * Tests for pythonPackage.ts - specifically for uncovered branches
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { clearAllCache } from '../../src/utils/cache.js';
+import { clearAllCache } from '../../src/utils/http/cache.js';
 
 // Mock axios
 const mockAxiosGet = vi.fn();
@@ -18,7 +18,7 @@ vi.mock('axios', () => ({
 }));
 
 // Import after mocking
-import { searchPythonPackage } from '../../src/utils/pythonPackage.js';
+import { searchPythonPackage } from '../../src/utils/package/python.js';
 
 describe('pythonPackage - branch coverage', () => {
   beforeEach(() => {

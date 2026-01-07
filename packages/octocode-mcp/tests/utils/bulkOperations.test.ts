@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { executeBulkOperation } from '../../src/utils/bulkOperations';
+import { executeBulkOperation } from '../../src/utils/response/bulk.js';
 import type { QueryStatus } from '../../src/types';
 import {
   ToolName,

@@ -7,7 +7,7 @@ vi.mock('../../src/session.js', () => ({
   logSessionError: vi.fn(() => Promise.resolve()),
 }));
 
-vi.mock('../../src/utils/fetchWithRetries.js');
+vi.mock('../../src/utils/http/fetch.js');
 
 describe('toolMetadata - Final Edge Cases', () => {
   beforeEach(() => {
@@ -18,7 +18,7 @@ describe('toolMetadata - Final Edge Cases', () => {
   describe('Concurrent initialization (line 146)', () => {
     it('should handle concurrent initializeToolMetadata calls', async () => {
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
 
       // Mock a slow response to create concurrency scenario
       vi.mocked(fetchWithRetries).mockImplementation(
@@ -68,7 +68,7 @@ describe('toolMetadata - Final Edge Cases', () => {
   describe('loadToolContent auto-initialization (line 206)', () => {
     it('should auto-initialize when metadata is null', async () => {
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
 
       vi.mocked(fetchWithRetries).mockResolvedValue({
         toolNames: {
@@ -103,7 +103,7 @@ describe('toolMetadata - Final Edge Cases', () => {
 
     it('should not reinitialize if metadata already loaded', async () => {
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
 
       vi.mocked(fetchWithRetries).mockResolvedValue({
         toolNames: {

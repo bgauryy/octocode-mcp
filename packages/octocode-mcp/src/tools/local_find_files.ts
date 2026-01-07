@@ -17,16 +17,16 @@ import {
   validateToolPath,
   createErrorResult,
   checkLargeOutputSafety,
-} from '../utils/local/utils/toolHelpers.js';
+} from '../utils/file/toolHelpers.js';
 import type {
   FindFilesQuery,
   FindFilesResult,
   FoundFile,
-} from '../utils/types.js';
+} from '../utils/core/types.js';
 import fs from 'fs';
 import { ToolErrors, type LocalToolErrorCode } from '../errorCodes.js';
 import { TOOL_NAMES } from './toolMetadata.js';
-import { executeBulkOperation } from '../utils/bulkOperations.js';
+import { executeBulkOperation } from '../utils/response/bulk.js';
 import {
   BulkFindFilesSchema,
   LOCAL_FIND_FILES_DESCRIPTION,

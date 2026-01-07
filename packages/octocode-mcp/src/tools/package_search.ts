@@ -8,14 +8,14 @@ import type { ToolInvocationCallback } from '../types.js';
 import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata.js';
 import { PackageSearchBulkQuerySchema } from '../scheme/package_search.js';
 import type { PackageSearchQuery } from '../scheme/package_search.js';
-import { searchPackage, checkNpmDeprecation } from '../utils/package.js';
+import { searchPackage, checkNpmDeprecation } from '../utils/package/common.js';
 import type {
   PackageSearchAPIResult,
   PackageSearchError,
   PackageResult,
   DeprecationInfo,
-} from '../utils/package.js';
-import { executeBulkOperation } from '../utils/bulkOperations.js';
+} from '../utils/package/common.js';
+import { executeBulkOperation } from '../utils/response/bulk.js';
 import {
   handleCatchError,
   createSuccessResult,

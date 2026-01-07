@@ -12,10 +12,10 @@ import type {
 import { GITHUB_STRUCTURE_DEFAULTS as STRUCTURE_DEFAULTS } from '../scheme/github_view_repo_structure';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
-import { generateCacheKey, withDataCache } from '../utils/cache';
+import { generateCacheKey, withDataCache } from '../utils/http/cache';
 import { generateStructurePaginationHints } from '../utils/pagination/index.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
+import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/file/filters';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
 import { REPOSITORY_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';

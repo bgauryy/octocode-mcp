@@ -91,11 +91,14 @@ src/
 │   ├── package_search.ts    # Package search implementation
 │   ├── utils.ts             # Tool-specific utilities
 │   └── hints/               # Dynamic hint generation
+│       ├── index.ts         # Hints module exports
 │       ├── dynamic.ts       # Context-aware hints
 │       ├── static.ts        # Predefined hints
+│       ├── localBaseHints.ts # Local tool base hints
 │       └── types.ts         # Hint type definitions
 │
 ├── github/                  # 🐙 GitHub API layer
+│   ├── index.ts             # GitHub module exports
 │   ├── client.ts            # Octokit client with throttling
 │   ├── githubAPI.ts         # Core API types & interfaces
 │   ├── codeSearch.ts        # Code search operations
@@ -113,6 +116,7 @@ src/
 │   ├── contentSanitizer.ts  # Secret detection & redaction
 │   ├── pathValidator.ts     # Path traversal prevention
 │   ├── commandValidator.ts  # Command injection prevention
+│   ├── executionContextValidator.ts # Execution context validation
 │   ├── ignoredPathFilter.ts # Sensitive path filtering
 │   ├── regexes.ts           # Secret detection patterns (100+)
 │   ├── mask.ts              # Data masking utilities
@@ -126,23 +130,60 @@ src/
 │   ├── FindCommandBuilder.ts    # find command builder
 │   └── LsCommandBuilder.ts      # ls command builder
 │
-├── utils/                   # 🛠️ Shared utilities
-│   ├── bulkOperations.ts    # Bulk query execution (1-5 queries)
-│   ├── cache.ts             # Response caching
-│   ├── constants.ts         # Global constants
-│   ├── fetchWithRetries.ts  # HTTP fetch with retry logic
-│   ├── promiseUtils.ts      # Async utilities
-│   ├── logger.ts            # MCP logging integration
-│   ├── errorResult.ts       # Error response formatting
-│   ├── types.ts             # Utility types
+├── utils/                   # 🛠️ Shared utilities (organized by domain)
+│   ├── core/                # Core utilities
+│   │   ├── index.ts         # Module exports
+│   │   ├── constants.ts     # Global constants
+│   │   ├── logger.ts        # MCP logging integration
+│   │   ├── promise.ts       # Async/promise utilities
+│   │   └── types.ts         # Core type definitions
+│   │
 │   ├── exec/                # Command execution
+│   │   ├── index.ts         # Module exports
 │   │   ├── safe.ts          # Safe command execution
-│   │   └── spawn.ts         # Process spawning
-│   ├── local/               # Local filesystem utilities
+│   │   ├── spawn.ts         # Process spawning
+│   │   ├── npm.ts           # NPM command utilities
+│   │   └── commandAvailability.ts # Command detection
+│   │
+│   ├── file/                # File operations
+│   │   ├── index.ts         # Module exports
+│   │   ├── byteOffset.ts    # Byte offset calculations
+│   │   ├── filters.ts       # File filtering utilities
+│   │   ├── size.ts          # File size utilities
+│   │   ├── toolHelpers.ts   # Tool-specific helpers
+│   │   └── types.ts         # File type definitions
+│   │
+│   ├── http/                # HTTP utilities
+│   │   ├── index.ts         # Module exports
+│   │   ├── cache.ts         # Response caching
+│   │   └── fetch.ts         # Fetch with retries
+│   │
 │   ├── minifier/            # Content minification
+│   │   ├── index.ts         # Module exports
 │   │   ├── minifier.ts      # File-type aware minification
 │   │   └── jsonToYamlString.ts # YAML conversion
-│   └── pagination/          # Pagination utilities
+│   │
+│   ├── package/             # Package utilities
+│   │   ├── index.ts         # Module exports
+│   │   ├── common.ts        # Shared package utilities
+│   │   ├── npm.ts           # NPM package search
+│   │   └── python.ts        # PyPI package search
+│   │
+│   ├── pagination/          # Pagination utilities
+│   │   ├── index.ts         # Module exports
+│   │   ├── core.ts          # Core pagination logic
+│   │   ├── hints.ts         # Pagination hints
+│   │   └── types.ts         # Pagination types
+│   │
+│   ├── parsers/             # Output parsers
+│   │   ├── index.ts         # Module exports
+│   │   ├── diff.ts          # Diff parsing
+│   │   └── ripgrep.ts       # Ripgrep output parsing
+│   │
+│   └── response/            # Response utilities
+│       ├── index.ts         # Module exports
+│       ├── bulk.ts          # Bulk operation responses
+│       └── error.ts         # Error response formatting
 │
 ├── prompts/                 # 💬 MCP prompts
 │   └── prompts.ts           # Prompt registration
@@ -321,9 +362,10 @@ yarn test:ui
 | Secret detection | `src/security/contentSanitizer.ts`, `src/security/regexes.ts` |
 | Path validation | `src/security/pathValidator.ts` |
 | GitHub client | `src/github/client.ts` |
-| Bulk operations | `src/utils/bulkOperations.ts` |
+| Bulk operations | `src/utils/response/bulk.ts` |
 | Response formatting | `src/responses.ts` |
 | Error codes | `src/errorCodes.ts` |
+| Package search | `src/utils/package/npm.ts`, `src/utils/package/python.ts` |
 
 ---
 

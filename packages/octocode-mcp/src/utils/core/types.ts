@@ -2,7 +2,7 @@
  * Core type definitions for local-explorer-mcp MCP server
  */
 
-import type { LocalToolErrorCode as ErrorCode } from '../errorCodes.js';
+import type { LocalToolErrorCode as ErrorCode } from '../../errorCodes.js';
 
 /**
  * Command execution result
@@ -365,4 +365,4 @@ export interface BulkResult<T> {
 }
 
 // Re-export ToolResponse from main types
-export type { ToolResponse } from '../types.js';
+export type { ToolResponse } from '../../types.js';

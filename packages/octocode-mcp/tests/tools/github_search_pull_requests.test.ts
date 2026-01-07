@@ -14,7 +14,7 @@ vi.mock('../../src/github/pullRequestSearch.js', () => ({
   searchGitHubPullRequestsAPI: mockSearchGitHubPullRequestsAPI,
 }));
 
-vi.mock('../../src/utils/cache.js', () => ({
+vi.mock('../../src/utils/http/cache.js', () => ({
   generateCacheKey: vi.fn(),
   withCache: vi.fn(),
 }));

@@ -1,10 +1,10 @@
 import type { RipgrepQuery } from '../../scheme/local_ripgrep.js';
-import { RESOURCE_LIMITS } from '../constants.js';
+import { RESOURCE_LIMITS } from '../core/constants.js';
 import type {
   RipgrepFileMatches,
   RipgrepMatch,
   SearchStats,
-} from '../types.js';
+} from '../core/types.js';
 
 interface RipgrepJsonMatch {
   type: 'match';

@@ -16,7 +16,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock dependencies BEFORE importing the module
-vi.mock('../../src/utils/fetchWithRetries.js', () => ({
+vi.mock('../../src/utils/http/fetch.js', () => ({
   fetchWithRetries: vi.fn(),
 }));
 
@@ -30,7 +30,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
     vi.resetModules();
 
     // Re-mock after reset
-    vi.doMock('../../src/utils/fetchWithRetries.js', () => ({
+    vi.doMock('../../src/utils/http/fetch.js', () => ({
       fetchWithRetries: vi.fn(),
     }));
 
@@ -196,7 +196,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
       };
 
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
       vi.mocked(fetchWithRetries).mockResolvedValueOnce(mockMetadata);
 
       const { initializeToolMetadata, TOOL_HINTS } =
@@ -297,7 +297,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
       };
 
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
       vi.mocked(fetchWithRetries).mockResolvedValueOnce(validMetadata);
 
       const { initializeToolMetadata, getToolHintsSync } =
@@ -337,7 +337,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
       };
 
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
       vi.mocked(fetchWithRetries).mockResolvedValueOnce(metadataWithNullTools);
 
       const { initializeToolMetadata, TOOL_HINTS } =
@@ -381,7 +381,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
       };
 
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
       vi.mocked(fetchWithRetries).mockResolvedValueOnce(validMetadata);
 
       const { initializeToolMetadata, TOOL_HINTS } =

@@ -11,7 +11,7 @@ import {
   charToByteIndex,
   getByteLength,
   convertByteMatchToChar,
-} from '../../../src/utils/local/utils/byteOffset.js';
+} from '../../../src/utils/file/byteOffset.js';
 
 describe('byteOffset', () => {
   describe('byteSlice', () => {

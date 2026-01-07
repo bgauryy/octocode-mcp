@@ -1,10 +1,10 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { executeWithErrorIsolation } from './promiseUtils.js';
-import { createResponseFormat } from '../responses.js';
+import { executeWithErrorIsolation } from '../core/promise.js';
+import { createResponseFormat } from '../../responses.js';
 import {
   getGenericErrorHintsSync,
   getToolHintsSync,
-} from '../tools/toolMetadata.js';
+} from '../../tools/toolMetadata.js';
 import type {
   ProcessedBulkResult,
   FlatQueryResult,
@@ -12,7 +12,7 @@ import type {
   BulkResponseConfig,
   ToolResponse,
   PromiseResult,
-} from '../types.js';
+} from '../../types.js';
 
 export async function executeBulkOperation<
   TQuery extends object,

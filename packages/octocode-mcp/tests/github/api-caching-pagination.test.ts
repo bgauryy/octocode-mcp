@@ -8,7 +8,7 @@
  * 4. Context fields don't affect cache keys
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { clearAllCache, getCacheStats } from '../../src/utils/cache';
+import { clearAllCache, getCacheStats } from '../../src/utils/http/cache.js';
 import { getOctokit } from '../../src/github/client';
 import { searchGitHubCodeAPI } from '../../src/github/codeSearch';
 import { searchGitHubReposAPI } from '../../src/github/repoSearch';

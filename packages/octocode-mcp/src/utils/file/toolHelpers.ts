@@ -3,13 +3,13 @@
  */
 
 import path from 'path';
-import { pathValidator } from '../../../security/pathValidator.js';
-import { ToolErrors } from '../../../errorCodes.js';
-import type { BaseQuery } from '../../../utils/types.js';
+import { pathValidator } from '../../security/pathValidator.js';
+import { ToolErrors } from '../../errorCodes.js';
+import type { BaseQuery } from '../core/types.js';
 import {
   createErrorResult,
   type UnifiedErrorResult,
-} from '../../errorResult.js';
+} from '../response/error.js';
 
 /**
  * Local error result type - compatible with UnifiedErrorResult
@@ -17,7 +17,7 @@ import {
 export type LocalErrorResult = UnifiedErrorResult;
 
 // Re-export createErrorResult for backwards compatibility during migration
-// Consumers should migrate to importing directly from '../utils/errorResult.js'
+// Consumers should migrate to importing directly from '../response/error.js'
 export { createErrorResult };
 
 /**

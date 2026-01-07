@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { fetchWithRetries } from '../../src/utils/fetchWithRetries.js';
+import { fetchWithRetries } from '../../src/utils/http/fetch.js';
 
 describe('fetchWithRetries - Additional Coverage', () => {
   beforeEach(() => {

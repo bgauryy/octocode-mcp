@@ -6,7 +6,7 @@ import {
 import { getOctokit } from '../../src/github/client.js';
 import { RequestError } from 'octokit';
 import * as minifierModule from '../../src/utils/minifier/index.js';
-import { clearAllCache } from '../../src/utils/cache.js';
+import { clearAllCache } from '../../src/utils/http/cache.js';
 
 // Helper to create RequestError with proper structure
 function createRequestError(message: string, status: number) {

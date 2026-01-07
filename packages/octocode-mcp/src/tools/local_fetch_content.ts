@@ -8,15 +8,18 @@ import {
   generatePaginationHints,
   createPaginationInfo,
 } from '../utils/pagination/index.js';
-import { RESOURCE_LIMITS, DEFAULTS } from '../utils/constants.js';
+import { RESOURCE_LIMITS, DEFAULTS } from '../utils/core/constants.js';
 import { TOOL_NAMES } from './toolMetadata.js';
 import {
   validateToolPath,
   createErrorResult,
-} from '../utils/local/utils/toolHelpers.js';
-import type { FetchContentQuery, FetchContentResult } from '../utils/types.js';
+} from '../utils/file/toolHelpers.js';
+import type {
+  FetchContentQuery,
+  FetchContentResult,
+} from '../utils/core/types.js';
 import { ToolErrors, ERROR_CODES } from '../errorCodes.js';
-import { executeBulkOperation } from '../utils/bulkOperations.js';
+import { executeBulkOperation } from '../utils/response/bulk.js';
 import {
   BulkFetchContentSchema,
   LOCAL_FETCH_CONTENT_DESCRIPTION,
