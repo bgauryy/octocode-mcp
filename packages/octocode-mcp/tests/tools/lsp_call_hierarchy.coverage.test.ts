@@ -528,11 +528,7 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
 
     it('should slice content before closing brace when brace is not at start', () => {
       // Cover line 1233-1234: lastBraceIndex > 0 case
-      const lines = [
-        'function f() {',
-        '  return 1;',
-        '  /* comment */ }',
-      ];
+      const lines = ['function f() {', '  return 1;', '  /* comment */ }'];
       const result = extractFunctionBody(lines, 0);
       expect(result).not.toBeNull();
       // The last line should be trimmed before the closing brace

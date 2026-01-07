@@ -5230,6 +5230,7 @@ __metadata:
     "@octokit/request": "npm:^10.0.7"
     "@types/node": "npm:^22.15.29"
     "@vitest/coverage-v8": "npm:^4.0.16"
+    eslint: "npm:^9.18.0"
     octocode-shared: "workspace:^"
     open: "npm:^11.0.0"
     tsx: "npm:^4.21.0"
@@ -5249,6 +5250,7 @@ __metadata:
     "@types/vscode": "npm:^1.107.0"
     "@vscode/vsce": "npm:^3.7.1"
     esbuild: "npm:^0.27.2"
+    eslint: "npm:^9.18.0"
     typescript: "npm:^5.9.3"
   languageName: unknown
   linkType: soft
@@ -5270,6 +5272,7 @@ __metadata:
     "@vitest/ui": "npm:^4.0.16"
     axios: "npm:^1.13.2"
     clean-css: "npm:^5.3.3"
+    eslint: "npm:^9.18.0"
     html-minifier-terser: "npm:^7.2.0"
     js-yaml: "npm:^4.1.1"
     node-cache: "npm:^5.1.2"
@@ -5313,6 +5316,7 @@ __metadata:
   dependencies:
     "@types/node": "npm:^22.15.29"
     "@vitest/coverage-v8": "npm:^4.0.16"
+    eslint: "npm:^9.18.0"
     typescript: "npm:^5.9.3"
     vitest: "npm:^4.0.16"
   languageName: unknown

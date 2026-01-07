@@ -21,6 +21,7 @@
   "devDependencies": {
     "@types/node": "^22.15.29",
     "@vitest/coverage-v8": "^4.0.16",
+    "eslint": "^9.18.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.16"
   },

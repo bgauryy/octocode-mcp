@@ -5,8 +5,45 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import * as path from 'path';
 import { addLineNumbers } from '../../src/tools/lsp_goto_definition.js';
+
+// Mock fs/promises
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(),
+}));
+
+// Mock LSP module with controllable behavior
+vi.mock('../../src/lsp/index.js', () => {
+  class MockSymbolResolutionError extends Error {
+    searchRadius: number;
+    constructor(message: string, searchRadius: number) {
+      super(message);
+      this.name = 'SymbolResolutionError';
+      this.searchRadius = searchRadius;
+    }
+  }
+
+  return {
+    SymbolResolver: vi.fn().mockImplementation(() => ({
+      resolvePositionFromContent: vi.fn().mockReturnValue({
+        position: { line: 3, character: 16 },
+        foundAtLine: 4,
+      }),
+      extractContext: vi.fn().mockReturnValue({
+        content: 'test content',
+        startLine: 1,
+        endLine: 10,
+      }),
+    })),
+    SymbolResolutionError: MockSymbolResolutionError,
+    getOrCreateClient: vi.fn().mockResolvedValue(null),
+    isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
+  };
+});
+
+// Import mocked modules
+import * as fs from 'fs/promises';
+import * as lspModule from '../../src/lsp/index.js';
 
 describe('LSP Goto Definition Coverage Tests', () => {
   beforeEach(() => {
@@ -161,7 +198,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
 
       registerLSPGotoDefinitionTool(mockServer as any);
 
-      const config = mockServer.registerTool.mock.calls[0][1];
+      const config = mockServer.registerTool.mock.calls[0]![1];
       expect(config.annotations).toEqual({
         title: 'Go To Definition',
         readOnlyHint: true,
@@ -340,15 +377,17 @@ describe('LSP Goto Definition Coverage Tests', () => {
     });
 
     it('should include line mismatch hint when applicable', () => {
-      const foundAtLine = 12;
-      const hintedLine = 10;
+      const foundAtLine: number = 12;
+      const hintedLine: number = 10;
 
       const hint =
         foundAtLine !== hintedLine
           ? `Symbol found at line ${foundAtLine} (hint was ${hintedLine})`
           : undefined;
 
-      expect(hint).toBe('Symbol found at line 12 (hint was 10)');
+      expect(hint).toBe(
+        `Symbol found at line ${foundAtLine} (hint was ${hintedLine})`
+      );
     });
   });
 
@@ -405,12 +444,12 @@ describe('LSP Goto Definition Coverage Tests', () => {
     it('should format numbered content with markers', () => {
       const lines = ['line 1', 'line 2', 'line 3'];
       const startLine = 10;
-      const targetLine = 11; // 1-indexed
+      const targetLineNum = 11; // 1-indexed
 
       const numberedContent = lines
         .map((line, i) => {
           const lineNum = startLine + i + 1;
-          const isTarget = lineNum > 10 && lineNum <= 11 + 1;
+          const isTarget = lineNum > 10 && lineNum <= targetLineNum + 1;
           const marker = isTarget ? '>' : ' ';
           return `${marker}${String(lineNum).padStart(4, ' ')}| ${line}`;
         })
@@ -473,7 +512,9 @@ describe('LSP Goto Definition Coverage Tests', () => {
       );
 
       expect(result.status).toBe('error');
-      expect(result.hints).toContain('Could not read file: /path/to/missing.ts');
+      expect(result.hints).toContain(
+        'Could not read file: /path/to/missing.ts'
+      );
     });
 
     it('should rethrow non-SymbolResolutionError errors (line 127)', () => {
@@ -578,6 +619,205 @@ describe('LSP Goto Definition Coverage Tests', () => {
 
       expect(result.status).toBe('error');
       expect(result.extra.uri).toBe('/test.ts');
+    });
+  });
+
+  describe('Integration tests for uncovered branches', () => {
+    const createHandler = async () => {
+      vi.resetModules();
+
+      // Re-import after resetting mocks
+      const { registerLSPGotoDefinitionTool } =
+        await import('../../src/tools/lsp_goto_definition.js');
+
+      const mockServer = {
+        registerTool: vi.fn(
+          (_name: string, _config: any, handler: any) => handler
+        ),
+      };
+      registerLSPGotoDefinitionTool(mockServer as any);
+      return mockServer.registerTool.mock.results[0]!.value;
+    };
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      process.env.WORKSPACE_ROOT = process.cwd();
+
+      // Default mocks
+      vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
+      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue(null);
+
+      // Default SymbolResolver mock
+      vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
+        return {
+          resolvePositionFromContent: vi.fn().mockReturnValue({
+            position: { line: 3, character: 16 },
+            foundAtLine: 4,
+          }),
+          extractContext: vi.fn().mockReturnValue({
+            content: 'test content',
+            startLine: 1,
+            endLine: 10,
+          }),
+        };
+      });
+    });
+
+    afterEach(() => {
+      delete process.env.WORKSPACE_ROOT;
+      vi.resetAllMocks();
+    });
+
+    it('should hit line 90: createErrorResult on file read error', async () => {
+      // This tests the catch block at line 89-98
+      const testPath = `${process.cwd()}/src/protected.ts`;
+
+      vi.mocked(fs.readFile).mockRejectedValue(
+        new Error('EACCES: permission denied')
+      );
+
+      const handler = await createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'test',
+            lineHint: 1,
+            researchGoal: 'Find def',
+            reasoning: 'Test file read error',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
+      expect(result.content?.[0]?.text).toContain('error');
+    });
+
+    it('should hit line 127: rethrow non-SymbolResolutionError', async () => {
+      // This tests the throw at line 127 for non-SymbolResolutionError
+      const testPath = `${process.cwd()}/src/test.ts`;
+
+      vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
+
+      // Make SymbolResolver throw a generic error (not SymbolResolutionError)
+      vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
+        return {
+          resolvePositionFromContent: vi.fn(() => {
+            throw new Error('Generic internal error');
+          }),
+          extractContext: vi.fn(),
+        };
+      });
+
+      const handler = await createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'test',
+            lineHint: 1,
+            researchGoal: 'Find def',
+            reasoning: 'Test generic error rethrow',
+          },
+        ],
+      });
+
+      // Should be caught by outer catch and return error result
+      expect(result).toBeDefined();
+      expect(result.content?.[0]?.text).toContain('error');
+    });
+
+    it('should hit line 146: console.debug on LSP failure fallback', async () => {
+      // This tests the catch block at line 143-147
+      const testPath = `${process.cwd()}/src/test.ts`;
+
+      vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+
+      // Make getOrCreateClient return a client that throws on gotoDefinition
+      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+        gotoDefinition: vi.fn().mockRejectedValue(new Error('LSP timeout')),
+      } as any);
+
+      const handler = await createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'test',
+            lineHint: 1,
+            researchGoal: 'Find def',
+            reasoning: 'Test LSP failure fallback',
+          },
+        ],
+      });
+
+      // Should fallback to text-based resolution
+      expect(result).toBeDefined();
+      expect(result.content?.[0]?.text).toContain('hasResults');
+    });
+
+    it('should hit line 187: LSP returns null/empty locations', async () => {
+      // This tests the empty result at line 186-199
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+
+      vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+
+      // Make getOrCreateClient return a client that returns empty locations
+      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+        gotoDefinition: vi.fn().mockResolvedValue([]),
+      } as any);
+
+      const handler = await createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'test',
+            lineHint: 1,
+            researchGoal: 'Find def',
+            reasoning: 'Test LSP empty locations',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain('empty');
+      expect(text).toContain('No definition found');
+    });
+
+    it('should hit line 187: LSP returns null locations', async () => {
+      // Test the null branch of (!locations || locations.length === 0)
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+
+      vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+
+      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+        gotoDefinition: vi.fn().mockResolvedValue(null),
+      } as any);
+
+      const handler = await createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'test',
+            lineHint: 1,
+            researchGoal: 'Find def',
+            reasoning: 'Test LSP null locations',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain('empty');
     });
   });
 });

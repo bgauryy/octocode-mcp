@@ -6,11 +6,60 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'path';
-import * as fs from 'fs/promises';
 import {
   findWorkspaceRoot,
   isLikelyDefinition,
 } from '../../src/tools/lsp_find_references.js';
+
+// Mock fs/promises
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(),
+  stat: vi.fn(),
+}));
+
+// Mock child_process for getExecAsync
+vi.mock('child_process', () => ({
+  exec: vi.fn(),
+}));
+
+// Mock util for promisify
+vi.mock('util', () => ({
+  promisify: (fn: Function) => fn,
+}));
+
+// Mock LSP module
+vi.mock('../../src/lsp/index.js', () => {
+  class MockSymbolResolutionError extends Error {
+    searchRadius: number;
+    constructor(message: string, searchRadius: number) {
+      super(message);
+      this.name = 'SymbolResolutionError';
+      this.searchRadius = searchRadius;
+    }
+  }
+
+  return {
+    SymbolResolver: vi.fn().mockImplementation(() => ({
+      resolvePositionFromContent: vi.fn().mockReturnValue({
+        position: { line: 3, character: 16 },
+        foundAtLine: 4,
+      }),
+      extractContext: vi.fn().mockReturnValue({
+        content: 'test content',
+        startLine: 1,
+        endLine: 10,
+      }),
+    })),
+    SymbolResolutionError: MockSymbolResolutionError,
+    getOrCreateClient: vi.fn().mockResolvedValue(null),
+    isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
+  };
+});
+
+// Import mocked modules
+import * as fs from 'fs/promises';
+import * as childProcess from 'child_process';
+import * as lspModule from '../../src/lsp/index.js';
 
 describe('LSP Find References Coverage Tests', () => {
   beforeEach(() => {
@@ -521,6 +570,361 @@ describe('LSP Find References Coverage Tests', () => {
 
     it('should have 6 markers', () => {
       expect(markers.length).toBe(6);
+    });
+  });
+
+  describe('Integration tests for uncovered sort branches', () => {
+    const sampleTypeScriptContent = `
+import { something } from './module';
+
+export function testFunction(param: string): string {
+  const result = param.toUpperCase();
+  return result;
+}
+`.trim();
+
+    const createHandler = async () => {
+      vi.resetModules();
+
+      // Re-import after resetting mocks
+      const { registerLSPFindReferencesTool } =
+        await import('../../src/tools/lsp_find_references.js');
+
+      const mockServer = {
+        registerTool: vi.fn(
+          (_name: string, _config: any, handler: any) => handler
+        ),
+      };
+      registerLSPFindReferencesTool(mockServer as any);
+      return mockServer.registerTool.mock.results[0]!.value;
+    };
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      process.env.WORKSPACE_ROOT = process.cwd();
+
+      // Default mocks
+      vi.mocked(fs.stat).mockResolvedValue({ isFile: () => true } as any);
+      vi.mocked(fs.readFile).mockResolvedValue(sampleTypeScriptContent);
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
+      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue(null);
+
+      // Default SymbolResolver mock
+      vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
+        return {
+          resolvePositionFromContent: vi.fn().mockReturnValue({
+            position: { line: 3, character: 16 },
+            foundAtLine: 4,
+          }),
+          extractContext: vi.fn().mockReturnValue({
+            content: 'test content',
+            startLine: 1,
+            endLine: 10,
+          }),
+        };
+      });
+    });
+
+    afterEach(() => {
+      delete process.env.WORKSPACE_ROOT;
+      vi.resetAllMocks();
+    });
+
+    it('should hit lines 587-588: ripgrep sort with definition vs non-definition', async () => {
+      // This tests the sort comparison at lines 584-589 in searchReferencesInWorkspace
+      // Need references where: definition sorts before non-definition
+      const testPath = `${process.cwd()}/src/test.ts`;
+      const otherPath = `${process.cwd()}/src/other.ts`;
+
+      // Create ripgrep output with:
+      // - A definition in test.ts (should sort first)
+      // - A non-definition in other.ts (should sort second)
+      // - Another non-definition in test.ts (should sort by URI then line)
+      vi.mocked(childProcess.exec).mockResolvedValue({
+        stdout: [
+          // Non-definition first (out of order)
+          JSON.stringify({
+            type: 'match',
+            data: {
+              path: { text: otherPath },
+              line_number: 10,
+              lines: { text: 'const x = testFunction();\n' },
+            },
+          }),
+          // Definition (should be sorted to top)
+          JSON.stringify({
+            type: 'match',
+            data: {
+              path: { text: testPath },
+              line_number: 4,
+              lines: { text: 'export function testFunction() {}\n' },
+            },
+          }),
+          // Another non-definition in test.ts (should come before other.ts)
+          JSON.stringify({
+            type: 'match',
+            data: {
+              path: { text: testPath },
+              line_number: 20,
+              lines: { text: 'return testFunction();\n' },
+            },
+          }),
+        ].join('\n'),
+      } as any);
+
+      vi.mocked(fs.readFile).mockResolvedValue(sampleTypeScriptContent);
+
+      const handler = await createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'testFunction',
+            lineHint: 4,
+            contextLines: 0,
+            researchGoal: 'Find refs',
+            reasoning: 'Testing ripgrep sort branches',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain('hasResults');
+    });
+
+    it('should hit lines 587-588: ripgrep sort by URI when both non-definition', async () => {
+      // Test the a.uri !== b.uri comparison branch
+      const testPath = `${process.cwd()}/src/test.ts`;
+      const aPath = `${process.cwd()}/src/aaa.ts`;
+      const zPath = `${process.cwd()}/src/zzz.ts`;
+
+      // Create ripgrep output with different files (no definitions)
+      vi.mocked(childProcess.exec).mockResolvedValue({
+        stdout: [
+          // File zzz should sort last
+          JSON.stringify({
+            type: 'match',
+            data: {
+              path: { text: zPath },
+              line_number: 5,
+              lines: { text: 'const z = testFunction();\n' },
+            },
+          }),
+          // File aaa should sort first
+          JSON.stringify({
+            type: 'match',
+            data: {
+              path: { text: aPath },
+              line_number: 5,
+              lines: { text: 'const a = testFunction();\n' },
+            },
+          }),
+        ].join('\n'),
+      } as any);
+
+      vi.mocked(fs.readFile).mockResolvedValue(sampleTypeScriptContent);
+
+      const handler = await createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'testFunction',
+            lineHint: 4,
+            contextLines: 0,
+            researchGoal: 'Find refs',
+            reasoning: 'Testing ripgrep URI sort branch',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
+    });
+
+    it('should hit lines 587-588: ripgrep sort by line in same file', async () => {
+      // Test the line number comparison branch within same file
+      const testPath = `${process.cwd()}/src/test.ts`;
+
+      // Create ripgrep output with multiple matches in same file, out of order
+      vi.mocked(childProcess.exec).mockResolvedValue({
+        stdout: [
+          JSON.stringify({
+            type: 'match',
+            data: {
+              path: { text: testPath },
+              line_number: 30,
+              lines: { text: 'const c = testFunction();\n' },
+            },
+          }),
+          JSON.stringify({
+            type: 'match',
+            data: {
+              path: { text: testPath },
+              line_number: 10,
+              lines: { text: 'const a = testFunction();\n' },
+            },
+          }),
+          JSON.stringify({
+            type: 'match',
+            data: {
+              path: { text: testPath },
+              line_number: 20,
+              lines: { text: 'const b = testFunction();\n' },
+            },
+          }),
+        ].join('\n'),
+      } as any);
+
+      vi.mocked(fs.readFile).mockResolvedValue(sampleTypeScriptContent);
+
+      const handler = await createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'testFunction',
+            lineHint: 4,
+            contextLines: 0,
+            researchGoal: 'Find refs',
+            reasoning: 'Testing ripgrep line number sort branch',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
+    });
+
+    it('should hit lines 699-702: grep fallback sort branches', async () => {
+      // This tests the sort comparison at lines 698-703 in searchReferencesWithGrep
+      // Need to make ripgrep fail with non-1 exit code to trigger grep fallback
+      const testPath = `${process.cwd()}/src/test.ts`;
+      const aPath = `${process.cwd()}/src/aaa.ts`;
+      const zPath = `${process.cwd()}/src/zzz.ts`;
+
+      vi.mocked(childProcess.exec).mockImplementation((cmd: string) => {
+        if (cmd.startsWith('rg ')) {
+          const err: any = new Error('rg failed');
+          err.code = 2; // Non-1 exit code triggers grep fallback
+          return Promise.reject(err) as any;
+        }
+        if (cmd.startsWith('grep -rn')) {
+          // Return results out of order to test sorting
+          return Promise.resolve({
+            stdout: [
+              `${zPath}:20:const z = testFunction();`,
+              `${testPath}:4:export function testFunction() {}`, // Definition
+              `${aPath}:10:const a = testFunction();`,
+              `${testPath}:30:return testFunction();`, // Same file, different line
+            ].join('\n'),
+          }) as any;
+        }
+        return Promise.resolve({ stdout: '' }) as any;
+      });
+
+      vi.mocked(fs.readFile).mockResolvedValue(sampleTypeScriptContent);
+
+      const handler = await createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'testFunction',
+            lineHint: 4,
+            contextLines: 0,
+            researchGoal: 'Find refs',
+            reasoning: 'Testing grep fallback sort branches',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain('hasResults');
+    });
+
+    it('should hit lines 699-702: grep sort definition vs non-definition', async () => {
+      // Test the specific branch: a.isDefinition && !b.isDefinition
+      const testPath = `${process.cwd()}/src/test.ts`;
+      const otherPath = `${process.cwd()}/src/other.ts`;
+
+      vi.mocked(childProcess.exec).mockImplementation((cmd: string) => {
+        if (cmd.startsWith('rg ')) {
+          const err: any = new Error('rg failed');
+          err.code = 2;
+          return Promise.reject(err) as any;
+        }
+        if (cmd.startsWith('grep -rn')) {
+          // Non-definition before definition (will be reordered by sort)
+          return Promise.resolve({
+            stdout: [
+              `${otherPath}:15:const x = testFunction();`,
+              `${testPath}:4:export function testFunction() {}`,
+            ].join('\n'),
+          }) as any;
+        }
+        return Promise.resolve({ stdout: '' }) as any;
+      });
+
+      vi.mocked(fs.readFile).mockResolvedValue(sampleTypeScriptContent);
+
+      const handler = await createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'testFunction',
+            lineHint: 4,
+            contextLines: 0,
+            researchGoal: 'Find refs',
+            reasoning: 'Testing grep definition sort priority',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
+    });
+
+    it('should hit lines 699-702: grep sort by URI then line', async () => {
+      // Test the URI comparison and line comparison branches
+      const testPath = `${process.cwd()}/src/test.ts`;
+
+      vi.mocked(childProcess.exec).mockImplementation((cmd: string) => {
+        if (cmd.startsWith('rg ')) {
+          const err: any = new Error('rg failed');
+          err.code = 2;
+          return Promise.reject(err) as any;
+        }
+        if (cmd.startsWith('grep -rn')) {
+          // Same file, different lines out of order
+          return Promise.resolve({
+            stdout: [
+              `${testPath}:50:const e = testFunction();`,
+              `${testPath}:10:const a = testFunction();`,
+              `${testPath}:30:const c = testFunction();`,
+            ].join('\n'),
+          }) as any;
+        }
+        return Promise.resolve({ stdout: '' }) as any;
+      });
+
+      vi.mocked(fs.readFile).mockResolvedValue(sampleTypeScriptContent);
+
+      const handler = await createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'testFunction',
+            lineHint: 4,
+            contextLines: 0,
+            researchGoal: 'Find refs',
+            reasoning: 'Testing grep line number sort',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
     });
   });
 
