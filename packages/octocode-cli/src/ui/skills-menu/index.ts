@@ -6,7 +6,6 @@
 import { c, bold, dim } from '../../utils/colors.js';
 import { loadInquirer, select, Separator, input } from '../../utils/prompts.js';
 import {
-  copyDirectory,
   dirExists,
   listSubdirectories,
   removeDirectory,
@@ -60,7 +59,6 @@ export interface InstalledSkill {
 }
 
 type SkillsMenuChoice =
-  | 'install'
   | 'manage'
   | 'view'
   | 'marketplace'
@@ -68,7 +66,6 @@ type SkillsMenuChoice =
   | 'change-path'
   | 'learn'
   | 'back';
-type InstallSkillsChoice = 'install' | 'select' | 'back';
 type ManageSkillsChoice = InstalledSkill | 'back';
 
 // ============================================================================
@@ -238,7 +235,6 @@ function getSkillsInfo(): {
  * Show skills submenu
  */
 async function showSkillsMenu(
-  hasUninstalled: boolean,
   installedCount: number
 ): Promise<SkillsMenuChoice> {
   const choices: Array<{
@@ -269,14 +265,6 @@ async function showSkillsMenu(
     value: 'marketplace',
     description: 'Community skills • installs on your behalf',
   });
-
-  if (hasUninstalled) {
-    choices.push({
-      name: '📥 Install bundled skills',
-      value: 'install',
-      description: 'Install Octocode skills to Claude Code',
-    });
-  }
 
   // Change default skills path option
   choices.push({
@@ -616,99 +604,6 @@ async function manageInstalledSkills(): Promise<void> {
   }
 }
 
-/**
- * Install skills
- * Returns true if installation was performed, false if user went back
- */
-async function installSkills(
-  info: ReturnType<typeof getSkillsInfo>
-): Promise<boolean> {
-  const { destDir, notInstalled } = info;
-
-  if (notInstalled.length === 0) {
-    console.log(`  ${c('green', '✓')} All skills are already installed!`);
-    console.log();
-    console.log(`  ${bold('Installation path:')}`);
-    console.log(`  ${c('cyan', destDir)}`);
-    console.log();
-    await pressEnterToContinue();
-    return true;
-  }
-
-  // Show what will be installed
-  console.log(`  ${bold('Skills to install:')}`);
-  console.log();
-  for (const skill of notInstalled) {
-    console.log(`    ${c('yellow', '○')} ${skill.name}`);
-  }
-  console.log();
-  console.log(`  ${bold('Installation path:')}`);
-  console.log(`  ${c('cyan', destDir)}`);
-  console.log();
-
-  // Ask user if they want to install with back option
-  const choice = await select<InstallSkillsChoice>({
-    message: `Install ${notInstalled.length} skill(s)?`,
-    choices: [
-      {
-        name: `${c('green', '✓')} Yes, install skills`,
-        value: 'install' as const,
-      },
-      new Separator() as unknown as {
-        name: string;
-        value: InstallSkillsChoice;
-      },
-      {
-        name: `${c('dim', '← Back to skills menu')}`,
-        value: 'back' as const,
-      },
-    ],
-    loop: false,
-  });
-
-  if (choice === 'back') {
-    return false;
-  }
-
-  // Install skills
-  console.log();
-  const spinner = new Spinner('Installing skills...').start();
-  let installedCount = 0;
-  const failed: string[] = [];
-
-  for (const skill of notInstalled) {
-    if (copyDirectory(skill.srcPath, skill.destPath)) {
-      installedCount++;
-    } else {
-      failed.push(skill.name);
-    }
-  }
-
-  if (failed.length === 0) {
-    spinner.succeed('Skills installed!');
-  } else {
-    spinner.warn('Some skills failed to install');
-  }
-
-  console.log();
-  if (installedCount > 0) {
-    console.log(`  ${c('green', '✓')} Installed ${installedCount} skill(s)`);
-    console.log(`  ${dim('Location:')} ${c('cyan', destDir)}`);
-  }
-  if (failed.length > 0) {
-    console.log(`  ${c('red', '✗')} Failed: ${failed.join(', ')}`);
-  }
-  console.log();
-
-  if (installedCount > 0) {
-    console.log(`  ${bold('Skills are now available in Claude Code!')}`);
-    console.log();
-  }
-
-  await pressEnterToContinue();
-  return true;
-}
-
 // ============================================================================
 // Main Flow
 // ============================================================================
@@ -750,8 +645,7 @@ export async function runSkillsMenu(): Promise<void> {
     const installedCount = installedSkills.length;
 
     // Show submenu
-    const hasUninstalled = info.notInstalled.length > 0;
-    const choice = await showSkillsMenu(hasUninstalled, installedCount);
+    const choice = await showSkillsMenu(installedCount);
 
     switch (choice) {
       case 'manage':
@@ -765,17 +659,6 @@ export async function runSkillsMenu(): Promise<void> {
       case 'marketplace':
         await runMarketplaceFlow();
         break;
-
-      case 'install': {
-        const installed = await installSkills(info);
-        // If user went back, stay in skills menu
-        // If installed, also stay in skills menu to show updated status
-        if (installed) {
-          // Refresh and continue showing menu
-          continue;
-        }
-        break;
-      }
 
       case 'view':
         showSkillsStatus(info);
