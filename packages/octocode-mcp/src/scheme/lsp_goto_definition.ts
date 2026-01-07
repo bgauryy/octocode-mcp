@@ -10,11 +10,17 @@ import { STATIC_TOOL_NAMES } from '../tools/toolNames.js';
  * Tool description for lspGotoDefinition
  */
 export const LSP_GOTO_DEFINITION_DESCRIPTION = `## Navigate to symbol definition
+> **TL;DR**: Jump to where a symbol is defined. Requires EXACT symbol name + line hint. Use after localSearchCode locates symbol.
+
 <when>
 - Find where function/class/variable/type is defined
 - Trace import to source | Jump to declaration
 - After localSearchCode finds symbol → get precise definition
 </when>
+<prefer_over>
+- localSearchCode: When you need precise definition location, not pattern matches
+- grep: When you need type-aware jump-to-definition
+</prefer_over>
 <when_NOT>
 - DON'T use for partial/fuzzy matching → use localSearchCode
 - DON'T use for searching comments/strings → use localSearchCode

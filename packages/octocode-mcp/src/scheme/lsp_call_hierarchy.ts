@@ -29,6 +29,8 @@ const FIELD_DESCRIPTIONS = {
  * Tool description for lspCallHierarchy
  */
 export const LSP_CALL_HIERARCHY_DESCRIPTION = `## Trace function call relationships
+> **TL;DR**: Build call graph for functions. "incoming" = who calls this, "outgoing" = what this calls. Expensive at depth>2.
+
 <when>
 - "What functions call this?" (incoming) | "What does this call?" (outgoing)
 - Understand code flow | Impact analysis for changes

@@ -29,6 +29,8 @@ const FIELD_DESCRIPTIONS = {
  * Tool description for lspFindReferences
  */
 export const LSP_FIND_REFERENCES_DESCRIPTION = `## Find all references to a symbol
+> **TL;DR**: Find all usages of a symbol across workspace. Semantic (ignores comments/strings). Requires EXACT symbol name + line hint.
+
 <when>
 - Find all usages of function/class/variable/type across workspace
 - Impact analysis before refactoring | "Who calls this?"
