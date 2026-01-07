@@ -1,21 +1,24 @@
 /**
  * Skills Fetch Utilities
- * Fetch skills from GitHub marketplace repositories
+ * Fetch skills from GitHub marketplace repositories and local bundled sources
  */
 
 import type {
   MarketplaceSource,
   MarketplaceSkill,
 } from '../configs/skills-marketplace.js';
+import { isLocalSource } from '../configs/skills-marketplace.js';
 import {
   dirExists,
   writeFileContent,
   readFileContent,
   fileExists,
+  copyDirectory,
 } from './fs.js';
 import { join } from 'node:path';
 import { mkdirSync, statSync, readdirSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
+import { getSkillsSourcePath, getAvailableSkills } from './skills.js';
 
 // ============================================================================
 // Cache Configuration
@@ -204,6 +207,77 @@ function formatSkillName(name: string): string {
     .replace(/\b\w/g, c => c.toUpperCase());
 }
 
+// ============================================================================
+// Local Skills Fetching
+// ============================================================================
+
+/**
+ * Fetch skills from local bundled source
+ * Reads directly from the skills directory bundled with the CLI
+ */
+export function fetchLocalSkills(
+  source: MarketplaceSource
+): MarketplaceSkill[] {
+  try {
+    const skillsSourcePath = getSkillsSourcePath();
+    const availableSkills = getAvailableSkills();
+    const skills: MarketplaceSkill[] = [];
+
+    for (const skillFolder of availableSkills) {
+      const skillPath = join(skillsSourcePath, skillFolder);
+      const skillMdPath = join(skillPath, 'SKILL.md');
+
+      if (fileExists(skillMdPath)) {
+        const content = readFileContent(skillMdPath);
+        if (content) {
+          const meta = parseFrontmatter(content);
+          skills.push({
+            name: skillFolder,
+            displayName: formatSkillName(skillFolder),
+            description:
+              meta?.description ||
+              extractFirstParagraph(content) ||
+              'No description',
+            category: meta?.category || 'Official',
+            path: skillFolder,
+            source,
+          });
+        }
+      }
+    }
+
+    return skills;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Install a local skill (copy from bundled source)
+ */
+export function installLocalSkill(
+  skill: MarketplaceSkill,
+  destDir: string
+): { success: boolean; error?: string } {
+  try {
+    const skillsSourcePath = getSkillsSourcePath();
+    const sourcePath = join(skillsSourcePath, skill.name);
+    const destPath = join(destDir, skill.name);
+
+    if (!dirExists(sourcePath)) {
+      return { success: false, error: 'Skill not found in bundled source' };
+    }
+
+    copyDirectory(sourcePath, destPath);
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
 /**
  * Fetch the directory tree from GitHub API
  * Uses the Trees API which doesn't require authentication for public repos
@@ -257,11 +331,17 @@ export async function fetchRawContent(
  * Fetch skills index from a marketplace source
  * Returns a list of available skills with metadata
  * Uses 24-hour cache to reduce API calls
+ * For local sources, reads directly from bundled files
  */
 export async function fetchMarketplaceSkills(
   source: MarketplaceSource,
   options: { skipCache?: boolean } = {}
 ): Promise<MarketplaceSkill[]> {
+  // Handle local sources - read directly from bundled files
+  if (isLocalSource(source)) {
+    return fetchLocalSkills(source);
+  }
+
   // Check cache first (unless skipCache is true)
   if (!options.skipCache) {
     const cached = readCachedSkills(source);
@@ -391,6 +471,8 @@ function extractFirstParagraph(content: string): string | null {
 
 /**
  * Download and install a skill from a marketplace
+ * For local sources, copies from bundled files
+ * For GitHub sources, downloads from remote repository
  */
 export async function installMarketplaceSkill(
   skill: MarketplaceSkill,
@@ -398,6 +480,12 @@ export async function installMarketplaceSkill(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const source = skill.source;
+
+    // Handle local sources - copy from bundled files
+    if (isLocalSource(source)) {
+      return installLocalSkill(skill, destDir);
+    }
+
     const tree = await fetchMarketplaceTree(source);
 
     // Create destination directory

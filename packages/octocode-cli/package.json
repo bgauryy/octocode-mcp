@@ -1,11 +1,10 @@
 {
   "name": "octocode-cli",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Interactive CLI installer for octocode-mcp - Configure MCP servers for Cursor, Claude Desktop, and more",
   "type": "module",
   "main": "out/octocode-cli.js",
   "bin": {
-    "octocode": "./out/octocode-cli.js",
     "octocode-cli": "./out/octocode-cli.js"
   },
   "files": [

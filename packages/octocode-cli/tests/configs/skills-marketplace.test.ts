@@ -10,6 +10,9 @@ import {
   fetchMarketplaceStars,
   fetchAllMarketplaceStars,
   clearStarsCache,
+  isLocalSource,
+  getLocalMarketplaces,
+  getGitHubMarketplaces,
 } from '../../src/configs/skills-marketplace.js';
 
 describe('Skills Marketplace Registry', () => {
@@ -22,6 +25,8 @@ describe('Skills Marketplace Registry', () => {
       for (const marketplace of SKILLS_MARKETPLACES) {
         expect(marketplace.id).toBeDefined();
         expect(marketplace.name).toBeDefined();
+        expect(marketplace.type).toBeDefined();
+        expect(['github', 'local']).toContain(marketplace.type);
         expect(marketplace.owner).toBeDefined();
         expect(marketplace.repo).toBeDefined();
         expect(marketplace.branch).toBeDefined();
@@ -30,6 +35,15 @@ describe('Skills Marketplace Registry', () => {
         expect(marketplace.description).toBeDefined();
         expect(marketplace.url).toBeDefined();
       }
+    });
+
+    it('should include octocode-official as a local marketplace', () => {
+      const octocode = SKILLS_MARKETPLACES.find(
+        m => m.id === 'octocode-official'
+      );
+      expect(octocode).toBeDefined();
+      expect(octocode?.type).toBe('local');
+      expect(octocode?.name).toContain('Octocode');
     });
 
     it('should have unique IDs', () => {
@@ -92,6 +106,54 @@ describe('Skills Marketplace Registry', () => {
     });
   });
 
+  describe('isLocalSource', () => {
+    it('should return true for local sources', () => {
+      const octocode = SKILLS_MARKETPLACES.find(
+        m => m.id === 'octocode-official'
+      );
+      expect(octocode).toBeDefined();
+      expect(isLocalSource(octocode!)).toBe(true);
+    });
+
+    it('should return false for GitHub sources', () => {
+      const buildWithClaude = SKILLS_MARKETPLACES.find(
+        m => m.id === 'buildwithclaude'
+      );
+      expect(buildWithClaude).toBeDefined();
+      expect(isLocalSource(buildWithClaude!)).toBe(false);
+    });
+  });
+
+  describe('getLocalMarketplaces', () => {
+    it('should return only local sources', () => {
+      const localSources = getLocalMarketplaces();
+      expect(localSources.length).toBeGreaterThan(0);
+      for (const source of localSources) {
+        expect(source.type).toBe('local');
+      }
+    });
+
+    it('should include octocode-official', () => {
+      const localSources = getLocalMarketplaces();
+      expect(localSources.some(s => s.id === 'octocode-official')).toBe(true);
+    });
+  });
+
+  describe('getGitHubMarketplaces', () => {
+    it('should return only GitHub sources', () => {
+      const githubSources = getGitHubMarketplaces();
+      expect(githubSources.length).toBeGreaterThan(0);
+      for (const source of githubSources) {
+        expect(source.type).toBe('github');
+      }
+    });
+
+    it('should not include octocode-official', () => {
+      const githubSources = getGitHubMarketplaces();
+      expect(githubSources.some(s => s.id === 'octocode-official')).toBe(false);
+    });
+  });
+
   describe('fetchMarketplaceStars', () => {
     const originalFetch = global.fetch;
 
@@ -104,14 +166,24 @@ describe('Skills Marketplace Registry', () => {
       global.fetch = originalFetch;
     });
 
-    it('should fetch stars from GitHub API', async () => {
+    it('should return null for local sources without making API call', async () => {
+      global.fetch = vi.fn();
+
+      const localSource = getLocalMarketplaces()[0];
+      const stars = await fetchMarketplaceStars(localSource);
+
+      expect(stars).toBeNull();
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('should fetch stars from GitHub API for GitHub sources', async () => {
       const mockResponse = {
         ok: true,
         json: () => Promise.resolve({ stargazers_count: 1500 }),
       };
       global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
-      const source = SKILLS_MARKETPLACES[0];
+      const source = getGitHubMarketplaces()[0];
       const stars = await fetchMarketplaceStars(source);
 
       expect(stars).toBe(1500);
@@ -132,7 +204,7 @@ describe('Skills Marketplace Registry', () => {
       };
       global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
-      const source = SKILLS_MARKETPLACES[0];
+      const source = getGitHubMarketplaces()[0];
       const stars = await fetchMarketplaceStars(source);
 
       expect(stars).toBeNull();
@@ -141,7 +213,7 @@ describe('Skills Marketplace Registry', () => {
     it('should return null on network error', async () => {
       global.fetch = vi.fn().mockRejectedValue(new Error('Network error'));
 
-      const source = SKILLS_MARKETPLACES[0];
+      const source = getGitHubMarketplaces()[0];
       const stars = await fetchMarketplaceStars(source);
 
       expect(stars).toBeNull();
@@ -154,7 +226,7 @@ describe('Skills Marketplace Registry', () => {
       };
       global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
-      const source = SKILLS_MARKETPLACES[0];
+      const source = getGitHubMarketplaces()[0];
 
       // First call
       await fetchMarketplaceStars(source);
