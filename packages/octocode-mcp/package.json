@@ -126,11 +126,13 @@
     "lint:fix": "eslint src/**/*.ts tests/**/*.ts --fix",
     "prepack": "yarn build",
     "prepublishOnly": "yarn lint && yarn test && tsdown",
-    "test": "vitest run --coverage",
+    "test": "yarn lint && yarn typecheck && vitest run --coverage",
     "test:coverage": "vitest run --coverage",
-    "test:quiet": "vitest run --reporter=dot --silent",
+    "test:quiet": "yarn lint && yarn typecheck && vitest run --reporter=dot --silent",
     "test:ui": "vitest --ui",
-    "test:watch": "vitest --watch"
+    "test:unit": "vitest run --coverage",
+    "test:watch": "vitest --watch",
+    "typecheck": "tsc --noEmit"
   },
   "type": "module"
 }
