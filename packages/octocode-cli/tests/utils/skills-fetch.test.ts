@@ -43,6 +43,7 @@ import * as nodeFs from 'node:fs';
 const mockSource: MarketplaceSource = {
   id: 'test-marketplace',
   name: 'Test Marketplace',
+  type: 'github',
   owner: 'test-owner',
   repo: 'test-repo',
   branch: 'main',
