@@ -110,10 +110,25 @@ const DANGEROUS_PATTERNS = [
   /[!^]/, // History expansion and negation
   /\\(?!["'\\])/, // Backslash (except escaped quotes)
   /[\n\r\x00]/, // Newlines and null bytes
-  /^-/, // Leading dash (could be interpreted as flag)
   /'.*'/, // Single quotes (potential quoting issues)
   /".*\$.*"/, // Double quotes with variable expansion
 ];
+
+/**
+ * Pattern for safe CLI flags:
+ * - Single letter flags: -y, -i, -e
+ * - Long flags: --rm, --yes, --no-cache
+ * - Flags with values: --port=8080, -p=3000
+ */
+const SAFE_FLAG_PATTERN = /^--?[a-zA-Z][a-zA-Z0-9-]*(=\S+)?$/;
+
+/**
+ * Check if an argument is a safe CLI flag
+ * Safe flags: -y, -i, --rm, --yes, --port=8080, etc.
+ */
+function isSafeFlag(arg: string): boolean {
+  return SAFE_FLAG_PATTERN.test(arg);
+}
 
 /**
  * Validate args don't contain shell injection characters
@@ -135,6 +150,11 @@ function validateArgs(args: string[]): {
         problematic: String(arg),
         error: 'Argument must be a string',
       };
+    }
+
+    // Skip validation for safe CLI flags (e.g., -y, --rm, --port=8080)
+    if (isSafeFlag(arg)) {
+      continue;
     }
 
     // Check against dangerous patterns

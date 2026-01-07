@@ -10,6 +10,7 @@ Pre-built Claude Code skills for enhanced AI-assisted research and development.
 | `octocode-pr-review` | Defects-first PR review across 6 domains | CONTEXT → CHECKPOINT → ANALYSIS → REPORT |
 | `octocode-plan` | Research-driven planning & implementation | UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY |
 | `octocode-generate` | App scaffolding with stack selection | DISCOVERY → STACK → PLAN → SCAFFOLD → VALIDATE |
+| `octocode-roast` | Brutally honest code review with comedic flair | SCOPE → ROAST → INVENTORY → SPOTLIGHT → REDEMPTION |
 
 ## Installation
 
@@ -73,6 +74,16 @@ Supported Frameworks:
 - Mobile: Expo
 - Desktop: Electron Vite
 - Backend: NestJS, Hono, Fastify
+
+### octocode-roast
+**Use when**: You want entertainment with your code review, finding antipatterns, or humorous feedback.
+
+Features:
+- Sin severity classification (FELONY → PARKING TICKET)
+- Personalized zingers based on actual patterns found
+- Multiple roast personas (Gordon Ramsay, Disappointed Dad, Tech Bro, etc.)
+- User checkpoint before fixes
+- Actionable redemption arc
 
 ## Skill Structure
 
