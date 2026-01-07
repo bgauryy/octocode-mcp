@@ -20,8 +20,15 @@ import {
   setCustomSkillsDestDir,
 } from '../../utils/skills.js';
 import path from 'node:path';
+import open from 'open';
 import { Spinner } from '../../utils/spinner.js';
 import { runMarketplaceFlow } from './marketplace.js';
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const WHAT_ARE_SKILLS_URL = 'https://agentskills.io/what-are-skills';
 // Re-export state types from centralized state module
 export { type SkillInfo, type SkillsState, getSkillsState } from '../state.js';
 
@@ -51,6 +58,7 @@ type SkillsMenuChoice =
   | 'view'
   | 'marketplace'
   | 'change-path'
+  | 'learn'
   | 'back';
 type InstallSkillsChoice = 'install' | 'select' | 'back';
 type ManageSkillsChoice = InstalledSkill | 'back';
@@ -257,6 +265,13 @@ async function showSkillsMenu(
       description?: string;
     }
   );
+
+  // Learn about skills - opens browser
+  choices.push({
+    name: `${c('cyan', '❓')} What are skills?`,
+    value: 'learn',
+    description: 'Learn about Claude Code skills • opens browser',
+  });
 
   choices.push({
     name: `${c('dim', '← Back to main menu')}`,
@@ -750,6 +765,31 @@ export async function runSkillsMenu(): Promise<void> {
         showSkillsStatus(info);
         await pressEnterToContinue();
         break;
+
+      case 'learn': {
+        console.log();
+        console.log(
+          `  ${c('cyan', '📖')} Opening ${bold('What are Skills?')} in your browser...`
+        );
+        console.log(`  ${dim(WHAT_ARE_SKILLS_URL)}`);
+        console.log();
+
+        try {
+          await open(WHAT_ARE_SKILLS_URL);
+          console.log(`  ${c('green', '✓')} Opened in browser`);
+        } catch {
+          console.log(
+            `  ${c('yellow', '!')} Could not open browser automatically`
+          );
+          console.log(
+            `  ${dim('Please visit:')} ${c('cyan', WHAT_ARE_SKILLS_URL)}`
+          );
+        }
+
+        console.log();
+        await pressEnterToContinue();
+        break;
+      }
 
       case 'change-path': {
         const defaultPath = getDefaultSkillsDestDir();

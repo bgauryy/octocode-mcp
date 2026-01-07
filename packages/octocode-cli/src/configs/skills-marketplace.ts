@@ -4,6 +4,13 @@
  */
 
 /**
+ * Source type for marketplaces
+ * - 'github': Skills fetched from GitHub repository
+ * - 'local': Skills bundled with the CLI
+ */
+export type MarketplaceSourceType = 'github' | 'local';
+
+/**
  * Marketplace source configuration
  */
 export interface MarketplaceSource {
@@ -11,11 +18,13 @@ export interface MarketplaceSource {
   id: string;
   /** Display name */
   name: string;
-  /** GitHub owner/organization */
+  /** Source type: 'github' for remote repos, 'local' for bundled skills */
+  type: MarketplaceSourceType;
+  /** GitHub owner/organization (required for github type) */
   owner: string;
-  /** GitHub repository name */
+  /** GitHub repository name (required for github type) */
   repo: string;
-  /** Default branch */
+  /** Default branch (required for github type) */
   branch: string;
   /** Path to skills directory (relative to repo root) */
   skillsPath: string;
@@ -50,9 +59,24 @@ export interface MarketplaceSkill {
  * These are popular, well-maintained repositories with Claude skills/commands
  */
 export const SKILLS_MARKETPLACES: MarketplaceSource[] = [
+  // === OFFICIAL BUNDLED SKILLS ===
+  {
+    id: 'octocode-official',
+    name: '🐙 Octocode Official',
+    type: 'local',
+    owner: 'ArekSrorth',
+    repo: 'octocode-mcp',
+    branch: 'main',
+    skillsPath: 'packages/octocode-cli/skills',
+    skillPattern: 'skill-folders',
+    description: 'Official research, planning, review & generation skills',
+    url: 'https://github.com/ArekSrorth/octocode-mcp',
+  },
+  // === COMMUNITY MARKETPLACES ===
   {
     id: 'buildwithclaude',
     name: 'Build With Claude',
+    type: 'github',
     owner: 'davepoon',
     repo: 'buildwithclaude',
     branch: 'main',
@@ -64,6 +88,7 @@ export const SKILLS_MARKETPLACES: MarketplaceSource[] = [
   {
     id: 'claude-code-plugins-plus-skills',
     name: 'Claude Code Plugins + Skills',
+    type: 'github',
     owner: 'jeremylongshore',
     repo: 'claude-code-plugins-plus-skills',
     branch: 'main',
@@ -75,6 +100,7 @@ export const SKILLS_MARKETPLACES: MarketplaceSource[] = [
   {
     id: 'claude-skills-marketplace',
     name: 'Claude Skills Marketplace',
+    type: 'github',
     owner: 'mhattingpete',
     repo: 'claude-skills-marketplace',
     branch: 'main',
@@ -86,6 +112,7 @@ export const SKILLS_MARKETPLACES: MarketplaceSource[] = [
   {
     id: 'daymade-claude-code-skills',
     name: 'Daymade Claude Skills',
+    type: 'github',
     owner: 'daymade',
     repo: 'claude-code-skills',
     branch: 'main',
@@ -97,6 +124,7 @@ export const SKILLS_MARKETPLACES: MarketplaceSource[] = [
   {
     id: 'superpowers',
     name: 'Superpowers',
+    type: 'github',
     owner: 'obra',
     repo: 'superpowers',
     branch: 'main',
@@ -108,6 +136,7 @@ export const SKILLS_MARKETPLACES: MarketplaceSource[] = [
   {
     id: 'claude-scientific-skills',
     name: 'Claude Scientific Skills',
+    type: 'github',
     owner: 'K-Dense-AI',
     repo: 'claude-scientific-skills',
     branch: 'main',
@@ -119,6 +148,7 @@ export const SKILLS_MARKETPLACES: MarketplaceSource[] = [
   {
     id: 'dev-browser',
     name: 'Dev Browser',
+    type: 'github',
     owner: 'SawyerHood',
     repo: 'dev-browser',
     branch: 'main',
@@ -171,12 +201,39 @@ export function clearStarsCache(): void {
 }
 
 /**
+ * Check if a marketplace source is local (bundled)
+ */
+export function isLocalSource(source: MarketplaceSource): boolean {
+  return source.type === 'local';
+}
+
+/**
+ * Get local (bundled) marketplace sources
+ */
+export function getLocalMarketplaces(): MarketplaceSource[] {
+  return SKILLS_MARKETPLACES.filter(m => m.type === 'local');
+}
+
+/**
+ * Get GitHub (remote) marketplace sources
+ */
+export function getGitHubMarketplaces(): MarketplaceSource[] {
+  return SKILLS_MARKETPLACES.filter(m => m.type === 'github');
+}
+
+/**
  * Fetch GitHub stars for a marketplace source
  * Uses in-memory cache with 5-minute TTL
+ * Returns null for local sources
  */
 export async function fetchMarketplaceStars(
   source: MarketplaceSource
 ): Promise<number | null> {
+  // Local sources don't have stars
+  if (source.type === 'local') {
+    return null;
+  }
+
   const cacheKey = `${source.owner}/${source.repo}`;
   const cached = starsCache.get(cacheKey);
 

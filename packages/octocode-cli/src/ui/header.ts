@@ -93,14 +93,20 @@ export function printWelcome(): void {
 
     // Full path outside the box
     console.log(`  ${dim('📂')} ${ctx.cwd}`);
-    console.log();
 
-    // Simple context line (no box to avoid rendering issues)
-    let envLine = `  ${dim('💻')} ${bold(ctx.ide)}`;
-    if (ctx.git) {
-      envLine += `   ${dim('🐙')} ${ctx.git.root} ${dim('(')}${ctx.git.branch}${dim(')')}`;
+    // Simple context line - only show IDE if detected (not plain Terminal)
+    const isIDE = ctx.ide === 'Cursor' || ctx.ide === 'VS Code';
+    if (isIDE || ctx.git) {
+      let envLine = '';
+      if (isIDE) {
+        envLine = `  ${dim('💻')} ${bold(ctx.ide)}`;
+      }
+      if (ctx.git) {
+        const gitPart = `${dim('🐙')} ${ctx.git.root} ${dim('(')}${ctx.git.branch}${dim(')')}`;
+        envLine += isIDE ? `   ${gitPart}` : `  ${gitPart}`;
+      }
+      console.log(envLine);
     }
-    console.log(envLine);
     console.log();
   } catch {
     // Silently continue if context detection fails

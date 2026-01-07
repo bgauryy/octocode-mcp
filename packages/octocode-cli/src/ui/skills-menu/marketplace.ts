@@ -13,6 +13,7 @@ import {
   type MarketplaceSource,
   type MarketplaceSkill,
   fetchAllMarketplaceStars,
+  isLocalSource,
 } from '../../configs/skills-marketplace.js';
 import {
   fetchMarketplaceSkills,
@@ -47,6 +48,10 @@ async function pressEnterToContinue(): Promise<void> {
  * Format marketplace for display
  */
 function formatMarketplace(source: MarketplaceSource, stars?: number): string {
+  // Local sources show "bundled" badge instead of stars
+  if (isLocalSource(source)) {
+    return `${bold(source.name)} ${c('cyan', '📦 bundled')} - ${dim(source.description)}`;
+  }
   const starsText = stars ? ` ⭐ ${stars.toLocaleString()}` : '';
   return `${bold(source.name)}${c('yellow', starsText)} - ${dim(source.description)}`;
 }
@@ -84,10 +89,17 @@ async function selectMarketplace(
   console.log(`  ${bold('Select a marketplace to browse:')}`);
   console.log();
 
-  // Sort marketplaces by stars
-  const sortedMarketplaces = [...SKILLS_MARKETPLACES].sort(
+  // Separate local and GitHub sources
+  const localSources = SKILLS_MARKETPLACES.filter(s => isLocalSource(s));
+  const githubSources = SKILLS_MARKETPLACES.filter(s => !isLocalSource(s));
+
+  // Sort GitHub sources by stars
+  const sortedGitHubSources = [...githubSources].sort(
     (a, b) => (starsMap.get(b.id) ?? 0) - (starsMap.get(a.id) ?? 0)
   );
+
+  // Local sources first, then GitHub sources sorted by stars
+  const sortedMarketplaces = [...localSources, ...sortedGitHubSources];
 
   const choices: Array<{
     name: string;

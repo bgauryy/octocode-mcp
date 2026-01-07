@@ -39,6 +39,7 @@
 
 - [See It In Action](#see-it-in-action)
 - [Installation](#installation)
+- [Octocode CLI](#octocode-cli)
 - [More Examples](#more-examples)
 - [Overview](#overview)
 - [Tools](#tools)
@@ -143,6 +144,24 @@ https://github.com/user-attachments/assets/c184d5d4-c9b6-40a1-a55a-41cb9b3ecc4f
 ---
 
 ## Installation
+
+### 🚀 Octocode CLI (Recommended)
+
+**The easiest way to install Octocode MCP, skills, and other MCP servers.**
+
+```bash
+npx octocode-cli
+```
+
+The interactive CLI will:
+- ✅ Auto-detect your IDEs (Cursor, VS Code, Claude Desktop, etc.)
+- ✅ Install and configure Octocode MCP with one click
+- ✅ Set up GitHub authentication
+- ✅ Optionally install AI skills and other MCP servers
+
+**[Learn more about Octocode CLI →](#octocode-cli)**
+
+---
 
 ### Standalone Binary (No Node.js Required)
 
@@ -508,6 +527,59 @@ After installation, verify Octocode MCP is working:
    ```
 
 If you see Octocode tools being used, you're all set! 🎉
+
+---
+
+## Octocode CLI
+
+**One-command setup for Octocode, MCP servers, and AI skills across all your IDEs.**
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/packages/octocode-cli/assets/example.png" alt="Octocode CLI" width="600" />
+</p>
+
+The Octocode CLI is an interactive tool that simplifies the installation and management of:
+
+- **🐙 Octocode MCP** - Install and sync across Cursor, VS Code, Claude Desktop, and more
+- **🧠 AI Skills** - Browse marketplace, install bundled skills, manage your skill library
+- **⚡ System MCPs** - Add and configure popular MCP servers from a curated registry
+
+### Quick Install
+
+```bash
+npx octocode@latest
+```
+
+Or install globally:
+
+```bash
+npm install -g octocode
+octocode
+```
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Multi-IDE Support** | Automatically detects and configures Cursor, VS Code, Claude Desktop, Windsurf, and more |
+| **Skills Marketplace** | Browse 7+ community skill sources with 170+ skills available |
+| **Bundled Skills** | Official Octocode skills for research, planning, PR review, and code generation |
+| **MCP Registry** | 50+ curated MCP servers ready to install with one click |
+| **GitHub Auth** | Quick browser-based OAuth or GitHub CLI integration |
+| **Sync Across IDEs** | Keep your MCP configuration in sync across all supported clients |
+
+### Interactive Menu
+
+```
+🐙 Octocode MCP        - Install/sync Octocode across IDEs
+🧠 Manage System Skills - Browse marketplace, install & manage skills  
+⚡ Manage System MCP    - Add popular MCP servers to your setup
+```
+
+### Learn More
+
+- **[What are Skills?](https://agentskills.io/what-are-skills)** - Learn about Claude Code skills
+- **[CLI Package](./packages/octocode-cli/README.md)** - Full CLI documentation
 
 ---
 
