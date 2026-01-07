@@ -9,7 +9,12 @@ import {
   clearConfigCachedToken,
   getServerConfig,
   isLoggingEnabled,
+  _setOctocodeTokenFn,
+  _resetOctocodeTokenFn,
 } from '../src/serverConfig.js';
+
+// Mock function for octocode token
+const mockGetOctocodeToken = vi.fn();
 
 // Helper function to create mock process
 function createMockProcess() {
@@ -45,6 +50,11 @@ function mockSpawnFailure() {
   return mockProcess;
 }
 
+// Helper function to mock octocode token
+function mockOctocodeToken(token: string | null) {
+  mockGetOctocodeToken.mockResolvedValue(token);
+}
+
 describe('ServerConfig - Simplified Version', () => {
   const originalEnv = process.env;
 
@@ -68,6 +78,10 @@ describe('ServerConfig - Simplified Version', () => {
     delete process.env.GITHUB_API_URL;
     delete process.env.REQUEST_TIMEOUT;
     delete process.env.MAX_RETRIES;
+
+    // Set up injectable mock for octocode token
+    _setOctocodeTokenFn(mockGetOctocodeToken);
+    mockGetOctocodeToken.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -79,6 +93,7 @@ describe('ServerConfig - Simplified Version', () => {
     process.env = originalEnv;
     cleanup();
     clearConfigCachedToken();
+    _resetOctocodeTokenFn();
   });
 
   describe('Configuration Initialization', () => {
@@ -204,6 +219,94 @@ describe('ServerConfig - Simplified Version', () => {
       mockSpawnSuccess('new-token');
       const token = await getGitHubToken();
       expect(token).toBe('new-token');
+    });
+  });
+
+  describe('octocode-cli Credential Fallback', () => {
+    it('should use octocode-cli token when GITHUB_TOKEN and gh CLI are unavailable', async () => {
+      delete process.env.GITHUB_TOKEN;
+      clearConfigCachedToken();
+
+      // gh CLI fails
+      mockSpawnFailure();
+      // octocode-cli has token
+      mockOctocodeToken('octocode-stored-token');
+
+      const token = await getGitHubToken();
+
+      expect(token).toBe('octocode-stored-token');
+    });
+
+    it('should prioritize GITHUB_TOKEN over octocode-cli token', async () => {
+      process.env.GITHUB_TOKEN = 'env-token';
+      clearConfigCachedToken();
+
+      mockSpawnFailure();
+      mockOctocodeToken('octocode-stored-token');
+
+      const token = await getGitHubToken();
+
+      expect(token).toBe('env-token');
+    });
+
+    it('should prioritize gh CLI token over octocode-cli token', async () => {
+      delete process.env.GITHUB_TOKEN;
+      clearConfigCachedToken();
+
+      mockSpawnSuccess('gh-cli-token');
+      mockOctocodeToken('octocode-stored-token');
+
+      const token = await getGitHubToken();
+
+      expect(token).toBe('gh-cli-token');
+    });
+
+    it('should return null when all token sources fail', async () => {
+      delete process.env.GITHUB_TOKEN;
+      clearConfigCachedToken();
+
+      mockSpawnFailure();
+      mockOctocodeToken(null);
+
+      const token = await getGitHubToken();
+
+      expect(token).toBeNull();
+    });
+
+    it('should handle octocode-cli token with whitespace', async () => {
+      delete process.env.GITHUB_TOKEN;
+      clearConfigCachedToken();
+
+      mockSpawnFailure();
+      mockOctocodeToken('  octocode-token-with-spaces  ');
+
+      const token = await getGitHubToken();
+
+      expect(token).toBe('octocode-token-with-spaces');
+    });
+
+    it('should skip empty octocode-cli token', async () => {
+      delete process.env.GITHUB_TOKEN;
+      clearConfigCachedToken();
+
+      mockSpawnFailure();
+      mockOctocodeToken('   ');
+
+      const token = await getGitHubToken();
+
+      expect(token).toBeNull();
+    });
+
+    it('should handle octocode-cli errors gracefully', async () => {
+      delete process.env.GITHUB_TOKEN;
+      clearConfigCachedToken();
+
+      mockSpawnFailure();
+      mockGetOctocodeToken.mockRejectedValue(new Error('Read error'));
+
+      const token = await getGitHubToken();
+
+      expect(token).toBeNull();
     });
   });
 

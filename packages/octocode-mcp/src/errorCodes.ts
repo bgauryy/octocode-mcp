@@ -294,9 +294,6 @@ export const LOCAL_TOOL_ERROR_CODES = {
   TOOL_EXECUTION_FAILED: 'toolExecutionFailed',
 } as const;
 
-// Alias for backwards compatibility with existing imports
-export const ERROR_CODES = LOCAL_TOOL_ERROR_CODES;
-
 /**
  * Local tool error code type
  */
@@ -431,9 +428,6 @@ export const LOCAL_TOOL_ERROR_REGISTRY: Record<
     recoverability: 'unrecoverable',
   },
 };
-
-// Alias for backwards compatibility
-export const ERROR_CODE_REGISTRY = LOCAL_TOOL_ERROR_REGISTRY;
 
 // ============================================================================
 // TOOL ERROR CLASS

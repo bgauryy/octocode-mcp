@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ERROR_CODES } from '../../src/errorCodes.js';
+import { LOCAL_TOOL_ERROR_CODES } from '../../src/errorCodes.js';
 import { fetchContent } from '../../src/tools/local_fetch_content.js';
 import { FetchContentQuerySchema } from '../../src/scheme/local_fetch_content.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
@@ -94,7 +94,7 @@ describe('localGetFileContent', () => {
       });
 
       expect(result.status).toBe('empty');
-      expect(result.errorCode).toBe(ERROR_CODES.NO_MATCHES);
+      expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.NO_MATCHES);
     });
 
     it('should show regex-specific hint when matchStringIsRegex and no matches', async () => {
@@ -171,7 +171,7 @@ describe('localGetFileContent', () => {
 
         // Expected: no matches because file doesn't contain "export const"
         expect(result.status).toBe('empty');
-        expect(result.errorCode).toBe(ERROR_CODES.NO_MATCHES);
+        expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.NO_MATCHES);
       });
 
       it('should match patterns line-by-line (not multiline)', async () => {
@@ -268,7 +268,9 @@ describe('localGetFileContent', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.PATH_VALIDATION_FAILED);
+      expect(result.errorCode).toBe(
+        LOCAL_TOOL_ERROR_CODES.PATH_VALIDATION_FAILED
+      );
     });
 
     it('should handle file read errors', async () => {
@@ -279,7 +281,7 @@ describe('localGetFileContent', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.FILE_READ_FAILED);
+      expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.FILE_READ_FAILED);
     });
 
     it('should handle stat errors (file access failed)', async () => {
@@ -290,7 +292,7 @@ describe('localGetFileContent', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.FILE_ACCESS_FAILED);
+      expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.FILE_ACCESS_FAILED);
     });
 
     it('should handle stat errors with non-Error objects', async () => {
@@ -301,7 +303,7 @@ describe('localGetFileContent', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.FILE_ACCESS_FAILED);
+      expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.FILE_ACCESS_FAILED);
     });
 
     it('should handle unexpected errors in main try-catch', async () => {
@@ -344,7 +346,7 @@ describe('localGetFileContent', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.FILE_TOO_LARGE);
+      expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.FILE_TOO_LARGE);
       expect(result.hints).toBeDefined();
       expect(result.hints!.length).toBeGreaterThan(0);
     });
@@ -1004,7 +1006,7 @@ describe('localGetFileContent', () => {
       });
 
       expect(result.status).toBe('empty');
-      expect(result.errorCode).toBe(ERROR_CODES.NO_MATCHES);
+      expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.NO_MATCHES);
       expect(result.hints).toBeDefined();
       expect(result.hints?.some(h => h.includes('exceeds file length'))).toBe(
         true

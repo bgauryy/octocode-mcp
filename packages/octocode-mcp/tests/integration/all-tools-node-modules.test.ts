@@ -13,7 +13,7 @@ import type {
   ViewStructureResult,
   FindFilesResult,
   FetchContentResult,
-} from '../../src/utils/types.js';
+} from '../../src/utils/core/types.js';
 import { RipgrepQuerySchema } from '../../src/scheme/local_ripgrep.js';
 import path from 'path';
 

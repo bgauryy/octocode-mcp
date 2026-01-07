@@ -29,8 +29,6 @@ import { runMarketplaceFlow } from './marketplace.js';
 // ============================================================================
 
 const WHAT_ARE_SKILLS_URL = 'https://agentskills.io/what-are-skills';
-// Re-export state types from centralized state module
-export { type SkillInfo, type SkillsState, getSkillsState } from '../state.js';
 
 // ============================================================================
 // Installed Skill Types (agentskills.io protocol)

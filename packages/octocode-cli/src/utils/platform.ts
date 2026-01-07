@@ -1,14 +1,29 @@
 /**
  * Platform Detection & Utilities
+ *
+ * Re-exports platform utilities from octocode-shared, plus CLI-specific functions.
  */
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+// Re-export platform detection from shared package
+export {
+  isWindows,
+  isMac,
+  isLinux,
+  HOME,
+  getAppDataPath,
+  getLocalAppDataPath,
+  getPlatformName,
+  getArchitecture,
+} from 'octocode-shared';
+
+import { isWindows, isMac } from 'octocode-shared';
+
 // ============================================================================
-// Git/VCS Directory Detection
+// Git/VCS Directory Detection (CLI-specific)
 // ============================================================================
 
 /**
@@ -122,34 +137,8 @@ export function isIDEOrGitPath(pathToCheck: string): boolean {
 }
 
 // ============================================================================
-// Platform Detection
+// CLI-Specific Platform Functions
 // ============================================================================
-
-// Platform detection
-export const isWindows: boolean = os.platform() === 'win32';
-export const isMac: boolean = os.platform() === 'darwin';
-export const isLinux: boolean = os.platform() === 'linux';
-export const HOME: string = os.homedir();
-
-/**
- * Get the AppData path on Windows
- */
-export function getAppDataPath(): string {
-  if (isWindows) {
-    return process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming');
-  }
-  return HOME;
-}
-
-/**
- * Get the local AppData path on Windows
- */
-export function getLocalAppDataPath(): string {
-  if (isWindows) {
-    return process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
-  }
-  return HOME;
-}
 
 /**
  * Clear the terminal screen and scrollback buffer
@@ -165,23 +154,6 @@ export function clearScreen(): void {
   // Clear visible screen + scrollback buffer + move cursor to home
   const clearSequence = '\x1b[2J\x1b[3J\x1b[H';
   process.stdout.write(clearSequence);
-}
-
-/**
- * Get platform name for display
- */
-export function getPlatformName(): string {
-  if (isMac) return 'macOS';
-  if (isWindows) return 'Windows';
-  if (isLinux) return 'Linux';
-  return os.platform();
-}
-
-/**
- * Get architecture for display
- */
-export function getArchitecture(): string {
-  return os.arch();
 }
 
 /**

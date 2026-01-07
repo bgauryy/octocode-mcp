@@ -1,4 +1,5 @@
 import { getGithubCLIToken } from './utils/exec/index.js';
+import { getOctocodeToken as getOctocodeTokenImpl } from './utils/credentials/index.js';
 import { version } from '../package.json';
 import type { ServerConfig } from './types.js';
 import { CONFIG_ERRORS } from './errorCodes.js';
@@ -9,6 +10,23 @@ let cachedToken: string | null = null;
 let initializationPromise: Promise<void> | null = null;
 // Track pending token resolution to prevent race conditions
 let pendingTokenPromise: Promise<string | null> | null = null;
+
+// Injectable function for testing
+let _getOctocodeToken = getOctocodeTokenImpl;
+
+/**
+ * @internal - For testing only
+ */
+export function _setOctocodeTokenFn(fn: typeof getOctocodeTokenImpl): void {
+  _getOctocodeToken = fn;
+}
+
+/**
+ * @internal - For testing only
+ */
+export function _resetOctocodeTokenFn(): void {
+  _getOctocodeToken = getOctocodeTokenImpl;
+}
 
 function parseStringArray(value?: string): string[] | undefined {
   if (!value?.trim()) return undefined;
@@ -58,6 +76,18 @@ async function resolveGitHubToken(): Promise<string | null> {
     const cliToken = await getGithubCLIToken();
     if (cliToken?.trim()) {
       return cliToken.trim();
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message) {
+      error.message = maskSensitiveData(error.message);
+    }
+  }
+
+  // Priority 3: octocode-cli stored credentials (~/.octocode/credentials.json)
+  try {
+    const octocodeToken = await _getOctocodeToken();
+    if (octocodeToken?.trim()) {
+      return octocodeToken.trim();
     }
   } catch (error) {
     if (error instanceof Error && error.message) {

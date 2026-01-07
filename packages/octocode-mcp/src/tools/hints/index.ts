@@ -74,9 +74,3 @@ export function getHints(
   const allHints = [...staticHints, ...dynamicHints];
   return [...new Set(allHints)];
 }
-
-/**
- * Legacy alias for getHints - for backward compatibility
- * @deprecated Use getHints instead
- */
-export const getToolHints = getHints;

@@ -7,7 +7,7 @@ import type { ContentBlock } from '@modelcontextprotocol/sdk/types.js';
 /**
  * Type guard to check if a ContentBlock is TextContent
  */
-export function isTextContent(
+function isTextContent(
   content: ContentBlock | undefined
 ): content is { type: 'text'; text: string } {
   return content?.type === 'text';

@@ -5,7 +5,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import {
   getHints,
-  getToolHints,
   hasDynamicHints,
   getLargeFileWorkflowHints,
 } from '../../../src/tools/hints/index.js';
@@ -134,12 +133,6 @@ describe('Unified Hints System', () => {
         // Different contexts should produce different hints
         expect(hintsWithRepo).not.toEqual(hintsWithoutRepo);
       });
-    });
-  });
-
-  describe('getToolHints (legacy alias)', () => {
-    it('should be the same function as getHints', () => {
-      expect(getToolHints).toBe(getHints);
     });
   });
 

@@ -1,5 +1,2 @@
-export {
-  jsonToYamlString,
-  type YamlConversionConfig,
-} from './jsonToYamlString.js';
-export { minifyContent, minifyContentSync, MINIFY_CONFIG } from './minifier.js';
+export { jsonToYamlString } from './jsonToYamlString.js';
+export { minifyContent, minifyContentSync } from './minifier.js';

@@ -18,7 +18,7 @@ import type {
   FetchContentQuery,
   FetchContentResult,
 } from '../utils/core/types.js';
-import { ToolErrors, ERROR_CODES } from '../errorCodes.js';
+import { ToolErrors, LOCAL_TOOL_ERROR_CODES } from '../errorCodes.js';
 import { executeBulkOperation } from '../utils/response/bulk.js';
 import {
   BulkFetchContentSchema,
@@ -191,7 +191,7 @@ export async function fetchContent(
         return {
           status: 'empty',
           path: query.path,
-          errorCode: ERROR_CODES.NO_MATCHES,
+          errorCode: LOCAL_TOOL_ERROR_CODES.NO_MATCHES,
           totalLines,
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
@@ -294,7 +294,7 @@ export async function fetchContent(
           status: 'empty',
           path: query.path,
           totalLines,
-          errorCode: ERROR_CODES.NO_MATCHES,
+          errorCode: LOCAL_TOOL_ERROR_CODES.NO_MATCHES,
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           hints: [

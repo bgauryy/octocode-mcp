@@ -4,9 +4,7 @@
   "description": "Interactive CLI installer for octocode-mcp - Configure MCP servers for Cursor, Claude Desktop, and more",
   "type": "module",
   "main": "out/octocode-cli.js",
-  "bin": {
-    "octocode-cli": "./out/octocode-cli.js"
-  },
+  "bin": "./out/octocode-cli.js",
   "files": [
     "out/octocode-cli.js",
     "skills",
@@ -59,7 +57,7 @@
     "@octokit/auth-oauth-device": "^8.0.3",
     "@octokit/oauth-methods": "^6.0.2",
     "@octokit/request": "^10.0.7",
-    "keytar": "^7.9.0",
+    "octocode-shared": "workspace:*",
     "open": "^11.0.0"
   },
   "devDependencies": {
@@ -68,6 +66,10 @@
     "@typescript-eslint/parser": "^8.32.0",
     "@vitest/coverage-v8": "^4.0.13",
     "eslint": "^8.57.0",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-plugin-prettier": "^5.5.4",
+    "prettier": "^3.5.3",
+    "tsx": "^4.19.0",
     "typescript": "^5.9.3",
     "vite": "^6.0.0",
     "vitest": "^4.0.13"

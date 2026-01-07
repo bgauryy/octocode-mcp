@@ -3,9 +3,9 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ERROR_CODES } from '../../src/errorCodes.js';
+import { LOCAL_TOOL_ERROR_CODES } from '../../src/errorCodes.js';
 import { findFiles } from '../../src/tools/local_find_files.js';
-import type { FindFilesResult } from '../../src/utils/types.js';
+import type { FindFilesResult } from '../../src/utils/core/types.js';
 import * as exec from '../../src/utils/exec/index.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 
@@ -511,7 +511,9 @@ describe('localFindFiles', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.PATH_VALIDATION_FAILED);
+      expect(result.errorCode).toBe(
+        LOCAL_TOOL_ERROR_CODES.PATH_VALIDATION_FAILED
+      );
     });
   });
 
@@ -530,7 +532,307 @@ describe('localFindFiles', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.COMMAND_EXECUTION_FAILED);
+      expect(result.errorCode).toBe(
+        LOCAL_TOOL_ERROR_CODES.COMMAND_EXECUTION_FAILED
+      );
+    });
+
+    it('should handle general exceptions gracefully', async () => {
+      mockSafeExec.mockRejectedValue(new Error('Unexpected error'));
+
+      const result = await findFiles({
+        path: '/test/path',
+        name: '*.txt',
+      });
+
+      expect(result.status).toBe('error');
+    });
+
+    it('should handle find command not available', async () => {
+      vi.mocked(exec.checkCommandAvailability).mockResolvedValueOnce({
+        available: false,
+        command: 'find',
+      });
+
+      const result = await findFiles({
+        path: '/test/path',
+        name: '*.txt',
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe(
+        LOCAL_TOOL_ERROR_CODES.COMMAND_NOT_AVAILABLE
+      );
+    });
+  });
+
+  describe('showFileLastModified sorting', () => {
+    it('should sort by modification time when showFileLastModified is true', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '/test/old.txt\0/test/new.txt\0/test/mid.txt\0',
+        stderr: '',
+      });
+
+      vi.mocked(mockFs.promises.lstat).mockImplementation(
+        async (filePath: string | Buffer | URL) => {
+          const path = filePath.toString();
+          const mtimes: Record<string, Date> = {
+            '/test/old.txt': new Date('2020-01-01'),
+            '/test/new.txt': new Date('2024-12-01'),
+            '/test/mid.txt': new Date('2022-06-01'),
+          };
+          return {
+            isDirectory: () => false,
+            isSymbolicLink: () => false,
+            isFile: () => true,
+            size: 123,
+            mode: parseInt('100644', 8),
+            mtime: mtimes[path] || new Date(),
+          } as unknown as import('fs').Stats;
+        }
+      );
+
+      const result = await findFiles({
+        path: '/test/path',
+        showFileLastModified: true,
+        details: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+      const files = expectDefinedFiles(result);
+      expect(files.length).toBe(3);
+      // Should be sorted by modification time (most recent first)
+      expect(files[0]!.path).toBe('/test/new.txt');
+      expect(files[0]!.modified).toBeDefined();
+    });
+
+    it('should fall back to path sorting when showFileLastModified is false', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '/test/c.txt\0/test/a.txt\0/test/b.txt\0',
+        stderr: '',
+      });
+
+      vi.mocked(mockFs.promises.lstat).mockResolvedValue({
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+        isFile: () => true,
+        size: 123,
+        mode: parseInt('100644', 8),
+        mtime: new Date(),
+      } as unknown as import('fs').Stats);
+
+      const result = await findFiles({
+        path: '/test/path',
+        showFileLastModified: false,
+        details: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+      const files = expectDefinedFiles(result);
+      expect(files.length).toBe(3);
+      // Should be sorted by path
+      expect(files[0]!.path).toBe('/test/a.txt');
+      expect(files[1]!.path).toBe('/test/b.txt');
+      expect(files[2]!.path).toBe('/test/c.txt');
+    });
+  });
+
+  describe('Fallback stat logic for missing details', () => {
+    it('should fetch missing file details via lstat fallback', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '/test/path/file1.txt\0',
+        stderr: '',
+      });
+
+      // First lstat call returns incomplete data
+      let callCount = 0;
+      vi.mocked(mockFs.promises.lstat).mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          // First call - return incomplete stats (missing size)
+          return {
+            isDirectory: () => false,
+            isSymbolicLink: () => false,
+            isFile: () => true,
+            size: undefined,
+            mode: undefined,
+            mtime: new Date('2024-01-01'),
+          } as unknown as import('fs').Stats;
+        }
+        // Second call - return complete stats
+        return {
+          isDirectory: () => false,
+          isSymbolicLink: () => false,
+          isFile: () => true,
+          size: 1024,
+          mode: parseInt('100644', 8),
+          mtime: new Date('2024-01-01'),
+        } as unknown as import('fs').Stats;
+      });
+
+      const result = await findFiles({
+        path: '/test/path',
+        details: true,
+        showFileLastModified: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+    });
+
+    it('should handle lstat failure gracefully in fallback', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '/test/path/file1.txt\0',
+        stderr: '',
+      });
+
+      // First call succeeds with incomplete data, second call fails
+      let callCount = 0;
+      vi.mocked(mockFs.promises.lstat).mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          return {
+            isDirectory: () => false,
+            isSymbolicLink: () => false,
+            isFile: () => true,
+            size: undefined,
+            mode: undefined,
+            mtime: undefined,
+          } as unknown as import('fs').Stats;
+        }
+        throw new Error('Permission denied');
+      });
+
+      const result = await findFiles({
+        path: '/test/path',
+        details: true,
+        showFileLastModified: true,
+      });
+
+      // Should still succeed, just with missing data
+      expect(result.status).toBe('hasResults');
+    });
+  });
+
+  describe('Large result handling', () => {
+    it('should paginate large result sets', async () => {
+      const files = Array.from(
+        { length: 50 },
+        (_, i) => `/test/file${i}.txt`
+      ).join('\0');
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: files + '\0',
+        stderr: '',
+      });
+
+      vi.mocked(mockFs.promises.lstat).mockResolvedValue({
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+        isFile: () => true,
+        size: 123,
+        mode: parseInt('100644', 8),
+        mtime: new Date(),
+      } as unknown as import('fs').Stats);
+
+      const result = await findFiles({
+        path: '/test/path',
+        details: true,
+        filesPerPage: 10,
+      });
+
+      // Should paginate large result sets
+      expect(result.status).toBe('hasResults');
+      expect(result.totalFiles).toBe(50);
+      const files2 = expectDefinedFiles(result);
+      expect(files2.length).toBeLessThanOrEqual(10);
+    });
+  });
+
+  describe('getFileDetails edge cases', () => {
+    it('should handle lstat errors in getFileDetails', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '/test/inaccessible.txt\0',
+        stderr: '',
+      });
+
+      vi.mocked(mockFs.promises.lstat).mockRejectedValue(
+        new Error('Permission denied')
+      );
+
+      const result = await findFiles({
+        path: '/test/path',
+        details: true,
+      });
+
+      // Should succeed with partial data
+      expect(result.status).toBe('hasResults');
+      const files = expectDefinedFiles(result);
+      expect(files[0]!.type).toBe('file'); // Default type
+    });
+
+    it('should detect symlinks in getFileDetails', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '/test/link.txt\0',
+        stderr: '',
+      });
+
+      vi.mocked(mockFs.promises.lstat).mockResolvedValue({
+        isDirectory: () => false,
+        isSymbolicLink: () => true,
+        isFile: () => false,
+        size: 10,
+        mode: parseInt('120755', 8),
+        mtime: new Date(),
+      } as unknown as import('fs').Stats);
+
+      const result = await findFiles({
+        path: '/test/path',
+        details: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+      const files = expectDefinedFiles(result);
+      expect(files[0]!.type).toBe('symlink');
+    });
+
+    it('should detect directories in getFileDetails', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '/test/dir\0',
+        stderr: '',
+      });
+
+      vi.mocked(mockFs.promises.lstat).mockResolvedValue({
+        isDirectory: () => true,
+        isSymbolicLink: () => false,
+        isFile: () => false,
+        size: 4096,
+        mode: parseInt('40755', 8),
+        mtime: new Date(),
+      } as unknown as import('fs').Stats);
+
+      const result = await findFiles({
+        path: '/test/path',
+        details: true,
+      });
+
+      expect(result.status).toBe('hasResults');
+      const files = expectDefinedFiles(result);
+      expect(files[0]!.type).toBe('directory');
     });
   });
 

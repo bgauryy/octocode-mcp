@@ -23,21 +23,3 @@ export const DANGEROUS_PATTERNS = [
   /\${/, // Variable expansion
   /\$\(/, // Command substitution
 ] as const;
-
-/**
- * Common file patterns to exclude for security and performance
- */
-export const DEFAULT_EXCLUDE_PATTERNS = [
-  '.git',
-  '.svn',
-  '.hg',
-  'dist',
-  'build',
-  'coverage',
-  '.next',
-  '.cache',
-  'vendor',
-  '__pycache__',
-  '*.pyc',
-  '.DS_Store',
-] as const;

@@ -32,7 +32,7 @@ import type {
 } from '../utils/core/types.js';
 import { promises as fs } from 'fs';
 import { join } from 'path';
-import { ERROR_CODES, ToolErrors } from '../errorCodes.js';
+import { LOCAL_TOOL_ERROR_CODES, ToolErrors } from '../errorCodes.js';
 import { executeBulkOperation } from '../utils/response/bulk.js';
 import { parseRipgrepJson, parseGrepOutput } from '../utils/parsers/ripgrep.js';
 
@@ -110,7 +110,7 @@ export async function searchContentRipgrep(
     if (errorMessage.includes('Output size limit exceeded')) {
       return {
         status: 'error',
-        errorCode: ERROR_CODES.OUTPUT_TOO_LARGE,
+        errorCode: LOCAL_TOOL_ERROR_CODES.OUTPUT_TOO_LARGE,
         path: configuredQuery.path,
         searchEngine: 'rg',
         researchGoal: configuredQuery.researchGoal,
@@ -184,7 +184,7 @@ async function executeRipgrepSearch(
     const timeoutMs = RESOURCE_LIMITS.DEFAULT_EXEC_TIMEOUT_MS;
     return {
       status: 'error',
-      errorCode: ERROR_CODES.COMMAND_TIMEOUT,
+      errorCode: LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT,
       path: configuredQuery.path,
       searchEngine: 'rg',
       researchGoal: configuredQuery.researchGoal,
@@ -295,7 +295,7 @@ async function executeGrepSearch(
     const timeoutMs = RESOURCE_LIMITS.DEFAULT_EXEC_TIMEOUT_MS;
     return {
       status: 'error',
-      errorCode: ERROR_CODES.COMMAND_TIMEOUT,
+      errorCode: LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT,
       path: configuredQuery.path,
       searchEngine: 'grep',
       researchGoal: configuredQuery.researchGoal,

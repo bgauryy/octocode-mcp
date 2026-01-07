@@ -9,29 +9,6 @@ export const DEFAULTS = {
   MAX_OUTPUT_CHARS: 2000, // Maximum output characters (~500 tokens) - use charLength for pagination
 } as const;
 
-/**
- * File type mappings for the 'file' command
- */
-export const FILE_TYPES = {
-  f: 'file',
-  d: 'directory',
-  l: 'symlink',
-  b: 'block device',
-  c: 'character device',
-  p: 'named pipe',
-  s: 'socket',
-} as const;
-
-/**
- * Sort options for ls command
- */
-export const SORT_OPTIONS = {
-  name: 'name',
-  size: 'size',
-  time: 'time',
-  extension: 'extension',
-} as const;
-
 // ===== RESOURCE LIMITS =====
 
 /**
@@ -146,28 +123,3 @@ export const RESOURCE_LIMITS = {
  * Type-safe access to RESOURCE_LIMITS
  */
 export type ResourceLimitsType = typeof RESOURCE_LIMITS;
-
-// ===== SECURITY DEFAULTS =====
-
-/**
- * Security-related default configurations
- * These values control security behavior across the codebase
- */
-export const SECURITY_DEFAULTS = {
-  /**
-   * Always validate and resolve symlink targets for security
-   * This prevents symlink-based path traversal attacks
-   */
-  VALIDATE_SYMLINK_TARGETS: true,
-
-  /**
-   * Don't follow symlinks by default during traversal for performance
-   * Users can opt-in via followSymlinks parameter in tool options
-   */
-  DEFAULT_FOLLOW_SYMLINKS: false,
-} as const;
-
-/**
- * Type-safe access to SECURITY_DEFAULTS
- */
-export type SecurityDefaultsType = typeof SECURITY_DEFAULTS;

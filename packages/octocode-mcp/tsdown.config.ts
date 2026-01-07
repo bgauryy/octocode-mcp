@@ -20,8 +20,12 @@ const serverConfig = defineConfig({
 
   // Bundle ALL dependencies for standalone CLI execution
   noExternal: [/.*/],
-  // Keep Node.js built-ins external (they're always available)
-  external: [...builtinModules, ...builtinModules.map(m => `node:${m}`)],
+  // Keep Node.js built-ins and native modules external
+  external: [
+    ...builtinModules,
+    ...builtinModules.map(m => `node:${m}`),
+    'keytar', // Native module - cannot be bundled
+  ],
 
   // Tree shaking - Rolldown has excellent tree shaking by default
   treeshake: true,
@@ -61,7 +65,11 @@ const publicConfig = defineConfig({
 
   // Bundle dependencies for standalone use
   noExternal: [/.*/],
-  external: [...builtinModules, ...builtinModules.map(m => `node:${m}`)],
+  external: [
+    ...builtinModules,
+    ...builtinModules.map(m => `node:${m}`),
+    'keytar', // Native module - cannot be bundled
+  ],
 
   treeshake: true,
   minify: true,

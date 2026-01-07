@@ -104,26 +104,13 @@ export interface GitHubAuthStatus {
   error?: string;
 }
 
-// OAuth token types
-export interface OAuthToken {
-  token: string;
-  tokenType: 'oauth';
-  scopes?: string[];
-  // For GitHub Apps with expiring tokens
-  refreshToken?: string;
-  expiresAt?: string;
-  refreshTokenExpiresAt?: string;
-}
-
-// Stored credentials for a host
-export interface StoredCredentials {
-  hostname: string;
-  username: string;
-  token: OAuthToken;
-  gitProtocol: 'ssh' | 'https';
-  createdAt: string;
-  updatedAt: string;
-}
+// Re-export credential types from shared package
+export type {
+  OAuthToken,
+  StoredCredentials,
+  StoreResult,
+  DeleteResult,
+} from 'octocode-shared';
 
 // Token source for auth status display
 export type TokenSource = 'octocode' | 'gh-cli' | 'env' | 'none';
@@ -143,20 +130,6 @@ export interface TokenResult {
   token: string | null;
   source: TokenSource;
   username?: string;
-}
-
-// Result from storing credentials (keyring-first strategy)
-export interface StoreResult {
-  success: boolean;
-  /** True if fallback to encrypted file was used (keyring unavailable/failed) */
-  insecureStorageUsed: boolean;
-}
-
-// Result from deleting credentials
-export interface DeleteResult {
-  success: boolean;
-  deletedFromKeyring: boolean;
-  deletedFromFile: boolean;
 }
 
 // ============================================

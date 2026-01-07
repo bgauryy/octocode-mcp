@@ -15,9 +15,6 @@ import { isWindows } from './platform.js';
 export {
   getMCPConfigPath,
   clientConfigExists,
-  configFileExists,
-  detectCurrentClient,
-  detectAvailableClients,
   MCP_CLIENTS,
 } from './mcp-paths.js';
 export { readMCPConfig, writeMCPConfig } from './mcp-io.js';
