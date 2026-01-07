@@ -30,6 +30,17 @@ type SkillMenuChoice = MarketplaceSkill | 'back';
 type InstallChoice = 'install' | 'back';
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+/** Recommended skills shown first with a star */
+const RECOMMENDED_SKILLS = new Set([
+  'octocode-research',
+  'octocode-pr-review',
+  'octocode-local-search',
+]);
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -60,11 +71,12 @@ function formatMarketplace(source: MarketplaceSource, stars?: number): string {
  * Format skill for display
  */
 function formatSkill(skill: MarketplaceSkill, installed: boolean): string {
+  const starTag = RECOMMENDED_SKILLS.has(skill.name) ? c('yellow', '⭐ ') : '';
   const status = installed ? c('green', ' ✓') : '';
   const category = skill.category ? ` [${skill.category}]` : '';
   const desc = skill.description.slice(0, 50);
   const ellipsis = skill.description.length > 50 ? '...' : '';
-  return `${skill.displayName}${status}${dim(category)} - ${dim(desc)}${dim(ellipsis)}`;
+  return `${starTag}${skill.displayName}${status}${dim(category)} - ${dim(desc)}${dim(ellipsis)}`;
 }
 
 /**
@@ -154,8 +166,18 @@ async function browseSkills(
   console.log(`  ${dim(source.url)}`);
   console.log();
 
+  // Sort skills: recommended first, then alphabetically
+  const sortedSkills = [...skills].sort((a, b) => {
+    const aRecommended = RECOMMENDED_SKILLS.has(a.name);
+    const bRecommended = RECOMMENDED_SKILLS.has(b.name);
+    if (aRecommended !== bRecommended) {
+      return aRecommended ? -1 : 1;
+    }
+    return a.displayName.localeCompare(b.displayName);
+  });
+
   // Create searchable choice list
-  const skillChoices = skills.map(skill => {
+  const skillChoices = sortedSkills.map(skill => {
     const installed = isSkillInstalled(skill.name);
     return {
       name: formatSkill(skill, installed),
@@ -215,9 +237,12 @@ async function showSkillDetails(
 ): Promise<InstallChoice> {
   const installed = isSkillInstalled(skill.name);
   const destDir = getSkillsDestDir();
+  const recommendedTag = RECOMMENDED_SKILLS.has(skill.name)
+    ? c('yellow', ' ⭐ recommended')
+    : '';
 
   console.log();
-  console.log(`  ${bold(skill.displayName)}`);
+  console.log(`  ${bold(skill.displayName)}${recommendedTag}`);
   console.log(`  ${dim(skill.description)}`);
   console.log();
 
@@ -348,7 +373,7 @@ export async function runMarketplaceFlow(): Promise<void> {
     let skills: MarketplaceSkill[];
     try {
       skills = await fetchMarketplaceSkills(source);
-      spinner.succeed(`Loaded ${skills.length} skills from ${source.name}`);
+      spinner.stop(); // Silent stop - count shown in browse view
     } catch (error) {
       spinner.fail(`Failed to load skills`);
       console.log();
@@ -383,6 +408,65 @@ export async function runMarketplaceFlow(): Promise<void> {
       if (detailChoice === 'install') {
         await installSkill(skillChoice);
       }
+    }
+  }
+}
+
+/**
+ * Run Octocode Official skills browser directly (skip marketplace selection)
+ */
+export async function runOctocodeOfficialFlow(): Promise<void> {
+  // Find Octocode Official source
+  const source = SKILLS_MARKETPLACES.find(s => s.id === 'octocode-official');
+  if (!source) {
+    console.log();
+    console.log(`  ${c('red', '✗')} Octocode Official source not found`);
+    console.log();
+    await pressEnterToContinue();
+    return;
+  }
+
+  // Fetch skills
+  console.log();
+  const spinner = new Spinner(`Loading ${source.name}...`).start();
+
+  let skills: MarketplaceSkill[];
+  try {
+    skills = await fetchMarketplaceSkills(source);
+    spinner.stop();
+  } catch (error) {
+    spinner.fail(`Failed to load skills`);
+    console.log();
+    console.log(
+      `  ${c('red', '✗')} ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+    console.log();
+    await pressEnterToContinue();
+    return;
+  }
+
+  if (skills.length === 0) {
+    console.log();
+    console.log(`  ${c('yellow', '⚠')} No skills found`);
+    console.log();
+    await pressEnterToContinue();
+    return;
+  }
+
+  // Browse skills loop
+  let inSkillsBrowser = true;
+  while (inSkillsBrowser) {
+    const skillChoice = await browseSkills(source, skills);
+
+    if (skillChoice === 'back') {
+      inSkillsBrowser = false;
+      continue;
+    }
+
+    // Show skill details
+    const detailChoice = await showSkillDetails(skillChoice);
+    if (detailChoice === 'install') {
+      await installSkill(skillChoice);
     }
   }
 }
