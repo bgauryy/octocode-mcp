@@ -24,7 +24,7 @@ describe('GitHub Repository Search', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     vi.mocked(getOctokit).mockResolvedValue(mockOctokit as any);
     vi.mocked(buildRepoSearchQuery).mockReturnValue('test query');
   });
@@ -803,7 +803,6 @@ describe('GitHub Repository Search', () => {
         keywordsToSearch: ['test'],
       };
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await searchGitHubReposAPI(params, authInfo as any);
 
       expect(getOctokit).toHaveBeenCalledWith(authInfo);

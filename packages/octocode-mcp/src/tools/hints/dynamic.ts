@@ -19,9 +19,12 @@ export const HINTS: Record<string, ToolHintGenerators> = {
         ? 'Using grep fallback - install ripgrep for best performance and features.'
         : undefined,
       'Next: localGetFileContent for context (prefer matchString).',
-      'Also search imports/usages/defs with localSearchCode.',
+      'Also search imports/usages/defs with localSearchCode or use LSP tools.',
       ctx.fileCount && ctx.fileCount > 5
-        ? 'Tip: run queries in parallel.'
+        ? 'Tip: run queries in parallel with bulk queries (max 5).'
+        : undefined,
+      ctx.fileCount && ctx.fileCount > 1
+        ? 'Multiple files? Use lspFindReferences for cross-file semantic tracking.'
         : undefined,
     ],
 
@@ -30,19 +33,20 @@ export const HINTS: Record<string, ToolHintGenerators> = {
         ? 'Using grep fallback - note: grep does not respect .gitignore.'
         : undefined,
       'No matches. Broaden scope (noIgnore, hidden) or use fixedString.',
-      'Unsure of paths? localViewStructure or localFindFiles.',
+      'Try semantic variants (auth→login, fetch→get).',
+      'Unsure of paths? localViewStructure or localFindFiles first.',
     ],
 
     error: (ctx: HintContext = {}) => {
       if (ctx.errorType === 'size_limit') {
         const baseHints = [
           `Too many results${ctx.matchCount ? ` (${ctx.matchCount} matches)` : ''}. Narrow pattern/scope.`,
-          'Add type/path filters to focus.',
+          'RECOVERY: Add type/path filters (e.g., type="ts", path="src/").',
           ctx.path?.includes('node_modules')
-            ? 'In node_modules, target specific packages.'
+            ? 'In node_modules, target specific packages with path filter.'
             : undefined,
-          'Names only? Use localFindFiles.',
-          'Flow: filesOnly=true \u2192 refine \u2192 read.',
+          'Flow: filesOnly=true → refine with filters → read with localGetFileContent.',
+          'For file names only: use localFindFiles instead.',
         ];
         return [
           ...baseHints,
@@ -52,15 +56,21 @@ export const HINTS: Record<string, ToolHintGenerators> = {
           ),
         ];
       }
-      return ['Tool unavailable; try localFindFiles or localViewStructure.'];
+      return [
+        'Tool unavailable.',
+        'RECOVERY: Try localFindFiles for file names or localViewStructure for browsing.',
+      ];
     },
   },
 
   [STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT]: {
-    hasResults: (_ctx: HintContext = {}) => [
-      'Next: trace imports/usages with localSearchCode.',
+    hasResults: (ctx: HintContext = {}) => [
+      'Next: trace imports/usages with localSearchCode or lspFindReferences.',
       'Open related files (tests/types/impl) together.',
-      'Prefer matchString over full file.',
+      'Prefer matchString over full file for large files.',
+      (ctx as Record<string, unknown>).hasMoreContent
+        ? 'More content available - use charOffset for pagination.'
+        : undefined,
     ],
 
     empty: (_ctx: HintContext = {}) => [
@@ -104,6 +114,13 @@ export const HINTS: Record<string, ToolHintGenerators> = {
             STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT,
             'patternTooBroad'
           ),
+        ];
+      }
+
+      if (ctx.errorType === 'not_found') {
+        return [
+          'File not found. Verify path exists.',
+          'Use localFindFiles or localViewStructure to locate file.',
         ];
       }
 
@@ -271,43 +288,58 @@ export const HINTS: Record<string, ToolHintGenerators> = {
     error: (_ctx: HintContext = {}) => [],
   },
 
-  // LSP Tools
+  // LSP Tools - Best practices from RESEARCH_FLOWS.md
   [STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION]: {
     hasResults: (ctx: HintContext = {}) => [
       'Definition found. Next: lspFindReferences for all usages.',
-      'Chain: lspGotoDefinition on imports to trace to source.',
+      'Chain: lspGotoDefinition on imports to trace to source (A→B→C).',
       (ctx as Record<string, unknown>).locationCount &&
       ((ctx as Record<string, unknown>).locationCount as number) > 1
         ? `Multiple definitions (${(ctx as Record<string, unknown>).locationCount}) - check overloads or re-exports.`
         : undefined,
-      'Read more context: localGetFileContent with wider range.',
+      'Read more context: Use contextLines=10+ for full implementation.',
+      'Trace call relationships: lspCallHierarchy(direction="incoming") for callers.',
       (ctx as Record<string, unknown>).hasExternalPackage
         ? 'External package? Use packageSearch → githubGetFileContent for source.'
+        : undefined,
+      (ctx as Record<string, unknown>).isFallback
+        ? 'Note: Using text-based resolution (language server not available).'
         : undefined,
     ],
     empty: (ctx: HintContext = {}) => [
       'No definition found. Verify symbolName is EXACT (case-sensitive).',
       (ctx as Record<string, unknown>).searchRadius
         ? `Searched ±${(ctx as Record<string, unknown>).searchRadius} lines from lineHint=${(ctx as Record<string, unknown>).lineHint}. Adjust hint.`
-        : 'Check lineHint is 1-indexed and accurate.',
-      'Locate symbol first: localSearchCode(pattern="symbolName") → get line number.',
-      'Dynamic/computed symbol? LSP cannot resolve runtime values.',
-      'Try localSearchCode for text-based fallback.',
+        : 'lineHint is 1-indexed (line 1 = first line). NEVER use 0.',
+      `RECOVERY: localSearchCode(pattern="${(ctx as Record<string, unknown>).symbolName || 'symbolName'}") → get actual line number.`,
+      'orderHint: 0 = first occurrence on line, 1 = second. Adjust if needed.',
+      'Dynamic/computed symbol? LSP cannot resolve runtime values - use localSearchCode.',
     ],
     error: (ctx: HintContext = {}) => {
       if ((ctx as Record<string, unknown>).errorType === 'symbol_not_found') {
         return [
           `Symbol "${(ctx as Record<string, unknown>).symbolName}" not found at line ${(ctx as Record<string, unknown>).lineHint}.`,
-          'Use localSearchCode to find correct location, then retry.',
+          `RECOVERY: localSearchCode(pattern="${(ctx as Record<string, unknown>).symbolName}", type="ts") → find correct line.`,
+          'Then retry lspGotoDefinition with updated lineHint.',
         ];
       }
       if ((ctx as Record<string, unknown>).errorType === 'file_not_found') {
         return [
           'File not found. Verify uri path exists.',
-          'Use localFindFiles or localViewStructure to locate file.',
+          `RECOVERY: localFindFiles(iname="${((ctx as Record<string, unknown>).uri as string)?.split('/').pop() || '*.ts'}") → locate file.`,
+          'Or use localViewStructure to browse directory tree.',
         ];
       }
-      return ['LSP error. Try localSearchCode as fallback.'];
+      if ((ctx as Record<string, unknown>).errorType === 'timeout') {
+        return [
+          'LSP timeout - file may be too large or complex.',
+          `RECOVERY: localGetFileContent(path="${(ctx as Record<string, unknown>).uri}", matchString="${(ctx as Record<string, unknown>).symbolName}") → read directly.`,
+          'Or use localSearchCode(filesOnly=true) to locate symbol first.',
+        ];
+      }
+      return [
+        'LSP error. RECOVERY: Use localSearchCode as text-based fallback.',
+      ];
     },
   },
 
@@ -317,29 +349,45 @@ export const HINTS: Record<string, ToolHintGenerators> = {
       ((ctx as Record<string, unknown>).locationCount as number) > 20
         ? `Found ${(ctx as Record<string, unknown>).locationCount} references. Use referencesPerPage + page to paginate.`
         : `Found ${(ctx as Record<string, unknown>).locationCount || 'multiple'} references.`,
-      'Next: localGetFileContent to read each reference location.',
-      'For call-only references: use lspCallHierarchy instead.',
+      'Next: localGetFileContent to read each reference location for context.',
+      'For function call relationships specifically: use lspCallHierarchy instead.',
+      'Use includeDeclaration=false to exclude the definition itself.',
       (ctx as Record<string, unknown>).hasMultipleFiles
-        ? 'References span multiple files - consider impact analysis.'
+        ? `References span ${(ctx as Record<string, unknown>).fileCount || 'multiple'} files - impact analysis needed.`
         : undefined,
       (ctx as Record<string, unknown>).hasMorePages
         ? `Page ${(ctx as Record<string, unknown>).currentPage}/${(ctx as Record<string, unknown>).totalPages}. Use page=${(((ctx as Record<string, unknown>).currentPage as number) || 1) + 1} for next.`
         : undefined,
+      (ctx as Record<string, unknown>).isFallback
+        ? 'Note: Using text-based search (language server not available).'
+        : 'More precise than grep: ignores comments, strings, similar names.',
     ],
-    empty: (_ctx: HintContext = {}) => [
+    empty: (ctx: HintContext = {}) => [
       'No references found. Symbol may be unused or dynamically referenced.',
-      'Verify symbolName matches exactly (case-sensitive).',
-      'Check if symbol is exported - internal symbols have limited scope.',
-      'Fallback: localSearchCode for text-based search.',
+      'Verify symbolName is EXACT (case-sensitive, complete name).',
+      'lineHint must be accurate (within ±2 lines of actual position).',
+      `RECOVERY: localSearchCode(pattern="${(ctx as Record<string, unknown>).symbolName || 'symbolName'}") → text-based fallback.`,
       'Dead code? Consider removing unused symbol.',
     ],
     error: (ctx: HintContext = {}) => {
       if ((ctx as Record<string, unknown>).errorType === 'symbol_not_found') {
         return [
-          'Could not resolve symbol. Use lspGotoDefinition first to verify location.',
+          'Could not resolve symbol at specified location.',
+          `RECOVERY: localSearchCode(pattern="${(ctx as Record<string, unknown>).symbolName}", type="ts") → find correct line.`,
+          'Then retry lspFindReferences with correct position.',
         ];
       }
-      return ['LSP error. Try localSearchCode as fallback.'];
+      if ((ctx as Record<string, unknown>).errorType === 'timeout') {
+        return [
+          'LSP timeout - symbol may have too many references (100+ common).',
+          'RECOVERY: Use referencesPerPage=10, page=1 to paginate results.',
+          `Or use localSearchCode(pattern="${(ctx as Record<string, unknown>).symbolName}") for faster text search.`,
+        ];
+      }
+      return [
+        'LSP error.',
+        `RECOVERY: localSearchCode(pattern="${(ctx as Record<string, unknown>).symbolName || 'symbolName'}") → text-based fallback.`,
+      ];
     },
   },
 
@@ -350,37 +398,45 @@ export const HINTS: Record<string, ToolHintGenerators> = {
         : `Found ${(ctx as Record<string, unknown>).callCount || 'multiple'} callees. Your target calls these functions.`,
       'Read implementations: localGetFileContent for each call site.',
       (ctx as Record<string, unknown>).depth === 1
-        ? 'Increase depth=2 for transitive calls (A→B→C).'
+        ? 'Increase depth=2 for transitive calls (A→B→C). ⚠️ depth>2 is expensive (O(n^depth)).'
         : `Depth=${(ctx as Record<string, unknown>).depth} showing ${(ctx as Record<string, unknown>).depth}-level call chain.`,
-      'Switch direction: incoming↔outgoing for full picture.',
+      `Switch direction="${(ctx as Record<string, unknown>).direction === 'incoming' ? 'outgoing' : 'incoming'}" for full call graph.`,
       (ctx as Record<string, unknown>).hasMorePages
-        ? `Page ${(ctx as Record<string, unknown>).currentPage}/${(ctx as Record<string, unknown>).totalPages}. More calls available.`
+        ? `Page ${(ctx as Record<string, unknown>).currentPage}/${(ctx as Record<string, unknown>).totalPages}. Use page=${(((ctx as Record<string, unknown>).currentPage as number) || 1) + 1} for next.`
         : undefined,
-      'Chain: lspCallHierarchy on each caller to trace full path.',
+      'Chain: lspGotoDefinition on each caller/callee to navigate.',
+      'Max queries: 3 (lower than other tools due to expensive operation).',
+      (ctx as Record<string, unknown>).isFallback
+        ? 'Note: Using text-based analysis (language server not available).'
+        : undefined,
     ],
     empty: (ctx: HintContext = {}) => [
       (ctx as Record<string, unknown>).direction === 'incoming'
         ? 'No callers found. Function may be entry point, unused, or called dynamically.'
         : 'No callees found. Function may be leaf node or uses only built-ins.',
-      'Verify symbolName is a function/method, not a variable or type.',
-      'Check direction: "incoming" (callers) vs "outgoing" (callees).',
-      'Fallback: lspFindReferences for broader usage search.',
-      'Dynamic calls (callbacks, eval)? LSP cannot trace runtime dispatch.',
+      'Symbol MUST be a function/method, NOT a type/variable.',
+      `RECOVERY: lspFindReferences(symbolName="${(ctx as Record<string, unknown>).symbolName}") → works with all symbol types.`,
+      'Verify symbolName is EXACT and lineHint is accurate (±2 lines).',
+      'Dynamic calls (callbacks, event handlers, eval)? LSP cannot trace runtime dispatch.',
     ],
     error: (ctx: HintContext = {}) => {
       if ((ctx as Record<string, unknown>).errorType === 'not_a_function') {
         return [
-          'Call hierarchy requires a function/method symbol.',
-          'For types/variables, use lspFindReferences instead.',
+          'Call hierarchy requires a function/method symbol, not type/variable.',
+          `RECOVERY: lspFindReferences(symbolName="${(ctx as Record<string, unknown>).symbolName}") → works with types/variables.`,
         ];
       }
       if ((ctx as Record<string, unknown>).errorType === 'timeout') {
         return [
-          `Depth=${(ctx as Record<string, unknown>).depth} caused timeout. Reduce to depth=1.`,
-          'Large codebases: paginate with callsPerPage.',
+          `Depth=${(ctx as Record<string, unknown>).depth} caused timeout (O(n^depth) complexity).`,
+          'RECOVERY: Reduce to depth=1 and use callsPerPage=10 for pagination.',
+          `Or use lspFindReferences(symbolName="${(ctx as Record<string, unknown>).symbolName}") → faster but less specific.`,
         ];
       }
-      return ['LSP error. Try lspFindReferences as fallback.'];
+      return [
+        'LSP error.',
+        `RECOVERY: lspFindReferences(symbolName="${(ctx as Record<string, unknown>).symbolName || 'functionName'}") → fallback.`,
+      ];
     },
   },
 };
@@ -388,7 +444,7 @@ export const HINTS: Record<string, ToolHintGenerators> = {
 /**
  * Tool names that have dynamic hint generators
  */
-export type DynamicToolName = keyof typeof HINTS;
+type DynamicToolName = keyof typeof HINTS;
 
 /**
  * Check if a tool has dynamic hint generators

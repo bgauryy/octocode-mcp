@@ -8,7 +8,7 @@ import { spawn, ChildProcess, SpawnOptions } from 'child_process';
 /**
  * Base options for spawn-with-timeout operations
  */
-export interface SpawnWithTimeoutOptions {
+interface SpawnWithTimeoutOptions {
   /** Command timeout in milliseconds (default: 30000) */
   timeout?: number;
   /** Working directory */
@@ -24,7 +24,7 @@ export interface SpawnWithTimeoutOptions {
 /**
  * Result from spawn-with-timeout execution
  */
-export interface SpawnResult {
+interface SpawnResult {
   /** Collected stdout */
   stdout: string;
   /** Collected stderr */

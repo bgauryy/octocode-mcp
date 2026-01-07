@@ -215,9 +215,7 @@ function formatSkillName(name: string): string {
  * Fetch skills from local bundled source
  * Reads directly from the skills directory bundled with the CLI
  */
-export function fetchLocalSkills(
-  source: MarketplaceSource
-): MarketplaceSkill[] {
+function fetchLocalSkills(source: MarketplaceSource): MarketplaceSkill[] {
   try {
     const skillsSourcePath = getSkillsSourcePath();
     const availableSkills = getAvailableSkills();
@@ -255,7 +253,7 @@ export function fetchLocalSkills(
 /**
  * Install a local skill (copy from bundled source)
  */
-export function installLocalSkill(
+function installLocalSkill(
   skill: MarketplaceSkill,
   destDir: string
 ): { success: boolean; error?: string } {

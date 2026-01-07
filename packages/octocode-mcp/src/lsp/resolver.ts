@@ -36,7 +36,7 @@ export class SymbolResolutionError extends Error {
 /**
  * Configuration for symbol resolver
  */
-export interface SymbolResolverConfig {
+interface SymbolResolverConfig {
   /** Number of lines to search above and below lineHint (default: 2) */
   lineSearchRadius?: number;
 }
@@ -44,7 +44,7 @@ export interface SymbolResolverConfig {
 /**
  * Result of symbol resolution
  */
-export interface ResolvedSymbol {
+interface ResolvedSymbol {
   /** Exact position where symbol was found */
   position: ExactPosition;
   /** The line where symbol was found (1-indexed) */

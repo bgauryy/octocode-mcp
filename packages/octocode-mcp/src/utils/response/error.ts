@@ -11,9 +11,6 @@ import { toToolError, isToolError, type ToolError } from '../../errorCodes.js';
 import { getHints } from '../../tools/hints/index.js';
 import type { BaseQuery } from '../core/types.js';
 
-// Re-export for backwards compatibility
-export type { BaseQuery as BaseQueryFields };
-
 /**
  * Unified error result structure
  * Compatible with both ToolErrorResult (GitHub) and local tool error results
@@ -36,7 +33,7 @@ export interface UnifiedErrorResult {
 /**
  * Options for creating an error result
  */
-export interface CreateErrorResultOptions {
+interface CreateErrorResultOptions {
   /** Tool name for hint generation */
   toolName?: string;
   /** Additional context for hints (local tools only) */

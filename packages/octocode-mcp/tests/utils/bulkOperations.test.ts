@@ -850,7 +850,7 @@ describe('executeBulkOperation', () => {
       const queries = [
         {
           id: 'q1',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
           researchGoal: 123 as any, // Invalid type for testing
         },
       ];
@@ -875,7 +875,7 @@ describe('executeBulkOperation', () => {
       const queries = [
         {
           id: 'q1',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
           reasoning: { nested: 'object' } as any, // Invalid type for testing
         },
       ];
@@ -900,7 +900,7 @@ describe('executeBulkOperation', () => {
       const queries = [
         {
           id: 'q1',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
           researchSuggestions: 'not an array' as any, // Invalid type for testing
         },
       ];
@@ -1094,17 +1094,16 @@ describe('executeBulkOperation', () => {
     it('should process queries in parallel', async () => {
       const queries = [{ id: 'q1' }, { id: 'q2' }, { id: 'q3' }];
       const processingOrder: number[] = [];
-      const processor = vi.fn().mockImplementation(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        async (_query: any, index: number) => {
+      const processor = vi
+        .fn()
+        .mockImplementation(async (_query: any, index: number) => {
           processingOrder.push(index);
           await new Promise(resolve => setTimeout(resolve, 10));
           return {
             status: 'hasResults' as const,
             data: { processed: true },
           };
-        }
-      );
+        });
 
       await executeBulkOperation(queries, processor, {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,

@@ -2,7 +2,7 @@
  * Token Storage Utility
  *
  * Stores OAuth tokens securely using:
- * 1. System keychain (via keytar) - preferred for desktop environments
+ * 1. System keychain (native OS commands) - preferred for desktop environments
  * 2. Encrypted file fallback (~/.octocode/credentials.json) - for CI/server
  *
  * Behavior matches gh CLI's credential storage approach.
@@ -24,6 +24,7 @@ import type {
   CredentialsStore,
 } from './types.js';
 import { HOME } from '../platform/index.js';
+import * as keychain from './keychain.js';
 
 // ============================================================================
 // TIMEOUT UTILITIES (like gh CLI's 3 second timeout)
@@ -56,27 +57,19 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
-// Keytar is optional - will fallback to file storage if not available
-let keytar: typeof import('keytar') | null = null;
+// Check if native keychain is available
+let _keychainAvailable: boolean | null = null;
 
-// Dynamic import of keytar - allows graceful fallback
-async function loadKeytar(): Promise<typeof import('keytar') | null> {
-  if (keytar !== null) return keytar;
-  try {
-    const module = await import('keytar');
-    keytar = module.default || module;
-    return keytar;
-  } catch {
-    // keytar not available - will use file fallback
-    return null;
+function checkKeychainAvailable(): boolean {
+  if (_keychainAvailable === null) {
+    _keychainAvailable = keychain.isKeychainAvailable();
   }
+  return _keychainAvailable;
 }
 
-// Try to load keytar on module init (non-blocking)
-loadKeytar().catch(error => {
-  console.error(
-    `[token-storage] Keytar load failed (using file fallback): ${error instanceof Error ? error.message : String(error)}`
-  );
+// Initialize keychain check on module load (non-blocking)
+Promise.resolve().then(() => {
+  checkKeychainAvailable();
 });
 
 // Service name for keychain storage (like gh uses "gh:github.com")
@@ -93,25 +86,24 @@ const IV_LENGTH = 16;
 
 // Track storage mode
 let _useSecureStorage: boolean | null = null;
-let _keytarInitialized = false;
+let _keychainInitialized = false;
 
 /**
- * Initialize secure storage by loading keytar and migrating legacy credentials
- * Call this before using any credential functions to ensure keytar is loaded
+ * Initialize secure storage by checking keychain availability and migrating legacy credentials.
+ * Call this before using any credential functions to ensure keychain is checked
  * and any legacy file-based credentials are migrated to keychain.
  *
- * @returns true if secure storage (keytar) is available
+ * @returns true if secure storage (native keychain) is available
  */
 export async function initializeSecureStorage(): Promise<boolean> {
-  if (_keytarInitialized) {
+  if (_keychainInitialized) {
     return _useSecureStorage ?? false;
   }
 
-  await loadKeytar();
-  _keytarInitialized = true;
-  _useSecureStorage = keytar !== null;
+  _keychainInitialized = true;
+  _useSecureStorage = checkKeychainAvailable();
 
-  // Migrate legacy credentials if keytar is available
+  // Migrate legacy credentials if keychain is available
   // This ensures migration completes before any credential operations
   if (_useSecureStorage) {
     await migrateLegacyCredentials();
@@ -121,19 +113,15 @@ export async function initializeSecureStorage(): Promise<boolean> {
 }
 
 /**
- * Check if secure storage (keytar) is available
- * Note: This may return false before initializeSecureStorage() is called
- * due to the async nature of keytar loading.
+ * Check if secure storage (native keychain) is available
  */
 export function isSecureStorageAvailable(): boolean {
   if (_useSecureStorage !== null) {
     return _useSecureStorage;
   }
 
-  // If keytar hasn't been initialized yet, check current state
-  // This may return false even if keytar is available (race condition)
-  // Use initializeSecureStorage() for reliable detection
-  _useSecureStorage = keytar !== null;
+  // Check current keychain availability
+  _useSecureStorage = checkKeychainAvailable();
   return _useSecureStorage;
 }
 
@@ -143,10 +131,8 @@ export function isSecureStorageAvailable(): boolean {
  */
 export function _setSecureStorageAvailable(available: boolean): void {
   _useSecureStorage = available;
-  _keytarInitialized = true; // Mark as initialized to prevent re-initialization
-  if (!available) {
-    keytar = null;
-  }
+  _keychainAvailable = available;
+  _keychainInitialized = true;
 }
 
 /**
@@ -155,35 +141,39 @@ export function _setSecureStorageAvailable(available: boolean): void {
  */
 export function _resetSecureStorageState(): void {
   _useSecureStorage = null;
-  _keytarInitialized = false;
-  keytar = null;
+  _keychainAvailable = null;
+  _keychainInitialized = false;
 }
 
 // ============================================================================
-// KEYTAR-BASED SECURE STORAGE (Primary)
+// NATIVE KEYCHAIN SECURE STORAGE (Primary)
 // ============================================================================
 
 /**
  * Store credentials in system keychain
  */
-async function keytarStore(
+async function keychainStore(
   hostname: string,
   credentials: StoredCredentials
 ): Promise<void> {
-  if (!keytar) throw new Error('Keytar not available');
+  if (!checkKeychainAvailable()) {
+    throw new Error('Keychain not available');
+  }
 
   const data = JSON.stringify(credentials);
-  await keytar.setPassword(KEYCHAIN_SERVICE, hostname, data);
+  await keychain.setPassword(KEYCHAIN_SERVICE, hostname, data);
 }
 
 /**
  * Get credentials from system keychain
  */
-async function keytarGet(hostname: string): Promise<StoredCredentials | null> {
-  if (!keytar) return null;
+async function keychainGet(
+  hostname: string
+): Promise<StoredCredentials | null> {
+  if (!checkKeychainAvailable()) return null;
 
   try {
-    const data = await keytar.getPassword(KEYCHAIN_SERVICE, hostname);
+    const data = await keychain.getPassword(KEYCHAIN_SERVICE, hostname);
     if (!data) return null;
     return JSON.parse(data) as StoredCredentials;
   } catch {
@@ -194,11 +184,11 @@ async function keytarGet(hostname: string): Promise<StoredCredentials | null> {
 /**
  * Delete credentials from system keychain
  */
-async function keytarDelete(hostname: string): Promise<boolean> {
-  if (!keytar) return false;
+async function keychainDelete(hostname: string): Promise<boolean> {
+  if (!checkKeychainAvailable()) return false;
 
   try {
-    return await keytar.deletePassword(KEYCHAIN_SERVICE, hostname);
+    return await keychain.deletePassword(KEYCHAIN_SERVICE, hostname);
   } catch {
     return false;
   }
@@ -207,11 +197,11 @@ async function keytarDelete(hostname: string): Promise<boolean> {
 /**
  * List all stored hostnames from keychain
  */
-async function keytarList(): Promise<string[]> {
-  if (!keytar) return [];
+async function keychainList(): Promise<string[]> {
+  if (!checkKeychainAvailable()) return [];
 
   try {
-    const credentials = await keytar.findCredentials(KEYCHAIN_SERVICE);
+    const credentials = await keychain.findCredentials(KEYCHAIN_SERVICE);
     return credentials.map(c => c.account);
   } catch {
     return [];
@@ -394,12 +384,12 @@ async function migrateLegacyCredentials(): Promise<void> {
       try {
         // Check if already in keyring (with timeout)
         const existing = await withTimeout(
-          keytarGet(hostname),
+          keychainGet(hostname),
           KEYRING_TIMEOUT_MS
         );
         if (!existing) {
           await withTimeout(
-            keytarStore(hostname, store.credentials[hostname]),
+            keychainStore(hostname, store.credentials[hostname]),
             KEYRING_TIMEOUT_MS
           );
         }
@@ -467,7 +457,7 @@ export async function storeCredentials(
   if (isSecureStorageAvailable()) {
     try {
       await withTimeout(
-        keytarStore(hostname, normalizedCredentials),
+        keychainStore(hostname, normalizedCredentials),
         KEYRING_TIMEOUT_MS
       );
 
@@ -519,7 +509,7 @@ export async function getCredentials(
   if (isSecureStorageAvailable()) {
     try {
       const creds = await withTimeout(
-        keytarGet(normalizedHostname),
+        keychainGet(normalizedHostname),
         KEYRING_TIMEOUT_MS
       );
       if (creds) return creds;
@@ -579,7 +569,7 @@ export async function deleteCredentials(
   if (isSecureStorageAvailable()) {
     try {
       deletedFromKeyring = await withTimeout(
-        keytarDelete(normalizedHostname),
+        keychainDelete(normalizedHostname),
         KEYRING_TIMEOUT_MS
       );
     } catch (err) {
@@ -621,7 +611,10 @@ export async function listStoredHosts(): Promise<string[]> {
   // Try keyring first (with timeout)
   if (isSecureStorageAvailable()) {
     try {
-      const keychainHosts = await withTimeout(keytarList(), KEYRING_TIMEOUT_MS);
+      const keychainHosts = await withTimeout(
+        keychainList(),
+        KEYRING_TIMEOUT_MS
+      );
       keychainHosts.forEach(h => hosts.add(h));
     } catch (err) {
       // Timeout or error - continue with file

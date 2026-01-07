@@ -352,7 +352,6 @@ async function getFileDetails(
   };
   const worker = async () => {
     for (let i = getNext(); i !== -1; i = getNext()) {
-      // eslint-disable-next-line no-await-in-loop
       await processAtIndex(i);
     }
   };

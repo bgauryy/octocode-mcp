@@ -69,7 +69,7 @@ const DEFAULT_SCOPES = ['repo', 'read:org', 'gist'];
 // Default hostname
 const DEFAULT_HOSTNAME = 'github.com';
 
-export interface LoginOptions {
+interface LoginOptions {
   /** GitHub hostname (default: github.com) */
   hostname?: string;
   /**
@@ -104,14 +104,14 @@ export interface VerificationInfo {
   interval: number;
 }
 
-export interface LoginResult {
+interface LoginResult {
   success: boolean;
   username?: string;
   hostname?: string;
   error?: string;
 }
 
-export interface LogoutResult {
+interface LogoutResult {
   success: boolean;
   error?: string;
 }
@@ -558,7 +558,7 @@ export function getGhCliToken(
 }
 
 /** Token source type for getToken */
-export type GetTokenSource = 'octocode' | 'gh' | 'auto';
+type GetTokenSource = 'octocode' | 'gh' | 'auto';
 
 /**
  * Get token with source information
@@ -609,7 +609,7 @@ export async function getToken(
  * as it requires clientSecret. Instead, we make a simple API call to verify
  * the token works.
  */
-export async function verifyToken(
+async function verifyToken(
   hostname: string = DEFAULT_HOSTNAME
 ): Promise<boolean> {
   const credentials = await getCredentials(hostname);

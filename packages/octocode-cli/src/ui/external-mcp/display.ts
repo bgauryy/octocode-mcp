@@ -12,7 +12,7 @@ export function printMCPDetails(mcp: MCPRegistryEntry): void {
   console.log(
     c('blue', ' │ ') +
       bold(mcp.name) +
-      (mcp.official ? ` ${c('green', '✓ Official')}` : '') +
+      (mcp.official ? ` ${c('cyan', '[Official]')}` : '') +
       ' '.repeat(Math.max(0, 60 - mcp.name.length - (mcp.official ? 12 : 0))) +
       c('blue', '│')
   );
@@ -149,7 +149,7 @@ export function printInstallError(error: string): void {
 /**
  * Print category header
  */
-export function printCategoryHeader(category: string): void {
+function printCategoryHeader(category: string): void {
   const displayCategory = category
     .split('-')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))

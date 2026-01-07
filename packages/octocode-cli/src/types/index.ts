@@ -72,14 +72,14 @@ export interface MCPClientInfo {
 export type InstallMethod = 'direct' | 'npx';
 
 // CLI parsed arguments
-export interface ParsedArgs {
+interface ParsedArgs {
   command: string | null;
   args: string[];
   options: Record<string, string | boolean>;
 }
 
 // CLI command definition
-export interface CLICommand {
+interface CLICommand {
   name: string;
   description: string;
   usage?: string;
@@ -88,7 +88,7 @@ export interface CLICommand {
 }
 
 // CLI option definition
-export interface CLIOption {
+interface CLIOption {
   name: string;
   short?: string;
   description: string;
@@ -105,12 +105,7 @@ export interface GitHubAuthStatus {
 }
 
 // Re-export credential types from shared package
-export type {
-  OAuthToken,
-  StoredCredentials,
-  StoreResult,
-  DeleteResult,
-} from 'octocode-shared';
+export type { OAuthToken, StoredCredentials } from 'octocode-shared';
 
 // Token source for auth status display
 export type TokenSource = 'octocode' | 'gh-cli' | 'env' | 'none';
@@ -139,17 +134,12 @@ export interface TokenResult {
 /**
  * AI Provider identifier
  */
-export type AIProvider =
-  | 'anthropic'
-  | 'openai'
-  | 'google'
-  | 'bedrock'
-  | 'vertex';
+type AIProvider = 'anthropic' | 'openai' | 'google' | 'bedrock' | 'vertex';
 
 /**
  * Source of API key discovery
  */
-export type APIKeySource =
+type APIKeySource =
   | 'environment'
   | 'keychain'
   | 'keychain-oauth'
@@ -162,7 +152,7 @@ export type APIKeySource =
 /**
  * Result from API key discovery
  */
-export interface APIKeyResult {
+interface APIKeyResult {
   key: string | null;
   source: APIKeySource | null;
   provider: AIProvider;
@@ -174,7 +164,7 @@ export interface APIKeyResult {
 /**
  * Claude Code OAuth credentials structure (from keychain)
  */
-export interface ClaudeCodeOAuthCredentials {
+interface ClaudeCodeOAuthCredentials {
   accessToken?: string;
   refreshToken?: string;
   expiresAt?: number;

@@ -9,10 +9,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
 
-// Default: keytar unavailable (will be overridden in specific tests)
-vi.mock('keytar', () => {
-  throw new Error('keytar not available');
-});
+// Mock child_process to prevent real keychain access
+// The keychain module uses spawnSync to call the `security` CLI tool
+vi.mock('node:child_process', () => ({
+  execSync: vi.fn().mockImplementation(() => {
+    throw new Error('mock: security not available');
+  }),
+  spawnSync: vi.fn().mockReturnValue({
+    error: new Error('mock: keychain unavailable'),
+    status: 1,
+    stdout: '',
+    stderr: '',
+  }),
+}));
 
 // Mock modules
 vi.mock('node:fs', () => ({

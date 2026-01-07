@@ -266,7 +266,7 @@ export function shouldIgnoreFile(filePath: string): boolean {
 /**
  * Options for getExtension function
  */
-export interface GetExtensionOptions {
+interface GetExtensionOptions {
   /** Convert extension to lowercase (default: false) */
   lowercase?: boolean;
   /** Fallback value when no extension found (default: '') */

@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { runCommand } from './shell.js';
 
-export interface AppContext {
+interface AppContext {
   cwd: string;
   ide: 'Cursor' | 'VS Code' | 'Terminal' | 'Unknown';
   git?: {

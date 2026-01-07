@@ -212,7 +212,7 @@ function buildOctocodeMenuItem(state: AppState): {
  * @param state - Unified application state
  * @returns MenuChoice or 'exit' if user confirms exit
  */
-export async function showMainMenu(state: AppState): Promise<MenuChoice> {
+async function showMainMenu(state: AppState): Promise<MenuChoice> {
   // Display compact status bar
   console.log();
   console.log(`  ${dim('Status:')} ${buildStatusLine(state)}`);
@@ -853,7 +853,7 @@ async function runAuthFlow(): Promise<void> {
 /**
  * Handle menu selection
  */
-export async function handleMenuChoice(choice: MenuChoice): Promise<boolean> {
+async function handleMenuChoice(choice: MenuChoice): Promise<boolean> {
   switch (choice) {
     case 'octocode':
       await runOctocodeFlow();

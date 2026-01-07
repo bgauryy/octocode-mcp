@@ -202,7 +202,8 @@ async function callHierarchyWithLSP(
   }
 
   // Use the first item (usually there's only one)
-  const targetItem = items[0];
+  // Non-null assertion safe: we checked items.length > 0 above
+  const targetItem = items[0]!;
 
   // Add content snippet to target item
   const enhancedTargetItem = await enhanceCallHierarchyItem(
@@ -913,8 +914,9 @@ async function searchWithGrep(
 
 /**
  * Parse ripgrep JSON output
+ * @internal Exported for testing
  */
-function parseRipgrepJsonOutput(output: string): CallSite[] {
+export function parseRipgrepJsonOutput(output: string): CallSite[] {
   const results: CallSite[] = [];
   const lines = output.split('\n').filter(line => line.trim());
 
@@ -940,8 +942,9 @@ function parseRipgrepJsonOutput(output: string): CallSite[] {
 
 /**
  * Parse grep output (file:line:content format)
+ * @internal Exported for testing
  */
-function parseGrepOutput(output: string): CallSite[] {
+export function parseGrepOutput(output: string): CallSite[] {
   const results: CallSite[] = [];
   const lines = output.split('\n').filter(line => line.trim());
 
@@ -1073,8 +1076,9 @@ async function createCallHierarchyItemFromSite(
 
 /**
  * Extract function body starting from a line
+ * @internal Exported for testing
  */
-function extractFunctionBody(
+export function extractFunctionBody(
   lines: string[],
   startLineIndex: number
 ): { lines: string[]; startLine: number; endLine: number } | null {
@@ -1142,8 +1146,9 @@ function extractFunctionBody(
 
 /**
  * Infer symbol kind from line content
+ * @internal Exported for testing
  */
-function inferSymbolKind(line: string): SymbolKind {
+export function inferSymbolKind(line: string): SymbolKind {
   if (/\bclass\b/.test(line)) return 'class';
   if (/\binterface\b/.test(line)) return 'interface';
   if (/\btype\b/.test(line)) return 'type';
@@ -1159,8 +1164,9 @@ function inferSymbolKind(line: string): SymbolKind {
 
 /**
  * Create an LSP range
+ * @internal Exported for testing
  */
-function createRange(
+export function createRange(
   line: number,
   character: number,
   length: number
@@ -1173,6 +1179,7 @@ function createRange(
 
 /**
  * Escape special regex characters
+ * @internal Exported for testing
  */
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

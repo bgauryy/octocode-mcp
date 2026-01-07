@@ -12,14 +12,6 @@ import { getStaticHints } from './static.js';
 import { getDynamicHints, hasDynamicHints } from './dynamic.js';
 import type { HintContext, HintStatus } from './types.js';
 
-// Re-export types for convenience
-export type {
-  HintContext,
-  HintStatus,
-  HintGenerator,
-  ToolHintGenerators,
-} from './types.js';
-
 // Re-export utility functions and HINTS object
 export {
   hasDynamicHints,

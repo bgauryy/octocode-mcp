@@ -15,6 +15,24 @@ export const LSP_GOTO_DEFINITION_DESCRIPTION = `## Navigate to symbol definition
 - Trace import to source | Jump to declaration
 - After localSearchCode finds symbol → get precise definition
 </when>
+<when_NOT>
+- DON'T use for partial/fuzzy matching → use localSearchCode
+- DON'T use for searching comments/strings → use localSearchCode
+- DON'T use for regex patterns → use localSearchCode
+- DON'T use if you don't know exact line → localSearchCode first
+</when_NOT>
+<prerequisites>
+- File must be in workspace (not node_modules by default)
+- TypeScript/JavaScript language server must be available
+- Symbol name must be EXACT (case-sensitive, complete name)
+- lineHint must be within ±2 lines of actual symbol position
+</prerequisites>
+<limitations>
+- Cannot resolve dynamic symbols (computed property names, eval)
+- Cannot trace through runtime polymorphism
+- External library definitions require node_modules access
+- Large files may timeout - use localSearchCode first to locate
+</limitations>
 <fromTool>
 - self: Chain definitions (A→B→C) for deep tracing
 - localSearchCode: Found symbol match → lspGotoDefinition for precise location
@@ -29,6 +47,15 @@ export const LSP_GOTO_DEFINITION_DESCRIPTION = `## Navigate to symbol definition
 - Returns empty if symbol not in ±2 lines of lineHint (adjust hint if needed)
 - For overloaded functions: use orderHint to disambiguate
 </gotchas>
+<recovery>
+- Empty result? → localSearchCode(pattern="symbolName") to find correct line
+- File not found? → localFindFiles or localViewStructure to locate
+- Timeout? → Use localGetFileContent(matchString="symbol") for large files
+</recovery>
+<defaults>
+- contextLines: 5 (lines before + after definition)
+- orderHint: 0 (first occurrence on line)
+</defaults>
 <examples>
 - uri="src/utils.ts", symbolName="fetchData", lineHint=42
 - uri="src/types/index.ts", symbolName="UserConfig", lineHint=15, orderHint=0
@@ -93,6 +120,4 @@ export const BulkLSPGotoDefinitionSchema = createBulkQuerySchema(
 export type LSPGotoDefinitionQuery = z.infer<
   typeof LSPGotoDefinitionQuerySchema
 >;
-export type BulkLSPGotoDefinitionRequest = z.infer<
-  typeof BulkLSPGotoDefinitionSchema
->;
+type BulkLSPGotoDefinitionRequest = z.infer<typeof BulkLSPGotoDefinitionSchema>;

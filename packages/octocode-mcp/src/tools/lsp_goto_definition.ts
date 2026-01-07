@@ -317,8 +317,9 @@ function createFallbackResult(
 
 /**
  * Add line numbers to code content, highlighting the target line
+ * @internal Exported for testing
  */
-function addLineNumbers(
+export function addLineNumbers(
   content: string,
   startLine: number,
   targetLine: number

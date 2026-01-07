@@ -351,18 +351,15 @@ export interface FetchContentResult extends BaseQuery {
 /**
  * Bulk operation query wrapper
  */
-export interface BulkQuery<T> {
+interface BulkQuery<T> {
   queries: T[];
 }
 
 /**
  * Bulk operation result wrapper
  */
-export interface BulkResult<T> {
+interface BulkResult<T> {
   results: T[];
   successCount: number;
   errorCount: number;
 }
-
-// Re-export ToolResponse from main types
-export type { ToolResponse } from '../../types.js';

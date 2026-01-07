@@ -392,10 +392,7 @@ function printReport(results: ValidationResult[]): void {
   console.log(`  🔴 Errors:          ${errors.length}`);
 
   // Skills count summary
-  const totalSkills = results.reduce(
-    (sum, r) => sum + (r.skillsCount || 0),
-    0
-  );
+  const totalSkills = results.reduce((sum, r) => sum + (r.skillsCount || 0), 0);
   if (totalSkills > 0) {
     console.log(`  📚 Total Skills:    ${totalSkills}`);
   }
@@ -403,7 +400,9 @@ function printReport(results: ValidationResult[]): void {
 
   // Invalid marketplaces
   if (invalid.length > 0) {
-    console.log('❌ INVALID MARKETPLACES (Repository not found or inaccessible)');
+    console.log(
+      '❌ INVALID MARKETPLACES (Repository not found or inaccessible)'
+    );
     console.log('─'.repeat(80));
     for (const m of invalid) {
       console.log(`  • ${m.id}`);
@@ -494,7 +493,8 @@ function printReport(results: ValidationResult[]): void {
     console.log('─'.repeat(40));
     for (const m of sortedByStars) {
       const stars = (m.stars ?? 0).toString().padStart(6);
-      const skills = m.skillsCount !== undefined ? ` (${m.skillsCount} skills)` : '';
+      const skills =
+        m.skillsCount !== undefined ? ` (${m.skillsCount} skills)` : '';
       console.log(`  ${stars} ⭐  ${m.name}${skills}`);
     }
     console.log();
@@ -523,10 +523,7 @@ function outputJson(results: ValidationResult[]): void {
         warnings,
         total: results.length,
         validCount: results.filter(r => r.status === 'valid').length,
-        totalSkills: results.reduce(
-          (sum, r) => sum + (r.skillsCount || 0),
-          0
-        ),
+        totalSkills: results.reduce((sum, r) => sum + (r.skillsCount || 0), 0),
       },
       null,
       2
@@ -585,4 +582,3 @@ main().catch(err => {
   console.error('Fatal error:', err);
   process.exit(1);
 });
-

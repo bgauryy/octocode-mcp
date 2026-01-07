@@ -405,7 +405,7 @@ describe('Skills Fetch Utilities', () => {
     describe('clearSkillsCache', () => {
       it('should clear all cached skill files', () => {
         vi.mocked(dirExists).mockReturnValue(true);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         vi.mocked(nodeFs.readdirSync).mockReturnValue([
           'source1.json',
           'source2.json',

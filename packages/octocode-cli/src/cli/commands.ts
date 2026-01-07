@@ -991,7 +991,7 @@ const syncCommand: CLICommand = {
 /**
  * All available commands
  */
-export const commands: CLICommand[] = [
+const commands: CLICommand[] = [
   installCommand,
   authCommand,
   loginCommand,

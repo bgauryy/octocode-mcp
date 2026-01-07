@@ -31,7 +31,6 @@ function applyStructurePagination(
   const cachedItems = cachedResult._cachedItems;
 
   if (!cachedItems || cachedItems.length === 0) {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { _cachedItems, ...result } = cachedResult;
     return result;
   }

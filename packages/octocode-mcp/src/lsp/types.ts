@@ -136,7 +136,7 @@ export interface LSPPaginationInfo {
 /**
  * Base LSP tool result
  */
-export interface LSPToolResultBase {
+interface LSPToolResultBase {
   /** Result status */
   status: 'hasResults' | 'empty' | 'error';
   /** Error message if status is 'error' */
@@ -155,7 +155,7 @@ export interface LSPToolResultBase {
 /**
  * LSP error types for dynamic hints
  */
-export type LSPErrorType =
+type LSPErrorType =
   | 'symbol_not_found'
   | 'file_not_found'
   | 'not_a_function'
@@ -210,7 +210,7 @@ export interface CallHierarchyResult extends LSPToolResultBase {
 /**
  * LSP hint context extending base HintContext
  */
-export interface LSPHintContext {
+interface LSPHintContext {
   // Resolution info
   symbolFound?: boolean;
   resolvedLine?: number;

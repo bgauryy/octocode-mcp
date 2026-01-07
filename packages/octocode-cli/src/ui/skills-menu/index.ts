@@ -43,7 +43,7 @@ const RECOMMENDED_SKILLS = new Set([
 /**
  * Installed skill info - parsed from SKILL.md following agentskills.io protocol
  */
-export interface InstalledSkill {
+interface InstalledSkill {
   /** Skill name from frontmatter */
   name: string;
   /** Description from frontmatter */

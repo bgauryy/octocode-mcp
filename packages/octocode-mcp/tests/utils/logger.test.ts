@@ -226,7 +226,7 @@ describe('Logger', () => {
   describe('LoggerFactory', () => {
     beforeEach(() => {
       // Clear the factory cache between tests
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       (LoggerFactory as any).loggers.clear();
     });
 
@@ -257,7 +257,6 @@ describe('Logger', () => {
     });
 
     it('should return OctocodeLogger instances', () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const logger = LoggerFactory.getLogger(mockServer as any, 'component');
 
       expect(logger).toBeInstanceOf(OctocodeLogger);

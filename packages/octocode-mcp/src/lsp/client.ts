@@ -8,6 +8,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { createRequire } from 'module';
+import { URI } from 'vscode-uri';
 import {
   createMessageConnection,
   MessageConnection,
@@ -49,7 +50,7 @@ const require = createRequire(import.meta.url);
 /**
  * Language server configuration
  */
-export interface LanguageServerConfig {
+interface LanguageServerConfig {
   /** Command to spawn the language server */
   command: string;
   /** Arguments for the command */
@@ -206,21 +207,48 @@ function convertSymbolKind(kind: LSPSymbolKind): SymbolKind {
 }
 
 /**
- * Convert file path to LSP URI
+ * Convert a file path to a file:// URI using proper encoding.
+ * Handles Windows paths, UNC paths, and special characters correctly.
+ *
+ * @param filePath - Absolute or relative file path
+ * @returns Properly encoded file:// URI
+ *
+ * @example
+ * toUri('/users/me/file.ts')           // 'file:///users/me/file.ts'
+ * toUri('C:\\Users\\me\\file.ts')      // 'file:///c%3A/Users/me/file.ts'
+ * toUri('/path/with spaces/file#1.ts') // 'file:///path/with%20spaces/file%231.ts'
  */
 function toUri(filePath: string): string {
-  if (filePath.startsWith('file://')) return filePath;
-  return `file://${path.resolve(filePath)}`;
+  // Already a URI - return as-is
+  if (filePath.startsWith('file://')) {
+    return filePath;
+  }
+
+  // Resolve to absolute path and convert to URI
+  const absolutePath = path.resolve(filePath);
+  return URI.file(absolutePath).toString();
 }
 
 /**
- * Convert LSP URI to file path
+ * Convert a file:// URI back to a filesystem path.
+ * Returns platform-specific path (forward slashes on Unix, backslashes on Windows).
+ *
+ * @param uri - A file:// URI string
+ * @returns Platform-specific filesystem path
+ *
+ * @example
+ * fromUri('file:///users/me/file.ts')           // '/users/me/file.ts'
+ * fromUri('file:///c%3A/Users/me/file.ts')      // 'C:\Users\me\file.ts' (Windows)
+ * fromUri('file:///path/with%20spaces/file.ts') // '/path/with spaces/file.ts'
  */
 function fromUri(uri: string): string {
-  if (uri.startsWith('file://')) {
-    return uri.slice(7);
+  // Not a file URI - return as-is
+  if (!uri.startsWith('file://')) {
+    return uri;
   }
-  return uri;
+
+  // Parse and return filesystem path
+  return URI.parse(uri).fsPath;
 }
 
 /**
@@ -737,23 +765,67 @@ export async function getOrCreateClient(
 }
 
 /**
- * Check if a language server is available for the given file
+ * Check if a command exists in the system PATH.
+ * Works cross-platform (Windows, macOS, Linux).
+ *
+ * @param command - The command name to check (e.g., 'node', 'python')
+ * @returns Promise resolving to true if command exists, false otherwise
+ *
+ * @example
+ * await commandExists('node')    // true (if Node.js installed)
+ * await commandExists('nonexistent')  // false
+ */
+async function commandExists(command: string): Promise<boolean> {
+  const isWindows = process.platform === 'win32';
+  const checkCmd = isWindows ? 'where' : 'which';
+
+  return new Promise(resolve => {
+    const proc = spawn(checkCmd, [command], {
+      stdio: 'ignore',
+      shell: isWindows, // Required for 'where' on Windows
+    });
+
+    const timeout = setTimeout(() => {
+      proc.kill();
+      resolve(false);
+    }, 5000);
+
+    proc.on('close', code => {
+      clearTimeout(timeout);
+      resolve(code === 0);
+    });
+
+    proc.on('error', () => {
+      clearTimeout(timeout);
+      resolve(false);
+    });
+  });
+}
+
+/**
+ * Check if a language server is available for the given file type.
+ *
+ * @param filePath - Path to a source file
+ * @returns Promise resolving to true if an LSP server is available
  */
 export async function isLanguageServerAvailable(
   filePath: string
 ): Promise<boolean> {
   const ext = path.extname(filePath).toLowerCase();
   const serverInfo = LANGUAGE_SERVER_COMMANDS[ext];
-  if (!serverInfo) return false;
+
+  if (!serverInfo) {
+    return false;
+  }
 
   const { command } = resolveLanguageServer(serverInfo);
 
-  // If command is node (process.execPath), assume it works (bundled)
+  // Bundled server (typescript-language-server via node)
   if (command === process.execPath) {
     return true;
   }
 
-  // If command is absolute path, check existence
+  // Absolute path - check if file exists
   if (path.isAbsolute(command)) {
     try {
       await fs.access(command);
@@ -763,17 +835,8 @@ export async function isLanguageServerAvailable(
     }
   }
 
-  // Check if command exists in PATH
-  const { exec } = await import('child_process');
-  const { promisify } = await import('util');
-  const execAsync = promisify(exec);
-
-  try {
-    await execAsync(`which ${command}`);
-    return true;
-  } catch {
-    return false;
-  }
+  // PATH lookup - cross-platform check
+  return commandExists(command);
 }
 
 /**

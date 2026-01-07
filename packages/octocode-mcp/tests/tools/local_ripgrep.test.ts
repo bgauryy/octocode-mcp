@@ -36,7 +36,6 @@ vi.mock('fs', () => ({
 const runRipgrep = (query: Parameters<typeof RipgrepQuerySchema.parse>[0]) =>
   searchContentRipgrep(RipgrepQuerySchema.parse(query));
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockFsReaddir = vi.mocked((fs as any).readdir);
 
 describe('localSearchCode', () => {
@@ -1162,7 +1161,6 @@ describe('localSearchCode', () => {
         path: '/test/path',
         filesPerPage: 10,
         filePageNumber: 0,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
       expect(['hasResults', 'empty']).toContain(result.status);
@@ -1196,7 +1194,6 @@ describe('localSearchCode', () => {
         path: '/test/path',
         filesPerPage: 10,
         filePageNumber: -2,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
       expect(['hasResults', 'empty']).toContain(result.status);
@@ -1363,7 +1360,6 @@ describe('localSearchCode', () => {
         pattern: 'test',
         path: '/test/path',
         matchesPerPage: 1000,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
       expect(result.status).toBe('hasResults');

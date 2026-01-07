@@ -7,9 +7,16 @@
   "repository": "bgauryy/octocode-mcp.git",
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "PolyForm-Small-Business-1.0.0",
+  "type": "module",
   "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-plugin-prettier": "^5.5.4",
+    "prettier": "^3.5.3",
     "syncpack": "^14.0.0-alpha.19",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.52.0"
   },
   "engines": {
     "node": ">=20.0.0"

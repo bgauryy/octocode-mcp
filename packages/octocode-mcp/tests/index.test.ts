@@ -70,17 +70,16 @@ const mockRegisterViewGitHubRepoStructureTool = vi.mocked(
 );
 
 describe('Index Module', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let processExitSpy: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let processStdinResumeSpy: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let processStdinOnSpy: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let processOnSpy: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let processStdoutUncorkSpy: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let processStderrUncorkSpy: any;
   let originalGithubToken: string | undefined;
   let originalGhToken: string | undefined;

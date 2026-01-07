@@ -103,7 +103,7 @@ export function printClientStatus(snapshots: ClientConfigSnapshot[]): void {
 /**
  * Print MCP diff details
  */
-export function printMCPDiff(diff: MCPDiff): void {
+function printMCPDiff(diff: MCPDiff): void {
   const icon = diff.hasConflict
     ? c('red', '!')
     : diff.missingIn.length > 0
@@ -169,10 +169,7 @@ export function printAllDiffs(analysis: SyncAnalysis): void {
 /**
  * Print MCP server config details
  */
-export function printServerConfig(
-  server: MCPServer,
-  indent: string = '     '
-): void {
+function printServerConfig(server: MCPServer, indent: string = '     '): void {
   console.log(`${indent}${dim('command:')} ${server.command || dim('(none)')}`);
   const argsStr = server.args?.join(' ') || '';
   if (argsStr) {

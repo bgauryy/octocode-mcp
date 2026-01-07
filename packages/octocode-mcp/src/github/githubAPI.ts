@@ -55,39 +55,38 @@ export type IssueComment = components['schemas']['issue-comment'];
  * Rate limit resource info (core, search, graphql, etc.)
  * Schema: components['schemas']['rate-limit']
  */
-export type OctokitRateLimit = components['schemas']['rate-limit'];
+type OctokitRateLimit = components['schemas']['rate-limit'];
 
 /**
  * Full rate limit overview response.
  * Schema: components['schemas']['rate-limit-overview']
  */
-export type OctokitRateLimitOverview =
-  components['schemas']['rate-limit-overview'];
+type OctokitRateLimitOverview = components['schemas']['rate-limit-overview'];
 
 // ─── User Types ─────────────────────────────────────────────────────────────
 /**
  * Simple user representation (minimal fields).
  * Schema: components['schemas']['simple-user']
  */
-export type OctokitSimpleUser = components['schemas']['simple-user'];
+type OctokitSimpleUser = components['schemas']['simple-user'];
 
 /**
  * Public user profile with full details.
  * Schema: components['schemas']['public-user']
  */
-export type OctokitPublicUser = components['schemas']['public-user'];
+type OctokitPublicUser = components['schemas']['public-user'];
 
 /**
  * Private user profile (authenticated user).
  * Schema: components['schemas']['private-user']
  */
-export type OctokitPrivateUser = components['schemas']['private-user'];
+type OctokitPrivateUser = components['schemas']['private-user'];
 
 // ─── Commit Types ───────────────────────────────────────────────────────────
 /**
  * Commit details. Schema: components['schemas']['commit']
  */
-export type OctokitCommit = components['schemas']['commit'];
+type OctokitCommit = components['schemas']['commit'];
 
 /** Commit file change information (merged from CommitFileItem) */
 export interface CommitFileInfo {
@@ -110,8 +109,7 @@ export interface CommitInfo {
 
 export type GetContentParameters =
   RestEndpointMethodTypes['repos']['getContent']['parameters'];
-export type GetRepoResponse =
-  RestEndpointMethodTypes['repos']['get']['response'];
+type GetRepoResponse = RestEndpointMethodTypes['repos']['get']['response'];
 export type SearchCodeParameters =
   RestEndpointMethodTypes['search']['code']['parameters'];
 export type SearchCodeResponse =
@@ -120,11 +118,9 @@ export type SearchReposParameters =
   RestEndpointMethodTypes['search']['repos']['parameters'];
 
 // Pull Request REST endpoint types
-export type PullsListResponse =
-  RestEndpointMethodTypes['pulls']['list']['response'];
-export type PullsGetResponse =
-  RestEndpointMethodTypes['pulls']['get']['response'];
-export type IssuesListCommentsResponse =
+type PullsListResponse = RestEndpointMethodTypes['pulls']['list']['response'];
+type PullsGetResponse = RestEndpointMethodTypes['pulls']['get']['response'];
+type IssuesListCommentsResponse =
   RestEndpointMethodTypes['issues']['listComments']['response'];
 
 export interface GitHubAPIError {

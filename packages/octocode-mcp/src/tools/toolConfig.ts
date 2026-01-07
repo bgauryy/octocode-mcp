@@ -128,7 +128,7 @@ export const LOCAL_FETCH_CONTENT: ToolConfig = {
 };
 
 // LSP Tools (isLocal: true) - semantic code intelligence
-export const LSP_GOTO_DEFINITION: ToolConfig = {
+const LSP_GOTO_DEFINITION: ToolConfig = {
   name: TOOL_NAMES.LSP_GOTO_DEFINITION,
   description: getDescription(TOOL_NAMES.LSP_GOTO_DEFINITION),
   isDefault: true,
@@ -137,7 +137,7 @@ export const LSP_GOTO_DEFINITION: ToolConfig = {
   fn: registerLSPGotoDefinitionTool,
 };
 
-export const LSP_FIND_REFERENCES: ToolConfig = {
+const LSP_FIND_REFERENCES: ToolConfig = {
   name: TOOL_NAMES.LSP_FIND_REFERENCES,
   description: getDescription(TOOL_NAMES.LSP_FIND_REFERENCES),
   isDefault: true,
@@ -146,7 +146,7 @@ export const LSP_FIND_REFERENCES: ToolConfig = {
   fn: registerLSPFindReferencesTool,
 };
 
-export const LSP_CALL_HIERARCHY: ToolConfig = {
+const LSP_CALL_HIERARCHY: ToolConfig = {
   name: TOOL_NAMES.LSP_CALL_HIERARCHY,
   description: getDescription(TOOL_NAMES.LSP_CALL_HIERARCHY),
   isDefault: true,

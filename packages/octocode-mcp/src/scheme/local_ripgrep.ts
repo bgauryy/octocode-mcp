@@ -16,7 +16,47 @@ import {
  */
 export const LOCAL_RIPGREP_DESCRIPTION =
   DESCRIPTIONS[TOOL_NAMES.LOCAL_RIPGREP] ||
-  'Search local files using ripgrep (rg) with grep fallback';
+  `## Search local files using ripgrep (rg) with grep fallback
+<when>
+- Find code patterns across files (regex or literal)
+- Locate symbols, functions, imports, or strings
+- Discovery phase before using LSP tools
+</when>
+<when_NOT>
+- DON'T use for semantic analysis → use LSP tools after locating
+- DON'T use for metadata filters (time, size) → use localFindFiles
+</when_NOT>
+<workflow>
+1. Discovery: filesOnly=true → get file list
+2. Refine: Add type/path filters
+3. Read: localGetFileContent with matchString
+</workflow>
+<defaults>
+- smartCase: true (case-insensitive unless pattern has uppercase)
+- filesPerPage: 10
+- matchesPerPage: 10
+</defaults>
+<common_patterns>
+# Find all exports
+pattern="export (function|class|const|interface)", type="ts"
+
+# Find TODO/FIXME
+pattern="TODO|FIXME|HACK", type="ts"
+
+# Find imports from specific module
+pattern="import.*from.*lodash"
+
+# Find function calls
+pattern="functionName\\\\("
+
+# File discovery only
+pattern="AuthService", filesOnly=true, type="ts"
+</common_patterns>
+<bulk_behavior>
+- Max queries: 5
+- Queries execute in parallel
+- Each query result is independent
+</bulk_behavior>`;
 
 /**
  * Ripgrep search content query schema
@@ -251,7 +291,7 @@ export const BulkRipgrepQuerySchema = createBulkQuerySchema(
 );
 
 export type RipgrepQuery = z.infer<typeof RipgrepQuerySchema>;
-export type BulkRipgrepQuery = z.infer<typeof BulkRipgrepQuerySchema>;
+type BulkRipgrepQuery = z.infer<typeof BulkRipgrepQuerySchema>;
 
 /**
  * Apply workflow mode presets to query

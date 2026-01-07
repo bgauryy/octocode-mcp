@@ -47,8 +47,9 @@
 octocode-mcp/
 ├── packages/
 │   ├── octocode-mcp/      # GitHub API MCP server (Node.js)
+│   ├── octocode-cli/      # CLI installer & skills manager
 │   ├── octocode-vscode/   # VS Code extension
-│   └── octocode-cli/      # CLI installer
+│   └── octocode-shared/   # Shared utilities (credentials, platform)
 ├── docs/                  # Configuration & auth guides
 └── package.json           # Workspace root
 ```
@@ -61,8 +62,9 @@ octocode-mcp/
 | Path | Access | Description |
 |------|--------|-------------|
 | `packages/octocode-mcp/` | FULL | GitHub MCP server source |
-| `packages/octocode-vscode/` | FULL | VS Code extension source |
 | `packages/octocode-cli/` | FULL | CLI installer source |
+| `packages/octocode-vscode/` | FULL | VS Code extension source |
+| `packages/octocode-shared/` | FULL | Shared utilities source |
 | `docs/` | EDIT | Documentation |
 | `*.json`, `*.config.*` | ASK | Root configurations |
 | `.env*`, `.octocode/` | NEVER | Secrets & research context |
@@ -156,13 +158,14 @@ packages/<name>/tests/
 
 ## 📦 Package-Level AGENTS.md
 
-Each package may have its own `AGENTS.md` with specific guidelines:
+Each package has its own `AGENTS.md` with specific guidelines:
 
 | Package | Location | Purpose |
 |---------|----------|---------|
 | `octocode-mcp` | [`packages/octocode-mcp/AGENTS.md`](./packages/octocode-mcp/AGENTS.md) | MCP server tools, security, bulk operations |
-| `octocode-vscode` | `packages/octocode-vscode/` | VS Code extension |
-| `octocode-cli` | `packages/octocode-cli/` | CLI installer |
+| `octocode-cli` | [`packages/octocode-cli/AGENTS.md`](./packages/octocode-cli/AGENTS.md) | CLI installer, skills, MCP marketplace |
+| `octocode-vscode` | [`packages/octocode-vscode/AGENTS.md`](./packages/octocode-vscode/AGENTS.md) | VS Code extension, OAuth, multi-editor support |
+| `octocode-shared` | [`packages/octocode-shared/AGENTS.md`](./packages/octocode-shared/AGENTS.md) | Shared credentials & platform utilities |
 
 Package-level files **override** this root file for work within that package.
 

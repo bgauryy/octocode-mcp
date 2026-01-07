@@ -9,10 +9,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
 
-// Mock keytar to be unavailable
-vi.mock('keytar', () => {
-  throw new Error('keytar not available');
-});
+// Mock keychain to be unavailable
+vi.mock('../../src/credentials/keychain.js', () => ({
+  isKeychainAvailable: vi.fn().mockReturnValue(false),
+  setPassword: vi.fn(),
+  getPassword: vi.fn(),
+  deletePassword: vi.fn(),
+  findCredentials: vi.fn().mockReturnValue([]),
+}));
 
 // Mock fs module
 vi.mock('node:fs', () => ({
@@ -65,7 +69,7 @@ describe('Token Storage', () => {
     // Setup crypto mocks
     vi.mocked(crypto.randomBytes).mockReturnValue(mockIv as unknown as void);
 
-    // Ensure keytar is disabled
+    // Ensure keychain is disabled
     const { _setSecureStorageAvailable, _resetSecureStorageState } =
       await import('../../src/credentials/storage.js');
     _resetSecureStorageState();
@@ -77,7 +81,7 @@ describe('Token Storage', () => {
   });
 
   describe('isSecureStorageAvailable', () => {
-    it('should return false when keytar is unavailable', async () => {
+    it('should return false when keychain is unavailable', async () => {
       const { isSecureStorageAvailable, _setSecureStorageAvailable } =
         await import('../../src/credentials/storage.js');
 
@@ -85,7 +89,7 @@ describe('Token Storage', () => {
       expect(isSecureStorageAvailable()).toBe(false);
     });
 
-    it('should return true when keytar is available', async () => {
+    it('should return true when keychain is available', async () => {
       const { isSecureStorageAvailable, _setSecureStorageAvailable } =
         await import('../../src/credentials/storage.js');
 
@@ -95,7 +99,7 @@ describe('Token Storage', () => {
   });
 
   describe('storeCredentials', () => {
-    it('should write encrypted credentials to file when keytar unavailable', async () => {
+    it('should write encrypted credentials to file when keychain unavailable', async () => {
       vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
         if (String(path).includes('.key')) return true;
         return false;

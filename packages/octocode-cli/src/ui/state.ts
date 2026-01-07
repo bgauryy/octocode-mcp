@@ -23,7 +23,7 @@ import path from 'node:path';
 /**
  * Skill installation info
  */
-export interface SkillInfo {
+interface SkillInfo {
   name: string;
   installed: boolean;
   srcPath: string;
@@ -50,7 +50,7 @@ export interface SkillsState {
 /**
  * Octocode MCP installation state
  */
-export interface OctocodeState {
+interface OctocodeState {
   installedClients: ClientInstallStatus[];
   availableClients: ClientInstallStatus[];
   /** Total count of clients where Octocode is installed */
@@ -78,7 +78,7 @@ export interface AppState {
 /**
  * Get Octocode MCP installation state
  */
-export function getOctocodeState(): OctocodeState {
+function getOctocodeState(): OctocodeState {
   const allClients = getAllClientInstallStatus();
   const installedClients = allClients.filter(c => c.octocodeInstalled);
   const availableClients = allClients.filter(
@@ -98,7 +98,7 @@ export function getOctocodeState(): OctocodeState {
 /**
  * Get Skills state - includes counts for both bundled and all installed
  */
-export function getSkillsState(): SkillsState {
+function getSkillsState(): SkillsState {
   const srcDir = getSkillsSourceDir();
   const destDir = getSkillsDestDir();
 

@@ -93,9 +93,9 @@ describe('GitHub Client Race Conditions', () => {
     expect(mockOctokit).toHaveBeenCalledTimes(2);
 
     // Verify correct tokens used
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((instance1 as any).options.auth).toBe('token-1');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((instance2 as any).options.auth).toBe('token-2');
   });
 

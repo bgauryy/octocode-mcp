@@ -35,6 +35,26 @@ export const LSP_FIND_REFERENCES_DESCRIPTION = `## Find all references to a symb
 - Impact analysis before refactoring | "Who calls this?"
 - After lspGotoDefinition -> find where symbol is used
 </when>
+<when_NOT>
+- DON'T use for partial/fuzzy matching → use localSearchCode
+- DON'T use for searching comments/strings → use localSearchCode
+- DON'T use for regex patterns → use localSearchCode
+- DON'T use for call relationships specifically → use lspCallHierarchy
+</when_NOT>
+<prefer_over>
+- localSearchCode: When you need semantic accuracy (ignores comments, strings)
+- grep: When you need cross-file symbol tracking with type awareness
+</prefer_over>
+<prerequisites>
+- File must be in workspace
+- Symbol name must be EXACT (case-sensitive)
+- lineHint must be accurate (within ±2 lines)
+</prerequisites>
+<limitations>
+- Cannot find dynamic references (computed property access, eval)
+- Cannot track through string concatenation or template literals
+- Large result sets may need pagination (100+ references common)
+</limitations>
 <fromTool>
 - self: Paginate through large result sets (page parameter)
 - lspGotoDefinition: Find definition first -> lspFindReferences for usages
@@ -49,6 +69,17 @@ export const LSP_FIND_REFERENCES_DESCRIPTION = `## Find all references to a symb
 - Slower than localSearchCode but semantically accurate
 - Empty result? Verify symbolName is exact and lineHint is correct
 </gotchas>
+<recovery>
+- Empty result? → Verify symbolName is EXACT, check lineHint accuracy
+- Symbol may be unused → Consider dead code removal
+- Dynamic references? → Use localSearchCode as fallback
+</recovery>
+<defaults>
+- includeDeclaration: true (includes definition in results)
+- contextLines: 2 (lines around each reference)
+- referencesPerPage: 20
+- page: 1
+</defaults>
 <examples>
 - uri="src/api/client.ts", symbolName="fetchUser", lineHint=45, includeDeclaration=false
 - uri="src/types.ts", symbolName="UserConfig", lineHint=10, referencesPerPage=20, page=1
@@ -123,6 +154,4 @@ export const BulkLSPFindReferencesSchema = createBulkQuerySchema(
 export type LSPFindReferencesQuery = z.infer<
   typeof LSPFindReferencesQuerySchema
 >;
-export type BulkLSPFindReferencesRequest = z.infer<
-  typeof BulkLSPFindReferencesSchema
->;
+type BulkLSPFindReferencesRequest = z.infer<typeof BulkLSPFindReferencesSchema>;

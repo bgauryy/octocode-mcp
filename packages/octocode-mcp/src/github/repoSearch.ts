@@ -14,7 +14,7 @@ import { logSessionError } from '../session.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
 
 /** Pagination info for repository search results */
-export interface RepoSearchPagination {
+interface RepoSearchPagination {
   currentPage: number;
   totalPages: number;
   perPage: number;

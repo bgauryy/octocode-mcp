@@ -19,9 +19,7 @@ let cachedEnvStatus: NodeEnvironmentStatus | null = null;
 /**
  * Print Node.js environment status
  */
-export function printNodeEnvironmentStatus(
-  status: NodeEnvironmentStatus
-): void {
+function printNodeEnvironmentStatus(status: NodeEnvironmentStatus): void {
   // Node.js check
   printNodeStatus(status.nodeInstalled, status.nodeVersion);
 
@@ -41,10 +39,7 @@ export function printNodeEnvironmentStatus(
 /**
  * Print Node.js status
  */
-export function printNodeStatus(
-  installed: boolean,
-  version: string | null
-): void {
+function printNodeStatus(installed: boolean, version: string | null): void {
   if (installed) {
     console.log(`  ${c('green', '✓')} Node.js: ${bold(version || 'unknown')}`);
   } else {
@@ -55,10 +50,7 @@ export function printNodeStatus(
 /**
  * Print npm status
  */
-export function printNpmStatus(
-  installed: boolean,
-  version: string | null
-): void {
+function printNpmStatus(installed: boolean, version: string | null): void {
   if (installed) {
     console.log(`  ${c('green', '✓')} npm: ${bold(version || 'unknown')}`);
   } else {
@@ -71,7 +63,7 @@ export function printNpmStatus(
 /**
  * Print npm registry status
  */
-export function printRegistryStatus(
+function printRegistryStatus(
   status: 'ok' | 'slow' | 'failed',
   latency: number | null
 ): void {
@@ -99,7 +91,7 @@ export function printRegistryStatus(
 /**
  * Print octocode-mcp package availability status
  */
-export function printOctocodePackageStatus(
+function printOctocodePackageStatus(
   available: boolean,
   version: string | null
 ): void {

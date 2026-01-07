@@ -51,7 +51,6 @@ describe('pythonPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const pkg = result.packages[0] as any;
         expect(pkg.lastPublished).toBe('2024-01-15T10:30:00');
       }
@@ -77,7 +76,6 @@ describe('pythonPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const pkg = result.packages[0] as any;
         expect(pkg.lastPublished).toBeUndefined();
       }
@@ -108,7 +106,6 @@ describe('pythonPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const pkg = result.packages[0] as any;
         expect(pkg.lastPublished).toBeUndefined();
       }
@@ -139,7 +136,6 @@ describe('pythonPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const pkg = result.packages[0] as any;
         expect(pkg.lastPublished).toBeUndefined();
       }
@@ -163,7 +159,6 @@ describe('pythonPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const pkg = result.packages[0] as any;
         expect(pkg.lastPublished).toBeUndefined();
       }
@@ -232,7 +227,6 @@ describe('pythonPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         expect((result.packages[0] as any)?.repository).toBe(
           'https://github.com/test/repo'
         );
@@ -258,7 +252,6 @@ describe('pythonPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         expect((result.packages[0] as any)?.repository).toBe(
           'https://github.com/test/repo'
         );
@@ -285,7 +278,6 @@ describe('pythonPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         expect((result.packages[0] as any)?.repository).toBeNull();
       }
     });

@@ -436,8 +436,9 @@ async function findReferencesWithPatternMatching(
 
 /**
  * Find the workspace root by looking for common markers
+ * @internal Exported for testing
  */
-function findWorkspaceRoot(filePath: string): string {
+export function findWorkspaceRoot(filePath: string): string {
   let currentDir = path.dirname(filePath);
   const markers = [
     'package.json',
@@ -706,8 +707,12 @@ async function searchReferencesWithGrep(
 
 /**
  * Heuristic to determine if a line is likely a definition
+ * @internal Exported for testing
  */
-function isLikelyDefinition(lineContent: string, symbolName: string): boolean {
+export function isLikelyDefinition(
+  lineContent: string,
+  symbolName: string
+): boolean {
   const trimmed = lineContent.trim();
 
   const definitionPatterns = [

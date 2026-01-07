@@ -8,15 +8,7 @@
  */
 
 // Re-export types
-export type {
-  PaginationMetadata,
-  ApplyPaginationOptions,
-  GeneratePaginationHintsOptions,
-  GitHubFileContentHintContext,
-  StructurePaginationInfo,
-  StructurePaginationHintContext,
-  SliceByCharResult,
-} from './types.js';
+export type { PaginationMetadata } from './types.js';
 
 // Re-export core utilities
 export {

@@ -8,10 +8,7 @@ import { LOCAL_BASE_HINTS } from './hints/localBaseHints.js';
 import { STATIC_TOOL_NAMES, isLocalTool } from './toolNames.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
-export type {
-  CompleteMetadata,
-  RawCompleteMetadata,
-} from '../types/metadata.js';
+export type { CompleteMetadata } from '../types/metadata.js';
 
 type ToolNamesValue = ToolNames[keyof ToolNames];
 
@@ -175,12 +172,15 @@ export async function initializeToolMetadata(): Promise<void> {
         hints: {
           hasResults: [
             'Use lspFindReferences to find all usages of the symbol.',
-            'Use lspCallHierarchy to trace incoming/outgoing calls.',
+            'Use lspCallHierarchy to trace incoming/outgoing calls (functions only).',
+            'Chain lspGotoDefinition on imports to trace to source (A→B→C).',
+            'Use contextLines=10+ to see full implementation.',
           ],
           empty: [
-            'Verify symbolName matches exactly (case-sensitive).',
-            'Check lineHint is within ±2 lines of actual position.',
-            'Try localSearchCode to locate the symbol first.',
+            'Verify symbolName is EXACT (case-sensitive, complete name).',
+            'Check lineHint is 1-indexed and within ±2 lines of actual position.',
+            'RECOVERY: localSearchCode(pattern="symbolName") → find correct line.',
+            'Dynamic/computed symbol? LSP cannot resolve - use localSearchCode.',
           ],
         },
       };
@@ -197,13 +197,16 @@ export async function initializeToolMetadata(): Promise<void> {
         >,
         hints: {
           hasResults: [
-            'Use localGetFileContent to read reference context.',
-            'Chain lspGotoDefinition to trace definitions.',
+            'Use localGetFileContent to read each reference location for context.',
+            'Chain lspGotoDefinition to navigate to specific usages.',
+            'For function calls only: use lspCallHierarchy instead.',
+            'Use includeDeclaration=false to exclude the definition itself.',
           ],
           empty: [
-            'Symbol may be unused or defined inline only.',
-            'Verify symbolName is exact and position is accurate.',
-            'Try localSearchCode for text-based search.',
+            'Verify symbolName is EXACT (case-sensitive, complete name).',
+            'Check lineHint is 1-indexed and within ±2 lines.',
+            'RECOVERY: localSearchCode(pattern="symbolName") → text-based fallback.',
+            'Symbol may be unused - consider dead code removal.',
           ],
         },
       };
@@ -220,13 +223,16 @@ export async function initializeToolMetadata(): Promise<void> {
         >,
         hints: {
           hasResults: [
-            'Use localGetFileContent to read caller/callee code.',
-            'Chain lspGotoDefinition on call targets.',
+            'Use localGetFileContent to read caller/callee implementations.',
+            'Chain lspGotoDefinition on each caller/callee to navigate.',
+            'Switch direction (incoming↔outgoing) for full call graph.',
+            '⚠️ depth>2 is expensive (O(n^depth)) - limit to avoid timeout.',
           ],
           empty: [
-            'Function may have no callers/callees in workspace.',
-            'Verify symbolName and position are accurate.',
-            'Try lspFindReferences for broader usage search.',
+            'Symbol must be a function/method, not a type/variable.',
+            'For types/interfaces: use lspFindReferences instead.',
+            'RECOVERY: lspFindReferences(symbolName) → broader usage search.',
+            'Dynamic calls (callbacks, eval)? LSP cannot trace runtime dispatch.',
           ],
         },
       };

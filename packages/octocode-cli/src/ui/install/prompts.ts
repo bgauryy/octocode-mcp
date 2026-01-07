@@ -472,7 +472,7 @@ async function promptCustomPath(): Promise<string | null> {
 // Environment Configuration Prompts
 // ============================================================================
 
-export interface EnvConfig {
+interface EnvConfig {
   enableLocal?: boolean;
   githubToken?: string;
 }
@@ -614,7 +614,7 @@ export async function promptGitHubAuth(): Promise<{
 /**
  * Confirm override prompt
  */
-export async function confirmOverride(
+async function confirmOverride(
   clientName: string,
   existingMethod: string | null
 ): Promise<boolean> {

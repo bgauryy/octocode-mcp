@@ -36,7 +36,7 @@ function ideToMCPClient(ide: string): MCPClient {
   return ide as MCPClient;
 }
 
-export interface InstallOptions {
+interface InstallOptions {
   ide: IDE;
   method: InstallMethod;
   force?: boolean;
@@ -50,7 +50,7 @@ export interface InstallResult {
   error?: string;
 }
 
-export interface InstallPreview {
+interface InstallPreview {
   ide: IDE;
   method: InstallMethod;
   configPath: string;
@@ -198,7 +198,7 @@ export function getInstallPreview(
 
 import type { OctocodeEnvOptions } from '../utils/mcp-config.js';
 
-export interface ClientInstallOptions {
+interface ClientInstallOptions {
   client: MCPClient;
   method: InstallMethod;
   customPath?: string;
@@ -206,7 +206,7 @@ export interface ClientInstallOptions {
   envOptions?: OctocodeEnvOptions;
 }
 
-export interface ClientInstallPreview {
+interface ClientInstallPreview {
   client: MCPClient;
   method: InstallMethod;
   configPath: string;

@@ -122,4 +122,4 @@ export const RESOURCE_LIMITS = {
 /**
  * Type-safe access to RESOURCE_LIMITS
  */
-export type ResourceLimitsType = typeof RESOURCE_LIMITS;
+type ResourceLimitsType = typeof RESOURCE_LIMITS;

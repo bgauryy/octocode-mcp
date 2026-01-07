@@ -8,6 +8,5 @@
 export type {
   HintContext,
   HintStatus,
-  HintGenerator,
   ToolHintGenerators,
 } from '../../types/metadata.js';

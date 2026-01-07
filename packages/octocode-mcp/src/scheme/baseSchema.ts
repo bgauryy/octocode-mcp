@@ -21,7 +21,7 @@ export const BaseQuerySchemaLocal = z.object({
 /**
  * Options for bulk query schema creation
  */
-export interface BulkQuerySchemaOptions {
+interface BulkQuerySchemaOptions {
   /** Maximum number of queries allowed (default: 3 for GitHub tools) */
   maxQueries?: number;
   /** Custom description prefix (default: uses BASE_SCHEMA.bulkQuery for GitHub) */

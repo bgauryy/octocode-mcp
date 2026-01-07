@@ -10,7 +10,7 @@ export const GITHUB_STRUCTURE_DEFAULTS = {
   MAX_ENTRIES_PER_PAGE: 200,
 } as const;
 
-export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
+const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
   owner: z
     .string()
     .min(1)
@@ -65,24 +65,8 @@ export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(
  */
 export type GitHubApiFileItem = ContentDirectoryEntry;
 
-export interface GitHubRepositoryContentsResult {
-  path: string;
-  baseUrl: string;
-  files: Array<{
-    name: string;
-    size: number;
-    url: string;
-  }>;
-  folders: string[];
-  branchFallback?: {
-    requested: string;
-    used: string;
-    message: string;
-  };
-}
-
 /** Internal item for caching (pre-pagination) */
-export interface CachedStructureItem {
+interface CachedStructureItem {
   path: string;
   type: 'file' | 'dir';
 }

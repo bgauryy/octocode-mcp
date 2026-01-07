@@ -12,7 +12,7 @@ interface ExtendedError extends Error {
   retryable?: boolean;
 }
 
-export interface FetchWithRetriesOptions {
+interface FetchWithRetriesOptions {
   /**
    * Maximum number of retry attempts (excluding the initial request)
    * @default 3

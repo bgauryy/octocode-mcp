@@ -19,7 +19,7 @@ export type MCPCategory =
   | 'aggregator'
   | 'other';
 
-export type InstallationType = 'npm' | 'npx' | 'pip' | 'docker' | 'source';
+type InstallationType = 'npm' | 'npx' | 'pip' | 'docker' | 'source';
 
 export interface MCPRegistryEntry {
   id: string;

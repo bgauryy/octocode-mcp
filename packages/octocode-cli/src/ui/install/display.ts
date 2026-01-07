@@ -67,7 +67,7 @@ export function printConfigPreview(config: MCPServer): void {
 /**
  * Print install success message
  */
-export function printInstallSuccess(result: InstallResult, ide: IDE): void {
+function printInstallSuccess(result: InstallResult, ide: IDE): void {
   console.log();
   console.log(c('green', '━'.repeat(66)));
   console.log(`  ${c('green', '✓')} ${bold('Configuration Complete!')}`);
@@ -172,7 +172,7 @@ export function printExistingOctocodeConfig(server: MCPServer): void {
 /**
  * Print existing MCP configuration (all servers)
  */
-export function printExistingMCPConfig(config: MCPConfig): void {
+function printExistingMCPConfig(config: MCPConfig): void {
   const servers = config.mcpServers || {};
   const serverNames = Object.keys(servers);
 

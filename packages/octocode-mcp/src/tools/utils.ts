@@ -35,7 +35,7 @@ export async function invokeCallbackSafely(
 /**
  * Options for createSuccessResult hint generation
  */
-export interface SuccessResultOptions {
+interface SuccessResultOptions {
   /** Context for generating dynamic hints */
   hintContext?: HintContext;
   /** Additional custom hints to append (e.g., pagination hints) */

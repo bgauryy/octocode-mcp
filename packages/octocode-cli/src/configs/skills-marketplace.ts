@@ -8,7 +8,7 @@
  * - 'github': Skills fetched from GitHub repository
  * - 'local': Skills bundled with the CLI
  */
-export type MarketplaceSourceType = 'github' | 'local';
+type MarketplaceSourceType = 'github' | 'local';
 
 /**
  * Marketplace source configuration

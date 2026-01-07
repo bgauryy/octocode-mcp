@@ -35,6 +35,26 @@ export const LSP_CALL_HIERARCHY_DESCRIPTION = `## Trace function call relationsh
 - Understand code flow | Impact analysis for changes
 - Build call graph for documentation or debugging
 </when>
+<when_NOT>
+- DON'T use for types/interfaces/variables → use lspFindReferences
+- DON'T use for partial symbol matching → use localSearchCode
+- DON'T use for finding all usages (not just calls) → use lspFindReferences
+</when_NOT>
+<prefer_over>
+- lspFindReferences: When you specifically need call relationships, not all references
+- localSearchCode: When you need semantic call graph, not text matches
+</prefer_over>
+<prerequisites>
+- Symbol must be a function or method (not type/variable)
+- Symbol name must be EXACT (case-sensitive)
+- lineHint must be accurate (within ±2 lines)
+</prerequisites>
+<limitations>
+- ⚠️ PERFORMANCE: depth>2 is expensive - O(n^depth) complexity
+- Cannot trace dynamic calls (callbacks, event handlers, eval)
+- Cannot trace through indirect invocation patterns
+- Large codebases with depth>1 may timeout
+</limitations>
 <fromTool>
 - self: Chain hierarchy calls (A calls B calls C) with depth parameter
 - lspGotoDefinition: Find function definition → lspCallHierarchy for call graph
@@ -49,6 +69,22 @@ export const LSP_CALL_HIERARCHY_DESCRIPTION = `## Trace function call relationsh
 - Expensive operation - limit depth to avoid timeout (max 3 recommended)
 - Works best with functions/methods, not variables or types
 </gotchas>
+<recovery>
+- Not a function? → Use lspFindReferences for types/variables
+- Timeout? → Reduce depth to 1, paginate with callsPerPage
+- Empty result? → Function may be entry point or use dynamic dispatch
+</recovery>
+<defaults>
+- depth: 1 (direct calls only)
+- contextLines: 2 (lines around each call site)
+- callsPerPage: 15
+- page: 1
+</defaults>
+<bulk_behavior>
+- Max queries: 3 (lower than other tools due to expensive operation)
+- Queries execute in parallel
+- Each query result is independent
+</bulk_behavior>
 <examples>
 - uri="src/api/handler.ts", symbolName="processRequest", lineHint=50, direction="incoming"
 - uri="src/services/auth.ts", symbolName="validateToken", lineHint=20, direction="outgoing", depth=2
@@ -124,6 +160,4 @@ export const BulkLSPCallHierarchySchema = createBulkQuerySchema(
 );
 
 export type LSPCallHierarchyQuery = z.infer<typeof LSPCallHierarchyQuerySchema>;
-export type BulkLSPCallHierarchyRequest = z.infer<
-  typeof BulkLSPCallHierarchySchema
->;
+type BulkLSPCallHierarchyRequest = z.infer<typeof BulkLSPCallHierarchySchema>;
