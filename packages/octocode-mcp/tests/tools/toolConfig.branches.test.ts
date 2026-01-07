@@ -125,8 +125,8 @@ describe('toolConfig branch coverage - getDescription fallback (line 26)', () =>
         expect(typeof config.fn).toBe('function');
       }
 
-      // ALL_TOOLS contains 6 GitHub tools + 4 Local tools = 10
-      expect(ALL_TOOLS).toHaveLength(10);
+      // ALL_TOOLS contains 6 GitHub tools + 4 Local tools + 3 LSP tools = 13
+      expect(ALL_TOOLS).toHaveLength(13);
     });
 
     it('should have correct tool types assigned', async () => {

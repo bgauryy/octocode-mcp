@@ -129,8 +129,8 @@ describe('Local Tools Flow Integration', () => {
       // Register tools
       const result = await registerTools(mockServer);
 
-      // Should register all 10 tools (6 GitHub + 4 local)
-      expect(result.successCount).toBe(10);
+      // Should register all 13 tools (6 GitHub + 4 local + 3 LSP)
+      expect(result.successCount).toBe(13);
       expect(result.failedTools).toHaveLength(0);
 
       // Verify ALL local tools were registered
@@ -167,7 +167,7 @@ describe('Local Tools Flow Integration', () => {
       expect(mockLocalViewStructureRegister).toHaveBeenCalled();
       expect(mockLocalFindFilesRegister).toHaveBeenCalled();
       expect(mockLocalFetchContentRegister).toHaveBeenCalled();
-      expect(result.successCount).toBe(10);
+      expect(result.successCount).toBe(13);
     });
 
     it('should register local tools when ENABLE_LOCAL=1', async () => {
@@ -183,7 +183,7 @@ describe('Local Tools Flow Integration', () => {
       expect(isLocalEnabled()).toBe(true);
 
       const result = await registerTools(mockServer);
-      expect(result.successCount).toBe(10);
+      expect(result.successCount).toBe(13);
     });
   });
 
@@ -261,12 +261,15 @@ describe('Local Tools Flow Integration', () => {
       // Get local tool names from ALL_TOOLS
       const localToolNames = ALL_TOOLS.filter(t => t.isLocal).map(t => t.name);
 
-      // These should match what the API returns
+      // These should match what the API returns (4 local + 3 LSP = 7)
       expect(localToolNames).toContain('localSearchCode');
       expect(localToolNames).toContain('localGetFileContent');
       expect(localToolNames).toContain('localFindFiles');
       expect(localToolNames).toContain('localViewStructure');
-      expect(localToolNames).toHaveLength(4);
+      expect(localToolNames).toContain('lspGotoDefinition');
+      expect(localToolNames).toContain('lspFindReferences');
+      expect(localToolNames).toContain('lspCallHierarchy');
+      expect(localToolNames).toHaveLength(7);
     });
   });
 });

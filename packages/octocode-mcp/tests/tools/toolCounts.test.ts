@@ -116,7 +116,8 @@ describe('Tool Count Verification', () => {
 
     const result = await registerTools(mockServer);
 
-    expect(result.successCount).toBe(10);
+    // 6 GitHub + 4 Local + 3 LSP = 13 tools
+    expect(result.successCount).toBe(13);
     expect(result.failedTools).toHaveLength(0);
   });
 });

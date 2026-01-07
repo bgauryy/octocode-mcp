@@ -6,6 +6,7 @@ import { logSessionError } from '../session.js';
 import { CompleteMetadata, ToolNames } from '../types/metadata.js';
 import { LOCAL_BASE_HINTS } from './hints/localBaseHints.js';
 import { STATIC_TOOL_NAMES, isLocalTool } from './toolNames.js';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 
 export type {
   CompleteMetadata,
@@ -158,6 +159,79 @@ export async function initializeToolMetadata(): Promise<void> {
       genericErrorHints: raw.genericErrorHints,
       bulkOperations: raw.bulkOperations,
     };
+
+    // --- Inject local-only tools that might be missing from remote metadata ---
+    // Use dynamic imports to avoid circular dependency with baseSchema.ts
+    if (!complete.tools[STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION]) {
+      const { LSP_GOTO_DEFINITION_DESCRIPTION, LSPGotoDefinitionQuerySchema } =
+        await import('../scheme/lsp_goto_definition.js');
+      complete.tools[STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION] = {
+        name: STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
+        description: LSP_GOTO_DEFINITION_DESCRIPTION,
+        schema: zodToJsonSchema(LSPGotoDefinitionQuerySchema) as Record<
+          string,
+          unknown
+        >,
+        hints: {
+          hasResults: [
+            'Use lspFindReferences to find all usages of the symbol.',
+            'Use lspCallHierarchy to trace incoming/outgoing calls.',
+          ],
+          empty: [
+            'Verify symbolName matches exactly (case-sensitive).',
+            'Check lineHint is within ±2 lines of actual position.',
+            'Try localSearchCode to locate the symbol first.',
+          ],
+        },
+      };
+    }
+    if (!complete.tools[STATIC_TOOL_NAMES.LSP_FIND_REFERENCES]) {
+      const { LSP_FIND_REFERENCES_DESCRIPTION, LSPFindReferencesQuerySchema } =
+        await import('../scheme/lsp_find_references.js');
+      complete.tools[STATIC_TOOL_NAMES.LSP_FIND_REFERENCES] = {
+        name: STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
+        description: LSP_FIND_REFERENCES_DESCRIPTION,
+        schema: zodToJsonSchema(LSPFindReferencesQuerySchema) as Record<
+          string,
+          unknown
+        >,
+        hints: {
+          hasResults: [
+            'Use localGetFileContent to read reference context.',
+            'Chain lspGotoDefinition to trace definitions.',
+          ],
+          empty: [
+            'Symbol may be unused or defined inline only.',
+            'Verify symbolName is exact and position is accurate.',
+            'Try localSearchCode for text-based search.',
+          ],
+        },
+      };
+    }
+    if (!complete.tools[STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY]) {
+      const { LSP_CALL_HIERARCHY_DESCRIPTION, LSPCallHierarchyQuerySchema } =
+        await import('../scheme/lsp_call_hierarchy.js');
+      complete.tools[STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY] = {
+        name: STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
+        description: LSP_CALL_HIERARCHY_DESCRIPTION,
+        schema: zodToJsonSchema(LSPCallHierarchyQuerySchema) as Record<
+          string,
+          unknown
+        >,
+        hints: {
+          hasResults: [
+            'Use localGetFileContent to read caller/callee code.',
+            'Chain lspGotoDefinition on call targets.',
+          ],
+          empty: [
+            'Function may have no callers/callees in workspace.',
+            'Verify symbolName and position are accurate.',
+            'Try lspFindReferences for broader usage search.',
+          ],
+        },
+      };
+    }
+    // -------------------------------------------------------------------------
 
     METADATA_JSON = deepFreeze(complete);
   })();

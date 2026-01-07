@@ -270,6 +270,119 @@ export const HINTS: Record<string, ToolHintGenerators> = {
     ],
     error: (_ctx: HintContext = {}) => [],
   },
+
+  // LSP Tools
+  [STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION]: {
+    hasResults: (ctx: HintContext = {}) => [
+      'Definition found. Next: lspFindReferences for all usages.',
+      'Chain: lspGotoDefinition on imports to trace to source.',
+      (ctx as Record<string, unknown>).locationCount &&
+      ((ctx as Record<string, unknown>).locationCount as number) > 1
+        ? `Multiple definitions (${(ctx as Record<string, unknown>).locationCount}) - check overloads or re-exports.`
+        : undefined,
+      'Read more context: localGetFileContent with wider range.',
+      (ctx as Record<string, unknown>).hasExternalPackage
+        ? 'External package? Use packageSearch → githubGetFileContent for source.'
+        : undefined,
+    ],
+    empty: (ctx: HintContext = {}) => [
+      'No definition found. Verify symbolName is EXACT (case-sensitive).',
+      (ctx as Record<string, unknown>).searchRadius
+        ? `Searched ±${(ctx as Record<string, unknown>).searchRadius} lines from lineHint=${(ctx as Record<string, unknown>).lineHint}. Adjust hint.`
+        : 'Check lineHint is 1-indexed and accurate.',
+      'Locate symbol first: localSearchCode(pattern="symbolName") → get line number.',
+      'Dynamic/computed symbol? LSP cannot resolve runtime values.',
+      'Try localSearchCode for text-based fallback.',
+    ],
+    error: (ctx: HintContext = {}) => {
+      if ((ctx as Record<string, unknown>).errorType === 'symbol_not_found') {
+        return [
+          `Symbol "${(ctx as Record<string, unknown>).symbolName}" not found at line ${(ctx as Record<string, unknown>).lineHint}.`,
+          'Use localSearchCode to find correct location, then retry.',
+        ];
+      }
+      if ((ctx as Record<string, unknown>).errorType === 'file_not_found') {
+        return [
+          'File not found. Verify uri path exists.',
+          'Use localFindFiles or localViewStructure to locate file.',
+        ];
+      }
+      return ['LSP error. Try localSearchCode as fallback.'];
+    },
+  },
+
+  [STATIC_TOOL_NAMES.LSP_FIND_REFERENCES]: {
+    hasResults: (ctx: HintContext = {}) => [
+      (ctx as Record<string, unknown>).locationCount &&
+      ((ctx as Record<string, unknown>).locationCount as number) > 20
+        ? `Found ${(ctx as Record<string, unknown>).locationCount} references. Use referencesPerPage + page to paginate.`
+        : `Found ${(ctx as Record<string, unknown>).locationCount || 'multiple'} references.`,
+      'Next: localGetFileContent to read each reference location.',
+      'For call-only references: use lspCallHierarchy instead.',
+      (ctx as Record<string, unknown>).hasMultipleFiles
+        ? 'References span multiple files - consider impact analysis.'
+        : undefined,
+      (ctx as Record<string, unknown>).hasMorePages
+        ? `Page ${(ctx as Record<string, unknown>).currentPage}/${(ctx as Record<string, unknown>).totalPages}. Use page=${(((ctx as Record<string, unknown>).currentPage as number) || 1) + 1} for next.`
+        : undefined,
+    ],
+    empty: (_ctx: HintContext = {}) => [
+      'No references found. Symbol may be unused or dynamically referenced.',
+      'Verify symbolName matches exactly (case-sensitive).',
+      'Check if symbol is exported - internal symbols have limited scope.',
+      'Fallback: localSearchCode for text-based search.',
+      'Dead code? Consider removing unused symbol.',
+    ],
+    error: (ctx: HintContext = {}) => {
+      if ((ctx as Record<string, unknown>).errorType === 'symbol_not_found') {
+        return [
+          'Could not resolve symbol. Use lspGotoDefinition first to verify location.',
+        ];
+      }
+      return ['LSP error. Try localSearchCode as fallback.'];
+    },
+  },
+
+  [STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY]: {
+    hasResults: (ctx: HintContext = {}) => [
+      (ctx as Record<string, unknown>).direction === 'incoming'
+        ? `Found ${(ctx as Record<string, unknown>).callCount || 'multiple'} callers. These functions call your target.`
+        : `Found ${(ctx as Record<string, unknown>).callCount || 'multiple'} callees. Your target calls these functions.`,
+      'Read implementations: localGetFileContent for each call site.',
+      (ctx as Record<string, unknown>).depth === 1
+        ? 'Increase depth=2 for transitive calls (A→B→C).'
+        : `Depth=${(ctx as Record<string, unknown>).depth} showing ${(ctx as Record<string, unknown>).depth}-level call chain.`,
+      'Switch direction: incoming↔outgoing for full picture.',
+      (ctx as Record<string, unknown>).hasMorePages
+        ? `Page ${(ctx as Record<string, unknown>).currentPage}/${(ctx as Record<string, unknown>).totalPages}. More calls available.`
+        : undefined,
+      'Chain: lspCallHierarchy on each caller to trace full path.',
+    ],
+    empty: (ctx: HintContext = {}) => [
+      (ctx as Record<string, unknown>).direction === 'incoming'
+        ? 'No callers found. Function may be entry point, unused, or called dynamically.'
+        : 'No callees found. Function may be leaf node or uses only built-ins.',
+      'Verify symbolName is a function/method, not a variable or type.',
+      'Check direction: "incoming" (callers) vs "outgoing" (callees).',
+      'Fallback: lspFindReferences for broader usage search.',
+      'Dynamic calls (callbacks, eval)? LSP cannot trace runtime dispatch.',
+    ],
+    error: (ctx: HintContext = {}) => {
+      if ((ctx as Record<string, unknown>).errorType === 'not_a_function') {
+        return [
+          'Call hierarchy requires a function/method symbol.',
+          'For types/variables, use lspFindReferences instead.',
+        ];
+      }
+      if ((ctx as Record<string, unknown>).errorType === 'timeout') {
+        return [
+          `Depth=${(ctx as Record<string, unknown>).depth} caused timeout. Reduce to depth=1.`,
+          'Large codebases: paginate with callsPerPage.',
+        ];
+      }
+      return ['LSP error. Try lspFindReferences as fallback.'];
+    },
+  },
 };
 
 /**

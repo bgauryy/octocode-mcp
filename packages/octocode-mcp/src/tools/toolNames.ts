@@ -18,6 +18,10 @@ export const STATIC_TOOL_NAMES = {
   LOCAL_FETCH_CONTENT: 'localGetFileContent',
   LOCAL_FIND_FILES: 'localFindFiles',
   LOCAL_VIEW_STRUCTURE: 'localViewStructure',
+  // LSP Tools
+  LSP_GOTO_DEFINITION: 'lspGotoDefinition',
+  LSP_FIND_REFERENCES: 'lspFindReferences',
+  LSP_CALL_HIERARCHY: 'lspCallHierarchy',
 } as const satisfies ToolNamesMap;
 
 /**
@@ -29,6 +33,10 @@ const LOCAL_TOOL_NAMES_SET = new Set<string>([
   STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT,
   STATIC_TOOL_NAMES.LOCAL_FIND_FILES,
   STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
+  // LSP Tools (operate on local files)
+  STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
+  STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
+  STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
 ]);
 
 /**

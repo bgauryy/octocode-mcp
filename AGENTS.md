@@ -36,7 +36,7 @@
     - **Never** leave the codebase in a broken state.
 
 6.  **Operational Efficiency ⚡**:
-    - **Native Tools**: **Use Linux commands** (`mv`, `cp`, `sed`, `find`, `grep`) for file operations and search.
+    - **Native Tools**: **Use Linux commands** (`mv`, `cp`, `sed`) for file operations
     - **Bulk Actions**: Prefer shell commands over manual edits or complex scripts for simple tasks.
 
 ## 📂 Repository Structure

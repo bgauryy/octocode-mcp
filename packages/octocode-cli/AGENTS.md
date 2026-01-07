@@ -136,8 +136,16 @@ skills/
 │   └── references/          # Reference documents
 │       ├── tool-reference.md
 │       └── workflow-patterns.md
-├── octocode-plan/           # Planning skill for task breakdown
-│   └── SKILL.md
+├── octocode-local-search/   # Local code exploration skill
+│   ├── SKILL.md
+│   └── references/
+│       ├── tool-reference.md
+│       └── workflow-patterns.md
+├── octocode-implement/      # Implementation skill from specs
+│   ├── SKILL.md
+│   └── references/
+│       ├── tool-reference.md
+│       └── workflow-patterns.md
 ├── octocode-generate/       # Generation skill for code creation
 │   └── SKILL.md
 ├── octocode-pr-review/      # PR review skill

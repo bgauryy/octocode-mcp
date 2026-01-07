@@ -46,8 +46,14 @@
     "octocode-shared": "workspace:*",
     "octokit": "^5.0.5",
     "terser": "^5.19.0",
+    "typescript": "^5.3.3",
+    "typescript-language-server": "^4.3.3",
     "uuid": "^13.0.0",
-    "zod": "^3.24.0"
+    "vscode-jsonrpc": "^8.2.0",
+    "vscode-languageserver-protocol": "^3.17.5",
+    "vscode-languageserver-types": "^3.17.5",
+    "zod": "^3.24.0",
+    "zod-to-json-schema": "^3.25.1"
   },
   "devDependencies": {
     "@types/clean-css": "^4.2.11",

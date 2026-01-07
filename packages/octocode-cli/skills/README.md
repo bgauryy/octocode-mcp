@@ -8,6 +8,7 @@ Pre-built Claude Code skills for enhanced AI-assisted research and development.
 |-------|-------------|------|
 | `octocode-research` | Evidence-first code forensics (local & GitHub) | PREPARE → DISCOVER → ANALYZE → OUTPUT |
 | `octocode-local-search` | Local-first code exploration and discovery | DISCOVER → PLAN → EXECUTE → VERIFY → OUTPUT |
+| `octocode-implement` | Research-driven feature implementation from specs | SPEC → CONTEXT → PLAN → RESEARCH → IMPLEMENT → VALIDATE |
 | `octocode-pr-review` | Defects-first PR review across 6+ domains | CONTEXT → CHECKPOINT → ANALYSIS → FINALIZE → REPORT |
 | `octocode-generate` | App scaffolding with stack selection | DISCOVERY → STACK → PLAN → RESEARCH → SCAFFOLD → VALIDATE |
 | `octocode-roast` | Brutally honest code review with comedic flair | SCOPE → ROAST → INVENTORY → SPOTLIGHT → REDEMPTION |
@@ -59,6 +60,22 @@ Features:
 - node_modules inspection with `noIgnore=true`
 - Token-efficient workflows with discovery mode
 - Multi-agent parallelization for independent research domains
+
+### octocode-implement
+
+**Use when**: Implementing features from specification documents (MD files, PRDs, tickets), building new functionality in large/unfamiliar codebases, or executing task lists with proper research.
+
+Features:
+- Reads and parses task specifications from MD files
+- Deep codebase research before writing code
+- LSP tools for semantic code intelligence (`lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`)
+- Pattern discovery to follow existing codebase conventions
+- Impact analysis before modifying code
+- Test-driven implementation with validation gates
+- User checkpoints at key decision points
+- Multi-agent parallelization for independent tasks
+
+Core Principle: "Read 10x more than you write. Measure twice, cut once."
 
 ### octocode-pr-review
 
