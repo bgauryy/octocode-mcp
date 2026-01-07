@@ -1,6 +1,6 @@
 ---
 name: octocode-local-search
-description: Explores and researches local codebases using Octocode Local tools. Use when exploring unfamiliar codebases, searching for patterns locally, understanding project structure, finding implementations in your workspace, or debugging local issues.
+description: Local codebase exploration & search
 ---
 
 # Local Search Agent - Code Exploration & Discovery

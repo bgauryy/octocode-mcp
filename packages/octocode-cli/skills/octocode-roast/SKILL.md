@@ -1,6 +1,6 @@
 ---
 name: octocode-roast
-description: Brutally honest code review with comedic flair. Mock the sins, then redeem the sinner. Use when roasting code, humorous code review, finding antipatterns, or when you want entertainment with your code review.
+description: Brutally honest roasts of your code with fixes
 ---
 
 # Octocode Roast

@@ -1,6 +1,6 @@
 ---
 name: octocode-generate
-description: Scaffolds new applications with optimal tech stack selection and project boilerplate. Use when creating new projects, setting up frameworks, generating boilerplate, or starting new applications.
+description: Scaffold apps with optimal tech stack
 ---
 
 # Octocode Generate

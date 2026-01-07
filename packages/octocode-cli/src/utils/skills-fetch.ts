@@ -199,12 +199,19 @@ function parseFrontmatter(
 /**
  * Format skill name from filename or folder name
  * e.g., "code-review.md" -> "Code Review"
+ * e.g., "pr-review" -> "PR Review"
  */
 function formatSkillName(name: string): string {
+  // Common acronyms that should be fully uppercase
+  const acronyms = ['PR', 'API', 'UI', 'CLI', 'MCP', 'AI'];
+
   return name
     .replace(/\.md$/i, '')
     .replace(/[-_]/g, ' ')
-    .replace(/\b\w/g, c => c.toUpperCase());
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .replace(new RegExp(`\\b(${acronyms.join('|')})\\b`, 'gi'), match =>
+      match.toUpperCase()
+    );
 }
 
 // ============================================================================

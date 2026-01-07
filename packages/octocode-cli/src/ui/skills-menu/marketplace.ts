@@ -71,12 +71,11 @@ function formatMarketplace(source: MarketplaceSource, stars?: number): string {
  * Format skill for display
  */
 function formatSkill(skill: MarketplaceSkill, installed: boolean): string {
-  const starTag = RECOMMENDED_SKILLS.has(skill.name) ? c('yellow', '⭐ ') : '';
-  const status = installed ? c('green', ' ✓') : '';
-  const category = skill.category ? ` [${skill.category}]` : '';
+  const installedTag = installed ? c('green', '✓ ') : '';
+  const starTag = RECOMMENDED_SKILLS.has(skill.name) ? c('yellow', ' ⭐') : '';
   const desc = skill.description.slice(0, 50);
   const ellipsis = skill.description.length > 50 ? '...' : '';
-  return `${starTag}${skill.displayName}${status}${dim(category)} - ${dim(desc)}${dim(ellipsis)}`;
+  return `${installedTag}${skill.displayName}${starTag} ${dim(desc)}${dim(ellipsis)}`;
 }
 
 /**

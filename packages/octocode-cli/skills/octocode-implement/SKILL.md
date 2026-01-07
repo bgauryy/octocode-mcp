@@ -1,6 +1,6 @@
 ---
-name: octocode-implement
-description: Implements tasks from specification documents (MD files) in large codebases using deep research and flow analysis. Use when implementing features from PRDs, task lists, tickets, or specification files — especially in unfamiliar or complex repositories.
+name: octocode-implement-with-contect
+description: Implement features from spec documents (context/doc required)
 ---
 
 # Implementation Agent - Research-Driven Feature Development

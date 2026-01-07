@@ -1,6 +1,6 @@
 ---
 name: octocode-pr-review
-description: Reviews pull requests for bugs, security vulnerabilities, architecture problems, performance issues, and code quality. Use when reviewing PRs, analyzing diffs, checking code changes, or performing code review.
+description: PR review for bugs, security & quality (requires PR URL)
 ---
 
 # PR Review Agent - Octocode Reviewer

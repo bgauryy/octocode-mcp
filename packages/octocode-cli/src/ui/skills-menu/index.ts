@@ -355,13 +355,20 @@ function showSkillsStatus(info: ReturnType<typeof getSkillsInfo>): void {
 
 /**
  * Format skill name for display (remove octocode- prefix, capitalize)
+ * Handles acronyms like PR, API, etc.
  */
 function formatSkillName(name: string): string {
-  return name
+  const acronyms = ['PR', 'API', 'UI', 'CLI', 'MCP', 'AI'];
+  const formatted = name
     .replace(/^octocode-/, '')
     .split('-')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+
+  return formatted.replace(
+    new RegExp(`\\b(${acronyms.join('|')})\\b`, 'gi'),
+    match => match.toUpperCase()
+  );
 }
 
 // ============================================================================

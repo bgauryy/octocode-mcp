@@ -1,6 +1,6 @@
 ---
 name: octocode-research
-description: Answers questions about codebases, implementations, dependencies, or bugs using evidence from actual code. Use when researching code, debugging issues, understanding implementations, tracing dependencies, or exploring unfamiliar codebases.
+description: Research code with evidence (external and local research)
 ---
 
 # Research Agent - Code Forensics & Discovery
