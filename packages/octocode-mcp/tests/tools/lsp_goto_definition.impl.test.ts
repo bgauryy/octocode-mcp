@@ -74,6 +74,22 @@ export interface Config {
     // Default: LSP not available
     vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
     vi.mocked(lspModule.getOrCreateClient).mockResolvedValue(null);
+
+    // Restore SymbolResolver mock (reset by vi.resetAllMocks in afterEach)
+    // Must use regular function (not arrow) because it's called with `new`
+    vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
+      return {
+        resolvePositionFromContent: vi.fn().mockReturnValue({
+          position: { line: 3, character: 16 },
+          foundAtLine: 4,
+        }),
+        extractContext: vi.fn().mockReturnValue({
+          content: 'test content',
+          startLine: 1,
+          endLine: 10,
+        }),
+      };
+    });
   });
 
   afterEach(() => {
@@ -129,27 +145,30 @@ export interface Config {
 
   describe('Symbol resolution errors', () => {
     it('should return empty result when symbol cannot be resolved', async () => {
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+
       vi.mocked(fs.readFile).mockResolvedValue('const somethingElse = 1;');
 
       const symbolError = new (lspModule as any).SymbolResolutionError(
         'Symbol not found',
         2
       );
-      vi.mocked(lspModule.SymbolResolver).mockImplementation(
-        () =>
-          ({
-            resolvePositionFromContent: vi.fn(() => {
-              throw symbolError;
-            }),
-            extractContext: vi.fn(),
-          }) as any
-      );
+      // Must use regular function (not arrow) because it's called with `new`
+      vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
+        return {
+          resolvePositionFromContent: vi.fn(() => {
+            throw symbolError;
+          }),
+          extractContext: vi.fn(),
+        };
+      });
 
       const handler = createHandler();
       const result = await handler({
         queries: [
           {
-            uri: '/workspace/test.ts',
+            uri: testPath,
             symbolName: 'missingSymbol',
             lineHint: 10,
             researchGoal: 'Find definition',
@@ -159,8 +178,9 @@ export interface Config {
       });
 
       const text = result.content?.[0]?.text ?? '';
-      expect(text).toContain('status: empty');
-      expect(text).toContain('errorType: symbol_not_found');
+      // Note: YAML output uses quotes around string values
+      expect(text).toContain('status: "empty"');
+      expect(text).toContain('errorType: "symbol_not_found"');
     });
   });
 
@@ -354,11 +374,15 @@ export interface Config {
 
   describe('LSP enhanced location formatting', () => {
     it('should enhance locations with numbered context when LSP returns definitions', async () => {
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+      const defsPath = `${process.cwd()}/src/defs.ts`;
+
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
       vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
         gotoDefinition: vi.fn().mockResolvedValue([
           {
-            uri: '/workspace/defs.ts',
+            uri: defsPath,
             range: {
               start: { line: 1, character: 0 },
               end: { line: 1, character: 3 },
@@ -368,11 +392,12 @@ export interface Config {
         ]),
       } as any);
 
-      vi.mocked(fs.readFile).mockImplementation(async (p) => {
+      vi.mocked(fs.readFile).mockImplementation(async p => {
         const filePath = typeof p === 'string' ? p : String(p);
-        if (filePath === '/workspace/test.ts')
+        if (filePath === testPath) {
           return 'function test() { return 1; }';
-        if (filePath === '/workspace/defs.ts') return 'alpha\nbeta\ngamma';
+        }
+        if (filePath === defsPath) return 'alpha\nbeta\ngamma';
         throw new Error(`Unexpected path: ${filePath}`);
       });
 
@@ -380,7 +405,7 @@ export interface Config {
       const result = await handler({
         queries: [
           {
-            uri: '/workspace/test.ts',
+            uri: testPath,
             symbolName: 'test',
             lineHint: 1,
             contextLines: 1,
@@ -391,17 +416,22 @@ export interface Config {
       });
 
       const text = result.content?.[0]?.text ?? '';
-      expect(text).toContain('status: hasResults');
+      // Note: YAML output uses quotes around string values
+      expect(text).toContain('status: "hasResults"');
       expect(text).toContain('Found 1 definition(s) via Language Server');
       expect(text).toContain('>   2| beta');
     });
 
     it('should fall back to raw location when reading definition file fails', async () => {
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+      const missingPath = `${process.cwd()}/src/missing.ts`;
+
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
       vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
         gotoDefinition: vi.fn().mockResolvedValue([
           {
-            uri: '/workspace/missing.ts',
+            uri: missingPath,
             range: {
               start: { line: 0, character: 0 },
               end: { line: 0, character: 3 },
@@ -411,10 +441,11 @@ export interface Config {
         ]),
       } as any);
 
-      vi.mocked(fs.readFile).mockImplementation(async (p) => {
+      vi.mocked(fs.readFile).mockImplementation(async p => {
         const filePath = typeof p === 'string' ? p : String(p);
-        if (filePath === '/workspace/test.ts')
+        if (filePath === testPath) {
           return 'function test() { return 1; }';
+        }
         throw new Error('ENOENT');
       });
 
@@ -422,7 +453,7 @@ export interface Config {
       const result = await handler({
         queries: [
           {
-            uri: '/workspace/test.ts',
+            uri: testPath,
             symbolName: 'test',
             lineHint: 1,
             researchGoal: 'Find def',
