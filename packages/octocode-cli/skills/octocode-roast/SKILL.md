@@ -175,6 +175,10 @@ Auto-detect scope in order:
 3. Specified files/dirs
 4. Entire repo (nuclear option)
 
+**Tactical Scan**:
+- Run `localViewStructure` to identify "God Files" (large size) and "Dumpster Directories" (too many files).
+- Use `localSearchCode` with `filesOnly=true` to map the blast radius.
+
 **Output**:
 ```
 🔥 ROAST INITIATED 🔥

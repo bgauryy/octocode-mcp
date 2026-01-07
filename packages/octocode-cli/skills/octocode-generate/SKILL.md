@@ -27,6 +27,8 @@ DISCOVERY → STACK → PLAN → RESEARCH → SCAFFOLD → VALIDATE
 
 | Tool | Purpose |
 |------|---------|
+| `localViewStructure` | **Analyze workspace context** (monorepo, existing configs) |
+| `localGetFileContent` | **Read local conventions** (tsconfig, package.json) |
 | `githubSearchRepositories` | Find template repos |
 | `githubViewRepoStructure` | Explore structure |
 | `githubSearchCode` | Find config patterns |
@@ -68,10 +70,13 @@ DISCOVERY → STACK → PLAN → RESEARCH → SCAFFOLD → VALIDATE
 
 ## Execution Phases
 
-### Phase 0: Discovery
-1. Classify app type: Fullstack | SPA | API | Mobile | Desktop
-2. Ask for references (existing apps, designs, specs)
-3. Confirm package manager: npm (default) | yarn | pnpm
+### Phase 0: Discovery & Context
+1. **Context Scan**:
+   - Run `localViewStructure` to identify existing project type (Monorepo? Standalone?)
+   - Check `package.json` / `tsconfig.json` for existing conventions (if in active workspace)
+2. **Classify app type**: Fullstack | SPA | API | Mobile | Desktop
+3. **Ask for references** (existing apps, designs, specs)
+4. **Confirm package manager**: Match existing (`yarn` vs `npm`) or default to `npm`
 
 **User Checkpoint**: If requirements unclear → STOP & ASK
 
@@ -96,10 +101,10 @@ Write plan with:
 
 | Dimension | Goal | Example Query |
 |-----------|------|---------------|
-| Official Examples | Canonical patterns | `owner:vercel repo:next.js path:examples` |
-| Popular Templates | Community patterns | `topics:starter topics:template stars:>1000` |
-| Integration Code | How libs connect | `filename:trpc extension:ts "createTRPCNext"` |
-| Config Files | Tooling setup | `filename:next.config extension:mjs` |
+| Official Examples | Canonical patterns | `owner="vercel" repo="next.js" path="examples"` |
+| Popular Templates | Community patterns | `topics=["starter", "template"] stars=">1000"` |
+| Integration Code | How libs connect | `filename="trpc" extension="ts" keywords=["createTRPCNext"]` |
+| Config Files | Tooling setup | `filename="next.config" extension="mjs"` |
 
 **Quality Guards**:
 - Prefer repos updated within last 6 months
@@ -134,6 +139,7 @@ Write plan with:
 
 | From | Need | Go To |
 |------|------|-------|
+| `localViewStructure` | Existing Patterns | `localGetFileContent` |
 | `githubSearchRepositories` | Structure | `githubViewRepoStructure` |
 | `githubSearchRepositories` | Patterns | `githubSearchCode` |
 | `githubViewRepoStructure` | File content | `githubGetFileContent` |
