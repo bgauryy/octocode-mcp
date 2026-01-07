@@ -31,7 +31,15 @@ export interface HintContext {
 
   // Error context
   /** Type of error encountered */
-  errorType?: 'size_limit' | 'not_found' | 'permission' | 'pattern_too_broad';
+  errorType?:
+    | 'size_limit'
+    | 'not_found'
+    | 'permission'
+    | 'pattern_too_broad'
+    | 'symbol_not_found'
+    | 'file_not_found'
+    | 'timeout'
+    | 'not_a_function';
   /** Original error message */
   originalError?: string;
 
@@ -48,6 +56,38 @@ export interface HintContext {
   match?: 'file' | 'path';
   /** Which search engine was used (local tools) */
   searchEngine?: 'rg' | 'grep';
+
+  // LSP tool context
+  /** Number of definition/reference locations found */
+  locationCount?: number;
+  /** Whether definition is from an external package */
+  hasExternalPackage?: boolean;
+  /** Whether using text-based fallback instead of LSP */
+  isFallback?: boolean;
+  /** Search radius in lines from lineHint */
+  searchRadius?: number;
+  /** Line hint provided for symbol lookup */
+  lineHint?: number;
+  /** Symbol name being looked up */
+  symbolName?: string;
+  /** File URI/path for LSP operations */
+  uri?: string;
+  /** Whether references span multiple files */
+  hasMultipleFiles?: boolean;
+  /** Whether there are more pages of results */
+  hasMorePages?: boolean;
+  /** Current page number (1-indexed) */
+  currentPage?: number;
+  /** Total number of pages */
+  totalPages?: number;
+  /** Call hierarchy direction */
+  direction?: 'incoming' | 'outgoing';
+  /** Number of callers/callees found */
+  callCount?: number;
+  /** Call hierarchy depth */
+  depth?: number;
+  /** Whether there is more content available (pagination) */
+  hasMoreContent?: boolean;
 }
 
 /**

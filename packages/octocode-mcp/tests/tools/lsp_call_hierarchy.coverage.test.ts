@@ -497,6 +497,46 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
       const result = extractFunctionBody(lines, 0);
       expect(result).toBeNull();
     });
+
+    it('should handle multiple braces on same line', () => {
+      // Tests the brace counting branch: line[j] === '{' braceCount++ and line[j] === '}' braceCount--
+      const lines = ['function f() { if (true) { return 1; } }'];
+      const result = extractFunctionBody(lines, 0);
+      expect(result).not.toBeNull();
+      // After the first '{', we count: '{ return 1; }' has +1 '{' and +2 '}' on same line
+    });
+
+    it('should handle nested braces across lines', () => {
+      const lines = [
+        'function outer() {',
+        '  if (true) {',
+        '    return { value: 1 };',
+        '  }',
+        '}',
+      ];
+      const result = extractFunctionBody(lines, 0);
+      expect(result).not.toBeNull();
+      expect(result!.lines.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('should handle inline brace on opening line', () => {
+      // Cover line 1204-1206: counting braces within same line after opening brace
+      const lines = ['function f() { const x = {}; return x; }'];
+      const result = extractFunctionBody(lines, 0);
+      expect(result).not.toBeNull();
+    });
+
+    it('should slice content before closing brace when brace is not at start', () => {
+      // Cover line 1233-1234: lastBraceIndex > 0 case
+      const lines = [
+        'function f() {',
+        '  return 1;',
+        '  /* comment */ }',
+      ];
+      const result = extractFunctionBody(lines, 0);
+      expect(result).not.toBeNull();
+      // The last line should be trimmed before the closing brace
+    });
   });
 
   describe('inferSymbolKind', () => {
@@ -519,6 +559,38 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
     it('should infer variable', () => {
       expect(inferSymbolKind('let v = 1;')).toBe('variable');
     });
+
+    it('should infer type', () => {
+      expect(inferSymbolKind('type MyType = string;')).toBe('type');
+    });
+
+    it('should infer enum', () => {
+      expect(inferSymbolKind('enum Status { Active, Inactive }')).toBe('enum');
+    });
+
+    it('should infer namespace', () => {
+      expect(inferSymbolKind('namespace MyApp {}')).toBe('namespace');
+    });
+
+    it('should infer module', () => {
+      expect(inferSymbolKind('module MyModule {}')).toBe('module');
+    });
+
+    it('should infer var as variable', () => {
+      expect(inferSymbolKind('var x = 1;')).toBe('variable');
+    });
+
+    it('should infer const arrow function as function not constant', () => {
+      expect(inferSymbolKind('const myFunc = () => {}')).toBe('function');
+    });
+
+    it('should infer const function as function not constant', () => {
+      expect(inferSymbolKind('const myFunc = function() {}')).toBe('function');
+    });
+
+    it('should infer let arrow function as function not variable', () => {
+      expect(inferSymbolKind('let myFunc = (x) => x')).toBe('function');
+    });
   });
 
   describe('createRange', () => {
@@ -528,6 +600,143 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
         start: { line: 0, character: 0 },
         end: { line: 0, character: 5 },
       });
+    });
+
+    it('should create range with non-zero character offset', () => {
+      const range = createRange(10, 5, 15);
+      expect(range).toEqual({
+        start: { line: 10, character: 5 },
+        end: { line: 10, character: 20 },
+      });
+    });
+  });
+
+  describe('createCallHierarchyItemFromSite - method matching', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it('should detect method defined as myMethod(args) {', async () => {
+      (toolHelpers.validateToolPath as Mock).mockReturnValue({
+        isValid: true,
+        sanitizedPath: '/workspace/file.ts',
+      });
+
+      // Content where a method is defined with myMethod(args): pattern
+      const fileContent = `class Service {
+  handleRequest(req: Request): void {
+    this.myFunc();
+  }
+}`;
+      (fsPromises.readFile as Mock).mockResolvedValue(fileContent);
+      mockSymbolResolver.resolvePositionFromContent.mockReturnValue({
+        position: { line: 2, character: 9 },
+        foundAtLine: 3,
+      });
+      (lspIndex.isLanguageServerAvailable as Mock).mockResolvedValue(false);
+      (execIndex.checkCommandAvailability as Mock).mockResolvedValue({
+        available: false,
+      });
+      (execIndex.safeExec as Mock).mockResolvedValue({
+        success: true,
+        stdout: '/workspace/caller.ts:3:    this.myFunc();',
+      });
+
+      const query = {
+        uri: '/workspace/file.ts',
+        symbolName: 'myFunc',
+        lineHint: 3,
+        direction: 'incoming',
+        researchGoal: 'goal',
+        reasoning: 'reason',
+        mainResearchGoal: 'main',
+      };
+
+      const result = await toolHandler({ queries: [query] });
+      const results = JSON.parse(result.content[0].text);
+
+      expect(results[0].status).toBe('hasResults');
+    });
+
+    it('should detect async method pattern', async () => {
+      (toolHelpers.validateToolPath as Mock).mockReturnValue({
+        isValid: true,
+        sanitizedPath: '/workspace/file.ts',
+      });
+
+      // Content with async method
+      const fileContent = `class Service {
+  async processData(data): Promise<void> {
+    await myFunc();
+  }
+}`;
+      (fsPromises.readFile as Mock).mockResolvedValue(fileContent);
+      mockSymbolResolver.resolvePositionFromContent.mockReturnValue({
+        position: { line: 2, character: 10 },
+        foundAtLine: 3,
+      });
+      (lspIndex.isLanguageServerAvailable as Mock).mockResolvedValue(false);
+      (execIndex.checkCommandAvailability as Mock).mockResolvedValue({
+        available: false,
+      });
+      (execIndex.safeExec as Mock).mockResolvedValue({
+        success: true,
+        stdout: '/workspace/caller.ts:3:    await myFunc();',
+      });
+
+      const query = {
+        uri: '/workspace/file.ts',
+        symbolName: 'myFunc',
+        lineHint: 3,
+        direction: 'incoming',
+        researchGoal: 'goal',
+        reasoning: 'reason',
+        mainResearchGoal: 'main',
+      };
+
+      const result = await toolHandler({ queries: [query] });
+      const results = JSON.parse(result.content[0].text);
+
+      expect(results[0].status).toBe('hasResults');
+    });
+
+    it('should handle file read error gracefully in createCallHierarchyItemFromSite', async () => {
+      (toolHelpers.validateToolPath as Mock).mockReturnValue({
+        isValid: true,
+        sanitizedPath: '/workspace/file.ts',
+      });
+      (fsPromises.readFile as Mock)
+        .mockResolvedValueOnce('function myFunc() {}') // First call for main handler
+        .mockRejectedValueOnce(new Error('File not found')); // Second call fails for call site
+
+      mockSymbolResolver.resolvePositionFromContent.mockReturnValue({
+        position: { line: 0, character: 0 },
+        foundAtLine: 1,
+      });
+      (lspIndex.isLanguageServerAvailable as Mock).mockResolvedValue(false);
+      (execIndex.checkCommandAvailability as Mock).mockResolvedValue({
+        available: false,
+      });
+      (execIndex.safeExec as Mock).mockResolvedValue({
+        success: true,
+        stdout: '/workspace/caller.ts:5:myFunc();',
+      });
+
+      const query = {
+        uri: '/workspace/file.ts',
+        symbolName: 'myFunc',
+        lineHint: 1,
+        direction: 'incoming',
+        researchGoal: 'goal',
+        reasoning: 'reason',
+        mainResearchGoal: 'main',
+      };
+
+      const result = await toolHandler({ queries: [query] });
+      const results = JSON.parse(result.content[0].text);
+
+      // Should still have results, but with default 'unknown' enclosing function
+      expect(results[0].status).toBe('hasResults');
     });
   });
 });

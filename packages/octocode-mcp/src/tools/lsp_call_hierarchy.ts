@@ -41,6 +41,14 @@ import { ToolErrors } from '../errorCodes.js';
 const TOOL_NAME = STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY;
 
 /**
+ * Create a unique key for a call hierarchy item to detect cycles.
+ * Uses file path and line number as the key.
+ */
+function createCallItemKey(item: CallHierarchyItem): string {
+  return `${item.uri}:${item.range.start.line}:${item.name}`;
+}
+
+/**
  * Register the LSP call hierarchy tool with the MCP server.
  */
 export function registerLSPCallHierarchyTool(server: McpServer) {
@@ -212,16 +220,27 @@ async function callHierarchyWithLSP(
     query.contextLines ?? 2
   );
 
+  const depth = query.depth ?? 1;
+  const visited = new Set<string>();
+  visited.add(createCallItemKey(targetItem)); // Mark target as visited
+
   // Get calls based on direction
   if (query.direction === 'incoming') {
-    const incomingCalls = await client.getIncomingCalls(targetItem);
+    // Recursively gather incoming calls up to specified depth
+    const allIncomingCalls = await gatherIncomingCallsRecursive(
+      client,
+      targetItem,
+      depth,
+      visited,
+      query.contextLines ?? 2
+    );
 
-    if (incomingCalls.length === 0) {
+    if (allIncomingCalls.length === 0) {
       return {
         status: 'empty',
         item: enhancedTargetItem,
         direction: 'incoming',
-        depth: query.depth ?? 1,
+        depth,
         incomingCalls: [],
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
@@ -235,13 +254,9 @@ async function callHierarchyWithLSP(
       };
     }
 
-    // Enhance with content snippets and apply pagination
-    const enhancedCalls = await enhanceIncomingCalls(
-      incomingCalls,
-      query.contextLines ?? 2
-    );
+    // Apply pagination to flattened results
     const { paginatedItems, pagination } = paginateResults(
-      enhancedCalls,
+      allIncomingCalls,
       query.callsPerPage ?? 15,
       query.page ?? 1
     );
@@ -250,27 +265,33 @@ async function callHierarchyWithLSP(
       status: 'hasResults',
       item: enhancedTargetItem,
       direction: 'incoming',
-      depth: query.depth ?? 1,
+      depth,
       incomingCalls: paginatedItems,
       pagination,
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
       hints: [
         ...getHints(TOOL_NAME, 'hasResults'),
-        `Found ${incomingCalls.length} caller(s) via Language Server`,
+        `Found ${allIncomingCalls.length} caller(s) via Language Server (depth ${depth})`,
         'Use lspGotoDefinition to navigate to each caller',
       ],
     };
   } else {
-    // Outgoing calls
-    const outgoingCalls = await client.getOutgoingCalls(targetItem);
+    // Recursively gather outgoing calls up to specified depth
+    const allOutgoingCalls = await gatherOutgoingCallsRecursive(
+      client,
+      targetItem,
+      depth,
+      visited,
+      query.contextLines ?? 2
+    );
 
-    if (outgoingCalls.length === 0) {
+    if (allOutgoingCalls.length === 0) {
       return {
         status: 'empty',
         item: enhancedTargetItem,
         direction: 'outgoing',
-        depth: query.depth ?? 1,
+        depth,
         outgoingCalls: [],
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
@@ -283,13 +304,9 @@ async function callHierarchyWithLSP(
       };
     }
 
-    // Enhance with content snippets and apply pagination
-    const enhancedCalls = await enhanceOutgoingCalls(
-      outgoingCalls,
-      query.contextLines ?? 2
-    );
+    // Apply pagination to flattened results
     const { paginatedItems, pagination } = paginateResults(
-      enhancedCalls,
+      allOutgoingCalls,
       query.callsPerPage ?? 15,
       query.page ?? 1
     );
@@ -298,18 +315,100 @@ async function callHierarchyWithLSP(
       status: 'hasResults',
       item: enhancedTargetItem,
       direction: 'outgoing',
-      depth: query.depth ?? 1,
+      depth,
       outgoingCalls: paginatedItems,
       pagination,
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
       hints: [
         ...getHints(TOOL_NAME, 'hasResults'),
-        `Found ${outgoingCalls.length} callee(s) via Language Server`,
+        `Found ${allOutgoingCalls.length} callee(s) via Language Server (depth ${depth})`,
         'Use lspGotoDefinition to navigate to each callee',
       ],
     };
   }
+}
+
+/**
+ * Recursively gather incoming calls with cycle detection.
+ * Returns a flattened list of all callers up to the specified depth.
+ */
+async function gatherIncomingCallsRecursive(
+  client: Awaited<ReturnType<typeof getOrCreateClient>>,
+  item: CallHierarchyItem,
+  remainingDepth: number,
+  visited: Set<string>,
+  contextLines: number
+): Promise<IncomingCall[]> {
+  if (remainingDepth <= 0 || !client) return [];
+
+  const directCalls = await client.getIncomingCalls(item);
+  const enhancedCalls = await enhanceIncomingCalls(directCalls, contextLines);
+
+  if (remainingDepth === 1) {
+    return enhancedCalls;
+  }
+
+  // For depth > 1, recursively get callers of callers
+  const allCalls: IncomingCall[] = [...enhancedCalls];
+
+  for (const call of enhancedCalls) {
+    const key = createCallItemKey(call.from);
+    if (visited.has(key)) continue; // Skip cycles
+    visited.add(key);
+
+    const nestedCalls = await gatherIncomingCallsRecursive(
+      client,
+      call.from,
+      remainingDepth - 1,
+      visited,
+      contextLines
+    );
+    allCalls.push(...nestedCalls);
+  }
+
+  return allCalls;
+}
+
+/**
+ * Recursively gather outgoing calls with cycle detection.
+ * Returns a flattened list of all callees up to the specified depth.
+ */
+async function gatherOutgoingCallsRecursive(
+  client: Awaited<ReturnType<typeof getOrCreateClient>>,
+  item: CallHierarchyItem,
+  remainingDepth: number,
+  visited: Set<string>,
+  contextLines: number
+): Promise<OutgoingCall[]> {
+  if (remainingDepth <= 0 || !client) return [];
+
+  const directCalls = await client.getOutgoingCalls(item);
+  const enhancedCalls = await enhanceOutgoingCalls(directCalls, contextLines);
+
+  if (remainingDepth === 1) {
+    return enhancedCalls;
+  }
+
+  // For depth > 1, recursively get callees of callees
+  const allCalls: OutgoingCall[] = [...enhancedCalls];
+
+  for (const call of enhancedCalls) {
+    const key = createCallItemKey(call.to);
+    if (visited.has(key)) continue; // Skip cycles
+    visited.add(key);
+
+    const nestedCalls = await gatherOutgoingCallsRecursive(
+      client,
+      call.to,
+      remainingDepth - 1,
+      visited,
+      contextLines
+    );
+    allCalls.push(...nestedCalls);
+  }
+
+  return allCalls;
 }
 
 /**

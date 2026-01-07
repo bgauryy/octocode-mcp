@@ -11,8 +11,7 @@ import { STATIC_TOOL_NAMES } from '../tools/toolNames.js';
  */
 const FIELD_DESCRIPTIONS = {
   uri: 'File path containing the function. Example: "src/api/handler.ts"',
-  symbolName:
-    'EXACT function/method name to trace calls for. Example: "processRequest"',
+  symbolName: 'EXACT function/method name. No parens',
   lineHint: '1-indexed line number where function is defined or called.',
   orderHint:
     '0-indexed occurrence if name appears multiple times on line. Default: 0',
@@ -97,7 +96,11 @@ export const LSP_CALL_HIERARCHY_DESCRIPTION = `## Trace function call relationsh
 export const LSPCallHierarchyQuerySchema = BaseQuerySchemaLocal.extend({
   uri: z.string().min(1).describe(FIELD_DESCRIPTIONS.uri),
 
-  symbolName: z.string().min(1).describe(FIELD_DESCRIPTIONS.symbolName),
+  symbolName: z
+    .string()
+    .min(1)
+    .max(255)
+    .describe(FIELD_DESCRIPTIONS.symbolName),
 
   lineHint: z.number().int().min(1).describe(FIELD_DESCRIPTIONS.lineHint),
 

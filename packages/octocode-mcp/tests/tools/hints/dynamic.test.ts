@@ -63,12 +63,12 @@ describe('Dynamic Hints', () => {
       expect(hints.some(h => h.includes('grep fallback'))).toBe(true);
     });
 
-    it('should NOT include grep hint when searchEngine is ripgrep', () => {
+    it('should NOT include grep hint when searchEngine is rg', () => {
       const hints = getDynamicHints(
         STATIC_TOOL_NAMES.LOCAL_RIPGREP,
         'hasResults',
         {
-          searchEngine: 'ripgrep',
+          searchEngine: 'rg',
         }
       );
       expect(hints.some(h => h.includes('grep fallback'))).toBe(false);
@@ -122,7 +122,7 @@ describe('Dynamic Hints', () => {
 
     it('should return generic error hints for non-size_limit errors', () => {
       const hints = getDynamicHints(STATIC_TOOL_NAMES.LOCAL_RIPGREP, 'error', {
-        errorType: 'other',
+        // No errorType - triggers default case
       });
       expect(hints.some(h => h.includes('Tool unavailable'))).toBe(true);
     });
@@ -236,7 +236,7 @@ describe('Dynamic Hints', () => {
         STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT,
         'error',
         {
-          errorType: 'unknown',
+          // No errorType - triggers default case
         }
       );
       expect(hints.some(h => h.includes('localFindFiles'))).toBe(true);
@@ -368,7 +368,7 @@ describe('Dynamic Hints', () => {
       const hints = getDynamicHints(
         STATIC_TOOL_NAMES.GITHUB_FETCH_CONTENT,
         'error',
-        { errorType: 'other' }
+        { errorType: 'not_found' }
       );
       expect(hints).toEqual([]);
     });
@@ -459,7 +459,7 @@ describe('Dynamic Hints', () => {
           errorType: 'symbol_not_found',
           symbolName: 'foo',
           lineHint: 42,
-        } as HintContext
+        }
       );
       expect(hints.some(h => h.includes('"foo"'))).toBe(true);
       expect(hints.some(h => h.includes('line 42'))).toBe(true);
@@ -472,7 +472,7 @@ describe('Dynamic Hints', () => {
         {
           errorType: 'file_not_found',
           uri: 'src/utils/helper.ts',
-        } as HintContext
+        }
       );
       expect(hints.some(h => h.includes('File not found'))).toBe(true);
       expect(hints.some(h => h.includes('helper.ts'))).toBe(true);
@@ -482,7 +482,7 @@ describe('Dynamic Hints', () => {
       const hints = getDynamicHints(
         STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
         'error',
-        { errorType: 'file_not_found' } as HintContext
+        { errorType: 'file_not_found' }
       );
       expect(hints.some(h => h.includes('*.ts'))).toBe(true);
     });
@@ -495,7 +495,7 @@ describe('Dynamic Hints', () => {
           errorType: 'timeout',
           uri: 'src/big.ts',
           symbolName: 'process',
-        } as HintContext
+        }
       );
       expect(hints.some(h => h.includes('LSP timeout'))).toBe(true);
       expect(hints.some(h => h.includes('src/big.ts'))).toBe(true);
@@ -506,7 +506,9 @@ describe('Dynamic Hints', () => {
       const hints = getDynamicHints(
         STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
         'error',
-        { errorType: 'unknown' } as HintContext
+        {
+          // No errorType - triggers default case
+        }
       );
       expect(hints.some(h => h.includes('LSP error'))).toBe(true);
     });
@@ -591,7 +593,7 @@ describe('Dynamic Hints', () => {
       const hints = getDynamicHints(
         STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
         'error',
-        { errorType: 'symbol_not_found', symbolName: 'bar' } as HintContext
+        { errorType: 'symbol_not_found', symbolName: 'bar' }
       );
       expect(hints.some(h => h.includes('Could not resolve symbol'))).toBe(
         true
@@ -603,7 +605,7 @@ describe('Dynamic Hints', () => {
       const hints = getDynamicHints(
         STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
         'error',
-        { errorType: 'timeout', symbolName: 'heavyFunction' } as HintContext
+        { errorType: 'timeout', symbolName: 'heavyFunction' }
       );
       expect(hints.some(h => h.includes('LSP timeout'))).toBe(true);
       expect(hints.some(h => h.includes('paginate'))).toBe(true);
@@ -614,7 +616,7 @@ describe('Dynamic Hints', () => {
       const hints = getDynamicHints(
         STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
         'error',
-        { errorType: 'unknown', symbolName: 'test' } as HintContext
+        { symbolName: 'test' }
       );
       expect(hints.some(h => h.includes('LSP error'))).toBe(true);
     });
@@ -724,7 +726,7 @@ describe('Dynamic Hints', () => {
       const hints = getDynamicHints(
         STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
         'error',
-        { errorType: 'not_a_function', symbolName: 'MyType' } as HintContext
+        { errorType: 'not_a_function', symbolName: 'MyType' }
       );
       expect(hints.some(h => h.includes('function/method'))).toBe(true);
       expect(hints.some(h => h.includes('MyType'))).toBe(true);
@@ -738,7 +740,7 @@ describe('Dynamic Hints', () => {
           errorType: 'timeout',
           depth: 3,
           symbolName: 'complexFn',
-        } as HintContext
+        }
       );
       expect(hints.some(h => h.includes('Depth=3'))).toBe(true);
       expect(hints.some(h => h.includes('complexFn'))).toBe(true);
@@ -748,7 +750,7 @@ describe('Dynamic Hints', () => {
       const hints = getDynamicHints(
         STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
         'error',
-        { errorType: 'unknown', symbolName: 'fn' } as HintContext
+        { symbolName: 'fn' }
       );
       expect(hints.some(h => h.includes('LSP error'))).toBe(true);
     });
@@ -817,15 +819,16 @@ describe('Dynamic Hints', () => {
       ];
 
       expectedTools.forEach(tool => {
-        expect(HINTS[tool]).toBeDefined();
-        expect(typeof HINTS[tool].hasResults).toBe('function');
-        expect(typeof HINTS[tool].empty).toBe('function');
-        expect(typeof HINTS[tool].error).toBe('function');
+        const hints = HINTS[tool];
+        expect(hints).toBeDefined();
+        expect(typeof hints?.hasResults).toBe('function');
+        expect(typeof hints?.empty).toBe('function');
+        expect(typeof hints?.error).toBe('function');
       });
     });
 
     it('should return arrays from all hint generators', () => {
-      Object.entries(HINTS).forEach(([toolName, generators]) => {
+      Object.entries(HINTS).forEach(([_toolName, generators]) => {
         ['hasResults', 'empty', 'error'].forEach(status => {
           const result = generators[status as keyof typeof generators]({});
           expect(Array.isArray(result)).toBe(true);

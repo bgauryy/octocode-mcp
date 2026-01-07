@@ -17,26 +17,79 @@ function hashToken(token: string): string {
 
 export const OctokitWithThrottling = Octokit.plugin(throttling);
 
-// Cache instances by token (or 'DEFAULT' for the default token)
-const instances = new Map<string, InstanceType<typeof OctokitWithThrottling>>();
+/**
+ * Time-to-live for cached Octokit instances (1 hour).
+ * After this time, a new instance will be created to ensure fresh tokens.
+ */
+const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * Cached Octokit instance with creation timestamp for TTL checks.
+ */
+interface CachedInstance {
+  client: InstanceType<typeof OctokitWithThrottling>;
+  createdAt: number;
+}
+
+/**
+ * Check if a cached instance has expired based on TTL.
+ */
+function isExpired(cached: CachedInstance): boolean {
+  return Date.now() - cached.createdAt > TOKEN_TTL_MS;
+}
+
+// Cache instances by token hash (or 'DEFAULT' for the default token)
+const instances = new Map<string, CachedInstance>();
 // Track pending default creation to handle race conditions
 let pendingDefaultPromise: Promise<
   InstanceType<typeof OctokitWithThrottling>
 > | null = null;
 
+/**
+ * Maximum number of retries for rate-limited requests.
+ */
+const MAX_RATE_LIMIT_RETRIES = 3;
+
+/**
+ * Maximum wait time (in seconds) before refusing to retry.
+ * Prevents waiting too long for rate limit reset.
+ */
+const MAX_RETRY_AFTER_SECONDS = 60;
+
 const createThrottleOptions = () => ({
   onRateLimit: (
-    _retryAfter: number,
-    _options: unknown,
+    retryAfter: number,
+    options: { method: string; url: string },
     _octokit: Octokit,
-    _retryCount: number
-  ) => false,
+    retryCount: number
+  ) => {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `Rate limit hit for ${options.method} ${options.url}, ` +
+        `retry ${retryCount + 1}/${MAX_RATE_LIMIT_RETRIES} after ${retryAfter}s`
+    );
+    // Retry if under max retries and wait is reasonable
+    return (
+      retryCount < MAX_RATE_LIMIT_RETRIES &&
+      retryAfter < MAX_RETRY_AFTER_SECONDS
+    );
+  },
   onSecondaryRateLimit: (
-    _retryAfter: number,
-    _options: unknown,
+    retryAfter: number,
+    options: { method: string; url: string },
     _octokit: Octokit,
-    _retryCount: number
-  ) => false,
+    retryCount: number
+  ) => {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `Secondary rate limit hit for ${options.method} ${options.url}, ` +
+        `retry ${retryCount + 1}/${MAX_RATE_LIMIT_RETRIES} after ${retryAfter}s`
+    );
+    return (
+      retryCount < MAX_RATE_LIMIT_RETRIES &&
+      retryAfter < MAX_RETRY_AFTER_SECONDS
+    );
+  },
 });
 
 function createOctokitInstance(
@@ -65,15 +118,23 @@ export async function getOctokit(
   if (authInfo?.token) {
     // Use hashed token as key to avoid storing raw tokens in memory
     const key = hashToken(authInfo.token);
-    if (!instances.has(key)) {
-      instances.set(key, createOctokitInstance(authInfo.token));
+    const cached = instances.get(key);
+
+    // Check if cached instance exists and is not expired
+    if (cached && !isExpired(cached)) {
+      return cached.client;
     }
-    return instances.get(key)!;
+
+    // Create new instance (either doesn't exist or expired)
+    const newInstance = createOctokitInstance(authInfo.token);
+    instances.set(key, { client: newInstance, createdAt: Date.now() });
+    return newInstance;
   }
 
-  // Case 2: Default instance already exists
-  if (instances.has('DEFAULT')) {
-    return instances.get('DEFAULT')!;
+  // Case 2: Default instance already exists and not expired
+  const defaultCached = instances.get('DEFAULT');
+  if (defaultCached && !isExpired(defaultCached)) {
+    return defaultCached.client;
   }
 
   // Case 3: Default instance being created (race condition protection)
@@ -86,7 +147,7 @@ export async function getOctokit(
     try {
       const token = await getGitHubToken();
       const instance = createOctokitInstance(token);
-      instances.set('DEFAULT', instance);
+      instances.set('DEFAULT', { client: instance, createdAt: Date.now() });
       return instance;
     } finally {
       pendingDefaultPromise = null;
@@ -96,7 +157,23 @@ export async function getOctokit(
   return pendingDefaultPromise;
 }
 
+/**
+ * Clear all cached Octokit instances.
+ * Used for testing or when a full reset is needed.
+ */
 export function clearOctokitInstances(): void {
   instances.clear();
   pendingDefaultPromise = null;
+}
+
+/**
+ * Remove expired entries from the instance cache.
+ * Can be called periodically to prevent memory buildup from stale entries.
+ */
+export function clearExpiredTokens(): void {
+  for (const [key, cached] of instances.entries()) {
+    if (isExpired(cached)) {
+      instances.delete(key);
+    }
+  }
 }

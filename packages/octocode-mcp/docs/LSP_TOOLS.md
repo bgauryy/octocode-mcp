@@ -266,7 +266,7 @@ Find all usages of a symbol.
 
 ### `lspCallHierarchy`
 
-Trace function call relationships.
+Trace function call relationships with recursive traversal.
 
 ```typescript
 // Input
@@ -289,6 +289,18 @@ Trace function call relationships.
   ]
 }
 ```
+
+**Depth Parameter:**
+
+The `depth` parameter enables transitive call tracing:
+
+| Depth | Behavior | Use Case |
+|-------|----------|----------|
+| `1` (default) | Direct calls only | Fast, most common |
+| `2` | Direct + transitive (A→B→C) | Understanding call chains |
+| `3` | Deep traversal | Full call graph (slow) |
+
+**Cycle Detection:** The tool automatically detects and skips circular call patterns (A→B→A) to prevent infinite loops.
 
 ---
 
@@ -315,7 +327,12 @@ symbolName: "fetch"
 
 // ❌ Wrong - includes parens
 symbolName: "fetchData()"
+
+// ❌ Wrong - too long (max 255 characters)
+symbolName: "aVeryLongSymbolName..."  // Will be rejected if > 255 chars
 ```
+
+**Validation:** Symbol names must be 1-255 characters. Longer names are rejected at schema validation.
 
 ### 3. Line Hint Accuracy
 
@@ -366,6 +383,29 @@ depth: 3
 
 ---
 
+## Security
+
+LSP tools include several security measures:
+
+### Path Validation
+
+- **Symlink Resolution**: All file paths are resolved to real paths before access
+- **Path Traversal Prevention**: Paths containing `..` that escape the workspace are blocked
+- **Binary Validation**: LSP server binaries are validated before spawning
+
+### Input Validation
+
+- **Symbol Name Length**: Limited to 255 characters to prevent buffer overflow
+- **Line Numbers**: Must be positive integers (1-indexed)
+- **Depth Parameter**: Capped at 3 to prevent resource exhaustion
+
+### Error Handling
+
+- **Path Redaction**: When `REDACT_ERROR_PATHS=true`, full paths are hidden in error messages
+- **Graceful Degradation**: Invalid inputs return helpful errors instead of crashing
+
+---
+
 ## Adding New Languages
 
 To add support for a new language, edit `src/lsp/client.ts`:
@@ -397,6 +437,17 @@ Requirements:
 - [Microsoft multilspy](https://github.com/microsoft/multilspy)
 - [`src/lsp/client.ts`](../src/lsp/client.ts) - LSP client implementation
 - [`src/lsp/types.ts`](../src/lsp/types.ts) - Type definitions
+
+---
+
+## Changelog
+
+### v11.1
+
+- **Depth recursion**: `lspCallHierarchy` now supports transitive call traversal with cycle detection
+- **Symbol name validation**: Added max length validation (255 characters)
+- **Security enhancements**: LSP server path validation, symlink resolution
+- **Error path redaction**: Configurable via `REDACT_ERROR_PATHS` environment variable
 
 ---
 

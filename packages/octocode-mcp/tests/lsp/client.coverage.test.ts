@@ -17,12 +17,19 @@ vi.mock('child_process', () => ({
   spawn: vi.fn(),
 }));
 
-vi.mock('fs', () => ({
-  promises: {
-    readFile: vi.fn(),
-    access: vi.fn(),
-  },
-}));
+vi.mock('fs', async importOriginal => {
+  const original = await importOriginal<typeof import('fs')>();
+  return {
+    ...original,
+    promises: {
+      readFile: vi.fn(),
+      access: vi.fn(),
+    },
+    // Sync functions used by validateLSPServerPath
+    realpathSync: vi.fn((p: string) => p),
+    statSync: vi.fn(() => ({ isFile: () => true })),
+  };
+});
 
 vi.mock('vscode-jsonrpc/node.js', () => ({
   createMessageConnection: vi.fn(),

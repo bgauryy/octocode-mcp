@@ -8,6 +8,52 @@
  * - Factory functions for common error patterns
  */
 
+import path from 'path';
+import os from 'os';
+
+/**
+ * Whether to redact full paths in error messages.
+ * Set REDACT_ERROR_PATHS=true in production to hide workspace structure.
+ */
+const REDACT_PATHS = process.env.REDACT_ERROR_PATHS === 'true';
+
+/**
+ * Redacts a filesystem path for safe inclusion in error messages.
+ *
+ * When REDACT_ERROR_PATHS is enabled:
+ * - Paths within workspaceRoot become relative paths
+ * - Paths within home directory become ~/...
+ * - Other paths show only the filename
+ *
+ * @param absolutePath - The full path to redact
+ * @param workspaceRoot - Optional workspace root for relative path display
+ * @returns Redacted path string safe for error messages
+ */
+export function redactPath(
+  absolutePath: string,
+  workspaceRoot?: string
+): string {
+  if (!REDACT_PATHS) {
+    return absolutePath;
+  }
+
+  // If within workspace, show relative path
+  if (workspaceRoot && absolutePath.startsWith(workspaceRoot)) {
+    const relativePath = absolutePath.slice(workspaceRoot.length);
+    // Remove leading slash
+    return relativePath.replace(/^[/\\]/, '') || '.';
+  }
+
+  // If within home directory, use ~
+  const homeDir = os.homedir();
+  if (homeDir && absolutePath.startsWith(homeDir)) {
+    return '~' + absolutePath.slice(homeDir.length);
+  }
+
+  // For paths completely outside known roots, show only filename
+  return path.basename(absolutePath);
+}
+
 // ============================================================================
 // DOMAIN-SPECIFIC ERROR CONSTANTS
 // ============================================================================
@@ -463,7 +509,8 @@ export class ToolError extends Error {
     const metadata = LOCAL_TOOL_ERROR_REGISTRY[errorCode];
     const finalMessage = message || metadata.description;
 
-    super(finalMessage);
+    // Pass cause to Error constructor for ES2022+ cause support
+    super(finalMessage, cause ? { cause } : undefined);
 
     this.name = 'ToolError';
     this.errorCode = errorCode;
@@ -546,47 +593,57 @@ export function toToolError(
  * Convenience factory functions for common errors
  */
 export const ToolErrors = {
-  pathValidationFailed: (path: string, reason?: string) =>
+  pathValidationFailed: (
+    filePath: string,
+    reason?: string,
+    workspaceRoot?: string
+  ) =>
     new ToolError(
       LOCAL_TOOL_ERROR_CODES.PATH_VALIDATION_FAILED,
-      reason || `Path validation failed: ${path}`,
-      { path }
+      reason ||
+        `Path validation failed: ${redactPath(filePath, workspaceRoot)}`,
+      { path: filePath }
     ),
 
-  fileAccessFailed: (path: string, cause?: Error) => {
+  fileAccessFailed: (
+    filePath: string,
+    cause?: Error,
+    workspaceRoot?: string
+  ) => {
     // Extract specific error message based on error code
-    let message = `Cannot access file: ${path}`;
+    const displayPath = redactPath(filePath, workspaceRoot);
+    let message = `Cannot access file: ${displayPath}`;
     const errorCode = (cause as Error & { code?: string })?.code;
 
     if (errorCode === 'ENOENT') {
-      message = `File not found: ${path}. Verify the path exists using localFindFiles.`;
+      message = `File not found: ${displayPath}. Verify the path exists using localFindFiles.`;
     } else if (errorCode === 'EACCES') {
-      message = `Permission denied: ${path}. Check file permissions.`;
+      message = `Permission denied: ${displayPath}. Check file permissions.`;
     } else if (errorCode === 'EISDIR') {
-      message = `Path is a directory: ${path}. Use localViewStructure instead.`;
+      message = `Path is a directory: ${displayPath}. Use localViewStructure instead.`;
     } else if (errorCode === 'ENOTDIR') {
-      message = `Invalid path: ${path}. A component of the path is not a directory.`;
+      message = `Invalid path: ${displayPath}. A component of the path is not a directory.`;
     } else if (errorCode === 'ENAMETOOLONG') {
-      message = `Path too long: ${path}`;
+      message = `Path too long: ${displayPath}`;
     }
 
     return new ToolError(
       LOCAL_TOOL_ERROR_CODES.FILE_ACCESS_FAILED,
       message,
-      { path, errorCode },
+      { path: filePath, errorCode },
       cause
     );
   },
 
-  fileReadFailed: (path: string, cause?: Error) =>
+  fileReadFailed: (filePath: string, cause?: Error, workspaceRoot?: string) =>
     new ToolError(
       LOCAL_TOOL_ERROR_CODES.FILE_READ_FAILED,
-      `Failed to read file: ${path}`,
-      { path },
+      `Failed to read file: ${redactPath(filePath, workspaceRoot)}`,
+      { path: filePath },
       cause
     ),
 
-  fileTooLarge: (path: string, sizeKB: number, limitKB: number) =>
+  fileTooLarge: (filePath: string, sizeKB: number, limitKB: number) =>
     new ToolError(
       LOCAL_TOOL_ERROR_CODES.FILE_TOO_LARGE,
       (() => {
@@ -594,7 +651,7 @@ export const ToolErrors = {
           Number.isInteger(n) ? `${n}KB` : `${n.toFixed(1)}KB`;
         return `File too large: ${fmt(sizeKB)} (limit: ${fmt(limitKB)})`;
       })(),
-      { path, sizeKB, limitKB }
+      { path: filePath, sizeKB, limitKB }
     ),
 
   noMatches: (pattern: string, context?: Record<string, unknown>) =>
@@ -671,4 +728,15 @@ export const ToolErrors = {
       { toolName },
       cause
     ),
+};
+
+/**
+ * Local tool error factory functions (subset of ToolErrors for local-only commands)
+ */
+export const localToolErrors = {
+  commandNotAvailable: ToolErrors.commandNotAvailable,
+  commandExecutionFailed: ToolErrors.commandExecutionFailed,
+  commandTimeout: ToolErrors.commandTimeout,
+  queryExecutionFailed: ToolErrors.queryExecutionFailed,
+  toolExecutionFailed: ToolErrors.toolExecutionFailed,
 };

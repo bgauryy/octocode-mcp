@@ -67,8 +67,7 @@ export const LSP_GOTO_DEFINITION_DESCRIPTION = `## Navigate to symbol definition
  */
 const FIELD_DESCRIPTIONS = {
   uri: 'File path containing the symbol. Relative paths resolved from workspace root. Example: "src/utils.ts"',
-  symbolName:
-    'EXACT text of the symbol to find definition for. Must match precisely - no partial matches. Example: "fetchData" not "fetch"',
+  symbolName: 'EXACT symbol text. No parens, no partial matches',
   lineHint:
     '1-indexed line number where symbol appears (first line = 1, NOT 0). Tool searches ±2 lines if not exact match.',
   orderHint:
@@ -83,7 +82,11 @@ const FIELD_DESCRIPTIONS = {
 const LSPGotoDefinitionBaseSchema = BaseQuerySchemaLocal.extend({
   uri: z.string().min(1).describe(FIELD_DESCRIPTIONS.uri),
 
-  symbolName: z.string().min(1).describe(FIELD_DESCRIPTIONS.symbolName),
+  symbolName: z
+    .string()
+    .min(1)
+    .max(255)
+    .describe(FIELD_DESCRIPTIONS.symbolName),
 
   lineHint: z.number().int().min(1).describe(FIELD_DESCRIPTIONS.lineHint),
 

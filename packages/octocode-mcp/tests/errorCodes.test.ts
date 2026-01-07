@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   CONFIG_ERRORS,
   VALIDATION_ERRORS,
@@ -10,6 +10,9 @@ import {
   STARTUP_ERRORS,
   PROMISE_ERRORS,
   ALL_ERROR_CODES,
+  TOOL_ERRORS,
+  redactPath,
+  localToolErrors,
 } from '../src/errorCodes.js';
 
 describe('errorCodes', () => {
@@ -369,6 +372,160 @@ describe('errorCodes', () => {
         );
         const uniqueCodes = new Set(codes);
         expect(codes.length).toBe(uniqueCodes.size);
+      });
+    });
+
+    describe('TOOL_ERRORS', () => {
+      it('should have EXECUTION_FAILED error with function message', () => {
+        const error = TOOL_ERRORS.EXECUTION_FAILED;
+        expect(error.code).toBe('TOOL_EXECUTION_FAILED');
+        expect(error.message).toBeTypeOf('function');
+        const msg = error.message('myTool', 'Something went wrong');
+        expect(msg).toContain('myTool');
+        expect(msg).toContain('Something went wrong');
+      });
+
+      it('should have SECURITY_VALIDATION_FAILED error with function message', () => {
+        const error = TOOL_ERRORS.SECURITY_VALIDATION_FAILED;
+        expect(error.code).toBe('TOOL_SECURITY_VALIDATION_FAILED');
+        expect(error.message).toBeTypeOf('function');
+        const msg = error.message('myTool', 'Invalid input');
+        expect(msg).toContain('myTool');
+        expect(msg).toContain('Invalid input');
+      });
+    });
+  });
+
+  describe('redactPath function', () => {
+    const originalEnv = process.env.REDACT_ERROR_PATHS;
+
+    afterEach(() => {
+      if (originalEnv === undefined) {
+        delete process.env.REDACT_ERROR_PATHS;
+      } else {
+        process.env.REDACT_ERROR_PATHS = originalEnv;
+      }
+    });
+
+    it('should return unredacted path when REDACT_ERROR_PATHS is not set', async () => {
+      delete process.env.REDACT_ERROR_PATHS;
+      // Re-import to get fresh module with current env
+      vi.resetModules();
+      const { redactPath: freshRedactPath } =
+        await import('../src/errorCodes.js');
+      const result = freshRedactPath('/home/user/project/file.ts');
+      expect(result).toBe('/home/user/project/file.ts');
+    });
+
+    it('should return unredacted path when REDACT_ERROR_PATHS is false', async () => {
+      process.env.REDACT_ERROR_PATHS = 'false';
+      vi.resetModules();
+      const { redactPath: freshRedactPath } =
+        await import('../src/errorCodes.js');
+      const result = freshRedactPath('/home/user/project/file.ts');
+      expect(result).toBe('/home/user/project/file.ts');
+    });
+
+    it('should show relative path when within workspace root', async () => {
+      process.env.REDACT_ERROR_PATHS = 'true';
+      vi.resetModules();
+      const { redactPath: freshRedactPath } =
+        await import('../src/errorCodes.js');
+      const result = freshRedactPath(
+        '/workspace/project/src/file.ts',
+        '/workspace/project'
+      );
+      expect(result).toBe('src/file.ts');
+    });
+
+    it('should return dot for workspace root path itself', async () => {
+      process.env.REDACT_ERROR_PATHS = 'true';
+      vi.resetModules();
+      const { redactPath: freshRedactPath } =
+        await import('../src/errorCodes.js');
+      const result = freshRedactPath(
+        '/workspace/project',
+        '/workspace/project'
+      );
+      expect(result).toBe('.');
+    });
+
+    it('should use tilde for home directory paths', async () => {
+      process.env.REDACT_ERROR_PATHS = 'true';
+      vi.resetModules();
+      const { redactPath: freshRedactPath } =
+        await import('../src/errorCodes.js');
+      const os = await import('os');
+      const homeDir = os.homedir();
+      const result = freshRedactPath(`${homeDir}/documents/file.ts`);
+      expect(result).toBe('~/documents/file.ts');
+    });
+
+    it('should show only filename for paths outside known roots', async () => {
+      process.env.REDACT_ERROR_PATHS = 'true';
+      vi.resetModules();
+      const { redactPath: freshRedactPath } =
+        await import('../src/errorCodes.js');
+      // Use a path that's unlikely to match home or workspace
+      const result = freshRedactPath('/var/log/app/error.log');
+      expect(result).toBe('error.log');
+    });
+  });
+
+  describe('localToolErrors', () => {
+    describe('commandNotAvailable', () => {
+      it('should create error with custom install hint', () => {
+        const error = localToolErrors.commandNotAvailable(
+          'rg',
+          'Install ripgrep: brew install ripgrep'
+        );
+        expect(error.message).toContain("Command 'rg' is not available");
+        expect(error.message).toContain(
+          'Install ripgrep: brew install ripgrep'
+        );
+        expect(error.context?.command).toBe('rg');
+        expect(error.context?.installHint).toBe(
+          'Install ripgrep: brew install ripgrep'
+        );
+      });
+
+      it('should create error with default install hint when not provided', () => {
+        const error = localToolErrors.commandNotAvailable('mycommand');
+        expect(error.message).toContain("Command 'mycommand' is not available");
+        expect(error.message).toContain(
+          'Please install it and ensure it is in your PATH'
+        );
+      });
+    });
+
+    describe('commandExecutionFailed', () => {
+      it('should create error with stderr when provided', () => {
+        const error = localToolErrors.commandExecutionFailed(
+          'grep',
+          undefined,
+          'grep: invalid option'
+        );
+        expect(error.message).toBe(
+          "Command 'grep' failed: grep: invalid option"
+        );
+        expect(error.context?.command).toBe('grep');
+        expect(error.context?.stderr).toBe('grep: invalid option');
+      });
+
+      it('should create error without stderr', () => {
+        const error = localToolErrors.commandExecutionFailed('find');
+        expect(error.message).toBe('Command execution failed: find');
+        expect(error.context?.command).toBe('find');
+      });
+
+      it('should preserve cause error when provided', () => {
+        const cause = new Error('Underlying issue');
+        const error = localToolErrors.commandExecutionFailed(
+          'ls',
+          cause,
+          'permission denied'
+        );
+        expect(error.cause).toBe(cause);
       });
     });
   });

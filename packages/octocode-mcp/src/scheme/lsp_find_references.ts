@@ -11,8 +11,7 @@ import { STATIC_TOOL_NAMES } from '../tools/toolNames.js';
  */
 const FIELD_DESCRIPTIONS = {
   uri: 'File path containing the symbol. Example: "src/api/client.ts"',
-  symbolName:
-    'EXACT text of the symbol to find references for. Must match precisely.',
+  symbolName: 'EXACT symbol text. No parens, no partial matches',
   lineHint:
     '1-indexed line number where symbol appears (first line = 1). Tool searches +/-2 lines.',
   orderHint:
@@ -92,7 +91,11 @@ export const LSP_FIND_REFERENCES_DESCRIPTION = `## Find all references to a symb
 const LSPFindReferencesBaseSchema = BaseQuerySchemaLocal.extend({
   uri: z.string().min(1).describe(FIELD_DESCRIPTIONS.uri),
 
-  symbolName: z.string().min(1).describe(FIELD_DESCRIPTIONS.symbolName),
+  symbolName: z
+    .string()
+    .min(1)
+    .max(255)
+    .describe(FIELD_DESCRIPTIONS.symbolName),
 
   lineHint: z.number().int().min(1).describe(FIELD_DESCRIPTIONS.lineHint),
 
