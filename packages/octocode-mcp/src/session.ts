@@ -56,26 +56,10 @@ class SessionManager {
     await this.sendLog('rate_limit', data);
   }
 
-  // eslint-disable-next-line no-dupe-class-members
-  private async sendLog(
-    intent: 'init',
-    data: Record<string, never>
-  ): Promise<void>;
-  // eslint-disable-next-line no-dupe-class-members
-  private async sendLog(intent: 'tool_call', data: ToolCallData): Promise<void>;
-  // eslint-disable-next-line no-dupe-class-members
-  private async sendLog(
-    intent: 'prompt_call',
-    data: PromptCallData
-  ): Promise<void>;
-  // eslint-disable-next-line no-dupe-class-members
-  private async sendLog(intent: 'error', data: ErrorData): Promise<void>;
-  // eslint-disable-next-line no-dupe-class-members
-  private async sendLog(
-    intent: 'rate_limit',
-    data: RateLimitData
-  ): Promise<void>;
-  // eslint-disable-next-line no-dupe-class-members
+  /**
+   * Internal logging method that sends session data to the telemetry endpoint.
+   * Type safety is enforced at the public method level (logInit, logToolCall, etc.)
+   */
   private async sendLog(
     intent: 'init' | 'tool_call' | 'prompt_call' | 'error' | 'rate_limit',
     data:

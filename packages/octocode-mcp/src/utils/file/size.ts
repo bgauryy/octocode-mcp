@@ -36,9 +36,9 @@ export function parseFileSize(sizeStr: string): number {
 
   // Handle decimal format with full unit names (e.g., "1.0KB", "5.5MB", "0.0B")
   const decimalMatch = trimmed.match(/^(\d+(?:\.\d+)?)(B|KB|MB|GB|TB)$/i);
-  if (decimalMatch) {
-    const value = parseFloat(decimalMatch[1]!);
-    const unit = decimalMatch[2]!.toUpperCase();
+  if (decimalMatch && decimalMatch[1] && decimalMatch[2]) {
+    const value = parseFloat(decimalMatch[1]);
+    const unit = decimalMatch[2].toUpperCase();
 
     switch (unit) {
       case 'B':
@@ -56,12 +56,12 @@ export function parseFileSize(sizeStr: string): number {
 
   // Handle size with single letter unit (K, M, G, T) - supports both integer and decimal
   const match = trimmed.match(/^(\d+(?:\.\d+)?)([KMGT])$/i);
-  if (!match) {
+  if (!match || !match[1] || !match[2]) {
     throw new Error(`Invalid size format: ${sizeStr}`);
   }
 
-  const value = parseFloat(match[1]!);
-  const unit = match[2]!.toUpperCase();
+  const value = parseFloat(match[1]);
+  const unit = match[2].toUpperCase();
 
   switch (unit) {
     case 'K':

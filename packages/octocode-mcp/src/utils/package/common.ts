@@ -1,6 +1,5 @@
 import { searchNpmPackage, checkNpmDeprecation } from './npmPackage.js';
 import { searchPythonPackage } from './pythonPackage.js';
-import { tryInferRepoUrl } from './githubRepoFallback.js';
 
 export interface PackageSearchInput {
   ecosystem: 'npm' | 'python';
@@ -92,16 +91,6 @@ export async function searchPackage(
       searchLimit,
       fetchMetadata
     );
-
-    // Post-processing: infer repo URL if not found (done AFTER cache)
-    if (!('error' in result) && result.packages.length > 0) {
-      result.packages = result.packages.map(pkg => {
-        if ('repoUrl' in pkg && !pkg.repoUrl) {
-          return tryInferRepoUrl(pkg.path, pkg);
-        }
-        return pkg;
-      });
-    }
 
     return result;
   } else {

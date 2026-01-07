@@ -124,13 +124,16 @@ export function parseRipgrepJson(
           ? firstSubmatch.end - firstSubmatch.start
           : lineText.length;
 
-        fileMap.get(path)!.rawMatches.push({
-          lineText,
-          lineNumber,
-          absoluteOffset,
-          column,
-          matchLength,
-        });
+        const fileEntry = fileMap.get(path);
+        if (fileEntry) {
+          fileEntry.rawMatches.push({
+            lineText,
+            lineNumber,
+            absoluteOffset,
+            column,
+            matchLength,
+          });
+        }
       } else if (msg.type === 'context') {
         const path = msg.data.path.text;
         const lineNumber = msg.data.line_number;
@@ -139,7 +142,10 @@ export function parseRipgrepJson(
         if (!fileMap.has(path)) {
           fileMap.set(path, { rawMatches: [], contexts: new Map() });
         }
-        fileMap.get(path)!.contexts.set(lineNumber, lineText);
+        const fileEntry = fileMap.get(path);
+        if (fileEntry) {
+          fileEntry.contexts.set(lineNumber, lineText);
+        }
       } else if (msg.type === 'summary') {
         stats = {
           matchCount: msg.data.stats.matches,
@@ -253,11 +259,14 @@ export function parseGrepOutput(
 
         // Try to find the column (position of pattern in the line)
         // For simplicity, we set column to 0 since grep doesn't provide it
-        fileMap.get(path)!.push({
-          lineText: content,
-          lineNumber,
-          column: 0,
-        });
+        const fileMatches = fileMap.get(path);
+        if (fileMatches) {
+          fileMatches.push({
+            lineText: content,
+            lineNumber,
+            column: 0,
+          });
+        }
       } else if (line.includes(':')) {
         // Fallback: try to parse as filename:content (no line number)
         const colonIdx = line.indexOf(':');
@@ -268,11 +277,14 @@ export function parseGrepOutput(
           if (!fileMap.has(path)) {
             fileMap.set(path, []);
           }
-          fileMap.get(path)!.push({
-            lineText: content,
-            lineNumber: 0,
-            column: 0,
-          });
+          const fileMatches = fileMap.get(path);
+          if (fileMatches) {
+            fileMatches.push({
+              lineText: content,
+              lineNumber: 0,
+              column: 0,
+            });
+          }
         }
       }
     }

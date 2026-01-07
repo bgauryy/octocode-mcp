@@ -86,8 +86,11 @@ function applyStructurePagination(
   }
 
   for (const dir of Object.keys(structure)) {
-    structure[dir]!.files.sort();
-    structure[dir]!.folders.sort();
+    const entry = structure[dir];
+    if (entry) {
+      entry.files.sort();
+      entry.folders.sort();
+    }
   }
 
   const sortedStructure: Record<
@@ -100,7 +103,10 @@ function applyStructurePagination(
     return a.localeCompare(b);
   });
   for (const key of sortedKeys) {
-    sortedStructure[key] = structure[key]!;
+    const entry = structure[key];
+    if (entry) {
+      sortedStructure[key] = entry;
+    }
   }
 
   const pageFiles = paginatedItems.filter(i => i.type === 'file').length;
@@ -420,8 +426,11 @@ async function viewGitHubRepositoryStructureAPIInternal(
     }
 
     for (const dir of Object.keys(structure)) {
-      structure[dir]!.files.sort();
-      structure[dir]!.folders.sort();
+      const entry = structure[dir];
+      if (entry) {
+        entry.files.sort();
+        entry.folders.sort();
+      }
     }
 
     const sortedStructure: Record<
@@ -434,7 +443,10 @@ async function viewGitHubRepositoryStructureAPIInternal(
       return a.localeCompare(b);
     });
     for (const key of sortedKeys) {
-      sortedStructure[key] = structure[key]!;
+      const entry = structure[key];
+      if (entry) {
+        sortedStructure[key] = entry;
+      }
     }
 
     const pageFiles = paginatedItems.filter(i => i.type === 'file').length;

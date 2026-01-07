@@ -142,8 +142,9 @@ function applyEntryFilters(
   }
 
   if (query.extensions && query.extensions.length > 0) {
+    const extensions = query.extensions;
     filtered = filtered.filter(
-      e => e.extension && query.extensions!.includes(e.extension)
+      e => e.extension && extensions.includes(e.extension)
     );
   }
 

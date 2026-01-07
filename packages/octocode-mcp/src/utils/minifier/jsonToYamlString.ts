@@ -15,9 +15,10 @@ export function jsonToYamlString(
     }
 
     if (config.keysPriority && config.keysPriority.length > 0) {
+      const priorityKeys = config.keysPriority;
       return (a: string, b: string) => {
-        const aPriority = config.keysPriority!.indexOf(a);
-        const bPriority = config.keysPriority!.indexOf(b);
+        const aPriority = priorityKeys.indexOf(a);
+        const bPriority = priorityKeys.indexOf(b);
 
         if (aPriority !== -1 && bPriority !== -1) {
           return aPriority - bPriority;
