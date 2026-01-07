@@ -5246,7 +5246,6 @@ __metadata:
     vite: "npm:^6.0.0"
     vitest: "npm:^4.0.13"
   bin:
-    octocode: ./out/octocode-cli.js
     octocode-cli: ./out/octocode-cli.js
   languageName: unknown
   linkType: soft
