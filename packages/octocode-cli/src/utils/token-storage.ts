@@ -32,6 +32,12 @@ export {
   // Utility
   getCredentialsFilePath,
 
+  // Environment variable support
+  getTokenFromEnv,
+  getEnvTokenSource,
+  hasEnvToken,
+  ENV_TOKEN_VARS,
+
   // Errors
   TimeoutError,
 

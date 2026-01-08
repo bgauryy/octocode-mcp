@@ -54,3 +54,21 @@ export interface CredentialsStore {
   version: number;
   credentials: Record<string, StoredCredentials>;
 }
+
+/**
+ * Token source identifier for debugging and display
+ *
+ * Priority order:
+ * 1. Environment variables (OCTOCODE_TOKEN > GH_TOKEN > GITHUB_TOKEN)
+ * 2. Native keychain (most secure for desktop)
+ * 3. Encrypted file fallback (secure for headless)
+ * 4. gh CLI stored token (external fallback)
+ */
+export type TokenSource =
+  | 'env:OCTOCODE_TOKEN'
+  | 'env:GH_TOKEN'
+  | 'env:GITHUB_TOKEN'
+  | 'keychain'
+  | 'file'
+  | 'gh-cli'
+  | null;

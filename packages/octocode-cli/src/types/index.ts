@@ -125,6 +125,8 @@ export interface TokenResult {
   token: string | null;
   source: TokenSource;
   username?: string;
+  /** Specific env var name when source is 'env' (e.g., 'env:OCTOCODE_TOKEN') */
+  envSource?: string;
 }
 
 // ============================================

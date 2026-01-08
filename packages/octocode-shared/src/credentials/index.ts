@@ -9,6 +9,7 @@ export type {
   StoreResult,
   DeleteResult,
   CredentialsStore,
+  TokenSource,
 } from './types.js';
 
 // Storage functions
@@ -28,6 +29,8 @@ export {
   // Token retrieval (convenience)
   getToken,
   getTokenSync,
+  resolveToken,
+  type ResolvedToken,
 
   // List/check operations
   listStoredHosts,
@@ -51,6 +54,12 @@ export {
   OCTOCODE_DIR,
   CREDENTIALS_FILE,
   KEY_FILE,
+  ENV_TOKEN_VARS,
+
+  // Environment variable support
+  getTokenFromEnv,
+  getEnvTokenSource,
+  hasEnvToken,
 
   // Errors
   TimeoutError,

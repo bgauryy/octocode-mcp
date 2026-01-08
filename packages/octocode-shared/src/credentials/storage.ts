@@ -22,6 +22,7 @@ import type {
   StoreResult,
   DeleteResult,
   CredentialsStore,
+  TokenSource,
 } from './types.js';
 import { HOME } from '../platform/index.js';
 import * as keychain from './keychain.js';
@@ -67,11 +68,6 @@ function checkKeychainAvailable(): boolean {
   return _keychainAvailable;
 }
 
-// Initialize keychain check on module load (non-blocking)
-Promise.resolve().then(() => {
-  checkKeychainAvailable();
-});
-
 // Service name for keychain storage (like gh uses "gh:github.com")
 const KEYCHAIN_SERVICE = 'octocode-cli';
 
@@ -83,6 +79,61 @@ export const KEY_FILE = join(OCTOCODE_DIR, '.key');
 // Encryption constants
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
+
+// ============================================================================
+// ENVIRONMENT VARIABLE SUPPORT
+// ============================================================================
+
+/**
+ * Environment variable names for token lookup (in priority order)
+ */
+export const ENV_TOKEN_VARS = [
+  'OCTOCODE_TOKEN', // octocode-specific (highest priority)
+  'GH_TOKEN', // gh CLI compatible
+  'GITHUB_TOKEN', // GitHub Actions native
+] as const;
+
+/**
+ * Get token from environment variables
+ *
+ * Checks environment variables in priority order:
+ * 1. OCTOCODE_TOKEN - octocode-specific token
+ * 2. GH_TOKEN - GitHub CLI compatible
+ * 3. GITHUB_TOKEN - GitHub Actions native
+ *
+ * @returns Token string or null if not found in any env var
+ */
+export function getTokenFromEnv(): string | null {
+  for (const envVar of ENV_TOKEN_VARS) {
+    const token = process.env[envVar];
+    if (token && token.trim()) {
+      return token.trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * Get the source of an environment variable token
+ *
+ * @returns The env var name that contains the token, or null if none found
+ */
+export function getEnvTokenSource(): TokenSource {
+  for (const envVar of ENV_TOKEN_VARS) {
+    const token = process.env[envVar];
+    if (token && token.trim()) {
+      return `env:${envVar}` as TokenSource;
+    }
+  }
+  return null;
+}
+
+/**
+ * Check if token is available from environment variables
+ */
+export function hasEnvToken(): boolean {
+  return getTokenFromEnv() !== null;
+}
 
 // Track storage mode
 let _useSecureStorage: boolean | null = null;
@@ -718,10 +769,12 @@ export function isRefreshTokenExpired(credentials: StoredCredentials): boolean {
 }
 
 /**
- * Get token from stored credentials
+ * Get token from stored credentials (keychain/file only)
  *
  * Convenience function that retrieves credentials and returns just the token string.
  * Checks for token expiration before returning.
+ *
+ * NOTE: This does NOT check environment variables. Use resolveToken() for full resolution.
  *
  * @param hostname - GitHub hostname (default: 'github.com')
  * @returns Token string or null if not found/expired
@@ -741,6 +794,58 @@ export async function getToken(
   }
 
   return credentials.token.token;
+}
+
+/**
+ * Token resolution result with source tracking
+ */
+export interface ResolvedToken {
+  token: string;
+  source: TokenSource;
+}
+
+/**
+ * Resolve token using the full priority chain
+ *
+ * Priority order:
+ * 1. OCTOCODE_TOKEN env var
+ * 2. GH_TOKEN env var
+ * 3. GITHUB_TOKEN env var
+ * 4. Native keychain (most secure for desktop)
+ * 5. Encrypted file storage (~/.octocode/credentials.json)
+ *
+ * This is the single entry point for token resolution - consumers should use this
+ * instead of manually checking env vars and calling getToken() separately.
+ *
+ * @param hostname - GitHub hostname (default: 'github.com')
+ * @returns ResolvedToken with token and source, or null if not found
+ */
+export async function resolveToken(
+  hostname: string = 'github.com'
+): Promise<ResolvedToken | null> {
+  // Priority 1-3: Environment variables
+  const envToken = getTokenFromEnv();
+  if (envToken) {
+    return {
+      token: envToken,
+      source: getEnvTokenSource() ?? 'env:GITHUB_TOKEN',
+    };
+  }
+
+  // Priority 4-5: Stored credentials (keychain → file)
+  const storedToken = await getToken(hostname);
+  if (storedToken) {
+    // Determine if from keychain or file
+    const source: TokenSource = isSecureStorageAvailable()
+      ? 'keychain'
+      : 'file';
+    return {
+      token: storedToken,
+      source,
+    };
+  }
+
+  return null;
 }
 
 /**

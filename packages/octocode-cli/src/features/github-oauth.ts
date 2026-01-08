@@ -32,6 +32,8 @@ import {
   getCredentialsFilePath,
   isUsingSecureStorage as tokenStorageIsUsingSecureStorage,
   getCredentialsSync,
+  getTokenFromEnv,
+  getEnvTokenSource,
 } from '../utils/token-storage.js';
 
 /**
@@ -567,7 +569,14 @@ type GetTokenSource = 'octocode' | 'gh' | 'auto';
  * @param preferredSource - Token source preference:
  *   - 'octocode': Only return octocode-cli token
  *   - 'gh': Only return gh CLI token
- *   - 'auto': Match octocode-mcp priority: GITHUB_TOKEN env → gh CLI → octocode
+ *   - 'auto': Priority chain: env vars → gh CLI → octocode storage
+ *
+ * Auto mode priority:
+ * 1. OCTOCODE_TOKEN env var (octocode-specific)
+ * 2. GH_TOKEN env var (gh CLI compatible)
+ * 3. GITHUB_TOKEN env var (GitHub Actions)
+ * 4. gh CLI stored token
+ * 5. octocode-cli stored credentials
  */
 export async function getToken(
   hostname: string = DEFAULT_HOSTNAME,
@@ -582,23 +591,27 @@ export async function getToken(
     return getGhCliToken(hostname);
   }
 
-  // Auto mode: Match octocode-mcp priority
-  // 1. GITHUB_TOKEN environment variable (explicit override)
-  if (process.env.GITHUB_TOKEN) {
+  // Auto mode: Check environment variables first (priority order)
+  // 1-3. Environment variables: OCTOCODE_TOKEN → GH_TOKEN → GITHUB_TOKEN
+  const envToken = getTokenFromEnv();
+  if (envToken) {
+    const source = getEnvTokenSource();
     return {
-      token: process.env.GITHUB_TOKEN,
+      token: envToken,
       source: 'env',
       username: undefined,
-    };
+      // Include which env var was used for debugging
+      envSource: source ?? undefined,
+    } as TokenResult;
   }
 
-  // 2. gh CLI token (most common for developers)
+  // 4. gh CLI token (most common for developers)
   const ghResult = getGhCliToken(hostname);
   if (ghResult.token) {
     return ghResult;
   }
 
-  // 3. octocode storage (fallback)
+  // 5. octocode storage (fallback)
   return getOctocodeToken(hostname);
 }
 

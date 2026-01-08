@@ -12,7 +12,7 @@ import {
 import { getSkillsSourceDir, getSkillsDestDir } from '../utils/skills.js';
 import { dirExists, listSubdirectories } from '../utils/fs.js';
 import { detectCurrentClient } from '../utils/mcp-paths.js';
-import { getAuthStatusAsync } from '../features/github-oauth.js';
+import { getAuthStatus } from '../features/github-oauth.js';
 import type { OctocodeAuthStatus } from '../types/index.js';
 import path from 'node:path';
 
@@ -147,13 +147,14 @@ function getSkillsState(): SkillsState {
 }
 
 /**
- * Get unified application state (async for keyring auth check)
+ * Get unified application state
+ * Uses sync auth check (file storage + gh CLI only) to avoid keychain popup on startup
  */
-export async function getAppState(): Promise<AppState> {
+export function getAppState(): AppState {
   return {
     octocode: getOctocodeState(),
     skills: getSkillsState(),
     currentClient: detectCurrentClient(),
-    githubAuth: await getAuthStatusAsync(),
+    githubAuth: getAuthStatus(),
   };
 }

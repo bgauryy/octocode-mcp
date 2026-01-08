@@ -1,5 +1,8 @@
 import { getGithubCLIToken } from './utils/exec/index.js';
-import { getOctocodeToken as getOctocodeTokenImpl } from './utils/credentials/index.js';
+import {
+  resolveToken as resolveTokenImpl,
+  type ResolvedToken,
+} from './utils/credentials/index.js';
 import { version } from '../package.json';
 import type { ServerConfig } from './types.js';
 import { CONFIG_ERRORS } from './errorCodes.js';
@@ -12,20 +15,20 @@ let initializationPromise: Promise<void> | null = null;
 let pendingTokenPromise: Promise<string | null> | null = null;
 
 // Injectable function for testing
-let _getOctocodeToken = getOctocodeTokenImpl;
+let _resolveToken = resolveTokenImpl;
 
 /**
  * @internal - For testing only
  */
-export function _setOctocodeTokenFn(fn: typeof getOctocodeTokenImpl): void {
-  _getOctocodeToken = fn;
+export function _setResolveTokenFn(fn: typeof resolveTokenImpl): void {
+  _resolveToken = fn;
 }
 
 /**
  * @internal - For testing only
  */
-export function _resetOctocodeTokenFn(): void {
-  _getOctocodeToken = getOctocodeTokenImpl;
+export function _resetResolveTokenFn(): void {
+  _resolveToken = resolveTokenImpl;
 }
 
 function parseStringArray(value?: string): string[] | undefined {
@@ -66,16 +69,12 @@ function parseBooleanEnvDefaultTrue(value: string | undefined): boolean {
 }
 
 async function resolveGitHubToken(): Promise<string | null> {
-  // Priority 1: Explicit GITHUB_TOKEN environment variable
-  if (process.env.GITHUB_TOKEN) {
-    return process.env.GITHUB_TOKEN;
-  }
-
-  // Priority 2: GitHub CLI token (fallback for convenience)
+  // Priority 1-5: Use octocode-shared's unified token resolution
+  // Handles: env vars (OCTOCODE_TOKEN > GH_TOKEN > GITHUB_TOKEN) → keychain → file
   try {
-    const cliToken = await getGithubCLIToken();
-    if (cliToken?.trim()) {
-      return cliToken.trim();
+    const resolved = await _resolveToken();
+    if (resolved?.token) {
+      return resolved.token;
     }
   } catch (error) {
     if (error instanceof Error && error.message) {
@@ -83,11 +82,11 @@ async function resolveGitHubToken(): Promise<string | null> {
     }
   }
 
-  // Priority 3: octocode-cli stored credentials (~/.octocode/credentials.json)
+  // Priority 6: GitHub CLI token (external fallback via `gh auth token`)
   try {
-    const octocodeToken = await _getOctocodeToken();
-    if (octocodeToken?.trim()) {
-      return octocodeToken.trim();
+    const cliToken = await getGithubCLIToken();
+    if (cliToken?.trim()) {
+      return cliToken.trim();
     }
   } catch (error) {
     if (error instanceof Error && error.message) {

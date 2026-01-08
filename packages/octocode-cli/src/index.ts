@@ -22,12 +22,9 @@ import {
   checkAndPrintEnvironmentWithLoader,
   printNodeDoctorHint,
   hasEnvironmentIssues,
-  printAuthStatus,
 } from './ui/install/index.js';
 import { runMenuLoop } from './ui/menu.js';
 import { runCLI } from './cli/index.js';
-import { initializeSecureStorage } from './utils/token-storage.js';
-import { getAuthStatusAsync } from './features/github-oauth.js';
 
 // ─────────────────────────────────────────────────────────────
 // Interactive Mode
@@ -57,12 +54,6 @@ async function runInteractiveMode(): Promise<void> {
 
   const envStatus = await checkAndPrintEnvironmentWithLoader();
 
-  // Auth status check (with loading indicator)
-  const authSpinner = new Spinner('  Auth: Checking...').start();
-  const authStatus = await getAuthStatusAsync();
-  authSpinner.clear();
-  printAuthStatus(authStatus);
-
   // Show node-doctor hint if issues detected
   if (hasEnvironmentIssues(envStatus)) {
     console.log();
@@ -91,10 +82,6 @@ async function runInteractiveMode(): Promise<void> {
 // ─────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  // Initialize secure storage (keytar) early to avoid race conditions
-  // This ensures isSecureStorageAvailable() returns accurate results
-  await initializeSecureStorage();
-
   // Check for CLI commands first
   const handled = await runCLI();
 

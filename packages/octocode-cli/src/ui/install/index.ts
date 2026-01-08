@@ -7,5 +7,4 @@ export {
   checkAndPrintEnvironmentWithLoader,
   printNodeDoctorHint,
   hasEnvironmentIssues,
-  printAuthStatus,
 } from './environment.js';
