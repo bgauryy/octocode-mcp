@@ -25,6 +25,8 @@ const serverConfig = defineConfig({
     ...builtinModules,
     ...builtinModules.map(m => `node:${m}`),
     'keytar', // Native module - cannot be bundled
+    '@napi-rs/keyring', // Native module - cannot be bundled
+    /^@napi-rs\/keyring-/, // Platform-specific native bindings
   ],
 
   // Tree shaking - Rolldown has excellent tree shaking by default
@@ -69,6 +71,8 @@ const publicConfig = defineConfig({
     ...builtinModules,
     ...builtinModules.map(m => `node:${m}`),
     'keytar', // Native module - cannot be bundled
+    '@napi-rs/keyring', // Native module - cannot be bundled
+    /^@napi-rs\/keyring-/, // Platform-specific native bindings
   ],
 
   treeshake: true,

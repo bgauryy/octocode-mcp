@@ -16,6 +16,7 @@ export const LSP_GOTO_DEFINITION_DESCRIPTION = `## Navigate to symbol definition
 - Find where function/class/variable/type is defined
 - Trace import to source | Jump to declaration
 - After localSearchCode finds symbol → get precise definition
+- **ALWAYS use after localSearchCode when tracing code flows**
 </when>
 <prefer_over>
 - localSearchCode: When you need precise definition location, not pattern matches

@@ -33,6 +33,13 @@ vi.mock('../../src/utils/exec/index.js', () => ({
   getGithubCLIToken: vi.fn().mockResolvedValue(null),
 }));
 
+// Mock credentials to prevent @napi-rs/keyring native module loading
+vi.mock('../../src/utils/credentials/index.js', () => ({
+  getOctocodeToken: vi.fn().mockResolvedValue(null),
+  _setSecureStorageAvailable: vi.fn(),
+  _resetSecureStorageState: vi.fn(),
+}));
+
 // Mock the actual tool registration functions to track calls
 const mockLocalRipgrepRegister = vi.fn().mockReturnValue({});
 const mockLocalViewStructureRegister = vi.fn().mockReturnValue({});

@@ -89,9 +89,11 @@ let _useSecureStorage: boolean | null = null;
 let _keychainInitialized = false;
 
 /**
- * Initialize secure storage by checking keychain availability and migrating legacy credentials.
- * Call this before using any credential functions to ensure keychain is checked
- * and any legacy file-based credentials are migrated to keychain.
+ * Initialize secure storage by checking keychain availability.
+ * Call this before using any credential functions to ensure keychain is checked.
+ *
+ * Note: Migration from file to keychain happens lazily on first credential access,
+ * not at startup. This avoids triggering keychain permission prompts on every app launch.
  *
  * @returns true if secure storage (native keychain) is available
  */
@@ -103,11 +105,8 @@ export async function initializeSecureStorage(): Promise<boolean> {
   _keychainInitialized = true;
   _useSecureStorage = checkKeychainAvailable();
 
-  // Migrate legacy credentials if keychain is available
-  // This ensures migration completes before any credential operations
-  if (_useSecureStorage) {
-    await migrateLegacyCredentials();
-  }
+  // Note: Migration is now lazy - happens on first getCredentials() call
+  // This prevents keychain permission prompts on every app startup
 
   return _useSecureStorage;
 }
@@ -365,57 +364,22 @@ function cleanupKeyFile(): void {
 // ============================================================================
 
 /**
- * Check for and migrate legacy credentials to keychain (with timeout protection)
+ * Migrate a single credential from file to keychain (lazy migration)
+ * Called on first access to a file-stored credential.
  */
-async function migrateLegacyCredentials(): Promise<void> {
-  if (!isSecureStorageAvailable()) return;
-  if (!existsSync(CREDENTIALS_FILE)) return;
-
+async function migrateSingleCredential(
+  hostname: string,
+  credentials: StoredCredentials
+): Promise<void> {
   try {
-    const store = readCredentialsStore();
-    const hostnames = Object.keys(store.credentials);
+    // Store in keychain
+    await withTimeout(keychainStore(hostname, credentials), KEYRING_TIMEOUT_MS);
 
-    if (hostnames.length === 0) return;
-
-    let migratedCount = 0;
-
-    // Migrate each credential to keychain with timeout
-    for (const hostname of hostnames) {
-      try {
-        // Check if already in keyring (with timeout)
-        const existing = await withTimeout(
-          keychainGet(hostname),
-          KEYRING_TIMEOUT_MS
-        );
-        if (!existing) {
-          await withTimeout(
-            keychainStore(hostname, store.credentials[hostname]),
-            KEYRING_TIMEOUT_MS
-          );
-        }
-        // Remove from file after successful migration
-        delete store.credentials[hostname];
-        migratedCount++;
-      } catch (err) {
-        console.warn(
-          `[token-storage] Migration failed for ${hostname}: ${
-            err instanceof Error ? err.message : String(err)
-          }`
-        );
-        // Keep in file storage if migration fails
-      }
-    }
-
-    // Update file storage (may be empty now)
-    if (Object.keys(store.credentials).length === 0) {
-      cleanupKeyFile();
-    } else if (migratedCount > 0) {
-      writeCredentialsStore(store);
-    }
-  } catch (migrationError) {
-    console.error(
-      `[token-storage] Credential migration failed: ${migrationError instanceof Error ? migrationError.message : String(migrationError)}`
-    );
+    // Remove from file storage after successful migration
+    removeFromFileStorage(hostname);
+  } catch {
+    // Migration failed - credential remains in file storage
+    // Don't log to avoid noise during normal operation
   }
 }
 
@@ -495,7 +459,7 @@ export async function storeCredentials(
  *
  * Flow:
  * 1. Try keyring with timeout
- * 2. Fallback to file storage
+ * 2. Fallback to file storage (with lazy migration to keyring)
  *
  * @param hostname - GitHub hostname (default: 'github.com')
  * @returns Stored credentials or null if not found
@@ -527,7 +491,19 @@ export async function getCredentials(
 
   // 2. Fallback to file storage
   const store = readCredentialsStore();
-  return store.credentials[normalizedHostname] || null;
+  const fileCreds = store.credentials[normalizedHostname];
+
+  if (fileCreds) {
+    // Lazy migration: migrate this credential to keyring on first access
+    if (isSecureStorageAvailable()) {
+      migrateSingleCredential(normalizedHostname, fileCreds).catch(() => {
+        // Migration failed silently - credentials still available from file
+      });
+    }
+    return fileCreds;
+  }
+
+  return null;
 }
 
 /**

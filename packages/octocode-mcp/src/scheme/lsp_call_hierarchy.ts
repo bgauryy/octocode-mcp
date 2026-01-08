@@ -29,7 +29,17 @@ const FIELD_DESCRIPTIONS = {
  * Tool description for lspCallHierarchy
  */
 export const LSP_CALL_HIERARCHY_DESCRIPTION = `## Trace function call relationships
-> **TL;DR**: Build call graph for functions. "incoming" = who calls this, "outgoing" = what this calls. Expensive at depth>2.
+> **TL;DR**: Build call graph for functions. "incoming" = who calls this, "outgoing" = what this calls.
+
+> **⚠️ USE THIS INSTEAD OF localGetFileContent when:**
+> - User asks about "flow", "calls", "chain", "trace"
+> - You need to understand call relationships
+> - You want to trace from entry point to implementation
+>
+> **WHY BETTER than file reading:**
+> - Semantic: Understands actual call relationships, not just text
+> - Cross-file: Traces through imports automatically  
+> - Complete: Shows full call chain, not just one file
 
 <when>
 - "What functions call this?" (incoming) | "What does this call?" (outgoing)
