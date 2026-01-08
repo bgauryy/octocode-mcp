@@ -14,36 +14,7 @@ import {
  * Tool description for localViewStructure
  */
 export const LOCAL_VIEW_STRUCTURE_DESCRIPTION =
-  DESCRIPTIONS[TOOL_NAMES.LOCAL_VIEW_STRUCTURE] ||
-  `## View directory structure and list files
-<when>
-- Understand codebase layout before searching
-- Browse directory tree to find file locations
-- Discover project structure (src/, tests/, config/)
-</when>
-<workflow>
-- Start with depth=1 at root to see top-level layout
-- Drill into specific directories with depth=2
-- Use localSearchCode or localFindFiles for specific files
-</workflow>
-<defaults>
-- depth: 1 (current directory only)
-- entriesPerPage: 20
-- sortBy: time (most recent first)
-</defaults>
-<common_patterns>
-# Root overview
-path="", depth=1
-
-# Drill into src
-path="src", depth=2
-
-# Filter by extension
-path="src", extension="ts"
-
-# Show hidden files
-path=".", hidden=true
-</common_patterns>`;
+  DESCRIPTIONS[TOOL_NAMES.LOCAL_VIEW_STRUCTURE];
 
 /**
  * View structure query schema

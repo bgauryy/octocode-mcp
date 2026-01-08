@@ -14,38 +14,7 @@ import {
  * Tool description for localFindFiles
  */
 export const LOCAL_FIND_FILES_DESCRIPTION =
-  DESCRIPTIONS[TOOL_NAMES.LOCAL_FIND_FILES] ||
-  `## Find files by name, pattern, or metadata
-<when>
-- Find files by name pattern (case-sensitive or insensitive)
-- Filter by modification time, size, or permissions
-- Locate specific file types across directories
-</when>
-<prefer_over>
-- localSearchCode(filesOnly=true): When you need metadata filters (time, size)
-- localViewStructure: When you know the name but not the path
-</prefer_over>
-<defaults>
-- filesPerPage: 20
-- details: true (includes size, modified time)
-- showFileLastModified: true
-</defaults>
-<common_patterns>
-# Find by name (case-insensitive)
-iname="*.config.ts"
-
-# Find recently modified files
-modifiedWithin="7d"
-
-# Find large files
-sizeGreater="10M"
-
-# Find TypeScript files
-iname="*.ts", excludeDir=["node_modules", "dist"]
-
-# Find directories
-type="d", iname="utils"
-</common_patterns>`;
+  DESCRIPTIONS[TOOL_NAMES.LOCAL_FIND_FILES];
 
 /**
  * Find files query schema

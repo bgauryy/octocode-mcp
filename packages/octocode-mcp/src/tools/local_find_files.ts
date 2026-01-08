@@ -274,6 +274,13 @@ export async function findFiles(
         : 'Sorted by path',
     ];
 
+    // Detect config files for context-aware hints
+    const configFilePatterns =
+      /\.(config|rc|env|json|ya?ml|toml|ini)$|^(\..*rc|config\.|\.env)/i;
+    const hasConfigFiles = finalFiles.some(f =>
+      configFilePatterns.test(f.path.split('/').pop() || '')
+    );
+
     return {
       status,
       files: finalFiles,
@@ -293,7 +300,10 @@ export async function findFiles(
       reasoning: query.reasoning,
       hints: [
         ...filePaginationHints,
-        ...getHints(TOOL_NAMES.LOCAL_FIND_FILES, status),
+        ...getHints(TOOL_NAMES.LOCAL_FIND_FILES, status, {
+          fileCount: totalFiles,
+          hasConfigFiles,
+        }),
         ...(paginationMetadata
           ? generatePaginationHints(paginationMetadata, {
               toolName: TOOL_NAMES.LOCAL_FIND_FILES,

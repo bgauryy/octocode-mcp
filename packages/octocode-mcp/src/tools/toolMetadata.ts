@@ -6,7 +6,6 @@ import { logSessionError } from '../session.js';
 import { CompleteMetadata, ToolNames } from '../types/metadata.js';
 import { LOCAL_BASE_HINTS } from './hints/localBaseHints.js';
 import { STATIC_TOOL_NAMES, isLocalTool } from './toolNames.js';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 
 export type { CompleteMetadata } from '../types/metadata.js';
 
@@ -157,88 +156,6 @@ export async function initializeToolMetadata(): Promise<void> {
       bulkOperations: raw.bulkOperations,
     };
 
-    // --- Inject local-only tools that might be missing from remote metadata ---
-    // Use dynamic imports to avoid circular dependency with baseSchema.ts
-    if (!complete.tools[STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION]) {
-      const { LSP_GOTO_DEFINITION_DESCRIPTION, LSPGotoDefinitionQuerySchema } =
-        await import('../scheme/lsp_goto_definition.js');
-      complete.tools[STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION] = {
-        name: STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
-        description: LSP_GOTO_DEFINITION_DESCRIPTION,
-        schema: zodToJsonSchema(LSPGotoDefinitionQuerySchema) as Record<
-          string,
-          unknown
-        >,
-        hints: {
-          hasResults: [
-            'Use lspFindReferences to find all usages of the symbol.',
-            'Use lspCallHierarchy to trace incoming/outgoing calls (functions only).',
-            'Chain lspGotoDefinition on imports to trace to source (A→B→C).',
-            'Use contextLines=10+ to see full implementation.',
-          ],
-          empty: [
-            'Verify symbolName is EXACT (case-sensitive, complete name).',
-            'Check lineHint is 1-indexed and within ±2 lines of actual position.',
-            'RECOVERY: localSearchCode(pattern="symbolName") → find correct line.',
-            'Dynamic/computed symbol? LSP cannot resolve - use localSearchCode.',
-          ],
-        },
-      };
-    }
-    if (!complete.tools[STATIC_TOOL_NAMES.LSP_FIND_REFERENCES]) {
-      const { LSP_FIND_REFERENCES_DESCRIPTION, LSPFindReferencesQuerySchema } =
-        await import('../scheme/lsp_find_references.js');
-      complete.tools[STATIC_TOOL_NAMES.LSP_FIND_REFERENCES] = {
-        name: STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
-        description: LSP_FIND_REFERENCES_DESCRIPTION,
-        schema: zodToJsonSchema(LSPFindReferencesQuerySchema) as Record<
-          string,
-          unknown
-        >,
-        hints: {
-          hasResults: [
-            'Use localGetFileContent to read each reference location for context.',
-            'Chain lspGotoDefinition to navigate to specific usages.',
-            'For function calls only: use lspCallHierarchy instead.',
-            'Use includeDeclaration=false to exclude the definition itself.',
-          ],
-          empty: [
-            'Verify symbolName is EXACT (case-sensitive, complete name).',
-            'Check lineHint is 1-indexed and within ±2 lines.',
-            'RECOVERY: localSearchCode(pattern="symbolName") → text-based fallback.',
-            'Symbol may be unused - consider dead code removal.',
-          ],
-        },
-      };
-    }
-    if (!complete.tools[STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY]) {
-      const { LSP_CALL_HIERARCHY_DESCRIPTION, LSPCallHierarchyQuerySchema } =
-        await import('../scheme/lsp_call_hierarchy.js');
-      complete.tools[STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY] = {
-        name: STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
-        description: LSP_CALL_HIERARCHY_DESCRIPTION,
-        schema: zodToJsonSchema(LSPCallHierarchyQuerySchema) as Record<
-          string,
-          unknown
-        >,
-        hints: {
-          hasResults: [
-            'Use localGetFileContent to read caller/callee implementations.',
-            'Chain lspGotoDefinition on each caller/callee to navigate.',
-            'Switch direction (incoming↔outgoing) for full call graph.',
-            '⚠️ depth>2 is expensive (O(n^depth)) - limit to avoid timeout.',
-          ],
-          empty: [
-            'Symbol must be a function/method, not a type/variable.',
-            'For types/interfaces: use lspFindReferences instead.',
-            'RECOVERY: lspFindReferences(symbolName) → broader usage search.',
-            'Dynamic calls (callbacks, eval)? LSP cannot trace runtime dispatch.',
-          ],
-        },
-      };
-    }
-    // -------------------------------------------------------------------------
-
     METADATA_JSON = deepFreeze(complete);
   })();
   await initializationPromise;
@@ -359,7 +276,10 @@ export function getDynamicHints(
   toolName: string,
   hintType: string
 ): readonly string[] {
-  const tool = (getMeta().tools as Record<string, unknown>)[toolName] as
+  // Defensive check - return empty array if metadata not initialized
+  if (!METADATA_JSON) return [];
+
+  const tool = (METADATA_JSON.tools as Record<string, unknown>)[toolName] as
     | {
         hints?: {
           dynamic?: Record<string, string[] | undefined>;
@@ -787,5 +707,59 @@ export const LOCAL_VIEW_STRUCTURE = createSchemaHelper(
     entryPageNumber: string;
     charOffset: string;
     charLength: string;
+  };
+};
+
+// LSP Tools
+export const LSP_GOTO_DEFINITION = createSchemaHelper(
+  STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION
+) as {
+  scope: {
+    uri: string;
+    symbolName: string;
+    lineHint: string;
+  };
+  options: {
+    orderHint: string;
+    contextLines: string;
+  };
+};
+
+export const LSP_FIND_REFERENCES = createSchemaHelper(
+  STATIC_TOOL_NAMES.LSP_FIND_REFERENCES
+) as {
+  scope: {
+    uri: string;
+    symbolName: string;
+    lineHint: string;
+  };
+  options: {
+    orderHint: string;
+    includeDeclaration: string;
+    contextLines: string;
+  };
+  pagination: {
+    referencesPerPage: string;
+    page: string;
+  };
+};
+
+export const LSP_CALL_HIERARCHY = createSchemaHelper(
+  STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY
+) as {
+  scope: {
+    uri: string;
+    symbolName: string;
+    lineHint: string;
+  };
+  options: {
+    orderHint: string;
+    direction: string;
+    depth: string;
+    contextLines: string;
+  };
+  pagination: {
+    callsPerPage: string;
+    page: string;
   };
 };

@@ -14,40 +14,7 @@ import {
  * Tool description for localGetFileContent
  */
 export const LOCAL_FETCH_CONTENT_DESCRIPTION =
-  DESCRIPTIONS[TOOL_NAMES.LOCAL_FETCH_CONTENT] ||
-  `## Read file content with optional pattern matching
-<when>
-- Read specific file content after locating it with search
-- Extract specific sections using matchString or line ranges
-- Get context around a known pattern
-</when>
-<when_NOT>
-- DON'T use for searching across files → use localSearchCode
-- DON'T use fullContent on large files → use matchString or charLength
-</when_NOT>
-<strategies>
-- matchString: Find and extract around a pattern (preferred for large files)
-- startLine/endLine: Extract known line range
-- fullContent: Read entire file (only for small files)
-- charOffset/charLength: Paginate through large files
-</strategies>
-<defaults>
-- matchStringContextLines: 5 (lines around each match)
-- fullContent: false
-</defaults>
-<common_patterns>
-# Read function implementation
-matchString="function targetFunction", matchStringContextLines=20
-
-# Read class definition
-matchString="class ClassName", matchStringContextLines=30
-
-# Read specific line range (1-indexed)
-startLine=10, endLine=50
-
-# Paginate large file
-charOffset=0, charLength=5000, then charOffset=5000
-</common_patterns>`;
+  DESCRIPTIONS[TOOL_NAMES.LOCAL_FETCH_CONTENT];
 
 /**
  * Base schema for fetching file content (before refinement)
