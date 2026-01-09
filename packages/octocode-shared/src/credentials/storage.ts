@@ -317,9 +317,9 @@ export function decrypt(encryptedData: string): string {
 }
 
 /**
- * Ensure .octocode directory exists
+ * Ensure .octocode directory exists with secure permissions (0o700)
  */
-function ensureOctocodeDir(): void {
+export function ensureOctocodeDir(): void {
   if (!existsSync(OCTOCODE_DIR)) {
     mkdirSync(OCTOCODE_DIR, { recursive: true, mode: 0o700 });
   }

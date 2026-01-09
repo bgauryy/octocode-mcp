@@ -49,6 +49,7 @@ export {
   readCredentialsStore,
   encrypt,
   decrypt,
+  ensureOctocodeDir,
 
   // Constants
   OCTOCODE_DIR,

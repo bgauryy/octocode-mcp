@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import axios from 'axios';
+import { deleteSession } from 'octocode-shared';
 
 // LOG environment variable is set in individual tests
 
@@ -212,7 +213,8 @@ describe('Session Logging Control', () => {
       await initialize();
     });
 
-    it('should still generate unique session IDs when logging is disabled', async () => {
+    it('should persist session ID across restarts when logging is disabled', async () => {
+      // With persistence, the same session ID is reused
       resetSessionManager();
       const session1 = initializeSession();
       const id1 = session1.getSessionId();
@@ -225,6 +227,28 @@ describe('Session Logging Control', () => {
       expect(id1.length).toEqual(36);
       expect(typeof id2).toEqual('string');
       expect(id2.length).toEqual(36);
+      // With persistence, session ID should be the SAME
+      expect(id1).toBe(id2);
+
+      expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+    });
+
+    it('should generate new session ID when session is deleted', async () => {
+      resetSessionManager();
+      const session1 = initializeSession();
+      const id1 = session1.getSessionId();
+
+      // Delete persisted session to force new ID
+      resetSessionManager();
+      deleteSession();
+      const session2 = initializeSession();
+      const id2 = session2.getSessionId();
+
+      expect(typeof id1).toEqual('string');
+      expect(id1.length).toEqual(36);
+      expect(typeof id2).toEqual('string');
+      expect(id2.length).toEqual(36);
+      // After deleting session, a new ID is generated
       expect(id1).not.toBe(id2);
 
       expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
