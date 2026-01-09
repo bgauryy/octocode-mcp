@@ -12,7 +12,7 @@ import {
 import { getSkillsSourceDir, getSkillsDestDir } from '../utils/skills.js';
 import { dirExists, listSubdirectories } from '../utils/fs.js';
 import { detectCurrentClient } from '../utils/mcp-paths.js';
-import { getAuthStatusAsync } from '../features/github-oauth.js';
+import { getAuthStatus } from '../features/github-oauth.js';
 import type { OctocodeAuthStatus } from '../types/index.js';
 import path from 'node:path';
 
@@ -23,7 +23,7 @@ import path from 'node:path';
 /**
  * Skill installation info
  */
-export interface SkillInfo {
+interface SkillInfo {
   name: string;
   installed: boolean;
   srcPath: string;
@@ -50,7 +50,7 @@ export interface SkillsState {
 /**
  * Octocode MCP installation state
  */
-export interface OctocodeState {
+interface OctocodeState {
   installedClients: ClientInstallStatus[];
   availableClients: ClientInstallStatus[];
   /** Total count of clients where Octocode is installed */
@@ -78,7 +78,7 @@ export interface AppState {
 /**
  * Get Octocode MCP installation state
  */
-export function getOctocodeState(): OctocodeState {
+function getOctocodeState(): OctocodeState {
   const allClients = getAllClientInstallStatus();
   const installedClients = allClients.filter(c => c.octocodeInstalled);
   const availableClients = allClients.filter(
@@ -98,7 +98,7 @@ export function getOctocodeState(): OctocodeState {
 /**
  * Get Skills state - includes counts for both bundled and all installed
  */
-export function getSkillsState(): SkillsState {
+function getSkillsState(): SkillsState {
   const srcDir = getSkillsSourceDir();
   const destDir = getSkillsDestDir();
 
@@ -147,13 +147,14 @@ export function getSkillsState(): SkillsState {
 }
 
 /**
- * Get unified application state (async for keyring auth check)
+ * Get unified application state
+ * Uses sync auth check (file storage + gh CLI only) to avoid keychain popup on startup
  */
-export async function getAppState(): Promise<AppState> {
+export function getAppState(): AppState {
   return {
     octocode: getOctocodeState(),
     skills: getSkillsState(),
     currentClient: detectCurrentClient(),
-    githubAuth: await getAuthStatusAsync(),
+    githubAuth: getAuthStatus(),
   };
 }

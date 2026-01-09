@@ -1175,7 +1175,7 @@ function getDisplayDefault(option: ConfigOption): string {
 /**
  * Show all configuration options with explanations
  */
-export function showConfigInfo(): void {
+function showConfigInfo(): void {
   console.log();
   console.log(`  ${bold('All Available Configuration Options')}`);
   console.log();

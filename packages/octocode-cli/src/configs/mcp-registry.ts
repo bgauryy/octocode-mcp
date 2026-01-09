@@ -19,7 +19,7 @@ export type MCPCategory =
   | 'aggregator'
   | 'other';
 
-export type InstallationType = 'npm' | 'npx' | 'pip' | 'docker' | 'source';
+type InstallationType = 'npm' | 'npx' | 'pip' | 'docker' | 'source';
 
 export interface MCPRegistryEntry {
   id: string;
@@ -2231,10 +2231,6 @@ export function getMCPsByCategory(category: MCPCategory): MCPRegistryEntry[] {
   return MCP_REGISTRY.filter(mcp => mcp.category === category);
 }
 
-export function getMCPsByPopularity(): MCPRegistryEntry[] {
-  return [...MCP_REGISTRY].sort((a, b) => (b.stars ?? 0) - (a.stars ?? 0));
-}
-
 export function searchMCPs(query: string): MCPRegistryEntry[] {
   const lowerQuery = query.toLowerCase();
   return MCP_REGISTRY.filter(
@@ -2245,20 +2241,8 @@ export function searchMCPs(query: string): MCPRegistryEntry[] {
   );
 }
 
-export function getOfficialMCPs(): MCPRegistryEntry[] {
-  return MCP_REGISTRY.filter(mcp => mcp.official);
-}
-
 export function getAllCategories(): MCPCategory[] {
   return Array.from(new Set(MCP_REGISTRY.map(mcp => mcp.category)));
-}
-
-export function getMCPById(id: string): MCPRegistryEntry | undefined {
-  return MCP_REGISTRY.find(mcp => mcp.id === id);
-}
-
-export function getMCPCount(): number {
-  return MCP_REGISTRY.length;
 }
 
 export function getAllTags(): string[] {

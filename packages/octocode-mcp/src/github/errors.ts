@@ -240,5 +240,3 @@ function generateScopesSuggestion(
 
   return ERROR_MESSAGES[ERROR_CODES.FORBIDDEN_PERMISSIONS].fallbackSuggestion;
 }
-
-export { ERROR_CODES, ERROR_MESSAGES, type ErrorCode };

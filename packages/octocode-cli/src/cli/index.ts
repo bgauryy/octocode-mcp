@@ -6,11 +6,6 @@ import { parseArgs, hasHelpFlag, hasVersionFlag } from './parser.js';
 import { findCommand } from './commands.js';
 import { showHelp, showCommandHelp, showVersion } from './help.js';
 
-export { parseArgs, hasHelpFlag, hasVersionFlag } from './parser.js';
-export { commands, findCommand } from './commands.js';
-export { showHelp, showCommandHelp, showVersion } from './help.js';
-export type { ParsedArgs, CLICommand, CLIOption } from './types.js';
-
 /**
  * Run CLI
  * Returns true if a CLI command was handled, false to continue to interactive mode

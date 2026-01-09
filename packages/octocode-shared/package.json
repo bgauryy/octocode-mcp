@@ -1,0 +1,67 @@
+{
+  "name": "octocode-shared",
+  "version": "1.0.0",
+  "description": "Shared utilities for Octocode packages - credential management and platform detection",
+  "keywords": [
+    "octocode",
+    "shared",
+    "credentials",
+    "token-storage",
+    "platform"
+  ],
+  "author": "Guy Bary <bgauryy@octocodeai.com>",
+  "homepage": "https://octocode.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bgauryy/octocode-mcp.git",
+    "directory": "packages/octocode-shared"
+  },
+  "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
+  "license": "PolyForm-Small-Business-1.0.0",
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "@vitest/coverage-v8": "^4.0.16",
+    "eslint": "^9.18.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./credentials": {
+      "types": "./dist/credentials/index.d.ts",
+      "import": "./dist/credentials/index.js"
+    },
+    "./platform": {
+      "types": "./dist/platform/index.d.ts",
+      "import": "./dist/platform/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "yarn lint && tsc",
+    "build:dev": "tsc",
+    "clean": "rm -rf dist/",
+    "lint": "eslint src tests",
+    "lint:fix": "eslint src tests --fix",
+    "test": "vitest run --coverage",
+    "test:quiet": "vitest run --reporter=dot --silent",
+    "test:watch": "vitest --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "type": "module",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@napi-rs/keyring": "^1.2.0"
+  }
+}

@@ -8,7 +8,7 @@ export interface ParsedArgs {
   options: Record<string, string | boolean>;
 }
 
-export interface CLIOption {
+interface CLIOption {
   name: string;
   short?: string;
   description: string;

@@ -1,11 +1,11 @@
 import type { GitHubAPIError } from './github/githubAPI.js';
-import type { PaginationInfo } from './utils/types.js';
+import type { PaginationInfo } from './utils/core/types.js';
 
 export type { PaginationInfo };
 
 export type QueryStatus = 'hasResults' | 'empty' | 'error';
 
-export interface BaseToolResult<TQuery = object> {
+interface BaseToolResult<TQuery = object> {
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -14,7 +14,7 @@ export interface BaseToolResult<TQuery = object> {
   query?: TQuery;
 }
 
-export interface ToolResult {
+interface ToolResult {
   status: QueryStatus;
   mainResearchGoal?: string;
   researchGoal?: string;
@@ -112,7 +112,7 @@ export interface FileContentQuery {
 }
 
 /** LLM sampling metadata for content operations */
-export interface SamplingInfo {
+interface SamplingInfo {
   samplingId?: string;
   samplingMethod?: string;
   samplingTokens?: number;
@@ -121,7 +121,7 @@ export interface SamplingInfo {
 }
 
 /** File content result data */
-export interface ContentResultData {
+interface ContentResultData {
   owner?: string;
   repo?: string;
   path?: string;
@@ -236,7 +236,7 @@ export interface DirectoryEntry {
  * Groups files by parent directory to eliminate path repetition.
  * Keys are relative directory paths (e.g., ".", "src", "src/utils").
  */
-export interface RepoStructureResultData {
+interface RepoStructureResultData {
   owner?: string;
   repo?: string;
   branch?: string;
@@ -255,7 +255,7 @@ export interface RepoStructureResult
 // ─── Package Search (package_search) ────────────────────────────────────────
 
 /** Query parameters for searching packages */
-export interface PackageSearchQuery {
+interface PackageSearchQuery {
   name: string;
   ecosystem: 'npm' | 'python';
   searchLimit?: number;
@@ -266,7 +266,7 @@ export interface PackageSearchQuery {
 }
 
 /** Individual package in search results */
-export interface PackageInfo {
+interface PackageInfo {
   name: string;
   version: string;
   description: string | null;
@@ -280,14 +280,14 @@ export interface PackageInfo {
 }
 
 /** Package search result data */
-export interface PackageSearchResultData {
+interface PackageSearchResultData {
   packages: PackageInfo[];
   ecosystem: 'npm' | 'python';
   totalFound: number;
 }
 
 /** Complete package search result */
-export interface PackageSearchResult
+interface _PackageSearchResult
   extends BaseToolResult<PackageSearchQuery>, PackageSearchResultData {}
 
 // ─── Pull Requests (github_search_pull_requests) ────────────────────────────
@@ -340,7 +340,7 @@ export interface GitHubPullRequestSearchQuery {
 }
 
 /** Detailed pull request information */
-export interface PullRequestInfo {
+interface PullRequestInfo {
   id?: number;
   number: number;
   title: string;
@@ -418,7 +418,7 @@ export interface PullRequestInfo {
 }
 
 /** Pagination info for pull request search results */
-export interface PRSearchPagination {
+interface PRSearchPagination {
   currentPage: number;
   totalPages: number;
   perPage: number;
@@ -427,7 +427,7 @@ export interface PRSearchPagination {
 }
 
 /** Pull request search result data */
-export interface PullRequestSearchResultData {
+interface PullRequestSearchResultData {
   owner?: string;
   repo?: string;
   pull_requests?: PullRequestInfo[];
@@ -501,7 +501,7 @@ export interface BulkResponseConfig {
 // ─── Caching (cache.ts) ─────────────────────────────────────────────────────
 
 /** Cache performance statistics */
-export interface CacheStats {
+interface _CacheStats {
   hits: number;
   misses: number;
   sets: number;

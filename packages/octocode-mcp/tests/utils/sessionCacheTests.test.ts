@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { generateCacheKey } from '../../src/utils/cache.js';
+import { generateCacheKey } from '../../src/utils/http/cache.js';
 
 describe('Session-scoped Caching', () => {
   beforeEach(() => {

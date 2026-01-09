@@ -14,8 +14,7 @@ import {
  * Tool description for localGetFileContent
  */
 export const LOCAL_FETCH_CONTENT_DESCRIPTION =
-  DESCRIPTIONS[TOOL_NAMES.LOCAL_FETCH_CONTENT] ||
-  'Read file content with optional pattern matching';
+  DESCRIPTIONS[TOOL_NAMES.LOCAL_FETCH_CONTENT];
 
 /**
  * Base schema for fetching file content (before refinement)
@@ -155,5 +154,5 @@ export const BulkFetchContentSchema = createBulkQuerySchema(
   { maxQueries: 5 }
 );
 
-export type FetchContentQuery = z.infer<typeof FetchContentQuerySchema>;
-export type BulkFetchContentRequest = z.infer<typeof BulkFetchContentSchema>;
+type _FetchContentQuery = z.infer<typeof FetchContentQuerySchema>;
+type _BulkFetchContentRequest = z.infer<typeof BulkFetchContentSchema>;

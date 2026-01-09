@@ -9,7 +9,7 @@ vi.mock('../../src/session.js', () => ({
 }));
 
 // Mock fetchWithRetries to control responses
-vi.mock('../../src/utils/fetchWithRetries.js');
+vi.mock('../../src/utils/http/fetch.js');
 
 describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
   beforeEach(() => {
@@ -20,7 +20,7 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
   describe('Invalid API Response Validation (lines 172-176)', () => {
     it('should throw error and log when API response missing toolNames', async () => {
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
       const { logSessionError } = await import('../../src/session.js');
 
       const mockFetch = vi.mocked(fetchWithRetries);
@@ -46,7 +46,7 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
 
     it('should throw error when baseSchema is not an object', async () => {
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
 
       const mockFetch = vi.mocked(fetchWithRetries);
 
@@ -69,7 +69,7 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
 
     it('should throw error when baseHints is not an object', async () => {
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
 
       const mockFetch = vi.mocked(fetchWithRetries);
 
@@ -91,7 +91,7 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
 
     it('should throw error when genericErrorHints is not an array', async () => {
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
 
       const mockFetch = vi.mocked(fetchWithRetries);
 
@@ -113,7 +113,7 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
 
     it('should throw error when prompts is not an object', async () => {
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
 
       const mockFetch = vi.mocked(fetchWithRetries);
 
@@ -140,7 +140,7 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
 
       // Prevent automatic initialization
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
       vi.mocked(fetchWithRetries).mockRejectedValue(new Error('No init'));
 
       const { TOOL_NAMES } = await import('../../src/tools/toolMetadata.js');
@@ -184,7 +184,7 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
       vi.resetModules();
 
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
       vi.mocked(fetchWithRetries).mockRejectedValue(new Error('No init'));
 
       const { TOOL_NAMES } = await import('../../src/tools/toolMetadata.js');
@@ -203,7 +203,7 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
       vi.resetModules();
 
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
       vi.mocked(fetchWithRetries).mockRejectedValue(new Error('No init'));
 
       const { TOOL_NAMES } = await import('../../src/tools/toolMetadata.js');
@@ -221,7 +221,7 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
       vi.resetModules();
 
       const { fetchWithRetries } =
-        await import('../../src/utils/fetchWithRetries.js');
+        await import('../../src/utils/http/fetch.js');
       vi.mocked(fetchWithRetries).mockRejectedValue(new Error('No init'));
 
       const { TOOL_NAMES } = await import('../../src/tools/toolMetadata.js');

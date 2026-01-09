@@ -1,5 +1,5 @@
 import { BaseCommandBuilder } from './BaseCommandBuilder.js';
-import type { FindFilesQuery } from '../utils/types.js';
+import type { FindFilesQuery } from '../utils/core/types.js';
 
 export class FindCommandBuilder extends BaseCommandBuilder {
   private isMacOS: boolean;

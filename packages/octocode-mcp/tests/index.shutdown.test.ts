@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
-import type { OctocodeLogger } from '../src/utils/logger.js';
+import type { OctocodeLogger } from '../src/utils/core/logger.js';
 
 // Mock process.exit to prevent tests from actually exiting
 const mockProcessExit = vi.spyOn(process, 'exit').mockImplementation((() => {
@@ -72,11 +72,11 @@ vi.mock('../src/prompts/prompts.js', () => ({
   registerPrompts: vi.fn(),
 }));
 
-vi.mock('../src/utils/cache.js', () => ({
+vi.mock('../src/utils/http/cache.js', () => ({
   clearAllCache: vi.fn(),
 }));
 
-vi.mock('../src/utils/logger.js', () => ({
+vi.mock('../src/utils/core/logger.js', () => ({
   createLogger: vi.fn(() => ({
     info: vi.fn(() => Promise.resolve()),
     error: vi.fn(() => Promise.resolve()),
@@ -136,7 +136,7 @@ describe('index.ts - Server Lifecycle', () => {
 
     it('should log warning when no GitHub token available', async () => {
       const { getGitHubToken } = await import('../src/serverConfig.js');
-      const { LoggerFactory } = await import('../src/utils/logger.js');
+      const { LoggerFactory } = await import('../src/utils/core/logger.js');
 
       vi.mocked(getGitHubToken).mockResolvedValueOnce(null);
 
@@ -247,7 +247,7 @@ describe('index.ts - Server Lifecycle', () => {
 
     it('should log info when GitHub token is ready', async () => {
       const { getGitHubToken } = await import('../src/serverConfig.js');
-      const { LoggerFactory } = await import('../src/utils/logger.js');
+      const { LoggerFactory } = await import('../src/utils/core/logger.js');
 
       vi.mocked(getGitHubToken).mockResolvedValueOnce('test-token');
 
@@ -282,7 +282,7 @@ describe('index.ts - Server Lifecycle', () => {
 
     it('should log error when tool registration throws', async () => {
       const { getGitHubToken } = await import('../src/serverConfig.js');
-      const { LoggerFactory } = await import('../src/utils/logger.js');
+      const { LoggerFactory } = await import('../src/utils/core/logger.js');
 
       vi.mocked(getGitHubToken).mockResolvedValueOnce('test-token');
 

@@ -1,4 +1,8 @@
 import { getGithubCLIToken } from './utils/exec/index.js';
+import {
+  resolveToken as resolveTokenImpl,
+  type ResolvedToken as _ResolvedToken,
+} from './utils/credentials/index.js';
 import { version } from '../package.json';
 import type { ServerConfig } from './types.js';
 import { CONFIG_ERRORS } from './errorCodes.js';
@@ -9,6 +13,23 @@ let cachedToken: string | null = null;
 let initializationPromise: Promise<void> | null = null;
 // Track pending token resolution to prevent race conditions
 let pendingTokenPromise: Promise<string | null> | null = null;
+
+// Injectable function for testing
+let _resolveToken = resolveTokenImpl;
+
+/**
+ * @internal - For testing only
+ */
+export function _setResolveTokenFn(fn: typeof resolveTokenImpl): void {
+  _resolveToken = fn;
+}
+
+/**
+ * @internal - For testing only
+ */
+export function _resetResolveTokenFn(): void {
+  _resolveToken = resolveTokenImpl;
+}
 
 function parseStringArray(value?: string): string[] | undefined {
   if (!value?.trim()) return undefined;
@@ -48,12 +69,20 @@ function parseBooleanEnvDefaultTrue(value: string | undefined): boolean {
 }
 
 async function resolveGitHubToken(): Promise<string | null> {
-  // Priority 1: Explicit GITHUB_TOKEN environment variable
-  if (process.env.GITHUB_TOKEN) {
-    return process.env.GITHUB_TOKEN;
+  // Priority 1-5: Use octocode-shared's unified token resolution
+  // Handles: env vars (OCTOCODE_TOKEN > GH_TOKEN > GITHUB_TOKEN) → keychain → file
+  try {
+    const resolved = await _resolveToken();
+    if (resolved?.token) {
+      return resolved.token;
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message) {
+      error.message = maskSensitiveData(error.message);
+    }
   }
 
-  // Priority 2: GitHub CLI token (fallback for convenience)
+  // Priority 6: GitHub CLI token (external fallback via `gh auth token`)
   try {
     const cliToken = await getGithubCLIToken();
     if (cliToken?.trim()) {

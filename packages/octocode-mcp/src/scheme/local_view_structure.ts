@@ -14,13 +14,12 @@ import {
  * Tool description for localViewStructure
  */
 export const LOCAL_VIEW_STRUCTURE_DESCRIPTION =
-  DESCRIPTIONS[TOOL_NAMES.LOCAL_VIEW_STRUCTURE] ||
-  'View directory structure and list files';
+  DESCRIPTIONS[TOOL_NAMES.LOCAL_VIEW_STRUCTURE];
 
 /**
  * View structure query schema
  */
-export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
+const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
   path: z.string().describe(LOCAL_VIEW_STRUCTURE.scope.path),
 
   details: z
@@ -129,5 +128,5 @@ export const BulkViewStructureSchema = createBulkQuerySchema(
   { maxQueries: 5 }
 );
 
-export type ViewStructureQuery = z.infer<typeof ViewStructureQuerySchema>;
-export type BulkViewStructureQuery = z.infer<typeof BulkViewStructureSchema>;
+type _ViewStructureQuery = z.infer<typeof ViewStructureQuerySchema>;
+type _BulkViewStructureQuery = z.infer<typeof BulkViewStructureSchema>;

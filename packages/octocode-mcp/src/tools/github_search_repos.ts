@@ -14,7 +14,7 @@ import {
   getDynamicHints as getMetadataDynamicHints,
 } from './toolMetadata.js';
 import { GitHubReposSearchQuerySchema } from '../scheme/github_search_repos.js';
-import { executeBulkOperation } from '../utils/bulkOperations.js';
+import { executeBulkOperation } from '../utils/response/bulk.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import {
   handleApiError,

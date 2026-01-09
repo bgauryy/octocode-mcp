@@ -8,7 +8,7 @@ import type { GitHubReposSearchQuery } from '../../src/types.js';
 vi.mock('../../src/github/client.js');
 vi.mock('../../src/github/errors.js');
 vi.mock('../../src/github/queryBuilders.js');
-vi.mock('../../src/utils/cache.js', () => ({
+vi.mock('../../src/utils/http/cache.js', () => ({
   generateCacheKey: vi.fn(() => 'test-cache-key'),
   withDataCache: vi.fn((_, operation) => operation()),
 }));
@@ -24,7 +24,7 @@ describe('GitHub Repository Search', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     vi.mocked(getOctokit).mockResolvedValue(mockOctokit as any);
     vi.mocked(buildRepoSearchQuery).mockReturnValue('test query');
   });
@@ -803,7 +803,6 @@ describe('GitHub Repository Search', () => {
         keywordsToSearch: ['test'],
       };
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await searchGitHubReposAPI(params, authInfo as any);
 
       expect(getOctokit).toHaveBeenCalledWith(authInfo);
@@ -812,7 +811,7 @@ describe('GitHub Repository Search', () => {
 
   describe('searchGitHubReposAPI - Caching', () => {
     it('should use cache with session ID', async () => {
-      const { withDataCache } = await import('../../src/utils/cache.js');
+      const { withDataCache } = await import('../../src/utils/http/cache.js');
       const mockWithDataCache = vi.mocked(withDataCache);
 
       const mockResponse = {

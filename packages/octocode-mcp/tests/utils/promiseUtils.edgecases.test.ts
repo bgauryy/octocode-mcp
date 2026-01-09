@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { executeWithErrorIsolation } from '../../src/utils/promiseUtils';
+import { executeWithErrorIsolation } from '../../src/utils/core/promise.js';
 
 // Mock logSessionError
 vi.mock('../../src/session.js', () => ({

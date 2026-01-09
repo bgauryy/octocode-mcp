@@ -80,14 +80,7 @@ export function getAuthLoginCommand(): string {
   return 'gh auth login';
 }
 
-/**
- * Get auth status command
- */
-export function getAuthStatusCommand(): string {
-  return 'gh auth status';
-}
-
-export interface GitHubAuthLoginOptions {
+interface GitHubAuthLoginOptions {
   /** Use web browser flow directly */
   web?: boolean;
   /** Hostname for GitHub Enterprise */
@@ -98,7 +91,7 @@ export interface GitHubAuthLoginOptions {
   skipSshKey?: boolean;
 }
 
-export interface GitHubAuthResult {
+interface GitHubAuthResult {
   success: boolean;
   exitCode: number | null;
 }

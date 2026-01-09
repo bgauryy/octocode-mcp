@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { searchContentRipgrep } from '../../src/tools/local_ripgrep.js';
-import { ERROR_CODES } from '../../src/errorCodes.js';
+import { LOCAL_TOOL_ERROR_CODES } from '../../src/errorCodes.js';
 import { RipgrepQuerySchema } from '../../src/scheme/local_ripgrep.js';
 import * as exec from '../../src/utils/exec/index.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
@@ -29,11 +29,14 @@ vi.mock('fs', () => ({
   promises: {
     stat: vi.fn(),
     readFile: vi.fn(),
+    readdir: vi.fn(),
   },
 }));
 
 const runRipgrep = (query: Parameters<typeof RipgrepQuerySchema.parse>[0]) =>
   searchContentRipgrep(RipgrepQuerySchema.parse(query));
+
+const mockFsReaddir = vi.mocked((fs as any).readdir);
 
 describe('localSearchCode', () => {
   const mockSafeExec = vi.mocked(exec.safeExec);
@@ -55,6 +58,8 @@ describe('localSearchCode', () => {
     mockFsReadFile.mockResolvedValue(
       'test content for byte to char conversion'
     );
+    // Default mock for fs.readdir - return empty directory
+    mockFsReaddir.mockResolvedValue([]);
   });
 
   describe('Basic search', () => {
@@ -473,7 +478,7 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.OUTPUT_TOO_LARGE);
+      expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.OUTPUT_TOO_LARGE);
     });
   });
 
@@ -490,7 +495,9 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.PATH_VALIDATION_FAILED);
+      expect(result.errorCode).toBe(
+        LOCAL_TOOL_ERROR_CODES.PATH_VALIDATION_FAILED
+      );
     });
   });
 
@@ -1154,7 +1161,6 @@ describe('localSearchCode', () => {
         path: '/test/path',
         filesPerPage: 10,
         filePageNumber: 0,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
       expect(['hasResults', 'empty']).toContain(result.status);
@@ -1188,7 +1194,6 @@ describe('localSearchCode', () => {
         path: '/test/path',
         filesPerPage: 10,
         filePageNumber: -2,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
       expect(['hasResults', 'empty']).toContain(result.status);
@@ -1355,7 +1360,6 @@ describe('localSearchCode', () => {
         pattern: 'test',
         path: '/test/path',
         matchesPerPage: 1000,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
       expect(result.status).toBe('hasResults');
@@ -2163,7 +2167,9 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.COMMAND_NOT_AVAILABLE);
+      expect(result.errorCode).toBe(
+        LOCAL_TOOL_ERROR_CODES.COMMAND_NOT_AVAILABLE
+      );
     });
 
     it('should warn about unsupported grep features', async () => {
@@ -2250,6 +2256,49 @@ describe('localSearchCode', () => {
       expect(result.searchEngine).toBe('grep');
     });
 
+    it('should handle grep timeout (code null)', async () => {
+      mockCheckCommandAvailability
+        .mockResolvedValueOnce({ available: false, command: 'rg' })
+        .mockResolvedValueOnce({ available: true, command: 'grep' });
+
+      mockSafeExec.mockResolvedValue({
+        success: false,
+        code: null, // Timeout indicator
+        stdout: '',
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT);
+      expect(result.hints).toBeDefined();
+    });
+
+    it('should handle grep failure with exit code > 1', async () => {
+      mockCheckCommandAvailability
+        .mockResolvedValueOnce({ available: false, command: 'rg' })
+        .mockResolvedValueOnce({ available: true, command: 'grep' });
+
+      mockSafeExec.mockResolvedValue({
+        success: false,
+        code: 2, // Error exit code
+        stdout: '',
+        stderr: 'grep: invalid option',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBeDefined();
+    });
+
     it('should use ripgrep when available (preferred)', async () => {
       mockCheckCommandAvailability.mockResolvedValue({
         available: true,
@@ -2279,6 +2328,283 @@ describe('localSearchCode', () => {
 
       expect(result.status).toBe('hasResults');
       expect(result.searchEngine).toBe('rg');
+    });
+  });
+
+  describe('estimateDirectoryStats', () => {
+    it('should detect large directory with many files', async () => {
+      // Mock a large directory with many files
+      mockFsReaddir.mockResolvedValueOnce(
+        Array.from({ length: 100 }, (_, i) => ({
+          name: `file${i}.ts`,
+          isFile: () => true,
+          isDirectory: () => false,
+        }))
+      );
+
+      // Mock stat to return large file size (50MB total)
+      mockFsStat.mockResolvedValue({
+        size: 500000, // ~500KB per file
+        mtime: new Date(),
+      } as unknown as Awaited<ReturnType<typeof fs.stat>>);
+
+      const jsonOutput = JSON.stringify({
+        type: 'match',
+        data: {
+          path: { text: '/test/file.ts' },
+          lines: { text: 'test match' },
+          line_number: 10,
+          absolute_offset: 100,
+          submatches: [{ start: 0, end: 4, match: { text: 'test' } }],
+        },
+      });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonOutput,
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      // Should succeed but may include large directory warning
+      expect(result.status).toBe('hasResults');
+    });
+
+    it('should handle directory with subdirectories', async () => {
+      // Mock directory with files and subdirs
+      mockFsReaddir
+        .mockResolvedValueOnce([
+          { name: 'file.ts', isFile: () => true, isDirectory: () => false },
+          { name: 'subdir', isFile: () => false, isDirectory: () => true },
+        ])
+        // Mock subdirectory contents
+        .mockResolvedValueOnce([
+          { name: 'sub1.ts', isFile: () => true, isDirectory: () => false },
+          { name: 'sub2.ts', isFile: () => true, isDirectory: () => false },
+        ]);
+
+      mockFsStat.mockResolvedValue({
+        size: 1024,
+        mtime: new Date(),
+      } as unknown as Awaited<ReturnType<typeof fs.stat>>);
+
+      const jsonOutput = JSON.stringify({
+        type: 'match',
+        data: {
+          path: { text: '/test/file.ts' },
+          lines: { text: 'test match' },
+          line_number: 10,
+          absolute_offset: 100,
+          submatches: [{ start: 0, end: 4, match: { text: 'test' } }],
+        },
+      });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonOutput,
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('hasResults');
+    });
+
+    it('should skip hidden directories when estimating', async () => {
+      // Mock directory with hidden dir
+      mockFsReaddir.mockResolvedValueOnce([
+        { name: '.hidden', isFile: () => false, isDirectory: () => true },
+        { name: 'visible', isFile: () => false, isDirectory: () => true },
+      ]);
+
+      mockFsStat.mockResolvedValue({
+        size: 1024,
+        mtime: new Date(),
+      } as unknown as Awaited<ReturnType<typeof fs.stat>>);
+
+      const jsonOutput = JSON.stringify({
+        type: 'match',
+        data: {
+          path: { text: '/test/file.ts' },
+          lines: { text: 'test match' },
+          line_number: 10,
+          absolute_offset: 100,
+          submatches: [{ start: 0, end: 4, match: { text: 'test' } }],
+        },
+      });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonOutput,
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('hasResults');
+    });
+
+    it('should handle readdir errors gracefully', async () => {
+      // Mock readdir to fail
+      mockFsReaddir.mockRejectedValueOnce(new Error('Permission denied'));
+
+      const jsonOutput = JSON.stringify({
+        type: 'match',
+        data: {
+          path: { text: '/test/file.ts' },
+          lines: { text: 'test match' },
+          line_number: 10,
+          absolute_offset: 100,
+          submatches: [{ start: 0, end: 4, match: { text: 'test' } }],
+        },
+      });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonOutput,
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      // Should still succeed - errors in estimateDirectoryStats don't block search
+      expect(result.status).toBe('hasResults');
+    });
+
+    it('should handle stat errors for individual files', async () => {
+      // Mock directory with file
+      mockFsReaddir.mockResolvedValueOnce([
+        { name: 'file.ts', isFile: () => true, isDirectory: () => false },
+      ]);
+
+      // Mock stat to fail for estimation but succeed for result processing
+      mockFsStat
+        .mockRejectedValueOnce(new Error('Permission denied')) // For estimation
+        .mockResolvedValue({
+          mtime: new Date(),
+        } as unknown as Awaited<ReturnType<typeof fs.stat>>); // For result processing
+
+      const jsonOutput = JSON.stringify({
+        type: 'match',
+        data: {
+          path: { text: '/test/file.ts' },
+          lines: { text: 'test match' },
+          line_number: 10,
+          absolute_offset: 100,
+          submatches: [{ start: 0, end: 4, match: { text: 'test' } }],
+        },
+      });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonOutput,
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('hasResults');
+    });
+
+    it('should handle subdirectory readdir errors', async () => {
+      // Mock directory with subdir
+      mockFsReaddir
+        .mockResolvedValueOnce([
+          { name: 'subdir', isFile: () => false, isDirectory: () => true },
+        ])
+        // Subdirectory readdir fails
+        .mockRejectedValueOnce(new Error('Permission denied'));
+
+      mockFsStat.mockResolvedValue({
+        size: 1024,
+        mtime: new Date(),
+      } as unknown as Awaited<ReturnType<typeof fs.stat>>);
+
+      const jsonOutput = JSON.stringify({
+        type: 'match',
+        data: {
+          path: { text: '/test/file.ts' },
+          lines: { text: 'test match' },
+          line_number: 10,
+          absolute_offset: 100,
+          submatches: [{ start: 0, end: 4, match: { text: 'test' } }],
+        },
+      });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonOutput,
+        stderr: '',
+      });
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('hasResults');
+    });
+  });
+
+  describe('getFileModifiedTime error handling', () => {
+    it('should handle stat errors when getting modified time', async () => {
+      // This tests the catch block in getFileModifiedTime
+
+      const jsonOutput = JSON.stringify({
+        type: 'match',
+        data: {
+          path: { text: '/test/file.ts' },
+          lines: { text: 'test match' },
+          line_number: 10,
+          absolute_offset: 100,
+          submatches: [{ start: 0, end: 4, match: { text: 'test' } }],
+        },
+      });
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: jsonOutput,
+        stderr: '',
+      });
+
+      // Mock stat to fail when getting modified time
+      mockFsStat.mockRejectedValue(new Error('File not found'));
+      mockFsReadFile.mockResolvedValue('test match content');
+
+      const result = await runRipgrep({
+        pattern: 'test',
+        path: '/test/path',
+        showFileLastModified: true,
+      });
+
+      // Should succeed but without modified time
+      expect(result.status).toBe('hasResults');
+      expect(result.files).toBeDefined();
+      // Modified time should be undefined due to error
+      expect(result.files![0]!.modified).toBeUndefined();
     });
   });
 });

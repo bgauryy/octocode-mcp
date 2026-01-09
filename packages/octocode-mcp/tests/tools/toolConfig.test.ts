@@ -16,8 +16,8 @@ import { TOOL_NAMES, DESCRIPTIONS } from '../../src/tools/toolMetadata.js';
 
 describe('Tool Configuration', () => {
   describe('ALL_TOOLS', () => {
-    it('should contain all expected tools (6 GitHub + 4 Local = 10)', () => {
-      expect(ALL_TOOLS).toHaveLength(10);
+    it('should contain all expected tools (6 GitHub + 4 Local + 3 LSP = 13)', () => {
+      expect(ALL_TOOLS).toHaveLength(13);
 
       const toolNames = ALL_TOOLS.map(t => t.name);
 
@@ -59,7 +59,8 @@ describe('Tool Configuration', () => {
 
     it('should have isLocal correctly set for Local tools', () => {
       const localTools = ALL_TOOLS.filter(t => t.isLocal);
-      expect(localTools).toHaveLength(4);
+      // 4 local + 3 LSP = 7 local tools
+      expect(localTools).toHaveLength(7);
       localTools.forEach(tool => {
         expect(tool.isLocal).toBe(true);
       });

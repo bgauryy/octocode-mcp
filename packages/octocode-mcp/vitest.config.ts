@@ -20,6 +20,10 @@ export default defineConfig({
         'src/index.ts', // Main entry point with process handlers - hard to test
         'src/types.ts', // Type definitions only
         'src/**/*.d.ts', // Type definition files
+        'src/**/index.ts', // Barrel exports
+        'src/**/types.ts', // Type-only files
+        'src/public.ts', // Public API exports
+        'src/types/**/*.ts', // Type definition folder
       ],
       thresholds: {
         statements: 90,

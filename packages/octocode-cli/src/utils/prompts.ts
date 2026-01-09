@@ -2,15 +2,6 @@
  * Dynamic Import for ES Module (@inquirer/prompts)
  */
 
-/**
- * Error thrown when user cancels a prompt (e.g., presses Escape)
- * This is distinct from ExitPromptError (Ctrl+C) which exits the app
- */
-export class CancelPromptError extends Error {
-  override name = 'CancelPromptError';
-  override message = 'Prompt was canceled';
-}
-
 type SelectConfig<T> = {
   message: string;
   choices: Array<
@@ -97,10 +88,10 @@ type SearchFunction = <T>(config: {
 }) => Promise<T>;
 
 // Separator is a class that can be instantiated with optional text
-interface SeparatorInstance {
+type SeparatorInstance = {
   type: 'separator';
   separator: string;
-}
+};
 
 type SeparatorClass = {
   new (separator?: string): SeparatorInstance;
@@ -125,8 +116,6 @@ export let Separator: SeparatorClass = class {
     throw new Error('Inquirer not loaded. Call loadInquirer() first.');
   }
 } as unknown as SeparatorClass;
-
-export type { SeparatorClass, SeparatorInstance };
 
 let loaded = false;
 
@@ -166,16 +155,4 @@ export async function selectWithCancel<T>(config: SelectConfig<T>): Promise<T> {
   const inquirer = await import('@inquirer/prompts');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (await inquirer.select(config as any)) as T;
-}
-
-/**
- * Helper to format step indicator for menu messages
- * @example formatStep(1, 3, 'Select client') => '[Step 1/3] Select client'
- */
-export function formatStep(
-  current: number,
-  total: number,
-  message: string
-): string {
-  return `[Step ${current}/${total}] ${message}`;
 }

@@ -9,7 +9,7 @@
 import { minify } from 'terser';
 import CleanCSS from 'clean-css';
 import { minify as htmlMinifierTerser } from 'html-minifier-terser';
-import { getExtension } from '../fileFilters.js';
+import { getExtension } from '../file/filters.js';
 
 // ============================================================================
 // Types

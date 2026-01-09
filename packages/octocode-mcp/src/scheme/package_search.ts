@@ -39,10 +39,10 @@ export const PackageSearchQuerySchema = z.discriminatedUnion('ecosystem', [
   PythonPackageQuerySchema,
 ]);
 
-export type NpmPackageQuery = z.infer<typeof NpmPackageQuerySchema>;
-export type PythonPackageQuery = z.infer<typeof PythonPackageQuerySchema>;
+type NpmPackageQuery = z.infer<typeof NpmPackageQuerySchema>;
+type PythonPackageQuery = z.infer<typeof PythonPackageQuerySchema>;
 export type PackageSearchQuery = NpmPackageQuery | PythonPackageQuery;
-export type PackageSearchBulkParams = {
+type _PackageSearchBulkParams = {
   queries: PackageSearchQuery[];
 };
 

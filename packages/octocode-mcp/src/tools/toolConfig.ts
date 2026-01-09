@@ -14,6 +14,9 @@ import { registerLocalRipgrepTool } from './local_ripgrep.js';
 import { registerLocalViewStructureTool } from './local_view_structure.js';
 import { registerLocalFindFilesTool } from './local_find_files.js';
 import { registerLocalFetchContentTool } from './local_fetch_content.js';
+import { registerLSPGotoDefinitionTool } from './lsp_goto_definition.js';
+import { registerLSPFindReferencesTool } from './lsp_find_references.js';
+import { registerLSPCallHierarchyTool } from './lsp_call_hierarchy.js';
 
 export interface ToolConfig {
   name: string;
@@ -124,6 +127,34 @@ export const LOCAL_FETCH_CONTENT: ToolConfig = {
   fn: registerLocalFetchContentTool,
 };
 
+// LSP Tools (isLocal: true) - semantic code intelligence
+const LSP_GOTO_DEFINITION: ToolConfig = {
+  name: TOOL_NAMES.LSP_GOTO_DEFINITION,
+  description: getDescription(TOOL_NAMES.LSP_GOTO_DEFINITION),
+  isDefault: true,
+  isLocal: true,
+  type: 'content',
+  fn: registerLSPGotoDefinitionTool,
+};
+
+const LSP_FIND_REFERENCES: ToolConfig = {
+  name: TOOL_NAMES.LSP_FIND_REFERENCES,
+  description: getDescription(TOOL_NAMES.LSP_FIND_REFERENCES),
+  isDefault: true,
+  isLocal: true,
+  type: 'search',
+  fn: registerLSPFindReferencesTool,
+};
+
+const LSP_CALL_HIERARCHY: ToolConfig = {
+  name: TOOL_NAMES.LSP_CALL_HIERARCHY,
+  description: getDescription(TOOL_NAMES.LSP_CALL_HIERARCHY),
+  isDefault: true,
+  isLocal: true,
+  type: 'content',
+  fn: registerLSPCallHierarchyTool,
+};
+
 /**
  * All tools in ONE place - the single source of truth for tool registration.
  * GitHub tools first, then local tools.
@@ -143,4 +174,8 @@ export const ALL_TOOLS: ToolConfig[] = [
   LOCAL_VIEW_STRUCTURE,
   LOCAL_FIND_FILES,
   LOCAL_FETCH_CONTENT,
+  // LSP tools (3 tools)
+  LSP_GOTO_DEFINITION,
+  LSP_FIND_REFERENCES,
+  LSP_CALL_HIERARCHY,
 ];

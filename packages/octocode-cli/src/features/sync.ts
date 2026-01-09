@@ -15,24 +15,6 @@ import {
 import { readMCPConfig, writeMCPConfig } from '../utils/mcp-io.js';
 
 /**
- * MCP server config with source client tracking
- */
-export interface MCPServerWithSource {
-  server: MCPServer;
-  sourceClient: MCPClient;
-  configPath: string;
-}
-
-/**
- * Represents a single MCP across all clients
- */
-export interface MCPAcrossClients {
-  mcpId: string;
-  configs: Map<MCPClient, MCPServer>;
-  isConsistent: boolean;
-}
-
-/**
  * Client config snapshot
  */
 export interface ClientConfigSnapshot {

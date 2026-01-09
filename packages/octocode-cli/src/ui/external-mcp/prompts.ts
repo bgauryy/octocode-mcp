@@ -75,11 +75,13 @@ function getCategoryIcon(category: MCPCategory): string {
 
 /**
  * Format MCP entry for display
+ * Note: ✓ checkmark is NOT shown here because we don't have client context
+ * to check installation status. [Official] badge shown for official MCPs.
  */
 function formatMCPChoice(mcp: MCPRegistryEntry): string {
   let name = `${getCategoryIcon(mcp.category)} ${mcp.name}`;
   if (mcp.official) {
-    name += ` ${c('green', '✓')}`;
+    name += ` ${c('cyan', '[Official]')}`;
   }
   name += ` - ${dim(mcp.description.slice(0, 45))}${mcp.description.length > 45 ? '...' : ''}`;
   return name;
@@ -507,30 +509,6 @@ async function selectFromList(
   });
 
   return selected;
-}
-
-/**
- * Select MCP from registry (main entry point)
- */
-export async function selectMCPFromRegistry(): Promise<
-  MCPRegistryEntry | 'back' | null
-> {
-  const mode = await selectBrowseMode();
-
-  if (mode === 'back' || mode === null) return 'back';
-
-  switch (mode) {
-    case 'search':
-      return await searchMCPs();
-    case 'category':
-      return await selectByCategory();
-    case 'popular':
-      return await selectPopular();
-    case 'all':
-      return await selectAll();
-    default:
-      return null;
-  }
 }
 
 /**

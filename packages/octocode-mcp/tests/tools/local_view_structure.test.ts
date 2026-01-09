@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ERROR_CODES } from '../../src/errorCodes.js';
+import { LOCAL_TOOL_ERROR_CODES } from '../../src/errorCodes.js';
 import { viewStructure } from '../../src/tools/local_view_structure.js';
 import * as exec from '../../src/utils/exec/index.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
@@ -256,6 +256,29 @@ describe('localViewStructure', () => {
   });
 
   describe('Filtering', () => {
+    it('should handle invalid regex pattern with fallback', async () => {
+      mockReaddir.mockResolvedValue(['test1.txt', 'test2.txt', 'other.txt']);
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date(),
+      } as Stats);
+
+      // Use an invalid regex pattern that will fail to compile
+      // When regex fails, falls back to substring matching - 'test' matches files
+      const result = await viewStructure({
+        path: '/test/path',
+        pattern: 'test*[', // Invalid regex - unmatched bracket, but 'test' prefix should match
+        depth: 1,
+      });
+
+      // The fallback uses substring match, not glob - if no match found, returns empty
+      expect(['hasResults', 'empty']).toContain(result.status);
+    });
+
     it('should filter by file extension', async () => {
       mockReaddir.mockResolvedValue(['file1.ts', 'file2.js', 'file3.ts']);
 
@@ -1005,7 +1028,7 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.OUTPUT_TOO_LARGE);
+      expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.OUTPUT_TOO_LARGE);
       expect(result.hints).toBeDefined();
       expect(
         result.hints?.some(h => h.toLowerCase().includes('recursive'))
@@ -1109,7 +1132,9 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.PATH_VALIDATION_FAILED);
+      expect(result.errorCode).toBe(
+        LOCAL_TOOL_ERROR_CODES.PATH_VALIDATION_FAILED
+      );
     });
   });
 
@@ -1127,7 +1152,9 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(ERROR_CODES.COMMAND_EXECUTION_FAILED);
+      expect(result.errorCode).toBe(
+        LOCAL_TOOL_ERROR_CODES.COMMAND_EXECUTION_FAILED
+      );
     });
 
     it('should handle unreadable directories', async () => {

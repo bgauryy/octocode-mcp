@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filterPatch } from '../../src/utils/diffParser';
+import { filterPatch } from '../../src/utils/parsers/diff.js';
 
 describe('filterPatch', () => {
   const samplePatch = `@@ -1,3 +1,4 @@

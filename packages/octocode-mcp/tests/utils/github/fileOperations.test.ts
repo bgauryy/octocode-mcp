@@ -37,7 +37,7 @@ vi.mock('../../../src/utils/minifier/index.js', () => ({
   minifyContent: mockminifyContent,
 }));
 
-vi.mock('../../../src/utils/cache.js', () => ({
+vi.mock('../../../src/utils/http/cache.js', () => ({
   generateCacheKey: mockGenerateCacheKey,
   withDataCache: mockWithDataCache,
 }));

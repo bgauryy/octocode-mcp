@@ -31,7 +31,7 @@ vi.mock('../../src/github/queryBuilders.js', () => ({
   shouldUseSearchForPRs: mockShouldUseSearchForPRs,
 }));
 
-vi.mock('../../src/utils/cache.js', () => ({
+vi.mock('../../src/utils/http/cache.js', () => ({
   generateCacheKey: mockGenerateCacheKey,
   withDataCache: mockWithDataCache,
 }));
@@ -1241,11 +1241,11 @@ describe('Pull Request Search', () => {
       );
 
       expect(result.commits).toBeDefined();
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+
       expect(result.commits![0]!.sha).toBe('sha2');
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+
       expect(result.commits![1]!.sha).toBe('sha1');
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+
       expect(result.commits![2]!.sha).toBe('sha3');
     });
   });

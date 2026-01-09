@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fetchGitHubFileContentAPI } from '../../src/github/fileOperations.js';
 import { getOctokit } from '../../src/github/client.js';
-import { clearAllCache } from '../../src/utils/cache.js';
+import { clearAllCache } from '../../src/utils/http/cache.js';
 import { RequestError } from 'octokit';
 
 vi.mock('../../src/github/client.js');

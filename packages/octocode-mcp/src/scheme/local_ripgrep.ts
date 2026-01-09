@@ -14,9 +14,7 @@ import {
 /**
  * Tool description for localSearchCode
  */
-export const LOCAL_RIPGREP_DESCRIPTION =
-  DESCRIPTIONS[TOOL_NAMES.LOCAL_RIPGREP] ||
-  'Search local files using ripgrep (rg) with grep fallback';
+export const LOCAL_RIPGREP_DESCRIPTION = DESCRIPTIONS[TOOL_NAMES.LOCAL_RIPGREP];
 
 /**
  * Ripgrep search content query schema
@@ -251,7 +249,7 @@ export const BulkRipgrepQuerySchema = createBulkQuerySchema(
 );
 
 export type RipgrepQuery = z.infer<typeof RipgrepQuerySchema>;
-export type BulkRipgrepQuery = z.infer<typeof BulkRipgrepQuerySchema>;
+type _BulkRipgrepQuery = z.infer<typeof BulkRipgrepQuerySchema>;
 
 /**
  * Apply workflow mode presets to query

@@ -9,7 +9,7 @@ import type {
   ApplyPaginationOptions,
   SliceByCharResult,
 } from './types.js';
-import { byteToCharIndex, charToByteIndex } from '../local/utils/byteOffset.js';
+import { byteToCharIndex, charToByteIndex } from '../file/byteOffset.js';
 
 /**
  * Apply pagination to content based on offset and length

@@ -71,31 +71,6 @@ export interface MCPClientInfo {
 // Installation methods
 export type InstallMethod = 'direct' | 'npx';
 
-// CLI parsed arguments
-export interface ParsedArgs {
-  command: string | null;
-  args: string[];
-  options: Record<string, string | boolean>;
-}
-
-// CLI command definition
-export interface CLICommand {
-  name: string;
-  description: string;
-  usage?: string;
-  options?: CLIOption[];
-  handler: (args: ParsedArgs) => Promise<void>;
-}
-
-// CLI option definition
-export interface CLIOption {
-  name: string;
-  short?: string;
-  description: string;
-  hasValue?: boolean;
-  default?: string | boolean;
-}
-
 // GitHub auth status (legacy - for gh CLI check)
 export interface GitHubAuthStatus {
   installed: boolean;
@@ -104,26 +79,8 @@ export interface GitHubAuthStatus {
   error?: string;
 }
 
-// OAuth token types
-export interface OAuthToken {
-  token: string;
-  tokenType: 'oauth';
-  scopes?: string[];
-  // For GitHub Apps with expiring tokens
-  refreshToken?: string;
-  expiresAt?: string;
-  refreshTokenExpiresAt?: string;
-}
-
-// Stored credentials for a host
-export interface StoredCredentials {
-  hostname: string;
-  username: string;
-  token: OAuthToken;
-  gitProtocol: 'ssh' | 'https';
-  createdAt: string;
-  updatedAt: string;
-}
+// Re-export credential types from shared package
+export type { OAuthToken, StoredCredentials } from 'octocode-shared';
 
 // Token source for auth status display
 export type TokenSource = 'octocode' | 'gh-cli' | 'env' | 'none';
@@ -143,74 +100,6 @@ export interface TokenResult {
   token: string | null;
   source: TokenSource;
   username?: string;
-}
-
-// Result from storing credentials (keyring-first strategy)
-export interface StoreResult {
-  success: boolean;
-  /** True if fallback to encrypted file was used (keyring unavailable/failed) */
-  insecureStorageUsed: boolean;
-}
-
-// Result from deleting credentials
-export interface DeleteResult {
-  success: boolean;
-  deletedFromKeyring: boolean;
-  deletedFromFile: boolean;
-}
-
-// ============================================
-// AI Provider Types
-// ============================================
-
-/**
- * AI Provider identifier
- */
-export type AIProvider =
-  | 'anthropic'
-  | 'openai'
-  | 'google'
-  | 'bedrock'
-  | 'vertex';
-
-/**
- * Source of API key discovery
- */
-export type APIKeySource =
-  | 'environment'
-  | 'keychain'
-  | 'keychain-oauth'
-  | 'config'
-  | 'config-file'
-  | 'manual'
-  | 'sdk'
-  | 'none';
-
-/**
- * Result from API key discovery
- */
-export interface APIKeyResult {
-  key: string | null;
-  source: APIKeySource | null;
-  provider: AIProvider;
-  expiresAt?: number;
-  isOAuth?: boolean;
-  scopes?: string[];
-}
-
-/**
- * Claude Code OAuth credentials structure (from keychain)
- */
-export interface ClaudeCodeOAuthCredentials {
-  accessToken?: string;
-  refreshToken?: string;
-  expiresAt?: number;
-  claudeAiOauth?: {
-    accessToken: string;
-    refreshToken?: string;
-    expiresAt?: number;
-    scopes?: string[];
-    subscriptionType?: string;
-    rateLimitTier?: string;
-  };
+  /** Specific env var name when source is 'env' (e.g., 'env:OCTOCODE_TOKEN') */
+  envSource?: string;
 }

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fetchWithRetries } from '../utils/fetchWithRetries.js';
+import { fetchWithRetries } from '../utils/http/fetch.js';
 import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
@@ -7,10 +7,7 @@ import { CompleteMetadata, ToolNames } from '../types/metadata.js';
 import { LOCAL_BASE_HINTS } from './hints/localBaseHints.js';
 import { STATIC_TOOL_NAMES, isLocalTool } from './toolNames.js';
 
-export type {
-  CompleteMetadata,
-  RawCompleteMetadata,
-} from '../types/metadata.js';
+export type { CompleteMetadata } from '../types/metadata.js';
 
 type ToolNamesValue = ToolNames[keyof ToolNames];
 
@@ -279,7 +276,10 @@ export function getDynamicHints(
   toolName: string,
   hintType: string
 ): readonly string[] {
-  const tool = (getMeta().tools as Record<string, unknown>)[toolName] as
+  // Defensive check - return empty array if metadata not initialized
+  if (!METADATA_JSON) return [];
+
+  const tool = (METADATA_JSON.tools as Record<string, unknown>)[toolName] as
     | {
         hints?: {
           dynamic?: Record<string, string[] | undefined>;
@@ -707,5 +707,59 @@ export const LOCAL_VIEW_STRUCTURE = createSchemaHelper(
     entryPageNumber: string;
     charOffset: string;
     charLength: string;
+  };
+};
+
+// LSP Tools
+export const LSP_GOTO_DEFINITION = createSchemaHelper(
+  STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION
+) as {
+  scope: {
+    uri: string;
+    symbolName: string;
+    lineHint: string;
+  };
+  options: {
+    orderHint: string;
+    contextLines: string;
+  };
+};
+
+export const LSP_FIND_REFERENCES = createSchemaHelper(
+  STATIC_TOOL_NAMES.LSP_FIND_REFERENCES
+) as {
+  scope: {
+    uri: string;
+    symbolName: string;
+    lineHint: string;
+  };
+  options: {
+    orderHint: string;
+    includeDeclaration: string;
+    contextLines: string;
+  };
+  pagination: {
+    referencesPerPage: string;
+    page: string;
+  };
+};
+
+export const LSP_CALL_HIERARCHY = createSchemaHelper(
+  STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY
+) as {
+  scope: {
+    uri: string;
+    symbolName: string;
+    lineHint: string;
+  };
+  options: {
+    orderHint: string;
+    direction: string;
+    depth: string;
+    contextLines: string;
+  };
+  pagination: {
+    callsPerPage: string;
+    page: string;
   };
 };

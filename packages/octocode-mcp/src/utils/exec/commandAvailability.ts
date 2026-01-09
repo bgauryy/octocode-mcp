@@ -8,7 +8,7 @@ import { spawnCheckSuccess } from './spawn.js';
 /**
  * Result of command availability check
  */
-export interface CommandAvailabilityResult {
+interface CommandAvailabilityResult {
   available: boolean;
   command: string;
   version?: string;
@@ -34,7 +34,7 @@ export const REQUIRED_COMMANDS = {
   ls: { name: 'ls', versionFlag: '--version', tool: 'localViewStructure' },
 } as const;
 
-export type CommandName = keyof typeof REQUIRED_COMMANDS;
+type CommandName = keyof typeof REQUIRED_COMMANDS;
 
 /**
  * Check if a specific command is available

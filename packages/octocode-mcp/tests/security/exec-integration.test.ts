@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import path from 'path';
 import { spawn } from 'child_process';
-import type { ExecResult } from '../../src/utils/types.js';
+import type { ExecResult } from '../../src/utils/core/types.js';
 
 // We need to manually reset the spawn mock to use real implementation
 // because vi.unmock doesn't work after module is already loaded

@@ -839,7 +839,7 @@ describe('Tools Utils', () => {
       const mockCallback: ToolInvocationCallback = vi
         .fn()
         .mockImplementation(() => {
-          throw 'string error'; // eslint-disable-line no-throw-literal
+          throw 'string error';
         });
 
       await expect(

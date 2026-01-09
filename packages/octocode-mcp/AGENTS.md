@@ -31,9 +31,11 @@ All commands run from this package directory (`packages/octocode-mcp/`).
 | **Build (Watch)** | `yarn build:watch` | Watch mode for development |
 | **Clean** | `yarn clean` | Remove `dist/` directory |
 | **Test** | `yarn test` | Run tests with coverage report |
+| **Test (Full)** | `yarn test:full` | Lint + typecheck + tests with coverage |
 | **Test (Quiet)** | `yarn test:quiet` | Minimal test output |
 | **Test (Watch)** | `yarn test:watch` | Watch mode for tests |
 | **Test (UI)** | `yarn test:ui` | Vitest UI dashboard |
+| **Typecheck** | `yarn typecheck` | TypeScript type checking |
 | **Lint** | `yarn lint` | ESLint check |
 | **Lint (Fix)** | `yarn lint:fix` | Auto-fix linting issues |
 | **Format** | `yarn format` | Prettier format `src/` |
@@ -78,6 +80,7 @@ src/
 │   ├── baseSchema.ts        # Common schema patterns & bulk query builder
 │   ├── github_*.ts          # GitHub tool schemas (5 files)
 │   ├── local_*.ts           # Local tool schemas (4 files)
+│   ├── lsp_*.ts             # LSP tool schemas (3 files)
 │   ├── package_search.ts    # Package search schema
 │   └── responsePriority.ts  # Response field ordering
 │
@@ -88,14 +91,18 @@ src/
 │   ├── toolsManager.ts      # Tool registration orchestrator
 │   ├── github_*.ts          # GitHub tool implementations (5 files)
 │   ├── local_*.ts           # Local tool implementations (4 files)
+│   ├── lsp_*.ts             # LSP tool implementations (3 files)
 │   ├── package_search.ts    # Package search implementation
 │   ├── utils.ts             # Tool-specific utilities
 │   └── hints/               # Dynamic hint generation
+│       ├── index.ts         # Hints module exports
 │       ├── dynamic.ts       # Context-aware hints
 │       ├── static.ts        # Predefined hints
+│       ├── localBaseHints.ts # Local tool base hints
 │       └── types.ts         # Hint type definitions
 │
 ├── github/                  # 🐙 GitHub API layer
+│   ├── index.ts             # GitHub module exports
 │   ├── client.ts            # Octokit client with throttling
 │   ├── githubAPI.ts         # Core API types & interfaces
 │   ├── codeSearch.ts        # Code search operations
@@ -108,11 +115,18 @@ src/
 │   ├── errors.ts            # GitHub error handling
 │   └── errorConstants.ts    # GitHub-specific error codes
 │
+├── lsp/                     # 🔤 Language Server Protocol
+│   ├── index.ts             # LSP module exports
+│   ├── client.ts            # LSP client (spawns servers, JSON-RPC)
+│   ├── types.ts             # LSP type definitions
+│   └── resolver.ts          # Symbol resolution utilities
+│
 ├── security/                # 🔒 Security layer
 │   ├── withSecurityValidation.ts  # Security wrapper for tools
 │   ├── contentSanitizer.ts  # Secret detection & redaction
 │   ├── pathValidator.ts     # Path traversal prevention
 │   ├── commandValidator.ts  # Command injection prevention
+│   ├── executionContextValidator.ts # Execution context validation
 │   ├── ignoredPathFilter.ts # Sensitive path filtering
 │   ├── regexes.ts           # Secret detection patterns (100+)
 │   ├── mask.ts              # Data masking utilities
@@ -126,23 +140,60 @@ src/
 │   ├── FindCommandBuilder.ts    # find command builder
 │   └── LsCommandBuilder.ts      # ls command builder
 │
-├── utils/                   # 🛠️ Shared utilities
-│   ├── bulkOperations.ts    # Bulk query execution (1-5 queries)
-│   ├── cache.ts             # Response caching
-│   ├── constants.ts         # Global constants
-│   ├── fetchWithRetries.ts  # HTTP fetch with retry logic
-│   ├── promiseUtils.ts      # Async utilities
-│   ├── logger.ts            # MCP logging integration
-│   ├── errorResult.ts       # Error response formatting
-│   ├── types.ts             # Utility types
+├── utils/                   # 🛠️ Shared utilities (organized by domain)
+│   ├── core/                # Core utilities
+│   │   ├── constants.ts     # Global constants
+│   │   ├── logger.ts        # MCP logging integration
+│   │   ├── promise.ts       # Async/promise utilities
+│   │   └── types.ts         # Core type definitions
+│   │
+│   ├── credentials/         # Credential utilities
+│   │   └── index.ts         # Credential management re-exports
+│   │
+│   ├── environment/         # Environment detection
+│   │   └── environmentDetection.ts # Runtime environment detection
+│   │
 │   ├── exec/                # Command execution
+│   │   ├── index.ts         # Module exports
 │   │   ├── safe.ts          # Safe command execution
-│   │   └── spawn.ts         # Process spawning
-│   ├── local/               # Local filesystem utilities
+│   │   ├── spawn.ts         # Process spawning
+│   │   ├── npm.ts           # NPM command utilities
+│   │   └── commandAvailability.ts # Command detection
+│   │
+│   ├── file/                # File operations
+│   │   ├── byteOffset.ts    # Byte offset calculations
+│   │   ├── filters.ts       # File filtering utilities
+│   │   ├── size.ts          # File size utilities
+│   │   ├── toolHelpers.ts   # Tool-specific helpers
+│   │   └── types.ts         # File type definitions
+│   │
+│   ├── http/                # HTTP utilities
+│   │   ├── cache.ts         # Response caching
+│   │   └── fetch.ts         # Fetch with retries
+│   │
 │   ├── minifier/            # Content minification
+│   │   ├── index.ts         # Module exports
 │   │   ├── minifier.ts      # File-type aware minification
 │   │   └── jsonToYamlString.ts # YAML conversion
-│   └── pagination/          # Pagination utilities
+│   │
+│   ├── package/             # Package utilities
+│   │   ├── common.ts        # Shared package utilities
+│   │   ├── npm.ts           # NPM package search
+│   │   └── python.ts        # PyPI package search
+│   │
+│   ├── pagination/          # Pagination utilities
+│   │   ├── index.ts         # Module exports
+│   │   ├── core.ts          # Core pagination logic
+│   │   ├── hints.ts         # Pagination hints
+│   │   └── types.ts         # Pagination types
+│   │
+│   ├── parsers/             # Output parsers
+│   │   ├── diff.ts          # Diff parsing
+│   │   └── ripgrep.ts       # Ripgrep output parsing
+│   │
+│   └── response/            # Response utilities
+│       ├── bulk.ts          # Bulk operation responses
+│       └── error.ts         # Error response formatting
 │
 ├── prompts/                 # 💬 MCP prompts
 │   └── prompts.ts           # Prompt registration
@@ -161,11 +212,15 @@ tests/
 ├── session.*.test.ts        # Session/telemetry tests
 ├── errorCodes.test.ts       # Error codes tests
 ├── commands/                # Command builder tests
-├── github/                  # GitHub API tests (27 files)
+├── errors/                  # Error handling tests
+├── github/                  # GitHub API tests (29 files)
+├── lsp/                     # LSP client tests (7 files)
 ├── security/                # Security tests (15 files)
 ├── scheme/                  # Schema validation tests
-├── tools/                   # Tool implementation tests (42 files)
-├── utils/                   # Utility tests (33 files)
+├── tools/                   # Tool implementation tests (55 files)
+│   ├── lsp_*.test.ts        # LSP tool tests
+│   └── hints/               # Hints system tests
+├── utils/                   # Utility tests (36 files)
 ├── integration/             # End-to-end tests
 ├── helpers/                 # Test utilities & mocks
 └── fixtures/                # Test fixtures
@@ -187,6 +242,20 @@ tests/
 | `localViewStructure` | content | ✅ | Browse local directories |
 | `localFindFiles` | search | ✅ | Find files by metadata |
 | `localGetFileContent` | content | ✅ | Read local file content |
+| `lspGotoDefinition` | LSP | ✅ | Jump to symbol definition |
+| `lspFindReferences` | LSP | ✅ | Find all usages of a symbol |
+| `lspCallHierarchy` | LSP | ✅ | Trace function call relationships |
+
+### LSP Tools
+
+LSP (Language Server Protocol) tools provide **semantic** code intelligence:
+
+- **No IDE required** - Works standalone via spawned language servers
+- **TypeScript/JavaScript bundled** - Works out-of-box
+- **30+ languages supported** - Python, Go, Rust, Java, C/C++, etc. (requires server installation)
+- **Cross-platform** - macOS, Linux, Windows
+
+See [`LSP_TOOLS.md`](./docs/LSP_TOOLS.md) for full documentation.
 
 ---
 
@@ -302,10 +371,12 @@ yarn test:ui
 |----------|-------------|
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Deep dive into system design, data flows, security |
 | [`HINTS_ARCHITECTURE.md`](./docs/HINTS_ARCHITECTURE.md) | Hints system: flow, sources, types, implementation |
+| [`LSP_TOOLS.md`](./docs/LSP_TOOLS.md) | LSP tools: supported languages, usage, configuration |
 | [`README.md`](./README.md) | Installation, usage, configuration |
 | [`../../AGENTS.md`](../../AGENTS.md) | Root monorepo guidelines |
 | [MCP Spec](https://modelcontextprotocol.io/) | Model Context Protocol specification |
 | [GitHub REST API](https://docs.github.com/en/rest) | GitHub API reference |
+| [LSP Spec](https://microsoft.github.io/language-server-protocol/) | Language Server Protocol specification |
 
 ---
 
@@ -321,9 +392,12 @@ yarn test:ui
 | Secret detection | `src/security/contentSanitizer.ts`, `src/security/regexes.ts` |
 | Path validation | `src/security/pathValidator.ts` |
 | GitHub client | `src/github/client.ts` |
-| Bulk operations | `src/utils/bulkOperations.ts` |
+| LSP client | `src/lsp/client.ts` ([docs](./docs/LSP_TOOLS.md)) |
+| LSP tools | `src/tools/lsp_*.ts` |
+| Bulk operations | `src/utils/response/bulk.ts` |
 | Response formatting | `src/responses.ts` |
 | Error codes | `src/errorCodes.ts` |
+| Package search | `src/utils/package/npm.ts`, `src/utils/package/python.ts` |
 
 ---
 

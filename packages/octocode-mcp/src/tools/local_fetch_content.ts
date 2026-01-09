@@ -8,15 +8,18 @@ import {
   generatePaginationHints,
   createPaginationInfo,
 } from '../utils/pagination/index.js';
-import { RESOURCE_LIMITS, DEFAULTS } from '../utils/constants.js';
+import { RESOURCE_LIMITS, DEFAULTS } from '../utils/core/constants.js';
 import { TOOL_NAMES } from './toolMetadata.js';
 import {
   validateToolPath,
   createErrorResult,
-} from '../utils/local/utils/toolHelpers.js';
-import type { FetchContentQuery, FetchContentResult } from '../utils/types.js';
-import { ToolErrors, ERROR_CODES } from '../errorCodes.js';
-import { executeBulkOperation } from '../utils/bulkOperations.js';
+} from '../utils/file/toolHelpers.js';
+import type {
+  FetchContentQuery,
+  FetchContentResult,
+} from '../utils/core/types.js';
+import { ToolErrors, LOCAL_TOOL_ERROR_CODES } from '../errorCodes.js';
+import { executeBulkOperation } from '../utils/response/bulk.js';
 import {
   BulkFetchContentSchema,
   LOCAL_FETCH_CONTENT_DESCRIPTION,
@@ -188,7 +191,7 @@ export async function fetchContent(
         return {
           status: 'empty',
           path: query.path,
-          errorCode: ERROR_CODES.NO_MATCHES,
+          errorCode: LOCAL_TOOL_ERROR_CODES.NO_MATCHES,
           totalLines,
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
@@ -206,9 +209,13 @@ export async function fetchContent(
 
       // Extract line numbers from matchRanges for response
       if (result.matchRanges.length > 0) {
-        actualStartLine = result.matchRanges[0]!.start;
-        actualEndLine = result.matchRanges[result.matchRanges.length - 1]!.end;
-        matchRanges = result.matchRanges;
+        const firstRange = result.matchRanges[0];
+        const lastRange = result.matchRanges[result.matchRanges.length - 1];
+        if (firstRange && lastRange) {
+          actualStartLine = firstRange.start;
+          actualEndLine = lastRange.end;
+          matchRanges = result.matchRanges;
+        }
       }
 
       if (result.matchCount > 50) {
@@ -287,7 +294,7 @@ export async function fetchContent(
           status: 'empty',
           path: query.path,
           totalLines,
-          errorCode: ERROR_CODES.NO_MATCHES,
+          errorCode: LOCAL_TOOL_ERROR_CODES.NO_MATCHES,
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           hints: [
@@ -370,14 +377,15 @@ export async function fetchContent(
       isPartial,
       totalLines,
       // Line extraction info (when startLine/endLine or matchString used)
-      ...(actualStartLine !== undefined && {
-        startLine: actualStartLine,
-        endLine: actualEndLine,
-        ...(matchRanges === undefined && {
-          extractedLines: actualEndLine! - actualStartLine + 1,
+      ...(actualStartLine !== undefined &&
+        actualEndLine !== undefined && {
+          startLine: actualStartLine,
+          endLine: actualEndLine,
+          ...(matchRanges === undefined && {
+            extractedLines: actualEndLine - actualStartLine + 1,
+          }),
+          ...(matchRanges !== undefined && { matchRanges }),
         }),
-        ...(matchRanges !== undefined && { matchRanges }),
-      }),
       // Include pagination info when explicitly requested OR auto-paginated
       ...((effectiveCharLength || autoPaginated) && {
         pagination: createPaginationInfo(pagination),
@@ -425,11 +433,12 @@ function extractMatchingLines(
   const literalPattern = caseSensitive ? pattern : pattern.toLowerCase();
 
   lines.forEach((line, index) => {
-    const matches = isRegex
-      ? regex!.test(line)
-      : caseSensitive
-        ? line.includes(pattern)
-        : line.toLowerCase().includes(literalPattern);
+    const matches =
+      isRegex && regex
+        ? regex.test(line)
+        : caseSensitive
+          ? line.includes(pattern)
+          : line.toLowerCase().includes(literalPattern);
 
     if (matches) {
       matchingLineNumbers.push(index + 1);
@@ -448,14 +457,19 @@ function extractMatchingLines(
 
   // Group consecutive matches to avoid duplicating context
   const ranges: Array<{ start: number; end: number }> = [];
-  const firstMatchLine = matchesToProcess[0]!;
+  const firstMatchLine = matchesToProcess[0];
+  if (firstMatchLine === undefined) {
+    return { lines: [], matchRanges: [], matchCount: 0 };
+  }
+
   let currentRange = {
     start: Math.max(1, firstMatchLine - contextLines),
     end: Math.min(lines.length, firstMatchLine + contextLines),
   };
 
   for (let i = 1; i < matchesToProcess.length; i++) {
-    const matchLine = matchesToProcess[i]!;
+    const matchLine = matchesToProcess[i];
+    if (matchLine === undefined) continue;
     const rangeStart = Math.max(1, matchLine - contextLines);
     const rangeEnd = Math.min(lines.length, matchLine + contextLines);
 
@@ -471,12 +485,14 @@ function extractMatchingLines(
   const resultLines: string[] = [];
   ranges.forEach((range, idx) => {
     if (idx > 0) {
-      const prevRange = ranges[idx - 1]!;
-      const omittedLines = range.start - prevRange.end - 1;
-      if (omittedLines > 0) {
-        resultLines.push('');
-        resultLines.push(`... [${omittedLines} lines omitted] ...`);
-        resultLines.push('');
+      const prevRange = ranges[idx - 1];
+      if (prevRange) {
+        const omittedLines = range.start - prevRange.end - 1;
+        if (omittedLines > 0) {
+          resultLines.push('');
+          resultLines.push(`... [${omittedLines} lines omitted] ...`);
+          resultLines.push('');
+        }
       }
     }
     resultLines.push(...lines.slice(range.start - 1, range.end));

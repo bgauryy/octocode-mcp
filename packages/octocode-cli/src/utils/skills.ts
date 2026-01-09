@@ -92,7 +92,7 @@ export function getDefaultSkillsDestDir(): string {
 /**
  * Skill metadata from SKILL.md frontmatter
  */
-export interface SkillMetadata {
+interface SkillMetadata {
   name: string;
   description: string;
   folder: string;

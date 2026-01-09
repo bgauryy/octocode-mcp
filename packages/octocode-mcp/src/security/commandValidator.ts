@@ -2,7 +2,11 @@
  * Command validation for security - prevents command injection attacks
  */
 
-import { ALLOWED_COMMANDS, DANGEROUS_PATTERNS } from './securityConstants.js';
+import {
+  ALLOWED_COMMANDS,
+  DANGEROUS_PATTERNS,
+  PATTERN_DANGEROUS_PATTERNS,
+} from './securityConstants.js';
 
 /**
  * Result of command validation
@@ -36,6 +40,9 @@ export function validateCommand(
 /**
  * Validates arguments based on command context
  * Uses position-aware validation - certain args are search patterns, others are paths
+ *
+ * Pattern arguments (regex, globs) get more permissive validation that allows
+ * legitimate regex metacharacters but still blocks shell injection vectors.
  */
 function validateCommandArgs(
   command: string,
@@ -49,16 +56,18 @@ function validateCommandArgs(
     const arg = args[i]!;
     const isPattern = patternPositions.has(i);
 
-    // Skip validation for pattern arguments (they can contain |, (), etc.)
-    if (isPattern) {
-      continue;
-    }
+    // Use appropriate validation set based on argument type
+    // Pattern args get more permissive checks but still block shell injection
+    const dangerousPatterns = isPattern
+      ? PATTERN_DANGEROUS_PATTERNS
+      : DANGEROUS_PATTERNS;
 
-    for (const dangerousPattern of DANGEROUS_PATTERNS) {
+    for (const dangerousPattern of dangerousPatterns) {
       if (dangerousPattern.test(arg)) {
+        const argType = isPattern ? 'search pattern' : 'argument';
         return {
           isValid: false,
-          error: `Dangerous pattern detected in argument: '${arg}'. This may be a command injection attempt.`,
+          error: `Dangerous pattern detected in ${argType}: '${arg}'. This may be a command injection attempt.`,
         };
       }
     }

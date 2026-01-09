@@ -6,7 +6,6 @@
 import { c, bold, dim } from '../../utils/colors.js';
 import { loadInquirer, select, Separator, input } from '../../utils/prompts.js';
 import {
-  copyDirectory,
   dirExists,
   listSubdirectories,
   removeDirectory,
@@ -22,15 +21,20 @@ import {
 import path from 'node:path';
 import open from 'open';
 import { Spinner } from '../../utils/spinner.js';
-import { runMarketplaceFlow } from './marketplace.js';
+import { runMarketplaceFlow, runOctocodeOfficialFlow } from './marketplace.js';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
 const WHAT_ARE_SKILLS_URL = 'https://agentskills.io/what-are-skills';
-// Re-export state types from centralized state module
-export { type SkillInfo, type SkillsState, getSkillsState } from '../state.js';
+
+/** Recommended skills shown first with a star */
+const RECOMMENDED_SKILLS = new Set([
+  'octocode-research',
+  'octocode-pr-review',
+  'octocode-local-search',
+]);
 
 // ============================================================================
 // Installed Skill Types (agentskills.io protocol)
@@ -39,7 +43,7 @@ export { type SkillInfo, type SkillsState, getSkillsState } from '../state.js';
 /**
  * Installed skill info - parsed from SKILL.md following agentskills.io protocol
  */
-export interface InstalledSkill {
+interface InstalledSkill {
   /** Skill name from frontmatter */
   name: string;
   /** Description from frontmatter */
@@ -50,17 +54,18 @@ export interface InstalledSkill {
   path: string;
   /** Whether this is an Octocode bundled skill */
   isBundled: boolean;
+  /** Whether this is a recommended skill (shown first with star) */
+  isRecommended: boolean;
 }
 
 type SkillsMenuChoice =
-  | 'install'
   | 'manage'
   | 'view'
   | 'marketplace'
+  | 'octocode-official'
   | 'change-path'
   | 'learn'
   | 'back';
-type InstallSkillsChoice = 'install' | 'select' | 'back';
 type ManageSkillsChoice = InstalledSkill | 'back';
 
 // ============================================================================
@@ -127,6 +132,8 @@ function getAllInstalledSkills(): InstalledSkill[] {
       dirExists(srcDir) &&
       dirExists(path.join(srcDir, folder));
 
+    const isRecommended = RECOMMENDED_SKILLS.has(folder);
+
     if (fileExists(skillMdPath)) {
       const content = readFileContent(skillMdPath);
       if (content) {
@@ -138,6 +145,7 @@ function getAllInstalledSkills(): InstalledSkill[] {
             folder,
             path: skillPath,
             isBundled,
+            isRecommended,
           });
           continue;
         }
@@ -151,8 +159,17 @@ function getAllInstalledSkills(): InstalledSkill[] {
       folder,
       path: skillPath,
       isBundled,
+      isRecommended,
     });
   }
+
+  // Sort: recommended first, then alphabetically by name
+  skills.sort((a, b) => {
+    if (a.isRecommended !== b.isRecommended) {
+      return a.isRecommended ? -1 : 1;
+    }
+    return a.name.localeCompare(b.name);
+  });
 
   return skills;
 }
@@ -218,7 +235,6 @@ function getSkillsInfo(): {
  * Show skills submenu
  */
 async function showSkillsMenu(
-  hasUninstalled: boolean,
   installedCount: number
 ): Promise<SkillsMenuChoice> {
   const choices: Array<{
@@ -236,20 +252,19 @@ async function showSkillsMenu(
     });
   }
 
+  // Octocode Official - quick access to bundled skills
+  choices.push({
+    name: '🐙 Octocode Official 📦',
+    value: 'octocode-official',
+    description: 'Research, PR review, local search & more',
+  });
+
   // Browse marketplace - always available
   choices.push({
     name: '🌐 Browse Marketplace',
     value: 'marketplace',
     description: 'Community skills • installs on your behalf',
   });
-
-  if (hasUninstalled) {
-    choices.push({
-      name: '📥 Install bundled skills',
-      value: 'install',
-      description: 'Install Octocode skills to Claude Code',
-    });
-  }
 
   // Change default skills path option
   choices.push({
@@ -340,13 +355,20 @@ function showSkillsStatus(info: ReturnType<typeof getSkillsInfo>): void {
 
 /**
  * Format skill name for display (remove octocode- prefix, capitalize)
+ * Handles acronyms like PR, API, etc.
  */
 function formatSkillName(name: string): string {
-  return name
+  const acronyms = ['PR', 'API', 'UI', 'CLI', 'MCP', 'AI'];
+  const formatted = name
     .replace(/^octocode-/, '')
     .split('-')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+
+  return formatted.replace(
+    new RegExp(`\\b(${acronyms.join('|')})\\b`, 'gi'),
+    match => match.toUpperCase()
+  );
 }
 
 // ============================================================================
@@ -372,6 +394,7 @@ async function selectInstalledSkill(
   }> = [];
 
   for (const skill of skills) {
+    const starTag = skill.isRecommended ? c('yellow', '⭐ ') : '';
     const sourceTag = skill.isBundled
       ? c('cyan', ' [bundled]')
       : c('magenta', ' [community]');
@@ -379,7 +402,7 @@ async function selectInstalledSkill(
     const ellipsis = skill.description.length > 40 ? '...' : '';
 
     choices.push({
-      name: `${skill.name}${sourceTag} - ${dim(desc)}${dim(ellipsis)}`,
+      name: `${starTag}${skill.name}${sourceTag} - ${dim(desc)}${dim(ellipsis)}`,
       value: skill,
     });
   }
@@ -416,12 +439,15 @@ type SkillActionChoice = 'remove' | 'view' | 'back';
 async function showSkillActions(
   skill: InstalledSkill
 ): Promise<SkillActionChoice> {
+  const recommendedTag = skill.isRecommended
+    ? c('yellow', '⭐ recommended ')
+    : '';
   const sourceTag = skill.isBundled
     ? c('cyan', '[bundled]')
     : c('magenta', '[community]');
 
   console.log();
-  console.log(`  ${bold(skill.name)} ${sourceTag}`);
+  console.log(`  ${bold(skill.name)} ${recommendedTag}${sourceTag}`);
   console.log(`  ${dim(skill.description)}`);
   console.log(`  ${dim(skill.path)}`);
   console.log();
@@ -432,7 +458,7 @@ async function showSkillActions(
       value: 'remove',
     },
     {
-      name: `📋 View SKILL.md content`,
+      name: `📂 Open skill location`,
       value: 'view',
     },
     new Separator() as unknown as { name: string; value: SkillActionChoice },
@@ -458,39 +484,20 @@ async function showSkillActions(
 }
 
 /**
- * Show SKILL.md content for a skill
+ * Open skill location in file explorer (cross-platform: macOS/Windows/Linux)
  */
-function showSkillContent(skill: InstalledSkill): void {
-  const skillMdPath = path.join(skill.path, 'SKILL.md');
-
-  if (!fileExists(skillMdPath)) {
-    console.log();
-    console.log(`  ${c('yellow', '⚠')} No SKILL.md file found`);
-    console.log();
-    return;
-  }
-
-  const content = readFileContent(skillMdPath);
-  if (!content) {
-    console.log();
-    console.log(`  ${c('red', '✗')} Failed to read SKILL.md`);
-    console.log();
-    return;
-  }
-
+async function openSkillLocation(skill: InstalledSkill): Promise<void> {
   console.log();
-  console.log(`  ${bold('SKILL.md')} ${dim(`- ${skill.name}`)}`);
+  console.log(`  ${c('cyan', '📂')} Opening ${bold(skill.name)} location...`);
+  console.log(`  ${dim(skill.path)}`);
   console.log();
 
-  // Show content with proper formatting (first 50 lines)
-  const lines = content.split('\n').slice(0, 50);
-  for (const line of lines) {
-    console.log(`  ${dim(line)}`);
-  }
-
-  if (content.split('\n').length > 50) {
-    console.log();
-    console.log(`  ${dim('... (truncated)')}`);
+  try {
+    await open(skill.path);
+    console.log(`  ${c('green', '✓')} Opened in file explorer`);
+  } catch {
+    console.log(`  ${c('yellow', '!')} Could not open location automatically`);
+    console.log(`  ${dim('Path:')} ${c('cyan', skill.path)}`);
   }
   console.log();
 }
@@ -591,7 +598,7 @@ async function manageInstalledSkills(): Promise<void> {
         }
 
         case 'view':
-          showSkillContent(selectedSkill);
+          await openSkillLocation(selectedSkill);
           await pressEnterToContinue();
           break;
 
@@ -602,99 +609,6 @@ async function manageInstalledSkills(): Promise<void> {
       }
     }
   }
-}
-
-/**
- * Install skills
- * Returns true if installation was performed, false if user went back
- */
-async function installSkills(
-  info: ReturnType<typeof getSkillsInfo>
-): Promise<boolean> {
-  const { destDir, notInstalled } = info;
-
-  if (notInstalled.length === 0) {
-    console.log(`  ${c('green', '✓')} All skills are already installed!`);
-    console.log();
-    console.log(`  ${bold('Installation path:')}`);
-    console.log(`  ${c('cyan', destDir)}`);
-    console.log();
-    await pressEnterToContinue();
-    return true;
-  }
-
-  // Show what will be installed
-  console.log(`  ${bold('Skills to install:')}`);
-  console.log();
-  for (const skill of notInstalled) {
-    console.log(`    ${c('yellow', '○')} ${skill.name}`);
-  }
-  console.log();
-  console.log(`  ${bold('Installation path:')}`);
-  console.log(`  ${c('cyan', destDir)}`);
-  console.log();
-
-  // Ask user if they want to install with back option
-  const choice = await select<InstallSkillsChoice>({
-    message: `Install ${notInstalled.length} skill(s)?`,
-    choices: [
-      {
-        name: `${c('green', '✓')} Yes, install skills`,
-        value: 'install' as const,
-      },
-      new Separator() as unknown as {
-        name: string;
-        value: InstallSkillsChoice;
-      },
-      {
-        name: `${c('dim', '← Back to skills menu')}`,
-        value: 'back' as const,
-      },
-    ],
-    loop: false,
-  });
-
-  if (choice === 'back') {
-    return false;
-  }
-
-  // Install skills
-  console.log();
-  const spinner = new Spinner('Installing skills...').start();
-  let installedCount = 0;
-  const failed: string[] = [];
-
-  for (const skill of notInstalled) {
-    if (copyDirectory(skill.srcPath, skill.destPath)) {
-      installedCount++;
-    } else {
-      failed.push(skill.name);
-    }
-  }
-
-  if (failed.length === 0) {
-    spinner.succeed('Skills installed!');
-  } else {
-    spinner.warn('Some skills failed to install');
-  }
-
-  console.log();
-  if (installedCount > 0) {
-    console.log(`  ${c('green', '✓')} Installed ${installedCount} skill(s)`);
-    console.log(`  ${dim('Location:')} ${c('cyan', destDir)}`);
-  }
-  if (failed.length > 0) {
-    console.log(`  ${c('red', '✗')} Failed: ${failed.join(', ')}`);
-  }
-  console.log();
-
-  if (installedCount > 0) {
-    console.log(`  ${bold('Skills are now available in Claude Code!')}`);
-    console.log();
-  }
-
-  await pressEnterToContinue();
-  return true;
 }
 
 // ============================================================================
@@ -738,28 +652,20 @@ export async function runSkillsMenu(): Promise<void> {
     const installedCount = installedSkills.length;
 
     // Show submenu
-    const hasUninstalled = info.notInstalled.length > 0;
-    const choice = await showSkillsMenu(hasUninstalled, installedCount);
+    const choice = await showSkillsMenu(installedCount);
 
     switch (choice) {
       case 'manage':
         await manageInstalledSkills();
         break;
 
+      case 'octocode-official':
+        await runOctocodeOfficialFlow();
+        break;
+
       case 'marketplace':
         await runMarketplaceFlow();
         break;
-
-      case 'install': {
-        const installed = await installSkills(info);
-        // If user went back, stay in skills menu
-        // If installed, also stay in skills menu to show updated status
-        if (installed) {
-          // Refresh and continue showing menu
-          continue;
-        }
-        break;
-      }
 
       case 'view':
         showSkillsStatus(info);

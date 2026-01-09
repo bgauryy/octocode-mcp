@@ -12,10 +12,10 @@ import type {
 import { GITHUB_STRUCTURE_DEFAULTS as STRUCTURE_DEFAULTS } from '../scheme/github_view_repo_structure';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
-import { generateCacheKey, withDataCache } from '../utils/cache';
+import { generateCacheKey, withDataCache } from '../utils/http/cache';
 import { generateStructurePaginationHints } from '../utils/pagination/index.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
+import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/file/filters';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
 import { REPOSITORY_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
@@ -31,7 +31,6 @@ function applyStructurePagination(
   const cachedItems = cachedResult._cachedItems;
 
   if (!cachedItems || cachedItems.length === 0) {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { _cachedItems, ...result } = cachedResult;
     return result;
   }
@@ -86,8 +85,11 @@ function applyStructurePagination(
   }
 
   for (const dir of Object.keys(structure)) {
-    structure[dir]!.files.sort();
-    structure[dir]!.folders.sort();
+    const entry = structure[dir];
+    if (entry) {
+      entry.files.sort();
+      entry.folders.sort();
+    }
   }
 
   const sortedStructure: Record<
@@ -100,7 +102,10 @@ function applyStructurePagination(
     return a.localeCompare(b);
   });
   for (const key of sortedKeys) {
-    sortedStructure[key] = structure[key]!;
+    const entry = structure[key];
+    if (entry) {
+      sortedStructure[key] = entry;
+    }
   }
 
   const pageFiles = paginatedItems.filter(i => i.type === 'file').length;
@@ -420,8 +425,11 @@ async function viewGitHubRepositoryStructureAPIInternal(
     }
 
     for (const dir of Object.keys(structure)) {
-      structure[dir]!.files.sort();
-      structure[dir]!.folders.sort();
+      const entry = structure[dir];
+      if (entry) {
+        entry.files.sort();
+        entry.folders.sort();
+      }
     }
 
     const sortedStructure: Record<
@@ -434,7 +442,10 @@ async function viewGitHubRepositoryStructureAPIInternal(
       return a.localeCompare(b);
     });
     for (const key of sortedKeys) {
-      sortedStructure[key] = structure[key]!;
+      const entry = structure[key];
+      if (entry) {
+        sortedStructure[key] = entry;
+      }
     }
 
     const pageFiles = paginatedItems.filter(i => i.type === 'file').length;

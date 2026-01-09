@@ -23,7 +23,7 @@ export interface ResearchFinding {
   summary: string;
 }
 
-export interface ResearchOutputConfig {
+interface ResearchOutputConfig {
   /** Project root directory (defaults to cwd) */
   projectRoot?: string;
   /** Maximum length for query summary */

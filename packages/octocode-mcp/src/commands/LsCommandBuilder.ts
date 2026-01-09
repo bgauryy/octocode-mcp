@@ -3,7 +3,7 @@
  */
 
 import { BaseCommandBuilder } from './BaseCommandBuilder.js';
-import type { ViewStructureQuery } from '../utils/types.js';
+import type { ViewStructureQuery } from '../utils/core/types.js';
 
 /**
  * Builder for ls commands

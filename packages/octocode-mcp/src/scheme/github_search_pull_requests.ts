@@ -2,12 +2,12 @@ import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_SEARCH_PULL_REQUESTS, TOOL_NAMES } from '../tools/toolMetadata';
 
-export const PRMatchScopeSchema = z
+const PRMatchScopeSchema = z
   .array(z.enum(['title', 'body', 'comments']))
   .optional()
   .describe(GITHUB_SEARCH_PULL_REQUESTS.filters.match);
 
-export const DateRangeSchema = z.object({
+const DateRangeSchema = z.object({
   created: z
     .string()
     .optional()
@@ -18,7 +18,7 @@ export const DateRangeSchema = z.object({
     .describe(GITHUB_SEARCH_PULL_REQUESTS.filters.updated),
 });
 
-export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
+const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
   query: z
     .string()
     .optional()

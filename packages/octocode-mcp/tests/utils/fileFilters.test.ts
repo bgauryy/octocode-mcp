@@ -6,7 +6,7 @@ import {
   shouldIgnoreDir,
   shouldIgnoreFile,
   getExtension,
-} from '../../src/utils/fileFilters.js';
+} from '../../src/utils/file/filters.js';
 
 describe('fileFilters', () => {
   describe('IGNORED_FOLDER_NAMES', () => {

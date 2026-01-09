@@ -32,6 +32,8 @@ import {
   getCredentialsFilePath,
   isUsingSecureStorage as tokenStorageIsUsingSecureStorage,
   getCredentialsSync,
+  getTokenFromEnv,
+  getEnvTokenSource,
 } from '../utils/token-storage.js';
 
 /**
@@ -69,7 +71,7 @@ const DEFAULT_SCOPES = ['repo', 'read:org', 'gist'];
 // Default hostname
 const DEFAULT_HOSTNAME = 'github.com';
 
-export interface LoginOptions {
+interface LoginOptions {
   /** GitHub hostname (default: github.com) */
   hostname?: string;
   /**
@@ -104,14 +106,14 @@ export interface VerificationInfo {
   interval: number;
 }
 
-export interface LoginResult {
+interface LoginResult {
   success: boolean;
   username?: string;
   hostname?: string;
   error?: string;
 }
 
-export interface LogoutResult {
+interface LogoutResult {
   success: boolean;
   error?: string;
 }
@@ -558,7 +560,7 @@ export function getGhCliToken(
 }
 
 /** Token source type for getToken */
-export type GetTokenSource = 'octocode' | 'gh' | 'auto';
+type GetTokenSource = 'octocode' | 'gh' | 'auto';
 
 /**
  * Get token with source information
@@ -567,7 +569,14 @@ export type GetTokenSource = 'octocode' | 'gh' | 'auto';
  * @param preferredSource - Token source preference:
  *   - 'octocode': Only return octocode-cli token
  *   - 'gh': Only return gh CLI token
- *   - 'auto': Match octocode-mcp priority: GITHUB_TOKEN env → gh CLI → octocode
+ *   - 'auto': Priority chain: env vars → gh CLI → octocode storage
+ *
+ * Auto mode priority:
+ * 1. OCTOCODE_TOKEN env var (octocode-specific)
+ * 2. GH_TOKEN env var (gh CLI compatible)
+ * 3. GITHUB_TOKEN env var (GitHub Actions)
+ * 4. gh CLI stored token
+ * 5. octocode-cli stored credentials
  */
 export async function getToken(
   hostname: string = DEFAULT_HOSTNAME,
@@ -582,57 +591,28 @@ export async function getToken(
     return getGhCliToken(hostname);
   }
 
-  // Auto mode: Match octocode-mcp priority
-  // 1. GITHUB_TOKEN environment variable (explicit override)
-  if (process.env.GITHUB_TOKEN) {
+  // Auto mode: Check environment variables first (priority order)
+  // 1-3. Environment variables: OCTOCODE_TOKEN → GH_TOKEN → GITHUB_TOKEN
+  const envToken = getTokenFromEnv();
+  if (envToken) {
+    const source = getEnvTokenSource();
     return {
-      token: process.env.GITHUB_TOKEN,
+      token: envToken,
       source: 'env',
       username: undefined,
-    };
+      // Include which env var was used for debugging
+      envSource: source ?? undefined,
+    } as TokenResult;
   }
 
-  // 2. gh CLI token (most common for developers)
+  // 4. gh CLI token (most common for developers)
   const ghResult = getGhCliToken(hostname);
   if (ghResult.token) {
     return ghResult;
   }
 
-  // 3. octocode storage (fallback)
+  // 5. octocode storage (fallback)
   return getOctocodeToken(hostname);
-}
-
-/**
- * Verify the stored token is still valid by making a test API call
- *
- * Note: For public OAuth apps (like this CLI), we cannot use checkToken()
- * as it requires clientSecret. Instead, we make a simple API call to verify
- * the token works.
- */
-export async function verifyToken(
-  hostname: string = DEFAULT_HOSTNAME
-): Promise<boolean> {
-  const credentials = await getCredentials(hostname);
-
-  if (!credentials) {
-    return false;
-  }
-
-  try {
-    // Verify token by making a simple API call
-    await request('GET /user', {
-      headers: {
-        authorization: `token ${credentials.token.token}`,
-      },
-      baseUrl: getApiBaseUrl(hostname),
-    });
-    return true;
-  } catch (error) {
-    console.error(
-      `[github-oauth] Token verification failed: ${error instanceof Error ? error.message : String(error)}`
-    );
-    return false;
-  }
 }
 
 /**

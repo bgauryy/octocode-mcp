@@ -17,16 +17,16 @@ import {
   validateToolPath,
   createErrorResult,
   checkLargeOutputSafety,
-} from '../utils/local/utils/toolHelpers.js';
+} from '../utils/file/toolHelpers.js';
 import type {
   FindFilesQuery,
   FindFilesResult,
   FoundFile,
-} from '../utils/types.js';
+} from '../utils/core/types.js';
 import fs from 'fs';
 import { ToolErrors, type LocalToolErrorCode } from '../errorCodes.js';
 import { TOOL_NAMES } from './toolMetadata.js';
-import { executeBulkOperation } from '../utils/bulkOperations.js';
+import { executeBulkOperation } from '../utils/response/bulk.js';
 import {
   BulkFindFilesSchema,
   LOCAL_FIND_FILES_DESCRIPTION,
@@ -274,6 +274,13 @@ export async function findFiles(
         : 'Sorted by path',
     ];
 
+    // Detect config files for context-aware hints
+    const configFilePatterns =
+      /\.(config|rc|env|json|ya?ml|toml|ini)$|^(\..*rc|config\.|\.env)/i;
+    const hasConfigFiles = finalFiles.some(f =>
+      configFilePatterns.test(f.path.split('/').pop() || '')
+    );
+
     return {
       status,
       files: finalFiles,
@@ -293,7 +300,10 @@ export async function findFiles(
       reasoning: query.reasoning,
       hints: [
         ...filePaginationHints,
-        ...getHints(TOOL_NAMES.LOCAL_FIND_FILES, status),
+        ...getHints(TOOL_NAMES.LOCAL_FIND_FILES, status, {
+          fileCount: totalFiles,
+          hasConfigFiles,
+        }),
         ...(paginationMetadata
           ? generatePaginationHints(paginationMetadata, {
               toolName: TOOL_NAMES.LOCAL_FIND_FILES,
@@ -352,7 +362,6 @@ async function getFileDetails(
   };
   const worker = async () => {
     for (let i = getNext(); i !== -1; i = getNext()) {
-      // eslint-disable-next-line no-await-in-loop
       await processAtIndex(i);
     }
   };

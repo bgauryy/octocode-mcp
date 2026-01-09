@@ -9,7 +9,12 @@ import {
   clearConfigCachedToken,
   getServerConfig,
   isLoggingEnabled,
+  _setResolveTokenFn,
+  _resetResolveTokenFn,
 } from '../src/serverConfig.js';
+
+// Mock function for resolve token (returns ResolvedToken | null)
+const mockResolveToken = vi.fn();
 
 // Helper function to create mock process
 function createMockProcess() {
@@ -45,6 +50,19 @@ function mockSpawnFailure() {
   return mockProcess;
 }
 
+// Helper function to mock token resolution
+// Returns { token, source } or null
+function mockTokenResolution(
+  token: string | null,
+  source: string = 'env:GITHUB_TOKEN'
+) {
+  if (token) {
+    mockResolveToken.mockResolvedValue({ token, source });
+  } else {
+    mockResolveToken.mockResolvedValue(null);
+  }
+}
+
 describe('ServerConfig - Simplified Version', () => {
   const originalEnv = process.env;
 
@@ -68,6 +86,10 @@ describe('ServerConfig - Simplified Version', () => {
     delete process.env.GITHUB_API_URL;
     delete process.env.REQUEST_TIMEOUT;
     delete process.env.MAX_RETRIES;
+
+    // Set up injectable mock for token resolution
+    _setResolveTokenFn(mockResolveToken);
+    mockResolveToken.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -79,6 +101,7 @@ describe('ServerConfig - Simplified Version', () => {
     process.env = originalEnv;
     cleanup();
     clearConfigCachedToken();
+    _resetResolveTokenFn();
   });
 
   describe('Configuration Initialization', () => {
@@ -152,6 +175,8 @@ describe('ServerConfig - Simplified Version', () => {
       clearConfigCachedToken();
       cleanup();
 
+      // Mock resolveToken to return env token (simulating env var priority)
+      mockTokenResolution('env-github-token', 'env:GITHUB_TOKEN');
       mockSpawnSuccess('cli-token');
       const token = await getGitHubToken();
 
@@ -207,10 +232,104 @@ describe('ServerConfig - Simplified Version', () => {
     });
   });
 
+  describe('octocode-cli Credential Fallback', () => {
+    it('should use octocode-cli token when GITHUB_TOKEN and gh CLI are unavailable', async () => {
+      delete process.env.GITHUB_TOKEN;
+      clearConfigCachedToken();
+
+      // gh CLI fails
+      mockSpawnFailure();
+      // octocode-cli has token
+      mockTokenResolution('octocode-stored-token');
+
+      const token = await getGitHubToken();
+
+      expect(token).toBe('octocode-stored-token');
+    });
+
+    it('should prioritize GITHUB_TOKEN over octocode-cli token', async () => {
+      process.env.GITHUB_TOKEN = 'env-token';
+      clearConfigCachedToken();
+
+      // Mock resolveToken to return env token (simulating priority)
+      mockTokenResolution('env-token', 'env:GITHUB_TOKEN');
+      mockSpawnFailure();
+
+      const token = await getGitHubToken();
+
+      expect(token).toBe('env-token');
+    });
+
+    it('should prioritize gh CLI token over octocode-cli token', async () => {
+      delete process.env.GITHUB_TOKEN;
+      clearConfigCachedToken();
+
+      // Mock resolveToken to return null so gh CLI fallback is used
+      mockTokenResolution(null);
+      mockSpawnSuccess('gh-cli-token');
+
+      const token = await getGitHubToken();
+
+      expect(token).toBe('gh-cli-token');
+    });
+
+    it('should return null when all token sources fail', async () => {
+      delete process.env.GITHUB_TOKEN;
+      clearConfigCachedToken();
+
+      mockSpawnFailure();
+      mockTokenResolution(null);
+
+      const token = await getGitHubToken();
+
+      expect(token).toBeNull();
+    });
+
+    it('should handle octocode-cli token with whitespace', async () => {
+      delete process.env.GITHUB_TOKEN;
+      clearConfigCachedToken();
+
+      mockSpawnFailure();
+      // Token is returned trimmed by resolveToken
+      mockTokenResolution('octocode-token-with-spaces');
+
+      const token = await getGitHubToken();
+
+      expect(token).toBe('octocode-token-with-spaces');
+    });
+
+    it('should skip empty octocode-cli token', async () => {
+      delete process.env.GITHUB_TOKEN;
+      clearConfigCachedToken();
+
+      mockSpawnFailure();
+      // Empty/whitespace tokens resolve to null
+      mockTokenResolution(null);
+
+      const token = await getGitHubToken();
+
+      expect(token).toBeNull();
+    });
+
+    it('should handle octocode-cli errors gracefully', async () => {
+      delete process.env.GITHUB_TOKEN;
+      clearConfigCachedToken();
+
+      mockSpawnFailure();
+      mockResolveToken.mockRejectedValue(new Error('Read error'));
+
+      const token = await getGitHubToken();
+
+      expect(token).toBeNull();
+    });
+  });
+
   describe('getToken with Error Throwing', () => {
     it('should return token when available', async () => {
       process.env.GITHUB_TOKEN = 'available-token';
       clearConfigCachedToken();
+      // Mock resolveToken to return the env token
+      mockTokenResolution('available-token', 'env:GITHUB_TOKEN');
       mockSpawnFailure();
 
       const token = await getToken();
@@ -299,6 +418,8 @@ describe('ServerConfig - Simplified Version', () => {
     it('should handle GitHub CLI errors gracefully', async () => {
       process.env.GITHUB_TOKEN = 'fallback-token';
       clearConfigCachedToken();
+      // Mock resolveToken to return env token
+      mockTokenResolution('fallback-token', 'env:GITHUB_TOKEN');
       mockSpawnFailure();
 
       const token = await getGitHubToken();

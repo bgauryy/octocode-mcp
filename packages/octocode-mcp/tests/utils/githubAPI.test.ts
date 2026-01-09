@@ -73,7 +73,7 @@ vi.mock('@octokit/plugin-throttling', () => ({
   throttling: vi.fn(),
 }));
 
-vi.mock('../../src/utils/cache.js', () => ({
+vi.mock('../../src/utils/http/cache.js', () => ({
   generateCacheKey: mockGenerateCacheKey,
   withCache: mockWithCache,
   withDataCache: mockWithDataCache,

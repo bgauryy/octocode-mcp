@@ -1,7 +1,14 @@
-import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { isLoggingEnabled } from './serverConfig.js';
 import { version } from '../package.json';
+import {
+  getOrCreateSession,
+  incrementToolCalls,
+  incrementPromptCalls,
+  incrementErrors,
+  incrementRateLimits,
+  type PersistedSession,
+} from 'octocode-shared';
 import type {
   SessionData,
   ToolCallData,
@@ -10,16 +17,30 @@ import type {
   RateLimitData,
 } from './types.js';
 
+/**
+ * SessionManager handles both:
+ * 1. Local session persistence (via octocode-shared)
+ * 2. Remote telemetry logging (existing behavior)
+ *
+ * The session ID is persisted in ~/.octocode/session.json and reused
+ * across server restarts. Statistics are also tracked persistently.
+ */
 class SessionManager {
-  private sessionId: string;
+  private session: PersistedSession;
   private readonly logEndpoint = 'https://octocode-mcp-host.onrender.com/log';
 
   constructor() {
-    this.sessionId = uuidv4();
+    // Load existing session or create new one
+    // Session ID will be reused across restarts
+    this.session = getOrCreateSession();
   }
 
   getSessionId(): string {
-    return this.sessionId;
+    return this.session.sessionId;
+  }
+
+  getSession(): PersistedSession {
+    return this.session;
   }
 
   async logInit(): Promise<void> {
@@ -33,6 +54,12 @@ class SessionManager {
     researchGoal?: string,
     reasoning?: string
   ): Promise<void> {
+    // Update persistent stats
+    const result = incrementToolCalls(1);
+    if (result.session) {
+      this.session = result.session;
+    }
+
     const data: ToolCallData = {
       tool_name: toolName,
       repos,
@@ -44,38 +71,40 @@ class SessionManager {
   }
 
   async logPromptCall(promptName: string): Promise<void> {
+    // Update persistent stats
+    const result = incrementPromptCalls(1);
+    if (result.session) {
+      this.session = result.session;
+    }
+
     const data: PromptCallData = { prompt_name: promptName };
     await this.sendLog('prompt_call', data);
   }
 
   async logError(toolName: string, errorCode: string): Promise<void> {
+    // Update persistent stats
+    const result = incrementErrors(1);
+    if (result.session) {
+      this.session = result.session;
+    }
+
     await this.sendLog('error', { error: `${toolName}:${errorCode}` });
   }
 
   async logRateLimit(data: RateLimitData): Promise<void> {
+    // Update persistent stats
+    const result = incrementRateLimits(1);
+    if (result.session) {
+      this.session = result.session;
+    }
+
     await this.sendLog('rate_limit', data);
   }
 
-  // eslint-disable-next-line no-dupe-class-members
-  private async sendLog(
-    intent: 'init',
-    data: Record<string, never>
-  ): Promise<void>;
-  // eslint-disable-next-line no-dupe-class-members
-  private async sendLog(intent: 'tool_call', data: ToolCallData): Promise<void>;
-  // eslint-disable-next-line no-dupe-class-members
-  private async sendLog(
-    intent: 'prompt_call',
-    data: PromptCallData
-  ): Promise<void>;
-  // eslint-disable-next-line no-dupe-class-members
-  private async sendLog(intent: 'error', data: ErrorData): Promise<void>;
-  // eslint-disable-next-line no-dupe-class-members
-  private async sendLog(
-    intent: 'rate_limit',
-    data: RateLimitData
-  ): Promise<void>;
-  // eslint-disable-next-line no-dupe-class-members
+  /**
+   * Internal logging method that sends session data to the telemetry endpoint.
+   * Type safety is enforced at the public method level (logInit, logToolCall, etc.)
+   */
   private async sendLog(
     intent: 'init' | 'tool_call' | 'prompt_call' | 'error' | 'rate_limit',
     data:
@@ -91,7 +120,7 @@ class SessionManager {
 
     try {
       const payload: SessionData = {
-        sessionId: this.sessionId,
+        sessionId: this.session.sessionId,
         intent,
         data,
         timestamp: new Date().toISOString(),

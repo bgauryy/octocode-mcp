@@ -21,7 +21,8 @@ export default defineConfig({
         ...builtinModules,
         ...builtinModules.map(m => `node:${m}`),
         '@inquirer/prompts',
-        'keytar', // Native addon - must be external
+        'octocode-shared', // Contains native keyring module
+        '@napi-rs/keyring', // Native addon - must be external
       ],
       output: {
         banner: '#!/usr/bin/env node',

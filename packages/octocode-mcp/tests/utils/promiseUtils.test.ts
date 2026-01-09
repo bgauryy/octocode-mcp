@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { executeWithErrorIsolation } from '../../src/utils/promiseUtils';
+import { executeWithErrorIsolation } from '../../src/utils/core/promise.js';
 import type { PromiseExecutionOptions } from '../../src/types';
 import { VALIDATION_ERRORS, PROMISE_ERRORS } from '../../src/errorCodes';
 import { logSessionError } from '../../src/session';
@@ -463,6 +463,41 @@ describe('promiseUtils', () => {
       expect(results[1]?.error?.message).toBe('123');
       expect(results[2]?.success).toBe(false);
       expect(results[2]?.error?.message).toBe('null');
+    });
+
+    it('should handle Promise.allSettled rejected status with non-Error reason', async () => {
+      // Test to ensure the mapping of rejected results is correct
+      // This tests line 71 where allSettled returns rejected status
+      const promises = [
+        () => Promise.resolve('success'),
+        () => {
+          // Use a plain throw to ensure we hit the else branch
+          throw 42; // Non-Error thrown value
+        },
+      ];
+
+      const results = await executeWithErrorIsolation(promises);
+
+      expect(results).toHaveLength(2);
+      expect(results[0]?.success).toBe(true);
+      expect(results[1]?.success).toBe(false);
+      expect(results[1]?.error).toBeInstanceOf(Error);
+    });
+
+    it('should handle createIsolatedPromise catch block with non-Error', async () => {
+      // Test the catch block in createIsolatedPromise
+      const promises = [
+        () => {
+          // Throw a non-Error to test the error conversion
+          throw { custom: 'error object' };
+        },
+      ];
+
+      const results = await executeWithErrorIsolation(promises);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]?.success).toBe(false);
+      expect(results[0]?.error).toBeInstanceOf(Error);
     });
 
     it('should handle errors in concurrency limit path', async () => {

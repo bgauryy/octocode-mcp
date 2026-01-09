@@ -464,7 +464,7 @@ describe('ToolsManager - Metadata Availability', () => {
       mockIsToolAvailableSync.mockReturnValue(true);
 
       // Make first tool throw error
-      vi.mocked(ALL_TOOLS[0]?.fn!).mockImplementation(() => {
+      vi.mocked(ALL_TOOLS[0]!.fn).mockImplementation(() => {
         throw new Error('Registration failed');
       });
 
@@ -487,7 +487,7 @@ describe('ToolsManager - Metadata Availability', () => {
       });
 
       // Make another tool throw error
-      vi.mocked(ALL_TOOLS[1]?.fn!).mockImplementation(() => {
+      vi.mocked(ALL_TOOLS[1]!.fn).mockImplementation(() => {
         throw new Error('Registration failed');
       });
 

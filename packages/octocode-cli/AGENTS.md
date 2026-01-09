@@ -80,6 +80,7 @@ src/
 │   ├── header.ts            # Welcome banner & branding
 │   ├── constants.ts         # UI constants & styling
 │   ├── gh-guidance.ts       # GitHub auth guidance
+│   ├── state.ts             # UI state management
 │   │
 │   ├── config/              # Configuration inspection
 │   │   ├── index.ts         # Config flow orchestration
@@ -99,10 +100,13 @@ src/
 │   │   └── prompts.ts       # IDE selection prompts
 │   │
 │   ├── skills-menu/         # Skills management
-│   │   └── index.ts         # Skills installation UI
+│   │   ├── index.ts         # Skills installation UI
+│   │   └── marketplace.ts   # Skills marketplace display
 │   │
 │   └── sync/                # Sync UI
-│       └── *.ts             # Sync flow components
+│       ├── index.ts         # Exports
+│       ├── flow.ts          # Sync flow logic
+│       └── display.ts       # Sync status display
 │
 └── utils/                   # 🛠️ Shared utilities
     ├── assert.ts            # Assertion helpers
@@ -127,15 +131,34 @@ src/
 ```
 skills/
 ├── README.md                # Skills documentation
-├── octocode-research/       # Research skill for code exploration
-│   ├── SKILL.md             # Skill definition
-│   └── references/          # Reference documents
-├── octocode-plan/           # Planning skill for task breakdown
-│   └── SKILL.md
 ├── octocode-generate/       # Generation skill for code creation
 │   └── SKILL.md
-└── octocode-pr-review/      # PR review skill
-    └── SKILL.md
+├── octocode-implement/      # Implementation skill from specs
+│   ├── SKILL.md
+│   └── references/
+│       ├── execution-phases.md
+│       ├── tool-reference.md
+│       └── workflow-patterns.md
+├── octocode-local-search/   # Local code exploration skill
+│   ├── SKILL.md
+│   └── references/
+│       ├── tool-reference.md
+│       └── workflow-patterns.md
+├── octocode-pr-review/      # PR review skill
+│   ├── SKILL.md
+│   └── references/
+│       ├── domain-reviewers.md
+│       ├── execution-lifecycle.md
+│       └── research-flows.md
+├── octocode-research/       # Research skill for code exploration
+│   ├── SKILL.md
+│   └── references/
+│       ├── tool-reference.md
+│       └── workflow-patterns.md
+└── octocode-roast/          # Code roasting skill for fun feedback
+    ├── SKILL.md
+    └── references/
+        └── sin-registry.md
 ```
 
 ### Tests Structure
@@ -161,14 +184,17 @@ tests/
     ├── assert.test.ts
     ├── context.test.ts
     ├── fs.test.ts
-    ├── mcp-config*.test.ts  # MCP config tests (3 files)
+    ├── mcp-config.test.ts
+    ├── mcp-config-coverage.test.ts
+    ├── mcp-config-extended.test.ts
     ├── mcp-io.test.ts
     ├── mcp-paths.test.ts
     ├── platform.test.ts
     ├── prompts.test.ts
     ├── research-output.test.ts
     ├── shell.test.ts
-    ├── skills*.test.ts      # Skills tests (2 files)
+    ├── skills.test.ts
+    ├── skills-fetch.test.ts
     ├── spinner.test.ts
     └── token-storage.test.ts
 ```

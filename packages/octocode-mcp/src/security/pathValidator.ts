@@ -33,13 +33,13 @@
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import type { PathValidationResult } from '../utils/types.js';
+import type { PathValidationResult } from '../utils/core/types.js';
 import { shouldIgnore } from './ignoredPathFilter.js';
 
 /**
  * PathValidator configuration options
  */
-export interface PathValidatorOptions {
+interface PathValidatorOptions {
   /** Primary workspace root directory. Defaults to CWD. */
   workspaceRoot?: string;
   /** Additional allowed root directories */

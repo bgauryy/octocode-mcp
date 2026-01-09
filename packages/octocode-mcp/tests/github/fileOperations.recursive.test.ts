@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { viewGitHubRepositoryStructureAPI } from '../../src/github/fileOperations.js';
 import { getOctokit } from '../../src/github/client.js';
-import { clearAllCache } from '../../src/utils/cache.js';
+import { clearAllCache } from '../../src/utils/http/cache.js';
 
 vi.mock('../../src/github/client.js');
 vi.mock('../../src/session.js', () => ({

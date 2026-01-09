@@ -5,7 +5,12 @@ import {
   getGitHubToken,
   clearConfigCachedToken,
   cleanup,
+  _setResolveTokenFn,
+  _resetResolveTokenFn,
 } from '../src/serverConfig.js';
+
+// Mock for resolveToken function
+const mockResolveToken = vi.fn();
 
 // Helper function to create mock process
 function createMockProcess() {
@@ -31,12 +36,17 @@ describe('ServerConfig Race Conditions', () => {
     // Reset environment variables - remove GITHUB_TOKEN to force CLI fallback
     process.env = { ...originalEnv };
     delete process.env.GITHUB_TOKEN;
+
+    // Mock resolveToken to return null so CLI fallback is used
+    _setResolveTokenFn(mockResolveToken);
+    mockResolveToken.mockResolvedValue(null);
   });
 
   afterEach(() => {
     process.env = originalEnv;
     cleanup();
     clearConfigCachedToken();
+    _resetResolveTokenFn();
   });
 
   it('should handle concurrent token requests without race condition', async () => {
@@ -125,6 +135,10 @@ describe('ServerConfig Race Conditions', () => {
     // While first is pending, start more
     const promise2 = getGitHubToken();
     const promise3 = getGitHubToken();
+
+    // Allow microtask queue to flush so spawn can be called
+    await Promise.resolve();
+    await Promise.resolve();
 
     // At this point, only 1 resolution should have started
     expect(resolutionsStarted).toBe(1);

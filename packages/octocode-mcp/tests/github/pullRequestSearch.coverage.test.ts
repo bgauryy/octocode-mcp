@@ -5,7 +5,7 @@ import * as queryBuilders from '../../src/github/queryBuilders';
 
 vi.mock('../../src/github/client');
 vi.mock('../../src/session');
-vi.mock('../../src/utils/cache', () => ({
+vi.mock('../../src/utils/http/cache.js', () => ({
   withDataCache: vi.fn((_key, fn) => fn()),
   generateCacheKey: vi.fn(() => 'cache-key'),
 }));

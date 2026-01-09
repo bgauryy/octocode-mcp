@@ -7,14 +7,14 @@ import type { GitHubReposSearchQuery, SimplifiedRepository } from '../types';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildRepoSearchQuery } from './queryBuilders';
-import { generateCacheKey, withDataCache } from '../utils/cache';
+import { generateCacheKey, withDataCache } from '../utils/http/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';
 
 /** Pagination info for repository search results */
-export interface RepoSearchPagination {
+interface RepoSearchPagination {
   currentPage: number;
   totalPages: number;
   perPage: number;

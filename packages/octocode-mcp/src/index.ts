@@ -2,9 +2,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { registerPrompts } from './prompts/prompts.js';
-import { clearAllCache } from './utils/cache.js';
+import { clearAllCache } from './utils/http/cache.js';
 import { initialize, cleanup, getGitHubToken } from './serverConfig.js';
-import { createLogger, LoggerFactory } from './utils/logger.js';
+import { createLogger, LoggerFactory } from './utils/core/logger.js';
 import {
   initializeSession,
   logSessionInit,

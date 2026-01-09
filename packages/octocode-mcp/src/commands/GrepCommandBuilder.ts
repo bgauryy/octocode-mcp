@@ -5,12 +5,12 @@
 
 import { BaseCommandBuilder } from './BaseCommandBuilder.js';
 import type { RipgrepQuery } from '../scheme/local_ripgrep.js';
-import { TYPE_TO_EXTENSIONS } from '../utils/fileTypes.js';
+import { TYPE_TO_EXTENSIONS } from '../utils/file/types.js';
 
 /**
  * Features not supported by grep (will generate warnings)
  */
-export interface GrepUnsupportedFeatures {
+interface GrepUnsupportedFeatures {
   smartCase: boolean;
   multiline: boolean;
   countMatches: boolean;

@@ -21,7 +21,7 @@ export const BaseQuerySchemaLocal = z.object({
 /**
  * Options for bulk query schema creation
  */
-export interface BulkQuerySchemaOptions {
+interface BulkQuerySchemaOptions {
   /** Maximum number of queries allowed (default: 3 for GitHub tools) */
   maxQueries?: number;
   /** Custom description prefix (default: uses BASE_SCHEMA.bulkQuery for GitHub) */
@@ -54,19 +54,3 @@ export function createBulkQuerySchema<T extends z.ZodTypeAny>(
       .describe(description),
   });
 }
-
-export type BaseQuery = z.infer<typeof BaseQuerySchema>;
-export type BaseQueryLocal = z.infer<typeof BaseQuerySchemaLocal>;
-
-/**
- * Common pagination parameter descriptions
- * Used across all tools for consistency
- */
-export const COMMON_PAGINATION_DESCRIPTIONS = {
-  charOffset: 'Start offset for pagination (default 0)',
-  charLength: 'Max characters to return (recommend ≤10,000 for large results)',
-  filesPerPage: 'Files per page. See tool schema for defaults/max.',
-  filePageNumber: 'File page (1-based, default 1). Use with filesPerPage.',
-  entriesPerPage: 'Entries per page. See tool schema for defaults/max.',
-  entryPageNumber: 'Entry page (1-based, default 1). Use with entriesPerPage.',
-} as const;

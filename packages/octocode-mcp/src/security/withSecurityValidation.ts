@@ -169,9 +169,7 @@ function getQueriesArray(
  * Extracts research fields from a single query object.
  * Used for logging individual queries in bulk operations.
  */
-export function extractResearchFieldsFromSingleQuery(
-  query: Record<string, unknown>
-): {
+function extractResearchFieldsFromSingleQuery(query: Record<string, unknown>): {
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -256,7 +254,7 @@ export function extractResearchFields(params: Record<string, unknown>): {
  * extractRepoOwnerFromSingleQuery({ owner: "vercel" })
  * // Returns: ["vercel"]
  */
-export function extractRepoOwnerFromSingleQuery(
+function extractRepoOwnerFromSingleQuery(
   query: Record<string, unknown>
 ): string[] {
   const repos: string[] = [];

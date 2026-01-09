@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { executeWithErrorIsolation } from '../../src/utils/promiseUtils.js';
+import { executeWithErrorIsolation } from '../../src/utils/core/promise.js';
 
 describe('promiseUtils - Concurrency and Timeout Coverage', () => {
   beforeEach(() => {

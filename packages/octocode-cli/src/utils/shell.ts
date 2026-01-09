@@ -4,7 +4,7 @@
 
 import { spawnSync } from 'node:child_process';
 
-export interface CommandResult {
+interface CommandResult {
   success: boolean;
   stdout: string;
   stderr: string;
@@ -73,7 +73,7 @@ export function getCommandVersion(
   return null;
 }
 
-export interface InteractiveCommandResult {
+interface InteractiveCommandResult {
   success: boolean;
   exitCode: number | null;
 }

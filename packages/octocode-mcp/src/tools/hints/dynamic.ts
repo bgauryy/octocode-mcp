@@ -14,76 +14,87 @@ import type { HintContext, HintStatus, ToolHintGenerators } from './types.js';
  */
 export const HINTS: Record<string, ToolHintGenerators> = {
   [STATIC_TOOL_NAMES.LOCAL_RIPGREP]: {
-    hasResults: (ctx: HintContext = {}) => [
-      ctx.searchEngine === 'grep'
-        ? 'Using grep fallback - install ripgrep for best performance and features.'
-        : undefined,
-      'Next: localGetFileContent for context (prefer matchString).',
-      'Also search imports/usages/defs with localSearchCode.',
-      ctx.fileCount && ctx.fileCount > 5
-        ? 'Tip: run queries in parallel.'
-        : undefined,
-    ],
+    // Only context-aware hints - base hints come from HOST static hints
+    hasResults: (ctx: HintContext = {}) => {
+      const hints: (string | undefined)[] = [];
+      if (ctx.searchEngine === 'grep') {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LOCAL_RIPGREP,
+            'grepFallback'
+          )
+        );
+      }
+      if (ctx.fileCount && ctx.fileCount > 5) {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LOCAL_RIPGREP,
+            'parallelTip'
+          )
+        );
+      }
+      if (ctx.fileCount && ctx.fileCount > 1) {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LOCAL_RIPGREP,
+            'multipleFiles'
+          )
+        );
+      }
+      return hints;
+    },
 
-    empty: (ctx: HintContext = {}) => [
-      ctx.searchEngine === 'grep'
-        ? 'Using grep fallback - note: grep does not respect .gitignore.'
-        : undefined,
-      'No matches. Broaden scope (noIgnore, hidden) or use fixedString.',
-      'Unsure of paths? localViewStructure or localFindFiles.',
-    ],
+    empty: (ctx: HintContext = {}) => {
+      const hints: (string | undefined)[] = [];
+      if (ctx.searchEngine === 'grep') {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LOCAL_RIPGREP,
+            'grepFallbackEmpty'
+          )
+        );
+      }
+      return hints;
+    },
 
     error: (ctx: HintContext = {}) => {
       if (ctx.errorType === 'size_limit') {
-        const baseHints = [
-          `Too many results${ctx.matchCount ? ` (${ctx.matchCount} matches)` : ''}. Narrow pattern/scope.`,
-          'Add type/path filters to focus.',
-          ctx.path?.includes('node_modules')
-            ? 'In node_modules, target specific packages.'
-            : undefined,
-          'Names only? Use localFindFiles.',
-          'Flow: filesOnly=true \u2192 refine \u2192 read.',
-        ];
         return [
-          ...baseHints,
+          `Too many results${ctx.matchCount ? ` (${ctx.matchCount} matches)` : ''}. Narrow pattern/scope.`,
+          ...(ctx.path?.includes('node_modules')
+            ? getMetadataDynamicHints(
+                STATIC_TOOL_NAMES.LOCAL_RIPGREP,
+                'nodeModulesSearch'
+              )
+            : []),
           ...getMetadataDynamicHints(
             STATIC_TOOL_NAMES.LOCAL_RIPGREP,
             'largeResult'
           ),
         ];
       }
-      return ['Tool unavailable; try localFindFiles or localViewStructure.'];
+      return [];
     },
   },
 
   [STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT]: {
-    hasResults: (_ctx: HintContext = {}) => [
-      'Next: trace imports/usages with localSearchCode.',
-      'Open related files (tests/types/impl) together.',
-      'Prefer matchString over full file.',
+    // Only context-aware hints - base hints come from HOST static hints
+    hasResults: (ctx: HintContext = {}) => [
+      (ctx as Record<string, unknown>).hasMoreContent
+        ? 'More content available - use charOffset for pagination.'
+        : undefined,
     ],
 
     empty: (_ctx: HintContext = {}) => [
-      'No match/file. Check path/pattern.',
-      'Locate via localFindFiles (name) or localSearchCode (filesOnly for paths).',
+      // Base hints come from HOST
     ],
 
     error: (ctx: HintContext = {}) => {
-      if (
-        ctx.errorType === 'size_limit' &&
-        ctx.isLarge &&
-        !ctx.hasPagination &&
-        !ctx.hasPattern
-      ) {
-        const baseHints = [
+      if (ctx.errorType === 'size_limit' && ctx.isLarge) {
+        return [
           ctx.fileSize
             ? `Large file (~${Math.round(ctx.fileSize * 0.25)}K tokens).`
-            : 'Large file.',
-          'Use matchString for sections, or charLength to paginate.',
-          'Avoid fullContent without pagination.',
-        ];
-        return [
-          ...baseHints,
+            : undefined,
           ...getMetadataDynamicHints(
             STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT,
             'largeFile'
@@ -92,14 +103,10 @@ export const HINTS: Record<string, ToolHintGenerators> = {
       }
 
       if (ctx.errorType === 'pattern_too_broad') {
-        const baseHints = [
+        return [
           ctx.tokenEstimate
             ? `Pattern too broad (~${ctx.tokenEstimate.toLocaleString()} tokens).`
-            : 'Pattern too broad.',
-          'Tighten pattern or paginate with charLength.',
-        ];
-        return [
-          ...baseHints,
+            : undefined,
           ...getMetadataDynamicHints(
             STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT,
             'patternTooBroad'
@@ -107,70 +114,82 @@ export const HINTS: Record<string, ToolHintGenerators> = {
         ];
       }
 
-      return ['Unknown path; find via localFindFiles or localSearchCode.'];
+      return [];
     },
   },
 
   [STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE]: {
-    hasResults: (ctx: HintContext = {}) => [
-      'Next: localSearchCode for patterns; localFindFiles for filters.',
-      'Drill deeper with depth=2 when needed.',
-      ctx.entryCount && ctx.entryCount > 10
-        ? 'Parallelize across directories.'
-        : undefined,
-    ],
+    // Only context-aware hints - base hints come from HOST static hints
+    hasResults: (ctx: HintContext = {}) => {
+      const hints: (string | undefined)[] = [];
+      if (ctx.entryCount && ctx.entryCount > 10) {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
+            'parallelize'
+          )
+        );
+      }
+      return hints;
+    },
 
     empty: (_ctx: HintContext = {}) => [
-      'Empty/missing. Use hidden=true or check parent.',
-      'Discover dirs with localFindFiles type="d".',
+      // Base hints come from HOST
     ],
 
     error: (ctx: HintContext = {}) => {
       if (ctx.errorType === 'size_limit' && ctx.entryCount) {
-        const baseHints = [
-          `Directory has ${ctx.entryCount} entries${ctx.tokenEstimate ? ` (~${ctx.tokenEstimate.toLocaleString()} tokens)` : ''}. Use entriesPerPage.`,
-          'Sort by recent; scan page by page.',
-        ];
         return [
-          ...baseHints,
+          `Directory has ${ctx.entryCount} entries${ctx.tokenEstimate ? ` (~${ctx.tokenEstimate.toLocaleString()} tokens)` : ''}.`,
           ...getMetadataDynamicHints(
             STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
             'largeDirectory'
           ),
         ];
       }
-      return ['Access failed; locate dirs with localFindFiles type="d".'];
+      return [];
     },
   },
 
   [STATIC_TOOL_NAMES.LOCAL_FIND_FILES]: {
+    // Only context-aware hints - base hints come from HOST static hints
     hasResults: (ctx: HintContext = {}) => {
-      const baseHints = [
-        'Found files. Next: localGetFileContent or localSearchCode.',
-        'Use modifiedWithin="7d" to track recent changes.',
-        ctx.fileCount && ctx.fileCount > 3 ? 'Batch in parallel.' : undefined,
-      ];
+      const hints: (string | undefined)[] = [];
+      // Add batchParallel hints for multiple results
+      if (ctx.fileCount && ctx.fileCount > 3) {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LOCAL_FIND_FILES,
+            'batchParallel'
+          )
+        );
+      }
+      // Add manyResults hints for large result sets
       if (ctx.fileCount && ctx.fileCount > 20) {
-        return [
-          ...baseHints,
+        hints.push(
           ...getMetadataDynamicHints(
             STATIC_TOOL_NAMES.LOCAL_FIND_FILES,
             'manyResults'
-          ),
-        ];
+          )
+        );
       }
-      return baseHints;
+      // Add configFiles hints when config files are found
+      if ((ctx as Record<string, unknown>).hasConfigFiles) {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LOCAL_FIND_FILES,
+            'configFiles'
+          )
+        );
+      }
+      return hints;
     },
 
     empty: (_ctx: HintContext = {}) => [
-      'No matches. Broaden iname, increase maxDepth, relax filters.',
-      'Or use localViewStructure/localSearchCode.',
-      'Syntax: time "7d", size "10M".',
+      // Base hints come from HOST
     ],
 
-    error: (_ctx: HintContext = {}) => [
-      'Search failed; try localViewStructure or localSearchCode.',
-    ],
+    error: (_ctx: HintContext = {}) => [],
   },
 
   [STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE]: {
@@ -179,11 +198,17 @@ export const HINTS: Record<string, ToolHintGenerators> = {
       const hints: (string | undefined)[] = [];
       if (ctx.hasOwnerRepo) {
         hints.push(
-          'Result is from single repo. Use githubGetFileContent with path.'
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE,
+            'singleRepo'
+          )
         );
       } else {
         hints.push(
-          'Results from multiple repos. Check owners/repos before fetching.'
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE,
+            'multiRepo'
+          )
         );
       }
       return hints;
@@ -195,13 +220,18 @@ export const HINTS: Record<string, ToolHintGenerators> = {
       // Path-specific guidance when match="path" returns empty
       if (ctx.match === 'path') {
         hints.push(
-          'match="path" searches file/directory NAMES only, not contents.'
-        );
-        hints.push(
-          'No paths contain this keyword. Try match="file" to search content instead.'
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE,
+            'pathEmpty'
+          )
         );
       } else if (!ctx.hasOwnerRepo) {
-        hints.push('Cross-repo search requires unique keywords (3+ chars).');
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.GITHUB_SEARCH_CODE,
+            'crossRepoEmpty'
+          )
+        );
       }
       // Note: "Try semantic variants" is in static hints, not duplicated here
       return hints;
@@ -210,19 +240,29 @@ export const HINTS: Record<string, ToolHintGenerators> = {
   },
 
   [STATIC_TOOL_NAMES.GITHUB_FETCH_CONTENT]: {
-    hasResults: (ctx: HintContext = {}) => [
+    hasResults: (ctx: HintContext = {}) => {
       // Only add context-aware hints, static hints come from content.json
-      ctx.isLarge
-        ? 'Large file - use matchString to target specific sections'
-        : undefined,
-    ],
+      const hints: (string | undefined)[] = [];
+      if (ctx.isLarge) {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.GITHUB_FETCH_CONTENT,
+            'largeFile'
+          )
+        );
+      }
+      return hints;
+    },
     empty: (_ctx: HintContext = {}) => [
       // Static hints cover the common cases, no dynamic hints needed
     ],
     error: (ctx: HintContext = {}) => {
       if (ctx.errorType === 'size_limit') {
         return [
-          'FILE_TOO_LARGE: Use matchString or startLine/endLine for partial reads',
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.GITHUB_FETCH_CONTENT,
+            'fileTooLarge'
+          ),
         ];
       }
       return [];
@@ -230,12 +270,20 @@ export const HINTS: Record<string, ToolHintGenerators> = {
   },
 
   [STATIC_TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]: {
-    hasResults: (ctx: HintContext = {}) => [
+    hasResults: (ctx: HintContext = {}) => {
       // Only add context-aware hints based on entry count
-      ctx.entryCount && ctx.entryCount > 50
-        ? `Large directory (${ctx.entryCount} entries) - use entriesPerPage to paginate`
-        : undefined,
-    ],
+      const hints: (string | undefined)[] = [];
+      if (ctx.entryCount && ctx.entryCount > 50) {
+        hints.push(`Large directory (${ctx.entryCount} entries).`);
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+            'largeDirectory'
+          )
+        );
+      }
+      return hints;
+    },
     empty: (_ctx: HintContext = {}) => [
       // Static hints cover the common cases
     ],
@@ -270,12 +318,300 @@ export const HINTS: Record<string, ToolHintGenerators> = {
     ],
     error: (_ctx: HintContext = {}) => [],
   },
+
+  // LSP Tools - Context-aware hints only (base hints come from HOST)
+  [STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION]: {
+    hasResults: (ctx: HintContext = {}) => {
+      // Only context-aware hints - base hints come from HOST static hints
+      const hints: (string | undefined)[] = [];
+      const locationCount = (ctx as Record<string, unknown>).locationCount as
+        | number
+        | undefined;
+      if (locationCount && locationCount > 1) {
+        hints.push(`Found ${locationCount} definitions.`);
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
+            'multipleDefinitions'
+          )
+        );
+      }
+      if ((ctx as Record<string, unknown>).hasExternalPackage) {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
+            'externalPackage'
+          )
+        );
+      }
+      if ((ctx as Record<string, unknown>).isFallback) {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
+            'fallbackMode'
+          )
+        );
+      }
+      return hints;
+    },
+    empty: (ctx: HintContext = {}) => {
+      // Only context-aware hints - base hints come from HOST static hints
+      const hints: (string | undefined)[] = [];
+      const searchRadius = (ctx as Record<string, unknown>).searchRadius;
+      const lineHint = (ctx as Record<string, unknown>).lineHint;
+      if (searchRadius) {
+        hints.push(
+          `Searched ±${searchRadius} lines from lineHint=${lineHint}. Adjust hint.`
+        );
+      }
+      if ((ctx as Record<string, unknown>).symbolName) {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
+            'symbolNotFound'
+          )
+        );
+      }
+      return hints;
+    },
+    error: (ctx: HintContext = {}) => {
+      const symbolName = (ctx as Record<string, unknown>).symbolName;
+      const lineHint = (ctx as Record<string, unknown>).lineHint;
+      const uri = (ctx as Record<string, unknown>).uri as string | undefined;
+
+      if ((ctx as Record<string, unknown>).errorType === 'symbol_not_found') {
+        return [
+          `Symbol "${symbolName}" not found at line ${lineHint}.`,
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
+            'symbolNotFound'
+          ),
+        ];
+      }
+      if ((ctx as Record<string, unknown>).errorType === 'file_not_found') {
+        return [
+          `File not found: ${uri}`,
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
+            'fileNotFound'
+          ),
+        ];
+      }
+      if ((ctx as Record<string, unknown>).errorType === 'timeout') {
+        return [
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
+            'timeout'
+          ),
+        ];
+      }
+      return [];
+    },
+  },
+
+  [STATIC_TOOL_NAMES.LSP_FIND_REFERENCES]: {
+    hasResults: (ctx: HintContext = {}) => {
+      // Only context-aware hints - base hints come from HOST static hints
+      const hints: (string | undefined)[] = [];
+      const locationCount = (ctx as Record<string, unknown>).locationCount as
+        | number
+        | undefined;
+      const fileCount = (ctx as Record<string, unknown>).fileCount;
+      const currentPage = (ctx as Record<string, unknown>).currentPage as
+        | number
+        | undefined;
+      const totalPages = (ctx as Record<string, unknown>).totalPages;
+
+      if (locationCount && locationCount > 20) {
+        hints.push(`Found ${locationCount} references.`);
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
+            'manyReferences'
+          )
+        );
+      }
+      if ((ctx as Record<string, unknown>).hasMultipleFiles) {
+        hints.push(`References span ${fileCount || 'multiple'} files.`);
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
+            'multipleFiles'
+          )
+        );
+      }
+      if ((ctx as Record<string, unknown>).hasMorePages) {
+        hints.push(`Page ${currentPage}/${totalPages}.`);
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
+            'pagination'
+          )
+        );
+      }
+      if ((ctx as Record<string, unknown>).isFallback) {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
+            'fallbackMode'
+          )
+        );
+      }
+      return hints;
+    },
+    empty: (ctx: HintContext = {}) => {
+      // Only context-aware hints - base hints come from HOST static hints
+      const hints: (string | undefined)[] = [];
+      if ((ctx as Record<string, unknown>).symbolName) {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
+            'symbolNotFound'
+          )
+        );
+      }
+      return hints;
+    },
+    error: (ctx: HintContext = {}) => {
+      if ((ctx as Record<string, unknown>).errorType === 'symbol_not_found') {
+        return [
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
+            'symbolNotFound'
+          ),
+        ];
+      }
+      if ((ctx as Record<string, unknown>).errorType === 'timeout') {
+        return [
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
+            'timeout'
+          ),
+        ];
+      }
+      return [];
+    },
+  },
+
+  [STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY]: {
+    hasResults: (ctx: HintContext = {}) => {
+      // Only context-aware hints - base hints come from HOST static hints
+      const hints: (string | undefined)[] = [];
+      const direction = (ctx as Record<string, unknown>).direction;
+      const callCount = (ctx as Record<string, unknown>).callCount;
+      const depth = (ctx as Record<string, unknown>).depth as
+        | number
+        | undefined;
+      const currentPage = (ctx as Record<string, unknown>).currentPage as
+        | number
+        | undefined;
+      const totalPages = (ctx as Record<string, unknown>).totalPages;
+
+      // Direction-based hints
+      if (direction === 'incoming') {
+        hints.push(`Found ${callCount || 'multiple'} callers.`);
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
+            'incomingResults'
+          )
+        );
+      } else {
+        hints.push(`Found ${callCount || 'multiple'} callees.`);
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
+            'outgoingResults'
+          )
+        );
+      }
+
+      // Depth hints
+      if (depth && depth > 1) {
+        hints.push(`Depth=${depth} showing ${depth}-level call chain.`);
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
+            'deepChain'
+          )
+        );
+      }
+
+      // Pagination hints
+      if ((ctx as Record<string, unknown>).hasMorePages) {
+        hints.push(`Page ${currentPage}/${totalPages}.`);
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
+            'pagination'
+          )
+        );
+      }
+
+      // Fallback hints
+      if ((ctx as Record<string, unknown>).isFallback) {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
+            'fallbackMode'
+          )
+        );
+      }
+
+      return hints;
+    },
+    empty: (ctx: HintContext = {}) => {
+      // Only context-aware hints - base hints come from HOST static hints
+      const hints: (string | undefined)[] = [];
+      const direction = (ctx as Record<string, unknown>).direction;
+
+      if (direction === 'incoming') {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
+            'noCallers'
+          )
+        );
+      } else {
+        hints.push(
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
+            'noCallees'
+          )
+        );
+      }
+
+      return hints;
+    },
+    error: (ctx: HintContext = {}) => {
+      const depth = (ctx as Record<string, unknown>).depth;
+
+      if ((ctx as Record<string, unknown>).errorType === 'not_a_function') {
+        return [
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
+            'notAFunction'
+          ),
+        ];
+      }
+      if ((ctx as Record<string, unknown>).errorType === 'timeout') {
+        return [
+          `Depth=${depth} caused timeout.`,
+          ...getMetadataDynamicHints(
+            STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
+            'timeout'
+          ),
+        ];
+      }
+      return [];
+    },
+  },
 };
 
 /**
  * Tool names that have dynamic hint generators
  */
-export type DynamicToolName = keyof typeof HINTS;
+type DynamicToolName = keyof typeof HINTS;
 
 /**
  * Check if a tool has dynamic hint generators

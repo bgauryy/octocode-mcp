@@ -44,7 +44,7 @@ vi.mock('../../src/github/client.js', () => ({
 }));
 
 // Mock cache to prevent interference
-vi.mock('../../src/utils/cache.js', () => ({
+vi.mock('../../src/utils/http/cache.js', () => ({
   generateCacheKey: vi.fn(() => 'test-cache-key'),
   withDataCache: vi.fn(async (_key: string, fn: () => unknown) => {
     return await fn();

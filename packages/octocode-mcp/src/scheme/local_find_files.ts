@@ -14,13 +14,12 @@ import {
  * Tool description for localFindFiles
  */
 export const LOCAL_FIND_FILES_DESCRIPTION =
-  DESCRIPTIONS[TOOL_NAMES.LOCAL_FIND_FILES] ||
-  'Find files by name, pattern, or metadata';
+  DESCRIPTIONS[TOOL_NAMES.LOCAL_FIND_FILES];
 
 /**
  * Find files query schema
  */
-export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
+const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
   path: z.string().describe(LOCAL_FIND_FILES.scope.path),
 
   maxDepth: z
@@ -146,5 +145,5 @@ export const BulkFindFilesSchema = createBulkQuerySchema(
   { maxQueries: 5 }
 );
 
-export type FindFilesQuery = z.infer<typeof FindFilesQuerySchema>;
-export type BulkFindFilesQuery = z.infer<typeof BulkFindFilesSchema>;
+type _FindFilesQuery = z.infer<typeof FindFilesQuerySchema>;
+type _BulkFindFilesQuery = z.infer<typeof BulkFindFilesSchema>;

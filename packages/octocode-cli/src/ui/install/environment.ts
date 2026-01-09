@@ -8,43 +8,16 @@ import {
   checkNodeInPath,
   checkNpmInPath,
   checkNpmRegistry,
-  checkOctocodePackageAsync,
 } from '../../features/node-check.js';
-import type { OctocodeAuthStatus } from '../../types/index.js';
 import { Spinner } from '../../utils/spinner.js';
 
 // Cache for environment check results (only check once per session)
 let cachedEnvStatus: NodeEnvironmentStatus | null = null;
 
 /**
- * Print Node.js environment status
- */
-export function printNodeEnvironmentStatus(
-  status: NodeEnvironmentStatus
-): void {
-  // Node.js check
-  printNodeStatus(status.nodeInstalled, status.nodeVersion);
-
-  // npm check
-  printNpmStatus(status.npmInstalled, status.npmVersion);
-
-  // Registry check
-  printRegistryStatus(status.registryStatus, status.registryLatency);
-
-  // Octocode package check
-  printOctocodePackageStatus(
-    status.octocodePackageAvailable,
-    status.octocodePackageVersion
-  );
-}
-
-/**
  * Print Node.js status
  */
-export function printNodeStatus(
-  installed: boolean,
-  version: string | null
-): void {
+function printNodeStatus(installed: boolean, version: string | null): void {
   if (installed) {
     console.log(`  ${c('green', '✓')} Node.js: ${bold(version || 'unknown')}`);
   } else {
@@ -55,10 +28,7 @@ export function printNodeStatus(
 /**
  * Print npm status
  */
-export function printNpmStatus(
-  installed: boolean,
-  version: string | null
-): void {
+function printNpmStatus(installed: boolean, version: string | null): void {
   if (installed) {
     console.log(`  ${c('green', '✓')} npm: ${bold(version || 'unknown')}`);
   } else {
@@ -71,7 +41,7 @@ export function printNpmStatus(
 /**
  * Print npm registry status
  */
-export function printRegistryStatus(
+function printRegistryStatus(
   status: 'ok' | 'slow' | 'failed',
   latency: number | null
 ): void {
@@ -97,24 +67,6 @@ export function printRegistryStatus(
 }
 
 /**
- * Print octocode-mcp package availability status
- */
-export function printOctocodePackageStatus(
-  available: boolean,
-  version: string | null
-): void {
-  if (available) {
-    console.log(
-      `  ${c('green', '✓')} octocode-mcp: ${c('green', 'Available')} ${dim(`(v${version})`)}`
-    );
-  } else {
-    console.log(
-      `  ${c('red', '✗')} octocode-mcp: ${c('red', 'Not found in registry')}`
-    );
-  }
-}
-
-/**
  * Check and print environment status with loader for slow operations
  * Results are cached to avoid repeated network calls that can slow down menus
  */
@@ -126,10 +78,6 @@ export async function checkAndPrintEnvironmentWithLoader(): Promise<NodeEnvironm
     printRegistryStatus(
       cachedEnvStatus.registryStatus,
       cachedEnvStatus.registryLatency
-    );
-    printOctocodePackageStatus(
-      cachedEnvStatus.octocodePackageAvailable,
-      cachedEnvStatus.octocodePackageVersion
     );
     return cachedEnvStatus;
   }
@@ -148,12 +96,6 @@ export async function checkAndPrintEnvironmentWithLoader(): Promise<NodeEnvironm
   registrySpinner.clear();
   printRegistryStatus(registryCheck.status, registryCheck.latency);
 
-  // 4. Check Octocode Package (Async - network call with 4s timeout)
-  const octocodeSpinner = new Spinner('  octocode-mcp: Checking...').start();
-  const octocodeCheck = await checkOctocodePackageAsync();
-  octocodeSpinner.clear();
-  printOctocodePackageStatus(octocodeCheck.available, octocodeCheck.version);
-
   // Cache the result
   cachedEnvStatus = {
     nodeInstalled: nodeCheck.installed,
@@ -162,30 +104,11 @@ export async function checkAndPrintEnvironmentWithLoader(): Promise<NodeEnvironm
     npmVersion: npmCheck.version,
     registryStatus: registryCheck.status,
     registryLatency: registryCheck.latency,
-    octocodePackageAvailable: octocodeCheck.available,
-    octocodePackageVersion: octocodeCheck.version,
+    octocodePackageAvailable: true, // Not checked anymore
+    octocodePackageVersion: null,
   };
 
   return cachedEnvStatus;
-}
-
-/**
- * Print GitHub authentication status
- */
-export function printAuthStatus(status: OctocodeAuthStatus): void {
-  if (status.authenticated) {
-    const source =
-      status.tokenSource === 'gh-cli'
-        ? 'gh CLI'
-        : status.tokenSource === 'octocode'
-          ? 'Octocode'
-          : 'env';
-    console.log(
-      `  ${c('green', '✓')} Auth: ${c('cyan', '@' + (status.username || 'unknown'))} ${dim(`(${source})`)}`
-    );
-  } else {
-    console.log(`  ${c('yellow', '○')} Auth: ${c('dim', 'Not signed in')}`);
-  }
 }
 
 /**
@@ -205,7 +128,6 @@ export function hasEnvironmentIssues(status: NodeEnvironmentStatus): boolean {
     !status.nodeInstalled ||
     !status.npmInstalled ||
     status.registryStatus === 'slow' ||
-    status.registryStatus === 'failed' ||
-    !status.octocodePackageAvailable
+    status.registryStatus === 'failed'
   );
 }

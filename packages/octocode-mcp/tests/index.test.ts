@@ -8,7 +8,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 // Mock all dependencies before importing index
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js');
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js');
-vi.mock('../src/utils/cache.js');
+vi.mock('../src/utils/http/cache.js');
 vi.mock('../src/prompts/prompts.js');
 vi.mock('../src/tools/github_search_code.js');
 vi.mock('../src/tools/github_fetch_content.js');
@@ -70,17 +70,16 @@ const mockRegisterViewGitHubRepoStructureTool = vi.mocked(
 );
 
 describe('Index Module', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let processExitSpy: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let processStdinResumeSpy: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let processStdinOnSpy: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let processOnSpy: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let processStdoutUncorkSpy: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let processStderrUncorkSpy: any;
   let originalGithubToken: string | undefined;
   let originalGhToken: string | undefined;

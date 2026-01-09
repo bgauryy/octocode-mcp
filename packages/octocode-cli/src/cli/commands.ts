@@ -66,15 +66,22 @@ function printNodeDoctorHintCLI(): void {
 
 /**
  * Format token source for display
+ * @param source - The token source type
+ * @param envSource - Optional specific env var name when source is 'env'
  */
-function formatTokenSource(source: TokenSource): string {
+function formatTokenSource(source: TokenSource, envSource?: string): string {
   switch (source) {
     case 'octocode':
       return c('cyan', 'octocode');
     case 'gh-cli':
       return c('magenta', 'gh cli');
     case 'env':
-      return c('green', 'GITHUB_TOKEN');
+      // Show specific env var name if available
+      if (envSource) {
+        const varName = envSource.replace('env:', '');
+        return c('green', varName);
+      }
+      return c('green', 'environment variable');
     default:
       return dim('none');
   }
@@ -785,7 +792,9 @@ const tokenCommand: CLICommand = {
     if (showSource) {
       console.log();
       console.log(`  ${c('green', '✓')} Token found`);
-      console.log(`  ${dim('Source:')} ${formatTokenSource(result.source)}`);
+      console.log(
+        `  ${dim('Source:')} ${formatTokenSource(result.source, result.envSource)}`
+      );
       if (result.username) {
         console.log(`  ${dim('User:')} ${c('cyan', '@' + result.username)}`);
       }
@@ -991,7 +1000,7 @@ const syncCommand: CLICommand = {
 /**
  * All available commands
  */
-export const commands: CLICommand[] = [
+const commands: CLICommand[] = [
   installCommand,
   authCommand,
   loginCommand,

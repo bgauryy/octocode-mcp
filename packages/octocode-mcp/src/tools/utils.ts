@@ -8,7 +8,7 @@ import type { HintContext } from '../types/metadata.js';
 import { getHints } from './hints/index.js';
 import { logSessionError } from '../session.js';
 import { TOOL_ERRORS } from '../errorCodes.js';
-import { createErrorResult } from '../utils/errorResult.js';
+import { createErrorResult } from '../utils/response/error.js';
 
 export { createErrorResult };
 
@@ -35,7 +35,7 @@ export async function invokeCallbackSafely(
 /**
  * Options for createSuccessResult hint generation
  */
-export interface SuccessResultOptions {
+interface SuccessResultOptions {
   /** Context for generating dynamic hints */
   hintContext?: HintContext;
   /** Additional custom hints to append (e.g., pagination hints) */

@@ -7,9 +7,10 @@ Pre-built Claude Code skills for enhanced AI-assisted research and development.
 | Skill | Description | Flow |
 |-------|-------------|------|
 | `octocode-research` | Evidence-first code forensics (local & GitHub) | PREPARE → DISCOVER → ANALYZE → OUTPUT |
-| `octocode-pr-review` | Defects-first PR review across 6 domains | CONTEXT → CHECKPOINT → ANALYSIS → REPORT |
-| `octocode-plan` | Research-driven planning & implementation | UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY |
-| `octocode-generate` | App scaffolding with stack selection | DISCOVERY → STACK → PLAN → SCAFFOLD → VALIDATE |
+| `octocode-local-search` | Local-first code exploration and discovery | DISCOVER → PLAN → EXECUTE → VERIFY → OUTPUT |
+| `octocode-implement` | Research-driven feature implementation from specs | SPEC → CONTEXT → PLAN → RESEARCH → IMPLEMENT → VALIDATE |
+| `octocode-pr-review` | Defects-first PR review across 6+ domains | CONTEXT → CHECKPOINT → ANALYSIS → FINALIZE → REPORT |
+| `octocode-generate` | App scaffolding with stack selection | DISCOVERY → STACK → PLAN → RESEARCH → SCAFFOLD → VALIDATE |
 | `octocode-roast` | Brutally honest code review with comedic flair | SCOPE → ROAST → INVENTORY → SPOTLIGHT → REDEMPTION |
 
 ## Installation
@@ -37,53 +38,79 @@ cp -r skills/octocode-* .claude/skills/
 ## Skill Details
 
 ### octocode-research
-**Use when**: Answering questions about codebases, implementations, dependencies, or bugs.
+
+**Use when**: Answering questions about codebases, implementations, dependencies, or bugs. Researching code across local workspace AND GitHub repositories.
 
 Features:
 - Local-first strategy (prefer local tools over shell commands)
-- GitHub code forensics
+- GitHub code forensics across repositories
 - Cross-domain transitions (Local ↔ GitHub)
-- node_modules inspection
+- node_modules inspection with `noIgnore=true`
+- Multi-agent parallelization for independent hypotheses
+- Validation pattern: Discover → Verify → Cross-check → Confirm
+
+### octocode-local-search
+
+**Use when**: Exploring unfamiliar codebases, searching for patterns locally, understanding project structure, finding implementations in your workspace.
+
+Features:
+- Local-only focus (no GitHub tools)
+- Structured discovery with `localViewStructure`, `localSearchCode`, `localFindFiles`, `localGetFileContent`
+- Interactive planning with user checkpoints
+- node_modules inspection with `noIgnore=true`
+- Token-efficient workflows with discovery mode
+- Multi-agent parallelization for independent research domains
+
+### octocode-implement
+
+**Use when**: Implementing features from specification documents (MD files, PRDs, tickets), building new functionality in large/unfamiliar codebases, or executing task lists with proper research.
+
+Features:
+- Reads and parses task specifications from MD files
+- Deep codebase research before writing code
+- LSP tools for semantic code intelligence (`lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`)
+- Pattern discovery to follow existing codebase conventions
+- Impact analysis before modifying code
+- Test-driven implementation with validation gates
+- User checkpoints at key decision points
+- Multi-agent parallelization for independent tasks
+
+Core Principle: "Read 10x more than you write. Measure twice, cut once."
 
 ### octocode-pr-review
-**Use when**: Reviewing pull requests for issues.
+
+**Use when**: Reviewing pull requests for bugs, security vulnerabilities, architecture problems, performance issues, and code quality.
 
 Domain Reviewers:
-- Bug (runtime errors, logic flaws)
-- Architecture (pattern violations, coupling)
-- Performance (O(n²), memory leaks)
-- Code Quality (naming, conventions)
-- Error Handling (swallowed exceptions)
-- Flow Impact (breaking changes)
-
-### octocode-plan
-**Use when**: Planning complex implementations requiring research.
-
-Goal Types:
-- RESEARCH_ONLY - No code changes
-- ANALYSIS - Understand existing code
-- CREATION - New files/features
-- FEATURE / BUG / REFACTOR - Modify existing
+- 🐛 Bug (runtime errors, logic flaws, resource leaks)
+- 🏗️ Architecture (pattern violations, circular dependencies)
+- ⚡ Performance (O(n²), memory leaks, blocking ops)
+- 🎨 Code Quality (naming, conventions, DRY violations)
+- 🔗 Duplicate Code (missed reuse opportunities)
+- 🚨 Error Handling (swallowed exceptions, poor diagnostics)
+- 🔄 Flow Impact (breaking changes, altered data paths)
 
 ### octocode-generate
-**Use when**: Scaffolding new applications.
+
+**Use when**: Scaffolding new applications with optimal tech stack selection.
 
 Supported Frameworks:
-- Fullstack: Next.js, T3 Stack, Remix, Nuxt
-- Frontend: Vite, Angular
-- Mobile: Expo
-- Desktop: Electron Vite
-- Backend: NestJS, Hono, Fastify
+- **Fullstack**: Next.js, T3 Stack, Remix, Nuxt
+- **Frontend**: Vite, Angular
+- **Mobile**: Expo (React Native)
+- **Desktop**: Electron Vite
+- **Backend**: NestJS, Hono, Fastify
 
 ### octocode-roast
+
 **Use when**: You want entertainment with your code review, finding antipatterns, or humorous feedback.
 
 Features:
-- Sin severity classification (FELONY → PARKING TICKET)
+- Sin severity classification (FELONY → WAR CRIME → PARKING TICKET)
 - Personalized zingers based on actual patterns found
-- Multiple roast personas (Gordon Ramsay, Disappointed Dad, Tech Bro, etc.)
-- User checkpoint before fixes
-- Actionable redemption arc
+- Multiple roast personas (Gordon Ramsay, Disappointed Dad, Tech Bro, Israeli Sabra, etc.)
+- User checkpoint before fixes (Redemption Arc)
+- Actionable fixes with before/after
 
 ## Skill Structure
 
@@ -92,7 +119,7 @@ Each skill follows Anthropic's best practices:
 ```
 {skill-name}/
 ├── SKILL.md           # Main reference (<500 lines)
-└── resources/         # Supporting documentation (optional)
+└── references/        # Supporting documentation (optional)
     ├── tool-reference.md
     └── workflow-patterns.md
 ```
@@ -107,6 +134,7 @@ All skills follow these core principles:
 4. **TodoWrite**: Track progress with tasks
 5. **Validation**: Green build required
 6. **No Time Estimates**: Never provide timing
+7. **Evidence Citing**: Include file paths and code references
 
 ## Creating Custom Skills
 
@@ -120,7 +148,7 @@ See `octocode-research/` as a template. Key guidelines:
    ---
    ```
 
-2. **Keep SKILL.md under 500 lines** - Use resources/ for details
+2. **Keep SKILL.md under 500 lines** - Use references/ for details
 
 3. **Description = When to Use** - Don't describe workflow, describe triggers
 
@@ -128,5 +156,5 @@ See `octocode-research/` as a template. Key guidelines:
 
 ## More Info
 
-- [Claude Skills Documentation](https://support.claude.com/en/articles/12512176-what-are-skills)
+- [Claude Skills Documentation](https://support.anthropic.com/en/articles/10176498-how-to-use-custom-instructions-for-your-projects)
 - [Octocode MCP](https://octocode.ai)
