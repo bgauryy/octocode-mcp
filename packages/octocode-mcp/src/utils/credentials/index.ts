@@ -10,7 +10,10 @@ export {
   resolveToken,
   type ResolvedToken,
 
-  // Legacy: stored token only (keychain/file, no env vars)
+  // Env-only token check (no storage interaction)
+  getTokenFromEnv,
+
+  // Stored token only (keychain/file, no env vars)
   getToken as getOctocodeToken,
 
   // Testing utilities

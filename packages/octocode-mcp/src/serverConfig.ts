@@ -1,7 +1,7 @@
 import { getGithubCLIToken } from './utils/exec/index.js';
 import {
-  resolveToken as resolveTokenImpl,
-  type ResolvedToken as _ResolvedToken,
+  getTokenFromEnv,
+  getOctocodeToken,
 } from './utils/credentials/index.js';
 import { version } from '../package.json';
 import type { ServerConfig } from './types.js';
@@ -14,21 +14,59 @@ let initializationPromise: Promise<void> | null = null;
 // Track pending token resolution to prevent race conditions
 let pendingTokenPromise: Promise<string | null> | null = null;
 
-// Injectable function for testing
-let _resolveToken = resolveTokenImpl;
+// Injectable functions for testing
+let _getTokenFromEnv = getTokenFromEnv;
+let _getOctocodeToken = getOctocodeToken;
+let _getGithubCLIToken = getGithubCLIToken;
+
+// Legacy mock for backward compatibility with existing tests
+// Maps { token, source } format to the new split functions
+type ResolvedToken = { token: string; source: string } | null;
+type ResolveTokenFn = () => Promise<ResolvedToken>;
+let _legacyResolveToken: ResolveTokenFn | null = null;
 
 /**
- * @internal - For testing only
+ * @internal - For testing only (NEW API)
  */
-export function _setResolveTokenFn(fn: typeof resolveTokenImpl): void {
-  _resolveToken = fn;
+export function _setTokenResolvers(resolvers: {
+  getTokenFromEnv?: typeof getTokenFromEnv;
+  getOctocodeToken?: typeof getOctocodeToken;
+  getGithubCLIToken?: typeof getGithubCLIToken;
+}): void {
+  if (resolvers.getTokenFromEnv) {
+    _getTokenFromEnv = resolvers.getTokenFromEnv;
+  }
+  if (resolvers.getOctocodeToken) {
+    _getOctocodeToken = resolvers.getOctocodeToken;
+  }
+  if (resolvers.getGithubCLIToken) {
+    _getGithubCLIToken = resolvers.getGithubCLIToken;
+  }
 }
 
 /**
- * @internal - For testing only
+ * @internal - For testing only (NEW API)
+ */
+export function _resetTokenResolvers(): void {
+  _getTokenFromEnv = getTokenFromEnv;
+  _getOctocodeToken = getOctocodeToken;
+  _getGithubCLIToken = getGithubCLIToken;
+  _legacyResolveToken = null;
+}
+
+/**
+ * @internal - For testing only (LEGACY API - backward compatibility)
+ * Sets a mock function that returns { token, source } | null
+ */
+export function _setResolveTokenFn(fn: ResolveTokenFn): void {
+  _legacyResolveToken = fn;
+}
+
+/**
+ * @internal - For testing only (LEGACY API - backward compatibility)
  */
 export function _resetResolveTokenFn(): void {
-  _resolveToken = resolveTokenImpl;
+  _legacyResolveToken = null;
 }
 
 function parseStringArray(value?: string): string[] | undefined {
@@ -69,12 +107,32 @@ function parseBooleanEnvDefaultTrue(value: string | undefined): boolean {
 }
 
 async function resolveGitHubToken(): Promise<string | null> {
-  // Priority 1-5: Use octocode-shared's unified token resolution
-  // Handles: env vars (OCTOCODE_TOKEN > GH_TOKEN > GITHUB_TOKEN) → keychain → file
+  // Support legacy test mock (backward compatibility)
+  if (_legacyResolveToken) {
+    try {
+      const resolved = await _legacyResolveToken();
+      return resolved?.token ?? null;
+    } catch (error) {
+      if (error instanceof Error && error.message) {
+        error.message = maskSensitiveData(error.message);
+      }
+      return null;
+    }
+  }
+
+  // Priority 1-3: Environment variables (fastest, no I/O)
+  // OCTOCODE_TOKEN > GH_TOKEN > GITHUB_TOKEN
+  const envToken = _getTokenFromEnv();
+  if (envToken) {
+    return envToken;
+  }
+
+  // Priority 4: GitHub CLI token via `gh auth token`
+  // For users who have authenticated with `gh auth login`
   try {
-    const resolved = await _resolveToken();
-    if (resolved?.token) {
-      return resolved.token;
+    const cliToken = await _getGithubCLIToken();
+    if (cliToken?.trim()) {
+      return cliToken.trim();
     }
   } catch (error) {
     if (error instanceof Error && error.message) {
@@ -82,11 +140,11 @@ async function resolveGitHubToken(): Promise<string | null> {
     }
   }
 
-  // Priority 6: GitHub CLI token (external fallback via `gh auth token`)
+  // Priority 5-6: Stored credentials (keychain → file)
   try {
-    const cliToken = await getGithubCLIToken();
-    if (cliToken?.trim()) {
-      return cliToken.trim();
+    const storedToken = await _getOctocodeToken();
+    if (storedToken) {
+      return storedToken;
     }
   } catch (error) {
     if (error instanceof Error && error.message) {
@@ -183,15 +241,8 @@ export async function getGitHubToken(): Promise<string | null> {
   return pendingTokenPromise;
 }
 
-export async function getToken(): Promise<string> {
-  const token = await getGitHubToken();
-  if (!token) {
-    const sanitizedMessage = maskSensitiveData(
-      CONFIG_ERRORS.NO_GITHUB_TOKEN.message
-    );
-    throw new Error(sanitizedMessage);
-  }
-  return token;
+export async function getToken(): Promise<string | null> {
+  return getGitHubToken();
 }
 
 export function isLocalEnabled(): boolean {

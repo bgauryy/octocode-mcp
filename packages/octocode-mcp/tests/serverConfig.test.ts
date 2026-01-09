@@ -1,6 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { spawn, ChildProcess } from 'child_process';
-import { EventEmitter } from 'events';
+import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
 import {
   initialize,
   cleanup,
@@ -9,57 +7,54 @@ import {
   clearConfigCachedToken,
   getServerConfig,
   isLoggingEnabled,
-  _setResolveTokenFn,
-  _resetResolveTokenFn,
+  _setTokenResolvers,
+  _resetTokenResolvers,
 } from '../src/serverConfig.js';
 
-// Mock function for resolve token (returns ResolvedToken | null)
-const mockResolveToken = vi.fn();
+// Mock functions for the new token resolvers API
+let mockGetTokenFromEnv: Mock<() => string | null>;
+let mockGetOctocodeToken: Mock<(hostname?: string) => Promise<string | null>>;
+let mockGetGithubCLIToken: Mock<() => Promise<string | null>>;
 
-// Helper function to create mock process
-function createMockProcess() {
-  const mockProcess = new EventEmitter() as EventEmitter & {
-    stdout: EventEmitter;
-    stderr: EventEmitter;
-    kill: ReturnType<typeof vi.fn>;
-  };
-  mockProcess.stdout = new EventEmitter();
-  mockProcess.stderr = new EventEmitter();
-  mockProcess.kill = vi.fn();
-  return mockProcess as unknown as ChildProcess;
+// Helper to setup all token resolvers with mocks
+function setupTokenMocks() {
+  mockGetTokenFromEnv = vi.fn(() => null);
+  mockGetOctocodeToken = vi.fn(async () => null);
+  mockGetGithubCLIToken = vi.fn(async () => null);
+
+  _setTokenResolvers({
+    getTokenFromEnv: mockGetTokenFromEnv,
+    getOctocodeToken: mockGetOctocodeToken,
+    getGithubCLIToken: mockGetGithubCLIToken,
+  });
 }
 
-// Helper function to mock spawn with success
+// Helper function to mock CLI token success
 function mockSpawnSuccess(token: string) {
-  const mockProcess = createMockProcess();
-  vi.mocked(spawn).mockReturnValue(mockProcess);
-  setTimeout(() => {
-    mockProcess.stdout!.emit('data', token + '\n');
-    mockProcess.emit('close', 0);
-  }, 10);
-  return mockProcess;
+  mockGetGithubCLIToken.mockResolvedValue(token);
 }
 
-// Helper function to mock spawn with failure
+// Helper function to mock CLI token failure
 function mockSpawnFailure() {
-  const mockProcess = createMockProcess();
-  vi.mocked(spawn).mockReturnValue(mockProcess);
-  setTimeout(() => {
-    mockProcess.emit('close', 1);
-  }, 10);
-  return mockProcess;
+  mockGetGithubCLIToken.mockResolvedValue(null);
 }
 
-// Helper function to mock token resolution
-// Returns { token, source } or null
+// Helper function to mock token resolution via env/stored credentials
 function mockTokenResolution(
   token: string | null,
   source: string = 'env:GITHUB_TOKEN'
 ) {
   if (token) {
-    mockResolveToken.mockResolvedValue({ token, source });
+    // Simulate token coming from env
+    if (source.startsWith('env:')) {
+      mockGetTokenFromEnv.mockReturnValue(token);
+    } else {
+      // Token from storage
+      mockGetOctocodeToken.mockResolvedValue(token);
+    }
   } else {
-    mockResolveToken.mockResolvedValue(null);
+    mockGetTokenFromEnv.mockReturnValue(null);
+    mockGetOctocodeToken.mockResolvedValue(null);
   }
 }
 
@@ -86,22 +81,17 @@ describe('ServerConfig - Simplified Version', () => {
     delete process.env.GITHUB_API_URL;
     delete process.env.REQUEST_TIMEOUT;
     delete process.env.MAX_RETRIES;
+    delete process.env.OCTOCODE_TOKEN;
 
-    // Set up injectable mock for token resolution
-    _setResolveTokenFn(mockResolveToken);
-    mockResolveToken.mockResolvedValue(null);
-  });
-
-  afterEach(() => {
-    // Ensure cache is cleared between tests
-    clearConfigCachedToken();
+    // Set up injectable mocks for token resolution (new API)
+    setupTokenMocks();
   });
 
   afterEach(() => {
     process.env = originalEnv;
     cleanup();
     clearConfigCachedToken();
-    _resetResolveTokenFn();
+    _resetTokenResolvers();
   });
 
   describe('Configuration Initialization', () => {
@@ -312,11 +302,10 @@ describe('ServerConfig - Simplified Version', () => {
     });
 
     it('should handle octocode-cli errors gracefully', async () => {
-      delete process.env.GITHUB_TOKEN;
       clearConfigCachedToken();
 
       mockSpawnFailure();
-      mockResolveToken.mockRejectedValue(new Error('Read error'));
+      mockGetOctocodeToken.mockRejectedValue(new Error('Read error'));
 
       const token = await getGitHubToken();
 
@@ -324,27 +313,25 @@ describe('ServerConfig - Simplified Version', () => {
     });
   });
 
-  describe('getToken with Error Throwing', () => {
+  describe('getToken', () => {
     it('should return token when available', async () => {
-      process.env.GITHUB_TOKEN = 'available-token';
       clearConfigCachedToken();
       // Mock resolveToken to return the env token
       mockTokenResolution('available-token', 'env:GITHUB_TOKEN');
-      mockSpawnFailure();
 
       const token = await getToken();
 
       expect(token).toBe('available-token');
     });
 
-    it('should throw when no token available', async () => {
-      delete process.env.GITHUB_TOKEN;
+    it('should return null when no token available', async () => {
       clearConfigCachedToken();
       mockSpawnFailure();
+      mockTokenResolution(null);
 
-      await expect(getToken()).rejects.toThrow(
-        'No GitHub token found. Please authenticate with GitHub CLI (gh auth login) or set GITHUB_TOKEN/GH_TOKEN environment variable'
-      );
+      const token = await getToken();
+
+      expect(token).toBeNull();
     });
   });
 
