@@ -165,15 +165,3 @@ export function clearOctokitInstances(): void {
   instances.clear();
   pendingDefaultPromise = null;
 }
-
-/**
- * Remove expired entries from the instance cache.
- * Can be called periodically to prevent memory buildup from stale entries.
- */
-export function clearExpiredTokens(): void {
-  for (const [key, cached] of instances.entries()) {
-    if (isExpired(cached)) {
-      instances.delete(key);
-    }
-  }
-}

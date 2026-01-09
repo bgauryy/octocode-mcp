@@ -13,12 +13,6 @@ export {
   // Legacy: stored token only (keychain/file, no env vars)
   getToken as getOctocodeToken,
 
-  // Environment variable support
-  getTokenFromEnv,
-  getEnvTokenSource,
-  hasEnvToken,
-  ENV_TOKEN_VARS,
-
   // Testing utilities
   _setSecureStorageAvailable,
   _resetSecureStorageState,
