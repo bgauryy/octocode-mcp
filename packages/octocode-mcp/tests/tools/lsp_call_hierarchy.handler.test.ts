@@ -44,6 +44,9 @@ vi.mock('../../src/utils/exec/index.js', () => ({
   checkCommandAvailability: vi
     .fn()
     .mockResolvedValue({ available: true, path: '/usr/bin/rg' }),
+  getGithubCLIToken: vi.fn().mockResolvedValue(null),
+  checkNpmAvailability: vi.fn().mockResolvedValue({ available: true }),
+  executeNpmCommand: vi.fn().mockResolvedValue({ success: true, stdout: '' }),
 }));
 
 describe('LSP Call Hierarchy Handler Tests', () => {

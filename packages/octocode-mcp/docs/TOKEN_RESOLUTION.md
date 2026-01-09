@@ -11,24 +11,53 @@ The Octocode MCP server requires a GitHub token to access the GitHub API. Rather
 When the MCP server needs a GitHub token, it checks sources in this order:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ Token Resolution (Priority Order)                       │
-├─────────────────────────────────────────────────────────┤
+┌─────────────────────────────────────────────────────────────┐
+│ Token Resolution (Priority Order)                           │
+├─────────────────────────────────────────────────────────────┤
 │ 1. OCTOCODE_TOKEN env? → Return immediately             │ ← No storage interaction
 │ 2. GH_TOKEN env?       → Return immediately             │ ← No storage interaction
 │ 3. GITHUB_TOKEN env?   → Return immediately             │ ← No storage interaction
-│ 4. Keychain?           → Read from OS secure storage    │ ← Only if env vars not set
-│ 5. File?               → Read from encrypted file       │ ← Fallback storage
-│ 6. gh auth token?      → External CLI call              │ ← Last resort
-└─────────────────────────────────────────────────────────┘
+│ 4. gh auth token?      → External CLI call              │ ← After env vars
+│ 5. Keychain?           → Read from OS secure storage    │ ← Stored credentials
+│ 6. File?               → Read from encrypted file       │ ← Fallback storage
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ### Why This Order?
 
 1. **Environment variables first** — Fast, no I/O, allows CI/CD overrides
-2. **Secure storage second** — OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service)
-3. **Encrypted file third** — Fallback when keychain unavailable
-4. **GitHub CLI last** — Compatibility with existing `gh` installations
+2. **GitHub CLI fourth** — Users who have authenticated with `gh auth login` work automatically
+3. **Secure storage fifth** — OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+4. **Encrypted file last** — Fallback when keychain unavailable
+
+### Why Keychain Storage?
+
+The Keychain (OS secure storage) exists as a storage option for several important reasons:
+
+| Storage Method | Security | Persistence | Drawbacks |
+|----------------|----------|-------------|-----------|
+| **Env vars** | ⚠️ Medium | ❌ Per-session | Can leak in `ps e`, stored as plain text in shell profiles |
+| **`gh` CLI** | ✅ High | ✅ Yes | Requires installing GitHub CLI |
+| **Keychain** | ✅ Highest | ✅ Yes | May prompt for access on first use |
+| **Encrypted file** | ✅ High | ✅ Yes | Fallback when keychain unavailable |
+
+**Key reasons for Keychain support:**
+
+1. **Not everyone uses `gh` CLI** — Some users don't have GitHub CLI installed or prefer not to install additional tools just for Octocode
+
+2. **OAuth tokens need secure storage** — When users authenticate via `npx octocode-cli` (OAuth flow), the token must be stored somewhere. Keychain provides OS-level encryption
+
+3. **Environment variables have security limitations:**
+   - Can be leaked in process listings (`ps auxe`)
+   - Must be stored in shell profiles (`~/.zshrc`) as plain text
+   - Visible to all child processes
+
+4. **Cross-session persistence** — Unlike terminal environment variables, Keychain entries persist across sessions and reboots without requiring re-authentication
+
+5. **OS-level protection** — Keychain entries are:
+   - Encrypted at rest by the operating system
+   - Protected by the user's login password
+   - Isolated from other applications (on macOS, apps must be granted explicit access)
 
 ---
 
@@ -80,7 +109,7 @@ export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
 
 **Tip:** Add to your shell profile (`~/.zshrc`, `~/.bashrc`) for persistence.
 
-### Option 3: GitHub CLI
+### Option 3: GitHub CLI (Recommended)
 
 If you already have the GitHub CLI (`gh`) installed and authenticated:
 
@@ -89,7 +118,9 @@ If you already have the GitHub CLI (`gh`) installed and authenticated:
 gh auth login
 ```
 
-The MCP server will automatically use `gh auth token` as a last resort.
+The MCP server will automatically use `gh auth token` as the **first priority**. This means if you're already authenticated with `gh`, no additional setup is needed!
+
+> **Note:** After authenticating or changing tokens, you must **restart the MCP server** to apply changes. The server caches tokens at startup for performance.
 
 ---
 
@@ -135,6 +166,7 @@ The `resolveToken()` function returns both the token and its source:
 
 | Source | Meaning |
 |--------|---------|
+| `gh` | From GitHub CLI (`gh auth token`) — highest priority |
 | `env:OCTOCODE_TOKEN` | From OCTOCODE_TOKEN environment variable |
 | `env:GH_TOKEN` | From GH_TOKEN environment variable |
 | `env:GITHUB_TOKEN` | From GITHUB_TOKEN environment variable |
@@ -147,22 +179,31 @@ The `resolveToken()` function returns both the token and its source:
 
 ### "No GitHub token found"
 
-1. **Check environment variables:**
+1. **Check GitHub CLI authentication (recommended):**
+   ```bash
+   gh auth status
+   # If not authenticated, run:
+   gh auth login
+   ```
+
+2. **Check environment variables:**
    ```bash
    echo $OCTOCODE_TOKEN $GH_TOKEN $GITHUB_TOKEN
    ```
 
-2. **Login via CLI:**
+3. **Login via Octocode CLI:**
    ```bash
    npx octocode-cli
    # Select "Login to GitHub"
    ```
 
-3. **Check stored credentials:**
+4. **Check stored credentials:**
    ```bash
    npx octocode-cli
    # Select "Check GitHub Auth Status"
    ```
+
+5. **Restart the MCP server** — After setting up authentication, you must restart the MCP server to apply changes. The token is cached at startup.
 
 ### "Token expired"
 

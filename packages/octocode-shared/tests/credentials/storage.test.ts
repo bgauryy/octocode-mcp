@@ -373,6 +373,453 @@ describe('Token Storage', () => {
     });
   });
 
+  describe('getTokenFromEnv', () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      process.env = { ...originalEnv };
+      delete process.env.OCTOCODE_TOKEN;
+      delete process.env.GH_TOKEN;
+      delete process.env.GITHUB_TOKEN;
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    it('should return OCTOCODE_TOKEN when set', async () => {
+      process.env.OCTOCODE_TOKEN = 'octocode-test-token';
+
+      const { getTokenFromEnv } =
+        await import('../../src/credentials/storage.js');
+      expect(getTokenFromEnv()).toBe('octocode-test-token');
+    });
+
+    it('should return GH_TOKEN when OCTOCODE_TOKEN is not set', async () => {
+      process.env.GH_TOKEN = 'gh-test-token';
+
+      const { getTokenFromEnv } =
+        await import('../../src/credentials/storage.js');
+      expect(getTokenFromEnv()).toBe('gh-test-token');
+    });
+
+    it('should return GITHUB_TOKEN when others are not set', async () => {
+      process.env.GITHUB_TOKEN = 'github-test-token';
+
+      const { getTokenFromEnv } =
+        await import('../../src/credentials/storage.js');
+      expect(getTokenFromEnv()).toBe('github-test-token');
+    });
+
+    it('should prioritize OCTOCODE_TOKEN over GH_TOKEN', async () => {
+      process.env.OCTOCODE_TOKEN = 'octocode-priority';
+      process.env.GH_TOKEN = 'gh-lower-priority';
+
+      const { getTokenFromEnv } =
+        await import('../../src/credentials/storage.js');
+      expect(getTokenFromEnv()).toBe('octocode-priority');
+    });
+
+    it('should prioritize OCTOCODE_TOKEN over GITHUB_TOKEN', async () => {
+      process.env.OCTOCODE_TOKEN = 'octocode-priority';
+      process.env.GITHUB_TOKEN = 'github-lower-priority';
+
+      const { getTokenFromEnv } =
+        await import('../../src/credentials/storage.js');
+      expect(getTokenFromEnv()).toBe('octocode-priority');
+    });
+
+    it('should prioritize GH_TOKEN over GITHUB_TOKEN', async () => {
+      process.env.GH_TOKEN = 'gh-priority';
+      process.env.GITHUB_TOKEN = 'github-lower-priority';
+
+      const { getTokenFromEnv } =
+        await import('../../src/credentials/storage.js');
+      expect(getTokenFromEnv()).toBe('gh-priority');
+    });
+
+    it('should return null when no env vars are set', async () => {
+      const { getTokenFromEnv } =
+        await import('../../src/credentials/storage.js');
+      expect(getTokenFromEnv()).toBeNull();
+    });
+
+    it('should trim whitespace from token values', async () => {
+      process.env.OCTOCODE_TOKEN = '  trimmed-token  ';
+
+      const { getTokenFromEnv } =
+        await import('../../src/credentials/storage.js');
+      expect(getTokenFromEnv()).toBe('trimmed-token');
+    });
+
+    it('should skip empty or whitespace-only tokens', async () => {
+      process.env.OCTOCODE_TOKEN = '   ';
+      process.env.GH_TOKEN = 'fallback-token';
+
+      const { getTokenFromEnv } =
+        await import('../../src/credentials/storage.js');
+      expect(getTokenFromEnv()).toBe('fallback-token');
+    });
+  });
+
+  describe('getEnvTokenSource', () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      process.env = { ...originalEnv };
+      delete process.env.OCTOCODE_TOKEN;
+      delete process.env.GH_TOKEN;
+      delete process.env.GITHUB_TOKEN;
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    it('should return env:OCTOCODE_TOKEN when set', async () => {
+      process.env.OCTOCODE_TOKEN = 'test-token';
+
+      const { getEnvTokenSource } =
+        await import('../../src/credentials/storage.js');
+      expect(getEnvTokenSource()).toBe('env:OCTOCODE_TOKEN');
+    });
+
+    it('should return env:GH_TOKEN when OCTOCODE_TOKEN is not set', async () => {
+      process.env.GH_TOKEN = 'test-token';
+
+      const { getEnvTokenSource } =
+        await import('../../src/credentials/storage.js');
+      expect(getEnvTokenSource()).toBe('env:GH_TOKEN');
+    });
+
+    it('should return env:GITHUB_TOKEN when others are not set', async () => {
+      process.env.GITHUB_TOKEN = 'test-token';
+
+      const { getEnvTokenSource } =
+        await import('../../src/credentials/storage.js');
+      expect(getEnvTokenSource()).toBe('env:GITHUB_TOKEN');
+    });
+
+    it('should return null when no env vars are set', async () => {
+      const { getEnvTokenSource } =
+        await import('../../src/credentials/storage.js');
+      expect(getEnvTokenSource()).toBeNull();
+    });
+  });
+
+  describe('hasEnvToken', () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      process.env = { ...originalEnv };
+      delete process.env.OCTOCODE_TOKEN;
+      delete process.env.GH_TOKEN;
+      delete process.env.GITHUB_TOKEN;
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    it('should return true when OCTOCODE_TOKEN is set', async () => {
+      process.env.OCTOCODE_TOKEN = 'test-token';
+
+      const { hasEnvToken } = await import('../../src/credentials/storage.js');
+      expect(hasEnvToken()).toBe(true);
+    });
+
+    it('should return true when GH_TOKEN is set', async () => {
+      process.env.GH_TOKEN = 'test-token';
+
+      const { hasEnvToken } = await import('../../src/credentials/storage.js');
+      expect(hasEnvToken()).toBe(true);
+    });
+
+    it('should return true when GITHUB_TOKEN is set', async () => {
+      process.env.GITHUB_TOKEN = 'test-token';
+
+      const { hasEnvToken } = await import('../../src/credentials/storage.js');
+      expect(hasEnvToken()).toBe(true);
+    });
+
+    it('should return false when no env vars are set', async () => {
+      const { hasEnvToken } = await import('../../src/credentials/storage.js');
+      expect(hasEnvToken()).toBe(false);
+    });
+  });
+
+  describe('resolveToken', () => {
+    const originalEnv = process.env;
+
+    beforeEach(async () => {
+      process.env = { ...originalEnv };
+      delete process.env.OCTOCODE_TOKEN;
+      delete process.env.GH_TOKEN;
+      delete process.env.GITHUB_TOKEN;
+
+      // Reset storage state
+      const { _resetSecureStorageState, _setSecureStorageAvailable } =
+        await import('../../src/credentials/storage.js');
+      _resetSecureStorageState();
+      _setSecureStorageAvailable(false);
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    describe('Priority 1-3: Environment Variables', () => {
+      it('should return OCTOCODE_TOKEN with source env:OCTOCODE_TOKEN', async () => {
+        process.env.OCTOCODE_TOKEN = 'env-octocode-token';
+
+        const { resolveToken } =
+          await import('../../src/credentials/storage.js');
+        const result = await resolveToken();
+
+        expect(result).toEqual({
+          token: 'env-octocode-token',
+          source: 'env:OCTOCODE_TOKEN',
+        });
+      });
+
+      it('should return GH_TOKEN with source env:GH_TOKEN', async () => {
+        process.env.GH_TOKEN = 'env-gh-token';
+
+        const { resolveToken } =
+          await import('../../src/credentials/storage.js');
+        const result = await resolveToken();
+
+        expect(result).toEqual({
+          token: 'env-gh-token',
+          source: 'env:GH_TOKEN',
+        });
+      });
+
+      it('should return GITHUB_TOKEN with source env:GITHUB_TOKEN', async () => {
+        process.env.GITHUB_TOKEN = 'env-github-token';
+
+        const { resolveToken } =
+          await import('../../src/credentials/storage.js');
+        const result = await resolveToken();
+
+        expect(result).toEqual({
+          token: 'env-github-token',
+          source: 'env:GITHUB_TOKEN',
+        });
+      });
+
+      it('should prioritize OCTOCODE_TOKEN over all other env vars', async () => {
+        process.env.OCTOCODE_TOKEN = 'octocode-wins';
+        process.env.GH_TOKEN = 'gh-loses';
+        process.env.GITHUB_TOKEN = 'github-loses';
+
+        const { resolveToken } =
+          await import('../../src/credentials/storage.js');
+        const result = await resolveToken();
+
+        expect(result?.token).toBe('octocode-wins');
+        expect(result?.source).toBe('env:OCTOCODE_TOKEN');
+      });
+
+      it('should prioritize GH_TOKEN over GITHUB_TOKEN', async () => {
+        process.env.GH_TOKEN = 'gh-wins';
+        process.env.GITHUB_TOKEN = 'github-loses';
+
+        const { resolveToken } =
+          await import('../../src/credentials/storage.js');
+        const result = await resolveToken();
+
+        expect(result?.token).toBe('gh-wins');
+        expect(result?.source).toBe('env:GH_TOKEN');
+      });
+    });
+
+    describe('Priority 4-5: Stored Credentials (Keychain/File)', () => {
+      it('should fall back to stored credentials when no env vars', async () => {
+        const storedCreds = createTestCredentials();
+        const store = {
+          version: 1,
+          credentials: { 'github.com': storedCreds },
+        };
+
+        vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+          if (String(path).includes('.key')) return true;
+          if (String(path).includes('credentials.json')) return true;
+          return false;
+        });
+        vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+          if (String(path).includes('.key')) return mockKey.toString('hex');
+          return 'iv:authtag:encrypted';
+        });
+
+        const mockDecipher = {
+          update: vi.fn().mockReturnValue(JSON.stringify(store)),
+          final: vi.fn().mockReturnValue(''),
+          setAuthTag: vi.fn(),
+        };
+        vi.mocked(crypto.createDecipheriv).mockReturnValue(
+          mockDecipher as unknown as crypto.DecipherGCM
+        );
+
+        const { resolveToken } =
+          await import('../../src/credentials/storage.js');
+        const result = await resolveToken();
+
+        expect(result).toEqual({
+          token: 'test-token',
+          source: 'file', // Because keychain is unavailable
+        });
+      });
+
+      it('should return keychain source when secure storage available', async () => {
+        const storedCreds = createTestCredentials();
+        const store = {
+          version: 1,
+          credentials: { 'github.com': storedCreds },
+        };
+
+        vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+          if (String(path).includes('.key')) return true;
+          if (String(path).includes('credentials.json')) return true;
+          return false;
+        });
+        vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+          if (String(path).includes('.key')) return mockKey.toString('hex');
+          return 'iv:authtag:encrypted';
+        });
+
+        const mockDecipher = {
+          update: vi.fn().mockReturnValue(JSON.stringify(store)),
+          final: vi.fn().mockReturnValue(''),
+          setAuthTag: vi.fn(),
+        };
+        vi.mocked(crypto.createDecipheriv).mockReturnValue(
+          mockDecipher as unknown as crypto.DecipherGCM
+        );
+
+        const { resolveToken, _setSecureStorageAvailable } =
+          await import('../../src/credentials/storage.js');
+
+        // Simulate keychain being available but empty
+        // The token comes from file storage, but source shows keychain
+        // if secure storage is available (as that's the preferred source)
+        _setSecureStorageAvailable(true);
+        const result = await resolveToken();
+
+        expect(result?.token).toBe('test-token');
+        expect(result?.source).toBe('keychain');
+      });
+
+      it('should return null when no token found anywhere', async () => {
+        vi.mocked(fs.existsSync).mockReturnValue(false);
+
+        const { resolveToken } =
+          await import('../../src/credentials/storage.js');
+        const result = await resolveToken();
+
+        expect(result).toBeNull();
+      });
+    });
+
+    describe('Environment Variables Skip Storage', () => {
+      it('should NOT check storage when env var token is available', async () => {
+        process.env.GITHUB_TOKEN = 'fast-env-token';
+
+        const { resolveToken } =
+          await import('../../src/credentials/storage.js');
+        const result = await resolveToken();
+
+        // Storage functions should not be called
+        expect(fs.existsSync).not.toHaveBeenCalled();
+        expect(fs.readFileSync).not.toHaveBeenCalled();
+        expect(result?.token).toBe('fast-env-token');
+      });
+    });
+
+    describe('Custom Hostname', () => {
+      it('should use custom hostname for storage lookup', async () => {
+        const storedCreds = createTestCredentials({
+          hostname: 'github.mycompany.com',
+        });
+        const store = {
+          version: 1,
+          credentials: { 'github.mycompany.com': storedCreds },
+        };
+
+        vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+          if (String(path).includes('.key')) return true;
+          if (String(path).includes('credentials.json')) return true;
+          return false;
+        });
+        vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+          if (String(path).includes('.key')) return mockKey.toString('hex');
+          return 'iv:authtag:encrypted';
+        });
+
+        const mockDecipher = {
+          update: vi.fn().mockReturnValue(JSON.stringify(store)),
+          final: vi.fn().mockReturnValue(''),
+          setAuthTag: vi.fn(),
+        };
+        vi.mocked(crypto.createDecipheriv).mockReturnValue(
+          mockDecipher as unknown as crypto.DecipherGCM
+        );
+
+        const { resolveToken } =
+          await import('../../src/credentials/storage.js');
+
+        // Should return null for default github.com
+        const defaultResult = await resolveToken('github.com');
+        expect(defaultResult).toBeNull();
+
+        // Should return token for custom hostname
+        const customResult = await resolveToken('github.mycompany.com');
+        expect(customResult?.token).toBe('test-token');
+      });
+    });
+
+    describe('Expired Token Handling', () => {
+      it('should return null for expired stored token', async () => {
+        const storedCreds = createTestCredentials({
+          token: {
+            token: 'expired-token',
+            tokenType: 'oauth' as const,
+            expiresAt: '2020-01-01T00:00:00.000Z',
+          },
+        });
+        const store = {
+          version: 1,
+          credentials: { 'github.com': storedCreds },
+        };
+
+        vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+          if (String(path).includes('.key')) return true;
+          if (String(path).includes('credentials.json')) return true;
+          return false;
+        });
+        vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+          if (String(path).includes('.key')) return mockKey.toString('hex');
+          return 'iv:authtag:encrypted';
+        });
+
+        const mockDecipher = {
+          update: vi.fn().mockReturnValue(JSON.stringify(store)),
+          final: vi.fn().mockReturnValue(''),
+          setAuthTag: vi.fn(),
+        };
+        vi.mocked(crypto.createDecipheriv).mockReturnValue(
+          mockDecipher as unknown as crypto.DecipherGCM
+        );
+
+        const { resolveToken } =
+          await import('../../src/credentials/storage.js');
+        const result = await resolveToken();
+
+        expect(result).toBeNull();
+      });
+    });
+  });
+
   describe('getTokenSync', () => {
     it('should return token string when credentials exist', async () => {
       const storedCreds = createTestCredentials();

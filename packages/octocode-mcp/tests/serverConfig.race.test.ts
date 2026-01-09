@@ -1,28 +1,28 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { spawn, ChildProcess } from 'child_process';
-import { EventEmitter } from 'events';
+import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
 import {
   getGitHubToken,
   clearConfigCachedToken,
   cleanup,
-  _setResolveTokenFn,
-  _resetResolveTokenFn,
+  _setTokenResolvers,
+  _resetTokenResolvers,
 } from '../src/serverConfig.js';
 
-// Mock for resolveToken function
-const mockResolveToken = vi.fn();
+// Mock functions for the new token resolvers API
+let mockGetTokenFromEnv: Mock<() => string | null>;
+let mockGetOctocodeToken: Mock<(hostname?: string) => Promise<string | null>>;
+let mockGetGithubCLIToken: Mock<() => Promise<string | null>>;
 
-// Helper function to create mock process
-function createMockProcess() {
-  const mockProcess = new EventEmitter() as EventEmitter & {
-    stdout: EventEmitter;
-    stderr: EventEmitter;
-    kill: ReturnType<typeof vi.fn>;
-  };
-  mockProcess.stdout = new EventEmitter();
-  mockProcess.stderr = new EventEmitter();
-  mockProcess.kill = vi.fn();
-  return mockProcess as unknown as ChildProcess;
+// Helper to setup all token resolvers with mocks
+function setupTokenMocks() {
+  mockGetTokenFromEnv = vi.fn(() => null);
+  mockGetOctocodeToken = vi.fn(async () => null);
+  mockGetGithubCLIToken = vi.fn(async () => null);
+
+  _setTokenResolvers({
+    getTokenFromEnv: mockGetTokenFromEnv,
+    getOctocodeToken: mockGetOctocodeToken,
+    getGithubCLIToken: mockGetGithubCLIToken,
+  });
 }
 
 describe('ServerConfig Race Conditions', () => {
@@ -36,32 +36,29 @@ describe('ServerConfig Race Conditions', () => {
     // Reset environment variables - remove GITHUB_TOKEN to force CLI fallback
     process.env = { ...originalEnv };
     delete process.env.GITHUB_TOKEN;
+    delete process.env.GH_TOKEN;
+    delete process.env.OCTOCODE_TOKEN;
 
-    // Mock resolveToken to return null so CLI fallback is used
-    _setResolveTokenFn(mockResolveToken);
-    mockResolveToken.mockResolvedValue(null);
+    // Setup mocks using the new API
+    setupTokenMocks();
   });
 
   afterEach(() => {
     process.env = originalEnv;
     cleanup();
     clearConfigCachedToken();
-    _resetResolveTokenFn();
+    _resetTokenResolvers();
   });
 
   it('should handle concurrent token requests without race condition', async () => {
     // Track how many times resolveGitHubToken is actually called
     let resolveCount = 0;
 
-    // Mock spawn to simulate async CLI token retrieval with delay
-    vi.mocked(spawn).mockImplementation(() => {
+    // Mock CLI token with async delay to simulate real-world behavior
+    mockGetGithubCLIToken.mockImplementation(async () => {
       resolveCount++;
-      const mockProcess = createMockProcess();
-      setTimeout(() => {
-        mockProcess.stdout!.emit('data', 'cli-token\n');
-        mockProcess.emit('close', 0);
-      }, 50); // Delay to exacerbate race condition
-      return mockProcess;
+      await new Promise(resolve => setTimeout(resolve, 50));
+      return 'cli-token';
     });
 
     // Start 3 concurrent requests for the token
@@ -88,14 +85,10 @@ describe('ServerConfig Race Conditions', () => {
   it('should return cached token immediately after first resolution', async () => {
     let resolveCount = 0;
 
-    vi.mocked(spawn).mockImplementation(() => {
+    mockGetGithubCLIToken.mockImplementation(async () => {
       resolveCount++;
-      const mockProcess = createMockProcess();
-      setTimeout(() => {
-        mockProcess.stdout!.emit('data', 'cached-token\n');
-        mockProcess.emit('close', 0);
-      }, 10);
-      return mockProcess;
+      await new Promise(resolve => setTimeout(resolve, 10));
+      return 'cached-token';
     });
 
     // First call - triggers resolution
@@ -118,15 +111,11 @@ describe('ServerConfig Race Conditions', () => {
     let resolutionsStarted = 0;
     let resolutionsCompleted = 0;
 
-    vi.mocked(spawn).mockImplementation(() => {
+    mockGetGithubCLIToken.mockImplementation(async () => {
       resolutionsStarted++;
-      const mockProcess = createMockProcess();
-      setTimeout(() => {
-        resolutionsCompleted++;
-        mockProcess.stdout!.emit('data', 'token\n');
-        mockProcess.emit('close', 0);
-      }, 100);
-      return mockProcess;
+      await new Promise(resolve => setTimeout(resolve, 100));
+      resolutionsCompleted++;
+      return 'token';
     });
 
     // Start first request
@@ -136,7 +125,7 @@ describe('ServerConfig Race Conditions', () => {
     const promise2 = getGitHubToken();
     const promise3 = getGitHubToken();
 
-    // Allow microtask queue to flush so spawn can be called
+    // Allow microtask queue to flush
     await Promise.resolve();
     await Promise.resolve();
 
@@ -155,14 +144,10 @@ describe('ServerConfig Race Conditions', () => {
   it('should clear pending promise when clearing cache', async () => {
     let resolveCount = 0;
 
-    vi.mocked(spawn).mockImplementation(() => {
+    mockGetGithubCLIToken.mockImplementation(async () => {
       resolveCount++;
-      const mockProcess = createMockProcess();
-      setTimeout(() => {
-        mockProcess.stdout!.emit('data', `token-${resolveCount}\n`);
-        mockProcess.emit('close', 0);
-      }, 10);
-      return mockProcess;
+      await new Promise(resolve => setTimeout(resolve, 10));
+      return `token-${resolveCount}`;
     });
 
     // First resolution

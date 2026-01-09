@@ -67,7 +67,7 @@ export const CONFIG_ERRORS = {
   NO_GITHUB_TOKEN: {
     code: 'CONFIG_NO_GITHUB_TOKEN',
     message:
-      'No GitHub token found. Please authenticate with GitHub CLI (gh auth login) or set GITHUB_TOKEN/GH_TOKEN environment variable',
+      'No GitHub token found. Please authenticate with GitHub CLI (gh auth login) or set GITHUB_TOKEN/GH_TOKEN/OCTOCODE_TOKEN environment variable. After setting the token, restart the MCP server to apply changes.',
   },
 } as const;
 
