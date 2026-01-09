@@ -512,30 +512,6 @@ async function selectFromList(
 }
 
 /**
- * Select MCP from registry (main entry point)
- */
-async function _selectMCPFromRegistry(): Promise<
-  MCPRegistryEntry | 'back' | null
-> {
-  const mode = await selectBrowseMode();
-
-  if (mode === 'back' || mode === null) return 'back';
-
-  switch (mode) {
-    case 'search':
-      return await searchMCPs();
-    case 'category':
-      return await selectByCategory();
-    case 'popular':
-      return await selectPopular();
-    case 'all':
-      return await selectAll();
-    default:
-      return null;
-  }
-}
-
-/**
  * Prompt for required environment variables
  */
 export async function promptEnvVars(

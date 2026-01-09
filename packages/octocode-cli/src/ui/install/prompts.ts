@@ -472,11 +472,6 @@ async function promptCustomPath(): Promise<string | null> {
 // Environment Configuration Prompts
 // ============================================================================
 
-interface _EnvConfig {
-  enableLocal?: boolean;
-  githubToken?: string;
-}
-
 type LocalToolsChoice = 'enable' | 'disable' | 'back';
 
 /**
@@ -609,38 +604,4 @@ export async function promptGitHubAuth(): Promise<{
   }
 
   return { method: 'skip' };
-}
-
-/**
- * Confirm override prompt
- */
-async function _confirmOverride(
-  clientName: string,
-  existingMethod: string | null
-): Promise<boolean> {
-  const { confirm } = await import('../../utils/prompts.js');
-
-  console.log();
-  console.log(c('yellow', '  ┌' + '─'.repeat(60) + '┐'));
-  console.log(
-    c('yellow', '  │ ') +
-      `${c('yellow', '⚠')} Octocode is already configured in ${clientName}!` +
-      ' '.repeat(Math.max(0, 60 - 42 - clientName.length)) +
-      c('yellow', '│')
-  );
-  if (existingMethod) {
-    console.log(
-      c('yellow', '  │ ') +
-        `Current method: ${existingMethod}` +
-        ' '.repeat(Math.max(0, 60 - 17 - existingMethod.length)) +
-        c('yellow', '│')
-    );
-  }
-  console.log(c('yellow', '  └' + '─'.repeat(60) + '┘'));
-  console.log();
-
-  return await confirm({
-    message: 'Override existing configuration?',
-    default: false,
-  });
 }

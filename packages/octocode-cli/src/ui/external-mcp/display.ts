@@ -145,17 +145,3 @@ export function printInstallError(error: string): void {
   console.log(`  ${c('red', 'Error:')} ${error}`);
   console.log();
 }
-
-/**
- * Print category header
- */
-function _printCategoryHeader(category: string): void {
-  const displayCategory = category
-    .split('-')
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
-  console.log();
-  console.log(
-    `  ${c('cyan', '─'.repeat(3))} ${bold(displayCategory)} ${c('cyan', '─'.repeat(50 - displayCategory.length))}`
-  );
-}

@@ -616,39 +616,6 @@ export async function getToken(
 }
 
 /**
- * Verify the stored token is still valid by making a test API call
- *
- * Note: For public OAuth apps (like this CLI), we cannot use checkToken()
- * as it requires clientSecret. Instead, we make a simple API call to verify
- * the token works.
- */
-async function _verifyToken(
-  hostname: string = DEFAULT_HOSTNAME
-): Promise<boolean> {
-  const credentials = await getCredentials(hostname);
-
-  if (!credentials) {
-    return false;
-  }
-
-  try {
-    // Verify token by making a simple API call
-    await request('GET /user', {
-      headers: {
-        authorization: `token ${credentials.token.token}`,
-      },
-      baseUrl: getApiBaseUrl(hostname),
-    });
-    return true;
-  } catch (error) {
-    console.error(
-      `[github-oauth] Token verification failed: ${error instanceof Error ? error.message : String(error)}`
-    );
-    return false;
-  }
-}
-
-/**
  * Get the credentials file path (for display to user)
  */
 export function getStoragePath(): string {

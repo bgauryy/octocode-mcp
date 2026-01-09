@@ -71,31 +71,6 @@ export interface MCPClientInfo {
 // Installation methods
 export type InstallMethod = 'direct' | 'npx';
 
-// CLI parsed arguments
-interface ParsedArgs {
-  command: string | null;
-  args: string[];
-  options: Record<string, string | boolean>;
-}
-
-// CLI command definition
-interface _CLICommand {
-  name: string;
-  description: string;
-  usage?: string;
-  options?: CLIOption[];
-  handler: (args: ParsedArgs) => Promise<void>;
-}
-
-// CLI option definition
-interface CLIOption {
-  name: string;
-  short?: string;
-  description: string;
-  hasValue?: boolean;
-  default?: string | boolean;
-}
-
 // GitHub auth status (legacy - for gh CLI check)
 export interface GitHubAuthStatus {
   installed: boolean;
@@ -127,55 +102,4 @@ export interface TokenResult {
   username?: string;
   /** Specific env var name when source is 'env' (e.g., 'env:OCTOCODE_TOKEN') */
   envSource?: string;
-}
-
-// ============================================
-// AI Provider Types
-// ============================================
-
-/**
- * AI Provider identifier
- */
-type AIProvider = 'anthropic' | 'openai' | 'google' | 'bedrock' | 'vertex';
-
-/**
- * Source of API key discovery
- */
-type APIKeySource =
-  | 'environment'
-  | 'keychain'
-  | 'keychain-oauth'
-  | 'config'
-  | 'config-file'
-  | 'manual'
-  | 'sdk'
-  | 'none';
-
-/**
- * Result from API key discovery
- */
-interface _APIKeyResult {
-  key: string | null;
-  source: APIKeySource | null;
-  provider: AIProvider;
-  expiresAt?: number;
-  isOAuth?: boolean;
-  scopes?: string[];
-}
-
-/**
- * Claude Code OAuth credentials structure (from keychain)
- */
-interface _ClaudeCodeOAuthCredentials {
-  accessToken?: string;
-  refreshToken?: string;
-  expiresAt?: number;
-  claudeAiOauth?: {
-    accessToken: string;
-    refreshToken?: string;
-    expiresAt?: number;
-    scopes?: string[];
-    subscriptionType?: string;
-    rateLimitTier?: string;
-  };
 }
