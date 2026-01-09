@@ -622,7 +622,7 @@ export async function getToken(
  * as it requires clientSecret. Instead, we make a simple API call to verify
  * the token works.
  */
-async function verifyToken(
+async function _verifyToken(
   hostname: string = DEFAULT_HOSTNAME
 ): Promise<boolean> {
   const credentials = await getCredentials(hostname);

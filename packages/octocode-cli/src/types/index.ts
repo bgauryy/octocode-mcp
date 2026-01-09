@@ -79,7 +79,7 @@ interface ParsedArgs {
 }
 
 // CLI command definition
-interface CLICommand {
+interface _CLICommand {
   name: string;
   description: string;
   usage?: string;
@@ -154,7 +154,7 @@ type APIKeySource =
 /**
  * Result from API key discovery
  */
-interface APIKeyResult {
+interface _APIKeyResult {
   key: string | null;
   source: APIKeySource | null;
   provider: AIProvider;
@@ -166,7 +166,7 @@ interface APIKeyResult {
 /**
  * Claude Code OAuth credentials structure (from keychain)
  */
-interface ClaudeCodeOAuthCredentials {
+interface _ClaudeCodeOAuthCredentials {
   accessToken?: string;
   refreshToken?: string;
   expiresAt?: number;

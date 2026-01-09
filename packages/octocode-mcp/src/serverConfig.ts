@@ -1,7 +1,7 @@
 import { getGithubCLIToken } from './utils/exec/index.js';
 import {
   resolveToken as resolveTokenImpl,
-  type ResolvedToken,
+  type ResolvedToken as _ResolvedToken,
 } from './utils/credentials/index.js';
 import { version } from '../package.json';
 import type { ServerConfig } from './types.js';

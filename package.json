@@ -25,6 +25,7 @@
   "scripts": {
     "build": "yarn workspaces foreach -Apt run build",
     "lint": "yarn workspaces foreach -Apt run lint",
+    "lint:fix": "yarn workspaces foreach -Apt run lint:fix",
     "syncpack:fix": "syncpack fix",
     "syncpack:format": "syncpack format",
     "syncpack:lint": "syncpack lint",

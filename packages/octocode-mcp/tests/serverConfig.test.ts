@@ -9,12 +9,12 @@ import {
   clearConfigCachedToken,
   getServerConfig,
   isLoggingEnabled,
-  _setOctocodeTokenFn,
-  _resetOctocodeTokenFn,
+  _setResolveTokenFn,
+  _resetResolveTokenFn,
 } from '../src/serverConfig.js';
 
-// Mock function for octocode token
-const mockGetOctocodeToken = vi.fn();
+// Mock function for resolve token (returns ResolvedToken | null)
+const mockResolveToken = vi.fn();
 
 // Helper function to create mock process
 function createMockProcess() {
@@ -50,9 +50,17 @@ function mockSpawnFailure() {
   return mockProcess;
 }
 
-// Helper function to mock octocode token
-function mockOctocodeToken(token: string | null) {
-  mockGetOctocodeToken.mockResolvedValue(token);
+// Helper function to mock token resolution
+// Returns { token, source } or null
+function mockTokenResolution(
+  token: string | null,
+  source: string = 'env:GITHUB_TOKEN'
+) {
+  if (token) {
+    mockResolveToken.mockResolvedValue({ token, source });
+  } else {
+    mockResolveToken.mockResolvedValue(null);
+  }
 }
 
 describe('ServerConfig - Simplified Version', () => {
@@ -79,9 +87,9 @@ describe('ServerConfig - Simplified Version', () => {
     delete process.env.REQUEST_TIMEOUT;
     delete process.env.MAX_RETRIES;
 
-    // Set up injectable mock for octocode token
-    _setOctocodeTokenFn(mockGetOctocodeToken);
-    mockGetOctocodeToken.mockResolvedValue(null);
+    // Set up injectable mock for token resolution
+    _setResolveTokenFn(mockResolveToken);
+    mockResolveToken.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -93,7 +101,7 @@ describe('ServerConfig - Simplified Version', () => {
     process.env = originalEnv;
     cleanup();
     clearConfigCachedToken();
-    _resetOctocodeTokenFn();
+    _resetResolveTokenFn();
   });
 
   describe('Configuration Initialization', () => {
@@ -167,6 +175,8 @@ describe('ServerConfig - Simplified Version', () => {
       clearConfigCachedToken();
       cleanup();
 
+      // Mock resolveToken to return env token (simulating env var priority)
+      mockTokenResolution('env-github-token', 'env:GITHUB_TOKEN');
       mockSpawnSuccess('cli-token');
       const token = await getGitHubToken();
 
@@ -230,7 +240,7 @@ describe('ServerConfig - Simplified Version', () => {
       // gh CLI fails
       mockSpawnFailure();
       // octocode-cli has token
-      mockOctocodeToken('octocode-stored-token');
+      mockTokenResolution('octocode-stored-token');
 
       const token = await getGitHubToken();
 
@@ -241,8 +251,9 @@ describe('ServerConfig - Simplified Version', () => {
       process.env.GITHUB_TOKEN = 'env-token';
       clearConfigCachedToken();
 
+      // Mock resolveToken to return env token (simulating priority)
+      mockTokenResolution('env-token', 'env:GITHUB_TOKEN');
       mockSpawnFailure();
-      mockOctocodeToken('octocode-stored-token');
 
       const token = await getGitHubToken();
 
@@ -253,8 +264,9 @@ describe('ServerConfig - Simplified Version', () => {
       delete process.env.GITHUB_TOKEN;
       clearConfigCachedToken();
 
+      // Mock resolveToken to return null so gh CLI fallback is used
+      mockTokenResolution(null);
       mockSpawnSuccess('gh-cli-token');
-      mockOctocodeToken('octocode-stored-token');
 
       const token = await getGitHubToken();
 
@@ -266,7 +278,7 @@ describe('ServerConfig - Simplified Version', () => {
       clearConfigCachedToken();
 
       mockSpawnFailure();
-      mockOctocodeToken(null);
+      mockTokenResolution(null);
 
       const token = await getGitHubToken();
 
@@ -278,7 +290,8 @@ describe('ServerConfig - Simplified Version', () => {
       clearConfigCachedToken();
 
       mockSpawnFailure();
-      mockOctocodeToken('  octocode-token-with-spaces  ');
+      // Token is returned trimmed by resolveToken
+      mockTokenResolution('octocode-token-with-spaces');
 
       const token = await getGitHubToken();
 
@@ -290,7 +303,8 @@ describe('ServerConfig - Simplified Version', () => {
       clearConfigCachedToken();
 
       mockSpawnFailure();
-      mockOctocodeToken('   ');
+      // Empty/whitespace tokens resolve to null
+      mockTokenResolution(null);
 
       const token = await getGitHubToken();
 
@@ -302,7 +316,7 @@ describe('ServerConfig - Simplified Version', () => {
       clearConfigCachedToken();
 
       mockSpawnFailure();
-      mockGetOctocodeToken.mockRejectedValue(new Error('Read error'));
+      mockResolveToken.mockRejectedValue(new Error('Read error'));
 
       const token = await getGitHubToken();
 
@@ -314,6 +328,8 @@ describe('ServerConfig - Simplified Version', () => {
     it('should return token when available', async () => {
       process.env.GITHUB_TOKEN = 'available-token';
       clearConfigCachedToken();
+      // Mock resolveToken to return the env token
+      mockTokenResolution('available-token', 'env:GITHUB_TOKEN');
       mockSpawnFailure();
 
       const token = await getToken();
@@ -402,6 +418,8 @@ describe('ServerConfig - Simplified Version', () => {
     it('should handle GitHub CLI errors gracefully', async () => {
       process.env.GITHUB_TOKEN = 'fallback-token';
       clearConfigCachedToken();
+      // Mock resolveToken to return env token
+      mockTokenResolution('fallback-token', 'env:GITHUB_TOKEN');
       mockSpawnFailure();
 
       const token = await getGitHubToken();

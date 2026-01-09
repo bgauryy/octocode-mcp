@@ -293,7 +293,7 @@ export const ALL_ERROR_CODES = {
   ...TOOL_ERRORS,
 } as const;
 
-type ErrorCategory =
+type _ErrorCategory =
   | 'CONFIG'
   | 'VALIDATION'
   | 'FETCH'
@@ -349,7 +349,7 @@ export type LocalToolErrorCode =
 /**
  * Combined error code type (domain + local tool)
  */
-type ErrorCode =
+type _ErrorCode =
   | (typeof ALL_ERROR_CODES)[keyof typeof ALL_ERROR_CODES]['code']
   | LocalToolErrorCode;
 

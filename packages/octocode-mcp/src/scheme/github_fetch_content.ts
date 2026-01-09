@@ -79,7 +79,7 @@ export const FileContentQuerySchema = FileContentBaseSchema.superRefine(
   }
 );
 
-type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
+type _FileContentQuery = z.infer<typeof FileContentQuerySchema>;
 
 export const FileContentBulkQuerySchema = createBulkQuerySchema(
   TOOL_NAMES.GITHUB_FETCH_CONTENT,

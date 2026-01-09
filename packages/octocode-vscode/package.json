@@ -120,6 +120,7 @@
     "build": "yarn esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --minify",
     "compile": "npm run build",
     "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
     "package": "npx @vscode/vsce package --allow-missing-repository --no-dependencies",
     "publish": "npx @vscode/vsce publish",
     "vscode:prepublish": "npm run build",

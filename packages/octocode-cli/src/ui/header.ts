@@ -9,7 +9,7 @@ import { getAppContext } from '../utils/context.js';
 /**
  * Print the main header
  */
-function printHeader(): void {
+function _printHeader(): void {
   const width = 64;
 
   console.log();

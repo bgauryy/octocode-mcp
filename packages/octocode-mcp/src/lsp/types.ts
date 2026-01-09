@@ -210,7 +210,7 @@ export interface CallHierarchyResult extends LSPToolResultBase {
 /**
  * LSP hint context extending base HintContext
  */
-interface LSPHintContext {
+interface _LSPHintContext {
   // Resolution info
   symbolFound?: boolean;
   resolvedLine?: number;

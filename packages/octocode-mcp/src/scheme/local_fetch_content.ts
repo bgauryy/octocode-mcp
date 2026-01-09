@@ -154,5 +154,5 @@ export const BulkFetchContentSchema = createBulkQuerySchema(
   { maxQueries: 5 }
 );
 
-type FetchContentQuery = z.infer<typeof FetchContentQuerySchema>;
-type BulkFetchContentRequest = z.infer<typeof BulkFetchContentSchema>;
+type _FetchContentQuery = z.infer<typeof FetchContentQuerySchema>;
+type _BulkFetchContentRequest = z.infer<typeof BulkFetchContentSchema>;

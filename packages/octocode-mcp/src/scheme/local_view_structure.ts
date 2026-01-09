@@ -128,5 +128,5 @@ export const BulkViewStructureSchema = createBulkQuerySchema(
   { maxQueries: 5 }
 );
 
-type ViewStructureQuery = z.infer<typeof ViewStructureQuerySchema>;
-type BulkViewStructureQuery = z.infer<typeof BulkViewStructureSchema>;
+type _ViewStructureQuery = z.infer<typeof ViewStructureQuerySchema>;
+type _BulkViewStructureQuery = z.infer<typeof BulkViewStructureSchema>;

@@ -149,7 +149,7 @@ export function printInstallError(error: string): void {
 /**
  * Print category header
  */
-function printCategoryHeader(category: string): void {
+function _printCategoryHeader(category: string): void {
   const displayCategory = category
     .split('-')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))

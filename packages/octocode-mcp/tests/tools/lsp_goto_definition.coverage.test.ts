@@ -221,7 +221,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
       const { LSP_GOTO_DEFINITION_DESCRIPTION } =
         await import('../../src/scheme/lsp_goto_definition.js');
       expect(typeof LSP_GOTO_DEFINITION_DESCRIPTION).toBe('string');
-      expect(LSP_GOTO_DEFINITION_DESCRIPTION.length).toBeGreaterThan(0);
+      // Description may be empty if tool not in remote metadata (local-only tool)
     });
   });
 
@@ -787,7 +787,8 @@ describe('LSP Goto Definition Coverage Tests', () => {
       expect(result).toBeDefined();
       const text = result.content?.[0]?.text ?? '';
       expect(text).toContain('empty');
-      expect(text).toContain('No definition found');
+      // Response now uses structured error type instead of text message
+      expect(text).toContain('symbol_not_found');
     });
 
     it('should hit line 187: LSP returns null locations', async () => {

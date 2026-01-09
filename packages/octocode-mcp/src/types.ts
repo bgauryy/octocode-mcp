@@ -287,7 +287,7 @@ interface PackageSearchResultData {
 }
 
 /** Complete package search result */
-interface PackageSearchResult
+interface _PackageSearchResult
   extends BaseToolResult<PackageSearchQuery>, PackageSearchResultData {}
 
 // ─── Pull Requests (github_search_pull_requests) ────────────────────────────
@@ -501,7 +501,7 @@ export interface BulkResponseConfig {
 // ─── Caching (cache.ts) ─────────────────────────────────────────────────────
 
 /** Cache performance statistics */
-interface CacheStats {
+interface _CacheStats {
   hits: number;
   misses: number;
   sets: number;

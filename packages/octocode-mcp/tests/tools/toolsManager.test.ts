@@ -397,7 +397,7 @@ describe('ToolsManager', () => {
 
       // Make first GitHub tool throw error
       const githubTools = ALL_TOOLS.filter(t => !t.isLocal);
-      vi.mocked(githubTools[0]?.fn!).mockImplementation(() => {
+      vi.mocked(githubTools[0]!.fn).mockImplementation(() => {
         throw new Error('Registration failed');
       });
 
@@ -424,10 +424,10 @@ describe('ToolsManager', () => {
 
       // Make multiple GitHub tools throw errors
       const githubTools = ALL_TOOLS.filter(t => !t.isLocal);
-      vi.mocked(githubTools[0]?.fn!).mockImplementation(() => {
+      vi.mocked(githubTools[0]!.fn).mockImplementation(() => {
         throw new Error('Registration failed');
       });
-      vi.mocked(githubTools[2]?.fn!).mockImplementation(() => {
+      vi.mocked(githubTools[2]!.fn).mockImplementation(() => {
         throw new Error('Registration failed');
       });
 
@@ -586,7 +586,7 @@ describe('ToolsManager', () => {
 
       // Make first GitHub tool return null (tool unavailable)
       const githubTools = ALL_TOOLS.filter(t => !t.isLocal);
-      vi.mocked(githubTools[0]?.fn!).mockResolvedValue(null);
+      vi.mocked(githubTools[0]!.fn).mockResolvedValue(null);
 
       const result = await registerTools(mockServer);
 

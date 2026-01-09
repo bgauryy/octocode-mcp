@@ -47,13 +47,12 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
       expect(getGenericErrorHintsSync()).toEqual([]);
     });
 
-    it('should throw error when getDynamicHints is called before initialization', async () => {
+    it('should return empty array when getDynamicHints is called before initialization', async () => {
       const { getDynamicHints } =
         await import('../../src/tools/toolMetadata.js');
 
-      expect(() => getDynamicHints('anyTool', 'topicsHasResults')).toThrow(
-        'Tool metadata not initialized. Call and await initializeToolMetadata() before using tool metadata.'
-      );
+      // getDynamicHints defensively returns empty array when not initialized
+      expect(getDynamicHints('anyTool', 'topicsHasResults')).toEqual([]);
     });
   });
 

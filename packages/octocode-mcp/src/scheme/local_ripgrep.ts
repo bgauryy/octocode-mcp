@@ -249,7 +249,7 @@ export const BulkRipgrepQuerySchema = createBulkQuerySchema(
 );
 
 export type RipgrepQuery = z.infer<typeof RipgrepQuerySchema>;
-type BulkRipgrepQuery = z.infer<typeof BulkRipgrepQuerySchema>;
+type _BulkRipgrepQuery = z.infer<typeof BulkRipgrepQuerySchema>;
 
 /**
  * Apply workflow mode presets to query

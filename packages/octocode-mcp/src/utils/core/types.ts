@@ -351,14 +351,14 @@ export interface FetchContentResult extends BaseQuery {
 /**
  * Bulk operation query wrapper
  */
-interface BulkQuery<T> {
+interface _BulkQuery<T> {
   queries: T[];
 }
 
 /**
  * Bulk operation result wrapper
  */
-interface BulkResult<T> {
+interface _BulkResult<T> {
   results: T[];
   successCount: number;
   errorCount: number;

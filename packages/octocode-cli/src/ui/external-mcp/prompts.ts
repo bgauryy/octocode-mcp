@@ -514,7 +514,7 @@ async function selectFromList(
 /**
  * Select MCP from registry (main entry point)
  */
-async function selectMCPFromRegistry(): Promise<
+async function _selectMCPFromRegistry(): Promise<
   MCPRegistryEntry | 'back' | null
 > {
   const mode = await selectBrowseMode();
