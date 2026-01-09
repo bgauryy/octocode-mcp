@@ -396,6 +396,7 @@ export function resetSessionStats(): SessionUpdateResult {
 
 /**
  * Delete the current session (for testing or cleanup)
+ * Also cleans up exit handlers to avoid listener warnings in tests
  * @returns true if session was deleted, false if it didn't exist
  */
 export function deleteSession(): boolean {
@@ -403,8 +404,9 @@ export function deleteSession(): boolean {
   cachedSession = null;
   isDirty = false;
 
-  // Stop flush timer
+  // Stop flush timer and unregister handlers
   stopFlushTimer();
+  unregisterExitHandlers();
 
   if (!existsSync(SESSION_FILE)) {
     return false;
