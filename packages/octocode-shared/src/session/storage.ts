@@ -8,7 +8,13 @@
  * and flushed to disk every 60 seconds or on process exit.
  */
 
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  unlinkSync,
+  renameSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { OCTOCODE_DIR, ensureOctocodeDir } from '../credentials/storage.js';
@@ -42,28 +48,58 @@ let flushTimer: ReturnType<typeof setInterval> | null = null;
 /** Whether exit handlers are registered */
 let exitHandlersRegistered = false;
 
+/** Stored listener references for cleanup */
+let exitListener: (() => void) | null = null;
+let sigintListener: (() => void) | null = null;
+let sigtermListener: (() => void) | null = null;
+
 /**
- * Register process exit handlers to flush session on shutdown
- * Uses process.once to avoid duplicate listeners
+ * Register process exit handlers to flush session on shutdown.
+ *
+ * IMPORTANT: This is a library module - we flush data but NEVER call process.exit().
+ * The consuming application owns the process lifecycle.
  */
 function registerExitHandlers(): void {
   if (exitHandlersRegistered) return;
   exitHandlersRegistered = true;
 
-  // Flush on normal exit (can have multiple 'exit' listeners)
-  process.on('exit', () => {
+  // Create listener functions (stored for cleanup in tests)
+  exitListener = () => {
     flushSessionSync();
-  });
+  };
+  sigintListener = () => {
+    flushSessionSync();
+    // Don't call process.exit() - let the application decide
+  };
+  sigtermListener = () => {
+    flushSessionSync();
+    // Don't call process.exit() - let the application decide
+  };
 
-  // Flush on SIGINT (Ctrl+C) - use prependOnceListener to avoid stacking
-  process.prependOnceListener('SIGINT', () => {
-    flushSessionSync();
-  });
+  // Register handlers
+  process.on('exit', exitListener);
+  process.once('SIGINT', sigintListener);
+  process.once('SIGTERM', sigtermListener);
+}
 
-  // Flush on SIGTERM - use prependOnceListener to avoid stacking
-  process.prependOnceListener('SIGTERM', () => {
-    flushSessionSync();
-  });
+/**
+ * Unregister exit handlers (for testing only)
+ * @internal
+ */
+function unregisterExitHandlers(): void {
+  if (exitListener) {
+    process.removeListener('exit', exitListener);
+    exitListener = null;
+  }
+  if (sigintListener) {
+    process.removeListener('SIGINT', sigintListener);
+    sigintListener = null;
+  }
+  if (sigtermListener) {
+    process.removeListener('SIGTERM', sigtermListener);
+    sigtermListener = null;
+  }
+  exitHandlersRegistered = false;
 }
 
 /**
@@ -95,12 +131,20 @@ function stopFlushTimer(): void {
 
 /**
  * Write session directly to disk (internal)
+ * Uses atomic write (temp file + rename) to prevent corruption on crash
  */
 function writeSessionToDisk(session: PersistedSession): void {
   ensureOctocodeDir();
-  writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2), {
+
+  const tempFile = `${SESSION_FILE}.tmp`;
+
+  // Write to temp file first
+  writeFileSync(tempFile, JSON.stringify(session, null, 2), {
     mode: 0o600,
   });
+
+  // Atomic rename (POSIX guarantees atomicity)
+  renameSync(tempFile, SESSION_FILE);
 }
 
 /**
@@ -376,12 +420,12 @@ export function deleteSession(): boolean {
 
 /**
  * Reset internal state (for testing)
- * Note: Exit handlers are NOT reset as they use process.once and can't be re-registered
+ * This properly cleans up all listeners to avoid MaxListenersExceededWarning
  * @internal
  */
 export function _resetSessionState(): void {
   cachedSession = null;
   isDirty = false;
   stopFlushTimer();
-  // Don't reset exitHandlersRegistered - handlers are registered once per process
+  unregisterExitHandlers();
 }
