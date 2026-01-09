@@ -1,5 +1,10 @@
-import { beforeEach, afterAll, vi } from 'vitest';
+import { beforeEach, afterEach, afterAll, vi } from 'vitest';
 import { initializeToolMetadata } from '../src/tools/toolMetadata';
+import { _resetSessionState } from 'octocode-shared';
+
+// Increase max listeners to avoid warnings in test environments
+// Tests may legitimately register many listeners due to module isolation
+process.setMaxListeners(50);
 
 // Minimal mock content for tests - metadata is fetched from API in production
 // Schema requires: instructions, prompts, toolNames, baseSchema, tools, baseHints, genericErrorHints
@@ -274,6 +279,12 @@ beforeEach(() => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
   }
+});
+
+afterEach(() => {
+  // Clean up session state to prevent MaxListenersExceededWarning
+  // This properly removes exit handlers registered during tests
+  _resetSessionState();
 });
 
 afterAll(() => {
