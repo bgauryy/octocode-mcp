@@ -45,4 +45,3 @@ export interface SessionOptions {
   /** Force create a new session even if one exists */
   forceNew?: boolean;
 }
-
