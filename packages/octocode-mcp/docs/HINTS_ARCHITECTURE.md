@@ -99,9 +99,10 @@ packages/octocode-mcp/src/
 ├── tools/
 │   ├── hints/                    # 🎯 HINTS MODULE
 │   │   ├── index.ts             # Entry point - getHints()
-│   │   ├── types.ts             # HintContext, HintStatus, HintGenerator
-│   │   ├── static.ts            # Loads from toolMetadata
-│   │   └── dynamic.ts           # Context-aware HINTS object (all 10 tools)
+│   │   ├── types.ts             # Re-exports from types/metadata.ts
+│   │   ├── static.ts            # Loads from toolMetadata + getMetadataDynamicHints()
+│   │   ├── dynamic.ts           # Context-aware HINTS object (all 13 tools)
+│   │   └── localBaseHints.ts    # Local tool base hints constants
 │   │
 │   ├── utils.ts                 # 🎯 createSuccessResult() - MAIN ENTRY POINT
 │   ├── toolMetadata.ts          # Fetches remote JSON, exports getToolHintsSync
@@ -111,12 +112,19 @@ packages/octocode-mcp/src/
 │   ├── local_fetch_content.ts   # Uses createSuccessResult()
 │   ├── local_view_structure.ts  # Uses createSuccessResult()
 │   ├── local_find_files.ts      # Uses createSuccessResult()
+│   ├── lsp_goto_definition.ts   # Uses createSuccessResult()
+│   ├── lsp_find_references.ts   # Uses createSuccessResult()
+│   ├── lsp_call_hierarchy.ts    # Uses createSuccessResult()
 │   ├── github_*.ts              # Uses createSuccessResult()
 │   └── package_search.ts        # Uses createSuccessResult()
 │
+├── types/
+│   └── metadata.ts              # HintContext, HintStatus, ToolHintGenerators
+│
 └── utils/
-    ├── bulkOperations.ts        # Aggregates hints across bulk results
-    └── errorResult.ts           # Error hints handling
+    └── response/
+        ├── bulk.ts              # Aggregates hints across bulk results
+        └── error.ts             # Error hints handling
 ```
 
 ---
@@ -181,6 +189,7 @@ packages/octocode-mcp/src/
 **Context Properties**:
 ```typescript
 interface HintContext {
+  // Common properties
   fileSize?: number;           // File size in bytes
   resultSize?: number;         // Result size
   tokenEstimate?: number;      // Estimated tokens
@@ -188,14 +197,45 @@ interface HintContext {
   matchCount?: number;         // Search matches
   fileCount?: number;          // Files found
   isLarge?: boolean;           // Large file/result flag
-  errorType?: 'size_limit' | 'not_found' | 'permission' | 'pattern_too_broad';
   originalError?: string;
   hasPattern?: boolean;        // Has matchString
   hasPagination?: boolean;     // Using pagination
   path?: string;
+  
+  // Error types
+  errorType?: 
+    | 'size_limit' 
+    | 'not_found' 
+    | 'permission' 
+    | 'pattern_too_broad'
+    | 'symbol_not_found'       // LSP: symbol not found
+    | 'file_not_found'         // LSP: file not found
+    | 'timeout'                // LSP: server timeout
+    | 'not_a_function';        // LSP: not a callable symbol
+  
+  // GitHub-specific
   hasOwnerRepo?: boolean;      // GitHub: has owner/repo
   match?: 'file' | 'path';     // GitHub: search mode
+  
+  // Local-specific
   searchEngine?: 'rg' | 'grep'; // Local: which engine
+  
+  // LSP-specific
+  locationCount?: number;      // Number of definitions/references found
+  hasExternalPackage?: boolean; // Definition in node_modules
+  isFallback?: boolean;        // Using text-search fallback
+  searchRadius?: number;       // Lines searched around lineHint
+  lineHint?: number;           // Original line hint provided
+  symbolName?: string;         // Symbol being searched
+  uri?: string;                // File URI
+  hasMultipleFiles?: boolean;  // References span multiple files
+  hasMorePages?: boolean;      // Pagination available
+  currentPage?: number;        // Current page number
+  totalPages?: number;         // Total pages
+  direction?: 'incoming' | 'outgoing'; // Call hierarchy direction
+  callCount?: number;          // Number of calls found
+  depth?: number;              // Call hierarchy depth
+  hasMoreContent?: boolean;    // More content available
 }
 ```
 
@@ -310,6 +350,14 @@ export function getStaticHints(
   return getToolHintsSync(toolName, status);
 }
 
+// Also exports getMetadataDynamicHints for dynamic.ts to use
+export function getMetadataDynamicHints(
+  toolName: string,
+  hintType: string
+): readonly string[] {
+  return getStaticDynamicHints(toolName, hintType);
+}
+
 // toolMetadata.ts
 export function getToolHintsSync(
   toolName: string,
@@ -319,43 +367,62 @@ export function getToolHintsSync(
   const toolHints = METADATA_JSON.tools[toolName]?.hints[resultType] ?? [];
   return [...baseHints, ...toolHints];
 }
+
+// Fetches dynamic hints by key from tools[toolName].hints.dynamic[hintType]
+export function getDynamicHints(
+  toolName: string,
+  hintType: string
+): readonly string[] {
+  return METADATA_JSON.tools[toolName]?.hints?.dynamic?.[hintType] ?? [];
+}
 ```
 
 ### Step 4: Dynamic hints from context
 
+Dynamic hints use `getMetadataDynamicHints()` to fetch hint text from the remote API, keeping hint content centralized and updatable without code changes:
+
 ```typescript
 // hints/dynamic.ts
+import { getMetadataDynamicHints } from './static.js';
+
 export const HINTS: Record<string, ToolHintGenerators> = {
   [STATIC_TOOL_NAMES.LOCAL_RIPGREP]: {
-    hasResults: (ctx: HintContext = {}) => [
-      ctx.searchEngine === 'grep'
-        ? 'Using grep fallback - install ripgrep for best performance.'
-        : undefined,
-      'Next: localGetFileContent for context (prefer matchString).',
-      'Also search imports/usages/defs with localSearchCode.',
-      ctx.fileCount && ctx.fileCount > 5
-        ? 'Tip: run queries in parallel.'
-        : undefined,
-    ],
-    empty: (ctx: HintContext = {}) => [
-      ctx.searchEngine === 'grep'
-        ? 'Using grep fallback - note: grep does not respect .gitignore.'
-        : undefined,
-      'No matches. Broaden scope (noIgnore, hidden) or use fixedString.',
-      'Unsure of paths? localViewStructure or localFindFiles.',
-    ],
+    hasResults: (ctx: HintContext = {}) => {
+      const hints: (string | undefined)[] = [];
+      
+      // Conditional hints fetch from metadata by key
+      if (ctx.searchEngine === 'grep') {
+        hints.push(...getMetadataDynamicHints(STATIC_TOOL_NAMES.LOCAL_RIPGREP, 'grepFallback'));
+      }
+      if (ctx.fileCount && ctx.fileCount > 5) {
+        hints.push(...getMetadataDynamicHints(STATIC_TOOL_NAMES.LOCAL_RIPGREP, 'parallelTip'));
+      }
+      if (ctx.fileCount && ctx.fileCount > 1) {
+        hints.push(...getMetadataDynamicHints(STATIC_TOOL_NAMES.LOCAL_RIPGREP, 'multipleFiles'));
+      }
+      return hints;
+    },
+    empty: (ctx: HintContext = {}) => {
+      const hints: (string | undefined)[] = [];
+      if (ctx.searchEngine === 'grep') {
+        hints.push(...getMetadataDynamicHints(STATIC_TOOL_NAMES.LOCAL_RIPGREP, 'grepFallbackEmpty'));
+      }
+      return hints;
+    },
     error: (ctx: HintContext = {}) => {
       if (ctx.errorType === 'size_limit') {
         return [
           `Too many results${ctx.matchCount ? ` (${ctx.matchCount} matches)` : ''}. Narrow pattern/scope.`,
-          'Add type/path filters to focus.',
-          'Names only? Use localFindFiles.',
+          ...(ctx.path?.includes('node_modules') 
+            ? getMetadataDynamicHints(STATIC_TOOL_NAMES.LOCAL_RIPGREP, 'nodeModulesSearch') 
+            : []),
+          ...getMetadataDynamicHints(STATIC_TOOL_NAMES.LOCAL_RIPGREP, 'largeResult'),
         ];
       }
-      return ['Tool unavailable; try localFindFiles or localViewStructure.'];
+      return [];
     },
   },
-  // ... other tools ...
+  // ... 12 more tools (LOCAL_*, GITHUB_*, LSP_*, PACKAGE_SEARCH) ...
 };
 
 export function getDynamicHints(
@@ -371,6 +438,8 @@ export function getDynamicHints(
 }
 ```
 
+The `getMetadataDynamicHints()` function fetches hint text from the remote API's `tools[toolName].hints.dynamic[hintKey]` field, enabling hint content updates without code deployments.
+
 ---
 
 ## Bulk Operations Aggregation
@@ -378,7 +447,7 @@ export function getDynamicHints(
 When tools return multiple results (bulk queries), hints are aggregated:
 
 ```typescript
-// utils/bulkOperations.ts
+// utils/response/bulk.ts
 function createBulkResponse(...) {
   const hasResultsHintsSet = new Set<string>();
   const emptyHintsSet = new Set<string>();
@@ -481,6 +550,41 @@ function createBulkResponse(...) {
 | hasResults | - | Tool-generated hints via `extraHints` (deprecation, install, explore) |
 | empty | - | Tool-generated hints via `extraHints` |
 
+### LSP_GOTO_DEFINITION
+| Status | Context Check | Hint |
+|--------|---------------|------|
+| hasResults | `locationCount > 1` | Multiple definitions found |
+| hasResults | `hasExternalPackage` | Definition in external package |
+| hasResults | `isFallback` | Using text-search fallback mode |
+| empty | `searchRadius` | Searched ±N lines from lineHint |
+| empty | `symbolName` | Symbol not found suggestions |
+| error | `errorType === 'symbol_not_found'` | Symbol not at expected line |
+| error | `errorType === 'file_not_found'` | File path not found |
+| error | `errorType === 'timeout'` | LSP server timeout |
+
+### LSP_FIND_REFERENCES
+| Status | Context Check | Hint |
+|--------|---------------|------|
+| hasResults | `locationCount > 20` | Many references found |
+| hasResults | `hasMultipleFiles` | References span multiple files |
+| hasResults | `hasMorePages` | Pagination available |
+| hasResults | `isFallback` | Using text-search fallback mode |
+| empty | `symbolName` | Symbol not found suggestions |
+| error | `errorType === 'symbol_not_found'` | Symbol not found |
+| error | `errorType === 'timeout'` | LSP server timeout |
+
+### LSP_CALL_HIERARCHY
+| Status | Context Check | Hint |
+|--------|---------------|------|
+| hasResults | `direction === 'incoming'` | Found N callers |
+| hasResults | `direction === 'outgoing'` | Found N callees |
+| hasResults | `depth > 1` | Multi-level hierarchy |
+| hasResults | `hasMorePages` | More calls via pagination |
+| hasResults | `isFallback` | Using text-search fallback mode |
+| empty | `symbolName` | Symbol not found suggestions |
+| error | `errorType === 'not_a_function'` | Symbol is not callable |
+| error | `errorType === 'timeout'` | LSP server timeout |
+
 ---
 
 ## Special Hints
@@ -547,25 +651,39 @@ Update the remote API at `octocodeai.com/api/mcpContent`:
 
 ### 2. Add Dynamic Hints (in code)
 
-Edit `hints/dynamic.ts`:
+Edit `hints/dynamic.ts`. Use `getMetadataDynamicHints()` to fetch hint text from the API when possible:
 
 ```typescript
+import { getMetadataDynamicHints } from './static.js';
+
 export const HINTS: Record<string, ToolHintGenerators> = {
   // ...existing tools...
   
   [STATIC_TOOL_NAMES.YOUR_NEW_TOOL]: {
-    hasResults: (ctx: HintContext = {}) => [
-      ctx.someCondition ? 'Conditional hint' : undefined,
-      'Always shown hint',
-    ],
-    empty: (ctx: HintContext = {}) => [
-      'Recovery suggestion',
-    ],
+    hasResults: (ctx: HintContext = {}) => {
+      const hints: (string | undefined)[] = [];
+      
+      // Fetch hints from API metadata by key
+      if (ctx.someCondition) {
+        hints.push(...getMetadataDynamicHints(STATIC_TOOL_NAMES.YOUR_NEW_TOOL, 'someConditionKey'));
+      }
+      
+      return hints;
+    },
+    empty: (ctx: HintContext = {}) => {
+      // Can also return inline hints for dynamic values
+      return ctx.symbolName 
+        ? [`Symbol "${ctx.symbolName}" not found.`]
+        : [];
+    },
     error: (ctx: HintContext = {}) => {
       if (ctx.errorType === 'size_limit') {
-        return ['Size limit hint'];
+        return [
+          `Too large${ctx.tokenEstimate ? ` (~${ctx.tokenEstimate} tokens)` : ''}.`,
+          ...getMetadataDynamicHints(STATIC_TOOL_NAMES.YOUR_NEW_TOOL, 'sizeLimitRecovery'),
+        ];
       }
-      return ['General error hint'];
+      return [];
     },
   },
 };
@@ -593,13 +711,15 @@ return {
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| `utils.ts` | Entry | `createSuccessResult()` - main tool entry point |
-| `hints/types.ts` | Types | HintContext, HintStatus, HintGenerator |
-| `hints/index.ts` | Combiner | `getHints()` - combines static + dynamic |
-| `hints/static.ts` | Loader | Loads from toolMetadata |
-| `hints/dynamic.ts` | Generator | Context-aware HINTS object (all 10 tools) |
-| `toolMetadata.ts` | Remote | Fetches from API, caches |
-| `bulkOperations.ts` | Aggregator | Deduplicates across bulk results |
+| `tools/utils.ts` | Entry | `createSuccessResult()` - main tool entry point |
+| `types/metadata.ts` | Types | HintContext, HintStatus, ToolHintGenerators |
+| `tools/hints/index.ts` | Combiner | `getHints()` - combines static + dynamic |
+| `tools/hints/types.ts` | Re-exports | Re-exports types from `types/metadata.ts` |
+| `tools/hints/static.ts` | Loader | Loads from toolMetadata + `getMetadataDynamicHints()` |
+| `tools/hints/dynamic.ts` | Generator | Context-aware HINTS object (all 13 tools) |
+| `tools/hints/localBaseHints.ts` | Constants | Local tool base hints |
+| `tools/toolMetadata.ts` | Remote | Fetches from API, caches |
+| `utils/response/bulk.ts` | Aggregator | Deduplicates across bulk results |
 
 **Flow**:
 ```

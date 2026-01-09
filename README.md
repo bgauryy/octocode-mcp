@@ -49,7 +49,11 @@
   - [/review_pull_request - Comprehensive PR Review](#review_pull_request---comprehensive-pr-review)
   - [/review_security - Security Audit](#review_security---security-audit)
 - [Documentation](#documentation)
-- [Project Stats](#project-stats)
+- [Local Research](#local-research)
+  - [Tools](#tools-1)
+  - [LSP Tools (Code Intelligence)](#lsp-tools-code-intelligence)
+  - [Research Workflows](#research-workflows)
+  - [Use Cases](#use-cases)
 - [Community](#community)
 - [License](#license)
 
@@ -887,18 +891,25 @@ Comprehensive security analysis of a repository. Identifies vulnerabilities, rev
 
 ## Local Research
 
-**octocode-mcp-local** brings the power of Octocode's research capabilities to your local filesystem.
+**Octocode Local** brings the power of Octocode's research capabilities to your local filesystem with **LSP-powered code intelligence**.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/bgauryy/local-explorer-mcp/main/assets/logo.png" alt="octocode-mcp-local" width="100" />
 </p>
 
-An MCP server that provides AI assistants with native Unix tools for local code exploration. Built on ripgrep for pattern search, find for file metadata queries, and ls for directory traversal.
+An MCP server that provides AI assistants with powerful tools for local code exploration, combining fast Unix utilities with semantic code understanding through Language Server Protocol (LSP) integration.
 
-- **Fast Pattern Search**: Uses `ripgrep` for high-performance regex searching
-- **Smart Navigation**: Directory structure analysis and file discovery
-- **Secure Access**: Strictly scoped to your workspace with automatic secrets filtering
-- **No Indexing**: Direct filesystem access for real-time results
+### Core Capabilities
+
+| Capability | Implementation | Benefit |
+|------------|----------------|---------|
+| **Pattern Search** | `ripgrep` integration | 10x faster than grep, respects `.gitignore` |
+| **Code Intelligence** | LSP integration | Go-to-definition, find references, call hierarchy |
+| **Smart Navigation** | Directory analysis | Structure exploration with filtering and sorting |
+| **File Discovery** | Metadata search | Find by name, time, size, permissions |
+| **Secure Access** | Workspace scoping | Automatic secrets filtering, no indexing required |
+
+---
 
 ### Quick Install
 
@@ -917,8 +928,152 @@ An MCP server that provides AI assistants with native Unix tools for local code 
 }
 ```
 
+---
 
-👉 **[Get Started with Octocode Local](./packages/octocode-local/README.md)**
+### Tools
+
+#### 📁 localViewStructure
+
+**Explore directory structure with depth control and filtering**
+
+Navigate your codebase hierarchy, understand project organization, and discover important files.
+
+```
+• Project overview: "Show me the structure of src/ with depth 2"
+• Find components: "List all directories in app/components"
+• Discover patterns: "Show files sorted by modification time"
+```
+
+---
+
+#### 🔍 localSearchCode
+
+**Fast pattern search powered by ripgrep**
+
+Find code patterns, function definitions, or text across your entire codebase in milliseconds.
+
+```
+• Find implementations: "Search for 'useAuth' in TypeScript files"
+• Locate patterns: "Find all TODO comments in src/"
+• Discovery mode: "List files containing 'export default'"
+```
+
+---
+
+#### 📂 localFindFiles
+
+**Find files by metadata (name, time, size, permissions)**
+
+Locate files based on properties rather than content—perfect for finding recent changes or specific file types.
+
+```
+• Recent changes: "Find files modified in the last 7 days"
+• By name: "Find all *.test.ts files"
+• By size: "Find files larger than 1MB"
+```
+
+---
+
+#### 📄 localGetFileContent
+
+**Read file contents with smart extraction**
+
+Retrieve specific sections using pattern matching or line ranges—avoid loading entire files into context.
+
+```
+• Pattern matching: "Show me the validateUser function with 10 lines of context"
+• Line ranges: "Read lines 50-100 from api/handler.ts"
+• Full content: "Get the entire package.json file"
+```
+
+---
+
+### LSP Tools (Code Intelligence)
+
+Octocode Local includes **Language Server Protocol** integration for semantic code understanding—go beyond text search to understand code relationships.
+
+#### 🎯 lspGotoDefinition
+
+**Navigate to where symbols are defined**
+
+Jump directly to function definitions, class declarations, or variable origins.
+
+```
+• "Go to the definition of handleSubmit"
+• "Where is UserContext defined?"
+• "Find the source of this imported function"
+```
+
+---
+
+#### 🔗 lspFindReferences
+
+**Find all usages of a symbol**
+
+Discover everywhere a function, variable, or type is used across your codebase.
+
+```
+• "Find all references to validateToken"
+• "Where is the User type used?"
+• "Show all calls to this API function"
+```
+
+---
+
+#### 🌳 lspCallHierarchy
+
+**Trace function call relationships**
+
+Understand code flow by seeing who calls a function (incoming) and what it calls (outgoing).
+
+```
+• "Who calls the authenticate function?" (incoming)
+• "What functions does processPayment call?" (outgoing)
+• "Trace the flow from API handler to database"
+```
+
+**When to use**: Flow tracing, understanding code paths, impact analysis before refactoring.
+
+---
+
+### Research Workflows
+
+Octocode Local tools work together in powerful combinations:
+
+#### The Discovery Flow
+```
+localViewStructure → localSearchCode → localGetFileContent
+```
+Map structure → Find patterns → Read details
+
+#### The Semantic Flow
+```
+localSearchCode → lspGotoDefinition → lspFindReferences
+```
+Find text → Jump to definition → Trace usages
+
+#### The Flow Analysis
+```
+localSearchCode → lspCallHierarchy(incoming) → lspCallHierarchy(outgoing)
+```
+Find function → See callers → See callees
+
+---
+
+### Use Cases
+
+| Task | Recommended Approach |
+|------|---------------------|
+| **Understand new codebase** | `localViewStructure` → `localSearchCode` → `lspGotoDefinition` |
+| **Find where function is used** | `localSearchCode` → `lspFindReferences` |
+| **Trace code flow** | `localSearchCode` → `lspCallHierarchy` |
+| **Find recent changes** | `localFindFiles(modifiedWithin="7d")` |
+| **Read specific code section** | `localGetFileContent(matchString="functionName")` |
+| **Impact analysis** | `lspGotoDefinition` → `lspCallHierarchy(incoming)` |
+
+---
+
+👉 **[Full Documentation →](./packages/octocode-mcp/docs/LSP_TOOLS.md)**
 
 ---
 

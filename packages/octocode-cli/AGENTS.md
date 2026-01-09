@@ -131,9 +131,12 @@ src/
 ```
 skills/
 ├── README.md                # Skills documentation
-├── octocode-research/       # Research skill for code exploration
-│   ├── SKILL.md             # Skill definition
-│   └── references/          # Reference documents
+├── octocode-generate/       # Generation skill for code creation
+│   └── SKILL.md
+├── octocode-implement/      # Implementation skill from specs
+│   ├── SKILL.md
+│   └── references/
+│       ├── execution-phases.md
 │       ├── tool-reference.md
 │       └── workflow-patterns.md
 ├── octocode-local-search/   # Local code exploration skill
@@ -141,17 +144,21 @@ skills/
 │   └── references/
 │       ├── tool-reference.md
 │       └── workflow-patterns.md
-├── octocode-implement/      # Implementation skill from specs
+├── octocode-pr-review/      # PR review skill
+│   ├── SKILL.md
+│   └── references/
+│       ├── domain-reviewers.md
+│       ├── execution-lifecycle.md
+│       └── research-flows.md
+├── octocode-research/       # Research skill for code exploration
 │   ├── SKILL.md
 │   └── references/
 │       ├── tool-reference.md
 │       └── workflow-patterns.md
-├── octocode-generate/       # Generation skill for code creation
-│   └── SKILL.md
-├── octocode-pr-review/      # PR review skill
-│   └── SKILL.md
 └── octocode-roast/          # Code roasting skill for fun feedback
-    └── SKILL.md
+    ├── SKILL.md
+    └── references/
+        └── sin-registry.md
 ```
 
 ### Tests Structure

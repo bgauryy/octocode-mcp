@@ -31,9 +31,11 @@ All commands run from this package directory (`packages/octocode-mcp/`).
 | **Build (Watch)** | `yarn build:watch` | Watch mode for development |
 | **Clean** | `yarn clean` | Remove `dist/` directory |
 | **Test** | `yarn test` | Run tests with coverage report |
+| **Test (Full)** | `yarn test:full` | Lint + typecheck + tests with coverage |
 | **Test (Quiet)** | `yarn test:quiet` | Minimal test output |
 | **Test (Watch)** | `yarn test:watch` | Watch mode for tests |
 | **Test (UI)** | `yarn test:ui` | Vitest UI dashboard |
+| **Typecheck** | `yarn typecheck` | TypeScript type checking |
 | **Lint** | `yarn lint` | ESLint check |
 | **Lint (Fix)** | `yarn lint:fix` | Auto-fix linting issues |
 | **Format** | `yarn format` | Prettier format `src/` |
@@ -78,6 +80,7 @@ src/
 │   ├── baseSchema.ts        # Common schema patterns & bulk query builder
 │   ├── github_*.ts          # GitHub tool schemas (5 files)
 │   ├── local_*.ts           # Local tool schemas (4 files)
+│   ├── lsp_*.ts             # LSP tool schemas (3 files)
 │   ├── package_search.ts    # Package search schema
 │   └── responsePriority.ts  # Response field ordering
 │
@@ -88,6 +91,7 @@ src/
 │   ├── toolsManager.ts      # Tool registration orchestrator
 │   ├── github_*.ts          # GitHub tool implementations (5 files)
 │   ├── local_*.ts           # Local tool implementations (4 files)
+│   ├── lsp_*.ts             # LSP tool implementations (3 files)
 │   ├── package_search.ts    # Package search implementation
 │   ├── utils.ts             # Tool-specific utilities
 │   └── hints/               # Dynamic hint generation
@@ -138,11 +142,16 @@ src/
 │
 ├── utils/                   # 🛠️ Shared utilities (organized by domain)
 │   ├── core/                # Core utilities
-│   │   ├── index.ts         # Module exports
 │   │   ├── constants.ts     # Global constants
 │   │   ├── logger.ts        # MCP logging integration
 │   │   ├── promise.ts       # Async/promise utilities
 │   │   └── types.ts         # Core type definitions
+│   │
+│   ├── credentials/         # Credential utilities
+│   │   └── index.ts         # Credential management re-exports
+│   │
+│   ├── environment/         # Environment detection
+│   │   └── environmentDetection.ts # Runtime environment detection
 │   │
 │   ├── exec/                # Command execution
 │   │   ├── index.ts         # Module exports
@@ -152,7 +161,6 @@ src/
 │   │   └── commandAvailability.ts # Command detection
 │   │
 │   ├── file/                # File operations
-│   │   ├── index.ts         # Module exports
 │   │   ├── byteOffset.ts    # Byte offset calculations
 │   │   ├── filters.ts       # File filtering utilities
 │   │   ├── size.ts          # File size utilities
@@ -160,7 +168,6 @@ src/
 │   │   └── types.ts         # File type definitions
 │   │
 │   ├── http/                # HTTP utilities
-│   │   ├── index.ts         # Module exports
 │   │   ├── cache.ts         # Response caching
 │   │   └── fetch.ts         # Fetch with retries
 │   │
@@ -170,7 +177,6 @@ src/
 │   │   └── jsonToYamlString.ts # YAML conversion
 │   │
 │   ├── package/             # Package utilities
-│   │   ├── index.ts         # Module exports
 │   │   ├── common.ts        # Shared package utilities
 │   │   ├── npm.ts           # NPM package search
 │   │   └── python.ts        # PyPI package search
@@ -182,12 +188,10 @@ src/
 │   │   └── types.ts         # Pagination types
 │   │
 │   ├── parsers/             # Output parsers
-│   │   ├── index.ts         # Module exports
 │   │   ├── diff.ts          # Diff parsing
 │   │   └── ripgrep.ts       # Ripgrep output parsing
 │   │
 │   └── response/            # Response utilities
-│       ├── index.ts         # Module exports
 │       ├── bulk.ts          # Bulk operation responses
 │       └── error.ts         # Error response formatting
 │
@@ -208,13 +212,15 @@ tests/
 ├── session.*.test.ts        # Session/telemetry tests
 ├── errorCodes.test.ts       # Error codes tests
 ├── commands/                # Command builder tests
-├── github/                  # GitHub API tests (27 files)
-├── lsp/                     # LSP client tests
+├── errors/                  # Error handling tests
+├── github/                  # GitHub API tests (29 files)
+├── lsp/                     # LSP client tests (7 files)
 ├── security/                # Security tests (15 files)
 ├── scheme/                  # Schema validation tests
-├── tools/                   # Tool implementation tests (42 files)
-│   └── lsp_*.test.ts        # LSP tool tests
-├── utils/                   # Utility tests (33 files)
+├── tools/                   # Tool implementation tests (55 files)
+│   ├── lsp_*.test.ts        # LSP tool tests
+│   └── hints/               # Hints system tests
+├── utils/                   # Utility tests (36 files)
 ├── integration/             # End-to-end tests
 ├── helpers/                 # Test utilities & mocks
 └── fixtures/                # Test fixtures
