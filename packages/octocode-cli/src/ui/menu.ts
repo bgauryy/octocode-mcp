@@ -100,7 +100,7 @@ function buildSkillsMenuItem(skills: SkillsState): {
     return {
       name: `🧠 Manage System Skills ${c('green', '✓')}`,
       value: 'skills',
-      description: `${skills.totalInstalledCount} installed • ${skills.destDir}`,
+      description: `${skills.totalInstalledCount} installed • Research, PR Review & more`,
     };
   }
 
@@ -108,14 +108,15 @@ function buildSkillsMenuItem(skills: SkillsState): {
     return {
       name: '🧠 Manage System Skills',
       value: 'skills',
-      description: `${skills.totalInstalledCount} installed • ${skills.destDir}`,
+      description: `${skills.totalInstalledCount}/${skills.skills.length} installed • Get more skills!`,
     };
   }
 
+  // No skills installed - encourage installation
   return {
-    name: '🧠 Manage System Skills',
+    name: `🧠 ${bold('Manage System Skills')} ${c('cyan', '★')}`,
     value: 'skills',
-    description: `No skills installed • ${skills.destDir}`,
+    description: `${c('cyan', '→')} Install skills for AI-powered coding workflows`,
   };
 }
 
@@ -160,11 +161,11 @@ function buildAuthMenuItem(auth: OctocodeAuthStatus): {
     };
   }
 
-  // Not authenticated - show X to indicate setup needed
+  // Not authenticated - show prominent indicator with call to action
   return {
-    name: `🔑 Manage Auth ${c('red', '✗')}`,
+    name: `🔑 ${bold('Manage Auth')} ${c('red', '✗ Required!')}`,
     value: 'auth',
-    description: 'Not configured - set up auth',
+    description: `${c('yellow', '→')} Sign in to access GitHub`,
   };
 }
 
@@ -235,6 +236,50 @@ function buildOctocodeMenuItem(state: AppState): {
 }
 
 /**
+ * Print contextual hints based on app state
+ * Guides users to set up auth and use best practices
+ */
+function printContextualHints(state: AppState): void {
+  const hints: string[] = [];
+
+  // ─── AUTH HINT (Priority 1) ───
+  if (!state.githubAuth.authenticated) {
+    hints.push(
+      `${c('yellow', '⚠')} ${bold('Auth required!')} Run ${c('cyan', '🔑 Manage Auth')} to access GitHub repos`
+    );
+  } else if (
+    state.octocode.isInstalled &&
+    state.skills.totalInstalledCount === 0
+  ) {
+    // ─── SKILLS HINT (Priority 2) ───
+    hints.push(
+      `${c('cyan', '💡')} ${dim('Boost your AI coding:')} Install ${c('magenta', 'Skills')} for research, PR review & more!`
+    );
+  }
+
+  // ─── PRO TIPS (show one at a time) ───
+  if (hints.length === 0 && state.githubAuth.authenticated) {
+    const tips = [
+      `${c('cyan', '💡')} ${dim('Pro tip:')} Use ${c('magenta', '/research')} or ${c('magenta', '/plan')} prompts for structured code workflows`,
+      `${c('cyan', '💡')} ${dim('Pro tip:')} Add ${c('magenta', 'AGENTS.md')} or ${c('magenta', '.context/')} files to give AI better project context`,
+      `${c('cyan', '💡')} ${dim('Pro tip:')} Install ${c('magenta', 'octocode-pr-review')} skill for AI-powered code reviews`,
+      `${c('cyan', '💡')} ${dim('Pro tip:')} Use ${c('magenta', 'localSearchCode')} + ${c('magenta', 'lspGotoDefinition')} for deep code exploration`,
+    ];
+    // Show a random tip based on current time (changes each session)
+    const tipIndex = Math.floor(Date.now() / 60000) % tips.length;
+    hints.push(tips[tipIndex]);
+  }
+
+  // Print hints
+  if (hints.length > 0) {
+    console.log();
+    for (const hint of hints) {
+      console.log(`  ${hint}`);
+    }
+  }
+}
+
+/**
  * Show main menu and handle selection
  * @param state - Unified application state
  * @returns MenuChoice or 'exit' if user confirms exit
@@ -243,6 +288,9 @@ async function showMainMenu(state: AppState): Promise<MenuChoice> {
   // Display compact status bar
   console.log();
   console.log(`  ${dim('Status:')} ${buildStatusLine(state)}`);
+
+  // Show contextual hints and tips
+  printContextualHints(state);
 
   // Build menu choices based on state
   const choices: Array<{
@@ -634,11 +682,13 @@ async function showAuthMenu(
 }
 
 /**
- * Run the login flow
+ * Run the login flow with enhanced progress indication
  */
 async function runLoginFlow(): Promise<boolean> {
   console.log();
+  console.log(c('blue', '━'.repeat(66)));
   console.log(`  ${bold('🔐 GitHub Authentication')}`);
+  console.log(c('blue', '━'.repeat(66)));
   console.log();
   console.log(
     `  ${dim('This will open your browser to authenticate with GitHub.')}`
@@ -646,6 +696,7 @@ async function runLoginFlow(): Promise<boolean> {
   console.log();
 
   let verificationShown = false;
+  let authSpinner: Spinner | null = null;
   const spinner = new Spinner('Connecting to GitHub...').start();
 
   const result = await oauthLogin({
@@ -653,33 +704,82 @@ async function runLoginFlow(): Promise<boolean> {
       spinner.stop();
       verificationShown = true;
 
-      console.log(
-        `  ${c('yellow', '!')} First copy your one-time code: ${bold(verification.user_code)}`
-      );
+      // Clear visual box for the code
       console.log();
+      console.log(c('yellow', '  ┌' + '─'.repeat(50) + '┐'));
       console.log(
-        `  ${bold('Press Enter')} to open ${c('cyan', verification.verification_uri)} in your browser...`
+        c('yellow', '  │ ') +
+          `${c('yellow', '!')} Your one-time code: ${bold(c('cyan', verification.user_code))}` +
+          ' '.repeat(50 - 26 - verification.user_code.length) +
+          c('yellow', '│')
       );
+      console.log(c('yellow', '  └' + '─'.repeat(50) + '┘'));
       console.log();
-      console.log(`  ${dim('Waiting for authentication...')}`);
+      console.log(`  ${bold('1.')} Copy the code above`);
+      console.log(
+        `  ${bold('2.')} ${bold('Press Enter')} to open ${c('cyan', verification.verification_uri)}`
+      );
+      console.log(`  ${bold('3.')} Paste the code in your browser`);
+      console.log();
+
+      // Start a progress spinner with helpful context
+      authSpinner = new Spinner(
+        `Waiting for browser authentication... ${dim('(typically 10-30 seconds)')}`
+      ).start();
     },
   });
 
+  // Stop any running spinner
+  if (authSpinner) {
+    (authSpinner as Spinner).stop();
+  }
   if (!verificationShown) {
     spinner.stop();
   }
 
   console.log();
   if (result.success) {
-    console.log(`  ${c('green', '✓')} Authentication complete!`);
+    console.log(c('green', '  ┌' + '─'.repeat(50) + '┐'));
     console.log(
-      `  ${c('green', '✓')} Logged in as ${c('cyan', result.username || 'unknown')}`
+      c('green', '  │ ') +
+        `${c('green', '✓')} ${bold('Authentication successful!')}` +
+        ' '.repeat(22) +
+        c('green', '│')
     );
+    console.log(c('green', '  └' + '─'.repeat(50) + '┘'));
     console.log();
-    console.log(`  ${dim('Credentials stored in:')} ${getStoragePath()}`);
-  } else {
     console.log(
-      `  ${c('red', '✗')} Authentication failed: ${result.error || 'Unknown error'}`
+      `  ${c('green', '✓')} Logged in as ${c('cyan', '@' + (result.username || 'unknown'))}`
+    );
+    console.log(`  ${dim('Credentials stored in:')} ${getStoragePath()}`);
+    console.log();
+    console.log(`  ${c('cyan', '💡')} ${bold("What's next?")}`);
+    console.log(
+      `     ${dim('•')} Install ${c('magenta', 'Skills')} for AI-powered research & PR reviews`
+    );
+    console.log(
+      `     ${dim('•')} Use ${c('cyan', '/research')} prompt to explore any GitHub repo`
+    );
+    console.log(
+      `     ${dim('•')} Add ${c('cyan', 'AGENTS.md')} to your project for better AI context`
+    );
+  } else {
+    console.log(c('red', '  ┌' + '─'.repeat(50) + '┐'));
+    console.log(
+      c('red', '  │ ') +
+        `${c('red', '✗')} ${bold('Authentication failed')}` +
+        ' '.repeat(27) +
+        c('red', '│')
+    );
+    console.log(c('red', '  └' + '─'.repeat(50) + '┘'));
+    console.log();
+    console.log(`  ${c('red', 'Error:')} ${result.error || 'Unknown error'}`);
+    console.log();
+    console.log(`  ${bold('Troubleshooting:')}`);
+    console.log(`     ${dim('•')} Make sure you copied the code correctly`);
+    console.log(`     ${dim('•')} Check your browser didn't block the popup`);
+    console.log(
+      `     ${dim('•')} Try running ${c('cyan', 'octocode login')} again`
     );
   }
   console.log();
@@ -846,9 +946,33 @@ function displayAuthStatus(status: OctocodeAuthStatus): void {
         `  ${c('yellow', '⚠')} Session expired - please sign in again`
       );
     }
+
+    // Success tips
+    console.log();
+    console.log(
+      `  ${c('green', '✓')} ${dim('Ready to access GitHub repositories!')}`
+    );
   } else {
-    console.log(`  ${c('yellow', '○')} Not signed in`);
-    console.log(`  ${dim('Sign in to access private repositories.')}`);
+    // Not authenticated - prominent warning with instructions
+    console.log(c('yellow', '  ┌' + '─'.repeat(56) + '┐'));
+    console.log(
+      c('yellow', '  │ ') +
+        `${c('yellow', '⚠')} ${bold('Authentication Required')}` +
+        ' '.repeat(31) +
+        c('yellow', '│')
+    );
+    console.log(c('yellow', '  └' + '─'.repeat(56) + '┘'));
+    console.log();
+    console.log(`  ${dim('Without auth, Octocode cannot:')}`);
+    console.log(`     ${c('red', '✗')} Access private repositories`);
+    console.log(`     ${c('red', '✗')} Search code in your organization`);
+    console.log(
+      `     ${c('red', '✗')} Provide full GitHub research capabilities`
+    );
+    console.log();
+    console.log(
+      `  ${c('cyan', '→')} Select ${c('green', '"Sign In via Octocode"')} below to authenticate`
+    );
   }
   console.log();
 }

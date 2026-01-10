@@ -28,6 +28,7 @@ import path from 'node:path';
 type MarketplaceMenuChoice = MarketplaceSource | 'back';
 type SkillMenuChoice = MarketplaceSkill | 'back';
 type InstallChoice = 'install' | 'back';
+type OfficialFlowChoice = 'install-all' | 'browse' | 'back';
 
 // ============================================================================
 // Constants
@@ -329,6 +330,153 @@ async function installSkill(skill: MarketplaceSkill): Promise<boolean> {
 }
 
 // ============================================================================
+// Bulk Install
+// ============================================================================
+
+/**
+ * Show initial menu for Official skills - Install All or Browse
+ */
+async function showOfficialFlowMenu(
+  totalSkills: number,
+  notInstalledCount: number
+): Promise<OfficialFlowChoice> {
+  console.log();
+  console.log(`  ${bold('Octocode Official Skills')}`);
+  console.log(`  ${dim(`${totalSkills} skills available`)}`);
+  console.log();
+
+  const choices: Array<{
+    name: string;
+    value: OfficialFlowChoice;
+    description?: string;
+  }> = [];
+
+  // Show "Install All" option only if there are skills to install
+  if (notInstalledCount > 0) {
+    choices.push({
+      name: `${c('green', '⚡')} Install All Skills (${notInstalledCount} to install)`,
+      value: 'install-all',
+      description: dim('One-click install of all Octocode skills'),
+    });
+  } else {
+    choices.push({
+      name: `${c('green', '✓')} All skills installed!`,
+      value: 'browse',
+      description: dim('Browse to reinstall or view details'),
+    });
+  }
+
+  choices.push({
+    name: `${c('cyan', '📋')} Browse Skills Individually`,
+    value: 'browse',
+    description: dim('View details and install one by one'),
+  });
+
+  choices.push(
+    new Separator() as unknown as {
+      name: string;
+      value: OfficialFlowChoice;
+    }
+  );
+  choices.push({
+    name: `${c('dim', '← Back')}`,
+    value: 'back',
+  });
+
+  const choice = await select<OfficialFlowChoice>({
+    message: '',
+    choices,
+    loop: false,
+    theme: {
+      prefix: '  ',
+      style: {
+        highlight: (text: string) => c('magenta', text),
+      },
+    },
+  });
+
+  return choice;
+}
+
+/**
+ * Install all skills that are not yet installed
+ */
+async function installAllSkills(skills: MarketplaceSkill[]): Promise<void> {
+  const destDir = getSkillsDestDir();
+
+  // Filter to only non-installed skills
+  const skillsToInstall = skills.filter(skill => !isSkillInstalled(skill.name));
+
+  if (skillsToInstall.length === 0) {
+    console.log();
+    console.log(`  ${c('green', '✓')} All skills are already installed!`);
+    console.log();
+    await pressEnterToContinue();
+    return;
+  }
+
+  console.log();
+  console.log(
+    `  ${bold('Installing')} ${skillsToInstall.length} ${bold('skills...')}`
+  );
+  console.log();
+
+  const spinner = new Spinner(
+    `Installing ${skillsToInstall.length} skills...`
+  ).start();
+
+  let installed = 0;
+  let failed = 0;
+  const errors: Array<{ skill: string; error: string }> = [];
+
+  for (const skill of skillsToInstall) {
+    spinner.update(
+      `Installing ${skill.displayName}... (${installed + failed + 1}/${skillsToInstall.length})`
+    );
+
+    const result = await installMarketplaceSkill(skill, destDir);
+    if (result.success) {
+      installed++;
+    } else {
+      failed++;
+      errors.push({
+        skill: skill.displayName,
+        error: result.error || 'Unknown error',
+      });
+    }
+  }
+
+  if (failed === 0) {
+    spinner.succeed(`All ${installed} skills installed successfully!`);
+  } else {
+    spinner.warn(`Installed ${installed} skills, ${failed} failed`);
+  }
+
+  console.log();
+
+  if (installed > 0) {
+    console.log(
+      `  ${c('green', '✓')} Successfully installed ${installed} skill(s)`
+    );
+    console.log(`  ${dim('Location:')} ${c('cyan', destDir)}`);
+  }
+
+  if (errors.length > 0) {
+    console.log();
+    console.log(`  ${c('red', '✗')} Failed to install:`);
+    for (const { skill, error } of errors) {
+      console.log(`    ${c('red', '•')} ${skill}: ${dim(error)}`);
+    }
+  }
+
+  console.log();
+  console.log(`  ${bold('Skills are now available in Claude Code!')}`);
+  console.log();
+
+  await pressEnterToContinue();
+}
+
+// ============================================================================
 // Main Flow
 // ============================================================================
 
@@ -452,20 +600,50 @@ export async function runOctocodeOfficialFlow(): Promise<void> {
     return;
   }
 
-  // Browse skills loop
-  let inSkillsBrowser = true;
-  while (inSkillsBrowser) {
-    const skillChoice = await browseSkills(source, skills);
+  // Calculate not-installed count for the menu
+  const notInstalledCount = skills.filter(
+    s => !isSkillInstalled(s.name)
+  ).length;
 
-    if (skillChoice === 'back') {
-      inSkillsBrowser = false;
-      continue;
-    }
+  // Show initial menu - Install All or Browse
+  let inOfficialFlow = true;
+  while (inOfficialFlow) {
+    const menuChoice = await showOfficialFlowMenu(
+      skills.length,
+      notInstalledCount
+    );
 
-    // Show skill details
-    const detailChoice = await showSkillDetails(skillChoice);
-    if (detailChoice === 'install') {
-      await installSkill(skillChoice);
+    switch (menuChoice) {
+      case 'install-all':
+        await installAllSkills(skills);
+        // After install all, return to skills menu (don't loop back)
+        inOfficialFlow = false;
+        break;
+
+      case 'browse': {
+        // Browse skills loop
+        let inSkillsBrowser = true;
+        while (inSkillsBrowser) {
+          const skillChoice = await browseSkills(source, skills);
+
+          if (skillChoice === 'back') {
+            inSkillsBrowser = false;
+            continue;
+          }
+
+          // Show skill details
+          const detailChoice = await showSkillDetails(skillChoice);
+          if (detailChoice === 'install') {
+            await installSkill(skillChoice);
+          }
+        }
+        break;
+      }
+
+      case 'back':
+      default:
+        inOfficialFlow = false;
+        break;
     }
   }
 }

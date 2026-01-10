@@ -85,7 +85,7 @@ export function printWelcome(): void {
 }
 
 /**
- * Print goodbye message
+ * Print goodbye message with helpful tips
  */
 export function printGoodbye(): void {
   console.log();
@@ -93,5 +93,22 @@ export function printGoodbye(): void {
   console.log(c('magenta', '  Thanks for using Octocode CLI'));
   console.log(c('magenta', `  🔍🐙 ${c('underscore', 'https://octocode.ai')}`));
   console.log(c('magenta', '─'.repeat(66)));
+  console.log();
+  console.log(
+    `  ${c('cyan', '💡')} ${bold('Quick tips for better AI coding:')}`
+  );
+  console.log();
+  console.log(
+    `     ${c('green', '▸')} ${dim('Prompts:')}  Use ${c('cyan', '/research')}, ${c('cyan', '/plan')}, ${c('cyan', '/implement')} in chat`
+  );
+  console.log(
+    `     ${c('green', '▸')} ${dim('Skills:')}   Install via ${c('cyan', 'npx octocode-cli')} → Skills menu`
+  );
+  console.log(
+    `     ${c('green', '▸')} ${dim('Context:')}  Add ${c('cyan', 'AGENTS.md')} or ${c('cyan', '.context/')} to your project`
+  );
+  console.log(
+    `     ${c('green', '▸')} ${dim('Docs:')}     ${c('underscore', 'https://docs.octocode.ai')}`
+  );
   console.log();
 }
