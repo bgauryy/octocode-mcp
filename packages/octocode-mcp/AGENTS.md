@@ -16,7 +16,7 @@ Octocode MCP is an MCP server providing AI agents with code exploration tools:
 - **Local Research**: Search code with ripgrep, browse directories, find files, read content
 - **Package Discovery**: Search NPM/PyPI for packages and repository URLs
 
-**Key Docs**: [`ARCHITECTURE.md`](./ARCHITECTURE.md) • [`README.md`](./README.md)
+**Key Docs**: [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) • [`README.md`](./README.md)
 
 ---
 
@@ -369,9 +369,13 @@ yarn test:ui
 
 | Document | Description |
 |----------|-------------|
-| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Deep dive into system design, data flows, security |
+| [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Deep dive into system design, data flows, security |
+| [`GITHUB_TOOLS_REFERENCE.md`](./docs/GITHUB_TOOLS_REFERENCE.md) | GitHub tools: search code/repos/PRs, content, packages |
+| [`LOCAL_TOOLS_REFERENCE.md`](./docs/LOCAL_TOOLS_REFERENCE.md) | Local + LSP tools: search, structure, files, semantic analysis |
 | [`HINTS_ARCHITECTURE.md`](./docs/HINTS_ARCHITECTURE.md) | Hints system: flow, sources, types, implementation |
 | [`LSP_TOOLS.md`](./docs/LSP_TOOLS.md) | LSP tools: supported languages, usage, configuration |
+| [`SESSION_PERSISTENCE.md`](./docs/SESSION_PERSISTENCE.md) | Session management: persistence, caching, telemetry |
+| [`TOKEN_RESOLUTION.md`](./docs/TOKEN_RESOLUTION.md) | GitHub token resolution: priority, sources, setup |
 | [`README.md`](./README.md) | Installation, usage, configuration |
 | [`../../AGENTS.md`](../../AGENTS.md) | Root monorepo guidelines |
 | [MCP Spec](https://modelcontextprotocol.io/) | Model Context Protocol specification |

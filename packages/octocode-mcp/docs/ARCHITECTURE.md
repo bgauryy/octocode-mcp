@@ -460,7 +460,7 @@ flowchart TD
 
 ## Testing
 
-**169 test files** using Vitest. Coverage: **90%** required.
+**170 test files** using Vitest. Coverage: **90%** required.
 
 | Directory | Files | Purpose |
 |-----------|-------|---------|
@@ -493,9 +493,9 @@ yarn test:quiet  # Minimal output
 
 ## Related Documentation
 
-- [README.md](./README.md) - Installation and usage
-- [LSP_TOOLS.md](./docs/LSP_TOOLS.md) - LSP tools configuration and supported languages
-- [HINTS_ARCHITECTURE.md](./docs/HINTS_ARCHITECTURE.md) - Dynamic hints system
+- [README.md](../README.md) - Installation and usage
+- [LSP_TOOLS.md](./LSP_TOOLS.md) - LSP tools configuration and supported languages
+- [HINTS_ARCHITECTURE.md](./HINTS_ARCHITECTURE.md) - Dynamic hints system
 - [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification
 - [GitHub REST API](https://docs.github.com/en/rest) - GitHub API reference
 - [LSP Specification](https://microsoft.github.io/language-server-protocol/) - Language Server Protocol

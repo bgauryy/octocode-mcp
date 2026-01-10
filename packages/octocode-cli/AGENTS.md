@@ -18,7 +18,16 @@ Octocode CLI is the unified installer and management hub for AI-assisted develop
 - **Skills Manager**: Install and update AI coding skills for Claude Code
 - **MCP Marketplace**: Browse and install 70+ community MCP servers
 
-**Key Docs**: [`README.md`](./README.md) • [Root AGENTS.md](../../AGENTS.md)
+**Key Docs**: [`README.md`](./README.md) • [Root AGENTS.md](../../AGENTS.md) • [`docs/`](./docs/)
+
+### Documentation
+
+| Document | Description |
+|----------|-------------|
+| [`CLI_REFERENCE.md`](./docs/CLI_REFERENCE.md) | Complete CLI commands reference with options and examples |
+| [`MENU_FLOW.md`](./docs/MENU_FLOW.md) | Interactive menu system documentation with flow diagrams |
+| [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Technical architecture and design patterns |
+| [`SKILLS_GUIDE.md`](./docs/SKILLS_GUIDE.md) | Comprehensive guide to Octocode Skills system |
 
 ---
 
@@ -225,7 +234,9 @@ tests/
 | Claude Code | `~/.claude.json` | `claude-code` |
 | VS Code (Cline) | Extension settings | `cline` |
 | VS Code (Roo-Cline) | Extension settings | `roo-cline` |
-| VS Code (Continue) | Extension settings | `continue` |
+| VS Code (Continue) | Extension settings | `vscode-continue` |
+| Trae | TBD | `trae` |
+| Antigravity | TBD | `antigravity` |
 
 ---
 
@@ -343,3 +354,90 @@ main() → initializeSecureStorage() → runCLI() → [command handler] OR runIn
 3. Update `src/configs/skills-marketplace.ts`
 4. Run `yarn validate:skills` to verify
 
+---
+
+## 🎯 Skills System
+
+Skills are markdown-based instruction sets that teach AI assistants how to perform specific tasks. They transform generic AI assistants into specialized experts.
+
+### Official Skills
+
+| Skill | Description | Flow |
+|-------|-------------|------|
+| `octocode-research` | Evidence-first code forensics (external GitHub) | PREPARE → DISCOVER → ANALYZE → OUTPUT |
+| `octocode-local-search` | Local-first code exploration and discovery | DISCOVER → PLAN → EXECUTE → VERIFY → OUTPUT |
+| `octocode-implement` | Research-driven feature implementation from specs | SPEC → CONTEXT → PLAN → RESEARCH → IMPLEMENT → VALIDATE |
+| `octocode-plan` | Adaptive research & implementation planning | UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY |
+| `octocode-pr-review` | Defects-first PR review across 6+ domains | CONTEXT → CHECKPOINT → ANALYSIS → FINALIZE → REPORT |
+| `octocode-roast` | Brutally honest code review with comedic flair | SCOPE → ROAST → INVENTORY → SPOTLIGHT → REDEMPTION |
+
+### Skill Structure
+
+```
+{skill-name}/
+├── SKILL.md              # Main reference (<500 lines)
+└── references/           # Supporting documentation (optional)
+    ├── tool-reference.md
+    └── workflow-patterns.md
+```
+
+### SKILL.md Format
+
+Skills use YAML frontmatter for metadata:
+
+```yaml
+---
+name: skill-name
+description: Use when [specific triggers]...
+---
+
+# Skill Title
+
+## Flow Overview
+`PHASE1` → `PHASE2` → `PHASE3`
+
+## 1. Agent Identity
+<agent_identity>
+Role: **Agent Type**. Expert description.
+**Objective**: What the agent does.
+**Principles**: Core behaviors.
+</agent_identity>
+
+## 2. Scope & Tooling
+<tools>
+| Tool | Purpose |
+|------|---------|
+| `toolName` | When to use |
+</tools>
+```
+
+### Skills Marketplace
+
+The CLI includes a skills marketplace with 8+ community sources:
+
+| Marketplace | Description |
+|-------------|-------------|
+| 🐙 Octocode Official | Research, planning, review & roast skills |
+| Build With Claude | Largest collection - 170+ commands |
+| Claude Code Plugins + Skills | Organized categories with tutorials |
+| Superpowers | TDD, debugging, git worktrees |
+| Claude Scientific Skills | Scientific computing skills |
+
+### Installation Paths
+
+| Platform | Default Path |
+|----------|--------------|
+| macOS/Linux | `~/.claude/skills/` |
+| Windows | `%LOCALAPPDATA%\Claude\skills\` |
+
+### Key Source Files
+
+| File | Purpose |
+|------|---------|
+| `src/configs/skills-marketplace.ts` | Marketplace source definitions |
+| `src/utils/skills.ts` | Skill file management utilities |
+| `src/utils/skills-fetch.ts` | Skill download & installation |
+| `src/ui/skills-menu/index.ts` | Skills management UI |
+| `src/ui/skills-menu/marketplace.ts` | Marketplace browsing UI |
+
+For complete details, see [`docs/SKILLS_GUIDE.md`](./docs/SKILLS_GUIDE.md).
