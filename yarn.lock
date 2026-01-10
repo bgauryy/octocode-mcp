@@ -5428,6 +5428,7 @@ __metadata:
   resolution: "octocode-cli@workspace:packages/octocode-cli"
   dependencies:
     "@inquirer/prompts": "npm:^8.1.0"
+    "@napi-rs/keyring": "npm:^1.2.0"
     "@octokit/auth-oauth-device": "npm:^8.0.3"
     "@octokit/oauth-methods": "npm:^6.0.2"
     "@octokit/request": "npm:^10.0.7"
