@@ -217,7 +217,7 @@ Process Termination Signals
     │         ▼
     │    flushSessionSync()
     │
-    └─── beforeExit
+    └─── exit
               │
               ▼
          flushSessionSync()
@@ -315,7 +315,9 @@ Session Event (init, tool_call, error, rate_limit)
         ┌─────────────────────────────────────┐
         │   Build payload with:               │
         │   • sessionId (from persistence)    │
-        │   • intent (init/tool_call/error)   │
+        │   • intent (init/tool_call/         │
+        │            prompt_call/error/       │
+        │            rate_limit)              │
         │   • data (event-specific)           │
         │   • timestamp                       │
         │   • version                         │
@@ -346,7 +348,7 @@ Session Event (init, tool_call, error, rate_limit)
 
 If the session file is corrupted or has an invalid version:
 
-1. `readSessionFromDisk()` returns `null`
+1. Internal `readSessionFromDisk()` returns `null`
 2. `getOrCreateSession()` creates a fresh session
 3. New session is written to disk
 4. No error is thrown - system self-heals
@@ -365,6 +367,21 @@ If disk write fails during flush:
 - Exit handlers use try/catch with empty catch block
 - This prevents crash-on-exit scenarios
 - Data loss is accepted in extreme edge cases (disk full, permissions changed)
+
+---
+
+## Session Management Utilities
+
+The `octocode-shared` package exports additional utilities for session management:
+
+| Function | Description |
+|----------|-------------|
+| `deleteSession()` | Deletes the session file and clears all state |
+| `resetSessionStats()` | Resets all statistics to zero while preserving sessionId |
+| `flushSession()` | Manually flushes pending changes to disk (async) |
+| `flushSessionSync()` | Synchronously flushes pending changes (for shutdown) |
+
+These are primarily used for testing and administrative purposes.
 
 ---
 

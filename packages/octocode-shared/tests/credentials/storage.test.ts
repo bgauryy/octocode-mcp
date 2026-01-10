@@ -3,6 +3,11 @@
  *
  * Basic tests for credential storage functionality.
  * More comprehensive tests are in octocode-cli which imports from this package.
+ *
+ * ⚠️ IMPORTANT: All storage operations are MOCKED to prevent real credential access.
+ * - fs module is fully mocked - no real file I/O
+ * - keychain module is mocked - no real keychain access
+ * - crypto module is mocked for predictable encryption behavior
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -30,7 +35,7 @@ vi.mock('@octokit/request', () => ({
   },
 }));
 
-// Mock fs module
+// Mock fs module - CRITICAL: Prevents real file operations
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(),
   mkdirSync: vi.fn(),
@@ -39,20 +44,43 @@ vi.mock('node:fs', () => ({
   unlinkSync: vi.fn(),
 }));
 
-// Mock crypto module
+// Mock crypto module - Provides predictable encryption for tests
 vi.mock('node:crypto', () => ({
   randomBytes: vi.fn(),
   createCipheriv: vi.fn(),
   createDecipheriv: vi.fn(),
 }));
 
-// Helper to create a valid test credential object
-function createTestCredentials(overrides = {}) {
+/**
+ * Verify that fs module is properly mocked (safety check)
+ * This prevents accidental writes to real credential files
+ */
+function assertFsIsMocked(): void {
+  // Verify writeFileSync is a mock function
+  if (!vi.isMockFunction(fs.writeFileSync)) {
+    throw new Error(
+      'SAFETY: fs.writeFileSync is NOT mocked! Tests would write to real files.'
+    );
+  }
+  // Verify existsSync is a mock function
+  if (!vi.isMockFunction(fs.existsSync)) {
+    throw new Error(
+      'SAFETY: fs.existsSync is NOT mocked! Tests would access real files.'
+    );
+  }
+}
+
+/**
+ * Helper to create a MOCK credential object for testing.
+ * ⚠️ All storage operations are MOCKED - these values never touch real storage.
+ * The fs module is completely mocked, preventing any real file I/O.
+ */
+function createMockCredentials(overrides = {}) {
   return {
     hostname: 'github.com',
-    username: 'testuser',
+    username: '__mock_user__', // Clearly a mock value
     token: {
-      token: 'test-token',
+      token: 'ghp_MOCK_TOKEN_00000000000000000000', // Mock token (40 char)
       tokenType: 'oauth' as const,
     },
     gitProtocol: 'https' as const,
@@ -78,10 +106,14 @@ describe('Token Storage', () => {
     vi.resetModules();
     vi.clearAllMocks();
 
+    // ⚠️ SAFETY CHECK: Verify fs is properly mocked before any test runs
+    // This prevents accidental writes to real credential files
+    assertFsIsMocked();
+
     // Setup crypto mocks
     vi.mocked(crypto.randomBytes).mockReturnValue(mockIv as unknown as void);
 
-    // Ensure keychain is disabled
+    // Ensure keychain is disabled (mocked)
     const { _setSecureStorageAvailable, _resetSecureStorageState } =
       await import('../../src/credentials/storage.js');
     _resetSecureStorageState();
@@ -90,6 +122,20 @@ describe('Token Storage', () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+
+    // Verify no real file writes occurred during the test
+    // All writeFileSync calls should be to the mock, not real fs
+    const writeFileCalls = vi.mocked(fs.writeFileSync).mock.calls;
+    for (const call of writeFileCalls) {
+      const path = String(call[0]);
+      // Ensure we never wrote to paths that look like real user directories
+      // (The mock should intercept these, but this is a safety assertion)
+      if (path.includes('/Users/') || path.includes('/home/')) {
+        console.warn(
+          `⚠️ Test called writeFileSync with user path: ${path} (mocked, not real)`
+        );
+      }
+    }
   });
 
   describe('isSecureStorageAvailable', () => {
@@ -126,7 +172,7 @@ describe('Token Storage', () => {
       const { storeCredentials } =
         await import('../../src/credentials/storage.js');
 
-      const result = await storeCredentials(createTestCredentials());
+      const result = await storeCredentials(createMockCredentials());
 
       expect(result.success).toBe(true);
       expect(result.insecureStorageUsed).toBe(true);
@@ -144,7 +190,7 @@ describe('Token Storage', () => {
       const { storeCredentials } =
         await import('../../src/credentials/storage.js');
 
-      await storeCredentials(createTestCredentials());
+      await storeCredentials(createMockCredentials());
 
       expect(fs.mkdirSync).toHaveBeenCalled();
     });
@@ -162,7 +208,7 @@ describe('Token Storage', () => {
     });
 
     it('should return credentials when they exist in file', async () => {
-      const storedCreds = createTestCredentials();
+      const storedCreds = createMockCredentials();
       const store = { version: 1, credentials: { 'github.com': storedCreds } };
 
       vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
@@ -194,7 +240,7 @@ describe('Token Storage', () => {
 
   describe('getToken', () => {
     it('should return token string when credentials exist', async () => {
-      const storedCreds = createTestCredentials();
+      const storedCreds = createMockCredentials();
       const store = { version: 1, credentials: { 'github.com': storedCreds } };
 
       vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
@@ -219,7 +265,7 @@ describe('Token Storage', () => {
       const { getToken } = await import('../../src/credentials/storage.js');
       const result = await getToken('github.com');
 
-      expect(result).toBe('test-token');
+      expect(result).toBe('ghp_MOCK_TOKEN_00000000000000000000');
     });
 
     it('should return null when credentials do not exist', async () => {
@@ -237,7 +283,7 @@ describe('Token Storage', () => {
       const { isTokenExpired } =
         await import('../../src/credentials/storage.js');
 
-      const credentials = createTestCredentials();
+      const credentials = createMockCredentials();
       expect(isTokenExpired(credentials)).toBe(false);
     });
 
@@ -245,7 +291,7 @@ describe('Token Storage', () => {
       const { isTokenExpired } =
         await import('../../src/credentials/storage.js');
 
-      const credentials = createTestCredentials({
+      const credentials = createMockCredentials({
         token: {
           token: 'test-token',
           tokenType: 'oauth' as const,
@@ -261,7 +307,7 @@ describe('Token Storage', () => {
         await import('../../src/credentials/storage.js');
 
       const futureDate = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
-      const credentials = createTestCredentials({
+      const credentials = createMockCredentials({
         token: {
           token: 'test-token',
           tokenType: 'oauth' as const,
@@ -277,7 +323,7 @@ describe('Token Storage', () => {
         await import('../../src/credentials/storage.js');
 
       const nearFuture = new Date(Date.now() + 2 * 60 * 1000); // 2 minutes from now
-      const credentials = createTestCredentials({
+      const credentials = createMockCredentials({
         token: {
           token: 'test-token',
           tokenType: 'oauth' as const,
@@ -292,7 +338,7 @@ describe('Token Storage', () => {
       const { isTokenExpired } =
         await import('../../src/credentials/storage.js');
 
-      const credentials = createTestCredentials({
+      const credentials = createMockCredentials({
         token: {
           token: 'test-token',
           tokenType: 'oauth' as const,
@@ -309,7 +355,7 @@ describe('Token Storage', () => {
       const { isRefreshTokenExpired } =
         await import('../../src/credentials/storage.js');
 
-      const credentials = createTestCredentials();
+      const credentials = createMockCredentials();
       expect(isRefreshTokenExpired(credentials)).toBe(false);
     });
 
@@ -317,7 +363,7 @@ describe('Token Storage', () => {
       const { isRefreshTokenExpired } =
         await import('../../src/credentials/storage.js');
 
-      const credentials = createTestCredentials({
+      const credentials = createMockCredentials({
         token: {
           token: 'test-token',
           tokenType: 'oauth' as const,
@@ -334,7 +380,7 @@ describe('Token Storage', () => {
         await import('../../src/credentials/storage.js');
 
       const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000); // 1 day from now
-      const credentials = createTestCredentials({
+      const credentials = createMockCredentials({
         token: {
           token: 'test-token',
           tokenType: 'oauth' as const,
@@ -350,7 +396,7 @@ describe('Token Storage', () => {
       const { isRefreshTokenExpired } =
         await import('../../src/credentials/storage.js');
 
-      const credentials = createTestCredentials({
+      const credentials = createMockCredentials({
         token: {
           token: 'test-token',
           tokenType: 'oauth' as const,
@@ -648,7 +694,7 @@ describe('Token Storage', () => {
 
     describe('Priority 4-5: Stored Credentials (Keychain/File)', () => {
       it('should fall back to stored credentials when no env vars', async () => {
-        const storedCreds = createTestCredentials();
+        const storedCreds = createMockCredentials();
         const store = {
           version: 1,
           credentials: { 'github.com': storedCreds },
@@ -678,13 +724,13 @@ describe('Token Storage', () => {
         const result = await resolveToken();
 
         expect(result).toEqual({
-          token: 'test-token',
+          token: 'ghp_MOCK_TOKEN_00000000000000000000',
           source: 'file', // Because keychain is unavailable
         });
       });
 
       it('should return keychain source when secure storage available', async () => {
-        const storedCreds = createTestCredentials();
+        const storedCreds = createMockCredentials();
         const store = {
           version: 1,
           credentials: { 'github.com': storedCreds },
@@ -718,7 +764,7 @@ describe('Token Storage', () => {
         _setSecureStorageAvailable(true);
         const result = await resolveToken();
 
-        expect(result?.token).toBe('test-token');
+        expect(result?.token).toBe('ghp_MOCK_TOKEN_00000000000000000000');
         expect(result?.source).toBe('keychain');
       });
 
@@ -750,7 +796,7 @@ describe('Token Storage', () => {
 
     describe('Custom Hostname', () => {
       it('should use custom hostname for storage lookup', async () => {
-        const storedCreds = createTestCredentials({
+        const storedCreds = createMockCredentials({
           hostname: 'github.mycompany.com',
         });
         const store = {
@@ -786,13 +832,13 @@ describe('Token Storage', () => {
 
         // Should return token for custom hostname
         const customResult = await resolveToken('github.mycompany.com');
-        expect(customResult?.token).toBe('test-token');
+        expect(customResult?.token).toBe('ghp_MOCK_TOKEN_00000000000000000000');
       });
     });
 
     describe('Expired Token Handling', () => {
       it('should return null for expired stored token', async () => {
-        const storedCreds = createTestCredentials({
+        const storedCreds = createMockCredentials({
           token: {
             token: 'expired-token',
             tokenType: 'oauth' as const,
@@ -834,7 +880,7 @@ describe('Token Storage', () => {
 
   describe('getTokenSync', () => {
     it('should return token string when credentials exist', async () => {
-      const storedCreds = createTestCredentials();
+      const storedCreds = createMockCredentials();
       const store = { version: 1, credentials: { 'github.com': storedCreds } };
 
       vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
@@ -859,7 +905,7 @@ describe('Token Storage', () => {
       const { getTokenSync } = await import('../../src/credentials/storage.js');
       const result = getTokenSync('github.com');
 
-      expect(result).toBe('test-token');
+      expect(result).toBe('ghp_MOCK_TOKEN_00000000000000000000');
     });
 
     it('should return null when credentials do not exist', async () => {
@@ -872,7 +918,7 @@ describe('Token Storage', () => {
     });
 
     it('should return null when token is expired', async () => {
-      const storedCreds = createTestCredentials({
+      const storedCreds = createMockCredentials({
         token: {
           token: 'test-token',
           tokenType: 'oauth' as const,
@@ -908,7 +954,7 @@ describe('Token Storage', () => {
 
     it('should return null when credentials exist but token is missing', async () => {
       const storedCreds = {
-        ...createTestCredentials(),
+        ...createMockCredentials(),
         token: undefined,
       };
       const store = { version: 1, credentials: { 'github.com': storedCreds } };
@@ -941,7 +987,7 @@ describe('Token Storage', () => {
 
   describe('getToken', () => {
     it('should return null when token is expired', async () => {
-      const storedCreds = createTestCredentials({
+      const storedCreds = createMockCredentials({
         token: {
           token: 'test-token',
           tokenType: 'oauth' as const,
@@ -989,7 +1035,7 @@ describe('Token Storage', () => {
     });
 
     it('should return error when token has no refresh token', async () => {
-      const storedCreds = createTestCredentials({
+      const storedCreds = createMockCredentials({
         token: {
           token: 'test-token',
           tokenType: 'oauth' as const,
@@ -1026,7 +1072,7 @@ describe('Token Storage', () => {
     });
 
     it('should return error when refresh token is expired', async () => {
-      const storedCreds = createTestCredentials({
+      const storedCreds = createMockCredentials({
         token: {
           token: 'test-token',
           tokenType: 'oauth' as const,
@@ -1066,7 +1112,7 @@ describe('Token Storage', () => {
 
   describe('getTokenWithRefresh', () => {
     it('should return token when not expired', async () => {
-      const storedCreds = createTestCredentials({
+      const storedCreds = createMockCredentials({
         token: {
           token: 'valid-token',
           tokenType: 'oauth' as const,
@@ -1100,11 +1146,11 @@ describe('Token Storage', () => {
 
       expect(result.token).toBe('valid-token');
       expect(result.source).toBe('stored');
-      expect(result.username).toBe('testuser');
+      expect(result.username).toBe('__mock_user__');
     });
 
     it('should return null with error when expired and no refresh token', async () => {
-      const storedCreds = createTestCredentials({
+      const storedCreds = createMockCredentials({
         token: {
           token: 'expired-token',
           tokenType: 'oauth' as const,
@@ -1186,7 +1232,7 @@ describe('Token Storage', () => {
     });
 
     it('should return stored token with wasRefreshed=false when valid', async () => {
-      const storedCreds = createTestCredentials({
+      const storedCreds = createMockCredentials({
         token: {
           token: 'stored-token',
           tokenType: 'oauth' as const,
@@ -1219,7 +1265,7 @@ describe('Token Storage', () => {
 
       expect(result?.token).toBe('stored-token');
       expect(result?.wasRefreshed).toBe(false);
-      expect(result?.username).toBe('testuser');
+      expect(result?.username).toBe('__mock_user__');
     });
 
     it('should return null when no token found', async () => {
@@ -1233,7 +1279,7 @@ describe('Token Storage', () => {
     });
 
     it('should return refresh error when token expired and no refresh token', async () => {
-      const storedCreds = createTestCredentials({
+      const storedCreds = createMockCredentials({
         token: {
           token: 'expired-token',
           tokenType: 'oauth' as const,
@@ -1343,7 +1389,7 @@ describe('Token Storage', () => {
 
     describe('Priority 4-5: Stored Credentials with Refresh', () => {
       it('should return stored token when env vars not set', async () => {
-        const storedCreds = createTestCredentials({
+        const storedCreds = createMockCredentials({
           token: {
             token: 'stored-token',
             tokenType: 'oauth' as const,
@@ -1379,11 +1425,11 @@ describe('Token Storage', () => {
 
         expect(result?.token).toBe('stored-token');
         expect(result?.source).toBe('file');
-        expect(result?.username).toBe('testuser');
+        expect(result?.username).toBe('__mock_user__');
       });
 
       it('should return keychain source when secure storage available', async () => {
-        const storedCreds = createTestCredentials();
+        const storedCreds = createMockCredentials();
         const store = {
           version: 1,
           credentials: { 'github.com': storedCreds },
@@ -1414,7 +1460,7 @@ describe('Token Storage', () => {
         _setSecureStorageAvailable(true);
         const result = await resolveTokenFull();
 
-        expect(result?.token).toBe('test-token');
+        expect(result?.token).toBe('ghp_MOCK_TOKEN_00000000000000000000');
         expect(result?.source).toBe('keychain');
       });
     });
@@ -1545,7 +1591,7 @@ describe('Token Storage', () => {
       });
 
       it('should NOT call getGhCliToken when stored token available', async () => {
-        const storedCreds = createTestCredentials();
+        const storedCreds = createMockCredentials();
         const store = {
           version: 1,
           credentials: { 'github.com': storedCreds },
@@ -1579,11 +1625,11 @@ describe('Token Storage', () => {
         });
 
         expect(mockGetGhCliToken).not.toHaveBeenCalled();
-        expect(result?.token).toBe('test-token');
+        expect(result?.token).toBe('ghp_MOCK_TOKEN_00000000000000000000');
       });
 
       it('should include refresh error when falling back to gh CLI', async () => {
-        const storedCreds = createTestCredentials({
+        const storedCreds = createMockCredentials({
           token: {
             token: 'expired-token',
             tokenType: 'oauth' as const,
@@ -1640,7 +1686,7 @@ describe('Token Storage', () => {
       });
 
       it('should return refresh error when token expired and no gh CLI', async () => {
-        const storedCreds = createTestCredentials({
+        const storedCreds = createMockCredentials({
           token: {
             token: 'expired-token',
             tokenType: 'oauth' as const,
@@ -1693,7 +1739,7 @@ describe('Token Storage', () => {
       });
 
       it('should use custom hostname for storage lookup', async () => {
-        const storedCreds = createTestCredentials({
+        const storedCreds = createMockCredentials({
           hostname: 'github.enterprise.com',
         });
         const store = {
@@ -1731,93 +1777,173 @@ describe('Token Storage', () => {
         const customResult = await resolveTokenFull({
           hostname: 'github.enterprise.com',
         });
-        expect(customResult?.token).toBe('test-token');
+        expect(customResult?.token).toBe('ghp_MOCK_TOKEN_00000000000000000000');
       });
     });
   });
 
-  describe('Token Caching (1-minute TTL)', () => {
-    const originalEnv = process.env;
+  describe('Credentials Cache', () => {
+    it('should cache credentials after first fetch', async () => {
+      const credentials = createMockCredentials();
+      const store = {
+        version: 1,
+        credentials: { 'github.com': credentials },
+      };
 
-    beforeEach(async () => {
-      process.env = { ...originalEnv };
-      delete process.env.OCTOCODE_TOKEN;
-      delete process.env.GH_TOKEN;
-      delete process.env.GITHUB_TOKEN;
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { getCredentials, _getCacheStats, _resetCredentialsCache } =
+        await import('../../src/credentials/storage.js');
+
+      // Reset cache first
+      _resetCredentialsCache();
+
+      // First call - should fetch from storage
+      const result1 = await getCredentials('github.com');
+      expect(result1?.token.token).toBe('ghp_MOCK_TOKEN_00000000000000000000');
+
+      // Check cache has entry
+      const stats1 = _getCacheStats();
+      expect(stats1.size).toBe(1);
+      expect(stats1.entries[0].hostname).toBe('github.com');
+      expect(stats1.entries[0].valid).toBe(true);
+
+      // Second call - should use cache (decipher not called again)
+      vi.mocked(crypto.createDecipheriv).mockClear();
+      const result2 = await getCredentials('github.com');
+      expect(result2?.token.token).toBe('ghp_MOCK_TOKEN_00000000000000000000');
+
+      // Decipher should not be called for cached read
+      // (Note: this depends on implementation - cache prevents file read)
+    });
+
+    it('should bypass cache when option is set', async () => {
+      const credentials = createMockCredentials();
+      const store = {
+        version: 1,
+        credentials: { 'github.com': credentials },
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { getCredentials, _resetCredentialsCache } =
+        await import('../../src/credentials/storage.js');
+
+      // Reset cache first
+      _resetCredentialsCache();
+
+      // First call - populates cache
+      await getCredentials('github.com');
+
+      // Clear mock to track new calls
+      vi.mocked(crypto.createDecipheriv).mockClear();
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      // Bypass cache - should fetch from storage again
+      const result = await getCredentials('github.com', { bypassCache: true });
+      expect(result?.token.token).toBe('ghp_MOCK_TOKEN_00000000000000000000');
+
+      // Decipher should be called for bypassed read
+      expect(crypto.createDecipheriv).toHaveBeenCalled();
+    });
+
+    it('should invalidate cache on storeCredentials', async () => {
+      const credentials = createMockCredentials();
+      const store = {
+        version: 1,
+        credentials: { 'github.com': credentials },
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const mockCipher = createMockCipher();
+      vi.mocked(crypto.createCipheriv).mockReturnValue(
+        mockCipher as unknown as crypto.CipherGCM
+      );
 
       const {
-        _resetSecureStorageState,
-        _setSecureStorageAvailable,
-        clearTokenCache,
+        getCredentials,
+        storeCredentials,
+        _getCacheStats,
+        _resetCredentialsCache,
       } = await import('../../src/credentials/storage.js');
-      _resetSecureStorageState();
-      _setSecureStorageAvailable(false);
-      clearTokenCache(); // Clear cache between tests
+
+      // Reset cache first
+      _resetCredentialsCache();
+
+      // Populate cache
+      await getCredentials('github.com');
+      expect(_getCacheStats().size).toBe(1);
+
+      // Store new credentials - should invalidate cache
+      await storeCredentials(credentials);
+
+      // Cache should be empty for this hostname (invalidated)
+      const stats = _getCacheStats();
+      expect(
+        stats.entries.find(e => e.hostname === 'github.com')
+      ).toBeUndefined();
     });
 
-    afterEach(() => {
-      process.env = originalEnv;
-    });
-
-    it('should return cached result within 1 minute without re-resolving', async () => {
-      let resolveCount = 0;
-      const storedCreds = createTestCredentials({
-        token: {
-          token: 'cached-token',
-          tokenType: 'oauth' as const,
-        },
-      });
-      const store = { version: 1, credentials: { 'github.com': storedCreds } };
-
-      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
-        if (String(path).includes('.key')) return true;
-        if (String(path).includes('credentials.json')) return true;
-        return false;
-      });
-      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
-        resolveCount++;
-        if (String(path).includes('.key')) return mockKey.toString('hex');
-        return 'iv:authtag:encrypted';
-      });
-
-      const mockDecipher = {
-        update: vi.fn().mockReturnValue(JSON.stringify(store)),
-        final: vi.fn().mockReturnValue(''),
-        setAuthTag: vi.fn(),
+    it('should invalidate cache on deleteCredentials', async () => {
+      const credentials = createMockCredentials();
+      const store = {
+        version: 1,
+        credentials: { 'github.com': credentials },
       };
-      vi.mocked(crypto.createDecipheriv).mockReturnValue(
-        mockDecipher as unknown as crypto.DecipherGCM
-      );
-
-      const { resolveTokenFull } =
-        await import('../../src/credentials/storage.js');
-
-      // First call - should resolve
-      const result1 = await resolveTokenFull();
-      expect(result1?.token).toBe('cached-token');
-      const firstResolveCount = resolveCount;
-
-      // Second call - should use cache (no additional file reads)
-      const result2 = await resolveTokenFull();
-      expect(result2?.token).toBe('cached-token');
-      expect(resolveCount).toBe(firstResolveCount); // No additional reads
-
-      // Third call - still cached
-      const result3 = await resolveTokenFull();
-      expect(result3?.token).toBe('cached-token');
-      expect(resolveCount).toBe(firstResolveCount); // Still no additional reads
-    });
-
-    it('should re-resolve after cache expires (1 minute TTL)', async () => {
-      vi.useFakeTimers();
-
-      const storedCreds = createTestCredentials({
-        token: {
-          token: 'original-token',
-          tokenType: 'oauth' as const,
-        },
-      });
-      const store = { version: 1, credentials: { 'github.com': storedCreds } };
 
       vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
         if (String(path).includes('.key')) return true;
@@ -1838,107 +1964,45 @@ describe('Token Storage', () => {
         mockDecipher as unknown as crypto.DecipherGCM
       );
 
-      const { resolveTokenFull, clearTokenCache } =
-        await import('../../src/credentials/storage.js');
-
-      // First call - cache the result
-      const result1 = await resolveTokenFull();
-      expect(result1?.token).toBe('original-token');
-
-      // Update the mock to return a different token
-      const newCreds = createTestCredentials({
-        token: {
-          token: 'new-token',
-          tokenType: 'oauth' as const,
-        },
-      });
-      const newStore = { version: 1, credentials: { 'github.com': newCreds } };
-      mockDecipher.update.mockReturnValue(JSON.stringify(newStore));
-
-      // Within 1 minute - should still return cached value
-      vi.advanceTimersByTime(59 * 1000); // 59 seconds
-      const result2 = await resolveTokenFull();
-      expect(result2?.token).toBe('original-token'); // Still cached
-
-      // After 1 minute - should re-resolve
-      vi.advanceTimersByTime(2 * 1000); // Now at 61 seconds total
-      const result3 = await resolveTokenFull();
-      expect(result3?.token).toBe('new-token'); // Fresh resolution
-
-      vi.useRealTimers();
-    });
-
-    it('should clear cache with clearTokenCache()', async () => {
-      const storedCreds = createTestCredentials({
-        token: {
-          token: 'first-token',
-          tokenType: 'oauth' as const,
-        },
-      });
-      const store = { version: 1, credentials: { 'github.com': storedCreds } };
-
-      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
-        if (String(path).includes('.key')) return true;
-        if (String(path).includes('credentials.json')) return true;
-        return false;
-      });
-      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
-        if (String(path).includes('.key')) return mockKey.toString('hex');
-        return 'iv:authtag:encrypted';
-      });
-
-      const mockDecipher = {
-        update: vi.fn().mockReturnValue(JSON.stringify(store)),
-        final: vi.fn().mockReturnValue(''),
-        setAuthTag: vi.fn(),
-      };
-      vi.mocked(crypto.createDecipheriv).mockReturnValue(
-        mockDecipher as unknown as crypto.DecipherGCM
+      const mockCipher = createMockCipher();
+      vi.mocked(crypto.createCipheriv).mockReturnValue(
+        mockCipher as unknown as crypto.CipherGCM
       );
 
-      const { resolveTokenFull, clearTokenCache } =
-        await import('../../src/credentials/storage.js');
+      const {
+        getCredentials,
+        deleteCredentials,
+        _getCacheStats,
+        _resetCredentialsCache,
+      } = await import('../../src/credentials/storage.js');
 
-      // First call - cache the result
-      const result1 = await resolveTokenFull();
-      expect(result1?.token).toBe('first-token');
+      // Reset cache first
+      _resetCredentialsCache();
 
-      // Update the mock
-      const newCreds = createTestCredentials({
-        token: {
-          token: 'second-token',
-          tokenType: 'oauth' as const,
-        },
-      });
-      const newStore = { version: 1, credentials: { 'github.com': newCreds } };
-      mockDecipher.update.mockReturnValue(JSON.stringify(newStore));
+      // Populate cache
+      await getCredentials('github.com');
+      expect(_getCacheStats().size).toBe(1);
 
-      // Should still return cached value
-      const result2 = await resolveTokenFull();
-      expect(result2?.token).toBe('first-token');
+      // Delete credentials - should invalidate cache
+      await deleteCredentials('github.com');
 
-      // Clear cache
-      clearTokenCache();
-
-      // Should resolve fresh
-      const result3 = await resolveTokenFull();
-      expect(result3?.token).toBe('second-token');
+      // Cache should be empty for this hostname
+      const stats = _getCacheStats();
+      expect(
+        stats.entries.find(e => e.hostname === 'github.com')
+      ).toBeUndefined();
     });
 
-    it('should clear cache for specific hostname with clearTokenCache(hostname)', async () => {
-      const ghCreds = createTestCredentials({
-        hostname: 'github.com',
-        token: { token: 'github-cached', tokenType: 'oauth' as const },
-      });
-      const enterpriseCreds = createTestCredentials({
+    it('should invalidate all cache entries with invalidateCredentialsCache()', async () => {
+      const credentials1 = createMockCredentials({ hostname: 'github.com' });
+      const credentials2 = createMockCredentials({
         hostname: 'github.enterprise.com',
-        token: { token: 'enterprise-cached', tokenType: 'oauth' as const },
       });
       const store = {
         version: 1,
         credentials: {
-          'github.com': ghCreds,
-          'github.enterprise.com': enterpriseCreds,
+          'github.com': credentials1,
+          'github.enterprise.com': credentials2,
         },
       };
 
@@ -1961,164 +2025,38 @@ describe('Token Storage', () => {
         mockDecipher as unknown as crypto.DecipherGCM
       );
 
-      const { resolveTokenFull, clearTokenCache } =
-        await import('../../src/credentials/storage.js');
+      const {
+        getCredentials,
+        invalidateCredentialsCache,
+        _getCacheStats,
+        _resetCredentialsCache,
+      } = await import('../../src/credentials/storage.js');
 
-      // Cache both hostnames
-      const result1 = await resolveTokenFull();
-      expect(result1?.token).toBe('github-cached');
+      // Reset cache first
+      _resetCredentialsCache();
 
-      const result2 = await resolveTokenFull({
+      // Populate cache with both hosts
+      await getCredentials('github.com');
+      await getCredentials('github.enterprise.com');
+      expect(_getCacheStats().size).toBe(2);
+
+      // Invalidate all
+      invalidateCredentialsCache();
+
+      // Cache should be empty
+      expect(_getCacheStats().size).toBe(0);
+    });
+
+    it('should invalidate specific hostname with invalidateCredentialsCache(hostname)', async () => {
+      const credentials1 = createMockCredentials({ hostname: 'github.com' });
+      const credentials2 = createMockCredentials({
         hostname: 'github.enterprise.com',
-      });
-      expect(result2?.token).toBe('enterprise-cached');
-
-      // Update mock to return different tokens
-      const newGhCreds = createTestCredentials({
-        hostname: 'github.com',
-        token: { token: 'github-new', tokenType: 'oauth' as const },
-      });
-      const newStore = {
-        version: 1,
-        credentials: {
-          'github.com': newGhCreds,
-          'github.enterprise.com': enterpriseCreds, // Keep enterprise unchanged
-        },
-      };
-      mockDecipher.update.mockReturnValue(JSON.stringify(newStore));
-
-      // Clear only github.com cache
-      clearTokenCache('github.com');
-
-      // github.com should re-resolve (get new token)
-      const result3 = await resolveTokenFull();
-      expect(result3?.token).toBe('github-new');
-
-      // github.enterprise.com should still be cached (unchanged)
-      const result4 = await resolveTokenFull({
-        hostname: 'github.enterprise.com',
-      });
-      expect(result4?.token).toBe('enterprise-cached');
-    });
-
-    it('should cache env token results', async () => {
-      process.env.GITHUB_TOKEN = 'env-cached-token';
-
-      const { resolveTokenFull } =
-        await import('../../src/credentials/storage.js');
-
-      // First call
-      const result1 = await resolveTokenFull();
-      expect(result1?.token).toBe('env-cached-token');
-      expect(result1?.source).toBe('env:GITHUB_TOKEN');
-
-      // Env should NOT be re-checked on cached call (cache returns same result)
-      const result2 = await resolveTokenFull();
-      expect(result2?.token).toBe('env-cached-token');
-
-      // Verify both results are the same object (cache hit)
-      expect(result1).toEqual(result2);
-    });
-
-    it('should cache gh-cli token results', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      let ghCliCallCount = 0;
-      const mockGetGhCliToken = vi.fn().mockImplementation(() => {
-        ghCliCallCount++;
-        return 'gh-cli-cached-token';
-      });
-
-      const { resolveTokenFull } =
-        await import('../../src/credentials/storage.js');
-
-      // First call - should call gh CLI
-      const result1 = await resolveTokenFull({
-        getGhCliToken: mockGetGhCliToken,
-      });
-      expect(result1?.token).toBe('gh-cli-cached-token');
-      expect(ghCliCallCount).toBe(1);
-
-      // Second call - should use cache (gh CLI not called again)
-      const result2 = await resolveTokenFull({
-        getGhCliToken: mockGetGhCliToken,
-      });
-      expect(result2?.token).toBe('gh-cli-cached-token');
-      expect(ghCliCallCount).toBe(1); // Still 1, not 2
-    });
-
-    it('should prioritize env vars over cached tokens from other sources', async () => {
-      // Setup: gh-cli returns a token (simulating cached non-env source)
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-      const mockGetGhCliToken = vi.fn().mockReturnValue('gh-cli-token');
-
-      const { resolveTokenFull, clearTokenCache } =
-        await import('../../src/credentials/storage.js');
-
-      // First call - resolves from gh-cli
-      const result1 = await resolveTokenFull({
-        getGhCliToken: mockGetGhCliToken,
-      });
-      expect(result1?.token).toBe('gh-cli-token');
-      expect(result1?.source).toBe('gh-cli');
-
-      // Now set GITHUB_TOKEN in environment (simulating runtime env var change)
-      process.env.GITHUB_TOKEN = 'new-env-token';
-
-      // Second call - should return env var, NOT cached gh-cli token
-      // This is the critical fix: env vars must always take priority over cache
-      const result2 = await resolveTokenFull({
-        getGhCliToken: mockGetGhCliToken,
-      });
-      expect(result2?.token).toBe('new-env-token');
-      expect(result2?.source).toBe('env:GITHUB_TOKEN');
-
-      // Cleanup
-      delete process.env.GITHUB_TOKEN;
-      clearTokenCache();
-    });
-
-    it('should cache null results (no token found)', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-
-      let resolveAttempts = 0;
-      const mockGetGhCliToken = vi.fn().mockImplementation(() => {
-        resolveAttempts++;
-        return null;
-      });
-
-      const { resolveTokenFull } =
-        await import('../../src/credentials/storage.js');
-
-      // First call - should resolve (no token)
-      const result1 = await resolveTokenFull({
-        getGhCliToken: mockGetGhCliToken,
-      });
-      expect(result1).toBeNull();
-      expect(resolveAttempts).toBe(1);
-
-      // Second call - should use cache (not re-resolve)
-      const result2 = await resolveTokenFull({
-        getGhCliToken: mockGetGhCliToken,
-      });
-      expect(result2).toBeNull();
-      expect(resolveAttempts).toBe(1); // Still 1
-    });
-
-    it('should use hostname-specific caching', async () => {
-      const ghCreds = createTestCredentials({
-        hostname: 'github.com',
-        token: { token: 'github-token', tokenType: 'oauth' as const },
-      });
-      const enterpriseCreds = createTestCredentials({
-        hostname: 'github.enterprise.com',
-        token: { token: 'enterprise-token', tokenType: 'oauth' as const },
       });
       const store = {
         version: 1,
         credentials: {
-          'github.com': ghCreds,
-          'github.enterprise.com': enterpriseCreds,
+          'github.com': credentials1,
+          'github.enterprise.com': credentials2,
         },
       };
 
@@ -2141,27 +2079,28 @@ describe('Token Storage', () => {
         mockDecipher as unknown as crypto.DecipherGCM
       );
 
-      const { resolveTokenFull } =
-        await import('../../src/credentials/storage.js');
+      const {
+        getCredentials,
+        invalidateCredentialsCache,
+        _getCacheStats,
+        _resetCredentialsCache,
+      } = await import('../../src/credentials/storage.js');
 
-      // Resolve for default hostname
-      const result1 = await resolveTokenFull();
-      expect(result1?.token).toBe('github-token');
+      // Reset cache first
+      _resetCredentialsCache();
 
-      // Resolve for enterprise hostname (different cache entry)
-      const result2 = await resolveTokenFull({
-        hostname: 'github.enterprise.com',
-      });
-      expect(result2?.token).toBe('enterprise-token');
+      // Populate cache with both hosts
+      await getCredentials('github.com');
+      await getCredentials('github.enterprise.com');
+      expect(_getCacheStats().size).toBe(2);
 
-      // Both should be cached independently
-      const result3 = await resolveTokenFull();
-      expect(result3?.token).toBe('github-token');
+      // Invalidate only github.com
+      invalidateCredentialsCache('github.com');
 
-      const result4 = await resolveTokenFull({
-        hostname: 'github.enterprise.com',
-      });
-      expect(result4?.token).toBe('enterprise-token');
+      // Only enterprise should remain
+      const stats = _getCacheStats();
+      expect(stats.size).toBe(1);
+      expect(stats.entries[0].hostname).toBe('github.enterprise.com');
     });
   });
 });

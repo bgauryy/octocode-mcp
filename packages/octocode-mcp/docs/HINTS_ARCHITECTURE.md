@@ -64,7 +64,7 @@ The hints system provides context-aware guidance to AI agents using Octocode MCP
               │               │               │
               ▼               ▼               ▼
     ┌─────────────────┐ ┌─────────────┐ ┌─────────────────┐
-    │  Tool Files     │ │ bulkOps.ts  │ │   utils.ts      │
+    │  Tool Files     │ │   bulk.ts   │ │   utils.ts      │
     │ local_ripgrep   │ │ Aggregates  │ │ createResult()  │
     │ local_fetch...  │ │ hints from  │ │                 │
     │ github_search...│ │ all results │ │                 │
@@ -363,7 +363,10 @@ export function getToolHintsSync(
   toolName: string,
   resultType: 'hasResults' | 'empty'
 ): readonly string[] {
-  const baseHints = METADATA_JSON.baseHints[resultType] ?? [];
+  // Local tools use LOCAL_BASE_HINTS, remote tools use METADATA_JSON.baseHints
+  const baseHints = isLocalTool(toolName)
+    ? (LOCAL_BASE_HINTS[resultType] ?? [])
+    : (METADATA_JSON.baseHints[resultType] ?? []);
   const toolHints = METADATA_JSON.tools[toolName]?.hints[resultType] ?? [];
   return [...baseHints, ...toolHints];
 }
@@ -479,39 +482,41 @@ function createBulkResponse(...) {
 
 ## Per-Tool Dynamic Hints
 
+> **Note**: This section documents the **dynamic hints** from `hints/dynamic.ts` only. These are context-aware hints generated based on `HintContext` properties. Static hints from the remote API (baseHints + tool-specific hints) are always included in addition to these dynamic hints. Entries marked "(from metadata)" fetch their content via `getMetadataDynamicHints()`.
+
 ### LOCAL_RIPGREP
 | Status | Context Check | Hint |
 |--------|---------------|------|
-| hasResults | `searchEngine === 'grep'` | Grep fallback warning |
-| hasResults | `fileCount > 5` | Parallel queries tip |
-| hasResults | always | Next tool suggestions |
-| empty | `searchEngine === 'grep'` | Grep doesn't respect .gitignore |
-| empty | always | Broaden scope suggestion |
-| error | `errorType === 'size_limit'` | Too many results, narrow scope |
+| hasResults | `searchEngine === 'grep'` | Grep fallback warning (from metadata) |
+| hasResults | `fileCount > 5` | Parallel queries tip (from metadata) |
+| hasResults | `fileCount > 1` | Multiple files hint (from metadata) |
+| empty | `searchEngine === 'grep'` | Grep doesn't respect .gitignore (from metadata) |
+| error | `errorType === 'size_limit'` | Too many results (N matches), narrow scope |
+| error | `errorType === 'size_limit' && path includes 'node_modules'` | Node modules search hints |
 
 ### LOCAL_FETCH_CONTENT
 | Status | Context Check | Hint |
 |--------|---------------|------|
-| hasResults | always | Trace imports, prefer matchString |
-| empty | always | Check path/pattern |
-| error | `errorType === 'size_limit' && isLarge` | Large file, use matchString |
-| error | `errorType === 'pattern_too_broad'` | Pattern too broad |
+| hasResults | `hasMoreContent` | More content available - use charOffset for pagination |
+| empty | - | (No dynamic hints) |
+| error | `errorType === 'size_limit' && isLarge` | Large file (~N tokens), use matchString |
+| error | `errorType === 'pattern_too_broad'` | Pattern too broad (~N tokens) |
 
 ### LOCAL_VIEW_STRUCTURE
 | Status | Context Check | Hint |
 |--------|---------------|------|
-| hasResults | `entryCount > 10` | Parallelize across directories |
-| hasResults | always | Next tool suggestions |
-| empty | always | Use hidden=true |
-| error | `errorType === 'size_limit'` | Large directory, use pagination |
+| hasResults | `entryCount > 10` | Parallelize across directories (from metadata) |
+| empty | - | (No dynamic hints) |
+| error | `errorType === 'size_limit' && entryCount` | Directory has N entries (~N tokens) |
 
 ### LOCAL_FIND_FILES
 | Status | Context Check | Hint |
 |--------|---------------|------|
-| hasResults | `fileCount > 3` | Batch in parallel |
+| hasResults | `fileCount > 3` | Batch in parallel (from metadata) |
 | hasResults | `fileCount > 20` | Additional hints from metadata |
-| empty | always | Broaden filters |
-| error | always | Try alternative tools |
+| hasResults | `hasConfigFiles` | Config files hints from metadata |
+| empty | - | (No dynamic hints) |
+| error | - | (No dynamic hints) |
 
 ### GITHUB_SEARCH_CODE
 | Status | Context Check | Hint |

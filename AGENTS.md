@@ -49,10 +49,12 @@
 octocode-mcp/
 ├── packages/
 │   ├── octocode-mcp/      # MCP server: GitHub API, local tools, LSP integration
+│   │   └── docs/          # Tool references & architecture guides
 │   ├── octocode-cli/      # CLI installer & skills marketplace
+│   │   └── docs/          # CLI reference, menu flows & architecture
 │   ├── octocode-vscode/   # VS Code extension (OAuth, multi-editor support)
 │   └── octocode-shared/   # Shared utilities (credentials, platform, session)
-├── docs/                  # Configuration & architecture guides
+│       └── docs/          # Credentials, session & API documentation
 └── package.json           # Workspace root (yarn workspaces)
 ```
 
@@ -73,10 +75,12 @@ octocode-mcp/
 | Path | Access | Description |
 |------|--------|-------------|
 | `packages/octocode-mcp/` | FULL | GitHub MCP server source |
+| `packages/octocode-mcp/docs/` | EDIT | Tool references & architecture docs |
 | `packages/octocode-cli/` | FULL | CLI installer source |
+| `packages/octocode-cli/docs/` | EDIT | CLI reference & menu flow docs |
 | `packages/octocode-vscode/` | FULL | VS Code extension source |
 | `packages/octocode-shared/` | FULL | Shared utilities source |
-| `docs/` | EDIT | Documentation |
+| `packages/octocode-shared/docs/` | EDIT | Credentials & session docs |
 | `*.json`, `*.config.*` | ASK | Root configurations |
 | `.env*`, `.octocode/` | NEVER | Secrets & research context |
 | `node_modules/`, `dist/`, `out/` | NEVER | Generated artifacts |
@@ -204,18 +208,64 @@ Each package has its own `AGENTS.md` with specific guidelines:
 
 Package-level files **override** this root file for work within that package.
 
-### Skills Marketplace (`octocode-cli`)
+### Skills System (`octocode-cli`)
 
-Available skills for AI assistants:
+Skills are markdown-based instruction sets that teach AI assistants how to perform specific tasks. They transform generic AI assistants into specialized experts for code research, implementation, PR review, and more.
 
-| Skill | Description |
-|-------|-------------|
-| `octocode-research` | GitHub repository research workflows |
-| `octocode-implement` | Implementation guidance with references |
-| `octocode-pr-review` | Pull request review automation |
-| `octocode-local-search` | Local codebase exploration |
-| `octocode-generate` | Code generation patterns |
-| `octocode-roast` | Code review with personality |
+#### Official Skills
+
+| Skill | Description | Flow |
+|-------|-------------|------|
+| `octocode-research` | Evidence-first code forensics (external GitHub) | PREPARE → DISCOVER → ANALYZE → OUTPUT |
+| `octocode-local-search` | Local-first code exploration and discovery | DISCOVER → PLAN → EXECUTE → VERIFY → OUTPUT |
+| `octocode-implement` | Research-driven feature implementation from specs | SPEC → CONTEXT → PLAN → RESEARCH → IMPLEMENT → VALIDATE |
+| `octocode-plan` | Adaptive research & implementation planning | UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY |
+| `octocode-pr-review` | Defects-first PR review across 6+ domains | CONTEXT → CHECKPOINT → ANALYSIS → FINALIZE → REPORT |
+| `octocode-roast` | Brutally honest code review with comedic flair | SCOPE → ROAST → INVENTORY → SPOTLIGHT → REDEMPTION |
+
+#### Skill Structure
+
+```
+skills/{skill-name}/
+├── SKILL.md              # Main reference (<500 lines)
+└── references/           # Supporting documentation (optional)
+```
+
+For complete details, see [`SKILLS_GUIDE.md`](./packages/octocode-cli/docs/SKILLS_GUIDE.md).
+
+### Documentation (`octocode-mcp`)
+
+Technical documentation for the MCP server:
+
+| Document | Description |
+|----------|-------------|
+| [`GITHUB_TOOLS_REFERENCE.md`](./packages/octocode-mcp/docs/GITHUB_TOOLS_REFERENCE.md) | GitHub API tools usage guide |
+| [`LOCAL_TOOLS_REFERENCE.md`](./packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) | Local codebase exploration tools |
+| [`LSP_TOOLS.md`](./packages/octocode-mcp/docs/LSP_TOOLS.md) | LSP-powered code intelligence |
+| [`HINTS_ARCHITECTURE.md`](./packages/octocode-mcp/docs/HINTS_ARCHITECTURE.md) | Hint system design & patterns |
+| [`SESSION_PERSISTENCE.md`](./packages/octocode-mcp/docs/SESSION_PERSISTENCE.md) | Session state management |
+| [`TOKEN_RESOLUTION.md`](./packages/octocode-mcp/docs/TOKEN_RESOLUTION.md) | GitHub token resolution flow |
+
+### Documentation (`octocode-cli`)
+
+Technical documentation for the CLI installer:
+
+| Document | Description |
+|----------|-------------|
+| [`CLI_REFERENCE.md`](./packages/octocode-cli/docs/CLI_REFERENCE.md) | Complete CLI commands reference with options and examples |
+| [`MENU_FLOW.md`](./packages/octocode-cli/docs/MENU_FLOW.md) | Interactive menu system documentation with flow diagrams |
+| [`ARCHITECTURE.md`](./packages/octocode-cli/docs/ARCHITECTURE.md) | Technical architecture and design patterns |
+| [`SKILLS_GUIDE.md`](./packages/octocode-cli/docs/SKILLS_GUIDE.md) | Comprehensive guide to Octocode Skills system |
+
+### Documentation (`octocode-shared`)
+
+Technical documentation for shared utilities:
+
+| Document | Description |
+|----------|-------------|
+| [`CREDENTIALS_ARCHITECTURE.md`](./packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) | Token storage, encryption, keychain integration, refresh flow |
+| [`SESSION_PERSISTENCE.md`](./packages/octocode-shared/docs/SESSION_PERSISTENCE.md) | Deferred writes, exit handlers, statistics tracking |
+| [`API_REFERENCE.md`](./packages/octocode-shared/docs/API_REFERENCE.md) | Complete API documentation for all modules |
 
 ## 🔬 Research Workflows
 

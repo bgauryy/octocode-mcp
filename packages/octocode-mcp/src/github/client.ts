@@ -18,10 +18,12 @@ function hashToken(token: string): string {
 export const OctokitWithThrottling = Octokit.plugin(throttling);
 
 /**
- * Time-to-live for cached Octokit instances (1 hour).
- * After this time, a new instance will be created to ensure fresh tokens.
+ * Time-to-live for cached Octokit instances (5 minutes).
+ * Short TTL ensures refreshed tokens are picked up promptly after expiry/refresh.
+ * GitHub App tokens last ~8 hours, so 5 min cache provides good balance
+ * between performance and token freshness.
  */
-const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+const TOKEN_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Cached Octokit instance with creation timestamp for TTL checks.
@@ -146,7 +148,7 @@ export async function getOctokit(
   pendingDefaultPromise = (async () => {
     try {
       const token = await getGitHubToken();
-      const instance = createOctokitInstance(token);
+      const instance = createOctokitInstance(token ?? undefined);
       instances.set('DEFAULT', { client: instance, createdAt: Date.now() });
       return instance;
     } finally {

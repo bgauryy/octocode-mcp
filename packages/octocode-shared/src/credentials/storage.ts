@@ -35,42 +35,6 @@ const DEFAULT_CLIENT_ID = '178c6fc778ccc68e1d6a';
 const DEFAULT_HOSTNAME = 'github.com';
 
 // ============================================================================
-// TOKEN CACHE (1-minute TTL using node-cache)
-// ============================================================================
-
-import NodeCache from 'node-cache';
-
-/** Cache TTL in seconds (1 minute) */
-const TOKEN_CACHE_TTL_SECONDS = 60;
-
-/**
- * Token cache using node-cache with automatic TTL expiration.
- * - stdTTL: 60 seconds (1 minute)
- * - checkperiod: 30 seconds (cleanup expired keys)
- * - useClones: false (return references for performance)
- */
-const tokenCache = new NodeCache({
-  stdTTL: TOKEN_CACHE_TTL_SECONDS,
-  checkperiod: 30,
-  useClones: false,
-  deleteOnExpire: true,
-});
-
-/**
- * Clear the token resolution cache.
- * Use this when credentials change (login, logout, refresh).
- *
- * @param hostname - Optional hostname to clear. If not provided, clears all.
- */
-export function clearTokenCache(hostname?: string): void {
-  if (hostname) {
-    tokenCache.del(hostname);
-  } else {
-    tokenCache.flushAll();
-  }
-}
-
-// ============================================================================
 // TIMEOUT UTILITIES (like gh CLI's 3 second timeout)
 // ============================================================================
 
@@ -122,6 +86,74 @@ export const KEY_FILE = join(OCTOCODE_DIR, '.key');
 // Encryption constants
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
+
+// ============================================================================
+// IN-MEMORY CREDENTIALS CACHE
+// ============================================================================
+
+/** Cache entry structure */
+interface CachedCredentials {
+  credentials: StoredCredentials;
+  cachedAt: number;
+}
+
+/** In-memory credentials cache (per hostname) */
+const credentialsCache = new Map<string, CachedCredentials>();
+
+/** Cache TTL in milliseconds (5 minutes - matches token expiry buffer) */
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Check if cached credentials are still valid (not expired)
+ */
+function isCacheValid(hostname: string): boolean {
+  const cached = credentialsCache.get(hostname);
+  if (!cached) return false;
+
+  const age = Date.now() - cached.cachedAt;
+  return age < CACHE_TTL_MS;
+}
+
+/**
+ * Invalidate cache for a hostname (call after credential changes)
+ * @param hostname - Hostname to invalidate, or undefined to clear all
+ */
+export function invalidateCredentialsCache(hostname?: string): void {
+  if (hostname) {
+    credentialsCache.delete(normalizeHostname(hostname));
+  } else {
+    credentialsCache.clear();
+  }
+}
+
+/**
+ * Get cache statistics (for debugging/monitoring)
+ * @internal
+ */
+export function _getCacheStats(): {
+  size: number;
+  entries: Array<{ hostname: string; age: number; valid: boolean }>;
+} {
+  const now = Date.now();
+  return {
+    size: credentialsCache.size,
+    entries: Array.from(credentialsCache.entries()).map(
+      ([hostname, entry]) => ({
+        hostname,
+        age: now - entry.cachedAt,
+        valid: isCacheValid(hostname),
+      })
+    ),
+  };
+}
+
+/**
+ * Reset cache state (for testing)
+ * @internal
+ */
+export function _resetCredentialsCache(): void {
+  credentialsCache.clear();
+}
 
 // ============================================================================
 // ENVIRONMENT VARIABLE SUPPORT
@@ -498,6 +530,7 @@ function normalizeHostname(hostname: string): string {
  * 1. Try keyring with timeout
  * 2. On success: remove from file storage (clean migration)
  * 3. On failure: fallback to encrypted file storage
+ * 4. Invalidate cache to ensure fresh reads
  *
  * @returns StoreResult with insecureStorageUsed flag
  */
@@ -522,6 +555,9 @@ export async function storeCredentials(
       // 2. SUCCESS: Clean up file storage (single source of truth)
       removeFromFileStorage(hostname);
 
+      // 3. Invalidate cache for this hostname
+      invalidateCredentialsCache(hostname);
+
       return { success: true, insecureStorageUsed: false };
     } catch (err) {
       console.warn(
@@ -532,11 +568,14 @@ export async function storeCredentials(
     }
   }
 
-  // 3. FALLBACK: Encrypted file storage
+  // 4. FALLBACK: Encrypted file storage
   try {
     const store = readCredentialsStore();
     store.credentials[hostname] = normalizedCredentials;
     writeCredentialsStore(store);
+
+    // 5. Invalidate cache for this hostname
+    invalidateCredentialsCache(hostname);
 
     return { success: true, insecureStorageUsed: true };
   } catch (fileError) {
@@ -549,21 +588,61 @@ export async function storeCredentials(
 }
 
 /**
+ * Options for getCredentials
+ */
+export interface GetCredentialsOptions {
+  /** Bypass cache and fetch fresh credentials from storage */
+  bypassCache?: boolean;
+}
+
+/**
  * Get credentials using keyring-first strategy (like gh CLI)
  *
  * Flow:
- * 1. Try keyring with timeout
- * 2. Fallback to file storage (with lazy migration to keyring)
+ * 1. Check in-memory cache (unless bypassed)
+ * 2. Try keyring with timeout
+ * 3. Fallback to file storage (with lazy migration to keyring)
+ * 4. Cache result for future calls
  *
  * @param hostname - GitHub hostname (default: 'github.com')
+ * @param options - Optional settings (e.g., bypassCache)
  * @returns Stored credentials or null if not found
  */
 export async function getCredentials(
-  hostname: string = 'github.com'
+  hostname: string = 'github.com',
+  options?: GetCredentialsOptions
 ): Promise<StoredCredentials | null> {
   const normalizedHostname = normalizeHostname(hostname);
 
-  // 1. Try keyring first (with timeout)
+  // 1. Check cache first (unless bypassed)
+  if (!options?.bypassCache && isCacheValid(normalizedHostname)) {
+    return credentialsCache.get(normalizedHostname)!.credentials;
+  }
+
+  // 2. Fetch fresh credentials from storage
+  const credentials = await fetchCredentialsFromStorage(normalizedHostname);
+
+  // 3. Update cache (even if null - we cache the absence)
+  if (credentials) {
+    credentialsCache.set(normalizedHostname, {
+      credentials,
+      cachedAt: Date.now(),
+    });
+  } else {
+    // Remove stale cache entry if credentials no longer exist
+    credentialsCache.delete(normalizedHostname);
+  }
+
+  return credentials;
+}
+
+/**
+ * Internal: Fetch credentials from storage (keyring → file)
+ */
+async function fetchCredentialsFromStorage(
+  normalizedHostname: string
+): Promise<StoredCredentials | null> {
+  // Try keyring first (with timeout)
   if (isSecureStorageAvailable()) {
     try {
       const creds = await withTimeout(
@@ -583,7 +662,7 @@ export async function getCredentials(
     }
   }
 
-  // 2. Fallback to file storage
+  // Fallback to file storage
   const store = readCredentialsStore();
   const fileCreds = store.credentials[normalizedHostname];
 
@@ -664,6 +743,9 @@ export async function deleteCredentials(
     }
     deletedFromFile = true;
   }
+
+  // 3. Invalidate cache for this hostname
+  invalidateCredentialsCache(normalizedHostname);
 
   return {
     success: deletedFromKeyring || deletedFromFile,
@@ -1156,16 +1238,17 @@ export type GhCliTokenGetter = (
 ) => string | null | Promise<string | null>;
 
 /**
- * Full token resolution with gh CLI fallback and 1-minute caching
+ * Full token resolution with gh CLI fallback
  *
  * This is the recommended function for complete token resolution across all sources.
- * Results are cached for 1 minute to reduce I/O overhead.
+ * Uses in-memory cache (5-minute TTL) for performance, with automatic invalidation
+ * on credential updates/refresh.
  *
  * Priority order:
  * 1. OCTOCODE_TOKEN env var
  * 2. GH_TOKEN env var
  * 3. GITHUB_TOKEN env var
- * 4. Octocode storage with auto-refresh (keychain → file)
+ * 4. Octocode storage with auto-refresh (keychain → file, cached)
  * 5. gh CLI token (fallback via callback)
  *
  * @param options - Resolution options
@@ -1183,8 +1266,7 @@ export async function resolveTokenFull(options?: {
   const clientId = options?.clientId ?? DEFAULT_CLIENT_ID;
   const getGhCliToken = options?.getGhCliToken;
 
-  // Priority 1-3: ALWAYS check environment variables first (highest priority, no I/O)
-  // This ensures env vars take precedence over any cached token from other sources
+  // Priority 1-3: Check environment variables first (highest priority, no I/O)
   const envToken = getTokenFromEnv();
   if (envToken) {
     return {
@@ -1194,23 +1276,8 @@ export async function resolveTokenFull(options?: {
     };
   }
 
-  // Check cache for non-env token results (keychain/file/gh-cli)
-  const cached = tokenCache.get<FullTokenResolution | null>(hostname);
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  // Cache miss or expired - resolve from storage/gh-cli (skips env since already checked)
-  const result = await resolveTokenFullInternalNoEnv(
-    hostname,
-    clientId,
-    getGhCliToken
-  );
-
-  // Cache the result (including null) with default TTL
-  tokenCache.set(hostname, result);
-
-  return result;
+  // Priority 4-6: Resolve from storage/gh-cli (uses in-memory cache)
+  return resolveTokenFullInternalNoEnv(hostname, clientId, getGhCliToken);
 }
 
 /**

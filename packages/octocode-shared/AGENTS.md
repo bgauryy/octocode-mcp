@@ -39,6 +39,18 @@ All commands run from this package directory (`packages/octocode-shared/`).
 
 ---
 
+## 📚 Documentation
+
+Technical documentation for the shared utilities:
+
+| Document | Description |
+|----------|-------------|
+| [`CREDENTIALS_ARCHITECTURE.md`](./docs/CREDENTIALS_ARCHITECTURE.md) | Token storage, encryption, keychain integration, refresh flow |
+| [`SESSION_PERSISTENCE.md`](./docs/SESSION_PERSISTENCE.md) | Deferred writes, exit handlers, statistics tracking |
+| [`API_REFERENCE.md`](./docs/API_REFERENCE.md) | Complete API documentation for all modules |
+
+---
+
 ## 📂 Package Structure
 
 ```
@@ -99,13 +111,18 @@ import { ... } from 'octocode-shared/session';
 | Export | Type | Purpose |
 |--------|------|---------|
 | `storeCredentials` | Function | Store encrypted credentials |
-| `getCredentials` | Function | Retrieve credentials (async) |
-| `getCredentialsSync` | Function | Retrieve credentials (sync) |
+| `getCredentials` | Function | Retrieve credentials (async, cached) |
+| `getCredentialsSync` | Function | Retrieve credentials (sync, file only) |
 | `deleteCredentials` | Function | Remove stored credentials |
 | `getToken` | Function | Get token for a host (async) |
 | `getTokenSync` | Function | Get token for a host (sync) |
+| `getTokenWithRefresh` | Function | Get token with auto-refresh (recommended) |
 | `resolveToken` | Function | Resolve token from env/storage |
+| `resolveTokenWithRefresh` | Function | Resolve with auto-refresh |
+| `resolveTokenFull` | Function | Full resolution with gh CLI fallback |
+| `refreshAuthToken` | Function | Manually refresh an expired token |
 | `updateToken` | Function | Update stored token |
+| `invalidateCredentialsCache` | Function | Invalidate cached credentials |
 | `listStoredHosts` | Function | List all stored hosts |
 | `hasCredentials` | Function | Check if credentials exist |
 | `isTokenExpired` | Function | Check token expiration |
@@ -117,6 +134,7 @@ import { ... } from 'octocode-shared/session';
 | `OAuthToken` | Type | OAuth token structure |
 | `StoredCredentials` | Type | Credential data structure |
 | `TokenSource` | Type | Token origin (env/storage) |
+| `GetCredentialsOptions` | Type | Options for getCredentials |
 
 ### Platform Module
 
@@ -180,7 +198,9 @@ import { ... } from 'octocode-shared/session';
 - **Random IV**: Unique initialization vector per encryption
 - **Keychain Integration**: Native OS keychain for encryption key
 - **Secure Fallback**: File-based key when keychain unavailable
-- **Token Resolution**: Automatic env → storage → null fallback chain
+- **Token Resolution**: Automatic env → storage → gh CLI fallback chain
+- **Auto-Refresh**: Octocode tokens refreshed automatically when expired (via `@octokit/oauth-methods`)
+- **In-Memory Cache**: 5-minute TTL with automatic invalidation on credential updates
 
 ---
 
@@ -240,34 +260,64 @@ These are the core principles for this shared package:
 ```
 resolveTokenFull(options)
     ↓
-getTokenFromEnv()  ← ALWAYS checked first (bypasses cache!)
+getTokenFromEnv()  ← Checked first (highest priority, NO REFRESH)
     ├── 1. Check OCTOCODE_TOKEN
     ├── 2. Check GH_TOKEN
     ├── 3. Check GITHUB_TOKEN
-    └── Return { token, source: 'env:*' } if found
+    └── Return { token, source: 'env:*' } if found (user manages these)
     ↓
-tokenCache.get(hostname)  ← Check 1-minute TTL cache
-    └── Return cached result if exists
-    ↓
-getTokenWithRefresh(host)
-    ├── Read from keychain or encrypted storage
-    ├── Auto-refresh if token expired
+getTokenWithRefresh(host)  ← ONLY OCTOCODE TOKENS ARE REFRESHED
+    ├── Read from in-memory cache (5-min TTL)
+    ├── Fallback to keychain or encrypted storage
+    ├── Auto-refresh if token expired (using @octokit/oauth-methods)
     └── Return { token, source: 'keychain'|'file' } if found
     ↓
-getGhCliToken(host)  ← Fallback
+getGhCliToken(host)  ← Fallback (NO REFRESH - gh CLI manages its own tokens)
     └── Return { token, source: 'gh-cli' } if found
-    ↓
-Cache result (1-min TTL)
     ↓
 Return result or null
 ```
 
-### Token Caching
+### Token Refresh Policy
 
-- **Env vars bypass cache**: `OCTOCODE_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` are ALWAYS checked first
-- **Cache TTL**: 1 minute for non-env tokens (keychain/file/gh-cli)
-- **Cache scope**: Per hostname (e.g., `github.com`)
-- **Clear cache**: `clearTokenCache()` or `clearTokenCache(hostname)`
+| Token Source | Auto-Refresh? | Reason |
+|--------------|---------------|--------|
+| **Env vars** (`OCTOCODE_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`) | ❌ No | User-managed tokens |
+| **Octocode credentials** (keychain/file) | ✅ If supported | GitHub App tokens only (see below) |
+| **gh CLI token** | ❌ No | gh CLI handles its own token refresh |
+
+**Token Type Support:**
+
+| Token Type | Expires? | Refresh Token? | Auto-Refresh? |
+|------------|----------|----------------|---------------|
+| **GitHub App user tokens** | ✅ 8 hours | ✅ Yes | ✅ Yes |
+| **OAuth App tokens** (classic) | ❌ Never | ❌ No | ❌ N/A |
+
+**Note:** Only tokens with a `refreshToken` field are auto-refreshed. OAuth App tokens never expire and don't need refresh. Octocode uses a GitHub App, so tokens from `octocode login` support auto-refresh.
+
+### Credentials Caching
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                 IN-MEMORY CREDENTIALS CACHE                  │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Cache TTL: 5 minutes (matches token expiry buffer)         │
+│                                                              │
+│  Cache Invalidation:                                         │
+│    └── storeCredentials() → invalidates hostname             │
+│    └── deleteCredentials() → invalidates hostname            │
+│    └── updateToken() → calls storeCredentials()              │
+│    └── refreshAuthToken() → calls updateToken()              │
+│                                                              │
+│  Bypass Cache:                                               │
+│    └── getCredentials(host, { bypassCache: true })          │
+│                                                              │
+│  Manual Invalidation:                                        │
+│    └── invalidateCredentialsCache(hostname?)                │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ### Session Write Flow
 
@@ -372,6 +422,8 @@ yarn test:quiet        # Minimal output
 | Dependency | Purpose |
 |------------|---------|
 | `keychain-napi` | Native keychain access |
+| `@octokit/oauth-methods` | GitHub OAuth token refresh |
+| `@octokit/request` | HTTP requests to GitHub API |
 
 ### Build Output
 

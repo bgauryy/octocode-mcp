@@ -119,7 +119,7 @@ gh auth login
 
 The MCP server will use `gh auth token` as a **fallback** when no environment variables or octocode credentials are found. If you're authenticated with `gh` and have no other credentials set up, it will work automatically!
 
-> **Note:** Token changes are picked up dynamically - **no server restart required**. Environment variables (`OCTOCODE_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`) are checked fresh on every request and always take priority over cached tokens. See [Caching Behavior](#caching-behavior) for details.
+> **Note:** Token changes are picked up dynamically - **no server restart required**. All token sources are checked fresh on every request for immediate propagation of changes.
 
 ---
 
@@ -159,67 +159,45 @@ The MCP server will use `gh auth token` as a **fallback** when no environment va
 | **Encrypted File** | `~/.octocode/credentials.json` | AES-256-GCM encrypted |
 | **Encryption Key** | `~/.octocode/.key` | File permissions 600 |
 
-### Caching Behavior
+### Token Resolution Details
 
-Token resolution includes intelligent caching to reduce I/O overhead while ensuring environment variables always take priority:
+Token resolution always fetches fresh tokens for immediate propagation of changes:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│             Token Resolution with Caching                    │
+│               Token Resolution (Fresh)                       │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
 │  resolveTokenFull() called                                   │
 │         ↓                                                    │
 │  ┌─────────────────────────────────────────┐                │
-│  │ 1. Check ENV VARS (ALWAYS FIRST)        │ ← No cache!    │
+│  │ 1. Check ENV VARS (highest priority)    │                │
 │  │    OCTOCODE_TOKEN → GH_TOKEN → GITHUB   │                │
 │  │    If found: Return immediately ✅       │                │
 │  └─────────────────────────────────────────┘                │
 │         ↓ (only if no env var)                              │
 │  ┌─────────────────────────────────────────┐                │
-│  │ 2. Check TOKEN CACHE (1-min TTL)        │                │
-│  │    If cached: Return cached result      │                │
+│  │ 2. Resolve from storage                 │                │
+│  │    Keychain → Encrypted File            │                │
+│  │    Auto-refresh if token expired        │                │
 │  └─────────────────────────────────────────┘                │
-│         ↓ (only if cache miss)                              │
+│         ↓ (only if no stored token)                         │
 │  ┌─────────────────────────────────────────┐                │
-│  │ 3. Resolve from storage/gh-cli          │                │
-│  │    Keychain → File → gh CLI             │                │
-│  │    Cache result for 1 minute            │                │
+│  │ 3. gh CLI fallback                      │                │
+│  │    gh auth token                        │                │
 │  └─────────────────────────────────────────┘                │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-#### Key Caching Rules
+#### Key Behaviors
 
-| Rule | Behavior |
-|------|----------|
-| **Env vars bypass cache** | `OCTOCODE_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` are ALWAYS checked first, before any cache lookup |
-| **Cache TTL** | Non-env tokens (keychain/file/gh-cli) are cached for **1 minute** |
-| **Cache scope** | Cached per hostname (e.g., `github.com`, `github.enterprise.com`) |
-| **Env var priority** | Setting an env var at runtime immediately takes effect (no restart needed) |
-
-#### Why This Design?
-
-1. **Environment variables are always fresh** — Users can set `GITHUB_TOKEN` at any time and it takes immediate effect, even if a keychain token was previously cached
-
-2. **Reduced I/O for storage tokens** — Keychain access and file reads are expensive; caching for 1 minute reduces overhead for repeated API calls
-
-3. **No caching for env tokens** — Environment variables are fast to read (no I/O), so they're checked fresh on every call
-
-#### Programmatic Cache Control
-
-```typescript
-import { clearTokenCache } from 'octocode-shared';
-
-// Clear all cached tokens
-clearTokenCache();
-
-// Clear token for specific hostname
-clearTokenCache('github.com');
-```
-
-> **Note:** You typically don't need to clear the cache manually. Setting an environment variable automatically takes priority over any cached token.
+| Behavior | Description |
+|----------|-------------|
+| **Fresh resolution** | Tokens are always resolved fresh on every request |
+| **Immediate propagation** | When you run `gh auth login` or set a new token, it takes effect immediately |
+| **No server restart** | Token changes are picked up dynamically without restarting the MCP server |
+| **Priority order** | Env vars → Stored credentials (keychain/file) → gh CLI |
 
 ---
 
