@@ -271,10 +271,17 @@ Return result or null
 | Token Source | Auto-Refresh? | Reason |
 |--------------|---------------|--------|
 | **Env vars** (`OCTOCODE_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`) | ❌ No | User-managed tokens |
-| **Octocode credentials** (keychain/file) | ✅ Yes | OAuth tokens with refresh support |
+| **Octocode credentials** (keychain/file) | ✅ If supported | GitHub App tokens only (see below) |
 | **gh CLI token** | ❌ No | gh CLI handles its own token refresh |
 
-**Only tokens stored via `octocode login` (in keychain or `~/.octocode/credentials.json`) are auto-refreshed.**
+**Token Type Support:**
+
+| Token Type | Expires? | Refresh Token? | Auto-Refresh? |
+|------------|----------|----------------|---------------|
+| **GitHub App user tokens** | ✅ 8 hours | ✅ Yes | ✅ Yes |
+| **OAuth App tokens** (classic) | ❌ Never | ❌ No | ❌ N/A |
+
+**Note:** Only tokens with a `refreshToken` field are auto-refreshed. OAuth App tokens never expire and don't need refresh. Octocode uses a GitHub App, so tokens from `octocode login` support auto-refresh.
 
 ### Credentials Caching
 
