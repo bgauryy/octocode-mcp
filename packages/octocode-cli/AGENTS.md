@@ -144,6 +144,8 @@ skills/
 │   └── references/
 │       ├── tool-reference.md
 │       └── workflow-patterns.md
+├── octocode-plan/           # Adaptive research & implementation planning
+│   └── SKILL.md
 ├── octocode-pr-review/      # PR review skill
 │   ├── SKILL.md
 │   └── references/

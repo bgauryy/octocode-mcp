@@ -9,6 +9,7 @@ Pre-built Claude Code skills for enhanced AI-assisted research and development.
 | `octocode-research` | Evidence-first code forensics (local & GitHub) | PREPARE → DISCOVER → ANALYZE → OUTPUT |
 | `octocode-local-search` | Local-first code exploration and discovery | DISCOVER → PLAN → EXECUTE → VERIFY → OUTPUT |
 | `octocode-implement` | Research-driven feature implementation from specs | SPEC → CONTEXT → PLAN → RESEARCH → IMPLEMENT → VALIDATE |
+| `octocode-plan` | Adaptive research & implementation planning | UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY |
 | `octocode-pr-review` | Defects-first PR review across 6+ domains | CONTEXT → CHECKPOINT → ANALYSIS → FINALIZE → REPORT |
 | `octocode-generate` | App scaffolding with stack selection | DISCOVERY → STACK → PLAN → RESEARCH → SCAFFOLD → VALIDATE |
 | `octocode-roast` | Brutally honest code review with comedic flair | SCOPE → ROAST → INVENTORY → SPOTLIGHT → REDEMPTION |
@@ -76,6 +77,22 @@ Features:
 - Multi-agent parallelization for independent tasks
 
 Core Principle: "Read 10x more than you write. Measure twice, cut once."
+
+### octocode-plan
+
+**Use when**: Implementing features requiring research-driven planning, tackling complex multi-step tasks, building new functionality with proper validation, or when you need structured implementation with approval gates.
+
+Features:
+- Adaptive execution flow: UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY
+- Evidence-based coding with pattern validation from high-quality repos
+- Interactive mode with user checkpoints at key decision points
+- Goal classification (RESEARCH_ONLY, ANALYSIS, CREATION, FEATURE, BUG, REFACTOR)
+- Research synthesis with confidence levels
+- Plan approval gates before implementation
+- Multi-agent parallelization for independent research domains
+- Structured output to `.octocode/plan/{session-name}/`
+
+Core Principle: "Research Before Code. Verify Patterns. Follow the Plan. Green Build Required."
 
 ### octocode-pr-review
 

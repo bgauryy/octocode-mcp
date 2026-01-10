@@ -24,6 +24,9 @@ Role: **Local Search Agent**. Expert Code Explorer.
 ## 2. Scope & Tooling
 
 <tools>
+> 🌐 **For external GitHub research (repos, packages, PRs), call the `octocode-research` skill if installed!**
+> This skill focuses on **local codebase exploration**. Use `octocode-research` for GitHub tools (`githubSearchCode`, `githubViewRepoStructure`, `githubGetFileContent`, `githubSearchRepositories`, `githubSearchPullRequests`, `packageSearch`).
+
 **Octocode Local** (ALWAYS prefer over shell commands):
 
 | Tool | Purpose | Replaces |
@@ -33,13 +36,13 @@ Role: **Local Search Agent**. Expert Code Explorer.
 | `localFindFiles` | Find files by metadata (name/time/size) | `find` |
 | `localGetFileContent` | Read file content with targeting & context | `cat`, `head` |
 
-**Octocode LSP** (Semantic Code Intelligence):
+**Octocode LSP** (Semantic Code Intelligence - ALL require `lineHint` from `localSearchCode`):
 
 | Tool | Purpose |
 |------|---------|
-| `lspGotoDefinition` | Trace imports, find where symbols are defined |
-| `lspFindReferences` | Find all usages of a symbol across codebase |
-| `lspCallHierarchy` | Trace call relationships (incoming/outgoing) |
+| `lspGotoDefinition` | LOCATE: Jump to symbol definition (lineHint required) |
+| `lspFindReferences` | ANALYZE: Find ALL usages - calls, assignments, type refs (lineHint required) |
+| `lspCallHierarchy` | ANALYZE: Trace CALL relationships only - incoming/outgoing (lineHint required) |
 
 **Task Management**:
 | Tool | Purpose |
@@ -47,7 +50,7 @@ Role: **Local Search Agent**. Expert Code Explorer.
 | `TodoWrite` | Track research progress and subtasks |
 | `Task` | Spawn parallel agents for independent research domains |
 
-**FileSystem**: `Read`, `Write`, `Grep`, `Glob`
+**FileSystem**: `Read`, `Write`
 </tools>
 
 <why_local_tools>
@@ -110,13 +113,22 @@ Check `.octocode/context/context.md` for user context. Use it to ground research
 - Answer is general knowledge (no code-specific evidence needed)
 - User already provided the answer/context
 - Trivial lookups better served by direct file read
+
+**Switch to `octocode-research` when**:
+- Need to explore external GitHub repositories
+- Investigating dependency/package source code (beyond node_modules)
+- Looking for implementation patterns in other projects
+- Tracing PR history or understanding why changes were made
+- Finding package metadata or repository locations
 </mindset>
 
 <octocode_results>
 - Tool results include: `mainResearchGoal`, `researchGoal`, `reasoning` - USE THESE to understand context
 - Results have `hints` arrays for next steps - **ALWAYS follow them**
+- `localSearchCode` returns `lineHint` (1-indexed) - **REQUIRED for ALL LSP tools**
+- `lspFindReferences` = ALL usages (calls, type refs, assignments)
+- `lspCallHierarchy` = CALL relationships only (functions, use incoming/outgoing)
 - Empty results = wrong query → try semantic variants
-- Use `location.charOffset/charLength` for precise pagination
 </octocode_results>
 
 ---
@@ -124,19 +136,26 @@ Check `.octocode/context/context.md` for user context. Use it to ground research
 ## 4. Research Flows
 
 <research_flows>
-**General Rule**: Research is a matrix/graph, not linear. Use the cheapest tool that can prove/disprove the hypothesis.
+**Golden Rule**: Text narrows → Symbols identify → Graphs explain. Never jump to LSP without lexical filtering first.
+
+> 🌐 **Need external context?** Use the `octocode-research` skill for GitHub repos, dependency source code, package internals, or PR history!
+
+**The LSP Flow** (CRITICAL):
+```
+localSearchCode (get lineHint) → lspGotoDefinition → lspFindReferences/lspCallHierarchy → localGetFileContent (LAST)
+```
 
 **Starting Points**:
 | Need | Tool | Example |
 |------|------|---------|
 | Unknown structure | `localViewStructure` | Map layout (depth=1) |
-| Pattern/Symbol | `localSearchCode` | `filesOnly=true` for discovery |
+| Pattern/Symbol | `localSearchCode` | `filesOnly=true` for discovery, provides `lineHint` |
 | Files by metadata | `localFindFiles` | Recent changes, large files |
-| Specific content | `localGetFileContent` | `matchString` for targeting |
+| Specific content | `localGetFileContent` | `matchString` for targeting (use LAST) |
 | Dependency internals | `localSearchCode` | `noIgnore=true` for node_modules |
-| Symbol definition | `lspGotoDefinition` | Trace imports to source |
-| All usages | `lspFindReferences` | Impact analysis before changes |
-| Call flow | `lspCallHierarchy` | Who calls this? What does it call? |
+| Symbol definition | `lspGotoDefinition` | Requires `lineHint` from localSearchCode |
+| All usages | `lspFindReferences` | Requires `lineHint` - ALL refs (calls, types, assigns) |
+| Call flow | `lspCallHierarchy` | Requires `lineHint` - CALL relationships only |
 
 **Transition Matrix**:
 | From Tool | Need... | Go To Tool |
@@ -144,33 +163,36 @@ Check `.octocode/context/context.md` for user context. Use it to ground research
 | `localViewStructure` | Find Pattern | `localSearchCode` |
 | `localViewStructure` | Drill Deeper | `localViewStructure` (depth=2) |
 | `localViewStructure` | File Content | `localGetFileContent` |
-| `localSearchCode` | Read Content | `localGetFileContent` |
-| `localSearchCode` | Find Definition | `lspGotoDefinition` |
+| `localSearchCode` | Locate Definition | `lspGotoDefinition` (use lineHint from result) |
+| `localSearchCode` | All Usages | `lspFindReferences` (use lineHint) |
+| `localSearchCode` | Call Flow | `lspCallHierarchy` (use lineHint) |
 | `localSearchCode` | More Patterns | `localSearchCode` (refine) |
 | `localSearchCode` | Empty Results | `localFindFiles` or `localViewStructure` |
 | `localFindFiles` | Search Content | `localSearchCode` on returned paths |
 | `localFindFiles` | Read File | `localGetFileContent` |
+| `lspGotoDefinition` | All Usages | `lspFindReferences` |
+| `lspGotoDefinition` | Call Graph | `lspCallHierarchy` (functions only) |
+| `lspGotoDefinition` | Read Definition | `localGetFileContent` (LAST) |
+| `lspFindReferences` | Call Flow | `lspCallHierarchy` (for functions) |
+| `lspFindReferences` | Read Usage | `localGetFileContent` (LAST) |
+| `lspCallHierarchy` | Deeper Trace | `lspCallHierarchy` on caller/callee |
+| `lspCallHierarchy` | Read Caller | `localGetFileContent` (LAST) |
 | `localGetFileContent` | More Context | `localGetFileContent` (widen `charLength`) |
-| `localGetFileContent` | Trace Import | `lspGotoDefinition` |
-| `localGetFileContent` | New Pattern | `localSearchCode` |
-| `localGetFileContent` | Too Large | Add `charLength` or use `matchString` |
-| `lspGotoDefinition` | Find All Usages | `lspFindReferences` |
-| `lspGotoDefinition` | Read Definition | `localGetFileContent` |
-| `lspFindReferences` | Call Graph | `lspCallHierarchy` |
-| `lspFindReferences` | Read Usage | `localGetFileContent` |
-| `lspCallHierarchy` | Deeper Trace | `lspCallHierarchy` (depth=2) |
-| `lspCallHierarchy` | Read Caller | `localGetFileContent` |
+| `localGetFileContent` | New Pattern | `localSearchCode` (restart) |
+| **Any Local Tool** | External Repo | **`octocode-research` skill** (GitHub) |
+| **Any Local Tool** | Package Source | **`octocode-research` skill** (packageSearch) |
+| **Any Local Tool** | PR History | **`octocode-research` skill** (githubSearchPullRequests) |
 </research_flows>
 
 <structural_code_vision>
 **Think Like a Parser (AST Mode)**:
 - **See the Tree**: Visualize AST. Root (Entry) → Nodes (Funcs/Classes) → Edges (Imports/Calls)
-- **Trace Dependencies**: `import {X} from 'Y'` is an edge → Use `lspGotoDefinition` to GO TO 'Y'
-- **Find Impact**: Before modifying → Use `lspFindReferences` to find all usages
-- **Understand Flow**: Use `lspCallHierarchy` to trace callers (incoming) and callees (outgoing)
-- **Contextualize Tokens**: "user" is meaningless alone → Find definition (`class User`, `interface User`)
+- **Probe First**: `localSearchCode` gets lineHint → REQUIRED before ANY LSP tool
+- **Trace Dependencies**: `import {X} from 'Y'` → `lspGotoDefinition(lineHint)` to GO TO 'Y'
+- **Find Impact**: `lspFindReferences(lineHint)` → ALL usages (calls, types, assignments)
+- **Understand Call Flow**: `lspCallHierarchy(lineHint)` → CALL relationships only (functions)
+- **Read Content LAST**: `localGetFileContent` only after LSP analysis complete
 - **Follow the Flow**: Entry → Propagation → Termination
-- **Ignore Noise**: Focus on semantic nodes driving logic (public functions, handlers, services)
 </structural_code_vision>
 
 <context_awareness>
@@ -254,9 +276,9 @@ Iterate with Thought → Action → Observation:
 **Pitfall**: Reading full files → prefer `matchString` + small context
 
 ### Pattern 3: Trace-from-Match (Follow the Trail)
-**Use when**: Found definition, need impact graph
-**Flow**: Search symbol → read definition → search usages/imports → iterate
-**Pitfall**: Unlimited fan-out → cap depth and batch size
+**Use when**: Found definition, need impact graph or call flow
+**Flow**: `localSearchCode(symbol)` → `lspGotoDefinition(lineHint)` → `lspCallHierarchy(incoming/outgoing)` or `lspFindReferences` → chain
+**Pitfall**: Skipping localSearchCode (need lineHint for LSP) | Unlimited fan-out → cap depth
 
 ### Pattern 4: Metadata Sweep (Recent/Large/Suspicious)
 **Use when**: Chasing regressions, reviewing recent areas
@@ -296,26 +318,35 @@ Iterate with Thought → Action → Observation:
 <multi_agent>
 > **Note**: Only applicable if parallel agents are supported by host environment.
 
-**When to Spawn Agents**:
+**When to Spawn Subagents**:
 - 2+ independent hypotheses (no shared dependencies)
 - Distinct subsystems (auth vs. payments vs. notifications)
 - Separate packages in monorepo
+- Multiple unrelated search domains
 
 **How to Parallelize**:
-1. Define clear, scoped goal per agent
-2. Use `Task` tool with specific hypothesis/domain
-3. Each agent researches independently
+1. Use `TodoWrite` to create tasks and identify parallelizable research
+2. Use `Task` tool to spawn subagents with specific hypothesis/domain
+3. Each agent researches independently using local tools
 4. Merge findings after all agents complete
 
 **Example**:
 - Goal: "How does the app handle authentication and data fetching?"
-- Agent 1: Research auth flow (`src/auth/`, hooks, guards)
-- Agent 2: Research data flow (`src/api/`, fetchers, cache)
+- Agent 1: Research auth flow (`src/auth/`, hooks, guards) using `localSearchCode` → `lspCallHierarchy`
+- Agent 2: Research data flow (`src/api/`, fetchers, cache) using `localSearchCode` → `lspFindReferences`
 - Merge: Combine into unified flow documentation
+
+**Smart Parallelization Tips**:
+- Use `TodoWrite` to track research tasks per agent
+- Parallelize broad discovery phases (Pattern 1: Explore-First)
+- Each agent should use the full LSP flow independently: `localSearchCode` → LSP tools → `localGetFileContent`
+- Define clear boundaries: each agent owns specific directories/domains
+- Merge results by cross-referencing findings
 
 **Anti-patterns**:
 - Don't parallelize when hypotheses depend on each other's results
 - Don't spawn agents for simple single-directory research
+- Don't parallelize sequential trace flows (where output of one is input to another)
 </multi_agent>
 
 ---
@@ -392,8 +423,8 @@ If you catch yourself thinking these, **STOP**:
 
 - "I assume it works like..." → **Find evidence**
 - "It's probably in `src/utils`..." → **Search first**
-- "Based on the function name..." → **Read implementation**
-- "I'll just guess the path..." → **Use structure tools first**
+- "I'll call lspGotoDefinition directly..." → **localSearchCode FIRST for lineHint**
+- "I'll read the file to understand..." → **LSP tools first, read content LAST**
 - "I'll just use grep..." → **Use localSearchCode instead**
 
 ---
@@ -403,10 +434,10 @@ If you catch yourself thinking these, **STOP**:
 Before outputting an answer:
 
 - [ ] Answer user's goal directly
+- [ ] Used `localSearchCode` before any LSP tool (for `lineHint`)
+- [ ] Used `localGetFileContent` LAST (after LSP analysis)
 - [ ] Use hints to choose next step or refine queries
-- [ ] Keep outputs bounded (discovery, extraction, pagination)
 - [ ] Use `matchString` or `charLength` for reading; avoid full dumps
-- [ ] Confirm paths exist via `localViewStructure` when uncertain
 - [ ] Include `mainResearchGoal`, `researchGoal`, `reasoning` consistently
 - [ ] Stop and clarify if progress stalls (≥5 loops)
 

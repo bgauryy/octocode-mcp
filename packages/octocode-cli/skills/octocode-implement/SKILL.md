@@ -24,30 +24,11 @@ Role: **Implementation Agent**. Expert Engineer with surgical precision.
 ## 2. Scope & Tooling
 
 <tools>
-**Octocode Local** (ALWAYS prefer over shell commands):
+> 🔍 **For local workspace search & LSP code intelligence, call the `octocode-local-search` skill!**
+> Includes: `localViewStructure`, `localSearchCode`, `localFindFiles`, `localGetFileContent`, `lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`
 
-| Tool | Purpose |
-|------|---------|
-| `localViewStructure` | Map codebase architecture |
-| `localSearchCode` | Find implementations, usages |
-| `localFindFiles` | Locate configs, recent changes |
-| `localGetFileContent` | Read implementations deeply |
-
-**Octocode LSP** (Semantic Code Intelligence):
-
-| Tool | Purpose |
-|------|---------|
-| `lspGotoDefinition` | Trace imports, find source |
-| `lspFindReferences` | Impact analysis |
-| `lspCallHierarchy` | Understand data flow |
-
-**Octocode GitHub** (When patterns not found locally):
-
-| Tool | Purpose |
-|------|---------|
-| `githubSearchCode` | Reference implementations |
-| `githubGetFileContent` | Canonical patterns |
-| `packageSearch` | Library internals |
+> 🌐 **For external GitHub research, call the `octocode-research` skill!**
+> Includes: `githubSearchCode`, `githubGetFileContent`, `githubSearchRepositories`, `packageSearch`
 
 **Task Management**: `TodoWrite`, `Task` (for parallel agents)
 
@@ -91,36 +72,24 @@ Role: **Implementation Agent**. Expert Engineer with surgical precision.
 ## 4. Research Flows
 
 <research_flows>
-**Starting Points**:
+> 📚 **For detailed research workflows and tool transitions, see the `octocode-local-search` and `octocode-research` skills!**
 
-| Need | Tool | Example |
-|------|------|---------|
-| Map codebase | `localViewStructure` | `depth=1` at root |
-| Find feature area | `localSearchCode` | `filesOnly=true` |
-| Understand flow | `lspCallHierarchy` | Trace callers/callees |
-| Find all usages | `lspFindReferences` | Impact analysis |
-| Read implementation | `localGetFileContent` | `matchString` targeting |
-| External patterns | `githubSearchCode` | Reference implementations |
+**Implementation-Specific Research**:
 
-**Transition Matrix**:
+| Goal | Approach |
+|------|----------|
+| Map codebase | `octocode-local-search` → `localViewStructure(depth=1)` |
+| Find similar features | `octocode-local-search` → `localSearchCode(filesOnly=true)` |
+| Trace code flow | `octocode-local-search` → LSP tools (definitions, references, call hierarchy) |
+| External patterns | `octocode-research` → `githubSearchCode` for reference implementations |
+| Library internals | `octocode-research` → `packageSearch` → `githubGetFileContent` |
 
-| From Tool | Need... | Go To Tool |
-|-----------|---------|------------|
-| `localViewStructure` | Find Pattern | `localSearchCode` |
-| `localSearchCode` | Read Content | `localGetFileContent` |
-| `localSearchCode` | Find Definition | `lspGotoDefinition` |
-| `lspGotoDefinition` | Find Usages | `lspFindReferences` |
-| `lspFindReferences` | Call Graph | `lspCallHierarchy` |
-| `localGetFileContent` | External Lib | `packageSearch` → GitHub |
+**Key Questions Before Implementing**:
+1. **Where?** → Map structure, find target files
+2. **How?** → Find similar implementations, trace patterns
+3. **Impact?** → Find all usages, understand dependencies
+4. **Reference?** → Check external implementations if unclear
 </research_flows>
-
-<structural_code_vision>
-**Think Like a Compiler**:
-- **See the Tree**: Entry → Functions → Imports → Dependencies
-- **Trace Dependencies**: `import {X} from 'Y'` → Use `lspGotoDefinition` to GO TO 'Y'
-- **Follow Data**: Input → Transform → Output → Side Effects
-- **Map Impact**: What else depends on what I'm changing?
-</structural_code_vision>
 
 ---
 
@@ -154,17 +123,11 @@ Role: **Implementation Agent**. Expert Engineer with surgical precision.
 
 **SPEC + VALIDATE**: Parse spec → Check completeness → Ask if unclear.
 
-**CONTEXT**: Map with `localViewStructure(depth=1)` → Find similar features → Understand test structure.
+**CONTEXT**: Use `octocode-local-search` skill → Map structure → Find similar features → Understand test patterns.
 
 **PLAN**: Create plan → **User Checkpoint**: Wait for approval → Add tasks to TodoWrite.
 
-**RESEARCH**: For each task:
-```
-localSearchCode(filesOnly=true)         → Locate target
-localGetFileContent(matchString=...)    → Read context
-lspCallHierarchy(direction="incoming")  → Trace flow
-lspFindReferences                       → Impact analysis
-```
+**RESEARCH**: Use `octocode-local-search` skill for each task (locate → read → trace flow → impact analysis).
 
 **IMPLEMENT**: Types First → Core Logic → Integration → Tests. Match existing style.
 
@@ -281,8 +244,50 @@ Before declaring implementation complete:
 
 ---
 
+## Multi-Agent Parallelization
+
+> **Note**: Only applicable if parallel agents are supported by host environment.
+
+**When to Spawn Subagents**:
+- 2+ independent implementation tasks (no shared dependencies)
+- Distinct subsystems (frontend + backend + tests)
+- Separate packages/modules in monorepo
+- Parallel research for different parts of the spec
+
+**How to Parallelize**:
+1. Use `TodoWrite` to create tasks and identify parallelizable work
+2. Use `Task` tool to spawn subagents with specific, scoped goals
+3. Each agent implements independently within defined boundaries
+4. Merge changes after all agents complete, resolve conflicts
+
+**Example**:
+- Goal: "Implement user authentication with frontend and backend changes"
+- Agent 1: Implement backend auth middleware + API routes (`src/api/auth/`)
+- Agent 2: Implement frontend auth hooks + guards (`src/hooks/`, `src/components/auth/`)
+- Agent 3: Implement tests for both (`tests/auth/`)
+- Merge: Integrate components, verify end-to-end flow
+
+**Smart Parallelization Tips**:
+- Use `TodoWrite` with clear task boundaries per agent
+- Parallelize RESEARCH phase across different spec requirements
+- Parallelize IMPLEMENTATION only for truly independent modules
+- Keep VALIDATION sequential to catch integration issues
+- Define file ownership: each agent has exclusive directories
+
+**Anti-patterns**:
+- Don't parallelize when tasks share state or types being modified
+- Don't spawn agents for single-file changes
+- Don't parallelize when implementation order matters (e.g., types → logic → integration)
+
+---
+
 ## References
 
+**Related Skills**:
+- **`octocode-local-search`**: Local workspace search & LSP code intelligence
+- **`octocode-research`**: External GitHub research & package discovery
+
+**Implementation Docs**:
 - **Execution Phases**: `references/execution-phases.md` (Detailed steps, subagent patterns, multi-agent parallelization)
 - **Tools**: `references/tool-reference.md` (Parameters & Tips)
 - **Workflows**: `references/workflow-patterns.md` (Research Recipes)
