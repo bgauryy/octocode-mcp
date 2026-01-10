@@ -1183,14 +1183,25 @@ export async function resolveTokenFull(options?: {
   const clientId = options?.clientId ?? DEFAULT_CLIENT_ID;
   const getGhCliToken = options?.getGhCliToken;
 
-  // Check cache first (node-cache handles TTL automatically)
+  // Priority 1-3: ALWAYS check environment variables first (highest priority, no I/O)
+  // This ensures env vars take precedence over any cached token from other sources
+  const envToken = getTokenFromEnv();
+  if (envToken) {
+    return {
+      token: envToken,
+      source: getEnvTokenSource() ?? 'env:GITHUB_TOKEN',
+      wasRefreshed: false,
+    };
+  }
+
+  // Check cache for non-env token results (keychain/file/gh-cli)
   const cached = tokenCache.get<FullTokenResolution | null>(hostname);
   if (cached !== undefined) {
     return cached;
   }
 
-  // Cache miss or expired - resolve fresh
-  const result = await resolveTokenFullInternal(
+  // Cache miss or expired - resolve from storage/gh-cli (skips env since already checked)
+  const result = await resolveTokenFullInternalNoEnv(
     hostname,
     clientId,
     getGhCliToken
@@ -1203,23 +1214,14 @@ export async function resolveTokenFull(options?: {
 }
 
 /**
- * Internal token resolution without caching
+ * Internal token resolution skipping env vars (for use after env check)
+ * This allows env vars to be checked before cache in resolveTokenFull
  */
-async function resolveTokenFullInternal(
+async function resolveTokenFullInternalNoEnv(
   hostname: string,
   clientId: string,
   getGhCliToken?: GhCliTokenGetter
 ): Promise<FullTokenResolution | null> {
-  // Priority 1-3: Environment variables (fastest, no I/O)
-  const envToken = getTokenFromEnv();
-  if (envToken) {
-    return {
-      token: envToken,
-      source: getEnvTokenSource() ?? 'env:GITHUB_TOKEN',
-      wasRefreshed: false,
-    };
-  }
-
   // Priority 4-5: Octocode storage with auto-refresh (keychain → file)
   const result = await getTokenWithRefresh(hostname, clientId);
 

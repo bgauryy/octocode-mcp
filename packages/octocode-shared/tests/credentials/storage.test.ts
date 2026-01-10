@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
 
-// Mock keychain to be unavailable
+// Mock keychain to be unavailable - prevents real keychain access during tests
 vi.mock('../../src/credentials/keychain.js', () => ({
   isKeychainAvailable: vi.fn().mockReturnValue(false),
   setPassword: vi.fn(),
@@ -1925,6 +1925,82 @@ describe('Token Storage', () => {
       expect(result3?.token).toBe('second-token');
     });
 
+    it('should clear cache for specific hostname with clearTokenCache(hostname)', async () => {
+      const ghCreds = createTestCredentials({
+        hostname: 'github.com',
+        token: { token: 'github-cached', tokenType: 'oauth' as const },
+      });
+      const enterpriseCreds = createTestCredentials({
+        hostname: 'github.enterprise.com',
+        token: { token: 'enterprise-cached', tokenType: 'oauth' as const },
+      });
+      const store = {
+        version: 1,
+        credentials: {
+          'github.com': ghCreds,
+          'github.enterprise.com': enterpriseCreds,
+        },
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { resolveTokenFull, clearTokenCache } =
+        await import('../../src/credentials/storage.js');
+
+      // Cache both hostnames
+      const result1 = await resolveTokenFull();
+      expect(result1?.token).toBe('github-cached');
+
+      const result2 = await resolveTokenFull({
+        hostname: 'github.enterprise.com',
+      });
+      expect(result2?.token).toBe('enterprise-cached');
+
+      // Update mock to return different tokens
+      const newGhCreds = createTestCredentials({
+        hostname: 'github.com',
+        token: { token: 'github-new', tokenType: 'oauth' as const },
+      });
+      const newStore = {
+        version: 1,
+        credentials: {
+          'github.com': newGhCreds,
+          'github.enterprise.com': enterpriseCreds, // Keep enterprise unchanged
+        },
+      };
+      mockDecipher.update.mockReturnValue(JSON.stringify(newStore));
+
+      // Clear only github.com cache
+      clearTokenCache('github.com');
+
+      // github.com should re-resolve (get new token)
+      const result3 = await resolveTokenFull();
+      expect(result3?.token).toBe('github-new');
+
+      // github.enterprise.com should still be cached (unchanged)
+      const result4 = await resolveTokenFull({
+        hostname: 'github.enterprise.com',
+      });
+      expect(result4?.token).toBe('enterprise-cached');
+    });
+
     it('should cache env token results', async () => {
       process.env.GITHUB_TOKEN = 'env-cached-token';
 
@@ -1969,6 +2045,37 @@ describe('Token Storage', () => {
       });
       expect(result2?.token).toBe('gh-cli-cached-token');
       expect(ghCliCallCount).toBe(1); // Still 1, not 2
+    });
+
+    it('should prioritize env vars over cached tokens from other sources', async () => {
+      // Setup: gh-cli returns a token (simulating cached non-env source)
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      const mockGetGhCliToken = vi.fn().mockReturnValue('gh-cli-token');
+
+      const { resolveTokenFull, clearTokenCache } =
+        await import('../../src/credentials/storage.js');
+
+      // First call - resolves from gh-cli
+      const result1 = await resolveTokenFull({
+        getGhCliToken: mockGetGhCliToken,
+      });
+      expect(result1?.token).toBe('gh-cli-token');
+      expect(result1?.source).toBe('gh-cli');
+
+      // Now set GITHUB_TOKEN in environment (simulating runtime env var change)
+      process.env.GITHUB_TOKEN = 'new-env-token';
+
+      // Second call - should return env var, NOT cached gh-cli token
+      // This is the critical fix: env vars must always take priority over cache
+      const result2 = await resolveTokenFull({
+        getGhCliToken: mockGetGhCliToken,
+      });
+      expect(result2?.token).toBe('new-env-token');
+      expect(result2?.source).toBe('env:GITHUB_TOKEN');
+
+      // Cleanup
+      delete process.env.GITHUB_TOKEN;
+      clearTokenCache();
     });
 
     it('should cache null results (no token found)', async () => {

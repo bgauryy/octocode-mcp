@@ -238,20 +238,36 @@ These are the core principles for this shared package:
 ### Token Resolution Flow
 
 ```
-resolveToken(host)
+resolveTokenFull(options)
     ↓
-getTokenFromEnv()
-    ├── Check GITHUB_TOKEN
-    ├── Check GH_TOKEN
-    └── Return { token, source: 'env' } if found
+getTokenFromEnv()  ← ALWAYS checked first (bypasses cache!)
+    ├── 1. Check OCTOCODE_TOKEN
+    ├── 2. Check GH_TOKEN
+    ├── 3. Check GITHUB_TOKEN
+    └── Return { token, source: 'env:*' } if found
     ↓
-getCredentials(host)
-    ├── Read from encrypted storage
-    ├── Decrypt with keychain key
-    └── Return { token, source: 'storage' } if found
+tokenCache.get(hostname)  ← Check 1-minute TTL cache
+    └── Return cached result if exists
     ↓
-Return null (no token available)
+getTokenWithRefresh(host)
+    ├── Read from keychain or encrypted storage
+    ├── Auto-refresh if token expired
+    └── Return { token, source: 'keychain'|'file' } if found
+    ↓
+getGhCliToken(host)  ← Fallback
+    └── Return { token, source: 'gh-cli' } if found
+    ↓
+Cache result (1-min TTL)
+    ↓
+Return result or null
 ```
+
+### Token Caching
+
+- **Env vars bypass cache**: `OCTOCODE_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` are ALWAYS checked first
+- **Cache TTL**: 1 minute for non-env tokens (keychain/file/gh-cli)
+- **Cache scope**: Per hostname (e.g., `github.com`)
+- **Clear cache**: `clearTokenCache()` or `clearTokenCache(hostname)`
 
 ### Session Write Flow
 

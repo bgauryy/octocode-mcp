@@ -29,10 +29,11 @@ import {
   _setTokenResolvers,
   _resetTokenResolvers,
 } from '../src/serverConfig.js';
-import type { FullTokenResolution } from 'octocode-shared';
+import { clearTokenCache, type FullTokenResolution } from 'octocode-shared';
 
 describe('Token Resolution Priority (TOKEN_RESOLUTION.md)', () => {
-  const originalEnv = process.env;
+  // Store original env values (not a reference to process.env!)
+  const savedEnvVars: Record<string, string | undefined> = {};
 
   // Mock for resolveTokenFull from octocode-shared
   type ResolveTokenFullMock = Mock<
@@ -70,9 +71,16 @@ describe('Token Resolution Priority (TOKEN_RESOLUTION.md)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     cleanup();
+    clearTokenCache(); // Clear octocode-shared's token cache
 
-    // Reset environment variables
-    process.env = { ...originalEnv };
+    // Save and clear token-related env vars (don't replace process.env!)
+    // This is critical: we must modify the SAME process.env object that
+    // octocode-shared reads from, not create a new object
+    savedEnvVars.OCTOCODE_TOKEN = process.env.OCTOCODE_TOKEN;
+    savedEnvVars.GH_TOKEN = process.env.GH_TOKEN;
+    savedEnvVars.GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+    savedEnvVars.LOG = process.env.LOG;
+
     delete process.env.OCTOCODE_TOKEN;
     delete process.env.GH_TOKEN;
     delete process.env.GITHUB_TOKEN;
@@ -88,7 +96,28 @@ describe('Token Resolution Priority (TOKEN_RESOLUTION.md)', () => {
   });
 
   afterEach(() => {
-    process.env = originalEnv;
+    // Restore original env values
+    if (savedEnvVars.OCTOCODE_TOKEN !== undefined) {
+      process.env.OCTOCODE_TOKEN = savedEnvVars.OCTOCODE_TOKEN;
+    } else {
+      delete process.env.OCTOCODE_TOKEN;
+    }
+    if (savedEnvVars.GH_TOKEN !== undefined) {
+      process.env.GH_TOKEN = savedEnvVars.GH_TOKEN;
+    } else {
+      delete process.env.GH_TOKEN;
+    }
+    if (savedEnvVars.GITHUB_TOKEN !== undefined) {
+      process.env.GITHUB_TOKEN = savedEnvVars.GITHUB_TOKEN;
+    } else {
+      delete process.env.GITHUB_TOKEN;
+    }
+    if (savedEnvVars.LOG !== undefined) {
+      process.env.LOG = savedEnvVars.LOG;
+    } else {
+      delete process.env.LOG;
+    }
+
     cleanup();
     _resetTokenResolvers();
   });
