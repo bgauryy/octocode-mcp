@@ -42,6 +42,7 @@ export {
 
   // Full token resolution with gh CLI fallback (recommended for CLI/MCP)
   resolveTokenFull,
+  clearTokenCache,
   type FullTokenResolution,
   type GhCliTokenGetter,
 

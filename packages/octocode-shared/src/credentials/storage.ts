@@ -35,6 +35,42 @@ const DEFAULT_CLIENT_ID = '178c6fc778ccc68e1d6a';
 const DEFAULT_HOSTNAME = 'github.com';
 
 // ============================================================================
+// TOKEN CACHE (1-minute TTL using node-cache)
+// ============================================================================
+
+import NodeCache from 'node-cache';
+
+/** Cache TTL in seconds (1 minute) */
+const TOKEN_CACHE_TTL_SECONDS = 60;
+
+/**
+ * Token cache using node-cache with automatic TTL expiration.
+ * - stdTTL: 60 seconds (1 minute)
+ * - checkperiod: 30 seconds (cleanup expired keys)
+ * - useClones: false (return references for performance)
+ */
+const tokenCache = new NodeCache({
+  stdTTL: TOKEN_CACHE_TTL_SECONDS,
+  checkperiod: 30,
+  useClones: false,
+  deleteOnExpire: true,
+});
+
+/**
+ * Clear the token resolution cache.
+ * Use this when credentials change (login, logout, refresh).
+ *
+ * @param hostname - Optional hostname to clear. If not provided, clears all.
+ */
+export function clearTokenCache(hostname?: string): void {
+  if (hostname) {
+    tokenCache.del(hostname);
+  } else {
+    tokenCache.flushAll();
+  }
+}
+
+// ============================================================================
 // TIMEOUT UTILITIES (like gh CLI's 3 second timeout)
 // ============================================================================
 
@@ -1120,10 +1156,10 @@ export type GhCliTokenGetter = (
 ) => string | null | Promise<string | null>;
 
 /**
- * Full token resolution with gh CLI fallback
+ * Full token resolution with gh CLI fallback and 1-minute caching
  *
  * This is the recommended function for complete token resolution across all sources.
- * It implements the full priority chain:
+ * Results are cached for 1 minute to reduce I/O overhead.
  *
  * Priority order:
  * 1. OCTOCODE_TOKEN env var
@@ -1147,6 +1183,33 @@ export async function resolveTokenFull(options?: {
   const clientId = options?.clientId ?? DEFAULT_CLIENT_ID;
   const getGhCliToken = options?.getGhCliToken;
 
+  // Check cache first (node-cache handles TTL automatically)
+  const cached = tokenCache.get<FullTokenResolution | null>(hostname);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  // Cache miss or expired - resolve fresh
+  const result = await resolveTokenFullInternal(
+    hostname,
+    clientId,
+    getGhCliToken
+  );
+
+  // Cache the result (including null) with default TTL
+  tokenCache.set(hostname, result);
+
+  return result;
+}
+
+/**
+ * Internal token resolution without caching
+ */
+async function resolveTokenFullInternal(
+  hostname: string,
+  clientId: string,
+  getGhCliToken?: GhCliTokenGetter
+): Promise<FullTokenResolution | null> {
   // Priority 1-3: Environment variables (fastest, no I/O)
   const envToken = getTokenFromEnv();
   if (envToken) {
