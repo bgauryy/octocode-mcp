@@ -92,6 +92,8 @@ export interface OctocodeAuthStatus {
   username?: string;
   tokenExpired?: boolean;
   tokenSource?: TokenSource;
+  /** Specific env var when tokenSource is 'env' (e.g., 'env:OCTOCODE_TOKEN') */
+  envTokenSource?: string;
   error?: string;
 }
 

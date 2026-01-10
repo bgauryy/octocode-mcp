@@ -18,6 +18,7 @@ import {
   getToken,
   getOctocodeToken,
   getGhCliToken,
+  getTokenType,
   type VerificationInfo,
 } from '../features/github-oauth.js';
 import { GH_CLI_URL } from '../features/gh-auth.js';
@@ -691,7 +692,7 @@ const tokenCommand: CLICommand = {
   aliases: ['t'],
   description: 'Print the GitHub token (matches octocode-mcp priority)',
   usage:
-    'octocode token [--type <auto|octocode|gh>] [--hostname <host>] [--source]',
+    'octocode token [--type <auto|octocode|gh>] [--hostname <host>] [--source] [--json]',
   options: [
     {
       name: 'type',
@@ -712,6 +713,11 @@ const tokenCommand: CLICommand = {
       short: 's',
       description: 'Show token source and user info',
     },
+    {
+      name: 'json',
+      short: 'j',
+      description: 'Output as JSON: {"token": "...", "type": "..."}',
+    },
   ],
   handler: async (args: ParsedArgs) => {
     const hostnameOpt = args.options['hostname'] ?? args.options['H'];
@@ -719,6 +725,7 @@ const tokenCommand: CLICommand = {
       (typeof hostnameOpt === 'string' ? hostnameOpt : undefined) ||
       'github.com';
     const showSource = Boolean(args.options['source'] || args.options['s']);
+    const jsonOutput = Boolean(args.options['json'] || args.options['j']);
     const typeOpt = args.options['type'] ?? args.options['t'];
     const typeArg =
       (typeof typeOpt === 'string' ? typeOpt : undefined) || 'auto';
@@ -740,6 +747,12 @@ const tokenCommand: CLICommand = {
         tokenSource = 'auto';
         break;
       default:
+        // JSON output for invalid type
+        if (jsonOutput) {
+          console.log(JSON.stringify({ token: null, type: 'none' }));
+          process.exitCode = 1;
+          return;
+        }
         console.log();
         console.log(`  ${c('red', '✗')} Invalid token type: ${typeArg}`);
         console.log(`  ${dim('Valid options:')} octocode, gh, auto`);
@@ -749,6 +762,19 @@ const tokenCommand: CLICommand = {
     }
 
     const result = await getToken(hostname, tokenSource);
+
+    // JSON output mode - machine-readable for MCP consumption
+    if (jsonOutput) {
+      const output = {
+        token: result.token,
+        type: getTokenType(result.source, result.envSource),
+      };
+      console.log(JSON.stringify(output));
+      if (!result.token) {
+        process.exitCode = 1;
+      }
+      return;
+    }
 
     if (!result.token) {
       console.log();

@@ -17,15 +17,22 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { refreshToken as octokitRefreshToken } from '@octokit/oauth-methods';
+import { request } from '@octokit/request';
 import type {
   StoredCredentials,
   StoreResult,
   DeleteResult,
   CredentialsStore,
   TokenSource,
+  OAuthToken,
 } from './types.js';
 import { HOME } from '../platform/index.js';
 import * as keychain from './keychain.js';
+
+// Default OAuth client ID for octocode (same as CLI)
+const DEFAULT_CLIENT_ID = '178c6fc778ccc68e1d6a';
+const DEFAULT_HOSTNAME = 'github.com';
 
 // ============================================================================
 // TIMEOUT UTILITIES (like gh CLI's 3 second timeout)
@@ -775,6 +782,7 @@ export function isRefreshTokenExpired(credentials: StoredCredentials): boolean {
  * Checks for token expiration before returning.
  *
  * NOTE: This does NOT check environment variables. Use resolveToken() for full resolution.
+ * NOTE: This does NOT refresh expired tokens. Use getTokenWithRefresh() for auto-refresh.
  *
  * @param hostname - GitHub hostname (default: 'github.com')
  * @returns Token string or null if not found/expired
@@ -790,10 +798,178 @@ export async function getToken(
 
   // Check if token is expired
   if (isTokenExpired(credentials)) {
-    return null; // Let caller handle re-auth
+    return null; // Let caller handle re-auth or use getTokenWithRefresh()
   }
 
   return credentials.token.token;
+}
+
+// ============================================================================
+// TOKEN REFRESH
+// ============================================================================
+
+/**
+ * Get GitHub API base URL for a hostname
+ */
+function getApiBaseUrl(hostname: string): string {
+  if (hostname === 'github.com' || hostname === DEFAULT_HOSTNAME) {
+    return 'https://api.github.com';
+  }
+  return `https://${hostname}/api/v3`;
+}
+
+/**
+ * Result of a token refresh operation
+ */
+export interface RefreshResult {
+  success: boolean;
+  username?: string;
+  hostname?: string;
+  error?: string;
+}
+
+/**
+ * Refresh an expired OAuth token using the refresh token
+ *
+ * @param hostname - GitHub hostname (default: 'github.com')
+ * @param clientId - OAuth client ID (default: octocode client ID)
+ * @returns RefreshResult with success status and error details
+ */
+export async function refreshAuthToken(
+  hostname: string = DEFAULT_HOSTNAME,
+  clientId: string = DEFAULT_CLIENT_ID
+): Promise<RefreshResult> {
+  const credentials = await getCredentials(hostname);
+
+  if (!credentials) {
+    return {
+      success: false,
+      error: `Not logged in to ${hostname}`,
+    };
+  }
+
+  if (!credentials.token.refreshToken) {
+    return {
+      success: false,
+      error: 'Token does not support refresh (OAuth App tokens do not expire)',
+    };
+  }
+
+  if (isRefreshTokenExpired(credentials)) {
+    return {
+      success: false,
+      error: 'Refresh token has expired. Please login again.',
+    };
+  }
+
+  try {
+    const response = await octokitRefreshToken({
+      clientType: 'github-app',
+      clientId,
+      clientSecret: '', // Empty for OAuth apps
+      refreshToken: credentials.token.refreshToken,
+      request: request.defaults({
+        baseUrl: getApiBaseUrl(hostname),
+      }),
+    } as Parameters<typeof octokitRefreshToken>[0]);
+
+    const newToken: OAuthToken = {
+      token: response.authentication.token,
+      tokenType: 'oauth',
+      refreshToken: response.authentication.refreshToken,
+      expiresAt: response.authentication.expiresAt,
+      refreshTokenExpiresAt: response.authentication.refreshTokenExpiresAt,
+    };
+
+    await updateToken(hostname, newToken);
+
+    return {
+      success: true,
+      username: credentials.username,
+      hostname,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Token refresh failed',
+    };
+  }
+}
+
+/**
+ * Result of getting a token with refresh capability
+ */
+export interface TokenWithRefreshResult {
+  token: string | null;
+  source: 'stored' | 'refreshed' | 'none';
+  username?: string;
+  refreshError?: string;
+}
+
+/**
+ * Get token with automatic refresh for expired tokens
+ *
+ * This is the recommended function for getting stored tokens. It will:
+ * 1. Check if credentials exist
+ * 2. If token is expired and has a refresh token, attempt to refresh
+ * 3. Return the valid token or null
+ *
+ * NOTE: This does NOT check environment variables. Use resolveTokenWithRefresh()
+ * for full resolution including env vars.
+ *
+ * @param hostname - GitHub hostname (default: 'github.com')
+ * @param clientId - OAuth client ID for refresh (default: octocode client ID)
+ * @returns TokenWithRefreshResult with token, source, and any refresh errors
+ */
+export async function getTokenWithRefresh(
+  hostname: string = DEFAULT_HOSTNAME,
+  clientId: string = DEFAULT_CLIENT_ID
+): Promise<TokenWithRefreshResult> {
+  const credentials = await getCredentials(hostname);
+
+  if (!credentials || !credentials.token) {
+    return { token: null, source: 'none' };
+  }
+
+  // Token is valid - return it
+  if (!isTokenExpired(credentials)) {
+    return {
+      token: credentials.token.token,
+      source: 'stored',
+      username: credentials.username,
+    };
+  }
+
+  // Token is expired - try to refresh if we have a refresh token
+  if (credentials.token.refreshToken) {
+    const refreshResult = await refreshAuthToken(hostname, clientId);
+
+    if (refreshResult.success) {
+      // Get the updated credentials after refresh
+      const updatedCredentials = await getCredentials(hostname);
+      if (updatedCredentials?.token.token) {
+        return {
+          token: updatedCredentials.token.token,
+          source: 'refreshed',
+          username: updatedCredentials.username,
+        };
+      }
+    }
+
+    // Refresh failed
+    return {
+      token: null,
+      source: 'none',
+      refreshError: refreshResult.error,
+    };
+  }
+
+  // No refresh token available and token is expired
+  return {
+    token: null,
+    source: 'none',
+    refreshError: 'Token expired and no refresh token available',
+  };
 }
 
 /**
@@ -814,8 +990,7 @@ export interface ResolvedToken {
  * 4. Native keychain (most secure for desktop)
  * 5. Encrypted file storage (~/.octocode/credentials.json)
  *
- * This is the single entry point for token resolution - consumers should use this
- * instead of manually checking env vars and calling getToken() separately.
+ * NOTE: This does NOT refresh expired tokens. Use resolveTokenWithRefresh() for auto-refresh.
  *
  * @param hostname - GitHub hostname (default: 'github.com')
  * @returns ResolvedToken with token and source, or null if not found
@@ -843,6 +1018,188 @@ export async function resolveToken(
       token: storedToken,
       source,
     };
+  }
+
+  return null;
+}
+
+/**
+ * Extended resolved token result with refresh support
+ */
+export interface ResolvedTokenWithRefresh extends ResolvedToken {
+  /** Whether the token was refreshed during resolution */
+  wasRefreshed?: boolean;
+  /** Username associated with the token (if from storage) */
+  username?: string;
+  /** Error message if refresh was attempted but failed */
+  refreshError?: string;
+}
+
+/**
+ * Resolve token with automatic refresh for expired tokens
+ *
+ * This is the recommended function for token resolution. It will:
+ * 1. Check environment variables first (OCTOCODE_TOKEN, GH_TOKEN, GITHUB_TOKEN)
+ * 2. Check stored credentials (keychain → file)
+ * 3. If stored token is expired and has a refresh token, attempt to refresh
+ * 4. Return the valid token with source information
+ *
+ * Priority order:
+ * 1. OCTOCODE_TOKEN env var
+ * 2. GH_TOKEN env var
+ * 3. GITHUB_TOKEN env var
+ * 4. Stored credentials with auto-refresh (keychain → file)
+ *
+ * @param hostname - GitHub hostname (default: 'github.com')
+ * @param clientId - OAuth client ID for refresh (default: octocode client ID)
+ * @returns ResolvedTokenWithRefresh with token, source, and refresh status
+ */
+export async function resolveTokenWithRefresh(
+  hostname: string = DEFAULT_HOSTNAME,
+  clientId: string = DEFAULT_CLIENT_ID
+): Promise<ResolvedTokenWithRefresh | null> {
+  // Priority 1-3: Environment variables (no refresh needed)
+  const envToken = getTokenFromEnv();
+  if (envToken) {
+    return {
+      token: envToken,
+      source: getEnvTokenSource() ?? 'env:GITHUB_TOKEN',
+      wasRefreshed: false,
+    };
+  }
+
+  // Priority 4-5: Stored credentials with refresh (keychain → file)
+  const result = await getTokenWithRefresh(hostname, clientId);
+
+  if (result.token) {
+    const source: TokenSource = isSecureStorageAvailable()
+      ? 'keychain'
+      : 'file';
+    return {
+      token: result.token,
+      source,
+      wasRefreshed: result.source === 'refreshed',
+      username: result.username,
+    };
+  }
+
+  // No token found, but we might have a refresh error to report
+  if (result.refreshError) {
+    return {
+      token: '',
+      source: null,
+      wasRefreshed: false,
+      refreshError: result.refreshError,
+    } as ResolvedTokenWithRefresh;
+  }
+
+  return null;
+}
+
+/**
+ * Full token resolution result including gh CLI fallback
+ */
+export interface FullTokenResolution {
+  /** The resolved token */
+  token: string;
+  /** Source of the token */
+  source: TokenSource | 'gh-cli';
+  /** Whether the token was refreshed during resolution */
+  wasRefreshed?: boolean;
+  /** Username associated with the token (if from storage) */
+  username?: string;
+  /** Error message if refresh was attempted but failed */
+  refreshError?: string;
+}
+
+/**
+ * Callback type for getting gh CLI token
+ */
+export type GhCliTokenGetter = (
+  hostname?: string
+) => string | null | Promise<string | null>;
+
+/**
+ * Full token resolution with gh CLI fallback
+ *
+ * This is the recommended function for complete token resolution across all sources.
+ * It implements the full priority chain:
+ *
+ * Priority order:
+ * 1. OCTOCODE_TOKEN env var
+ * 2. GH_TOKEN env var
+ * 3. GITHUB_TOKEN env var
+ * 4. Octocode storage with auto-refresh (keychain → file)
+ * 5. gh CLI token (fallback via callback)
+ *
+ * @param options - Resolution options
+ * @param options.hostname - GitHub hostname (default: 'github.com')
+ * @param options.clientId - OAuth client ID for refresh (default: octocode client ID)
+ * @param options.getGhCliToken - Callback to get gh CLI token (optional)
+ * @returns FullTokenResolution with token, source, and metadata, or null if not found
+ */
+export async function resolveTokenFull(options?: {
+  hostname?: string;
+  clientId?: string;
+  getGhCliToken?: GhCliTokenGetter;
+}): Promise<FullTokenResolution | null> {
+  const hostname = options?.hostname ?? DEFAULT_HOSTNAME;
+  const clientId = options?.clientId ?? DEFAULT_CLIENT_ID;
+  const getGhCliToken = options?.getGhCliToken;
+
+  // Priority 1-3: Environment variables (fastest, no I/O)
+  const envToken = getTokenFromEnv();
+  if (envToken) {
+    return {
+      token: envToken,
+      source: getEnvTokenSource() ?? 'env:GITHUB_TOKEN',
+      wasRefreshed: false,
+    };
+  }
+
+  // Priority 4-5: Octocode storage with auto-refresh (keychain → file)
+  const result = await getTokenWithRefresh(hostname, clientId);
+
+  if (result.token) {
+    const source: TokenSource = isSecureStorageAvailable()
+      ? 'keychain'
+      : 'file';
+    return {
+      token: result.token,
+      source,
+      wasRefreshed: result.source === 'refreshed',
+      username: result.username,
+    };
+  }
+
+  // Capture refresh error if any
+  const refreshError = result.refreshError;
+
+  // Priority 6: gh CLI token (fallback)
+  if (getGhCliToken) {
+    try {
+      const ghToken = await Promise.resolve(getGhCliToken(hostname));
+      if (ghToken?.trim()) {
+        return {
+          token: ghToken.trim(),
+          source: 'gh-cli',
+          wasRefreshed: false,
+          refreshError, // Include any refresh error from step 4-5
+        };
+      }
+    } catch {
+      // gh CLI failed, continue to return null
+    }
+  }
+
+  // No token found
+  if (refreshError) {
+    return {
+      token: '',
+      source: null,
+      wasRefreshed: false,
+      refreshError,
+    } as FullTokenResolution;
   }
 
   return null;

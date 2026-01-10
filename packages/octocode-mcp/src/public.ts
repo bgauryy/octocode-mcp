@@ -120,3 +120,26 @@ export { registerPrompts } from './prompts/prompts.js';
 // ============================================================================
 
 export { ALL_TOOLS, type ToolConfig } from './tools/toolConfig.js';
+
+// ============================================================================
+// Server Configuration - For accessing runtime configuration
+// ============================================================================
+
+/**
+ * Get the source of the current GitHub token.
+ * Always resolves fresh - token can change at runtime.
+ * Useful for debugging and logging token resolution.
+ *
+ * @example
+ * ```typescript
+ * import { getTokenSource } from 'octocode-mcp/public';
+ *
+ * const source = await getTokenSource();
+ * console.log(`Token from: ${source}`);
+ * // Output: 'env:GH_TOKEN', 'gh-cli', 'octocode-storage', or 'none'
+ * ```
+ */
+export { getTokenSource } from './serverConfig.js';
+
+// Re-export TokenSourceType for type-safe usage
+export type { TokenSourceType } from './types.js';
