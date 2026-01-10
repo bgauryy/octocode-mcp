@@ -22,7 +22,7 @@
 
 - **🚀 One-Step Installation**: Instantly configure `octocode-mcp` for Cursor, Claude Desktop, Windsurf, Zed, and more.
 - **🔌 MCP Marketplace**: Browse and install over 70+ community-vetted MCP servers directly from your terminal.
-- **🧠 AI Skills Manager**: Install and update specialized AI coding skills for Claude Code (`research`, `plan`, `pr-review`).
+- **🧠 AI Skills Manager**: Install and update specialized AI coding skills for Claude Code (`research`, `local-search`, `implement`, `plan`, `pr-review`, `roast`).
 - **🔄 Universal Sync**: Keep your MCP configurations and authentication states synchronized across all your IDEs.
 - **🔐 Secure Authentication**: Enterprise-grade token management with encrypted storage and multiple auth providers.
 
@@ -102,6 +102,20 @@ octocode-cli skills list
 octocode-cli skills install
 ```
 
+#### 5. Additional Commands
+Other useful commands for power users.
+
+```bash
+# Logout from GitHub
+octocode-cli logout
+
+# Get GitHub token (for scripting)
+octocode-cli token
+
+# Auth management menu
+octocode-cli auth
+```
+
 ---
 
 ## 🖥️ Supported Clients
@@ -115,6 +129,9 @@ Octocode CLI supports a wide range of AI-first editors and tools.
 | **Windsurf** | Codeium AI IDE | `~/.codeium/windsurf/mcp_config.json` |
 | **Zed** | High-performance editor | `~/.config/zed/settings.json` |
 | **Claude Code** | CLI Assistant | `~/.claude.json` |
+| **Trae** | Adaptive AI IDE | `~/Library/Application Support/Trae/mcp.json` |
+| **Antigravity** | Gemini-powered AI IDE | `~/.gemini/antigravity/mcp_config.json` |
+| **Opencode** | AI coding agent CLI | `~/.config/opencode/config.json` |
 | **VS Code Extensions** | Cline, Roo-Cline, Continue | *(Varies by extension)* |
 
 ---

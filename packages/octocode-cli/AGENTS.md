@@ -131,8 +131,6 @@ src/
 ```
 skills/
 ├── README.md                # Skills documentation
-├── octocode-generate/       # Generation skill for code creation
-│   └── SKILL.md
 ├── octocode-implement/      # Implementation skill from specs
 │   ├── SKILL.md
 │   └── references/

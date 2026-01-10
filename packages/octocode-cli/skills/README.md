@@ -11,7 +11,6 @@ Pre-built Claude Code skills for enhanced AI-assisted research and development.
 | `octocode-implement` | Research-driven feature implementation from specs | SPEC → CONTEXT → PLAN → RESEARCH → IMPLEMENT → VALIDATE |
 | `octocode-plan` | Adaptive research & implementation planning | UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY |
 | `octocode-pr-review` | Defects-first PR review across 6+ domains | CONTEXT → CHECKPOINT → ANALYSIS → FINALIZE → REPORT |
-| `octocode-generate` | App scaffolding with stack selection | DISCOVERY → STACK → PLAN → RESEARCH → SCAFFOLD → VALIDATE |
 | `octocode-roast` | Brutally honest code review with comedic flair | SCOPE → ROAST → INVENTORY → SPOTLIGHT → REDEMPTION |
 
 ## Installation
@@ -106,17 +105,6 @@ Domain Reviewers:
 - 🔗 Duplicate Code (missed reuse opportunities)
 - 🚨 Error Handling (swallowed exceptions, poor diagnostics)
 - 🔄 Flow Impact (breaking changes, altered data paths)
-
-### octocode-generate
-
-**Use when**: Scaffolding new applications with optimal tech stack selection.
-
-Supported Frameworks:
-- **Fullstack**: Next.js, T3 Stack, Remix, Nuxt
-- **Frontend**: Vite, Angular
-- **Mobile**: Expo (React Native)
-- **Desktop**: Electron Vite
-- **Backend**: NestJS, Hono, Fastify
 
 ### octocode-roast
 
