@@ -1,22 +1,26 @@
 import { getGithubCLIToken } from './utils/exec/index.js';
 import {
-  getTokenFromEnv,
-  getOctocodeToken,
+  getEnvTokenSource,
+  resolveTokenFull,
+  type FullTokenResolution,
+  type GhCliTokenGetter,
 } from './utils/credentials/index.js';
+import { initializeSecureStorage } from 'octocode-shared';
 import { version } from '../package.json';
-import type { ServerConfig } from './types.js';
+import type { ServerConfig, TokenSourceType } from './types.js';
 import { CONFIG_ERRORS } from './errorCodes.js';
 import { maskSensitiveData } from './security/mask.js';
 
-let config: ServerConfig | null = null;
-let cachedToken: string | null = null;
-let initializationPromise: Promise<void> | null = null;
-// Track pending token resolution to prevent race conditions
-let pendingTokenPromise: Promise<string | null> | null = null;
+/** Result of token resolution with source tracking */
+interface TokenResolutionResult {
+  token: string | null;
+  source: TokenSourceType;
+}
 
-// Injectable functions for testing
-let _getTokenFromEnv = getTokenFromEnv;
-let _getOctocodeToken = getOctocodeToken;
+let config: ServerConfig | null = null;
+let initializationPromise: Promise<void> | null = null;
+
+// Injectable function for testing (gh CLI is passed to resolveTokenFull)
 let _getGithubCLIToken = getGithubCLIToken;
 
 // Legacy mock for backward compatibility with existing tests
@@ -25,32 +29,57 @@ type ResolvedToken = { token: string; source: string } | null;
 type ResolveTokenFn = () => Promise<ResolvedToken>;
 let _legacyResolveToken: ResolveTokenFn | null = null;
 
+// Injectable resolveTokenFull for testing
+type ResolveTokenFullFn = (options?: {
+  hostname?: string;
+  clientId?: string;
+  getGhCliToken?: GhCliTokenGetter;
+}) => Promise<FullTokenResolution | null>;
+let _resolveTokenFull: ResolveTokenFullFn = resolveTokenFull;
+
 /**
- * @internal - For testing only (NEW API)
+ * Maps shared token source types to internal TokenSourceType.
+ * - 'env:*' → same (env:OCTOCODE_TOKEN, env:GH_TOKEN, env:GITHUB_TOKEN)
+ * - 'keychain' | 'file' → 'octocode-storage'
+ * - 'gh-cli' → 'gh-cli'
+ * - null → 'none'
+ */
+function mapSharedSourceToInternal(
+  source: string | null | undefined
+): TokenSourceType {
+  if (!source) return 'none';
+  if (source.startsWith('env:')) return source as TokenSourceType;
+  if (source === 'gh-cli') return 'gh-cli';
+  if (source === 'keychain' || source === 'file') return 'octocode-storage';
+  return 'none';
+}
+
+/**
+ * @internal - For testing only
+ * Supports both new and legacy APIs:
+ * - New: Use `resolveTokenFull` to mock the entire resolution chain
+ * - Legacy: Use `getGithubCLIToken` to mock gh CLI fallback
+ * Note: Legacy `getTokenFromEnv`, `getOctocodeToken`, `getOctocodeTokenWithRefresh`
+ *       are deprecated - use `resolveTokenFull` instead.
  */
 export function _setTokenResolvers(resolvers: {
-  getTokenFromEnv?: typeof getTokenFromEnv;
-  getOctocodeToken?: typeof getOctocodeToken;
   getGithubCLIToken?: typeof getGithubCLIToken;
+  resolveTokenFull?: ResolveTokenFullFn;
 }): void {
-  if (resolvers.getTokenFromEnv) {
-    _getTokenFromEnv = resolvers.getTokenFromEnv;
-  }
-  if (resolvers.getOctocodeToken) {
-    _getOctocodeToken = resolvers.getOctocodeToken;
-  }
   if (resolvers.getGithubCLIToken) {
     _getGithubCLIToken = resolvers.getGithubCLIToken;
+  }
+  if (resolvers.resolveTokenFull) {
+    _resolveTokenFull = resolvers.resolveTokenFull;
   }
 }
 
 /**
- * @internal - For testing only (NEW API)
+ * @internal - For testing only
  */
 export function _resetTokenResolvers(): void {
-  _getTokenFromEnv = getTokenFromEnv;
-  _getOctocodeToken = getOctocodeToken;
   _getGithubCLIToken = getGithubCLIToken;
+  _resolveTokenFull = resolveTokenFull;
   _legacyResolveToken = null;
 }
 
@@ -106,53 +135,60 @@ function parseBooleanEnvDefaultTrue(value: string | undefined): boolean {
   return trimmed !== 'false' && trimmed !== '0';
 }
 
-async function resolveGitHubToken(): Promise<string | null> {
+async function resolveGitHubToken(): Promise<TokenResolutionResult> {
   // Support legacy test mock (backward compatibility)
   if (_legacyResolveToken) {
     try {
       const resolved = await _legacyResolveToken();
-      return resolved?.token ?? null;
+      if (resolved?.token) {
+        // Map legacy source format to new TokenSourceType
+        let source: TokenSourceType = 'none';
+        if (resolved.source?.startsWith('env:')) {
+          source = resolved.source as TokenSourceType;
+        } else if (resolved.source === 'env') {
+          source =
+            (getEnvTokenSource() as TokenSourceType) ?? 'env:GITHUB_TOKEN';
+        } else if (resolved.source === 'gh-cli') {
+          source = 'gh-cli';
+        } else if (
+          resolved.source === 'octocode' ||
+          resolved.source === 'octocode-storage'
+        ) {
+          source = 'octocode-storage';
+        }
+        return { token: resolved.token, source };
+      }
+      return { token: null, source: 'none' };
     } catch (error) {
       if (error instanceof Error && error.message) {
         error.message = maskSensitiveData(error.message);
       }
-      return null;
+      return { token: null, source: 'none' };
     }
   }
 
-  // Priority 1-3: Environment variables (fastest, no I/O)
-  // OCTOCODE_TOKEN > GH_TOKEN > GITHUB_TOKEN
-  const envToken = _getTokenFromEnv();
-  if (envToken) {
-    return envToken;
-  }
-
-  // Priority 4: GitHub CLI token via `gh auth token`
-  // For users who have authenticated with `gh auth login`
+  // Delegate to octocode-shared's resolveTokenFull for centralized logic
+  // Priority: env vars (1-3) → octocode storage (4-5) → gh CLI (6)
   try {
-    const cliToken = await _getGithubCLIToken();
-    if (cliToken?.trim()) {
-      return cliToken.trim();
+    const result = await _resolveTokenFull({
+      hostname: 'github.com',
+      getGhCliToken: _getGithubCLIToken,
+    });
+
+    if (result?.token) {
+      return {
+        token: result.token,
+        source: mapSharedSourceToInternal(result.source),
+      };
     }
+
+    return { token: null, source: 'none' };
   } catch (error) {
     if (error instanceof Error && error.message) {
       error.message = maskSensitiveData(error.message);
     }
+    return { token: null, source: 'none' };
   }
-
-  // Priority 5-6: Stored credentials (keychain → file)
-  try {
-    const storedToken = await _getOctocodeToken();
-    if (storedToken) {
-      return storedToken;
-    }
-  } catch (error) {
-    if (error instanceof Error && error.message) {
-      error.message = maskSensitiveData(error.message);
-    }
-  }
-
-  return null;
 }
 
 export async function initialize(): Promise<void> {
@@ -164,7 +200,13 @@ export async function initialize(): Promise<void> {
   }
 
   initializationPromise = (async () => {
-    cachedToken = await resolveGitHubToken();
+    // Initialize secure storage FIRST (enables keychain access for stored tokens)
+    // This must happen before any token resolution to find credentials stored by CLI
+    await initializeSecureStorage();
+
+    // Resolve token once at startup for initial config (source tracking)
+    // Token is NOT cached - subsequent calls to getGitHubToken() will re-resolve
+    const tokenResult = await resolveGitHubToken();
 
     // Parse logging flag (defaults to true unless explicitly 'false' or '0')
     const isLoggingEnabled = parseBooleanEnvDefaultTrue(process.env.LOG);
@@ -193,6 +235,7 @@ export async function initialize(): Promise<void> {
       ),
       loggingEnabled: isLoggingEnabled,
       enableLocal,
+      tokenSource: tokenResult.source,
     };
   })();
 
@@ -201,9 +244,7 @@ export async function initialize(): Promise<void> {
 
 export function cleanup(): void {
   config = null;
-  cachedToken = null;
   initializationPromise = null;
-  pendingTokenPromise = null;
 }
 
 export function getServerConfig(): ServerConfig {
@@ -217,28 +258,14 @@ export function getServerConfig(): ServerConfig {
   return config;
 }
 
+/**
+ * Get the current GitHub token.
+ * Always resolves fresh - no caching. Let octocode-shared handle fallbacks.
+ * Token can change at runtime (deletion, refresh, new login).
+ */
 export async function getGitHubToken(): Promise<string | null> {
-  // Case 1: Token already cached
-  if (cachedToken) {
-    return cachedToken;
-  }
-
-  // Case 2: Token resolution already in progress (race condition protection)
-  if (pendingTokenPromise) {
-    return pendingTokenPromise;
-  }
-
-  // Case 3: Start new token resolution
-  pendingTokenPromise = (async () => {
-    try {
-      cachedToken = await resolveGitHubToken();
-      return cachedToken;
-    } finally {
-      pendingTokenPromise = null;
-    }
-  })();
-
-  return pendingTokenPromise;
+  const result = await resolveGitHubToken();
+  return result.token;
 }
 
 export async function getToken(): Promise<string | null> {
@@ -253,7 +280,16 @@ export function isLoggingEnabled(): boolean {
   return config?.loggingEnabled ?? false;
 }
 
-export function clearConfigCachedToken(): void {
-  cachedToken = null;
-  pendingTokenPromise = null;
+/**
+ * Get the source of the current GitHub token.
+ * Always resolves fresh - no caching. Token source can change at runtime.
+ * Returns the type indicating where the token was found:
+ * - 'env:OCTOCODE_TOKEN', 'env:GH_TOKEN', 'env:GITHUB_TOKEN' for env vars
+ * - 'gh-cli' for GitHub CLI
+ * - 'octocode-storage' for stored credentials
+ * - 'none' if no token was found
+ */
+export async function getTokenSource(): Promise<TokenSourceType> {
+  const result = await resolveGitHubToken();
+  return result.source;
 }

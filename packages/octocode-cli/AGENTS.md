@@ -131,8 +131,6 @@ src/
 ```
 skills/
 ├── README.md                # Skills documentation
-├── octocode-generate/       # Generation skill for code creation
-│   └── SKILL.md
 ├── octocode-implement/      # Implementation skill from specs
 │   ├── SKILL.md
 │   └── references/
@@ -144,6 +142,8 @@ skills/
 │   └── references/
 │       ├── tool-reference.md
 │       └── workflow-patterns.md
+├── octocode-plan/           # Adaptive research & implementation planning
+│   └── SKILL.md
 ├── octocode-pr-review/      # PR review skill
 │   ├── SKILL.md
 │   └── references/

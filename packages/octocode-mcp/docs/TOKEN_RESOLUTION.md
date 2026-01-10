@@ -17,18 +17,17 @@ When the MCP server needs a GitHub token, it checks sources in this order:
 │ 1. OCTOCODE_TOKEN env? → Return immediately             │ ← No storage interaction
 │ 2. GH_TOKEN env?       → Return immediately             │ ← No storage interaction
 │ 3. GITHUB_TOKEN env?   → Return immediately             │ ← No storage interaction
-│ 4. gh auth token?      → External CLI call              │ ← After env vars
-│ 5. Keychain?           → Read from OS secure storage    │ ← Stored credentials
-│ 6. File?               → Read from encrypted file       │ ← Fallback storage
+│ 4. Keychain?           → Read from OS secure storage    │ ← Stored credentials (auto-refresh)
+│ 5. File?               → Read from encrypted file       │ ← Fallback storage (auto-refresh)
+│ 6. gh auth token?      → External CLI call              │ ← gh CLI fallback
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Why This Order?
 
 1. **Environment variables first** — Fast, no I/O, allows CI/CD overrides
-2. **GitHub CLI fourth** — Users who have authenticated with `gh auth login` work automatically
-3. **Secure storage fifth** — OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service)
-4. **Encrypted file last** — Fallback when keychain unavailable
+2. **Octocode storage fourth/fifth** — Keychain or encrypted file with auto-refresh for expired tokens
+3. **GitHub CLI sixth** — Fallback for users who have authenticated with `gh auth login`
 
 ### Why Keychain Storage?
 
@@ -118,9 +117,9 @@ If you already have the GitHub CLI (`gh`) installed and authenticated:
 gh auth login
 ```
 
-The MCP server will automatically use `gh auth token` as the **first priority**. This means if you're already authenticated with `gh`, no additional setup is needed!
+The MCP server will use `gh auth token` as a **fallback** when no environment variables or octocode credentials are found. If you're authenticated with `gh` and have no other credentials set up, it will work automatically!
 
-> **Note:** After authenticating or changing tokens, you must **restart the MCP server** to apply changes. The server caches tokens at startup for performance.
+> **Note:** Token changes are picked up dynamically - **no server restart required**. Environment variables (`OCTOCODE_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`) are checked fresh on every request and always take priority over cached tokens. See [Caching Behavior](#caching-behavior) for details.
 
 ---
 
@@ -137,8 +136,8 @@ The MCP server will automatically use `gh auth token` as the **first priority**.
                               │       octocode-shared        │
                               │                              │
                               │  credentials/storage.ts      │
+                              │  ├─ resolveTokenFull()       │ ← Recommended (env→storage→gh)
                               │  ├─ resolveToken()           │
-                              │  ├─ getToken()               │
                               │  └─ getCredentials()         │
                               │                              │
                               │  Storage Locations:          │
@@ -160,18 +159,107 @@ The MCP server will automatically use `gh auth token` as the **first priority**.
 | **Encrypted File** | `~/.octocode/credentials.json` | AES-256-GCM encrypted |
 | **Encryption Key** | `~/.octocode/.key` | File permissions 600 |
 
+### Caching Behavior
+
+Token resolution includes intelligent caching to reduce I/O overhead while ensuring environment variables always take priority:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│             Token Resolution with Caching                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  resolveTokenFull() called                                   │
+│         ↓                                                    │
+│  ┌─────────────────────────────────────────┐                │
+│  │ 1. Check ENV VARS (ALWAYS FIRST)        │ ← No cache!    │
+│  │    OCTOCODE_TOKEN → GH_TOKEN → GITHUB   │                │
+│  │    If found: Return immediately ✅       │                │
+│  └─────────────────────────────────────────┘                │
+│         ↓ (only if no env var)                              │
+│  ┌─────────────────────────────────────────┐                │
+│  │ 2. Check TOKEN CACHE (1-min TTL)        │                │
+│  │    If cached: Return cached result      │                │
+│  └─────────────────────────────────────────┘                │
+│         ↓ (only if cache miss)                              │
+│  ┌─────────────────────────────────────────┐                │
+│  │ 3. Resolve from storage/gh-cli          │                │
+│  │    Keychain → File → gh CLI             │                │
+│  │    Cache result for 1 minute            │                │
+│  └─────────────────────────────────────────┘                │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Key Caching Rules
+
+| Rule | Behavior |
+|------|----------|
+| **Env vars bypass cache** | `OCTOCODE_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` are ALWAYS checked first, before any cache lookup |
+| **Cache TTL** | Non-env tokens (keychain/file/gh-cli) are cached for **1 minute** |
+| **Cache scope** | Cached per hostname (e.g., `github.com`, `github.enterprise.com`) |
+| **Env var priority** | Setting an env var at runtime immediately takes effect (no restart needed) |
+
+#### Why This Design?
+
+1. **Environment variables are always fresh** — Users can set `GITHUB_TOKEN` at any time and it takes immediate effect, even if a keychain token was previously cached
+
+2. **Reduced I/O for storage tokens** — Keychain access and file reads are expensive; caching for 1 minute reduces overhead for repeated API calls
+
+3. **No caching for env tokens** — Environment variables are fast to read (no I/O), so they're checked fresh on every call
+
+#### Programmatic Cache Control
+
+```typescript
+import { clearTokenCache } from 'octocode-shared';
+
+// Clear all cached tokens
+clearTokenCache();
+
+// Clear token for specific hostname
+clearTokenCache('github.com');
+```
+
+> **Note:** You typically don't need to clear the cache manually. Setting an environment variable automatically takes priority over any cached token.
+
+---
+
 ### Token Sources Returned
 
-The `resolveToken()` function returns both the token and its source:
+The MCP server tracks where the token was resolved from via the `tokenSource` field in `ServerConfig`:
 
 | Source | Meaning |
 |--------|---------|
-| `gh` | From GitHub CLI (`gh auth token`) — highest priority |
-| `env:OCTOCODE_TOKEN` | From OCTOCODE_TOKEN environment variable |
-| `env:GH_TOKEN` | From GH_TOKEN environment variable |
-| `env:GITHUB_TOKEN` | From GITHUB_TOKEN environment variable |
-| `keychain` | From OS secure storage |
-| `file` | From encrypted credentials file |
+| `env:OCTOCODE_TOKEN` | From OCTOCODE_TOKEN environment variable (Priority 1) |
+| `env:GH_TOKEN` | From GH_TOKEN environment variable (Priority 2) |
+| `env:GITHUB_TOKEN` | From GITHUB_TOKEN environment variable (Priority 3) |
+| `octocode-storage` | From keychain or encrypted file (Priority 4-5) |
+| `gh-cli` | From GitHub CLI (`gh auth token`) (Priority 6) |
+| `none` | No token found |
+
+#### Programmatic Access
+
+```typescript
+import { getTokenSource } from 'octocode-mcp/public';
+
+const source = await getTokenSource();
+console.log(`Token from: ${source}`);
+// Output: 'env:GH_TOKEN', 'gh-cli', 'octocode-storage', or 'none'
+```
+
+> **Note:** `getTokenSource()` is async and resolves the token fresh each time, reflecting any runtime changes.
+
+#### CLI JSON Output
+
+The CLI also supports machine-readable JSON output for token information:
+
+```bash
+# Get token with source information as JSON
+npx octocode-cli token --json
+
+# Output: {"token":"ghp_xxx","type":"env:GH_TOKEN"}
+```
+
+This is useful for scripting and integration with other tools.
 
 ---
 
@@ -203,7 +291,7 @@ The `resolveToken()` function returns both the token and its source:
    # Select "Check GitHub Auth Status"
    ```
 
-5. **Restart the MCP server** — After setting up authentication, you must restart the MCP server to apply changes. The token is cached at startup.
+5. **Token changes are automatic** — After setting up authentication, the MCP server will pick up the new token on the next request. No restart required.
 
 ### "Token expired"
 

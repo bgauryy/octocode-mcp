@@ -32,6 +32,20 @@ export {
   resolveToken,
   type ResolvedToken,
 
+  // Token retrieval with refresh (recommended)
+  getTokenWithRefresh,
+  type TokenWithRefreshResult,
+  resolveTokenWithRefresh,
+  type ResolvedTokenWithRefresh,
+  refreshAuthToken,
+  type RefreshResult,
+
+  // Full token resolution with gh CLI fallback (recommended for CLI/MCP)
+  resolveTokenFull,
+  clearTokenCache,
+  type FullTokenResolution,
+  type GhCliTokenGetter,
+
   // List/check operations
   listStoredHosts,
   listStoredHostsSync,

@@ -127,4 +127,10 @@ export class Spinner {
     if (text) this.text = text;
     return this.stop('⚠', 'yellow');
   }
+
+  /** Update the spinner text while running */
+  update(text: string): this {
+    this.text = text;
+    return this;
+  }
 }

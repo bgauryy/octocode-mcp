@@ -6,15 +6,16 @@
 
 // Re-export credential functions from shared package
 export {
-  // Main token resolution (includes all fallbacks: env → keychain → file)
-  resolveToken,
-  type ResolvedToken,
+  // Env token source detection (for source tracking)
+  getEnvTokenSource,
 
-  // Env-only token check (no storage interaction)
-  getTokenFromEnv,
-
-  // Stored token only (keychain/file, no env vars)
+  // Stored token only (keychain/file, no env vars) - used by tests
   getToken as getOctocodeToken,
+
+  // Full token resolution with gh CLI fallback (recommended for MCP)
+  resolveTokenFull,
+  type FullTokenResolution,
+  type GhCliTokenGetter,
 
   // Testing utilities
   _setSecureStorageAvailable,

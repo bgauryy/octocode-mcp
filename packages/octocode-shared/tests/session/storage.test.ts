@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
 import { dirname } from 'node:path';
 import {
   SESSION_FILE,
@@ -19,40 +19,84 @@ import {
 } from '../../src/session/storage.js';
 import type { PersistedSession } from '../../src/session/types.js';
 
+// Mock node:fs to prevent tests from touching real filesystem
+vi.mock('node:fs', () => ({
+  existsSync: vi.fn(),
+  readFileSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  mkdirSync: vi.fn(),
+  unlinkSync: vi.fn(),
+  renameSync: vi.fn(),
+}));
+
+// Mock ensureOctocodeDir to prevent creating real directories
+vi.mock('../../src/credentials/storage.js', async importOriginal => {
+  const actual =
+    await importOriginal<typeof import('../../src/credentials/storage.js')>();
+  return {
+    ...actual,
+    ensureOctocodeDir: vi.fn(),
+  };
+});
+
 describe('Session Storage', () => {
-  // Save original session before tests and restore after
-  let originalSessionContent: string | null = null;
+  // In-memory store for mocked filesystem
+  let mockFileStore: Map<string, string>;
 
   beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+
     // Reset internal state (cache, timer, etc.)
     _resetSessionState();
 
-    // Save any existing session file content
-    if (existsSync(SESSION_FILE)) {
-      originalSessionContent = readFileSync(SESSION_FILE, 'utf8');
-    } else {
-      originalSessionContent = null;
-    }
+    // Initialize mock file store
+    mockFileStore = new Map();
 
-    // Delete session for clean test
-    deleteSession();
+    // Setup fs mocks to use in-memory store
+    vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+      return mockFileStore.has(String(path));
+    });
+
+    vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+      const content = mockFileStore.get(String(path));
+      if (content === undefined) {
+        const error = new Error(
+          `ENOENT: no such file or directory, open '${path}'`
+        ) as NodeJS.ErrnoException;
+        error.code = 'ENOENT';
+        throw error;
+      }
+      return content;
+    });
+
+    vi.mocked(fs.writeFileSync).mockImplementation(
+      (path: unknown, data: unknown) => {
+        mockFileStore.set(String(path), String(data));
+      }
+    );
+
+    vi.mocked(fs.mkdirSync).mockImplementation(() => undefined);
+
+    vi.mocked(fs.unlinkSync).mockImplementation((path: unknown) => {
+      mockFileStore.delete(String(path));
+    });
+
+    vi.mocked(fs.renameSync).mockImplementation(
+      (oldPath: unknown, newPath: unknown) => {
+        const content = mockFileStore.get(String(oldPath));
+        if (content !== undefined) {
+          mockFileStore.set(String(newPath), content);
+          mockFileStore.delete(String(oldPath));
+        }
+      }
+    );
   });
 
   afterEach(() => {
     // Reset internal state
     _resetSessionState();
-
-    // Clean up test session
-    deleteSession();
-
-    // Restore original session if it existed
-    if (originalSessionContent) {
-      const sessionDir = dirname(SESSION_FILE);
-      if (!existsSync(sessionDir)) {
-        mkdirSync(sessionDir, { recursive: true });
-      }
-      writeFileSync(SESSION_FILE, originalSessionContent, { mode: 0o600 });
-    }
+    vi.resetAllMocks();
   });
 
   describe('SESSION_FILE constant', () => {
@@ -167,21 +211,18 @@ describe('Session Storage', () => {
       writeSession(testSession);
       flushSession();
 
-      // Read directly from disk
-      const content = readFileSync(SESSION_FILE, 'utf8');
-      const diskSession = JSON.parse(content);
+      // Read from mock file store
+      const content = mockFileStore.get(SESSION_FILE);
+      expect(content).toBeDefined();
+      const diskSession = JSON.parse(content!);
 
       expect(diskSession.sessionId).toBe('test-uuid-flush');
       expect(diskSession.stats.toolCalls).toBe(5);
     });
 
     it('should return null for invalid JSON on disk', () => {
-      // Write invalid JSON directly to disk
-      const sessionDir = dirname(SESSION_FILE);
-      if (!existsSync(sessionDir)) {
-        mkdirSync(sessionDir, { recursive: true });
-      }
-      writeFileSync(SESSION_FILE, 'invalid json {{{');
+      // Write invalid JSON directly to mock store
+      mockFileStore.set(SESSION_FILE, 'invalid json {{{');
 
       // Reset state to clear any cache
       _resetSessionState();
@@ -191,11 +232,8 @@ describe('Session Storage', () => {
     });
 
     it('should return null for session with wrong version', () => {
-      const sessionDir = dirname(SESSION_FILE);
-      if (!existsSync(sessionDir)) {
-        mkdirSync(sessionDir, { recursive: true });
-      }
-      writeFileSync(
+      // Write session with wrong version to mock store
+      mockFileStore.set(
         SESSION_FILE,
         JSON.stringify({
           version: 999,
@@ -325,11 +363,13 @@ describe('Session Storage', () => {
   describe('deleteSession', () => {
     it('should delete the session file and clear cache', () => {
       getOrCreateSession();
+      flushSession(); // Ensure it's written to mock store
 
       const deleted = deleteSession();
 
       expect(deleted).toBe(true);
       expect(readSession()).toBeNull();
+      expect(mockFileStore.has(SESSION_FILE)).toBe(false);
     });
 
     it('should return false when no session exists', () => {
@@ -368,9 +408,10 @@ describe('Session Storage', () => {
       // Flush to disk
       flushSession();
 
-      // Read directly from disk (bypass cache)
-      const persistedContent = readFileSync(SESSION_FILE, 'utf8');
-      const persistedSession = JSON.parse(persistedContent);
+      // Read from mock file store (bypass cache)
+      const persistedContent = mockFileStore.get(SESSION_FILE);
+      expect(persistedContent).toBeDefined();
+      const persistedSession = JSON.parse(persistedContent!);
 
       expect(persistedSession.sessionId).toBe(session.sessionId);
       expect(persistedSession.stats.toolCalls).toBe(5);
@@ -381,7 +422,8 @@ describe('Session Storage', () => {
       getOrCreateSession();
       flushSession();
 
-      const content = readFileSync(SESSION_FILE, 'utf8');
+      const content = mockFileStore.get(SESSION_FILE);
+      expect(content).toBeDefined();
 
       // Should contain newlines (formatted JSON)
       expect(content).toContain('\n');
@@ -403,8 +445,9 @@ describe('Session Storage', () => {
       flushSession();
       flushSession();
 
-      const content = readFileSync(SESSION_FILE, 'utf8');
-      const session = JSON.parse(content);
+      const content = mockFileStore.get(SESSION_FILE);
+      expect(content).toBeDefined();
+      const session = JSON.parse(content!);
       expect(session.stats.toolCalls).toBe(5);
     });
   });

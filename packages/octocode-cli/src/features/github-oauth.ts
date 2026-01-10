@@ -12,7 +12,7 @@
  */
 
 import { createOAuthDeviceAuth } from '@octokit/auth-oauth-device';
-import { refreshToken, deleteToken } from '@octokit/oauth-methods';
+import { deleteToken } from '@octokit/oauth-methods';
 import { request } from '@octokit/request';
 import open from 'open';
 import type {
@@ -20,6 +20,7 @@ import type {
   StoredCredentials,
   OctocodeAuthStatus,
   TokenResult,
+  TokenSource,
 } from '../types/index.js';
 import { getGitHubCLIToken, checkGitHubAuth } from './gh-auth.js';
 import {
@@ -27,13 +28,15 @@ import {
   getCredentials,
   deleteCredentials,
   isTokenExpired,
-  isRefreshTokenExpired,
-  updateToken,
   getCredentialsFilePath,
   isUsingSecureStorage as tokenStorageIsUsingSecureStorage,
   getCredentialsSync,
-  getTokenFromEnv,
   getEnvTokenSource,
+  hasEnvToken,
+  resolveTokenFull,
+  // Centralized token refresh from octocode-shared
+  refreshAuthToken as sharedRefreshAuthToken,
+  getTokenWithRefresh,
 } from '../utils/token-storage.js';
 
 /**
@@ -316,69 +319,16 @@ export async function logout(
 /**
  * Refresh an expired token
  *
- * Only works for GitHub Apps with expiring tokens enabled
+ * Only works for GitHub Apps with expiring tokens enabled.
+ *
+ * Note: This delegates to the centralized implementation in octocode-shared.
+ * All token refresh logic is maintained in one place for consistency.
  */
 export async function refreshAuthToken(
   hostname: string = DEFAULT_HOSTNAME
 ): Promise<LoginResult> {
-  const credentials = await getCredentials(hostname);
-
-  if (!credentials) {
-    return {
-      success: false,
-      error: `Not logged in to ${hostname}`,
-    };
-  }
-
-  if (!credentials.token.refreshToken) {
-    return {
-      success: false,
-      error: 'Token does not support refresh (OAuth App tokens do not expire)',
-    };
-  }
-
-  if (isRefreshTokenExpired(credentials)) {
-    return {
-      success: false,
-      error: 'Refresh token has expired. Please login again.',
-    };
-  }
-
-  try {
-    // Note: For GitHub Apps with expiring tokens, clientSecret is normally required.
-    // However, tokens from the device flow may work without it in some cases.
-    const response = await refreshToken({
-      clientType: 'github-app', // Required: refreshToken API only works with GitHub Apps
-      clientId: DEFAULT_CLIENT_ID,
-      clientSecret: '', // Not available for public OAuth apps
-      refreshToken: credentials.token.refreshToken,
-      request: request.defaults({
-        baseUrl: getApiBaseUrl(hostname),
-      }),
-    } as Parameters<typeof refreshToken>[0]);
-
-    // Update stored token
-    const newToken: OAuthToken = {
-      token: response.authentication.token,
-      tokenType: 'oauth',
-      refreshToken: response.authentication.refreshToken,
-      expiresAt: response.authentication.expiresAt,
-      refreshTokenExpiresAt: response.authentication.refreshTokenExpiresAt,
-    };
-
-    await updateToken(hostname, newToken);
-
-    return {
-      success: true,
-      username: credentials.username,
-      hostname,
-    };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Token refresh failed',
-    };
-  }
+  // Delegate to centralized refresh in octocode-shared
+  return sharedRefreshAuthToken(hostname, DEFAULT_CLIENT_ID);
 }
 
 /**
@@ -387,14 +337,29 @@ export async function refreshAuthToken(
  * ⚠️ Note: This sync version only checks file storage, not keyring.
  * For full async check including keyring, use getAuthStatusAsync().
  *
- * Checks octocode storage first, then falls back to gh CLI
+ * Priority order (matching TOKEN_RESOLUTION.md):
+ * 1-3. Environment variables (OCTOCODE_TOKEN, GH_TOKEN, GITHUB_TOKEN)
+ * 4. Octocode stored credentials (file only for sync)
+ * 5. gh CLI authentication (fallback)
  */
 export function getAuthStatus(
   hostname: string = DEFAULT_HOSTNAME
 ): OctocodeAuthStatus {
-  // First check octocode's own storage (file only for sync)
-  const credentials = getCredentialsSync(hostname);
+  // 1-3. Check environment variables first (highest priority)
+  if (hasEnvToken()) {
+    const envSource = getEnvTokenSource();
+    return {
+      authenticated: true,
+      hostname,
+      username: undefined, // Can't determine username from env token
+      tokenSource: 'env',
+      // Store the specific env var for display (e.g., 'env:GH_TOKEN')
+      envTokenSource: envSource ?? undefined,
+    };
+  }
 
+  // 4. Check octocode's own storage (file only for sync)
+  const credentials = getCredentialsSync(hostname);
   if (credentials) {
     const tokenExpired = isTokenExpired(credentials);
     return {
@@ -406,7 +371,7 @@ export function getAuthStatus(
     };
   }
 
-  // Fallback to gh CLI
+  // 5. Check gh CLI authentication (fallback)
   const ghAuth = checkGitHubAuth();
   if (ghAuth.authenticated) {
     return {
@@ -425,14 +390,29 @@ export function getAuthStatus(
 
 /**
  * Get current authentication status (async - preferred)
- * Checks keyring first, then file storage, then gh CLI
+ *
+ * Priority order (matching TOKEN_RESOLUTION.md):
+ * 1-3. Environment variables (OCTOCODE_TOKEN, GH_TOKEN, GITHUB_TOKEN)
+ * 4-5. Octocode stored credentials (keyring-first, file fallback)
+ * 6. gh CLI authentication (fallback)
  */
 export async function getAuthStatusAsync(
   hostname: string = DEFAULT_HOSTNAME
 ): Promise<OctocodeAuthStatus> {
-  // First check octocode's own storage (keyring-first)
-  const credentials = await getCredentials(hostname);
+  // 1-3. Check environment variables first (highest priority)
+  if (hasEnvToken()) {
+    const envSource = getEnvTokenSource();
+    return {
+      authenticated: true,
+      hostname,
+      username: undefined, // Can't determine username from env token
+      tokenSource: 'env',
+      envTokenSource: envSource ?? undefined,
+    };
+  }
 
+  // 4-5. Check octocode's own storage (keyring-first)
+  const credentials = await getCredentials(hostname);
   if (credentials) {
     const tokenExpired = isTokenExpired(credentials);
     return {
@@ -444,7 +424,7 @@ export async function getAuthStatusAsync(
     };
   }
 
-  // Fallback to gh CLI
+  // 6. Check gh CLI authentication (fallback)
   const ghAuth = checkGitHubAuth();
   if (ghAuth.authenticated) {
     return {
@@ -463,70 +443,33 @@ export async function getAuthStatusAsync(
 
 /**
  * Get a valid token, refreshing if necessary
+ *
+ * Uses centralized token-with-refresh logic from octocode-shared.
  */
 export async function getValidToken(
   hostname: string = DEFAULT_HOSTNAME
 ): Promise<string | null> {
-  const credentials = await getCredentials(hostname);
-
-  if (!credentials) {
-    return null;
-  }
-
-  // Check if token is expired
-  if (isTokenExpired(credentials)) {
-    // Try to refresh
-    if (credentials.token.refreshToken) {
-      const result = await refreshAuthToken(hostname);
-      if (!result.success) {
-        return null;
-      }
-      // Get updated credentials
-      const updated = await getCredentials(hostname);
-      return updated?.token.token || null;
-    }
-    return null;
-  }
-
-  return credentials.token.token;
+  // Use centralized getTokenWithRefresh from octocode-shared
+  const result = await getTokenWithRefresh(hostname, DEFAULT_CLIENT_ID);
+  return result.token;
 }
 
 /**
  * Get token from octocode storage only (keyring-first)
+ *
+ * Uses centralized getTokenWithRefresh from octocode-shared for auto-refresh.
  */
 export async function getOctocodeToken(
   hostname: string = DEFAULT_HOSTNAME
 ): Promise<TokenResult> {
-  const credentials = await getCredentials(hostname);
+  // Use centralized getTokenWithRefresh from octocode-shared
+  const result = await getTokenWithRefresh(hostname, DEFAULT_CLIENT_ID);
 
-  if (credentials) {
-    // Check if token is expired
-    if (isTokenExpired(credentials)) {
-      // Try to refresh
-      if (credentials.token.refreshToken) {
-        const result = await refreshAuthToken(hostname);
-        if (result.success) {
-          const updated = await getCredentials(hostname);
-          if (updated?.token.token) {
-            return {
-              token: updated.token.token,
-              source: 'octocode',
-              username: updated.username,
-            };
-          }
-        }
-      }
-      // Token expired and can't refresh
-      return {
-        token: null,
-        source: 'none',
-      };
-    }
-
+  if (result.token) {
     return {
-      token: credentials.token.token,
+      token: result.token,
       source: 'octocode',
-      username: credentials.username,
+      username: result.username,
     };
   }
 
@@ -569,14 +512,14 @@ type GetTokenSource = 'octocode' | 'gh' | 'auto';
  * @param preferredSource - Token source preference:
  *   - 'octocode': Only return octocode-cli token
  *   - 'gh': Only return gh CLI token
- *   - 'auto': Priority chain: env vars → gh CLI → octocode storage
+ *   - 'auto': Priority chain: env vars → octocode storage → gh CLI
  *
  * Auto mode priority:
  * 1. OCTOCODE_TOKEN env var (octocode-specific)
  * 2. GH_TOKEN env var (gh CLI compatible)
  * 3. GITHUB_TOKEN env var (GitHub Actions)
- * 4. gh CLI stored token
- * 5. octocode-cli stored credentials
+ * 4. octocode-cli stored credentials (with auto-refresh)
+ * 5. gh CLI stored token (fallback)
  */
 export async function getToken(
   hostname: string = DEFAULT_HOSTNAME,
@@ -591,28 +534,35 @@ export async function getToken(
     return getGhCliToken(hostname);
   }
 
-  // Auto mode: Check environment variables first (priority order)
-  // 1-3. Environment variables: OCTOCODE_TOKEN → GH_TOKEN → GITHUB_TOKEN
-  const envToken = getTokenFromEnv();
-  if (envToken) {
-    const source = getEnvTokenSource();
+  // Auto mode: Use shared resolveTokenFull for unified priority chain
+  // Priority: env vars → octocode storage (with refresh) → gh CLI
+  const result = await resolveTokenFull({
+    hostname,
+    getGhCliToken: getGitHubCLIToken,
+  });
+
+  if (result?.token) {
+    // Map FullTokenResolution to TokenResult
+    const source: TokenSource =
+      result.source === 'gh-cli'
+        ? 'gh-cli'
+        : result.source?.startsWith('env:')
+          ? 'env'
+          : 'octocode';
+
     return {
-      token: envToken,
-      source: 'env',
-      username: undefined,
-      // Include which env var was used for debugging
-      envSource: source ?? undefined,
-    } as TokenResult;
+      token: result.token,
+      source,
+      username: result.username,
+      envSource: result.source?.startsWith('env:') ? result.source : undefined,
+    };
   }
 
-  // 4. gh CLI token (most common for developers)
-  const ghResult = getGhCliToken(hostname);
-  if (ghResult.token) {
-    return ghResult;
-  }
-
-  // 5. octocode storage (fallback)
-  return getOctocodeToken(hostname);
+  // No token found
+  return {
+    token: null,
+    source: 'none',
+  };
 }
 
 /**
@@ -628,4 +578,27 @@ export function getStoragePath(): string {
  */
 export function isUsingSecureStorage(): boolean {
   return tokenStorageIsUsingSecureStorage();
+}
+
+/**
+ * Map TokenResult to standardized type string for JSON output.
+ * Used by MCP to identify token source without handling fallbacks.
+ *
+ * @param source - The token source type
+ * @param envSource - Optional specific env var when source is 'env' (e.g., 'env:GH_TOKEN')
+ * @returns Standardized type string for machine consumption
+ */
+export function getTokenType(source: TokenSource, envSource?: string): string {
+  switch (source) {
+    case 'env':
+      // Return specific env var: 'env:OCTOCODE_TOKEN', 'env:GH_TOKEN', 'env:GITHUB_TOKEN'
+      return envSource ?? 'env:GITHUB_TOKEN';
+    case 'gh-cli':
+      return 'gh-cli';
+    case 'octocode':
+      return 'octocode-storage';
+    case 'none':
+    default:
+      return 'none';
+  }
 }

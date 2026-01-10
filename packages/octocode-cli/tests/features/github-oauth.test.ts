@@ -55,6 +55,16 @@ vi.mock('../../src/utils/token-storage.js', () => ({
     .fn()
     .mockReturnValue('/home/test/.octocode/credentials.json'),
   isUsingSecureStorage: vi.fn().mockReturnValue(false),
+  // Add hasEnvToken - checks if any env token is available
+  hasEnvToken: vi.fn().mockImplementation(() => {
+    for (const envVar of ENV_TOKEN_VARS) {
+      const token = process.env[envVar];
+      if (token && token.trim()) {
+        return true;
+      }
+    }
+    return false;
+  }),
   // Add getTokenFromEnv - reads from env with priority order
   getTokenFromEnv: vi.fn().mockImplementation(() => {
     for (const envVar of ENV_TOKEN_VARS) {
@@ -75,6 +85,16 @@ vi.mock('../../src/utils/token-storage.js', () => ({
     }
     return null;
   }),
+  // Add resolveTokenFull - full priority chain resolution
+  // Note: This mock needs to call the mocked getCredentials, so we make it a getter
+  // that is replaced after module initialization
+  resolveTokenFull: vi.fn(),
+  // Centralized refresh from octocode-shared (re-exported via token-storage)
+  refreshAuthToken: vi.fn(),
+  // Token retrieval with auto-refresh from octocode-shared
+  getTokenWithRefresh: vi
+    .fn()
+    .mockResolvedValue({ token: null, source: 'none' }),
 }));
 
 vi.mock('../../src/features/gh-auth.js', () => ({
@@ -86,9 +106,179 @@ vi.mock('../../src/features/gh-auth.js', () => ({
 }));
 
 describe('GitHub OAuth', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
+
+    // Set up resolveTokenFull mock implementation that uses other mocked functions
+    const tokenStorage = await import('../../src/utils/token-storage.js');
+    vi.mocked(tokenStorage.resolveTokenFull).mockImplementation(
+      async (options?: {
+        hostname?: string;
+        clientId?: string;
+        getGhCliToken?: (
+          hostname?: string
+        ) => string | null | Promise<string | null>;
+      }) => {
+        // Priority 1-3: Environment variables
+        for (const envVar of ENV_TOKEN_VARS) {
+          const token = process.env[envVar];
+          if (token && token.trim()) {
+            return {
+              token: token.trim(),
+              source: `env:${envVar}` as const,
+              wasRefreshed: false,
+            };
+          }
+        }
+
+        // Priority 4-5: Octocode storage
+        const credentials = await tokenStorage.getCredentials(
+          options?.hostname ?? 'github.com'
+        );
+        if (credentials?.token?.token) {
+          const isExpired = tokenStorage.isTokenExpired(credentials);
+          if (!isExpired) {
+            return {
+              token: credentials.token.token,
+              source: 'keychain' as const,
+              wasRefreshed: false,
+              username: credentials.username,
+            };
+          }
+        }
+
+        // Priority 6: gh CLI fallback
+        if (options?.getGhCliToken) {
+          const ghToken = await Promise.resolve(
+            options.getGhCliToken(options?.hostname)
+          );
+          if (ghToken?.trim()) {
+            return {
+              token: ghToken.trim(),
+              source: 'gh-cli' as const,
+              wasRefreshed: false,
+            };
+          }
+        }
+        return null;
+      }
+    );
+
+    // Set up refreshAuthToken mock - delegates to shared implementation
+    vi.mocked(tokenStorage.refreshAuthToken).mockImplementation(
+      async (hostname?: string, _clientId?: string) => {
+        const credentials = await tokenStorage.getCredentials(
+          hostname ?? 'github.com'
+        );
+        if (!credentials) {
+          return {
+            success: false,
+            error: `Not logged in to ${hostname ?? 'github.com'}`,
+          };
+        }
+        if (!credentials.token.refreshToken) {
+          return {
+            success: false,
+            error:
+              'Token does not support refresh (OAuth App tokens do not expire)',
+          };
+        }
+        if (tokenStorage.isRefreshTokenExpired(credentials)) {
+          return {
+            success: false,
+            error: 'Refresh token has expired. Please login again.',
+          };
+        }
+        // Mock successful refresh - would be handled by @octokit/oauth-methods
+        return {
+          success: true,
+          username: credentials.username,
+          hostname: hostname ?? 'github.com',
+        };
+      }
+    );
+
+    // Set up getTokenWithRefresh mock - returns token with auto-refresh
+    vi.mocked(tokenStorage.getTokenWithRefresh).mockImplementation(
+      async (hostname?: string, _clientId?: string) => {
+        const credentials = await tokenStorage.getCredentials(
+          hostname ?? 'github.com'
+        );
+        if (!credentials?.token?.token) {
+          return { token: null, source: 'none' as const };
+        }
+        const isExpired = tokenStorage.isTokenExpired(credentials);
+        if (isExpired) {
+          // Token expired - try refresh
+          if (credentials.token.refreshToken) {
+            const refreshResult = await tokenStorage.refreshAuthToken(
+              hostname ?? 'github.com'
+            );
+            if (refreshResult.success) {
+              // Return refreshed token
+              return {
+                token: credentials.token.token,
+                source: 'refreshed' as const,
+                username: credentials.username,
+              };
+            }
+          }
+          return { token: null, source: 'none' as const };
+        }
+        return {
+          token: credentials.token.token,
+          source: 'stored' as const,
+          username: credentials.username,
+        };
+      }
+    );
+  });
+
+  describe('getTokenType', () => {
+    it('should return env:OCTOCODE_TOKEN for env source with OCTOCODE_TOKEN', async () => {
+      const { getTokenType } =
+        await import('../../src/features/github-oauth.js');
+      expect(getTokenType('env', 'env:OCTOCODE_TOKEN')).toBe(
+        'env:OCTOCODE_TOKEN'
+      );
+    });
+
+    it('should return env:GH_TOKEN for env source with GH_TOKEN', async () => {
+      const { getTokenType } =
+        await import('../../src/features/github-oauth.js');
+      expect(getTokenType('env', 'env:GH_TOKEN')).toBe('env:GH_TOKEN');
+    });
+
+    it('should return env:GITHUB_TOKEN for env source with GITHUB_TOKEN', async () => {
+      const { getTokenType } =
+        await import('../../src/features/github-oauth.js');
+      expect(getTokenType('env', 'env:GITHUB_TOKEN')).toBe('env:GITHUB_TOKEN');
+    });
+
+    it('should return env:GITHUB_TOKEN for env source with no envSource specified', async () => {
+      const { getTokenType } =
+        await import('../../src/features/github-oauth.js');
+      expect(getTokenType('env')).toBe('env:GITHUB_TOKEN');
+    });
+
+    it('should return gh-cli for gh-cli source', async () => {
+      const { getTokenType } =
+        await import('../../src/features/github-oauth.js');
+      expect(getTokenType('gh-cli')).toBe('gh-cli');
+    });
+
+    it('should return octocode-storage for octocode source', async () => {
+      const { getTokenType } =
+        await import('../../src/features/github-oauth.js');
+      expect(getTokenType('octocode')).toBe('octocode-storage');
+    });
+
+    it('should return none for none source', async () => {
+      const { getTokenType } =
+        await import('../../src/features/github-oauth.js');
+      expect(getTokenType('none')).toBe('none');
+    });
   });
 
   describe('getAuthStatus', () => {
@@ -153,6 +343,78 @@ describe('GitHub OAuth', () => {
 
       expect(status.authenticated).toBe(false);
       expect(status.tokenExpired).toBe(true);
+    });
+
+    it('should return authenticated when env token exists (priority 1)', async () => {
+      const { hasEnvToken, getEnvTokenSource } =
+        await import('../../src/utils/token-storage.js');
+
+      // Mock env token as available
+      vi.mocked(hasEnvToken).mockReturnValue(true);
+      vi.mocked(getEnvTokenSource).mockReturnValue('env:GH_TOKEN');
+
+      const { getAuthStatus } =
+        await import('../../src/features/github-oauth.js');
+      const status = getAuthStatus('github.com');
+
+      expect(status.authenticated).toBe(true);
+      expect(status.tokenSource).toBe('env');
+      expect(status.envTokenSource).toBe('env:GH_TOKEN');
+      // Env tokens don't provide username
+      expect(status.username).toBeUndefined();
+    });
+
+    it('should prioritize env token over gh CLI and stored credentials', async () => {
+      const { hasEnvToken, getEnvTokenSource, getCredentialsSync } =
+        await import('../../src/utils/token-storage.js');
+      const { checkGitHubAuth } = await import('../../src/features/gh-auth.js');
+
+      // All sources available
+      vi.mocked(hasEnvToken).mockReturnValue(true);
+      vi.mocked(getEnvTokenSource).mockReturnValue('env:OCTOCODE_TOKEN');
+      vi.mocked(getCredentialsSync).mockReturnValue({
+        hostname: 'github.com',
+        username: 'stored-user',
+        token: { token: 'stored-token', tokenType: 'oauth' },
+        gitProtocol: 'https',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      });
+      vi.mocked(checkGitHubAuth).mockReturnValue({
+        installed: true,
+        authenticated: true,
+        username: 'gh-cli-user',
+      });
+
+      const { getAuthStatus } =
+        await import('../../src/features/github-oauth.js');
+      const status = getAuthStatus('github.com');
+
+      // Env token should take priority
+      expect(status.tokenSource).toBe('env');
+      expect(status.envTokenSource).toBe('env:OCTOCODE_TOKEN');
+    });
+
+    it('should fall back to gh CLI when no env token', async () => {
+      const { hasEnvToken, getCredentialsSync } =
+        await import('../../src/utils/token-storage.js');
+      const { checkGitHubAuth } = await import('../../src/features/gh-auth.js');
+
+      vi.mocked(hasEnvToken).mockReturnValue(false);
+      vi.mocked(getCredentialsSync).mockReturnValue(null);
+      vi.mocked(checkGitHubAuth).mockReturnValue({
+        installed: true,
+        authenticated: true,
+        username: 'gh-user',
+      });
+
+      const { getAuthStatus } =
+        await import('../../src/features/github-oauth.js');
+      const status = getAuthStatus('github.com');
+
+      expect(status.authenticated).toBe(true);
+      expect(status.tokenSource).toBe('gh-cli');
+      expect(status.username).toBe('gh-user');
     });
   });
 
@@ -256,10 +518,12 @@ describe('GitHub OAuth', () => {
       expect(result.error).toContain('Refresh token has expired');
     });
 
-    it('should use oauth-app clientType when refreshing token (Bug #1 fix)', async () => {
-      const { getCredentials, isRefreshTokenExpired, updateToken } =
+    it('should delegate to shared refreshAuthToken and return success', async () => {
+      // This test verifies CLI correctly delegates to octocode-shared's refreshAuthToken
+      // The actual @octokit/oauth-methods call with github-app clientType is tested
+      // in octocode-shared/tests/credentials/storage.test.ts
+      const { getCredentials, isRefreshTokenExpired, refreshAuthToken } =
         await import('../../src/utils/token-storage.js');
-      const { refreshToken } = await import('@octokit/oauth-methods');
 
       vi.mocked(getCredentials).mockResolvedValue({
         hostname: 'github.com',
@@ -276,33 +540,22 @@ describe('GitHub OAuth', () => {
         updatedAt: '2024-01-01T00:00:00.000Z',
       });
       vi.mocked(isRefreshTokenExpired).mockReturnValue(false);
-      vi.mocked(refreshToken).mockResolvedValue({
-        authentication: {
-          token: 'new-token',
-          refreshToken: 'new-refresh-token',
-          expiresAt: '2030-06-01T00:00:00.000Z',
-          refreshTokenExpiresAt: '2030-12-01T00:00:00.000Z',
-          clientType: 'github-app',
-        },
-        headers: {},
-        status: 200,
-        url: '',
-        data: {} as never,
-      } as unknown as Awaited<ReturnType<typeof refreshToken>>);
-      vi.mocked(updateToken).mockResolvedValue(true);
+      // The shared refreshAuthToken mock returns success when conditions are met
+      vi.mocked(refreshAuthToken).mockResolvedValue({
+        success: true,
+        username: 'testuser',
+        hostname: 'github.com',
+      });
 
-      const { refreshAuthToken } =
+      const { refreshAuthToken: cliRefreshAuthToken } =
         await import('../../src/features/github-oauth.js');
-      const result = await refreshAuthToken('github.com');
+      const result = await cliRefreshAuthToken('github.com');
 
       expect(result.success).toBe(true);
-      // Verify refreshToken was called with github-app clientType
-      // Note: refreshToken API requires github-app (OAuth apps don't have refresh tokens)
-      expect(refreshToken).toHaveBeenCalledWith(
-        expect.objectContaining({
-          clientType: 'github-app',
-        })
-      );
+      expect(result.username).toBe('testuser');
+      expect(result.hostname).toBe('github.com');
+      // Verify shared refreshAuthToken was called (centralized logic)
+      expect(refreshAuthToken).toHaveBeenCalled();
     });
   });
 
@@ -677,11 +930,12 @@ describe('GitHub OAuth', () => {
       expect(result.source).toBe('env');
     });
 
-    it('should prioritize gh CLI over octocode in auto mode', async () => {
+    it('should prioritize octocode over gh CLI in auto mode', async () => {
       // Both gh CLI and octocode available, no env var
+      // New priority: octocode storage wins over gh CLI
       const { getGitHubCLIToken, checkGitHubAuth } =
         await import('../../src/features/gh-auth.js');
-      vi.mocked(getGitHubCLIToken).mockReturnValue('gh-wins');
+      vi.mocked(getGitHubCLIToken).mockReturnValue('gh-loses');
       vi.mocked(checkGitHubAuth).mockReturnValue({
         installed: true,
         authenticated: true,
@@ -694,7 +948,7 @@ describe('GitHub OAuth', () => {
         hostname: 'github.com',
         username: 'octocode-user',
         token: {
-          token: 'octocode-loses',
+          token: 'octocode-wins',
           tokenType: 'oauth',
         },
         gitProtocol: 'https',
@@ -706,9 +960,9 @@ describe('GitHub OAuth', () => {
       const { getToken } = await import('../../src/features/github-oauth.js');
       const result = await getToken('github.com', 'auto');
 
-      // gh CLI should win over octocode
-      expect(result.token).toBe('gh-wins');
-      expect(result.source).toBe('gh-cli');
+      // octocode storage should win over gh CLI
+      expect(result.token).toBe('octocode-wins');
+      expect(result.source).toBe('octocode');
     });
   });
 });

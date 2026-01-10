@@ -13,6 +13,21 @@ vi.mock('../../src/features/github-oauth.js', () => ({
   getStoragePath: vi
     .fn()
     .mockReturnValue('/home/test/.octocode/credentials.json'),
+  getTokenType: vi
+    .fn()
+    .mockImplementation((source: string, envSource?: string) => {
+      switch (source) {
+        case 'env':
+          return envSource ?? 'env:GITHUB_TOKEN';
+        case 'gh-cli':
+          return 'gh-cli';
+        case 'octocode':
+          return 'octocode-storage';
+        case 'none':
+        default:
+          return 'none';
+      }
+    }),
 }));
 
 vi.mock('../../src/utils/token-storage.js', () => ({
@@ -249,6 +264,159 @@ describe('CLI Commands', () => {
         expect.stringContaining('Invalid token type')
       );
       expect(process.exitCode).toBe(1);
+    });
+
+    describe('--json flag', () => {
+      it('should output valid JSON with token and type when authenticated via env', async () => {
+        const { getToken } = await import('../../src/features/github-oauth.js');
+        vi.mocked(getToken).mockResolvedValue({
+          token: 'env_token_12345',
+          source: 'env',
+          envSource: 'env:GH_TOKEN',
+        });
+
+        const { findCommand } = await import('../../src/cli/commands.js');
+        const tokenCmd = findCommand('token');
+
+        await tokenCmd!.handler({
+          command: 'token',
+          args: [],
+          options: { json: true },
+        });
+
+        // Get the output from console.log
+        const output = consoleSpy.mock.calls.find(call =>
+          call[0]?.includes('"token"')
+        );
+        expect(output).toBeDefined();
+        const parsed = JSON.parse(output![0]);
+        expect(parsed.token).toBe('env_token_12345');
+        expect(parsed.type).toBe('env:GH_TOKEN');
+        expect(process.exitCode).toBeUndefined();
+      });
+
+      it('should output valid JSON with token and type when authenticated via gh-cli', async () => {
+        const { getToken } = await import('../../src/features/github-oauth.js');
+        vi.mocked(getToken).mockResolvedValue({
+          token: 'ghcli_token_12345',
+          source: 'gh-cli',
+          username: 'ghuser',
+        });
+
+        const { findCommand } = await import('../../src/cli/commands.js');
+        const tokenCmd = findCommand('token');
+
+        await tokenCmd!.handler({
+          command: 'token',
+          args: [],
+          options: { json: true },
+        });
+
+        const output = consoleSpy.mock.calls.find(call =>
+          call[0]?.includes('"token"')
+        );
+        expect(output).toBeDefined();
+        const parsed = JSON.parse(output![0]);
+        expect(parsed.token).toBe('ghcli_token_12345');
+        expect(parsed.type).toBe('gh-cli');
+      });
+
+      it('should output valid JSON with token and type when authenticated via octocode', async () => {
+        const { getToken } = await import('../../src/features/github-oauth.js');
+        vi.mocked(getToken).mockResolvedValue({
+          token: 'octocode_token_12345',
+          source: 'octocode',
+          username: 'octocodeuser',
+        });
+
+        const { findCommand } = await import('../../src/cli/commands.js');
+        const tokenCmd = findCommand('token');
+
+        await tokenCmd!.handler({
+          command: 'token',
+          args: [],
+          options: { json: true },
+        });
+
+        const output = consoleSpy.mock.calls.find(call =>
+          call[0]?.includes('"token"')
+        );
+        expect(output).toBeDefined();
+        const parsed = JSON.parse(output![0]);
+        expect(parsed.token).toBe('octocode_token_12345');
+        expect(parsed.type).toBe('octocode-storage');
+      });
+
+      it('should output JSON with null token and none type when not authenticated', async () => {
+        const { getToken } = await import('../../src/features/github-oauth.js');
+        vi.mocked(getToken).mockResolvedValue({
+          token: null,
+          source: 'none',
+        });
+
+        const { findCommand } = await import('../../src/cli/commands.js');
+        const tokenCmd = findCommand('token');
+
+        await tokenCmd!.handler({
+          command: 'token',
+          args: [],
+          options: { json: true },
+        });
+
+        const output = consoleSpy.mock.calls.find(call =>
+          call[0]?.includes('"token"')
+        );
+        expect(output).toBeDefined();
+        const parsed = JSON.parse(output![0]);
+        expect(parsed.token).toBeNull();
+        expect(parsed.type).toBe('none');
+        expect(process.exitCode).toBe(1);
+      });
+
+      it('should work with -j shorthand', async () => {
+        const { getToken } = await import('../../src/features/github-oauth.js');
+        vi.mocked(getToken).mockResolvedValue({
+          token: 'shorthand_token',
+          source: 'gh-cli',
+        });
+
+        const { findCommand } = await import('../../src/cli/commands.js');
+        const tokenCmd = findCommand('token');
+
+        await tokenCmd!.handler({
+          command: 'token',
+          args: [],
+          options: { j: true },
+        });
+
+        const output = consoleSpy.mock.calls.find(call =>
+          call[0]?.includes('"token"')
+        );
+        expect(output).toBeDefined();
+        const parsed = JSON.parse(output![0]);
+        expect(parsed.token).toBe('shorthand_token');
+        expect(parsed.type).toBe('gh-cli');
+      });
+
+      it('should output JSON error for invalid type in json mode', async () => {
+        const { findCommand } = await import('../../src/cli/commands.js');
+        const tokenCmd = findCommand('token');
+
+        await tokenCmd!.handler({
+          command: 'token',
+          args: [],
+          options: { json: true, type: 'invalid' },
+        });
+
+        const output = consoleSpy.mock.calls.find(call =>
+          call[0]?.includes('"token"')
+        );
+        expect(output).toBeDefined();
+        const parsed = JSON.parse(output![0]);
+        expect(parsed.token).toBeNull();
+        expect(parsed.type).toBe('none');
+        expect(process.exitCode).toBe(1);
+      });
     });
   });
 

@@ -342,7 +342,49 @@ Created by Octocode MCP https://octocode.ai
 
 ---
 
-## 6. References
+## 6. Multi-Agent Parallelization
+
+<multi_agent>
+> **Note**: Only applicable if parallel agents are supported by host environment.
+
+**When to Spawn Subagents**:
+- Large PRs with 3+ distinct functional areas
+- Changes spanning multiple subsystems (frontend + backend + infra)
+- Independent domain reviews (security vs. performance vs. architecture)
+- Multi-package changes in monorepo
+
+**How to Parallelize**:
+1. Use `TodoWrite` to identify independent review domains
+2. Use `Task` tool to spawn subagents per domain/area
+3. Each agent reviews independently using appropriate tools
+4. Merge findings, deduplicate, and prioritize
+
+**Smart Parallelization Tips**:
+- **Phase 1 (Context)**: Keep sequential - need unified PR understanding
+- **Phase 2 (Analysis)**: Parallelize across independent domains
+  - Agent 1: Security review (auth, input validation, secrets)
+  - Agent 2: Performance review (queries, algorithms, caching)
+  - Agent 3: Architecture review (patterns, coupling, API design)
+- **Phase 3 (Finalize)**: Keep sequential - requires deduplication and merging
+- Use `TodoWrite` to track review progress per agent
+- Define clear scope: each agent owns specific review domains
+
+**Example**:
+- Goal: "Review large PR touching auth, API, and database"
+- Agent 1: Review auth changes using `localSearchCode` → `lspCallHierarchy` for impact
+- Agent 2: Review API changes using `githubGetFileContent` + `lspFindReferences`
+- Agent 3: Review database migrations using `localGetFileContent` + pattern research
+- Merge: Combine findings, remove duplicates, prioritize by severity
+
+**Anti-patterns**:
+- Don't parallelize small PRs (<100 lines)
+- Don't spawn agents for single-domain reviews
+- Don't parallelize finalization (needs unified output)
+</multi_agent>
+
+---
+
+## 7. References
 
 - **Domain Reviewers**: [references/domain-reviewers.md](references/domain-reviewers.md) - Full priority matrices and detection patterns
 - **Execution Lifecycle**: [references/execution-lifecycle.md](references/execution-lifecycle.md) - Detailed phase descriptions and user checkpoints

@@ -580,6 +580,18 @@ export interface ValidationResult {
 
 // ─── Server Configuration (serverConfig.ts) ─────────────────────────────────
 
+/**
+ * Token source types for tracking where the GitHub token came from.
+ * Used by MCP to identify token source for debugging and logging.
+ */
+export type TokenSourceType =
+  | 'env:OCTOCODE_TOKEN' // Priority 1
+  | 'env:GH_TOKEN' // Priority 2
+  | 'env:GITHUB_TOKEN' // Priority 3
+  | 'gh-cli' // Priority 4
+  | 'octocode-storage' // Priority 5 (keychain or file)
+  | 'none'; // No token found
+
 /** Server configuration and feature flags */
 export interface ServerConfig {
   version: string;
@@ -592,6 +604,8 @@ export interface ServerConfig {
   maxRetries: number;
   loggingEnabled: boolean;
   enableLocal: boolean;
+  /** Token source tracking - identifies where the GitHub token was resolved from */
+  tokenSource: TokenSourceType;
 }
 
 // ─── Session Management (session.ts) ────────────────────────────────────────

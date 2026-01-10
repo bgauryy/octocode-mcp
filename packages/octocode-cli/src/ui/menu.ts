@@ -21,12 +21,13 @@ import { runSyncFlow } from './sync/index.js';
 import { printGoodbye, printWelcome } from './header.js';
 import { Spinner } from '../utils/spinner.js';
 import { runSkillsMenu } from './skills-menu/index.js';
+import { installAllOctocodeSkills } from './skills-menu/marketplace.js';
 import { getAppState, type AppState, type SkillsState } from './state.js';
 import { MCP_CLIENTS, type ClientInstallStatus } from '../utils/mcp-config.js';
 import {
   login as oauthLogin,
   logout as oauthLogout,
-  getAuthStatus,
+  getAuthStatusAsync,
   getStoragePath,
   isUsingSecureStorage,
   type VerificationInfo,
@@ -37,7 +38,7 @@ import {
   runGitHubAuthLogout,
   getGitHubCLIToken,
 } from '../features/gh-auth.js';
-import { getCredentials } from '../utils/token-storage.js';
+import { getCredentials, hasEnvToken } from '../utils/token-storage.js';
 import open from 'open';
 
 /**
@@ -53,7 +54,7 @@ async function pressEnterToContinue(): Promise<void> {
 
 type MenuChoice = 'octocode' | 'skills' | 'auth' | 'mcp-config' | 'exit';
 
-type OctocodeMenuChoice = 'configure' | 'install' | 'back';
+type OctocodeMenuChoice = 'configure' | 'install' | 'install-skills' | 'back';
 
 /**
  * Get friendly client names for display
@@ -100,7 +101,7 @@ function buildSkillsMenuItem(skills: SkillsState): {
     return {
       name: `🧠 Manage System Skills ${c('green', '✓')}`,
       value: 'skills',
-      description: `${skills.totalInstalledCount} installed • ${skills.destDir}`,
+      description: `${skills.totalInstalledCount} installed • Research, PR Review & more`,
     };
   }
 
@@ -108,15 +109,38 @@ function buildSkillsMenuItem(skills: SkillsState): {
     return {
       name: '🧠 Manage System Skills',
       value: 'skills',
-      description: `${skills.totalInstalledCount} installed • ${skills.destDir}`,
+      description: `${skills.totalInstalledCount}/${skills.skills.length} installed • Get more skills!`,
     };
   }
 
+  // No skills installed - encourage installation
   return {
-    name: '🧠 Manage System Skills',
+    name: `🧠 ${bold('Manage System Skills')} ${c('cyan', '★')}`,
     value: 'skills',
-    description: `No skills installed • ${skills.destDir}`,
+    description: `${c('cyan', '→')} Install skills for AI-powered coding workflows`,
   };
+}
+
+/**
+ * Get human-readable auth source name
+ */
+function getAuthSourceDisplay(auth: OctocodeAuthStatus): string {
+  switch (auth.tokenSource) {
+    case 'gh-cli':
+      return 'gh CLI';
+    case 'env': {
+      // Show which env var is being used (e.g., "env:GH_TOKEN" → "GH_TOKEN")
+      if (auth.envTokenSource) {
+        const varName = auth.envTokenSource.replace('env:', '');
+        return `env (${varName})`;
+      }
+      return 'env var';
+    }
+    case 'octocode':
+      return 'Octocode';
+    default:
+      return 'unknown';
+  }
 }
 
 /**
@@ -128,19 +152,21 @@ function buildAuthMenuItem(auth: OctocodeAuthStatus): {
   description: string;
 } {
   if (auth.authenticated) {
-    const source = auth.tokenSource === 'gh-cli' ? 'gh CLI' : 'Octocode';
+    const source = getAuthSourceDisplay(auth);
+    const user = auth.username ? `@${auth.username}` : '';
+    const userPart = user ? `${user} ` : '';
     return {
       name: `🔑 Manage Auth ${c('green', '✓')}`,
       value: 'auth',
-      description: `@${auth.username || 'unknown'} via ${source}`,
+      description: `${userPart}via ${source}`,
     };
   }
 
-  // Not authenticated - show X to indicate setup needed
+  // Not authenticated - show prominent indicator with call to action
   return {
-    name: `🔑 Manage Auth ${c('red', '✗')}`,
+    name: `🔑 ${bold('Manage Auth')} ${c('red', '✗ Required!')}`,
     value: 'auth',
-    description: 'Not configured - set up auth',
+    description: `${c('yellow', '→')} Sign in to access GitHub`,
   };
 }
 
@@ -211,6 +237,60 @@ function buildOctocodeMenuItem(state: AppState): {
 }
 
 /**
+ * Print contextual hints based on app state
+ * Guides users to set up auth and use best practices
+ */
+function printContextualHints(state: AppState): void {
+  // ─── AUTH HINT (Priority 1) ───
+  if (!state.githubAuth.authenticated) {
+    console.log();
+    console.log(
+      `  ${c('yellow', '⚠')} ${bold('Auth required!')} Run ${c('cyan', '🔑 Manage Auth')} to access GitHub repos`
+    );
+  } else if (
+    state.octocode.isInstalled &&
+    state.skills.totalInstalledCount === 0
+  ) {
+    // ─── SKILLS HINT (Priority 2) ───
+    console.log();
+    console.log(
+      `  ${c('cyan', '💡')} ${dim('Boost your AI coding:')} Install ${c('magenta', 'Skills')} for research, PR review & more!`
+    );
+  }
+
+  // ─── QUICK HINTS (always show, yellow) ───
+  console.log();
+  console.log(`  ${c('yellow', 'Hints:')}`);
+  console.log(
+    c('yellow', `     ▸ Prompts:  Use /research, /plan, /implement in chat`)
+  );
+  console.log(
+    c(
+      'yellow',
+      `     ▸ Skills:   Add all via Manage System Skills → Octocode Official`
+    )
+  );
+  console.log(
+    c(
+      'yellow',
+      `     ▸ Context:  Add AGENTS.md to your project (you can ask octocode)`
+    )
+  );
+  console.log(
+    c(
+      'yellow',
+      `     ▸ Auth:     Supports Octocode OAuth and gh CLI (if installed)`
+    )
+  );
+  console.log(
+    c(
+      'yellow',
+      `     ▸ MCP:      Manage all system MCP servers via Manage System MCP`
+    )
+  );
+}
+
+/**
  * Show main menu and handle selection
  * @param state - Unified application state
  * @returns MenuChoice or 'exit' if user confirms exit
@@ -219,6 +299,9 @@ async function showMainMenu(state: AppState): Promise<MenuChoice> {
   // Display compact status bar
   console.log();
   console.log(`  ${dim('Status:')} ${buildStatusLine(state)}`);
+
+  // Show contextual hints and tips
+  printContextualHints(state);
 
   // Build menu choices based on state
   const choices: Array<{
@@ -316,6 +399,16 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
     });
   }
 
+  // ─── INSTALL ALL SKILLS (only if not all installed) ───
+  if (!state.skills.allInstalled && state.skills.hasSkills) {
+    const notInstalled = state.skills.skills.filter(s => !s.installed).length;
+    choices.push({
+      name: `🧠 Install All Skills ${c('cyan', `(${notInstalled} available)`)}`,
+      value: 'install-skills',
+      description: 'One-click install of all Octocode skills',
+    });
+  }
+
   // ─── BACK ───
   choices.push(
     new Separator() as unknown as {
@@ -353,7 +446,7 @@ async function runOctocodeFlow(): Promise<void> {
   await loadInquirer();
 
   // Get initial state
-  let state = getAppState();
+  let state = await getAppState();
 
   // Show installed IDEs info
   console.log();
@@ -368,7 +461,7 @@ async function runOctocodeFlow(): Promise<void> {
       firstRun = false;
     } else {
       const spinner = new Spinner('  Refreshing...').start();
-      state = getAppState();
+      state = await getAppState();
       spinner.clear();
     }
 
@@ -384,6 +477,48 @@ async function runOctocodeFlow(): Promise<void> {
         await runConfigOptionsFlow();
         console.log();
         break;
+
+      case 'install-skills': {
+        console.log();
+        const skillsSpinner = new Spinner(
+          'Installing all Octocode skills...'
+        ).start();
+
+        const result = await installAllOctocodeSkills();
+
+        if (result.installed > 0) {
+          skillsSpinner.succeed(
+            `Installed ${result.installed} skill${result.installed !== 1 ? 's' : ''}!`
+          );
+          console.log();
+          console.log(
+            `  ${c('green', '✓')} ${result.installed} skill${result.installed !== 1 ? 's' : ''} installed successfully`
+          );
+          if (result.alreadyInstalled > 0) {
+            console.log(
+              `  ${dim(`(${result.alreadyInstalled} already installed)`)}`
+            );
+          }
+          if (result.failed > 0) {
+            console.log(
+              `  ${c('yellow', '⚠')} ${result.failed} skill${result.failed !== 1 ? 's' : ''} failed to install`
+            );
+          }
+          console.log();
+          console.log(`  ${bold('Skills are now available in Claude Code!')}`);
+        } else if (result.allInstalled) {
+          skillsSpinner.succeed('All skills already installed!');
+          console.log();
+          console.log(`  ${c('green', '✓')} All Octocode skills are installed`);
+        } else {
+          skillsSpinner.fail('Failed to install skills');
+          console.log();
+          console.log(`  ${c('red', '✗')} Could not install skills`);
+        }
+        console.log();
+        await pressEnterToContinue();
+        break;
+      }
 
       case 'back':
       default:
@@ -494,18 +629,11 @@ async function runMCPConfigFlow(): Promise<void> {
 // Auth Flow
 // ============================================================================
 
-type AuthMenuChoice =
-  | 'login'
-  | 'gh-guidance'
-  | 'logout'
-  | 'gh-logout'
-  | 'check-token'
-  | 'back';
+type AuthMenuChoice = 'login' | 'gh-guidance' | 'logout' | 'gh-logout' | 'back';
 
 /**
- * Show auth menu - smart ordering based on auth state
- * - Not authenticated: Sign in options first
- * - Authenticated: Manage/sign out first
+ * Show auth menu - directly shows all relevant options
+ * No intermediate "Manage Tokens" step - everything in one menu
  */
 async function showAuthMenu(
   status: OctocodeAuthStatus
@@ -516,42 +644,25 @@ async function showAuthMenu(
     description?: string;
   }> = [];
 
-  const isUsingOctocode = status.tokenSource === 'octocode';
-  const isUsingGhCli = status.tokenSource === 'gh-cli';
-  const isAuthenticated = status.authenticated;
+  const isUsingEnv = status.tokenSource === 'env';
 
-  if (isAuthenticated) {
-    // ─── AUTHENTICATED: Show management options first ───
-    choices.push({
-      name: '🔍 Manage Auth Tokens',
-      value: 'check-token',
-      description: 'View and delete stored tokens',
-    });
+  // Check what auth methods are available (independent of current active source)
+  const ghCliToken = getGitHubCLIToken();
+  const ghAuth = checkGitHubAuth();
+  const octocodeCredentials = await getCredentials();
 
-    if (isUsingGhCli) {
-      choices.push({
-        name: '🔓 Sign Out (gh CLI)',
-        value: 'gh-logout',
-        description: 'Opens gh auth logout',
-      });
-    } else if (isUsingOctocode) {
-      choices.push({
-        name: '🔓 Sign Out',
-        value: 'logout',
-        description: 'Remove Octocode token',
-      });
-    }
-  } else {
-    // ─── NOT AUTHENTICATED: Show sign in options first ───
+  const hasGhCli = !!ghCliToken;
+  const hasOctocode = !!octocodeCredentials;
+  const hasEnv = hasEnvToken();
+
+  // ─── Show env var info if using env (can't delete) ───
+  if (isUsingEnv && hasEnv) {
+    const envVar =
+      status.envTokenSource?.replace('env:', '') || 'environment variable';
     choices.push({
-      name: `🔐 Sign In via Octocode ${c('green', '(Recommended)')}`,
-      value: 'login',
-      description: 'Quick browser sign in',
-    });
-    choices.push({
-      name: '🔐 Sign In via gh CLI',
-      value: 'gh-guidance',
-      description: 'Use existing GitHub CLI installation',
+      name: `ℹ️  Using ${c('cyan', envVar)} ${dim('(takes priority)')}`,
+      value: 'back', // No action, just info
+      description: 'Token set via environment variable',
     });
 
     choices.push(
@@ -561,11 +672,46 @@ async function showAuthMenu(
         description?: string;
       }
     );
+  }
 
+  // ─── Show delete options for available tokens ───
+  if (hasGhCli) {
+    const userPart = ghAuth.username ? ` (@${ghAuth.username})` : '';
     choices.push({
-      name: `${dim('🔍 View all auth methods')}`,
-      value: 'check-token',
-      description: 'Check env vars, gh CLI, stored tokens',
+      name: `🗑️  Delete gh CLI token${userPart}`,
+      value: 'gh-logout',
+      description: 'Opens gh auth logout',
+    });
+  }
+
+  if (hasOctocode) {
+    const userPart = octocodeCredentials.username
+      ? ` (@${octocodeCredentials.username})`
+      : '';
+    const storageType = isUsingSecureStorage() ? 'keychain' : 'file';
+    choices.push({
+      name: `🗑️  Delete Octocode token${userPart}`,
+      value: 'logout',
+      description: `Remove from ${storageType}`,
+    });
+  }
+
+  // ─── Show sign-in options for methods not yet configured ───
+  if (!hasOctocode) {
+    choices.push({
+      name: `🔐 Sign In via Octocode ${c('green', '(Recommended)')}`,
+      value: 'login',
+      description: 'Quick browser sign in',
+    });
+  }
+
+  if (!hasGhCli) {
+    choices.push({
+      name: '🔐 Sign In via gh CLI',
+      value: 'gh-guidance',
+      description: ghAuth.installed
+        ? 'Use existing GitHub CLI'
+        : 'GitHub CLI not installed',
     });
   }
 
@@ -599,11 +745,13 @@ async function showAuthMenu(
 }
 
 /**
- * Run the login flow
+ * Run the login flow with enhanced progress indication
  */
 async function runLoginFlow(): Promise<boolean> {
   console.log();
+  console.log(c('blue', '━'.repeat(66)));
   console.log(`  ${bold('🔐 GitHub Authentication')}`);
+  console.log(c('blue', '━'.repeat(66)));
   console.log();
   console.log(
     `  ${dim('This will open your browser to authenticate with GitHub.')}`
@@ -611,6 +759,7 @@ async function runLoginFlow(): Promise<boolean> {
   console.log();
 
   let verificationShown = false;
+  let authSpinner: Spinner | null = null;
   const spinner = new Spinner('Connecting to GitHub...').start();
 
   const result = await oauthLogin({
@@ -618,33 +767,82 @@ async function runLoginFlow(): Promise<boolean> {
       spinner.stop();
       verificationShown = true;
 
-      console.log(
-        `  ${c('yellow', '!')} First copy your one-time code: ${bold(verification.user_code)}`
-      );
+      // Clear visual box for the code
       console.log();
+      console.log(c('yellow', '  ┌' + '─'.repeat(50) + '┐'));
       console.log(
-        `  ${bold('Press Enter')} to open ${c('cyan', verification.verification_uri)} in your browser...`
+        c('yellow', '  │ ') +
+          `${c('yellow', '!')} Your one-time code: ${bold(c('cyan', verification.user_code))}` +
+          ' '.repeat(50 - 26 - verification.user_code.length) +
+          c('yellow', '│')
       );
+      console.log(c('yellow', '  └' + '─'.repeat(50) + '┘'));
       console.log();
-      console.log(`  ${dim('Waiting for authentication...')}`);
+      console.log(`  ${bold('1.')} Copy the code above`);
+      console.log(
+        `  ${bold('2.')} ${bold('Press Enter')} to open ${c('cyan', verification.verification_uri)}`
+      );
+      console.log(`  ${bold('3.')} Paste the code in your browser`);
+      console.log();
+
+      // Start a progress spinner with helpful context
+      authSpinner = new Spinner(
+        `Waiting for browser authentication... ${dim('(typically 10-30 seconds)')}`
+      ).start();
     },
   });
 
+  // Stop any running spinner
+  if (authSpinner) {
+    (authSpinner as Spinner).stop();
+  }
   if (!verificationShown) {
     spinner.stop();
   }
 
   console.log();
   if (result.success) {
-    console.log(`  ${c('green', '✓')} Authentication complete!`);
+    console.log(c('green', '  ┌' + '─'.repeat(50) + '┐'));
     console.log(
-      `  ${c('green', '✓')} Logged in as ${c('cyan', result.username || 'unknown')}`
+      c('green', '  │ ') +
+        `${c('green', '✓')} ${bold('Authentication successful!')}` +
+        ' '.repeat(22) +
+        c('green', '│')
     );
+    console.log(c('green', '  └' + '─'.repeat(50) + '┘'));
     console.log();
-    console.log(`  ${dim('Credentials stored in:')} ${getStoragePath()}`);
-  } else {
     console.log(
-      `  ${c('red', '✗')} Authentication failed: ${result.error || 'Unknown error'}`
+      `  ${c('green', '✓')} Logged in as ${c('cyan', '@' + (result.username || 'unknown'))}`
+    );
+    console.log(`  ${dim('Credentials stored in:')} ${getStoragePath()}`);
+    console.log();
+    console.log(`  ${c('cyan', '💡')} ${bold("What's next?")}`);
+    console.log(
+      `     ${dim('•')} Install ${c('magenta', 'Skills')} for AI-powered research & PR reviews`
+    );
+    console.log(
+      `     ${dim('•')} Use ${c('cyan', '/research')} prompt to explore any GitHub repo`
+    );
+    console.log(
+      `     ${dim('•')} Add ${c('cyan', 'AGENTS.md')} to your project for better AI context`
+    );
+  } else {
+    console.log(c('red', '  ┌' + '─'.repeat(50) + '┐'));
+    console.log(
+      c('red', '  │ ') +
+        `${c('red', '✗')} ${bold('Authentication failed')}` +
+        ' '.repeat(27) +
+        c('red', '│')
+    );
+    console.log(c('red', '  └' + '─'.repeat(50) + '┘'));
+    console.log();
+    console.log(`  ${c('red', 'Error:')} ${result.error || 'Unknown error'}`);
+    console.log();
+    console.log(`  ${bold('Troubleshooting:')}`);
+    console.log(`     ${dim('•')} Make sure you copied the code correctly`);
+    console.log(`     ${dim('•')} Check your browser didn't block the popup`);
+    console.log(
+      `     ${dim('•')} Try running ${c('cyan', 'octocode login')} again`
     );
   }
   console.log();
@@ -657,7 +855,7 @@ async function runLoginFlow(): Promise<boolean> {
  * Run the logout flow
  */
 async function runLogoutFlow(): Promise<boolean> {
-  const status = getAuthStatus();
+  const status = await getAuthStatusAsync();
 
   console.log();
   console.log(`  ${bold('🔓 Sign Out')}`);
@@ -760,256 +958,84 @@ async function showGhCliGuidance(): Promise<void> {
   }
 }
 
-type TokenCheckChoice =
-  | 'delete-gh'
-  | 'delete-octocode'
-  | 'login-octocode'
-  | 'gh-guidance'
-  | 'back';
-
-/**
- * Check all authentication methods and display their status
- * Allows deleting individual tokens or logging in
- */
-async function runCheckTokenFlow(): Promise<void> {
-  let inTokenCheck = true;
-
-  while (inTokenCheck) {
-    console.log();
-    console.log(`  ${bold('🔍 Auth Token Status')}`);
-    console.log();
-
-    // 1. Check gh CLI token
-    const ghCliToken = getGitHubCLIToken();
-    const ghAuth = checkGitHubAuth();
-    let ghCliAvailable = false;
-    let ghCliUsername = '';
-
-    if (ghCliToken) {
-      ghCliAvailable = true;
-      ghCliUsername = ghAuth.username || '';
-    }
-
-    // 2. Check Octocode storage (keychain/file)
-    const octocodeCredentials = await getCredentials();
-    let octocodeAvailable = false;
-    let octocodeUsername = '';
-    const storageType = isUsingSecureStorage() ? 'keychain' : 'encrypted file';
-
-    if (octocodeCredentials) {
-      octocodeAvailable = true;
-      octocodeUsername = octocodeCredentials.username || '';
-    }
-
-    // Display simple status
-    if (ghCliAvailable) {
-      const userPart = ghCliUsername ? ` (@${ghCliUsername})` : '';
-      console.log(`  ${c('green', '✓')} gh CLI${userPart}`);
-    } else {
-      const statusText = ghAuth.installed
-        ? 'Not authenticated'
-        : 'Not installed';
-      console.log(`  ${c('red', '✗')} gh CLI: ${dim(statusText)}`);
-    }
-
-    if (octocodeAvailable) {
-      const userPart = octocodeUsername ? ` (@${octocodeUsername})` : '';
-      console.log(`  ${c('green', '✓')} Octocode (${storageType})${userPart}`);
-    } else {
-      console.log(
-        `  ${c('red', '✗')} Octocode (${storageType}): ${dim('Not stored')}`
-      );
-    }
-
-    const availableCount =
-      (ghCliAvailable ? 1 : 0) + (octocodeAvailable ? 1 : 0);
-
-    console.log();
-    if (availableCount > 0) {
-      console.log(`  ${dim('→')} ${availableCount} auth method(s) available`);
-    } else {
-      console.log(`  ${c('yellow', '⚠')} No authentication methods available`);
-    }
-    console.log();
-
-    // Build menu choices - show login or delete based on availability
-    const choices: Array<{
-      name: string;
-      value: TokenCheckChoice;
-      description?: string;
-    }> = [];
-
-    if (ghCliAvailable) {
-      choices.push({
-        name: `🗑️  Delete gh CLI token`,
-        value: 'delete-gh',
-        description: ghCliUsername
-          ? `@${ghCliUsername}`
-          : 'Opens gh auth logout',
-      });
-    } else {
-      choices.push({
-        name: `🔐 Sign In via gh CLI`,
-        value: 'gh-guidance',
-        description: 'Use GitHub CLI to authenticate',
-      });
-    }
-
-    if (octocodeAvailable) {
-      choices.push({
-        name: `🗑️  Delete Octocode token`,
-        value: 'delete-octocode',
-        description: octocodeUsername
-          ? `@${octocodeUsername}`
-          : `From ${storageType}`,
-      });
-    } else {
-      choices.push({
-        name: `🔐 Sign In via Octocode`,
-        value: 'login-octocode',
-        description: 'Quick browser sign in',
-      });
-    }
-
-    choices.push(
-      new Separator() as unknown as {
-        name: string;
-        value: TokenCheckChoice;
-        description?: string;
-      }
-    );
-
-    choices.push({
-      name: `${c('dim', '← Back')}`,
-      value: 'back',
-    });
-
-    const choice = await selectWithCancel<TokenCheckChoice>({
-      message: '',
-      choices,
-      pageSize: 10,
-      loop: false,
-      theme: {
-        prefix: '  ',
-        style: {
-          highlight: (text: string) => c('magenta', text),
-        },
-      },
-    });
-
-    switch (choice) {
-      case 'delete-gh': {
-        console.log();
-        const confirmGh = await selectWithCancel<'yes' | 'no'>({
-          message: `Delete gh CLI token${ghCliUsername ? ` (@${ghCliUsername})` : ''}?`,
-          choices: [
-            { name: 'Yes, sign out', value: 'yes' },
-            { name: 'No, cancel', value: 'no' },
-          ],
-          theme: {
-            prefix: '  ',
-            style: {
-              highlight: (text: string) => c('red', text),
-            },
-          },
-        });
-
-        if (confirmGh === 'yes') {
-          console.log();
-          console.log(`  ${dim('Opening gh auth logout...')}`);
-          const ghResult = runGitHubAuthLogout();
-          if (ghResult.success) {
-            console.log(`  ${c('green', '✓')} Signed out of gh CLI`);
-          } else {
-            console.log(`  ${c('yellow', '!')} Sign out was cancelled`);
-          }
-          console.log();
-          await pressEnterToContinue();
-        }
-        break;
-      }
-
-      case 'delete-octocode': {
-        console.log();
-        const confirmOctocode = await selectWithCancel<'yes' | 'no'>({
-          message: `Delete Octocode token${octocodeUsername ? ` (@${octocodeUsername})` : ''} from ${storageType}?`,
-          choices: [
-            { name: 'Yes, delete', value: 'yes' },
-            { name: 'No, cancel', value: 'no' },
-          ],
-          theme: {
-            prefix: '  ',
-            style: {
-              highlight: (text: string) => c('red', text),
-            },
-          },
-        });
-
-        if (confirmOctocode === 'yes') {
-          const result = await oauthLogout();
-          if (result.success) {
-            console.log();
-            console.log(`  ${c('green', '✓')} Octocode token deleted`);
-          } else {
-            console.log();
-            console.log(
-              `  ${c('red', '✗')} Failed to delete: ${result.error || 'Unknown error'}`
-            );
-          }
-          console.log();
-          await pressEnterToContinue();
-        }
-        break;
-      }
-
-      case 'login-octocode': {
-        const success = await runLoginFlow();
-        if (success) {
-          // After successful login, exit the token check loop to refresh state
-          inTokenCheck = false;
-        }
-        break;
-      }
-
-      case 'gh-guidance': {
-        await showGhCliGuidance();
-        break;
-      }
-
-      case 'back':
-      default:
-        inTokenCheck = false;
-        break;
-    }
-  }
-}
-
 /**
  * Display auth status - clean, simple status line
  */
+/**
+ * Get detailed auth source for display
+ */
+function getDetailedAuthSource(status: OctocodeAuthStatus): string {
+  switch (status.tokenSource) {
+    case 'gh-cli':
+      return 'gh CLI';
+    case 'env': {
+      // Show which env var (e.g., "env:GH_TOKEN" → "GH_TOKEN")
+      if (status.envTokenSource) {
+        const varName = status.envTokenSource.replace('env:', '');
+        return `${varName} env var`;
+      }
+      return 'environment variable';
+    }
+    case 'octocode':
+      return isUsingSecureStorage() ? 'keychain' : 'file';
+    default:
+      return 'unknown';
+  }
+}
+
 function displayAuthStatus(status: OctocodeAuthStatus): void {
   console.log(`  ${bold('🔐 GitHub Authentication')}`);
   console.log();
 
   if (status.authenticated) {
-    const source =
-      status.tokenSource === 'gh-cli'
-        ? 'gh CLI'
-        : isUsingSecureStorage()
-          ? 'keychain'
-          : 'file';
-    console.log(
-      `  ${c('green', '✓')} Signed in as ${c('cyan', '@' + (status.username || 'unknown'))} ${dim(`via ${source}`)}`
-    );
+    const source = getDetailedAuthSource(status);
+
+    // For env tokens, we can't get username, so show different message
+    if (status.tokenSource === 'env') {
+      const envVarName = status.envTokenSource
+        ? status.envTokenSource.replace('env:', '')
+        : 'environment variable';
+      console.log(
+        `  ${c('green', '✓')} Using ${c('cyan', envVarName)} ${dim('(token configured)')}`
+      );
+    } else {
+      console.log(
+        `  ${c('green', '✓')} Signed in as ${c('cyan', '@' + (status.username || 'unknown'))} ${dim(`via ${source}`)}`
+      );
+    }
 
     if (status.tokenExpired) {
       console.log(
         `  ${c('yellow', '⚠')} Session expired - please sign in again`
       );
     }
+
+    // Success tips
+    console.log();
+    console.log(
+      `  ${c('green', '✓')} ${dim('Ready to access GitHub repositories!')}`
+    );
   } else {
-    console.log(`  ${c('yellow', '○')} Not signed in`);
-    console.log(`  ${dim('Sign in to access private repositories.')}`);
+    // Not authenticated - prominent warning with instructions
+    console.log(c('yellow', '  ┌' + '─'.repeat(56) + '┐'));
+    console.log(
+      c('yellow', '  │ ') +
+        `${c('yellow', '⚠')} ${bold('Authentication Required')}` +
+        ' '.repeat(31) +
+        c('yellow', '│')
+    );
+    console.log(c('yellow', '  └' + '─'.repeat(56) + '┘'));
+    console.log();
+    console.log(`  ${dim('Without auth, Octocode cannot:')}`);
+    console.log(`     ${c('red', '✗')} Access private repositories`);
+    console.log(`     ${c('red', '✗')} Search code in your organization`);
+    console.log(
+      `     ${c('red', '✗')} Provide full GitHub research capabilities`
+    );
+    console.log();
+    console.log(
+      `  ${c('cyan', '→')} Select ${c('green', '"Sign In via Octocode"')} below to authenticate`
+    );
   }
   console.log();
 }
@@ -1023,7 +1049,7 @@ async function runAuthFlow(): Promise<void> {
 
   let inAuthMenu = true;
   while (inAuthMenu) {
-    const status = getAuthStatus();
+    const status = await getAuthStatusAsync();
 
     // Show current status
     displayAuthStatus(status);
@@ -1031,11 +1057,6 @@ async function runAuthFlow(): Promise<void> {
     const choice = await showAuthMenu(status);
 
     switch (choice) {
-      case 'check-token':
-        await runCheckTokenFlow();
-        console.log();
-        break;
-
       case 'login':
         await runLoginFlow();
         console.log();
@@ -1051,6 +1072,25 @@ async function runAuthFlow(): Promise<void> {
         break;
 
       case 'gh-logout': {
+        // Confirm before deleting
+        const confirmGh = await selectWithCancel<'yes' | 'no'>({
+          message: 'Sign out of gh CLI?',
+          choices: [
+            { name: 'Yes, sign out', value: 'yes' },
+            { name: 'No, cancel', value: 'no' },
+          ],
+          theme: {
+            prefix: '  ',
+            style: {
+              highlight: (text: string) => c('red', text),
+            },
+          },
+        });
+
+        if (confirmGh !== 'yes') {
+          break;
+        }
+
         console.log();
         console.log(`  ${dim('Opening gh auth logout...')}`);
         console.log();
@@ -1147,10 +1187,10 @@ export async function runMenuLoop(): Promise<void> {
     // Show loading indicator on subsequent iterations (first run shows env status)
     let state;
     if (firstRun) {
-      state = getAppState();
+      state = await getAppState();
     } else {
       const spinner = new Spinner('  Loading...').start();
-      state = getAppState();
+      state = await getAppState();
       spinner.clear();
     }
 

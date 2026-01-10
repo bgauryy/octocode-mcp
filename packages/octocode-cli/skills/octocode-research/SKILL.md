@@ -1,6 +1,6 @@
 ---
 name: octocode-research
-description: Research code with evidence (external and local research)
+description: Research code with evidence (external GitHub research)
 ---
 
 # Research Agent - Code Forensics & Discovery
@@ -24,7 +24,10 @@ Role: **Research Agent**. Expert Judicial Logician.
 ## 2. Scope & Tooling
 
 <tools>
-**Octocode Research**:
+> 🔍 **For local workspace search & LSP code intelligence, call the `octocode-local-search` skill if installed!**
+> This skill focuses on **external GitHub research**. Use `octocode-local-search` for local tools (`localSearchCode`, `localViewStructure`, `localFindFiles`, `localGetFileContent`) and LSP tools (`lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`).
+
+**Octocode Research (GitHub)**:
 | Tool | Purpose |
 |------|---------|
 | `githubSearchRepositories` | Discover repos by topics, stars, activity |
@@ -34,62 +37,14 @@ Role: **Research Agent**. Expert Judicial Logician.
 | `githubSearchPullRequests` | Fetch PR metadata, diffs, comments, history |
 | `packageSearch` | Package metadata, versions, repo location |
 
-**Octocode Local** (When available, prefer over shell commands for local context):
-| Tool | Purpose | Replaces |
-|------|---------|----------|
-| `localViewStructure` | Explore directories with sorting/depth/filtering | `ls`, `tree` |
-| `localSearchCode` | Fast content search with pagination & hints | `grep`, `rg` |
-| `localFindFiles` | Find files by metadata (name/time/size) | `find` |
-| `localGetFileContent` | Read file content with targeting & context | `cat`, `head` |
-
-**Octocode LSP** (Semantic Code Intelligence - local workspaces only):
-| Tool | Purpose |
-|------|---------|
-| `lspGotoDefinition` | Trace imports, find where symbols are defined |
-| `lspFindReferences` | Find all usages of a symbol across codebase |
-| `lspCallHierarchy` | Trace call relationships (incoming/outgoing) |
-
 **Task Management**:
 | Tool | Purpose |
 |------|---------|
 | `TodoWrite` | Track research progress and subtasks |
 | `Task` | Spawn parallel agents for independent research domains |
 
-**FileSystem**: `Read`, `Write`, `Grep`, `Glob`
+**FileSystem**: `Read`, `Write`
 </tools>
-
-<local_tools_priority>
-**When local tools are available, ALWAYS prefer them over shell commands** for workspace exploration:
-
-| Instead of... | Use... | Why Better |
-|---------------|--------|------------|
-| `grep`, `rg` | `localSearchCode` | Structured results, pagination, hints, byte offsets |
-| `ls`, `tree` | `localViewStructure` | Filtering, sorting, depth control, summaries |
-| `find` | `localFindFiles` | Time/size/permission filters, pagination |
-| `cat`, `head` | `localGetFileContent` | matchString targeting, context lines, pagination |
-
-**Local-First Research Strategy**:
-1. **Start Local**: Use local tools to understand workspace context before GitHub research
-2. **Understand Dependencies**: Check `package.json`, imports, local configs first
-3. **Inspect node_modules**: Use `localSearchCode(path="node_modules/pkg", noIgnore=true)` to understand dependency internals
-4. **Cross-Reference**: Compare local implementations with upstream GitHub repos
-
-**node_modules Inspection**:
-- Local tools respect `.gitignore` by default — use `noIgnore=true` to search inside `node_modules`
-- Useful for: debugging dependency behavior, understanding library internals, finding undocumented APIs
-- Example: `localSearchCode(pattern="createContext", path="node_modules/react", noIgnore=true)`
-- Example: `localViewStructure(path="node_modules/express/lib", depth=2)`
-
-**When to Use Local vs GitHub**:
-| Scenario | Use Local | Use GitHub |
-|----------|-----------|------------|
-| Current workspace code | ✅ | |
-| Dependency source code | ✅ (node_modules) | ✅ (canonical) |
-| External library research | | ✅ |
-| PR history / blame | | ✅ |
-| Package discovery | | ✅ (packageSearch) |
-| Cross-repo patterns | | ✅ |
-</local_tools_priority>
 
 <location>
 **`.octocode/`** - Project root folder for Octocode artifacts. Create if missing and ask user to add to `.gitignore`.
@@ -147,39 +102,17 @@ Check `.octocode/context/context.md` for user context. Use it to ground research
 <research_flows>
 **General Rule**: Research is a matrix/graph, not linear. Use the cheapest tool that can prove/disprove the hypothesis.
 
-**Starting Points** (Local First when available):
-| Need | Local Tool | GitHub Tool | Example |
-|------|------------|-------------|---------|
-| Local workspace context | `localViewStructure` | — | Understand project layout |
-| Local pattern search | `localSearchCode` | `githubSearchCode` | Find implementations |
-| Local file by metadata | `localFindFiles` | — | Recent changes, configs |
-| Symbol definition | `lspGotoDefinition` | — | Trace imports to source |
-| All symbol usages | `lspFindReferences` | — | Impact analysis |
-| Call flow analysis | `lspCallHierarchy` | — | Who calls what? |
-| Repository discovery | — | `githubSearchRepositories` | Find repos by topic/stars |
-| Package info | — | `packageSearch` | Metadata, repo location |
-| Remote repo structure | — | `githubViewRepoStructure` | Map external layout |
-| PR History | — | `githubSearchPullRequests` | Why changes were made |
-| Dependency internals | `localSearchCode` (noIgnore) | `githubGetFileContent` | Check node_modules vs source |
+> 🔍 **For local workspace exploration and LSP code intelligence, use the `octocode-local-search` skill!**
 
-**Local Transition Matrix**:
-| From Tool | Need... | Go To Tool |
-|-----------|---------|------------|
-| `localViewStructure` | Find Pattern | `localSearchCode` |
-| `localViewStructure` | File Content | `localGetFileContent` |
-| `localSearchCode` | Context/Content | `localGetFileContent` |
-| `localSearchCode` | Find Definition | `lspGotoDefinition` |
-| `localSearchCode` | More Patterns | `localSearchCode` (refine) |
-| `localSearchCode` | Upstream Source | `packageSearch` → GitHub tools |
-| `localFindFiles` | File Content | `localGetFileContent` |
-| `localGetFileContent` | More Context | `localGetFileContent` (widen) |
-| `localGetFileContent` | Trace Import | `lspGotoDefinition` |
-| `lspGotoDefinition` | Find All Usages | `lspFindReferences` |
-| `lspGotoDefinition` | Read Definition | `localGetFileContent` |
-| `lspFindReferences` | Call Graph | `lspCallHierarchy` |
-| `lspFindReferences` | Read Usage | `localGetFileContent` |
-| `lspCallHierarchy` | Deeper Trace | `lspCallHierarchy` (depth=2) |
-| `lspCallHierarchy` | Read Caller | `localGetFileContent` |
+**Starting Points (GitHub Research)**:
+| Need | GitHub Tool | Example |
+|------|-------------|---------|
+| Repository discovery | `githubSearchRepositories` | Find repos by topic/stars |
+| Package info | `packageSearch` | Metadata, repo location |
+| Remote repo structure | `githubViewRepoStructure` | Map external layout |
+| Pattern search | `githubSearchCode` | Find implementations |
+| File content | `githubGetFileContent` | Read with `matchString` |
+| PR History | `githubSearchPullRequests` | Why changes were made |
 
 **GitHub Transition Matrix**:
 | From Tool | Need... | Go To Tool |
@@ -194,25 +127,17 @@ Check `.octocode/context/context.md` for user context. Use it to ground research
 | `githubSearchPullRequests` | File Content | `githubGetFileContent` |
 | `githubGetFileContent` | More Context | `githubGetFileContent` (widen scope) |
 | `githubGetFileContent` | New Pattern | `githubSearchCode` |
-
-**Cross-Domain Transitions** (Local ↔ GitHub):
-| From | Need... | Go To |
-|------|---------|-------|
-| Local code | Upstream implementation | `packageSearch` → GitHub tools |
-| Local node_modules | Canonical source | `githubGetFileContent` (same path) |
-| GitHub finding | Local usage | `localSearchCode` (same pattern) |
-| GitHub PR | Local impact | `localSearchCode` (changed files) |
 </research_flows>
 
 <structural_code_vision>
 **Think Like a Parser (AST Mode)**:
 - **See the Tree**: Visualize AST. Root (Entry) → Nodes (Funcs/Classes) → Edges (Imports/Calls)
-- **Trace Dependencies**: `import {X} from 'Y'` is an edge → Use `lspGotoDefinition` to GO TO 'Y'
-- **Find Impact**: Before modifying → Use `lspFindReferences` to find all usages
-- **Understand Flow**: Use `lspCallHierarchy` to trace callers (incoming) and callees (outgoing)
+- **Trace Dependencies**: `import {X} from 'Y'` is an edge → follow imports to source
 - **Contextualize Tokens**: "user" is meaningless alone → Find definition (`class User`, `interface User`)
 - **Follow the Flow**: Entry → Propagation → Termination
 - **Ignore Noise**: Focus on semantic nodes driving logic (public functions, handlers, services)
+
+> 💡 **For LSP-powered code intelligence (definitions, references, call hierarchy), use the `octocode-local-search` skill!**
 </structural_code_vision>
 
 <doc_vision>
@@ -304,26 +229,43 @@ Iterate Thought, Action, Observation:
 <multi_agent>
 > **Note**: Only applicable if parallel agents are supported by host environment.
 
-**When to Spawn Agents**:
+**When to Spawn Subagents**:
 - 2+ independent hypotheses (no shared dependencies)
 - Distinct repos/domains (e.g., `client` + `server`, `lib-a` + `lib-b`)
 - Separate subsystems (auth vs. payments vs. notifications)
+- Multiple external packages to research
 
 **How to Parallelize**:
-1. Define clear, scoped goal per agent
-2. Use `Task` tool with specific hypothesis/domain
-3. Each agent researches independently
+1. Use `TodoWrite` to create tasks and identify parallelizable research
+2. Use `Task` tool to spawn subagents with specific hypothesis/domain
+3. Each agent researches independently using GitHub tools
 4. Merge findings after all agents complete
 
-**Example**:
+**Smart Parallelization Tips**:
+- **Preparation Phase**: Keep sequential - need unified hypothesis identification
+- **Execution Phase**: Parallelize across independent repos/domains
+- Use `TodoWrite` to track research progress per agent
+- Each agent should follow full research flow: `githubSearchRepositories` → `githubViewRepoStructure` → `githubSearchCode` → `githubGetFileContent`
+- Define clear boundaries: each agent owns specific repos/packages
+- Cross-reference findings during merge to identify connections
+
+**Example - Multi-Repo Research**:
 - Goal: "How does auth work across frontend and backend?"
 - Agent 1: Research `frontend-app` auth flow (login, token storage, guards)
 - Agent 2: Research `backend-api` auth flow (middleware, validation, sessions)
-- Merge: Combine into unified auth flow documentation
+- Merge: Combine into unified auth flow documentation, trace cross-repo dependencies
+
+**Example - Multi-Package Research**:
+- Goal: "Compare authentication libraries for Node.js"
+- Agent 1: Research `passport` using `packageSearch` → `githubViewRepoStructure` → `githubGetFileContent`
+- Agent 2: Research `next-auth` using same flow
+- Agent 3: Research `lucia-auth` using same flow
+- Merge: Create comparison matrix with pros/cons
 
 **Anti-patterns**:
 - Don't parallelize when hypotheses depend on each other's results
 - Don't spawn agents for simple single-repo research
+- Don't parallelize output generation (needs unified synthesis)
 </multi_agent>
 
 ---

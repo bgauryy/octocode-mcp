@@ -3,6 +3,8 @@
  *
  * Re-exports credential storage from octocode-shared package.
  * This file is kept for backward compatibility with existing imports.
+ *
+ * ALL token management logic is centralized in octocode-shared.
  */
 
 // Re-export from the shared package
@@ -29,6 +31,14 @@ export {
   isTokenExpired,
   isRefreshTokenExpired,
 
+  // Token refresh (centralized in shared)
+  refreshAuthToken,
+  type RefreshResult,
+
+  // Token retrieval with auto-refresh
+  getTokenWithRefresh,
+  type TokenWithRefreshResult,
+
   // Utility
   getCredentialsFilePath,
 
@@ -37,6 +47,11 @@ export {
   getEnvTokenSource,
   hasEnvToken,
   ENV_TOKEN_VARS,
+
+  // Full token resolution (recommended)
+  resolveTokenFull,
+  type FullTokenResolution,
+  type GhCliTokenGetter,
 
   // Errors
   TimeoutError,

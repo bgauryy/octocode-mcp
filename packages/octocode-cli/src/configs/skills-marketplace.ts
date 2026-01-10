@@ -69,8 +69,7 @@ export const SKILLS_MARKETPLACES: MarketplaceSource[] = [
     branch: 'main',
     skillsPath: 'packages/octocode-cli/skills',
     skillPattern: 'skill-folders',
-    description:
-      'Official research, planning, review, generation & roast skills',
+    description: 'Official research, planning, review & roast skills',
     url: 'https://github.com/ArekSrorth/octocode-mcp',
   },
   // === COMMUNITY MARKETPLACES ===
