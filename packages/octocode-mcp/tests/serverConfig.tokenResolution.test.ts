@@ -29,7 +29,7 @@ import {
   _setTokenResolvers,
   _resetTokenResolvers,
 } from '../src/serverConfig.js';
-import { clearTokenCache, type FullTokenResolution } from 'octocode-shared';
+import type { FullTokenResolution } from 'octocode-shared';
 
 describe('Token Resolution Priority (TOKEN_RESOLUTION.md)', () => {
   // Store original env values (not a reference to process.env!)
@@ -71,7 +71,6 @@ describe('Token Resolution Priority (TOKEN_RESOLUTION.md)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     cleanup();
-    clearTokenCache(); // Clear octocode-shared's token cache
 
     // Save and clear token-related env vars (don't replace process.env!)
     // This is critical: we must modify the SAME process.env object that

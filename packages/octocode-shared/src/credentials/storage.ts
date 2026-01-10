@@ -35,42 +35,6 @@ const DEFAULT_CLIENT_ID = '178c6fc778ccc68e1d6a';
 const DEFAULT_HOSTNAME = 'github.com';
 
 // ============================================================================
-// TOKEN CACHE (1-minute TTL using node-cache)
-// ============================================================================
-
-import NodeCache from 'node-cache';
-
-/** Cache TTL in seconds (1 minute) */
-const TOKEN_CACHE_TTL_SECONDS = 60;
-
-/**
- * Token cache using node-cache with automatic TTL expiration.
- * - stdTTL: 60 seconds (1 minute)
- * - checkperiod: 30 seconds (cleanup expired keys)
- * - useClones: false (return references for performance)
- */
-const tokenCache = new NodeCache({
-  stdTTL: TOKEN_CACHE_TTL_SECONDS,
-  checkperiod: 30,
-  useClones: false,
-  deleteOnExpire: true,
-});
-
-/**
- * Clear the token resolution cache.
- * Use this when credentials change (login, logout, refresh).
- *
- * @param hostname - Optional hostname to clear. If not provided, clears all.
- */
-export function clearTokenCache(hostname?: string): void {
-  if (hostname) {
-    tokenCache.del(hostname);
-  } else {
-    tokenCache.flushAll();
-  }
-}
-
-// ============================================================================
 // TIMEOUT UTILITIES (like gh CLI's 3 second timeout)
 // ============================================================================
 
@@ -1156,10 +1120,10 @@ export type GhCliTokenGetter = (
 ) => string | null | Promise<string | null>;
 
 /**
- * Full token resolution with gh CLI fallback and 1-minute caching
+ * Full token resolution with gh CLI fallback
  *
  * This is the recommended function for complete token resolution across all sources.
- * Results are cached for 1 minute to reduce I/O overhead.
+ * Always fetches fresh tokens - no caching to ensure immediate propagation of token changes.
  *
  * Priority order:
  * 1. OCTOCODE_TOKEN env var
@@ -1183,8 +1147,7 @@ export async function resolveTokenFull(options?: {
   const clientId = options?.clientId ?? DEFAULT_CLIENT_ID;
   const getGhCliToken = options?.getGhCliToken;
 
-  // Priority 1-3: ALWAYS check environment variables first (highest priority, no I/O)
-  // This ensures env vars take precedence over any cached token from other sources
+  // Priority 1-3: Check environment variables first (highest priority, no I/O)
   const envToken = getTokenFromEnv();
   if (envToken) {
     return {
@@ -1194,23 +1157,8 @@ export async function resolveTokenFull(options?: {
     };
   }
 
-  // Check cache for non-env token results (keychain/file/gh-cli)
-  const cached = tokenCache.get<FullTokenResolution | null>(hostname);
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  // Cache miss or expired - resolve from storage/gh-cli (skips env since already checked)
-  const result = await resolveTokenFullInternalNoEnv(
-    hostname,
-    clientId,
-    getGhCliToken
-  );
-
-  // Cache the result (including null) with default TTL
-  tokenCache.set(hostname, result);
-
-  return result;
+  // Priority 4-6: Resolve from storage/gh-cli (no caching)
+  return resolveTokenFullInternalNoEnv(hostname, clientId, getGhCliToken);
 }
 
 /**

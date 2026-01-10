@@ -240,14 +240,11 @@ These are the core principles for this shared package:
 ```
 resolveTokenFull(options)
     ↓
-getTokenFromEnv()  ← ALWAYS checked first (bypasses cache!)
+getTokenFromEnv()  ← Checked first (highest priority)
     ├── 1. Check OCTOCODE_TOKEN
     ├── 2. Check GH_TOKEN
     ├── 3. Check GITHUB_TOKEN
     └── Return { token, source: 'env:*' } if found
-    ↓
-tokenCache.get(hostname)  ← Check 1-minute TTL cache
-    └── Return cached result if exists
     ↓
 getTokenWithRefresh(host)
     ├── Read from keychain or encrypted storage
@@ -257,17 +254,8 @@ getTokenWithRefresh(host)
 getGhCliToken(host)  ← Fallback
     └── Return { token, source: 'gh-cli' } if found
     ↓
-Cache result (1-min TTL)
-    ↓
 Return result or null
 ```
-
-### Token Caching
-
-- **Env vars bypass cache**: `OCTOCODE_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` are ALWAYS checked first
-- **Cache TTL**: 1 minute for non-env tokens (keychain/file/gh-cli)
-- **Cache scope**: Per hostname (e.g., `github.com`)
-- **Clear cache**: `clearTokenCache()` or `clearTokenCache(hostname)`
 
 ### Session Write Flow
 
