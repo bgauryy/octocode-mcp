@@ -1789,7 +1789,10 @@ describe('Token Storage', () => {
         version: 1,
         credentials: {
           'github.com': credentials,
-          'github.enterprise.com': { ...credentials, hostname: 'github.enterprise.com' },
+          'github.enterprise.com': {
+            ...credentials,
+            hostname: 'github.enterprise.com',
+          },
         },
       };
 
@@ -2039,8 +2042,11 @@ describe('Token Storage', () => {
     });
 
     it('should return file path when secure storage unavailable', async () => {
-      const { getCredentialsFilePath, _setSecureStorageAvailable, CREDENTIALS_FILE } =
-        await import('../../src/credentials/storage.js');
+      const {
+        getCredentialsFilePath,
+        _setSecureStorageAvailable,
+        CREDENTIALS_FILE,
+      } = await import('../../src/credentials/storage.js');
 
       _setSecureStorageAvailable(false);
       const path = getCredentialsFilePath();
@@ -2069,12 +2075,13 @@ describe('Token Storage', () => {
 
   describe('refreshAuthToken - successful refresh', () => {
     it('should successfully refresh token and update storage', async () => {
-      const { refreshToken: mockRefreshToken } = await import(
-        '@octokit/oauth-methods'
-      );
+      const { refreshToken: mockRefreshToken } =
+        await import('@octokit/oauth-methods');
 
       const futureDate = new Date(Date.now() + 8 * 60 * 60 * 1000); // 8 hours
-      const futureRefreshDate = new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000); // 6 months
+      const futureRefreshDate = new Date(
+        Date.now() + 6 * 30 * 24 * 60 * 60 * 1000
+      ); // 6 months
 
       const storedCreds = createMockCredentials({
         token: {
@@ -2137,11 +2144,12 @@ describe('Token Storage', () => {
     });
 
     it('should return error when refresh API call fails', async () => {
-      const { refreshToken: mockRefreshToken } = await import(
-        '@octokit/oauth-methods'
-      );
+      const { refreshToken: mockRefreshToken } =
+        await import('@octokit/oauth-methods');
 
-      const futureRefreshDate = new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000);
+      const futureRefreshDate = new Date(
+        Date.now() + 6 * 30 * 24 * 60 * 60 * 1000
+      );
 
       const storedCreds = createMockCredentials({
         token: {
@@ -2188,12 +2196,13 @@ describe('Token Storage', () => {
     });
 
     it('should use enterprise API base URL for enterprise hostname', async () => {
-      const { refreshToken: mockRefreshToken } = await import(
-        '@octokit/oauth-methods'
-      );
+      const { refreshToken: mockRefreshToken } =
+        await import('@octokit/oauth-methods');
       const { request: mockRequest } = await import('@octokit/request');
 
-      const futureRefreshDate = new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000);
+      const futureRefreshDate = new Date(
+        Date.now() + 6 * 30 * 24 * 60 * 60 * 1000
+      );
 
       const storedCreds = createMockCredentials({
         hostname: 'github.mycompany.com',
@@ -2249,12 +2258,13 @@ describe('Token Storage', () => {
 
   describe('getTokenWithRefresh - successful refresh', () => {
     it('should refresh expired token and return new token', async () => {
-      const { refreshToken: mockRefreshToken } = await import(
-        '@octokit/oauth-methods'
-      );
+      const { refreshToken: mockRefreshToken } =
+        await import('@octokit/oauth-methods');
 
       const futureDate = new Date(Date.now() + 8 * 60 * 60 * 1000);
-      const futureRefreshDate = new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000);
+      const futureRefreshDate = new Date(
+        Date.now() + 6 * 30 * 24 * 60 * 60 * 1000
+      );
 
       const expiredCreds = createMockCredentials({
         token: {
