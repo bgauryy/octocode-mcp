@@ -22,9 +22,13 @@ export {
   // CRUD operations
   storeCredentials,
   getCredentials,
+  type GetCredentialsOptions,
   getCredentialsSync,
   deleteCredentials,
   updateToken,
+
+  // Cache management
+  invalidateCredentialsCache,
 
   // Token retrieval (convenience)
   getToken,
@@ -81,4 +85,6 @@ export {
   // Testing utilities
   _setSecureStorageAvailable,
   _resetSecureStorageState,
+  _getCacheStats,
+  _resetCredentialsCache,
 } from './storage.js';
