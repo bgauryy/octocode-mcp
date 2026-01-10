@@ -339,8 +339,8 @@ export async function refreshAuthToken(
  *
  * Priority order (matching TOKEN_RESOLUTION.md):
  * 1-3. Environment variables (OCTOCODE_TOKEN, GH_TOKEN, GITHUB_TOKEN)
- * 4. gh CLI authentication
- * 5. Octocode stored credentials (file only for sync)
+ * 4. Octocode stored credentials (file only for sync)
+ * 5. gh CLI authentication (fallback)
  */
 export function getAuthStatus(
   hostname: string = DEFAULT_HOSTNAME
@@ -358,18 +358,7 @@ export function getAuthStatus(
     };
   }
 
-  // 4. Check gh CLI authentication
-  const ghAuth = checkGitHubAuth();
-  if (ghAuth.authenticated) {
-    return {
-      authenticated: true,
-      hostname,
-      username: ghAuth.username,
-      tokenSource: 'gh-cli',
-    };
-  }
-
-  // 5. Check octocode's own storage (file only for sync)
+  // 4. Check octocode's own storage (file only for sync)
   const credentials = getCredentialsSync(hostname);
   if (credentials) {
     const tokenExpired = isTokenExpired(credentials);
@@ -379,6 +368,17 @@ export function getAuthStatus(
       username: credentials.username,
       tokenExpired,
       tokenSource: 'octocode',
+    };
+  }
+
+  // 5. Check gh CLI authentication (fallback)
+  const ghAuth = checkGitHubAuth();
+  if (ghAuth.authenticated) {
+    return {
+      authenticated: true,
+      hostname,
+      username: ghAuth.username,
+      tokenSource: 'gh-cli',
     };
   }
 
@@ -393,8 +393,8 @@ export function getAuthStatus(
  *
  * Priority order (matching TOKEN_RESOLUTION.md):
  * 1-3. Environment variables (OCTOCODE_TOKEN, GH_TOKEN, GITHUB_TOKEN)
- * 4. gh CLI authentication
- * 5. Octocode stored credentials (keyring-first, file fallback)
+ * 4-5. Octocode stored credentials (keyring-first, file fallback)
+ * 6. gh CLI authentication (fallback)
  */
 export async function getAuthStatusAsync(
   hostname: string = DEFAULT_HOSTNAME
@@ -411,18 +411,7 @@ export async function getAuthStatusAsync(
     };
   }
 
-  // 4. Check gh CLI authentication
-  const ghAuth = checkGitHubAuth();
-  if (ghAuth.authenticated) {
-    return {
-      authenticated: true,
-      hostname,
-      username: ghAuth.username,
-      tokenSource: 'gh-cli',
-    };
-  }
-
-  // 5. Check octocode's own storage (keyring-first)
+  // 4-5. Check octocode's own storage (keyring-first)
   const credentials = await getCredentials(hostname);
   if (credentials) {
     const tokenExpired = isTokenExpired(credentials);
@@ -432,6 +421,17 @@ export async function getAuthStatusAsync(
       username: credentials.username,
       tokenExpired,
       tokenSource: 'octocode',
+    };
+  }
+
+  // 6. Check gh CLI authentication (fallback)
+  const ghAuth = checkGitHubAuth();
+  if (ghAuth.authenticated) {
+    return {
+      authenticated: true,
+      hostname,
+      username: ghAuth.username,
+      tokenSource: 'gh-cli',
     };
   }
 

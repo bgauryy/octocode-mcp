@@ -560,6 +560,79 @@ export async function runMarketplaceFlow(): Promise<void> {
 }
 
 /**
+ * Install all Octocode Official skills that are not yet installed
+ * Returns count of skills installed and whether all are now installed
+ */
+export async function installAllOctocodeSkills(): Promise<{
+  installed: number;
+  alreadyInstalled: number;
+  failed: number;
+  allInstalled: boolean;
+}> {
+  // Find Octocode Official source
+  const source = SKILLS_MARKETPLACES.find(s => s.id === 'octocode-official');
+  if (!source) {
+    return {
+      installed: 0,
+      alreadyInstalled: 0,
+      failed: 0,
+      allInstalled: false,
+    };
+  }
+
+  // Fetch skills
+  let skills: MarketplaceSkill[];
+  try {
+    skills = await fetchMarketplaceSkills(source);
+  } catch {
+    return {
+      installed: 0,
+      alreadyInstalled: 0,
+      failed: 0,
+      allInstalled: false,
+    };
+  }
+
+  if (skills.length === 0) {
+    return { installed: 0, alreadyInstalled: 0, failed: 0, allInstalled: true };
+  }
+
+  const destDir = getSkillsDestDir();
+
+  // Filter to only non-installed skills
+  const skillsToInstall = skills.filter(skill => !isSkillInstalled(skill.name));
+  const alreadyInstalled = skills.length - skillsToInstall.length;
+
+  if (skillsToInstall.length === 0) {
+    return {
+      installed: 0,
+      alreadyInstalled,
+      failed: 0,
+      allInstalled: true,
+    };
+  }
+
+  let installed = 0;
+  let failed = 0;
+
+  for (const skill of skillsToInstall) {
+    const result = await installMarketplaceSkill(skill, destDir);
+    if (result.success) {
+      installed++;
+    } else {
+      failed++;
+    }
+  }
+
+  return {
+    installed,
+    alreadyInstalled,
+    failed,
+    allInstalled: failed === 0,
+  };
+}
+
+/**
  * Run Octocode Official skills browser directly (skip marketplace selection)
  */
 export async function runOctocodeOfficialFlow(): Promise<void> {

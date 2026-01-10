@@ -21,6 +21,7 @@ import { runSyncFlow } from './sync/index.js';
 import { printGoodbye, printWelcome } from './header.js';
 import { Spinner } from '../utils/spinner.js';
 import { runSkillsMenu } from './skills-menu/index.js';
+import { installAllOctocodeSkills } from './skills-menu/marketplace.js';
 import { getAppState, type AppState, type SkillsState } from './state.js';
 import { MCP_CLIENTS, type ClientInstallStatus } from '../utils/mcp-config.js';
 import {
@@ -53,7 +54,7 @@ async function pressEnterToContinue(): Promise<void> {
 
 type MenuChoice = 'octocode' | 'skills' | 'auth' | 'mcp-config' | 'exit';
 
-type OctocodeMenuChoice = 'configure' | 'install' | 'back';
+type OctocodeMenuChoice = 'configure' | 'install' | 'install-skills' | 'back';
 
 /**
  * Get friendly client names for display
@@ -240,43 +241,53 @@ function buildOctocodeMenuItem(state: AppState): {
  * Guides users to set up auth and use best practices
  */
 function printContextualHints(state: AppState): void {
-  const hints: string[] = [];
-
   // ─── AUTH HINT (Priority 1) ───
   if (!state.githubAuth.authenticated) {
-    hints.push(
-      `${c('yellow', '⚠')} ${bold('Auth required!')} Run ${c('cyan', '🔑 Manage Auth')} to access GitHub repos`
+    console.log();
+    console.log(
+      `  ${c('yellow', '⚠')} ${bold('Auth required!')} Run ${c('cyan', '🔑 Manage Auth')} to access GitHub repos`
     );
   } else if (
     state.octocode.isInstalled &&
     state.skills.totalInstalledCount === 0
   ) {
     // ─── SKILLS HINT (Priority 2) ───
-    hints.push(
-      `${c('cyan', '💡')} ${dim('Boost your AI coding:')} Install ${c('magenta', 'Skills')} for research, PR review & more!`
+    console.log();
+    console.log(
+      `  ${c('cyan', '💡')} ${dim('Boost your AI coding:')} Install ${c('magenta', 'Skills')} for research, PR review & more!`
     );
   }
 
-  // ─── PRO TIPS (show one at a time) ───
-  if (hints.length === 0 && state.githubAuth.authenticated) {
-    const tips = [
-      `${c('cyan', '💡')} ${dim('Pro tip:')} Use ${c('magenta', '/research')} or ${c('magenta', '/plan')} prompts for structured code workflows`,
-      `${c('cyan', '💡')} ${dim('Pro tip:')} Add ${c('magenta', 'AGENTS.md')} or ${c('magenta', '.context/')} files to give AI better project context`,
-      `${c('cyan', '💡')} ${dim('Pro tip:')} Install ${c('magenta', 'octocode-pr-review')} skill for AI-powered code reviews`,
-      `${c('cyan', '💡')} ${dim('Pro tip:')} Use ${c('magenta', 'localSearchCode')} + ${c('magenta', 'lspGotoDefinition')} for deep code exploration`,
-    ];
-    // Show a random tip based on current time (changes each session)
-    const tipIndex = Math.floor(Date.now() / 60000) % tips.length;
-    hints.push(tips[tipIndex]);
-  }
-
-  // Print hints
-  if (hints.length > 0) {
-    console.log();
-    for (const hint of hints) {
-      console.log(`  ${hint}`);
-    }
-  }
+  // ─── QUICK HINTS (always show, yellow) ───
+  console.log();
+  console.log(`  ${c('yellow', 'Hints:')}`);
+  console.log(
+    c('yellow', `     ▸ Prompts:  Use /research, /plan, /implement in chat`)
+  );
+  console.log(
+    c(
+      'yellow',
+      `     ▸ Skills:   Add all via Manage System Skills → Octocode Official`
+    )
+  );
+  console.log(
+    c(
+      'yellow',
+      `     ▸ Context:  Add AGENTS.md to your project (you can ask octocode)`
+    )
+  );
+  console.log(
+    c(
+      'yellow',
+      `     ▸ Auth:     Supports Octocode OAuth and gh CLI (if installed)`
+    )
+  );
+  console.log(
+    c(
+      'yellow',
+      `     ▸ MCP:      Manage all system MCP servers via Manage System MCP`
+    )
+  );
 }
 
 /**
@@ -388,6 +399,16 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
     });
   }
 
+  // ─── INSTALL ALL SKILLS (only if not all installed) ───
+  if (!state.skills.allInstalled && state.skills.hasSkills) {
+    const notInstalled = state.skills.skills.filter(s => !s.installed).length;
+    choices.push({
+      name: `🧠 Install All Skills ${c('cyan', `(${notInstalled} available)`)}`,
+      value: 'install-skills',
+      description: 'One-click install of all Octocode skills',
+    });
+  }
+
   // ─── BACK ───
   choices.push(
     new Separator() as unknown as {
@@ -456,6 +477,48 @@ async function runOctocodeFlow(): Promise<void> {
         await runConfigOptionsFlow();
         console.log();
         break;
+
+      case 'install-skills': {
+        console.log();
+        const skillsSpinner = new Spinner(
+          'Installing all Octocode skills...'
+        ).start();
+
+        const result = await installAllOctocodeSkills();
+
+        if (result.installed > 0) {
+          skillsSpinner.succeed(
+            `Installed ${result.installed} skill${result.installed !== 1 ? 's' : ''}!`
+          );
+          console.log();
+          console.log(
+            `  ${c('green', '✓')} ${result.installed} skill${result.installed !== 1 ? 's' : ''} installed successfully`
+          );
+          if (result.alreadyInstalled > 0) {
+            console.log(
+              `  ${dim(`(${result.alreadyInstalled} already installed)`)}`
+            );
+          }
+          if (result.failed > 0) {
+            console.log(
+              `  ${c('yellow', '⚠')} ${result.failed} skill${result.failed !== 1 ? 's' : ''} failed to install`
+            );
+          }
+          console.log();
+          console.log(`  ${bold('Skills are now available in Claude Code!')}`);
+        } else if (result.allInstalled) {
+          skillsSpinner.succeed('All skills already installed!');
+          console.log();
+          console.log(`  ${c('green', '✓')} All Octocode skills are installed`);
+        } else {
+          skillsSpinner.fail('Failed to install skills');
+          console.log();
+          console.log(`  ${c('red', '✗')} Could not install skills`);
+        }
+        console.log();
+        await pressEnterToContinue();
+        break;
+      }
 
       case 'back':
       default:
