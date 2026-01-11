@@ -159,80 +159,85 @@ async function gotoDefinitionWithLSP(
   const client = await getOrCreateClient(workspaceRoot, filePath);
   if (!client) return null;
 
-  const locations = await client.gotoDefinition(filePath, position);
+  try {
+    const locations = await client.gotoDefinition(filePath, position);
 
-  if (!locations || locations.length === 0) {
+    if (!locations || locations.length === 0) {
+      return {
+        status: 'empty',
+        error: 'No definition found by language server',
+        errorType: 'symbol_not_found',
+        researchGoal: query.researchGoal,
+        reasoning: query.reasoning,
+        hints: [
+          ...getHints(TOOL_NAME, 'empty'),
+          'Language server could not find definition',
+          'Symbol may be a built-in or from external library',
+          'Try packageSearch to find library source code',
+        ],
+      };
+    }
+
+    // Enhance snippets with context lines
+    const contextLines = query.contextLines ?? 5;
+    const enhancedLocations: CodeSnippet[] = [];
+
+    for (const loc of locations) {
+      try {
+        const locContent = await readFile(loc.uri, 'utf-8');
+        const lines = locContent.split(/\r?\n/);
+        const startLine = Math.max(0, loc.range.start.line - contextLines);
+        const endLine = Math.min(
+          lines.length - 1,
+          loc.range.end.line + contextLines
+        );
+
+        const snippetLines = lines.slice(startLine, endLine + 1);
+        const numberedContent = snippetLines
+          .map((line, i) => {
+            const lineNum = startLine + i + 1;
+            const isTarget =
+              lineNum > loc.range.start.line &&
+              lineNum <= loc.range.end.line + 1;
+            const marker = isTarget ? '>' : ' ';
+            return `${marker}${String(lineNum).padStart(4, ' ')}| ${line}`;
+          })
+          .join('\n');
+
+        enhancedLocations.push({
+          ...loc,
+          content: numberedContent,
+          displayRange: {
+            startLine: startLine + 1,
+            endLine: endLine + 1,
+          },
+        });
+      } catch {
+        // Keep original if we can't read the file
+        enhancedLocations.push(loc);
+      }
+    }
+
     return {
-      status: 'empty',
-      error: 'No definition found by language server',
-      errorType: 'symbol_not_found',
+      status: 'hasResults',
+      locations: enhancedLocations,
+      resolvedPosition: position,
+      searchRadius: 2,
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
       hints: [
-        ...getHints(TOOL_NAME, 'empty'),
-        'Language server could not find definition',
-        'Symbol may be a built-in or from external library',
-        'Try packageSearch to find library source code',
-      ],
+        ...getHints(TOOL_NAME, 'hasResults'),
+        `Found ${locations.length} definition(s) via Language Server`,
+        locations.length > 1
+          ? 'Multiple definitions - check overloads or re-exports'
+          : undefined,
+        'Use lspFindReferences to find all usages',
+        'Use lspCallHierarchy to trace call graph',
+      ].filter(Boolean) as string[],
     };
+  } finally {
+    await client.stop();
   }
-
-  // Enhance snippets with context lines
-  const contextLines = query.contextLines ?? 5;
-  const enhancedLocations: CodeSnippet[] = [];
-
-  for (const loc of locations) {
-    try {
-      const locContent = await readFile(loc.uri, 'utf-8');
-      const lines = locContent.split(/\r?\n/);
-      const startLine = Math.max(0, loc.range.start.line - contextLines);
-      const endLine = Math.min(
-        lines.length - 1,
-        loc.range.end.line + contextLines
-      );
-
-      const snippetLines = lines.slice(startLine, endLine + 1);
-      const numberedContent = snippetLines
-        .map((line, i) => {
-          const lineNum = startLine + i + 1;
-          const isTarget =
-            lineNum > loc.range.start.line && lineNum <= loc.range.end.line + 1;
-          const marker = isTarget ? '>' : ' ';
-          return `${marker}${String(lineNum).padStart(4, ' ')}| ${line}`;
-        })
-        .join('\n');
-
-      enhancedLocations.push({
-        ...loc,
-        content: numberedContent,
-        displayRange: {
-          startLine: startLine + 1,
-          endLine: endLine + 1,
-        },
-      });
-    } catch {
-      // Keep original if we can't read the file
-      enhancedLocations.push(loc);
-    }
-  }
-
-  return {
-    status: 'hasResults',
-    locations: enhancedLocations,
-    resolvedPosition: position,
-    searchRadius: 2,
-    researchGoal: query.researchGoal,
-    reasoning: query.reasoning,
-    hints: [
-      ...getHints(TOOL_NAME, 'hasResults'),
-      `Found ${locations.length} definition(s) via Language Server`,
-      locations.length > 1
-        ? 'Multiple definitions - check overloads or re-exports'
-        : undefined,
-      'Use lspFindReferences to find all usages',
-      'Use lspCallHierarchy to trace call graph',
-    ].filter(Boolean) as string[],
-  };
 }
 
 /**

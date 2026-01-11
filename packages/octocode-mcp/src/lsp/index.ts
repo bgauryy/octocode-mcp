@@ -43,6 +43,7 @@ export { LSPClient } from './client.js';
 
 // Client manager
 export {
+  createClient,
   getOrCreateClient,
   isLanguageServerAvailable,
   shutdownAllClients,

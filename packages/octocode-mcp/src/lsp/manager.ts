@@ -1,6 +1,6 @@
 /**
  * LSP Client lifecycle management
- * Handles client caching, creation, and availability checks
+ * Handles client creation and availability checks
  * @module lsp/manager
  */
 
@@ -16,26 +16,24 @@ import {
 } from './config.js';
 
 /**
- * Client cache to reuse connections
- * Key: `${command}:${workspaceRoot}`
- */
-const clientCache = new Map<string, LSPClient>();
-
-/**
- * Get or create an LSP client for a workspace and file type.
- * Clients are cached by command and workspace root.
+ * Create a new LSP client for a workspace and file type.
+ * A new client is created for each call - caller is responsible for stopping it.
  *
  * @param workspaceRoot - Workspace root directory
  * @param filePath - Path to a source file (used to determine language server)
  * @returns LSP client or null if no server available
  *
  * @example
- * const client = await getOrCreateClient('/path/to/project', '/path/to/project/src/index.ts');
+ * const client = await createClient('/path/to/project', '/path/to/project/src/index.ts');
  * if (client) {
- *   const definitions = await client.gotoDefinition(filePath, position);
+ *   try {
+ *     const definitions = await client.gotoDefinition(filePath, position);
+ *   } finally {
+ *     await client.stop();
+ *   }
  * }
  */
-export async function getOrCreateClient(
+export async function createClient(
   workspaceRoot: string,
   filePath: string
 ): Promise<LSPClient | null> {
@@ -44,18 +42,10 @@ export async function getOrCreateClient(
     return null;
   }
 
-  const cacheKey = `${serverConfig.command}:${workspaceRoot}`;
-
-  let client = clientCache.get(cacheKey);
-  if (client) {
-    return client;
-  }
-
-  client = new LSPClient(serverConfig);
+  const client = new LSPClient(serverConfig);
 
   try {
     await client.start();
-    clientCache.set(cacheKey, client);
     return client;
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -63,6 +53,11 @@ export async function getOrCreateClient(
     return null;
   }
 }
+
+/**
+ * @deprecated Use createClient instead - caching removed
+ */
+export const getOrCreateClient = createClient;
 
 /**
  * Check if a command exists in the system PATH.
@@ -158,33 +153,22 @@ export async function isLanguageServerAvailable(
 }
 
 /**
- * Shutdown all cached clients.
- * Should be called during application shutdown.
- *
- * @example
- * process.on('SIGTERM', async () => {
- *   await shutdownAllClients();
- *   process.exit(0);
- * });
+ * @deprecated No-op - caching removed. Client cleanup is caller's responsibility.
  */
 export async function shutdownAllClients(): Promise<void> {
-  for (const client of Array.from(clientCache.values())) {
-    await client.stop();
-  }
-  clientCache.clear();
+  // No-op - caching removed
 }
 
 /**
- * Get the number of cached clients (for testing/debugging)
+ * @deprecated No-op - caching removed
  */
 export function getCachedClientCount(): number {
-  return clientCache.size;
+  return 0;
 }
 
 /**
- * Clear the client cache without shutting down clients (for testing)
- * @internal
+ * @deprecated No-op - caching removed
  */
 export function clearClientCache(): void {
-  clientCache.clear();
+  // No-op - caching removed
 }

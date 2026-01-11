@@ -239,8 +239,8 @@ Manages server configuration with multi-source token resolution:
 | `env:OCTOCODE_TOKEN` | 1 | `OCTOCODE_TOKEN` |
 | `env:GH_TOKEN` | 2 | `GH_TOKEN` |
 | `env:GITHUB_TOKEN` | 3 | `GITHUB_TOKEN` |
-| `gh-cli` | 4 | (via `gh auth token`) |
-| `octocode-storage` | 5 | (keychain/file) |
+| `octocode-storage` | 4-5 | (keychain/file) |
+| `gh-cli` | 6 | (via `gh auth token`) |
 
 **Key Configuration Options:**
 
@@ -352,22 +352,37 @@ viewGitHubRepositoryStructureAPI(owner, repo, branch, path)
 Provides Language Server Protocol integration:
 
 ```typescript
-// Get or create LSP client for a file
-const client = await getOrCreateClient(filePath);
+// Create LSP client for a file
+const client = await createClient(workspaceRoot, filePath);
+if (client) {
+  try {
+    // Go to definition
+    await client.gotoDefinition(filePath, position);
 
-// Symbol operations
-await client.gotoDefinition(uri, position);
-await client.findReferences(uri, position);
-await client.callHierarchy(uri, position, direction);
+    // Find references
+    await client.findReferences(filePath, position);
+
+    // Call hierarchy (3-step process)
+    const items = await client.prepareCallHierarchy(filePath, position);
+    if (items.length > 0) {
+      const incoming = await client.getIncomingCalls(items[0]);
+      const outgoing = await client.getOutgoingCalls(items[0]);
+    }
+  } finally {
+    await client.stop();
+  }
+}
 ```
 
 **Supported Language Servers:**
 
 | Language | Server | Install Method |
 |----------|--------|----------------|
-| TypeScript/JavaScript | `typescript-language-server` | `npm install -g` |
-| Python | `pylsp` | `pip install` |
-| (Extensible) | User config | `~/.config/octocode/lsp.json` |
+| TypeScript/JavaScript | `typescript-language-server` | Bundled |
+| Python | `pylsp` | `pip install python-lsp-server` |
+| Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
+| Rust | `rust-analyzer` | `rustup component add rust-analyzer` |
+| 30+ more | See LSP_TOOLS.md | Various |
 
 ### 7. Hints System
 
@@ -492,19 +507,25 @@ REDACT_ERROR_PATHS=true       # Redact paths in errors
 
 ### LSP Configuration
 
-Custom language server configuration at `~/.config/octocode/lsp.json`:
+Custom language server configuration. Config files loaded in priority order:
+
+1. `OCTOCODE_LSP_CONFIG` environment variable
+2. `.octocode/lsp-servers.json` (workspace-level)
+3. `~/.octocode/lsp-servers.json` (user-level)
 
 ```json
 {
-  "servers": {
-    "rust": {
+  "languageServers": {
+    ".rs": {
       "command": "rust-analyzer",
       "args": [],
-      "languageIds": ["rust"]
+      "languageId": "rust"
     }
   }
 }
 ```
+
+> **Note:** Keys are file extensions (e.g., `.rs`, `.py`), not language names.
 
 ## Error Handling
 

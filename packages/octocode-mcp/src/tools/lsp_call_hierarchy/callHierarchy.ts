@@ -152,144 +152,148 @@ async function callHierarchyWithLSP(
   const client = await getOrCreateClient(workspaceRoot, filePath);
   if (!client) return null;
 
-  // Prepare call hierarchy to get the item at position
-  const items = await client.prepareCallHierarchy(filePath, position);
+  try {
+    // Prepare call hierarchy to get the item at position
+    const items = await client.prepareCallHierarchy(filePath, position);
 
-  if (!items || items.length === 0) {
-    return {
-      status: 'empty',
-      error: 'No callable symbol found at position',
-      errorType: 'symbol_not_found',
-      direction: query.direction,
-      depth: query.depth ?? 1,
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
-      hints: [
-        ...getHints(TOOL_NAME, 'empty'),
-        'Language server could not identify a callable symbol',
-        'Ensure the position is on a function/method name',
-        'Try adjusting lineHint to the exact function declaration line',
-      ],
-    };
-  }
+    if (!items || items.length === 0) {
+      return {
+        status: 'empty',
+        error: 'No callable symbol found at position',
+        errorType: 'symbol_not_found',
+        direction: query.direction,
+        depth: query.depth ?? 1,
+        researchGoal: query.researchGoal,
+        reasoning: query.reasoning,
+        hints: [
+          ...getHints(TOOL_NAME, 'empty'),
+          'Language server could not identify a callable symbol',
+          'Ensure the position is on a function/method name',
+          'Try adjusting lineHint to the exact function declaration line',
+        ],
+      };
+    }
 
-  // Use the first item (usually there's only one)
-  // Non-null assertion safe: we checked items.length > 0 above
-  const targetItem = items[0]!;
+    // Use the first item (usually there's only one)
+    // Non-null assertion safe: we checked items.length > 0 above
+    const targetItem = items[0]!;
 
-  // Add content snippet to target item
-  const enhancedTargetItem = await enhanceCallHierarchyItem(
-    targetItem,
-    content,
-    query.contextLines ?? 2
-  );
-
-  const depth = query.depth ?? 1;
-  const visited = new Set<string>();
-  visited.add(createCallItemKey(targetItem)); // Mark target as visited
-
-  // Get calls based on direction
-  if (query.direction === 'incoming') {
-    // Recursively gather incoming calls up to specified depth
-    const allIncomingCalls = await gatherIncomingCallsRecursive(
-      client,
+    // Add content snippet to target item
+    const enhancedTargetItem = await enhanceCallHierarchyItem(
       targetItem,
-      depth,
-      visited,
+      content,
       query.contextLines ?? 2
     );
 
-    if (allIncomingCalls.length === 0) {
+    const depth = query.depth ?? 1;
+    const visited = new Set<string>();
+    visited.add(createCallItemKey(targetItem)); // Mark target as visited
+
+    // Get calls based on direction
+    if (query.direction === 'incoming') {
+      // Recursively gather incoming calls up to specified depth
+      const allIncomingCalls = await gatherIncomingCallsRecursive(
+        client,
+        targetItem,
+        depth,
+        visited,
+        query.contextLines ?? 2
+      );
+
+      if (allIncomingCalls.length === 0) {
+        return {
+          status: 'empty',
+          item: enhancedTargetItem,
+          direction: 'incoming',
+          depth,
+          incomingCalls: [],
+          researchGoal: query.researchGoal,
+          reasoning: query.reasoning,
+          hints: [
+            ...getHints(TOOL_NAME, 'empty'),
+            `No callers found for '${query.symbolName}' via Language Server`,
+            'The function may not be called directly in the workspace',
+            'Check if it is called via alias or dynamic invocation',
+            'Try lspFindReferences for broader usage search',
+          ],
+        };
+      }
+
+      // Apply pagination to flattened results
+      const { paginatedItems, pagination } = paginateResults(
+        allIncomingCalls,
+        query.callsPerPage ?? 15,
+        query.page ?? 1
+      );
+
       return {
-        status: 'empty',
+        status: 'hasResults',
         item: enhancedTargetItem,
         direction: 'incoming',
         depth,
-        incomingCalls: [],
+        incomingCalls: paginatedItems,
+        pagination,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
         hints: [
-          ...getHints(TOOL_NAME, 'empty'),
-          `No callers found for '${query.symbolName}' via Language Server`,
-          'The function may not be called directly in the workspace',
-          'Check if it is called via alias or dynamic invocation',
-          'Try lspFindReferences for broader usage search',
+          ...getHints(TOOL_NAME, 'hasResults'),
+          `Found ${allIncomingCalls.length} caller(s) via Language Server (depth ${depth})`,
+          'Use lspGotoDefinition to navigate to each caller',
         ],
       };
-    }
+    } else {
+      // Recursively gather outgoing calls up to specified depth
+      const allOutgoingCalls = await gatherOutgoingCallsRecursive(
+        client,
+        targetItem,
+        depth,
+        visited,
+        query.contextLines ?? 2
+      );
 
-    // Apply pagination to flattened results
-    const { paginatedItems, pagination } = paginateResults(
-      allIncomingCalls,
-      query.callsPerPage ?? 15,
-      query.page ?? 1
-    );
+      if (allOutgoingCalls.length === 0) {
+        return {
+          status: 'empty',
+          item: enhancedTargetItem,
+          direction: 'outgoing',
+          depth,
+          outgoingCalls: [],
+          researchGoal: query.researchGoal,
+          reasoning: query.reasoning,
+          hints: [
+            ...getHints(TOOL_NAME, 'empty'),
+            `No callees found in '${query.symbolName}' via Language Server`,
+            'The function may only contain primitive operations',
+            'Check if calls use dynamic invocation patterns',
+          ],
+        };
+      }
 
-    return {
-      status: 'hasResults',
-      item: enhancedTargetItem,
-      direction: 'incoming',
-      depth,
-      incomingCalls: paginatedItems,
-      pagination,
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
-      hints: [
-        ...getHints(TOOL_NAME, 'hasResults'),
-        `Found ${allIncomingCalls.length} caller(s) via Language Server (depth ${depth})`,
-        'Use lspGotoDefinition to navigate to each caller',
-      ],
-    };
-  } else {
-    // Recursively gather outgoing calls up to specified depth
-    const allOutgoingCalls = await gatherOutgoingCallsRecursive(
-      client,
-      targetItem,
-      depth,
-      visited,
-      query.contextLines ?? 2
-    );
+      // Apply pagination to flattened results
+      const { paginatedItems, pagination } = paginateResults(
+        allOutgoingCalls,
+        query.callsPerPage ?? 15,
+        query.page ?? 1
+      );
 
-    if (allOutgoingCalls.length === 0) {
       return {
-        status: 'empty',
+        status: 'hasResults',
         item: enhancedTargetItem,
         direction: 'outgoing',
         depth,
-        outgoingCalls: [],
+        outgoingCalls: paginatedItems,
+        pagination,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
         hints: [
-          ...getHints(TOOL_NAME, 'empty'),
-          `No callees found in '${query.symbolName}' via Language Server`,
-          'The function may only contain primitive operations',
-          'Check if calls use dynamic invocation patterns',
+          ...getHints(TOOL_NAME, 'hasResults'),
+          `Found ${allOutgoingCalls.length} callee(s) via Language Server (depth ${depth})`,
+          'Use lspGotoDefinition to navigate to each callee',
         ],
       };
     }
-
-    // Apply pagination to flattened results
-    const { paginatedItems, pagination } = paginateResults(
-      allOutgoingCalls,
-      query.callsPerPage ?? 15,
-      query.page ?? 1
-    );
-
-    return {
-      status: 'hasResults',
-      item: enhancedTargetItem,
-      direction: 'outgoing',
-      depth,
-      outgoingCalls: paginatedItems,
-      pagination,
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
-      hints: [
-        ...getHints(TOOL_NAME, 'hasResults'),
-        `Found ${allOutgoingCalls.length} callee(s) via Language Server (depth ${depth})`,
-        'Use lspGotoDefinition to navigate to each callee',
-      ],
-    };
+  } finally {
+    await client.stop();
   }
 }
 

@@ -332,6 +332,7 @@ export interface Config {
     it('should attempt LSP when available', async () => {
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
       vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+        stop: vi.fn(),
         gotoDefinition: vi.fn().mockResolvedValue([]),
       } as any);
 
@@ -380,6 +381,7 @@ export interface Config {
 
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
       vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+        stop: vi.fn(),
         gotoDefinition: vi.fn().mockResolvedValue([
           {
             uri: defsPath,
@@ -429,6 +431,7 @@ export interface Config {
 
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
       vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+        stop: vi.fn(),
         gotoDefinition: vi.fn().mockResolvedValue([
           {
             uri: missingPath,

@@ -369,6 +369,7 @@ export function caller() {
     it('should attempt LSP when available', async () => {
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
       vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+        stop: vi.fn(),
         prepareCallHierarchy: vi.fn().mockResolvedValue([]),
         getIncomingCalls: vi.fn().mockResolvedValue([]),
         getOutgoingCalls: vi.fn().mockResolvedValue([]),

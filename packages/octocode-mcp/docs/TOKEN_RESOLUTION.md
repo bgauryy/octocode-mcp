@@ -234,7 +234,8 @@ The CLI also supports machine-readable JSON output for token information:
 # Get token with source information as JSON
 npx octocode-cli token --json
 
-# Output: {"token":"ghp_xxx","type":"env:GH_TOKEN"}
+# Output format: {"token":"ghp_xxx","type":"<source-type>"}
+# where source-type is: "octocode", "gh-cli", "env:VARNAME", or "none"
 ```
 
 This is useful for scripting and integration with other tools.

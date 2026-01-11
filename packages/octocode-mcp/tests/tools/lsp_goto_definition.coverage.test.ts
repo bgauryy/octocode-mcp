@@ -737,6 +737,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
 
       // Make getOrCreateClient return a client that throws on gotoDefinition
       vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+        stop: vi.fn(),
         gotoDefinition: vi.fn().mockRejectedValue(new Error('LSP timeout')),
       } as any);
 
@@ -768,6 +769,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
 
       // Make getOrCreateClient return a client that returns empty locations
       vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+        stop: vi.fn(),
         gotoDefinition: vi.fn().mockResolvedValue([]),
       } as any);
 
@@ -800,6 +802,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
 
       vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+        stop: vi.fn(),
         gotoDefinition: vi.fn().mockResolvedValue(null),
       } as any);
 

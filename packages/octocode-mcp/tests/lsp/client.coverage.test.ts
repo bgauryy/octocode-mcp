@@ -618,7 +618,7 @@ describe('LSPClient Coverage', () => {
   });
 
   describe('Utility Functions', () => {
-    it('getOrCreateClient should create and cache client', async () => {
+    it('getOrCreateClient should create new client each time (no caching)', async () => {
       mockConnection.sendRequest.mockResolvedValue({});
 
       const client1 = await getOrCreateClient(
@@ -631,7 +631,9 @@ describe('LSPClient Coverage', () => {
         '/workspace',
         '/workspace/file.ts'
       );
-      expect(client2).toBe(client1); // Should be same instance
+      expect(client2).toBeDefined();
+      // Caching removed - each call creates a new client
+      expect(client2).not.toBe(client1);
     });
 
     it('getOrCreateClient should return null for unsupported file', async () => {

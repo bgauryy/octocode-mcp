@@ -88,6 +88,7 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
 
     // Setup LSP Client mock
     mockLSPClient = {
+      stop: vi.fn(),
       prepareCallHierarchy: vi.fn(),
       getIncomingCalls: vi.fn(),
       getOutgoingCalls: vi.fn(),

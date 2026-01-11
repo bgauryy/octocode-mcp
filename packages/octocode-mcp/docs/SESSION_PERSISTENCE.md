@@ -335,7 +335,7 @@ Session Event (init, tool_call, error, rate_limit)
 
 | Aspect | Telemetry | Persistence |
 |--------|-----------|-------------|
-| **Failure handling** | Silent (best-effort) | Mandatory (critical path) |
+| **Failure handling** | Logs to stderr (best-effort, non-fatal) | Mandatory (critical path) |
 | **Timeout** | 5 seconds | None (sync operations) |
 | **Disable option** | `LOG=false` env var | Always enabled |
 | **Network required** | Yes | No (local file only) |
@@ -389,8 +389,8 @@ These are primarily used for testing and administrative purposes.
 
 | Environment Variable | Effect |
 |---------------------|--------|
-| `LOG=true` | Enable telemetry logging (default) |
-| `LOG=false` | Disable telemetry (persistence still works) |
+| `LOG` (unset) | Enable telemetry logging (default behavior) |
+| `LOG=false` or `LOG=0` | Disable telemetry (persistence still works) |
 
 No configuration is needed for session persistence itself - it's always enabled.
 

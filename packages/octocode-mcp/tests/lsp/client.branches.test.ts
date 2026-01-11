@@ -130,8 +130,13 @@ describe('LSP Client Branch Coverage', () => {
     });
   });
 
-  describe('User config cache and path (lines 131-135, 159)', () => {
-    it('should cache user config and return path via getUserConfigPath', async () => {
+  describe('User config path (caching removed)', () => {
+    it('should always return null from getUserConfigPath (caching removed)', () => {
+      // getUserConfigPath is deprecated - caching was removed
+      expect(getUserConfigPath()).toBeNull();
+    });
+
+    it('should read user config from disk on each call (no caching)', async () => {
       const workspaceConfigPath = '/workspace/.octocode/lsp-servers.json';
 
       const userConfig = {
@@ -158,16 +163,18 @@ describe('LSP Client Branch Coverage', () => {
         return mockCheckProcess;
       });
 
-      // First call loads and caches
+      // First call reads from disk
       await isLanguageServerAvailable('/file.rb', '/workspace');
+      expect(fs.promises.readFile).toHaveBeenCalled();
 
-      // Verify path is tracked
-      const loadedPath = getUserConfigPath();
-      expect(loadedPath).toBe(workspaceConfigPath);
-
-      // Second call uses cache (no additional fs.readFile)
+      // Second call also reads from disk (no caching)
       vi.clearAllMocks();
-      // Re-mock spawn for second call
+      (fs.promises.readFile as Mock).mockImplementation((path: string) => {
+        if (path === workspaceConfigPath) {
+          return Promise.resolve(JSON.stringify(userConfig));
+        }
+        return Promise.reject(new Error('ENOENT'));
+      });
       const mockCheckProcess2 = new EventEmitter();
       (mockCheckProcess2 as EventEmitter & { kill: Mock }).kill = vi.fn();
       (cp.spawn as Mock).mockImplementation(() => {
@@ -175,10 +182,11 @@ describe('LSP Client Branch Coverage', () => {
         return mockCheckProcess2;
       });
       await isLanguageServerAvailable('/file.rb', '/workspace');
-      expect(fs.promises.readFile).not.toHaveBeenCalled();
+      expect(fs.promises.readFile).toHaveBeenCalled(); // Called again - no caching
     });
 
-    it('should return null from getUserConfigPath when no config loaded', () => {
+    it('resetUserConfigCache should be a no-op (deprecated)', () => {
+      // resetUserConfigCache is deprecated - caching was removed
       resetUserConfigCache();
       expect(getUserConfigPath()).toBeNull();
     });

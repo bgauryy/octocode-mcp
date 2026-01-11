@@ -294,11 +294,11 @@ tests/
 ├── commands/                # Command builder tests
 ├── errors/                  # Error handling tests
 ├── github/                  # GitHub API tests (29 files)
-├── lsp/                     # LSP client tests (7 files)
+├── lsp/                     # LSP client tests (9 files)
 ├── security/                # Security tests (15 files)
 ├── scheme/                  # Schema validation tests
 ├── hints/                   # Hints system tests
-├── tools/                   # Tool implementation tests (53 files)
+├── tools/                   # Tool implementation tests (54 files)
 ├── utils/                   # Utility tests (37 files)
 ├── integration/             # End-to-end tests
 ├── helpers/                 # Test utilities & mocks

@@ -414,16 +414,6 @@ export const LANGUAGE_SERVER_COMMANDS: Record<string, LanguageServerCommand> = {
   // Note: Dockerfile has no extension, handled separately if needed
 };
 
-// ============================================================================
-// User Config Cache
-// ============================================================================
-
-/**
- * Cache for loaded user configs (by workspace root)
- */
-let userConfigCache: Record<string, UserLanguageServerConfig> | null = null;
-let userConfigLoadedFrom: string | null = null;
-
 /**
  * Load user-defined language server configs from config files.
  * Checks (in order):
@@ -437,11 +427,6 @@ let userConfigLoadedFrom: string | null = null;
 export async function loadUserConfig(
   workspaceRoot?: string
 ): Promise<Record<string, UserLanguageServerConfig>> {
-  // Return cached if available
-  if (userConfigCache !== null) {
-    return userConfigCache;
-  }
-
   const configPaths: string[] = [];
 
   // 1. Environment variable
@@ -462,9 +447,7 @@ export async function loadUserConfig(
       const content = await fs.readFile(configPath, 'utf-8');
       const config: LSPConfigFile = JSON.parse(content);
       if (config.languageServers) {
-        userConfigCache = config.languageServers;
-        userConfigLoadedFrom = configPath;
-        return userConfigCache;
+        return config.languageServers;
       }
     } catch {
       // Config file doesn't exist or is invalid, try next
@@ -472,23 +455,21 @@ export async function loadUserConfig(
   }
 
   // No user config found
-  userConfigCache = {};
-  return userConfigCache;
+  return {};
 }
 
 /**
- * Reset user config cache (for testing or when workspace changes)
+ * @deprecated No-op - caching removed
  */
 export function resetUserConfigCache(): void {
-  userConfigCache = null;
-  userConfigLoadedFrom = null;
+  // No-op - caching removed
 }
 
 /**
- * Get the path from which user config was loaded (for debugging)
+ * @deprecated Returns null - caching removed
  */
 export function getUserConfigPath(): string | null {
-  return userConfigLoadedFrom;
+  return null;
 }
 
 // ============================================================================

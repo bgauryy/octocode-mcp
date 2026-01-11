@@ -72,7 +72,7 @@ The LSP client is **completely standalone**:
 | **Rust** | `.rs` | `rust-analyzer` | `rustup component add rust-analyzer` |
 | **Java** | `.java` | `jdtls` | `brew install jdtls` |
 | **Kotlin** | `.kt`, `.kts` | `kotlin-language-server` | `brew install kotlin-language-server` |
-| **C/C++** | `.c`, `.cpp`, `.h`, `.hpp` | `clangd` | `brew install llvm` |
+| **C/C++** | `.c`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp` | `clangd` | `brew install llvm` |
 | **C#** | `.cs` | `csharp-ls` | `dotnet tool install -g csharp-ls` |
 | **Ruby** | `.rb` | `solargraph` | `gem install solargraph` |
 | **PHP** | `.php` | `intelephense` | `npm install -g intelephense` |
@@ -221,9 +221,10 @@ Navigate to symbol definition.
 // Input
 {
   uri: "src/utils.ts",        // File containing the symbol
-  symbolName: "fetchData",    // EXACT symbol name (case-sensitive)
+  symbolName: "fetchData",    // EXACT symbol name (case-sensitive, max 255 chars)
   lineHint: 42,               // 1-indexed line number (searches ±2 lines)
-  contextLines?: 5            // Lines of context around definition
+  orderHint?: 0,              // Which occurrence if multiple on same line (default: 0)
+  contextLines?: 5            // Lines of context around definition (0-20, default: 5)
 }
 
 // Output
@@ -247,8 +248,10 @@ Find all usages of a symbol.
   uri: "src/api/client.ts",
   symbolName: "fetchData",
   lineHint: 15,
-  includeDeclaration?: true,  // Include definition in results
-  referencesPerPage?: 20,     // Pagination
+  orderHint?: 0,              // Which occurrence if multiple on same line (default: 0)
+  includeDeclaration?: true,  // Include definition in results (default: true)
+  contextLines?: 2,           // Lines of context (0-10, default: 2)
+  referencesPerPage?: 20,     // Results per page (1-50, default: 20)
   page?: 1
 }
 
@@ -275,8 +278,11 @@ Trace function call relationships with recursive traversal.
   symbolName: "processRequest",
   lineHint: 50,
   direction: "incoming",  // "incoming" = who calls this, "outgoing" = what this calls
-  depth?: 1,              // Recursion depth (1-3, higher = slower)
-  callsPerPage?: 15
+  orderHint?: 0,          // Which occurrence if multiple on same line (default: 0)
+  depth?: 1,              // Recursion depth (1-3, default: 1, higher = slower)
+  contextLines?: 2,       // Lines of context (0-10, default: 2)
+  callsPerPage?: 15,      // Results per page (1-30, default: 15)
+  page?: 1
 }
 
 // Output
@@ -408,10 +414,10 @@ LSP tools include several security measures:
 
 ## Adding New Languages
 
-To add support for a new language, edit `src/lsp/client.ts`:
+To add support for a new language, edit `src/lsp/config.ts`:
 
 ```typescript
-const LANGUAGE_SERVER_COMMANDS = {
+export const LANGUAGE_SERVER_COMMANDS: Record<string, LanguageServerCommand> = {
   // ... existing languages ...
 
   '.newext': {
@@ -427,6 +433,26 @@ Requirements:
 - Server must support stdio communication
 - Server must implement LSP protocol
 - Server must be in PATH or configured via env var
+
+## Bulk Queries
+
+All LSP tools support processing multiple queries in a single call:
+
+| Tool | Max Queries per Call |
+|------|---------------------|
+| `lspGotoDefinition` | 5 |
+| `lspFindReferences` | 5 |
+| `lspCallHierarchy` | 3 (expensive operation) |
+
+## Fallback Behavior
+
+When a language server is unavailable, tools automatically fall back to pattern matching:
+
+- **lspGotoDefinition**: Returns symbol position found via text search
+- **lspFindReferences**: Uses ripgrep to find text matches
+- **lspCallHierarchy**: Uses pattern matching to trace calls
+
+Fallback results include a hint noting that text-based search was used.
 
 ---
 

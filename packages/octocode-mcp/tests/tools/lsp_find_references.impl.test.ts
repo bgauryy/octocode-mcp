@@ -366,6 +366,7 @@ export function anotherFunction() {
 
     it('should attempt LSP when available', async () => {
       const mockClient = {
+        stop: vi.fn(),
         findReferences: vi.fn().mockResolvedValue([]),
       };
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
@@ -396,6 +397,7 @@ export function anotherFunction() {
 
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
       vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+        stop: vi.fn(),
         findReferences: vi.fn().mockResolvedValue([
           {
             uri: testPath,

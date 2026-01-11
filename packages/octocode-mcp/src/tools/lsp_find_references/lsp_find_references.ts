@@ -193,90 +193,94 @@ export async function findReferencesWithLSP(
   const client = await getOrCreateClient(workspaceRoot, filePath);
   if (!client) return null;
 
-  const includeDeclaration = query.includeDeclaration ?? true;
-  const locations = await client.findReferences(
-    filePath,
-    position,
-    includeDeclaration
-  );
-
-  if (!locations || locations.length === 0) {
-    return {
-      status: 'empty',
-      totalReferences: 0,
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
-      hints: [
-        ...getHints(TOOL_NAME, 'empty'),
-        'Language server found no references',
-        'Symbol may be unused or only referenced dynamically',
-        'Try localSearchCode for text-based search as fallback',
-      ],
-    };
-  }
-
-  // Enhance with context and convert to ReferenceLocation
-  const contextLines = query.contextLines ?? 2;
-  const referenceLocations: ReferenceLocation[] = [];
-
-  for (const loc of locations) {
-    const refLoc = await enhanceReferenceLocation(
-      loc,
-      workspaceRoot,
-      contextLines,
+  try {
+    const includeDeclaration = query.includeDeclaration ?? true;
+    const locations = await client.findReferences(
       filePath,
       position,
-      query.symbolName
+      includeDeclaration
     );
-    referenceLocations.push(refLoc);
+
+    if (!locations || locations.length === 0) {
+      return {
+        status: 'empty',
+        totalReferences: 0,
+        researchGoal: query.researchGoal,
+        reasoning: query.reasoning,
+        hints: [
+          ...getHints(TOOL_NAME, 'empty'),
+          'Language server found no references',
+          'Symbol may be unused or only referenced dynamically',
+          'Try localSearchCode for text-based search as fallback',
+        ],
+      };
+    }
+
+    // Enhance with context and convert to ReferenceLocation
+    const contextLines = query.contextLines ?? 2;
+    const referenceLocations: ReferenceLocation[] = [];
+
+    for (const loc of locations) {
+      const refLoc = await enhanceReferenceLocation(
+        loc,
+        workspaceRoot,
+        contextLines,
+        filePath,
+        position,
+        query.symbolName
+      );
+      referenceLocations.push(refLoc);
+    }
+
+    // Apply pagination
+    const referencesPerPage = query.referencesPerPage ?? 20;
+    const page = query.page ?? 1;
+    const totalReferences = referenceLocations.length;
+    const totalPages = Math.ceil(totalReferences / referencesPerPage);
+    const startIndex = (page - 1) * referencesPerPage;
+    const endIndex = Math.min(startIndex + referencesPerPage, totalReferences);
+    const paginatedReferences = referenceLocations.slice(startIndex, endIndex);
+
+    // Determine if references span multiple files
+    const uniqueFiles = new Set(paginatedReferences.map(ref => ref.uri));
+    const hasMultipleFiles = uniqueFiles.size > 1;
+
+    const pagination: LSPPaginationInfo = {
+      currentPage: page,
+      totalPages,
+      totalResults: totalReferences,
+      hasMore: page < totalPages,
+      resultsPerPage: referencesPerPage,
+    };
+
+    const hints = [
+      ...getHints(TOOL_NAME, 'hasResults'),
+      `Found ${totalReferences} reference(s) via Language Server`,
+    ];
+
+    if (pagination.hasMore) {
+      hints.push(
+        `Showing page ${page} of ${totalPages}. Use page=${page + 1} for more.`
+      );
+    }
+
+    if (hasMultipleFiles) {
+      hints.push(`References span ${uniqueFiles.size} files.`);
+    }
+
+    return {
+      status: 'hasResults',
+      locations: paginatedReferences,
+      pagination,
+      totalReferences,
+      hasMultipleFiles,
+      researchGoal: query.researchGoal,
+      reasoning: query.reasoning,
+      hints,
+    };
+  } finally {
+    await client.stop();
   }
-
-  // Apply pagination
-  const referencesPerPage = query.referencesPerPage ?? 20;
-  const page = query.page ?? 1;
-  const totalReferences = referenceLocations.length;
-  const totalPages = Math.ceil(totalReferences / referencesPerPage);
-  const startIndex = (page - 1) * referencesPerPage;
-  const endIndex = Math.min(startIndex + referencesPerPage, totalReferences);
-  const paginatedReferences = referenceLocations.slice(startIndex, endIndex);
-
-  // Determine if references span multiple files
-  const uniqueFiles = new Set(paginatedReferences.map(ref => ref.uri));
-  const hasMultipleFiles = uniqueFiles.size > 1;
-
-  const pagination: LSPPaginationInfo = {
-    currentPage: page,
-    totalPages,
-    totalResults: totalReferences,
-    hasMore: page < totalPages,
-    resultsPerPage: referencesPerPage,
-  };
-
-  const hints = [
-    ...getHints(TOOL_NAME, 'hasResults'),
-    `Found ${totalReferences} reference(s) via Language Server`,
-  ];
-
-  if (pagination.hasMore) {
-    hints.push(
-      `Showing page ${page} of ${totalPages}. Use page=${page + 1} for more.`
-    );
-  }
-
-  if (hasMultipleFiles) {
-    hints.push(`References span ${uniqueFiles.size} files.`);
-  }
-
-  return {
-    status: 'hasResults',
-    locations: paginatedReferences,
-    pagination,
-    totalReferences,
-    hasMultipleFiles,
-    researchGoal: query.researchGoal,
-    reasoning: query.reasoning,
-    hints,
-  };
 }
 
 /**
