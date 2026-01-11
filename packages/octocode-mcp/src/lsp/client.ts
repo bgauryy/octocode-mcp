@@ -990,20 +990,25 @@ export class LSPClient {
 
     await this.openDocument(filePath);
 
-    const params: DefinitionParams = {
-      textDocument: { uri: toUri(filePath) } as TextDocumentIdentifier,
-      position: {
-        line: position.line,
-        character: position.character,
-      } as Position,
-    };
+    try {
+      const params: DefinitionParams = {
+        textDocument: { uri: toUri(filePath) } as TextDocumentIdentifier,
+        position: {
+          line: position.line,
+          character: position.character,
+        } as Position,
+      };
 
-    const result = (await this.connection.sendRequest(
-      'textDocument/definition',
-      params
-    )) as Location | Location[] | LocationLink[] | null;
+      const result = (await this.connection.sendRequest(
+        'textDocument/definition',
+        params
+      )) as Location | Location[] | LocationLink[] | null;
 
-    return this.locationsToSnippets(result);
+      return this.locationsToSnippets(result);
+    } finally {
+      // Close document to prevent memory leak
+      await this.closeDocument(filePath);
+    }
   }
 
   /**
@@ -1020,21 +1025,26 @@ export class LSPClient {
 
     await this.openDocument(filePath);
 
-    const params: ReferenceParams = {
-      textDocument: { uri: toUri(filePath) } as TextDocumentIdentifier,
-      position: {
-        line: position.line,
-        character: position.character,
-      } as Position,
-      context: { includeDeclaration },
-    };
+    try {
+      const params: ReferenceParams = {
+        textDocument: { uri: toUri(filePath) } as TextDocumentIdentifier,
+        position: {
+          line: position.line,
+          character: position.character,
+        } as Position,
+        context: { includeDeclaration },
+      };
 
-    const result = (await this.connection.sendRequest(
-      'textDocument/references',
-      params
-    )) as Location[] | null;
+      const result = (await this.connection.sendRequest(
+        'textDocument/references',
+        params
+      )) as Location[] | null;
 
-    return this.locationsToSnippets(result);
+      return this.locationsToSnippets(result);
+    } finally {
+      // Close document to prevent memory leak
+      await this.closeDocument(filePath);
+    }
   }
 
   /**
@@ -1050,26 +1060,31 @@ export class LSPClient {
 
     await this.openDocument(filePath);
 
-    const params: CallHierarchyPrepareParams = {
-      textDocument: { uri: toUri(filePath) } as TextDocumentIdentifier,
-      position: {
-        line: position.line,
-        character: position.character,
-      } as Position,
-    };
+    try {
+      const params: CallHierarchyPrepareParams = {
+        textDocument: { uri: toUri(filePath) } as TextDocumentIdentifier,
+        position: {
+          line: position.line,
+          character: position.character,
+        } as Position,
+      };
 
-    const result = await this.connection.sendRequest(
-      'textDocument/prepareCallHierarchy',
-      params
-    );
+      const result = await this.connection.sendRequest(
+        'textDocument/prepareCallHierarchy',
+        params
+      );
 
-    if (!result || !Array.isArray(result)) {
-      return [];
+      if (!result || !Array.isArray(result)) {
+        return [];
+      }
+
+      return (result as LSPCallHierarchyItem[]).map(item =>
+        this.convertCallHierarchyItem(item)
+      );
+    } finally {
+      // Close document to prevent memory leak
+      await this.closeDocument(filePath);
     }
-
-    return (result as LSPCallHierarchyItem[]).map(item =>
-      this.convertCallHierarchyItem(item)
-    );
   }
 
   /**

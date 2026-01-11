@@ -66,22 +66,27 @@ vi.mock('octocode-shared', () => ({
   _resetSecureStorageState: vi.fn(),
   _setSecureStorageAvailable: vi.fn(),
   getTokenFromEnv: vi.fn(() => {
-    const envVars = ["OCTOCODE_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"];
+    const envVars = ['OCTOCODE_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'];
     for (const v of envVars) {
       if (process.env[v]) return process.env[v];
     }
     return null;
   }),
   getEnvTokenSource: vi.fn(() => {
-    if (process.env.OCTOCODE_TOKEN) return "env:OCTOCODE_TOKEN";
-    if (process.env.GH_TOKEN) return "env:GH_TOKEN";
-    if (process.env.GITHUB_TOKEN) return "env:GITHUB_TOKEN";
+    if (process.env.OCTOCODE_TOKEN) return 'env:OCTOCODE_TOKEN';
+    if (process.env.GH_TOKEN) return 'env:GH_TOKEN';
+    if (process.env.GITHUB_TOKEN) return 'env:GITHUB_TOKEN';
     return null;
   }),
   resolveTokenFull: vi.fn(async () => {
-    const envVars = [["OCTOCODE_TOKEN", "env:OCTOCODE_TOKEN"], ["GH_TOKEN", "env:GH_TOKEN"], ["GITHUB_TOKEN", "env:GITHUB_TOKEN"]];
+    const envVars = [
+      ['OCTOCODE_TOKEN', 'env:OCTOCODE_TOKEN'],
+      ['GH_TOKEN', 'env:GH_TOKEN'],
+      ['GITHUB_TOKEN', 'env:GITHUB_TOKEN'],
+    ];
     for (const [envVar, source] of envVars) {
-      if (process.env[envVar]) return { token: process.env[envVar], source, wasRefreshed: false };
+      if (process.env[envVar])
+        return { token: process.env[envVar], source, wasRefreshed: false };
     }
     return null;
   }),
