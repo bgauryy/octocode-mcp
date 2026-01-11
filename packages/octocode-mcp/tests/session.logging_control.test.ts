@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import axios from 'axios';
-import { deleteSession } from 'octocode-shared';
+import { deleteSession, _resetSessionState } from 'octocode-shared';
+import { sessionMockState } from './setup.js';
 
 // LOG environment variable is set in individual tests
 
@@ -17,7 +18,7 @@ import { initialize, cleanup } from '../src/serverConfig.js';
 describe('Session Logging Control', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.resetModules();
+    // Reset mock session state for each test (done by setup.ts beforeEach)
     resetSessionManager();
   });
 

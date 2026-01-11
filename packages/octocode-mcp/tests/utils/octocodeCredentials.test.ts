@@ -43,6 +43,7 @@ describe('octocodeCredentials (via shared package)', () => {
 
   beforeEach(async () => {
     vi.resetModules();
+    vi.doUnmock('octocode-shared');
     vi.clearAllMocks();
 
     // Get fresh mocks
