@@ -51,7 +51,7 @@ vi.mock('../../src/lsp/index.js', () => {
       }),
     })),
     SymbolResolutionError: MockSymbolResolutionError,
-    getOrCreateClient: vi.fn().mockResolvedValue(null),
+    createClient: vi.fn().mockResolvedValue(null),
     isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
   };
 });
@@ -607,7 +607,7 @@ export function testFunction(param: string): string {
       vi.mocked(fs.stat).mockResolvedValue({ isFile: () => true } as any);
       vi.mocked(fs.readFile).mockResolvedValue(sampleTypeScriptContent);
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue(null);
+      vi.mocked(lspModule.createClient).mockResolvedValue(null);
 
       // Default SymbolResolver mock
       vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {

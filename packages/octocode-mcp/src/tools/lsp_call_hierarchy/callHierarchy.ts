@@ -14,7 +14,7 @@ import { STATIC_TOOL_NAMES } from '../toolNames.js';
 import {
   SymbolResolver,
   SymbolResolutionError,
-  getOrCreateClient,
+  createClient,
   isLanguageServerAvailable,
 } from '../../lsp/index.js';
 import type {
@@ -149,7 +149,7 @@ async function callHierarchyWithLSP(
   query: LSPCallHierarchyQuery,
   content: string
 ): Promise<CallHierarchyResult | null> {
-  const client = await getOrCreateClient(workspaceRoot, filePath);
+  const client = await createClient(workspaceRoot, filePath);
   if (!client) return null;
 
   try {
@@ -302,7 +302,7 @@ async function callHierarchyWithLSP(
  * Returns a flattened list of all callers up to the specified depth.
  */
 async function gatherIncomingCallsRecursive(
-  client: Awaited<ReturnType<typeof getOrCreateClient>>,
+  client: Awaited<ReturnType<typeof createClient>>,
   item: CallHierarchyItem,
   remainingDepth: number,
   visited: Set<string>,
@@ -343,7 +343,7 @@ async function gatherIncomingCallsRecursive(
  * Returns a flattened list of all callees up to the specified depth.
  */
 async function gatherOutgoingCallsRecursive(
-  client: Awaited<ReturnType<typeof getOrCreateClient>>,
+  client: Awaited<ReturnType<typeof createClient>>,
   item: CallHierarchyItem,
   remainingDepth: number,
   visited: Set<string>,

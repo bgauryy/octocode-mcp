@@ -42,21 +42,12 @@ export {
 export { LSPClient } from './client.js';
 
 // Client manager
-export {
-  createClient,
-  getOrCreateClient,
-  isLanguageServerAvailable,
-  shutdownAllClients,
-  getCachedClientCount,
-  clearClientCache,
-} from './manager.js';
+export { createClient, isLanguageServerAvailable } from './manager.js';
 
 // Configuration utilities
 export {
   LANGUAGE_SERVER_COMMANDS,
   loadUserConfig,
-  resetUserConfigCache,
-  getUserConfigPath,
   resolveLanguageServer,
   detectLanguageId,
   getLanguageServerForFile,

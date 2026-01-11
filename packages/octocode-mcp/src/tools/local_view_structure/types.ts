@@ -66,6 +66,7 @@ export interface ViewStructureResult {
   totalSize?: number;
   errorCode?: ErrorCode;
   hints?: readonly string[];
+  warnings?: string[];
   pagination?: ViewStructurePagination;
   mainResearchGoal?: string;
   researchGoal?: string;

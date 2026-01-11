@@ -32,7 +32,7 @@ vi.mock('../../src/lsp/index.js', () => ({
       this.searchRadius = searchRadius;
     }
   },
-  getOrCreateClient: vi.fn().mockResolvedValue(null),
+  createClient: vi.fn().mockResolvedValue(null),
   isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
 }));
 

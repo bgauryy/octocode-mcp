@@ -35,7 +35,7 @@ vi.mock('../../src/lsp/index.js', () => {
       }),
     })),
     SymbolResolutionError: MockSymbolResolutionError,
-    getOrCreateClient: vi.fn().mockResolvedValue(null),
+    createClient: vi.fn().mockResolvedValue(null),
     isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
   };
 });
@@ -73,7 +73,7 @@ export interface Config {
 
     // Default: LSP not available
     vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-    vi.mocked(lspModule.getOrCreateClient).mockResolvedValue(null);
+    vi.mocked(lspModule.createClient).mockResolvedValue(null);
 
     // Restore SymbolResolver mock (reset by vi.resetAllMocks in afterEach)
     // Must use regular function (not arrow) because it's called with `new`
@@ -331,7 +331,7 @@ export interface Config {
 
     it('should attempt LSP when available', async () => {
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+      vi.mocked(lspModule.createClient).mockResolvedValue({
         stop: vi.fn(),
         gotoDefinition: vi.fn().mockResolvedValue([]),
       } as any);
@@ -380,7 +380,7 @@ export interface Config {
       const defsPath = `${process.cwd()}/src/defs.ts`;
 
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+      vi.mocked(lspModule.createClient).mockResolvedValue({
         stop: vi.fn(),
         gotoDefinition: vi.fn().mockResolvedValue([
           {
@@ -430,7 +430,7 @@ export interface Config {
       const missingPath = `${process.cwd()}/src/missing.ts`;
 
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+      vi.mocked(lspModule.createClient).mockResolvedValue({
         stop: vi.fn(),
         gotoDefinition: vi.fn().mockResolvedValue([
           {

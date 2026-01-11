@@ -10,7 +10,7 @@ import type { LSPGotoDefinitionQuery } from './scheme.js';
 import {
   SymbolResolver,
   SymbolResolutionError,
-  getOrCreateClient,
+  createClient,
   isLanguageServerAvailable,
 } from '../../lsp/index.js';
 import type {
@@ -156,7 +156,7 @@ async function gotoDefinitionWithLSP(
   query: LSPGotoDefinitionQuery,
   _content: string
 ): Promise<GotoDefinitionResult | null> {
-  const client = await getOrCreateClient(workspaceRoot, filePath);
+  const client = await createClient(workspaceRoot, filePath);
   if (!client) return null;
 
   try {

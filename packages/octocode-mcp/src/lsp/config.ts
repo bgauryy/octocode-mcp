@@ -458,20 +458,6 @@ export async function loadUserConfig(
   return {};
 }
 
-/**
- * @deprecated No-op - caching removed
- */
-export function resetUserConfigCache(): void {
-  // No-op - caching removed
-}
-
-/**
- * @deprecated Returns null - caching removed
- */
-export function getUserConfigPath(): string | null {
-  return null;
-}
-
 // ============================================================================
 // Server Resolution
 // ============================================================================

@@ -20,7 +20,7 @@ import {
 import {
   SymbolResolver,
   SymbolResolutionError,
-  getOrCreateClient,
+  createClient,
   isLanguageServerAvailable,
 } from '../../lsp/index.js';
 import type {
@@ -190,7 +190,7 @@ export async function findReferencesWithLSP(
   position: ExactPosition,
   query: LSPFindReferencesQuery
 ): Promise<FindReferencesResult | null> {
-  const client = await getOrCreateClient(workspaceRoot, filePath);
+  const client = await createClient(workspaceRoot, filePath);
   if (!client) return null;
 
   try {

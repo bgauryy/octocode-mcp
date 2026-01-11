@@ -104,26 +104,6 @@ export async function checkNpmRegistry(): Promise<{
 }
 
 /**
- * Check if octocode-mcp package is available in npm registry (sync - blocks event loop)
- * @deprecated Use checkOctocodePackageAsync for UI flows with spinners
- */
-export function checkOctocodePackage(): {
-  available: boolean;
-  version: string | null;
-} {
-  try {
-    const result = execSync('npm view octocode-mcp version', {
-      encoding: 'utf-8',
-      timeout: 10000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-    return { available: true, version: result };
-  } catch {
-    return { available: false, version: null };
-  }
-}
-
-/**
  * Check if octocode-mcp package is available in npm registry (async - non-blocking)
  * Use this version for UI flows to allow spinner animations
  * Times out after 4 seconds to prevent menu from getting stuck
@@ -149,7 +129,7 @@ export async function checkNodeEnvironment(): Promise<NodeEnvironmentStatus> {
   const nodeCheck = checkNodeInPath();
   const npmCheck = checkNpmInPath();
   const registryCheck = await checkNpmRegistry();
-  const octocodeCheck = checkOctocodePackage();
+  const octocodeCheck = await checkOctocodePackageAsync();
 
   return {
     nodeInstalled: nodeCheck.installed,

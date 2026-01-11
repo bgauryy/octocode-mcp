@@ -17,20 +17,15 @@ describe('LSP Client Module', () => {
       expect(typeof LSPClient).toBe('function');
     });
 
-    it('should export getOrCreateClient function', async () => {
-      const { getOrCreateClient } = await import('../../src/lsp/index.js');
-      expect(typeof getOrCreateClient).toBe('function');
+    it('should export createClient function', async () => {
+      const { createClient } = await import('../../src/lsp/index.js');
+      expect(typeof createClient).toBe('function');
     });
 
     it('should export isLanguageServerAvailable function', async () => {
       const { isLanguageServerAvailable } =
         await import('../../src/lsp/index.js');
       expect(typeof isLanguageServerAvailable).toBe('function');
-    });
-
-    it('should export shutdownAllClients function', async () => {
-      const { shutdownAllClients } = await import('../../src/lsp/index.js');
-      expect(typeof shutdownAllClients).toBe('function');
     });
   });
 
@@ -84,24 +79,18 @@ describe('LSP Client Module', () => {
     });
   });
 
-  describe('getOrCreateClient', () => {
+  describe('createClient', () => {
     it('should return null for unsupported file types', async () => {
-      const { getOrCreateClient } = await import('../../src/lsp/index.js');
+      const { createClient } = await import('../../src/lsp/index.js');
 
-      const result = await getOrCreateClient(
-        '/workspace',
-        '/workspace/file.txt'
-      );
+      const result = await createClient('/workspace', '/workspace/file.txt');
       expect(result).toBeNull();
     });
 
     it('should return null for unknown extensions', async () => {
-      const { getOrCreateClient } = await import('../../src/lsp/index.js');
+      const { createClient } = await import('../../src/lsp/index.js');
 
-      const result = await getOrCreateClient(
-        '/workspace',
-        '/workspace/file.xyz'
-      );
+      const result = await createClient('/workspace', '/workspace/file.xyz');
       expect(result).toBeNull();
     });
   });

@@ -49,7 +49,7 @@ vi.mock('../../src/lsp/index.js', () => {
       }),
     })),
     SymbolResolutionError: MockSymbolResolutionError,
-    getOrCreateClient: vi.fn().mockResolvedValue(null),
+    createClient: vi.fn().mockResolvedValue(null),
     isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
   };
 });
@@ -89,7 +89,7 @@ export function anotherFunction() {
 
     // Default: LSP not available
     vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-    vi.mocked(lspModule.getOrCreateClient).mockResolvedValue(null);
+    vi.mocked(lspModule.createClient).mockResolvedValue(null);
 
     // Restore SymbolResolver mock (reset by vi.resetAllMocks in afterEach)
     // Must use regular function (not arrow) because it's called with `new`
@@ -370,9 +370,7 @@ export function anotherFunction() {
         findReferences: vi.fn().mockResolvedValue([]),
       };
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue(
-        mockClient as any
-      );
+      vi.mocked(lspModule.createClient).mockResolvedValue(mockClient as any);
 
       const handler = createHandler();
       const result = await handler({
@@ -396,7 +394,7 @@ export function anotherFunction() {
       const otherPath = `${process.cwd()}/src/other.ts`;
 
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+      vi.mocked(lspModule.createClient).mockResolvedValue({
         stop: vi.fn(),
         findReferences: vi.fn().mockResolvedValue([
           {

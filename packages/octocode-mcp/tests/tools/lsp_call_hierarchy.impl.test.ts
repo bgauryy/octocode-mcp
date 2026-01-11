@@ -45,7 +45,7 @@ vi.mock('../../src/lsp/index.js', () => {
       }),
     })),
     SymbolResolutionError: MockSymbolResolutionError,
-    getOrCreateClient: vi.fn().mockResolvedValue(null),
+    createClient: vi.fn().mockResolvedValue(null),
     isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
   };
 });
@@ -88,7 +88,7 @@ export function caller() {
 
     // Default: LSP not available
     vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-    vi.mocked(lspModule.getOrCreateClient).mockResolvedValue(null);
+    vi.mocked(lspModule.createClient).mockResolvedValue(null);
 
     // Default: ripgrep is available
     vi.mocked(execModule.checkCommandAvailability).mockResolvedValue({
@@ -368,7 +368,7 @@ export function caller() {
 
     it('should attempt LSP when available', async () => {
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+      vi.mocked(lspModule.createClient).mockResolvedValue({
         stop: vi.fn(),
         prepareCallHierarchy: vi.fn().mockResolvedValue([]),
         getIncomingCalls: vi.fn().mockResolvedValue([]),

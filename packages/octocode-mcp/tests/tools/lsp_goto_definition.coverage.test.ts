@@ -36,7 +36,7 @@ vi.mock('../../src/lsp/index.js', () => {
       }),
     })),
     SymbolResolutionError: MockSymbolResolutionError,
-    getOrCreateClient: vi.fn().mockResolvedValue(null),
+    createClient: vi.fn().mockResolvedValue(null),
     isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
   };
 });
@@ -646,7 +646,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
       // Default mocks
       vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue(null);
+      vi.mocked(lspModule.createClient).mockResolvedValue(null);
 
       // Default SymbolResolver mock
       vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
@@ -735,8 +735,8 @@ describe('LSP Goto Definition Coverage Tests', () => {
       vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
 
-      // Make getOrCreateClient return a client that throws on gotoDefinition
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+      // Make createClient return a client that throws on gotoDefinition
+      vi.mocked(lspModule.createClient).mockResolvedValue({
         stop: vi.fn(),
         gotoDefinition: vi.fn().mockRejectedValue(new Error('LSP timeout')),
       } as any);
@@ -767,8 +767,8 @@ describe('LSP Goto Definition Coverage Tests', () => {
       vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
 
-      // Make getOrCreateClient return a client that returns empty locations
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+      // Make createClient return a client that returns empty locations
+      vi.mocked(lspModule.createClient).mockResolvedValue({
         stop: vi.fn(),
         gotoDefinition: vi.fn().mockResolvedValue([]),
       } as any);
@@ -801,7 +801,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
       vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
 
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+      vi.mocked(lspModule.createClient).mockResolvedValue({
         stop: vi.fn(),
         gotoDefinition: vi.fn().mockResolvedValue(null),
       } as any);

@@ -55,11 +55,6 @@ export async function createClient(
 }
 
 /**
- * @deprecated Use createClient instead - caching removed
- */
-export const getOrCreateClient = createClient;
-
-/**
  * Check if a command exists in the system PATH.
  * Works cross-platform (Windows, macOS, Linux).
  *
@@ -150,25 +145,4 @@ export async function isLanguageServerAvailable(
 
   // PATH lookup - cross-platform check
   return commandExists(command);
-}
-
-/**
- * @deprecated No-op - caching removed. Client cleanup is caller's responsibility.
- */
-export async function shutdownAllClients(): Promise<void> {
-  // No-op - caching removed
-}
-
-/**
- * @deprecated No-op - caching removed
- */
-export function getCachedClientCount(): number {
-  return 0;
-}
-
-/**
- * @deprecated No-op - caching removed
- */
-export function clearClientCache(): void {
-  // No-op - caching removed
 }

@@ -134,7 +134,15 @@ src/
 │   ├── commandValidator.ts        # Shell command validation
 │   ├── ignoredPathFilter.ts       # Gitignore filtering
 │   ├── mask.ts                    # Sensitive data masking
-│   ├── regexes.ts                 # Secret detection patterns
+│   ├── regexes.ts                 # Re-exports from regexes/
+│   ├── regexes/                   # Secret detection patterns (modular)
+│   │   ├── index.ts               # Combined exports
+│   │   ├── ai-providers.ts        # AI/LLM API keys
+│   │   ├── cloud-infrastructure.ts # AWS, GCP, Azure, DBs
+│   │   ├── auth-crypto.ts         # JWT, OAuth, keys
+│   │   ├── dev-tools-vcs.ts       # CI/CD, VCS tokens
+│   │   ├── payments-commerce.ts   # Payment providers
+│   │   └── communications.ts      # Slack, social media
 │   ├── patternsConstants.ts       # Security patterns
 │   ├── securityConstants.ts       # Security constants
 │   └── executionContextValidator.ts # Context validation

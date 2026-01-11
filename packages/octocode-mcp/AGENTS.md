@@ -207,7 +207,15 @@ src/
 │   ├── commandValidator.ts  # Command injection prevention
 │   ├── executionContextValidator.ts # Execution context validation
 │   ├── ignoredPathFilter.ts # Sensitive path filtering
-│   ├── regexes.ts           # Secret detection patterns (100+)
+│   ├── regexes.ts           # Re-exports from regexes/
+│   ├── regexes/             # Secret detection patterns (200+)
+│   │   ├── index.ts         # Combined exports
+│   │   ├── ai-providers.ts  # AI/LLM API keys
+│   │   ├── cloud-infrastructure.ts # AWS, GCP, Azure, databases
+│   │   ├── auth-crypto.ts   # JWT, OAuth, private keys
+│   │   ├── dev-tools-vcs.ts # CI/CD, GitHub, GitLab
+│   │   ├── payments-commerce.ts # Stripe, PayPal, crypto
+│   │   └── communications.ts # Slack, social, messaging
 │   ├── mask.ts              # Data masking utilities
 │   ├── patternsConstants.ts # Security pattern definitions
 │   └── securityConstants.ts # Security configuration
@@ -489,7 +497,7 @@ yarn test:ui
 | Tool modules | `src/tools/<tool_name>/` (scheme.ts, execution.ts, types.ts) |
 | Hints system | `src/hints/` ([docs](./docs/HINTS_ARCHITECTURE.md)) |
 | Security wrapper | `src/security/withSecurityValidation.ts` |
-| Secret detection | `src/security/contentSanitizer.ts`, `src/security/regexes.ts` |
+| Secret detection | `src/security/contentSanitizer.ts`, `src/security/regexes/` |
 | Path validation | `src/security/pathValidator.ts` |
 | GitHub client | `src/github/client.ts` |
 | LSP client | `src/lsp/client.ts` ([docs](./docs/LSP_TOOLS.md)) |

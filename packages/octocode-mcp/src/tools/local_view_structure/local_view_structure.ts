@@ -20,7 +20,7 @@ import {
   generatePaginationHints,
 } from '../../utils/pagination/index.js';
 import { formatFileSize, parseFileSize } from '../../utils/file/size.js';
-import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
+import { RESOURCE_LIMITS, DEFAULTS } from '../../utils/core/constants.js';
 import type {
   ViewStructureQuery,
   ViewStructureResult,
@@ -306,14 +306,27 @@ export async function viewStructure(
       formatEntryString(entry, 0)
     );
     let structuredOutput = structuredLines.join('\n');
+    const warnings: string[] = [];
 
     let paginationMetadata: ReturnType<typeof applyPagination> | null = null;
 
-    if (query.charLength) {
+    // Auto-pagination: Apply character limit if output is large
+    let effectiveCharLength = query.charLength;
+    if (
+      !query.charLength &&
+      structuredOutput.length > DEFAULTS.MAX_OUTPUT_CHARS
+    ) {
+      effectiveCharLength = 5000;
+      warnings.push(
+        `Auto-paginated: Content (${structuredOutput.length} chars) exceeds ${DEFAULTS.MAX_OUTPUT_CHARS} char limit`
+      );
+    }
+
+    if (effectiveCharLength) {
       paginationMetadata = applyPagination(
         structuredOutput,
         query.charOffset ?? 0,
-        query.charLength
+        effectiveCharLength
       );
       structuredOutput = paginationMetadata.paginatedContent;
     }
@@ -351,6 +364,7 @@ export async function viewStructure(
       pagination,
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
+      ...(warnings.length > 0 && { warnings }),
       hints: [
         ...entryPaginationHints,
         ...getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, status),
@@ -586,14 +600,27 @@ async function viewStructureRecursive(
     return formatEntryString(entry, depth);
   });
   let structuredOutput = structuredLines.join('\n');
+  const warnings: string[] = [];
 
   let paginationMetadata: ReturnType<typeof applyPagination> | null = null;
 
-  if (query.charLength) {
+  // Auto-pagination: Apply character limit if output is large
+  let effectiveCharLength = query.charLength;
+  if (
+    !query.charLength &&
+    structuredOutput.length > DEFAULTS.MAX_OUTPUT_CHARS
+  ) {
+    effectiveCharLength = RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH;
+    warnings.push(
+      `Auto-paginated: Content (${structuredOutput.length} chars) exceeds ${DEFAULTS.MAX_OUTPUT_CHARS} char limit`
+    );
+  }
+
+  if (effectiveCharLength) {
     paginationMetadata = applyPagination(
       structuredOutput,
       query.charOffset ?? 0,
-      query.charLength
+      effectiveCharLength
     );
     structuredOutput = paginationMetadata.paginatedContent;
   }
@@ -641,6 +668,7 @@ async function viewStructureRecursive(
     pagination,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
+    ...(warnings.length > 0 && { warnings }),
     hints: [...baseHints, ...entryPaginationHints, ...paginationHints],
   };
 }
