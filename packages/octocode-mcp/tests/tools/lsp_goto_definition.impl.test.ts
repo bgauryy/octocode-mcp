@@ -45,7 +45,7 @@ import * as fs from 'fs/promises';
 import * as lspModule from '../../src/lsp/index.js';
 
 // Import the module under test after mocks are set up
-import { registerLSPGotoDefinitionTool } from '../../src/tools/lsp_goto_definition.js';
+import { registerLSPGotoDefinitionTool } from '../../src/tools/lsp_goto_definition/lsp_goto_definition.js';
 
 describe('LSP Goto Definition Implementation Tests', () => {
   const sampleTypeScriptContent = `
@@ -469,14 +469,14 @@ export interface Config {
   describe('Schema Exports', () => {
     it('should export BulkLSPGotoDefinitionSchema', async () => {
       const { BulkLSPGotoDefinitionSchema } =
-        await import('../../src/scheme/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/scheme.js');
 
       expect(BulkLSPGotoDefinitionSchema).toBeDefined();
     });
 
     it('should export LSP_GOTO_DEFINITION_DESCRIPTION', async () => {
       const { LSP_GOTO_DEFINITION_DESCRIPTION } =
-        await import('../../src/scheme/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/scheme.js');
 
       expect(LSP_GOTO_DEFINITION_DESCRIPTION).toBeDefined();
       expect(typeof LSP_GOTO_DEFINITION_DESCRIPTION).toBe('string');

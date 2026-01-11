@@ -4,7 +4,7 @@ import {
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
 import { getTextContent } from '../utils/testHelpers.js';
-import { FileContentBulkQuerySchema } from '../../src/scheme/github_fetch_content.js';
+import { FileContentBulkQuerySchema } from '../../src/tools/github_fetch_content/scheme.js';
 
 const mockFetchGitHubFileContentAPI = vi.hoisted(() => vi.fn());
 
@@ -34,7 +34,7 @@ vi.mock('../../src/sampling.js', () => ({
   performSampling: mockPerformSampling,
 }));
 
-import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch_content.js';
+import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch_content/github_fetch_content.js';
 import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 
 describe('GitHub Fetch Content Tool', () => {

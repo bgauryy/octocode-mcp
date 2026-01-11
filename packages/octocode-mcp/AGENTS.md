@@ -14,6 +14,7 @@ Octocode MCP is an MCP server providing AI agents with code exploration tools:
 
 - **GitHub Research**: Search code, repositories, PRs, view structure, fetch content
 - **Local Research**: Search code with ripgrep, browse directories, find files, read content
+- **LSP Intelligence**: Semantic code navigation with goto definition, find references, call hierarchy
 - **Package Discovery**: Search NPM/PyPI for packages and repository URLs
 
 **Key Docs**: [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) • [`README.md`](./README.md)
@@ -55,14 +56,6 @@ All commands run from this package directory (`packages/octocode-mcp/`).
 | Windows x64 | `yarn build:bin:windows-x64` |
 | All platforms | `yarn build:bin:all` |
 
-### Desktop Extension (DXT)
-
-| Task | Command |
-|------|---------|
-| Validate | `yarn dxt:validate` |
-| Pack | `yarn dxt:pack` |
-| Release | `yarn dxt:release` |
-
 ---
 
 ## 📂 Package Structure
@@ -75,31 +68,112 @@ src/
 ├── responses.ts             # Response formatting utilities
 ├── errorCodes.ts            # Centralized error definitions
 ├── types.ts                 # Shared TypeScript types
+├── public.ts                # Public API exports
 │
-├── scheme/                  # 📐 Input validation schemas (Zod)
-│   ├── baseSchema.ts        # Common schema patterns & bulk query builder
-│   ├── github_*.ts          # GitHub tool schemas (5 files)
-│   ├── local_*.ts           # Local tool schemas (4 files)
-│   ├── lsp_*.ts             # LSP tool schemas (3 files)
-│   ├── package_search.ts    # Package search schema
-│   └── responsePriority.ts  # Response field ordering
+├── hints/                   # 💡 Dynamic hint generation
+│   ├── index.ts             # Hints module exports
+│   ├── dynamic.ts           # Context-aware hints
+│   ├── static.ts            # Predefined hints
+│   ├── localBaseHints.ts    # Local tool base hints
+│   └── types.ts             # Hint type definitions
 │
-├── tools/                   # 🔧 Tool implementations
+├── scheme/                  # 📐 Shared schema utilities
+│   └── baseSchema.ts        # Common schema patterns & bulk query builder
+│
+├── tools/                   # 🔧 Tool implementations (modular structure)
 │   ├── toolConfig.ts        # Tool registry & configuration
 │   ├── toolMetadata.ts      # Dynamic metadata from API
 │   ├── toolNames.ts         # Static tool name constants
 │   ├── toolsManager.ts      # Tool registration orchestrator
-│   ├── github_*.ts          # GitHub tool implementations (5 files)
-│   ├── local_*.ts           # Local tool implementations (4 files)
-│   ├── lsp_*.ts             # LSP tool implementations (3 files)
-│   ├── package_search.ts    # Package search implementation
 │   ├── utils.ts             # Tool-specific utilities
-│   └── hints/               # Dynamic hint generation
-│       ├── index.ts         # Hints module exports
-│       ├── dynamic.ts       # Context-aware hints
-│       ├── static.ts        # Predefined hints
-│       ├── localBaseHints.ts # Local tool base hints
-│       └── types.ts         # Hint type definitions
+│   │
+│   ├── github_fetch_content/    # GitHub file content retrieval
+│   │   ├── execution.ts         # Handler implementation
+│   │   ├── github_fetch_content.ts  # Tool registration
+│   │   ├── scheme.ts            # Zod schema
+│   │   └── types.ts             # Type definitions
+│   │
+│   ├── github_search_code/      # GitHub code search
+│   │   ├── execution.ts
+│   │   ├── github_search_code.ts
+│   │   ├── scheme.ts
+│   │   └── types.ts
+│   │
+│   ├── github_search_pull_requests/  # GitHub PR search
+│   │   ├── execution.ts
+│   │   ├── github_search_pull_requests.ts
+│   │   ├── scheme.ts
+│   │   └── types.ts
+│   │
+│   ├── github_search_repos/     # GitHub repository search
+│   │   ├── execution.ts
+│   │   ├── github_search_repos.ts
+│   │   ├── scheme.ts
+│   │   └── types.ts
+│   │
+│   ├── github_view_repo_structure/  # GitHub repo tree
+│   │   ├── execution.ts
+│   │   ├── github_view_repo_structure.ts
+│   │   ├── scheme.ts
+│   │   └── types.ts
+│   │
+│   ├── local_fetch_content/     # Local file content
+│   │   ├── execution.ts
+│   │   ├── fetchContent.ts      # Core implementation
+│   │   ├── index.ts
+│   │   ├── register.ts
+│   │   ├── scheme.ts
+│   │   └── types.ts
+│   │
+│   ├── local_find_files/        # Local file finder
+│   │   ├── execution.ts
+│   │   ├── findFiles.ts
+│   │   ├── index.ts
+│   │   ├── register.ts
+│   │   ├── scheme.ts
+│   │   └── types.ts
+│   │
+│   ├── local_ripgrep/           # Local code search (ripgrep)
+│   │   ├── execution.ts
+│   │   ├── index.ts
+│   │   ├── register.ts
+│   │   ├── scheme.ts
+│   │   ├── searchContentRipgrep.ts
+│   │   └── types.ts
+│   │
+│   ├── local_view_structure/    # Local directory browser
+│   │   ├── execution.ts
+│   │   ├── index.ts
+│   │   ├── local_view_structure.ts
+│   │   ├── scheme.ts
+│   │   └── types.ts
+│   │
+│   ├── lsp_call_hierarchy/      # LSP call hierarchy
+│   │   ├── callHierarchy.ts
+│   │   ├── execution.ts
+│   │   ├── index.ts
+│   │   ├── register.ts
+│   │   ├── scheme.ts
+│   │   └── types.ts
+│   │
+│   ├── lsp_find_references/     # LSP find references
+│   │   ├── execution.ts
+│   │   ├── index.ts
+│   │   ├── lsp_find_references.ts
+│   │   ├── scheme.ts
+│   │   └── types.ts
+│   │
+│   ├── lsp_goto_definition/     # LSP goto definition
+│   │   ├── execution.ts
+│   │   ├── lsp_goto_definition.ts
+│   │   ├── scheme.ts
+│   │   └── types.ts
+│   │
+│   └── package_search/          # NPM/PyPI package search
+│       ├── execution.ts
+│       ├── package_search.ts
+│       ├── scheme.ts
+│       └── types.ts
 │
 ├── github/                  # 🐙 GitHub API layer
 │   ├── index.ts             # GitHub module exports
@@ -118,8 +192,13 @@ src/
 ├── lsp/                     # 🔤 Language Server Protocol
 │   ├── index.ts             # LSP module exports
 │   ├── client.ts            # LSP client (spawns servers, JSON-RPC)
+│   ├── config.ts            # Language server configurations
+│   ├── manager.ts           # LSP server lifecycle management
+│   ├── resolver.ts          # Symbol resolution utilities
+│   ├── symbols.ts           # Symbol type utilities
 │   ├── types.ts             # LSP type definitions
-│   └── resolver.ts          # Symbol resolution utilities
+│   ├── uri.ts               # URI handling utilities
+│   └── validation.ts        # LSP input validation
 │
 ├── security/                # 🔒 Security layer
 │   ├── withSecurityValidation.ts  # Security wrapper for tools
@@ -200,6 +279,7 @@ src/
 │
 └── types/                   # 📝 Type definitions
     ├── metadata.ts          # Metadata types
+    ├── toolTypes.ts         # Tool-specific types
     └── markdown.d.ts        # Markdown type declarations
 ```
 
@@ -217,10 +297,9 @@ tests/
 ├── lsp/                     # LSP client tests (7 files)
 ├── security/                # Security tests (15 files)
 ├── scheme/                  # Schema validation tests
-├── tools/                   # Tool implementation tests (55 files)
-│   ├── lsp_*.test.ts        # LSP tool tests
-│   └── hints/               # Hints system tests
-├── utils/                   # Utility tests (36 files)
+├── hints/                   # Hints system tests
+├── tools/                   # Tool implementation tests (53 files)
+├── utils/                   # Utility tests (37 files)
 ├── integration/             # End-to-end tests
 ├── helpers/                 # Test utilities & mocks
 └── fixtures/                # Test fixtures
@@ -273,21 +352,36 @@ These are the core principles for this MCP server:
 
 ## 🏗️ Architecture Patterns
 
+### Tool Module Structure
+
+Each tool is organized as a self-contained module:
+
+```
+tools/<tool_name>/
+├── execution.ts         # Handler implementation (bulk logic)
+├── <tool_name>.ts       # Tool registration with MCP server
+├── scheme.ts            # Zod schema for input validation
+├── types.ts             # TypeScript type definitions
+├── index.ts             # Module exports (local tools)
+└── register.ts          # Registration helper (local tools)
+```
+
 ### Tool Registration Flow
 
 ```
 Schema (Zod) → Security Wrapper → Bulk Handler → Implementation → Sanitizer → Response
 ```
 
-1. **Schema Validation** (`scheme/*.ts`) - Zod validates inputs
+1. **Schema Validation** (`<tool>/scheme.ts`) - Zod validates inputs
 2. **Security Wrapper** (`withSecurityValidation.ts`) - Input sanitization, secret detection
-3. **Bulk Operations** (`bulkOperations.ts`) - Parallel query execution (1-5 queries)
-4. **Tool Implementation** (`tools/*.ts`) - Business logic, API calls
+3. **Bulk Operations** (`<tool>/execution.ts`) - Parallel query execution (1-5 queries)
+4. **Tool Implementation** - Business logic, API calls
 5. **Content Sanitizer** (`contentSanitizer.ts`) - Output secret redaction
 6. **Response Formatting** (`responses.ts`) - YAML output with priority ordering
 
 ### Key Design Decisions
 
+- **Modular Tools**: Each tool is a self-contained directory with scheme, types, execution, and registration
 - **Bulk Queries**: All tools accept 1-5 queries per request
 - **Research Context**: Every query requires `mainResearchGoal`, `researchGoal`, `reasoning`
 - **Security First**: All I/O sanitized, secrets redacted, paths validated
@@ -330,6 +424,8 @@ Schema (Zod) → Security Wrapper → Bulk Handler → Implementation → Saniti
 | Integration | `tests/integration/` | End-to-end tool tests |
 | Security | `tests/security/` | Penetration & bypass tests |
 | GitHub API | `tests/github/` | API mocking & validation |
+| LSP | `tests/lsp/` | LSP client & tool tests |
+| Hints | `tests/hints/` | Hints system tests |
 
 ### Running Tests
 
@@ -390,14 +486,14 @@ yarn test:ui
 |---------|---------|
 | Entry point | `src/index.ts` |
 | Tool registration | `src/tools/toolsManager.ts`, `src/tools/toolConfig.ts` |
-| Schema definitions | `src/scheme/*.ts` |
-| Hints system | `src/tools/hints/` ([docs](./docs/HINTS_ARCHITECTURE.md)) |
+| Tool modules | `src/tools/<tool_name>/` (scheme.ts, execution.ts, types.ts) |
+| Hints system | `src/hints/` ([docs](./docs/HINTS_ARCHITECTURE.md)) |
 | Security wrapper | `src/security/withSecurityValidation.ts` |
 | Secret detection | `src/security/contentSanitizer.ts`, `src/security/regexes.ts` |
 | Path validation | `src/security/pathValidator.ts` |
 | GitHub client | `src/github/client.ts` |
 | LSP client | `src/lsp/client.ts` ([docs](./docs/LSP_TOOLS.md)) |
-| LSP tools | `src/tools/lsp_*.ts` |
+| LSP config | `src/lsp/config.ts`, `src/lsp/manager.ts` |
 | Bulk operations | `src/utils/response/bulk.ts` |
 | Response formatting | `src/responses.ts` |
 | Error codes | `src/errorCodes.ts` |
@@ -406,4 +502,3 @@ yarn test:ui
 ---
 
 *Package-level AGENTS.md for octocode-mcp v11.x*
-

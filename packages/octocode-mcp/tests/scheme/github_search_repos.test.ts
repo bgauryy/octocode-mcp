@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GitHubReposSearchQuerySchema } from '../../src/scheme/github_search_repos.js';
+import { GitHubReposSearchQuerySchema } from '../../src/tools/github_search_repos/scheme.js';
 
 describe('GitHubReposSearchQuerySchema', () => {
   // Helper to add required base research fields

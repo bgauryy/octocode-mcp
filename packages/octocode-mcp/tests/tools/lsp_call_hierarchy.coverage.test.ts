@@ -12,7 +12,7 @@ import {
   extractFunctionBody,
   inferSymbolKind,
   createRange,
-} from '../../src/tools/lsp_call_hierarchy.js';
+} from '../../src/tools/lsp_call_hierarchy/index.js';
 import { SymbolResolver } from '../../src/lsp/index.js';
 import * as lspIndex from '../../src/lsp/index.js';
 import * as toolHelpers from '../../src/utils/file/toolHelpers.js';
@@ -45,7 +45,7 @@ vi.mock('../../src/utils/exec/index.js', () => ({
   checkCommandAvailability: vi.fn(),
 }));
 
-vi.mock('../../src/tools/hints/index.js', () => {
+vi.mock('../../src/hints/index.js', () => {
   return {
     getHints: vi.fn(() => []),
   };

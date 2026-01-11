@@ -5,7 +5,7 @@ import {
   shutdownAllClients,
   isLanguageServerAvailable,
   resetUserConfigCache,
-} from '../../src/lsp/client.js';
+} from '../../src/lsp/index.js';
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as jsonrpc from 'vscode-jsonrpc/node.js';

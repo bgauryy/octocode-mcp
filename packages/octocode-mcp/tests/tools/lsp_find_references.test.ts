@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   findWorkspaceRoot,
   isLikelyDefinition,
-} from '../../src/tools/lsp_find_references.js';
+} from '../../src/tools/lsp_find_references/index.js';
 
 describe('LSP Find References Tool', () => {
   beforeEach(() => {
@@ -23,7 +23,7 @@ describe('LSP Find References Tool', () => {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -51,7 +51,7 @@ describe('LSP Find References Tool', () => {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -69,7 +69,7 @@ describe('LSP Find References Tool', () => {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -87,7 +87,7 @@ describe('LSP Find References Tool', () => {
       vi.resetModules();
 
       const { BulkLSPFindReferencesSchema } =
-        await import('../../src/scheme/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/scheme.js');
 
       expect(BulkLSPFindReferencesSchema).toBeDefined();
       // Zod schemas have a shape property for objects
@@ -98,7 +98,7 @@ describe('LSP Find References Tool', () => {
       vi.resetModules();
 
       const { BulkLSPFindReferencesSchema } =
-        await import('../../src/scheme/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/scheme.js');
 
       expect(BulkLSPFindReferencesSchema.shape.queries).toBeDefined();
     });
@@ -175,7 +175,7 @@ describe('LSP Find References Tool', () => {
     it('should export tool description', async () => {
       // Don't reset modules - use the initialized metadata from setup.ts
       const { LSP_FIND_REFERENCES_DESCRIPTION } =
-        await import('../../src/scheme/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/scheme.js');
 
       expect(LSP_FIND_REFERENCES_DESCRIPTION).toBeDefined();
       expect(typeof LSP_FIND_REFERENCES_DESCRIPTION).toBe('string');

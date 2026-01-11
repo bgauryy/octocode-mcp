@@ -7,7 +7,7 @@ import {
   parseRipgrepJson,
   parseGrepOutput,
 } from '../../../src/utils/parsers/ripgrep.js';
-import type { RipgrepQuery } from '../../../src/scheme/local_ripgrep.js';
+import type { RipgrepQuery } from '../../../src/tools/local_ripgrep/scheme.js';
 
 const baseQuery: RipgrepQuery = {
   pattern: 'test',

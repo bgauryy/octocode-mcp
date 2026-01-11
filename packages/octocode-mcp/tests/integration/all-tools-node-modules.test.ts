@@ -4,17 +4,17 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { searchContentRipgrep } from '../../src/tools/local_ripgrep.js';
-import { viewStructure } from '../../src/tools/local_view_structure.js';
-import { findFiles } from '../../src/tools/local_find_files.js';
-import { fetchContent } from '../../src/tools/local_fetch_content.js';
+import { searchContentRipgrep } from '../../src/tools/local_ripgrep/index.js';
+import { viewStructure } from '../../src/tools/local_view_structure/local_view_structure.js';
+import { findFiles } from '../../src/tools/local_find_files/index.js';
+import { fetchContent } from '../../src/tools/local_fetch_content/index.js';
 import type {
   SearchContentResult,
   ViewStructureResult,
   FindFilesResult,
   FetchContentResult,
 } from '../../src/utils/core/types.js';
-import { RipgrepQuerySchema } from '../../src/scheme/local_ripgrep.js';
+import { RipgrepQuerySchema } from '../../src/tools/local_ripgrep/scheme.js';
 import path from 'path';
 
 const NODE_MODULES_PATH = path.resolve(process.cwd(), 'node_modules');

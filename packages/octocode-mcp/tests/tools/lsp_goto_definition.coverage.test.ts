@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { addLineNumbers } from '../../src/tools/lsp_goto_definition.js';
+import { addLineNumbers } from '../../src/tools/lsp_goto_definition/lsp_goto_definition.js';
 
 // Mock fs/promises
 vi.mock('fs/promises', () => ({
@@ -168,7 +168,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
       vi.resetModules();
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -190,7 +190,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
       vi.resetModules();
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -212,14 +212,14 @@ describe('LSP Goto Definition Coverage Tests', () => {
   describe('Schema exports', () => {
     it('should export BulkLSPGotoDefinitionSchema', async () => {
       const { BulkLSPGotoDefinitionSchema } =
-        await import('../../src/scheme/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/scheme.js');
       expect(BulkLSPGotoDefinitionSchema).toBeDefined();
       expect(BulkLSPGotoDefinitionSchema.shape.queries).toBeDefined();
     });
 
     it('should export description', async () => {
       const { LSP_GOTO_DEFINITION_DESCRIPTION } =
-        await import('../../src/scheme/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/scheme.js');
       expect(typeof LSP_GOTO_DEFINITION_DESCRIPTION).toBe('string');
       // Description may be empty if tool not in remote metadata (local-only tool)
     });
@@ -628,7 +628,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
 
       // Re-import after resetting mocks
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn(

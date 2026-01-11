@@ -64,11 +64,6 @@ export const CONFIG_ERRORS = {
     message:
       'Configuration not initialized. Call initialize() and await its completion before calling getServerConfig().',
   },
-  NO_GITHUB_TOKEN: {
-    code: 'CONFIG_NO_GITHUB_TOKEN',
-    message:
-      'No GitHub token found. Please authenticate with GitHub CLI (gh auth login) or set GITHUB_TOKEN/GH_TOKEN/OCTOCODE_TOKEN environment variable. After setting the token, restart the MCP server to apply changes.',
-  },
 } as const;
 
 export const VALIDATION_ERRORS = {
@@ -83,19 +78,6 @@ export const VALIDATION_ERRORS = {
   CONCURRENCY_NOT_POSITIVE: {
     code: 'VALIDATION_CONCURRENCY_NOT_POSITIVE',
     message: 'concurrency must be positive',
-  },
-  INVALID_PARAMETERS: {
-    code: 'VALIDATION_INVALID_PARAMETERS',
-    message: 'Invalid parameters: must be an object',
-  },
-  INVALID_PARAMETER_KEY: {
-    code: 'VALIDATION_INVALID_PARAMETER_KEY',
-    message: (key: string) => `Invalid parameter key: ${key}`,
-  },
-  INVALID_NESTED_OBJECT: {
-    code: 'VALIDATION_INVALID_NESTED_OBJECT',
-    message: (key: string, warnings: string) =>
-      `Invalid nested object in parameter ${key}: ${warnings}`,
   },
 } as const;
 
@@ -156,11 +138,6 @@ export const FILE_OPERATION_ERRORS = {
     code: 'FILE_UNSUPPORTED_TYPE',
     message: (type: string) => `Unsupported file type: ${type}`,
   },
-  MATCH_STRING_NOT_FOUND: {
-    code: 'FILE_MATCH_STRING_NOT_FOUND',
-    message: (matchString: string) =>
-      `Match string "${matchString}" not found in file. The file may have changed since the search was performed.`,
-  },
 } as const;
 
 export const REPOSITORY_ERRORS = {
@@ -184,11 +161,6 @@ export const REPOSITORY_ERRORS = {
     message: (owner: string, repo: string, error: string) =>
       `Failed to access repository "${owner}/${repo}": ${error}`,
   },
-  BRANCH_NOT_FOUND: {
-    code: 'REPO_BRANCH_NOT_FOUND',
-    message: (branch: string) =>
-      `Branch '${branch}' not found. Ask user: Do you want to get the file from the default branch instead?`,
-  },
   STRUCTURE_EXPLORATION_FAILED: {
     code: 'REPO_STRUCTURE_EXPLORATION_FAILED',
     message: 'Failed to explore repository structure',
@@ -211,10 +183,6 @@ export const SEARCH_ERRORS = {
   PR_SINGLE_VALUES: {
     code: 'SEARCH_PR_SINGLE_VALUES',
     message: 'Owner and repo must be single values',
-  },
-  API_REQUEST_FAILED: {
-    code: 'SEARCH_API_REQUEST_FAILED',
-    message: (error: string) => `API request failed: ${error}`,
   },
   PULL_REQUEST_SEARCH_FAILED: {
     code: 'SEARCH_PR_SEARCH_FAILED',
@@ -293,21 +261,6 @@ export const ALL_ERROR_CODES = {
   ...TOOL_ERRORS,
 } as const;
 
-type _ErrorCategory =
-  | 'CONFIG'
-  | 'VALIDATION'
-  | 'FETCH'
-  | 'TOOL_METADATA'
-  | 'FILE_OPERATION'
-  | 'REPOSITORY'
-  | 'SEARCH'
-  | 'STARTUP'
-  | 'PROMISE'
-  | 'TOOL'
-  | 'FILE_SYSTEM'
-  | 'PAGINATION'
-  | 'EXECUTION';
-
 // ============================================================================
 // LOCAL TOOL ERROR CODES (for local file operations)
 // ============================================================================
@@ -325,18 +278,14 @@ export const LOCAL_TOOL_ERROR_CODES = {
 
   // Search & Pattern Errors
   NO_MATCHES: 'noMatches',
-  PATTERN_TOO_BROAD: 'patternTooBroad',
 
   // Pagination & Output Errors
-  PAGINATION_REQUIRED: 'paginationRequired',
   OUTPUT_TOO_LARGE: 'outputTooLarge',
-  RESPONSE_TOO_LARGE: 'responseTooLarge',
 
   // Execution Errors
   COMMAND_NOT_AVAILABLE: 'commandNotAvailable',
   COMMAND_EXECUTION_FAILED: 'commandExecutionFailed',
   COMMAND_TIMEOUT: 'commandTimeout',
-  QUERY_EXECUTION_FAILED: 'queryExecutionFailed',
   TOOL_EXECUTION_FAILED: 'toolExecutionFailed',
 } as const;
 
@@ -349,9 +298,6 @@ export type LocalToolErrorCode =
 /**
  * Combined error code type (domain + local tool)
  */
-type _ErrorCode =
-  | (typeof ALL_ERROR_CODES)[keyof typeof ALL_ERROR_CODES]['code']
-  | LocalToolErrorCode;
 
 /**
  * Error category enum for local tools
@@ -414,31 +360,12 @@ export const LOCAL_TOOL_ERROR_REGISTRY: Record<
     description: 'Search pattern found no matches',
     recoverability: 'user-action-required',
   },
-  [LOCAL_TOOL_ERROR_CODES.PATTERN_TOO_BROAD]: {
-    code: LOCAL_TOOL_ERROR_CODES.PATTERN_TOO_BROAD,
-    category: LocalToolErrorCategory.SEARCH,
-    description:
-      'Search pattern is too broad and would return too many results',
-    recoverability: 'user-action-required',
-  },
 
   // Pagination & Output
-  [LOCAL_TOOL_ERROR_CODES.PAGINATION_REQUIRED]: {
-    code: LOCAL_TOOL_ERROR_CODES.PAGINATION_REQUIRED,
-    category: LocalToolErrorCategory.PAGINATION,
-    description: 'Result set too large - pagination required',
-    recoverability: 'user-action-required',
-  },
   [LOCAL_TOOL_ERROR_CODES.OUTPUT_TOO_LARGE]: {
     code: LOCAL_TOOL_ERROR_CODES.OUTPUT_TOO_LARGE,
     category: LocalToolErrorCategory.PAGINATION,
     description: 'Output exceeds size limits',
-    recoverability: 'user-action-required',
-  },
-  [LOCAL_TOOL_ERROR_CODES.RESPONSE_TOO_LARGE]: {
-    code: LOCAL_TOOL_ERROR_CODES.RESPONSE_TOO_LARGE,
-    category: LocalToolErrorCategory.PAGINATION,
-    description: 'Response exceeds maximum allowed size',
     recoverability: 'user-action-required',
   },
 
@@ -460,12 +387,6 @@ export const LOCAL_TOOL_ERROR_REGISTRY: Record<
     category: LocalToolErrorCategory.EXECUTION,
     description: 'Command execution timed out',
     recoverability: 'user-action-required',
-  },
-  [LOCAL_TOOL_ERROR_CODES.QUERY_EXECUTION_FAILED]: {
-    code: LOCAL_TOOL_ERROR_CODES.QUERY_EXECUTION_FAILED,
-    category: LocalToolErrorCategory.EXECUTION,
-    description: 'Query execution failed',
-    recoverability: 'unrecoverable',
   },
   [LOCAL_TOOL_ERROR_CODES.TOOL_EXECUTION_FAILED]: {
     code: LOCAL_TOOL_ERROR_CODES.TOOL_EXECUTION_FAILED,
@@ -654,39 +575,11 @@ export const ToolErrors = {
       { path: filePath, sizeKB, limitKB }
     ),
 
-  noMatches: (pattern: string, context?: Record<string, unknown>) =>
-    new ToolError(
-      LOCAL_TOOL_ERROR_CODES.NO_MATCHES,
-      `No matches found for pattern: ${pattern}`,
-      { pattern, ...context }
-    ),
-
-  patternTooBroad: (pattern: string, matchCount: number) =>
-    new ToolError(
-      LOCAL_TOOL_ERROR_CODES.PATTERN_TOO_BROAD,
-      `Pattern too broad: ${matchCount} matches found`,
-      { pattern, matchCount }
-    ),
-
-  paginationRequired: (itemCount: number) =>
-    new ToolError(
-      LOCAL_TOOL_ERROR_CODES.PAGINATION_REQUIRED,
-      `Pagination required: ${itemCount} characters`,
-      { itemCount }
-    ),
-
   outputTooLarge: (size: number, limit: number) =>
     new ToolError(
       LOCAL_TOOL_ERROR_CODES.OUTPUT_TOO_LARGE,
       `Output too large: ${size} (limit: ${limit})`,
       { size, limit }
-    ),
-
-  responseTooLarge: (tokens: number, limit: number) =>
-    new ToolError(
-      LOCAL_TOOL_ERROR_CODES.RESPONSE_TOO_LARGE,
-      `Response too large: ${tokens} tokens (limit: ${limit})`,
-      { tokens, limit }
     ),
 
   commandNotAvailable: (command: string, installHint?: string) =>
@@ -706,21 +599,6 @@ export const ToolErrors = {
       cause
     ),
 
-  commandTimeout: (command: string, timeoutMs: number) =>
-    new ToolError(
-      LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT,
-      `Command '${command}' timed out after ${timeoutMs}ms. Try a narrower search path or add filters.`,
-      { command, timeoutMs }
-    ),
-
-  queryExecutionFailed: (queryId?: string, cause?: Error) =>
-    new ToolError(
-      LOCAL_TOOL_ERROR_CODES.QUERY_EXECUTION_FAILED,
-      'Query execution failed',
-      { queryId },
-      cause
-    ),
-
   toolExecutionFailed: (toolName: string, cause?: Error) =>
     new ToolError(
       LOCAL_TOOL_ERROR_CODES.TOOL_EXECUTION_FAILED,
@@ -728,15 +606,4 @@ export const ToolErrors = {
       { toolName },
       cause
     ),
-};
-
-/**
- * Local tool error factory functions (subset of ToolErrors for local-only commands)
- */
-export const localToolErrors = {
-  commandNotAvailable: ToolErrors.commandNotAvailable,
-  commandExecutionFailed: ToolErrors.commandExecutionFailed,
-  commandTimeout: ToolErrors.commandTimeout,
-  queryExecutionFailed: ToolErrors.queryExecutionFailed,
-  toolExecutionFailed: ToolErrors.toolExecutionFailed,
 };

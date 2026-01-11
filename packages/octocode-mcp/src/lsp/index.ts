@@ -4,6 +4,69 @@
  * @module lsp
  */
 
-export * from './types.js';
-export * from './resolver.js';
-export * from './client.js';
+// Types
+export type {
+  // Position & Range types
+  FuzzyPosition,
+  ExactPosition,
+  LSPRange,
+  CodeSnippet,
+  SymbolKind,
+  ReferenceLocation,
+  // Call hierarchy types
+  CallHierarchyItem,
+  IncomingCall,
+  OutgoingCall,
+  // Pagination
+  LSPPaginationInfo,
+  // Result types
+  GotoDefinitionResult,
+  FindReferencesResult,
+  CallHierarchyResult,
+  // Configuration types
+  LanguageServerConfig,
+  UserLanguageServerConfig,
+  LSPConfigFile,
+  LanguageServerCommand,
+} from './types.js';
+
+// Symbol resolver
+export {
+  SymbolResolver,
+  SymbolResolutionError,
+  defaultResolver,
+  resolveSymbolPosition,
+} from './resolver.js';
+
+// LSP Client
+export { LSPClient } from './client.js';
+
+// Client manager
+export {
+  getOrCreateClient,
+  isLanguageServerAvailable,
+  shutdownAllClients,
+  getCachedClientCount,
+  clearClientCache,
+} from './manager.js';
+
+// Configuration utilities
+export {
+  LANGUAGE_SERVER_COMMANDS,
+  loadUserConfig,
+  resetUserConfigCache,
+  getUserConfigPath,
+  resolveLanguageServer,
+  detectLanguageId,
+  getLanguageServerForFile,
+} from './config.js';
+
+// URI utilities
+export { toUri, fromUri } from './uri.js';
+
+// Symbol conversion utilities
+export { convertSymbolKind, toLSPSymbolKind } from './symbols.js';
+
+// Validation utilities
+export { validateLSPServerPath } from './validation.js';
+export type { ValidationResult } from './validation.js';

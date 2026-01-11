@@ -5,6 +5,8 @@ import { version } from '../../../package.json';
 /**
  * Simple, reliable logger for Octocode MCP
  */
+export type Logger = OctocodeLogger;
+
 export class OctocodeLogger {
   private readonly prefix: string;
   private readonly server: McpServer;

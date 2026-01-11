@@ -50,7 +50,7 @@ describe('LSP Goto Definition Handler Tests', () => {
       vi.resetModules();
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue('registered'),
@@ -69,7 +69,7 @@ describe('LSP Goto Definition Handler Tests', () => {
       vi.resetModules();
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -94,7 +94,7 @@ describe('LSP Goto Definition Handler Tests', () => {
       mockReadFile.mockResolvedValue('function test() { return 1; }');
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -125,7 +125,7 @@ describe('LSP Goto Definition Handler Tests', () => {
       mockReadFile.mockResolvedValue('const x = 1;');
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -165,7 +165,7 @@ describe('LSP Goto Definition Handler Tests', () => {
       mockReadFile.mockRejectedValue(new Error('ENOENT: file not found'));
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -198,7 +198,7 @@ describe('LSP Goto Definition Handler Tests', () => {
       mockReadFile.mockResolvedValue('const test = 1;');
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -230,7 +230,7 @@ describe('LSP Goto Definition Handler Tests', () => {
       mockReadFile.mockResolvedValue('const test = 1;');
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -264,7 +264,7 @@ describe('LSP Goto Definition Handler Tests', () => {
       mockReadFile.mockResolvedValue('const test = 1;');
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -293,14 +293,14 @@ describe('LSP Goto Definition Handler Tests', () => {
   describe('Schema validation', () => {
     it('should validate schema shape', async () => {
       const { BulkLSPGotoDefinitionSchema } =
-        await import('../../src/scheme/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/scheme.js');
 
       expect(BulkLSPGotoDefinitionSchema.shape.queries).toBeDefined();
     });
 
     it('should export description', async () => {
       const { LSP_GOTO_DEFINITION_DESCRIPTION } =
-        await import('../../src/scheme/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/scheme.js');
 
       expect(typeof LSP_GOTO_DEFINITION_DESCRIPTION).toBe('string');
       // Description may be empty if tool not in remote metadata (local-only tool)

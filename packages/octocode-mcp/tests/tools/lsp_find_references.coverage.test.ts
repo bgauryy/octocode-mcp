@@ -9,7 +9,7 @@ import * as path from 'path';
 import {
   findWorkspaceRoot,
   isLikelyDefinition,
-} from '../../src/tools/lsp_find_references.js';
+} from '../../src/tools/lsp_find_references/index.js';
 
 // Mock fs/promises
 vi.mock('fs/promises', () => ({
@@ -588,7 +588,7 @@ export function testFunction(param: string): string {
 
       // Re-import after resetting mocks
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
         registerTool: vi.fn(
@@ -933,7 +933,7 @@ export function testFunction(param: string): string {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -952,7 +952,7 @@ export function testFunction(param: string): string {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),

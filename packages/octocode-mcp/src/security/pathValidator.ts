@@ -292,7 +292,7 @@ export function reinitializePathValidator(
 ): PathValidator {
   const newValidator = new PathValidator(options);
   // Copy allowed roots to the singleton (mutate in place)
-  (pathValidator as { allowedRoots: string[] }).allowedRoots =
+  (pathValidator as unknown as { allowedRoots: string[] }).allowedRoots =
     newValidator.getAllowedRoots() as string[];
   return pathValidator;
 }

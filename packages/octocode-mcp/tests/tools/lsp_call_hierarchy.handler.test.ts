@@ -63,7 +63,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
       vi.resetModules();
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue('registered'),
@@ -82,7 +82,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
       vi.resetModules();
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue('registered'),
@@ -99,7 +99,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
       vi.resetModules();
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -123,7 +123,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
       mockReadFile.mockResolvedValue('function test() { return 1; }');
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -155,7 +155,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
       mockReadFile.mockResolvedValue('function test() { helper(); }');
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -189,7 +189,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
       mockReadFile.mockResolvedValue('function test() { }');
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -222,7 +222,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
       mockReadFile.mockResolvedValue('function test() { }');
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -258,7 +258,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
       mockReadFile.mockResolvedValue('function test() { }');
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -291,7 +291,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
       mockReadFile.mockResolvedValue('function test() { }');
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -326,7 +326,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
       mockReadFile.mockRejectedValue(new Error('ENOENT'));
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -360,7 +360,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
       mockReadFile.mockResolvedValue('function test() { }');
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -390,7 +390,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
   describe('Schema validation', () => {
     it('should export BulkLSPCallHierarchySchema', async () => {
       const { BulkLSPCallHierarchySchema } =
-        await import('../../src/scheme/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/scheme.js');
 
       expect(BulkLSPCallHierarchySchema).toBeDefined();
       expect(BulkLSPCallHierarchySchema.shape.queries).toBeDefined();
@@ -398,7 +398,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
 
     it('should export description', async () => {
       const { LSP_CALL_HIERARCHY_DESCRIPTION } =
-        await import('../../src/scheme/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/scheme.js');
 
       expect(typeof LSP_CALL_HIERARCHY_DESCRIPTION).toBe('string');
       // Description may be empty if tool not in remote metadata (local-only tool)
@@ -504,7 +504,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
       mockReadFile.mockResolvedValue('function test() { }');
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),

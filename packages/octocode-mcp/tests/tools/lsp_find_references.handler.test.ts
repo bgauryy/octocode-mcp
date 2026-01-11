@@ -45,7 +45,7 @@ describe('LSP Find References Handler Tests', () => {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue('registered'),
@@ -63,7 +63,7 @@ describe('LSP Find References Handler Tests', () => {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -84,7 +84,7 @@ describe('LSP Find References Handler Tests', () => {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -123,7 +123,7 @@ describe('LSP Find References Handler Tests', () => {
       mockReadFile.mockResolvedValue('const test = 1;');
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -154,7 +154,7 @@ describe('LSP Find References Handler Tests', () => {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -191,14 +191,14 @@ describe('LSP Find References Handler Tests', () => {
   describe('Schema exports', () => {
     it('should export BulkLSPFindReferencesSchema', async () => {
       const { BulkLSPFindReferencesSchema } =
-        await import('../../src/scheme/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/scheme.js');
 
       expect(BulkLSPFindReferencesSchema).toBeDefined();
     });
 
     it('should export LSP_FIND_REFERENCES_DESCRIPTION', async () => {
       const { LSP_FIND_REFERENCES_DESCRIPTION } =
-        await import('../../src/scheme/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/scheme.js');
 
       expect(LSP_FIND_REFERENCES_DESCRIPTION).toBeDefined();
       expect(typeof LSP_FIND_REFERENCES_DESCRIPTION).toBe('string');
@@ -241,7 +241,7 @@ describe('LSP Find References Handler Tests', () => {
       mockStat.mockRejectedValue(new Error('ENOENT: no such file'));
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),
@@ -277,7 +277,7 @@ describe('LSP Find References Handler Tests', () => {
       mockReadFile.mockRejectedValue(new Error('Permission denied'));
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
         registerTool: vi.fn((name, config, handler) => handler),

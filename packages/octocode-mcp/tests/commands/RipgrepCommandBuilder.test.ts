@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { RipgrepCommandBuilder } from '../../src/commands/RipgrepCommandBuilder.js';
-import { RipgrepQuerySchema } from '../../src/scheme/local_ripgrep.js';
+import { RipgrepQuerySchema } from '../../src/tools/local_ripgrep/scheme.js';
 
 const createQuery = (query: Parameters<typeof RipgrepQuerySchema.parse>[0]) =>
   RipgrepQuerySchema.parse(query);

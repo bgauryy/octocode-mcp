@@ -10,7 +10,7 @@ vi.mock('../../src/session.js', () => ({
 const mockFetchWithRetries = vi.mocked(fetchWithRetries);
 
 // Mock the local hints module
-vi.mock('../../src/tools/hints/localBaseHints.js', () => ({
+vi.mock('../../src/hints/localBaseHints.js', () => ({
   LOCAL_BASE_HINTS: {
     hasResults: [
       'Follow mainResearchGoal to navigate research',

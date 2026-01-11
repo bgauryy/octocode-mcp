@@ -3,10 +3,10 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { viewStructure } from '../../src/tools/local_view_structure.js';
-import { findFiles } from '../../src/tools/local_find_files.js';
-import { searchContentRipgrep } from '../../src/tools/local_ripgrep.js';
-import { fetchContent } from '../../src/tools/local_fetch_content.js';
+import { viewStructure } from '../../src/tools/local_view_structure/local_view_structure.js';
+import { findFiles } from '../../src/tools/local_find_files/index.js';
+import { searchContentRipgrep } from '../../src/tools/local_ripgrep/index.js';
+import { fetchContent } from '../../src/tools/local_fetch_content/index.js';
 import * as exec from '../../src/utils/exec/index.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 import type { Stats } from 'fs';

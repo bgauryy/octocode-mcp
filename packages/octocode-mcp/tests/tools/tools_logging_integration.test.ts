@@ -68,11 +68,11 @@ vi.mock('../../src/serverConfig.js', () => ({
 }));
 
 // Import tools after mocks are set up
-import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code.js';
-import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch_content.js';
-import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
-import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
-import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests.js';
+import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code/github_search_code.js';
+import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch_content/github_fetch_content.js';
+import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos/github_search_repos.js';
+import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure/github_view_repo_structure.js';
+import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests/github_search_pull_requests.js';
 import { createMockMcpServer } from '../fixtures/mcp-fixtures.js';
 
 describe('Tools Logging Integration - Repo/Owner Tracking', () => {

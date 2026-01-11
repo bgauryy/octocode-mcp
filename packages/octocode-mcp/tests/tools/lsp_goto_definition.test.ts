@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { addLineNumbers } from '../../src/tools/lsp_goto_definition.js';
+import { addLineNumbers } from '../../src/tools/lsp_goto_definition/lsp_goto_definition.js';
 
 describe('LSP Goto Definition Tool', () => {
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe('LSP Goto Definition Tool', () => {
       vi.resetModules();
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -49,7 +49,7 @@ describe('LSP Goto Definition Tool', () => {
       vi.resetModules();
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -67,7 +67,7 @@ describe('LSP Goto Definition Tool', () => {
       vi.resetModules();
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -85,7 +85,7 @@ describe('LSP Goto Definition Tool', () => {
       vi.resetModules();
 
       const { BulkLSPGotoDefinitionSchema } =
-        await import('../../src/scheme/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/scheme.js');
 
       expect(BulkLSPGotoDefinitionSchema).toBeDefined();
       // Zod schemas have a shape property for objects
@@ -96,7 +96,7 @@ describe('LSP Goto Definition Tool', () => {
       vi.resetModules();
 
       const { BulkLSPGotoDefinitionSchema } =
-        await import('../../src/scheme/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/scheme.js');
 
       expect(BulkLSPGotoDefinitionSchema.shape.queries).toBeDefined();
     });
@@ -177,7 +177,7 @@ describe('LSP Goto Definition Tool', () => {
     it('should export tool description', async () => {
       // Don't reset modules - use the initialized metadata from setup.ts
       const { LSP_GOTO_DEFINITION_DESCRIPTION } =
-        await import('../../src/scheme/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/scheme.js');
 
       expect(LSP_GOTO_DEFINITION_DESCRIPTION).toBeDefined();
       expect(typeof LSP_GOTO_DEFINITION_DESCRIPTION).toBe('string');

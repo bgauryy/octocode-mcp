@@ -4,7 +4,7 @@
  */
 
 import { BaseCommandBuilder } from './BaseCommandBuilder.js';
-import type { RipgrepQuery } from '../scheme/local_ripgrep.js';
+import type { RipgrepQuery } from '../tools/local_ripgrep/scheme.js';
 import { TYPE_TO_EXTENSIONS } from '../utils/file/types.js';
 
 /**

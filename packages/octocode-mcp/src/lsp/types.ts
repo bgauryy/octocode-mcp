@@ -4,6 +4,66 @@
  * @module lsp/types
  */
 
+// ============================================================================
+// Configuration Types
+// ============================================================================
+
+/**
+ * Language server configuration for spawning a server
+ */
+export interface LanguageServerConfig {
+  /** Command to spawn the language server */
+  command: string;
+  /** Arguments for the command */
+  args?: string[];
+  /** Working directory (workspace root) */
+  workspaceRoot: string;
+  /** Language ID (typescript, javascript, python, go, etc.) */
+  languageId?: string;
+}
+
+/**
+ * User-configurable language server entry
+ */
+export interface UserLanguageServerConfig {
+  /** Command to spawn the language server */
+  command: string;
+  /** Arguments for the command (default: []) */
+  args?: string[];
+  /** Language ID for the server (e.g., 'python', 'go') */
+  languageId: string;
+}
+
+/**
+ * Config file schema for user-defined language servers
+ * File locations (in priority order):
+ * 1. OCTOCODE_LSP_CONFIG environment variable
+ * 2. .octocode/lsp-servers.json (workspace-level)
+ * 3. ~/.octocode/lsp-servers.json (user-level)
+ */
+export interface LSPConfigFile {
+  /** Language servers by file extension (e.g., ".py", ".java") */
+  languageServers?: Record<string, UserLanguageServerConfig>;
+}
+
+/**
+ * Server command info from the registry
+ */
+export interface LanguageServerCommand {
+  /** Command to spawn the language server */
+  command: string;
+  /** Arguments for the command */
+  args: string[];
+  /** Language ID for the server */
+  languageId: string;
+  /** Environment variable to override the command */
+  envVar: string;
+}
+
+// ============================================================================
+// Position & Range Types
+// ============================================================================
+
 /**
  * Fuzzy position for symbol resolution
  * Used when exact character position is not known

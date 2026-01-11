@@ -8,7 +8,7 @@ import {
   getGrepFeatureWarnings,
   getUnsupportedGrepFeatures,
 } from '../../src/commands/GrepCommandBuilder.js';
-import type { RipgrepQuery } from '../../src/scheme/local_ripgrep.js';
+import type { RipgrepQuery } from '../../src/tools/local_ripgrep/scheme.js';
 
 describe('GrepCommandBuilder', () => {
   describe('fromQuery', () => {

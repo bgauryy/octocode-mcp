@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LOCAL_TOOL_ERROR_CODES } from '../../src/errorCodes.js';
-import { viewStructure } from '../../src/tools/local_view_structure.js';
+import { viewStructure } from '../../src/tools/local_view_structure/local_view_structure.js';
 import * as exec from '../../src/utils/exec/index.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 import type { Stats } from 'fs';

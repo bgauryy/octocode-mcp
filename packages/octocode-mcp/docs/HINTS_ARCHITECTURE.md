@@ -718,11 +718,11 @@ return {
 |-----------|----------|---------|
 | `tools/utils.ts` | Entry | `createSuccessResult()` - main tool entry point |
 | `types/metadata.ts` | Types | HintContext, HintStatus, ToolHintGenerators |
-| `tools/hints/index.ts` | Combiner | `getHints()` - combines static + dynamic |
-| `tools/hints/types.ts` | Re-exports | Re-exports types from `types/metadata.ts` |
-| `tools/hints/static.ts` | Loader | Loads from toolMetadata + `getMetadataDynamicHints()` |
-| `tools/hints/dynamic.ts` | Generator | Context-aware HINTS object (all 13 tools) |
-| `tools/hints/localBaseHints.ts` | Constants | Local tool base hints |
+| `hints/index.ts` | Combiner | `getHints()` - combines static + dynamic |
+| `hints/types.ts` | Re-exports | Re-exports types from `types/metadata.ts` |
+| `hints/static.ts` | Loader | Loads from toolMetadata + `getMetadataDynamicHints()` |
+| `hints/dynamic.ts` | Generator | Context-aware HINTS object (all 13 tools) |
+| `hints/localBaseHints.ts` | Constants | Local tool base hints |
 | `tools/toolMetadata.ts` | Remote | Fetches from API, caches |
 | `utils/response/bulk.ts` | Aggregator | Deduplicates across bulk results |
 

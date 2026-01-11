@@ -57,6 +57,10 @@ export interface HintContext {
   /** Which search engine was used (local tools) */
   searchEngine?: 'rg' | 'grep';
 
+  // Find files context
+  /** Whether config files were found */
+  hasConfigFiles?: boolean;
+
   // LSP tool context
   /** Number of definition/reference locations found */
   locationCount?: number;

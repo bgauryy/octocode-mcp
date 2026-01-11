@@ -60,7 +60,7 @@ import * as childProcess from 'child_process';
 import * as lspModule from '../../src/lsp/index.js';
 
 // Import the module under test after mocks are set up
-import { registerLSPFindReferencesTool } from '../../src/tools/lsp_find_references.js';
+import { registerLSPFindReferencesTool } from '../../src/tools/lsp_find_references/index.js';
 
 describe('LSP Find References Implementation Tests', () => {
   const sampleTypeScriptContent = `
@@ -585,14 +585,14 @@ export function anotherFunction() {
   describe('Schema Exports', () => {
     it('should export BulkLSPFindReferencesSchema', async () => {
       const { BulkLSPFindReferencesSchema } =
-        await import('../../src/scheme/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/scheme.js');
 
       expect(BulkLSPFindReferencesSchema).toBeDefined();
     });
 
     it('should export LSP_FIND_REFERENCES_DESCRIPTION', async () => {
       const { LSP_FIND_REFERENCES_DESCRIPTION } =
-        await import('../../src/scheme/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/scheme.js');
 
       expect(LSP_FIND_REFERENCES_DESCRIPTION).toBeDefined();
       expect(typeof LSP_FIND_REFERENCES_DESCRIPTION).toBe('string');

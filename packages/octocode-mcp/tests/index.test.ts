@@ -10,22 +10,26 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js');
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js');
 vi.mock('../src/utils/http/cache.js');
 vi.mock('../src/prompts/prompts.js');
-vi.mock('../src/tools/github_search_code.js');
-vi.mock('../src/tools/github_fetch_content.js');
-vi.mock('../src/tools/github_search_repos.js');
-vi.mock('../src/tools/github_search_pull_requests.js');
-vi.mock('../src/tools/github_view_repo_structure.js');
+vi.mock('../src/tools/github_search_code/github_search_code.js');
+vi.mock('../src/tools/github_fetch_content/github_fetch_content.js');
+vi.mock('../src/tools/github_search_repos/github_search_repos.js');
+vi.mock(
+  '../src/tools/github_search_pull_requests/github_search_pull_requests.js'
+);
+vi.mock(
+  '../src/tools/github_view_repo_structure/github_view_repo_structure.js'
+);
 vi.mock('../src/utils/exec/index.js');
 vi.mock('../src/serverConfig.js');
 vi.mock('../src/tools/toolsManager.js');
 
 // Import mocked functions
 import { registerPrompts } from '../src/prompts/prompts.js';
-import { registerGitHubSearchCodeTool } from '../src/tools/github_search_code.js';
-import { registerFetchGitHubFileContentTool } from '../src/tools/github_fetch_content.js';
-import { registerSearchGitHubReposTool } from '../src/tools/github_search_repos.js';
-import { registerSearchGitHubPullRequestsTool } from '../src/tools/github_search_pull_requests.js';
-import { registerViewGitHubRepoStructureTool } from '../src/tools/github_view_repo_structure.js';
+import { registerGitHubSearchCodeTool } from '../src/tools/github_search_code/github_search_code.js';
+import { registerFetchGitHubFileContentTool } from '../src/tools/github_fetch_content/github_fetch_content.js';
+import { registerSearchGitHubReposTool } from '../src/tools/github_search_repos/github_search_repos.js';
+import { registerSearchGitHubPullRequestsTool } from '../src/tools/github_search_pull_requests/github_search_pull_requests.js';
+import { registerViewGitHubRepoStructureTool } from '../src/tools/github_view_repo_structure/github_view_repo_structure.js';
 import { getGithubCLIToken } from '../src/utils/exec/index.js';
 import { initialize, cleanup, getServerConfig } from '../src/serverConfig.js';
 import { registerTools } from '../src/tools/toolsManager.js';

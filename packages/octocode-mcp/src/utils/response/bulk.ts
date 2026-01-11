@@ -14,36 +14,22 @@ import type {
   PromiseResult,
 } from '../../types.js';
 
-export async function executeBulkOperation<
-  TQuery extends object,
-  TData = Record<string, unknown>,
-  R extends ProcessedBulkResult<TData, TQuery> = ProcessedBulkResult<
-    TData,
-    TQuery
-  >,
->(
+export async function executeBulkOperation<TQuery extends object>(
   queries: Array<TQuery>,
-  processor: (query: TQuery, index: number) => Promise<R>,
+  processor: (query: TQuery, index: number) => Promise<ProcessedBulkResult>,
   config: BulkResponseConfig
 ): Promise<CallToolResult> {
-  const { results, errors } = await processBulkQueries<TQuery, TData, R>(
+  const { results, errors } = await processBulkQueries<TQuery>(
     queries,
     processor
   );
-  return createBulkResponse<TQuery, TData, R>(config, results, errors, queries);
+  return createBulkResponse<TQuery>(config, results, errors, queries);
 }
 
-function createBulkResponse<
-  TQuery extends object,
-  TData = Record<string, unknown>,
-  R extends ProcessedBulkResult<TData, TQuery> = ProcessedBulkResult<
-    TData,
-    TQuery
-  >,
->(
+function createBulkResponse<TQuery extends object>(
   config: BulkResponseConfig,
   results: Array<{
-    result: R;
+    result: ProcessedBulkResult;
     queryIndex: number;
     originalQuery: TQuery;
   }>,
@@ -199,26 +185,19 @@ function createBulkResponse<
  * @param processor - Async function that processes each query
  * @returns Object containing successful results and errors
  */
-async function processBulkQueries<
-  TQuery extends object,
-  TData = Record<string, unknown>,
-  R extends ProcessedBulkResult<TData, TQuery> = ProcessedBulkResult<
-    TData,
-    TQuery
-  >,
->(
+async function processBulkQueries<TQuery extends object>(
   queries: Array<TQuery>,
-  processor: (query: TQuery, index: number) => Promise<R>
+  processor: (query: TQuery, index: number) => Promise<ProcessedBulkResult>
 ): Promise<{
   results: Array<{
-    result: R;
+    result: ProcessedBulkResult;
     queryIndex: number;
     originalQuery: TQuery;
   }>;
   errors: QueryError[];
 }> {
   const results: Array<{
-    result: R;
+    result: ProcessedBulkResult;
     queryIndex: number;
     originalQuery: TQuery;
   }> = [];
@@ -252,7 +231,7 @@ async function processBulkQueries<
   queryResults.forEach(
     (
       result: PromiseResult<{
-        result: R;
+        result: ProcessedBulkResult;
         queryIndex: number;
         originalQuery: TQuery;
       }>
@@ -270,9 +249,7 @@ async function processBulkQueries<
   return { results, errors };
 }
 
-function extractToolData<TData = Record<string, unknown>, TQuery = object>(
-  result: ProcessedBulkResult<TData, TQuery>
-): Record<string, unknown> {
+function extractToolData(result: ProcessedBulkResult): Record<string, unknown> {
   const excludedKeys = new Set([
     'mainResearchGoal',
     'researchGoal',
