@@ -4,6 +4,8 @@ export { registerLSPFindReferencesTool } from './lsp_find_references.js';
 // Execution functions
 export { executeFindReferences } from './execution.js';
 export {
+  findWorkspaceRoot,
+  isLikelyDefinition,
   findReferences,
   findReferencesWithLSP,
   findReferencesWithPatternMatching,
