@@ -1,7 +1,23 @@
-export {
-  registerLSPFindReferencesTool,
-  findReferences,
-  findWorkspaceRoot,
-  isLikelyDefinition,
-} from './lsp_find_references.js';
+// Registration
+export { registerLSPFindReferencesTool } from './lsp_find_references.js';
+
+// Execution functions
 export { executeFindReferences } from './execution.js';
+export {
+  findReferences,
+  findReferencesWithLSP,
+  findReferencesWithPatternMatching,
+} from './lsp_find_references.js';
+
+// Types
+export type {
+  LSPFindReferencesQuery,
+  ExactPosition,
+  LSPRange,
+  SymbolKind,
+  CodeSnippet,
+  ReferenceLocation,
+  LSPPaginationInfo,
+  LSPErrorType,
+  FindReferencesResult,
+} from './types.js';
