@@ -3,7 +3,7 @@ import type { GitHubCodeSearchQuery, SearchResult } from '../../types.js';
 import { searchGitHubCodeAPI } from '../../github/codeSearch.js';
 import { TOOL_NAMES } from '../toolMetadata.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
-import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import type { ToolExecutionArgs } from '../../types/execution.js';
 import {
   handleApiError,
   handleCatchError,
@@ -11,10 +11,10 @@ import {
 } from '../utils.js';
 
 export async function searchMultipleGitHubCode(
-  queries: GitHubCodeSearchQuery[],
-  authInfo?: AuthInfo,
-  sessionId?: string
+  args: ToolExecutionArgs<GitHubCodeSearchQuery>
 ): Promise<CallToolResult> {
+  const { queries, authInfo, sessionId } = args;
+
   return executeBulkOperation(
     queries,
     async (query: GitHubCodeSearchQuery, _index: number) => {

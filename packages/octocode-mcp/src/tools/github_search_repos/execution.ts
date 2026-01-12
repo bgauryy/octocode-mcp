@@ -10,7 +10,7 @@ import {
   getDynamicHints as getMetadataDynamicHints,
 } from '../toolMetadata.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
-import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import type { ToolExecutionArgs } from '../../types/execution.js';
 import {
   handleApiError,
   handleCatchError,
@@ -111,10 +111,9 @@ function generateSearchSpecificHints(
 }
 
 export async function searchMultipleGitHubRepos(
-  queries: GitHubReposSearchQuery[],
-  authInfo?: AuthInfo,
-  sessionId?: string
+  args: ToolExecutionArgs<GitHubReposSearchQuery>
 ): Promise<CallToolResult> {
+  const { queries, authInfo, sessionId } = args;
   const expandedQueries = expandQueriesWithBothSearchTypes(queries);
 
   return executeBulkOperation(

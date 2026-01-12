@@ -45,7 +45,7 @@ export function registerGitHubSearchCodeTool(
           queries
         );
 
-        return searchMultipleGitHubCode(queries, authInfo, sessionId);
+        return searchMultipleGitHubCode({ queries, authInfo, sessionId });
       }
     )
   );
