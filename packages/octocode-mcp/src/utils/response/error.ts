@@ -8,7 +8,7 @@
 
 import type { GitHubAPIError } from '../../github/githubAPI.js';
 import { toToolError, isToolError, type ToolError } from '../../errorCodes.js';
-import { getHints } from '../../tools/hints/index.js';
+import { getHints } from '../../hints/index.js';
 import type { BaseQuery } from '../core/types.js';
 
 /**
@@ -203,20 +203,16 @@ export function createErrorResult(
  */
 function getErrorTypeFromToolError(
   error: ToolError
-): 'size_limit' | 'not_found' | 'permission' | 'pattern_too_broad' | undefined {
+): 'size_limit' | 'not_found' | 'permission' | undefined {
   switch (error.errorCode) {
     case 'fileTooLarge':
     case 'outputTooLarge':
-    case 'responseTooLarge':
-    case 'paginationRequired':
       return 'size_limit';
     case 'fileAccessFailed':
     case 'fileReadFailed':
       return 'not_found';
     case 'pathValidationFailed':
       return 'permission';
-    case 'patternTooBroad':
-      return 'pattern_too_broad';
     default:
       return undefined;
   }

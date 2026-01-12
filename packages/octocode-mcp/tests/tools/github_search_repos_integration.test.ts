@@ -23,7 +23,7 @@ vi.mock('../../src/serverConfig.js', () => ({
   })),
 }));
 
-import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
+import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos/github_search_repos.js';
 
 describe('GitHub Search Repositories Response Structure Test', () => {
   it('should return YAML response with correct structure (no total_count, forks, language)', async () => {

@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
 import {
   LSPClient,
-  getOrCreateClient,
-  shutdownAllClients,
+  createClient,
   isLanguageServerAvailable,
-  resetUserConfigCache,
-} from '../../src/lsp/client.js';
+} from '../../src/lsp/index.js';
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as jsonrpc from 'vscode-jsonrpc/node.js';
@@ -53,7 +51,6 @@ describe('LSPClient Coverage', () => {
     vi.clearAllMocks();
 
     // Reset user config cache to ensure clean state
-    resetUserConfigCache();
 
     // Setup mock process
     mockProcess = new EventEmitter();
@@ -89,10 +86,7 @@ describe('LSPClient Coverage', () => {
     client = new LSPClient(config);
   });
 
-  afterEach(async () => {
-    await shutdownAllClients();
-    resetUserConfigCache();
-  });
+  afterEach(async () => {});
 
   describe('start()', () => {
     it('should spawn process and initialize connection', async () => {
@@ -618,35 +612,28 @@ describe('LSPClient Coverage', () => {
   });
 
   describe('Utility Functions', () => {
-    it('getOrCreateClient should create and cache client', async () => {
+    it('createClient should create new client each time (no caching)', async () => {
       mockConnection.sendRequest.mockResolvedValue({});
 
-      const client1 = await getOrCreateClient(
-        '/workspace',
-        '/workspace/file.ts'
-      );
+      const client1 = await createClient('/workspace', '/workspace/file.ts');
       expect(client1).toBeDefined();
 
-      const client2 = await getOrCreateClient(
-        '/workspace',
-        '/workspace/file.ts'
-      );
-      expect(client2).toBe(client1); // Should be same instance
+      const client2 = await createClient('/workspace', '/workspace/file.ts');
+      expect(client2).toBeDefined();
+      // Caching removed - each call creates a new client
+      expect(client2).not.toBe(client1);
     });
 
-    it('getOrCreateClient should return null for unsupported file', async () => {
-      const client = await getOrCreateClient(
-        '/workspace',
-        '/workspace/file.txt'
-      );
+    it('createClient should return null for unsupported file', async () => {
+      const client = await createClient('/workspace', '/workspace/file.txt');
       expect(client).toBeNull();
     });
 
-    it('getOrCreateClient should handle start failure', async () => {
+    it('createClient should handle start failure', async () => {
       (cp.spawn as Mock).mockImplementationOnce(() => {
         throw new Error('Spawn failed');
       });
-      const client = await getOrCreateClient(
+      const client = await createClient(
         '/workspace-fail',
         '/workspace-fail/file.ts'
       );

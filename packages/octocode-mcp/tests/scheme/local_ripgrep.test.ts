@@ -9,7 +9,7 @@ import {
   applyWorkflowMode,
   validateRipgrepQuery,
   type RipgrepQuery,
-} from '../../src/scheme/local_ripgrep.js';
+} from '../../src/tools/local_ripgrep/scheme.js';
 
 describe('localSearchCode schema', () => {
   describe('RipgrepQuerySchema', () => {

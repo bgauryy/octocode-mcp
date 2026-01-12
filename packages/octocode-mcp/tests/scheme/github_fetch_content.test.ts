@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   FileContentQuerySchema,
   FileContentBulkQuerySchema,
-} from '../../src/scheme/github_fetch_content.js';
+} from '../../src/tools/github_fetch_content/scheme.js';
 
 describe('FileContentQuerySchema', () => {
   describe('Valid parameters', () => {

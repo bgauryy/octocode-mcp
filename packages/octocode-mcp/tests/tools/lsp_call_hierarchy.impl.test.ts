@@ -45,7 +45,7 @@ vi.mock('../../src/lsp/index.js', () => {
       }),
     })),
     SymbolResolutionError: MockSymbolResolutionError,
-    getOrCreateClient: vi.fn().mockResolvedValue(null),
+    createClient: vi.fn().mockResolvedValue(null),
     isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
   };
 });
@@ -56,7 +56,7 @@ import * as lspModule from '../../src/lsp/index.js';
 import * as execModule from '../../src/utils/exec/index.js';
 
 // Import the module under test after mocks are set up
-import { registerLSPCallHierarchyTool } from '../../src/tools/lsp_call_hierarchy.js';
+import { registerLSPCallHierarchyTool } from '../../src/tools/lsp_call_hierarchy/index.js';
 
 describe('LSP Call Hierarchy Implementation Tests', () => {
   const sampleTypeScriptContent = `
@@ -88,7 +88,7 @@ export function caller() {
 
     // Default: LSP not available
     vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-    vi.mocked(lspModule.getOrCreateClient).mockResolvedValue(null);
+    vi.mocked(lspModule.createClient).mockResolvedValue(null);
 
     // Default: ripgrep is available
     vi.mocked(execModule.checkCommandAvailability).mockResolvedValue({
@@ -368,7 +368,8 @@ export function caller() {
 
     it('should attempt LSP when available', async () => {
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+      vi.mocked(lspModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
         prepareCallHierarchy: vi.fn().mockResolvedValue([]),
         getIncomingCalls: vi.fn().mockResolvedValue([]),
         getOutgoingCalls: vi.fn().mockResolvedValue([]),
@@ -445,14 +446,14 @@ export function caller() {
   describe('Schema Exports', () => {
     it('should export BulkLSPCallHierarchySchema', async () => {
       const { BulkLSPCallHierarchySchema } =
-        await import('../../src/scheme/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/scheme.js');
 
       expect(BulkLSPCallHierarchySchema).toBeDefined();
     });
 
     it('should export LSP_CALL_HIERARCHY_DESCRIPTION', async () => {
       const { LSP_CALL_HIERARCHY_DESCRIPTION } =
-        await import('../../src/scheme/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/scheme.js');
 
       expect(LSP_CALL_HIERARCHY_DESCRIPTION).toBeDefined();
       expect(typeof LSP_CALL_HIERARCHY_DESCRIPTION).toBe('string');

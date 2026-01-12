@@ -95,11 +95,11 @@ vi.mock('../../src/session.js', () => ({
   SessionManager: vi.fn(),
 }));
 
-import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code.js';
-import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch_content.js';
-import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
-import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests.js';
-import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
+import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code/github_search_code.js';
+import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch_content/github_fetch_content.js';
+import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos/github_search_repos.js';
+import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests/github_search_pull_requests.js';
+import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure/github_view_repo_structure.js';
 import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 
 describe('Response Structure - All Tools', () => {

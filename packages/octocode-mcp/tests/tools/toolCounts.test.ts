@@ -23,39 +23,45 @@ vi.mock('../../src/session.js', () => ({
 }));
 
 // Mock tool registration functions to just return successfully
-vi.mock('../../src/tools/github_search_code.js', () => ({
+vi.mock('../../src/tools/github_search_code/github_search_code.js', () => ({
   registerGitHubSearchCodeTool: vi.fn().mockReturnValue({}),
 }));
-vi.mock('../../src/tools/github_fetch_content.js', () => ({
+vi.mock('../../src/tools/github_fetch_content/github_fetch_content.js', () => ({
   registerFetchGitHubFileContentTool: vi.fn().mockReturnValue({}),
 }));
-vi.mock('../../src/tools/github_search_repos.js', () => ({
+vi.mock('../../src/tools/github_search_repos/github_search_repos.js', () => ({
   registerSearchGitHubReposTool: vi.fn().mockReturnValue({}),
 }));
-vi.mock('../../src/tools/github_search_pull_requests.js', () => ({
-  registerSearchGitHubPullRequestsTool: vi.fn().mockReturnValue({}),
-}));
-vi.mock('../../src/tools/github_view_repo_structure.js', () => ({
-  registerViewGitHubRepoStructureTool: vi.fn().mockReturnValue({}),
-}));
-vi.mock('../../src/tools/package_search.js', () => ({
+vi.mock(
+  '../../src/tools/github_search_pull_requests/github_search_pull_requests.js',
+  () => ({
+    registerSearchGitHubPullRequestsTool: vi.fn().mockReturnValue({}),
+  })
+);
+vi.mock(
+  '../../src/tools/github_view_repo_structure/github_view_repo_structure.js',
+  () => ({
+    registerViewGitHubRepoStructureTool: vi.fn().mockReturnValue({}),
+  })
+);
+vi.mock('../../src/tools/package_search/package_search.js', () => ({
   registerPackageSearchTool: vi.fn().mockReturnValue({}),
 }));
 
 // Mock local tools - export registration functions used by toolConfig
-vi.mock('../../src/tools/local_ripgrep.js', () => ({
+vi.mock('../../src/tools/local_ripgrep/index.js', () => ({
   registerLocalRipgrepTool: vi.fn().mockReturnValue({}),
   searchContentRipgrep: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
-vi.mock('../../src/tools/local_view_structure.js', () => ({
+vi.mock('../../src/tools/local_view_structure/index.js', () => ({
   registerLocalViewStructureTool: vi.fn().mockReturnValue({}),
   viewStructure: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
-vi.mock('../../src/tools/local_find_files.js', () => ({
+vi.mock('../../src/tools/local_find_files/index.js', () => ({
   registerLocalFindFilesTool: vi.fn().mockReturnValue({}),
   findFiles: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
-vi.mock('../../src/tools/local_fetch_content.js', () => ({
+vi.mock('../../src/tools/local_fetch_content/index.js', () => ({
   registerLocalFetchContentTool: vi.fn().mockReturnValue({}),
   fetchContent: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));

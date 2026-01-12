@@ -52,34 +52,40 @@ const mockGitHubSearchReposRegister = vi.fn().mockReturnValue({});
 const mockGitHubSearchPRsRegister = vi.fn().mockReturnValue({});
 const mockPackageSearchRegister = vi.fn().mockReturnValue({});
 
-vi.mock('../../src/tools/local_ripgrep.js', () => ({
+vi.mock('../../src/tools/local_ripgrep/index.js', () => ({
   registerLocalRipgrepTool: mockLocalRipgrepRegister,
 }));
-vi.mock('../../src/tools/local_view_structure.js', () => ({
+vi.mock('../../src/tools/local_view_structure/index.js', () => ({
   registerLocalViewStructureTool: mockLocalViewStructureRegister,
 }));
-vi.mock('../../src/tools/local_find_files.js', () => ({
+vi.mock('../../src/tools/local_find_files/index.js', () => ({
   registerLocalFindFilesTool: mockLocalFindFilesRegister,
 }));
-vi.mock('../../src/tools/local_fetch_content.js', () => ({
+vi.mock('../../src/tools/local_fetch_content/index.js', () => ({
   registerLocalFetchContentTool: mockLocalFetchContentRegister,
 }));
-vi.mock('../../src/tools/github_search_code.js', () => ({
+vi.mock('../../src/tools/github_search_code/github_search_code.js', () => ({
   registerGitHubSearchCodeTool: mockGitHubSearchCodeRegister,
 }));
-vi.mock('../../src/tools/github_fetch_content.js', () => ({
+vi.mock('../../src/tools/github_fetch_content/github_fetch_content.js', () => ({
   registerFetchGitHubFileContentTool: mockGitHubFetchContentRegister,
 }));
-vi.mock('../../src/tools/github_view_repo_structure.js', () => ({
-  registerViewGitHubRepoStructureTool: mockGitHubViewStructureRegister,
-}));
-vi.mock('../../src/tools/github_search_repos.js', () => ({
+vi.mock(
+  '../../src/tools/github_view_repo_structure/github_view_repo_structure.js',
+  () => ({
+    registerViewGitHubRepoStructureTool: mockGitHubViewStructureRegister,
+  })
+);
+vi.mock('../../src/tools/github_search_repos/github_search_repos.js', () => ({
   registerSearchGitHubReposTool: mockGitHubSearchReposRegister,
 }));
-vi.mock('../../src/tools/github_search_pull_requests.js', () => ({
-  registerSearchGitHubPullRequestsTool: mockGitHubSearchPRsRegister,
-}));
-vi.mock('../../src/tools/package_search.js', () => ({
+vi.mock(
+  '../../src/tools/github_search_pull_requests/github_search_pull_requests.js',
+  () => ({
+    registerSearchGitHubPullRequestsTool: mockGitHubSearchPRsRegister,
+  })
+);
+vi.mock('../../src/tools/package_search/package_search.js', () => ({
   registerPackageSearchTool: mockPackageSearchRegister,
 }));
 

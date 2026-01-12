@@ -66,7 +66,7 @@ Tools for discovering code, repositories, and pull requests across GitHub.
 | **Scope filters** | Owner, repository |
 | **File filters** | Extension, filename, path |
 | **Match mode** | `file` (content) or `path` (file names) |
-| **Pagination** | `limit` (1-100), `page` (1-10) |
+| **Pagination** | `limit` (1-100, default: 10), `page` (1-10) |
 
 **Key parameters:**
 - `keywordsToSearch` (required): Array of 1-5 search keywords
@@ -153,6 +153,7 @@ topicsToSearch=["react", "state-management"], updated=">2024-01-01"
 | **Content types** | Metadata, full diff, partial diff |
 | **Extra data** | Comments, commits |
 | **Match scope** | Title, body, comments |
+| **Sorting** | `created`, `updated`, `best-match` |
 
 **Key parameters:**
 - `prNumber`: Direct PR lookup (ignores all other filters)
@@ -166,6 +167,8 @@ topicsToSearch=["react", "state-management"], updated=">2024-01-01"
 - `created`/`updated`/`closed`/`merged-at`: Date filters
 - `merged`: Boolean - only merged PRs
 - `draft`: Boolean - draft status
+- `sort`: `created`, `updated`, `best-match`
+- `order`: `asc` or `desc` (default: desc)
 - `type`: `metadata`, `fullContent`, `partialContent`
 - `withComments`: Include PR comments
 - `withCommits`: Include commit list
@@ -185,8 +188,8 @@ prNumber=123, type="metadata"
 owner="org", repo="app", state="closed", merged=true, query="authentication"
 
 # Get specific file diffs from a PR
-prNumber=456, type="partialContent", 
-partialContentMetadata=[{file: "src/auth.ts"}]
+prNumber=456, type="partialContent",
+partialContentMetadata=[{"file": "src/auth.ts"}]
 
 # PRs with comments (understand WHY)
 prNumber=123, type="metadata", withComments=true

@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 
 // Import actual schemas to verify they are correctly built
-import { BulkRipgrepQuerySchema } from '../../src/scheme/local_ripgrep.js';
-import { BulkViewStructureSchema } from '../../src/scheme/local_view_structure.js';
-import { BulkFindFilesSchema } from '../../src/scheme/local_find_files.js';
-import { BulkFetchContentSchema } from '../../src/scheme/local_fetch_content.js';
+import { BulkRipgrepQuerySchema } from '../../src/tools/local_ripgrep/scheme.js';
+import { BulkViewStructureSchema } from '../../src/tools/local_view_structure/scheme.js';
+import { BulkFindFilesSchema } from '../../src/tools/local_find_files/scheme.js';
+import { BulkFetchContentSchema } from '../../src/tools/local_fetch_content/scheme.js';
 import { STATIC_TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 
 describe('Local tool schemas (TDD for local tools registration)', () => {

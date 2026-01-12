@@ -7,7 +7,7 @@ import {
   getHints,
   getLargeFileWorkflowHints,
   HINTS,
-} from '../../src/tools/hints/index.js';
+} from '../../src/hints/index.js';
 import { STATIC_TOOL_NAMES } from '../../src/tools/toolNames.js';
 
 describe('Local Tools Hints', () => {

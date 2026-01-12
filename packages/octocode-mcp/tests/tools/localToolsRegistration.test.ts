@@ -94,16 +94,16 @@ vi.mock('../../src/session.js', () => ({
 }));
 
 // Mock local tool implementations
-vi.mock('../../src/tools/local_ripgrep.js', () => ({
+vi.mock('../../src/tools/local_ripgrep/index.js', () => ({
   searchContentRipgrep: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
-vi.mock('../../src/tools/local_view_structure.js', () => ({
+vi.mock('../../src/tools/local_view_structure/index.js', () => ({
   viewStructure: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
-vi.mock('../../src/tools/local_find_files.js', () => ({
+vi.mock('../../src/tools/local_find_files/index.js', () => ({
   findFiles: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
-vi.mock('../../src/tools/local_fetch_content.js', () => ({
+vi.mock('../../src/tools/local_fetch_content/index.js', () => ({
   fetchContent: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
 vi.mock('../../src/utils/bulkOperations.js', () => ({

@@ -1,10 +1,99 @@
 import { beforeEach, afterEach, afterAll, vi } from 'vitest';
 import { initializeToolMetadata } from '../src/tools/toolMetadata';
-import { _resetSessionState } from 'octocode-shared';
 
 // Increase max listeners to avoid warnings in test environments
 // Tests may legitimately register many listeners due to module isolation
 process.setMaxListeners(50);
+
+// Global mock for octocode-shared to prevent filesystem access during tests
+// This is needed because some tests use vi.resetModules() which can break file-level mocks
+
+// Generate a mock UUID v4 format (36 characters: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx)
+const generateMockUUID = () => {
+  const hex = '0123456789abcdef';
+  let uuid = '';
+  for (let i = 0; i < 36; i++) {
+    if (i === 8 || i === 13 || i === 18 || i === 23) {
+      uuid += '-';
+    } else if (i === 14) {
+      uuid += '4'; // Version 4
+    } else if (i === 19) {
+      uuid += hex[(Math.random() * 4) | 8]; // Variant
+    } else {
+      uuid += hex[(Math.random() * 16) | 0];
+    }
+  }
+  return uuid;
+};
+
+const sessionMockState = {
+  sessionId: generateMockUUID(),
+  deleted: false,
+};
+
+vi.mock('octocode-shared', () => ({
+  _resetSessionState: vi.fn(() => {
+    sessionMockState.sessionId = generateMockUUID();
+    sessionMockState.deleted = false;
+  }),
+  getOrCreateSession: vi.fn(() => {
+    if (sessionMockState.deleted) {
+      sessionMockState.sessionId = generateMockUUID();
+      sessionMockState.deleted = false;
+    }
+    return {
+      version: 1,
+      sessionId: sessionMockState.sessionId,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      lastActiveAt: '2024-01-01T00:00:00.000Z',
+      stats: { toolCalls: 0, promptCalls: 0, errors: 0, rateLimits: 0 },
+    };
+  }),
+  incrementToolCalls: vi.fn(() => ({ success: true })),
+  incrementPromptCalls: vi.fn(() => ({ success: true })),
+  incrementErrors: vi.fn(() => ({ success: true })),
+  incrementRateLimits: vi.fn(() => ({ success: true })),
+  deleteSession: vi.fn(() => {
+    sessionMockState.deleted = true;
+    return true;
+  }),
+  ensureOctocodeDir: vi.fn(),
+  OCTOCODE_DIR: '/mock/.octocode',
+  initializeSecureStorage: vi.fn().mockResolvedValue(undefined),
+  getOctocodeToken: vi.fn().mockResolvedValue(null),
+  getToken: vi.fn().mockResolvedValue(null),
+  isSecureStorageAvailable: vi.fn().mockReturnValue(false),
+  _resetSecureStorageState: vi.fn(),
+  _setSecureStorageAvailable: vi.fn(),
+  getTokenFromEnv: vi.fn(() => {
+    const envVars = ['OCTOCODE_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'];
+    for (const v of envVars) {
+      if (process.env[v]) return process.env[v];
+    }
+    return null;
+  }),
+  getEnvTokenSource: vi.fn(() => {
+    if (process.env.OCTOCODE_TOKEN) return 'env:OCTOCODE_TOKEN';
+    if (process.env.GH_TOKEN) return 'env:GH_TOKEN';
+    if (process.env.GITHUB_TOKEN) return 'env:GITHUB_TOKEN';
+    return null;
+  }),
+  resolveTokenFull: vi.fn(async () => {
+    const envVars = [
+      ['OCTOCODE_TOKEN', 'env:OCTOCODE_TOKEN'],
+      ['GH_TOKEN', 'env:GH_TOKEN'],
+      ['GITHUB_TOKEN', 'env:GITHUB_TOKEN'],
+    ];
+    for (const [envVar, source] of envVars) {
+      if (process.env[envVar])
+        return { token: process.env[envVar], source, wasRefreshed: false };
+    }
+    return null;
+  }),
+}));
+
+// Export for tests that need to access the mock state
+export { sessionMockState };
 
 // Minimal mock content for tests - metadata is fetched from API in production
 // Schema requires: instructions, prompts, toolNames, baseSchema, tools, baseHints, genericErrorHints
@@ -273,6 +362,10 @@ await initializeToolMetadata();
 
 // Mock console methods to avoid noise during tests
 beforeEach(() => {
+  // Reset session mock state with a new UUID
+  sessionMockState.sessionId = generateMockUUID();
+  sessionMockState.deleted = false;
+
   // Only mock if not in debug mode
   if (!process.env.VITEST_DEBUG) {
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -282,9 +375,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  // Clean up session state to prevent MaxListenersExceededWarning
-  // This properly removes exit handlers registered during tests
-  _resetSessionState();
+  // Clean up session mock state with a new UUID for next test
+  sessionMockState.sessionId = generateMockUUID();
+  sessionMockState.deleted = false;
 });
 
 afterAll(() => {

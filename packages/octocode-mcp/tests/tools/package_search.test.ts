@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PackageSearchQuerySchema } from '../../src/scheme/package_search.js';
+import { PackageSearchQuerySchema } from '../../src/tools/package_search/scheme.js';
 import type { ToolInvocationCallback } from '../../src/types.js';
 import {
   createMockMcpServer,
@@ -237,7 +237,7 @@ import {
   type MinimalPackageResult,
   type PythonPackageResult,
 } from '../../src/utils/package/common.js';
-import { registerPackageSearchTool } from '../../src/tools/package_search.js';
+import { registerPackageSearchTool } from '../../src/tools/package_search/package_search.js';
 
 describe('PackageSearchQuerySchema', () => {
   const withResearchFields = <T extends object>(query: T) => ({

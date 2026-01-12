@@ -12,31 +12,26 @@ describe('LSP Client Module', () => {
 
   describe('Module exports', () => {
     it('should export LSPClient class', async () => {
-      const { LSPClient } = await import('../../src/lsp/client.js');
+      const { LSPClient } = await import('../../src/lsp/index.js');
       expect(LSPClient).toBeDefined();
       expect(typeof LSPClient).toBe('function');
     });
 
-    it('should export getOrCreateClient function', async () => {
-      const { getOrCreateClient } = await import('../../src/lsp/client.js');
-      expect(typeof getOrCreateClient).toBe('function');
+    it('should export createClient function', async () => {
+      const { createClient } = await import('../../src/lsp/index.js');
+      expect(typeof createClient).toBe('function');
     });
 
     it('should export isLanguageServerAvailable function', async () => {
       const { isLanguageServerAvailable } =
-        await import('../../src/lsp/client.js');
+        await import('../../src/lsp/index.js');
       expect(typeof isLanguageServerAvailable).toBe('function');
-    });
-
-    it('should export shutdownAllClients function', async () => {
-      const { shutdownAllClients } = await import('../../src/lsp/client.js');
-      expect(typeof shutdownAllClients).toBe('function');
     });
   });
 
   describe('LSPClient constructor', () => {
     it('should create instance with config', async () => {
-      const { LSPClient } = await import('../../src/lsp/client.js');
+      const { LSPClient } = await import('../../src/lsp/index.js');
       const client = new LSPClient({
         command: 'test-server',
         args: ['--stdio'],
@@ -48,7 +43,7 @@ describe('LSP Client Module', () => {
     });
 
     it('should accept minimal config', async () => {
-      const { LSPClient } = await import('../../src/lsp/client.js');
+      const { LSPClient } = await import('../../src/lsp/index.js');
       const client = new LSPClient({
         command: 'test-server',
         workspaceRoot: '/workspace',
@@ -61,7 +56,7 @@ describe('LSP Client Module', () => {
   describe('isLanguageServerAvailable', () => {
     it('should return false for unsupported file types', async () => {
       const { isLanguageServerAvailable } =
-        await import('../../src/lsp/client.js');
+        await import('../../src/lsp/index.js');
 
       const result = await isLanguageServerAvailable('/test/file.txt');
       expect(result).toBe(false);
@@ -69,7 +64,7 @@ describe('LSP Client Module', () => {
 
     it('should return false for unknown extensions', async () => {
       const { isLanguageServerAvailable } =
-        await import('../../src/lsp/client.js');
+        await import('../../src/lsp/index.js');
 
       const result = await isLanguageServerAvailable('/test/file.xyz');
       expect(result).toBe(false);
@@ -77,31 +72,25 @@ describe('LSP Client Module', () => {
 
     it('should return false for files without extension', async () => {
       const { isLanguageServerAvailable } =
-        await import('../../src/lsp/client.js');
+        await import('../../src/lsp/index.js');
 
       const result = await isLanguageServerAvailable('/test/Makefile');
       expect(result).toBe(false);
     });
   });
 
-  describe('getOrCreateClient', () => {
+  describe('createClient', () => {
     it('should return null for unsupported file types', async () => {
-      const { getOrCreateClient } = await import('../../src/lsp/client.js');
+      const { createClient } = await import('../../src/lsp/index.js');
 
-      const result = await getOrCreateClient(
-        '/workspace',
-        '/workspace/file.txt'
-      );
+      const result = await createClient('/workspace', '/workspace/file.txt');
       expect(result).toBeNull();
     });
 
     it('should return null for unknown extensions', async () => {
-      const { getOrCreateClient } = await import('../../src/lsp/client.js');
+      const { createClient } = await import('../../src/lsp/index.js');
 
-      const result = await getOrCreateClient(
-        '/workspace',
-        '/workspace/file.xyz'
-      );
+      const result = await createClient('/workspace', '/workspace/file.xyz');
       expect(result).toBeNull();
     });
   });
@@ -123,7 +112,7 @@ describe('LSP Client Module', () => {
         // The language server configuration is internal, but we can verify
         // that supported extensions don't return null immediately
         const { isLanguageServerAvailable } =
-          await import('../../src/lsp/client.js');
+          await import('../../src/lsp/index.js');
 
         // This will check if the extension is recognized
         // (actual availability depends on installed servers)
@@ -241,7 +230,7 @@ describe('LSP Client Module', () => {
 
   describe('LSP capability check', () => {
     it('should handle missing capabilities', async () => {
-      const { LSPClient } = await import('../../src/lsp/client.js');
+      const { LSPClient } = await import('../../src/lsp/index.js');
 
       const client = new LSPClient({
         command: 'test-server',

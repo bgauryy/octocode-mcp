@@ -33,7 +33,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 }));
 
 // Import after mocking
-import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code.js';
+import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code/github_search_code.js';
 
 describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
   let server: McpServer;

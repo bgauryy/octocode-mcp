@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   CONFIG_ERRORS,
   VALIDATION_ERRORS,
@@ -11,8 +11,6 @@ import {
   PROMISE_ERRORS,
   ALL_ERROR_CODES,
   TOOL_ERRORS,
-  redactPath,
-  localToolErrors,
 } from '../src/errorCodes.js';
 
 describe('errorCodes', () => {
@@ -22,13 +20,6 @@ describe('errorCodes', () => {
         expect(CONFIG_ERRORS.NOT_INITIALIZED).toMatchObject({
           code: 'CONFIG_NOT_INITIALIZED',
           message: expect.stringContaining('initialize()'),
-        });
-      });
-
-      it('should have NO_GITHUB_TOKEN error', () => {
-        expect(CONFIG_ERRORS.NO_GITHUB_TOKEN).toMatchObject({
-          code: 'CONFIG_NO_GITHUB_TOKEN',
-          message: expect.stringContaining('GitHub token'),
         });
       });
     });
@@ -53,28 +44,6 @@ describe('errorCodes', () => {
           code: 'VALIDATION_CONCURRENCY_NOT_POSITIVE',
           message: 'concurrency must be positive',
         });
-      });
-
-      it('should have INVALID_PARAMETERS error', () => {
-        expect(VALIDATION_ERRORS.INVALID_PARAMETERS).toMatchObject({
-          code: 'VALIDATION_INVALID_PARAMETERS',
-          message: expect.stringContaining('object'),
-        });
-      });
-
-      it('should have INVALID_PARAMETER_KEY error with function message', () => {
-        const error = VALIDATION_ERRORS.INVALID_PARAMETER_KEY;
-        expect(error.code).toBe('VALIDATION_INVALID_PARAMETER_KEY');
-        expect(error.message).toBeTypeOf('function');
-        expect(error.message('testKey')).toContain('testKey');
-      });
-
-      it('should have INVALID_NESTED_OBJECT error with function message', () => {
-        const error = VALIDATION_ERRORS.INVALID_NESTED_OBJECT;
-        expect(error.code).toBe('VALIDATION_INVALID_NESTED_OBJECT');
-        expect(error.message).toBeTypeOf('function');
-        expect(error.message('testKey', 'warnings')).toContain('testKey');
-        expect(error.message('testKey', 'warnings')).toContain('warnings');
       });
     });
 
@@ -168,13 +137,6 @@ describe('errorCodes', () => {
         expect(error.message).toBeTypeOf('function');
         expect(error.message('submodule')).toContain('submodule');
       });
-
-      it('should have MATCH_STRING_NOT_FOUND error with function message', () => {
-        const error = FILE_OPERATION_ERRORS.MATCH_STRING_NOT_FOUND;
-        expect(error.code).toBe('FILE_MATCH_STRING_NOT_FOUND');
-        expect(error.message).toBeTypeOf('function');
-        expect(error.message('searchTerm')).toContain('searchTerm');
-      });
     });
 
     describe('REPOSITORY_ERRORS', () => {
@@ -219,13 +181,6 @@ describe('errorCodes', () => {
         expect(msg).toContain('Network error');
       });
 
-      it('should have BRANCH_NOT_FOUND error with function message', () => {
-        const error = REPOSITORY_ERRORS.BRANCH_NOT_FOUND;
-        expect(error.code).toBe('REPO_BRANCH_NOT_FOUND');
-        expect(error.message).toBeTypeOf('function');
-        expect(error.message('feature-branch')).toContain('feature-branch');
-      });
-
       it('should have STRUCTURE_EXPLORATION_FAILED error', () => {
         expect(REPOSITORY_ERRORS.STRUCTURE_EXPLORATION_FAILED).toMatchObject({
           code: 'REPO_STRUCTURE_EXPLORATION_FAILED',
@@ -261,15 +216,6 @@ describe('errorCodes', () => {
           code: 'SEARCH_PR_SINGLE_VALUES',
           message: expect.stringContaining('single values'),
         });
-      });
-
-      it('should have API_REQUEST_FAILED error with function message', () => {
-        const error = SEARCH_ERRORS.API_REQUEST_FAILED;
-        expect(error.code).toBe('SEARCH_API_REQUEST_FAILED');
-        expect(error.message).toBeTypeOf('function');
-        expect(error.message('Rate limit exceeded')).toContain(
-          'Rate limit exceeded'
-        );
       });
 
       it('should have PULL_REQUEST_SEARCH_FAILED error with function message', () => {
@@ -469,64 +415,6 @@ describe('errorCodes', () => {
       // Use a path that's unlikely to match home or workspace
       const result = freshRedactPath('/var/log/app/error.log');
       expect(result).toBe('error.log');
-    });
-  });
-
-  describe('localToolErrors', () => {
-    describe('commandNotAvailable', () => {
-      it('should create error with custom install hint', () => {
-        const error = localToolErrors.commandNotAvailable(
-          'rg',
-          'Install ripgrep: brew install ripgrep'
-        );
-        expect(error.message).toContain("Command 'rg' is not available");
-        expect(error.message).toContain(
-          'Install ripgrep: brew install ripgrep'
-        );
-        expect(error.context?.command).toBe('rg');
-        expect(error.context?.installHint).toBe(
-          'Install ripgrep: brew install ripgrep'
-        );
-      });
-
-      it('should create error with default install hint when not provided', () => {
-        const error = localToolErrors.commandNotAvailable('mycommand');
-        expect(error.message).toContain("Command 'mycommand' is not available");
-        expect(error.message).toContain(
-          'Please install it and ensure it is in your PATH'
-        );
-      });
-    });
-
-    describe('commandExecutionFailed', () => {
-      it('should create error with stderr when provided', () => {
-        const error = localToolErrors.commandExecutionFailed(
-          'grep',
-          undefined,
-          'grep: invalid option'
-        );
-        expect(error.message).toBe(
-          "Command 'grep' failed: grep: invalid option"
-        );
-        expect(error.context?.command).toBe('grep');
-        expect(error.context?.stderr).toBe('grep: invalid option');
-      });
-
-      it('should create error without stderr', () => {
-        const error = localToolErrors.commandExecutionFailed('find');
-        expect(error.message).toBe('Command execution failed: find');
-        expect(error.context?.command).toBe('find');
-      });
-
-      it('should preserve cause error when provided', () => {
-        const cause = new Error('Underlying issue');
-        const error = localToolErrors.commandExecutionFailed(
-          'ls',
-          cause,
-          'permission denied'
-        );
-        expect(error.cause).toBe(cause);
-      });
     });
   });
 });

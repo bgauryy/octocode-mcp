@@ -1,18 +1,34 @@
-import type { GitHubAPIError } from './github/githubAPI.js';
-import type { PaginationInfo } from './utils/core/types.js';
+/**
+ * Common types used across multiple tools and modules
+ * @module types
+ *
+ * NOTE: Tool-specific types are defined in their respective directories:
+ * - tools/github_fetch_content/types.ts
+ * - tools/github_search_code/types.ts
+ * - tools/github_search_repos/types.ts
+ * - tools/github_view_repo_structure/types.ts
+ * - tools/github_search_pull_requests/types.ts
+ * - tools/local_fetch_content/types.ts
+ * - tools/local_find_files/types.ts
+ * - tools/local_ripgrep/types.ts
+ * - tools/local_view_structure/types.ts
+ * - tools/lsp_goto_definition/types.ts
+ * - tools/lsp_find_references/types.ts
+ * - tools/lsp_call_hierarchy/types.ts
+ * - tools/package_search/types.ts
+ */
 
-export type { PaginationInfo };
+import type { GitHubAPIError } from './github/githubAPI.js';
+
+// ============================================================================
+// COMMON QUERY STATUS
+// ============================================================================
 
 export type QueryStatus = 'hasResults' | 'empty' | 'error';
 
-interface BaseToolResult<TQuery = object> {
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-  error?: string;
-  hints?: string[];
-  query?: TQuery;
-}
+// ============================================================================
+// TOOL RESULT TYPES
+// ============================================================================
 
 interface ToolResult {
   status: QueryStatus;
@@ -20,7 +36,7 @@ interface ToolResult {
   researchGoal?: string;
   reasoning?: string;
   hints?: string[];
-  [key: string]: unknown; // Tool-specific fields
+  [key: string]: unknown;
 }
 
 export interface ToolErrorResult extends ToolResult {
@@ -35,64 +51,224 @@ export interface ToolSuccessResult<
   data?: T;
 }
 
-export interface GitHubCodeSearchQuery {
-  keywordsToSearch: string[];
-  owner?: string;
-  repo?: string;
-  extension?: string;
-  filename?: string;
-  path?: string;
-  match?: 'file' | 'path';
-  limit?: number;
-  page?: number;
+// ============================================================================
+// PAGINATION
+// ============================================================================
+
+/**
+ * Common pagination information used across tools
+ */
+export interface PaginationInfo {
+  currentPage: number;
+  totalPages: number;
+  hasMore: boolean;
+  byteOffset?: number;
+  byteLength?: number;
+  totalBytes?: number;
+  charOffset?: number;
+  charLength?: number;
+  totalChars?: number;
+  filesPerPage?: number;
+  totalFiles?: number;
+  entriesPerPage?: number;
+  totalEntries?: number;
+  matchesPerPage?: number;
+  totalMatches?: number;
+}
+
+// ============================================================================
+// TOOL OPERATIONS - Bulk processing, caching, and execution utilities
+// ============================================================================
+
+/**
+ * Optional callback invoked when a tool is called with queries
+ */
+export type ToolInvocationCallback = (
+  toolName: string,
+  queries: unknown[]
+) => Promise<void>;
+
+/** Processed result from bulk query execution */
+export interface ProcessedBulkResult {
+  mainResearchGoal?: string;
+  researchGoal?: string;
+  reasoning?: string;
+  data?: Record<string, unknown>;
+  error?: string | GitHubAPIError;
+  status: QueryStatus;
+  query?: object;
+  hints?: readonly string[] | string[];
+  [key: string]: unknown;
+}
+
+/** Flattened query result for bulk operations */
+export interface FlatQueryResult {
+  id: number;
+  status: QueryStatus;
+  data: Record<string, unknown>;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
 
-/**
- * Code search result with matched files.
- * - For content matches: includes text_matches with matched code snippets
- * - For path-only matches: only includes path (no text_matches)
- * - Each file includes repo (owner/repo) for direct use with githubGetFileContent
- */
-export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
-  /** Array of matched files with their paths and optional text matches */
-  files?: Array<{
-    /** File path within the repository */
-    path: string;
-    /** Repository in owner/repo format - use this for githubGetFileContent */
-    repo?: string;
-    /** Matched code snippets (only for match="file") */
-    text_matches?: string[];
-    /** File last modified timestamp */
-    lastModifiedAt?: string;
-  }>;
-  /** When all files are from the same repo, this provides the owner, repo, and branch separately */
-  repositoryContext?: {
-    owner: string;
-    repo: string;
-    /** Default branch of the repository (for use with githubGetFileContent) */
-    branch?: string;
-  };
-  /** Pagination info for navigating through results */
-  pagination?: {
-    /** Current page number (1-based) */
-    currentPage: number;
-    /** Total number of available pages */
-    totalPages: number;
-    /** Number of results per page */
-    perPage: number;
-    /** Total number of matching results (capped at 1000 by GitHub) */
-    totalMatches: number;
-    /** Whether more pages are available */
-    hasMore: boolean;
-  };
+/** Error information for failed queries */
+export interface QueryError {
+  queryIndex: number;
+  error: string;
 }
 
-// ─── File Content (github_fetch_content) ────────────────────────────────────
+/** Configuration for bulk response formatting */
+export interface BulkResponseConfig {
+  toolName: string;
+  keysPriority?: string[];
+}
 
-/** Query parameters for fetching file content */
+/** Result of a promise with error isolation */
+export interface PromiseResult<T> {
+  success: boolean;
+  data?: T;
+  error?: Error;
+  index: number;
+}
+
+/** Options for batch promise execution */
+export interface PromiseExecutionOptions {
+  timeout?: number;
+  continueOnError?: boolean;
+  concurrency?: number;
+  onError?: (error: Error, index: number) => void;
+}
+
+/** Standardized tool response format */
+export interface ToolResponse {
+  data?: unknown;
+  hints?: string[];
+  instructions?: string;
+  results?: unknown[];
+  summary?: {
+    total: number;
+    hasResults: number;
+    empty: number;
+    errors: number;
+  };
+  hasResultsStatusHints?: string[];
+  emptyStatusHints?: string[];
+  errorStatusHints?: string[];
+  [key: string]: unknown;
+}
+
+// ============================================================================
+// SECURITY TYPES
+// ============================================================================
+
+/** Pattern definition for detecting sensitive data */
+export interface SensitiveDataPattern {
+  name: string;
+  description: string;
+  regex: RegExp;
+  fileContext?: RegExp;
+  matchAccuracy?: 'high' | 'medium';
+}
+
+/** Result of content sanitization */
+export interface SanitizationResult {
+  content: string;
+  hasSecrets: boolean;
+  secretsDetected: string[];
+  warnings: string[];
+}
+
+/** Result of parameter validation */
+export interface ValidationResult {
+  sanitizedParams: Record<string, unknown>;
+  isValid: boolean;
+  hasSecrets: boolean;
+  warnings: string[];
+}
+
+// ============================================================================
+// SERVER CONFIGURATION
+// ============================================================================
+
+/**
+ * Token source types for tracking where the GitHub token came from.
+ */
+export type TokenSourceType =
+  | 'env:OCTOCODE_TOKEN'
+  | 'env:GH_TOKEN'
+  | 'env:GITHUB_TOKEN'
+  | 'gh-cli'
+  | 'octocode-storage'
+  | 'none';
+
+/** Server configuration and feature flags */
+export interface ServerConfig {
+  version: string;
+  githubApiUrl: string;
+  toolsToRun?: string[];
+  enableTools?: string[];
+  disableTools?: string[];
+  enableLogging: boolean;
+  timeout: number;
+  maxRetries: number;
+  loggingEnabled: boolean;
+  enableLocal: boolean;
+  tokenSource: TokenSourceType;
+}
+
+// ============================================================================
+// SESSION MANAGEMENT
+// ============================================================================
+
+/** Session data for tracking tool usage */
+export interface SessionData {
+  sessionId: string;
+  intent: 'init' | 'error' | 'tool_call' | 'prompt_call' | 'rate_limit';
+  data:
+    | ToolCallData
+    | PromptCallData
+    | ErrorData
+    | RateLimitData
+    | Record<string, never>;
+  timestamp: string;
+  version: string;
+}
+
+/** Tool call tracking data */
+export interface ToolCallData {
+  tool_name: string;
+  repos: string[];
+  mainResearchGoal?: string;
+  researchGoal?: string;
+  reasoning?: string;
+}
+
+export interface PromptCallData {
+  prompt_name: string;
+}
+
+/** Error tracking data */
+export interface ErrorData {
+  error: string;
+}
+
+/** Rate limit tracking data */
+export interface RateLimitData {
+  limit_type: 'primary' | 'secondary' | 'graphql' | 'precheck_blocked';
+  retry_after_seconds?: number;
+  rate_limit_remaining?: number;
+  rate_limit_reset_ms?: number;
+  api_method?: string;
+  api_url?: string;
+  details?: string;
+}
+
+// ============================================================================
+// GITHUB TOOL TYPES (duplicated for backward compatibility)
+// These types are also defined in their respective tool directories
+// ============================================================================
+
+/** Query parameters for fetching GitHub file content */
 export interface FileContentQuery {
   owner: string;
   repo: string;
@@ -111,46 +287,21 @@ export interface FileContentQuery {
   reasoning?: string;
 }
 
-/** LLM sampling metadata for content operations */
-interface SamplingInfo {
-  samplingId?: string;
-  samplingMethod?: string;
-  samplingTokens?: number;
-  samplingCost?: number;
-  [key: string]: unknown;
-}
-
-/** File content result data */
-interface ContentResultData {
+/** Query parameters for GitHub code search */
+export interface GitHubCodeSearchQuery {
+  keywordsToSearch: string[];
   owner?: string;
   repo?: string;
+  extension?: string;
+  filename?: string;
   path?: string;
-  contentLength?: number;
-  content?: string;
-  branch?: string;
-  startLine?: number;
-  endLine?: number;
-  isPartial?: boolean;
-  minified?: boolean;
-  minificationFailed?: boolean;
-  minificationType?: string;
-  originalQuery?: FileContentQuery;
-  matchLocations?: string[];
-  sampling?: SamplingInfo;
-  lastModified?: string;
-  lastModifiedBy?: string;
-  pagination?: PaginationInfo;
-  /** True when matchString was provided but not found in file (not an error, just no match) */
-  matchNotFound?: boolean;
-  /** The matchString that was searched for (when matchNotFound is true) */
-  searchedFor?: string;
+  match?: 'file' | 'path';
+  limit?: number;
+  page?: number;
+  mainResearchGoal?: string;
+  researchGoal?: string;
+  reasoning?: string;
 }
-
-/** Complete file content result */
-export interface ContentResult
-  extends BaseToolResult<FileContentQuery>, ContentResultData {}
-
-// ─── Repository Search (github_search_repos) ────────────────────────────────
 
 /** Query parameters for searching GitHub repositories */
 export interface GitHubReposSearchQuery {
@@ -170,47 +321,6 @@ export interface GitHubReposSearchQuery {
   reasoning?: string;
 }
 
-/** Simplified repository metadata */
-export interface SimplifiedRepository {
-  owner: string;
-  repo: string;
-  defaultBranch?: string;
-  stars: number;
-  description: string;
-  url: string;
-  createdAt: string;
-  updatedAt: string;
-  pushedAt: string;
-  /** Repository visibility: public, private, or internal */
-  visibility?: string;
-  /** Array of topic tags (only included if repository has topics) */
-  topics?: string[];
-  /** Number of forks (only included if > 0) */
-  forksCount?: number;
-  /** Number of open issues (only included if > 0) */
-  openIssuesCount?: number;
-}
-
-/** Repository search result */
-export interface RepoSearchResult extends BaseToolResult<GitHubReposSearchQuery> {
-  repositories: SimplifiedRepository[];
-  /** Pagination info for navigating through results */
-  pagination?: {
-    /** Current page number (1-based) */
-    currentPage: number;
-    /** Total number of available pages */
-    totalPages: number;
-    /** Number of results per page */
-    perPage: number;
-    /** Total number of matching results (capped at 1000 by GitHub) */
-    totalMatches: number;
-    /** Whether more pages are available */
-    hasMore: boolean;
-  };
-}
-
-// ─── Repository Structure (github_view_repo_structure) ──────────────────────
-
 /** Query parameters for viewing repository structure */
 export interface GitHubViewRepoStructureQuery {
   owner: string;
@@ -224,73 +334,6 @@ export interface GitHubViewRepoStructureQuery {
   researchGoal?: string;
   reasoning?: string;
 }
-
-/** Directory entry with files and folders grouped together */
-export interface DirectoryEntry {
-  files: string[];
-  folders: string[];
-}
-
-/**
- * Repository structure result data - optimized format.
- * Groups files by parent directory to eliminate path repetition.
- * Keys are relative directory paths (e.g., ".", "src", "src/utils").
- */
-interface RepoStructureResultData {
-  owner?: string;
-  repo?: string;
-  branch?: string;
-  /** Base path that was queried */
-  path?: string;
-  /** Structure grouped by directory - keys are relative paths */
-  structure?: Record<string, DirectoryEntry>;
-}
-
-/** Complete repository structure result */
-export interface RepoStructureResult
-  extends
-    BaseToolResult<GitHubViewRepoStructureQuery>,
-    RepoStructureResultData {}
-
-// ─── Package Search (package_search) ────────────────────────────────────────
-
-/** Query parameters for searching packages */
-interface PackageSearchQuery {
-  name: string;
-  ecosystem: 'npm' | 'python';
-  searchLimit?: number;
-  npmFetchMetadata?: boolean;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-}
-
-/** Individual package in search results */
-interface PackageInfo {
-  name: string;
-  version: string;
-  description: string | null;
-  keywords: string[];
-  repository: string | null;
-  owner?: string;
-  repo?: string;
-  license?: string;
-  homepage?: string;
-  author?: string;
-}
-
-/** Package search result data */
-interface PackageSearchResultData {
-  packages: PackageInfo[];
-  ecosystem: 'npm' | 'python';
-  totalFound: number;
-}
-
-/** Complete package search result */
-interface _PackageSearchResult
-  extends BaseToolResult<PackageSearchQuery>, PackageSearchResultData {}
-
-// ─── Pull Requests (github_search_pull_requests) ────────────────────────────
 
 /** Query parameters for searching pull requests */
 export interface GitHubPullRequestSearchQuery {
@@ -339,8 +382,106 @@ export interface GitHubPullRequestSearchQuery {
   reasoning?: string;
 }
 
-/** Detailed pull request information */
-interface PullRequestInfo {
+/** Simplified repository metadata */
+export interface SimplifiedRepository {
+  owner: string;
+  repo: string;
+  defaultBranch?: string;
+  stars: number;
+  description: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+  pushedAt: string;
+  visibility?: string;
+  topics?: string[];
+  forksCount?: number;
+  openIssuesCount?: number;
+}
+
+/** Directory entry with files and folders */
+export interface DirectoryEntry {
+  files: string[];
+  folders: string[];
+}
+
+/** Base result interface */
+interface BaseToolResult<TQuery = object> {
+  mainResearchGoal?: string;
+  researchGoal?: string;
+  reasoning?: string;
+  error?: string;
+  hints?: string[];
+  query?: TQuery;
+}
+
+/** Code search result */
+export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
+  files?: Array<{
+    path: string;
+    repo?: string;
+    text_matches?: string[];
+    lastModifiedAt?: string;
+  }>;
+  repositoryContext?: {
+    owner: string;
+    repo: string;
+    branch?: string;
+  };
+  pagination?: {
+    currentPage: number;
+    totalPages: number;
+    perPage: number;
+    totalMatches: number;
+    hasMore: boolean;
+  };
+}
+
+/** File content result */
+export interface ContentResult extends BaseToolResult<FileContentQuery> {
+  owner?: string;
+  repo?: string;
+  path?: string;
+  contentLength?: number;
+  content?: string;
+  branch?: string;
+  startLine?: number;
+  endLine?: number;
+  isPartial?: boolean;
+  minified?: boolean;
+  minificationFailed?: boolean;
+  minificationType?: string;
+  matchLocations?: string[];
+  lastModified?: string;
+  lastModifiedBy?: string;
+  pagination?: PaginationInfo;
+  matchNotFound?: boolean;
+  searchedFor?: string;
+}
+
+/** Repository search result */
+export interface RepoSearchResult extends BaseToolResult<GitHubReposSearchQuery> {
+  repositories: SimplifiedRepository[];
+  pagination?: {
+    currentPage: number;
+    totalPages: number;
+    perPage: number;
+    totalMatches: number;
+    hasMore: boolean;
+  };
+}
+
+/** Repository structure result */
+export interface RepoStructureResult extends BaseToolResult<GitHubViewRepoStructureQuery> {
+  owner?: string;
+  repo?: string;
+  branch?: string;
+  path?: string;
+  structure?: Record<string, DirectoryEntry>;
+}
+
+/** Pull request info */
+export interface PullRequestInfo {
   id?: number;
   number: number;
   title: string;
@@ -417,251 +558,18 @@ interface PullRequestInfo {
   }>;
 }
 
-/** Pagination info for pull request search results */
-interface PRSearchPagination {
-  currentPage: number;
-  totalPages: number;
-  perPage: number;
-  totalMatches: number;
-  hasMore: boolean;
-}
-
-/** Pull request search result data */
-interface PullRequestSearchResultData {
+/** Pull request search result */
+export interface PullRequestSearchResult extends BaseToolResult<GitHubPullRequestSearchQuery> {
   owner?: string;
   repo?: string;
   pull_requests?: PullRequestInfo[];
   total_count?: number;
   incomplete_results?: boolean;
-  pagination?: PRSearchPagination;
-}
-
-/** Complete pull request search result */
-export interface PullRequestSearchResult
-  extends
-    BaseToolResult<GitHubPullRequestSearchQuery>,
-    PullRequestSearchResultData {}
-
-// ============================================================================
-// TOOL OPERATIONS - Bulk processing, caching, and execution utilities
-// ============================================================================
-
-// ─── Tool Invocation Callback ───────────────────────────────────────────────
-
-/**
- * Optional callback invoked when a tool is called with queries
- * @param toolName - The name of the tool being invoked
- * @param queries - Array of query objects passed to the tool
- */
-export type ToolInvocationCallback = (
-  toolName: string,
-  queries: unknown[]
-) => Promise<void>;
-
-// ─── Bulk Operations (executeBulkOperation) ─────────────────────────────────
-
-/** Processed result from bulk query execution */
-export interface ProcessedBulkResult<
-  TData = Record<string, unknown>,
-  TQuery = object,
-> {
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-  data?: TData;
-  error?: string | GitHubAPIError;
-  status: QueryStatus;
-  query?: TQuery;
-  hints?: readonly string[] | string[];
-  [key: string]: unknown; // Tool-specific fields
-}
-
-/** Flattened query result for bulk operations (optimized - no query duplication) */
-export interface FlatQueryResult {
-  id: number;
-  status: QueryStatus;
-  data: Record<string, unknown>;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-}
-
-/** Error information for failed queries */
-export interface QueryError {
-  queryIndex: number;
-  error: string;
-}
-
-/** Configuration for bulk response formatting */
-export interface BulkResponseConfig {
-  toolName: string; // Kept as string to avoid circular dependency
-  keysPriority?: string[];
-}
-
-// ─── Caching (cache.ts) ─────────────────────────────────────────────────────
-
-/** Cache performance statistics */
-interface _CacheStats {
-  hits: number;
-  misses: number;
-  sets: number;
-  totalKeys: number;
-  lastReset: Date;
-}
-
-// ─── Promise Utilities (promiseUtils.ts) ────────────────────────────────────
-
-/** Result of a promise with error isolation */
-export interface PromiseResult<T> {
-  success: boolean;
-  data?: T;
-  error?: Error;
-  index: number;
-}
-
-/** Options for batch promise execution */
-export interface PromiseExecutionOptions {
-  timeout?: number;
-  continueOnError?: boolean;
-  concurrency?: number;
-  onError?: (error: Error, index: number) => void;
-}
-
-// ─── Response Formatting (responses.ts) ─────────────────────────────────────
-
-/** Standardized tool response format (single and bulk) */
-export interface ToolResponse {
-  data?: unknown; // Single response data
-  hints?: string[]; // DEPRECATED: Use instructions
-  instructions?: string; // Processing instructions
-  results?: unknown[]; // Bulk operation results
-  summary?: {
-    total: number;
-    hasResults: number;
-    empty: number;
-    errors: number;
+  pagination?: {
+    currentPage: number;
+    totalPages: number;
+    perPage: number;
+    totalMatches: number;
+    hasMore: boolean;
   };
-  hasResultsStatusHints?: string[]; // Bulk hints for successful queries
-  emptyStatusHints?: string[]; // Bulk hints for empty results
-  errorStatusHints?: string[]; // Bulk hints for errors
-  [key: string]: unknown; // Allow additional tool-specific fields
-}
-
-// ============================================================================
-// INFRASTRUCTURE - Server, security, and session management
-// ============================================================================
-
-// ─── Security (security/) ───────────────────────────────────────────────────
-
-/** Pattern definition for detecting sensitive data */
-export interface SensitiveDataPattern {
-  name: string;
-  description: string;
-  regex: RegExp;
-  fileContext?: RegExp;
-  matchAccuracy?: 'high' | 'medium';
-}
-
-/** Result of content sanitization */
-export interface SanitizationResult {
-  content: string;
-  hasSecrets: boolean;
-  secretsDetected: string[];
-  warnings: string[]; // Alias for secretsDetected
-}
-
-/** Result of parameter validation */
-export interface ValidationResult {
-  sanitizedParams: Record<string, unknown>;
-  isValid: boolean;
-  hasSecrets: boolean;
-  warnings: string[];
-}
-
-// ─── Server Configuration (serverConfig.ts) ─────────────────────────────────
-
-/**
- * Token source types for tracking where the GitHub token came from.
- * Used by MCP to identify token source for debugging and logging.
- */
-export type TokenSourceType =
-  | 'env:OCTOCODE_TOKEN' // Priority 1
-  | 'env:GH_TOKEN' // Priority 2
-  | 'env:GITHUB_TOKEN' // Priority 3
-  | 'gh-cli' // Priority 4
-  | 'octocode-storage' // Priority 5 (keychain or file)
-  | 'none'; // No token found
-
-/** Server configuration and feature flags */
-export interface ServerConfig {
-  version: string;
-  githubApiUrl: string;
-  toolsToRun?: string[];
-  enableTools?: string[];
-  disableTools?: string[];
-  enableLogging: boolean;
-  timeout: number;
-  maxRetries: number;
-  loggingEnabled: boolean;
-  enableLocal: boolean;
-  /** Token source tracking - identifies where the GitHub token was resolved from */
-  tokenSource: TokenSourceType;
-}
-
-// ─── Session Management (session.ts) ────────────────────────────────────────
-
-/** Session data for tracking tool usage */
-export interface SessionData {
-  sessionId: string;
-  intent: 'init' | 'error' | 'tool_call' | 'prompt_call' | 'rate_limit';
-  data:
-    | ToolCallData
-    | PromptCallData
-    | ErrorData
-    | RateLimitData
-    | Record<string, never>;
-  timestamp: string;
-  version: string;
-}
-
-/** Tool call tracking data */
-export interface ToolCallData {
-  tool_name: string;
-  repos: string[];
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-}
-
-export interface PromptCallData {
-  prompt_name: string;
-}
-
-/** Error tracking data */
-export interface ErrorData {
-  error: string;
-}
-
-/** Rate limit tracking data */
-export interface RateLimitData {
-  /**
-   * The kind of rate limit that occurred
-   * - primary: Hourly quota exhausted (REST/GraphQL)
-   * - secondary: Abuse detection (too frequent)
-   * - graphql: GraphQL-specific rate limiting indication
-   * - precheck_blocked: Proactive block based on current rate limits
-   */
-  limit_type: 'primary' | 'secondary' | 'graphql' | 'precheck_blocked';
-  /** Seconds to wait before retrying (if known) */
-  retry_after_seconds?: number;
-  /** Remaining requests at the time of the event */
-  rate_limit_remaining?: number;
-  /** Epoch milliseconds for reset time (if known) */
-  rate_limit_reset_ms?: number;
-  /** Optional HTTP method involved */
-  api_method?: string;
-  /** Optional API URL that was being called */
-  api_url?: string;
-  /** Additional free-form details */
-  details?: string;
 }

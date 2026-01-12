@@ -67,9 +67,13 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 **Key parameters:**
 - `pattern` (required): Search pattern (regex or literal)
 - `path` (required): Directory to search
+- `mode`: Workflow presets (`discovery`, `paginated`, `detailed`)
 - `filesOnly`: Return only file paths (fast discovery)
 - `contextLines`: Lines of context around matches
+- `type`: File type filter (e.g., `ts`, `js`, `py`)
 - `include`/`exclude`: Glob patterns for filtering
+- `smartCase`: Smart case sensitivity (default: true)
+- `matchesPerPage`/`filesPerPage`/`filePageNumber`: Pagination controls
 
 **Critical:** Produces `lineHint` values **required** for all LSP tools.
 
@@ -88,10 +92,11 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 
 **Key parameters:**
 - `path` (required): Directory to explore
-- `depth`: How deep to traverse (default: 1)
-- `sortBy`: `name`, `size`, `time`, `extension`
+- `depth`: How deep to traverse (default: 1, max: 5)
+- `sortBy`: `name`, `size`, `time`, `extension` (default: `time`)
 - `filesOnly`/`directoriesOnly`: Filter by type
 - `pattern`: Filter by name pattern
+- `entriesPerPage`/`entryPageNumber`: Pagination controls
 
 ---
 
@@ -131,7 +136,10 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `path` (required): File to read
 - `startLine`/`endLine`: Line range (1-indexed)
 - `matchString`: Find specific content with context
-- `matchStringContextLines`: Lines around match (default: 5)
+- `matchStringContextLines`: Lines around match (default: 5, max: 50)
+- `matchStringIsRegex`: Treat matchString as regex (default: false)
+- `matchStringCaseSensitive`: Case-sensitive matching (default: false)
+- `charOffset`/`charLength`: Character-based pagination for large files
 - `fullContent`: Read entire file (use sparingly)
 
 **⚠️ Should be the LAST step** after search/LSP analysis.
@@ -166,9 +174,10 @@ MCP Client → Octocode MCP → Language Server (spawned)
 
 **Key parameters:**
 - `uri` (required): File containing the symbol
-- `symbolName` (required): Exact symbol name (case-sensitive)
+- `symbolName` (required): Exact symbol name (case-sensitive, max 255 chars)
 - `lineHint` (required): Line number from `localSearchCode` (1-indexed)
-- `contextLines`: Lines of context around definition
+- `orderHint`: Which occurrence on line if multiple (0-indexed, default: 0)
+- `contextLines`: Lines of context around definition (default: 5, max: 20)
 
 **Use when:** "Where is this function/class/variable defined?"
 
@@ -186,10 +195,13 @@ MCP Client → Octocode MCP → Language Server (spawned)
 
 **Key parameters:**
 - `uri` (required): File containing the symbol
-- `symbolName` (required): Exact symbol name
+- `symbolName` (required): Exact symbol name (max 255 chars)
 - `lineHint` (required): Line number from search
-- `includeDeclaration`: Include definition in results
-- `referencesPerPage`/`page`: Pagination
+- `orderHint`: Which occurrence on line if multiple (0-indexed, default: 0)
+- `includeDeclaration`: Include definition in results (default: true)
+- `contextLines`: Lines of context (default: 2, max: 10)
+- `referencesPerPage`: Results per page (default: 20, max: 50)
+- `page`: Page number (default: 1)
 
 **Use when:** "Who uses this type/interface/variable/constant?"
 
@@ -207,11 +219,14 @@ MCP Client → Octocode MCP → Language Server (spawned)
 
 **Key parameters:**
 - `uri` (required): File containing the function
-- `symbolName` (required): Function name
+- `symbolName` (required): Function name (max 255 chars)
 - `lineHint` (required): Line number from search
 - `direction` (required): `incoming` or `outgoing`
+- `orderHint`: Which occurrence on line if multiple (0-indexed, default: 0)
 - `depth`: Recursion depth (1-3, default: 1)
-- `callsPerPage`/`page`: Pagination
+- `contextLines`: Lines of context (default: 2, max: 10)
+- `callsPerPage`: Results per page (default: 15, max: 30)
+- `page`: Page number (default: 1)
 
 **Use when:** "Trace the call flow" / "Who calls X?" / "What does X call?"
 
@@ -557,4 +572,4 @@ Tools with no dependencies can run in parallel:
 
 **Batch limits:**
 - Local tools: Up to 5 queries per call
-- LSP tools: Up to 3-5 queries per call
+- LSP tools: 5 queries per call (except `lspCallHierarchy`: 3 max)

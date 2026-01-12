@@ -206,7 +206,7 @@ vi.mock('../../src/security/pathValidator.js', () => pathValidatorMocks);
 // STEP 3: Import modules under test AFTER mocks are set up
 // =============================================================================
 const { viewStructure } =
-  await import('../../src/tools/local_view_structure.js');
+  await import('../../src/tools/local_view_structure/index.js');
 
 // =============================================================================
 // TESTS

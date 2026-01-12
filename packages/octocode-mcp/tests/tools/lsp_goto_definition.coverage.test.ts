@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { addLineNumbers } from '../../src/tools/lsp_goto_definition.js';
+import { addLineNumbers } from '../../src/tools/lsp_goto_definition/lsp_goto_definition.js';
 
 // Mock fs/promises
 vi.mock('fs/promises', () => ({
@@ -36,7 +36,7 @@ vi.mock('../../src/lsp/index.js', () => {
       }),
     })),
     SymbolResolutionError: MockSymbolResolutionError,
-    getOrCreateClient: vi.fn().mockResolvedValue(null),
+    createClient: vi.fn().mockResolvedValue(null),
     isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
   };
 });
@@ -168,7 +168,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
       vi.resetModules();
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -190,7 +190,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
       vi.resetModules();
 
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -212,14 +212,14 @@ describe('LSP Goto Definition Coverage Tests', () => {
   describe('Schema exports', () => {
     it('should export BulkLSPGotoDefinitionSchema', async () => {
       const { BulkLSPGotoDefinitionSchema } =
-        await import('../../src/scheme/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/scheme.js');
       expect(BulkLSPGotoDefinitionSchema).toBeDefined();
       expect(BulkLSPGotoDefinitionSchema.shape.queries).toBeDefined();
     });
 
     it('should export description', async () => {
       const { LSP_GOTO_DEFINITION_DESCRIPTION } =
-        await import('../../src/scheme/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/scheme.js');
       expect(typeof LSP_GOTO_DEFINITION_DESCRIPTION).toBe('string');
       // Description may be empty if tool not in remote metadata (local-only tool)
     });
@@ -628,7 +628,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
 
       // Re-import after resetting mocks
       const { registerLSPGotoDefinitionTool } =
-        await import('../../src/tools/lsp_goto_definition.js');
+        await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
         registerTool: vi.fn(
@@ -646,7 +646,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
       // Default mocks
       vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue(null);
+      vi.mocked(lspModule.createClient).mockResolvedValue(null);
 
       // Default SymbolResolver mock
       vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
@@ -735,8 +735,9 @@ describe('LSP Goto Definition Coverage Tests', () => {
       vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
 
-      // Make getOrCreateClient return a client that throws on gotoDefinition
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+      // Make createClient return a client that throws on gotoDefinition
+      vi.mocked(lspModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
         gotoDefinition: vi.fn().mockRejectedValue(new Error('LSP timeout')),
       } as any);
 
@@ -766,8 +767,9 @@ describe('LSP Goto Definition Coverage Tests', () => {
       vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
 
-      // Make getOrCreateClient return a client that returns empty locations
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+      // Make createClient return a client that returns empty locations
+      vi.mocked(lspModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
         gotoDefinition: vi.fn().mockResolvedValue([]),
       } as any);
 
@@ -799,7 +801,8 @@ describe('LSP Goto Definition Coverage Tests', () => {
       vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
 
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+      vi.mocked(lspModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
         gotoDefinition: vi.fn().mockResolvedValue(null),
       } as any);
 

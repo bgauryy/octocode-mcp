@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LOCAL_TOOL_ERROR_CODES } from '../../src/errorCodes.js';
-import { viewStructure } from '../../src/tools/local_view_structure.js';
+import { viewStructure } from '../../src/tools/local_view_structure/local_view_structure.js';
 import * as exec from '../../src/utils/exec/index.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 import type { Stats } from 'fs';
@@ -2307,6 +2307,123 @@ describe('localViewStructure', () => {
         expect(result.charPagination.totalBytes).toBeGreaterThan(
           result.charPagination.totalChars ?? 0
         );
+      }
+    });
+  });
+
+  describe('Auto-pagination for large structuredOutput', () => {
+    it('should auto-paginate when output exceeds MAX_OUTPUT_CHARS (2000) without charLength', async () => {
+      // Create 20 files with VERY long names to exceed 2000 chars (20 entries * 150+ chars = 3000+ chars)
+      const longNameFiles = Array.from(
+        { length: 20 },
+        (_, i) =>
+          `this_is_an_extremely_long_filename_that_will_definitely_exceed_the_limit_when_multiplied_by_twenty_entries_${i.toString().padStart(3, '0')}.txt`
+      );
+      mockReaddir.mockResolvedValue(longNameFiles);
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date('2024-01-01'),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+        entriesPerPage: 20, // Ensure all 20 are on one page
+        // No charLength specified - should trigger auto-pagination
+      });
+
+      expect(result.status).toBe('hasResults');
+      // Output should be truncated to 5000 chars max
+      if (result.structuredOutput) {
+        expect(result.structuredOutput.length).toBeLessThanOrEqual(5000);
+      }
+      // Should have warnings about auto-pagination
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings?.length).toBeGreaterThan(0);
+      expect(result.warnings?.[0]).toContain('Auto-paginated');
+      expect(result.warnings?.[0]).toContain('exceeds');
+    });
+
+    it('should NOT auto-paginate when output is under MAX_OUTPUT_CHARS (2000)', async () => {
+      // Create just a few files - small output
+      const fewFiles = ['a.txt', 'b.txt', 'c.txt'];
+      mockReaddir.mockResolvedValue(fewFiles);
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 100,
+        mtime: new Date('2024-01-01'),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+        // No charLength specified - should NOT trigger auto-pagination (output small)
+      });
+
+      expect(result.status).toBe('hasResults');
+      // Should NOT have auto-pagination warnings
+      expect(result.warnings).toBeUndefined();
+    });
+
+    it('should NOT auto-paginate when charLength is explicitly provided', async () => {
+      // Create many files
+      const manyFiles = Array.from(
+        { length: 50 },
+        (_, i) => `file_${i.toString().padStart(3, '0')}.txt`
+      );
+      mockReaddir.mockResolvedValue(manyFiles);
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date('2024-01-01'),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+        charLength: 500, // User explicitly set charLength
+      });
+
+      expect(result.status).toBe('hasResults');
+      // Should NOT have auto-pagination warning (user controlled pagination)
+      expect(result.warnings).toBeUndefined();
+      // Output should be truncated to user's charLength
+      if (result.structuredOutput) {
+        expect(result.structuredOutput.length).toBeLessThanOrEqual(500);
+      }
+    });
+
+    it('should auto-paginate in non-recursive mode (ls-based) when output is large', async () => {
+      // Create files via ls output simulation
+      const longFiles = Array.from(
+        { length: 100 },
+        (_, i) =>
+          `very_long_filename_for_ls_output_${i.toString().padStart(3, '0')}.txt`
+      ).join('\n');
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: longFiles,
+        stderr: '',
+      });
+
+      const result = await viewStructure({
+        path: '/test/path',
+        // No depth = non-recursive ls mode
+      });
+
+      expect(result.status).toBe('hasResults');
+      // If output was large, should be auto-paginated
+      if (result.structuredOutput && result.structuredOutput.length > 0) {
+        expect(result.structuredOutput.length).toBeLessThanOrEqual(5000);
       }
     });
   });

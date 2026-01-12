@@ -5,7 +5,7 @@ import type {
   ToolInvocationCallback,
 } from '../types.js';
 import type { HintContext } from '../types/metadata.js';
-import { getHints } from './hints/index.js';
+import { getHints } from '../hints/index.js';
 import { logSessionError } from '../session.js';
 import { TOOL_ERRORS } from '../errorCodes.js';
 import { createErrorResult } from '../utils/response/error.js';

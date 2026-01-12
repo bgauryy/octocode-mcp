@@ -1,505 +1,662 @@
-# Octocode MCP Architecture
+# Octocode MCP Server Architecture
 
-> Model Context Protocol (MCP) server for GitHub and local code research, built in TypeScript.
+> Technical architecture documentation for the `octocode-mcp` Model Context Protocol server.
 
 ## Overview
 
-Octocode MCP is an MCP server that provides AI agents with powerful code exploration capabilities. It exposes **13 tools** for:
+Octocode MCP is a **Model Context Protocol (MCP)** server that provides AI agents with powerful code research capabilities. It offers tools for:
 
-- **GitHub Research**: Search code, repositories, pull requests, view repo structure, and fetch file content
-- **Local Research**: Search local codebases using ripgrep, browse directory structure, find files, and read content
-- **LSP Intelligence**: Semantic code navigation via Language Server Protocol (go-to-definition, find references, call hierarchy)
-- **Package Discovery**: Search NPM and PyPI for package information and repository URLs
+- **GitHub API integration** — Search code, repositories, PRs, and fetch file contents
+- **Local filesystem exploration** — Search, browse, and read local codebases
+- **LSP-powered code intelligence** — Go to definition, find references, call hierarchy
 
-The server follows the [Model Context Protocol](https://modelcontextprotocol.io/) specification and integrates with MCP-compatible clients like Cursor, Claude Desktop, and others.
+The server communicates via **stdio transport** and outputs **YAML-formatted responses** optimized for LLM consumption.
 
----
+## High-Level Architecture
 
-## Project Structure
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              AI Agent (Client)                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      │ MCP Protocol (stdio)
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            Octocode MCP Server                               │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │                         Entry Point (index.ts)                          ││
+│  │  • Server initialization    • Tool registration    • Graceful shutdown  ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│                                      │                                       │
+│  ┌───────────────────────────────────┼───────────────────────────────────┐  │
+│  │                        Security Layer                                  │  │
+│  │  • Input validation    • Path security    • Sensitive data masking    │  │
+│  └───────────────────────────────────┼───────────────────────────────────┘  │
+│                                      │                                       │
+│  ┌───────────────────────────────────┴───────────────────────────────────┐  │
+│  │                          Tools Manager                                 │  │
+│  │               13 Tools • Bulk Operations • Hints System                │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│          │                    │                    │                         │
+│          ▼                    ▼                    ▼                         │
+│  ┌──────────────┐   ┌──────────────────┐   ┌────────────────┐               │
+│  │   GitHub     │   │      Local       │   │      LSP       │               │
+│  │   Module     │   │     Module       │   │    Module      │               │
+│  │              │   │                  │   │                │               │
+│  │ • Octokit    │   │ • Ripgrep        │   │ • TS Server    │               │
+│  │ • Throttling │   │ • Find           │   │ • Definitions  │               │
+│  │ • GraphQL    │   │ • File reads     │   │ • References   │               │
+│  └──────────────┘   └──────────────────┘   └────────────────┘               │
+│          │                    │                    │                         │
+│          └────────────────────┴────────────────────┘                         │
+│                               │                                              │
+│  ┌────────────────────────────┴────────────────────────────────────────────┐│
+│  │                        Response Formatting                               ││
+│  │   • YAML output    • Bulk responses    • Hints injection    • Minify    ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                    ┌─────────────────┼─────────────────┐
+                    ▼                 ▼                 ▼
+             ┌──────────┐      ┌──────────┐      ┌──────────┐
+             │ GitHub   │      │ Local    │      │ Language │
+             │ API      │      │ Filesystem│     │ Servers  │
+             └──────────┘      └──────────┘      └──────────┘
+```
+
+## Directory Structure
 
 ```
 src/
-├── index.ts                 # Entry point - server initialization
-├── serverConfig.ts          # Configuration & GitHub token management
-├── session.ts               # Session tracking & telemetry
-├── responses.ts             # Response formatting utilities
-├── errorCodes.ts            # Centralized error definitions
-├── types.ts                 # Shared TypeScript types
-├── public.ts                # Public API exports
+├── index.ts                    # Server entry point
+├── serverConfig.ts             # Configuration & token resolution
+├── session.ts                  # Session management & telemetry
+├── types.ts                    # Core TypeScript types
+├── errorCodes.ts               # Centralized error definitions
+├── responses.ts                # Response formatting utilities
+├── public.ts                   # Public API exports
 │
-├── scheme/                  # 📐 Input validation schemas (Zod)
-│   ├── baseSchema.ts        # Common schema patterns & bulk query builder
-│   ├── github_*.ts          # GitHub tool schemas (5 files)
-│   ├── local_*.ts           # Local tool schemas (4 files)
-│   ├── lsp_*.ts             # LSP tool schemas (3 files)
-│   ├── package_search.ts    # Package search schema
-│   └── responsePriority.ts  # Response field ordering
+├── tools/                      # Tool implementations
+│   ├── toolsManager.ts         # Tool registration orchestrator
+│   ├── toolConfig.ts           # Tool definitions & metadata
+│   ├── toolMetadata.ts         # Schema & hints from API
+│   ├── toolNames.ts            # Static tool name constants
+│   ├── utils.ts                # Tool utilities
+│   │
+│   ├── github_*/               # GitHub API tools
+│   │   ├── github_search_code/
+│   │   ├── github_fetch_content/
+│   │   ├── github_view_repo_structure/
+│   │   ├── github_search_repos/
+│   │   └── github_search_pull_requests/
+│   │
+│   ├── local_*/                # Local filesystem tools
+│   │   ├── local_ripgrep/
+│   │   ├── local_view_structure/
+│   │   ├── local_find_files/
+│   │   └── local_fetch_content/
+│   │
+│   ├── lsp_*/                  # LSP tools
+│   │   ├── lsp_goto_definition/
+│   │   ├── lsp_find_references/
+│   │   └── lsp_call_hierarchy/
+│   │
+│   └── package_search/         # NPM/PyPI package search
 │
-├── tools/                   # 🔧 Tool implementations
-│   ├── toolConfig.ts        # Tool registry & configuration
-│   ├── toolMetadata.ts      # Dynamic metadata from API
-│   ├── toolNames.ts         # Static tool name constants
-│   ├── toolsManager.ts      # Tool registration orchestrator
-│   ├── github_*.ts          # GitHub tool implementations (5 files)
-│   ├── local_*.ts           # Local tool implementations (4 files)
-│   ├── lsp_*.ts             # LSP tool implementations (3 files)
-│   ├── package_search.ts    # Package search implementation
-│   ├── utils.ts             # Tool-specific utilities
-│   └── hints/               # Dynamic hint generation
-│       ├── index.ts         # Hints module exports
-│       ├── dynamic.ts       # Context-aware hints
-│       ├── static.ts        # Predefined hints
-│       ├── localBaseHints.ts # Local tool base hints
-│       └── types.ts         # Hint type definitions
+├── github/                     # GitHub API layer
+│   ├── index.ts                # Module exports
+│   ├── client.ts               # Octokit client with throttling
+│   ├── githubAPI.ts            # Core API functions
+│   ├── codeSearch.ts           # Code search implementation
+│   ├── repoSearch.ts           # Repository search
+│   ├── pullRequestSearch.ts    # PR search
+│   ├── fileContent.ts          # File content fetching
+│   ├── repoStructure.ts        # Repository tree traversal
+│   ├── queryBuilders.ts        # Search query construction
+│   ├── errors.ts               # GitHub-specific errors
+│   └── errorConstants.ts       # Error code definitions
 │
-├── github/                  # 🐙 GitHub API layer
-│   ├── index.ts             # GitHub module exports
-│   ├── client.ts            # Octokit client with throttling
-│   ├── githubAPI.ts         # Core API types & interfaces
-│   ├── codeSearch.ts        # Code search operations
-│   ├── fileContent.ts       # File content retrieval
-│   ├── fileOperations.ts    # File operation utilities
-│   ├── repoSearch.ts        # Repository search
-│   ├── repoStructure.ts     # Repository tree exploration
-│   ├── pullRequestSearch.ts # PR search & diff retrieval
-│   ├── queryBuilders.ts     # GitHub search query construction
-│   ├── errors.ts            # GitHub error handling
-│   └── errorConstants.ts    # GitHub-specific error codes
+├── lsp/                        # Language Server Protocol
+│   ├── index.ts                # Module exports
+│   ├── client.ts               # LSP client implementation
+│   ├── manager.ts              # Client lifecycle management
+│   ├── config.ts               # Language server configuration
+│   ├── resolver.ts             # Symbol resolution
+│   ├── symbols.ts              # Symbol kind mapping
+│   ├── types.ts                # LSP type definitions
+│   ├── uri.ts                  # URI utilities
+│   └── validation.ts           # Server path validation
 │
-├── lsp/                     # 🔤 Language Server Protocol
-│   ├── index.ts             # LSP module exports
-│   ├── client.ts            # LSP client (spawns servers, JSON-RPC)
-│   ├── types.ts             # LSP type definitions
-│   └── resolver.ts          # Symbol resolution utilities
+├── security/                   # Security layer
+│   ├── withSecurityValidation.ts  # Tool handler wrapper
+│   ├── contentSanitizer.ts        # Content sanitization
+│   ├── pathValidator.ts           # Path traversal prevention
+│   ├── commandValidator.ts        # Shell command validation
+│   ├── ignoredPathFilter.ts       # Gitignore filtering
+│   ├── mask.ts                    # Sensitive data masking
+│   ├── regexes.ts                 # Re-exports from regexes/
+│   ├── regexes/                   # Secret detection patterns (modular)
+│   │   ├── index.ts               # Combined exports
+│   │   ├── ai-providers.ts        # AI/LLM API keys
+│   │   ├── cloud-infrastructure.ts # AWS, GCP, Azure, DBs
+│   │   ├── auth-crypto.ts         # JWT, OAuth, keys
+│   │   ├── dev-tools-vcs.ts       # CI/CD, VCS tokens
+│   │   ├── payments-commerce.ts   # Payment providers
+│   │   └── communications.ts      # Slack, social media
+│   ├── patternsConstants.ts       # Security patterns
+│   ├── securityConstants.ts       # Security constants
+│   └── executionContextValidator.ts # Context validation
 │
-├── security/                # 🔒 Security layer
-│   ├── withSecurityValidation.ts  # Security wrapper for tools
-│   ├── contentSanitizer.ts  # Secret detection & redaction
-│   ├── pathValidator.ts     # Path traversal prevention
-│   ├── commandValidator.ts  # Command injection prevention
-│   ├── executionContextValidator.ts # Execution context validation
-│   ├── ignoredPathFilter.ts # Sensitive path filtering
-│   ├── regexes.ts           # Secret detection patterns (100+)
-│   ├── mask.ts              # Data masking utilities
-│   ├── patternsConstants.ts # Security pattern definitions
-│   └── securityConstants.ts # Security configuration
+├── hints/                      # Hint system
+│   ├── index.ts                # Hint aggregation
+│   ├── static.ts               # Static hints from metadata
+│   ├── dynamic.ts              # Context-aware dynamic hints
+│   ├── localBaseHints.ts       # Local tool base hints
+│   └── types.ts                # Hint type definitions
 │
-├── commands/                # 🖥️ CLI command builders
-│   ├── BaseCommandBuilder.ts    # Abstract command builder
-│   ├── RipgrepCommandBuilder.ts # ripgrep (rg) command builder
-│   ├── GrepCommandBuilder.ts    # grep fallback builder
-│   ├── FindCommandBuilder.ts    # find command builder
-│   └── LsCommandBuilder.ts      # ls command builder
+├── commands/                   # Shell command builders
+│   ├── BaseCommandBuilder.ts   # Abstract command builder
+│   ├── RipgrepCommandBuilder.ts # ripgrep commands
+│   ├── GrepCommandBuilder.ts   # grep commands
+│   ├── FindCommandBuilder.ts   # find commands
+│   └── LsCommandBuilder.ts     # ls commands
 │
-├── utils/                   # 🛠️ Shared utilities (organized by domain)
-│   ├── core/                # Core utilities
-│   │   ├── constants.ts     # Global constants
-│   │   ├── logger.ts        # MCP logging integration
-│   │   ├── promise.ts       # Async/promise utilities
-│   │   └── types.ts         # Core type definitions
-│   │
-│   ├── credentials/         # Credential utilities
-│   │   └── index.ts         # Credential management
-│   │
-│   ├── environment/         # Environment utilities
-│   │   └── environmentDetection.ts # Environment detection
-│   │
-│   ├── exec/                # Command execution
-│   │   ├── index.ts         # Module exports
-│   │   ├── safe.ts          # Safe command execution
-│   │   ├── spawn.ts         # Process spawning
-│   │   ├── npm.ts           # NPM command utilities
-│   │   └── commandAvailability.ts # Command detection
-│   │
-│   ├── file/                # File operations
-│   │   ├── byteOffset.ts    # Byte offset calculations
-│   │   ├── filters.ts       # File filtering utilities
-│   │   ├── size.ts          # File size utilities
-│   │   ├── toolHelpers.ts   # Tool-specific helpers
-│   │   └── types.ts         # File type definitions
-│   │
-│   ├── http/                # HTTP utilities
-│   │   ├── cache.ts         # Response caching
-│   │   └── fetch.ts         # Fetch with retries
-│   │
-│   ├── minifier/            # Content minification
-│   │   ├── index.ts         # Module exports
-│   │   ├── minifier.ts      # File-type aware minification
-│   │   └── jsonToYamlString.ts # YAML conversion
-│   │
-│   ├── package/             # Package utilities
-│   │   ├── common.ts        # Shared package utilities
-│   │   ├── npm.ts           # NPM package search
-│   │   └── python.ts        # PyPI package search
-│   │
-│   ├── pagination/          # Pagination utilities
-│   │   ├── index.ts         # Module exports
-│   │   ├── core.ts          # Core pagination logic
-│   │   ├── hints.ts         # Pagination hints
-│   │   └── types.ts         # Pagination types
-│   │
-│   ├── parsers/             # Output parsers
-│   │   ├── diff.ts          # Diff parsing
-│   │   └── ripgrep.ts       # Ripgrep output parsing
-│   │
-│   └── response/            # Response utilities
-│       ├── bulk.ts          # Bulk operation responses
-│       └── error.ts         # Error response formatting
+├── prompts/                    # MCP prompts
+│   └── prompts.ts              # Prompt registration
 │
-├── prompts/                 # 💬 MCP prompts
-│   └── prompts.ts           # Prompt registration
+├── scheme/                     # Base schemas
+│   └── baseSchema.ts           # Shared Zod schemas
 │
-└── types/                   # 📝 Type definitions
-    ├── metadata.ts          # Metadata types
-    └── markdown.d.ts        # Markdown type declarations
+├── types/                      # Type definitions
+│   ├── metadata.ts             # Metadata types
+│   ├── toolTypes.ts            # Tool-specific types
+│   └── markdown.d.ts           # Markdown type declarations
+│
+└── utils/                      # Utility modules
+    ├── core/                   # Core utilities
+    │   ├── constants.ts        # Shared constants
+    │   ├── logger.ts           # MCP logging
+    │   ├── promise.ts          # Promise utilities
+    │   └── types.ts            # Core types
+    ├── credentials/            # Token utilities
+    ├── environment/            # Environment detection
+    ├── exec/                   # Command execution
+    │   ├── commandAvailability.ts
+    │   ├── safe.ts             # Safe execution
+    │   ├── spawn.ts            # Process spawning
+    │   └── npm.ts              # NPM utilities
+    ├── file/                   # File utilities
+    │   ├── byteOffset.ts       # Byte offset calculations
+    │   ├── filters.ts          # File filtering
+    │   ├── size.ts             # Size utilities
+    │   └── toolHelpers.ts      # Tool helpers
+    ├── http/                   # HTTP utilities
+    │   ├── cache.ts            # Response caching
+    │   └── fetch.ts            # Fetch with retries
+    ├── minifier/               # Output optimization
+    │   ├── minifier.ts         # Content minification
+    │   └── jsonToYamlString.ts # JSON to YAML
+    ├── package/                # Package search
+    │   ├── npm.ts              # NPM registry
+    │   └── python.ts           # PyPI registry
+    ├── pagination/             # Pagination utilities
+    │   ├── core.ts             # Pagination logic
+    │   ├── hints.ts            # Pagination hints
+    │   └── types.ts            # Pagination types
+    ├── parsers/                # Output parsers
+    │   ├── diff.ts             # Diff parsing
+    │   └── ripgrep.ts          # Ripgrep output parsing
+    └── response/               # Response utilities
+        ├── bulk.ts             # Bulk operation handling
+        └── error.ts            # Error formatting
 ```
-
----
 
 ## Core Components
 
-### 1. Entry Point (`index.ts`)
+### 1. Server Initialization (`index.ts`)
 
-The server starts by:
+The entry point orchestrates:
 
-1. **Initializing configuration** - Load environment variables, resolve GitHub token
-2. **Loading tool metadata** - Fetch dynamic metadata from Octocode API
-3. **Creating MCP server** - Initialize `McpServer` with capabilities
-4. **Registering tools** - Register all enabled tools with security wrappers
-5. **Registering prompts** - Register available prompts
-6. **Connecting transport** - Start stdio transport for MCP communication
-7. **Setting up shutdown handlers** - Graceful shutdown on SIGINT/SIGTERM
-
-```mermaid
-graph TD
-    A[Start Server] --> B[Initialize Config]
-    B --> C[Load Tool Metadata]
-    C --> D[Create MCP Server]
-    D --> E[Register Tools]
-    E --> F[Register Prompts]
-    F --> G[Connect Transport]
-    G --> H[Listen for Requests]
-    H --> I{Request Type}
-    I -->|Tool Call| J[Execute Tool]
-    I -->|Prompt| K[Return Prompt]
-    I -->|Shutdown| L[Graceful Shutdown]
-```
-
-### 2. Tool Registration Flow
-
-Tools follow a layered architecture: **Schema → Implementation → Security**
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         MCP Client Request                          │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     1. Schema Validation (Zod)                      │
-│                        scheme/github_*.ts                           │
-│                        scheme/local_*.ts                            │
-│                        scheme/lsp_*.ts                              │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                   2. Security Validation Wrapper                    │
-│                 security/withSecurityValidation.ts                  │
-│   • Input parameter validation                                      │
-│   • Secret detection in parameters                                  │
-│   • Session logging                                                 │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     3. Bulk Operations Handler                      │
-│                     utils/bulkOperations.ts                         │
-│   • Execute 1-5 queries in parallel                                 │
-│   • Isolate errors per query                                        │
-│   • Aggregate results & hints                                       │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      4. Tool Implementation                         │
-│                       tools/github_*.ts                             │
-│                       tools/local_*.ts                              │
-│                       tools/lsp_*.ts                                │
-│   • Business logic                                                  │
-│   • API calls / Command execution / LSP client                      │
-│   • Result transformation                                           │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     5. Content Sanitization                         │
-│                  security/contentSanitizer.ts                       │
-│   • Detect secrets in output                                        │
-│   • Redact sensitive data                                           │
-│   • Minify content for tokens                                       │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     6. Response Formatting                          │
-│                        responses.ts                                 │
-│   • YAML formatting                                                 │
-│   • Field prioritization                                            │
-│   • Final masking                                                   │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### 3. Tool Configuration (`toolConfig.ts`)
-
-Each tool is defined with:
+1. **Configuration initialization** — Load environment variables, resolve GitHub token
+2. **Tool metadata loading** — Fetch tool schemas and hints from API
+3. **Session initialization** — Create session for telemetry
+4. **MCP server creation** — Instantiate `McpServer` with capabilities
+5. **Tool registration** — Register all enabled tools
+6. **Transport connection** — Connect stdio transport
+7. **Graceful shutdown** — Handle SIGINT/SIGTERM, cleanup resources
 
 ```typescript
-interface ToolConfig {
-  name: string;        // Tool identifier (e.g., 'githubSearchCode')
-  description: string; // Human-readable description
-  isDefault: boolean;  // Enabled by default
-  isLocal: boolean;    // Requires local filesystem access
-  type: 'search' | 'content' | 'history' | 'debug';
-  fn: (server, callback?) => RegisteredTool;
+// Simplified flow
+async function startServer() {
+  await initialize();                    // Config + token
+  const content = await loadToolContent(); // Metadata from API
+  const session = initializeSession();   // Telemetry
+  const server = new McpServer(config);
+  await registerAllTools(server, content);
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
 }
 ```
 
-**Available Tools (13 total):**
+### 2. Configuration (`serverConfig.ts`)
 
-| Tool | Type | Local | Description |
-|------|------|-------|-------------|
-| `githubSearchCode` | search | ❌ | Search code across GitHub |
-| `githubGetFileContent` | content | ❌ | Fetch file content from repos |
-| `githubViewRepoStructure` | content | ❌ | Browse repository tree |
-| `githubSearchRepositories` | search | ❌ | Search GitHub repositories |
-| `githubSearchPullRequests` | history | ❌ | Search PRs and view diffs |
-| `packageSearch` | search | ❌ | Search NPM/PyPI packages |
-| `localSearchCode` | search | ✅ | Search code with ripgrep |
-| `localViewStructure` | content | ✅ | Browse local directories |
-| `localFindFiles` | search | ✅ | Find files by metadata |
-| `localGetFileContent` | content | ✅ | Read local file content |
-| `lspGotoDefinition` | content | ✅ | Jump to symbol definition |
-| `lspFindReferences` | search | ✅ | Find all usages of a symbol |
-| `lspCallHierarchy` | content | ✅ | Trace function call relationships |
+Manages server configuration with multi-source token resolution:
 
----
+| Token Source | Priority | Environment Variable |
+|-------------|----------|---------------------|
+| `env:OCTOCODE_TOKEN` | 1 | `OCTOCODE_TOKEN` |
+| `env:GH_TOKEN` | 2 | `GH_TOKEN` |
+| `env:GITHUB_TOKEN` | 3 | `GITHUB_TOKEN` |
+| `octocode-storage` | 4-5 | (keychain/file) |
+| `gh-cli` | 6 | (via `gh auth token`) |
 
-## Schema Layer (`scheme/`)
-
-[Zod](https://zod.dev/) schemas for runtime validation. All queries require research context (`mainResearchGoal`, `researchGoal`, `reasoning`). Bulk queries: 1-3 for GitHub, 1-5 for local/LSP.
-
----
-
-## Security Layer (`security/`)
-
-### Security Wrapper (`withSecurityValidation.ts`)
-
-Wraps all tool handlers: validates inputs → logs calls → executes with sanitized params.
-
-### Content Sanitizer (`contentSanitizer.ts`)
-
-- **Input validation**: Max 10K chars, block prototype pollution (`__proto__`, `constructor`)
-- **Secret detection**: 100+ regex patterns (API keys, tokens, AWS credentials, etc.)
-- **Automatic redaction**: `[REDACTED-<TYPE>]` replacement
-
-### Path Validator (`pathValidator.ts`)
-
-Prevents directory traversal: expands `~`, resolves absolute paths, validates against allowed roots, verifies symlinks.
-
----
-
-## GitHub Client (`github/`)
-
-### Token Resolution
-
-Tokens are resolved in priority order: `GITHUB_TOKEN` env var → GitHub CLI (`gh auth token`).
-
-### Octokit Configuration
-
-- **Throttling plugin** - Handles rate limits gracefully
-- **Instance caching** - Reuse clients by token hash
-- **Configurable base URL** - GitHub Enterprise support
-- **Request timeout** - Default 30s
-
----
-
-## Bulk Operations (`utils/response/bulk.ts`)
-
-All tools support bulk queries: **1-3 for GitHub**, **1-5 for local/LSP**.
-
-- **Parallel execution** (concurrency: 3)
-- **Error isolation** (one failure doesn't stop others)
-- **Per-query timeout** (60s)
-- **Status tracking**: `hasResults`, `empty`, `error`
-
----
-
-## Session Management (`session.ts`)
-
-Anonymous telemetry (opt-out via `LOG=false`). Logs: `init`, `tool_call`, `prompt_call`, `error`, `rate_limit`.
-
----
-
-## Command Builders (`commands/`)
-
-Local tools use command builders for safe CLI execution. Fallback chain: `ripgrep (rg) → grep → error`.
-
----
-
-## LSP (Language Server Protocol) (`lsp/`)
-
-Semantic code intelligence via spawned language servers (JSON-RPC).
-
-- **TypeScript/JavaScript bundled** - works out-of-box
-- **30+ languages supported** - Python, Go, Rust, Java, C/C++ (install required)
-- **Tools**: `lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`
-
-See [LSP_TOOLS.md](./docs/LSP_TOOLS.md) for full documentation.
-
----
-
-## Configuration
+**Key Configuration Options:**
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `GITHUB_TOKEN` | GitHub personal access token | - |
-| `GITHUB_API_URL` | GitHub API base URL | `https://api.github.com` |
-| `ENABLE_LOCAL` / `LOCAL` | Enable local/LSP tools | `false` |
-| `LOG` | Enable session logging | `true` |
+| `ENABLE_LOCAL` / `LOCAL` | Enable local filesystem tools | `false` |
+| `TOOLS_TO_RUN` | Whitelist specific tools | All tools |
+| `ENABLE_TOOLS` | Enable additional tools | — |
+| `DISABLE_TOOLS` | Disable specific tools | — |
+| `LOG` | Enable session telemetry | `true` |
 | `REQUEST_TIMEOUT` | API timeout (ms) | `30000` |
-| `TOOLS_TO_RUN` | Tool whitelist (comma-separated) | - |
-| `ENABLE_TOOLS` / `DISABLE_TOOLS` | Enable/disable specific tools | - |
+| `MAX_RETRIES` | API retry count | `3` |
 
----
+### 3. Tools System
+
+#### Tool Structure
+
+Each tool follows a consistent pattern:
+
+```
+tools/<tool_name>/
+├── index.ts           # Re-exports
+├── scheme.ts          # Zod schema definition
+├── execution.ts       # Query processing logic
+└── <tool_name>.ts     # Registration function
+```
+
+#### Tool Categories
+
+| Category | Tools | Description |
+|----------|-------|-------------|
+| **GitHub** | `githubSearchCode`, `githubGetFileContent`, `githubViewRepoStructure`, `githubSearchRepositories`, `githubSearchPullRequests` | GitHub API integration |
+| **Local** | `localSearchCode`, `localGetFileContent`, `localViewStructure`, `localFindFiles` | Local filesystem tools |
+| **LSP** | `lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy` | Code intelligence |
+| **Package** | `packageSearch` | NPM/PyPI lookup |
+
+#### Tool Registration Flow
+
+```
+┌──────────────┐     ┌─────────────────┐     ┌──────────────────┐
+│ toolConfig   │────▶│ toolsManager    │────▶│ McpServer        │
+│              │     │                 │     │ .tool()          │
+│ ALL_TOOLS[]  │     │ registerTools() │     │                  │
+└──────────────┘     └─────────────────┘     └──────────────────┘
+       │                     │
+       ▼                     ▼
+┌──────────────┐     ┌─────────────────┐
+│ Tool config  │     │ Filter enabled  │
+│ • name       │     │ • isDefault     │
+│ • isDefault  │     │ • isLocal       │
+│ • isLocal    │     │ • ENABLE_TOOLS  │
+│ • fn()       │     │ • DISABLE_TOOLS │
+└──────────────┘     └─────────────────┘
+```
+
+### 4. Security Layer
+
+All tool inputs pass through security validation:
+
+```
+┌─────────────┐     ┌─────────────────────────┐     ┌──────────────┐
+│ Tool Args   │────▶│ withSecurityValidation  │────▶│ Tool Handler │
+└─────────────┘     └─────────────────────────┘     └──────────────┘
+                              │
+                    ┌─────────┴─────────┐
+                    ▼                   ▼
+          ┌─────────────────┐  ┌─────────────────┐
+          │ ContentSanitizer│  │ Session Logging │
+          │ • validateInput │  │ • logToolCall   │
+          │ • sanitize      │  │ • extractRepos  │
+          └─────────────────┘  └─────────────────┘
+```
+
+**Security Components:**
+
+| Component | Purpose |
+|-----------|---------|
+| `ContentSanitizer` | Validate and sanitize input parameters |
+| `pathValidator` | Prevent path traversal attacks |
+| `commandValidator` | Validate shell commands |
+| `ignoredPathFilter` | Respect `.gitignore` patterns |
+| `mask` | Mask sensitive data in outputs |
+| `regexes` | Detect secrets (API keys, tokens, etc.) |
+
+### 5. GitHub Module
+
+Provides GitHub API integration via Octokit:
+
+```typescript
+// Client with built-in throttling
+const octokit = getOctokit(token);
+
+// API functions
+searchGitHubCodeAPI(query)
+searchGitHubReposAPI(query)
+searchGitHubPullRequestsAPI(query)
+fetchGitHubFileContentAPI(owner, repo, path, branch)
+viewGitHubRepositoryStructureAPI(owner, repo, branch, path)
+```
+
+**Features:**
+- Automatic rate limit handling with throttling
+- GraphQL for efficient file content fetching
+- Search query builders with proper escaping
+- Structured error handling with specific codes
+
+### 6. LSP Module
+
+Provides Language Server Protocol integration:
+
+```typescript
+// Create LSP client for a file
+const client = await createClient(workspaceRoot, filePath);
+if (client) {
+  try {
+    // Go to definition
+    await client.gotoDefinition(filePath, position);
+
+    // Find references
+    await client.findReferences(filePath, position);
+
+    // Call hierarchy (3-step process)
+    const items = await client.prepareCallHierarchy(filePath, position);
+    if (items.length > 0) {
+      const incoming = await client.getIncomingCalls(items[0]);
+      const outgoing = await client.getOutgoingCalls(items[0]);
+    }
+  } finally {
+    await client.stop();
+  }
+}
+```
+
+**Supported Language Servers:**
+
+| Language | Server | Install Method |
+|----------|--------|----------------|
+| TypeScript/JavaScript | `typescript-language-server` | Bundled |
+| Python | `pylsp` | `pip install python-lsp-server` |
+| Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
+| Rust | `rust-analyzer` | `rustup component add rust-analyzer` |
+| 30+ more | See LSP_TOOLS.md | Various |
+
+### 7. Hints System
+
+Provides contextual guidance to AI agents:
+
+```typescript
+// Get hints for a tool result
+const hints = getHints(toolName, status, context);
+
+// Hint types
+- Static hints: From tool metadata
+- Dynamic hints: Based on result context (pagination, large files, etc.)
+```
+
+**Hint Categories:**
+
+| Status | Purpose |
+|--------|---------|
+| `hasResults` | Guide on processing results |
+| `empty` | Suggest alternative approaches |
+| `error` | Recovery strategies |
+
+### 8. Response Formatting
+
+All responses are formatted as YAML for optimal LLM parsing:
+
+```yaml
+instructions: "Bulk response with 3 results..."
+results:
+  - id: 1
+    status: hasResults
+    data:
+      path: "src/index.ts"
+      content: "..."
+    researchGoal: "Find main entry point"
+hasResultsStatusHints:
+  - "Use lspGotoDefinition for symbol navigation"
+```
+
+**Bulk Operations:**
+- Process multiple queries in parallel
+- Error isolation (one failure doesn't stop others)
+- Aggregated hints by status type
 
 ## Data Flow
 
-### Tool Execution Lifecycle
+### Tool Execution Flow
 
-The following flowchart illustrates the complete lifecycle of a tool request, including security validation, bulk processing, and the feedback loop.
-
-```mermaid
-flowchart TD
-    %% Actors
-    Agent[🤖 AI Agent / Client]
-    
-    %% Request Phase
-    subgraph Request_Phase [1. Request & Validation]
-        direction TB
-        Call[Tool Call]
-        Context[Research Context<br/>mainResearchGoal, researchGoal, reasoning]
-        Schema{Schema Check<br/>Zod}
-        SecurityIn{Security Wrapper<br/>Input Validation}
-        
-        Call --> Context
-        Context --> Schema
-        Schema -- Invalid --> Error[Return Error]
-        Schema -- Valid --> SecurityIn
-        SecurityIn -- Secrets Detected --> Error
-        SecurityIn -- Safe --> Bulk[Bulk Splitter]
-    end
-
-    %% Execution Phase
-    subgraph Execution_Phase [2. Execution (Bulk 1-5)]
-        direction TB
-        Bulk --> Query1[Query 1]
-        Bulk --> Query2[Query N...]
-        
-        Query1 --> Exec{Execute Tool}
-        Query2 --> Exec
-        
-        Exec -- GitHub --> API[GitHub API / Cache]
-        Exec -- Local --> Shell[Local Shell / FS]
-        Exec -- LSP --> LSP[Language Server]
-    end
-
-    %% Processing Phase
-    subgraph Processing_Phase [3. Processing & Safety]
-        direction TB
-        RawData[Raw Results]
-        Sanitizer[Content Sanitizer<br/>Redact Secrets]
-        Minifier[Minifier<br/>Reduce Tokens]
-        
-        API --> RawData
-        Shell --> RawData
-        LSP --> RawData
-        RawData --> Sanitizer
-        Sanitizer --> Minifier
-    end
-
-    %% Response Phase
-    subgraph Response_Phase [4. Response & Guidance]
-        direction TB
-        Hints[Hints Generator<br/>Dynamic Suggestions]
-        Format[Response Formatter<br/>JSON → YAML]
-        Result[Final Result]
-        
-        Minifier --> Hints
-        Hints --> Format
-        Format --> Result
-    end
-
-    %% Flow Connections
-    Agent --> Call
-    Result --> Agent
-    
-    %% Feedback Loop
-    Agent -.->|Reads Hints & Data| Decision{Next Step?}
-    Decision -.->|Follow Hint| NextTool[Next Tool Call]
-    Decision -.->|Refine| RefinedQuery[Refined Query]
-    
-    %% Styling
-    style SecurityIn fill:#ffcccc,stroke:#cc0000
-    style Sanitizer fill:#ffcccc,stroke:#cc0000
-    style Context fill:#e1f5fe,stroke:#01579b
-    style Hints fill:#e6fffa,stroke:#009688
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ 1. Client sends tool_call request via MCP                            │
+└──────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ 2. Security validation (withSecurityValidation)                       │
+│    • Validate input parameters                                        │
+│    • Sanitize content                                                 │
+│    • Log tool call to session                                         │
+└──────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ 3. Bulk operation processing (if multiple queries)                    │
+│    • Execute queries in parallel (concurrency: 3)                     │
+│    • Isolate errors per query                                         │
+│    • Timeout handling (60s)                                           │
+└──────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ 4. Tool-specific execution                                            │
+│    • GitHub: API call via Octokit                                     │
+│    • Local: Shell command via spawn                                   │
+│    • LSP: Protocol message to language server                         │
+└──────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ 5. Response formatting                                                │
+│    • Structure data                                                   │
+│    • Add pagination info                                              │
+│    • Inject hints based on status                                     │
+│    • Convert to YAML                                                  │
+│    • Mask sensitive data                                              │
+└──────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ 6. Return CallToolResult to client                                    │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
----
+## Configuration & Extensibility
 
-## Testing
-
-**170 test files** using Vitest. Coverage: **90%** required.
-
-| Directory | Files | Purpose |
-|-----------|-------|---------|
-| `commands/` | 4 | Command builder tests |
-| `github/` | 29 | GitHub API tests |
-| `lsp/` | 7 | LSP client tests |
-| `security/` | 15 | Security & penetration tests |
-| `tools/` | 55 | Tool implementation tests |
-| `utils/` | 37 | Utility tests |
+### Environment Variables
 
 ```bash
-yarn test        # Run with coverage
-yarn test:quiet  # Minimal output
+# Token Configuration
+OCTOCODE_TOKEN=ghp_xxx        # Preferred token
+GH_TOKEN=ghp_xxx              # Fallback 1
+GITHUB_TOKEN=ghp_xxx          # Fallback 2
+
+# Feature Flags
+ENABLE_LOCAL=true             # Enable local tools
+LOCAL=true                    # Alias for ENABLE_LOCAL
+LOG=true                      # Enable telemetry
+
+# Tool Filtering
+TOOLS_TO_RUN=githubSearchCode,localSearchCode  # Whitelist
+ENABLE_TOOLS=lspGotoDefinition                 # Enable additional
+DISABLE_TOOLS=packageSearch                    # Disable specific
+
+# Performance
+REQUEST_TIMEOUT=30000         # API timeout (ms)
+MAX_RETRIES=3                 # Retry count
+
+# Advanced
+GITHUB_API_URL=https://api.github.com  # Custom API URL
+REDACT_ERROR_PATHS=true       # Redact paths in errors
 ```
 
+### LSP Configuration
+
+Custom language server configuration. Config files loaded in priority order:
+
+1. `OCTOCODE_LSP_CONFIG` environment variable
+2. `.octocode/lsp-servers.json` (workspace-level)
+3. `~/.octocode/lsp-servers.json` (user-level)
+
+```json
+{
+  "languageServers": {
+    ".rs": {
+      "command": "rust-analyzer",
+      "args": [],
+      "languageId": "rust"
+    }
+  }
+}
+```
+
+> **Note:** Keys are file extensions (e.g., `.rs`, `.py`), not language names.
+
+## Error Handling
+
+### Error Code Structure
+
+Errors are organized by category in `errorCodes.ts`:
+
+| Category | Prefix | Example |
+|----------|--------|---------|
+| Config | `CONFIG_` | `CONFIG_NOT_INITIALIZED` |
+| Validation | `VALIDATION_` | `VALIDATION_PROMISES_NOT_ARRAY` |
+| Fetch | `FETCH_` | `FETCH_FAILED_AFTER_RETRIES` |
+| Tool | `TOOL_` | `TOOL_SECURITY_VALIDATION_FAILED` |
+| GitHub | `GITHUB_` | `GITHUB_RATE_LIMITED` |
+| LSP | `LSP_` | `LSP_SERVER_NOT_FOUND` |
+
+### Error Recovery
+
+The system provides hints for error recovery:
+
+```yaml
+errorStatusHints:
+  - "Check API rate limits"
+  - "Verify token permissions"
+  - "Try narrowing search scope"
+```
+
+## Session & Telemetry
+
+### Session Data
+
+```typescript
+interface SessionData {
+  sessionId: string;
+  intent: 'init' | 'error' | 'tool_call' | 'prompt_call' | 'rate_limit';
+  data: ToolCallData | ErrorData | RateLimitData;
+  timestamp: string;
+  version: string;
+}
+```
+
+### Logged Events
+
+| Event | Data |
+|-------|------|
+| `init` | Session start |
+| `tool_call` | Tool name, repos, research goals |
+| `error` | Tool name, error code |
+| `rate_limit` | Limit type, retry info |
+
+## Public API
+
+The `public.ts` module exports the public API for programmatic use:
+
+```typescript
+import {
+  // Metadata
+  initializeToolMetadata,
+  loadToolContent,
+  TOOL_NAMES,
+  DESCRIPTIONS,
+  
+  // Tool registration
+  registerTools,
+  ALL_TOOLS,
+  
+  // Hints
+  getToolHintsSync,
+  getDynamicHints,
+  
+  // Config
+  getTokenSource,
+} from 'octocode-mcp';
+```
+
+## Dependencies
+
+### Core Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `@modelcontextprotocol/sdk` | MCP protocol implementation |
+| `@octokit/rest` | GitHub REST API |
+| `@octokit/graphql` | GitHub GraphQL API |
+| `@octokit/plugin-throttling` | Rate limit handling |
+| `zod` | Schema validation |
+| `axios` | HTTP client for telemetry |
+
+### Shared Package
+
+The server uses `octocode-shared` for:
+- Secure credential storage
+- Session persistence
+- Platform detection
+
+### External Commands
+
+| Command | Tool | Purpose |
+|---------|------|---------|
+| `rg` (ripgrep) | `localSearchCode` | Fast code search |
+| `find` | `localFindFiles` | File discovery |
+| `ls` | `localViewStructure` | Directory listing |
+| `cat` | `localGetFileContent` | File reading |
+| `typescript-language-server` | LSP tools | TypeScript intelligence |
+
+## Performance Considerations
+
+1. **Parallel query execution** — Up to 3 concurrent queries per bulk operation
+2. **HTTP caching** — Response caching for repeated requests
+3. **Rate limit throttling** — Automatic backoff for GitHub API
+4. **LSP client pooling** — Reuse language server connections
+5. **Output minification** — Reduce response size for LLM context efficiency
+6. **Lazy initialization** — Tool metadata loaded on demand
+
+## Security Model
+
+1. **Input validation** — All parameters validated via Zod schemas
+2. **Path traversal prevention** — Paths restricted to workspace
+3. **Secret detection** — API keys, tokens filtered from output
+4. **Command injection prevention** — Shell commands validated
+5. **Sensitive data masking** — Credentials masked in logs/errors
+6. **Gitignore respect** — Hidden/ignored files excluded
+
 ---
 
-## Key Design Decisions
-
-1. **Bulk Queries** - All tools accept 1-5 queries per request to minimize round trips
-2. **Research Context** - Every query requires `mainResearchGoal`, `researchGoal`, `reasoning` for better AI agent guidance
-3. **Security First** - All inputs sanitized, all outputs checked for secrets, paths validated
-4. **Graceful Degradation** - Local tools fall back from ripgrep to grep, errors isolated per query
-5. **Token Efficiency** - Content minification, YAML output, response prioritization
-6. **Dynamic Metadata** - Tool descriptions and hints fetched from API for easy updates
-7. **Caching** - Response caching reduces GitHub API calls and improves latency
-8. **LSP Integration** - Semantic code intelligence via spawned language servers for definition/reference lookup
-
----
-
-## Related Documentation
-
-- [README.md](../README.md) - Installation and usage
-- [LSP_TOOLS.md](./LSP_TOOLS.md) - LSP tools configuration and supported languages
-- [HINTS_ARCHITECTURE.md](./HINTS_ARCHITECTURE.md) - Dynamic hints system
-- [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification
-- [GitHub REST API](https://docs.github.com/en/rest) - GitHub API reference
-- [LSP Specification](https://microsoft.github.io/language-server-protocol/) - Language Server Protocol
-
----
-
-*Architecture document for Octocode MCP v11.x*
+*Last updated: January 2026*

@@ -49,7 +49,7 @@ vi.mock('../../src/lsp/index.js', () => {
       }),
     })),
     SymbolResolutionError: MockSymbolResolutionError,
-    getOrCreateClient: vi.fn().mockResolvedValue(null),
+    createClient: vi.fn().mockResolvedValue(null),
     isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
   };
 });
@@ -60,7 +60,7 @@ import * as childProcess from 'child_process';
 import * as lspModule from '../../src/lsp/index.js';
 
 // Import the module under test after mocks are set up
-import { registerLSPFindReferencesTool } from '../../src/tools/lsp_find_references.js';
+import { registerLSPFindReferencesTool } from '../../src/tools/lsp_find_references/index.js';
 
 describe('LSP Find References Implementation Tests', () => {
   const sampleTypeScriptContent = `
@@ -89,7 +89,7 @@ export function anotherFunction() {
 
     // Default: LSP not available
     vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-    vi.mocked(lspModule.getOrCreateClient).mockResolvedValue(null);
+    vi.mocked(lspModule.createClient).mockResolvedValue(null);
 
     // Restore SymbolResolver mock (reset by vi.resetAllMocks in afterEach)
     // Must use regular function (not arrow) because it's called with `new`
@@ -366,12 +366,11 @@ export function anotherFunction() {
 
     it('should attempt LSP when available', async () => {
       const mockClient = {
+        stop: vi.fn(),
         findReferences: vi.fn().mockResolvedValue([]),
       };
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue(
-        mockClient as any
-      );
+      vi.mocked(lspModule.createClient).mockResolvedValue(mockClient as any);
 
       const handler = createHandler();
       const result = await handler({
@@ -395,7 +394,8 @@ export function anotherFunction() {
       const otherPath = `${process.cwd()}/src/other.ts`;
 
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
-      vi.mocked(lspModule.getOrCreateClient).mockResolvedValue({
+      vi.mocked(lspModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
         findReferences: vi.fn().mockResolvedValue([
           {
             uri: testPath,
@@ -585,14 +585,14 @@ export function anotherFunction() {
   describe('Schema Exports', () => {
     it('should export BulkLSPFindReferencesSchema', async () => {
       const { BulkLSPFindReferencesSchema } =
-        await import('../../src/scheme/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/scheme.js');
 
       expect(BulkLSPFindReferencesSchema).toBeDefined();
     });
 
     it('should export LSP_FIND_REFERENCES_DESCRIPTION', async () => {
       const { LSP_FIND_REFERENCES_DESCRIPTION } =
-        await import('../../src/scheme/lsp_find_references.js');
+        await import('../../src/tools/lsp_find_references/scheme.js');
 
       expect(LSP_FIND_REFERENCES_DESCRIPTION).toBeDefined();
       expect(typeof LSP_FIND_REFERENCES_DESCRIPTION).toBe('string');

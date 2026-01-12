@@ -45,7 +45,7 @@ describe('LSP Client Handler Tests', () => {
 
   describe('LSPClient class', () => {
     it('should create instance without args', async () => {
-      const { LSPClient } = await import('../../src/lsp/client.js');
+      const { LSPClient } = await import('../../src/lsp/index.js');
 
       const client = new LSPClient({
         command: 'test-server',
@@ -57,7 +57,7 @@ describe('LSP Client Handler Tests', () => {
     });
 
     it('should create instance with full config', async () => {
-      const { LSPClient } = await import('../../src/lsp/client.js');
+      const { LSPClient } = await import('../../src/lsp/index.js');
 
       const client = new LSPClient({
         command: 'typescript-language-server',
@@ -70,7 +70,7 @@ describe('LSP Client Handler Tests', () => {
     });
 
     it('should report no capabilities before initialization', async () => {
-      const { LSPClient } = await import('../../src/lsp/client.js');
+      const { LSPClient } = await import('../../src/lsp/index.js');
 
       const client = new LSPClient({
         command: 'test-server',
@@ -83,33 +83,27 @@ describe('LSP Client Handler Tests', () => {
     });
   });
 
-  describe('getOrCreateClient function', () => {
+  describe('createClient function', () => {
     it('should return null for unsupported extension .txt', async () => {
-      const { getOrCreateClient } = await import('../../src/lsp/client.js');
+      const { createClient } = await import('../../src/lsp/index.js');
 
-      const result = await getOrCreateClient(
-        '/workspace',
-        '/workspace/file.txt'
-      );
+      const result = await createClient('/workspace', '/workspace/file.txt');
 
       expect(result).toBeNull();
     });
 
     it('should return null for unsupported extension .md', async () => {
-      const { getOrCreateClient } = await import('../../src/lsp/client.js');
+      const { createClient } = await import('../../src/lsp/index.js');
 
-      const result = await getOrCreateClient(
-        '/workspace',
-        '/workspace/README.md'
-      );
+      const result = await createClient('/workspace', '/workspace/README.md');
 
       expect(result).toBeNull();
     });
 
     it('should return null for unsupported extension .json', async () => {
-      const { getOrCreateClient } = await import('../../src/lsp/client.js');
+      const { createClient } = await import('../../src/lsp/index.js');
 
-      const result = await getOrCreateClient(
+      const result = await createClient(
         '/workspace',
         '/workspace/package.json'
       );
@@ -118,56 +112,41 @@ describe('LSP Client Handler Tests', () => {
     });
 
     it('should return null for unsupported extension .yaml', async () => {
-      const { getOrCreateClient } = await import('../../src/lsp/client.js');
+      const { createClient } = await import('../../src/lsp/index.js');
 
-      const result = await getOrCreateClient(
-        '/workspace',
-        '/workspace/config.yaml'
-      );
+      const result = await createClient('/workspace', '/workspace/config.yaml');
 
       expect(result).toBeNull();
     });
 
     it('should return null for unsupported extension .html', async () => {
-      const { getOrCreateClient } = await import('../../src/lsp/client.js');
+      const { createClient } = await import('../../src/lsp/index.js');
 
-      const result = await getOrCreateClient(
-        '/workspace',
-        '/workspace/index.html'
-      );
+      const result = await createClient('/workspace', '/workspace/index.html');
 
       expect(result).toBeNull();
     });
 
     it('should return null for unsupported extension .css', async () => {
-      const { getOrCreateClient } = await import('../../src/lsp/client.js');
+      const { createClient } = await import('../../src/lsp/index.js');
 
-      const result = await getOrCreateClient(
-        '/workspace',
-        '/workspace/styles.css'
-      );
+      const result = await createClient('/workspace', '/workspace/styles.css');
 
       expect(result).toBeNull();
     });
 
     it('should return null for files without extension', async () => {
-      const { getOrCreateClient } = await import('../../src/lsp/client.js');
+      const { createClient } = await import('../../src/lsp/index.js');
 
-      const result = await getOrCreateClient(
-        '/workspace',
-        '/workspace/Dockerfile'
-      );
+      const result = await createClient('/workspace', '/workspace/Dockerfile');
 
       expect(result).toBeNull();
     });
 
     it('should return null for hidden files', async () => {
-      const { getOrCreateClient } = await import('../../src/lsp/client.js');
+      const { createClient } = await import('../../src/lsp/index.js');
 
-      const result = await getOrCreateClient(
-        '/workspace',
-        '/workspace/.gitignore'
-      );
+      const result = await createClient('/workspace', '/workspace/.gitignore');
 
       expect(result).toBeNull();
     });
@@ -176,7 +155,7 @@ describe('LSP Client Handler Tests', () => {
   describe('isLanguageServerAvailable function', () => {
     it('should return false for .txt extension', async () => {
       const { isLanguageServerAvailable } =
-        await import('../../src/lsp/client.js');
+        await import('../../src/lsp/index.js');
 
       const result = await isLanguageServerAvailable('/test/file.txt');
 
@@ -185,7 +164,7 @@ describe('LSP Client Handler Tests', () => {
 
     it('should return false for .md extension', async () => {
       const { isLanguageServerAvailable } =
-        await import('../../src/lsp/client.js');
+        await import('../../src/lsp/index.js');
 
       const result = await isLanguageServerAvailable('/test/README.md');
 
@@ -194,7 +173,7 @@ describe('LSP Client Handler Tests', () => {
 
     it('should return false for .json extension', async () => {
       const { isLanguageServerAvailable } =
-        await import('../../src/lsp/client.js');
+        await import('../../src/lsp/index.js');
 
       const result = await isLanguageServerAvailable('/test/config.json');
 
@@ -203,7 +182,7 @@ describe('LSP Client Handler Tests', () => {
 
     it('should return false for no extension', async () => {
       const { isLanguageServerAvailable } =
-        await import('../../src/lsp/client.js');
+        await import('../../src/lsp/index.js');
 
       const result = await isLanguageServerAvailable('/test/Makefile');
 
@@ -212,7 +191,7 @@ describe('LSP Client Handler Tests', () => {
 
     it('should return false for .html extension', async () => {
       const { isLanguageServerAvailable } =
-        await import('../../src/lsp/client.js');
+        await import('../../src/lsp/index.js');
 
       const result = await isLanguageServerAvailable('/test/index.html');
 
@@ -221,7 +200,7 @@ describe('LSP Client Handler Tests', () => {
 
     it('should return false for .css extension', async () => {
       const { isLanguageServerAvailable } =
-        await import('../../src/lsp/client.js');
+        await import('../../src/lsp/index.js');
 
       const result = await isLanguageServerAvailable('/test/styles.css');
 
@@ -230,7 +209,7 @@ describe('LSP Client Handler Tests', () => {
 
     it('should return false for .svg extension', async () => {
       const { isLanguageServerAvailable } =
-        await import('../../src/lsp/client.js');
+        await import('../../src/lsp/index.js');
 
       const result = await isLanguageServerAvailable('/test/logo.svg');
 
@@ -239,30 +218,11 @@ describe('LSP Client Handler Tests', () => {
 
     it('should return false for .xml extension', async () => {
       const { isLanguageServerAvailable } =
-        await import('../../src/lsp/client.js');
+        await import('../../src/lsp/index.js');
 
       const result = await isLanguageServerAvailable('/test/config.xml');
 
       expect(result).toBe(false);
-    });
-  });
-
-  describe('shutdownAllClients function', () => {
-    it('should complete without error when no clients', async () => {
-      const { shutdownAllClients } = await import('../../src/lsp/client.js');
-
-      await expect(shutdownAllClients()).resolves.not.toThrow();
-    });
-
-    it('should be callable multiple times', async () => {
-      const { shutdownAllClients } = await import('../../src/lsp/client.js');
-
-      await shutdownAllClients();
-      await shutdownAllClients();
-      await shutdownAllClients();
-
-      // Should not throw
-      expect(true).toBe(true);
     });
   });
 

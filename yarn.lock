@@ -5428,6 +5428,7 @@ __metadata:
   resolution: "octocode-cli@workspace:packages/octocode-cli"
   dependencies:
     "@inquirer/prompts": "npm:^8.1.0"
+    "@napi-rs/keyring": "npm:^1.2.0"
     "@octokit/auth-oauth-device": "npm:^8.0.3"
     "@octokit/oauth-methods": "npm:^6.0.2"
     "@octokit/request": "npm:^10.0.7"
@@ -5524,6 +5525,7 @@ __metadata:
     "@vitest/coverage-v8": "npm:^4.0.16"
     eslint: "npm:^9.18.0"
     typescript: "npm:^5.9.3"
+    vite: "npm:^7.3.0"
     vitest: "npm:^4.0.16"
   languageName: unknown
   linkType: soft

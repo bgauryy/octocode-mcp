@@ -3,6 +3,14 @@ import { z } from 'zod';
 import { logPromptCall } from '../session.js';
 import type { CompleteMetadata } from '../tools/toolMetadata.js';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PromptHandler = (args: any) => Promise<{
+  messages: Array<{
+    role: 'user' | 'assistant';
+    content: { type: 'text'; text: string };
+  }>;
+}>;
+
 /**
  * Register all prompts with the MCP server
  * Iterates over the prompts defined in the metadata and registers them dynamically
@@ -44,38 +52,41 @@ export function registerPrompts(
       }
     }
 
+    const handler: PromptHandler = async incomingArgs => {
+      await logPromptCall(prompt.name);
+
+      let text = prompt.content;
+
+      if (incomingArgs && Object.keys(incomingArgs).length > 0) {
+        text += '\n\nUse Input\n\n';
+        for (const [key, value] of Object.entries(incomingArgs)) {
+          if (value !== undefined && value !== null) {
+            text += `${key}: ${String(value)}\n`;
+          }
+        }
+      }
+
+      return {
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text,
+            },
+          },
+        ],
+      };
+    };
+
+    // @ts-expect-error - Type instantiation depth exceeded with dynamic Zod schemas
     server.registerPrompt(
       prompt.name,
       {
         description: prompt.description,
         argsSchema: argsShape,
       },
-      async incomingArgs => {
-        await logPromptCall(prompt.name);
-
-        let text = prompt.content;
-
-        if (incomingArgs && Object.keys(incomingArgs).length > 0) {
-          text += '\n\nUse Input\n\n';
-          for (const [key, value] of Object.entries(incomingArgs)) {
-            if (value !== undefined && value !== null) {
-              text += `${key}: ${String(value)}\n`;
-            }
-          }
-        }
-
-        return {
-          messages: [
-            {
-              role: 'user',
-              content: {
-                type: 'text',
-                text,
-              },
-            },
-          ],
-        };
-      }
+      handler
     );
   }
 }

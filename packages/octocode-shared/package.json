@@ -23,6 +23,7 @@
     "@vitest/coverage-v8": "^4.0.16",
     "eslint": "^9.18.0",
     "typescript": "^5.9.3",
+    "vite": "^7.3.0",
     "vitest": "^4.0.16"
   },
   "engines": {
@@ -49,8 +50,8 @@
   ],
   "main": "dist/index.js",
   "scripts": {
-    "build": "yarn lint && tsc",
-    "build:dev": "tsc",
+    "build": "yarn lint && vite build && tsc --emitDeclarationOnly",
+    "build:dev": "vite build && tsc --emitDeclarationOnly",
     "clean": "rm -rf dist/",
     "lint": "eslint src tests",
     "lint:fix": "eslint src tests --fix",

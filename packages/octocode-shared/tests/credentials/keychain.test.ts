@@ -3,9 +3,16 @@
  *
  * Tests for native keychain access using @napi-rs/keyring.
  * We mock the @napi-rs/keyring module to test our wrapper functions.
+ *
+ * NOTE: This test file unmocks the keychain.js wrapper (globally mocked in setup.ts)
+ * because we need to test the actual wrapper implementation.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// Unmock the keychain wrapper - we want to test the real implementation
+// (setup.ts globally mocks it for safety, but this test needs the real module)
+vi.unmock('../../src/credentials/keychain.js');
 
 // Create mock functions that persist across module reloads
 const mockSetPassword = vi.fn();

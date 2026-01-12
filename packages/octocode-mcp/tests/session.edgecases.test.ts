@@ -1,4 +1,41 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// Mock octocode-shared session storage to prevent filesystem access
+vi.mock('octocode-shared', async importOriginal => {
+  const actual = await importOriginal<typeof import('octocode-shared')>();
+  return {
+    ...actual,
+    getOrCreateSession: vi.fn(() => ({
+      version: 1,
+      sessionId: 'mock-session-id-12345678-1234-4123-8123-123456789012',
+      createdAt: '2024-01-01T00:00:00.000Z',
+      lastActiveAt: '2024-01-01T00:00:00.000Z',
+      stats: { toolCalls: 0, promptCalls: 0, errors: 0, rateLimits: 0 },
+    })),
+    incrementToolCalls: vi.fn(count => ({
+      success: true,
+      session: {
+        version: 1,
+        sessionId: 'mock-session-id-12345678-1234-4123-8123-123456789012',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        lastActiveAt: new Date().toISOString(),
+        stats: { toolCalls: count, promptCalls: 0, errors: 0, rateLimits: 0 },
+      },
+    })),
+    incrementErrors: vi.fn(count => ({
+      success: true,
+      session: {
+        version: 1,
+        sessionId: 'mock-session-id-12345678-1234-4123-8123-123456789012',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        lastActiveAt: new Date().toISOString(),
+        stats: { toolCalls: 0, promptCalls: 0, errors: count, rateLimits: 0 },
+      },
+    })),
+    deleteSession: vi.fn(),
+  };
+});
+
 import {
   initializeSession,
   logSessionInit,

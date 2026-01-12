@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GitHubCodeSearchQuerySchema } from '../../src/scheme/github_search_code.js';
+import { GitHubCodeSearchQuerySchema } from '../../src/tools/github_search_code/scheme.js';
 
 describe('GitHubCodeSearchQuerySchema - Pagination', () => {
   // Base required fields for all tests

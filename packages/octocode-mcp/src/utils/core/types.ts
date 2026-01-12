@@ -120,6 +120,9 @@ export interface SearchContentResult extends BaseQuery {
 
   // Optional metadata
   searchEngine?: 'rg' | 'grep'; // Which search engine was used
+
+  // Index signature for ProcessedBulkResult compatibility
+  [key: string]: unknown;
 }
 
 /**
@@ -233,6 +236,9 @@ export interface ViewStructureResult extends BaseQuery {
   // Pagination metadata (only present when pagination is active)
   pagination?: PaginationInfo;
   charPagination?: PaginationInfo; // Character-based pagination metadata
+
+  // Index signature for ProcessedBulkResult compatibility
+  [key: string]: unknown;
 }
 
 /**
@@ -299,6 +305,9 @@ export interface FindFilesResult extends BaseQuery {
   // Pagination metadata (only present when pagination is active)
   pagination?: PaginationInfo;
   charPagination?: PaginationInfo;
+
+  // Index signature for ProcessedBulkResult compatibility
+  [key: string]: unknown;
 }
 
 /**
@@ -346,20 +355,18 @@ export interface FetchContentResult extends BaseQuery {
 
   // Pagination metadata (only present when pagination is active)
   pagination?: PaginationInfo;
+
+  // Index signature for ProcessedBulkResult compatibility
+  [key: string]: unknown;
 }
 
 /**
- * Bulk operation query wrapper
+ * Cache statistics for monitoring and debugging
  */
-interface _BulkQuery<T> {
-  queries: T[];
-}
-
-/**
- * Bulk operation result wrapper
- */
-interface _BulkResult<T> {
-  results: T[];
-  successCount: number;
-  errorCount: number;
+export interface CacheStats {
+  hits: number;
+  misses: number;
+  sets: number;
+  totalKeys: number;
+  lastReset: Date;
 }

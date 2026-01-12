@@ -6,12 +6,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
 import {
   LSPClient,
-  getOrCreateClient,
-  shutdownAllClients,
+  createClient,
   isLanguageServerAvailable,
-  resetUserConfigCache,
-  getUserConfigPath,
-} from '../../src/lsp/client.js';
+} from '../../src/lsp/index.js';
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as jsonrpc from 'vscode-jsonrpc/node.js';
@@ -54,7 +51,6 @@ describe('LSP Client Branch Coverage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    resetUserConfigCache();
 
     // Setup mock process
     mockProcess = new EventEmitter() as typeof mockProcess;
@@ -86,8 +82,6 @@ describe('LSP Client Branch Coverage', () => {
   });
 
   afterEach(async () => {
-    await shutdownAllClients();
-    resetUserConfigCache();
     delete process.env['OCTOCODE_LSP_CONFIG'];
   });
 
@@ -130,58 +124,53 @@ describe('LSP Client Branch Coverage', () => {
     });
   });
 
-  describe('User config cache and path (lines 131-135, 159)', () => {
-    it('should cache user config and return path via getUserConfigPath', async () => {
-      const workspaceConfigPath = '/workspace/.octocode/lsp-servers.json';
+  it('should read user config from disk on each call (no caching)', async () => {
+    const workspaceConfigPath = '/workspace/.octocode/lsp-servers.json';
 
-      const userConfig = {
-        languageServers: {
-          '.rb': {
-            command: 'ruby-lsp',
-            languageId: 'ruby',
-          },
+    const userConfig = {
+      languageServers: {
+        '.rb': {
+          command: 'ruby-lsp',
+          languageId: 'ruby',
         },
-      };
+      },
+    };
 
-      (fs.promises.readFile as Mock).mockImplementation((path: string) => {
-        if (path === workspaceConfigPath) {
-          return Promise.resolve(JSON.stringify(userConfig));
-        }
-        return Promise.reject(new Error('ENOENT'));
-      });
-
-      // Mock command exists check
-      const mockCheckProcess = new EventEmitter();
-      (mockCheckProcess as EventEmitter & { kill: Mock }).kill = vi.fn();
-      (cp.spawn as Mock).mockImplementation(() => {
-        setImmediate(() => mockCheckProcess.emit('close', 0));
-        return mockCheckProcess;
-      });
-
-      // First call loads and caches
-      await isLanguageServerAvailable('/file.rb', '/workspace');
-
-      // Verify path is tracked
-      const loadedPath = getUserConfigPath();
-      expect(loadedPath).toBe(workspaceConfigPath);
-
-      // Second call uses cache (no additional fs.readFile)
-      vi.clearAllMocks();
-      // Re-mock spawn for second call
-      const mockCheckProcess2 = new EventEmitter();
-      (mockCheckProcess2 as EventEmitter & { kill: Mock }).kill = vi.fn();
-      (cp.spawn as Mock).mockImplementation(() => {
-        setImmediate(() => mockCheckProcess2.emit('close', 0));
-        return mockCheckProcess2;
-      });
-      await isLanguageServerAvailable('/file.rb', '/workspace');
-      expect(fs.promises.readFile).not.toHaveBeenCalled();
+    (fs.promises.readFile as Mock).mockImplementation((path: string) => {
+      if (path === workspaceConfigPath) {
+        return Promise.resolve(JSON.stringify(userConfig));
+      }
+      return Promise.reject(new Error('ENOENT'));
     });
 
-    it('should return null from getUserConfigPath when no config loaded', () => {
-      resetUserConfigCache();
-      expect(getUserConfigPath()).toBeNull();
+    // Mock command exists check
+    const mockCheckProcess = new EventEmitter();
+    (mockCheckProcess as EventEmitter & { kill: Mock }).kill = vi.fn();
+    (cp.spawn as Mock).mockImplementation(() => {
+      setImmediate(() => mockCheckProcess.emit('close', 0));
+      return mockCheckProcess;
     });
+
+    // First call reads from disk
+    await isLanguageServerAvailable('/file.rb', '/workspace');
+    expect(fs.promises.readFile).toHaveBeenCalled();
+
+    // Second call also reads from disk (no caching)
+    vi.clearAllMocks();
+    (fs.promises.readFile as Mock).mockImplementation((path: string) => {
+      if (path === workspaceConfigPath) {
+        return Promise.resolve(JSON.stringify(userConfig));
+      }
+      return Promise.reject(new Error('ENOENT'));
+    });
+    const mockCheckProcess2 = new EventEmitter();
+    (mockCheckProcess2 as EventEmitter & { kill: Mock }).kill = vi.fn();
+    (cp.spawn as Mock).mockImplementation(() => {
+      setImmediate(() => mockCheckProcess2.emit('close', 0));
+      return mockCheckProcess2;
+    });
+    await isLanguageServerAvailable('/file.rb', '/workspace');
+    expect(fs.promises.readFile).toHaveBeenCalled(); // Called again - no caching
   });
 
   describe('User config with custom args (lines 611-617)', () => {
@@ -203,10 +192,7 @@ describe('LSP Client Branch Coverage', () => {
         return Promise.resolve('file content');
       });
 
-      const client = await getOrCreateClient(
-        '/workspace',
-        '/workspace/Main.java'
-      );
+      const client = await createClient('/workspace', '/workspace/Main.java');
 
       if (client) {
         // If client was created, verify config was used
@@ -236,10 +222,7 @@ describe('LSP Client Branch Coverage', () => {
         return Promise.resolve('file content');
       });
 
-      const client = await getOrCreateClient(
-        '/workspace',
-        '/workspace/Main.scala'
-      );
+      const client = await createClient('/workspace', '/workspace/Main.scala');
 
       if (client) {
         expect(cp.spawn).toHaveBeenCalledWith(
@@ -518,7 +501,7 @@ describe('LSP Client Branch Coverage', () => {
         .mockImplementation(() => {});
 
       // This is hard to test directly since it requires the require to fail
-      // The test is covered indirectly when we test getOrCreateClient
+      // The test is covered indirectly when we test createClient
       // and the ts-language-server is not found via require
 
       // We can verify the console.debug path exists by checking behavior

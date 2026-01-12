@@ -12,7 +12,7 @@ import {
   extractFunctionBody,
   inferSymbolKind,
   createRange,
-} from '../../src/tools/lsp_call_hierarchy.js';
+} from '../../src/tools/lsp_call_hierarchy/index.js';
 import { SymbolResolver } from '../../src/lsp/index.js';
 import * as lspIndex from '../../src/lsp/index.js';
 import * as toolHelpers from '../../src/utils/file/toolHelpers.js';
@@ -27,7 +27,7 @@ vi.mock('fs/promises', () => ({
 vi.mock('../../src/lsp/index.js', () => ({
   SymbolResolver: vi.fn(),
   SymbolResolutionError: class extends Error {},
-  getOrCreateClient: vi.fn(),
+  createClient: vi.fn(),
   isLanguageServerAvailable: vi.fn(),
 }));
 
@@ -45,7 +45,7 @@ vi.mock('../../src/utils/exec/index.js', () => ({
   checkCommandAvailability: vi.fn(),
 }));
 
-vi.mock('../../src/tools/hints/index.js', () => {
+vi.mock('../../src/hints/index.js', () => {
   return {
     getHints: vi.fn(() => []),
   };
@@ -88,11 +88,12 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
 
     // Setup LSP Client mock
     mockLSPClient = {
+      stop: vi.fn(),
       prepareCallHierarchy: vi.fn(),
       getIncomingCalls: vi.fn(),
       getOutgoingCalls: vi.fn(),
     };
-    (lspIndex.getOrCreateClient as Mock).mockResolvedValue(mockLSPClient);
+    (lspIndex.createClient as Mock).mockResolvedValue(mockLSPClient);
 
     // Register tool to get handler
     registerLSPCallHierarchyTool(mockServer);

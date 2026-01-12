@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LOCAL_TOOL_ERROR_CODES } from '../../src/errorCodes.js';
-import { findFiles } from '../../src/tools/local_find_files.js';
+import { findFiles } from '../../src/tools/local_find_files/index.js';
 import type { FindFilesResult } from '../../src/utils/core/types.js';
 import * as exec from '../../src/utils/exec/index.js';
 import * as pathValidator from '../../src/security/pathValidator.js';

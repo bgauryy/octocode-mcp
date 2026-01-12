@@ -10,7 +10,7 @@ import {
   extractFunctionBody,
   inferSymbolKind,
   createRange,
-} from '../../src/tools/lsp_call_hierarchy.js';
+} from '../../src/tools/lsp_call_hierarchy/index.js';
 
 describe('LSP Call Hierarchy Tool', () => {
   beforeEach(() => {
@@ -26,7 +26,7 @@ describe('LSP Call Hierarchy Tool', () => {
       vi.resetModules();
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -54,7 +54,7 @@ describe('LSP Call Hierarchy Tool', () => {
       vi.resetModules();
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -72,7 +72,7 @@ describe('LSP Call Hierarchy Tool', () => {
       vi.resetModules();
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -90,7 +90,7 @@ describe('LSP Call Hierarchy Tool', () => {
       vi.resetModules();
 
       const { BulkLSPCallHierarchySchema } =
-        await import('../../src/scheme/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/scheme.js');
 
       expect(BulkLSPCallHierarchySchema).toBeDefined();
       // Zod schemas have a shape property for objects
@@ -101,7 +101,7 @@ describe('LSP Call Hierarchy Tool', () => {
       vi.resetModules();
 
       const { BulkLSPCallHierarchySchema } =
-        await import('../../src/scheme/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/scheme.js');
 
       expect(BulkLSPCallHierarchySchema.shape.queries).toBeDefined();
     });
@@ -361,7 +361,7 @@ describe('LSP Call Hierarchy Tool', () => {
     it('should export tool description', async () => {
       // Don't reset modules - use the initialized metadata from setup.ts
       const { LSP_CALL_HIERARCHY_DESCRIPTION } =
-        await import('../../src/scheme/lsp_call_hierarchy.js');
+        await import('../../src/tools/lsp_call_hierarchy/scheme.js');
 
       expect(LSP_CALL_HIERARCHY_DESCRIPTION).toBeDefined();
       expect(typeof LSP_CALL_HIERARCHY_DESCRIPTION).toBe('string');

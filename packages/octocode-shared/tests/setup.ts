@@ -4,23 +4,23 @@
  * Global mocks to prevent tests from accessing real system resources.
  * This file runs before all tests to ensure isolation.
  *
- * IMPORTANT: Each test file should explicitly mock keychain.js if needed.
- * We do NOT globally mock keychain.js here because:
- * - keychain.test.ts needs to test the real keychain.js wrapper
- * - Other test files (like storage.test.ts) should mock it explicitly
- *
- * This setup file only provides safety nets for truly dangerous operations.
+ * SAFETY: Keychain is globally mocked to prevent tests from accidentally
+ * writing to the real system keychain. Individual test files can override
+ * these mocks with their own vi.mock() calls if needed.
  */
 
-// This file intentionally empty for now.
-// Each test file is responsible for its own mocks.
+import { vi } from 'vitest';
+
+// Global keychain mock - SAFETY NET to prevent real keychain access
+// This prevents tests from accidentally writing test data (e.g., 'testuser')
+// to your real system keychain, which would then appear when running the CLI.
 //
-// If you're adding a new test file that uses storage.ts, add this mock:
-//
-// vi.mock('../../src/credentials/keychain.js', () => ({
-//   isKeychainAvailable: vi.fn().mockReturnValue(false),
-//   setPassword: vi.fn().mockResolvedValue(undefined),
-//   getPassword: vi.fn().mockResolvedValue(null),
-//   deletePassword: vi.fn().mockResolvedValue(false),
-//   findCredentials: vi.fn().mockResolvedValue([]),
-// }));
+// Individual test files (like keychain.test.ts) can override with their own mocks.
+vi.mock('../src/credentials/keychain.js', () => ({
+  isKeychainAvailable: vi.fn().mockReturnValue(false),
+  setPassword: vi.fn().mockResolvedValue(undefined),
+  getPassword: vi.fn().mockResolvedValue(null),
+  deletePassword: vi.fn().mockResolvedValue(false),
+  findCredentials: vi.fn().mockResolvedValue([]),
+  findCredentialsAsync: vi.fn().mockResolvedValue([]),
+}));

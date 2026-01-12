@@ -1,4 +1,4 @@
-import type { RipgrepQuery } from '../../scheme/local_ripgrep.js';
+import type { RipgrepQuery } from '../../tools/local_ripgrep/scheme.js';
 import { RESOURCE_LIMITS } from '../core/constants.js';
 import type {
   RipgrepFileMatches,

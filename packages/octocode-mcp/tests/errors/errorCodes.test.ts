@@ -25,20 +25,14 @@ describe('Local Error Codes', () => {
       expect(LOCAL_TOOL_ERROR_CODES.FILE_READ_FAILED).toBe('fileReadFailed');
       expect(LOCAL_TOOL_ERROR_CODES.FILE_TOO_LARGE).toBe('fileTooLarge');
       expect(LOCAL_TOOL_ERROR_CODES.NO_MATCHES).toBe('noMatches');
-      expect(LOCAL_TOOL_ERROR_CODES.PATTERN_TOO_BROAD).toBe('patternTooBroad');
-      expect(LOCAL_TOOL_ERROR_CODES.PAGINATION_REQUIRED).toBe(
-        'paginationRequired'
-      );
       expect(LOCAL_TOOL_ERROR_CODES.OUTPUT_TOO_LARGE).toBe('outputTooLarge');
-      expect(LOCAL_TOOL_ERROR_CODES.RESPONSE_TOO_LARGE).toBe(
-        'responseTooLarge'
+      expect(LOCAL_TOOL_ERROR_CODES.COMMAND_NOT_AVAILABLE).toBe(
+        'commandNotAvailable'
       );
       expect(LOCAL_TOOL_ERROR_CODES.COMMAND_EXECUTION_FAILED).toBe(
         'commandExecutionFailed'
       );
-      expect(LOCAL_TOOL_ERROR_CODES.QUERY_EXECUTION_FAILED).toBe(
-        'queryExecutionFailed'
-      );
+      expect(LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT).toBe('commandTimeout');
       expect(LOCAL_TOOL_ERROR_CODES.TOOL_EXECUTION_FAILED).toBe(
         'toolExecutionFailed'
       );
@@ -66,7 +60,7 @@ describe('Local Error Codes', () => {
       expect(LOCAL_TOOL_ERROR_REGISTRY.noMatches.category).toBe(
         ErrorCategory.SEARCH
       );
-      expect(LOCAL_TOOL_ERROR_REGISTRY.paginationRequired.category).toBe(
+      expect(LOCAL_TOOL_ERROR_REGISTRY.outputTooLarge.category).toBe(
         ErrorCategory.PAGINATION
       );
       expect(LOCAL_TOOL_ERROR_REGISTRY.commandExecutionFailed.category).toBe(
@@ -367,35 +361,6 @@ describe('Local Error Codes', () => {
       expect(error.message).toContain('500.3KB'); // Rounded to 1 decimal
     });
 
-    it('should create noMatches error', () => {
-      const error = ToolErrors.noMatches('searchPattern', {
-        directory: '/src',
-      });
-
-      expect(error.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.NO_MATCHES);
-      expect(error.message).toContain('searchPattern');
-      expect(error.context).toEqual({
-        pattern: 'searchPattern',
-        directory: '/src',
-      });
-    });
-
-    it('should create patternTooBroad error', () => {
-      const error = ToolErrors.patternTooBroad('.*', 10000);
-
-      expect(error.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.PATTERN_TOO_BROAD);
-      expect(error.message).toContain('10000');
-      expect(error.context).toEqual({ pattern: '.*', matchCount: 10000 });
-    });
-
-    it('should create paginationRequired error', () => {
-      const error = ToolErrors.paginationRequired(50000);
-
-      expect(error.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.PAGINATION_REQUIRED);
-      expect(error.message).toContain('50000');
-      expect(error.context).toEqual({ itemCount: 50000 });
-    });
-
     it('should create outputTooLarge error', () => {
       const error = ToolErrors.outputTooLarge(100000, 50000);
 
@@ -405,13 +370,14 @@ describe('Local Error Codes', () => {
       expect(error.context).toEqual({ size: 100000, limit: 50000 });
     });
 
-    it('should create responseTooLarge error', () => {
-      const error = ToolErrors.responseTooLarge(200000, 100000);
+    it('should create commandNotAvailable error', () => {
+      const error = ToolErrors.commandNotAvailable('rg', 'Install ripgrep');
 
-      expect(error.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.RESPONSE_TOO_LARGE);
-      expect(error.message).toContain('200000');
-      expect(error.message).toContain('100000');
-      expect(error.context).toEqual({ tokens: 200000, limit: 100000 });
+      expect(error.errorCode).toBe(
+        LOCAL_TOOL_ERROR_CODES.COMMAND_NOT_AVAILABLE
+      );
+      expect(error.message).toContain('rg');
+      expect(error.message).toContain('Install ripgrep');
     });
 
     it('should create commandExecutionFailed error', () => {
@@ -422,18 +388,10 @@ describe('Local Error Codes', () => {
         LOCAL_TOOL_ERROR_CODES.COMMAND_EXECUTION_FAILED
       );
       expect(error.message).toContain('find /path');
-      expect(error.context).toEqual({ command: 'find /path' });
-      expect(error.stack).toContain('Caused by:');
-    });
-
-    it('should create queryExecutionFailed error', () => {
-      const cause = new Error('Query timeout');
-      const error = ToolErrors.queryExecutionFailed('query-123', cause);
-
-      expect(error.errorCode).toBe(
-        LOCAL_TOOL_ERROR_CODES.QUERY_EXECUTION_FAILED
-      );
-      expect(error.context).toEqual({ queryId: 'query-123' });
+      expect(error.context).toEqual({
+        command: 'find /path',
+        stderr: undefined,
+      });
       expect(error.stack).toContain('Caused by:');
     });
 

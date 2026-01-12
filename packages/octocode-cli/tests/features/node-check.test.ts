@@ -112,32 +112,6 @@ describe('Node Check', () => {
     });
   });
 
-  describe('checkOctocodePackage', () => {
-    it('should return available true with version', async () => {
-      vi.mocked(execSync).mockReturnValue('1.2.3\n');
-
-      const { checkOctocodePackage } =
-        await import('../../src/features/node-check.js');
-      const result = checkOctocodePackage();
-
-      expect(result.available).toBe(true);
-      expect(result.version).toBe('1.2.3');
-    });
-
-    it('should return available false when package not found', async () => {
-      vi.mocked(execSync).mockImplementation(() => {
-        throw new Error('Not found');
-      });
-
-      const { checkOctocodePackage } =
-        await import('../../src/features/node-check.js');
-      const result = checkOctocodePackage();
-
-      expect(result.available).toBe(false);
-      expect(result.version).toBeNull();
-    });
-  });
-
   describe('checkOctocodePackageAsync', () => {
     it('should return available true with version', async () => {
       vi.mocked(exec).mockImplementation(
@@ -178,11 +152,20 @@ describe('Node Check', () => {
 
   describe('checkNodeEnvironment', () => {
     it('should return complete environment status', async () => {
-      // Mock all execSync calls
+      // Mock all execSync calls (for sync checks)
       vi.mocked(execSync)
         .mockReturnValueOnce('v20.10.0\n') // node --version
-        .mockReturnValueOnce('10.2.3\n') // npm --version
-        .mockReturnValueOnce('1.0.0\n'); // npm view octocode-mcp version
+        .mockReturnValueOnce('10.2.3\n'); // npm --version
+
+      // Mock exec for async octocode check
+      vi.mocked(exec).mockImplementation(
+        (_cmd: string, _opts: unknown, callback?: unknown) => {
+          if (typeof callback === 'function') {
+            callback(null, { stdout: '1.0.0\n', stderr: '' });
+          }
+          return {} as ReturnType<typeof exec>;
+        }
+      );
 
       // Mock fetch for registry
       mockFetch.mockResolvedValue({ ok: true });
@@ -203,6 +186,19 @@ describe('Node Check', () => {
       vi.mocked(execSync).mockImplementation(() => {
         throw new Error('Command not found');
       });
+
+      // Mock exec to also fail for async octocode check
+      vi.mocked(exec).mockImplementation(
+        (_cmd: string, _opts: unknown, callback?: unknown) => {
+          if (typeof callback === 'function') {
+            callback(new Error('Command not found'), {
+              stdout: '',
+              stderr: '',
+            });
+          }
+          return {} as ReturnType<typeof exec>;
+        }
+      );
 
       mockFetch.mockRejectedValue(new Error('Network error'));
 
