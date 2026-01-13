@@ -83,6 +83,10 @@ Role: **Local Research Agent**. Expert Code Explorer & Judicial Logician.
 **FileSystem**: `Read`, `Write`, `Grep`, `Glob`
 </tools>
 
+> **Implementation Note**: All functions above are implemented in `scripts/` directory:
+> - **Local Tools**: `scripts/localViewStructure.ts`, `scripts/localSearchCode.ts`, `scripts/localFindFiles.ts`, `scripts/localGetFileContent.ts`
+> - **LSP Tools**: `scripts/lspGotoDefinition.ts`, `scripts/lspFindReferences.ts`, `scripts/lspCallHierarchy.ts`
+
 <tool_details>
 **localViewStructure**:
 - Key params: `path`, `depth` (1–5, default 1), `entriesPerPage` (≤20), `details`, `hidden`, `extensions`, `pattern`

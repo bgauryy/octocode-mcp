@@ -11,6 +11,22 @@ description: >-
 
 Code research and discovery for local and remote codebases using library functions from `octocode-research` package.
 
+## Installation
+
+Run the install script (automatically skips if already installed):
+
+```bash
+cd packages/octocode-research
+./install.sh
+```
+
+Or install manually:
+
+```bash
+yarn install  # from workspace root
+yarn build    # build the package
+```
+
 ## When to Use This Skill
 
 Use this skill when the user needs to:
@@ -22,7 +38,9 @@ Use this skill when the user needs to:
 
 ## How It Works
 
-This skill provides **library functions** (not MCP tools) that wrap the `octocode-mcp` execution layer. Import and call them directly:
+> ⚠️ **Important**: This skill provides **library functions** (not MCP tools). Do NOT use MCP tool calls. Instead, import and call functions directly from `octocode-research`.
+
+Import functions and call them directly:
 
 ```typescript
 import { 
@@ -38,6 +56,8 @@ const result = await localSearchCode({
   }]
 });
 ```
+
+> 💡 **See Examples**: The `scripts/` folder contains standalone CLI scripts demonstrating each function. Each script file (e.g., `scripts/localSearchCode.ts`) shows the correct import and usage pattern.
 
 ## Available Functions
 
@@ -73,6 +93,59 @@ const result = await localSearchCode({
 | Function | Purpose | Reference |
 |----------|---------|-----------|
 | `packageSearch` | Search npm/PyPI | [📖 Reference](./references/packageSearch.md) |
+
+---
+
+### CLI Scripts (Examples & Quick Usage)
+
+The `scripts/` folder contains example implementations for each function. These serve as:
+1. **Reference examples** - See how to import and call each function
+2. **Quick CLI tools** - Run directly for ad-hoc research
+
+Run scripts directly from the package directory:
+
+```bash
+cd packages/octocode-research
+
+# Local tools
+npx tsx scripts/localSearchCode.ts "pattern" ./src
+npx tsx scripts/localGetFileContent.ts ./path/to/file.ts
+npx tsx scripts/localFindFiles.ts . "*.ts"
+npx tsx scripts/localViewStructure.ts ./src
+
+# LSP tools
+npx tsx scripts/lspGotoDefinition.ts ./src/file.ts symbolName 42
+npx tsx scripts/lspFindReferences.ts ./src/file.ts symbolName 42
+npx tsx scripts/lspCallHierarchy.ts ./src/file.ts symbolName 42 incoming
+
+# GitHub tools (requires token)
+npx tsx scripts/githubSearchCode.ts "keywords" owner/repo
+npx tsx scripts/githubGetFileContent.ts owner repo path/to/file.ts
+npx tsx scripts/githubSearchRepositories.ts "topic"
+npx tsx scripts/githubViewRepoStructure.ts owner repo main path
+npx tsx scripts/githubSearchPullRequests.ts owner repo "query"
+
+# Package search
+npx tsx scripts/packageSearch.ts express npm
+```
+
+**Script ↔ Function Mapping:**
+
+| Script File | Function Import |
+|-------------|-----------------|
+| `scripts/localSearchCode.ts` | `import { localSearchCode } from 'octocode-research'` |
+| `scripts/localGetFileContent.ts` | `import { localGetFileContent } from 'octocode-research'` |
+| `scripts/localFindFiles.ts` | `import { localFindFiles } from 'octocode-research'` |
+| `scripts/localViewStructure.ts` | `import { localViewStructure } from 'octocode-research'` |
+| `scripts/lspGotoDefinition.ts` | `import { lspGotoDefinition } from 'octocode-research'` |
+| `scripts/lspFindReferences.ts` | `import { lspFindReferences } from 'octocode-research'` |
+| `scripts/lspCallHierarchy.ts` | `import { lspCallHierarchy } from 'octocode-research'` |
+| `scripts/githubSearchCode.ts` | `import { githubSearchCode } from 'octocode-research'` |
+| `scripts/githubGetFileContent.ts` | `import { githubGetFileContent } from 'octocode-research'` |
+| `scripts/githubSearchRepositories.ts` | `import { githubSearchRepositories } from 'octocode-research'` |
+| `scripts/githubViewRepoStructure.ts` | `import { githubViewRepoStructure } from 'octocode-research'` |
+| `scripts/githubSearchPullRequests.ts` | `import { githubSearchPullRequests } from 'octocode-research'` |
+| `scripts/packageSearch.ts` | `import { packageSearch } from 'octocode-research'` |
 
 ---
 

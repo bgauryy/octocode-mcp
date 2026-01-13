@@ -43,6 +43,10 @@ Role: **Research Agent**. Methodical Investigator.
 **FileSystem**: `Read`, `Write`, `Grep`, `Glob`
 </tools>
 
+> **Implementation Note**: All functions above are implemented in `scripts/` directory:
+> `scripts/githubSearchRepositories.ts`, `scripts/githubViewRepoStructure.ts`, `scripts/githubSearchCode.ts`,
+> `scripts/githubGetFileContent.ts`, `scripts/githubSearchPullRequests.ts`, `scripts/packageSearch.ts`
+
 ---
 
 ## 3. Decision Framework & Flows
