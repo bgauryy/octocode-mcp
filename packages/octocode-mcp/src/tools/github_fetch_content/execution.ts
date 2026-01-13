@@ -3,7 +3,7 @@ import type { FileContentQuery } from '../../types.js';
 import { fetchGitHubFileContentAPI } from '../../github/fileOperations.js';
 import { TOOL_NAMES } from '../toolMetadata.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
-import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import type { ToolExecutionArgs } from '../../types/execution.js';
 import {
   handleCatchError,
   createSuccessResult,
@@ -11,10 +11,10 @@ import {
 } from '../utils.js';
 
 export async function fetchMultipleGitHubFileContents(
-  queries: FileContentQuery[],
-  authInfo?: AuthInfo,
-  sessionId?: string
+  args: ToolExecutionArgs<FileContentQuery>
 ): Promise<CallToolResult> {
+  const { queries, authInfo, sessionId } = args;
+
   return executeBulkOperation(
     queries,
     async (query: FileContentQuery, _index: number) => {

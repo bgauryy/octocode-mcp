@@ -1,6 +1,6 @@
 {
   "name": "octocode-mcp",
-  "version": "11.1.3",
+  "version": "11.1.4",
   "description": "Model Context Protocol (MCP) server for advanced GitHub repository analysis and code discovery. Provides AI assistants with powerful tools to search, analyze, and understand codebases across GitHub.",
   "keywords": [
     "mcp",
@@ -44,6 +44,7 @@
     "html-minifier-terser": "^7.2.0",
     "js-yaml": "^4.1.1",
     "node-cache": "^5.1.2",
+    "octocode-shared": "1.0.0",
     "octokit": "^5.0.5",
     "terser": "^5.44.1",
     "typescript": "^5.3.3",
@@ -63,7 +64,6 @@
     "@vitest/coverage-v8": "^4.0.16",
     "@vitest/ui": "^4.0.16",
     "eslint": "^9.18.0",
-    "octocode-shared": "workspace:^",
     "tsdown": "^0.18.3",
     "typescript": "^5.9.3",
     "vitest": "^4.0.16"
@@ -82,12 +82,18 @@
     "./types": {
       "types": "./dist/public.d.ts",
       "import": "./dist/public.js"
+    },
+    "./responses": {
+      "types": "./dist/responses.d.ts",
+      "import": "./dist/responses.js"
     }
   },
   "files": [
     "dist/index.js",
     "dist/public.js",
     "dist/public.d.ts",
+    "dist/responses.js",
+    "dist/responses.d.ts",
     "manifest.json",
     "server.json",
     "LICENSE"

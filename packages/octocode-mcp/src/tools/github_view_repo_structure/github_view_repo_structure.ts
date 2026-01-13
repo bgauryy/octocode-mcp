@@ -46,11 +46,11 @@ export function registerViewGitHubRepoStructureTool(
           queries
         );
 
-        return exploreMultipleRepositoryStructures(
+        return exploreMultipleRepositoryStructures({
           queries,
           authInfo,
-          sessionId
-        );
+          sessionId,
+        });
       }
     )
   );

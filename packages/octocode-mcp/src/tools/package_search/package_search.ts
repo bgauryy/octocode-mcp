@@ -52,7 +52,7 @@ export async function registerPackageSearchTool(
           queries
         );
 
-        return searchPackages(queries);
+        return searchPackages({ queries });
       }
     )
   );
