@@ -44,6 +44,7 @@
     "html-minifier-terser": "^7.2.0",
     "js-yaml": "^4.1.1",
     "node-cache": "^5.1.2",
+    "octocode-shared": "workspace:^",
     "octokit": "^5.0.5",
     "terser": "^5.44.1",
     "typescript": "^5.3.3",
@@ -62,7 +63,6 @@
     "@vitest/coverage-v8": "^4.0.16",
     "@vitest/ui": "^4.0.16",
     "eslint": "^9.18.0",
-    "octocode-shared": "workspace:^",
     "tsdown": "^0.18.3",
     "typescript": "^5.9.3",
     "vitest": "^4.0.16"
