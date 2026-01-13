@@ -78,15 +78,21 @@ const PROVIDERS = {
   octocode: {
     servers: {
       octocode: { command: 'npx', args: ['-y', 'octocode-mcp@latest'] }
-    }
+    },
+    // Allow all MCP tools + web search
+    allowedTools: undefined as string[] | undefined
   },
   context7: {
     servers: {
       context7: { command: 'npx', args: ['-y', '@upstash/context7-mcp@latest'] }
-    }
+    },
+    // Allow all MCP tools + web search
+    allowedTools: undefined as string[] | undefined
   },
   none: {
-    servers: {}
+    servers: {},
+    // DISABLE all tools including WebSearch - pure knowledge baseline
+    allowedTools: [] as string[]
   }
 };
 
@@ -174,6 +180,9 @@ async function runWithProvider(
         model: 'claude-sonnet-4-5-20250929',
         maxTurns: 8, // Same for all providers
         mcpServers: provider.servers,
+        // Disable WebSearch for baseline (allowedTools: [])
+        // undefined = allow all tools (default for octocode/context7)
+        ...(provider.allowedTools !== undefined && { allowedTools: provider.allowedTools }),
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
       },
