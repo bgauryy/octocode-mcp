@@ -1,0 +1,245 @@
+[
+  {
+    "name": "find_react_hooks_implementation",
+    "description": "Search for React hooks implementation patterns in a popular library",
+    "prompt": "Find how useState is implemented in the React repository. Show me the core logic.",
+    "category": "code_search",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["useState", "hook"]
+    },
+    "tags": ["github", "react", "implementation"]
+  },
+  {
+    "name": "locate_config_files",
+    "description": "Find configuration files in a monorepo",
+    "prompt": "Find all tsconfig.json files in the vercel/next.js repository and show their structure.",
+    "category": "file_discovery",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 3,
+      "expectedTools": ["githubSearchCode"],
+      "mustContain": ["tsconfig"]
+    },
+    "tags": ["github", "config", "typescript"]
+  },
+  {
+    "name": "find_function_definition",
+    "description": "Locate a specific function definition using LSP",
+    "prompt": "Find the definition of the 'createServer' function in the local codebase.",
+    "category": "symbol_lookup",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["localSearchCode", "lspGotoDefinition"]
+    },
+    "tags": ["local", "lsp", "definition"]
+  },
+  {
+    "name": "npm_package_lookup",
+    "description": "Search for npm package information",
+    "prompt": "Find information about the 'zod' npm package including its repository URL.",
+    "category": "package_search",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch"],
+      "mustContain": ["zod", "github"]
+    },
+    "tags": ["npm", "package"]
+  },
+  {
+    "name": "find_pr_that_added_feature",
+    "description": "Find the pull request that introduced a specific feature",
+    "prompt": "Find the PR that added Server Actions to Next.js",
+    "category": "pr_archaeology",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchPullRequests"],
+      "mustContain": ["server", "action"]
+    },
+    "tags": ["github", "pr", "history"]
+  },
+  {
+    "name": "search_nonexistent_repo",
+    "description": "Handle error when searching a non-existent repository",
+    "prompt": "Search for code in the repository 'nonexistent-owner/nonexistent-repo-12345'",
+    "category": "error_handling",
+    "expected": {
+      "status": "error"
+    },
+    "tags": ["error", "github"]
+  },
+  {
+    "name": "find_test_patterns",
+    "description": "Search for testing patterns in a codebase",
+    "prompt": "Find examples of how tests are structured in the facebook/react repository. Show me describe blocks and test patterns.",
+    "category": "code_search",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 2,
+      "expectedTools": ["githubSearchCode"],
+      "mustContain": ["describe", "test"]
+    },
+    "tags": ["github", "testing", "patterns"]
+  },
+  {
+    "name": "local_file_content",
+    "description": "Read local file content with specific patterns",
+    "prompt": "Show me the contents of the package.json file in the current directory.",
+    "category": "file_discovery",
+    "expected": {
+      "status": "hasResults",
+      "expectedTools": ["localGetFileContent"],
+      "mustContain": ["name", "version"]
+    },
+    "tags": ["local", "file", "read"]
+  },
+  {
+    "name": "find_all_references",
+    "description": "Find all usages of a symbol",
+    "prompt": "Find all references to the 'EvalScorer' type in the codebase.",
+    "category": "symbol_lookup",
+    "expected": {
+      "status": "hasResults",
+      "expectedTools": ["localSearchCode", "lspFindReferences"]
+    },
+    "tags": ["local", "lsp", "references"]
+  },
+  {
+    "name": "python_package_search",
+    "description": "Search for Python package information",
+    "prompt": "Find the repository URL for the 'requests' Python package.",
+    "category": "package_search",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch"],
+      "mustContain": ["requests", "github"]
+    },
+    "tags": ["python", "package"]
+  },
+  {
+    "name": "find_api_endpoints",
+    "description": "Search for API endpoint definitions",
+    "prompt": "Find all API route handlers in the Next.js examples repository",
+    "category": "code_search",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode"],
+      "mustContain": ["api", "route"]
+    },
+    "tags": ["github", "api", "endpoints"]
+  },
+  {
+    "name": "find_call_hierarchy",
+    "description": "Analyze function call hierarchy",
+    "prompt": "Show me what functions call 'runSingleEval' and what functions it calls.",
+    "category": "symbol_lookup",
+    "expected": {
+      "status": "hasResults",
+      "expectedTools": ["localSearchCode", "lspCallHierarchy"]
+    },
+    "tags": ["local", "lsp", "call-hierarchy"]
+  },
+  {
+    "name": "repo_structure_exploration",
+    "description": "Explore repository structure",
+    "prompt": "Show me the directory structure of the microsoft/typescript repository, focusing on the src folder.",
+    "category": "file_discovery",
+    "expected": {
+      "status": "hasResults",
+      "expectedTools": ["githubViewRepoStructure"],
+      "mustContain": ["src"]
+    },
+    "tags": ["github", "structure", "exploration"]
+  },
+  {
+    "name": "find_error_handling_patterns",
+    "description": "Search for error handling patterns",
+    "prompt": "Find examples of try-catch error handling in the octocode-mcp codebase",
+    "category": "code_search",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 3,
+      "expectedTools": ["localSearchCode"],
+      "mustContain": ["catch"]
+    },
+    "tags": ["local", "error", "patterns"]
+  },
+  {
+    "name": "find_merged_prs",
+    "description": "Search for merged pull requests with specific criteria",
+    "prompt": "Find merged PRs in the vercel/next.js repo that mention 'performance' in the last month",
+    "category": "pr_archaeology",
+    "expected": {
+      "status": "hasResults",
+      "expectedTools": ["githubSearchPullRequests"],
+      "mustContain": ["performance"]
+    },
+    "tags": ["github", "pr", "performance"]
+  },
+  {
+    "name": "invalid_local_path",
+    "description": "Handle error when accessing invalid local path",
+    "prompt": "Read the file at /nonexistent/path/that/does/not/exist.ts",
+    "category": "error_handling",
+    "expected": {
+      "status": "error"
+    },
+    "tags": ["error", "local", "path"]
+  },
+  {
+    "name": "find_type_definitions",
+    "description": "Search for TypeScript type definitions",
+    "prompt": "Find the type definition for 'ToolResponse' in the Octocode codebase",
+    "category": "symbol_lookup",
+    "expected": {
+      "status": "hasResults",
+      "expectedTools": ["localSearchCode"],
+      "mustContain": ["type", "ToolResponse"]
+    },
+    "tags": ["local", "types", "typescript"]
+  },
+  {
+    "name": "compare_implementations",
+    "description": "Compare different implementations of similar functionality",
+    "prompt": "Find how different MCP servers implement the 'listTools' function. Compare octocode-mcp with other MCP servers.",
+    "category": "code_search",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 2,
+      "expectedTools": ["githubSearchCode"]
+    },
+    "tags": ["github", "comparison", "mcp"]
+  },
+  {
+    "name": "find_deprecated_code",
+    "description": "Search for deprecated code patterns",
+    "prompt": "Find any deprecated functions or APIs marked with @deprecated in the React repository",
+    "category": "code_search",
+    "expected": {
+      "status": "hasResults",
+      "expectedTools": ["githubSearchCode"],
+      "mustContain": ["deprecated"]
+    },
+    "tags": ["github", "deprecated", "maintenance"]
+  },
+  {
+    "name": "search_with_regex_pattern",
+    "description": "Search using complex regex patterns",
+    "prompt": "Find all export statements that export types in the local codebase",
+    "category": "code_search",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 5,
+      "expectedTools": ["localSearchCode"],
+      "mustContain": ["export"]
+    },
+    "tags": ["local", "regex", "exports"]
+  }
+]
