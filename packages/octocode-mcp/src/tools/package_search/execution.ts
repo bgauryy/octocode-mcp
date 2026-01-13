@@ -17,6 +17,7 @@ import {
   createErrorResult,
 } from '../utils.js';
 import { TOOL_NAMES } from '../toolMetadata.js';
+import type { ToolExecutionArgs } from '../../types/execution.js';
 
 function isPackageSearchError(
   result: PackageSearchAPIResult | PackageSearchError
@@ -54,8 +55,10 @@ function parseRepoInfo(repoUrl: string | null | undefined): {
 }
 
 export async function searchPackages(
-  queries: PackageSearchQuery[]
+  args: ToolExecutionArgs<PackageSearchQuery>
 ): Promise<CallToolResult> {
+  const { queries } = args;
+
   return executeBulkOperation(
     queries,
     async (query: PackageSearchQuery, _index: number) => {

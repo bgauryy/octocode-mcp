@@ -4,7 +4,7 @@ import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
 import { CompleteMetadata, ToolNames } from '../types/metadata.js';
-import { LOCAL_BASE_HINTS } from '../hints/localBaseHints.js';
+import { LOCAL_BASE_HINTS } from './local_ripgrep/hints.js';
 import { STATIC_TOOL_NAMES, isLocalTool } from './toolNames.js';
 
 export type { CompleteMetadata } from '../types/metadata.js';

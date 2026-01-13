@@ -90,4 +90,38 @@ const publicConfig = defineConfig({
   },
 });
 
-export default [serverConfig, publicConfig];
+// Responses entry - exports result formatting utilities for skills
+const responsesConfig = defineConfig({
+  entry: ['src/responses.ts'],
+  format: ['esm'],
+  outDir: 'dist',
+  clean: false, // Don't clean - runs after server and public builds
+  target: 'node18',
+  platform: 'node',
+
+  // Bundle dependencies for standalone use
+  noExternal: [/.*/],
+  external: [
+    ...builtinModules,
+    ...builtinModules.map(m => `node:${m}`),
+    'keytar', // Native module - cannot be bundled
+    '@napi-rs/keyring', // Native module - cannot be bundled
+    /^@napi-rs\/keyring-/, // Platform-specific native bindings
+  ],
+
+  treeshake: true,
+  minify: true,
+  shims: true,
+
+  // Generate type declarations for responses API
+  dts: true,
+
+  sourcemap: false,
+  outExtensions: () => ({ js: '.js' }),
+
+  define: {
+    'process.env.NODE_ENV': '"production"',
+  },
+});
+
+export default [serverConfig, publicConfig, responsesConfig];

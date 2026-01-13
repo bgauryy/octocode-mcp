@@ -4,6 +4,7 @@ import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 
 import { registerPrompts } from './prompts/prompts.js';
 import { clearAllCache } from './utils/http/cache.js';
+import { clearOctokitInstances } from './github/client.js';
 import { initialize, cleanup, getGitHubToken } from './serverConfig.js';
 import { createLogger, LoggerFactory, Logger } from './utils/core/logger.js';
 import {
@@ -52,7 +53,17 @@ function createShutdownHandler(
 
       state.timeout = setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS);
 
+      // Log memory usage for debugging
+      const memUsage = process.memoryUsage();
+      await logger?.info('Memory at shutdown', {
+        heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024) + 'MB',
+        heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024) + 'MB',
+        rss: Math.round(memUsage.rss / 1024 / 1024) + 'MB',
+      });
+
+      // Cleanup all caches and instances
       clearAllCache();
+      clearOctokitInstances();
       cleanup();
 
       try {

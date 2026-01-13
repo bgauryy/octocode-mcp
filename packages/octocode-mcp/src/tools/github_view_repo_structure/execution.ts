@@ -7,7 +7,7 @@ import type {
 import { viewGitHubRepositoryStructureAPI } from '../../github/fileOperations.js';
 import { TOOL_NAMES } from '../toolMetadata.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
-import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import type { ToolExecutionArgs } from '../../types/execution.js';
 import { shouldIgnoreFile, shouldIgnoreDir } from '../../utils/file/filters.js';
 import {
   handleApiError,
@@ -88,10 +88,10 @@ function createEmptyStructureResult(
 }
 
 export async function exploreMultipleRepositoryStructures(
-  queries: GitHubViewRepoStructureQuery[],
-  authInfo?: AuthInfo,
-  sessionId?: string
+  args: ToolExecutionArgs<GitHubViewRepoStructureQuery>
 ): Promise<CallToolResult> {
+  const { queries, authInfo, sessionId } = args;
+
   return executeBulkOperation(
     queries,
     async (query: GitHubViewRepoStructureQuery, _index: number) => {

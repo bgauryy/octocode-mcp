@@ -25,6 +25,7 @@ import {
 } from '../../utils/file/toolHelpers.js';
 import { getHints } from '../../hints/index.js';
 import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import type { ToolExecutionArgs } from '../../types/execution.js';
 
 const TOOL_NAME = STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION;
 
@@ -32,11 +33,13 @@ const TOOL_NAME = STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION;
  * Execute bulk goto definition operation.
  * Wraps gotoDefinition with bulk operation handling for multiple queries.
  */
-export async function executeGotoDefinition(args: {
-  queries: LSPGotoDefinitionQuery[];
-}): Promise<CallToolResult> {
+export async function executeGotoDefinition(
+  args: ToolExecutionArgs<LSPGotoDefinitionQuery>
+): Promise<CallToolResult> {
+  const { queries } = args;
+
   return executeBulkOperation(
-    args.queries || [],
+    queries || [],
     async (query: LSPGotoDefinitionQuery) => gotoDefinition(query),
     { toolName: TOOL_NAME }
   );

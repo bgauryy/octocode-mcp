@@ -1,5 +1,13 @@
-export {
-  registerLocalViewStructureTool,
-  viewStructure,
-} from './local_view_structure.js';
+// Registration
+export { registerLocalViewStructureTool } from './local_view_structure.js';
+
+// Execution functions
+export { viewStructure } from './local_view_structure.js';
 export { executeViewStructure } from './execution.js';
+
+// Types
+export type {
+  ViewStructureQuery,
+  ViewStructurePagination,
+  ViewStructureResult,
+} from './types.js';

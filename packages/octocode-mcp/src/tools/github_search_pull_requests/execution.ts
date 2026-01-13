@@ -6,7 +6,7 @@ import type {
 import { searchGitHubPullRequestsAPI } from '../../github/pullRequestSearch.js';
 import { TOOL_NAMES } from '../toolMetadata.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
-import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import type { ToolExecutionArgs } from '../../types/execution.js';
 import {
   handleApiError,
   handleCatchError,
@@ -18,10 +18,10 @@ import {
  * Search multiple GitHub pull requests using efficient bulk operations
  */
 export async function searchMultipleGitHubPullRequests(
-  queries: GitHubPullRequestSearchQuery[],
-  authInfo?: AuthInfo,
-  sessionId?: string
+  args: ToolExecutionArgs<GitHubPullRequestSearchQuery>
 ): Promise<CallToolResult> {
+  const { queries, authInfo, sessionId } = args;
+
   return executeBulkOperation(
     queries,
     async (query: GitHubPullRequestSearchQuery, _index: number) => {

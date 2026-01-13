@@ -37,6 +37,11 @@ interface FetchWithRetriesOptions {
    * @default false
    */
   includeVersion?: boolean;
+  /**
+   * AbortSignal for request cancellation (e.g., on shutdown)
+   * When aborted, the function throws immediately without retrying
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -71,6 +76,7 @@ export async function fetchWithRetries(
     headers = {},
     method = 'GET',
     includeVersion = false,
+    signal,
   } = options;
 
   let finalUrl = url;
@@ -97,10 +103,16 @@ export async function fetchWithRetries(
   const maxAttempts = maxRetries + 1;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Check if request was aborted before attempting
+    if (signal?.aborted) {
+      throw new Error('Request aborted');
+    }
+
     try {
       const res = await f(finalUrl, {
         method,
         headers: finalHeaders,
+        signal,
       });
 
       if (!res.ok) {
@@ -129,6 +141,14 @@ export async function fetchWithRetries(
       return await res.json();
     } catch (error: unknown) {
       const extendedError = error as ExtendedError;
+
+      // Don't retry on abort - propagate immediately
+      if (
+        signal?.aborted ||
+        (error instanceof Error && error.name === 'AbortError')
+      ) {
+        throw new Error('Request aborted');
+      }
 
       if (extendedError && extendedError.retryable === false) {
         throw error;

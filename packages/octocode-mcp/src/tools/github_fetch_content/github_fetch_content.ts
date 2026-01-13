@@ -42,7 +42,11 @@ export function registerFetchGitHubFileContentTool(
           queries
         );
 
-        return fetchMultipleGitHubFileContents(queries, authInfo, sessionId);
+        return fetchMultipleGitHubFileContents({
+          queries,
+          authInfo,
+          sessionId,
+        });
       }
     )
   );

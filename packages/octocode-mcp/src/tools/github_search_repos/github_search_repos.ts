@@ -45,7 +45,7 @@ export function registerSearchGitHubReposTool(
           queries
         );
 
-        return searchMultipleGitHubRepos(queries, authInfo, sessionId);
+        return searchMultipleGitHubRepos({ queries, authInfo, sessionId });
       }
     )
   );

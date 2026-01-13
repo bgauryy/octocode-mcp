@@ -94,7 +94,11 @@ export function registerSearchGitHubPullRequestsTool(
           );
         }
 
-        return searchMultipleGitHubPullRequests(queries, authInfo, sessionId);
+        return searchMultipleGitHubPullRequests({
+          queries,
+          authInfo,
+          sessionId,
+        });
       }
     )
   );

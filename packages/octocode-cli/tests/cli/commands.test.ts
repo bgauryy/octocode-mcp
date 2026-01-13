@@ -4,6 +4,39 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Mock node:fs to prevent any real file operations
+vi.mock('node:fs', () => ({
+  existsSync: vi.fn().mockReturnValue(false),
+  readFileSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  mkdirSync: vi.fn(),
+  unlinkSync: vi.fn(),
+  rmSync: vi.fn(),
+  statSync: vi.fn(),
+  promises: {
+    readFile: vi.fn(),
+    writeFile: vi.fn(),
+    mkdir: vi.fn(),
+    unlink: vi.fn(),
+    stat: vi.fn(),
+  },
+}));
+
+// Mock node:crypto to prevent real encryption
+vi.mock('node:crypto', () => ({
+  randomBytes: vi.fn().mockReturnValue(Buffer.alloc(32)),
+  createCipheriv: vi.fn().mockReturnValue({
+    update: vi.fn().mockReturnValue('encrypted'),
+    final: vi.fn().mockReturnValue(''),
+    getAuthTag: vi.fn().mockReturnValue(Buffer.alloc(16)),
+  }),
+  createDecipheriv: vi.fn().mockReturnValue({
+    update: vi.fn().mockReturnValue('{}'),
+    final: vi.fn().mockReturnValue(''),
+    setAuthTag: vi.fn(),
+  }),
+}));
+
 // Mock all external dependencies
 vi.mock('../../src/features/github-oauth.js', () => ({
   login: vi.fn(),
