@@ -1,0 +1,302 @@
+[
+  {
+    "name": "react19_use_hook_implementation",
+    "description": "React 19's new 'use' hook - released after training cutoff",
+    "prompt": "How does React 19's new 'use' hook work internally? Show me the implementation for handling promises and context.",
+    "category": "code_search",
+    "difficulty": 5,
+    "whyHard": "React 19 released after most AI training cutoffs. The 'use' hook is entirely new and not in documentation AI was trained on.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["use", "promise", "context"]
+    },
+    "tags": ["github", "react", "breaking-change", "post-cutoff"]
+  },
+  {
+    "name": "nextjs15_async_request_apis",
+    "description": "Next.js 15's breaking change to async request APIs",
+    "prompt": "Next.js 15 made cookies(), headers(), and params async. Show me how to migrate from sync to async usage and what the new signature looks like.",
+    "category": "code_search",
+    "difficulty": 5,
+    "whyHard": "Next.js 15 introduced breaking changes in October 2024. AI trained before this would provide incorrect sync API usage.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["async", "cookies", "await"]
+    },
+    "tags": ["github", "nextjs", "breaking-change", "migration"]
+  },
+  {
+    "name": "prisma5_json_protocol",
+    "description": "Prisma 5's switch from GraphQL to JSON protocol",
+    "prompt": "Prisma 5 changed from GraphQL to JSON protocol for the query engine. How do I configure the engine type and what's the performance difference?",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "Prisma 5 fundamentals changed. AI might suggest deprecated GraphQL engine configurations.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["engine", "json"]
+    },
+    "tags": ["github", "prisma", "breaking-change"]
+  },
+  {
+    "name": "tailwind_v4_config_format",
+    "description": "Tailwind CSS v4's new CSS-based configuration",
+    "prompt": "Tailwind v4 uses CSS-based configuration instead of tailwind.config.js. Show me how to configure custom colors and extend the theme in v4.",
+    "category": "code_search",
+    "difficulty": 5,
+    "whyHard": "Tailwind v4 is a complete rewrite with CSS-based config. AI would incorrectly suggest JavaScript config which no longer works.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["@theme", "@layer", "css"]
+    },
+    "tags": ["github", "tailwind", "breaking-change", "configuration"]
+  },
+  {
+    "name": "openapi_ts_plugins_internal",
+    "description": "openapi-ts undocumented plugin architecture",
+    "prompt": "How does openapi-ts (@hey-api/openapi-ts) plugin system work internally? I want to create a custom plugin to transform generated types.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "Plugin internals are undocumented. Only source code reveals the plugin interface and transformation hooks.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch", "githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["plugin", "transform"]
+    },
+    "tags": ["github", "openapi", "undocumented", "plugins"]
+  },
+  {
+    "name": "strapi_custom_controller_internals",
+    "description": "Strapi v5 controller customization internals",
+    "prompt": "How do I properly override Strapi v5's core controller methods while maintaining type safety? Show me the internal controller factory pattern.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "Strapi's controller internals are poorly documented. Must read source to understand factory pattern.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch", "githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["controller", "factory"]
+    },
+    "tags": ["github", "strapi", "undocumented"]
+  },
+  {
+    "name": "prisma_client_extensions_flow",
+    "description": "Prisma client extensions internal flow",
+    "prompt": "How does Prisma's $extends() work internally? I need to understand the execution order when chaining multiple extensions.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "Extension internals and chaining behavior are not documented. Source code is the only truth.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch", "githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["extends", "extension"]
+    },
+    "tags": ["github", "prisma", "undocumented", "extensions"]
+  },
+  {
+    "name": "mastra_ai_framework_agents",
+    "description": "Mastra AI framework - new in 2025",
+    "prompt": "How do I create an AI agent with memory in Mastra framework? Show me the agent configuration and memory persistence options.",
+    "category": "code_search",
+    "difficulty": 5,
+    "whyHard": "Mastra is a new AI framework from 2024-2025. AI has no training data on it.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch", "githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["agent", "memory"]
+    },
+    "tags": ["github", "mastra", "emerging-framework", "ai"]
+  },
+  {
+    "name": "bun_workspace_protocol",
+    "description": "Bun's workspace protocol implementation",
+    "prompt": "How does Bun implement the 'workspace:' protocol differently from pnpm? Show me the resolution logic in the source.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "Bun is rapidly evolving. Its workspace protocol has subtle differences from pnpm that aren't well documented.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["workspace", "resolution"]
+    },
+    "tags": ["github", "bun", "emerging-framework", "package-manager"]
+  },
+  {
+    "name": "crawlee_playwright_context",
+    "description": "Crawlee's PlaywrightCrawler context internals",
+    "prompt": "How does Crawlee's PlaywrightCrawler manage browser context isolation? I need to understand how cookies and storage are isolated between requests.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "Crawlee is newer framework. Browser context management internals require source reading.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch", "githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["context", "browser", "isolation"]
+    },
+    "tags": ["github", "crawlee", "emerging-framework", "scraping"]
+  },
+  {
+    "name": "mcp_protocol_tool_response",
+    "description": "MCP protocol tool response specification",
+    "prompt": "What's the exact format for MCP tool responses? Show me how to properly format isError, content types, and pagination in tool results.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "MCP is a new protocol (2024). Specification details require reading the actual SDK source.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch", "githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["tool", "response", "content"]
+    },
+    "tags": ["github", "mcp", "protocol", "specification"]
+  },
+  {
+    "name": "websocket_subprotocol_negotiation",
+    "description": "WebSocket subprotocol negotiation implementation",
+    "prompt": "How does ws (the Node.js WebSocket library) handle subprotocol negotiation internally? Show me the handshake validation logic.",
+    "category": "code_search",
+    "difficulty": 3,
+    "whyHard": "Subprotocol negotiation internals are not documented. Must trace through handshake code.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch", "githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["subprotocol", "handshake"]
+    },
+    "tags": ["github", "websocket", "protocol", "networking"]
+  },
+  {
+    "name": "grpc_web_streaming_implementation",
+    "description": "gRPC-web streaming internals",
+    "prompt": "How does grpc-web implement server streaming over HTTP/1.1? Show me the chunked transfer encoding handling.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "gRPC-web's streaming over HTTP/1.1 is a complex workaround. Implementation details require source reading.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch", "githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["stream", "chunk"]
+    },
+    "tags": ["github", "grpc", "protocol", "streaming"]
+  },
+  {
+    "name": "typescript_project_references_monorepo",
+    "description": "TypeScript project references in complex monorepos",
+    "prompt": "How does Turborepo configure TypeScript project references for incremental builds? Show me a real-world example with path aliases and composite projects.",
+    "category": "file_discovery",
+    "difficulty": 3,
+    "whyHard": "Complex monorepo configs require seeing real examples. Documentation is abstract.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["references", "composite"]
+    },
+    "tags": ["github", "typescript", "configuration", "monorepo"]
+  },
+  {
+    "name": "k8s_nginx_ingress_annotations",
+    "description": "Kubernetes NGINX ingress annotations for rate limiting",
+    "prompt": "What's the correct annotation syntax for rate limiting in kubernetes/ingress-nginx? Show me examples with custom error pages and client IP extraction.",
+    "category": "code_search",
+    "difficulty": 3,
+    "whyHard": "NGINX ingress has hundreds of annotations. Real examples needed to see correct combinations.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["rate", "limit", "annotation"]
+    },
+    "tags": ["github", "kubernetes", "nginx", "configuration"]
+  },
+  {
+    "name": "drizzle_orm_transaction_isolation",
+    "description": "Drizzle ORM transaction isolation levels",
+    "prompt": "How do I set transaction isolation levels in Drizzle ORM? Show me examples for PostgreSQL with serializable and repeatable read.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "Drizzle is newer ORM. Transaction isolation configuration is not well documented.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch", "githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["transaction", "isolation"]
+    },
+    "tags": ["github", "drizzle", "orm", "database"]
+  },
+  {
+    "name": "vitest_coverage_v8_configuration",
+    "description": "Vitest v8 coverage provider configuration",
+    "prompt": "How do I configure Vitest's @vitest/coverage-v8 to exclude certain patterns and set thresholds per file? Show me the configuration options.",
+    "category": "code_search",
+    "difficulty": 3,
+    "whyHard": "Coverage-v8 has options not fully documented. Real configs show working patterns.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["coverage", "exclude", "threshold"]
+    },
+    "tags": ["github", "vitest", "testing", "configuration"]
+  },
+  {
+    "name": "react_compiler_optimization",
+    "description": "React Compiler (React Forget) optimization rules",
+    "prompt": "How does the React Compiler decide what to memoize automatically? Show me the optimization rules and what code patterns it recognizes.",
+    "category": "code_search",
+    "difficulty": 5,
+    "whyHard": "React Compiler is very new (2024). Optimization rules require reading compiler source.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["memo", "optimization"]
+    },
+    "tags": ["github", "react", "compiler", "emerging"]
+  },
+  {
+    "name": "tanstack_query_v5_suspense",
+    "description": "TanStack Query v5 Suspense integration",
+    "prompt": "How do I use TanStack Query v5's useSuspenseQuery with error boundaries? Show me the proper pattern for parallel queries with Suspense.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "v5 changed Suspense APIs significantly. AI trained on v4 would give incorrect patterns.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch", "githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["useSuspenseQuery", "Suspense"]
+    },
+    "tags": ["github", "tanstack-query", "breaking-change", "react"]
+  },
+  {
+    "name": "effect_ts_layer_composition",
+    "description": "Effect-TS layer composition patterns",
+    "prompt": "How do I compose Effect-TS layers with dependencies between services? Show me the provideSome and provideLayer patterns.",
+    "category": "code_search",
+    "difficulty": 5,
+    "whyHard": "Effect-TS is complex and niche. Layer composition is poorly documented outside source.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch", "githubSearchCode", "githubGetFileContent"],
+      "mustContain": ["Layer", "provide"]
+    },
+    "tags": ["github", "effect-ts", "functional", "advanced"]
+  }
+]
