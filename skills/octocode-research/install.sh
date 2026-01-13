@@ -34,6 +34,23 @@ check_requirements() {
     fi
 }
 
+# Install tsx globally if not present
+install_tsx() {
+    if command -v tsx &> /dev/null; then
+        log_info "tsx already installed globally ✓"
+        return 0
+    fi
+    
+    log_info "Installing tsx globally..."
+    npm install -g tsx
+    
+    if command -v tsx &> /dev/null; then
+        log_info "tsx installed successfully ✓"
+    else
+        log_warn "tsx install may require sudo: sudo npm install -g tsx"
+    fi
+}
+
 # Check if already installed
 is_installed() {
     # Check workspace root node_modules (monorepo)
@@ -59,6 +76,9 @@ detect_package_manager() {
 # Main
 main() {
     check_requirements
+    
+    # Install tsx globally for running scripts
+    install_tsx
     
     # Check if already installed
     if is_installed; then

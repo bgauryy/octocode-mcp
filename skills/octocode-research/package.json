@@ -37,7 +37,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "octocode-mcp": "workspace:^"
+    "octocode-mcp": "^11.1.4"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",
