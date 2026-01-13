@@ -53,7 +53,7 @@ Combined Score = (Exact Match × 0.4) + (Blind Judge × 0.6)
 
 ### Test Case Distribution
 
-Current test cases cover 10 different libraries (12 total tests):
+Current test cases cover 14 different libraries (16 total tests):
 
 | Library | Count | Category | Difficulty |
 |---------|-------|----------|------------|
@@ -67,6 +67,10 @@ Current test cases cover 10 different libraries (12 total tests):
 | citty | 1 | CLI parser | 5 |
 | unstorage | 1 | Storage | 5 |
 | defu | 1 | Object utils | 5 |
+| h3 | 1 | Web framework | 5 |
+| scule | 1 | String utils | 5 |
+| consola | 1 | Logging | 5 |
+| hookable | 1 | Hooks | 5 |
 
 **Difficulty 5 tests** target less popular libraries with implementation details that can't be found via web search.
 
@@ -89,7 +93,7 @@ The command:
 
 | Limitation | Mitigation |
 |------------|------------|
-| Small sample size (N=8) | Use `--runs 3` for confidence intervals |
+| Small sample size (N=16) | Use `--runs 3` for confidence intervals |
 | Test cases may favor certain tools | Generate cases without Octocode (clone locally) |
 | Ground truth can become stale | Verify against current source before adding |
 | 40/60 weight split is somewhat arbitrary | Based on promptfoo patterns; ablation study recommended |

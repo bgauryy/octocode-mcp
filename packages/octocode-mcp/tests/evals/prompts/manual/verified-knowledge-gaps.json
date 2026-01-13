@@ -130,5 +130,49 @@
       "validationQuery": "defu's isPlainObject returns true for objects with Symbol.toStringTag only when Object.prototype.toString.call(value) === '[object Module]'. This allows ES Modules to be treated as plain objects for merging."
     },
     "tags": ["verified", "defu", "unjs", "object-utils"]
+  },
+  {
+    "name": "h3_chunked_cookie_prefix",
+    "description": "Exact prefix for chunked cookies in h3",
+    "prompt": "What is the exact prefix string that the h3 framework prepends to cookie names when splitting large cookies into chunks?",
+    "difficulty": 5,
+    "groundTruth": {
+      "exactMatch": ["__chunked__"],
+      "validationQuery": "h3 uses '__chunked__' as the CHUNKED_COOKIE constant prefix when splitting large cookies. The full pattern is `${name}${CHUNKED_COOKIE}${index}`."
+    },
+    "tags": ["verified", "h3", "unjs", "cookies"]
+  },
+  {
+    "name": "scule_str_splitters",
+    "description": "Default string splitter characters in scule",
+    "prompt": "What are the exact 4 characters in the STR_SPLITTERS array that the scule library uses by default to split strings for case conversion?",
+    "difficulty": 5,
+    "groundTruth": {
+      "exactMatch": ["-", "_", "/", "."],
+      "validationQuery": "scule's STR_SPLITTERS constant is exactly ['-', '_', '/', '.']. These 4 characters are used to split strings before case transformation."
+    },
+    "tags": ["verified", "scule", "unjs", "string-utils"]
+  },
+  {
+    "name": "consola_silent_log_level",
+    "description": "Numeric value for silent log level in consola",
+    "prompt": "What exact numeric value does the consola library use for the 'silent' log level in its LogLevels object?",
+    "difficulty": 5,
+    "groundTruth": {
+      "exactMatch": ["Number.NEGATIVE_INFINITY", "-Infinity"],
+      "validationQuery": "consola sets LogLevels.silent = Number.NEGATIVE_INFINITY. This ensures silent level is always lower than any other log level."
+    },
+    "tags": ["verified", "consola", "unjs", "logging"]
+  },
+  {
+    "name": "hookable_callback_suffix",
+    "description": "Auto-generated hook callback name suffix in hookable",
+    "prompt": "What exact suffix string does the hookable library append to auto-generated hook callback function names (the part after the sanitized hook name)?",
+    "difficulty": 5,
+    "groundTruth": {
+      "exactMatch": ["_hook_cb"],
+      "validationQuery": "hookable generates callback names using the pattern: '_' + name.replace(/\\W+/g, '_') + '_hook_cb'. The suffix is always '_hook_cb'."
+    },
+    "tags": ["verified", "hookable", "unjs", "hooks"]
   }
 ]
