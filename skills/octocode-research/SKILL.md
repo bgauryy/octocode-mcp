@@ -11,21 +11,40 @@ description: >-
 
 Code research and discovery for local and remote codebases using library functions from `octocode-research` package.
 
+---
+
+## Table of Contents
+
+1. [Installation](#installation)
+2. [When to Use](#when-to-use-this-skill)
+3. [Quick Decision Guide](#quick-decision-guide)
+4. [Available Functions](#available-functions)
+5. [Usage Examples](#usage-examples)
+6. [CLI Scripts](#cli-scripts)
+7. [Response Format](#response-format)
+8. [Critical Rules](#critical-rules)
+9. [Full References](#full-references)
+
+---
+
 ## Installation
 
-Run the install script (automatically skips if already installed):
+Run the install script (installs dependencies + tsx globally):
 
 ```bash
-cd packages/octocode-research
+cd skills/octocode-research
 ./install.sh
 ```
 
 Or install manually:
 
 ```bash
-yarn install  # from workspace root
-yarn build    # build the package
+yarn install           # from workspace root
+yarn build             # build the package
+npm install -g tsx     # for running CLI scripts
 ```
+
+---
 
 ## When to Use This Skill
 
@@ -36,178 +55,11 @@ Use this skill when the user needs to:
 - Trace function call hierarchies
 - Research npm/PyPI packages
 
-## How It Works
-
-> ⚠️ **Important**: This skill provides **library functions** (not MCP tools). Do NOT use MCP tool calls. Instead, import and call functions directly from `octocode-research`.
-
-Import functions and call them directly:
-
-```typescript
-import { 
-  localSearchCode, 
-  lspGotoDefinition,
-  githubSearchCode 
-} from 'octocode-research';
-
-const result = await localSearchCode({
-  queries: [{
-    pattern: 'authenticate',
-    path: '/project/src',
-  }]
-});
-```
-
-> 💡 **See Examples**: The `scripts/` folder contains standalone CLI scripts demonstrating each function. Each script file (e.g., `scripts/localSearchCode.ts`) shows the correct import and usage pattern.
-
-## Available Functions
-
-### Local Tools
-
-| Function | Purpose | Reference |
-|----------|---------|-----------|
-| `localSearchCode` | Search code with ripgrep | [📖 Reference](./references/localSearchCode.md) |
-| `localGetFileContent` | Read local file content | [📖 Reference](./references/localGetFileContent.md) |
-| `localFindFiles` | Find files by metadata | [📖 Reference](./references/localFindFiles.md) |
-| `localViewStructure` | View directory tree | [📖 Reference](./references/localViewStructure.md) |
-
-### LSP Tools
-
-| Function | Purpose | Reference |
-|----------|---------|-----------|
-| `lspGotoDefinition` | Jump to symbol definition | [📖 Reference](./references/lspGotoDefinition.md) |
-| `lspFindReferences` | Find all symbol usages | [📖 Reference](./references/lspFindReferences.md) |
-| `lspCallHierarchy` | Trace call relationships | [📖 Reference](./references/lspCallHierarchy.md) |
-
-### GitHub Tools
-
-| Function | Purpose | Reference |
-|----------|---------|-----------|
-| `githubSearchCode` | Search GitHub code | [📖 Reference](./references/githubSearchCode.md) |
-| `githubGetFileContent` | Read GitHub files | [📖 Reference](./references/githubGetFileContent.md) |
-| `githubSearchRepositories` | Find GitHub repos | [📖 Reference](./references/githubSearchRepositories.md) |
-| `githubViewRepoStructure` | Explore repo structure | [📖 Reference](./references/githubViewRepoStructure.md) |
-| `githubSearchPullRequests` | Search PR history | [📖 Reference](./references/githubSearchPullRequests.md) |
-
-### Package Tools
-
-| Function | Purpose | Reference |
-|----------|---------|-----------|
-| `packageSearch` | Search npm/PyPI | [📖 Reference](./references/packageSearch.md) |
+> ⚠️ **Important**: This skill provides **library functions** (not MCP tools). Import and call functions directly from `octocode-research`.
 
 ---
 
-### CLI Scripts (Examples & Quick Usage)
-
-The `scripts/` folder contains example implementations for each function. These serve as:
-1. **Reference examples** - See how to import and call each function
-2. **Quick CLI tools** - Run directly for ad-hoc research
-
-Run scripts directly from the package directory:
-
-```bash
-cd packages/octocode-research
-
-# Local tools
-npx tsx scripts/localSearchCode.ts "pattern" ./src
-npx tsx scripts/localGetFileContent.ts ./path/to/file.ts
-npx tsx scripts/localFindFiles.ts . "*.ts"
-npx tsx scripts/localViewStructure.ts ./src
-
-# LSP tools
-npx tsx scripts/lspGotoDefinition.ts ./src/file.ts symbolName 42
-npx tsx scripts/lspFindReferences.ts ./src/file.ts symbolName 42
-npx tsx scripts/lspCallHierarchy.ts ./src/file.ts symbolName 42 incoming
-
-# GitHub tools (requires token)
-npx tsx scripts/githubSearchCode.ts "keywords" owner/repo
-npx tsx scripts/githubGetFileContent.ts owner repo path/to/file.ts
-npx tsx scripts/githubSearchRepositories.ts "topic"
-npx tsx scripts/githubViewRepoStructure.ts owner repo main path
-npx tsx scripts/githubSearchPullRequests.ts owner repo "query"
-
-# Package search
-npx tsx scripts/packageSearch.ts express npm
-```
-
-**Script ↔ Function Mapping:**
-
-| Script File | Function Import |
-|-------------|-----------------|
-| `scripts/localSearchCode.ts` | `import { localSearchCode } from 'octocode-research'` |
-| `scripts/localGetFileContent.ts` | `import { localGetFileContent } from 'octocode-research'` |
-| `scripts/localFindFiles.ts` | `import { localFindFiles } from 'octocode-research'` |
-| `scripts/localViewStructure.ts` | `import { localViewStructure } from 'octocode-research'` |
-| `scripts/lspGotoDefinition.ts` | `import { lspGotoDefinition } from 'octocode-research'` |
-| `scripts/lspFindReferences.ts` | `import { lspFindReferences } from 'octocode-research'` |
-| `scripts/lspCallHierarchy.ts` | `import { lspCallHierarchy } from 'octocode-research'` |
-| `scripts/githubSearchCode.ts` | `import { githubSearchCode } from 'octocode-research'` |
-| `scripts/githubGetFileContent.ts` | `import { githubGetFileContent } from 'octocode-research'` |
-| `scripts/githubSearchRepositories.ts` | `import { githubSearchRepositories } from 'octocode-research'` |
-| `scripts/githubViewRepoStructure.ts` | `import { githubViewRepoStructure } from 'octocode-research'` |
-| `scripts/githubSearchPullRequests.ts` | `import { githubSearchPullRequests } from 'octocode-research'` |
-| `scripts/packageSearch.ts` | `import { packageSearch } from 'octocode-research'` |
-
----
-
-## Research Prompts
-
-For AI agents using this skill, we provide comprehensive research methodology prompts:
-
-| Prompt | Scope | Reference |
-|--------|-------|-----------|
-| **Local Research** | Local codebase exploration with LSP semantic analysis | [📖 research_local_prompt.md](./references/research_local_prompt.md) |
-| **External Research** | GitHub repos, packages, and PRs | [📖 research_external_prompt.md](./references/research_external_prompt.md) |
-
-### What These Prompts Provide
-
-- **research_local_prompt.md**: Complete guide for local code forensics. Covers the Funnel Method (DISCOVER → SEARCH → LSP → READ), trigger word detection for flow tracing, and anti-patterns to avoid. Critical for understanding when to use `lspCallHierarchy` vs file reading.
-
-- **research_external_prompt.md**: Guide for GitHub-based research. Covers package discovery, repo exploration, code archaeology via PRs, and multi-agent parallelization strategies.
-
----
-
-## TL;DR: Tools Usage Quick Guide
-
-### 🏠 Local Research (Your Codebase)
-
-```
-Text narrows → Symbols identify → Graphs explain
-```
-
-| Task | Tool Chain |
-|------|------------|
-| **Find code** | `localSearchCode` |
-| **Explore structure** | `localViewStructure` |
-| **Go to definition** | `localSearchCode` → `lspGotoDefinition(lineHint)` |
-| **Who calls X?** | `localSearchCode` → `lspCallHierarchy(incoming)` |
-| **What does X call?** | `localSearchCode` → `lspCallHierarchy(outgoing)` |
-| **All usages** | `localSearchCode` → `lspFindReferences(lineHint)` |
-| **Read file (LAST)** | `localGetFileContent(matchString)` |
-
-⚠️ **Critical**: For flow tracing, ALWAYS use LSP tools. Never read files to understand call relationships.
-
-### 🌐 External Research (GitHub/Packages)
-
-| Task | Tool Chain |
-|------|------------|
-| **Find package repo** | `packageSearch` → `githubViewRepoStructure` |
-| **Search repo code** | `githubSearchCode(owner, repo, keywords)` |
-| **Read GitHub file** | `githubGetFileContent(matchString)` |
-| **Find repos** | `githubSearchRepositories(topics/keywords)` |
-| **Code archaeology** | `githubSearchPullRequests(merged=true)` |
-
-⚠️ **Critical**: Always narrow to `owner/repo` first. Use 1-2 filters max in `githubSearchCode`.
-
-### 🔀 Combined Research (Local + External)
-
-| Scenario | Flow |
-|----------|------|
-| **Understand imported package** | Local: find import → `packageSearch` → `githubViewRepoStructure` → `githubGetFileContent` |
-| **Compare implementations** | Local: `lspGotoDefinition` → GitHub: `githubSearchCode(same pattern)` |
-| **Find why code was written** | Local: identify code → GitHub: `githubSearchPullRequests(query, merged=true)` |
-| **Trace cross-repo flow** | Local: `lspCallHierarchy` → at boundary → GitHub: `githubSearchCode` |
-
-### Quick Decision Tree
+## Quick Decision Guide
 
 ```
 Is it in YOUR codebase?
@@ -219,147 +71,138 @@ Is it in YOUR codebase?
          └── Know repo? → githubViewRepoStructure → githubSearchCode
 ```
 
-## Direct Function Calls
+| Question | Function Chain | Full Reference |
+|----------|----------------|----------------|
+| "Where is X defined?" | `localSearchCode` → `lspGotoDefinition(lineHint)` | [lspGotoDefinition](./references/lspGotoDefinition.md) |
+| "Who calls function X?" | `localSearchCode` → `lspCallHierarchy(incoming)` | [lspCallHierarchy](./references/lspCallHierarchy.md) |
+| "What does X call?" | `localSearchCode` → `lspCallHierarchy(outgoing)` | [lspCallHierarchy](./references/lspCallHierarchy.md) |
+| "All usages of type/var?" | `localSearchCode` → `lspFindReferences(lineHint)` | [lspFindReferences](./references/lspFindReferences.md) |
+| "Find files by name" | `localFindFiles` | [localFindFiles](./references/localFindFiles.md) |
+| "Project structure?" | `localViewStructure` | [localViewStructure](./references/localViewStructure.md) |
+| "External package info?" | `packageSearch` → `githubViewRepoStructure` | [packageSearch](./references/packageSearch.md) |
+| "Search GitHub code?" | `githubSearchCode(owner, repo, keywords)` | [githubSearchCode](./references/githubSearchCode.md) |
 
-All functions are imported from `octocode-research` and called with `{ queries: [...] }`:
+---
+
+## Available Functions
+
+> 📋 **Full Schemas**: Each function supports many parameters (pagination, filtering, context, etc.). Click the **Reference** link for complete `Input Type` and `Output Type` specifications.
 
 ### Local Tools
 
+| Function | Purpose | Reference |
+|----------|---------|-----------|
+| `localSearchCode` | Search code with ripgrep | [📖 Full Reference](./references/localSearchCode.md) |
+| `localGetFileContent` | Read local file content | [📖 Full Reference](./references/localGetFileContent.md) |
+| `localFindFiles` | Find files by metadata | [📖 Full Reference](./references/localFindFiles.md) |
+| `localViewStructure` | View directory tree | [📖 Full Reference](./references/localViewStructure.md) |
+
+### LSP Tools
+
+| Function | Purpose | Reference |
+|----------|---------|-----------|
+| `lspGotoDefinition` | Jump to symbol definition | [📖 Full Reference](./references/lspGotoDefinition.md) |
+| `lspFindReferences` | Find all symbol usages | [📖 Full Reference](./references/lspFindReferences.md) |
+| `lspCallHierarchy` | Trace call relationships | [📖 Full Reference](./references/lspCallHierarchy.md) |
+
+### GitHub Tools
+
+| Function | Purpose | Reference |
+|----------|---------|-----------|
+| `githubSearchCode` | Search GitHub code | [📖 Full Reference](./references/githubSearchCode.md) |
+| `githubGetFileContent` | Read GitHub files | [📖 Full Reference](./references/githubGetFileContent.md) |
+| `githubSearchRepositories` | Find GitHub repos | [📖 Full Reference](./references/githubSearchRepositories.md) |
+| `githubViewRepoStructure` | Explore repo structure | [📖 Full Reference](./references/githubViewRepoStructure.md) |
+| `githubSearchPullRequests` | Search PR history | [📖 Full Reference](./references/githubSearchPullRequests.md) |
+
+### Package Tools
+
+| Function | Purpose | Reference |
+|----------|---------|-----------|
+| `packageSearch` | Search npm/PyPI | [📖 Full Reference](./references/packageSearch.md) |
+
+---
+
+## Usage Examples
+
+> 💡 **Note**: These are **simplified examples** showing common usage patterns. For **complete parameter options**, see the [Full References](#full-references) section.
+
+### Basic Import Pattern
+
 ```typescript
-import { localSearchCode, localGetFileContent, localFindFiles, localViewStructure } from 'octocode-research';
-
-// Search code
-const search = await localSearchCode({
-  queries: [{ pattern: 'export function', path: './src' }]
-});
-
-// Read file with match
-const content = await localGetFileContent({
-  queries: [{ path: './src/index.ts', matchString: 'export', matchStringContextLines: 10 }]
-});
-
-// Find files
-const files = await localFindFiles({
-  queries: [{ path: '.', name: '*.ts', type: 'f' }]
-});
-
-// View structure
-const structure = await localViewStructure({
-  queries: [{ path: '/project', depth: 2 }]
-});
+import { 
+  localSearchCode, 
+  lspGotoDefinition,
+  githubSearchCode,
+  initialize  // Required for GitHub tools
+} from 'octocode-research';
 ```
 
-### LSP Tools (require lineHint from search)
+### Example: Local Code Search
 
 ```typescript
-import { lspGotoDefinition, lspFindReferences, lspCallHierarchy } from 'octocode-research';
+// EXAMPLE: Basic search - see localSearchCode.md for all options
+const result = await localSearchCode({
+  queries: [{
+    pattern: 'authenticate',
+    path: '/project/src',
+  }]
+});
+```
+> 📖 **Full options**: [localSearchCode.md](./references/localSearchCode.md) - supports `contextLines`, `filesOnly`, `include/exclude`, pagination, etc.
 
-// Go to definition
+### Example: LSP Definition Lookup
+
+```typescript
+// EXAMPLE: Go to definition - see lspGotoDefinition.md for all options
 const def = await lspGotoDefinition({
-  queries: [{ uri: './src/index.ts', symbolName: 'myFunction', lineHint: 10 }]
-});
-
-// Find references
-const refs = await lspFindReferences({
-  queries: [{ uri: './src/types.ts', symbolName: 'UserConfig', lineHint: 5 }]
-});
-
-// Call hierarchy
-const calls = await lspCallHierarchy({
-  queries: [{ uri: './src/api.ts', symbolName: 'processRequest', lineHint: 42, direction: 'incoming' }]
+  queries: [{
+    uri: './src/index.ts',
+    symbolName: 'myFunction',
+    lineHint: 10,  // REQUIRED: from localSearchCode results
+  }]
 });
 ```
+> 📖 **Full options**: [lspGotoDefinition.md](./references/lspGotoDefinition.md) - supports `contextLines`, `orderHint`, etc.
 
-### GitHub Tools (require token initialization)
+### Example: Call Hierarchy
 
 ```typescript
-import { initialize, githubSearchCode, githubGetFileContent, githubSearchRepositories, githubViewRepoStructure, githubSearchPullRequests, packageSearch } from 'octocode-research';
+// EXAMPLE: Find who calls a function - see lspCallHierarchy.md for all options
+const calls = await lspCallHierarchy({
+  queries: [{
+    uri: './src/api.ts',
+    symbolName: 'processRequest',
+    lineHint: 42,
+    direction: 'incoming',  // or 'outgoing'
+  }]
+});
+```
+> 📖 **Full options**: [lspCallHierarchy.md](./references/lspCallHierarchy.md) - supports `depth`, `callsPerPage`, pagination, etc.
 
+### Example: GitHub Search
+
+```typescript
+// EXAMPLE: Search GitHub - see githubSearchCode.md for all options
 await initialize(); // Required first!
 
-// Search GitHub code
 const code = await githubSearchCode({
   queries: [{
-    mainResearchGoal: 'Find hooks', researchGoal: 'Search useState', reasoning: 'Understanding hooks',
-    keywordsToSearch: ['useState'], owner: 'facebook', repo: 'react',
-  }]
-});
-
-// Read GitHub file
-const file = await githubGetFileContent({
-  queries: [{
-    mainResearchGoal: 'Read source', researchGoal: 'Get README', reasoning: 'Documentation',
-    owner: 'facebook', repo: 'react', path: 'README.md', fullContent: true,
-  }]
-});
-
-// Search repositories
-const repos = await githubSearchRepositories({
-  queries: [{
-    mainResearchGoal: 'Find tools', researchGoal: 'TypeScript CLIs', reasoning: 'Research',
-    topicsToSearch: ['typescript', 'cli'], stars: '>1000',
-  }]
-});
-
-// View repo structure
-const struct = await githubViewRepoStructure({
-  queries: [{
-    mainResearchGoal: 'Explore repo', researchGoal: 'View lib', reasoning: 'Find source',
-    owner: 'expressjs', repo: 'express', branch: 'main', path: 'lib',
-  }]
-});
-
-// Search PRs
-const prs = await githubSearchPullRequests({
-  queries: [{
-    mainResearchGoal: 'Code archaeology', researchGoal: 'Find hooks PRs', reasoning: 'History',
-    owner: 'facebook', repo: 'react', query: 'hooks', state: 'closed', merged: true,
-  }]
-});
-
-// Package search
-const pkg = await packageSearch({
-  queries: [{
-    mainResearchGoal: 'Find package', researchGoal: 'Get express repo', reasoning: 'Source exploration',
-    name: 'express', ecosystem: 'npm',
+    mainResearchGoal: 'Find hooks implementation',
+    researchGoal: 'Search useState patterns',
+    reasoning: 'Understanding React hooks',
+    keywordsToSearch: ['useState'],
+    owner: 'facebook',
+    repo: 'react',
   }]
 });
 ```
+> 📖 **Full options**: [githubSearchCode.md](./references/githubSearchCode.md) - supports `extension`, `path`, `filename`, `match` mode, etc.
 
----
-
-## Response Format
-
-All functions return `CallToolResult` with YAML-formatted content:
+### Example: Complete Research Flow
 
 ```typescript
-interface CallToolResult {
-  content: Array<{ type: 'text'; text: string }>;
-  isError: boolean;
-}
-```
-
-The `text` field contains YAML with:
-- `status`: `"hasResults"` | `"empty"` | `"error"`
-- `data`: Query-specific result data
-- `hints`: Context-aware next-step guidance
-
----
-
-## Research Workflow
-
-Follow the **Funnel Method** - progressive narrowing:
-
-```
-1. DISCOVERY → 2. SEARCH → 3. LSP SEMANTIC → 4. READ
-     ↓              ↓              ↓              ↓
-  Structure     Pattern        Locate/       Implementation
-  & Scope      Matching       Analyze        Details (LAST!)
-```
-
-### Example: "Where is authentication handled?"
-
-```typescript
+// EXAMPLE: Full research workflow
 import {
   localViewStructure,
   localSearchCode,
@@ -374,7 +217,7 @@ const structure = await localViewStructure({
 
 // Step 2: SEARCH - Find patterns, get lineHint
 const search = await localSearchCode({
-  queries: [{ pattern: 'authenticate|auth', path: '/project/src' }]
+  queries: [{ pattern: 'authenticate', path: '/project/src' }]
 });
 // Results: line 42 in /project/src/middleware/auth.ts
 
@@ -383,7 +226,7 @@ const definition = await lspGotoDefinition({
   queries: [{
     uri: '/project/src/middleware/auth.ts',
     symbolName: 'authenticate',
-    lineHint: 42,  // From search!
+    lineHint: 42,
   }]
 });
 
@@ -399,24 +242,133 @@ const content = await localGetFileContent({
 
 ---
 
-## Tool Selection Quick Reference
+## CLI Scripts
 
-| Question | Function Chain |
-|----------|----------------|
-| "Where is X defined?" | `localSearchCode` → `lspGotoDefinition(lineHint)` |
-| "Who calls function X?" | `localSearchCode` → `lspCallHierarchy(incoming, lineHint)` |
-| "What does X call?" | `localSearchCode` → `lspCallHierarchy(outgoing, lineHint)` |
-| "All usages of type/var X?" | `localSearchCode` → `lspFindReferences(lineHint)` |
-| "Find files by name" | `localFindFiles` |
-| "Project structure?" | `localViewStructure` |
-| "External package info?" | `packageSearch` → `githubViewRepoStructure` → `githubSearchCode` |
-| "Why was code written?" | `githubSearchPullRequests(merged=true)` |
+The `scripts/` folder contains runnable examples for each function.
+
+### Running Scripts
+
+```bash
+cd skills/octocode-research
+
+# Local tools
+npx tsx scripts/localSearchCode.ts "pattern" ./src
+npx tsx scripts/localGetFileContent.ts ./path/to/file.ts
+npx tsx scripts/localFindFiles.ts . "*.ts"
+npx tsx scripts/localViewStructure.ts ./src
+
+# LSP tools
+npx tsx scripts/lspGotoDefinition.ts ./src/file.ts symbolName 42
+npx tsx scripts/lspFindReferences.ts ./src/file.ts symbolName 42
+npx tsx scripts/lspCallHierarchy.ts ./src/file.ts symbolName 42 incoming
+
+# GitHub tools (requires token)
+npx tsx scripts/githubSearchCode.ts "keywords" owner/repo
+npx tsx scripts/githubGetFileContent.ts owner/repo path/to/file.ts "matchString"
+npx tsx scripts/githubSearchRepositories.ts "keywords"
+npx tsx scripts/githubViewRepoStructure.ts owner/repo path branch
+npx tsx scripts/githubSearchPullRequests.ts owner/repo "query" --merged
+
+# Package search
+npx tsx scripts/packageSearch.ts express npm
+```
+
+### Script to Function Mapping
+
+| Script File | Function | Full Reference |
+|-------------|----------|----------------|
+| `scripts/localSearchCode.ts` | `localSearchCode` | [📖](./references/localSearchCode.md) |
+| `scripts/localGetFileContent.ts` | `localGetFileContent` | [📖](./references/localGetFileContent.md) |
+| `scripts/localFindFiles.ts` | `localFindFiles` | [📖](./references/localFindFiles.md) |
+| `scripts/localViewStructure.ts` | `localViewStructure` | [📖](./references/localViewStructure.md) |
+| `scripts/lspGotoDefinition.ts` | `lspGotoDefinition` | [📖](./references/lspGotoDefinition.md) |
+| `scripts/lspFindReferences.ts` | `lspFindReferences` | [📖](./references/lspFindReferences.md) |
+| `scripts/lspCallHierarchy.ts` | `lspCallHierarchy` | [📖](./references/lspCallHierarchy.md) |
+| `scripts/githubSearchCode.ts` | `githubSearchCode` | [📖](./references/githubSearchCode.md) |
+| `scripts/githubGetFileContent.ts` | `githubGetFileContent` | [📖](./references/githubGetFileContent.md) |
+| `scripts/githubSearchRepositories.ts` | `githubSearchRepositories` | [📖](./references/githubSearchRepositories.md) |
+| `scripts/githubViewRepoStructure.ts` | `githubViewRepoStructure` | [📖](./references/githubViewRepoStructure.md) |
+| `scripts/githubSearchPullRequests.ts` | `githubSearchPullRequests` | [📖](./references/githubSearchPullRequests.md) |
+| `scripts/packageSearch.ts` | `packageSearch` | [📖](./references/packageSearch.md) |
+
+---
+
+## Response Format
+
+All functions return `CallToolResult`:
+
+```typescript
+interface CallToolResult {
+  content: Array<{ type: 'text'; text: string }>;
+  isError: boolean;
+}
+```
+
+The `text` field contains YAML with:
+- `status`: `"hasResults"` | `"empty"` | `"error"`
+- `data`: Query-specific result data
+- `hints`: Context-aware next-step guidance
+
+---
+
+## Critical Rules
+
+1. **LSP tools REQUIRE `lineHint`** - Always call `localSearchCode` first!
+2. **Read file content LAST** - Use LSP for semantic understanding first
+3. **GitHub: Use 1-2 filters max** - Never combine extension+filename+path
+4. **`lspCallHierarchy` only works on functions** - Use `lspFindReferences` for types/variables
+5. **Initialize token** - Call `initialize()` before GitHub tools
+
+### Token Management
+
+```typescript
+import { initialize, getGitHubToken, getTokenSource } from 'octocode-research';
+
+await initialize();
+const token = await getGitHubToken();
+const source = await getTokenSource();
+// Returns: 'env:GH_TOKEN', 'env:GITHUB_TOKEN', 'gh-cli', 'octocode-storage', or 'none'
+```
+
+Token priority: `GH_TOKEN` → `GITHUB_TOKEN` → `gh auth token` → Octocode storage
+
+---
+
+## Full References
+
+### Research Methodology
+
+| Prompt | Scope | Reference |
+|--------|-------|-----------|
+| **Local Research** | Local codebase with LSP semantic analysis | [📖 research_local_prompt.md](./references/research_local_prompt.md) |
+| **External Research** | GitHub repos, packages, and PRs | [📖 research_external_prompt.md](./references/research_external_prompt.md) |
+
+### Function References (Complete API Documentation)
+
+#### Local Tools
+- [localSearchCode.md](./references/localSearchCode.md) - Full search options
+- [localGetFileContent.md](./references/localGetFileContent.md) - File reading options
+- [localFindFiles.md](./references/localFindFiles.md) - File finding options
+- [localViewStructure.md](./references/localViewStructure.md) - Structure viewing options
+
+#### LSP Tools
+- [lspGotoDefinition.md](./references/lspGotoDefinition.md) - Definition lookup options
+- [lspFindReferences.md](./references/lspFindReferences.md) - Reference finding options
+- [lspCallHierarchy.md](./references/lspCallHierarchy.md) - Call hierarchy options
+
+#### GitHub Tools
+- [githubSearchCode.md](./references/githubSearchCode.md) - Code search options
+- [githubGetFileContent.md](./references/githubGetFileContent.md) - File content options
+- [githubSearchRepositories.md](./references/githubSearchRepositories.md) - Repo search options
+- [githubViewRepoStructure.md](./references/githubViewRepoStructure.md) - Structure options
+- [githubSearchPullRequests.md](./references/githubSearchPullRequests.md) - PR search options
+
+#### Package Tools
+- [packageSearch.md](./references/packageSearch.md) - Package search options
 
 ---
 
 ## Exported Types
-
-Import types for TypeScript usage:
 
 ```typescript
 import type {
@@ -440,62 +392,5 @@ import type {
   
   // Package search
   PackageSearchQuery, PackageSearchResult,
-  NpmPackageSearchQuery, PythonPackageSearchQuery,
 } from 'octocode-research';
 ```
-
----
-
-## Token Management
-
-For GitHub tools, initialize token resolution:
-
-```typescript
-import { initialize, getGitHubToken, getTokenSource } from 'octocode-research';
-
-await initialize();
-const token = await getGitHubToken();
-const source = await getTokenSource();
-// Returns: 'env:GH_TOKEN', 'env:GITHUB_TOKEN', 'gh-cli', 'octocode-storage', or 'none'
-```
-
-Token priority:
-1. `GH_TOKEN` env var
-2. `GITHUB_TOKEN` env var
-3. `gh auth token` (GitHub CLI)
-4. Octocode secure storage
-
----
-
-## Critical Rules
-
-1. **LSP tools REQUIRE `lineHint`** - Always call `localSearchCode` first!
-2. **Read file content LAST** - Use LSP for semantic understanding first
-3. **GitHub: Use 1-2 filters max** - Never combine extension+filename+path
-4. **`lspCallHierarchy` only works on functions** - Use `lspFindReferences` for types/variables
-5. **Initialize token** - Call `initialize()` before GitHub tools
-
----
-
-## References
-
-For detailed API documentation for each function, see the `references/` folder:
-
-### Research Methodology Prompts
-- [research_local_prompt.md](./references/research_local_prompt.md) - Local codebase research with LSP
-- [research_external_prompt.md](./references/research_external_prompt.md) - GitHub/package research
-
-### Tool References
-- [localSearchCode](./references/localSearchCode.md)
-- [localGetFileContent](./references/localGetFileContent.md)
-- [localFindFiles](./references/localFindFiles.md)
-- [localViewStructure](./references/localViewStructure.md)
-- [lspGotoDefinition](./references/lspGotoDefinition.md)
-- [lspFindReferences](./references/lspFindReferences.md)
-- [lspCallHierarchy](./references/lspCallHierarchy.md)
-- [githubSearchCode](./references/githubSearchCode.md)
-- [githubGetFileContent](./references/githubGetFileContent.md)
-- [githubSearchRepositories](./references/githubSearchRepositories.md)
-- [githubViewRepoStructure](./references/githubViewRepoStructure.md)
-- [githubSearchPullRequests](./references/githubSearchPullRequests.md)
-- [packageSearch](./references/packageSearch.md)
