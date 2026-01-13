@@ -32,15 +32,23 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./credentials": {
       "types": "./dist/credentials/index.d.ts",
-      "import": "./dist/credentials/index.js"
+      "import": "./dist/credentials/index.js",
+      "default": "./dist/credentials/index.js"
     },
     "./platform": {
       "types": "./dist/platform/index.d.ts",
-      "import": "./dist/platform/index.js"
+      "import": "./dist/platform/index.js",
+      "default": "./dist/platform/index.js"
+    },
+    "./session": {
+      "types": "./dist/session/index.d.ts",
+      "import": "./dist/session/index.js",
+      "default": "./dist/session/index.js"
     }
   },
   "files": [
