@@ -1,5 +1,5 @@
 ---
-name: octocode-implement-with-contect
+name: octocode-implement
 description: Implement features from spec documents (context/doc required)
 ---
 

@@ -126,6 +126,37 @@ export { ALL_TOOLS, type ToolConfig } from './tools/toolConfig.js';
 // ============================================================================
 
 /**
+ * Initialize server configuration.
+ * Must be called before using getGitHubToken() or getTokenSource().
+ * Initializes secure storage and resolves initial token.
+ *
+ * @example
+ * ```typescript
+ * import { initialize } from 'octocode-mcp/public';
+ * await initialize();
+ * ```
+ */
+export { initialize } from './serverConfig.js';
+
+/**
+ * Get the current GitHub token.
+ * Always resolves fresh - no caching. Supports env vars, gh CLI, and octocode storage.
+ * Call initialize() first to set up secure storage.
+ *
+ * @example
+ * ```typescript
+ * import { initialize, getGitHubToken } from 'octocode-mcp/public';
+ *
+ * await initialize();
+ * const token = await getGitHubToken();
+ * if (token) {
+ *   // Use token for GitHub API calls
+ * }
+ * ```
+ */
+export { getGitHubToken, getToken } from './serverConfig.js';
+
+/**
  * Get the source of the current GitHub token.
  * Always resolves fresh - token can change at runtime.
  * Useful for debugging and logging token resolution.
@@ -400,3 +431,25 @@ export {
   type PackageSearchError,
   type PackageSearchResult,
 } from './tools/package_search/index.js';
+
+// ============================================================================
+// Security Validation - For skills requiring input validation
+// ============================================================================
+
+/**
+ * Basic security validation wrapper for skill use.
+ * Wraps tool handlers with input sanitization using ContentSanitizer.
+ *
+ * @example
+ * ```typescript
+ * import { withBasicSecurityValidation, fetchMultipleGitHubFileContents } from 'octocode-mcp/public';
+ *
+ * const validatedFetch = withBasicSecurityValidation(
+ *   async (args: { queries: unknown[] }) =>
+ *     fetchMultipleGitHubFileContents({ queries: args.queries })
+ * );
+ *
+ * const result = await validatedFetch({ queries: [...] });
+ * ```
+ */
+export { withBasicSecurityValidation } from './security/withSecurityValidation.js';

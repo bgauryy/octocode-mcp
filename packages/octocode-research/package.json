@@ -1,0 +1,51 @@
+{
+  "name": "octocode-research",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Code research skill using octocode tools - search, explore, and analyze local and remote codebases",
+  "author": "Guy Bary <bgauryy@octocodeai.com>",
+  "homepage": "https://octocode.ai",
+  "repository": "bgauryy/octocode-mcp.git",
+  "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
+  "license": "PolyForm-Small-Business-1.0.0",
+  "keywords": [
+    "agent-skill",
+    "claude-code",
+    "code-research",
+    "code-search",
+    "github",
+    "lsp",
+    "octocode",
+    "mcp"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "SKILL.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "octocode-mcp": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -81,12 +81,18 @@
     "./types": {
       "types": "./dist/public.d.ts",
       "import": "./dist/public.js"
+    },
+    "./responses": {
+      "types": "./dist/responses.d.ts",
+      "import": "./dist/responses.js"
     }
   },
   "files": [
     "dist/index.js",
     "dist/public.js",
     "dist/public.d.ts",
+    "dist/responses.js",
+    "dist/responses.d.ts",
     "manifest.json",
     "server.json",
     "LICENSE"
