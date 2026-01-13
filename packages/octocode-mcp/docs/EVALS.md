@@ -2,6 +2,109 @@
 
 > Technical documentation for the evaluation framework that measures Octocode MCP research quality.
 
+## Knowledge Gap Eval (v3)
+
+The primary evaluation measures whether tools help AI answer questions it cannot answer from training data alone.
+
+### Quick Start
+
+```bash
+# Run knowledge gap eval (single run)
+npx tsx tests/evals/run-knowledge-eval.ts
+
+# Run with statistical rigor (3 runs per test)
+npx tsx tests/evals/run-knowledge-eval.ts --runs 3
+
+# Run with verbose output
+npx tsx tests/evals/run-knowledge-eval.ts --verbose --limit 3
+```
+
+### Methodology (v3)
+
+The eval uses a rigorous methodology based on best practices from [promptfoo](https://github.com/promptfoo/promptfoo) and [deepeval](https://github.com/confident-ai/deepeval):
+
+| Feature | Implementation |
+|---------|----------------|
+| **Blind judging** | LLM judge evaluates factuality without seeing ground truth |
+| **Factuality categories** | A=correct, B=partial, C=incorrect, D=uncertain, E=irrelevant |
+| **Randomized order** | Provider order shuffled per test to avoid ordering bias |
+| **Same conditions** | Identical system prompt and maxTurns for all providers |
+| **Statistical rigor** | Optional multiple runs with confidence intervals |
+| **Exact + semantic** | 40% exact string match + 60% blind judge scoring |
+
+### Scoring
+
+```
+Combined Score = (Exact Match × 0.4) + (Blind Judge × 0.6)
+```
+
+- **Exact Match (40%)**: Response must contain specific strings (e.g., "408", "ReactQueryStreamedHydration")
+- **Blind Judge (60%)**: LLM evaluates factual accuracy using criteria (not ground truth)
+
+### Factuality Categories
+
+| Category | Score | Description |
+|----------|-------|-------------|
+| A | 100 | Correct - accurate, specific information matching criteria |
+| B | 50 | Partial - some correct info but missing key details |
+| C | 0 | Incorrect - wrong values or contradicts criteria |
+| D | 0 | Uncertain - admits not knowing or hedges |
+| E | 0 | Irrelevant - doesn't address the question |
+
+### Test Case Distribution
+
+Current test cases cover 6 different libraries:
+
+| Library | Count | Category |
+|---------|-------|----------|
+| ofetch | 2 | HTTP client |
+| TanStack Query | 2 | Data fetching |
+| Hono | 1 | Web framework |
+| Zod | 1 | Validation |
+| Drizzle | 1 | ORM |
+| Effect-TS | 1 | Functional |
+
+### Adding Test Cases
+
+Use the `/generate-knowledge-gap` command to create new test cases:
+
+```bash
+# In Claude Code
+/generate-knowledge-gap https://github.com/honojs/hono
+```
+
+The command:
+1. Clones repo locally (not via Octocode to avoid bias)
+2. Searches for obscure implementation details
+3. Validates baseline doesn't know via subagent
+4. Outputs JSON ready for `verified-knowledge-gaps.json`
+
+### Known Limitations
+
+| Limitation | Mitigation |
+|------------|------------|
+| Small sample size (N=8) | Use `--runs 3` for confidence intervals |
+| Test cases may favor certain tools | Generate cases without Octocode (clone locally) |
+| Ground truth can become stale | Verify against current source before adding |
+| 40/60 weight split is somewhat arbitrary | Based on promptfoo patterns; ablation study recommended |
+
+### Output Example
+
+```
+══════════════════════════════════════════════════════════════════════
+                         RESULTS SUMMARY
+══════════════════════════════════════════════════════════════════════
+
+AGGREGATE SCORES:
+  🔵 Octocode:  83% ± 12.5% (95% CI: 70-96%)
+  🟢 Context7:  73% ± 15.2% (95% CI: 58-88%)
+  ⚪ Baseline:  38% ± 18.1% (95% CI: 20-56%)
+
+✅ TOOLS HELP: Octocode provides the most value (statistically significant)
+```
+
+---
+
 ## Overview
 
 The eval framework provides objective measurement of Octocode's effectiveness compared to other tools (Context7) and baseline (no tools). It evaluates across 5 dimensions:

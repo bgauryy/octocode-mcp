@@ -1,13 +1,25 @@
 #!/usr/bin/env node
 /**
- * Knowledge Gap Eval - Tests if tools help AI answer questions it can't from training
+ * Knowledge Gap Eval v3 - Tests if tools help AI answer questions beyond training
+ *
+ * Improvements over v2:
+ * - Multiple runs per test for statistical rigor
+ * - Randomized provider order to avoid ordering bias
+ * - Blind LLM judge (factuality-style categories, not ground truth comparison)
+ * - Same system prompt for all providers (no bias)
+ * - Same maxTurns for all providers
+ * - Confidence intervals and standard deviation
+ * - Fixed winner logic bug
  *
  * Scoring:
- * 1. Exact Match (40%): Response must contain exact strings from ground truth
- * 2. LLM Judge (60%): Claude verifies if the answer is factually correct
+ * - Exact Match (40%): Response must contain exact strings
+ * - LLM Judge (60%): Blind factuality evaluation using categories
  *
  * Usage:
  *   npx tsx tests/evals/run-knowledge-eval.ts [options]
+ *   --runs N     Number of runs per test (default: 1, recommend 3+ for stats)
+ *   --limit N    Limit number of test cases
+ *   --verbose    Show detailed output
  */
 
 /* eslint-disable no-console */
@@ -19,66 +31,130 @@ interface KnowledgeTestCase {
   prompt: string;
   difficulty: number;
   groundTruth: {
-    exactMatch: string[];      // Must contain these exact strings
-    validationQuery: string;   // The correct answer for LLM judge
+    exactMatch: string[];
+    validationQuery: string;
   };
   tags: string[];
 }
 
-interface ProviderResult {
-  provider: string;
+interface RunResult {
   response: string;
   latencyMs: number;
-  exactMatchScore: number;    // 0-100
-  llmJudgeScore: number;      // 0-100
-  score: number;              // Combined score
+  exactMatchScore: number;
+  llmJudgeScore: number;
+  score: number;
   exactMatches: string[];
   exactMisses: string[];
+  llmJudgeCategory: string;
   llmJudgeReason: string;
+}
+
+interface ProviderStats {
+  provider: string;
+  runs: RunResult[];
+  mean: number;
+  stdDev: number;
+  ci95: [number, number];
+  meanLatency: number;
+  meanExact: number;
+  meanJudge: number;
 }
 
 interface TestResult {
   testCase: string;
   difficulty: number;
-  results: Record<string, ProviderResult>;
+  stats: Record<string, ProviderStats>;
   winner: string;
+  significant: boolean;
 }
+
+// Same system prompt for ALL providers - no bias
+const SYSTEM_PROMPT = `You are a coding assistant answering technical questions.
+Answer precisely with exact values when asked for specifics.
+If you have access to tools, use them to find accurate information.
+If you don't have tools or can't find the answer, provide your best knowledge-based response.`;
 
 const PROVIDERS = {
   octocode: {
     servers: {
       octocode: { command: 'npx', args: ['-y', 'octocode-mcp@latest'] }
-    },
-    systemPrompt: `You are a coding assistant with Octocode tools. Use them to search GitHub for accurate answers. Be specific with exact values.`
+    }
   },
   context7: {
     servers: {
       context7: { command: 'npx', args: ['-y', '@upstash/context7-mcp@latest'] }
-    },
-    systemPrompt: `You are a coding assistant with Context7 tools. Use them to search documentation for accurate answers. Be specific with exact values.`
+    }
   },
   none: {
-    servers: {},
-    systemPrompt: `You are a coding assistant. Answer using your training knowledge. Be specific. If unsure about exact values, say "I don't know the exact value".`
+    servers: {}
   }
 };
 
-const LLM_JUDGE_PROMPT = `You are evaluating if an AI response correctly answers a technical question.
+// Blind LLM Judge - uses factuality categories instead of showing ground truth
+// Based on promptfoo/OpenAI evals factuality approach
+const BLIND_JUDGE_PROMPT = `You are evaluating the factual accuracy of a technical answer.
 
 QUESTION: {question}
 
-CORRECT ANSWER (ground truth): {groundTruth}
-
-AI RESPONSE TO EVALUATE:
+RESPONSE TO EVALUATE:
 {response}
 
-Score the response:
-- 100: Correct - contains the exact correct information
-- 50: Partially correct - has some right info but missing key details or has errors
-- 0: Incorrect - wrong answer, guessed wrong values, or admitted not knowing
+EVALUATION CRITERIA:
+{criteria}
+
+Evaluate the response and categorize it:
+(A) CORRECT: Response provides accurate, specific information that matches the criteria
+(B) PARTIAL: Response has some correct information but is missing key details or has minor errors
+(C) INCORRECT: Response provides wrong specific values or contradicts the criteria
+(D) UNCERTAIN: Response admits uncertainty, hedges, or says "I don't know"
+(E) IRRELEVANT: Response doesn't address the question
+
+Choose the MOST appropriate category. Be strict about specifics - if the question asks for exact values, partial matches or approximations should be category B or C.
 
 Respond with ONLY a JSON object:
-{"score": <number>, "reason": "<brief explanation>"}`;
+{"category": "<A/B/C/D/E>", "reason": "<brief explanation>"}`;
+
+const CATEGORY_SCORES: Record<string, number> = {
+  A: 100,
+  B: 50,
+  C: 0,
+  D: 0,  // Admitting uncertainty = not knowing
+  E: 0
+};
+
+function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+function calculateStats(scores: number[]): { mean: number; stdDev: number; ci95: [number, number] } {
+  const n = scores.length;
+  const mean = scores.reduce((a, b) => a + b, 0) / n;
+
+  if (n < 2) {
+    return { mean, stdDev: 0, ci95: [mean, mean] };
+  }
+
+  const variance = scores.reduce((sum, x) => sum + Math.pow(x - mean, 2), 0) / (n - 1);
+  const stdDev = Math.sqrt(variance);
+
+  // 95% confidence interval (t-distribution approximation for small samples)
+  const tValue = n <= 2 ? 12.71 : n <= 3 ? 4.30 : n <= 5 ? 2.78 : n <= 10 ? 2.26 : 1.96;
+  const marginOfError = tValue * (stdDev / Math.sqrt(n));
+
+  return {
+    mean: Math.round(mean * 10) / 10,
+    stdDev: Math.round(stdDev * 10) / 10,
+    ci95: [
+      Math.round((mean - marginOfError) * 10) / 10,
+      Math.round((mean + marginOfError) * 10) / 10
+    ]
+  };
+}
 
 async function runWithProvider(
   prompt: string,
@@ -89,14 +165,14 @@ async function runWithProvider(
   const startTime = Date.now();
   let response = '';
 
-  const fullPrompt = `${provider.systemPrompt}\n\nQuestion: ${prompt}`;
+  const fullPrompt = `${SYSTEM_PROMPT}\n\nQuestion: ${prompt}`;
 
   try {
     for await (const message of query({
       prompt: fullPrompt,
       options: {
         model: 'claude-sonnet-4-5-20250929',
-        maxTurns: providerName === 'none' ? 1 : 8,
+        maxTurns: 8, // Same for all providers
         mcpServers: provider.servers,
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
@@ -125,14 +201,14 @@ async function runWithProvider(
   return { response, latencyMs: Date.now() - startTime };
 }
 
-async function llmJudge(
+async function blindJudge(
   question: string,
-  groundTruth: string,
+  criteria: string,
   response: string
-): Promise<{ score: number; reason: string }> {
-  const prompt = LLM_JUDGE_PROMPT
+): Promise<{ category: string; score: number; reason: string }> {
+  const prompt = BLIND_JUDGE_PROMPT
     .replace('{question}', question)
-    .replace('{groundTruth}', groundTruth)
+    .replace('{criteria}', criteria)
     .replace('{response}', response);
 
   let result = '';
@@ -153,17 +229,21 @@ async function llmJudge(
       }
     }
 
-    // Extract JSON from response
     const jsonMatch = result.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
-      return { score: parsed.score || 0, reason: parsed.reason || 'No reason' };
+      const category = (parsed.category || 'E').toUpperCase();
+      return {
+        category,
+        score: CATEGORY_SCORES[category] ?? 0,
+        reason: parsed.reason || 'No reason'
+      };
     }
   } catch (error) {
-    console.error('  LLM Judge error:', error);
+    console.error('  Blind Judge error:', error);
   }
 
-  return { score: 0, reason: 'Failed to judge' };
+  return { category: 'E', score: 0, reason: 'Failed to judge' };
 }
 
 function scoreExactMatch(response: string, exactMatch: string[]): {
@@ -175,7 +255,6 @@ function scoreExactMatch(response: string, exactMatch: string[]): {
   const misses: string[] = [];
 
   for (const exact of exactMatch) {
-    // Case-sensitive exact match for specific values
     if (response.includes(exact)) {
       matches.push(exact);
     } else {
@@ -190,80 +269,110 @@ function scoreExactMatch(response: string, exactMatch: string[]): {
   return { score, matches, misses };
 }
 
-async function scoreResponse(
-  response: string,
-  question: string,
-  groundTruth: KnowledgeTestCase['groundTruth'],
+async function runSingleTest(
+  testCase: KnowledgeTestCase,
+  providerName: string,
   verbose: boolean
-): Promise<{
-  exactMatchScore: number;
-  llmJudgeScore: number;
-  score: number;
-  exactMatches: string[];
-  exactMisses: string[];
-  llmJudgeReason: string;
-}> {
+): Promise<RunResult> {
+  const { response, latencyMs } = await runWithProvider(testCase.prompt, providerName, verbose);
+
   // Exact match scoring (40% weight)
-  const exact = scoreExactMatch(response, groundTruth.exactMatch);
+  const exact = scoreExactMatch(response, testCase.groundTruth.exactMatch);
 
-  // LLM Judge scoring (60% weight)
-  const judge = await llmJudge(question, groundTruth.validationQuery, response);
-
-  if (verbose) {
-    console.log(`      Exact: ${exact.score}% | Judge: ${judge.score}% (${judge.reason})`);
-  }
+  // Blind LLM Judge scoring (60% weight) - doesn't see ground truth, only criteria
+  const judge = await blindJudge(
+    testCase.prompt,
+    testCase.groundTruth.validationQuery,
+    response
+  );
 
   // Combined score: 40% exact + 60% judge
   const combinedScore = Math.round(exact.score * 0.4 + judge.score * 0.6);
 
   return {
+    response,
+    latencyMs,
     exactMatchScore: exact.score,
     llmJudgeScore: judge.score,
     score: combinedScore,
     exactMatches: exact.matches,
     exactMisses: exact.misses,
+    llmJudgeCategory: judge.category,
     llmJudgeReason: judge.reason,
   };
 }
 
 async function runTest(
   testCase: KnowledgeTestCase,
+  numRuns: number,
   verbose: boolean
 ): Promise<TestResult> {
   console.log(`\n${'─'.repeat(70)}`);
   console.log(`Testing: ${testCase.name}`);
   console.log(`Question: ${testCase.prompt.slice(0, 60)}...`);
   console.log(`Exact match required: ${testCase.groundTruth.exactMatch.join(', ')}`);
+  if (numRuns > 1) console.log(`Runs per provider: ${numRuns}`);
 
-  const results: Record<string, ProviderResult> = {};
+  const stats: Record<string, ProviderStats> = {};
 
-  for (const providerName of ['octocode', 'context7', 'none']) {
+  // Randomize provider order for each test
+  const providerOrder = shuffleArray(['octocode', 'context7', 'none']);
+
+  for (const providerName of providerOrder) {
     console.log(`\n  Running with ${providerName}...`);
 
-    const { response, latencyMs } = await runWithProvider(testCase.prompt, providerName, verbose);
-    const scores = await scoreResponse(response, testCase.prompt, testCase.groundTruth, verbose);
+    const runs: RunResult[] = [];
 
-    results[providerName] = {
+    for (let run = 0; run < numRuns; run++) {
+      if (numRuns > 1) console.log(`    Run ${run + 1}/${numRuns}...`);
+      const result = await runSingleTest(testCase, providerName, verbose);
+      runs.push(result);
+
+      if (verbose) {
+        console.log(`      Score: ${result.score}% (exact: ${result.exactMatchScore}%, judge: ${result.llmJudgeScore}% [${result.llmJudgeCategory}])`);
+      }
+    }
+
+    const scores = runs.map(r => r.score);
+    const { mean, stdDev, ci95 } = calculateStats(scores);
+
+    stats[providerName] = {
       provider: providerName,
-      response,
-      latencyMs,
-      ...scores
+      runs,
+      mean,
+      stdDev,
+      ci95,
+      meanLatency: Math.round(runs.reduce((a, r) => a + r.latencyMs, 0) / runs.length / 100) / 10,
+      meanExact: Math.round(runs.reduce((a, r) => a + r.exactMatchScore, 0) / runs.length),
+      meanJudge: Math.round(runs.reduce((a, r) => a + r.llmJudgeScore, 0) / runs.length),
     };
 
-    console.log(`  [${providerName}] Score: ${scores.score}% (exact: ${scores.exactMatchScore}%, judge: ${scores.llmJudgeScore}%)`);
-    console.log(`  [${providerName}] Latency: ${(latencyMs / 1000).toFixed(1)}s`);
-    if (scores.exactMisses.length > 0) {
-      console.log(`  [${providerName}] Missing: ${scores.exactMisses.join(', ')}`);
+    if (numRuns > 1) {
+      console.log(`  [${providerName}] Mean: ${mean}% ± ${stdDev}% (95% CI: ${ci95[0]}-${ci95[1]}%)`);
+    } else {
+      console.log(`  [${providerName}] Score: ${mean}% (exact: ${stats[providerName].meanExact}%, judge: ${stats[providerName].meanJudge}%)`);
     }
+    console.log(`  [${providerName}] Latency: ${stats[providerName].meanLatency}s`);
   }
 
-  // Determine winner
-  const scores = Object.entries(results).map(([name, r]) => ({ name, score: r.score }));
-  scores.sort((a, b) => b.score - a.score);
-  const winner = scores[0].score > scores[1].score ? scores[0].name :
-                 scores[0].score === scores[1].score ? 'tie' : scores[0].name;
+  // Determine winner with proper comparison
+  const sorted = Object.values(stats).sort((a, b) => b.mean - a.mean);
+  const best = sorted[0];
+  const second = sorted[1];
 
-  return { testCase: testCase.name, difficulty: testCase.difficulty, results, winner };
+  // Check if difference is significant (non-overlapping confidence intervals)
+  const significant = numRuns > 1 && (best.ci95[0] > second.ci95[1]);
+
+  let winner: string;
+  if (best.mean > second.mean) {
+    winner = best.provider;
+  } else if (best.mean === second.mean) {
+    winner = 'tie';
+  } else {
+    winner = second.provider; // This branch can now execute correctly
+  }
+
+  return { testCase: testCase.name, difficulty: testCase.difficulty, stats, winner, significant };
 }
 
 async function main() {
@@ -271,11 +380,20 @@ async function main() {
   const verbose = args.includes('--verbose');
   const limitIdx = args.indexOf('--limit');
   const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : undefined;
+  const runsIdx = args.indexOf('--runs');
+  const numRuns = runsIdx !== -1 ? parseInt(args[runsIdx + 1], 10) : 1;
 
   console.log('╔══════════════════════════════════════════════════════════════════════╗');
-  console.log('║              KNOWLEDGE GAP EVALUATION v2                             ║');
-  console.log('║  Scoring: 40% Exact Match + 60% LLM Judge                            ║');
+  console.log('║              KNOWLEDGE GAP EVALUATION v3                             ║');
+  console.log('║  Scoring: 40% Exact Match + 60% Blind LLM Judge                      ║');
   console.log('╚══════════════════════════════════════════════════════════════════════╝');
+  console.log('\nImprovements in v3:');
+  console.log('  - Blind judge (factuality categories, not ground truth comparison)');
+  console.log('  - Randomized provider order');
+  console.log('  - Same system prompt & maxTurns for all providers');
+  if (numRuns > 1) {
+    console.log(`  - Statistical rigor: ${numRuns} runs with confidence intervals`);
+  }
 
   const { promises: fs } = await import('fs');
   const { dirname, join } = await import('path');
@@ -290,12 +408,14 @@ async function main() {
   }
 
   console.log(`\nRunning ${testCases.length} knowledge gap tests...`);
-  console.log('Scoring: 40% exact string match + 60% LLM judge verification\n');
+  if (numRuns > 1) {
+    console.log(`Each test runs ${numRuns} times per provider for statistical significance\n`);
+  }
 
   const allResults: TestResult[] = [];
 
   for (const testCase of testCases) {
-    const result = await runTest(testCase, verbose);
+    const result = await runTest(testCase, numRuns, verbose);
     allResults.push(result);
   }
 
@@ -306,71 +426,116 @@ async function main() {
 
   console.log('\nPer-test scores:');
   console.log('─'.repeat(70));
-  console.log('Test Case'.padEnd(30) + 'Octocode  Context7  Baseline  Winner');
+  if (numRuns > 1) {
+    console.log('Test Case'.padEnd(28) + 'Octocode     Context7     Baseline     Winner');
+  } else {
+    console.log('Test Case'.padEnd(30) + 'Octocode  Context7  Baseline  Winner');
+  }
   console.log('─'.repeat(70));
 
   for (const result of allResults) {
-    const name = result.testCase.slice(0, 28).padEnd(30);
-    const octo = `${result.results.octocode?.score || 0}%`.padStart(6);
-    const ctx7 = `${result.results.context7?.score || 0}%`.padStart(8);
-    const none = `${result.results.none?.score || 0}%`.padStart(8);
-    const winner = result.winner === 'octocode' ? '🔵' :
-                   result.winner === 'context7' ? '🟢' :
-                   result.winner === 'none' ? '⚪' : '🟡';
-    console.log(`${name}${octo}${ctx7}${none}    ${winner} ${result.winner}`);
+    const name = result.testCase.slice(0, 26).padEnd(28);
+    if (numRuns > 1) {
+      const octo = `${result.stats.octocode?.mean}±${result.stats.octocode?.stdDev}`.padStart(10);
+      const ctx7 = `${result.stats.context7?.mean}±${result.stats.context7?.stdDev}`.padStart(12);
+      const none = `${result.stats.none?.mean}±${result.stats.none?.stdDev}`.padStart(12);
+      const sig = result.significant ? '*' : '';
+      const winnerIcon = result.winner === 'octocode' ? '🔵' :
+                         result.winner === 'context7' ? '🟢' :
+                         result.winner === 'none' ? '⚪' : '🟡';
+      console.log(`${name}${octo}${ctx7}${none}   ${winnerIcon} ${result.winner}${sig}`);
+    } else {
+      const octo = `${result.stats.octocode?.mean || 0}%`.padStart(6);
+      const ctx7 = `${result.stats.context7?.mean || 0}%`.padStart(8);
+      const none = `${result.stats.none?.mean || 0}%`.padStart(8);
+      const winnerIcon = result.winner === 'octocode' ? '🔵' :
+                         result.winner === 'context7' ? '🟢' :
+                         result.winner === 'none' ? '⚪' : '🟡';
+      console.log(`  ${name}${octo}${ctx7}${none}    ${winnerIcon} ${result.winner}`);
+    }
+  }
+
+  if (numRuns > 1) {
+    console.log('\n* = statistically significant (non-overlapping 95% CIs)');
   }
 
   // Aggregate stats
-  const avgScores = { octocode: 0, context7: 0, none: 0 };
-  const avgLatency = { octocode: 0, context7: 0, none: 0 };
+  const allScores = {
+    octocode: allResults.map(r => r.stats.octocode?.mean || 0),
+    context7: allResults.map(r => r.stats.context7?.mean || 0),
+    none: allResults.map(r => r.stats.none?.mean || 0),
+  };
+
+  const avgStats = {
+    octocode: calculateStats(allScores.octocode),
+    context7: calculateStats(allScores.context7),
+    none: calculateStats(allScores.none),
+  };
+
   const wins = { octocode: 0, context7: 0, none: 0, tie: 0 };
+  let significantWins = { octocode: 0, context7: 0, none: 0 };
 
   for (const result of allResults) {
-    avgScores.octocode += result.results.octocode?.score || 0;
-    avgScores.context7 += result.results.context7?.score || 0;
-    avgScores.none += result.results.none?.score || 0;
-    avgLatency.octocode += result.results.octocode?.latencyMs || 0;
-    avgLatency.context7 += result.results.context7?.latencyMs || 0;
-    avgLatency.none += result.results.none?.latencyMs || 0;
     if (result.winner === 'tie') wins.tie++;
     else wins[result.winner as keyof typeof wins]++;
+
+    if (result.significant && result.winner !== 'tie') {
+      significantWins[result.winner as keyof typeof significantWins]++;
+    }
   }
 
-  const n = allResults.length;
-  avgScores.octocode = Math.round(avgScores.octocode / n);
-  avgScores.context7 = Math.round(avgScores.context7 / n);
-  avgScores.none = Math.round(avgScores.none / n);
-  avgLatency.octocode = Math.round(avgLatency.octocode / n / 1000 * 10) / 10;
-  avgLatency.context7 = Math.round(avgLatency.context7 / n / 1000 * 10) / 10;
-  avgLatency.none = Math.round(avgLatency.none / n / 1000 * 10) / 10;
-
   console.log('\n' + '─'.repeat(70));
-  console.log('AVERAGE SCORES (40% exact + 60% LLM judge):');
-  console.log(`  🔵 Octocode:  ${avgScores.octocode}%`);
-  console.log(`  🟢 Context7:  ${avgScores.context7}%`);
-  console.log(`  ⚪ Baseline:  ${avgScores.none}%`);
-
-  console.log('\nAVERAGE LATENCY:');
-  console.log(`  🔵 Octocode:  ${avgLatency.octocode}s`);
-  console.log(`  🟢 Context7:  ${avgLatency.context7}s`);
-  console.log(`  ⚪ Baseline:  ${avgLatency.none}s`);
+  console.log('AGGREGATE SCORES:');
+  if (numRuns > 1) {
+    console.log(`  🔵 Octocode:  ${avgStats.octocode.mean}% ± ${avgStats.octocode.stdDev}% (95% CI: ${avgStats.octocode.ci95[0]}-${avgStats.octocode.ci95[1]}%)`);
+    console.log(`  🟢 Context7:  ${avgStats.context7.mean}% ± ${avgStats.context7.stdDev}% (95% CI: ${avgStats.context7.ci95[0]}-${avgStats.context7.ci95[1]}%)`);
+    console.log(`  ⚪ Baseline:  ${avgStats.none.mean}% ± ${avgStats.none.stdDev}% (95% CI: ${avgStats.none.ci95[0]}-${avgStats.none.ci95[1]}%)`);
+  } else {
+    console.log(`  🔵 Octocode:  ${avgStats.octocode.mean}%`);
+    console.log(`  🟢 Context7:  ${avgStats.context7.mean}%`);
+    console.log(`  ⚪ Baseline:  ${avgStats.none.mean}%`);
+  }
 
   console.log('\nIMPROVEMENT OVER BASELINE:');
-  console.log(`  🔵 Octocode:  +${avgScores.octocode - avgScores.none}% accuracy, +${(avgLatency.octocode - avgLatency.none).toFixed(1)}s latency`);
-  console.log(`  🟢 Context7:  +${avgScores.context7 - avgScores.none}% accuracy, +${(avgLatency.context7 - avgLatency.none).toFixed(1)}s latency`);
+  console.log(`  🔵 Octocode:  +${(avgStats.octocode.mean - avgStats.none.mean).toFixed(1)}%`);
+  console.log(`  🟢 Context7:  +${(avgStats.context7.mean - avgStats.none.mean).toFixed(1)}%`);
 
   console.log('\nWINS:');
   console.log(`  Octocode: ${wins.octocode} | Context7: ${wins.context7} | Baseline: ${wins.none} | Ties: ${wins.tie}`);
+  if (numRuns > 1) {
+    console.log(`  Significant wins: Octocode: ${significantWins.octocode} | Context7: ${significantWins.context7} | Baseline: ${significantWins.none}`);
+  }
 
   console.log('\n' + '═'.repeat(70));
 
-  const toolsHelp = avgScores.octocode > avgScores.none || avgScores.context7 > avgScores.none;
-  if (toolsHelp) {
-    const better = avgScores.octocode > avgScores.context7 ? 'Octocode' :
-                   avgScores.context7 > avgScores.octocode ? 'Context7' : 'Both equally';
-    console.log(`✅ TOOLS HELP: ${better} provides the most value for knowledge-gap questions`);
+  // Statistical significance check for overall results
+  const octoBetterThanBaseline = numRuns > 1
+    ? avgStats.octocode.ci95[0] > avgStats.none.ci95[1]
+    : avgStats.octocode.mean > avgStats.none.mean;
+  const ctx7BetterThanBaseline = numRuns > 1
+    ? avgStats.context7.ci95[0] > avgStats.none.ci95[1]
+    : avgStats.context7.mean > avgStats.none.mean;
+
+  if (octoBetterThanBaseline || ctx7BetterThanBaseline) {
+    const better = avgStats.octocode.mean > avgStats.context7.mean ? 'Octocode' :
+                   avgStats.context7.mean > avgStats.octocode.mean ? 'Context7' : 'Both equally';
+    const sigNote = numRuns > 1 ? ' (statistically significant)' : '';
+    console.log(`✅ TOOLS HELP: ${better} provides the most value${sigNote}`);
   } else {
-    console.log(`❌ TOOLS DON'T HELP: Baseline performed as well or better`);
+    console.log(`❌ TOOLS DON'T HELP: No significant improvement over baseline`);
+  }
+
+  // Methodology notes
+  console.log('\n' + '─'.repeat(70));
+  console.log('METHODOLOGY NOTES:');
+  console.log('  - Blind judge: LLM evaluates without seeing exact ground truth');
+  console.log('  - Factuality categories: A=correct, B=partial, C=incorrect, D=uncertain, E=irrelevant');
+  console.log('  - Provider order randomized per test to avoid ordering effects');
+  console.log('  - Same system prompt and maxTurns for all providers');
+  if (numRuns > 1) {
+    console.log(`  - ${numRuns} runs per test with 95% confidence intervals`);
+  } else {
+    console.log('  - Run with --runs 3 for statistical significance testing');
   }
 }
 

@@ -8,18 +8,7 @@
       "exactMatch": ["408", "409", "425", "429", "500", "502", "503", "504"],
       "validationQuery": "ofetch retries on exactly these 8 status codes: 408, 409, 425, 429, 500, 502, 503, 504. The answer must include ALL of these codes."
     },
-    "tags": ["verified", "ofetch"]
-  },
-  {
-    "name": "ofetch_null_body_codes",
-    "description": "Exact null body response codes in ofetch",
-    "prompt": "What exact HTTP status codes are in ofetch's nullBodyResponses set?",
-    "difficulty": 4,
-    "groundTruth": {
-      "exactMatch": ["101", "204", "205", "304"],
-      "validationQuery": "ofetch's nullBodyResponses contains exactly: 101, 204, 205, 304. Must have all 4."
-    },
-    "tags": ["verified", "ofetch"]
+    "tags": ["verified", "ofetch", "http"]
   },
   {
     "name": "ofetch_payload_methods",
@@ -30,18 +19,7 @@
       "exactMatch": ["PATCH", "POST", "PUT", "DELETE"],
       "validationQuery": "ofetch's payloadMethods are exactly: PATCH, POST, PUT, DELETE. Must be uppercase and include all 4."
     },
-    "tags": ["verified", "ofetch"]
-  },
-  {
-    "name": "ofetch_text_content_types",
-    "description": "Exact text content types in ofetch",
-    "prompt": "In ofetch's detectResponseType, what content types are treated as 'text'? List the exact strings checked.",
-    "difficulty": 5,
-    "groundTruth": {
-      "exactMatch": ["image/svg", "application/xml", "application/xhtml", "application/html"],
-      "validationQuery": "ofetch treats these as text: starts with 'text/', or includes 'image/svg', 'application/xml', 'application/xhtml', 'application/html'. Must mention these exact strings."
-    },
-    "tags": ["verified", "ofetch"]
+    "tags": ["verified", "ofetch", "http"]
   },
   {
     "name": "tanstack_query_eslint_url",
@@ -52,7 +30,7 @@
       "exactMatch": ["https://tanstack.com/query/latest/docs/eslint/"],
       "validationQuery": "The exact URL pattern is: https://tanstack.com/query/latest/docs/eslint/${ruleName}. Must contain this exact base URL."
     },
-    "tags": ["verified", "tanstack-query"]
+    "tags": ["verified", "tanstack-query", "eslint"]
   },
   {
     "name": "tanstack_streamed_hydration",
@@ -63,7 +41,7 @@
       "exactMatch": ["ReactQueryStreamedHydration"],
       "validationQuery": "The exact export name is ReactQueryStreamedHydration. Must be this exact string."
     },
-    "tags": ["verified", "tanstack-query"]
+    "tags": ["verified", "tanstack-query", "react"]
   },
   {
     "name": "hono_not_found_text",
@@ -74,7 +52,7 @@
       "exactMatch": ["404 Not Found"],
       "validationQuery": "Hono's default notFound returns exactly '404 Not Found' as the body text."
     },
-    "tags": ["verified", "hono"]
+    "tags": ["verified", "hono", "web-framework"]
   },
   {
     "name": "zod_email_regex_pattern",
@@ -85,7 +63,7 @@
       "exactMatch": ["^(?!\\.)(?!.*\\.\\.)([A-Z0-9_+-.]*)[A-Z0-9_+-]@([A-Z0-9][A-Z0-9-]*\\.)+[A-Z]{2,}$"],
       "validationQuery": "Zod's email regex is: /^(?!\\.)(?!.*\\.\\.)([A-Z0-9_+-.]*)[A-Z0-9_+-]@([A-Z0-9][A-Z0-9-]*\\.)+[A-Z]{2,}$/i. Must contain this pattern or describe it accurately."
     },
-    "tags": ["verified", "zod"]
+    "tags": ["verified", "zod", "validation"]
   },
   {
     "name": "drizzle_is_placeholder",
@@ -96,7 +74,7 @@
       "exactMatch": ["IsDrizzleReader"],
       "validationQuery": "Drizzle uses Symbol.for('drizzle:IsDrizzleReader') or similar pattern with 'IsDrizzleReader' to identify placeholders."
     },
-    "tags": ["verified", "drizzle"]
+    "tags": ["verified", "drizzle", "orm"]
   },
   {
     "name": "effect_fiber_status",
@@ -107,6 +85,6 @@
       "exactMatch": ["Done", "Running", "Suspended"],
       "validationQuery": "Effect-TS FiberStatus has exactly 3 states: 'Done', 'Running', 'Suspended'. Must list all 3."
     },
-    "tags": ["verified", "effect-ts"]
+    "tags": ["verified", "effect-ts", "functional"]
   }
 ]
