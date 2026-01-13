@@ -53,13 +53,10 @@ Combined Score = (Exact Match × 0.4) + (Blind Judge × 0.6)
 
 ### Test Case Distribution
 
-Current test cases cover 14 different libraries (16 total tests):
+Current test cases cover 11 different libraries (11 total tests, all difficulty 5):
 
 | Library | Count | Category | Difficulty |
 |---------|-------|----------|------------|
-| ofetch | 2 | HTTP client | 4 |
-| TanStack Query | 2 | Data fetching | 4 |
-| Hono | 1 | Web framework | 4 |
 | Zod | 1 | Validation | 5 |
 | Drizzle | 1 | ORM | 5 |
 | Effect-TS | 1 | Functional | 5 |
@@ -72,7 +69,7 @@ Current test cases cover 14 different libraries (16 total tests):
 | consola | 1 | Logging | 5 |
 | hookable | 1 | Hooks | 5 |
 
-**Difficulty 5 tests** target less popular libraries with implementation details that can't be found via web search.
+**All tests are difficulty 5** - targeting less popular libraries with implementation details that can't be found via web search or guessed from training data.
 
 ### Adding Test Cases
 
@@ -93,7 +90,7 @@ The command:
 
 | Limitation | Mitigation |
 |------------|------------|
-| Small sample size (N=16) | Use `--runs 3` for confidence intervals |
+| Small sample size (N=11) | Use `--runs 3` for confidence intervals |
 | Test cases may favor certain tools | Generate cases without Octocode (clone locally) |
 | Ground truth can become stale | Verify against current source before adding |
 | 40/60 weight split is somewhat arbitrary | Based on promptfoo patterns; ablation study recommended |

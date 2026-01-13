@@ -31,8 +31,9 @@ interface ValidatedCase {
   name: string;
   repo: string;
   prompt: string;
+  description: string;
   groundTruth: {
-    mustMention: string[];
+    exactMatch: string[];
     validationQuery: string;
   };
   baselineKnows: boolean;
@@ -310,12 +311,22 @@ async function validateQuestions(
     const status = knows ? '❌ BASELINE KNOWS' : '✅ KNOWLEDGE GAP';
     console.log(`  ${status}: ${q.question.slice(0, 40)}...`);
 
+    // Generate a clean name from the question
+    const packageName = repoUrl.split('/').pop() || 'unknown';
+    const cleanName = q.question
+      .slice(0, 40)
+      .replace(/[^a-z0-9]/gi, '_')
+      .toLowerCase()
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '');
+
     validated.push({
-      name: q.question.slice(0, 50).replace(/[^a-z0-9]/gi, '_').toLowerCase(),
+      name: `${packageName}_${cleanName}`,
       repo: repoUrl,
       prompt: q.question,
+      description: `${q.category} detail from ${packageName}`,
       groundTruth: {
-        mustMention: q.keyTerms,
+        exactMatch: q.keyTerms,
         validationQuery: q.answer,
       },
       baselineKnows: knows,
@@ -382,20 +393,25 @@ Example:
       console.log('\n✅ VALIDATED KNOWLEDGE GAP QUESTIONS:');
       console.log('─'.repeat(60));
 
-      // Output as JSON for use in evals
+      // Output as JSON for verified-knowledge-gaps.json
+      const packageName = repoUrl.split('/').pop() || 'unknown';
       const evalCases = knowledgeGaps.map(kg => ({
         name: kg.name,
-        description: `Knowledge gap from ${kg.repo}`,
+        description: kg.description,
         prompt: kg.prompt,
-        category: 'verified_knowledge_gap',
-        difficulty: 4,
-        groundTruth: kg.groundTruth,
-        expected: { status: 'hasResults' },
-        tags: ['verified', 'package-specific', kg.repo.split('/').pop()],
+        difficulty: 5,
+        groundTruth: {
+          exactMatch: kg.groundTruth.exactMatch,
+          validationQuery: kg.groundTruth.validationQuery,
+        },
+        tags: ['verified', packageName, 'unjs'],
       }));
 
-      console.log('\nJSON for eval file:');
+      console.log('\nJSON for verified-knowledge-gaps.json:');
       console.log(JSON.stringify(evalCases, null, 2));
+
+      console.log('\n📋 Copy the above JSON and append to:');
+      console.log('   packages/octocode-mcp/tests/evals/prompts/manual/verified-knowledge-gaps.json');
     }
 
   } finally {
