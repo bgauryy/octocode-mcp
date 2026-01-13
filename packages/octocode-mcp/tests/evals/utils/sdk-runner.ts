@@ -180,7 +180,10 @@ export async function runWithProvider(
       if (opts.verbose) {
         console.log(`[${provider}] Message:`, message.type);
         if (message.type === 'system') {
-          console.log(`[${provider}] Tools available:`, (message as { tools?: string[] }).tools?.length || 0);
+          console.log(
+            `[${provider}] Tools available:`,
+            (message as { tools?: string[] }).tools?.length || 0
+          );
         }
       }
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable no-console */
 /**
  * Knowledge Gap Generator
  *
@@ -13,7 +14,14 @@
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { execSync } from 'child_process';
-import { mkdtempSync, rmSync, existsSync, readdirSync, statSync, readFileSync } from 'fs';
+import {
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  readdirSync,
+  statSync,
+  readFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -91,15 +99,30 @@ async function cloneRepo(repoUrl: string): Promise<string> {
 
   execSync(`git clone --depth 1 ${repoUrl} ${tempDir}`, {
     stdio: 'pipe',
-    timeout: 60000
+    timeout: 60000,
   });
 
   return tempDir;
 }
 
-function findSourceFiles(dir: string, extensions = ['.ts', '.tsx', '.js']): string[] {
+function findSourceFiles(
+  dir: string,
+  extensions = ['.ts', '.tsx', '.js']
+): string[] {
   const results: string[] = [];
-  const ignore = ['node_modules', '.git', 'dist', 'build', 'coverage', '__tests__', 'test', 'tests', 'examples', 'docs', 'scripts'];
+  const ignore = [
+    'node_modules',
+    '.git',
+    'dist',
+    'build',
+    'coverage',
+    '__tests__',
+    'test',
+    'tests',
+    'examples',
+    'docs',
+    'scripts',
+  ];
   const prioritize = ['src', 'lib', 'packages'];
 
   // Try to find main source directory first
@@ -127,7 +150,12 @@ function findSourceFiles(dir: string, extensions = ['.ts', '.tsx', '.js']): stri
           walk(fullPath, depth + 1);
         } else if (extensions.some(ext => item.endsWith(ext))) {
           // Skip config files, test files, type declaration files
-          if (!item.includes('.config.') && !item.includes('.test.') && !item.includes('.spec.') && !item.endsWith('.d.ts')) {
+          if (
+            !item.includes('.config.') &&
+            !item.includes('.test.') &&
+            !item.includes('.spec.') &&
+            !item.endsWith('.d.ts')
+          ) {
             results.push(fullPath);
           }
         }
@@ -161,7 +189,10 @@ function readFileContent(filePath: string, maxLines = 200): string {
   }
 }
 
-async function findQuestions(repoPath: string, repoUrl: string): Promise<GeneratedQuestion[]> {
+async function findQuestions(
+  repoPath: string,
+  repoUrl: string
+): Promise<GeneratedQuestion[]> {
   console.log('\nAnalyzing repo for knowledge-gap questions...');
 
   // Find and read source files
@@ -179,7 +210,9 @@ async function findQuestions(repoPath: string, repoUrl: string): Promise<Generat
   }
 
   const codeContext = fileContents.join('\n');
-  console.log(`Total context: ${codeContext.length} chars from ${fileContents.length} files`);
+  console.log(
+    `Total context: ${codeContext.length} chars from ${fileContents.length} files`
+  );
 
   let response = '';
 
@@ -237,7 +270,9 @@ Example format:
   }
 }
 
-async function checkBaseline(question: string): Promise<{ knows: boolean; response: string }> {
+async function checkBaseline(
+  question: string
+): Promise<{ knows: boolean; response: string }> {
   console.log(`  Checking baseline for: "${question.slice(0, 50)}..."`);
 
   let response = '';
@@ -262,38 +297,40 @@ async function checkBaseline(question: string): Promise<{ knows: boolean; respon
   const uncertaintyMarkers = [
     "i don't know",
     "i'm not sure",
-    "i cannot",
+    'i cannot',
     "i can't",
-    "uncertain",
-    "not certain",
-    "may vary",
-    "would need to check",
-    "depends on the version",
+    'uncertain',
+    'not certain',
+    'may vary',
+    'would need to check',
+    'depends on the version',
     "i don't have",
     "i'm inferring",
-    "typically",
-    "usually",
-    "likely",
-    "probably",
-    "i would assume",
-    "i believe",
-    "i think",
-    "commonly",
-    "generally",
-    "in most cases",
-    "would need to",
-    "check the source",
-    "check the documentation",
-    "not 100%",
-    "hard to say",
+    'typically',
+    'usually',
+    'likely',
+    'probably',
+    'i would assume',
+    'i believe',
+    'i think',
+    'commonly',
+    'generally',
+    'in most cases',
+    'would need to',
+    'check the source',
+    'check the documentation',
+    'not 100%',
+    'hard to say',
   ];
 
   const lowerResponse = response.toLowerCase();
-  const showsUncertainty = uncertaintyMarkers.some(m => lowerResponse.includes(m));
+  const showsUncertainty = uncertaintyMarkers.some(m =>
+    lowerResponse.includes(m)
+  );
 
   return {
     knows: !showsUncertainty,
-    response
+    response,
   };
 }
 
@@ -376,7 +413,10 @@ Example:
     }
 
     // Step 3: Validate against baseline
-    const validated = await validateQuestions(questions.slice(0, limit), repoUrl);
+    const validated = await validateQuestions(
+      questions.slice(0, limit),
+      repoUrl
+    );
 
     // Step 4: Output results
     const knowledgeGaps = validated.filter(v => !v.baselineKnows);
@@ -386,7 +426,9 @@ Example:
     console.log('RESULTS SUMMARY');
     console.log('═'.repeat(60));
     console.log(`Total questions: ${validated.length}`);
-    console.log(`Knowledge gaps (baseline doesn't know): ${knowledgeGaps.length}`);
+    console.log(
+      `Knowledge gaps (baseline doesn't know): ${knowledgeGaps.length}`
+    );
     console.log(`Baseline knows: ${baselineKnows.length}`);
 
     if (knowledgeGaps.length > 0) {
@@ -411,9 +453,10 @@ Example:
       console.log(JSON.stringify(evalCases, null, 2));
 
       console.log('\n📋 Copy the above JSON and append to:');
-      console.log('   packages/octocode-mcp/tests/evals/prompts/manual/verified-knowledge-gaps.json');
+      console.log(
+        '   packages/octocode-mcp/tests/evals/prompts/manual/verified-knowledge-gaps.json'
+      );
     }
-
   } finally {
     // Cleanup
     if (repoPath && existsSync(repoPath)) {

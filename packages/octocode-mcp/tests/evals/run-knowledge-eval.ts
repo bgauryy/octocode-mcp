@@ -77,23 +77,26 @@ If you don't have tools or can't find the answer, provide your best knowledge-ba
 const PROVIDERS = {
   octocode: {
     servers: {
-      octocode: { command: 'npx', args: ['-y', 'octocode-mcp@latest'] }
+      octocode: { command: 'npx', args: ['-y', 'octocode-mcp@latest'] },
     },
     // Allow all MCP tools + web search
-    allowedTools: undefined as string[] | undefined
+    allowedTools: undefined as string[] | undefined,
   },
   context7: {
     servers: {
-      context7: { command: 'npx', args: ['-y', '@upstash/context7-mcp@latest'] }
+      context7: {
+        command: 'npx',
+        args: ['-y', '@upstash/context7-mcp@latest'],
+      },
     },
     // Allow all MCP tools + web search
-    allowedTools: undefined as string[] | undefined
+    allowedTools: undefined as string[] | undefined,
   },
   none: {
     servers: {},
     // DISABLE all tools including WebSearch - pure knowledge baseline
-    allowedTools: [] as string[]
-  }
+    allowedTools: [] as string[],
+  },
 };
 
 // Blind LLM Judge - uses factuality categories instead of showing ground truth
@@ -124,8 +127,8 @@ const CATEGORY_SCORES: Record<string, number> = {
   A: 100,
   B: 50,
   C: 0,
-  D: 0,  // Admitting uncertainty = not knowing
-  E: 0
+  D: 0, // Admitting uncertainty = not knowing
+  E: 0,
 };
 
 function shuffleArray<T>(array: T[]): T[] {
@@ -137,7 +140,11 @@ function shuffleArray<T>(array: T[]): T[] {
   return shuffled;
 }
 
-function calculateStats(scores: number[]): { mean: number; stdDev: number; ci95: [number, number] } {
+function calculateStats(scores: number[]): {
+  mean: number;
+  stdDev: number;
+  ci95: [number, number];
+} {
   const n = scores.length;
   const mean = scores.reduce((a, b) => a + b, 0) / n;
 
@@ -145,11 +152,13 @@ function calculateStats(scores: number[]): { mean: number; stdDev: number; ci95:
     return { mean, stdDev: 0, ci95: [mean, mean] };
   }
 
-  const variance = scores.reduce((sum, x) => sum + Math.pow(x - mean, 2), 0) / (n - 1);
+  const variance =
+    scores.reduce((sum, x) => sum + Math.pow(x - mean, 2), 0) / (n - 1);
   const stdDev = Math.sqrt(variance);
 
   // 95% confidence interval (t-distribution approximation for small samples)
-  const tValue = n <= 2 ? 12.71 : n <= 3 ? 4.30 : n <= 5 ? 2.78 : n <= 10 ? 2.26 : 1.96;
+  const tValue =
+    n <= 2 ? 12.71 : n <= 3 ? 4.3 : n <= 5 ? 2.78 : n <= 10 ? 2.26 : 1.96;
   const marginOfError = tValue * (stdDev / Math.sqrt(n));
 
   return {
@@ -157,8 +166,8 @@ function calculateStats(scores: number[]): { mean: number; stdDev: number; ci95:
     stdDev: Math.round(stdDev * 10) / 10,
     ci95: [
       Math.round((mean - marginOfError) * 10) / 10,
-      Math.round((mean + marginOfError) * 10) / 10
-    ]
+      Math.round((mean + marginOfError) * 10) / 10,
+    ],
   };
 }
 
@@ -182,7 +191,9 @@ async function runWithProvider(
         mcpServers: provider.servers,
         // Disable WebSearch for baseline (allowedTools: [])
         // undefined = allow all tools (default for octocode/context7)
-        ...(provider.allowedTools !== undefined && { allowedTools: provider.allowedTools }),
+        ...(provider.allowedTools !== undefined && {
+          allowedTools: provider.allowedTools,
+        }),
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
       },
@@ -215,8 +226,7 @@ async function blindJudge(
   criteria: string,
   response: string
 ): Promise<{ category: string; score: number; reason: string }> {
-  const prompt = BLIND_JUDGE_PROMPT
-    .replace('{question}', question)
+  const prompt = BLIND_JUDGE_PROMPT.replace('{question}', question)
     .replace('{criteria}', criteria)
     .replace('{response}', response);
 
@@ -245,7 +255,7 @@ async function blindJudge(
       return {
         category,
         score: CATEGORY_SCORES[category] ?? 0,
-        reason: parsed.reason || 'No reason'
+        reason: parsed.reason || 'No reason',
       };
     }
   } catch (error) {
@@ -255,7 +265,10 @@ async function blindJudge(
   return { category: 'E', score: 0, reason: 'Failed to judge' };
 }
 
-function scoreExactMatch(response: string, exactMatch: string[]): {
+function scoreExactMatch(
+  response: string,
+  exactMatch: string[]
+): {
   score: number;
   matches: string[];
   misses: string[];
@@ -271,9 +284,10 @@ function scoreExactMatch(response: string, exactMatch: string[]): {
     }
   }
 
-  const score = exactMatch.length > 0
-    ? Math.round((matches.length / exactMatch.length) * 100)
-    : 100;
+  const score =
+    exactMatch.length > 0
+      ? Math.round((matches.length / exactMatch.length) * 100)
+      : 100;
 
   return { score, matches, misses };
 }
@@ -283,7 +297,11 @@ async function runSingleTest(
   providerName: string,
   verbose: boolean
 ): Promise<RunResult> {
-  const { response, latencyMs } = await runWithProvider(testCase.prompt, providerName, verbose);
+  const { response, latencyMs } = await runWithProvider(
+    testCase.prompt,
+    providerName,
+    verbose
+  );
 
   // Exact match scoring (40% weight)
   const exact = scoreExactMatch(response, testCase.groundTruth.exactMatch);
@@ -319,7 +337,9 @@ async function runTest(
   console.log(`\n${'─'.repeat(70)}`);
   console.log(`Testing: ${testCase.name}`);
   console.log(`Question: ${testCase.prompt.slice(0, 60)}...`);
-  console.log(`Exact match required: ${testCase.groundTruth.exactMatch.join(', ')}`);
+  console.log(
+    `Exact match required: ${testCase.groundTruth.exactMatch.join(', ')}`
+  );
   if (numRuns > 1) console.log(`Runs per provider: ${numRuns}`);
 
   const stats: Record<string, ProviderStats> = {};
@@ -338,7 +358,9 @@ async function runTest(
       runs.push(result);
 
       if (verbose) {
-        console.log(`      Score: ${result.score}% (exact: ${result.exactMatchScore}%, judge: ${result.llmJudgeScore}% [${result.llmJudgeCategory}])`);
+        console.log(
+          `      Score: ${result.score}% (exact: ${result.exactMatchScore}%, judge: ${result.llmJudgeScore}% [${result.llmJudgeCategory}])`
+        );
       }
     }
 
@@ -351,17 +373,30 @@ async function runTest(
       mean,
       stdDev,
       ci95,
-      meanLatency: Math.round(runs.reduce((a, r) => a + r.latencyMs, 0) / runs.length / 100) / 10,
-      meanExact: Math.round(runs.reduce((a, r) => a + r.exactMatchScore, 0) / runs.length),
-      meanJudge: Math.round(runs.reduce((a, r) => a + r.llmJudgeScore, 0) / runs.length),
+      meanLatency:
+        Math.round(
+          runs.reduce((a, r) => a + r.latencyMs, 0) / runs.length / 100
+        ) / 10,
+      meanExact: Math.round(
+        runs.reduce((a, r) => a + r.exactMatchScore, 0) / runs.length
+      ),
+      meanJudge: Math.round(
+        runs.reduce((a, r) => a + r.llmJudgeScore, 0) / runs.length
+      ),
     };
 
     if (numRuns > 1) {
-      console.log(`  [${providerName}] Mean: ${mean}% ± ${stdDev}% (95% CI: ${ci95[0]}-${ci95[1]}%)`);
+      console.log(
+        `  [${providerName}] Mean: ${mean}% ± ${stdDev}% (95% CI: ${ci95[0]}-${ci95[1]}%)`
+      );
     } else {
-      console.log(`  [${providerName}] Score: ${mean}% (exact: ${stats[providerName].meanExact}%, judge: ${stats[providerName].meanJudge}%)`);
+      console.log(
+        `  [${providerName}] Score: ${mean}% (exact: ${stats[providerName].meanExact}%, judge: ${stats[providerName].meanJudge}%)`
+      );
     }
-    console.log(`  [${providerName}] Latency: ${stats[providerName].meanLatency}s`);
+    console.log(
+      `  [${providerName}] Latency: ${stats[providerName].meanLatency}s`
+    );
   }
 
   // Determine winner with proper comparison
@@ -370,7 +405,7 @@ async function runTest(
   const second = sorted[1];
 
   // Check if difference is significant (non-overlapping confidence intervals)
-  const significant = numRuns > 1 && (best.ci95[0] > second.ci95[1]);
+  const significant = numRuns > 1 && best.ci95[0] > second.ci95[1];
 
   let winner: string;
   if (best.mean > second.mean) {
@@ -381,7 +416,13 @@ async function runTest(
     winner = second.provider; // This branch can now execute correctly
   }
 
-  return { testCase: testCase.name, difficulty: testCase.difficulty, stats, winner, significant };
+  return {
+    testCase: testCase.name,
+    difficulty: testCase.difficulty,
+    stats,
+    winner,
+    significant,
+  };
 }
 
 async function main() {
@@ -392,23 +433,38 @@ async function main() {
   const runsIdx = args.indexOf('--runs');
   const numRuns = runsIdx !== -1 ? parseInt(args[runsIdx + 1], 10) : 1;
 
-  console.log('╔══════════════════════════════════════════════════════════════════════╗');
-  console.log('║              KNOWLEDGE GAP EVALUATION v3                             ║');
-  console.log('║  Scoring: 40% Exact Match + 60% Blind LLM Judge                      ║');
-  console.log('╚══════════════════════════════════════════════════════════════════════╝');
+  console.log(
+    '╔══════════════════════════════════════════════════════════════════════╗'
+  );
+  console.log(
+    '║              KNOWLEDGE GAP EVALUATION v3                             ║'
+  );
+  console.log(
+    '║  Scoring: 40% Exact Match + 60% Blind LLM Judge                      ║'
+  );
+  console.log(
+    '╚══════════════════════════════════════════════════════════════════════╝'
+  );
   console.log('\nImprovements in v3:');
-  console.log('  - Blind judge (factuality categories, not ground truth comparison)');
+  console.log(
+    '  - Blind judge (factuality categories, not ground truth comparison)'
+  );
   console.log('  - Randomized provider order');
   console.log('  - Same system prompt & maxTurns for all providers');
   if (numRuns > 1) {
-    console.log(`  - Statistical rigor: ${numRuns} runs with confidence intervals`);
+    console.log(
+      `  - Statistical rigor: ${numRuns} runs with confidence intervals`
+    );
   }
 
   const { promises: fs } = await import('fs');
   const { dirname, join } = await import('path');
   const promptsDir = dirname(import.meta.url.replace('file://', ''));
 
-  const verifiedPath = join(promptsDir, 'prompts/manual/verified-knowledge-gaps.json');
+  const verifiedPath = join(
+    promptsDir,
+    'prompts/manual/verified-knowledge-gaps.json'
+  );
   const content = await fs.readFile(verifiedPath, 'utf-8');
   let testCases: KnowledgeTestCase[] = JSON.parse(content);
 
@@ -418,7 +474,9 @@ async function main() {
 
   console.log(`\nRunning ${testCases.length} knowledge gap tests...`);
   if (numRuns > 1) {
-    console.log(`Each test runs ${numRuns} times per provider for statistical significance\n`);
+    console.log(
+      `Each test runs ${numRuns} times per provider for statistical significance\n`
+    );
   }
 
   const allResults: TestResult[] = [];
@@ -436,31 +494,56 @@ async function main() {
   console.log('\nPer-test scores:');
   console.log('─'.repeat(70));
   if (numRuns > 1) {
-    console.log('Test Case'.padEnd(28) + 'Octocode     Context7     Baseline     Winner');
+    console.log(
+      'Test Case'.padEnd(28) + 'Octocode     Context7     Baseline     Winner'
+    );
   } else {
-    console.log('Test Case'.padEnd(30) + 'Octocode  Context7  Baseline  Winner');
+    console.log(
+      'Test Case'.padEnd(30) + 'Octocode  Context7  Baseline  Winner'
+    );
   }
   console.log('─'.repeat(70));
 
   for (const result of allResults) {
     const name = result.testCase.slice(0, 26).padEnd(28);
     if (numRuns > 1) {
-      const octo = `${result.stats.octocode?.mean}±${result.stats.octocode?.stdDev}`.padStart(10);
-      const ctx7 = `${result.stats.context7?.mean}±${result.stats.context7?.stdDev}`.padStart(12);
-      const none = `${result.stats.none?.mean}±${result.stats.none?.stdDev}`.padStart(12);
+      const octo =
+        `${result.stats.octocode?.mean}±${result.stats.octocode?.stdDev}`.padStart(
+          10
+        );
+      const ctx7 =
+        `${result.stats.context7?.mean}±${result.stats.context7?.stdDev}`.padStart(
+          12
+        );
+      const none =
+        `${result.stats.none?.mean}±${result.stats.none?.stdDev}`.padStart(12);
       const sig = result.significant ? '*' : '';
-      const winnerIcon = result.winner === 'octocode' ? '🔵' :
-                         result.winner === 'context7' ? '🟢' :
-                         result.winner === 'none' ? '⚪' : '🟡';
-      console.log(`${name}${octo}${ctx7}${none}   ${winnerIcon} ${result.winner}${sig}`);
+      const winnerIcon =
+        result.winner === 'octocode'
+          ? '🔵'
+          : result.winner === 'context7'
+            ? '🟢'
+            : result.winner === 'none'
+              ? '⚪'
+              : '🟡';
+      console.log(
+        `${name}${octo}${ctx7}${none}   ${winnerIcon} ${result.winner}${sig}`
+      );
     } else {
       const octo = `${result.stats.octocode?.mean || 0}%`.padStart(6);
       const ctx7 = `${result.stats.context7?.mean || 0}%`.padStart(8);
       const none = `${result.stats.none?.mean || 0}%`.padStart(8);
-      const winnerIcon = result.winner === 'octocode' ? '🔵' :
-                         result.winner === 'context7' ? '🟢' :
-                         result.winner === 'none' ? '⚪' : '🟡';
-      console.log(`  ${name}${octo}${ctx7}${none}    ${winnerIcon} ${result.winner}`);
+      const winnerIcon =
+        result.winner === 'octocode'
+          ? '🔵'
+          : result.winner === 'context7'
+            ? '🟢'
+            : result.winner === 'none'
+              ? '⚪'
+              : '🟡';
+      console.log(
+        `  ${name}${octo}${ctx7}${none}    ${winnerIcon} ${result.winner}`
+      );
     }
   }
 
@@ -482,7 +565,7 @@ async function main() {
   };
 
   const wins = { octocode: 0, context7: 0, none: 0, tie: 0 };
-  let significantWins = { octocode: 0, context7: 0, none: 0 };
+  const significantWins = { octocode: 0, context7: 0, none: 0 };
 
   for (const result of allResults) {
     if (result.winner === 'tie') wins.tie++;
@@ -496,9 +579,15 @@ async function main() {
   console.log('\n' + '─'.repeat(70));
   console.log('AGGREGATE SCORES:');
   if (numRuns > 1) {
-    console.log(`  🔵 Octocode:  ${avgStats.octocode.mean}% ± ${avgStats.octocode.stdDev}% (95% CI: ${avgStats.octocode.ci95[0]}-${avgStats.octocode.ci95[1]}%)`);
-    console.log(`  🟢 Context7:  ${avgStats.context7.mean}% ± ${avgStats.context7.stdDev}% (95% CI: ${avgStats.context7.ci95[0]}-${avgStats.context7.ci95[1]}%)`);
-    console.log(`  ⚪ Baseline:  ${avgStats.none.mean}% ± ${avgStats.none.stdDev}% (95% CI: ${avgStats.none.ci95[0]}-${avgStats.none.ci95[1]}%)`);
+    console.log(
+      `  🔵 Octocode:  ${avgStats.octocode.mean}% ± ${avgStats.octocode.stdDev}% (95% CI: ${avgStats.octocode.ci95[0]}-${avgStats.octocode.ci95[1]}%)`
+    );
+    console.log(
+      `  🟢 Context7:  ${avgStats.context7.mean}% ± ${avgStats.context7.stdDev}% (95% CI: ${avgStats.context7.ci95[0]}-${avgStats.context7.ci95[1]}%)`
+    );
+    console.log(
+      `  ⚪ Baseline:  ${avgStats.none.mean}% ± ${avgStats.none.stdDev}% (95% CI: ${avgStats.none.ci95[0]}-${avgStats.none.ci95[1]}%)`
+    );
   } else {
     console.log(`  🔵 Octocode:  ${avgStats.octocode.mean}%`);
     console.log(`  🟢 Context7:  ${avgStats.context7.mean}%`);
@@ -506,40 +595,62 @@ async function main() {
   }
 
   console.log('\nIMPROVEMENT OVER BASELINE:');
-  console.log(`  🔵 Octocode:  +${(avgStats.octocode.mean - avgStats.none.mean).toFixed(1)}%`);
-  console.log(`  🟢 Context7:  +${(avgStats.context7.mean - avgStats.none.mean).toFixed(1)}%`);
+  console.log(
+    `  🔵 Octocode:  +${(avgStats.octocode.mean - avgStats.none.mean).toFixed(1)}%`
+  );
+  console.log(
+    `  🟢 Context7:  +${(avgStats.context7.mean - avgStats.none.mean).toFixed(1)}%`
+  );
 
   console.log('\nWINS:');
-  console.log(`  Octocode: ${wins.octocode} | Context7: ${wins.context7} | Baseline: ${wins.none} | Ties: ${wins.tie}`);
+  console.log(
+    `  Octocode: ${wins.octocode} | Context7: ${wins.context7} | Baseline: ${wins.none} | Ties: ${wins.tie}`
+  );
   if (numRuns > 1) {
-    console.log(`  Significant wins: Octocode: ${significantWins.octocode} | Context7: ${significantWins.context7} | Baseline: ${significantWins.none}`);
+    console.log(
+      `  Significant wins: Octocode: ${significantWins.octocode} | Context7: ${significantWins.context7} | Baseline: ${significantWins.none}`
+    );
   }
 
   console.log('\n' + '═'.repeat(70));
 
   // Statistical significance check for overall results
-  const octoBetterThanBaseline = numRuns > 1
-    ? avgStats.octocode.ci95[0] > avgStats.none.ci95[1]
-    : avgStats.octocode.mean > avgStats.none.mean;
-  const ctx7BetterThanBaseline = numRuns > 1
-    ? avgStats.context7.ci95[0] > avgStats.none.ci95[1]
-    : avgStats.context7.mean > avgStats.none.mean;
+  const octoBetterThanBaseline =
+    numRuns > 1
+      ? avgStats.octocode.ci95[0] > avgStats.none.ci95[1]
+      : avgStats.octocode.mean > avgStats.none.mean;
+  const ctx7BetterThanBaseline =
+    numRuns > 1
+      ? avgStats.context7.ci95[0] > avgStats.none.ci95[1]
+      : avgStats.context7.mean > avgStats.none.mean;
 
   if (octoBetterThanBaseline || ctx7BetterThanBaseline) {
-    const better = avgStats.octocode.mean > avgStats.context7.mean ? 'Octocode' :
-                   avgStats.context7.mean > avgStats.octocode.mean ? 'Context7' : 'Both equally';
+    const better =
+      avgStats.octocode.mean > avgStats.context7.mean
+        ? 'Octocode'
+        : avgStats.context7.mean > avgStats.octocode.mean
+          ? 'Context7'
+          : 'Both equally';
     const sigNote = numRuns > 1 ? ' (statistically significant)' : '';
     console.log(`✅ TOOLS HELP: ${better} provides the most value${sigNote}`);
   } else {
-    console.log(`❌ TOOLS DON'T HELP: No significant improvement over baseline`);
+    console.log(
+      `❌ TOOLS DON'T HELP: No significant improvement over baseline`
+    );
   }
 
   // Methodology notes
   console.log('\n' + '─'.repeat(70));
   console.log('METHODOLOGY NOTES:');
-  console.log('  - Blind judge: LLM evaluates without seeing exact ground truth');
-  console.log('  - Factuality categories: A=correct, B=partial, C=incorrect, D=uncertain, E=irrelevant');
-  console.log('  - Provider order randomized per test to avoid ordering effects');
+  console.log(
+    '  - Blind judge: LLM evaluates without seeing exact ground truth'
+  );
+  console.log(
+    '  - Factuality categories: A=correct, B=partial, C=incorrect, D=uncertain, E=irrelevant'
+  );
+  console.log(
+    '  - Provider order randomized per test to avoid ordering effects'
+  );
   console.log('  - Same system prompt and maxTurns for all providers');
   if (numRuns > 1) {
     console.log(`  - ${numRuns} runs per test with 95% confidence intervals`);
