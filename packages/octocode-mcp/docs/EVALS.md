@@ -53,16 +53,22 @@ Combined Score = (Exact Match × 0.4) + (Blind Judge × 0.6)
 
 ### Test Case Distribution
 
-Current test cases cover 6 different libraries:
+Current test cases cover 10 different libraries (12 total tests):
 
-| Library | Count | Category |
-|---------|-------|----------|
-| ofetch | 2 | HTTP client |
-| TanStack Query | 2 | Data fetching |
-| Hono | 1 | Web framework |
-| Zod | 1 | Validation |
-| Drizzle | 1 | ORM |
-| Effect-TS | 1 | Functional |
+| Library | Count | Category | Difficulty |
+|---------|-------|----------|------------|
+| ofetch | 2 | HTTP client | 4 |
+| TanStack Query | 2 | Data fetching | 4 |
+| Hono | 1 | Web framework | 4 |
+| Zod | 1 | Validation | 5 |
+| Drizzle | 1 | ORM | 5 |
+| Effect-TS | 1 | Functional | 5 |
+| ohash | 1 | Serialization | 5 |
+| citty | 1 | CLI parser | 5 |
+| unstorage | 1 | Storage | 5 |
+| defu | 1 | Object utils | 5 |
+
+**Difficulty 5 tests** target less popular libraries with implementation details that can't be found via web search.
 
 ### Adding Test Cases
 

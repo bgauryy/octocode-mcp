@@ -86,5 +86,49 @@
       "validationQuery": "Effect-TS FiberStatus has exactly 3 states: 'Done', 'Running', 'Suspended'. Must list all 3."
     },
     "tags": ["verified", "effect-ts", "functional"]
+  },
+  {
+    "name": "ohash_native_function_suffix",
+    "description": "Exact suffix for native function detection in ohash",
+    "prompt": "What exact string suffix does the ohash library check for (using slice) to detect native JavaScript functions during serialization?",
+    "difficulty": 5,
+    "groundTruth": {
+      "exactMatch": ["[native code] }"],
+      "validationQuery": "ohash checks if Function.prototype.toString() ends with '[native code] }' (15 characters, note the space before closing brace). The code uses fnStr.slice(-15) === '[native code] }'."
+    },
+    "tags": ["verified", "ohash", "unjs", "serialization"]
+  },
+  {
+    "name": "citty_nan_check_expression",
+    "description": "Exact NaN check expression in citty parser",
+    "prompt": "What exact JavaScript expression does citty's internal _parser.ts toVal function use to check if a parsed CLI argument value is a valid number (not NaN)?",
+    "difficulty": 5,
+    "groundTruth": {
+      "exactMatch": ["x * 0 === 0"],
+      "validationQuery": "citty uses the expression 'x * 0 === 0' to check for valid numbers. This works because NaN * 0 === NaN (not 0), while any valid number * 0 === 0."
+    },
+    "tags": ["verified", "citty", "unjs", "cli"]
+  },
+  {
+    "name": "unstorage_fs_default_ignore",
+    "description": "Default ignore patterns in unstorage fs driver",
+    "prompt": "What are the exact default ignore patterns (glob strings) used by unstorage's fs driver when no custom ignore option is provided? List all of them.",
+    "difficulty": 5,
+    "groundTruth": {
+      "exactMatch": ["**/node_modules/**", "**/.git/**"],
+      "validationQuery": "unstorage's fs driver uses exactly two default ignore patterns: '**/node_modules/**' and '**/.git/**'. Both patterns must be present."
+    },
+    "tags": ["verified", "unstorage", "unjs", "filesystem"]
+  },
+  {
+    "name": "defu_module_tostring_check",
+    "description": "ES Module detection string in defu isPlainObject",
+    "prompt": "In the defu library's isPlainObject function, what exact string does it compare Object.prototype.toString.call(value) against when Symbol.toStringTag is present to determine if the object should be treated as a plain object (ES Module)?",
+    "difficulty": 5,
+    "groundTruth": {
+      "exactMatch": ["[object Module]"],
+      "validationQuery": "defu's isPlainObject returns true for objects with Symbol.toStringTag only when Object.prototype.toString.call(value) === '[object Module]'. This allows ES Modules to be treated as plain objects for merging."
+    },
+    "tags": ["verified", "defu", "unjs", "object-utils"]
   }
 ]
