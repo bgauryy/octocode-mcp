@@ -8,83 +8,125 @@ Code research and discovery for local and remote codebases using Octocode tools.
 npm install octocode-research
 ```
 
-## Scripts
+## Direct Function Calls
 
-All 13 Octocode tools are available as CLI scripts. Run from the skill directory:
-
-```bash
-cd packages/octocode-research
-```
+All 13 tools are available as library functions. Import and call directly:
 
 ### Local Tools (no auth required)
 
-```bash
-# Search code patterns
-npx tsx scripts/search-local.ts <pattern> [path]
-npx tsx scripts/search-local.ts "export function" ./src
+```typescript
+import { localSearchCode, localViewStructure, localFindFiles, localGetFileContent } from 'octocode-research';
 
-# View directory structure
-npx tsx scripts/view-structure.ts [path] [depth]
-npx tsx scripts/view-structure.ts /project 2
+// Search code patterns
+const search = await localSearchCode({
+  queries: [{ pattern: 'export function', path: './src' }]
+});
 
-# Find files by name/metadata
-npx tsx scripts/find-files.ts <path> [name-pattern]
-npx tsx scripts/find-files.ts ./src "*.ts"
+// View directory structure
+const structure = await localViewStructure({
+  queries: [{ path: '/project', depth: 2 }]
+});
 
-# Read file content
-npx tsx scripts/get-file.ts <file-path> [match-string]
-npx tsx scripts/get-file.ts ./src/index.ts "export"
+// Find files by name/metadata
+const files = await localFindFiles({
+  queries: [{ path: './src', name: '*.ts', type: 'f' }]
+});
+
+// Read file content
+const content = await localGetFileContent({
+  queries: [{ path: './src/index.ts', matchString: 'export', matchStringContextLines: 10 }]
+});
 ```
 
 ### LSP Tools (semantic code analysis)
 
-```bash
-# Go to definition
-npx tsx scripts/goto-definition.ts <file-path> <symbol-name> <line-hint>
-npx tsx scripts/goto-definition.ts ./src/index.ts myFunction 10
+```typescript
+import { lspGotoDefinition, lspFindReferences, lspCallHierarchy } from 'octocode-research';
 
-# Find all references
-npx tsx scripts/find-references.ts <file-path> <symbol-name> <line-hint>
-npx tsx scripts/find-references.ts ./src/types.ts UserConfig 5
+// Go to definition (lineHint required from search!)
+const def = await lspGotoDefinition({
+  queries: [{ uri: './src/index.ts', symbolName: 'myFunction', lineHint: 10 }]
+});
 
-# Trace call hierarchy
-npx tsx scripts/call-hierarchy.ts <file-path> <function-name> <line-hint> [incoming|outgoing]
-npx tsx scripts/call-hierarchy.ts ./src/service.ts processRequest 42 incoming
+// Find all references
+const refs = await lspFindReferences({
+  queries: [{ uri: './src/types.ts', symbolName: 'UserConfig', lineHint: 5 }]
+});
+
+// Trace call hierarchy
+const calls = await lspCallHierarchy({
+  queries: [{ uri: './src/service.ts', symbolName: 'processRequest', lineHint: 42, direction: 'incoming' }]
+});
 ```
 
-### GitHub Tools (requires GITHUB_TOKEN)
+### GitHub Tools (requires token initialization)
 
-```bash
-export GITHUB_TOKEN=your_token
+```typescript
+import { initialize, githubSearchCode, githubSearchRepositories, githubViewRepoStructure, githubGetFileContent, githubSearchPullRequests } from 'octocode-research';
 
-# Search code across GitHub
-npx tsx scripts/github-search-code.ts <keywords> [owner/repo]
-npx tsx scripts/github-search-code.ts "useState" facebook/react
+await initialize(); // Required first!
 
-# Search repositories
-npx tsx scripts/github-search-repos.ts <keywords> [--topics]
-npx tsx scripts/github-search-repos.ts "typescript cli" --topics
+// Search code across GitHub
+const code = await githubSearchCode({
+  queries: [{
+    mainResearchGoal: 'Research', researchGoal: 'Find hooks', reasoning: 'Learning',
+    keywordsToSearch: ['useState'], owner: 'facebook', repo: 'react',
+  }]
+});
 
-# View repository structure
-npx tsx scripts/github-view-repo.ts <owner/repo> [path] [branch]
-npx tsx scripts/github-view-repo.ts facebook/react packages main
+// Search repositories
+const repos = await githubSearchRepositories({
+  queries: [{
+    mainResearchGoal: 'Research', researchGoal: 'Find CLIs', reasoning: 'Discovery',
+    topicsToSearch: ['typescript', 'cli'], stars: '>1000',
+  }]
+});
 
-# Read file from GitHub
-npx tsx scripts/github-get-file.ts <owner/repo> <file-path> [match-string]
-npx tsx scripts/github-get-file.ts facebook/react README.md
+// View repository structure
+const struct = await githubViewRepoStructure({
+  queries: [{
+    mainResearchGoal: 'Explore', researchGoal: 'View packages', reasoning: 'Navigation',
+    owner: 'facebook', repo: 'react', branch: 'main', path: 'packages',
+  }]
+});
 
-# Search pull requests
-npx tsx scripts/github-search-prs.ts <owner/repo> [query] [--merged]
-npx tsx scripts/github-search-prs.ts facebook/react "hooks" --merged
+// Read file from GitHub
+const file = await githubGetFileContent({
+  queries: [{
+    mainResearchGoal: 'Read', researchGoal: 'Get README', reasoning: 'Documentation',
+    owner: 'facebook', repo: 'react', path: 'README.md', fullContent: true,
+  }]
+});
+
+// Search pull requests
+const prs = await githubSearchPullRequests({
+  queries: [{
+    mainResearchGoal: 'History', researchGoal: 'Find hooks PRs', reasoning: 'Archaeology',
+    owner: 'facebook', repo: 'react', query: 'hooks', state: 'closed', merged: true,
+  }]
+});
 ```
 
 ### Package Tools
 
-```bash
-# Search npm/PyPI packages
-npx tsx scripts/package-search.ts <package-name> [npm|python]
-npx tsx scripts/package-search.ts express
-npx tsx scripts/package-search.ts requests python
+```typescript
+import { packageSearch } from 'octocode-research';
+
+// Search npm packages
+const npm = await packageSearch({
+  queries: [{
+    mainResearchGoal: 'Find package', researchGoal: 'Get express', reasoning: 'Source',
+    name: 'express', ecosystem: 'npm',
+  }]
+});
+
+// Search Python packages
+const pypi = await packageSearch({
+  queries: [{
+    mainResearchGoal: 'Find package', researchGoal: 'Get requests', reasoning: 'Source',
+    name: 'requests', ecosystem: 'python',
+  }]
+});
 ```
 
 ## Available Tools
@@ -104,43 +146,6 @@ npx tsx scripts/package-search.ts requests python
 | | `githubGetFileContent` | Read file content from GitHub |
 | | `githubSearchPullRequests` | Search and analyze pull requests |
 | **Package** | `packageSearch` | Search npm and PyPI packages |
-
-## Programmatic Usage
-
-```typescript
-import {
-  localSearchCode,
-  githubSearchCode,
-  lspGotoDefinition,
-  packageSearch
-} from 'octocode-research';
-
-// Search local code
-const localResult = await localSearchCode({
-  queries: [{
-    pattern: 'authenticate',
-    path: '/project/src',
-  }]
-});
-
-// Search GitHub
-const githubResult = await githubSearchCode({
-  queries: [{
-    keywordsToSearch: ['useState'],
-    owner: 'facebook',
-    repo: 'react',
-  }]
-});
-
-// Go to definition
-const defResult = await lspGotoDefinition({
-  queries: [{
-    uri: 'file:///project/src/index.ts',
-    symbolName: 'myFunction',
-    lineHint: 10,
-  }]
-});
-```
 
 ## Documentation
 

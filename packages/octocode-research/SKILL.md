@@ -1,15 +1,15 @@
 ---
 name: octocode-research
 description: >-
-  Research code in local and remote repositories. Use when users ask to
-  search code, explore codebases, find definitions, trace call hierarchies,
-  or analyze GitHub repos. Trigger phrases: "find where", "search for",
-  "how is X used", "what calls", "explore the codebase", "look up package".
+  Research code in local and remote repositories using library functions.
+  Use when users ask to search code, explore codebases, find definitions, 
+  trace call hierarchies, or analyze GitHub repos. Trigger phrases: "find where", 
+  "search for", "how is X used", "what calls", "explore the codebase", "look up package".
 ---
 
 # Octocode Research Skill
 
-Code research and discovery for local and remote codebases using octocode tools.
+Code research and discovery for local and remote codebases using library functions from `octocode-research` package.
 
 ## When to Use This Skill
 
@@ -20,700 +20,256 @@ Use this skill when the user needs to:
 - Trace function call hierarchies
 - Research npm/PyPI packages
 
-## How to Execute Tools
+## How It Works
 
-All tools are available as MCP tools through the octocode-local server. Call them directly:
+This skill provides **library functions** (not MCP tools) that wrap the `octocode-mcp` execution layer. Import and call them directly:
 
 ```typescript
-// Example: Search local code
-await localSearchCode({
+import { 
+  localSearchCode, 
+  lspGotoDefinition,
+  githubSearchCode 
+} from 'octocode-research';
+
+const result = await localSearchCode({
   queries: [{
     pattern: 'authenticate',
     path: '/project/src',
-    researchGoal: 'Find auth implementation',
-    reasoning: 'Understanding authentication flow',
   }]
 });
 ```
 
-## Response Format & Hints
+## Available Functions
 
-**IMPORTANT**: All tool responses include hints to guide your next actions!
+### Local Tools
 
-Every tool returns a `CallToolResult` with YAML-formatted content:
+| Function | Purpose | Reference |
+|----------|---------|-----------|
+| `localSearchCode` | Search code with ripgrep | [📖 Reference](./references/localSearchCode.md) |
+| `localGetFileContent` | Read local file content | [📖 Reference](./references/localGetFileContent.md) |
+| `localFindFiles` | Find files by metadata | [📖 Reference](./references/localFindFiles.md) |
+| `localViewStructure` | View directory tree | [📖 Reference](./references/localViewStructure.md) |
 
-```yaml
-instructions: "Bulk response with N results..."
-results:
-  - id: 1
-    status: "hasResults" | "empty" | "error"
-    data: { ... }
-    mainResearchGoal: "..."
-    researchGoal: "..."
-    reasoning: "..."
-hasResultsStatusHints:      # <-- CHECK THESE for next steps when results found
-  - "Use lineHint for LSP tools"
-  - "Next: lspGotoDefinition to locate definition"
-emptyStatusHints:           # <-- CHECK THESE when no results
-  - "Try broader terms"
-  - "Remove filters one at a time"
-errorStatusHints:           # <-- CHECK THESE on errors
-  - "Check authentication token"
-  - "Verify path exists"
-```
+### LSP Tools
 
-**Always read the hints in the response** - they provide context-aware guidance for your research workflow.
+| Function | Purpose | Reference |
+|----------|---------|-----------|
+| `lspGotoDefinition` | Jump to symbol definition | [📖 Reference](./references/lspGotoDefinition.md) |
+| `lspFindReferences` | Find all symbol usages | [📖 Reference](./references/lspFindReferences.md) |
+| `lspCallHierarchy` | Trace call relationships | [📖 Reference](./references/lspCallHierarchy.md) |
+
+### GitHub Tools
+
+| Function | Purpose | Reference |
+|----------|---------|-----------|
+| `githubSearchCode` | Search GitHub code | [📖 Reference](./references/githubSearchCode.md) |
+| `githubGetFileContent` | Read GitHub files | [📖 Reference](./references/githubGetFileContent.md) |
+| `githubSearchRepositories` | Find GitHub repos | [📖 Reference](./references/githubSearchRepositories.md) |
+| `githubViewRepoStructure` | Explore repo structure | [📖 Reference](./references/githubViewRepoStructure.md) |
+| `githubSearchPullRequests` | Search PR history | [📖 Reference](./references/githubSearchPullRequests.md) |
+
+### Package Tools
+
+| Function | Purpose | Reference |
+|----------|---------|-----------|
+| `packageSearch` | Search npm/PyPI | [📖 Reference](./references/packageSearch.md) |
 
 ---
 
-## Tool Executions Reference
+## Research Prompts
 
-### 1. localSearchCode
+For AI agents using this skill, we provide comprehensive research methodology prompts:
 
-Search code using ripgrep in local directories.
+| Prompt | Scope | Reference |
+|--------|-------|-----------|
+| **Local Research** | Local codebase exploration with LSP semantic analysis | [📖 research_local_prompt.md](./references/research_local_prompt.md) |
+| **External Research** | GitHub repos, packages, and PRs | [📖 research_external_prompt.md](./references/research_external_prompt.md) |
 
-**When to use**: Find code patterns, get `lineHint` for LSP tools
+### What These Prompts Provide
 
-**Input**:
-```typescript
-await localSearchCode({
-  queries: [{
-    // Required
-    pattern: string,           // Regex pattern to search
-    path: string,              // Directory to search in
+- **research_local_prompt.md**: Complete guide for local code forensics. Covers the Funnel Method (DISCOVER → SEARCH → LSP → READ), trigger word detection for flow tracing, and anti-patterns to avoid. Critical for understanding when to use `lspCallHierarchy` vs file reading.
 
-    // Research context (recommended)
-    researchGoal?: string,     // Goal of this search
-    reasoning?: string,        // Why this approach
-
-    // Options
-    caseInsensitive?: boolean, // Case-insensitive search
-    filesOnly?: boolean,       // Return only file paths
-    include?: string[],        // Glob patterns to include ["*.ts"]
-    exclude?: string[],        // Glob patterns to exclude ["*.test.ts"]
-    contextLines?: number,     // Lines of context around matches
-    maxFiles?: number,         // Limit number of files
-    wholeWord?: boolean,       // Match whole words only
-    fixedString?: boolean,     // Treat pattern as literal string
-  }]
-});
-```
-
-**Output**: File matches with line numbers (use as `lineHint` for LSP tools)
-```yaml
-results:
-  - status: "hasResults"
-    data:
-      files:
-        - path: "/project/src/service.ts"
-          matches:
-            - line: 42           # <-- Use this as lineHint!
-              content: "export class MyService {"
-              beforeContext: [...]
-              afterContext: [...]
-hasResultsStatusHints:
-  - "OUTPUT: Use lineHint (line number) for all LSP tools"
-  - "LSP? lspGotoDefinition to locate definition"
-```
+- **research_external_prompt.md**: Guide for GitHub-based research. Covers package discovery, repo exploration, code archaeology via PRs, and multi-agent parallelization strategies.
 
 ---
 
-### 2. localGetFileContent
+## TL;DR: Tools Usage Quick Guide
 
-Read file content from local filesystem.
+### 🏠 Local Research (Your Codebase)
 
-**When to use**: Read implementation details (LAST step in research flow)
+```
+Text narrows → Symbols identify → Graphs explain
+```
 
-**Input**:
+| Task | Tool Chain |
+|------|------------|
+| **Find code** | `localSearchCode` |
+| **Explore structure** | `localViewStructure` |
+| **Go to definition** | `localSearchCode` → `lspGotoDefinition(lineHint)` |
+| **Who calls X?** | `localSearchCode` → `lspCallHierarchy(incoming)` |
+| **What does X call?** | `localSearchCode` → `lspCallHierarchy(outgoing)` |
+| **All usages** | `localSearchCode` → `lspFindReferences(lineHint)` |
+| **Read file (LAST)** | `localGetFileContent(matchString)` |
+
+⚠️ **Critical**: For flow tracing, ALWAYS use LSP tools. Never read files to understand call relationships.
+
+### 🌐 External Research (GitHub/Packages)
+
+| Task | Tool Chain |
+|------|------------|
+| **Find package repo** | `packageSearch` → `githubViewRepoStructure` |
+| **Search repo code** | `githubSearchCode(owner, repo, keywords)` |
+| **Read GitHub file** | `githubGetFileContent(matchString)` |
+| **Find repos** | `githubSearchRepositories(topics/keywords)` |
+| **Code archaeology** | `githubSearchPullRequests(merged=true)` |
+
+⚠️ **Critical**: Always narrow to `owner/repo` first. Use 1-2 filters max in `githubSearchCode`.
+
+### 🔀 Combined Research (Local + External)
+
+| Scenario | Flow |
+|----------|------|
+| **Understand imported package** | Local: find import → `packageSearch` → `githubViewRepoStructure` → `githubGetFileContent` |
+| **Compare implementations** | Local: `lspGotoDefinition` → GitHub: `githubSearchCode(same pattern)` |
+| **Find why code was written** | Local: identify code → GitHub: `githubSearchPullRequests(query, merged=true)` |
+| **Trace cross-repo flow** | Local: `lspCallHierarchy` → at boundary → GitHub: `githubSearchCode` |
+
+### Quick Decision Tree
+
+```
+Is it in YOUR codebase?
+├── YES → Use LOCAL tools + LSP
+│         ⚠️ For flows: lspCallHierarchy is MANDATORY
+│
+└── NO → Use GITHUB tools
+         ├── Know package name? → packageSearch first
+         └── Know repo? → githubViewRepoStructure → githubSearchCode
+```
+
+## Direct Function Calls
+
+All functions are imported from `octocode-research` and called with `{ queries: [...] }`:
+
+### Local Tools
+
 ```typescript
-await localGetFileContent({
-  queries: [{
-    // Required
-    path: string,              // Absolute file path
+import { localSearchCode, localGetFileContent, localFindFiles, localViewStructure } from 'octocode-research';
 
-    // Choose ONE extraction method:
-    matchString?: string,      // Search for this pattern
-    matchStringContextLines?: number,  // Lines around match (default: 5)
-    // OR
-    startLine?: number,        // Start line (1-indexed)
-    endLine?: number,          // End line
-    // OR
-    fullContent?: boolean,     // Read entire file (small files only)
+// Search code
+const search = await localSearchCode({
+  queries: [{ pattern: 'export function', path: './src' }]
+});
 
-    // Research context
-    researchGoal?: string,
-    reasoning?: string,
-  }]
+// Read file with match
+const content = await localGetFileContent({
+  queries: [{ path: './src/index.ts', matchString: 'export', matchStringContextLines: 10 }]
+});
+
+// Find files
+const files = await localFindFiles({
+  queries: [{ path: '.', name: '*.ts', type: 'f' }]
+});
+
+// View structure
+const structure = await localViewStructure({
+  queries: [{ path: '/project', depth: 2 }]
 });
 ```
 
-**Output**: File content with optional context
-```yaml
-results:
-  - status: "hasResults"
-    data:
-      path: "/project/src/service.ts"
-      content: "export class MyService {\n  constructor() {...}\n}"
-      totalLines: 150
-      extractedLines: { start: 40, end: 60 }
-```
+### LSP Tools (require lineHint from search)
 
----
-
-### 3. localFindFiles
-
-Find files by name, type, or metadata.
-
-**When to use**: Discover files before searching content
-
-**Input**:
 ```typescript
-await localFindFiles({
-  queries: [{
-    // Required
-    path: string,              // Directory to search
+import { lspGotoDefinition, lspFindReferences, lspCallHierarchy } from 'octocode-research';
 
-    // Filters
-    name?: string,             // Glob pattern for name ("*.ts")
-    iname?: string,            // Case-insensitive name
-    type?: "f" | "d",          // f=files, d=directories
-    modifiedWithin?: string,   // Modified in timeframe ("7d", "1h")
-    modifiedBefore?: string,   // Modified before date
-    sizeGreater?: string,      // Size > ("1M", "100K")
-    sizeLess?: string,         // Size <
-    maxDepth?: number,         // Max directory depth
+// Go to definition
+const def = await lspGotoDefinition({
+  queries: [{ uri: './src/index.ts', symbolName: 'myFunction', lineHint: 10 }]
+});
 
-    // Research context
-    researchGoal?: string,
-    reasoning?: string,
-  }]
+// Find references
+const refs = await lspFindReferences({
+  queries: [{ uri: './src/types.ts', symbolName: 'UserConfig', lineHint: 5 }]
+});
+
+// Call hierarchy
+const calls = await lspCallHierarchy({
+  queries: [{ uri: './src/api.ts', symbolName: 'processRequest', lineHint: 42, direction: 'incoming' }]
 });
 ```
 
-**Output**: List of matching files with metadata
-```yaml
-results:
-  - status: "hasResults"
-    data:
-      files:
-        - path: "/project/src/auth/login.ts"
-          size: 2048
-          modified: "2024-01-15T10:30:00Z"
-          type: "file"
-```
+### GitHub Tools (require token initialization)
 
----
-
-### 4. localViewStructure
-
-View directory tree structure.
-
-**When to use**: First step - understand project layout
-
-**Input**:
 ```typescript
-await localViewStructure({
+import { initialize, githubSearchCode, githubGetFileContent, githubSearchRepositories, githubViewRepoStructure, githubSearchPullRequests, packageSearch } from 'octocode-research';
+
+await initialize(); // Required first!
+
+// Search GitHub code
+const code = await githubSearchCode({
   queries: [{
-    // Required
-    path: string,              // Directory to explore
-
-    // Options
-    depth?: number,            // Max depth (default: 1)
-    filesOnly?: boolean,       // Show only files
-    directoriesOnly?: boolean, // Show only directories
-    sortBy?: "name" | "size" | "time" | "extension",
-    hidden?: boolean,          // Include hidden files
-
-    // Research context
-    researchGoal?: string,
-    reasoning?: string,
+    mainResearchGoal: 'Find hooks', researchGoal: 'Search useState', reasoning: 'Understanding hooks',
+    keywordsToSearch: ['useState'], owner: 'facebook', repo: 'react',
   }]
 });
-```
 
-**Output**: Directory tree
-```yaml
-results:
-  - status: "hasResults"
-    data:
-      path: "/project/src"
-      structuredOutput: |
-        [DIR]  components/
-        [DIR]  services/
-        [FILE] index.ts (2.1 KB)
-        [FILE] types.ts (856 B)
-      totalFiles: 2
-      totalDirectories: 2
-hasResultsStatusHints:
-  - "Next: localSearchCode(pattern) to find code and get lineHint"
-  - "Drill deeper: depth=2 on specific subdirs"
-```
-
----
-
-### 5. lspGotoDefinition
-
-Jump to symbol definition using LSP.
-
-**When to use**: Find where a symbol is defined
-
-**CRITICAL**: Requires `lineHint` from `localSearchCode` results!
-
-**Input**:
-```typescript
-await lspGotoDefinition({
+// Read GitHub file
+const file = await githubGetFileContent({
   queries: [{
-    // Required
-    uri: string,               // File URI ("file:///path/to/file.ts")
-    symbolName: string,        // Symbol to find
-    lineHint: number,          // Line number from search results!
-
-    // Options
-    contextLines?: number,     // Lines of context (default: 5)
-    orderHint?: number,        // Which occurrence (0-indexed)
-
-    // Research context
-    researchGoal?: string,
-    reasoning?: string,
+    mainResearchGoal: 'Read source', researchGoal: 'Get README', reasoning: 'Documentation',
+    owner: 'facebook', repo: 'react', path: 'README.md', fullContent: true,
   }]
 });
-```
 
-**Output**: Definition location with code snippet
-```yaml
-results:
-  - status: "hasResults"
-    data:
-      symbol: "MyService"
-      definitionLocation:
-        uri: "file:///project/src/services/myService.ts"
-        range: { startLine: 10, endLine: 45 }
-      codeSnippet: "export class MyService {\n  private db: Database;\n  ..."
-      symbolKind: "class"
-hasResultsStatusHints:
-  - "Need callers? Use lspCallHierarchy(direction='incoming')"
-  - "Need all usages? Use lspFindReferences"
-emptyStatusHints:
-  - "Verify lineHint from localSearchCode results"
-  - "Check symbol name spelling"
+// Search repositories
+const repos = await githubSearchRepositories({
+  queries: [{
+    mainResearchGoal: 'Find tools', researchGoal: 'TypeScript CLIs', reasoning: 'Research',
+    topicsToSearch: ['typescript', 'cli'], stars: '>1000',
+  }]
+});
+
+// View repo structure
+const struct = await githubViewRepoStructure({
+  queries: [{
+    mainResearchGoal: 'Explore repo', researchGoal: 'View lib', reasoning: 'Find source',
+    owner: 'expressjs', repo: 'express', branch: 'main', path: 'lib',
+  }]
+});
+
+// Search PRs
+const prs = await githubSearchPullRequests({
+  queries: [{
+    mainResearchGoal: 'Code archaeology', researchGoal: 'Find hooks PRs', reasoning: 'History',
+    owner: 'facebook', repo: 'react', query: 'hooks', state: 'closed', merged: true,
+  }]
+});
+
+// Package search
+const pkg = await packageSearch({
+  queries: [{
+    mainResearchGoal: 'Find package', researchGoal: 'Get express repo', reasoning: 'Source exploration',
+    name: 'express', ecosystem: 'npm',
+  }]
+});
 ```
 
 ---
 
-### 6. lspFindReferences
+## Response Format
 
-Find all references to a symbol.
+All functions return `CallToolResult` with YAML-formatted content:
 
-**When to use**: Find all usages of types, interfaces, variables, functions
-
-**CRITICAL**: Requires `lineHint` from search results!
-
-**Input**:
 ```typescript
-await lspFindReferences({
-  queries: [{
-    // Required
-    uri: string,               // File URI
-    symbolName: string,        // Symbol to find
-    lineHint: number,          // From search results!
-
-    // Options
-    includeDeclaration?: boolean,  // Include definition (default: true)
-    contextLines?: number,     // Context lines (default: 2)
-    referencesPerPage?: number, // Pagination (default: 20)
-    page?: number,             // Page number
-
-    // Research context
-    researchGoal?: string,
-    reasoning?: string,
-  }]
-});
+interface CallToolResult {
+  content: Array<{ type: 'text'; text: string }>;
+  isError: boolean;
+}
 ```
 
-**Output**: List of reference locations
-```yaml
-results:
-  - status: "hasResults"
-    data:
-      symbol: "UserConfig"
-      totalReferences: 15
-      references:
-        - uri: "file:///project/src/app.ts"
-          line: 5
-          column: 10
-          context: "import { UserConfig } from './types';"
-        - uri: "file:///project/src/config.ts"
-          line: 20
-          context: "const config: UserConfig = {...}"
-      pagination: { page: 1, totalPages: 1 }
-```
-
----
-
-### 7. lspCallHierarchy
-
-Trace function call relationships.
-
-**When to use**: Find callers (incoming) or callees (outgoing) of a function
-
-**CRITICAL**: Requires `lineHint`! Only works for functions/methods!
-
-**Input**:
-```typescript
-await lspCallHierarchy({
-  queries: [{
-    // Required
-    uri: string,               // File URI
-    symbolName: string,        // Function name
-    lineHint: number,          // From search results!
-    direction: "incoming" | "outgoing",  // Call direction
-
-    // Options
-    depth?: number,            // Recursion depth (default: 1, max: 3)
-    contextLines?: number,     // Context lines (default: 2)
-    callsPerPage?: number,     // Pagination (default: 15)
-
-    // Research context
-    researchGoal?: string,
-    reasoning?: string,
-  }]
-});
-```
-
-**Output**: Call hierarchy tree
-```yaml
-results:
-  - status: "hasResults"
-    data:
-      symbol: "processRequest"
-      direction: "incoming"
-      calls:
-        - name: "handleRoute"
-          uri: "file:///project/src/router.ts"
-          line: 45
-          context: "await processRequest(req, res);"
-        - name: "middleware"
-          uri: "file:///project/src/middleware.ts"
-          line: 12
-hasResultsStatusHints:
-  - "Chain: Follow calls with another lspCallHierarchy"
-  - "Switch direction to see full flow"
-emptyStatusHints:
-  - "lspCallHierarchy only works on functions/methods"
-  - "For types/variables, use lspFindReferences instead"
-```
-
----
-
-### 8. githubSearchCode
-
-Search code across GitHub repositories.
-
-**When to use**: External research, find patterns in open source
-
-**Input**:
-```typescript
-await githubSearchCode({
-  queries: [{
-    // Required
-    keywordsToSearch: string[],  // Keywords to search
-    mainResearchGoal: string,    // Overall goal
-    researchGoal: string,        // Specific goal
-    reasoning: string,           // Why this approach
-
-    // Filters (use sparingly - 1-2 max)
-    owner?: string,              // Repository owner
-    repo?: string,               // Repository name
-    path?: string,               // Path prefix
-    extension?: string,          // File extension
-    filename?: string,           // Filename pattern
-    match?: "file" | "path",     // Match content or paths
-
-    // Pagination
-    limit?: number,              // Results limit (default: 10)
-    page?: number,               // Page number
-  }]
-});
-```
-
-**Output**: Code search results with text matches
-```yaml
-results:
-  - status: "hasResults"
-    data:
-      totalCount: 45
-      files:
-        - path: "packages/react/src/ReactHooks.js"
-          repository: "facebook/react"
-          textMatches:
-            - fragment: "export function useState(initialState) {"
-              matchedLines: [15, 16]
-          url: "https://github.com/facebook/react/blob/main/..."
-hasResultsStatusHints:
-  - "Use owner+repo for precision"
-  - "Next: githubGetFileContent to read matched files"
-emptyStatusHints:
-  - "Start lean: single filter → verify → add filters"
-  - "NEVER combine extension+filename+path"
-```
-
----
-
-### 9. githubGetFileContent
-
-Read file content from GitHub repositories.
-
-**When to use**: Read source code from GitHub repos
-
-**Input**:
-```typescript
-await githubGetFileContent({
-  queries: [{
-    // Required
-    owner: string,             // Repo owner ("facebook")
-    repo: string,              // Repo name ("react")
-    path: string,              // File path ("src/index.js")
-    mainResearchGoal: string,
-    researchGoal: string,
-    reasoning: string,
-
-    // Options
-    branch?: string,           // Branch name (default: default branch)
-
-    // Choose ONE extraction method:
-    matchString?: string,      // Search for pattern
-    matchStringContextLines?: number,  // Context lines (default: 5)
-    // OR
-    startLine?: number,        // Start line
-    endLine?: number,          // End line
-    // OR
-    fullContent?: boolean,     // Full file (small files only!)
-  }]
-});
-```
-
-**Output**: File content
-```yaml
-results:
-  - status: "hasResults"
-    data:
-      owner: "facebook"
-      repo: "react"
-      path: "packages/react/src/ReactHooks.js"
-      content: "export function useState(initialState) {\n  ..."
-      sha: "abc123..."
-      url: "https://github.com/facebook/react/blob/main/..."
-hasResultsStatusHints:
-  - "Need more context? Expand matchStringContextLines"
-  - "Trace imports? githubSearchCode with import path"
-```
-
----
-
-### 10. githubSearchRepositories
-
-Find GitHub repositories.
-
-**When to use**: Discover repos by topic, find popular projects
-
-**Input**:
-```typescript
-await githubSearchRepositories({
-  queries: [{
-    // Required
-    mainResearchGoal: string,
-    researchGoal: string,
-    reasoning: string,
-
-    // Search options (use one or both)
-    topicsToSearch?: string[], // Topics ["typescript", "cli"]
-    keywordsToSearch?: string[], // Keywords in name/description
-
-    // Filters
-    owner?: string,            // Filter by owner
-    stars?: string,            // Stars filter (">1000", "100..500")
-    created?: string,          // Created date
-    updated?: string,          // Updated date
-
-    // Options
-    match?: ("name" | "description" | "readme")[],
-    sort?: "stars" | "forks" | "updated" | "best-match",
-    limit?: number,
-  }]
-});
-```
-
-**Output**: Repository list
-```yaml
-results:
-  - status: "hasResults"
-    data:
-      totalCount: 250
-      repositories:
-        - fullName: "expressjs/express"
-          description: "Fast, unopinionated web framework"
-          stars: 62000
-          language: "JavaScript"
-          topics: ["nodejs", "web", "framework"]
-          pushedAt: "2024-01-15"
-          url: "https://github.com/expressjs/express"
-```
-
----
-
-### 11. githubViewRepoStructure
-
-Explore repository directory structure.
-
-**When to use**: Understand project layout before searching
-
-**Input**:
-```typescript
-await githubViewRepoStructure({
-  queries: [{
-    // Required
-    owner: string,
-    repo: string,
-    branch: string,            // Branch name (NOT SHA!)
-    mainResearchGoal: string,
-    researchGoal: string,
-    reasoning: string,
-
-    // Options
-    path?: string,             // Subdirectory (default: root "")
-    depth?: number,            // Depth (1 or 2)
-  }]
-});
-```
-
-**Output**: Directory tree
-```yaml
-results:
-  - status: "hasResults"
-    data:
-      owner: "expressjs"
-      repo: "express"
-      path: "lib"
-      entries:
-        - name: "application.js"
-          type: "file"
-          size: 15234
-        - name: "router"
-          type: "dir"
-hasResultsStatusHints:
-  - "Next: githubSearchCode to search in discovered dirs"
-  - "Drill deeper: Set path to subdirectory"
-```
-
----
-
-### 12. githubSearchPullRequests
-
-Search and analyze pull requests.
-
-**When to use**: Code archaeology - understand WHY code was written
-
-**Input**:
-```typescript
-await githubSearchPullRequests({
-  queries: [{
-    // Required
-    mainResearchGoal: string,
-    researchGoal: string,
-    reasoning: string,
-
-    // Search by PR number (ignores other filters)
-    prNumber?: number,
-
-    // OR search by filters
-    owner?: string,
-    repo?: string,
-    query?: string,            // Search terms
-    state?: "open" | "closed",
-    merged?: boolean,
-    author?: string,
-
-    // Content options
-    type?: "metadata" | "partialContent" | "fullContent",
-    withComments?: boolean,    // Include review comments
-    withCommits?: boolean,     // Include commit list
-
-    // For partialContent type:
-    partialContentMetadata?: [{
-      file: string,            // File path to get diff
-      additions?: number[],    // Specific added lines
-      deletions?: number[],    // Specific deleted lines
-    }],
-  }]
-});
-```
-
-**Output**: PR information
-```yaml
-results:
-  - status: "hasResults"
-    data:
-      pullRequests:
-        - number: 123
-          title: "Add authentication middleware"
-          state: "closed"
-          merged: true
-          author: "developer"
-          body: "This PR adds JWT authentication..."
-          changedFiles: 5
-          additions: 250
-          deletions: 30
-          url: "https://github.com/org/repo/pull/123"
-hasResultsStatusHints:
-  - "Get file changes: type='partialContent' with partialContentMetadata"
-  - "Understand decisions: withComments=true"
-```
-
----
-
-### 13. packageSearch
-
-Search npm and PyPI packages.
-
-**When to use**: Look up packages, get repo URL for source exploration
-
-**Input**:
-```typescript
-await packageSearch({
-  queries: [{
-    // Required
-    name: string,              // Package name
-    ecosystem: "npm" | "python",
-    mainResearchGoal: string,
-    researchGoal: string,
-    reasoning: string,
-
-    // Options
-    searchLimit?: number,      // Results (default: 1, use 5 for alternatives)
-    npmFetchMetadata?: boolean,  // Fetch npm details
-    pythonFetchMetadata?: boolean,  // Fetch PyPI details
-  }]
-});
-```
-
-**Output**: Package information with repository URL
-```yaml
-results:
-  - status: "hasResults"
-    data:
-      packages:
-        - name: "express"
-          version: "4.18.2"
-          description: "Fast web framework"
-          repository:
-            type: "git"
-            url: "https://github.com/expressjs/express"  # <-- Use for source exploration
-          homepage: "http://expressjs.com/"
-          license: "MIT"
-hasResultsStatusHints:
-  - "Have repo URL? Use githubViewRepoStructure next"
-  - "For alternatives: increase searchLimit"
-```
+The `text` field contains YAML with:
+- `status`: `"hasResults"` | `"empty"` | `"error"`
+- `data`: Query-specific result data
+- `hints`: Context-aware next-step guidance
 
 ---
 
@@ -731,35 +287,39 @@ Follow the **Funnel Method** - progressive narrowing:
 ### Example: "Where is authentication handled?"
 
 ```typescript
+import {
+  localViewStructure,
+  localSearchCode,
+  lspGotoDefinition,
+  localGetFileContent
+} from 'octocode-research';
+
 // Step 1: DISCOVERY - Understand structure
 const structure = await localViewStructure({
-  queries: [{ path: "/project/src", depth: 2 }]
+  queries: [{ path: '/project/src', depth: 2 }]
 });
-// Check hints → "Next: localSearchCode to find code"
 
 // Step 2: SEARCH - Find patterns, get lineHint
 const search = await localSearchCode({
-  queries: [{ pattern: "authenticate|auth", path: "/project/src" }]
+  queries: [{ pattern: 'authenticate|auth', path: '/project/src' }]
 });
-// Results show: line 42 in /project/src/middleware/auth.ts
-// Check hints → "Use lineHint for LSP tools"
+// Results: line 42 in /project/src/middleware/auth.ts
 
-// Step 3: LSP SEMANTIC - Go to definition
+// Step 3: LSP - Go to definition
 const definition = await lspGotoDefinition({
   queries: [{
-    uri: "file:///project/src/middleware/auth.ts",
-    symbolName: "authenticate",
-    lineHint: 42  // From search results!
+    uri: '/project/src/middleware/auth.ts',
+    symbolName: 'authenticate',
+    lineHint: 42,  // From search!
   }]
 });
-// Check hints → "Need callers? Use lspCallHierarchy"
 
 // Step 4: READ - Only after locating (LAST step!)
 const content = await localGetFileContent({
   queries: [{
-    path: "/project/src/middleware/auth.ts",
+    path: '/project/src/middleware/auth.ts',
     startLine: 40,
-    endLine: 80
+    endLine: 80,
   }]
 });
 ```
@@ -768,8 +328,8 @@ const content = await localGetFileContent({
 
 ## Tool Selection Quick Reference
 
-| Question | Tool Chain |
-|----------|------------|
+| Question | Function Chain |
+|----------|----------------|
 | "Where is X defined?" | `localSearchCode` → `lspGotoDefinition(lineHint)` |
 | "Who calls function X?" | `localSearchCode` → `lspCallHierarchy(incoming, lineHint)` |
 | "What does X call?" | `localSearchCode` → `lspCallHierarchy(outgoing, lineHint)` |
@@ -777,14 +337,92 @@ const content = await localGetFileContent({
 | "Find files by name" | `localFindFiles` |
 | "Project structure?" | `localViewStructure` |
 | "External package info?" | `packageSearch` → `githubViewRepoStructure` → `githubSearchCode` |
-| "Why was code written this way?" | `githubSearchPullRequests(merged=true)` |
+| "Why was code written?" | `githubSearchPullRequests(merged=true)` |
+
+---
+
+## Exported Types
+
+Import types for TypeScript usage:
+
+```typescript
+import type {
+  // Local tools
+  RipgrepSearchQuery, SearchContentResult,
+  FetchContentQuery, FetchContentResult,
+  FindFilesQuery, FindFilesResult,
+  ViewStructureQuery, ViewStructureResult,
+  
+  // LSP tools
+  LSPGotoDefinitionQuery, GotoDefinitionResult,
+  LSPFindReferencesQuery, FindReferencesResult,
+  LSPCallHierarchyQuery, CallHierarchyResult,
+  
+  // GitHub tools
+  GitHubCodeSearchQuery, SearchResult,
+  FileContentQuery, ContentResult,
+  GitHubReposSearchQuery, RepoSearchResult,
+  GitHubViewRepoStructureQuery, RepoStructureResult,
+  GitHubPullRequestSearchQuery, PullRequestSearchResult,
+  
+  // Package search
+  PackageSearchQuery, PackageSearchResult,
+  NpmPackageSearchQuery, PythonPackageSearchQuery,
+} from 'octocode-research';
+```
+
+---
+
+## Token Management
+
+For GitHub tools, initialize token resolution:
+
+```typescript
+import { initialize, getGitHubToken, getTokenSource } from 'octocode-research';
+
+await initialize();
+const token = await getGitHubToken();
+const source = await getTokenSource();
+// Returns: 'env:GH_TOKEN', 'env:GITHUB_TOKEN', 'gh-cli', 'octocode-storage', or 'none'
+```
+
+Token priority:
+1. `GH_TOKEN` env var
+2. `GITHUB_TOKEN` env var
+3. `gh auth token` (GitHub CLI)
+4. Octocode secure storage
 
 ---
 
 ## Critical Rules
 
 1. **LSP tools REQUIRE `lineHint`** - Always call `localSearchCode` first!
-2. **Read hints in every response** - They guide your next action
-3. **Read file content LAST** - Use LSP for semantic understanding first
-4. **GitHub: Use 1-2 filters max** - Never combine extension+filename+path
-5. **lspCallHierarchy only works on functions** - Use lspFindReferences for types/variables
+2. **Read file content LAST** - Use LSP for semantic understanding first
+3. **GitHub: Use 1-2 filters max** - Never combine extension+filename+path
+4. **`lspCallHierarchy` only works on functions** - Use `lspFindReferences` for types/variables
+5. **Initialize token** - Call `initialize()` before GitHub tools
+
+---
+
+## References
+
+For detailed API documentation for each function, see the `references/` folder:
+
+### Research Methodology Prompts
+- [research_local_prompt.md](./references/research_local_prompt.md) - Local codebase research with LSP
+- [research_external_prompt.md](./references/research_external_prompt.md) - GitHub/package research
+
+### Tool References
+- [localSearchCode](./references/localSearchCode.md)
+- [localGetFileContent](./references/localGetFileContent.md)
+- [localFindFiles](./references/localFindFiles.md)
+- [localViewStructure](./references/localViewStructure.md)
+- [lspGotoDefinition](./references/lspGotoDefinition.md)
+- [lspFindReferences](./references/lspFindReferences.md)
+- [lspCallHierarchy](./references/lspCallHierarchy.md)
+- [githubSearchCode](./references/githubSearchCode.md)
+- [githubGetFileContent](./references/githubGetFileContent.md)
+- [githubSearchRepositories](./references/githubSearchRepositories.md)
+- [githubViewRepoStructure](./references/githubViewRepoStructure.md)
+- [githubSearchPullRequests](./references/githubSearchPullRequests.md)
+- [packageSearch](./references/packageSearch.md)
