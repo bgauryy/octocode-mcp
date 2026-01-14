@@ -37,6 +37,12 @@ This handles everything:
 
 ---
 
+
+
+https://github.com/user-attachments/assets/7f4ab179-b810-40d5-aab5-e903a5c45c6e
+
+
+
 ## What It Does
 
 Octocode Research enables AI agents to perform **deep code research** — both locally and externally.
