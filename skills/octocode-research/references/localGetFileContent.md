@@ -2,165 +2,91 @@
 
 Read file content from local filesystem.
 
-## Import
+**Endpoint**: `GET /local/content`
 
-```typescript
-import { localGetFileContent } from 'octocode-research';
+> **Server runs locally** on user's machine. All paths are local filesystem paths.
+
+## HTTP API Examples
+
+```bash
+# Read with match string (RECOMMENDED for large files)
+curl "http://localhost:1987/local/content?path=/project/src/index.ts&matchString=export%20class&matchStringContextLines=20"
+
+# Read line range
+curl "http://localhost:1987/local/content?path=/project/src/service.ts&startLine=40&endLine=80"
+
+# Read full file (small configs only)
+curl "http://localhost:1987/local/content?path=/project/package.json&fullContent=true"
+
+# Regex match
+curl "http://localhost:1987/local/content?path=/project/src/api.ts&matchString=async%20function%20%5Cw%2B&matchStringIsRegex=true&matchStringContextLines=15"
+
+# Paginated reading for large files
+curl "http://localhost:1987/local/content?path=/project/src/large-file.ts&charOffset=0&charLength=5000"
 ```
 
-## Input Type
+## Query Parameters
 
-```typescript
-interface FetchContentQuery {
-  // Required
-  path: string;                 // Absolute file path
-  
-  // Research context
-  researchGoal?: string;
-  reasoning?: string;
-  
-  // Choose ONE extraction method:
-  
-  // Option 1: Match string search
-  matchString?: string;         // Pattern to find
-  matchStringContextLines?: number;  // Default: 5, max: 50
-  matchStringIsRegex?: boolean;      // Default: false
-  matchStringCaseSensitive?: boolean; // Default: false
-  
-  // Option 2: Line range
-  startLine?: number;           // 1-indexed start
-  endLine?: number;             // 1-indexed end (inclusive)
-  
-  // Option 3: Full content
-  fullContent?: boolean;        // Entire file (small files only)
-  
-  // Character-level pagination
-  charOffset?: number;
-  charLength?: number;          // Max: 10000
-}
-```
-
-## Output Type
-
-```typescript
-interface FetchContentResult {
-  status: 'hasResults' | 'empty' | 'error';
-  path?: string;
-  cwd?: string;
-  content?: string;
-  contentLength?: number;
-  isPartial?: boolean;
-  totalLines?: number;
-  minificationFailed?: boolean;
-  errorCode?: string;
-  hints?: string[];
-  warnings?: string[];
-  startLine?: number;
-  endLine?: number;
-  extractedLines?: number;
-  matchRanges?: Array<{ start: number; end: number }>;
-  pagination?: {
-    currentPage: number;
-    totalPages: number;
-    hasMore: boolean;
-    charOffset?: number;
-    charLength?: number;
-    totalChars?: number;
-  };
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-}
-```
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | ✅ | Absolute file path |
+| `matchString` | string | | Pattern to find |
+| `matchStringContextLines` | number | | Default: 5, max: 50 |
+| `matchStringIsRegex` | boolean | | Default: false |
+| `matchStringCaseSensitive` | boolean | | Default: false |
+| `startLine` | number | | 1-indexed start line |
+| `endLine` | number | | 1-indexed end line (inclusive) |
+| `fullContent` | boolean | | Read entire file (small files only) |
+| `charOffset` | number | | Character offset for pagination |
+| `charLength` | number | | Max: 10000 |
 
 ## Extraction Methods
+
+Choose **ONE** method:
 
 | Method | Use Case | Parameters |
 |--------|----------|------------|
 | Match string | Find specific pattern | `matchString`, `matchStringContextLines` |
 | Line range | Known line numbers | `startLine`, `endLine` |
-| Full content | Small config files | `fullContent: true` |
+| Full content | Small config files | `fullContent=true` |
 | Char pagination | Large files | `charOffset`, `charLength` |
 
-## Examples
+## Response Structure
 
-### Read with match string
-
-```typescript
-import { localGetFileContent } from 'octocode-research';
-
-const result = await localGetFileContent({
-  queries: [{
-    path: '/project/src/index.ts',
-    matchString: 'export class',
-    matchStringContextLines: 20,
-  }]
-});
+```json
+{
+  "status": "hasResults",
+  "path": "/project/src/auth/middleware.ts",
+  "content": "export async function authenticate(req, res, next) {\n  const token = req.headers.authorization;\n  ...",
+  "contentLength": 1523,
+  "totalLines": 85,
+  "startLine": 10,
+  "endLine": 35,
+  "extractedLines": 26,
+  "isPartial": true,
+  "matchRanges": [
+    { "start": 0, "end": 45 }
+  ]
+}
 ```
 
-### Read line range
+## Checkpoint: Before Reading Files
 
-```typescript
-const result = await localGetFileContent({
-  queries: [{
-    path: '/project/src/service.ts',
-    startLine: 40,
-    endLine: 80,
-  }]
-});
-```
+**⚠️ STOP and check:**
 
-### Read full file (small files only)
+1. Is user asking about FLOWS or CALLS?
+   - YES → Use `/lsp/calls` first, NOT this endpoint!
 
-```typescript
-const result = await localGetFileContent({
-  queries: [{
-    path: '/project/package.json',
-    fullContent: true,
-  }]
-});
-```
+2. Have you traced call hierarchy with LSP?
+   - NO → Do that first
 
-### Paginated reading for large files
-
-```typescript
-// First chunk
-const result1 = await localGetFileContent({
-  queries: [{
-    path: '/project/src/large-file.ts',
-    charOffset: 0,
-    charLength: 5000,
-  }]
-});
-
-// Next chunk
-const result2 = await localGetFileContent({
-  queries: [{
-    path: '/project/src/large-file.ts',
-    charOffset: 5000,
-    charLength: 5000,
-  }]
-});
-```
-
-### Regex match
-
-```typescript
-const result = await localGetFileContent({
-  queries: [{
-    path: '/project/src/api.ts',
-    matchString: 'async function \\w+',
-    matchStringIsRegex: true,
-    matchStringContextLines: 10,
-  }]
-});
-```
+3. Reading for specific implementation details?
+   - YES → Proceed with this endpoint
 
 ## Tips
 
 - **Use `matchString`** for targeted extraction - more efficient than `fullContent`
 - **Choose ONE method**: Cannot combine `startLine/endLine` with `matchString` or `fullContent`
-- **startLine/endLine must be used together**: Both are required for line range extraction
 - **Line numbers are 1-indexed**: First line is line 1, not line 0
 - **Use for implementation details**: This should be your LAST step after LSP analysis
 
@@ -171,7 +97,7 @@ const result = await localGetFileContent({
 3. Cannot use line range with `matchString`
 4. Cannot use line range with `fullContent`
 
-## Related Functions
+## Related Endpoints
 
-- [`localSearchCode`](./localSearchCode.md) - Search before reading
-- [`localViewStructure`](./localViewStructure.md) - Find files first
+- [`/local/search`](./localSearchCode.md) - Search before reading
+- [`/local/structure`](./localViewStructure.md) - Find files first

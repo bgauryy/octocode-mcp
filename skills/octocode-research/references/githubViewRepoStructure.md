@@ -2,159 +2,65 @@
 
 Explore repository directory structure on GitHub.
 
-## Import
+**Endpoint**: `GET /github/structure`
 
-```typescript
-import { githubViewRepoStructure } from 'octocode-research';
+> **Server runs locally** on user's machine. GitHub API calls are made from the local server.
+
+## HTTP API Examples
+
+```bash
+# View root structure (START HERE)
+curl "http://localhost:1987/github/structure?owner=facebook&repo=react&branch=main&path=&depth=1"
+
+# Drill into subdirectory
+curl "http://localhost:1987/github/structure?owner=facebook&repo=react&branch=main&path=packages&depth=2"
+
+# Monorepo exploration
+curl "http://localhost:1987/github/structure?owner=vercel&repo=next.js&branch=canary&path=packages&depth=1"
+
+# Paginated results
+curl "http://localhost:1987/github/structure?owner=microsoft&repo=TypeScript&branch=main&path=src/compiler&entryPageNumber=2&entriesPerPage=100"
 ```
 
-## ⚠️ Requirements
+## Query Parameters
 
-- **GitHub token required**: Set `GITHUB_TOKEN` env var or use `gh auth login`
-- **Initialize first**: Call `initialize()` before using
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `owner` | string | ✅ | Repository owner |
+| `repo` | string | ✅ | Repository name |
+| `branch` | string | ✅ | Branch NAME (not SHA!) |
+| `mainResearchGoal` | string | ✅ | Overall objective |
+| `researchGoal` | string | ✅ | Specific goal |
+| `reasoning` | string | ✅ | Why this approach |
+| `path` | string | | Subdirectory (default: root `""`) |
+| `depth` | number | | 1 or 2 (default: 1) |
+| `entriesPerPage` | number | | Max: 200 |
+| `entryPageNumber` | number | | Default: 1 |
 
-## Input Type
+## Response Structure
 
-```typescript
-interface GitHubViewRepoStructureQuery {
-  // Required
-  owner: string;                // Repository owner
-  repo: string;                 // Repository name
-  branch: string;               // Branch NAME (not SHA!)
-  
-  // Research context (required)
-  mainResearchGoal: string;
-  researchGoal: string;
-  reasoning: string;
-  
-  // Options
-  path?: string;                // Subdirectory (default: root "")
-  depth?: number;               // 1 or 2 (default: 1)
-  entriesPerPage?: number;      // Max: 200
-  entryPageNumber?: number;     // Default: 1
+```json
+{
+  "status": "hasResults",
+  "owner": "facebook",
+  "repo": "react",
+  "path": "packages",
+  "branch": "main",
+  "entries": [
+    { "name": "react", "type": "dir", "path": "packages/react" },
+    { "name": "react-dom", "type": "dir", "path": "packages/react-dom" },
+    { "name": "shared", "type": "dir", "path": "packages/shared" }
+  ],
+  "summary": {
+    "totalEntries": 25,
+    "truncated": false
+  },
+  "pagination": {
+    "currentPage": 1,
+    "totalPages": 2,
+    "hasMore": true
+  }
 }
-```
-
-## Output Type
-
-```typescript
-interface RepoStructureResult {
-  status?: 'hasResults' | 'empty' | 'error';
-  owner?: string;
-  repo?: string;
-  path?: string;
-  branch?: string;
-  entries?: Array<{
-    name: string;
-    type: 'file' | 'dir';
-    size?: number;
-    path: string;
-  }>;
-  summary?: {
-    totalEntries: number;
-    truncated: boolean;
-  };
-  pagination?: {
-    currentPage: number;
-    totalPages: number;
-    hasMore: boolean;
-  };
-  hints?: string[];
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-  error?: string;
-}
-```
-
-## Examples
-
-### View root structure
-
-```typescript
-import { githubViewRepoStructure, initialize } from 'octocode-research';
-
-await initialize();
-
-const result = await githubViewRepoStructure({
-  queries: [{
-    mainResearchGoal: 'Understand project layout',
-    researchGoal: 'View root directory',
-    reasoning: 'Need to find source files',
-    owner: 'facebook',
-    repo: 'react',
-    branch: 'main',
-    path: '',
-    depth: 1,
-  }]
-});
-```
-
-### Drill into subdirectory
-
-```typescript
-const result = await githubViewRepoStructure({
-  queries: [{
-    mainResearchGoal: 'Understand React packages',
-    researchGoal: 'View packages directory',
-    reasoning: 'Finding package structure',
-    owner: 'facebook',
-    repo: 'react',
-    branch: 'main',
-    path: 'packages',
-    depth: 2,  // Show subdirs of packages
-  }]
-});
-```
-
-### Monorepo exploration
-
-```typescript
-// Step 1: View packages root
-const packages = await githubViewRepoStructure({
-  queries: [{
-    mainResearchGoal: 'Explore monorepo',
-    researchGoal: 'List all packages',
-    reasoning: 'Understanding monorepo structure',
-    owner: 'org',
-    repo: 'monorepo',
-    branch: 'main',
-    path: 'packages',
-    depth: 1,
-  }]
-});
-
-// Step 2: Drill into specific package
-const core = await githubViewRepoStructure({
-  queries: [{
-    mainResearchGoal: 'Explore core package',
-    researchGoal: 'View core package structure',
-    reasoning: 'Understanding core implementation',
-    owner: 'org',
-    repo: 'monorepo',
-    branch: 'main',
-    path: 'packages/core/src',
-    depth: 2,
-  }]
-});
-```
-
-### Paginated results
-
-```typescript
-const result = await githubViewRepoStructure({
-  queries: [{
-    mainResearchGoal: 'View large directory',
-    researchGoal: 'Get second page',
-    reasoning: 'Directory has many files',
-    owner: 'microsoft',
-    repo: 'TypeScript',
-    branch: 'main',
-    path: 'src/compiler',
-    entryPageNumber: 2,
-    entriesPerPage: 100,
-  }]
-});
 ```
 
 ## Exploration Workflow
@@ -166,15 +72,6 @@ const result = await githubViewRepoStructure({
 4. Search or read             → Find specific code
 ```
 
-## Tips
-
-- **Start at root** with `path: ""` and `depth: 1`
-- **depth=2 is slow** on large directories - use on subdirs
-- **Monorepos**: Check `packages/`, `apps/`, `libs/`
-- **Auto-filters noisy dirs**: `.git`, `node_modules`, `dist` excluded
-- **Max 200 items**: Check `summary.truncated` if results cut off
-- **Use branch NAME**: `"main"`, not commit SHA
-
 ## Common Paths to Explore
 
 | Project Type | Key Paths |
@@ -185,15 +82,24 @@ const result = await githubViewRepoStructure({
 | API | `src/routes/`, `src/controllers/` |
 | CLI | `src/commands/`, `bin/` |
 
+## Tips
+
+- **Start at root** with `path=""` and `depth=1`
+- **depth=2 is slow** on large directories - use on subdirs
+- **Monorepos**: Check `packages/`, `apps/`, `libs/`
+- **Auto-filters noisy dirs**: `.git`, `node_modules`, `dist` excluded
+- **Max 200 items**: Check `summary.truncated` if results cut off
+- **Use branch NAME**: `main`, not commit SHA
+
 ## Next Steps
 
 After viewing structure:
-- [`githubSearchCode`](./githubSearchCode.md) - Search in discovered dirs
-- [`githubGetFileContent`](./githubGetFileContent.md) - Read discovered files
-- [`githubSearchPullRequests`](./githubSearchPullRequests.md) - Find changes
+- [`/github/search`](./githubSearchCode.md) - Search in discovered dirs
+- [`/github/content`](./githubGetFileContent.md) - Read discovered files
+- [`/github/prs`](./githubSearchPullRequests.md) - Find changes
 
-## Related Functions
+## Related Endpoints
 
-- [`githubSearchRepositories`](./githubSearchRepositories.md) - Find repos first
-- [`githubSearchCode`](./githubSearchCode.md) - Search code
-- [`githubGetFileContent`](./githubGetFileContent.md) - Read files
+- [`/github/repos`](./githubSearchRepositories.md) - Find repos first
+- [`/github/search`](./githubSearchCode.md) - Search code
+- [`/github/content`](./githubGetFileContent.md) - Read files

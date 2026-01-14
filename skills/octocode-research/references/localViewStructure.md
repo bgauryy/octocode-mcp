@@ -2,185 +2,92 @@
 
 View directory tree structure.
 
-## Import
+**Endpoint**: `GET /local/structure`
 
-```typescript
-import { localViewStructure } from 'octocode-research';
+> **Server runs locally** on user's machine. All paths are local filesystem paths.
+
+## HTTP API Examples
+
+```bash
+# Basic structure view (start here)
+curl "http://localhost:1987/local/structure?path=/project&depth=1"
+
+# Drill into source directory
+curl "http://localhost:1987/local/structure?path=/project/src&depth=2"
+
+# Files only, sorted by time
+curl "http://localhost:1987/local/structure?path=/project/src&filesOnly=true&sortBy=time&reverse=true"
+
+# Filter by extension
+curl "http://localhost:1987/local/structure?path=/project/src&extensions=ts,tsx&filesOnly=true"
+
+# Directories only
+curl "http://localhost:1987/local/structure?path=/project&directoriesOnly=true&depth=2"
+
+# Paginated results
+curl "http://localhost:1987/local/structure?path=/project/src&entryPageNumber=2&entriesPerPage=20"
 ```
 
-## Input Type
+## Query Parameters
 
-```typescript
-interface ViewStructureQuery {
-  // Required
-  path: string;                 // Directory to explore
-  
-  // Research context
-  researchGoal?: string;
-  reasoning?: string;
-  
-  // Display options
-  depth?: number;               // Default: 1, max: 5
-  filesOnly?: boolean;
-  directoriesOnly?: boolean;
-  hidden?: boolean;             // Include hidden files
-  recursive?: boolean;
-  
-  // Sorting
-  sortBy?: 'name' | 'size' | 'time' | 'extension';
-  reverse?: boolean;
-  
-  // Filtering
-  extension?: string;           // Single extension
-  extensions?: string[];        // Multiple extensions
-  pattern?: string;             // Name pattern
-  
-  // Pagination
-  entriesPerPage?: number;      // Default: 20, max: 20
-  entryPageNumber?: number;     // Default: 1
-  limit?: number;               // Max: 10000
-  
-  // Output
-  details?: boolean;            // Include size, time
-  humanReadable?: boolean;      // Default: true
-  summary?: boolean;            // Default: true
-  showFileLastModified?: boolean;
-  
-  // Character pagination
-  charOffset?: number;
-  charLength?: number;          // Max: 10000
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | ✅ | Directory to explore |
+| `depth` | number | | Default: 1, max: 5 |
+| `filesOnly` | boolean | | Show only files |
+| `directoriesOnly` | boolean | | Show only directories |
+| `hidden` | boolean | | Include hidden files |
+| `recursive` | boolean | | Recursive listing |
+| `sortBy` | string | | `name`, `size`, `time`, `extension` |
+| `reverse` | boolean | | Reverse sort order |
+| `extension` | string | | Single extension filter |
+| `extensions` | string | | Multiple extensions: `ts,tsx` |
+| `pattern` | string | | Name pattern |
+| `entriesPerPage` | number | | Default: 20, max: 20 |
+| `entryPageNumber` | number | | Default: 1 |
+| `details` | boolean | | Include size, time |
+| `summary` | boolean | | Default: true |
+
+## Response Structure
+
+```json
+{
+  "status": "hasResults",
+  "path": "/project/src",
+  "totalFiles": 42,
+  "totalDirectories": 12,
+  "structuredOutput": "[DIR]  auth/\n[DIR]  api/\n[FILE] index.ts (2.5KB)\n...",
+  "entries": [
+    { "name": "auth", "type": "dir" },
+    { "name": "api", "type": "dir" },
+    { "name": "index.ts", "type": "file", "size": 2560 }
+  ],
+  "pagination": {
+    "currentPage": 1,
+    "totalPages": 3,
+    "hasMore": true
+  }
 }
 ```
 
-## Output Type
+## Exploration Workflow
 
-```typescript
-interface ViewStructureResult {
-  status: 'hasResults' | 'empty' | 'error';
-  path?: string;
-  entries?: Array<{
-    name: string;
-    type: 'file' | 'dir';
-    size?: number;
-    modified?: string;
-  }>;
-  totalFiles?: number;
-  totalDirectories?: number;
-  structuredOutput?: string;    // Formatted tree output
-  pagination?: {
-    currentPage: number;
-    totalPages: number;
-    hasMore: boolean;
-  };
-  hints?: string[];
-}
 ```
-
-## Examples
-
-### Basic structure view
-
-```typescript
-import { localViewStructure } from 'octocode-research';
-
-const result = await localViewStructure({
-  queries: [{
-    path: '/project/src',
-    depth: 1,
-  }]
-});
-```
-
-### Deep exploration
-
-```typescript
-const result = await localViewStructure({
-  queries: [{
-    path: '/project/src',
-    depth: 3,
-    filesOnly: true,
-  }]
-});
-```
-
-### Sort by modification time
-
-```typescript
-const result = await localViewStructure({
-  queries: [{
-    path: '/project/src',
-    sortBy: 'time',
-    reverse: true,  // Most recent first
-  }]
-});
-```
-
-### Filter by extension
-
-```typescript
-const result = await localViewStructure({
-  queries: [{
-    path: '/project/src',
-    extensions: ['ts', 'tsx'],
-    filesOnly: true,
-  }]
-});
-```
-
-### Directories only
-
-```typescript
-const result = await localViewStructure({
-  queries: [{
-    path: '/project',
-    directoriesOnly: true,
-    depth: 2,
-  }]
-});
-```
-
-### Include hidden files
-
-```typescript
-const result = await localViewStructure({
-  queries: [{
-    path: '/project',
-    hidden: true,
-    depth: 1,
-  }]
-});
-```
-
-### Paginated results
-
-```typescript
-const result = await localViewStructure({
-  queries: [{
-    path: '/project/src',
-    entryPageNumber: 2,
-    entriesPerPage: 20,
-  }]
-});
+1. View root (path="/project", depth=1)    → Get overview
+2. Identify key directories                 → Look for src/, lib/, packages/
+3. Drill (path="/project/src", depth=2)    → Explore source
+4. Use /local/search                        → Find specific code
 ```
 
 ## Tips
 
-- **Start at root with `depth: 1`**: Get overview before drilling deeper
-- **Use `depth: 2` on subdirs**: Faster than deep recursion from root
-- **Filter noisy dirs**: `.git`, `node_modules`, `dist` are auto-filtered
+- **Start at root with `depth=1`**: Get overview before drilling deeper
+- **Use `depth=2` on subdirs**: Faster than deep recursion from root
+- **Noisy dirs auto-filtered**: `.git`, `node_modules`, `dist` are excluded
 - **Max 200 items**: Check `pagination.hasMore` if results are truncated
 
-## Workflow
+## Related Endpoints
 
-```
-1. View root (depth=1)
-2. Identify key directories
-3. Drill into specific subdirs (depth=2)
-4. Use localSearchCode to find patterns
-```
-
-## Related Functions
-
-- [`localFindFiles`](./localFindFiles.md) - Find files by metadata
-- [`localSearchCode`](./localSearchCode.md) - Search file contents
-- [`localGetFileContent`](./localGetFileContent.md) - Read files
+- [`/local/find`](./localFindFiles.md) - Find files by metadata
+- [`/local/search`](./localSearchCode.md) - Search file contents
+- [`/local/content`](./localGetFileContent.md) - Read files

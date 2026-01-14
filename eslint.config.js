@@ -14,6 +14,8 @@ export default tseslint.config(
       '**/*.js',
       '**/*.d.ts',
       '**/examples/**',
+      // Skills have their own eslint configs
+      'skills/**',
     ],
   },
 

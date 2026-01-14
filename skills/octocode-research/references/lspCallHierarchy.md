@@ -2,16 +2,30 @@
 
 Trace function call relationships using LSP (Language Server Protocol).
 
-## Import
+**Endpoint**: `GET /lsp/calls`
 
-```typescript
-import { lspCallHierarchy } from 'octocode-research';
+> **Server runs locally** on user's machine with LSP support for TypeScript/JavaScript.
+
+## HTTP API Examples
+
+```bash
+# Find incoming calls (who calls this)
+curl "http://localhost:1987/lsp/calls?uri=/project/src/api.ts&symbolName=processRequest&lineHint=50&direction=incoming"
+
+# Find outgoing calls (what this calls)
+curl "http://localhost:1987/lsp/calls?uri=/project/src/api.ts&symbolName=processRequest&lineHint=50&direction=outgoing"
+
+# Deeper call chain
+curl "http://localhost:1987/lsp/calls?uri=/project/src/auth.ts&symbolName=authenticate&lineHint=20&direction=incoming&depth=2"
+
+# With more context
+curl "http://localhost:1987/lsp/calls?uri=/project/src/service.ts&symbolName=handleRequest&lineHint=35&direction=outgoing&contextLines=5"
 ```
 
 ## ⚠️ Critical Requirements
 
-1. **Requires `lineHint`** from `localSearchCode` results!
-2. **Only works for functions/methods** - For types/variables, use [`lspFindReferences`](./lspFindReferences.md)
+1. **Requires `lineHint`** from `/local/search` results!
+2. **Only works for functions/methods** - For types/variables, use [`/lsp/references`](./lspFindReferences.md)
 
 ## Direction
 
@@ -20,223 +34,95 @@ import { lspCallHierarchy } from 'octocode-research';
 | `incoming` | "Who calls this function?" | Functions that call the target |
 | `outgoing` | "What does this function call?" | Functions called by the target |
 
-## Input Type
+## Query Parameters
 
-```typescript
-interface LSPCallHierarchyQuery {
-  // Required
-  uri: string;                  // File path
-  symbolName: string;           // Function/method name
-  lineHint: number;             // From search results! (1-indexed)
-  direction: 'incoming' | 'outgoing';  // Call direction
-  
-  // Research context
-  researchGoal?: string;
-  reasoning?: string;
-  
-  // Options
-  depth?: number;               // Recursion depth (default: 1, max: 3)
-  contextLines?: number;        // Context around calls (default: 2, max: 10)
-  orderHint?: number;           // Which occurrence (0-indexed)
-  
-  // Pagination
-  page?: number;                // Default: 1
-  callsPerPage?: number;        // Default: 15, max: 30
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `uri` | string | ✅ | File path |
+| `symbolName` | string | ✅ | Function/method name |
+| `lineHint` | number | ✅ | From search results! (1-indexed) |
+| `direction` | string | ✅ | `incoming` or `outgoing` |
+| `depth` | number | | Recursion depth (default: 1, max: 3) |
+| `contextLines` | number | | Context around calls (default: 2, max: 10) |
+| `orderHint` | number | | Which occurrence (0-indexed) |
+| `page` | number | | Default: 1 |
+| `callsPerPage` | number | | Default: 15, max: 30 |
+
+## Response Structure
+
+```json
+{
+  "status": "hasResults",
+  "direction": "incoming",
+  "depth": 1,
+  "item": {
+    "name": "processRequest",
+    "kind": "function",
+    "uri": "/project/src/api.ts",
+    "range": { "start": { "line": 50 }, "end": { "line": 75 } },
+    "content": "async function processRequest(req) {...}"
+  },
+  "incomingCalls": [
+    {
+      "from": {
+        "name": "handleRoute",
+        "uri": "/project/src/router.ts",
+        "range": { "start": { "line": 20 } }
+      },
+      "fromRanges": [{ "start": { "line": 25 } }]
+    }
+  ]
 }
-```
-
-## Output Type
-
-```typescript
-interface CallHierarchyResult {
-  status: 'hasResults' | 'empty' | 'error';
-  error?: string;
-  errorType?: LSPErrorType;
-  hints?: string[];
-  researchGoal?: string;
-  reasoning?: string;
-  direction?: 'incoming' | 'outgoing';
-  depth?: number;
-  item?: {
-    name: string;
-    kind: SymbolKind;
-    uri: string;
-    range: LSPRange;
-    selectionRange: LSPRange;
-    content?: string;
-    displayRange?: {
-      startLine: number;
-      endLine: number;
-    };
-  };
-  incomingCalls?: Array<{
-    from: CallHierarchyItem;
-    fromRanges: LSPRange[];
-  }>;
-  outgoingCalls?: Array<{
-    to: CallHierarchyItem;
-    fromRanges: LSPRange[];
-  }>;
-  pagination?: {
-    currentPage: number;
-    totalPages: number;
-    totalResults: number;
-    hasMore: boolean;
-    resultsPerPage: number;
-  };
-}
-
-type LSPErrorType = 
-  | 'symbol_not_found' 
-  | 'file_not_found' 
-  | 'not_a_function'  // Symbol is not a function!
-  | 'timeout' 
-  | 'parse_error' 
-  | 'unknown';
-```
-
-## Examples
-
-### Find incoming calls (who calls this)
-
-```typescript
-import { lspCallHierarchy } from 'octocode-research';
-
-const result = await lspCallHierarchy({
-  queries: [{
-    uri: '/project/src/api.ts',
-    symbolName: 'processRequest',
-    lineHint: 50,
-    direction: 'incoming',
-  }]
-});
-```
-
-### Find outgoing calls (what this calls)
-
-```typescript
-const result = await lspCallHierarchy({
-  queries: [{
-    uri: '/project/src/api.ts',
-    symbolName: 'processRequest',
-    lineHint: 50,
-    direction: 'outgoing',
-  }]
-});
-```
-
-### Deeper call chain
-
-```typescript
-const result = await lspCallHierarchy({
-  queries: [{
-    uri: '/project/src/auth.ts',
-    symbolName: 'authenticate',
-    lineHint: 20,
-    direction: 'incoming',
-    depth: 2,  // Follow 2 levels up the call chain
-  }]
-});
-```
-
-### With more context
-
-```typescript
-const result = await lspCallHierarchy({
-  queries: [{
-    uri: '/project/src/service.ts',
-    symbolName: 'handleRequest',
-    lineHint: 35,
-    direction: 'outgoing',
-    contextLines: 5,
-  }]
-});
 ```
 
 ## Full Workflow Example
 
-```typescript
-import { localSearchCode, lspCallHierarchy } from 'octocode-research';
+```bash
+# Step 1: Search for the function
+curl "http://localhost:1987/local/search?pattern=async%20function%20processRequest&path=/project/src"
+# Found at line 50 in /project/src/api.ts
 
-// Step 1: Search for the function
-const search = await localSearchCode({
-  queries: [{
-    pattern: 'async function processRequest',
-    path: '/project/src',
-  }]
-});
-// Found at line 50 in /project/src/api.ts
+# Step 2: Find who calls this function (parallel with step 3)
+curl "http://localhost:1987/lsp/calls?uri=/project/src/api.ts&symbolName=processRequest&lineHint=50&direction=incoming"
 
-// Step 2: Find who calls this function
-const incoming = await lspCallHierarchy({
-  queries: [{
-    uri: '/project/src/api.ts',
-    symbolName: 'processRequest',
-    lineHint: 50,
-    direction: 'incoming',
-  }]
-});
+# Step 3: Find what this function calls (parallel with step 2)
+curl "http://localhost:1987/lsp/calls?uri=/project/src/api.ts&symbolName=processRequest&lineHint=50&direction=outgoing"
 
-// Step 3: Find what this function calls
-const outgoing = await lspCallHierarchy({
-  queries: [{
-    uri: '/project/src/api.ts',
-    symbolName: 'processRequest',
-    lineHint: 50,
-    direction: 'outgoing',
-  }]
-});
-
-// Step 4: Chain - follow a caller
-if (incoming.incomingCalls?.[0]) {
-  const caller = incoming.incomingCalls[0].from;
-  const callerChain = await lspCallHierarchy({
-    queries: [{
-      uri: caller.uri,
-      symbolName: caller.name,
-      lineHint: caller.range.start.line + 1,  // Convert to 1-indexed
-      direction: 'incoming',
-    }]
-  });
-}
+# Step 4: Chain - follow a caller (use line from step 2 results)
+curl "http://localhost:1987/lsp/calls?uri=/project/src/router.ts&symbolName=handleRoute&lineHint=20&direction=incoming"
 ```
-
-## Tips
-
-- **Use `depth: 1` and chain manually**: Faster than `depth: 3` for large codebases
-- **Check `errorType: 'not_a_function'`**: Symbol must be a function/method
-- **For types/interfaces**: Use `lspFindReferences` instead
-- **Follow the chain**: Use results to make subsequent calls
 
 ## Common Error: `not_a_function`
 
-```typescript
-// This will fail - Config is a type, not a function
-const result = await lspCallHierarchy({
-  queries: [{
-    uri: '/project/src/types.ts',
-    symbolName: 'Config',  // Type, not function!
-    lineHint: 5,
-    direction: 'incoming',
-  }]
-});
-// Error: not_a_function
+```bash
+# This will fail - Config is a type, not a function
+curl "http://localhost:1987/lsp/calls?uri=/project/src/types.ts&symbolName=Config&lineHint=5&direction=incoming"
+# Error: not_a_function
 
-// Use lspFindReferences instead for types
+# Use /lsp/references instead for types:
+curl "http://localhost:1987/lsp/references?uri=/project/src/types.ts&symbolName=Config&lineHint=5"
 ```
 
-## lspCallHierarchy vs lspFindReferences
+## /lsp/calls vs /lsp/references
 
 | Use Case | Tool |
 |----------|------|
-| "Who calls function X?" | `lspCallHierarchy(incoming)` |
-| "What does function X call?" | `lspCallHierarchy(outgoing)` |
-| "All usages of type X?" | `lspFindReferences` |
-| "All usages of variable X?" | `lspFindReferences` |
+| "Who calls function X?" | `/lsp/calls` (incoming) |
+| "What does function X call?" | `/lsp/calls` (outgoing) |
+| "All usages of type X?" | `/lsp/references` |
+| "All usages of variable X?" | `/lsp/references` |
 | "All usages of function X?" | Either (references gives more, hierarchy gives direction) |
 
-## Related Functions
+## Tips
 
-- [`localSearchCode`](./localSearchCode.md) - Search to get lineHint
-- [`lspGotoDefinition`](./lspGotoDefinition.md) - Jump to definition
-- [`lspFindReferences`](./lspFindReferences.md) - Find all usages (types, variables)
+- **Use `depth=1` and chain manually**: Faster than `depth=3` for large codebases
+- **Check `errorType: 'not_a_function'`**: Symbol must be a function/method
+- **For types/interfaces**: Use `/lsp/references` instead
+- **Follow the chain**: Use results to make subsequent calls
+- **Run parallel calls**: Incoming AND outgoing can run simultaneously
+
+## Related Endpoints
+
+- [`/local/search`](./localSearchCode.md) - Search to get lineHint
+- [`/lsp/definition`](./lspGotoDefinition.md) - Jump to definition
+- [`/lsp/references`](./lspFindReferences.md) - Find all usages (types, variables)
