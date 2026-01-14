@@ -1,155 +1,139 @@
-# Octocode Research Skill
+# Octocode Research
 
-Code research and discovery for local and remote codebases using Octocode tools.
+**Code research HTTP server for AI agents** - Search, navigate, and understand codebases locally and on GitHub.
 
-## Installation
+[![Server](https://img.shields.io/badge/server-localhost:1987-blue)]()
+[![License](https://img.shields.io/badge/license-PolyForm--Small--Business-green)]()
+
+---
+
+## What It Does
+
+| Capability | Description |
+|------------|-------------|
+| **Local Code Search** | Ripgrep-powered search across your codebase |
+| **LSP Navigation** | Go-to-definition, find references, call hierarchy |
+| **GitHub Exploration** | Search code, repos, PRs across GitHub |
+| **Package Discovery** | Search npm and PyPI registries |
+
+> Runs **locally** on your machine at `http://localhost:1987`. Direct filesystem access + GitHub API.
+
+---
+
+## Quick Start
 
 ```bash
-npm install octocode-research
+# Install and start
+./install.sh start
+
+# Verify running
+curl http://localhost:1987/health
+# {"status":"ok","port":1987,"version":"2.0.0"}
 ```
 
-## Direct Function Calls
+---
 
-All 13 tools are available as library functions. Import and call directly:
+## Example Usage
 
-### Local Tools (no auth required)
-
-```typescript
-import { localSearchCode, localViewStructure, localFindFiles, localGetFileContent } from 'octocode-research';
-
-// Search code patterns
-const search = await localSearchCode({
-  queries: [{ pattern: 'export function', path: './src' }]
-});
-
-// View directory structure
-const structure = await localViewStructure({
-  queries: [{ path: '/project', depth: 2 }]
-});
-
-// Find files by name/metadata
-const files = await localFindFiles({
-  queries: [{ path: './src', name: '*.ts', type: 'f' }]
-});
-
-// Read file content
-const content = await localGetFileContent({
-  queries: [{ path: './src/index.ts', matchString: 'export', matchStringContextLines: 10 }]
-});
+### Search Local Code
+```bash
+curl "http://localhost:1987/local/search?pattern=authenticate&path=/my/project/src"
 ```
 
-### LSP Tools (semantic code analysis)
-
-```typescript
-import { lspGotoDefinition, lspFindReferences, lspCallHierarchy } from 'octocode-research';
-
-// Go to definition (lineHint required from search!)
-const def = await lspGotoDefinition({
-  queries: [{ uri: './src/index.ts', symbolName: 'myFunction', lineHint: 10 }]
-});
-
-// Find all references
-const refs = await lspFindReferences({
-  queries: [{ uri: './src/types.ts', symbolName: 'UserConfig', lineHint: 5 }]
-});
-
-// Trace call hierarchy
-const calls = await lspCallHierarchy({
-  queries: [{ uri: './src/service.ts', symbolName: 'processRequest', lineHint: 42, direction: 'incoming' }]
-});
+### Trace Call Flow (LSP)
+```bash
+# Find who calls a function
+curl "http://localhost:1987/lsp/calls?uri=/project/src/auth.ts&symbolName=login&lineHint=42&direction=incoming"
 ```
 
-### GitHub Tools (requires token initialization)
-
-```typescript
-import { initialize, githubSearchCode, githubSearchRepositories, githubViewRepoStructure, githubGetFileContent, githubSearchPullRequests } from 'octocode-research';
-
-await initialize(); // Required first!
-
-// Search code across GitHub
-const code = await githubSearchCode({
-  queries: [{
-    mainResearchGoal: 'Research', researchGoal: 'Find hooks', reasoning: 'Learning',
-    keywordsToSearch: ['useState'], owner: 'facebook', repo: 'react',
-  }]
-});
-
-// Search repositories
-const repos = await githubSearchRepositories({
-  queries: [{
-    mainResearchGoal: 'Research', researchGoal: 'Find CLIs', reasoning: 'Discovery',
-    topicsToSearch: ['typescript', 'cli'], stars: '>1000',
-  }]
-});
-
-// View repository structure
-const struct = await githubViewRepoStructure({
-  queries: [{
-    mainResearchGoal: 'Explore', researchGoal: 'View packages', reasoning: 'Navigation',
-    owner: 'facebook', repo: 'react', branch: 'main', path: 'packages',
-  }]
-});
-
-// Read file from GitHub
-const file = await githubGetFileContent({
-  queries: [{
-    mainResearchGoal: 'Read', researchGoal: 'Get README', reasoning: 'Documentation',
-    owner: 'facebook', repo: 'react', path: 'README.md', fullContent: true,
-  }]
-});
-
-// Search pull requests
-const prs = await githubSearchPullRequests({
-  queries: [{
-    mainResearchGoal: 'History', researchGoal: 'Find hooks PRs', reasoning: 'Archaeology',
-    owner: 'facebook', repo: 'react', query: 'hooks', state: 'closed', merged: true,
-  }]
-});
+### Search GitHub
+```bash
+curl "http://localhost:1987/github/search?keywordsToSearch=middleware,express&language=typescript"
 ```
+
+### Find npm Package Source
+```bash
+curl "http://localhost:1987/package/search?name=lodash&ecosystem=npm"
+```
+
+---
+
+## API Endpoints
+
+### Local Tools
+| Endpoint | Description |
+|----------|-------------|
+| `GET /local/search` | Search code patterns (ripgrep) |
+| `GET /local/content` | Read file content |
+| `GET /local/structure` | View directory tree |
+| `GET /local/find` | Find files by metadata |
+
+### LSP Tools
+| Endpoint | Description |
+|----------|-------------|
+| `GET /lsp/definition` | Jump to symbol definition |
+| `GET /lsp/references` | Find all usages |
+| `GET /lsp/calls` | Call hierarchy (incoming/outgoing) |
+
+### GitHub Tools
+| Endpoint | Description |
+|----------|-------------|
+| `GET /github/search` | Search code across repos |
+| `GET /github/content` | Read file from repo |
+| `GET /github/structure` | View repo file tree |
+| `GET /github/repos` | Search repositories |
+| `GET /github/prs` | Search pull requests |
 
 ### Package Tools
+| Endpoint | Description |
+|----------|-------------|
+| `GET /package/search` | Search npm/PyPI packages |
 
-```typescript
-import { packageSearch } from 'octocode-research';
+---
 
-// Search npm packages
-const npm = await packageSearch({
-  queries: [{
-    mainResearchGoal: 'Find package', researchGoal: 'Get express', reasoning: 'Source',
-    name: 'express', ecosystem: 'npm',
-  }]
-});
+## Server Management
 
-// Search Python packages
-const pypi = await packageSearch({
-  queries: [{
-    mainResearchGoal: 'Find package', researchGoal: 'Get requests', reasoning: 'Source',
-    name: 'requests', ecosystem: 'python',
-  }]
-});
+```bash
+./install.sh start     # Start server
+./install.sh stop      # Stop server
+./install.sh restart   # Restart server
+./install.sh status    # Check if running
+./install.sh logs      # View logs
 ```
 
-## Available Tools
+---
 
-| Category | Tool | Purpose |
-|----------|------|---------|
-| **Local** | `localSearchCode` | Search code patterns in local directories |
-| | `localViewStructure` | View directory tree structure |
-| | `localFindFiles` | Find files by name, type, or metadata |
-| | `localGetFileContent` | Read file content with targeting |
-| **LSP** | `lspGotoDefinition` | Jump to symbol definition |
-| | `lspFindReferences` | Find all references to a symbol |
-| | `lspCallHierarchy` | Trace function call relationships |
-| **GitHub** | `githubSearchCode` | Search code across GitHub repositories |
-| | `githubSearchRepositories` | Find GitHub repositories |
-| | `githubViewRepoStructure` | Explore repository directory structure |
-| | `githubGetFileContent` | Read file content from GitHub |
-| | `githubSearchPullRequests` | Search and analyze pull requests |
-| **Package** | `packageSearch` | Search npm and PyPI packages |
+## Logs
+
+Server logs to `~/.octocode/logs/`:
+
+| File | Contents |
+|------|----------|
+| `tools.log` | All API calls with timing |
+| `errors.log` | Errors and validation failures |
+
+---
 
 ## Documentation
 
-See [SKILL.md](./SKILL.md) for complete tool documentation and research workflows.
+| Document | Purpose |
+|----------|---------|
+| [SKILL.md](./SKILL.md) | Agent integration guide, research flows, decision trees |
+| [references/](./references/) | Detailed API documentation per endpoint |
+
+---
+
+## For AI Agents
+
+This server is designed for AI agent integration. See [SKILL.md](./SKILL.md) for:
+
+- Research flow patterns (Local vs External)
+- Task tool integration with Claude Code
+- Required parameters (`mainResearchGoal`, `researchGoal`, `reasoning`)
+- Output protocols and document templates
+- Decision trees for tool selection
+
+---
 
 ## License
 

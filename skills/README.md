@@ -6,12 +6,13 @@ Pre-built Claude Code skills for enhanced AI-assisted research and development.
 
 | Skill | Description | Flow |
 |-------|-------------|------|
-| `octocode-research` | Research code in local and remote repositories using library functions | INSTALL → IMPORT → CALL |
-| `octocode-local-search` | Local codebase exploration & search | DISCOVER → PLAN → EXECUTE → VERIFY → OUTPUT |
-| `octocode-implement` | Implement features from spec documents (context/doc required) | SPEC → SPEC_VALIDATE → CONTEXT → PLAN → RESEARCH → IMPLEMENT → VALIDATE |
-| `octocode-plan` | Adaptive research & implementation planning with evidence-based execution | UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY |
-| `octocode-pr-review` | PR review for bugs, security & quality (requires PR URL) | CONTEXT → CHECKPOINT → ANALYSIS → FINALIZE → REPORT |
-| `octocode-roast` | Brutally honest roasts of your code with fixes | TARGET → OBLITERATE → INVENTORY → AUTOPSY → RESURRECT |
+| `octocode-research` | Evidence-first code forensics (local & GitHub) | PREPARE → DISCOVER → ANALYZE → OUTPUT |
+| `octocode-implement` | Research-driven feature implementation from specs | SPEC → CONTEXT → PLAN → RESEARCH → IMPLEMENT → VALIDATE |
+| `octocode-plan` | Adaptive research & implementation planning | UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY |
+| `octocode-pr-review` | Defects-first PR review across 6+ domains | CONTEXT → CHECKPOINT → ANALYSIS → FINALIZE → REPORT |
+| `octocode-roast` | Brutally honest code review with comedic flair | SCOPE → ROAST → INVENTORY → SPOTLIGHT → REDEMPTION |
+
+> **Note**: `octocode-local-search` is available via `octocode skills install` from the CLI package.
 
 ## Installation
 
@@ -39,34 +40,15 @@ cp -r skills/octocode-* .claude/skills/
 
 ### octocode-research
 
-**Use when**: Searching code, exploring codebases, finding definitions, tracing call hierarchies, or analyzing GitHub repos. Trigger phrases: "find where", "search for", "how is X used", "what calls", "explore the codebase", "look up package".
+**Use when**: Answering questions about codebases, implementations, dependencies, or bugs. Researching code across local workspace AND GitHub repositories.
 
 Features:
-- **Library functions** (not MCP tools) - import and call directly
-- Local tools: `localSearchCode`, `localGetFileContent`, `localFindFiles`, `localViewStructure`
-- LSP tools: `lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`
-- GitHub tools: `githubSearchCode`, `githubGetFileContent`, `githubSearchRepositories`, `githubViewRepoStructure`, `githubSearchPullRequests`
-- Package tools: `packageSearch` (npm/PyPI)
-- CLI scripts in `scripts/` folder for quick usage
-
-Installation:
-```bash
-cd skills/octocode-research
-./install.sh
-```
-
-### octocode-local-search
-
-**Use when**: Exploring unfamiliar codebases, searching for patterns locally, understanding project structure, finding implementations in your workspace.
-
-Features:
-- Local-only focus (no GitHub tools)
-- Structured discovery with `localViewStructure`, `localSearchCode`, `localFindFiles`, `localGetFileContent`
-- LSP semantic intelligence: `lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`
-- Interactive planning with user checkpoints
+- Local-first strategy (prefer local tools over shell commands)
+- GitHub code forensics across repositories
+- Cross-domain transitions (Local ↔ GitHub)
 - node_modules inspection with `noIgnore=true`
-- Token-efficient workflows with discovery mode
-- Multi-agent parallelization for independent research domains
+- Multi-agent parallelization for independent hypotheses
+- Validation pattern: Discover → Verify → Cross-check → Confirm
 
 ### octocode-implement
 
@@ -75,8 +57,7 @@ Features:
 Features:
 - Reads and parses task specifications from MD files
 - Deep codebase research before writing code
-- Delegates to `octocode-local-search` for local workspace search & LSP
-- Delegates to `octocode-research` for external GitHub research
+- LSP tools for semantic code intelligence (`lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`)
 - Pattern discovery to follow existing codebase conventions
 - Impact analysis before modifying code
 - Test-driven implementation with validation gates
@@ -91,15 +72,15 @@ Core Principle: "Read 10x more than you write. Measure twice, cut once."
 
 Features:
 - Adaptive execution flow: UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY
-- Research orchestration - delegates to specialized skills
+- Evidence-based coding with pattern validation from high-quality repos
+- Interactive mode with user checkpoints at key decision points
 - Goal classification (RESEARCH_ONLY, ANALYSIS, CREATION, FEATURE, BUG, REFACTOR)
 - Research synthesis with confidence levels
 - Plan approval gates before implementation
-- Research-to-Plan traceability (every step references evidence)
 - Multi-agent parallelization for independent research domains
 - Structured output to `.octocode/plan/{session-name}/`
 
-Core Principle: "Research Before Code. Synthesize Evidence into Plans. Follow the Plan. Green Build Required."
+Core Principle: "Research Before Code. Verify Patterns. Follow the Plan. Green Build Required."
 
 ### octocode-pr-review
 
@@ -114,23 +95,16 @@ Domain Reviewers:
 - 🚨 Error Handling (swallowed exceptions, poor diagnostics)
 - 🔄 Flow Impact (breaking changes, altered data paths)
 
-Features:
-- Uses both GitHub tools and local LSP for impact analysis
-- Focus ONLY on changed code ('+' prefix in diffs)
-- Cites precisely with file:line references
-
 ### octocode-roast
 
 **Use when**: You want entertainment with your code review, finding antipatterns, or humorous feedback.
 
 Features:
-- Three Laws: Cite or Die, Punch the Code Not the Coder, Wait for Consent
-- Sin severity classification with precise citations
-- Triage mode for 20+ sins (pick top 10)
+- Sin severity classification (FELONY → WAR CRIME → PARKING TICKET)
+- Personalized zingers based on actual patterns found
+- Multiple roast personas (Gordon Ramsay, Disappointed Dad, Tech Bro, Israeli Sabra, etc.)
 - User checkpoint before fixes (Redemption Arc)
 - Actionable fixes with before/after
-
-Tone: Battle-hardened staff engineer + tech Twitter energy + Gordon Ramsay reviewing frozen pizza
 
 ## Skill Structure
 

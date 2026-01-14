@@ -2,229 +2,107 @@
 
 Search npm and PyPI packages to find repository URLs.
 
-## Import
+**Endpoint**: `GET /package/search`
 
-```typescript
-import { packageSearch } from 'octocode-research';
+> **Server runs locally** on user's machine. Package registry API calls are made from the local server.
+
+## HTTP API Examples
+
+```bash
+# Look up npm package
+curl "http://localhost:1987/package/search?ecosystem=npm&name=express"
+
+# Look up Python package
+curl "http://localhost:1987/package/search?ecosystem=python&name=requests"
+
+# Find alternatives (multiple results)
+curl "http://localhost:1987/package/search?ecosystem=npm&name=lodash&searchLimit=5"
+
+# With detailed metadata
+curl "http://localhost:1987/package/search?ecosystem=npm&name=axios&npmFetchMetadata=true"
 ```
 
 ## Use Case
 
 **Find package → get repository URL → explore source code**.
 
-This is often the first step when researching external packages.
+This is often the **first step** when researching external packages.
 
-## Input Type
+## Query Parameters
 
-```typescript
-// NPM package query
-interface NpmPackageSearchQuery {
-  name: string;                 // Package name
-  ecosystem: 'npm';
-  
-  // Research context (required)
-  mainResearchGoal: string;
-  researchGoal: string;
-  reasoning: string;
-  
-  // Options
-  searchLimit?: number;         // Default: 1, max: 10 (use 5 for alternatives)
-  npmFetchMetadata?: boolean;   // Fetch detailed npm metadata
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | ✅ | Package name |
+| `ecosystem` | string | ✅ | `npm` or `python` |
+| `mainResearchGoal` | string | ✅ | Overall objective |
+| `researchGoal` | string | ✅ | Specific goal |
+| `reasoning` | string | ✅ | Why this approach |
+| `searchLimit` | number | | Default: 1, max: 10 (use 5 for alternatives) |
+| `npmFetchMetadata` | boolean | | Fetch detailed npm metadata |
+| `pythonFetchMetadata` | boolean | | Fetch detailed PyPI metadata |
+
+## Response Structure
+
+```json
+{
+  "status": "hasResults",
+  "packages": [
+    {
+      "name": "express",
+      "version": "4.18.2",
+      "description": "Fast, unopinionated, minimalist web framework",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/expressjs/express"
+      },
+      "homepage": "http://expressjs.com/",
+      "license": "MIT",
+      "deprecated": false,
+      "keywords": ["express", "web", "server"],
+      "author": "TJ Holowaychuk",
+      "maintainers": ["dougwilson", "wesleytodd"]
+    }
+  ]
 }
-
-// Python package query
-interface PythonPackageSearchQuery {
-  name: string;                 // Package name
-  ecosystem: 'python';
-  
-  // Research context (required)
-  mainResearchGoal: string;
-  researchGoal: string;
-  reasoning: string;
-  
-  // Options
-  searchLimit?: number;
-  pythonFetchMetadata?: boolean;  // Fetch detailed PyPI metadata
-}
-
-type PackageSearchQuery = NpmPackageSearchQuery | PythonPackageSearchQuery;
-```
-
-## Output Type
-
-```typescript
-interface PackageSearchResult {
-  status?: 'hasResults' | 'empty' | 'error';
-  packages?: Array<{
-    name: string;
-    version?: string;
-    description?: string;
-    repository?: {
-      type: string;
-      url: string;              // Use this for source exploration!
-    };
-    homepage?: string;
-    license?: string;
-    deprecated?: boolean;       // Check this!
-    deprecationMessage?: string;
-    keywords?: string[];
-    author?: string;
-    maintainers?: string[];
-  }>;
-  hints?: string[];
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-  error?: string;
-}
-```
-
-## Examples
-
-### Look up npm package
-
-```typescript
-import { packageSearch } from 'octocode-research';
-
-const result = await packageSearch({
-  queries: [{
-    name: 'express',
-    ecosystem: 'npm',
-    mainResearchGoal: 'Research Express.js',
-    researchGoal: 'Get repository URL',
-    reasoning: 'Need to explore source code',
-  }]
-});
-
-// Result includes:
-// repository.url: "https://github.com/expressjs/express"
-```
-
-### Look up Python package
-
-```typescript
-const result = await packageSearch({
-  queries: [{
-    name: 'requests',
-    ecosystem: 'python',
-    mainResearchGoal: 'Research HTTP client',
-    researchGoal: 'Evaluate requests library',
-    reasoning: 'Comparing HTTP clients',
-  }]
-});
-```
-
-### Find alternatives
-
-```typescript
-const result = await packageSearch({
-  queries: [{
-    name: 'lodash',
-    ecosystem: 'npm',
-    mainResearchGoal: 'Find utility libraries',
-    researchGoal: 'Discover lodash alternatives',
-    reasoning: 'Evaluating bundle size',
-    searchLimit: 5,  // Get multiple results
-  }]
-});
-```
-
-### With detailed metadata
-
-```typescript
-const result = await packageSearch({
-  queries: [{
-    name: 'axios',
-    ecosystem: 'npm',
-    mainResearchGoal: 'Research HTTP clients',
-    researchGoal: 'Get axios details',
-    reasoning: 'Evaluating for project',
-    npmFetchMetadata: true,  // Include extra metadata
-  }]
-});
 ```
 
 ## Workflow: Package to Source
 
-```typescript
-import { 
-  packageSearch, 
-  githubViewRepoStructure, 
-  githubSearchCode,
-  githubGetFileContent 
-} from 'octocode-research';
+```bash
+# Step 1: Find package info
+curl "http://localhost:1987/package/search?ecosystem=npm&name=lodash"
+# Response: repository.url = "https://github.com/lodash/lodash"
+# Extract: owner=lodash, repo=lodash
 
-// Step 1: Find package info
-const pkg = await packageSearch({
-  queries: [{
-    name: 'lodash',
-    ecosystem: 'npm',
-    mainResearchGoal: 'Research lodash',
-    researchGoal: 'Get repo URL',
-    reasoning: 'Need source access',
-  }]
-});
-// Extract: repository.url → github.com/lodash/lodash
+# Step 2: Explore structure
+curl "http://localhost:1987/github/structure?owner=lodash&repo=lodash&branch=main&path=&depth=1"
 
-// Step 2: Explore structure
-const structure = await githubViewRepoStructure({
-  queries: [{
-    mainResearchGoal: 'Understand lodash',
-    researchGoal: 'View project structure',
-    reasoning: 'Finding implementation files',
-    owner: 'lodash',
-    repo: 'lodash',
-    branch: 'main',
-    path: '',
-    depth: 1,
-  }]
-});
+# Step 3: Search implementation
+curl "http://localhost:1987/github/search?keywordsToSearch=debounce&owner=lodash&repo=lodash"
 
-// Step 3: Search implementation
-const code = await githubSearchCode({
-  queries: [{
-    mainResearchGoal: 'Find lodash implementation',
-    researchGoal: 'Search for debounce',
-    reasoning: 'Understanding debounce impl',
-    keywordsToSearch: ['debounce'],
-    owner: 'lodash',
-    repo: 'lodash',
-  }]
-});
-
-// Step 4: Read specific file
-const content = await githubGetFileContent({
-  queries: [{
-    mainResearchGoal: 'Read implementation',
-    researchGoal: 'Get debounce code',
-    reasoning: 'Studying implementation',
-    owner: 'lodash',
-    repo: 'lodash',
-    path: 'debounce.js',
-    fullContent: true,
-  }]
-});
+# Step 4: Read specific file
+curl "http://localhost:1987/github/content?owner=lodash&repo=lodash&path=debounce.js&fullContent=true"
 ```
+
+## /package/search vs /github/repos
+
+| Use Case | Tool |
+|----------|------|
+| Known package name | `/package/search` (faster) |
+| Discover by topic | `/github/repos` |
+| Find org repos | `/github/repos` |
 
 ## Tips
 
 - **Check `deprecated` first**: Avoid deprecated packages
-- **`searchLimit: 1` for known name**: Fastest lookup
-- **`searchLimit: 5` for alternatives**: Compare options
+- **`searchLimit=1` for known name**: Fastest lookup
+- **`searchLimit=5` for alternatives**: Compare options
 - **Python returns 1 result**: PyPI API limitation
 - **NPM uses dashes, Python uses underscores**: `my-package` vs `my_package`
 - **Repository URL may need parsing**: Extract owner/repo from URL
 
-## packageSearch vs githubSearchRepositories
+## Related Endpoints
 
-| Use Case | Tool |
-|----------|------|
-| Known package name | `packageSearch` (faster) |
-| Discover by topic | `githubSearchRepositories` |
-| Find org repos | `githubSearchRepositories` |
-
-## Related Functions
-
-- [`githubViewRepoStructure`](./githubViewRepoStructure.md) - Explore package source
-- [`githubSearchCode`](./githubSearchCode.md) - Search package code
-- [`githubGetFileContent`](./githubGetFileContent.md) - Read package source
+- [`/github/structure`](./githubViewRepoStructure.md) - Explore package source
+- [`/github/search`](./githubSearchCode.md) - Search package code
+- [`/github/content`](./githubGetFileContent.md) - Read package source
