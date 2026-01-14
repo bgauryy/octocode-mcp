@@ -24,10 +24,73 @@ LOG_FILE="$TMP_DIR/octocode-research.log"
 # Cross-platform: HOME (Linux/Mac) or USERPROFILE (Windows)
 OCTOCODE_LOGS_DIR="${HOME:-$USERPROFILE}/.octocode/logs"
 
+# Session & Logging configuration
+SESSION_FILE="${HOME:-$USERPROFILE}/.octocode/session.json"
+LOG_ENDPOINT="https://octocode-mcp-host.onrender.com/log"
+SKILL_NAME="octocode-research"
+SKILL_VERSION="1.0.0"
+
 log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_server() { echo -e "${CYAN}[SERVER]${NC} $1"; }
+
+# Get or create session ID (compatible with octocode-mcp session format)
+get_or_create_session_id() {
+    local octocode_dir="${HOME:-$USERPROFILE}/.octocode"
+    
+    # Ensure directory exists
+    mkdir -p "$octocode_dir" 2>/dev/null || true
+    
+    # Check if session file exists and has sessionId
+    if [[ -f "$SESSION_FILE" ]]; then
+        local session_id
+        session_id=$(grep -o '"sessionId"[[:space:]]*:[[:space:]]*"[^"]*"' "$SESSION_FILE" 2>/dev/null | head -1 | sed 's/.*"sessionId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+        if [[ -n "$session_id" ]]; then
+            echo "$session_id"
+            return 0
+        fi
+    fi
+    
+    # Create new session with UUID
+    local new_session_id
+    new_session_id=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$$-$RANDOM")
+    local timestamp
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+    # Create session file (same format as octocode-mcp)
+    cat > "$SESSION_FILE" << EOF
+{
+  "version": 1,
+  "sessionId": "$new_session_id",
+  "createdAt": "$timestamp",
+  "lastActiveAt": "$timestamp",
+  "stats": {
+    "toolCalls": 0,
+    "promptCalls": 0,
+    "errors": 0,
+    "rateLimits": 0
+  }
+}
+EOF
+    chmod 600 "$SESSION_FILE" 2>/dev/null || true
+    echo "$new_session_id"
+}
+
+# Send skill install log (async, non-blocking)
+log_skill_install() {
+    local session_id="$1"
+    local timestamp
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+    # Send log in background (don't block install)
+    curl -s -X POST "$LOG_ENDPOINT" \
+        -H "Content-Type: application/json" \
+        -d "{\"sessionId\": \"$session_id\", \"intent\": \"skill_install\", \"data\": {\"skill_name\": \"$SKILL_NAME\", \"skill_version\": \"$SKILL_VERSION\"}, \"timestamp\": \"$timestamp\", \"version\": \"$SKILL_VERSION\"}" \
+        --connect-timeout 3 \
+        --max-time 5 \
+        > /dev/null 2>&1 &
+}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -162,6 +225,12 @@ start_server() {
             log_server "Health check: http://localhost:$PORT/health"
             echo ""
             log_info "API ready at http://localhost:$PORT"
+            
+            # Log skill installation (async, non-blocking)
+            local session_id
+            session_id=$(get_or_create_session_id)
+            log_skill_install "$session_id"
+            
             return 0
         fi
         sleep 0.5
@@ -230,6 +299,12 @@ main() {
             if is_our_server_running; then
                 log_info "Server already running on port $PORT"
                 curl -s "http://localhost:$PORT/health" 2>/dev/null || true
+                
+                # Log skill usage even when already running
+                local session_id
+                session_id=$(get_or_create_session_id)
+                log_skill_install "$session_id"
+                
                 exit 0
             fi
             

@@ -1,137 +1,102 @@
-# Octocode Research
+<div align="center">
+  <img src="https://github.com/bgauryy/octocode-mcp/raw/main/packages/octocode-mcp/assets/logo_white.png" width="400px" alt="Octocode Logo">
 
-**Code research HTTP server for AI agents** - Search, navigate, and understand codebases locally and on GitHub.
+  <h1>Octocode Research</h1>
+  
+  **The official way to use Octocode** — A skill for AI agents to search, navigate, and understand codebases.
 
-[![Server](https://img.shields.io/badge/server-localhost:1987-blue)]()
-[![License](https://img.shields.io/badge/license-PolyForm--Small--Business-green)]()
+  [![Skill](https://img.shields.io/badge/skill-agentskills.io-purple)](https://agentskills.io/what-are-skills)
+  [![License](https://img.shields.io/badge/license-PolyForm--Small--Business-green)]()
+
+</div>
+
+---
+
+## What is a Skill?
+
+Skills are reusable AI agent capabilities. Learn more at **[agentskills.io/what-are-skills](https://agentskills.io/what-are-skills)**.
+
+With Octocode Research as a skill:
+- ✅ **No tools or context bloat** — Runs without installing MCP tools into your agent
+- ✅ **Works everywhere** — Any host that supports skills can run Octocode research flows
+- ✅ **GitHub authenticated** — One-time authentication, then use across all compatible hosts
+
+---
+
+## Installation
+
+```bash
+npx octocode-cli
+```
+
+This handles everything:
+- GitHub authentication
+- Skill registration
+
+> The skill runs locally on your machine via a lightweight server that exposes research capabilities to AI agents.
 
 ---
 
 ## What It Does
 
+Octocode Research enables AI agents to perform **deep code research** — both locally and externally.
+
+### Local Research
+Search and navigate your own codebase:
+
 | Capability | Description |
 |------------|-------------|
-| **Local Code Search** | Ripgrep-powered search across your codebase |
+| **Code Search** | Find patterns across files (ripgrep-powered) |
 | **LSP Navigation** | Go-to-definition, find references, call hierarchy |
-| **GitHub Exploration** | Search code, repos, PRs across GitHub |
+| **File Discovery** | Browse structure, find files by metadata |
+
+### External Research
+Explore code across GitHub:
+
+| Capability | Description |
+|------------|-------------|
+| **GitHub Code Search** | Search code across public/private repos |
+| **Repository Exploration** | Browse repo structure and file contents |
+| **PR Research** | Search and analyze pull requests |
 | **Package Discovery** | Search npm and PyPI registries |
 
-> Runs **locally** on your machine at `http://localhost:1987`. Direct filesystem access + GitHub API.
+---
+
+## Why Use This?
+
+| Without Skill | With Octocode Research Skill |
+|---------------|------------------------------|
+| Install MCP tools per host | One installation, works everywhere |
+| Context window bloat from tool definitions | Clean context, tools run server-side |
+| Manual setup per agent | Pre-configured research flows |
+| Limited to basic file reading | LSP-powered semantic navigation |
 
 ---
 
-## Quick Start
+## Troubleshooting
 
+### Check Server Status
 ```bash
-# Install and start
-./install.sh start
-
-# Verify running
-curl http://localhost:1987/health
-# {"status":"ok","port":1987,"version":"2.0.0"}
+npx octocode-cli
+# Select "Skills" → "Status"
 ```
 
----
+### Logs Location
 
-## Example Usage
-
-### Search Local Code
-```bash
-curl "http://localhost:1987/local/search?pattern=authenticate&path=/my/project/src"
-```
-
-### Trace Call Flow (LSP)
-```bash
-# Find who calls a function
-curl "http://localhost:1987/lsp/calls?uri=/project/src/auth.ts&symbolName=login&lineHint=42&direction=incoming"
-```
-
-### Search GitHub
-```bash
-curl "http://localhost:1987/github/search?keywordsToSearch=middleware,express&language=typescript"
-```
-
-### Find npm Package Source
-```bash
-curl "http://localhost:1987/package/search?name=lodash&ecosystem=npm"
-```
-
----
-
-## API Endpoints
-
-### Local Tools
-| Endpoint | Description |
-|----------|-------------|
-| `GET /local/search` | Search code patterns (ripgrep) |
-| `GET /local/content` | Read file content |
-| `GET /local/structure` | View directory tree |
-| `GET /local/find` | Find files by metadata |
-
-### LSP Tools
-| Endpoint | Description |
-|----------|-------------|
-| `GET /lsp/definition` | Jump to symbol definition |
-| `GET /lsp/references` | Find all usages |
-| `GET /lsp/calls` | Call hierarchy (incoming/outgoing) |
-
-### GitHub Tools
-| Endpoint | Description |
-|----------|-------------|
-| `GET /github/search` | Search code across repos |
-| `GET /github/content` | Read file from repo |
-| `GET /github/structure` | View repo file tree |
-| `GET /github/repos` | Search repositories |
-| `GET /github/prs` | Search pull requests |
-
-### Package Tools
-| Endpoint | Description |
-|----------|-------------|
-| `GET /package/search` | Search npm/PyPI packages |
-
----
-
-## Server Management
-
-```bash
-./install.sh start     # Start server
-./install.sh stop      # Stop server
-./install.sh restart   # Restart server
-./install.sh status    # Check if running
-./install.sh logs      # View logs
-```
-
----
-
-## Logs
-
-Server logs to `~/.octocode/logs/`:
+Server logs are stored in `~/.octocode/logs/`:
 
 | File | Contents |
 |------|----------|
 | `tools.log` | All API calls with timing |
 | `errors.log` | Errors and validation failures |
 
----
+```bash
+# View recent logs
+tail -f ~/.octocode/logs/tools.log
 
-## Documentation
-
-| Document | Purpose |
-|----------|---------|
-| [SKILL.md](./SKILL.md) | Agent integration guide, research flows, decision trees |
-| [references/](./references/) | Detailed API documentation per endpoint |
-
----
-
-## For AI Agents
-
-This server is designed for AI agent integration. See [SKILL.md](./SKILL.md) for:
-
-- Research flow patterns (Local vs External)
-- Task tool integration with Claude Code
-- Required parameters (`mainResearchGoal`, `researchGoal`, `reasoning`)
-- Output protocols and document templates
-- Decision trees for tool selection
+# View errors
+cat ~/.octocode/logs/errors.log
+```
 
 ---
 
