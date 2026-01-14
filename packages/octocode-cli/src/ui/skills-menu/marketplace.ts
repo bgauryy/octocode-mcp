@@ -341,7 +341,7 @@ async function showOfficialFlowMenu(
   notInstalledCount: number
 ): Promise<OfficialFlowChoice> {
   console.log();
-  console.log(`  ${bold('Octocode Official Skills')}`);
+  console.log(`  ${bold('🐙 Octocode Skills')}`);
   console.log(`  ${dim(`${totalSkills} skills available`)}`);
   console.log();
 
@@ -560,95 +560,23 @@ export async function runMarketplaceFlow(): Promise<void> {
 }
 
 /**
- * Install all Octocode Official skills that are not yet installed
- * Returns count of skills installed and whether all are now installed
+ * Run Octocode Skills flow - main menu entry point
+ * Installs skills from https://github.com/bgauryy/octocode-mcp/tree/main/skills
  */
-export async function installAllOctocodeSkills(): Promise<{
-  installed: number;
-  alreadyInstalled: number;
-  failed: number;
-  allInstalled: boolean;
-}> {
-  // Find Octocode Official source
-  const source = SKILLS_MARKETPLACES.find(s => s.id === 'octocode-official');
-  if (!source) {
-    return {
-      installed: 0,
-      alreadyInstalled: 0,
-      failed: 0,
-      allInstalled: false,
-    };
-  }
-
-  // Fetch skills
-  let skills: MarketplaceSkill[];
-  try {
-    skills = await fetchMarketplaceSkills(source);
-  } catch {
-    return {
-      installed: 0,
-      alreadyInstalled: 0,
-      failed: 0,
-      allInstalled: false,
-    };
-  }
-
-  if (skills.length === 0) {
-    return { installed: 0, alreadyInstalled: 0, failed: 0, allInstalled: true };
-  }
-
-  const destDir = getSkillsDestDir();
-
-  // Filter to only non-installed skills
-  const skillsToInstall = skills.filter(skill => !isSkillInstalled(skill.name));
-  const alreadyInstalled = skills.length - skillsToInstall.length;
-
-  if (skillsToInstall.length === 0) {
-    return {
-      installed: 0,
-      alreadyInstalled,
-      failed: 0,
-      allInstalled: true,
-    };
-  }
-
-  let installed = 0;
-  let failed = 0;
-
-  for (const skill of skillsToInstall) {
-    const result = await installMarketplaceSkill(skill, destDir);
-    if (result.success) {
-      installed++;
-    } else {
-      failed++;
-    }
-  }
-
-  return {
-    installed,
-    alreadyInstalled,
-    failed,
-    allInstalled: failed === 0,
-  };
-}
-
-/**
- * Run Octocode Official skills browser directly (skip marketplace selection)
- */
-export async function runOctocodeOfficialFlow(): Promise<void> {
-  // Find Octocode Official source
-  const source = SKILLS_MARKETPLACES.find(s => s.id === 'octocode-official');
+export async function runOctocodeSkillsFlow(): Promise<void> {
+  // Find Octocode Skills source
+  const source = SKILLS_MARKETPLACES.find(s => s.id === 'octocode-skills');
   if (!source) {
     console.log();
-    console.log(`  ${c('red', '✗')} Octocode Official source not found`);
+    console.log(`  ${c('red', '✗')} Octocode Skills source not found`);
     console.log();
     await pressEnterToContinue();
     return;
   }
 
-  // Fetch skills
+  // Fetch skills from GitHub
   console.log();
-  const spinner = new Spinner(`Loading ${source.name}...`).start();
+  const spinner = new Spinner(`Loading Octocode Skills...`).start();
 
   let skills: MarketplaceSkill[];
   try {
@@ -673,14 +601,14 @@ export async function runOctocodeOfficialFlow(): Promise<void> {
     return;
   }
 
-  // Calculate not-installed count for the menu
+  // Calculate not-installed count
   const notInstalledCount = skills.filter(
     s => !isSkillInstalled(s.name)
   ).length;
 
   // Show initial menu - Install All or Browse
-  let inOfficialFlow = true;
-  while (inOfficialFlow) {
+  let inFlow = true;
+  while (inFlow) {
     const menuChoice = await showOfficialFlowMenu(
       skills.length,
       notInstalledCount
@@ -689,22 +617,17 @@ export async function runOctocodeOfficialFlow(): Promise<void> {
     switch (menuChoice) {
       case 'install-all':
         await installAllSkills(skills);
-        // After install all, return to skills menu (don't loop back)
-        inOfficialFlow = false;
+        inFlow = false;
         break;
 
       case 'browse': {
-        // Browse skills loop
         let inSkillsBrowser = true;
         while (inSkillsBrowser) {
           const skillChoice = await browseSkills(source, skills);
-
           if (skillChoice === 'back') {
             inSkillsBrowser = false;
             continue;
           }
-
-          // Show skill details
           const detailChoice = await showSkillDetails(skillChoice);
           if (detailChoice === 'install') {
             await installSkill(skillChoice);
@@ -715,7 +638,7 @@ export async function runOctocodeOfficialFlow(): Promise<void> {
 
       case 'back':
       default:
-        inOfficialFlow = false;
+        inFlow = false;
         break;
     }
   }

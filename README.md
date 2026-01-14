@@ -1,7 +1,6 @@
 <div align="center">
   <img src="https://github.com/bgauryy/octocode-mcp/raw/main/packages/octocode-mcp/assets/logo_white.png" width="400px" alt="Octocode Logo">
-
-
+  
   A Model Context Protocol (MCP) server enabling AI assistants to search, analyze, and extract insights from millions of GitHub repositories with enterprise-grade security and token efficiency.
 
   [![MCP Community Server](https://img.shields.io/badge/Model_Context_Protocol-Official_Community_Server-blue?style=flat-square)](https://github.com/modelcontextprotocol/servers)
@@ -37,257 +36,35 @@
 
 ## Table of Contents
 
-- [See It In Action](#see-it-in-action)
-- [Installation](#installation)
-- [Octocode CLI](#octocode-cli)
-- [More Examples](#more-examples)
+- [Quick Start](#quick-start)
 - [Overview](#overview)
-- [Tools](#tools)
+- [GitHub Tools](#github-tools)
+- [Local Tools](#local-tools)
 - [Commands](#commands)
-  - [/research - Expert Code & Product Research](#research---expert-code--product-research)
-  - [/plan - Research, Plan & Implement Complex Tasks](#plan---research-plan--implement-complex-tasks)
-  - [/review_pull_request - Comprehensive PR Review](#review_pull_request---comprehensive-pr-review)
-  - [/review_security - Security Audit](#review_security---security-audit)
+- [Octocode CLI](#octocode-cli)
+- [Installation Guide](#installation-guide)
 - [Documentation](#documentation)
-- [Local Research](#local-research)
-  - [Tools](#tools-1)
-  - [LSP Tools (Code Intelligence)](#lsp-tools-code-intelligence)
-  - [Research Workflows](#research-workflows)
-  - [Use Cases](#use-cases)
+- [Examples](#examples)
 - [Community](#community)
 - [License](#license)
 
 ---
 
-## See It In Action
+## Quick Start
 
-### Full-Stack Application Built in Under 10 Minutes
-
-Watch AI assistant use Octocode to research, plan, and build a complete chat application with Express backend.
-
-**Prompt:**
-
-> **Use Octocode MCP for Deep Research**
->
-> I want to build an application with chat (front-end) that shows a chat window to the user.
-> The user enters a prompt in the chat, and the application sends the prompt to an Express backend that uses AI to process the request.
->
-> Add a return box (to show the message returned from the AI) and loaders to the UI.
-> I want to build an AI agent system in Node.js using LangChain and LangGraph. Can you research the latest patterns?
->
-> Please conduct thorough research on how to create this in the best way possible.
-> Focus on repositories with good documentation and recent activity.
->
-> - Do a deep research
-> - Create a plan document
-> - Initiate the plan and create the application
-
-**Phase 1: Research & Planning**
-
-https://github.com/user-attachments/assets/4225ab98-ae2f-46dc-b3ce-7d117e552b8c
-
-[Octocode Plan Document](https://gist.github.com/bgauryy/06504671c0d5fef727fe22c492e054d6) - Detailed architecture and step-by-step guide
-
-**Phase 2: Implementation**
-
-https://github.com/user-attachments/assets/2aaee9f1-3592-438a-a633-255b5cbbb8e1
-
-**Result**: Production-ready full-stack application with authentication, real-time features, and best practices - **All in less than 10 minutes**
-
----
-
-### Research and Build Fullstack Agentic Application with /research command in Under 10 Minutes
-
-**Why use the `/research` command?** Instead of manually searching through repositories and piecing together information, let the AI conduct comprehensive research for you:
-
-- **🎯 Intelligent Tool Orchestration**: Automatically selects and combines the right Octocode tools (repository search, code search, file content, PR analysis, repo structure) based on your research needs
-- **🧠 Smart Decision Making**: Makes strategic choices throughout the research flow—when to search broadly vs. specifically, which repositories to explore, and how to validate findings
-- **👥 Multi-Purpose Research**: Perfect for feature discovery (product managers), code understanding (developers), bug investigation, flow analysis, planning from scratch, dependency tracking, security audits, and more
-- **🔬 Specialized Workflows**: Handles Technical Research (code flows), Product Research (docs+code validation), Pattern Analysis (cross-repo comparison), Bug Investigation, Architecture Mapping, API Research, Security/Auth flows, and more
-- **🔍 Transparent Reasoning**: Shows you exactly which tools it's using, what it's searching for, and why at each step
-- **🎨 Adaptive Strategy**: Works across public repos, private organizations, and specific repositories with configurable depth (overview, deep dive, or cross-repo comparison)
-- **📊 Cross-Validated Results**: Leverages multiple Octocode tools to verify information from different sources and perspectives
-- **🚀 Actionable Insights**: Delivers implementation-ready plans with code examples, not just raw information
-
-**Prompt:**
-
-> /octocode/research How can I use LangChain, LangGraph, and similar open-source AI tools to create agentic 
-> flows between agents for goal-oriented tasks?
-> Can you suggest UI frameworks I can use to build a full-stack AI application?
-
-https://github.com/user-attachments/assets/82ed97ae-57a9-46ae-9acd-828a509e711b
-
----
-
-### Discover APIs, Frameworks, and Dive Into Internal Implementation Details
-
-Octocode excels at both **broad discovery** and **deep code analysis**. Whether you're exploring new APIs, finding frameworks, or understanding how popular libraries work under the hood, Octocode provides comprehensive answers in seconds.
-
-**First Prompt - Broad Discovery:**
-
-> list top repositories for:
->
-> - Stock market APIs (Typescript)
-> - Cursor rules examples
-> - UI for AI
-> - Mobile development using React
-> - State management for React
-
-**What happens:** Octocode searches across GitHub to find the most popular and well-maintained repositories for each category, analyzing stars, activity, documentation quality, and recent updates. You get curated lists with context about each repository's strengths.
-
-**Second Prompt - Deep Implementation Analysis:**
-
-> How React implemented useState under the hood?
-
-**What happens:** Octocode dives into React's source code, traces the implementation flow, analyzes the relevant files (ReactHooks.js, ReactFiberHooks.js), and explains the internal mechanics including fiber architecture, hook state management, and dispatcher patterns—all with code references and detailed explanations.
-
-**The Power:** Move seamlessly from **discovering what exists** to **understanding how it works** in a single conversation. No manual repository hunting or code spelunking required.
-
-https://github.com/user-attachments/assets/c184d5d4-c9b6-40a1-a55a-41cb9b3ecc4f
-
----
-
-## Installation
-
-### 🚀 Octocode CLI (Recommended)
-
-**The easiest way to install Octocode MCP, skills, and other MCP servers.**
+### Option 1: Octocode CLI (Recommended)
 
 ```bash
 npx octocode-cli
 ```
+→ Interactive menu for GitHub auth, MCP installation, and AI skills
 
-The interactive CLI will:
-- ✅ Auto-detect your IDEs (Cursor, VS Code, Claude Desktop, etc.)
-- ✅ Install and configure Octocode MCP with one click
-- ✅ Set up GitHub authentication
-- ✅ Optionally install AI skills and other MCP servers
-
-**[Learn more about Octocode CLI →](#octocode-cli)**
-
----
-
-### Standalone Binary (No Node.js Required)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/install/install.sh | sh
-```
-
-**[Full Binary Installation Guide →](./docs/BINARY_INSTALLATION.md)** — Manual downloads, MCP configs, troubleshooting
-
----
-
-### npm / npx (Requires Node.js)
-
-#### Prerequisites
-
-- **Node.js** >= 18.12.0
-- **GitHub Authentication** (choose one):
-  - **GitHub CLI (recommended)**: Install from [cli.github.com](https://cli.github.com/) and run `gh auth login`
-  - **Personal Access Token**: Create at [github.com/settings/tokens](https://github.com/settings/tokens) with scopes: `repo`, `read:user`, `read:org`
-
-### Getting started
-
-First, install the Octocode MCP server with your client.
-
-**Standard config** works in most of the tools:
-
-```js
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": [
-        "octocode-mcp@latest"
-      ]
-    }
-  }
-}
-```
-
-> **Note**: This configuration uses GitHub CLI authentication. For Personal Access Token, see the [Authentication Guide](#authentication-methods) below.
-
-[<img src="https://img.shields.io/badge/VS_Code-VS_Code?style=flat-square&label=Install%20Server&color=0098FF" alt="Install in VS Code">](https://insiders.vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522octocode%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522octocode-mcp%2540latest%255D%257D) [<img alt="Install in VS Code Insiders" src="https://img.shields.io/badge/VS_Code_Insiders-VS_Code_Insiders?style=flat-square&label=Install%20Server&color=24bfa5">](https://insiders.vscode.dev/redirect?url=vscode-insiders%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522octocode%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522octocode-mcp%2540latest%255D%257D)
-
-<details>
-<summary>Amp</summary>
-
-Add via the Amp VS Code extension settings screen or by updating your settings.json file:
-
-```json
-"amp.mcpServers": {
-  "octocode": {
-    "command": "npx",
-    "args": [
-      "octocode-mcp@latest"
-    ]
-  }
-}
-```
-
-**Amp CLI Setup:**
-
-Add via the `amp mcp add` command below:
-
-```bash
-amp mcp add octocode -- npx octocode-mcp@latest
-```
-
-</details>
-
-<details>
-<summary>Claude Code</summary>
-
-Use the Claude Code CLI to add the Octocode MCP server:
-
-```bash
-claude mcp add octocode npx octocode-mcp@latest
-```
-
-</details>
-
-<details>
-<summary>Claude Desktop</summary>
-
-Follow the MCP install [guide](https://modelcontextprotocol.io/quickstart/user), use the standard config above.
-
-</details>
-
-<details>
-<summary>Codex</summary>
-
-Use the Codex CLI to add the Octocode MCP server:
-
-```bash
-codex mcp add octocode npx "octocode-mcp@latest"
-```
-
-Alternatively, create or edit the configuration file `~/.codex/config.toml` and add:
-
-```toml
-[mcp_servers.octocode]
-command = "npx"
-args = ["octocode-mcp@latest"]
-```
-
-For more information, see the [Codex MCP documentation](https://github.com/openai/codex/blob/main/codex-rs/config.md#mcp_servers).
-
-</details>
-
-<details>
-<summary>Cursor</summary>
-
-#### Click the button to install:
+### Option 2: One-Click Install
 
 [<img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor">](https://cursor.com/en/install-mcp?name=octocode&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJvY3RvY29kZS1tY3BAbGF0ZXN0Il19)
+[<img src="https://img.shields.io/badge/VS_Code-VS_Code?style=flat-square&label=Install%20Server&color=0098FF" alt="Install in VS Code">](https://insiders.vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522octocode%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522octocode-mcp%2540latest%255D%257D)
 
-#### Or install manually:
-
-Go to `Cursor Settings` -> `MCP` -> `Add new MCP Server`. Name to your liking, use `command` type with the command `npx octocode-mcp@latest`. You can also verify config or add command like arguments via clicking `Edit`.
-
-#### Project-Specific Configuration
-
-Create `.cursor/mcp.json` in your project root:
+### Option 3: Manual Configuration
 
 ```json
 {
@@ -300,189 +77,295 @@ Create `.cursor/mcp.json` in your project root:
 }
 ```
 
-</details>
-
-<details>
-<summary>Cline</summary>
-
-Add via the Cline VS Code extension settings or by updating your `cline_mcp_settings.json` file:
-
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": [
-        "octocode-mcp@latest"
-      ]
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary>Gemini CLI</summary>
-
-Follow the MCP install [guide](https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md#configure-the-mcp-server-in-settingsjson), use the standard config above.
-
-</details>
-
-<details>
-<summary>Goose</summary>
-
-#### Click the button to install:
-
-[![Install in Goose](https://block.github.io/goose/img/extension-install-dark.svg)](https://block.github.io/goose/extension?cmd=npx&arg=octocode-mcp%40latest&id=octocode&name=Octocode&description=Intelligent%20code%20research%20and%20GitHub%20repository%20analysis)
-
-#### Or install manually:
-
-Go to `Advanced settings` -> `Extensions` -> `Add custom extension`. Name to your liking, use type `STDIO`, and set the `command` to `npx octocode-mcp@latest`. Click "Add Extension".
-
-</details>
-
-<details>
-<summary>Kiro</summary>
-
-Follow the MCP Servers [documentation](https://kiro.dev/docs/mcp/). For example in `.kiro/settings/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": [
-        "octocode-mcp@latest"
-      ]
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary>LM Studio</summary>
-
-#### Click the button to install:
-
-[![Add MCP Server octocode to LM Studio](https://files.lmstudio.ai/deeplink/mcp-install-light.svg)](https://lmstudio.ai/install-mcp?name=octocode&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJvY3RvY29kZS1tY3BAbGF0ZXN0Il19)
-
-#### Or install manually:
-
-Go to `Program` in the right sidebar -> `Install` -> `Edit mcp.json`. Use the standard config above.
-
-</details>
-
-<details>
-<summary>opencode</summary>
-
-Follow the MCP Servers [documentation](https://opencode.ai/docs/mcp-servers/). For example in `~/.config/opencode/opencode.json`:
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "octocode": {
-      "type": "local",
-      "command": [
-        "npx",
-        "octocode-mcp@latest"
-      ],
-      "enabled": true
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary>Qodo Gen</summary>
-
-Open [Qodo Gen](https://docs.qodo.ai/qodo-documentation/qodo-gen) chat panel in VSCode or IntelliJ → Connect more tools → + Add new MCP → Paste the standard config above.
-
-Click <code>Save</code>.
-
-</details>
-
-<details>
-<summary>VS Code</summary>
-
-#### Click the button to install:
-
-[<img src="https://img.shields.io/badge/VS_Code-VS_Code?style=flat-square&label=Install%20Server&color=0098FF" alt="Install in VS Code">](https://insiders.vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522octocode%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522octocode-mcp%2540latest%255D%257D) [<img alt="Install in VS Code Insiders" src="https://img.shields.io/badge/VS_Code_Insiders-VS_Code_Insiders?style=flat-square&label=Install%20Server&color=24bfa5">](https://insiders.vscode.dev/redirect?url=vscode-insiders%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522octocode%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522octocode-mcp%2540latest%255D%257D)
-
-#### Or install manually:
-
-Follow the MCP install [guide](https://code.visualstudio.com/docs/copilot/chat/mcp-servers#_add-an-mcp-server), use the standard config above. You can also install the Octocode MCP server using the VS Code CLI:
+### Option 4: Standalone Binary (No Node.js)
 
 ```bash
-# For VS Code
-code --add-mcp '{"name":"octocode","command":"npx","args":["octocode-mcp@latest"]}'
+curl -fsSL https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/install/install.sh | sh
 ```
 
-After installation, the Octocode MCP server will be available for use with your GitHub Copilot agent in VS Code.
-
-</details>
-
-<details>
-<summary>Warp</summary>
-
-Go to `Settings` -> `AI` -> `Manage MCP Servers` -> `+ Add` to [add an MCP Server](https://docs.warp.dev/knowledge-and-collaboration/mcp#adding-an-mcp-server). Use the standard config above.
-
-Alternatively, use the slash command `/add-mcp` in the Warp prompt and paste the standard config from above:
-
-```js
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": [
-        "octocode-mcp@latest"
-      ]
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary>Windsurf</summary>
-
-Follow Windsurf MCP [documentation](https://docs.windsurf.com/windsurf/cascade/mcp). Use the standard config above.
-
-</details>
-
-<details>
-<summary>Zed</summary>
-
-Follow the MCP Servers [documentation](https://zed.dev/docs/assistant/model-context-protocol). Use the standard config above.
-
-</details>
+> **Prerequisites**: [GitHub CLI](https://cli.github.com/) (`gh auth login`) or [Personal Access Token](https://github.com/settings/tokens)
+> 
+> See [Installation Guide](#installation-guide) for IDE-specific setup and authentication options.
 
 ---
 
+## Overview
+
+Octocode is an **agentic code research platform** that bridges the gap between AI assistants and real-world code implementations. By providing structured access to GitHub's vast repository ecosystem, it enables AI systems to learn from production codebases rather than relying solely on training data.
+
+### Core Capabilities
+
+| Capability | Implementation | Benefit |
+|------------|----------------|---------|
+| **Code Discovery** | Multi-dimensional search across repositories, code, and pull requests | Find relevant implementations in seconds |
+| **Context Extraction** | Smart content retrieval with pattern matching and line-range targeting | Get exactly the context you need |
+| **Token Optimization** | Advanced minification strategies (50+ language support) | 30-70% reduction in token consumption |
+| **Security** | Automatic secrets detection and content sanitization | Enterprise-grade data protection |
+| **Progressive Research** | Workflow-driven exploration (Discover → Explore → Analyze) | Deep understanding of complex systems |
+| **Access Control** | GitHub permission-based access to public and private repositories | Organization-wide code research |
+
+### Packages
+
+| Package | npm | Description |
+|---------|-----|-------------|
+| **[octocode-mcp](./packages/octocode-mcp)** | [![npm](https://img.shields.io/npm/v/octocode-mcp?color=cb3837)](https://www.npmjs.com/package/octocode-mcp) | Core MCP server: GitHub API, local filesystem tools, LSP code intelligence |
+| **[octocode-cli](./packages/octocode-cli)** | [![npm](https://img.shields.io/npm/v/octocode-cli?color=cb3837)](https://www.npmjs.com/package/octocode-cli) | Interactive CLI for IDE setup, skills marketplace, MCP management |
+| **[octocode-vscode](./packages/octocode-vscode)** | [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=octocode.octocode-vscode) | VS Code extension for OAuth and multi-editor sync |
+| **[octocode-shared](./packages/octocode-shared)** | Internal | Shared utilities for credentials and session management |
+
+---
+
+## GitHub Tools
+
+Five specialized tools for comprehensive GitHub code research:
+
+### 🔍 githubSearchCode
+
+**Find code implementations across repositories**
+
+| Feature | Description |
+|---------|-------------|
+| Content Search | Find code inside files by keywords (AND logic) |
+| Path Search | Discover files/directories by name (25x faster) |
+| Smart Filtering | Scope by repository, path, file extension, or popularity |
+| Context-Rich Results | Returns code snippets with surrounding context |
+
+```
+• "How do popular repos implement OAuth?"
+• "Search for React custom hooks in vercel repos"
+• "Find error handling patterns in Express apps"
+```
+
+### 📚 githubSearchRepositories
+
+**Discover repositories by topics and keywords**
+
+| Feature | Description |
+|---------|-------------|
+| Topic-Based Discovery | Search by exact GitHub topics (most precise) |
+| Keyword Search | Find repos by name, description, or README content |
+| Quality Filters | Filter by stars, language, size, activity |
+
+```
+• "Discover TypeScript CLI tools with >1000 stars"
+• "Find all React state management libraries"
+• "List all repos from microsoft with topic 'ai'"
+```
+
+### 🗂️ githubViewRepoStructure
+
+**Explore repository directory structure**
+
+| Feature | Description |
+|---------|-------------|
+| Directory Tree | Visual representation of folder structure |
+| Depth Control | Explore 1 level (overview) or 2 levels (detailed) |
+| Path Targeting | Navigate directly to specific directories |
+
+```
+• "Show me the structure of facebook/react"
+• "Explore src/ directory in a monorepo"
+```
+
+### 📄 githubGetFileContent
+
+**Read file contents with smart extraction**
+
+| Feature | Description |
+|---------|-------------|
+| Pattern Matching | Extract sections matching specific patterns with context |
+| Line Range Reading | Read specific line ranges for efficiency |
+| Content Minification | Automatic optimization for token efficiency |
+
+```
+• "Get the validateUser function from auth.ts"
+• "Read lines 100-150 from the API handler"
+```
+
+### 🔀 githubSearchPullRequests
+
+**Analyze pull requests, changes, and discussions**
+
+| Feature | Description |
+|---------|-------------|
+| PR Discovery | Search by state, author, labels, dates |
+| Direct Access | Fetch specific PR by number (10x faster) |
+| Code Diffs | Include full diff content to see what changed |
+| Discussions | Access comment threads and review discussions |
+
+```
+• "Show recent merged PRs about authentication"
+• "Find PRs discussing the API redesign with comments"
+```
+
+---
+
+## Local Tools
+
+**Octocode Local** provides local filesystem research with LSP-powered code intelligence.
+
+<p align="center">
+  <a href="https://cursor.com/en/install-mcp?name=octocode-local&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJvY3RvY29kZS1tY3AtbG9jYWxAbGF0ZXN0Il19"><img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor"></a>
+</p>
+
+```json
+{
+  "mcpServers": {
+    "octocode-local": {
+      "command": "npx",
+      "args": ["octocode-mcp-local@latest"]
+    }
+  }
+}
+```
+
+### Filesystem Tools
+
+| Tool | Description | Example |
+|------|-------------|---------|
+| 📁 **localViewStructure** | Explore directory structure with depth control | "Show src/ with depth 2" |
+| 🔍 **localSearchCode** | Fast pattern search (ripgrep-powered) | "Search for 'useAuth' in TypeScript files" |
+| 📂 **localFindFiles** | Find files by metadata (name, time, size) | "Find files modified in the last 7 days" |
+| 📄 **localGetFileContent** | Read files with smart extraction | "Show the validateUser function" |
+
+### LSP Tools (Code Intelligence)
+
+| Tool | Description | Example |
+|------|-------------|---------|
+| 🎯 **lspGotoDefinition** | Navigate to symbol definitions | "Go to the definition of handleSubmit" |
+| 🔗 **lspFindReferences** | Find all usages of a symbol | "Find all references to validateToken" |
+| 🌳 **lspCallHierarchy** | Trace function call relationships | "Who calls the authenticate function?" |
+
+### Research Workflows
+
+```
+Discovery:    localViewStructure → localSearchCode → localGetFileContent
+Semantic:     localSearchCode → lspGotoDefinition → lspFindReferences
+Flow Analysis: localSearchCode → lspCallHierarchy(incoming) → lspCallHierarchy(outgoing)
+```
+
+👉 **[Full LSP Documentation →](./packages/octocode-mcp/docs/LSP_TOOLS.md)**
+
+---
+
+## Commands
+
+Intelligent prompt commands that enhance your research workflow:
+
+### `/research` - Expert Code & Product Research
+
+Deep code discovery, documentation analysis, pattern identification, and bug investigation.
+
+**When to use**:
+- Understanding repository workflows and technical implementations
+- Cross-repository flow analysis and microservices tracing
+- Bug investigation and root cause analysis
+- Pattern discovery across multiple repos
+
+```
+/research How does React's useState hook work internally?
+/research Compare state management approaches: Redux vs Zustand vs Jotai
+/research Why is the payment webhook failing? Trace the error through payment-service
+```
+
+### `/plan` - Research, Plan & Implement Complex Tasks
+
+Your AI architect for complex development work. Breaks down tasks, researches patterns, guides execution.
+
+**When to use**:
+- Building new features with research-backed architecture
+- Complex refactoring with migration planning
+- Learning new technologies incrementally
+
+```
+/plan Build a real-time chat application with WebSocket support
+/plan Migrate our authentication from JWT to OAuth2
+/plan Implement a plugin system for our CLI tool
+```
+
+### `/review_pull_request` - Comprehensive PR Review
+
+**Args:** `prUrl` (required) - GitHub Pull Request URL
+
+Expert-level PR review with Defects-First mindset. Analyzes:
+- **Defects & Bugs**: Logic errors, edge cases, race conditions
+- **Security Issues**: Injection vulnerabilities, auth bypasses
+- **Performance**: N+1 queries, memory leaks
+- **Code Quality**: Complexity, maintainability, test coverage
+
+```
+/review_pull_request prUrl: https://github.com/facebook/react/pull/12345
+```
+
+### `/review_security` - Security Audit
+
+**Args:** `repoUrl` (required) - GitHub repository URL
+
+Comprehensive security analysis. Analyzes:
+- **Authentication & Authorization**: Auth flows, session management
+- **Input Validation**: Injection points, sanitization
+- **Secrets Management**: Hardcoded credentials, API keys
+- **Dependencies**: Known vulnerabilities, supply chain risks
+
+```
+/review_security repoUrl: https://github.com/your-org/your-repo
+```
+
+> **💡 Pro Tip**: Combine `/research` and `/plan` — research existing patterns first, then plan your implementation.
+
+---
+
+## Octocode CLI
+
+**One-command setup for Octocode, MCP servers, and AI skills across all your IDEs.**
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/packages/octocode-cli/assets/example.png" alt="Octocode CLI" width="600" />
+</p>
+
+```bash
+npx octocode-cli@latest
+```
+
+| Feature | Description |
+|---------|-------------|
+| **Multi-IDE Support** | Cursor, VS Code, Claude Desktop, Windsurf, and more |
+| **Skills Marketplace** | 7+ community sources with 170+ skills |
+| **MCP Registry** | 50+ curated MCP servers ready to install |
+| **GitHub Auth** | Browser-based OAuth or GitHub CLI integration |
+
+```
+🐙 Octocode MCP        - Install/sync Octocode across IDEs
+🧠 Manage System Skills - Browse marketplace, install & manage skills  
+⚡ Manage System MCP    - Add popular MCP servers to your setup
+```
+
+**Learn More**: [CLI Documentation](./packages/octocode-cli/README.md) | [What are Skills?](https://agentskills.io/what-are-skills)
+
+---
+
+## Installation Guide
+
+### Prerequisites
+
+- **Node.js** >= 18.12.0 (or use [standalone binary](#standalone-binary))
+- **GitHub Authentication**: [GitHub CLI](https://cli.github.com/) (recommended) or [Personal Access Token](https://github.com/settings/tokens)
+
 ### Authentication Methods
 
-Octocode MCP supports two authentication methods:
-
-#### Option 1: GitHub CLI (Recommended)
+<details>
+<summary><strong>GitHub CLI (Recommended)</strong></summary>
 
 **Advantages**: Automatic token management, works with 2FA, supports SSO
 
 ```bash
-# Install GitHub CLI
 # macOS
 brew install gh
 
 # Windows
 winget install --id GitHub.cli
 
-# Linux
-# See https://github.com/cli/cli/blob/trunk/docs/install_linux.md
+# Linux - See https://github.com/cli/cli/blob/trunk/docs/install_linux.md
 
 # Authenticate
 gh auth login
@@ -490,7 +373,10 @@ gh auth login
 
 Then use the standard configuration (no `GITHUB_TOKEN` needed).
 
-#### Option 2: Personal Access Token
+</details>
+
+<details>
+<summary><strong>Personal Access Token</strong></summary>
 
 **When to use**: CI/CD environments, automation, or if GitHub CLI isn't available
 
@@ -512,88 +398,14 @@ Then use the standard configuration (no `GITHUB_TOKEN` needed).
 }
 ```
 
-> **Security Tip**: Never commit tokens to version control. Use environment variables or secure secret management.
+> **Security Tip**: Never commit tokens to version control.
 
----
+</details>
 
-### Verify Installation
+<details>
+<summary><strong>GitHub Enterprise</strong></summary>
 
-After installation, verify Octocode MCP is working:
-
-1. **Restart your MCP client** completely
-2. **Check connection status**:
-   - **Cursor**: Look for green dot in Settings → Tools & Integrations → MCP Tools
-   - **Claude Desktop**: Check for "octocode" in available tools
-   - **VS Code**: Verify in GitHub Copilot settings
-3. **Test with a simple query**:
-   ```
-   Search GitHub for React hooks implementations
-   ```
-
-If you see Octocode tools being used, you're all set! 🎉
-
----
-
-## Octocode CLI
-
-**One-command setup for Octocode, MCP servers, and AI skills across all your IDEs.**
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/packages/octocode-cli/assets/example.png" alt="Octocode CLI" width="600" />
-</p>
-
-The Octocode CLI is an interactive tool that simplifies the installation and management of:
-
-- **🐙 Octocode MCP** - Install and sync across Cursor, VS Code, Claude Desktop, and more
-- **🧠 AI Skills** - Browse marketplace, install bundled skills, manage your skill library
-- **⚡ System MCPs** - Add and configure popular MCP servers from a curated registry
-
-### Quick Install
-
-```bash
-npx octocode@latest
-```
-
-Or install globally:
-
-```bash
-npm install -g octocode
-octocode
-```
-
-### Features
-
-| Feature | Description |
-|---------|-------------|
-| **Multi-IDE Support** | Automatically detects and configures Cursor, VS Code, Claude Desktop, Windsurf, and more |
-| **Skills Marketplace** | Browse 7+ community skill sources with 170+ skills available |
-| **Bundled Skills** | Official Octocode skills for research, planning, PR review, and code generation |
-| **MCP Registry** | 50+ curated MCP servers ready to install with one click |
-| **GitHub Auth** | Quick browser-based OAuth or GitHub CLI integration |
-| **Sync Across IDEs** | Keep your MCP configuration in sync across all supported clients |
-
-### Interactive Menu
-
-```
-🐙 Octocode MCP        - Install/sync Octocode across IDEs
-🧠 Manage System Skills - Browse marketplace, install & manage skills  
-⚡ Manage System MCP    - Add popular MCP servers to your setup
-```
-
-### Learn More
-
-- **[What are Skills?](https://agentskills.io/what-are-skills)** - Learn about Claude Code skills
-- **[CLI Package](./packages/octocode-cli/README.md)** - Full CLI documentation
-
----
-
-## GitHub Enterprise Support
-
-Octocode MCP supports GitHub Enterprise Server instances with custom API URLs.
-
-### Configuration
-
-Add the `GITHUB_API_URL` environment variable to your MCP configuration:
+Add the `GITHUB_API_URL` environment variable:
 
 ```json
 {
@@ -610,470 +422,173 @@ Add the `GITHUB_API_URL` environment variable to your MCP configuration:
 }
 ```
 
-**Default:** If not specified, defaults to `https://api.github.com` (public GitHub).
+</details>
 
-**Note:** Ensure your GitHub Enterprise token has the same scopes as documented in the [Authentication Guide](./docs/AUTH_GUIDE.md).
+### Standalone Binary
 
----
+No Node.js required:
 
-## More Examples
-
-### Additional Demonstrations
-
-#### ThreeJS Implementation Quality Comparison
-
-**[Interactive Demo](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)**
-
-Side-by-side comparison showing:
-- **Generic AI**: Basic implementation with common patterns
-- **Octocode-Enhanced AI**: Production-grade implementation with advanced techniques from real projects
-
-**Key Differences**:
-- Performance optimizations from high-performance projects
-- Proper resource management patterns
-- Industry-standard error handling
-- Real-world edge case handling
-
-#### Deep Technical Research
-
-**[YouTube: React Hooks Internals](https://www.youtube.com/watch?v=BCOpsRjAPU4&t=9s)**
-
-Demonstrates progressive research workflow:
-1. Repository discovery (React source)
-2. Structure exploration (hooks implementation)
-3. Code analysis (internal mechanisms)
-4. Comprehensive explanation with code references
-
----
-
-## Overview
-
-Octocode is an **agentic code research platform** that bridges the gap between AI assistants and real-world code implementations. By providing structured access to GitHub's vast repository ecosystem, it enables AI systems to learn from production codebases rather than relying solely on training data.
-
-### Core Capabilities
-
-| Capability | Implementation | Benefit |
-|------------|----------------|---------|
-| **Code Discovery** | Multi-dimensional search across repositories, code, and pull requests | Find relevant implementations in seconds |
-| **Context Extraction** | Smart content retrieval with pattern matching and line-range targeting | Get exactly the context you need |
-| **Token Optimization** | Advanced minification strategies (50+ language support) | 30-70% reduction in token consumption |
-| **Security** | Automatic secrets detection and content sanitization | Enterprise-grade data protection |
-| **Progressive Research** | Workflow-driven exploration (Discover → Explore → Analyze) | Deep understanding of complex systems |
-| **Access Control** | GitHub permission-based access to public and private repositories | Organization-wide code research |
-
----
-
-## Tools
-
-Octocode provides five specialized research tools designed to work together for comprehensive code analysis:
-
-### 🔍 githubSearchCode
-
-**Find code implementations across repositories**
-
-Search for specific code patterns, functions, or implementations across millions of repositories.
-
-**Key Features**:
-- **Content Search**: Find code inside files by keywords (AND logic)
-- **Path Search**: Discover files/directories by name (25x faster)
-- **Smart Filtering**: Scope by repository, path, file extension, or popularity
-- **Context-Rich Results**: Returns code snippets with surrounding context
-
-**Common Use Cases**:
-```
-• Find implementation examples: "How do popular repos implement OAuth?"
-• Discover patterns: "Search for React custom hooks in vercel repos"
-• Locate functions: "Find error handling patterns in Express apps"
+```bash
+curl -fsSL https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/install/install.sh | sh
 ```
 
----
+**[Full Binary Guide →](./docs/BINARY_INSTALLATION.md)**
 
-### 📚 githubSearchRepositories
+### IDE-Specific Setup
 
-**Discover repositories by topics and keywords**
+<details>
+<summary><strong>Cursor</strong></summary>
 
-Your starting point for repository discovery - find the right projects to analyze.
+**One-click**: [<img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor">](https://cursor.com/en/install-mcp?name=octocode&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJvY3RvY29kZS1tY3BAbGF0ZXN0Il19)
 
-**Key Features**:
-- **Topic-Based Discovery**: Search by exact GitHub topics (most precise)
-- **Keyword Search**: Find repos by name, description, or README content
-- **Quality Filters**: Filter by stars, language, size, activity
-- **Sorting Options**: By popularity, recency, or relevance
+**Manual**: Go to `Cursor Settings` → `MCP` → `Add new MCP Server`. Use command `npx octocode-mcp@latest`.
 
-**Common Use Cases**:
-```
-• Find popular implementations: "Discover TypeScript CLI tools with >1000 stars"
-• Research ecosystems: "Find all React state management libraries"
-• Organization research: "List all repos from microsoft with topic 'ai'"
-```
+**Project-specific**: Create `.cursor/mcp.json` in your project root with the standard config.
 
----
+</details>
 
-### 🗂️ githubViewRepoStructure
+<details>
+<summary><strong>VS Code</strong></summary>
 
-**Explore repository directory structure**
+**One-click**: [<img src="https://img.shields.io/badge/VS_Code-VS_Code?style=flat-square&label=Install%20Server&color=0098FF" alt="Install in VS Code">](https://insiders.vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522octocode%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522octocode-mcp%2540latest%255D%257D)
 
-Understand how a project is organized before diving into specific files.
-
-**Key Features**:
-- **Directory Tree**: Visual representation of folder structure
-- **File Sizes**: See file sizes to identify important components
-- **Depth Control**: Explore 1 level (overview) or 2 levels (detailed)
-- **Path Targeting**: Navigate directly to specific directories
-
-**Common Use Cases**:
-```
-• Project overview: "Show me the structure of facebook/react"
-• Find entry points: "Explore src/ directory in a monorepo"
-• Understand architecture: "Navigate to the API implementation folder"
+**CLI**:
+```bash
+code --add-mcp '{"name":"octocode","command":"npx","args":["octocode-mcp@latest"]}'
 ```
 
----
+</details>
 
-### 📄 githubGetFileContent
+<details>
+<summary><strong>Claude Desktop / Claude Code</strong></summary>
 
-**Read file contents with smart extraction**
-
-Retrieve specific content from files efficiently - full files or targeted sections.
-
-**Key Features**:
-- **Pattern Matching**: Extract sections matching specific patterns with context
-- **Line Range Reading**: Read specific line ranges for efficiency
-- **Full Content Access**: Get entire file when needed
-- **Content Minification**: Automatic optimization for token efficiency
-
-**Common Use Cases**:
-```
-• Read specific functions: "Get the validateUser function from auth.ts"
-• Extract sections: "Show me all the middleware definitions in app.js"
-• Read configuration: "Get the full package.json file"
-• Analyze specific code: "Read lines 100-150 from the API handler"
+**Claude Code CLI**:
+```bash
+claude mcp add octocode npx octocode-mcp@latest
 ```
 
----
+**Claude Desktop**: Follow the [MCP install guide](https://modelcontextprotocol.io/quickstart/user), use the standard config.
 
-### 🔀 githubSearchPullRequests
+</details>
 
-**Analyze pull requests, changes, and discussions**
+<details>
+<summary><strong>Amp</strong></summary>
 
-Understand how code evolved, why decisions were made, and learn from production changes.
-
-**Key Features**:
-- **PR Discovery**: Search by state, author, labels, dates
-- **Direct Access**: Fetch specific PR by number (10x faster)
-- **Code Diffs**: Include full diff content to see what changed
-- **Discussions**: Access comment threads and review discussions
-- **Merged Code**: Filter for production-ready, merged changes
-
-**Common Use Cases**:
-```
-• Learn from changes: "Show recent merged PRs about authentication"
-• Understand decisions: "Find PRs discussing the API redesign with comments"
-• Track implementations: "See how feature X was implemented with diffs"
-• Expert contributions: "Find PRs by @author in the last 6 months"
+**VS Code settings.json**:
+```json
+"amp.mcpServers": {
+  "octocode": {
+    "command": "npx",
+    "args": ["octocode-mcp@latest"]
+  }
+}
 ```
 
----
-
-
-**[Full Documentation →](./packages/octocode-mcp/README.md)**
-
----
-
-## Commands
-
-Octocode MCP provides intelligent prompt commands that enhance your research workflow:
-
-### `/research` - Expert Code & Product Research
-
-Powerful research prompt leveraging Octocode's full capabilities for deep code discovery, documentation analysis, pattern identification, and bug investigation. Orchestrates parallel bulk queries with staged analysis to uncover insights fast.
-
-**When to use**:
-- **Understanding repository workflows**: Discover how repositories work, trace specific flows through codebases, and understand technical implementations
-- **Cross-repository flow analysis**: Understand complex flows that span multiple repositories, trace data flows across microservices
-- **Deep technical investigations**: Trace code flows, understand complex implementations, analyze architecture decisions
-- **Bug investigation**: Find root causes by analyzing code, commit history, and related PRs
-- **Pattern discovery**: Compare implementations across multiple repos to find best practices
-- **Documentation validation**: Verify docs match actual code behavior
-
-**Usage Examples**:
-```
-/research How does React's useState hook work internally?
-/research Compare state management approaches: Redux vs Zustand vs Jotai
-/research Why is the payment webhook failing? Trace the error through payment-service
+**Amp CLI**:
+```bash
+amp mcp add octocode -- npx octocode-mcp@latest
 ```
 
----
+</details>
 
-### `/plan` - Research, Plan & Implement Complex Tasks
+<details>
+<summary><strong>Codex</strong></summary>
 
-Your AI architect for tackling complex development work. Breaks down ambitious tasks into actionable steps, researches existing patterns and implementations, then guides you through execution—all powered by Octocode's deep codebase intelligence.
-
-**When to use**:
-- **Building new features**: Research patterns, plan architecture, then implement
-- **Complex refactoring**: Understand current state, plan migration path, execute safely
-- **Learning new technologies**: Research best practices, create learning plan, build incrementally
-- **System design**: Explore existing implementations, design your approach, validate decisions
-
-**Usage Examples**:
-```
-/plan Build a real-time chat application with WebSocket support
-/plan Migrate our authentication from JWT to OAuth2
-/plan Implement a plugin system for our CLI tool
+**CLI**:
+```bash
+codex mcp add octocode npx "octocode-mcp@latest"
 ```
 
----
-
-### `/review_pull_request` - Comprehensive PR Review
-
-**Args:** `prUrl` (required) - GitHub Pull Request URL (e.g., https://github.com/owner/repo/pull/123)
-
-Expert-level PR review with a Defects-First mindset. Dives deep into code changes, spots bugs before they ship, flags complexity risks, and delivers actionable feedback that elevates code quality.
-
-**What it analyzes**:
-- **Defects & Bugs**: Logic errors, edge cases, race conditions, null handling
-- **Security Issues**: Injection vulnerabilities, auth bypasses, data exposure
-- **Performance**: N+1 queries, memory leaks, inefficient algorithms
-- **Code Quality**: Complexity, maintainability, test coverage gaps
-- **Best Practices**: Design patterns, error handling, documentation
-
-**Usage**:
-```
-/review_pull_request prUrl: https://github.com/facebook/react/pull/12345
+**Config file** (`~/.codex/config.toml`):
+```toml
+[mcp_servers.octocode]
+command = "npx"
+args = ["octocode-mcp@latest"]
 ```
 
----
+</details>
 
-### `/review_security` - Security Audit
+<details>
+<summary><strong>Goose</strong></summary>
 
-**Args:** `repoUrl` (required) - GitHub repository URL (e.g., https://github.com/owner/repo)
+**One-click**: [![Install in Goose](https://block.github.io/goose/img/extension-install-dark.svg)](https://block.github.io/goose/extension?cmd=npx&arg=octocode-mcp%40latest&id=octocode&name=Octocode&description=Intelligent%20code%20research%20and%20GitHub%20repository%20analysis)
 
-Comprehensive security analysis of a repository. Identifies vulnerabilities, reviews authentication/authorization patterns, checks for secrets exposure, and provides remediation guidance.
+**Manual**: Go to `Advanced settings` → `Extensions` → `Add custom extension`. Use type `STDIO`, command `npx octocode-mcp@latest`.
 
-**What it analyzes**:
-- **Authentication & Authorization**: Auth flows, session management, access controls
-- **Input Validation**: Injection points, sanitization, boundary checks
-- **Secrets Management**: Hardcoded credentials, API keys, configuration security
-- **Dependencies**: Known vulnerabilities, outdated packages, supply chain risks
-- **Data Protection**: Encryption, PII handling, data flow security
+</details>
 
-**Usage**:
-```
-/review_security repoUrl: https://github.com/your-org/your-repo
-```
+<details>
+<summary><strong>LM Studio</strong></summary>
 
----
+**One-click**: [![Add MCP Server octocode to LM Studio](https://files.lmstudio.ai/deeplink/mcp-install-light.svg)](https://lmstudio.ai/install-mcp?name=octocode&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJvY3RvY29kZS1tY3BAbGF0ZXN0Il19)
 
-### Tips for Using Commands
+**Manual**: Go to `Program` → `Install` → `Edit mcp.json`. Use the standard config.
 
-1. **Use `/research` for code exploration** - Deep dive into how things work
-2. **Use `/plan` for building** - Research, plan, then implement complex features
-3. **Use `/review_pull_request`** before merging PRs for thorough code review
-4. **Use `/review_security`** for security audits of repositories
+</details>
 
-> **💡 Pro Tip**: Combine `/research` and `/plan` for maximum effectiveness—research existing patterns first, then plan your implementation with confidence.
+<details>
+<summary><strong>Other IDEs (Cline, Gemini CLI, Kiro, opencode, Qodo Gen, Warp, Windsurf, Zed)</strong></summary>
 
----
+All use the standard configuration:
 
-## Documentation
-
-### Comprehensive Guides
-
-| Resource | Description | Link |
-|----------|-------------|------|
-| **Binary Installation** | Standalone binary download and setup | [BINARY_INSTALLATION.md](./docs/BINARY_INSTALLATION.md) |
-| **Configuration Guide** | Environment variables and server configuration | [CONFIGURATION.md](./docs/CONFIGURATION.md) |
-| **Authentication Guide** | Setup instructions and troubleshooting | [AUTH_GUIDE.md](./docs/AUTH_GUIDE.md) |
-
-
-
----
-
-## Local Research
-
-**Octocode Local** brings the power of Octocode's research capabilities to your local filesystem with **LSP-powered code intelligence**.
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/bgauryy/local-explorer-mcp/main/assets/logo.png" alt="octocode-mcp-local" width="100" />
-</p>
-
-An MCP server that provides AI assistants with powerful tools for local code exploration, combining fast Unix utilities with semantic code understanding through Language Server Protocol (LSP) integration.
-
-### Core Capabilities
-
-| Capability | Implementation | Benefit |
-|------------|----------------|---------|
-| **Pattern Search** | `ripgrep` integration | 10x faster than grep, respects `.gitignore` |
-| **Code Intelligence** | LSP integration | Go-to-definition, find references, call hierarchy |
-| **Smart Navigation** | Directory analysis | Structure exploration with filtering and sorting |
-| **File Discovery** | Metadata search | Find by name, time, size, permissions |
-| **Secure Access** | Workspace scoping | Automatic secrets filtering, no indexing required |
-
----
-
-### Quick Install
-
-[<img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor">](https://cursor.com/en/install-mcp?name=octocode-local&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJvY3RvY29kZS1tY3AtbG9jYWxAbGF0ZXN0Il19)
-
-```js
+```json
 {
   "mcpServers": {
-    "octocode-local": {
+    "octocode": {
       "command": "npx",
-      "args": [
-        "octocode-mcp-local@latest"
-      ]
+      "args": ["octocode-mcp@latest"]
     }
   }
 }
 ```
 
----
+See each IDE's MCP documentation for the specific config file location.
 
-### Tools
+</details>
 
-#### 📁 localViewStructure
+### Verify Installation
 
-**Explore directory structure with depth control and filtering**
-
-Navigate your codebase hierarchy, understand project organization, and discover important files.
-
-```
-• Project overview: "Show me the structure of src/ with depth 2"
-• Find components: "List all directories in app/components"
-• Discover patterns: "Show files sorted by modification time"
-```
+1. **Restart your MCP client** completely
+2. **Check connection status**:
+   - **Cursor**: Green dot in Settings → Tools & Integrations → MCP Tools
+   - **Claude Desktop**: Check for "octocode" in available tools
+   - **VS Code**: Verify in GitHub Copilot settings
+3. **Test**: `Search GitHub for React hooks implementations`
 
 ---
 
-#### 🔍 localSearchCode
+## Documentation
 
-**Fast pattern search powered by ripgrep**
-
-Find code patterns, function definitions, or text across your entire codebase in milliseconds.
-
-```
-• Find implementations: "Search for 'useAuth' in TypeScript files"
-• Locate patterns: "Find all TODO comments in src/"
-• Discovery mode: "List files containing 'export default'"
-```
+| Resource | Description |
+|----------|-------------|
+| **[Configuration Guide](./docs/CONFIGURATION.md)** | Environment variables and server configuration |
+| **[Authentication Guide](./docs/AUTH_GUIDE.md)** | Setup instructions and troubleshooting |
+| **[GitHub Tools Reference](./packages/octocode-mcp/docs/GITHUB_TOOLS_REFERENCE.md)** | Full GitHub tools documentation |
+| **[Local Tools Reference](./packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md)** | Full local tools documentation |
+| **[LSP Tools](./packages/octocode-mcp/docs/LSP_TOOLS.md)** | Code intelligence features |
 
 ---
 
-#### 📂 localFindFiles
+## Examples
 
-**Find files by metadata (name, time, size, permissions)**
+### ThreeJS Implementation Quality Comparison
 
-Locate files based on properties rather than content—perfect for finding recent changes or specific file types.
+**[Interactive Demo](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)**
 
-```
-• Recent changes: "Find files modified in the last 7 days"
-• By name: "Find all *.test.ts files"
-• By size: "Find files larger than 1MB"
-```
+Side-by-side comparison showing Generic AI vs Octocode-Enhanced AI implementation quality:
+- Performance optimizations from high-performance projects
+- Proper resource management patterns
+- Industry-standard error handling
 
----
+### Deep Technical Research
 
-#### 📄 localGetFileContent
+**[YouTube: React Hooks Internals](https://www.youtube.com/watch?v=BCOpsRjAPU4&t=9s)**
 
-**Read file contents with smart extraction**
-
-Retrieve specific sections using pattern matching or line ranges—avoid loading entire files into context.
-
-```
-• Pattern matching: "Show me the validateUser function with 10 lines of context"
-• Line ranges: "Read lines 50-100 from api/handler.ts"
-• Full content: "Get the entire package.json file"
-```
-
----
-
-### LSP Tools (Code Intelligence)
-
-Octocode Local includes **Language Server Protocol** integration for semantic code understanding—go beyond text search to understand code relationships.
-
-#### 🎯 lspGotoDefinition
-
-**Navigate to where symbols are defined**
-
-Jump directly to function definitions, class declarations, or variable origins.
-
-```
-• "Go to the definition of handleSubmit"
-• "Where is UserContext defined?"
-• "Find the source of this imported function"
-```
-
----
-
-#### 🔗 lspFindReferences
-
-**Find all usages of a symbol**
-
-Discover everywhere a function, variable, or type is used across your codebase.
-
-```
-• "Find all references to validateToken"
-• "Where is the User type used?"
-• "Show all calls to this API function"
-```
-
----
-
-#### 🌳 lspCallHierarchy
-
-**Trace function call relationships**
-
-Understand code flow by seeing who calls a function (incoming) and what it calls (outgoing).
-
-```
-• "Who calls the authenticate function?" (incoming)
-• "What functions does processPayment call?" (outgoing)
-• "Trace the flow from API handler to database"
-```
-
-**When to use**: Flow tracing, understanding code paths, impact analysis before refactoring.
-
----
-
-### Research Workflows
-
-Octocode Local tools work together in powerful combinations:
-
-#### The Discovery Flow
-```
-localViewStructure → localSearchCode → localGetFileContent
-```
-Map structure → Find patterns → Read details
-
-#### The Semantic Flow
-```
-localSearchCode → lspGotoDefinition → lspFindReferences
-```
-Find text → Jump to definition → Trace usages
-
-#### The Flow Analysis
-```
-localSearchCode → lspCallHierarchy(incoming) → lspCallHierarchy(outgoing)
-```
-Find function → See callers → See callees
-
----
-
-### Use Cases
-
-| Task | Recommended Approach |
-|------|---------------------|
-| **Understand new codebase** | `localViewStructure` → `localSearchCode` → `lspGotoDefinition` |
-| **Find where function is used** | `localSearchCode` → `lspFindReferences` |
-| **Trace code flow** | `localSearchCode` → `lspCallHierarchy` |
-| **Find recent changes** | `localFindFiles(modifiedWithin="7d")` |
-| **Read specific code section** | `localGetFileContent(matchString="functionName")` |
-| **Impact analysis** | `lspGotoDefinition` → `lspCallHierarchy(incoming)` |
-
----
-
-👉 **[Full Documentation →](./packages/octocode-mcp/docs/LSP_TOOLS.md)**
+Progressive research workflow demonstration:
+1. Repository discovery (React source)
+2. Structure exploration (hooks implementation)
+3. Code analysis (internal mechanisms)
+4. Comprehensive explanation with code references
 
 ---
 
@@ -1087,9 +602,8 @@ Find function → See callers → See callees
 ### Show Your Support
 
 If Octocode helps your AI development workflow:
-
-- **Star the repository** on [GitHub](https://github.com/bgauryy/octocode-mcp)
-- **Share on social media** with #OctocodeMCP
+- ⭐ **Star the repository** on [GitHub](https://github.com/bgauryy/octocode-mcp)
+- 📣 **Share on social media** with #OctocodeMCP
 
 ---
 

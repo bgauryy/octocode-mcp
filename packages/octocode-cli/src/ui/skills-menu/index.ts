@@ -21,7 +21,7 @@ import {
 import path from 'node:path';
 import open from 'open';
 import { Spinner } from '../../utils/spinner.js';
-import { runMarketplaceFlow, runOctocodeOfficialFlow } from './marketplace.js';
+import { runMarketplaceFlow } from './marketplace.js';
 
 // ============================================================================
 // Constants
@@ -62,7 +62,6 @@ type SkillsMenuChoice =
   | 'manage'
   | 'view'
   | 'marketplace'
-  | 'octocode-official'
   | 'change-path'
   | 'learn'
   | 'back';
@@ -251,13 +250,6 @@ async function showSkillsMenu(
       description: 'View, remove, or inspect individual skills',
     });
   }
-
-  // Octocode Official - quick access to bundled skills
-  choices.push({
-    name: '🐙 Octocode Official 📦',
-    value: 'octocode-official',
-    description: 'Research, PR review, local search & more',
-  });
 
   // Browse marketplace - always available
   choices.push({
@@ -657,10 +649,6 @@ export async function runSkillsMenu(): Promise<void> {
     switch (choice) {
       case 'manage':
         await manageInstalledSkills();
-        break;
-
-      case 'octocode-official':
-        await runOctocodeOfficialFlow();
         break;
 
       case 'marketplace':
