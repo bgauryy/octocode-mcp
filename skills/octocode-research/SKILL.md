@@ -1,6 +1,29 @@
 ---
 name: octocode-research
-description: Code research for external (GitHub) and local code exploration. Initiate when user wants to research some code or implementation or findind docs anywhere
+description: |
+  Code research for external (GitHub) and local code exploration.
+  Use when user wants to research implementations, trace code flows, or find documentation.
+
+  <example>
+  Context: User exploring external library implementation
+  user: "How does react-query handle caching internally?"
+  assistant: "I'll research the react-query repository to trace the caching implementation..."
+  <commentary>External GitHub research - uses /github/* endpoints</commentary>
+  </example>
+
+  <example>
+  Context: User tracing local code flow
+  user: "How does our authentication middleware work?"
+  assistant: "I'll trace the auth flow using LSP tools to find callers and callees..."
+  <commentary>Local flow tracing - requires /lsp/calls with lineHint from /local/search</commentary>
+  </example>
+
+  <example>
+  Context: User exploring package source
+  user: "What's the implementation of lodash.debounce?"
+  assistant: "I'll find the lodash package and read the debounce implementation..."
+  <commentary>Package research - /package/search → /github/structure → /github/content</commentary>
+  </example>
 ---
 
 # Octocode Research Skill
@@ -11,110 +34,82 @@ HTTP API server for code research at `http://localhost:1987`
 
 ---
 
-## ⚠️ CRITICAL: Always Check Server Health First
+## ⚠️ CRITICAL: Health Check First
 
-**BEFORE making ANY API request**, you MUST verify the server is running:
-
-```bash
-# Step 1: ALWAYS check health first
-curl -s http://localhost:1987/health || echo "SERVER_NOT_RUNNING"
-
-# Step 2: If not running, start the server
-cd /path/to/octocode-research && ./install.sh start
-
-# Step 3: Verify it's running
-curl -s http://localhost:1987/health
-# Expected: {"status":"ok","port":1987,"version":"2.0.0"}
-
-# Step 4: NOW you can make API calls
-
-```
-
-**Why this matters**: The server runs locally and may not be started. Making API calls without checking health first will result in connection errors (exit code 7).
-
----
-
-## Quick Start
+**BEFORE ANY request**, verify server is running:
 
 ```bash
-# 1. Check if server is running (ALWAYS DO THIS FIRST)
+# Check health (ALWAYS first!)
 curl -s http://localhost:1987/health || echo "NOT_RUNNING"
 
-# 2. Start server if needed
-./install.sh start
+# Start if needed
+cd /path/to/octocode-research && ./install.sh start
 
-# 3. View logs if issues
+# View logs if issues
 ./install.sh logs
 ```
 
+**Why**: Server runs locally, may not be started. Connection errors (exit 7) mean server is down.
+
 ---
 
-## Available Endpoints
+## Endpoints
 
 **Base URL**: `http://localhost:1987`
 
-### Local Tools
-| Endpoint | Description | Docs |
-|----------|-------------|------|
-| `/local/search` | Search code patterns (ripgrep) | [ref](./references/localSearchCode.md) |
-| `/local/content` | Read file content | [ref](./references/localGetFileContent.md) |
-| `/local/structure` | Directory tree | [ref](./references/localViewStructure.md) |
-| `/local/find` | Find files by metadata | [ref](./references/localFindFiles.md) |
+| Category | Endpoint | Description | Docs |
+|----------|----------|-------------|------|
+| **Local** | `/local/search` | Search code (ripgrep) | [ref](./references/localSearchCode.md) |
+| | `/local/content` | Read file | [ref](./references/localGetFileContent.md) |
+| | `/local/structure` | Directory tree | [ref](./references/localViewStructure.md) |
+| | `/local/find` | Find by metadata | [ref](./references/localFindFiles.md) |
+| **LSP** | `/lsp/definition` | Go to definition | [ref](./references/lspGotoDefinition.md) |
+| | `/lsp/references` | Find usages | [ref](./references/lspFindReferences.md) |
+| | `/lsp/calls` | Call hierarchy | [ref](./references/lspCallHierarchy.md) |
+| **GitHub** | `/github/search` | Search code | [ref](./references/githubSearchCode.md) |
+| | `/github/content` | Read file | [ref](./references/githubGetFileContent.md) |
+| | `/github/structure` | Repo tree | [ref](./references/githubViewRepoStructure.md) |
+| | `/github/repos` | Search repos | [ref](./references/githubSearchRepositories.md) |
+| | `/github/prs` | Search PRs | [ref](./references/githubSearchPullRequests.md) |
+| **Package** | `/package/search` | npm/PyPI search | [ref](./references/packageSearch.md) |
 
-### LSP Tools (Semantic)
-| Endpoint | Description | Docs |
-|----------|-------------|------|
-| `/lsp/definition` | Go to definition | [ref](./references/lspGotoDefinition.md) |
-| `/lsp/references` | Find all usages | [ref](./references/lspFindReferences.md) |
-| `/lsp/calls` | Call hierarchy | [ref](./references/lspCallHierarchy.md) |
-
-### GitHub Tools
-| Endpoint | Description | Docs |
-|----------|-------------|------|
-| `/github/search` | Search code | [ref](./references/githubSearchCode.md) |
-| `/github/content` | Read file | [ref](./references/githubGetFileContent.md) |
-| `/github/structure` | Repo tree | [ref](./references/githubViewRepoStructure.md) |
-| `/github/repos` | Search repos | [ref](./references/githubSearchRepositories.md) |
-| `/github/prs` | Search PRs | [ref](./references/githubSearchPullRequests.md) |
-
-### Package Tools
-| Endpoint | Description | Docs |
-|----------|-------------|------|
-| `/package/search` | npm/PyPI search | [ref](./references/packageSearch.md) |
+All tools are **read-only**, **idempotent**, **safe to retry**. GitHub endpoints rate-limited (5000/hr with token).
 
 ---
 
-## Decision Tree
+## Decision Tree & Trigger Words
 
 ```
 Is it LOCAL codebase?
 ├── YES → /local/* + /lsp/*
 │   └── Flow question? → /lsp/calls REQUIRED
-│       📖 See: research_local_prompt.md
 └── NO  → /github/* or /package/*
-        📖 See: research_external_prompt.md
 ```
+
+| User Says... | REQUIRED Tool | FORBIDDEN |
+|--------------|---------------|-----------|
+| "flow", "trace", "calls", "chain" | `/lsp/calls` | `/local/content` alone |
+| "who uses X", "callers" | `/lsp/calls` (incoming) | search alone |
+| "what does X call" | `/lsp/calls` (outgoing) | file reading alone |
+| "where is X defined" | `/lsp/definition` | grep alone |
+| "show me file Y" | `/local/content` | - |
+| "find files named X" | `/local/find` | - |
+| "external repo/package" | `/github/*` or `/package/*` | local tools |
+
+**COMMON MISTAKE**: Using `/local/content` to understand flows. File reading shows text. LSP shows semantic relationships.
 
 ---
 
 ## Research Flows
 
-### Local: `DISCOVER → EXECUTE → VERIFY → OUTPUT`
-
+### Local Flow
 ```
-/local/structure → understand layout
-/local/search → find symbols, get lineHint
-/lsp/calls → trace flow (incoming/outgoing)
-/local/content → read implementation (LAST)
+/local/structure → /local/search → /lsp/calls → /local/content (LAST) → OUTPUT
 ```
 
-### External: `PREPARE → DISCOVER → ANALYZE → OUTPUT`
-
+### External Flow
 ```
-/package/search → get repo URL
-/github/structure → explore layout
-/github/search → find code
-/github/content → read details
+/package/search → /github/structure → /github/search → /github/content → OUTPUT
 ```
 
 **Detailed guides**: [Local](./references/research_local_prompt.md) | [External](./references/research_external_prompt.md)
@@ -125,57 +120,240 @@ Is it LOCAL codebase?
 
 | Rule | Why |
 |------|-----|
-| **⚠️ Health check FIRST** | Server may not be running - check before ANY request |
-| **Search first → get lineHint → LSP** | LSP needs accurate line numbers |
-| **Use `/lsp/calls` for flow tracing** | File reading alone misses call relationships |
-| **Parallel calls for speed** | Server handles concurrent requests (3x faster) |
-| **Never guess line numbers** | Always get lineHint from search results |
+| ⚠️ Health check FIRST | Server may not be running |
+| Search → lineHint → LSP | LSP needs accurate line numbers |
+| `/lsp/calls` for flow tracing | File reading misses call relationships |
+| Parallel calls for speed | 3x faster with concurrent requests |
+| Never guess line numbers | Always get lineHint from search |
+
+---
+
+## Research Planning (REQUIRED)
+
+**ALWAYS plan BEFORE making API calls!**
+
+EXAMPLE:
+
+```markdown
+## Research Plan
+**Main Question**: [User's question]
+**Type**: [ ] Local  [ ] External
+
+**Steps**:
+1. [ ] Understand structure
+2. [ ] Find entry points (search)
+3. [ ] Trace relationships (LSP)
+4. [ ] Read implementations
+5. [ ] Synthesize output
+
+**Deliverables**: Flow diagram, code snippets, summary
+```
+
+### Example Breakdown
+
+**Question**: "How does authentication work?"
+
+```
+Phase 1: Discovery (Parallel)
+  1. [ ] /local/search?pattern=auth|login
+  2. [ ] /local/structure?path=/src
+
+Phase 2: Entry Points (Sequential)
+  3. [ ] /local/search?pattern=authenticate → get lineHint
+  4. [ ] /lsp/definition?symbolName=authenticate&lineHint=N
+
+Phase 3: Flow Tracing (Parallel)
+  5. [ ] /lsp/calls?direction=incoming
+  6. [ ] /lsp/calls?direction=outgoing
+
+Phase 4: Deep Dive
+  7. [ ] /local/content (specific files)
+
+Phase 5: Output
+  8. [ ] Create diagram + summary
+```
+
+**Track progress**: `[✓]` done, `[→]` in progress, `[ ]` pending
+
+**CRITICAL**: Don't skip to output until ALL steps complete!
+
+### Spawn Agents for Complex Research
+
+**For multi-axis research, spawn parallel agents and use  Task tool**
+
+**When to spawn agents:**
+- Research has 3+ independent topics
+- Each axis requires its own search → LSP → read flow
+- Results can be combined at the end
+
+**Combine results**: After all agents complete, synthesize findings into single output document.
+
+---
+
+## Parallel API Calls
+
+**Make independent calls in parallel for 3x speed!**
+
+```bash
+# ✅ GOOD: Parallel
+curl "http://localhost:1987/lsp/calls?...&direction=incoming" &
+curl "http://localhost:1987/lsp/calls?...&direction=outgoing" &
+wait
+
+# ❌ BAD: Sequential when could be parallel
+```
+
+**Parallelize**: Multiple files, incoming+outgoing calls, multiple directories
+**Don't parallelize**: When next call needs previous result (search → lineHint → LSP)
+
+---
+
+## Response Structure
+
+```json
+{
+  "success": true,
+  "data": "YAML-formatted result",
+  "raw": { "content": [...], "isError": false }
+}
+```
+
+**Status hints**: `hasResultsStatusHints` (next steps) or `emptyStatusHints` (alternatives)
+
+**Validation errors**:
+```json
+{ "success": false, "error": { "message": "...", "code": "VALIDATION_ERROR" } }
+```
+
+**Follow hints**: Each response tells you what to do next!
 
 ---
 
 ## Required Parameters
 
-All endpoints require research context:
+All endpoints require:
 
 | Parameter | Purpose |
 |-----------|---------|
-| `mainResearchGoal` | Overall objective (constant across session) |
-| `researchGoal` | This query's specific goal |
+| `mainResearchGoal` | Overall objective (constant) |
+| `researchGoal` | This query's goal |
 | `reasoning` | Why this approach helps |
+
+---
+
+## Pre-Action Checkpoints
+
+| Before... | Check... | If NO → |
+|-----------|----------|---------|
+| ANY API call | Server running? (`/health`) | Start server |
+| `/lsp/*` call | Have `lineHint` from search? | Search first |
+| `/local/content` | Traced with `/lsp/calls`? | Trace first |
+| Concluding | Have 3+ evidence points? | Continue |
+
+---
+
+## Error Recovery
+
+| Error | Recovery |
+|-------|----------|
+| `Symbol not found` | Re-run `/local/search` for correct lineHint |
+| `Empty results` | Try variants (auth→login→credentials) |
+| `Too many results` | Add `path`, `type`, `excludeDir` filters |
+| `Timeout` | Reduce `depth`, use `matchString` |
+| `Connection refused` | Run `./install.sh start` |
+| `Rate limited` | Wait or use authenticated token |
+
+**Flow**: Error → Check hints in response → Follow recovery → If blocked, ask user
+
+---
+
+## Output Document (REQUIRED)
+
+**Every research session MUST produce structured output!**
+
+### Template - EXAMPLE (ALL SECTION OPTIONAL - ADD ONLY IF REQUIRED)
+
+```markdown
+# Research: [Topic]
+
+## TL;DR
+[2-3 sentences answering the question]
+
+## Flow Diagram
+[Mermaid diagram]
+
+## 🔍 Findings
+
+### 1. [Title]
+**Location**: `path/file.ts:L42-58`
+
+\`\`\`typescript:42:58:path/file.ts
+// Key code (max 15 lines)
+\`\`\`
+
+**Analysis**: [Why it matters]
+
+## 📚 References
+| File | Lines | Purpose |
+|------|-------|---------|
+| `file.ts` | 42-58 | Main impl |
+```
+
+### Mermaid Examples
+
+```mermaid
+flowchart TD
+    A[Request] --> B[authMiddleware]
+    B --> C{Valid?}
+    C -->|Yes| D[authenticate]
+    C -->|No| E[401]
+```
+
+```mermaid
+sequenceDiagram
+    Client->>API: POST /login
+    API->>Auth: authenticate()
+    Auth-->>API: token
+```
+
+### Quality Checklist
+
+| Check | Required |
+|-------|----------|
+| TL;DR | 2-3 sentence answer |
+| Flow Diagram | Mermaid (if flow question) |
+| Code Snippets | 2-3 with `file:line` refs |
+| Analysis | WHY each finding matters |
+
+### Quality Levels
+
+| Level | When |
+|-------|------|
+| **Quick**: TL;DR + 1 ref | "where is X" |
+| **Standard**: + diagram + 3 refs | Most questions |
+| **Deep**: Full doc + diagrams | "how does X work" |
+
+**Protocol**: Research → Output → Present → Ask user → Save if requested
 
 ---
 
 ## Integration Patterns
 
-| Pattern | When | How |
-|---------|------|-----|
-| **Direct Skill** | Simple questions | `/octocode-research` |
-| **Task + Explore** | Complex exploration | `Task(subagent_type="Explore")` |
-| **Parallel Tasks** | Multi-axis research | Multiple Tasks in one message |
+| Pattern | When |
+|---------|------|
+| Direct Skill | Simple questions |
+| Task + Explore | Complex exploration |
+| Parallel Tasks | Multi-axis research |
 
-**Full guide**: [Task Integration](./references/task_integration.md)
+**Use Claude Code `Task()` tool for complex exploration.**
 
----
 
-## Output Protocol
-
-1. **Research until quality** - Multiple evidence points, flows traced
-2. **Present summary** - TL;DR + findings + evidence
-3. **Ask user** - Save? Continue? Something else?
-4. **Save if requested** - `.octocode/research/{session-name}/`
-
-**Full guide**: [Output Protocol](./references/output_protocol.md)
 
 ---
 
 ## Logging
 
 Logs: `~/.octocode/logs/`
-
-| File | Contents |
-|------|----------|
-| `tools.log` | All tool calls with params, duration |
-| `errors.log` | Validation/server errors |
 
 ```bash
 tail -50 ~/.octocode/logs/tools.log   # Recent calls
@@ -186,33 +364,29 @@ cat ~/.octocode/logs/errors.log       # Errors
 
 ## Quick Example
 
-**Question**: "How does authentication work?"
-
 ```bash
-# 0. ALWAYS check health first!
+# 0. Health check
 curl -s http://localhost:1987/health || ./install.sh start
 
-# 1. Find entry points
+# 1. Search → get lineHint
 curl "http://localhost:1987/local/search?pattern=authenticate&path=/project/src"
-# → Found at line 15
 
 # 2. Trace flow (parallel)
-curl "http://localhost:1987/lsp/calls?uri=...&symbolName=authenticate&lineHint=15&direction=incoming" &
-curl "http://localhost:1987/lsp/calls?uri=...&symbolName=authenticate&lineHint=15&direction=outgoing" &
+curl "http://localhost:1987/lsp/calls?...&lineHint=15&direction=incoming" &
+curl "http://localhost:1987/lsp/calls?...&lineHint=15&direction=outgoing" &
 
-# 3. Read implementation (after understanding flow)
+# 3. Read (after flow understood)
 curl "http://localhost:1987/local/content?path=...&startLine=10&endLine=30"
 
-# 4. Present summary → Ask user → Save
+# 4. Output → Present → Save
 ```
 
 ---
 
-## Reference Guides
+## References
 
 | Guide | Purpose |
 |-------|---------|
-| [research_local_prompt.md](./references/research_local_prompt.md) | Local codebase research patterns |
-| [research_external_prompt.md](./references/research_external_prompt.md) | GitHub/package research patterns |
-| [task_integration.md](./references/task_integration.md) | Claude Code Task tool integration |
-| [output_protocol.md](./references/output_protocol.md) | Output format and document templates |
+| [research_local_prompt.md](./references/research_local_prompt.md) | Local research |
+| [research_external_prompt.md](./references/research_external_prompt.md) | GitHub/package |
+| [output_protocol.md](./references/output_protocol.md) | Output format |
