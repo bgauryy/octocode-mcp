@@ -77,18 +77,6 @@ npx octocode-cli
 }
 ```
 
-### Option 4: Standalone Binary (No Node.js)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/install/install.sh | sh
-```
-
-> **Prerequisites**: [GitHub CLI](https://cli.github.com/) (`gh auth login`) or [Personal Access Token](https://github.com/settings/tokens)
-> 
-> See [Installation Guide](#installation-guide) for IDE-specific setup and authentication options.
-
----
-
 ## Overview
 
 Octocode is an **agentic code research platform** that bridges the gap between AI assistants and real-world code implementations. By providing structured access to GitHub's vast repository ecosystem, it enables AI systems to learn from production codebases rather than relying solely on training data.
@@ -423,16 +411,6 @@ Add the `GITHUB_API_URL` environment variable:
 ```
 
 </details>
-
-### Standalone Binary
-
-No Node.js required:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/install/install.sh | sh
-```
-
-**[Full Binary Guide →](./docs/BINARY_INSTALLATION.md)**
 
 ### IDE-Specific Setup
 
