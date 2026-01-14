@@ -180,15 +180,19 @@ show_usage() {
     echo "Usage: ./install.sh [command]"
     echo ""
     echo "Commands:"
+    echo "  health    ⚠️  Check if server is running (DO THIS FIRST!)"
     echo "  start     Start server (install if needed) [default]"
     echo "  stop      Stop running server"
     echo "  restart   Restart server"
-    echo "  status    Check server status"
+    echo "  status    Check detailed server status"
     echo "  logs      Show server logs"
     echo "  build     Build without starting"
     echo ""
+    echo "⚠️  IMPORTANT: Always check health before making API calls!"
+    echo ""
     echo "Quick Start:"
-    echo "  ./install.sh start"
+    echo "  ./install.sh health      # Check if running first!"
+    echo "  ./install.sh start       # Start if not running"
     echo "  curl http://localhost:$PORT/health"
     echo ""
     echo "API Routes:"
@@ -210,6 +214,17 @@ main() {
     local command="${1:-start}"
 
     case "$command" in
+        health)
+            # Quick health check - recommended before any API calls
+            if curl -s --connect-timeout 2 "http://localhost:$PORT/health" 2>/dev/null; then
+                echo ""  # newline after JSON
+                exit 0
+            else
+                log_warn "Server is NOT running on port $PORT"
+                log_info "Start with: ./install.sh start"
+                exit 1
+            fi
+            ;;
         start)
             # Check if OUR server is already running (health check first!)
             if is_our_server_running; then

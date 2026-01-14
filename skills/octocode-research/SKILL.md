@@ -1,22 +1,50 @@
 ---
 name: octocode-research
-description: Code research HTTP server (localhost:1987) for local and external (GitHub) code exploration with LSP support.
+description: Code research for external (GitHub) and local code exploration. Initiate when user wants to research some code or implementation or findind docs anywhere
 ---
 
 # Octocode Research Skill
 
-HTTP API server for code research at `http://localhost:1987`.
+HTTP API server for code research at `http://localhost:1987`
 
 > **Local Server**: Runs on user's machine with direct filesystem and LSP access.
+
+---
+
+## ⚠️ CRITICAL: Always Check Server Health First
+
+**BEFORE making ANY API request**, you MUST verify the server is running:
+
+```bash
+# Step 1: ALWAYS check health first
+curl -s http://localhost:1987/health || echo "SERVER_NOT_RUNNING"
+
+# Step 2: If not running, start the server
+cd /path/to/octocode-research && ./install.sh start
+
+# Step 3: Verify it's running
+curl -s http://localhost:1987/health
+# Expected: {"status":"ok","port":1987,"version":"2.0.0"}
+
+# Step 4: NOW you can make API calls
+
+```
+
+**Why this matters**: The server runs locally and may not be started. Making API calls without checking health first will result in connection errors (exit code 7).
 
 ---
 
 ## Quick Start
 
 ```bash
-./install.sh start          # Install and start
-curl http://localhost:1987/health   # Verify running
-./install.sh logs           # View logs
+# 1. Check if server is running (ALWAYS DO THIS FIRST)
+curl -s http://localhost:1987/health || echo "NOT_RUNNING"
+
+# 2. Start server if needed
+./install.sh start
+
+# 3. View logs if issues
+./install.sh logs
 ```
 
 ---
@@ -97,6 +125,7 @@ Is it LOCAL codebase?
 
 | Rule | Why |
 |------|-----|
+| **⚠️ Health check FIRST** | Server may not be running - check before ANY request |
 | **Search first → get lineHint → LSP** | LSP needs accurate line numbers |
 | **Use `/lsp/calls` for flow tracing** | File reading alone misses call relationships |
 | **Parallel calls for speed** | Server handles concurrent requests (3x faster) |
@@ -160,6 +189,9 @@ cat ~/.octocode/logs/errors.log       # Errors
 **Question**: "How does authentication work?"
 
 ```bash
+# 0. ALWAYS check health first!
+curl -s http://localhost:1987/health || ./install.sh start
+
 # 1. Find entry points
 curl "http://localhost:1987/local/search?pattern=authenticate&path=/project/src"
 # → Found at line 15

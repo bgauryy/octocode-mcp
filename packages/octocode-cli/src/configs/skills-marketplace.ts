@@ -59,18 +59,18 @@ export interface MarketplaceSkill {
  * These are popular, well-maintained repositories with Claude skills/commands
  */
 export const SKILLS_MARKETPLACES: MarketplaceSource[] = [
-  // === OFFICIAL BUNDLED SKILLS ===
+  // === OCTOCODE SKILLS ===
   {
-    id: 'octocode-official',
-    name: '🐙 Octocode Official',
-    type: 'local',
-    owner: 'ArekSrorth',
+    id: 'octocode-skills',
+    name: 'Octocode Skills',
+    type: 'github',
+    owner: 'bgauryy',
     repo: 'octocode-mcp',
     branch: 'main',
-    skillsPath: 'packages/octocode-cli/skills',
+    skillsPath: 'skills',
     skillPattern: 'skill-folders',
-    description: 'Official research, planning, review & roast skills',
-    url: 'https://github.com/ArekSrorth/octocode-mcp',
+    description: 'Research, planning, implementation & PR review skills',
+    url: 'https://github.com/bgauryy/octocode-mcp/tree/main/skills',
   },
   // === COMMUNITY MARKETPLACES ===
   {

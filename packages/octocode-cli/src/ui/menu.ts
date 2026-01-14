@@ -21,7 +21,7 @@ import { runSyncFlow } from './sync/index.js';
 import { printGoodbye, printWelcome } from './header.js';
 import { Spinner } from '../utils/spinner.js';
 import { runSkillsMenu } from './skills-menu/index.js';
-import { installAllOctocodeSkills } from './skills-menu/marketplace.js';
+import { runOctocodeSkillsFlow } from './skills-menu/marketplace.js';
 import { getAppState, type AppState, type SkillsState } from './state.js';
 import { MCP_CLIENTS, type ClientInstallStatus } from '../utils/mcp-config.js';
 import {
@@ -52,9 +52,15 @@ async function pressEnterToContinue(): Promise<void> {
   });
 }
 
-type MenuChoice = 'octocode' | 'skills' | 'auth' | 'mcp-config' | 'exit';
+type MenuChoice =
+  | 'octocode'
+  | 'octocode-skills'
+  | 'skills'
+  | 'auth'
+  | 'mcp-config'
+  | 'exit';
 
-type OctocodeMenuChoice = 'configure' | 'install' | 'install-skills' | 'back';
+type OctocodeMenuChoice = 'configure' | 'install' | 'back';
 
 /**
  * Get friendly client names for display
@@ -118,6 +124,35 @@ function buildSkillsMenuItem(skills: SkillsState): {
     name: `🧠 ${bold('Manage System Skills')} ${c('cyan', '★')}`,
     value: 'skills',
     description: `${c('cyan', '→')} Install skills for AI-powered coding workflows`,
+  };
+}
+
+/**
+ * Build Octocode Skills menu item
+ * Shows ✓ if any octocode skills are installed
+ */
+function buildOctocodeSkillsMenuItem(skills: SkillsState): {
+  name: string;
+  value: MenuChoice;
+  description: string;
+} {
+  // Check if any octocode-* skills are installed
+  const octocodeSkillsInstalled = skills.skills.filter(
+    s => s.name.startsWith('octocode-') && s.installed
+  ).length;
+
+  if (octocodeSkillsInstalled > 0) {
+    return {
+      name: `🐙 Octocode Skills ${c('green', '✓')}`,
+      value: 'octocode-skills',
+      description: `${octocodeSkillsInstalled} installed • Research, planning & review`,
+    };
+  }
+
+  return {
+    name: '🐙 Octocode Skills',
+    value: 'octocode-skills',
+    description: 'Install AI-powered research, planning & review skills',
   };
 }
 
@@ -265,10 +300,7 @@ function printContextualHints(state: AppState): void {
     c('yellow', `     ▸ Prompts:  Use /research, /plan, /implement in chat`)
   );
   console.log(
-    c(
-      'yellow',
-      `     ▸ Skills:   Add all via Manage System Skills → Octocode Official`
-    )
+    c('yellow', `     ▸ Skills:   Add via 🐙 Octocode Skills in main menu`)
   );
   console.log(
     c(
@@ -312,6 +344,9 @@ async function showMainMenu(state: AppState): Promise<MenuChoice> {
 
   // ─── OCTOCODE ───
   choices.push(buildOctocodeMenuItem(state));
+
+  // ─── OCTOCODE SKILLS ───
+  choices.push(buildOctocodeSkillsMenuItem(state.skills));
 
   // ─── SKILLS ───
   choices.push(buildSkillsMenuItem(state.skills));
@@ -399,16 +434,6 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
     });
   }
 
-  // ─── INSTALL ALL SKILLS (only if not all installed) ───
-  if (!state.skills.allInstalled && state.skills.hasSkills) {
-    const notInstalled = state.skills.skills.filter(s => !s.installed).length;
-    choices.push({
-      name: `🧠 Install All Skills ${c('cyan', `(${notInstalled} available)`)}`,
-      value: 'install-skills',
-      description: 'One-click install of all Octocode skills',
-    });
-  }
-
   // ─── BACK ───
   choices.push(
     new Separator() as unknown as {
@@ -477,48 +502,6 @@ async function runOctocodeFlow(): Promise<void> {
         await runConfigOptionsFlow();
         console.log();
         break;
-
-      case 'install-skills': {
-        console.log();
-        const skillsSpinner = new Spinner(
-          'Installing all Octocode skills...'
-        ).start();
-
-        const result = await installAllOctocodeSkills();
-
-        if (result.installed > 0) {
-          skillsSpinner.succeed(
-            `Installed ${result.installed} skill${result.installed !== 1 ? 's' : ''}!`
-          );
-          console.log();
-          console.log(
-            `  ${c('green', '✓')} ${result.installed} skill${result.installed !== 1 ? 's' : ''} installed successfully`
-          );
-          if (result.alreadyInstalled > 0) {
-            console.log(
-              `  ${dim(`(${result.alreadyInstalled} already installed)`)}`
-            );
-          }
-          if (result.failed > 0) {
-            console.log(
-              `  ${c('yellow', '⚠')} ${result.failed} skill${result.failed !== 1 ? 's' : ''} failed to install`
-            );
-          }
-          console.log();
-          console.log(`  ${bold('Skills are now available in Claude Code!')}`);
-        } else if (result.allInstalled) {
-          skillsSpinner.succeed('All skills already installed!');
-          console.log();
-          console.log(`  ${c('green', '✓')} All Octocode skills are installed`);
-        } else {
-          skillsSpinner.fail('Failed to install skills');
-          console.log();
-          console.log(`  ${c('red', '✗')} Could not install skills`);
-        }
-        console.log();
-        await pressEnterToContinue();
-        break;
-      }
 
       case 'back':
       default:
@@ -1122,6 +1105,10 @@ async function handleMenuChoice(choice: MenuChoice): Promise<boolean> {
   switch (choice) {
     case 'octocode':
       await runOctocodeFlow();
+      return true;
+
+    case 'octocode-skills':
+      await runOctocodeSkillsFlow();
       return true;
 
     case 'skills':
