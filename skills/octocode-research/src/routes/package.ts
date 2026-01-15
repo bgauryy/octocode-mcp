@@ -3,6 +3,7 @@ import { packageSearch } from '../index.js';
 import { parseAndValidate } from '../middleware/queryParser.js';
 import { packageSearchSchema } from '../validation/index.js';
 import { ResearchResponse } from '../utils/responseBuilder.js';
+import { parseToolResponse } from '../utils/responseParser.js';
 
 export const packageRoutes = Router();
 
@@ -20,20 +21,22 @@ packageRoutes.get(
       );
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rawResult = await packageSearch({ queries } as any);
-      const data = (rawResult.structuredContent || {}) as StructuredData;
+      const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       // Extract packages from result
       const packages = extractPackages(data);
       const query = queries[0] as StructuredData;
-      const registry = (query.ecosystem || 'npm') as 'npm' | 'pypi';
+      const registry = query.ecosystem === 'python' ? 'pypi' : 'npm';
 
       const response = ResearchResponse.packageSearch({
         packages,
         registry,
         query: String(query.name || ''),
+        mcpHints: hints,
+        research,
       });
 
-      res.status(rawResult.isError ? 500 : 200).json(response);
+      res.status(isError ? 500 : 200).json(response);
     } catch (error) {
       next(error);
     }
@@ -79,13 +82,18 @@ function extractPackages(
     }));
   }
 
-  // Handle generic packages array
+  // Handle generic packages array (MCP uses 'path' for package name, 'repoUrl' for repository)
   if (Array.isArray(data.packages)) {
     return data.packages.map((pkg: StructuredData) => ({
-      name: String(pkg.name || ''),
+      name: String(pkg.name || pkg.path || ''),
       version: typeof pkg.version === 'string' ? pkg.version : undefined,
       description: typeof pkg.description === 'string' ? pkg.description : undefined,
-      repository: typeof pkg.repository === 'string' ? pkg.repository : undefined,
+      repository:
+        typeof pkg.repository === 'string'
+          ? pkg.repository
+          : typeof pkg.repoUrl === 'string'
+            ? pkg.repoUrl
+            : undefined,
     }));
   }
 

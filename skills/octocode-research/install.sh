@@ -209,11 +209,41 @@ start_server() {
     # Clear logs on fresh start
     rm -rf "$OCTOCODE_LOGS_DIR"/*.log 2>/dev/null || true
     > "$LOG_FILE"
-    
+
     log_server "Starting Octocode Research Server on port $PORT..."
 
-    # Start server in background
-    nohup node dist/server.js > "$LOG_FILE" 2>&1 &
+    # Build environment variables to pass to server
+    # This ensures GitHub/GitLab tokens are available even when started via nohup
+    local env_vars=""
+
+    # GitHub token (check multiple sources)
+    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+        env_vars="GITHUB_TOKEN=$GITHUB_TOKEN $env_vars"
+    elif [[ -n "${GH_TOKEN:-}" ]]; then
+        env_vars="GITHUB_TOKEN=$GH_TOKEN $env_vars"
+    elif command -v gh &> /dev/null; then
+        # Try to get token from GitHub CLI
+        local gh_token
+        gh_token=$(gh auth token 2>/dev/null || true)
+        if [[ -n "$gh_token" ]]; then
+            log_info "Using GitHub token from 'gh auth token'"
+            env_vars="GITHUB_TOKEN=$gh_token $env_vars"
+        fi
+    fi
+
+    # GitLab tokens
+    if [[ -n "${GITLAB_TOKEN:-}" ]]; then
+        env_vars="GITLAB_TOKEN=$GITLAB_TOKEN $env_vars"
+    fi
+    if [[ -n "${GL_TOKEN:-}" ]]; then
+        env_vars="GL_TOKEN=$GL_TOKEN $env_vars"
+    fi
+
+    # Preserve PATH for gh CLI access
+    env_vars="PATH=$PATH $env_vars"
+
+    # Start server in background with environment variables
+    nohup env $env_vars node dist/server.js > "$LOG_FILE" 2>&1 &
     local pid=$!
     echo "$pid" > "$PID_FILE"
 

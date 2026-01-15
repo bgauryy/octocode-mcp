@@ -1,309 +1,203 @@
-# LSP + Local Tools Coordination Guide
+# Using LSP and Local Tools Together
 
-> **Critical Rule**: LSP tools ALWAYS require `lineHint` from local search results. NEVER guess line numbers.
-
----
-
-## The Golden Rule
-
-```
-SEARCH FIRST → GET lineHint → THEN LSP
-```
-
-Every LSP call (`/lsp/definition`, `/lsp/references`, `/lsp/calls`) **MUST** be preceded by `/local/search` to obtain an accurate `lineHint`.
+> **Key Insight**: Search finds locations, LSP understands relationships.
 
 ---
 
-## Tool Dependency Graph
+## Why This Matters
+
+**Local search** (`/local/search`) finds text patterns - it tells you "this pattern appears at these locations."
+
+**LSP tools** (`/lsp/*`) understand code semantically - they tell you "this symbol is defined here, used there, and calls these functions."
+
+They work best together: search to find where things are, LSP to understand how they connect.
+
+---
+
+## The lineHint Pattern
+
+LSP tools work better when you give them a `lineHint` - a line number where the symbol appears:
+
+```bash
+# Step 1: Search finds the location
+curl "http://localhost:1987/local/search?pattern=authenticate"
+# Response: line 15 in auth.ts
+
+# Step 2: LSP uses that line to resolve the symbol accurately
+curl "http://localhost:1987/lsp/calls?symbolName=authenticate&lineHint=15&uri=auth.ts"
+```
+
+**Why?** LSP resolves symbols by position. If you say "find references to `auth`" it needs to know *which* `auth` - the function? The variable? The module? The line hint tells it exactly where to look.
+
+---
+
+## Tool Roles
+
+| Tool | What It Does | Good For |
+|------|--------------|----------|
+| `/local/search` | Finds text patterns in files | Locating where things appear |
+| `/local/structure` | Shows directory layout | Orienting in a codebase |
+| `/local/content` | Reads file content | Understanding implementation |
+| `/lsp/definition` | Jumps to where symbol is defined | Finding source of truth |
+| `/lsp/references` | Finds all usages of a symbol | Impact analysis, usage patterns |
+| `/lsp/calls` | Traces call relationships | Understanding flow and behavior |
+
+---
+
+## Typical Workflows
+
+### Finding and Understanding a Function
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    TOOL DEPENDENCIES                        │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  DISCOVERY TOOLS (No dependencies)                          │
-│  ├── /local/structure   → directory layout                  │
-│  └── /local/find        → file metadata search              │
-│                                                             │
-│  SEARCH TOOL (Provides lineHint)                           │
-│  └── /local/search      → pattern matching                  │
-│           │                                                 │
-│           ├──────────────┬──────────────┐                  │
-│           ▼              ▼              ▼                  │
-│  LSP TOOLS (Require lineHint)                              │
-│  ├── /lsp/definition    /lsp/references    /lsp/calls      │
-│  │                                                         │
-│  └──────────────────────┬──────────────────────────────────┤
-│                         ▼                                  │
-│  CONTENT TOOL (Last step)                                  │
-│  └── /local/content     → read implementation details      │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+Think: "I need to find it first, then understand it"
+
+1. /local/search for the function name → get lineHint
+2. /lsp/definition → see where it's actually defined
+3. /lsp/calls (incoming) → see who calls it
+4. /lsp/calls (outgoing) → see what it calls
+5. /local/content → read the actual implementation
+```
+
+### Understanding All Usages
+
+```
+Think: "I need comprehensive coverage"
+
+1. /local/search → find where symbol appears
+2. /lsp/references → get all semantic usages (more accurate)
+3. Compare results - text search may find more, LSP is more precise
+```
+
+### Tracing a Flow
+
+```
+Think: "I need to follow the execution path"
+
+1. /local/search → find the starting point
+2. /lsp/calls (outgoing) → what does it call?
+3. /lsp/calls on each result → continue the trace
+4. Build up a picture of the flow
 ```
 
 ---
 
-## Step-by-Step Coordination
+## When LSP Adds Value
 
-### Step 1: Search to Get lineHint
+**LSP is valuable when:**
+- You need to understand relationships (who calls what)
+- You want precise symbol resolution (avoid false positives)
+- You're doing impact analysis (what breaks if I change X)
 
-```bash
-curl "http://localhost:1987/local/search?pattern=authenticate&path=/project/src"
-```
+**Text search is valuable when:**
+- You're looking for patterns (comments, strings, partial names)
+- LSP isn't available or times out
+- You want quick, broad coverage
 
-**Response contains lineHint:**
-```json
-{
-  "files": [{
-    "path": "/project/src/auth/middleware.ts",
-    "matches": [{
-      "line": 15,        ← THIS IS YOUR lineHint!
-      "column": 10,
-      "preview": "export async function authenticate(req, res, next) {"
-    }]
-  }]
-}
-```
+**Use both** for the best results - they complement each other.
 
-### Step 2: Use lineHint in LSP Calls
+---
 
-```bash
-# Definition
-curl "http://localhost:1987/lsp/definition?uri=/project/src/auth/middleware.ts&symbolName=authenticate&lineHint=15"
+## Functions vs Types
 
-# References  
-curl "http://localhost:1987/lsp/references?uri=/project/src/auth/middleware.ts&symbolName=authenticate&lineHint=15"
+**For functions/methods**: Both `/lsp/references` and `/lsp/calls` work
+- `calls`: Shows the call graph (who calls, what it calls)
+- `references`: Shows all usages (including type annotations)
 
-# Call hierarchy
-curl "http://localhost:1987/lsp/calls?uri=/project/src/auth/middleware.ts&symbolName=authenticate&lineHint=15&direction=incoming"
-```
+**For types/interfaces/variables**: Use `/lsp/references` only
+- `calls` won't work (types aren't called)
+- `references` shows where the type is used
 
-### Step 3: Parallelize After Search
+---
 
-Once you have lineHint, LSP calls can run **in parallel**:
+## Parallel Execution
+
+Once you have lineHint, you can make multiple LSP calls in parallel:
 
 ```bash
-# All three run concurrently (3x faster)
-curl ".../lsp/definition?...&lineHint=15" &
-curl ".../lsp/calls?...&lineHint=15&direction=incoming" &
-curl ".../lsp/calls?...&lineHint=15&direction=outgoing" &
+# These don't depend on each other
+curl ".../lsp/calls?direction=incoming&lineHint=15" &
+curl ".../lsp/calls?direction=outgoing&lineHint=15" &
 wait
 ```
 
----
-
-## Decision Matrix: Which Tool to Use
-
-| Question Type | Primary Tool | lineHint Required? | Fallback |
-|---------------|--------------|-------------------|----------|
-| "Where is X defined?" | /lsp/definition | YES | /local/search |
-| "Who calls X?" (function) | /lsp/calls incoming | YES | /local/search pattern |
-| "What does X call?" (function) | /lsp/calls outgoing | YES | Read file + parse |
-| "All usages of X" (type/var) | /lsp/references | YES | /local/search pattern |
-| "Find files containing X" | /local/search | NO | - |
-| "Show directory structure" | /local/structure | NO | - |
-| "Find files named X" | /local/find | NO | - |
-| "Read file contents" | /local/content | NO | - |
+But: You need the search result (with lineHint) before making any LSP calls.
 
 ---
 
-## Common Mistakes to Avoid
+## When Things Don't Work
 
-### ❌ WRONG: Calling LSP Without Search
+**LSP returns nothing?**
+- Check if the symbol actually exists at that line
+- The symbol might be external (from node_modules, etc.)
+- Try text search as a fallback
 
-```bash
-# BAD - guessing lineHint
-curl "http://localhost:1987/lsp/definition?symbolName=auth&lineHint=1"
-```
+**LSP times out?**
+- The codebase might be large or cold
+- Try a more specific search first
+- Use text search as fallback
 
-**Why it fails**: lineHint=1 is almost certainly wrong. LSP needs the exact line where the symbol appears.
-
-### ❌ WRONG: Using /lsp/calls for Types/Variables
-
-```bash
-# BAD - /lsp/calls only works for functions/methods
-curl "http://localhost:1987/lsp/calls?symbolName=UserType&lineHint=10&direction=incoming"
-```
-
-**Why it fails**: Call hierarchy only tracks function calls. For types, interfaces, variables → use `/lsp/references`.
-
-### ❌ WRONG: Reading Files to Understand Flow
-
-```bash
-# BAD - file reading misses call relationships
-curl "http://localhost:1987/local/content?path=/project/src/auth.ts"
-# Then manually searching for function calls in text...
-```
-
-**Why it fails**: You'll miss dynamic calls, indirect references, and cross-file relationships. Use `/lsp/calls` for semantic flow analysis.
+**Wrong symbol resolved?**
+- Multiple symbols with same name? Use more specific lineHint
+- Try searching for a more unique pattern
 
 ---
 
-## Correct Patterns
+## Examples
 
-### Pattern 1: Symbol Lookup
-
-**Question**: "Where is `processRequest` defined?"
+### "Where is UserService defined?"
 
 ```
-1. /local/search?pattern=processRequest
-   → Response: { files: [{ path: "src/api.ts", matches: [{ line: 42 }] }] }
-   
-2. /lsp/definition?uri=src/api.ts&symbolName=processRequest&lineHint=42
-   → Response: { definition: { uri: "src/handlers/request.ts", line: 15 } }
+Thinking: This is a location question. Let me find it.
+
+→ /local/search pattern=UserService
+Found at services/user.ts:12
+
+→ /lsp/definition at line 12
+Confirmed: defined at services/user.ts:12-45 (class definition)
+
+Answer: "UserService is defined at services/user.ts:12"
 ```
 
-### Pattern 2: Flow Tracing
-
-**Question**: "How does authentication work?"
+### "What happens when login is called?"
 
 ```
-1. /local/search?pattern=authenticate
-   → lineHint=15 at src/auth/middleware.ts
+Thinking: This is a flow question. I need to trace the execution.
 
-2. PARALLEL:
-   /lsp/calls?direction=incoming&lineHint=15  → Who calls authenticate?
-   /lsp/calls?direction=outgoing&lineHint=15  → What does authenticate call?
+→ /local/search pattern=login
+Found at routes/auth.ts:25
 
-3. For each result, chain:
-   /lsp/definition?lineHint=<result.line>     → Navigate to called function
-   /lsp/calls?direction=outgoing              → Continue trace
-   
-4. LAST: /local/content for implementation details
+→ /lsp/calls direction=outgoing at line 25
+Calls: validateCredentials, createSession, sendResponse
+
+→ For each called function, continue tracing...
+→ Build up the full flow
+
+Answer: "When login is called, it validates credentials (auth.ts:30),
+creates a session (session.ts:15), and sends the response (auth.ts:42)"
 ```
 
-### Pattern 3: Impact Analysis
-
-**Question**: "What breaks if I change `validateInput`?"
+### "What will break if I change validateInput?"
 
 ```
-1. /local/search?pattern=validateInput
-   → lineHint=30 at src/utils/validation.ts
+Thinking: This is an impact question. I need all usages.
 
-2. /lsp/references?symbolName=validateInput&lineHint=30
-   → All locations that reference this function
+→ /local/search pattern=validateInput
+Found at validators/input.ts:8
 
-3. /lsp/calls?direction=incoming&lineHint=30
-   → All call sites (may overlap with references)
+→ /lsp/references at line 8
+Found 12 usages across 5 files
 
-4. For each caller:
-   → Check if they depend on specific behavior
-```
+→ /lsp/calls direction=incoming
+Found 8 direct callers
 
-### Pattern 4: Type/Interface Usage
-
-**Question**: "Where is `UserConfig` used?"
-
-```
-1. /local/search?pattern=UserConfig
-   → lineHint=5 at src/types/config.ts
-
-2. /lsp/references?symbolName=UserConfig&lineHint=5
-   → All type annotations, imports, etc.
-
-NOTE: Do NOT use /lsp/calls for types - it won't work!
+Answer: "validateInput is used in 12 places. The 8 direct callers are:
+[list with file:line for each]"
 ```
 
 ---
 
-## Error Recovery
+## The Key Principle
 
-### LSP Symbol Not Found
+**Search gives you coordinates. LSP gives you connections.**
 
-```
-Error: "Symbol 'X' not found at line N"
-```
-
-**Recovery**:
-1. Re-run `/local/search` with exact symbol name
-2. Verify lineHint matches a match result exactly
-3. Check if symbol is in a different file than expected
-
-### LSP Timeout
-
-```
-Error: "Operation timed out after 10s"
-```
-
-**Recovery**:
-1. Reduce scope (search in smaller directory)
-2. Use `/local/search` as fallback for text-based discovery
-3. Check if LSP server needs restart (cold start)
-
-### Empty LSP Results
-
-```
-Response: { locations: [] }
-```
-
-**Recovery**:
-1. Verify the symbol exists at lineHint location
-2. Try `/local/search` to confirm pattern exists
-3. For types/variables, ensure using `/lsp/references` not `/lsp/calls`
-
----
-
-## Parallel Execution Rules
-
-### ✅ CAN Parallelize
-
-- Multiple `/local/search` calls (different patterns)
-- Multiple `/local/structure` calls (different paths)
-- LSP calls AFTER you have lineHint from search
-- Exploration of different directories
-
-### ❌ CANNOT Parallelize
-
-- `/local/search` and `/lsp/*` for the SAME symbol (need search result first)
-- Sequential flow tracing (need each hop's lineHint)
-- Dependent queries (where one result determines next query)
-
----
-
-## Context Propagation
-
-When making chained calls, preserve research context:
-
-```bash
-# First call - get context token
-RESPONSE=$(curl -i "http://localhost:1987/local/search?pattern=auth")
-CTX=$(echo "$RESPONSE" | grep -i "X-Research-Context" | cut -d' ' -f2 | tr -d '\r')
-
-# Subsequent calls - pass context
-curl "http://localhost:1987/lsp/calls?...&_ctx=$CTX"
-```
-
-**Benefits**:
-- Better hints (context-aware suggestions)
-- Loop detection (warns if same tool called repeatedly)
-- Session correlation in logs
-
----
-
-## Quick Reference Card
-
-```
-┌─────────────────────────────────────────────────┐
-│        LSP + LOCAL COORDINATION                 │
-├─────────────────────────────────────────────────┤
-│                                                 │
-│  1. SEARCH FIRST (get lineHint)                │
-│     /local/search?pattern=X                     │
-│                                                 │
-│  2. USE lineHint FOR LSP                       │
-│     /lsp/definition?lineHint=N                  │
-│     /lsp/references?lineHint=N                  │
-│     /lsp/calls?lineHint=N&direction=in|out     │
-│                                                 │
-│  3. PARALLELIZE after search                    │
-│     Search must complete → then LSP in parallel │
-│                                                 │
-│  4. READ CONTENT LAST                          │
-│     /local/content only for implementation      │
-│                                                 │
-├─────────────────────────────────────────────────┤
-│  NEVER: Guess lineHint                         │
-│  NEVER: /lsp/calls on types (use references)   │
-│  NEVER: Read files to trace flow               │
-└─────────────────────────────────────────────────┘
-```
+Use search to find where things are. Use LSP to understand how they relate. Read files only when you need implementation details.

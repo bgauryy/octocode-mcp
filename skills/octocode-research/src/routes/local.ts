@@ -13,6 +13,8 @@ import {
   localStructureSchema,
 } from '../validation/index.js';
 import { ResearchResponse, QuickResult } from '../utils/responseBuilder.js';
+import { parseToolResponse } from '../utils/responseParser.js';
+import { withLocalResilience } from '../utils/resilience.js';
 
 export const localRoutes = Router();
 
@@ -28,33 +30,52 @@ localRoutes.get(
         req.query as Record<string, unknown>,
         localSearchSchema
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawResult = await localSearchCode({ queries } as any);
-      const data = (rawResult.structuredContent || {}) as StructuredData;
+      const rawResult = await withLocalResilience(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        () => localSearchCode({ queries } as any),
+        'localSearchCode'
+      );
+      const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       const files = Array.isArray(data.files) ? data.files : [];
       const pagination = (data.pagination || {}) as StructuredData;
 
       // Transform to role-based response
+      // MCP returns matches[] array per file with line numbers
       const response = ResearchResponse.searchResults({
-        files: files.map((f: StructuredData) => ({
-          path: String(f.path || ''),
-          matches: typeof f.matchCount === 'number' ? f.matchCount : undefined,
-          line: typeof f.line === 'number' ? f.line : undefined,
-        })),
+        files: files.map((f: StructuredData) => {
+          const matchesArray = Array.isArray(f.matches) ? f.matches : [];
+          const firstMatch = matchesArray[0] as StructuredData | undefined;
+          return {
+            path: String(f.path || ''),
+            matches: typeof f.matchCount === 'number' ? f.matchCount : matchesArray.length,
+            line: firstMatch && typeof firstMatch.line === 'number' ? firstMatch.line : undefined,
+            preview: firstMatch && typeof firstMatch.value === 'string' ? firstMatch.value.trim() : undefined,
+            // Preserve all match locations for detailed analysis
+            allMatches: matchesArray.map((m: StructuredData) => ({
+              line: typeof m.line === 'number' ? m.line : 0,
+              column: typeof m.column === 'number' ? m.column : undefined,
+              value: typeof m.value === 'string' ? m.value.trim() : undefined,
+              byteOffset: typeof m.byteOffset === 'number' ? m.byteOffset : undefined,
+              charOffset: typeof m.charOffset === 'number' ? m.charOffset : undefined,
+            })),
+          };
+        }),
         totalMatches: typeof data.totalMatches === 'number' ? data.totalMatches : 0,
         pagination:
           typeof pagination.currentPage === 'number'
             ? {
-                page: pagination.currentPage,
+                page: pagination.currentPage as number,
                 total: typeof pagination.totalPages === 'number' ? pagination.totalPages : 1,
                 hasMore: pagination.hasMore === true,
               }
             : undefined,
         searchPattern: queries[0]?.pattern,
+        mcpHints: hints, // Pass through MCP workflow hints
+        research, // Pass through research context
       });
 
-      res.status(rawResult.isError ? 500 : 200).json(response);
+      res.status(isError ? 500 : 200).json(response);
     } catch (error) {
       next(error);
     }
@@ -70,9 +91,12 @@ localRoutes.get(
         req.query as Record<string, unknown>,
         localContentSchema
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawResult = await localGetFileContent({ queries } as any);
-      const data = (rawResult.structuredContent || {}) as StructuredData;
+      const rawResult = await withLocalResilience(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        () => localGetFileContent({ queries } as any),
+        'localGetFileContent'
+      );
+      const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       // Transform to role-based response
       const response = ResearchResponse.fileContent({
@@ -81,16 +105,18 @@ localRoutes.get(
         lines:
           typeof data.startLine === 'number'
             ? {
-                start: data.startLine,
-                end: typeof data.endLine === 'number' ? data.endLine : data.startLine,
+                start: data.startLine as number,
+                end: typeof data.endLine === 'number' ? data.endLine : (data.startLine as number),
               }
             : undefined,
         language: detectLanguageFromPath(queries[0]?.path || ''),
         totalLines: typeof data.totalLines === 'number' ? data.totalLines : undefined,
         isPartial: typeof data.isPartial === 'boolean' ? data.isPartial : undefined,
+        mcpHints: hints,
+        research,
       });
 
-      res.status(rawResult.isError ? 500 : 200).json(response);
+      res.status(isError ? 500 : 200).json(response);
     } catch (error) {
       next(error);
     }
@@ -102,13 +128,14 @@ localRoutes.get(
   '/find',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const queries = parseAndValidate(
-        req.query as Record<string, unknown>,
-        localFindSchema
-      );
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawResult = await localFindFiles({ queries } as any);
-      const data = (rawResult.structuredContent || {}) as StructuredData;
+      const queries = parseAndValidate(req.query as Record<string, unknown>, localFindSchema as any);
+      const rawResult = await withLocalResilience(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        () => localFindFiles({ queries } as any),
+        'localFindFiles'
+      );
+      const { data, isError, hints: mcpHints } = parseToolResponse(rawResult);
 
       const files = Array.isArray(data.files) ? data.files : [];
       const summary =
@@ -122,19 +149,21 @@ localRoutes.get(
               .join('\n')
           : 'No files found';
 
+      // Build hints - start with MCP hints, add contextual info
+      const hints: string[] = [...mcpHints];
       const response =
         files.length === 0
-          ? QuickResult.empty(summary, [
+          ? QuickResult.empty(summary, hints.length > 0 ? hints : [
               'Try different name pattern',
               'Check path filter',
               'Use -iname for case-insensitive search',
             ])
-          : QuickResult.success(summary, data, [
+          : QuickResult.success(summary, data, hints.length > 0 ? hints : [
               'Use localGetFileContent to read file contents',
               'Use localSearchCode to search within files',
             ]);
 
-      res.status(rawResult.isError ? 500 : 200).json(response);
+      res.status(isError ? 500 : 200).json(response);
     } catch (error) {
       next(error);
     }
@@ -150,9 +179,12 @@ localRoutes.get(
         req.query as Record<string, unknown>,
         localStructureSchema
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawResult = await localViewStructure({ queries } as any);
-      const data = (rawResult.structuredContent || {}) as StructuredData;
+      const rawResult = await withLocalResilience(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        () => localViewStructure({ queries } as any),
+        'localViewStructure'
+      );
+      const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       // Parse structured output
       const structuredOutput = String(data.structuredOutput || '');
@@ -178,9 +210,11 @@ localRoutes.get(
         totalFiles: typeof data.totalFiles === 'number' ? data.totalFiles : undefined,
         totalFolders:
           typeof data.totalDirectories === 'number' ? data.totalDirectories : undefined,
+        mcpHints: hints,
+        research,
       });
 
-      res.status(rawResult.isError ? 500 : 200).json(response);
+      res.status(isError ? 500 : 200).json(response);
     } catch (error) {
       next(error);
     }

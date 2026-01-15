@@ -26,16 +26,7 @@ export interface ResearchContext {
   lastActivity: number;
 }
 
-/**
- * Extend Express Request to include research context
- */
-declare global {
-  namespace Express {
-    interface Request {
-      researchContext?: ResearchContext;
-    }
-  }
-}
+// Note: researchContext is added to Express Request type in src/types/express.d.ts
 
 /**
  * In-memory context store (consider Redis for production)

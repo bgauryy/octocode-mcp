@@ -671,6 +671,167 @@ describe('Provider Factory', () => {
     });
   });
 
+  describe('URL normalization for cache keys', () => {
+    beforeEach(() => {
+      const MockGitHubProvider = createMockProviderClass('github');
+      registerProvider('github', MockGitHubProvider);
+    });
+
+    it('should cache same provider for URLs with and without trailing slash', () => {
+      const config1: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://api.github.com',
+      };
+      const config2: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://api.github.com/',
+      };
+
+      const provider1 = getProvider('github', config1);
+      const provider2 = getProvider('github', config2);
+
+      // Both should use same cache entry after URL normalization
+      expect(provider1).toBe(provider2);
+    });
+
+    it('should cache same provider for URLs with multiple trailing slashes', () => {
+      const config1: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://api.github.com',
+      };
+      const config2: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://api.github.com///',
+      };
+
+      const provider1 = getProvider('github', config1);
+      const provider2 = getProvider('github', config2);
+
+      expect(provider1).toBe(provider2);
+    });
+
+    it('should cache same provider for URLs with different hostname casing', () => {
+      const config1: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://api.github.com',
+      };
+      const config2: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://API.GITHUB.COM',
+      };
+
+      const provider1 = getProvider('github', config1);
+      const provider2 = getProvider('github', config2);
+
+      expect(provider1).toBe(provider2);
+    });
+
+    it('should cache same provider for URLs with default https port', () => {
+      const config1: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://api.github.com',
+      };
+      const config2: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://api.github.com:443',
+      };
+
+      const provider1 = getProvider('github', config1);
+      const provider2 = getProvider('github', config2);
+
+      expect(provider1).toBe(provider2);
+    });
+
+    it('should cache same provider for URLs with default http port', () => {
+      const config1: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'http://localhost',
+      };
+      const config2: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'http://localhost:80',
+      };
+
+      const provider1 = getProvider('github', config1);
+      const provider2 = getProvider('github', config2);
+
+      expect(provider1).toBe(provider2);
+    });
+
+    it('should NOT cache same provider for URLs with non-default ports', () => {
+      const config1: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://gitlab.example.com',
+      };
+      const config2: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://gitlab.example.com:8443',
+      };
+
+      const provider1 = getProvider('github', config1);
+      const provider2 = getProvider('github', config2);
+
+      expect(provider1).not.toBe(provider2);
+    });
+
+    it('should handle combined normalization (case + trailing slash + port)', () => {
+      const config1: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://api.github.com',
+      };
+      const config2: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://API.GITHUB.COM:443/',
+      };
+
+      const provider1 = getProvider('github', config1);
+      const provider2 = getProvider('github', config2);
+
+      expect(provider1).toBe(provider2);
+    });
+
+    it('should preserve path during normalization', () => {
+      const config1: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://github.company.com/api/v3',
+      };
+      const config2: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://GITHUB.COMPANY.COM/api/v3/',
+      };
+
+      const provider1 = getProvider('github', config1);
+      const provider2 = getProvider('github', config2);
+
+      expect(provider1).toBe(provider2);
+    });
+
+    it('should handle invalid URLs gracefully by just normalizing trailing slashes', () => {
+      const config1: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'not-a-valid-url',
+      };
+      const config2: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'not-a-valid-url/',
+      };
+
+      const provider1 = getProvider('github', config1);
+      const provider2 = getProvider('github', config2);
+
+      // Even for invalid URLs, trailing slash normalization should work
+      expect(provider1).toBe(provider2);
+    });
+
+    it('should keep "default" value unchanged', () => {
+      const provider1 = getProvider('github');
+      const provider2 = getProvider('github', { type: 'github' });
+
+      // Both use 'default' as baseUrl
+      expect(provider1).toBe(provider2);
+    });
+  });
+
   describe('Provider instance interface', () => {
     beforeEach(() => {
       const MockGitHubProvider = createMockProviderClass('github');

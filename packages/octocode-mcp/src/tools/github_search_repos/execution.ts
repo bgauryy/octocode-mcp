@@ -4,18 +4,16 @@ import type {
   SimplifiedRepository,
   RepoSearchResult,
 } from '../../types.js';
-import { searchGitHubReposAPI } from '../../github/repoSearch.js';
 import {
   TOOL_NAMES,
   getDynamicHints as getMetadataDynamicHints,
 } from '../toolMetadata.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
-import {
-  handleApiError,
-  handleCatchError,
-  createSuccessResult,
-} from '../utils.js';
+import { handleCatchError, createSuccessResult } from '../utils.js';
+import { getProvider } from '../../providers/factory.js';
+import { getActiveProviderConfig } from '../../serverConfig.js';
+import { isProviderSuccess } from '../../providers/types.js';
 
 function hasValidTopics(query: GitHubReposSearchQuery): boolean {
   return Boolean(
@@ -52,7 +50,6 @@ function expandQueriesWithBothSearchTypes(
 
     if (hasTopics && hasKeywords) {
       const { topicsToSearch, keywordsToSearch, ...baseQuery } = query;
-
       expandedQueries.push(
         {
           ...baseQuery,
@@ -73,9 +70,6 @@ function expandQueriesWithBothSearchTypes(
   return expandedQueries;
 }
 
-/**
- * Generate search-type specific hints from metadata dynamic hints
- */
 function generateSearchSpecificHints(
   query: GitHubReposSearchQuery,
   hasResults: boolean
@@ -113,44 +107,96 @@ function generateSearchSpecificHints(
 export async function searchMultipleGitHubRepos(
   args: ToolExecutionArgs<GitHubReposSearchQuery>
 ): Promise<CallToolResult> {
-  const { queries, authInfo, sessionId } = args;
+  const { queries, authInfo } = args;
+  const { provider: providerType, baseUrl, token } = getActiveProviderConfig();
   const expandedQueries = expandQueriesWithBothSearchTypes(queries);
 
   return executeBulkOperation(
     expandedQueries,
     async (query: GitHubReposSearchQuery, _index: number) => {
       try {
-        const apiResult = await searchGitHubReposAPI(
-          query,
+        // Get provider instance
+        const provider = getProvider(providerType, {
+          type: providerType,
+          baseUrl,
+          token,
           authInfo,
-          sessionId
-        );
+        });
 
-        const apiError = handleApiError(apiResult, query);
-        if (apiError) return apiError;
+        // Parse stars filter if provided
+        let minStars: number | undefined;
+        if (query.stars) {
+          const starsMatch = query.stars.match(/[<>=]*(\d+)/);
+          if (starsMatch && starsMatch[1]) {
+            minStars = parseInt(starsMatch[1], 10);
+          }
+        }
 
-        const repositories =
-          'data' in apiResult
-            ? apiResult.data.repositories || []
-            : ([] satisfies SimplifiedRepository[]);
+        // Convert query to provider format
+        const providerQuery = {
+          keywords: query.keywordsToSearch,
+          topics: query.topicsToSearch,
+          owner: query.owner,
+          minStars,
+          sort: query.sort as
+            | 'stars'
+            | 'forks'
+            | 'updated'
+            | 'created'
+            | 'best-match'
+            | undefined,
+          limit: query.limit,
+          page: query.page,
+          mainResearchGoal: query.mainResearchGoal,
+          researchGoal: query.researchGoal,
+          reasoning: query.reasoning,
+        };
 
-        const pagination =
-          'data' in apiResult ? apiResult.data.pagination : undefined;
+        const apiResult = await provider.searchRepos(providerQuery);
 
-        // Generate pagination hints with full context for navigation
+        if (!isProviderSuccess(apiResult)) {
+          return handleCatchError(
+            new Error(apiResult.error || 'Provider error'),
+            query
+          );
+        }
+
+        // Transform provider response to tool result format
+        // Parse owner/repo from fullPath (e.g., "owner/repo")
+        const repositories: SimplifiedRepository[] =
+          apiResult.data.repositories.map(repo => {
+            const [owner, repoName] = repo.fullPath.split('/');
+            return {
+              owner: owner || '',
+              repo: repoName || repo.name,
+              defaultBranch: repo.defaultBranch,
+              stars: repo.stars,
+              description: repo.description || '',
+              url: repo.url,
+              createdAt: repo.createdAt,
+              updatedAt: repo.updatedAt,
+              pushedAt: repo.lastActivityAt,
+              visibility: repo.visibility,
+              topics: repo.topics,
+              forksCount: repo.forks,
+              openIssuesCount: repo.openIssuesCount,
+            };
+          });
+
+        const pagination = apiResult.data.pagination;
+
         const paginationHints: string[] = [];
         if (pagination) {
-          const { currentPage, totalPages, totalMatches, perPage, hasMore } =
-            pagination;
+          const { currentPage, totalPages, totalEntries, hasMore } = pagination;
+          const perPage = pagination.entriesPerPage || 10;
+          const totalMatches = totalEntries || 0;
           const startItem = (currentPage - 1) * perPage + 1;
           const endItem = Math.min(currentPage * perPage, totalMatches);
 
-          // Main pagination summary
           paginationHints.push(
             `Page ${currentPage}/${totalPages} (showing ${startItem}-${endItem} of ${totalMatches} repos)`
           );
 
-          // Navigation hints
           if (hasMore) {
             paginationHints.push(`Next: page=${currentPage + 1}`);
           }
@@ -160,8 +206,6 @@ export async function searchMultipleGitHubRepos(
           if (!hasMore) {
             paginationHints.push('Final page');
           }
-
-          // Quick navigation hint for multi-page results
           if (totalPages > 2) {
             paginationHints.push(
               `Jump to: page=1 (first) or page=${totalPages} (last)`
@@ -169,16 +213,25 @@ export async function searchMultipleGitHubRepos(
           }
         }
 
-        // Generate search-type specific hints from metadata
         const searchHints = generateSearchSpecificHints(
           query,
           repositories.length > 0
         );
 
-        // Use unified pattern: extraHints for pagination and search-specific hints
+        // Transform pagination to expected format
+        const resultPagination = pagination
+          ? {
+              currentPage: pagination.currentPage,
+              totalPages: pagination.totalPages,
+              perPage: pagination.entriesPerPage || 10,
+              totalMatches: pagination.totalEntries || 0,
+              hasMore: pagination.hasMore,
+            }
+          : undefined;
+
         return createSuccessResult(
           query,
-          { repositories, pagination },
+          { repositories, pagination: resultPagination },
           repositories.length > 0,
           TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
           {

@@ -3,6 +3,13 @@
  *
  * Provides high-level response helpers that wrap the MCP role-based response API
  * with research-specific patterns and formatting.
+ *
+ * NOTE: The MCP tools already provide rich reasoning context via:
+ * - mainResearchGoal, researchGoal, reasoning in each result
+ * - hasResultsStatusHints, emptyStatusHints, errorStatusHints for guidance
+ * - Dynamic per-tool hints based on context
+ *
+ * This module focuses on formatting and presentation, NOT duplicating reasoning.
  */
 
 import {
@@ -27,6 +34,17 @@ interface PaginationInfo {
 }
 
 /**
+ * Detailed match location info (preserved from MCP response)
+ */
+interface MatchLocation {
+  line: number;
+  column?: number;
+  value?: string;
+  byteOffset?: number;
+  charOffset?: number;
+}
+
+/**
  * File match info for search results
  */
 interface FileMatch {
@@ -35,6 +53,17 @@ interface FileMatch {
   line?: number;
   preview?: string;
   repo?: string;
+  /** All match locations - preserved from MCP for detailed analysis */
+  allMatches?: MatchLocation[];
+}
+
+/**
+ * Research context from MCP response
+ */
+interface ResearchContext {
+  mainResearchGoal?: string;
+  researchGoal?: string;
+  reasoning?: string;
 }
 
 /**
@@ -43,23 +72,19 @@ interface FileMatch {
 export const ResearchResponse = {
   /**
    * Search results with navigation hints
-   *
-   * @example
-   * ```typescript
-   * ResearchResponse.searchResults({
-   *   files: [{ path: 'src/index.ts', matches: 5, line: 42 }],
-   *   totalMatches: 15,
-   *   pagination: { page: 1, total: 3, hasMore: true }
-   * });
-   * ```
    */
   searchResults(results: {
     files: FileMatch[];
     totalMatches: number;
     pagination?: PaginationInfo;
     searchPattern?: string;
+    isLocal?: boolean;
+    /** MCP workflow hints - passed through from tool response */
+    mcpHints?: string[];
+    /** Research context - preserved from the query */
+    research?: ResearchContext;
   }): CallToolResult {
-    const { files, totalMatches, pagination, searchPattern } = results;
+    const { files, totalMatches, pagination, searchPattern, mcpHints = [], research } = results;
 
     // Build summary
     const patternInfo = searchPattern ? ` for "${searchPattern}"` : '';
@@ -70,16 +95,14 @@ export const ResearchResponse = {
             .slice(0, 10)
             .map(
               f =>
-                `- ${f.path}${f.line ? ` (line ${f.line})` : ''}${f.matches ? ` [${f.matches} matches]` : ''}`
+                `- ${f.repo ? `${f.repo}:` : ''}${f.path}${f.line ? ` (line ${f.line})` : ''}${f.matches ? ` [${f.matches} matches]` : ''}${f.preview ? `\n  "${f.preview.slice(0, 100)}${f.preview.length > 100 ? '...' : ''}"` : ''}`
             )
             .join('\n') +
           (files.length > 10 ? `\n... and ${files.length - 10} more files` : '')
         : `No matches found${patternInfo}`;
 
-    // Build hints
-    const hints: string[] = [
-      'Use lineHint from results for LSP tools (lspGotoDefinition, lspFindReferences)',
-    ];
+    // Build hints - start with MCP hints, add pagination info
+    const hints: string[] = [...mcpHints];
     if (files.length > 10) {
       hints.push(`Showing 10 of ${files.length} files`);
     }
@@ -89,11 +112,13 @@ export const ResearchResponse = {
 
     // Return appropriate response type
     if (files.length === 0) {
-      return QuickResult.empty(summary, [
+      // For empty results, MCP already provides relevant hints
+      const emptyHints = mcpHints.length > 0 ? mcpHints : [
         'Try broader search terms',
         'Check spelling and case sensitivity',
         'Remove path filters to widen search',
-      ]);
+      ];
+      return QuickResult.empty(summary, emptyHints);
     }
 
     if (pagination) {
@@ -105,16 +130,6 @@ export const ResearchResponse = {
 
   /**
    * File content with context
-   *
-   * @example
-   * ```typescript
-   * ResearchResponse.fileContent({
-   *   path: 'src/utils.ts',
-   *   content: 'export function helper() {...}',
-   *   lines: { start: 10, end: 25 },
-   *   language: 'typescript'
-   * });
-   * ```
    */
   fileContent(result: {
     path: string;
@@ -123,8 +138,12 @@ export const ResearchResponse = {
     language?: string;
     totalLines?: number;
     isPartial?: boolean;
+    /** MCP workflow hints - passed through from tool response */
+    mcpHints?: string[];
+    /** Research context - preserved from the query */
+    research?: ResearchContext;
   }): CallToolResult {
-    const { path, content, lines, language, totalLines, isPartial } = result;
+    const { path, content, lines, language, totalLines, isPartial, mcpHints = [] } = result;
 
     const lineInfo = lines ? ` (lines ${lines.start}-${lines.end})` : '';
     const lang = language || detectLanguage(path);
@@ -132,7 +151,9 @@ export const ResearchResponse = {
     // Format content with code fence
     const formattedContent = `📄 ${path}${lineInfo}\n\n\`\`\`${lang}\n${content}\n\`\`\``;
 
-    const hints: string[] = ['Content retrieved successfully'];
+    // Build hints - start with MCP hints, add contextual info
+    const hints: string[] = [...mcpHints];
+    hints.push('Content retrieved successfully');
     if (lines) {
       hints.push(`Showing lines ${lines.start}-${lines.end}`);
     }
@@ -151,22 +172,17 @@ export const ResearchResponse = {
 
   /**
    * LSP definition/reference/call hierarchy results
-   *
-   * @example
-   * ```typescript
-   * ResearchResponse.lspResult({
-   *   symbol: 'fetchData',
-   *   locations: [{ uri: 'src/api.ts', line: 42, preview: 'export async function fetchData' }],
-   *   type: 'definition'
-   * });
-   * ```
    */
   lspResult(result: {
     symbol: string;
     locations: Array<{ uri: string; line: number; preview?: string }>;
     type: 'definition' | 'references' | 'calls' | 'incoming' | 'outgoing';
+    /** MCP workflow hints - passed through from tool response */
+    mcpHints?: string[];
+    /** Research context - preserved from the query */
+    research?: ResearchContext;
   }): CallToolResult {
-    const { symbol, locations, type } = result;
+    const { symbol, locations, type, mcpHints = [] } = result;
 
     const typeLabels: Record<string, string> = {
       definition: 'Definition',
@@ -197,22 +213,17 @@ export const ResearchResponse = {
             .join('\n')
         : `No ${type} found for "${symbol}"`;
 
-    const hints =
-      locations.length > 0
-        ? [
-            'Use returned line numbers for further navigation',
-            type === 'definition'
-              ? 'Use lspFindReferences to find all usages'
-              : null,
-            type === 'references'
-              ? 'Use lspCallHierarchy for call relationships'
-              : null,
-          ].filter(Boolean) as string[]
-        : [
-            'Symbol may be external or unindexed',
-            'Try localSearchCode as fallback',
-            'Check if file is in workspace',
-          ];
+    // Build hints - start with MCP hints, add contextual info
+    const hints: string[] = [...mcpHints];
+    if (locations.length > 0) {
+      hints.push('Use returned line numbers for further navigation');
+      if (type === 'definition') hints.push('Use lspFindReferences to find all usages');
+      if (type === 'references') hints.push('Use lspCallHierarchy for call relationships');
+    } else if (mcpHints.length === 0) {
+      hints.push('Symbol may be external or unindexed');
+      hints.push('Try localSearchCode as fallback');
+      hints.push('Check if file is in workspace');
+    }
 
     return createRoleBasedResult({
       system: { hints },
@@ -227,15 +238,6 @@ export const ResearchResponse = {
 
   /**
    * Repository structure view
-   *
-   * @example
-   * ```typescript
-   * ResearchResponse.repoStructure({
-   *   path: 'src/',
-   *   structure: { files: ['index.ts'], folders: ['utils/', 'components/'] },
-   *   depth: 2
-   * });
-   * ```
    */
   repoStructure(result: {
     path: string;
@@ -245,8 +247,12 @@ export const ResearchResponse = {
     totalFolders?: number;
     owner?: string;
     repo?: string;
+    /** MCP workflow hints - passed through from tool response */
+    mcpHints?: string[];
+    /** Research context - preserved from the query */
+    research?: ResearchContext;
   }): CallToolResult {
-    const { path, structure, depth, totalFiles, totalFolders, owner, repo } =
+    const { path, structure, depth, totalFiles, totalFolders, owner, repo, mcpHints = [] } =
       result;
 
     const repoInfo = owner && repo ? `${owner}/${repo}` : '';
@@ -264,7 +270,8 @@ export const ResearchResponse = {
         ? `Files:\n${fileList.map(f => `  📄 ${f}`).join('\n')}`
         : 'No files in this directory');
 
-    const hints: string[] = [];
+    // Build hints - start with MCP hints, add contextual info
+    const hints: string[] = [...mcpHints];
     if (depth === 1) {
       hints.push('Use depth=2 to see nested contents');
     }
@@ -297,14 +304,6 @@ export const ResearchResponse = {
 
   /**
    * Package search results
-   *
-   * @example
-   * ```typescript
-   * ResearchResponse.packageSearch({
-   *   packages: [{ name: 'lodash', version: '4.17.21', description: '...' }],
-   *   registry: 'npm'
-   * });
-   * ```
    */
   packageSearch(result: {
     packages: Array<{
@@ -315,8 +314,12 @@ export const ResearchResponse = {
     }>;
     registry: 'npm' | 'pypi';
     query?: string;
+    /** MCP workflow hints - passed through from tool response */
+    mcpHints?: string[];
+    /** Research context - preserved from the query */
+    research?: ResearchContext;
   }): CallToolResult {
-    const { packages, registry, query } = result;
+    const { packages, registry, query, mcpHints = [] } = result;
 
     const queryInfo = query ? ` for "${query}"` : '';
     const summary =
@@ -331,13 +334,15 @@ export const ResearchResponse = {
             .join('\n')
         : `No packages found${queryInfo} on ${registry.toUpperCase()}`;
 
-    const hints =
-      packages.length > 0
-        ? [
-            'Use repository URL with githubViewRepoStructure to explore source',
-            'Use githubSearchCode to find usage examples',
-          ]
-        : ['Try different search terms', 'Check package name spelling'];
+    // Build hints - start with MCP hints, add contextual info
+    const hints: string[] = [...mcpHints];
+    if (packages.length > 0) {
+      hints.push('Use repository URL with githubViewRepoStructure to explore source');
+      hints.push('Use githubSearchCode to find usage examples');
+    } else if (mcpHints.length === 0) {
+      hints.push('Try different search terms');
+      hints.push('Check package name spelling');
+    }
 
     if (packages.length === 0) {
       return QuickResult.empty(summary, hints);
@@ -348,14 +353,6 @@ export const ResearchResponse = {
 
   /**
    * Pull request search results
-   *
-   * @example
-   * ```typescript
-   * ResearchResponse.pullRequests({
-   *   prs: [{ number: 123, title: 'Fix bug', state: 'merged' }],
-   *   repo: 'owner/repo'
-   * });
-   * ```
    */
   pullRequests(result: {
     prs: Array<{
@@ -367,8 +364,12 @@ export const ResearchResponse = {
     }>;
     repo?: string;
     pagination?: PaginationInfo;
+    /** MCP workflow hints - passed through from tool response */
+    mcpHints?: string[];
+    /** Research context - preserved from the query */
+    research?: ResearchContext;
   }): CallToolResult {
-    const { prs, repo, pagination } = result;
+    const { prs, repo, pagination, mcpHints = [] } = result;
 
     const repoInfo = repo ? ` in ${repo}` : '';
     const summary =
@@ -383,13 +384,15 @@ export const ResearchResponse = {
             .join('\n')
         : `No pull requests found${repoInfo}`;
 
-    const hints =
-      prs.length > 0
-        ? [
-            'Use prNumber with type="fullContent" to see full diff',
-            'Use type="partialContent" with file filter for specific changes',
-          ]
-        : ['Try broader date range', 'Check repository name'];
+    // Build hints - start with MCP hints, add contextual info
+    const hints: string[] = [...mcpHints];
+    if (prs.length > 0) {
+      hints.push('Use prNumber with type="fullContent" to see full diff');
+      hints.push('Use type="partialContent" with file filter for specific changes');
+    } else if (mcpHints.length === 0) {
+      hints.push('Try broader date range');
+      hints.push('Check repository name');
+    }
 
     if (prs.length === 0) {
       return QuickResult.empty(summary, hints);
@@ -404,14 +407,6 @@ export const ResearchResponse = {
 
   /**
    * Generic bulk operation result
-   *
-   * @example
-   * ```typescript
-   * ResearchResponse.bulkResult({
-   *   results: [{ status: 'success', data: {...} }, { status: 'error', error: '...' }],
-   *   operation: 'search'
-   * });
-   * ```
    */
   bulkResult(result: {
     results: Array<{ status: string; data?: unknown; error?: string }>;

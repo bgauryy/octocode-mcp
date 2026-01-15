@@ -15,6 +15,8 @@ import {
   githubPRsSchema,
 } from '../validation/index.js';
 import { ResearchResponse, QuickResult } from '../utils/responseBuilder.js';
+import { parseToolResponse } from '../utils/responseParser.js';
+import { withGitHubResilience } from '../utils/resilience.js';
 
 export const githubRoutes = Router();
 
@@ -30,26 +32,44 @@ githubRoutes.get(
         req.query as Record<string, unknown>,
         githubSearchSchema
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawResult = await githubSearchCode({ queries } as any);
-      const data = (rawResult.structuredContent || {}) as StructuredData;
+      const rawResult = await withGitHubResilience(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        () => githubSearchCode({ queries } as any),
+        'githubSearchCode'
+      );
+      const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       // Transform to role-based response
+      // GitHub API returns text_matches as string array (snippets), not line numbers
       const files = Array.isArray(data.files) ? data.files : [];
       const response = ResearchResponse.searchResults({
-        files: files.map((f: StructuredData) => ({
-          path: String(f.path || ''),
-          matches: typeof f.matchCount === 'number' ? f.matchCount : undefined,
-          line: typeof f.line === 'number' ? f.line : undefined,
-        })),
-        totalMatches: typeof data.totalMatches === 'number' ? data.totalMatches : 0,
-        pagination: data.pagination as { page: number; total: number; hasMore: boolean } | undefined,
+        files: files.map((f: StructuredData) => {
+          const textMatches = Array.isArray(f.text_matches) ? f.text_matches : [];
+          const firstMatch = textMatches[0];
+          return {
+            path: String(f.path || ''),
+            repo: typeof f.repo === 'string' ? f.repo : undefined,
+            matches: textMatches.length,
+            preview: typeof firstMatch === 'string' ? firstMatch.trim().slice(0, 200) : undefined,
+          };
+        }),
+        totalMatches: typeof (data.pagination as StructuredData)?.totalMatches === 'number'
+          ? (data.pagination as StructuredData).totalMatches as number
+          : 0,
+        // Map MCP pagination fields (currentPage/totalPages) to skill format (page/total)
+        pagination: data.pagination ? {
+          page: (data.pagination as StructuredData).currentPage as number || 1,
+          total: (data.pagination as StructuredData).totalPages as number || 1,
+          hasMore: (data.pagination as StructuredData).hasMore === true,
+        } : undefined,
         searchPattern: Array.isArray(queries[0]?.keywordsToSearch)
           ? queries[0].keywordsToSearch.join(' ')
           : undefined,
+        mcpHints: hints, // Pass through MCP workflow hints
+        research, // Pass through research context
       });
 
-      res.status(rawResult.isError ? 500 : 200).json(response);
+      res.status(isError ? 500 : 200).json(response);
     } catch (error) {
       next(error);
     }
@@ -65,9 +85,12 @@ githubRoutes.get(
         req.query as Record<string, unknown>,
         githubContentSchema
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawResult = await githubGetFileContent({ queries } as any);
-      const data = (rawResult.structuredContent || {}) as StructuredData;
+      const rawResult = await withGitHubResilience(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        () => githubGetFileContent({ queries } as any),
+        'githubGetFileContent'
+      );
+      const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       // Transform to role-based response
       const response = ResearchResponse.fileContent({
@@ -76,16 +99,18 @@ githubRoutes.get(
         lines:
           typeof data.startLine === 'number'
             ? {
-                start: data.startLine,
-                end: typeof data.endLine === 'number' ? data.endLine : data.startLine,
+                start: data.startLine as number,
+                end: typeof data.endLine === 'number' ? data.endLine : (data.startLine as number),
               }
             : undefined,
         language: detectLanguageFromPath(queries[0]?.path || ''),
         totalLines: typeof data.totalLines === 'number' ? data.totalLines : undefined,
         isPartial: typeof data.isPartial === 'boolean' ? data.isPartial : undefined,
+        mcpHints: hints,
+        research,
       });
 
-      res.status(rawResult.isError ? 500 : 200).json(response);
+      res.status(isError ? 500 : 200).json(response);
     } catch (error) {
       next(error);
     }
@@ -101,9 +126,12 @@ githubRoutes.get(
         req.query as Record<string, unknown>,
         githubReposSchema
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawResult = await githubSearchRepositories({ queries } as any);
-      const data = (rawResult.structuredContent || {}) as StructuredData;
+      const rawResult = await withGitHubResilience(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        () => githubSearchRepositories({ queries } as any),
+        'githubSearchRepositories'
+      );
+      const { data, isError, hints: mcpHints } = parseToolResponse(rawResult);
 
       const repos = Array.isArray(data.repositories) ? data.repositories : [];
       const summary =
@@ -117,18 +145,20 @@ githubRoutes.get(
               .join('\n')
           : 'No repositories found';
 
+      // Build hints - start with MCP hints, add contextual info
+      const hints: string[] = [...mcpHints];
       const response =
         repos.length === 0
-          ? QuickResult.empty(summary, [
+          ? QuickResult.empty(summary, hints.length > 0 ? hints : [
               'Try different search terms',
               'Use topicsToSearch for topic-based search',
             ])
-          : QuickResult.success(summary, data, [
+          : QuickResult.success(summary, data, hints.length > 0 ? hints : [
               'Use githubViewRepoStructure to explore repo',
               'Use githubSearchCode to search within repo',
             ]);
 
-      res.status(rawResult.isError ? 500 : 200).json(response);
+      res.status(isError ? 500 : 200).json(response);
     } catch (error) {
       next(error);
     }
@@ -144,9 +174,12 @@ githubRoutes.get(
         req.query as Record<string, unknown>,
         githubStructureSchema
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawResult = await githubViewRepoStructure({ queries } as any);
-      const data = (rawResult.structuredContent || {}) as StructuredData;
+      const rawResult = await withGitHubResilience(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        () => githubViewRepoStructure({ queries } as any),
+        'githubViewRepoStructure'
+      );
+      const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       const structure = (data.structure || {}) as StructuredData;
       const rootEntry = (structure['.'] || { files: [], folders: [] }) as {
@@ -166,9 +199,11 @@ githubRoutes.get(
         totalFolders: typeof summary.totalFolders === 'number' ? summary.totalFolders : undefined,
         owner: queries[0]?.owner,
         repo: queries[0]?.repo,
+        mcpHints: hints,
+        research,
       });
 
-      res.status(rawResult.isError ? 500 : 200).json(response);
+      res.status(isError ? 500 : 200).json(response);
     } catch (error) {
       next(error);
     }
@@ -184,9 +219,12 @@ githubRoutes.get(
         req.query as Record<string, unknown>,
         githubPRsSchema
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawResult = await githubSearchPullRequests({ queries } as any);
-      const data = (rawResult.structuredContent || {}) as StructuredData;
+      const rawResult = await withGitHubResilience(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        () => githubSearchPullRequests({ queries } as any),
+        'githubSearchPullRequests'
+      );
+      const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       const prs = Array.isArray(data.pull_requests) ? data.pull_requests : [];
 
@@ -196,16 +234,23 @@ githubRoutes.get(
           title: String(pr.title || ''),
           state: String(pr.state || ''),
           author: typeof pr.author === 'string' ? pr.author : undefined,
-          url: typeof pr.html_url === 'string' ? pr.html_url : undefined,
+          url: typeof pr.url === 'string' ? pr.url : undefined,
         })),
         repo:
           queries[0]?.owner && queries[0]?.repo
             ? `${queries[0].owner}/${queries[0].repo}`
             : undefined,
-        pagination: data.pagination as { page: number; total: number; hasMore: boolean } | undefined,
+        // Map MCP pagination fields (currentPage/totalPages) to skill format (page/total)
+        pagination: data.pagination ? {
+          page: (data.pagination as StructuredData).currentPage as number || 1,
+          total: (data.pagination as StructuredData).totalPages as number || 1,
+          hasMore: (data.pagination as StructuredData).hasMore === true,
+        } : undefined,
+        mcpHints: hints,
+        research,
       });
 
-      res.status(rawResult.isError ? 500 : 200).json(response);
+      res.status(isError ? 500 : 200).json(response);
     } catch (error) {
       next(error);
     }

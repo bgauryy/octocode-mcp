@@ -139,6 +139,21 @@ export { ALL_TOOLS, type ToolConfig } from './tools/toolConfig.js';
 export { initialize } from './serverConfig.js';
 
 /**
+ * Initialize provider registry (GitHub, GitLab).
+ * Must be called after initialize() to register code hosting providers.
+ *
+ * @example
+ * ```typescript
+ * import { initialize, initializeProviders } from 'octocode-mcp/public';
+ *
+ * await initialize();
+ * await initializeProviders();
+ * // Now GitHub/GitLab tools will work
+ * ```
+ */
+export { initializeProviders } from './providers/factory.js';
+
+/**
  * Get the current GitHub token.
  * Always resolves fresh - no caching. Supports env vars, gh CLI, and octocode storage.
  * Call initialize() first to set up secure storage.

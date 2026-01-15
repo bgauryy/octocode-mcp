@@ -11,6 +11,8 @@ import {
   lspCallsSchema,
 } from '../validation/index.js';
 import { ResearchResponse } from '../utils/responseBuilder.js';
+import { parseToolResponse } from '../utils/responseParser.js';
+import { withLspResilience } from '../utils/resilience.js';
 
 export const lspRoutes = Router();
 
@@ -26,9 +28,12 @@ lspRoutes.get(
         req.query as Record<string, unknown>,
         lspDefinitionSchema
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawResult = await lspGotoDefinition({ queries } as any);
-      const data = (rawResult.structuredContent || {}) as StructuredData;
+      const rawResult = await withLspResilience(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        () => lspGotoDefinition({ queries } as any),
+        'lspGotoDefinition'
+      );
+      const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       // Extract locations from result
       const locations = extractLocations(data, 'definition');
@@ -37,9 +42,11 @@ lspRoutes.get(
         symbol: queries[0]?.symbolName || 'unknown',
         locations,
         type: 'definition',
+        mcpHints: hints,
+        research,
       });
 
-      res.status(rawResult.isError ? 500 : 200).json(response);
+      res.status(isError ? 500 : 200).json(response);
     } catch (error) {
       next(error);
     }
@@ -55,9 +62,12 @@ lspRoutes.get(
         req.query as Record<string, unknown>,
         lspReferencesSchema
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawResult = await lspFindReferences({ queries } as any);
-      const data = (rawResult.structuredContent || {}) as StructuredData;
+      const rawResult = await withLspResilience(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        () => lspFindReferences({ queries } as any),
+        'lspFindReferences'
+      );
+      const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       // Extract locations from result
       const locations = extractLocations(data, 'references');
@@ -66,9 +76,11 @@ lspRoutes.get(
         symbol: queries[0]?.symbolName || 'unknown',
         locations,
         type: 'references',
+        mcpHints: hints,
+        research,
       });
 
-      res.status(rawResult.isError ? 500 : 200).json(response);
+      res.status(isError ? 500 : 200).json(response);
     } catch (error) {
       next(error);
     }
@@ -84,9 +96,12 @@ lspRoutes.get(
         req.query as Record<string, unknown>,
         lspCallsSchema
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawResult = await lspCallHierarchy({ queries } as any);
-      const data = (rawResult.structuredContent || {}) as StructuredData;
+      const rawResult = await withLspResilience(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        () => lspCallHierarchy({ queries } as any),
+        'lspCallHierarchy'
+      );
+      const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       // Extract locations from result
       const locations = extractCallHierarchyLocations(data);
@@ -96,9 +111,11 @@ lspRoutes.get(
         symbol: queries[0]?.symbolName || 'unknown',
         locations,
         type: direction as 'incoming' | 'outgoing',
+        mcpHints: hints,
+        research,
       });
 
-      res.status(rawResult.isError ? 500 : 200).json(response);
+      res.status(isError ? 500 : 200).json(response);
     } catch (error) {
       next(error);
     }
@@ -139,13 +156,17 @@ function extractLocations(
     });
   }
 
-  // Handle locations array (generic)
+  // Handle locations array (generic) - MCP returns range.start.line
   if (Array.isArray(data.locations)) {
-    return data.locations.map((loc: StructuredData) => ({
-      uri: String(loc.uri || ''),
-      line: typeof loc.line === 'number' ? loc.line : 1,
-      preview: typeof loc.preview === 'string' ? loc.preview : undefined,
-    }));
+    return data.locations.map((loc: StructuredData) => {
+      const range = (loc.range || {}) as StructuredData;
+      const start = (range.start || {}) as StructuredData;
+      return {
+        uri: String(loc.uri || ''),
+        line: (typeof start.line === 'number' ? start.line : 0) + 1,
+        preview: typeof loc.content === 'string' ? loc.content : undefined,
+      };
+    });
   }
 
   return [];

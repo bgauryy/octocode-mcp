@@ -1,380 +1,211 @@
-# Local Research Agent - Code Forensics & Discovery
+# Local Codebase Research
 
-> **Role**: Expert Code Explorer & Judicial Logician for local codebase research
-> **Server**: Runs locally on user's machine at `http://localhost:1987`
-> **Principles**: Code is Truth. Follow Hints. Cite Precisely. Quality Over Speed.
-> **Core Algorithm**: Text narrows → Symbols identify → Graphs explain
-
-<critical>
-**Show your reasoning**: Before each tool call, explain what you're looking for and why this tool/approach helps answer the user's question.
-</critical>
+> **Mindset**: You're a detective solving a mystery. Follow evidence, not procedures.
 
 ---
 
-## STEP 0: Task Classification (MANDATORY BEFORE ANY TOOL CALL)
+## The Research Loop
 
-Before making ANY tool call, classify the user's request:
+Good research is iterative:
 
-<task-classification>
-<task type="DISCOVERY" indicators="What files exist?, Show structure, explore">
-<required-tools>/local/structure</required-tools>
-<flow>DISCOVER only</flow>
-</task>
-<task type="SEARCH" indicators="Find X, Where is Y?, search for">
-<required-tools>/local/search</required-tools>
-<flow>DISCOVER → EXECUTE</flow>
-</task>
-<task type="FLOW_TRACING" indicators="How does X work?, trace, flow, calls, chain">
-<required-tools>/lsp/calls (MANDATORY)</required-tools>
-<forbidden>/local/content alone</forbidden>
-<flow>Full flow: search → lineHint → LSP → content last</flow>
-</task>
-<task type="FILE_READING" indicators="Show me the code in X, read file">
-<required-tools>/local/content</required-tools>
-<flow>Direct read</flow>
-</task>
-<task type="IMPACT_ANALYSIS" indicators="What will break if I change X?">
-<required-tools>/lsp/references + /lsp/calls</required-tools>
-<flow>Full flow</flow>
-</task>
-</task-classification>
+```
+QUESTION → HYPOTHESIS → INVESTIGATE → LEARN → REFINE → REPEAT
+```
 
-<critical>
-If user mentions ANY of: **"flow", "trace", "calls", "chain", "how does X call Y", "who uses", "callers", "callees", "how does...work"**
-
-→ **STOP. You MUST use `/lsp/calls`. File reading alone is FORBIDDEN.**
-</critical>
+Each API call should be driven by a question you're trying to answer. Share your thinking as you go.
 
 ---
 
-## Trigger Word → Tool Mapping (CHECK BEFORE EVERY RESPONSE)
+## Choosing the Right Approach
 
-<trigger-actions>
-<trigger keywords="flow, trace, calls, chain">
-<required>/lsp/calls</required>
-<forbidden>/local/content alone</forbidden>
-<thinking>User asks about relationships between functions - need semantic analysis, not text</thinking>
-</trigger>
-<trigger keywords="who uses X, callers">
-<required>/lsp/calls (incoming) or /lsp/references</required>
-<forbidden>search alone</forbidden>
-<thinking>User wants to know call relationships - LSP provides semantic graph, search only finds text</thinking>
-</trigger>
-<trigger keywords="what does X call, callees">
-<required>/lsp/calls (outgoing)</required>
-<forbidden>file reading alone</forbidden>
-<thinking>User wants outgoing call graph - must use LSP semantic analysis</thinking>
-</trigger>
-<trigger keywords="where is X defined">
-<required>/lsp/definition</required>
-<forbidden>grep alone</forbidden>
-<thinking>User wants precise definition location - LSP provides accurate symbol resolution</thinking>
-</trigger>
-<trigger keywords="show me the code in file Y">
-<required>/local/content</required>
-<thinking>User explicitly wants file contents - direct read is appropriate</thinking>
-</trigger>
-<trigger keywords="find files named X">
-<required>/local/find</required>
-<thinking>User wants file discovery by name pattern</thinking>
-</trigger>
-<trigger keywords="search for pattern X">
-<required>/local/search</required>
-<thinking>User wants text pattern matching across files</thinking>
-</trigger>
-<trigger keywords="show directory structure">
-<required>/local/structure</required>
-<thinking>User wants to explore codebase layout</thinking>
-</trigger>
-</trigger-actions>
+### What Are You Trying to Learn?
 
-**COMMON MISTAKE**: Using `/local/content` to understand flows. File reading shows text. LSP shows semantic relationships.
+| Question Type | Good Approach | Why |
+|---------------|---------------|-----|
+| "Where is X?" | Text search → location | You need to find something by name |
+| "What is X?" | Definition lookup | You need to understand what X is |
+| "Who uses X?" | References/calls | You need relationship information |
+| "How does X work?" | Call tracing | You need to understand behavior |
+| "What calls X?" | Incoming calls | You need caller relationships |
+| "What does X call?" | Outgoing calls | You need callee relationships |
+
+### Lexical vs Semantic
+
+**Lexical (text search)** answers: "Where does this text appear?"
+- Fast, finds patterns
+- Can find comments, strings, partial matches
+- Use: `/local/search`
+
+**Semantic (LSP)** answers: "How is this symbol connected to other code?"
+- Understands code structure
+- Finds actual usages, not just text matches
+- Use: `/lsp/definition`, `/lsp/references`, `/lsp/calls`
+
+**Example**: Searching for "authenticate" might find comments like "// authenticate users here". LSP references for `authenticate` finds only actual calls to that function.
 
 ---
 
-## The Main Flow: DISCOVER → PLAN → EXECUTE → VERIFY → OUTPUT
+## Practical Patterns
 
-### DISCOVER Phase
-**Goal**: Understand codebase structure, find entry points
+### Pattern: Find → Navigate → Understand
 
-```bash
-# 1. View root structure
-curl "http://localhost:1987/local/structure?path=/project&depth=1"
-
-# 2. Drill into source
-curl "http://localhost:1987/local/structure?path=/project/src&depth=2"
-
-# 3. Fast file discovery
-curl "http://localhost:1987/local/search?pattern=authenticate&path=/project/src&mode=discovery"
-```
-
-### PLAN Phase
-**Goal**: Identify target symbols, create search strategy
-
-- List the symbols/functions to investigate
-- Identify which flow pattern applies (see below)
-- For complex tasks: Use host's Task tool to break down
-
-### EXECUTE Phase
-**Goal**: Search → Get lineHint → LSP analysis
-
-```bash
-# 1. Search to get lineHint
-curl "http://localhost:1987/local/search?pattern=processRequest&path=/project/src"
-# Response includes: matches[].line → THIS IS lineHint!
-
-# 2. Use lineHint with LSP (parallel calls for speed)
-curl "http://localhost:1987/lsp/definition?uri=/project/src/api.ts&symbolName=processRequest&lineHint=42"
-curl "http://localhost:1987/lsp/calls?uri=/project/src/api.ts&symbolName=processRequest&lineHint=42&direction=incoming"
-curl "http://localhost:1987/lsp/calls?uri=/project/src/api.ts&symbolName=processRequest&lineHint=42&direction=outgoing"
-```
-
-### VERIFY Phase
-**Goal**: Confirm findings, ensure quality
-
-- Cross-reference with `/lsp/references`
-- Follow call chains to validate understanding
-- Check edge cases
-
-### OUTPUT Phase
-**Goal**: Present findings, ask user, generate doc
-
-- Show summary with evidence
-- Ask user: Save research doc? Continue?
-- Write to `.octocode/research/{session-name}/`
-
----
-
-## Getting lineHint from Search Results
-
-**CRITICAL**: All LSP tools require `lineHint` from `/local/search` results.
-
-```bash
-# Step 1: Search
-curl "http://localhost:1987/local/search?pattern=authenticate&path=/project/src"
-
-# Response:
-{
-  "files": [{
-    "path": "/project/src/auth/middleware.ts",
-    "matches": [{
-      "line": 15,        ← THIS IS lineHint!
-      "column": 10,
-      "value": "export async function authenticate(req, res, next) {"
-    }]
-  }]
-}
-
-# Step 2: Use line (15) as lineHint for LSP
-curl "http://localhost:1987/lsp/definition?uri=/project/src/auth/middleware.ts&symbolName=authenticate&lineHint=15"
-```
-
-**Never guess line numbers!** Always search first.
-
----
-
-## Research Flow Patterns
-
-### Pattern 1: Flow Tracing (CHECK THIS FIRST)
-**When user asks**: "how does X work", "trace the flow", "who calls X", "what does X call"
-
-<example type="good">
-<user-query>How does authentication work?</user-query>
-<thinking>
-User asks "how does X work" → This is FLOW TRACING.
-I must use /lsp/calls to understand call relationships.
-File reading alone would miss the semantic connections.
-Plan: search → get lineHint → trace incoming + outgoing calls → then read details.
-</thinking>
-<flow>
-/local/search(pattern="authenticate") → Get lineHint
-  → /lsp/calls(incoming) → Who calls it
-  → /lsp/calls(outgoing) → What it calls
-  → /local/content → LAST: Only for implementation details
-</flow>
-</example>
+When you need to find something specific:
 
 ```
-/local/search(pattern="functionName") → Get lineHint
-  → /lsp/calls(incoming, lineHint) → Who calls it
-  → /lsp/calls(outgoing, lineHint) → What it calls
-  → /lsp/definition(lineHint) → Navigate deeper
-  → /local/content → LAST: Only for impl details
+Think: "I don't know where X is, but I can search for it"
+
+1. /local/search for the pattern
+2. Results show file:line locations
+3. Use those line numbers with LSP tools
+4. Read the code to understand details
 ```
 
-### Pattern 2: Symbol Lookup (Semantic Probe)
-**When user asks**: "where is X defined", "find the definition of X"
+The key insight: **search results give you coordinates for deeper analysis**.
 
-<example type="good">
-<user-query>Where is the UserService defined?</user-query>
-<thinking>
-User asks "where is X defined" → This is SYMBOL LOOKUP.
-I need /lsp/definition for precise location, but first need lineHint from search.
-Plan: search for symbol → get lineHint → use LSP definition → find references if needed.
-</thinking>
-<flow>
-/local/search(pattern="UserService") → Get lineHint
-  → /lsp/definition(lineHint) → Jump to definition
-  → /lsp/references(lineHint) → Find all usages
-</flow>
-</example>
+### Pattern: Trace a Flow
+
+When the user asks about how something works:
 
 ```
-/local/search(pattern="symbolName") → Get lineHint
-  → /lsp/definition(lineHint) → Jump to definition
-  → /lsp/references(lineHint) → Find all usages
-  → /local/content(matchString) → Read specific details
+Think: "Understanding flow means understanding relationships"
+
+1. Find the entry point (search)
+2. Trace incoming calls (who triggers this?)
+3. Trace outgoing calls (what does it do?)
+4. Read implementation details last
 ```
 
-### Pattern 3: Discovery
-**When user asks**: "explore the codebase", "what's in this project"
+Reading files shows you code. LSP shows you **connections between code**.
 
-<example type="good">
-<user-query>What's in this project?</user-query>
-<thinking>
-User asks to explore → This is DISCOVERY.
-I should use /local/structure to understand layout before diving into code.
-Plan: view root structure → drill into key directories → identify main modules.
-</thinking>
-<flow>
-/local/structure(depth=1) → See root structure
-  → /local/structure(path="src", depth=2) → Drill into source
-  → /local/search(filesOnly=true) → Find key modules
-</flow>
-</example>
+### Pattern: Explore Unknown Territory
+
+When you're new to a codebase:
 
 ```
-/local/structure(depth=1) → See root structure
-  → /local/structure(path="src", depth=2) → Drill into source
-  → /local/search(filesOnly=true) → Find key modules
-  → LSP tools → Navigate and analyze
-```
+Think: "I need to orient before I dive"
 
-### Pattern 4: Impact Analysis (Pre-Refactor)
-**When user asks**: "what will break if I change X", "who depends on X"
-
-<example type="good">
-<user-query>What will break if I change the validateInput function?</user-query>
-<thinking>
-User asks about impact of change → This is IMPACT ANALYSIS.
-I must trace all callers and references to understand dependencies.
-Plan: find function → trace all incoming calls → find all references → assess impact.
-</thinking>
-<flow>
-/local/search(pattern="validateInput") → Get lineHint
-  → /lsp/calls(incoming, depth=2) → Find all callers
-  → /lsp/references(includeDeclaration=false) → Find type refs, tests
-</flow>
-</example>
-
-```
-/local/search(pattern="symbolName") → Get lineHint
-  → /lsp/definition(lineHint) → Understand current impl
-  → /lsp/calls(incoming, depth=2) → Find all callers
-  → /lsp/references(includeDeclaration=false) → Find type refs, tests
+1. View structure (what directories exist?)
+2. Look at key files (package.json, main entry points)
+3. Search for domain terms
+4. Let patterns emerge
 ```
 
 ---
 
-## Decision Trees
+## Using the Response Hints
 
-### Tree 1: Problem Type & Solution
-- **Text fragment to location?** → `/local/search` (Lexical)
-- **Symbol name to definition?** → `/lsp/definition` (Symbol Resolution)
-- **Behavior to implementation?** → `/lsp/calls` (Graph Traversal)
+Every API response includes rich context from the MCP tools:
 
-### Tree 2: "Where is X defined?"
-- Know exact symbol & line? → `/lsp/definition`
-- Know exact symbol? → `/local/search` (get lineHint) → `/lsp/definition`
-- Don't know? → `/local/search` (pattern matching)
+```yaml
+# Research context in each result:
+mainResearchGoal: "Your overall objective"
+researchGoal: "This query's specific goal"
+reasoning: "Why this approach was taken"
 
-### Tree 3: "Who uses X?"
-- Function/Method? → `/lsp/calls(incoming)` for calls, `/lsp/references` for all usages
-- Type/Variable? → `/lsp/references` (only option, `/lsp/calls` won't work)
+# Status-based hints guide next steps:
+hasResultsStatusHints:
+  - "Follow mainResearchGoal, researchGoal to navigate"
+  - "Got 3+ examples? Consider stopping"
+emptyStatusHints:
+  - "Try broader terms or related concepts"
+errorStatusHints:
+  - "Check error details for recovery"
+```
 
-### Tree 4: "How does X flow to Y?"
-- MUST use: `/local/search` → `/lsp/calls(incoming)` → `/lsp/calls(outgoing)`
-- Chain `/lsp/definition` for multi-hop tracing
-- DO NOT just use `/local/content` to read files
+**Read the hints** - they adapt to your actual results and tell you:
+- When you have enough data
+- How to narrow or broaden your search
+- What to try when things fail
+
+The MCP tools track your research context automatically.
 
 ---
 
-> **Parallel Execution**: See [task_integration.md](./task_integration.md) for parallel call patterns.
->
-> **Best Practices**: See [SKILL.md](../SKILL.md#best-practices) for consolidated DO/DON'T list.
+## Good Thinking Examples
+
+### Example 1: "How does authentication work?"
+
+```
+My thinking: User is asking about a flow/process. I should trace relationships,
+not just read files. Let me start by finding the authentication entry point.
+
+→ Search for "authenticate" patterns
+→ Found in middleware.ts at line 42
+→ Trace incoming calls: who triggers authentication?
+→ Trace outgoing calls: what does authentication do?
+→ Now I understand the flow - let me read specific implementations
+```
+
+### Example 2: "Where is the User type defined?"
+
+```
+My thinking: This is a location question. I need to find a definition.
+I'll search first to get the location, then verify with LSP.
+
+→ Search for "type User" or "interface User"
+→ Found at models/user.ts:15
+→ Confirm with /lsp/definition
+→ Simple answer: "The User type is defined at models/user.ts:15"
+```
+
+### Example 3: "What will break if I change this function?"
+
+```
+My thinking: This is an impact question. I need to find all dependencies.
+
+→ Find the function location
+→ Use /lsp/references to find all usages
+→ Use /lsp/calls (incoming) to find all callers
+→ Report: "This function is called from 5 places: [list with paths:lines]"
+```
 
 ---
 
-## Checkpoint: Before Calling /local/content
+## Common Pitfalls to Avoid
 
-<checkpoint name="before-local-content">
-<verify question="Is the user asking about FLOWS, CALLS, or TRACES?">
-<if-yes>STOP - Use /lsp/calls first</if-yes>
-<if-no>Continue to next check</if-no>
-</verify>
-<verify question="Have I traced call hierarchy with LSP?">
-<if-yes>Continue to next check</if-yes>
-<if-no>STOP - Do that first</if-no>
-</verify>
-<verify question="Am I reading for specific implementation details (not flow)?">
-<if-yes>Proceed with /local/content</if-yes>
-<if-no>STOP - Reconsider if LSP tools are needed</if-no>
-</verify>
-</checkpoint>
+**Pitfall 1: Reading files to understand flow**
+- Why it's wrong: File content shows code, not connections
+- Better: Use `/lsp/calls` to see relationships, then read for details
 
----
+**Pitfall 2: Guessing line numbers**
+- Why it's wrong: LSP needs accurate positions to resolve symbols
+- Better: Always search first to get real line numbers
 
-> **Research Completion**: See [output_protocol.md](./output_protocol.md) for quality checklist and output format.
->
-> **Error Recovery**: See [SKILL.md](../SKILL.md#error-recovery) for consolidated error handling.
+**Pitfall 3: Processing too many results**
+- Why it's wrong: Wastes time and context
+- Better: Narrow your search, then examine top matches
+
+**Pitfall 4: Mechanical tool selection**
+- Why it's wrong: "User said X so I must use tool Y" misses context
+- Better: Think about what information you need, then choose appropriately
 
 ---
 
-## Multi-Research: Complex Questions
+## Multi-Part Research
 
-For questions with **multiple independent aspects**, use multi-agent orchestration.
-
-### When to Spawn Parallel Agents
-
-- Question has **2+ independent research axes**
-- Tracing **cross-system flows** (frontend → API → database)
-- **Comparison** questions (X vs Y)
-
-### Orchestration Flow
+For complex questions with independent aspects:
 
 ```
-1. DECOMPOSE: Identify independent axes
-2. SPAWN: Launch parallel Task agents (single message)
-3. MONITOR: Track via TodoWrite
-4. MERGE: Synthesize when all complete
-5. OUTPUT: Present unified summary
+"How does checkout work, including payment and inventory?"
+
+This has three independent parts:
+1. Checkout orchestration
+2. Payment processing
+3. Inventory management
+
+Consider parallel investigation - spawn tasks for each axis,
+then merge the findings.
 ```
 
-### Example
+See [task_integration.md](./task_integration.md) for patterns.
 
-```
-User: "How does checkout work, including payment and inventory?"
+---
 
-Orchestrator:
-→ Task(prompt="Research checkout orchestration...") // Agent 1
-→ Task(prompt="Research payment processing...")     // Agent 2
-→ Task(prompt="Research inventory management...")   // Agent 3
-→ Wait for all agents
-→ Merge findings into unified flow diagram
-→ Present combined summary
-```
+## Quality Standards
 
-### Agent Prompt Template
+Every finding should have:
+- **Evidence**: Actual code path:line references
+- **Explanation**: What it means, not just what it is
+- **Context**: How it relates to the user's question
 
-```javascript
-Task({
-  subagent_type: "Explore",
-  prompt: `Research [SPECIFIC AXIS] in this codebase.
-           Server: http://localhost:1987
-           Flow: /local/search → /lsp/calls → /local/content
-           Goal: [What evidence to gather]
-           Output: Summary with file paths and line numbers`
-})
-```
-
-> **Full orchestration guide**: See [output_protocol.md](./output_protocol.md#complex-research-multi-axis--deep-dives)
+Don't report what tools told you. Report what you **learned**.

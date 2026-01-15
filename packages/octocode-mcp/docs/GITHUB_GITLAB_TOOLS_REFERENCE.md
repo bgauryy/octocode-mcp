@@ -1,18 +1,47 @@
-# GitHub Tools Reference
+# GitHub & GitLab Tools Reference
 
-> Complete reference for Octocode MCP GitHub tools - External research, code search, repository exploration, and package discovery.
+> Complete reference for Octocode MCP code host tools - External research, code search, repository exploration, and package discovery across **GitHub and GitLab**.
 
 ---
 
 ## Overview
 
-Octocode MCP provides **6 GitHub tools** for external code research and exploration:
+Octocode MCP provides **6 unified tools** for external code research that work with both **GitHub** and **GitLab**:
 
 | Category | Tools | Purpose |
 |----------|-------|---------|
-| **Search Tools** (3) | `githubSearchCode`, `githubSearchRepositories`, `githubSearchPullRequests` | Find code, repos, and PRs across GitHub |
+| **Search Tools** (3) | `githubSearchCode`, `githubSearchRepositories`, `githubSearchPullRequests` | Find code, repos, and PRs/MRs across providers |
 | **Content Tools** (2) | `githubGetFileContent`, `githubViewRepoStructure` | Read files and browse repository trees |
 | **Package Tools** (1) | `packageSearch` | Lookup NPM/PyPI packages → get repo URLs |
+
+### Provider Selection
+
+The active provider is determined by the **server configuration** (environment variables), not per tool call.
+
+- **GitHub** (Default): Active when `GITHUB_TOKEN` is set.
+- **GitLab**: Active when `GITLAB_TOKEN` is set (overrides GitHub).
+
+**To switch providers:** You must change the environment variables of the MCP server.
+
+---
+
+## Provider Mapping
+
+Tools use unified parameters that map to provider-specific concepts:
+
+| Parameter | GitHub | GitLab |
+|-----------|--------|--------|
+| `owner` | Organization / User | Group / Namespace |
+| `repo` | Repository | Project Name |
+| `owner` + `repo` | `owner/repo` | `group/project` (Project ID) |
+| `branch` | Branch Name | Ref (Branch/Tag) |
+| `prNumber` | Pull Request # | Merge Request IID |
+
+### GitLab-Specific Notes
+
+1.  **Scope is Required**: You must provide `owner` and `repo` to target a specific project (e.g., `owner="my-group"`, `repo="my-project"`).
+2.  **`branch` is Required**: GitLab requires a ref for file content retrieval (unlike GitHub which auto-detects default branch).
+3.  **Global Search**: GitLab global code search requires authentication and potentially Enterprise/Premium features. Scope to a project for best results.
 
 ---
 
@@ -22,16 +51,16 @@ Octocode MCP provides **6 GitHub tools** for external code research and explorat
 
 | Tool | Description |
 |------|-------------|
-| **`githubSearchCode`** | Search for code patterns across GitHub repositories by keywords. Filter by file extension, filename, path, or match type (content vs path). |
-| **`githubSearchRepositories`** | Discover GitHub repositories by keywords or topics. Filter by stars, size, dates, and sort results. |
-| **`githubSearchPullRequests`** | Search pull requests with extensive filters. Retrieve metadata, diffs, comments, and commits. |
+| **`githubSearchCode`** | Search for code patterns across repositories by keywords. Filter by file extension, filename, path, or match type (content vs path). |
+| **`githubSearchRepositories`** | Discover repositories by keywords or topics. Filter by stars, size, dates, and sort results. |
+| **`githubSearchPullRequests`** | Search pull requests/merge requests with extensive filters. Retrieve metadata, diffs, comments, and commits. |
 
 ### Content Tools
 
 | Tool | Description |
 |------|-------------|
-| **`githubGetFileContent`** | Read file content from GitHub repositories. Supports line ranges, string matching with context, and pagination for large files. |
-| **`githubViewRepoStructure`** | Display directory tree structure of a GitHub repository. Configurable depth and pagination. |
+| **`githubGetFileContent`** | Read file content from repositories. Supports line ranges, string matching with context, and pagination for large files. |
+| **`githubViewRepoStructure`** | Display directory tree structure of a repository. Configurable depth and pagination. |
 
 ### Package Tools
 
@@ -43,10 +72,10 @@ Octocode MCP provides **6 GitHub tools** for external code research and explorat
 
 | Question | Tool |
 |----------|------|
-| "Find code pattern across GitHub" | `githubSearchCode` |
+| "Find code pattern across repos" | `githubSearchCode` |
 | "Find repositories about X" | `githubSearchRepositories` |
-| "Find PRs that changed X" | `githubSearchPullRequests` |
-| "Read file from GitHub repo" | `githubGetFileContent` |
+| "Find PRs/MRs that changed X" | `githubSearchPullRequests` |
+| "Read file from repo" | `githubGetFileContent` |
 | "Browse repository structure" | `githubViewRepoStructure` |
 | "Get repo URL for npm package" | `packageSearch` |
 
@@ -54,24 +83,22 @@ Octocode MCP provides **6 GitHub tools** for external code research and explorat
 
 ## Search Tools (Detailed)
 
-Tools for discovering code, repositories, and pull requests across GitHub.
+Tools for discovering code, repositories, and pull requests/merge requests.
 
 ### `githubSearchCode`
 
-**What it does:** Search for code patterns across GitHub using the GitHub Code Search API.
+**What it does:** Search for code patterns using keywords across repositories.
 
-| Feature | Description |
-|---------|-------------|
-| **Pattern matching** | Keywords (1-5), partial matches |
-| **Scope filters** | Owner, repository |
-| **File filters** | Extension, filename, path |
-| **Match mode** | `file` (content) or `path` (file names) |
-| **Pagination** | `limit` (1-100, default: 10), `page` (1-10) |
+| Feature | GitHub | GitLab |
+|---------|--------|--------|
+| **Scope** | Global or per-repo | Per-project (Group + Project) |
+| **Pattern matching** | Keywords (1-5), partial matches | Keywords with path/filename filters |
+| **Project filter** | `owner` + `repo` | `owner` (Group) + `repo` (Project) |
 
 **Key parameters:**
 - `keywordsToSearch` (required): Array of 1-5 search keywords
-- `owner`: Filter by repository owner/organization
-- `repo`: Filter by specific repository
+- `owner`: Repository owner / GitLab Group
+- `repo`: Specific repository / GitLab Project
 - `extension`: Filter by file extension (e.g., `ts`, `py`)
 - `filename`: Filter by filename
 - `path`: Filter by path prefix
@@ -80,58 +107,52 @@ Tools for discovering code, repositories, and pull requests across GitHub.
 - `page`: Page number (default: 1, max: 10)
 
 **Example queries:**
+
 ```
-# Find useState hook implementations
+# GitHub: Find useState hook implementations
 keywordsToSearch=["useState", "hook"], extension="ts"
 
-# Find config files in an org
+# GitHub: Find config files in an org
 owner="facebook", keywordsToSearch=["config"], match="path"
 
-# Search specific repo
-owner="vercel", repo="next.js", keywordsToSearch=["middleware"]
+# GitLab: Search in specific project (group/project)
+owner="mygroup", repo="myproject", keywordsToSearch=["middleware"]
 ```
 
 **⚠️ Gotchas:**
 - Use 1-2 filters max. **Never combine** extension + filename + path together
 - `path` is a strict prefix: `pkg` finds `pkg/file`, NOT `parent/pkg/file`
-- Start lean: single filter → verify → add more filters
 
 ---
 
 ### `githubSearchRepositories`
 
-**What it does:** Discover GitHub repositories by keywords or topics.
+**What it does:** Discover repositories/projects by keywords or topics.
 
-| Feature | Description |
-|---------|-------------|
-| **Search modes** | Keywords (name/description/readme) or topics |
-| **Quality filters** | Stars, size, created/updated dates |
-| **Match scope** | Name, description, readme |
-| **Sorting** | Forks, stars, updated, best-match |
-| **Pagination** | `limit` (1-100), `page` (1-10) |
+| Feature | GitHub | GitLab |
+|---------|--------|--------|
+| **Search modes** | Keywords, topics | Keywords, topics |
+| **Visibility** | Public (mostly) | Public/Internal/Private based on token |
 
 **Key parameters:**
 - `keywordsToSearch`: Keywords to search in repos
 - `topicsToSearch`: Topics to filter by
-- `owner`: Filter by owner/organization
+- `owner`: Filter by owner/organization/group
 - `stars`: Star count filter (e.g., `>1000`, `100..500`)
-- `size`: Repository size in KB (e.g., `>5000`)
-- `created`: Creation date (e.g., `>2023-01-01`)
+- `size`: Repository size in KB
+- `created`: Creation date filters
 - `updated`: Last update date
-- `match`: Where to search (`name`, `description`, `readme`)
-- `sort`: `forks`, `stars`, `updated`, `best-match`
+- `sort`: Sorting field (`forks`, `stars`, `updated`, `best-match`)
 - `limit`: Results per page (default: 10)
 
 **Example queries:**
+
 ```
-# Find popular TypeScript CLI tools
+# GitHub: Find popular TypeScript CLI tools
 topicsToSearch=["typescript", "cli"], stars=">1000"
 
-# Find auth services in an org
+# GitHub: Find auth services in an org
 owner="wix-private", keywordsToSearch=["auth-service"]
-
-# Recent React state management libraries
-topicsToSearch=["react", "state-management"], updated=">2024-01-01"
 ```
 
 **⚠️ Gotchas:**
@@ -144,55 +165,48 @@ topicsToSearch=["react", "state-management"], updated=">2024-01-01"
 
 ### `githubSearchPullRequests`
 
-**What it does:** Search GitHub pull requests with extensive filtering and content retrieval.
+**What it does:** Search GitHub Pull Requests or GitLab Merge Requests with extensive filtering.
 
-| Feature | Description |
-|---------|-------------|
-| **Direct lookup** | Fetch specific PR by number |
-| **Search filters** | State, author, assignee, labels, dates, reviewers |
-| **Content types** | Metadata, full diff, partial diff |
-| **Extra data** | Comments, commits |
-| **Match scope** | Title, body, comments |
-| **Sorting** | `created`, `updated`, `best-match` |
+| Feature | GitHub (PRs) | GitLab (MRs) |
+|---------|--------------|--------------|
+| **Direct lookup** | `prNumber` | `prNumber` (maps to IID) |
+| **State values** | `open`, `closed` | `open`, `closed`, `merged`, `all` |
+| **Branch filters** | `head`, `base` | `source`, `target` |
 
 **Key parameters:**
-- `prNumber`: Direct PR lookup (ignores all other filters)
-- `owner`/`repo`: Repository scope
+- `prNumber`: Direct lookup (ignores all other filters). Maps to GitLab MR IID.
+- `owner`: Repository owner / GitLab Group
+- `repo`: Repository name / GitLab Project
 - `query`: Free-text search
-- `state`: `open` or `closed`
-- `author`/`assignee`/`commenter`: User filters
-- `involves`/`mentions`: Participation filters
-- `review-requested`/`reviewed-by`: Review filters
+- `state`: `open`, `closed` (GitHub) / `merged`, `all` (GitLab)
+- `author`: User filter
+- `assignee`: Assignee filter
 - `label`: Label filter (string or array)
-- `created`/`updated`/`closed`/`merged-at`: Date filters
-- `merged`: Boolean - only merged PRs
+- `created`: Date filters
+- `updated`: Update date
+- `merged`: Boolean - only merged PRs/MRs
 - `draft`: Boolean - draft status
 - `sort`: `created`, `updated`, `best-match`
 - `order`: `asc` or `desc` (default: desc)
 - `type`: `metadata`, `fullContent`, `partialContent`
-- `withComments`: Include PR comments
+- `withComments`: Include comments/notes
 - `withCommits`: Include commit list
 - `partialContentMetadata`: Specific files to fetch diff for
 
-**Content retrieval types:**
-- `metadata`: PR info only (fast, default)
-- `fullContent`: Complete diff (token expensive)
-- `partialContent`: Specific files only (use with `partialContentMetadata`)
-
 **Example queries:**
+
 ```
-# Get specific PR metadata
-prNumber=123, type="metadata"
+# Get specific PR/MR metadata
+prNumber=123, type="metadata", owner="org", repo="app"
 
 # Find merged PRs that changed auth
 owner="org", repo="app", state="closed", merged=true, query="authentication"
 
-# Get specific file diffs from a PR
-prNumber=456, type="partialContent",
-partialContentMetadata=[{"file": "src/auth.ts"}]
+# GitLab: Find MRs by state
+owner="group", repo="project", state="merged", author="johndoe"
 
-# PRs with comments (understand WHY)
-prNumber=123, type="metadata", withComments=true
+# Get PR with comments (understand WHY)
+prNumber=123, type="metadata", withComments=true, owner="org", repo="app"
 ```
 
 **⚠️ Gotchas:**
@@ -209,20 +223,18 @@ Tools for reading file content and browsing repository structure.
 
 ### `githubGetFileContent`
 
-**What it does:** Read file content from GitHub repositories with flexible extraction options.
+**What it does:** Read file content from repositories with flexible extraction options.
 
-| Feature | Description |
-|---------|-------------|
-| **Line ranges** | `startLine`/`endLine` for specific sections |
-| **Match-based** | `matchString` with configurable context |
-| **Full content** | Read entire file (small files only) |
-| **Pagination** | `charOffset`/`charLength` for large files |
+| Feature | GitHub | GitLab |
+|---------|--------|--------|
+| **Branch** | Auto-detected or specified | **Required** (`branch` param) |
+| **Identifier** | `owner` + `repo` + `path` | `owner` + `repo` + `path` + `branch` |
 
 **Key parameters:**
-- `owner` (required): Repository owner
-- `repo` (required): Repository name
+- `owner`: Repository owner / GitLab Group
+- `repo`: Repository name / GitLab Project
 - `path` (required): File path in repository
-- `branch`: Branch name (default: main/master)
+- `branch`: Branch name (**required for GitLab**)
 - `fullContent`: Read entire file (use sparingly)
 - `startLine`/`endLine`: Line range (1-indexed)
 - `matchString`: Find specific content with context
@@ -235,20 +247,28 @@ Tools for reading file content and browsing repository structure.
 3. `fullContent=true` (small configs only)
 
 **Example queries:**
+
 ```
-# Read specific function
+# GitHub: Read specific function
+owner="vercel", repo="next.js", path="packages/next/src/server/app-render.tsx",
 matchString="export function handleAuth", matchStringContextLines=20
 
-# Read file header
+# GitHub: Read file header
+owner="facebook", repo="react", path="packages/react/index.js",
 startLine=1, endLine=50
 
-# Read entire config (small files)
-path="package.json", fullContent=true
+# GitLab: Read file (branch required!)
+owner="group", repo="project", path="src/main.ts",
+branch="main", matchString="export class"
+
+# Read entire config (small files only)
+path="package.json", fullContent=true, owner="org", repo="repo"
 ```
 
 **⚠️ Gotchas:**
 - Choose ONE mode: `matchString` OR `startLine/endLine` OR `fullContent`
 - Max file size: 300KB (FILE_TOO_LARGE error)
+- **GitLab REQUIRES `branch`** - unlike GitHub which auto-detects
 - For `branch`: Use NAME (e.g., `main`), not SHA
 - Prefer `matchString` for large files (token efficient)
 
@@ -256,19 +276,17 @@ path="package.json", fullContent=true
 
 ### `githubViewRepoStructure`
 
-**What it does:** Display the directory tree structure of a GitHub repository.
+**What it does:** Display the directory tree structure of a repository.
 
-| Feature | Description |
-|---------|-------------|
-| **Depth control** | 1-2 levels deep |
-| **Path targeting** | Start from any subdirectory |
-| **Pagination** | Handle large directories |
-| **Auto-filtering** | Ignores `.git`, `node_modules`, `dist` |
+| Feature | GitHub | GitLab |
+|---------|--------|--------|
+| **Identifier** | `owner` + `repo` + `branch` | `owner` + `repo` + `branch` |
+| **Depth control** | 1-2 levels | Recursive by default |
 
 **Key parameters:**
-- `owner` (required): Repository owner
-- `repo` (required): Repository name
-- `branch` (required): Branch name
+- `owner`: Repository owner / GitLab Group
+- `repo`: Repository name / GitLab Project
+- `branch`: Branch name
 - `path`: Starting path (default: root `""`)
 - `depth`: Traversal depth (1-2, default: 1)
 - `entriesPerPage`: Entries per page (default: 50, max: 200)
@@ -280,15 +298,19 @@ path="package.json", fullContent=true
 3. Explore specific area: `path="packages/core"`, `depth=1`
 
 **Example queries:**
+
 ```
-# See root structure
-path="", depth=1
+# GitHub: See root structure
+owner="vercel", repo="next.js", branch="canary", path="", depth=1
 
-# Drill into source directory
-path="src", depth=2
+# GitHub: Drill into source directory
+owner="facebook", repo="react", branch="main", path="packages", depth=2
 
-# Explore monorepo package
-path="packages/core", depth=1
+# GitLab: View project structure
+owner="group", repo="project", branch="main", path=""
+
+# GitLab: Explore specific path
+owner="group", repo="project", branch="develop", path="src/api"
 ```
 
 **⚠️ Gotchas:**
@@ -309,7 +331,7 @@ path="packages/core", depth=1
 | Feature | Description |
 |---------|-------------|
 | **Ecosystems** | NPM (npm) and Python (PyPI) |
-| **Repository URL** | Get owner/repo for GitHub exploration |
+| **Repository URL** | Get owner/repo for further exploration |
 | **Metadata** | Version, description, deprecation status |
 | **Alternatives** | Search for similar packages |
 
@@ -321,6 +343,7 @@ path="packages/core", depth=1
 - `pythonFetchMetadata`: Fetch extended PyPI metadata
 
 **Example queries:**
+
 ```
 # Quick lookup - get repo URL
 ecosystem="npm", name="express"
@@ -338,7 +361,7 @@ ecosystem="npm", name="lodash", searchLimit=5
 - NPM uses dashes (`my-package`), Python uses underscores (`my_package`)
 - Check DEPRECATED warnings first before using
 
-**vs GitHub Search:**
+**vs GitHub/GitLab Search:**
 - `packageSearch`: Fast lookup by exact name → get repo URL
 - `githubSearchRepositories`: Broad discovery by keywords
 
@@ -417,26 +440,41 @@ githubSearchRepositories → githubViewRepoStructure → githubSearchCode → gi
 
 ---
 
+### Flow 6: "Research GitLab internal projects" (GitLab-specific)
+
+```
+githubSearchRepositories (gitlab) → githubViewRepoStructure → githubSearchCode → githubGetFileContent
+```
+
+**Steps:**
+1. **Ensure `GITLAB_TOKEN` is set.**
+2. `githubSearchRepositories(keywordsToSearch=["auth"])` → Find projects
+3. `githubViewRepoStructure(owner="group", repo="project", branch="main")` → See structure
+4. `githubSearchCode(owner="group", repo="project", keywordsToSearch=["handler"])` → Find code
+5. `githubGetFileContent(owner="group", repo="project", branch="main", path="src/handler.ts")` → Read
+
+---
+
 ## Quick Reference
 
 ### Tool Selection Guide
 
 | Question | Tool |
 |----------|------|
-| "Search code patterns on GitHub" | `githubSearchCode` |
-| "Find repositories about X" | `githubSearchRepositories` |
-| "Find PRs that changed X" | `githubSearchPullRequests` |
-| "Read file from GitHub" | `githubGetFileContent` |
+| "Search code patterns" | `githubSearchCode` |
+| "Find repositories/projects about X" | `githubSearchRepositories` |
+| "Find PRs/MRs that changed X" | `githubSearchPullRequests` |
+| "Read file from repo" | `githubGetFileContent` |
 | "Browse repo directory tree" | `githubViewRepoStructure` |
 | "Get repo URL for package X" | `packageSearch` |
 
-### GitHub vs Local Tools
+### Provider vs Local Tools
 
 | Scenario | Use |
 |----------|-----|
 | Your codebase (files on disk) | **Local tools** + LSP |
-| External repos / libraries | **GitHub tools** |
-| Found import, need source? | `packageSearch` → GitHub tools |
+| External repos / libraries | **GitHub/GitLab tools** |
+| Found import, need source? | `packageSearch` → Provider tools |
 
 **⚠️ Local code questions → NEVER use `github*` tools. Use `localSearchCode` → LSP.**
 
@@ -459,7 +497,7 @@ githubSearchRepositories → githubViewRepoStructure → githubSearchCode → gi
 ✅ RIGHT: packageSearch(name="express") → githubViewRepoStructure
 ```
 
-`packageSearch` gives you exact repo URL; GitHub search gives broad results.
+`packageSearch` gives you exact repo URL; search gives broad results.
 
 ### ⚠️ Rule 3: Start Lean with Filters
 
@@ -468,9 +506,9 @@ githubSearchRepositories → githubViewRepoStructure → githubSearchCode → gi
 ✅ RIGHT: keywordsToSearch=["config"] + extension="ts"
 ```
 
-GitHub search fails with too many combined filters.
+Search APIs fail with too many combined filters.
 
-### ⚠️ Rule 4: Metadata First for PRs
+### ⚠️ Rule 4: Metadata First for PRs/MRs
 
 ```
 ❌ WRONG: prNumber=123, type="fullContent"
@@ -486,18 +524,61 @@ Avoid token-expensive operations until you know what you need.
 ✅ RIGHT: githubGetFileContent(matchString="function authenticate")
 ```
 
+### ⚠️ Rule 6: GitLab Requires `branch` for File Content
+
+```
+❌ WRONG (GitLab): githubGetFileContent(owner="g", repo="p", path="file.ts")
+✅ RIGHT (GitLab): githubGetFileContent(owner="g", repo="p", path="file.ts", branch="main")
+```
+
+Unlike GitHub, GitLab does not auto-detect the default branch.
+
+### ⚠️ Rule 7: GitLab Code Search Needs Scope
+
+```
+❌ WRONG (GitLab): githubSearchCode(keywordsToSearch=["auth"])
+✅ RIGHT (GitLab): githubSearchCode(owner="g", repo="p", keywordsToSearch=["auth"])
+```
+
+GitLab requires project scope for code search.
+
 ---
 
 ## Anti-Patterns to Avoid
 
 | Anti-Pattern | Why It's Wrong | Correct Approach |
 |--------------|----------------|------------------|
-| Using GitHub tools for local code | Slower, less semantic | Use local + LSP tools |
+| Using provider tools for local code | Slower, less semantic | Use local + LSP tools |
 | Searching GitHub for known packages | Broad results | `packageSearch` first |
 | Too many filters in code search | API fails | Start with 1-2 filters |
 | `fullContent=true` on large files | Token waste | Use `matchString` |
 | `type=fullContent` for PRs | Token expensive | `metadata` → `partialContent` |
 | Ignoring `packageSearch` | Miss exact repo URL | Always check for packages |
+| GitLab without `branch` | API error | Always specify `branch` for GitLab file content |
+| GitLab code search without scope | API error | Specify `owner` and `repo` |
+
+---
+
+## Environment Variables
+
+### GitHub
+
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_TOKEN` | GitHub personal access token |
+| `OCTOCODE_TOKEN` | Octocode-specific token (highest priority) |
+| `GH_TOKEN` | GitHub CLI compatible token |
+| `GITHUB_API_URL` | Custom API URL for GitHub Enterprise |
+
+### GitLab
+
+| Variable | Description |
+|----------|-------------|
+| `GITLAB_TOKEN` | GitLab personal access token |
+| `GL_TOKEN` | GitLab token (fallback) |
+| `GITLAB_HOST` | GitLab instance URL (default: `https://gitlab.com`) |
+
+**Auto-detection:** If `GITLAB_TOKEN` is set, GitLab becomes the active provider.
 
 ---
 
@@ -519,4 +600,5 @@ Tools with no dependencies can run in parallel:
 
 **Batch limits:**
 - GitHub tools: Up to 3 queries per call
+- GitLab tools: Up to 3 queries per call
 - Package search: Up to 3 queries per call

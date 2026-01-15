@@ -51,17 +51,19 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "express": "^4.21.2",
+    "js-yaml": "^4.1.1",
     "octocode-mcp": "file:../../packages/octocode-mcp",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",
     "@types/express": "^5.0.0",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.15.29",
     "eslint": "^9.27.0",
-    "typescript-eslint": "^8.32.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.32.0",
     "vitest": "^4.0.16"
   },
   "engines": {

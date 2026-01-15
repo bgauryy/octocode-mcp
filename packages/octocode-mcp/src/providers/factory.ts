@@ -47,10 +47,40 @@ function hashToken(token?: string): string {
 }
 
 /**
+ * Normalize URL for consistent cache keys.
+ * - Removes trailing slashes
+ * - Lowercases hostname
+ * - Removes default ports (443 for https, 80 for http)
+ */
+function normalizeUrl(url: string): string {
+  if (url === 'default') return url;
+
+  try {
+    const parsed = new URL(url);
+    // Remove default ports
+    if (
+      (parsed.protocol === 'https:' && parsed.port === '443') ||
+      (parsed.protocol === 'http:' && parsed.port === '80')
+    ) {
+      parsed.port = '';
+    }
+    // Lowercase hostname, remove trailing slash from pathname
+    let normalized = `${parsed.protocol}//${parsed.hostname.toLowerCase()}`;
+    if (parsed.port) normalized += `:${parsed.port}`;
+    normalized += parsed.pathname.replace(/\/+$/, '') || '';
+    return normalized;
+  } catch {
+    // If URL parsing fails, just normalize trailing slashes
+    return url.replace(/\/+$/, '');
+  }
+}
+
+/**
  * Generate a cache key for provider instances.
+ * URLs are normalized for consistent caching.
  */
 function getCacheKey(type: ProviderType, config?: ProviderConfig): string {
-  const baseUrl = config?.baseUrl || 'default';
+  const baseUrl = normalizeUrl(config?.baseUrl || 'default');
   const tokenHash = hashToken(config?.token || config?.authInfo?.token);
   return `${type}:${baseUrl}:${tokenHash}`;
 }

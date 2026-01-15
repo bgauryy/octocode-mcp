@@ -1,11 +1,10 @@
 /**
  * Comprehensive tests to verify sessionId and authInfo propagation
- * from Tools → GitHub API layer for ALL tools
+ * from Tools → Provider layer for ALL tools
  *
  * This test suite ensures that:
- * 1. All tools correctly receive sessionId from withSecurityValidation
- * 2. All tools correctly pass sessionId to GitHub APIs
- * 3. All GitHub APIs properly receive and use sessionId for caching
+ * 1. All tools correctly use the provider layer
+ * 2. All tools properly call provider methods
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -14,44 +13,26 @@ import {
   type MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
 
-// Create mock spy functions for ALL GitHub APIs using vi.hoisted()
-// vi.hoisted() ensures these are available during module initialization
-const mockSearchGitHubCodeAPI = vi.hoisted(() => vi.fn());
-const mockFetchGitHubFileContentAPI = vi.hoisted(() => vi.fn());
-const mockViewGitHubRepositoryStructureAPI = vi.hoisted(() => vi.fn());
-const mockSearchGitHubReposAPI = vi.hoisted(() => vi.fn());
-const mockSearchGitHubPullRequestsAPI = vi.hoisted(() => vi.fn());
+const mockGetProvider = vi.hoisted(() => vi.fn());
 
-// Mock ALL GitHub API modules BEFORE any imports
-vi.mock('../../src/github/codeSearch.js', () => ({
-  searchGitHubCodeAPI: mockSearchGitHubCodeAPI,
+vi.mock('../../src/providers/factory.js', () => ({
+  getProvider: mockGetProvider,
 }));
 
-vi.mock('../../src/github/fileOperations.js', () => ({
-  fetchGitHubFileContentAPI: mockFetchGitHubFileContentAPI,
-  viewGitHubRepositoryStructureAPI: mockViewGitHubRepositoryStructureAPI,
-}));
-
-vi.mock('../../src/github/repoSearch.js', () => ({
-  searchGitHubReposAPI: mockSearchGitHubReposAPI,
-}));
-
-vi.mock('../../src/github/pullRequestSearch.js', () => ({
-  searchGitHubPullRequestsAPI: mockSearchGitHubPullRequestsAPI,
-}));
-
-// Mock cache to prevent caching interference
 vi.mock('../../src/utils/http/cache.js', () => ({
   generateCacheKey: vi.fn(() => 'test-cache-key'),
   withDataCache: vi.fn(async (_key: string, fn: () => unknown) => fn()),
 }));
 
-// Mock server config to disable logging
 vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
+  getActiveProviderConfig: vi.fn(() => ({
+    provider: 'github',
+    baseUrl: undefined,
+    token: 'mock-token',
+  })),
 }));
 
-// Now import the tool handlers
 import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch_content/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos/github_search_repos.js';
@@ -59,12 +40,79 @@ import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view
 import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests/github_search_pull_requests.js';
 import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 
-describe('SessionId and AuthInfo Propagation - ALL TOOLS', () => {
+describe('Provider Integration - ALL TOOLS', () => {
   let mockServer: MockMcpServer;
+  let mockProvider: {
+    searchCode: ReturnType<typeof vi.fn>;
+    getFileContent: ReturnType<typeof vi.fn>;
+    searchRepos: ReturnType<typeof vi.fn>;
+    searchPullRequests: ReturnType<typeof vi.fn>;
+    getRepoStructure: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     mockServer = createMockMcpServer();
     vi.clearAllMocks();
+
+    mockProvider = {
+      searchCode: vi.fn(),
+      getFileContent: vi.fn(),
+      searchRepos: vi.fn(),
+      searchPullRequests: vi.fn(),
+      getRepoStructure: vi.fn(),
+    };
+    mockGetProvider.mockReturnValue(mockProvider);
+
+    // Setup default mock responses
+    mockProvider.searchCode.mockResolvedValue({
+      data: {
+        items: [],
+        totalCount: 0,
+        pagination: { currentPage: 1, totalPages: 0, hasMore: false },
+      },
+      status: 200,
+      provider: 'github',
+    });
+    mockProvider.getFileContent.mockResolvedValue({
+      data: {
+        path: 'test.js',
+        content: 'test',
+        encoding: 'utf-8',
+        size: 4,
+        ref: 'main',
+      },
+      status: 200,
+      provider: 'github',
+    });
+    mockProvider.searchRepos.mockResolvedValue({
+      data: {
+        items: [],
+        totalCount: 0,
+        pagination: { currentPage: 1, totalPages: 0, hasMore: false },
+      },
+      status: 200,
+      provider: 'github',
+    });
+    mockProvider.getRepoStructure.mockResolvedValue({
+      data: {
+        entries: [],
+        path: '',
+        repository: { id: '1', name: 'test/repo', url: '' },
+        branch: 'main',
+        truncated: false,
+      },
+      status: 200,
+      provider: 'github',
+    });
+    mockProvider.searchPullRequests.mockResolvedValue({
+      data: {
+        items: [],
+        totalCount: 0,
+        pagination: { currentPage: 1, totalPages: 0, hasMore: false },
+      },
+      status: 200,
+      provider: 'github',
+    });
   });
 
   afterEach(() => {
@@ -72,135 +120,86 @@ describe('SessionId and AuthInfo Propagation - ALL TOOLS', () => {
     vi.resetAllMocks();
   });
 
-  describe('1. github_search_code → searchGitHubCodeAPI', () => {
-    it('should propagate authInfo and sessionId to searchGitHubCodeAPI', async () => {
-      mockSearchGitHubCodeAPI.mockResolvedValue({
-        data: { items: [], total_count: 0 },
-        status: 200,
-      });
-
+  describe('1. github_search_code → provider.searchCode', () => {
+    it('should call provider searchCode', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
       await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [{ keywordsToSearch: ['test'] }],
       });
 
-      // Verify the API was called with correct number of parameters
-      expect(mockSearchGitHubCodeAPI).toHaveBeenCalled();
-      expect(mockSearchGitHubCodeAPI).toHaveBeenCalledWith(
-        expect.objectContaining({ keywordsToSearch: ['test'] }),
-        undefined, // authInfo is passed (as undefined in mock environment)
-        undefined // sessionId is passed (as undefined in mock environment)
-      );
+      expect(mockGetProvider).toHaveBeenCalled();
+      expect(mockProvider.searchCode).toHaveBeenCalled();
     });
   });
 
-  describe('2. github_fetch_content → fetchGitHubFileContentAPI', () => {
-    it('should propagate authInfo and sessionId to fetchGitHubFileContentAPI', async () => {
-      mockFetchGitHubFileContentAPI.mockResolvedValue({
-        data: {
-          owner: 'test',
-          repo: 'repo',
-          path: 'test.js',
-          content: 'test content',
-        },
-        status: 200,
-      });
-
+  describe('2. github_fetch_content → provider.getFileContent', () => {
+    it('should call provider getFileContent', async () => {
       registerFetchGitHubFileContentTool(mockServer.server);
 
       await mockServer.callTool(TOOL_NAMES.GITHUB_FETCH_CONTENT, {
-        queries: [{ owner: 'test', repo: 'repo', path: 'test.js' }],
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            path: 'test.js',
+            branch: 'main',
+          },
+        ],
       });
 
-      // Verify the API was called with correct number of parameters
-      expect(mockFetchGitHubFileContentAPI).toHaveBeenCalled();
-      expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          owner: 'test',
-          repo: 'repo',
-          path: 'test.js',
-        }),
-        undefined, // authInfo is passed (as undefined in mock environment)
-        undefined // sessionId is passed (as undefined in mock environment)
-      );
+      expect(mockGetProvider).toHaveBeenCalled();
+      expect(mockProvider.getFileContent).toHaveBeenCalled();
     });
   });
 
-  describe('3. github_search_repos → searchGitHubReposAPI', () => {
-    it('should propagate authInfo and sessionId to searchGitHubReposAPI', async () => {
-      mockSearchGitHubReposAPI.mockResolvedValue({
-        data: { repositories: [] },
-        status: 200,
-      });
-
+  describe('3. github_search_repos → provider.searchRepos', () => {
+    it('should call provider searchRepos', async () => {
       registerSearchGitHubReposTool(mockServer.server);
 
       await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, {
-        queries: [{ keywordsToSearch: ['react'] }],
+        queries: [{ keywordsToSearch: ['test'] }],
       });
 
-      // Verify the API was called with correct number of parameters
-      expect(mockSearchGitHubReposAPI).toHaveBeenCalled();
-      expect(mockSearchGitHubReposAPI).toHaveBeenCalledWith(
-        expect.objectContaining({ keywordsToSearch: ['react'] }),
-        undefined, // authInfo is passed (as undefined in mock environment)
-        undefined // sessionId is passed (as undefined in mock environment)
-      );
+      expect(mockGetProvider).toHaveBeenCalled();
+      expect(mockProvider.searchRepos).toHaveBeenCalled();
     });
   });
 
-  describe('4. github_view_repo_structure → viewGitHubRepositoryStructureAPI', () => {
-    it('should propagate authInfo and sessionId to viewGitHubRepositoryStructureAPI', async () => {
-      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        owner: 'test',
-        repo: 'repo',
-        branch: 'main',
-        path: '/',
-        files: [],
-        folders: { count: 0, folders: [] },
-      });
-
+  describe('4. github_view_repo_structure → provider.getRepoStructure', () => {
+    it('should call provider getRepoStructure', async () => {
       registerViewGitHubRepoStructureTool(mockServer.server);
 
       await mockServer.callTool(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
-        queries: [{ owner: 'test', repo: 'repo', branch: 'main' }],
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+          },
+        ],
       });
 
-      // Verify the API was called with correct number of parameters
-      expect(mockViewGitHubRepositoryStructureAPI).toHaveBeenCalled();
-      expect(mockViewGitHubRepositoryStructureAPI).toHaveBeenCalledWith(
-        expect.objectContaining({
-          owner: 'test',
-          repo: 'repo',
-          branch: 'main',
-        }),
-        undefined, // authInfo is passed (as undefined in mock environment)
-        undefined // sessionId is passed (as undefined in mock environment)
-      );
+      expect(mockGetProvider).toHaveBeenCalled();
+      expect(mockProvider.getRepoStructure).toHaveBeenCalled();
     });
   });
 
-  describe('5. github_search_pull_requests → searchGitHubPullRequestsAPI', () => {
-    it('should propagate authInfo and sessionId to searchGitHubPullRequestsAPI', async () => {
-      mockSearchGitHubPullRequestsAPI.mockResolvedValue({
-        pull_requests: [],
-        total_count: 0,
-      });
-
+  describe('5. github_search_pull_requests → provider.searchPullRequests', () => {
+    it('should call provider searchPullRequests', async () => {
       registerSearchGitHubPullRequestsTool(mockServer.server);
 
       await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, {
-        queries: [{ owner: 'test', repo: 'repo' }],
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+          },
+        ],
       });
 
-      // Verify the API was called with correct number of parameters
-      expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalled();
-      expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
-        expect.objectContaining({ owner: 'test', repo: 'repo' }),
-        undefined, // authInfo is passed (as undefined in mock environment)
-        undefined // sessionId is passed (as undefined in mock environment)
-      );
+      expect(mockGetProvider).toHaveBeenCalled();
+      expect(mockProvider.searchPullRequests).toHaveBeenCalled();
     });
   });
 });

@@ -154,6 +154,7 @@ export { withBasicSecurityValidation } from 'octocode-mcp/public';
 
 export {
   initialize,
+  initializeProviders,
   getGitHubToken,
   getToken,
   getTokenSource,

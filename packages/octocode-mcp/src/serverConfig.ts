@@ -1,3 +1,4 @@
+import type { ProviderType } from './providers/types.js';
 import { getGithubCLIToken } from './utils/exec/index.js';
 import {
   getEnvTokenSource,
@@ -31,9 +32,6 @@ interface GitLabTokenResolutionResult {
 let config: ServerConfig | null = null;
 let initializationPromise: Promise<void> | null = null;
 
-// Cached GitLab configuration (resolved once at initialization)
-let gitlabConfig: GitLabConfig | null = null;
-
 // Injectable function for testing (gh CLI is passed to resolveTokenFull)
 let _getGithubCLIToken = getGithubCLIToken;
 
@@ -52,19 +50,38 @@ type ResolveTokenFullFn = (options?: {
 let _resolveTokenFull: ResolveTokenFullFn = resolveTokenFull;
 
 /**
- * Maps shared token source types to internal TokenSourceType.
- * - 'env:*' → same (env:OCTOCODE_TOKEN, env:GH_TOKEN, env:GITHUB_TOKEN)
- * - 'keychain' | 'file' → 'octocode-storage'
- * - 'gh-cli' → 'gh-cli'
- * - null → 'none'
+ * Maps source strings from various systems to internal TokenSourceType.
+ *
+ * Handles sources from:
+ * - octocode-shared: 'env:*', 'gh-cli', 'keychain', 'file'
+ * - legacy tests: 'env', 'octocode', 'octocode-storage'
+ *
+ * @param source - Source string from resolver
+ * @param getEnvSource - Optional function to get specific env var name
  */
 function mapSharedSourceToInternal(
-  source: string | null | undefined
+  source: string | null | undefined,
+  getEnvSource?: () => string | null
 ): TokenSourceType {
   if (!source) return 'none';
+
+  // Already prefixed env source
   if (source.startsWith('env:')) return source as TokenSourceType;
+
+  // Plain 'env' from legacy - need to determine specific env var
+  if (source === 'env') {
+    const specific = getEnvSource?.();
+    return (specific as TokenSourceType) ?? 'env:GITHUB_TOKEN';
+  }
+
+  // CLI source
   if (source === 'gh-cli') return 'gh-cli';
-  if (source === 'keychain' || source === 'file') return 'octocode-storage';
+
+  // Storage sources (keychain, file, octocode variants)
+  if (['keychain', 'file', 'octocode', 'octocode-storage'].includes(source)) {
+    return 'octocode-storage';
+  }
+
   return 'none';
 }
 
@@ -155,22 +172,10 @@ async function resolveGitHubToken(): Promise<TokenResolutionResult> {
     try {
       const resolved = await _legacyResolveToken();
       if (resolved?.token) {
-        // Map legacy source format to new TokenSourceType
-        let source: TokenSourceType = 'none';
-        if (resolved.source?.startsWith('env:')) {
-          source = resolved.source as TokenSourceType;
-        } else if (resolved.source === 'env') {
-          source =
-            (getEnvTokenSource() as TokenSourceType) ?? 'env:GITHUB_TOKEN';
-        } else if (resolved.source === 'gh-cli') {
-          source = 'gh-cli';
-        } else if (
-          resolved.source === 'octocode' ||
-          resolved.source === 'octocode-storage'
-        ) {
-          source = 'octocode-storage';
-        }
-        return { token: resolved.token, source };
+        return {
+          token: resolved.token,
+          source: mapSharedSourceToInternal(resolved.source, getEnvTokenSource),
+        };
       }
       return { token: null, source: 'none' };
     } catch (error) {
@@ -211,6 +216,21 @@ async function resolveGitHubToken(): Promise<TokenResolutionResult> {
 
 /** Default GitLab host */
 const DEFAULT_GITLAB_HOST = 'https://gitlab.com';
+
+// ============================================================================
+// CONFIGURATION LIMITS
+// ============================================================================
+
+/** Minimum timeout - 5 seconds (prevents accidental misconfiguration) */
+const MIN_TIMEOUT = 5000;
+/** Default timeout - 30 seconds */
+const DEFAULT_TIMEOUT = 30000;
+/** Minimum retries */
+const MIN_RETRIES = 0;
+/** Maximum retries */
+const MAX_RETRIES_LIMIT = 10;
+/** Default retries */
+const DEFAULT_RETRIES = 3;
 
 /**
  * Resolve GitLab token from environment variables.
@@ -265,9 +285,6 @@ export async function initialize(): Promise<void> {
     // Token is NOT cached - subsequent calls to getGitHubToken() will re-resolve
     const tokenResult = await resolveGitHubToken();
 
-    // Resolve GitLab configuration (cached for the session)
-    gitlabConfig = resolveGitLabConfig();
-
     // Parse logging flag (defaults to true unless explicitly 'false' or '0')
     const isLoggingEnabled = parseBooleanEnvDefaultTrue(process.env.LOG);
 
@@ -286,17 +303,24 @@ export async function initialize(): Promise<void> {
       disableTools: parseStringArray(process.env.DISABLE_TOOLS),
       enableLogging: isLoggingEnabled,
       timeout: Math.max(
-        30000,
-        parseInt(process.env.REQUEST_TIMEOUT?.trim() || '30000') || 30000
+        MIN_TIMEOUT,
+        parseInt(
+          process.env.REQUEST_TIMEOUT?.trim() || String(DEFAULT_TIMEOUT)
+        ) || DEFAULT_TIMEOUT
       ),
       maxRetries: Math.max(
-        0,
-        Math.min(10, parseInt(process.env.MAX_RETRIES?.trim() || '3') || 3)
+        MIN_RETRIES,
+        Math.min(
+          MAX_RETRIES_LIMIT,
+          parseInt(
+            process.env.MAX_RETRIES?.trim() || String(DEFAULT_RETRIES)
+          ) || DEFAULT_RETRIES
+        )
       ),
       loggingEnabled: isLoggingEnabled,
       enableLocal,
       tokenSource: tokenResult.source,
-      gitlab: gitlabConfig,
+      gitlab: resolveGitLabConfig(),
     };
   })();
 
@@ -306,7 +330,6 @@ export async function initialize(): Promise<void> {
 export function cleanup(): void {
   config = null;
   initializationPromise = null;
-  gitlabConfig = null;
 }
 
 export function getServerConfig(): ServerConfig {
@@ -362,11 +385,12 @@ export async function getTokenSource(): Promise<TokenSourceType> {
 
 /**
  * Get the GitLab configuration.
- * Returns the cached configuration resolved at initialization.
- * @returns GitLab configuration or null if not initialized
+ * Always resolves fresh - no caching. Let environment handle changes.
+ * Token can change at runtime (deletion, refresh, new login).
+ * @returns GitLab configuration
  */
-export function getGitLabConfig(): GitLabConfig | null {
-  return gitlabConfig;
+export function getGitLabConfig(): GitLabConfig {
+  return resolveGitLabConfig();
 }
 
 /**
@@ -405,4 +429,45 @@ export function getGitLabTokenSource(): GitLabTokenSourceType {
  */
 export function isGitLabConfigured(): boolean {
   return resolveGitLabToken().token !== null;
+}
+
+// ============================================================================
+// ACTIVE PROVIDER CONFIGURATION
+// ============================================================================
+
+/**
+ * Get the active provider based on environment configuration.
+ * Priority: GITLAB_TOKEN set → 'gitlab', otherwise → 'github' (default)
+ */
+export function getActiveProvider(): ProviderType {
+  return isGitLabConfigured() ? 'gitlab' : 'github';
+}
+
+/**
+ * Get active provider configuration for tool execution.
+ * Returns provider type and base URL based on environment.
+ */
+export function getActiveProviderConfig(): {
+  provider: ProviderType;
+  baseUrl?: string;
+  token?: string;
+} {
+  if (isGitLabConfigured()) {
+    return {
+      provider: 'gitlab',
+      baseUrl: getGitLabHost(),
+      token: getGitLabToken() ?? undefined,
+    };
+  }
+  return {
+    provider: 'github',
+    baseUrl: process.env.GITHUB_API_URL?.trim() || undefined,
+  };
+}
+
+/**
+ * Check if the active provider is GitLab.
+ */
+export function isGitLabActive(): boolean {
+  return getActiveProvider() === 'gitlab';
 }

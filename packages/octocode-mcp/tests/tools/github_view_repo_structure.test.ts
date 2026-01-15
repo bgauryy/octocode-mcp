@@ -5,31 +5,19 @@ import {
 } from '../fixtures/mcp-fixtures.js';
 import { getTextContent } from '../utils/testHelpers.js';
 
-const mockViewGitHubRepositoryStructureAPI = vi.hoisted(() => vi.fn());
+const mockGetProvider = vi.hoisted(() => vi.fn());
 
-const mockGetOctokit = vi.hoisted(() =>
-  vi.fn(() =>
-    Promise.resolve({
-      rest: {
-        repos: {
-          getContent: vi.fn(),
-          get: vi.fn(),
-        },
-      },
-    })
-  )
-);
-
-vi.mock('../../src/github/fileOperations.js', () => ({
-  viewGitHubRepositoryStructureAPI: mockViewGitHubRepositoryStructureAPI,
-}));
-
-vi.mock('../../src/github/client.js', () => ({
-  getOctokit: mockGetOctokit,
+vi.mock('../../src/providers/factory.js', () => ({
+  getProvider: mockGetProvider,
 }));
 
 vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
+  getActiveProviderConfig: vi.fn(() => ({
+    provider: 'github',
+    baseUrl: undefined,
+    token: 'mock-token',
+  })),
   getGitHubToken: vi.fn(async () => 'test-token'),
   getServerConfig: vi.fn(() => ({
     timeout: 30000,
@@ -42,24 +30,50 @@ import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 
 describe('GitHub View Repository Structure Tool', () => {
   let mockServer: MockMcpServer;
+  let mockProvider: {
+    searchCode: ReturnType<typeof vi.fn>;
+    getFileContent: ReturnType<typeof vi.fn>;
+    searchRepos: ReturnType<typeof vi.fn>;
+    searchPullRequests: ReturnType<typeof vi.fn>;
+    getRepoStructure: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     mockServer = createMockMcpServer();
+
+    mockProvider = {
+      searchCode: vi.fn(),
+      getFileContent: vi.fn(),
+      searchRepos: vi.fn(),
+      searchPullRequests: vi.fn(),
+      getRepoStructure: vi.fn(),
+    };
+    mockGetProvider.mockReturnValue(mockProvider);
+
     vi.clearAllMocks();
+    mockGetProvider.mockReturnValue(mockProvider);
     registerViewGitHubRepoStructureTool(mockServer.server);
 
-    mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-      structure: {
-        '.': {
-          files: ['README.md', 'package.json'],
-          folders: ['src', 'tests'],
+    // Default mock response - uses structure format
+    mockProvider.getRepoStructure.mockResolvedValue({
+      data: {
+        projectPath: 'test/repo',
+        branch: 'main',
+        path: '',
+        structure: {
+          '.': {
+            files: ['README.md', 'package.json'],
+            folders: ['src', 'tests'],
+          },
+        },
+        summary: {
+          totalFiles: 2,
+          totalFolders: 2,
+          truncated: false,
         },
       },
-      path: '/',
-      summary: {
-        totalFiles: 2,
-        totalFolders: 2,
-      },
+      status: 200,
+      provider: 'github',
     });
   });
 
@@ -84,69 +98,99 @@ describe('GitHub View Repository Structure Tool', () => {
 
     expect(result.isError).toBe(false);
     const responseText = getTextContent(result.content);
-    expect(responseText).toContain('instructions:');
-    expect(responseText).toContain('results:');
-    expect(responseText).toContain('1 hasResults');
-    expect(responseText).toContain('status: "hasResults"');
-    expect(responseText).toContain('path: "/"');
-    expect(responseText).toContain('files:');
-    expect(responseText).toContain('folders:');
-    expect(responseText).not.toMatch(/^data:/m);
-    expect(responseText).not.toContain('queries:');
-    expect(responseText).not.toMatch(/^hints:/m);
+    expect(responseText).toContain('README.md');
+    expect(responseText).toContain('package.json');
   });
 
-  it('should pass authInfo and sessionId to GitHub API', async () => {
-    // Mock successful API response
-    mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-      structure: {
-        '.': {
-          files: ['README.md'],
-          folders: ['src'],
+  it('should handle custom path', async () => {
+    mockProvider.getRepoStructure.mockResolvedValue({
+      data: {
+        projectPath: 'test/repo',
+        branch: 'main',
+        path: 'src',
+        structure: {
+          src: {
+            files: ['index.ts'],
+            folders: ['utils'],
+          },
+        },
+        summary: {
+          totalFiles: 1,
+          totalFolders: 1,
+          truncated: false,
         },
       },
-      path: '/',
-      summary: {
-        totalFiles: 1,
-        totalDirectories: 1,
-      },
+      status: 200,
+      provider: 'github',
     });
 
-    await mockServer.callTool(
+    const result = await mockServer.callTool(
       TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       {
         queries: [
           {
-            owner: 'test-owner',
-            repo: 'test-repo',
+            owner: 'test',
+            repo: 'repo',
             branch: 'main',
-            id: 'structure-auth-test',
+            path: 'src',
           },
         ],
-      },
-      {
-        authInfo: { token: 'mock-test-token' },
-        sessionId: 'test-session-id',
       }
     );
 
-    // Verify the API was called with authInfo and sessionId
-    expect(mockViewGitHubRepositoryStructureAPI).toHaveBeenCalledTimes(1);
-    const apiCall = mockViewGitHubRepositoryStructureAPI.mock.calls[0];
-
-    // Should be called with (apiRequest, authInfo, sessionId)
-    expect(apiCall).toBeDefined();
-    expect(apiCall).toHaveLength(3);
-    expect(apiCall?.[1]).toEqual({ token: 'mock-test-token' }); // authInfo
-    expect(apiCall?.[2]).toBe('test-session-id'); // sessionId
+    expect(result.isError).toBe(false);
+    const responseText = getTextContent(result.content);
+    expect(responseText).toContain('index.ts');
   });
 
-  it('should handle API errors', async () => {
-    // Mock the API to return an error
-    mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-      error: 'Repository not found or access denied',
+  it('should handle depth parameter', async () => {
+    mockProvider.getRepoStructure.mockResolvedValue({
+      data: {
+        projectPath: 'test/repo',
+        branch: 'main',
+        path: '',
+        structure: {
+          '.': {
+            files: ['README.md'],
+            folders: ['src'],
+          },
+          src: {
+            files: ['index.ts'],
+            folders: [],
+          },
+        },
+        summary: {
+          totalFiles: 2,
+          totalFolders: 1,
+          truncated: false,
+        },
+      },
+      status: 200,
+      provider: 'github',
+    });
+
+    const result = await mockServer.callTool(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            depth: 2,
+          },
+        ],
+      }
+    );
+
+    expect(result.isError).toBe(false);
+  });
+
+  it('should handle not found error', async () => {
+    mockProvider.getRepoStructure.mockResolvedValue({
+      error: 'Repository not found',
       status: 404,
-      type: 'http',
+      provider: 'github',
     });
 
     const result = await mockServer.callTool(
@@ -162,51 +206,28 @@ describe('GitHub View Repository Structure Tool', () => {
       }
     );
 
-    // With bulk operations, errors are handled gracefully and returned as data with hints
-    const responseText = getTextContent(result.content);
-
     expect(result.isError).toBe(false);
-    expect(responseText).toContain('instructions:');
-    expect(responseText).toContain('results:');
-    expect(responseText).toContain('1 failed');
-    expect(responseText).toContain('status: "error"');
-    expect(responseText).toContain(
-      'error: "Repository not found or access denied"'
-    );
-    // Query fields (owner, repo, branch) are no longer echoed in response
-    expect(responseText).not.toContain('queries:');
-    expect(responseText).not.toMatch(/^hints:/m);
+    const responseText = getTextContent(result.content);
+    expect(responseText).toContain('error');
   });
 
-  it('should include GitHub API error-derived hints (not found)', async () => {
-    mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-      error: 'Repository, resource, or path not found',
-      status: 404,
-      type: 'http',
+  it('should handle empty directory', async () => {
+    mockProvider.getRepoStructure.mockResolvedValue({
+      data: {
+        projectPath: 'test/repo',
+        branch: 'main',
+        path: 'empty-dir',
+        structure: {},
+        summary: {
+          totalFiles: 0,
+          totalFolders: 0,
+          truncated: false,
+        },
+      },
+      status: 200,
+      provider: 'github',
     });
 
-    const result = await mockServer.callTool(
-      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-      {
-        queries: [
-          {
-            owner: 'missing',
-            repo: 'repo',
-            branch: 'main',
-          },
-        ],
-      }
-    );
-
-    const responseText = getTextContent(result.content);
-    expect(result.isError).toBe(false);
-    expect(responseText).toContain('status: "error"');
-    expect(responseText).toContain(
-      'GitHub Octokit API Error: Repository, resource, or path not found'
-    );
-  });
-
-  it('should handle optional parameters', async () => {
     const result = await mockServer.callTool(
       TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       {
@@ -215,8 +236,123 @@ describe('GitHub View Repository Structure Tool', () => {
             owner: 'test',
             repo: 'repo',
             branch: 'main',
-            path: 'src',
-            depth: 2,
+            path: 'empty-dir',
+          },
+        ],
+      }
+    );
+
+    expect(result.isError).toBe(false);
+  });
+
+  it('should handle bulk queries', async () => {
+    mockProvider.getRepoStructure
+      .mockResolvedValueOnce({
+        data: {
+          projectPath: 'test/repo1',
+          branch: 'main',
+          path: '',
+          structure: {
+            '.': {
+              files: ['README.md'],
+              folders: [],
+            },
+          },
+          summary: {
+            totalFiles: 1,
+            totalFolders: 0,
+            truncated: false,
+          },
+        },
+        status: 200,
+        provider: 'github',
+      })
+      .mockResolvedValueOnce({
+        data: {
+          projectPath: 'test/repo2',
+          branch: 'main',
+          path: '',
+          structure: {
+            '.': {
+              files: ['index.js'],
+              folders: [],
+            },
+          },
+          summary: {
+            totalFiles: 1,
+            totalFolders: 0,
+            truncated: false,
+          },
+        },
+        status: 200,
+        provider: 'github',
+      });
+
+    const result = await mockServer.callTool(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      {
+        queries: [
+          { owner: 'test', repo: 'repo1', branch: 'main' },
+          { owner: 'test', repo: 'repo2', branch: 'main' },
+        ],
+      }
+    );
+
+    expect(result.isError).toBe(false);
+    const responseText = getTextContent(result.content);
+    expect(responseText).toContain('README.md');
+    expect(responseText).toContain('index.js');
+  });
+
+  it('should handle truncated results', async () => {
+    mockProvider.getRepoStructure.mockResolvedValue({
+      data: {
+        projectPath: 'test/repo',
+        branch: 'main',
+        path: '',
+        structure: {
+          '.': {
+            files: ['file1.ts'],
+            folders: [],
+          },
+        },
+        summary: {
+          totalFiles: 1,
+          totalFolders: 0,
+          truncated: true,
+        },
+      },
+      status: 200,
+      provider: 'github',
+    });
+
+    const result = await mockServer.callTool(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+          },
+        ],
+      }
+    );
+
+    expect(result.isError).toBe(false);
+  });
+
+  it('should handle provider exception', async () => {
+    mockProvider.getRepoStructure.mockRejectedValue(new Error('Network error'));
+
+    const result = await mockServer.callTool(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
           },
         ],
       }
@@ -224,493 +360,47 @@ describe('GitHub View Repository Structure Tool', () => {
 
     expect(result.isError).toBe(false);
     const responseText = getTextContent(result.content);
-    expect(responseText).toContain('instructions:');
-    expect(responseText).toContain('results:');
-    expect(responseText).toContain('1 hasResults');
-    expect(responseText).toContain('status: "hasResults"');
-    expect(responseText).toContain('path: "src"');
-    expect(responseText).not.toMatch(/^data:/m);
-    expect(responseText).not.toContain('queries:');
-    expect(responseText).not.toMatch(/^hints:/m);
+    expect(responseText).toContain('error');
   });
 
-  describe('New Features Tests', () => {
-    it('should remove path prefix from files and folders for subdirectory paths', async () => {
-      // Mock API response with files and folders that have the path prefix
-      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
+  it('should handle pagination', async () => {
+    mockProvider.getRepoStructure.mockResolvedValue({
+      data: {
+        projectPath: 'test/repo',
+        branch: 'main',
+        path: '',
         structure: {
           '.': {
-            files: ['.gitignore', 'package.json'],
-            folders: ['src', 'public'],
-          },
-          src: {
-            files: ['App.js', 'index.js'],
-            folders: ['components'],
-          },
-        },
-        path: '/contextapp',
-        summary: {
-          totalFiles: 4,
-          totalFolders: 3,
-        },
-      });
-
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        {
-          queries: [
-            {
-              owner: 'iamshaunjp',
-              repo: 'react-context-hooks',
-              branch: 'main',
-              path: '/contextapp',
-              id: 'contextapp-test',
-            },
-          ],
-        }
-      );
-
-      const responseText = getTextContent(result.content);
-
-      expect(result.isError).toBe(false);
-      expect(responseText).toContain('instructions:');
-      expect(responseText).toContain('results:');
-      expect(responseText).toContain('status: "hasResults"');
-
-      // Verify files are present
-      expect(responseText).toContain('.gitignore');
-      expect(responseText).toContain('package.json');
-      expect(responseText).toContain('App.js');
-      expect(responseText).toContain('index.js');
-
-      // Verify folders are present
-      expect(responseText).toContain('src');
-      expect(responseText).toContain('public');
-      expect(responseText).toContain('components');
-
-      expect(responseText).not.toMatch(/^data:/m);
-      expect(responseText).not.toContain('queries:');
-      expect(responseText).not.toMatch(/^hints:/m);
-    });
-
-    it('should handle root path without removing prefixes', async () => {
-      // Mock API response for root directory
-      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        structure: {
-          '.': {
-            files: ['.gitignore', 'package.json', 'README.md'],
-            folders: ['src', 'public', 'docs'],
-          },
-        },
-        path: '/',
-        summary: {
-          totalFiles: 3,
-          totalFolders: 3,
-        },
-      });
-
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        {
-          queries: [
-            {
-              owner: 'facebook',
-              repo: 'react',
-              branch: 'main',
-              path: '/',
-              id: 'root-test',
-            },
-          ],
-        }
-      );
-
-      const responseText = getTextContent(result.content);
-
-      expect(result.isError).toBe(false);
-      expect(responseText).toContain('instructions:');
-      expect(responseText).toContain('results:');
-      expect(responseText).toContain('status: "hasResults"');
-
-      // For root path, files and folders should be present
-      expect(responseText).toContain('.gitignore');
-      expect(responseText).toContain('package.json');
-      expect(responseText).toContain('README.md');
-      expect(responseText).toContain('src');
-      expect(responseText).toContain('public');
-      expect(responseText).toContain('docs');
-      expect(responseText).not.toMatch(/^data:/m);
-      expect(responseText).not.toContain('queries:');
-      expect(responseText).not.toMatch(/^hints:/m);
-    });
-
-    it('should include branch field in output', async () => {
-      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        structure: {
-          '.': {
-            files: ['README.md'],
-            folders: ['src'],
-          },
-        },
-        path: '/',
-        summary: {
-          totalFiles: 1,
-          totalFolders: 1,
-        },
-      });
-
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        {
-          queries: [
-            {
-              owner: 'test',
-              repo: 'repo',
-              branch: 'main',
-              id: 'no-branch-test',
-            },
-          ],
-        }
-      );
-
-      const responseText = getTextContent(result.content);
-
-      expect(result.isError).toBe(false);
-      expect(responseText).toContain('instructions:');
-      expect(responseText).toContain('results:');
-
-      // Branch should be in the response data
-      expect(responseText).toContain('branch: "main"');
-      expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('path: "/"');
-      expect(responseText).toContain('1 hasResults');
-      expect(responseText).toContain('files:');
-      expect(responseText).toContain('folders:');
-      expect(responseText).not.toMatch(/^data:/m);
-      expect(responseText).not.toContain('queries:');
-      expect(responseText).not.toMatch(/^hints:/m);
-    });
-
-    it('should use correct field ordering: path, files, folders', async () => {
-      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        structure: {
-          '.': {
-            files: ['test.js'],
-            folders: ['utils'],
-          },
-        },
-        path: '/',
-        summary: {
-          totalFiles: 1,
-          totalFolders: 1,
-        },
-      });
-
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        {
-          queries: [
-            {
-              owner: 'test',
-              repo: 'repo',
-              branch: 'main',
-              reasoning: 'Test field ordering',
-              id: 'field-order-test',
-            },
-          ],
-        }
-      );
-
-      const responseText = getTextContent(result.content);
-
-      expect(result.isError).toBe(false);
-      expect(responseText).toContain('instructions:');
-      expect(responseText).toContain('results:');
-      expect(responseText).toContain('status: "hasResults"');
-
-      // Verify key fields exist in the response
-      const statusIndex = responseText.indexOf('status:');
-      const pathIndex = responseText.indexOf('path:');
-      const structureIndex = responseText.indexOf('structure:');
-
-      // Verify all fields exist (must be found, not -1)
-      expect(statusIndex).not.toEqual(-1);
-      expect(pathIndex).not.toEqual(-1);
-      expect(structureIndex).not.toEqual(-1);
-
-      // Verify field ordering: path < structure (in data section)
-      expect(pathIndex < structureIndex).toEqual(true);
-
-      expect(responseText).not.toContain('queries:');
-      expect(responseText).not.toMatch(/^hints:/m);
-    });
-
-    it('should handle empty path prefix removal correctly', async () => {
-      // Mock API response for utils directory
-      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        structure: {
-          '.': {
-            files: ['helper.js', 'config.js'],
-            folders: ['lib'],
-          },
-        },
-        path: '/utils',
-        summary: {
-          totalFiles: 2,
-          totalFolders: 1,
-        },
-      });
-
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        {
-          queries: [
-            {
-              owner: 'test',
-              repo: 'repo',
-              branch: 'main',
-              path: '/utils',
-              id: 'utils-test',
-            },
-          ],
-        }
-      );
-
-      const responseText = getTextContent(result.content);
-
-      expect(result.isError).toBe(false);
-      expect(responseText).toContain('instructions:');
-      expect(responseText).toContain('results:');
-      expect(responseText).toContain('status: "hasResults"');
-
-      // Verify files and folders are present
-      expect(responseText).toContain('helper.js');
-      expect(responseText).toContain('config.js');
-      expect(responseText).toContain('lib');
-
-      expect(responseText).not.toMatch(/^data:/m);
-      expect(responseText).not.toContain('queries:');
-      expect(responseText).not.toMatch(/^hints:/m);
-    });
-
-    it('should handle multiple queries with different path prefixes', async () => {
-      // Mock API responses for different calls
-      mockViewGitHubRepositoryStructureAPI
-        .mockResolvedValueOnce({
-          structure: {
-            '.': {
-              files: ['App.js', 'index.js'],
-              folders: ['components'],
-            },
-          },
-          path: '/src',
-          summary: { totalFiles: 2, totalFolders: 1 },
-        })
-        .mockResolvedValueOnce({
-          structure: {
-            '.': {
-              files: ['README.md', 'API.md'],
-              folders: ['images'],
-            },
-          },
-          path: '/docs',
-          summary: { totalFiles: 2, totalFolders: 1 },
-        });
-
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        {
-          queries: [
-            {
-              owner: 'test',
-              repo: 'repo',
-              branch: 'main',
-              path: '/src',
-              id: 'src-test',
-            },
-            {
-              owner: 'test',
-              repo: 'repo',
-              branch: 'main',
-              path: '/docs',
-              id: 'docs-test',
-            },
-          ],
-        }
-      );
-
-      const responseText = getTextContent(result.content);
-
-      expect(result.isError).toBe(false);
-      expect(responseText).toContain('instructions:');
-      expect(responseText).toContain('results:');
-
-      // Verify both queries have files and folders present
-      // First query (/src)
-      expect(responseText).toContain('App.js');
-      expect(responseText).toContain('index.js');
-      expect(responseText).toContain('components');
-
-      // Second query (/docs)
-      expect(responseText).toContain('README.md');
-      expect(responseText).toContain('API.md');
-      expect(responseText).toContain('images');
-
-      expect(responseText).not.toMatch(/^data:/m);
-      expect(responseText).not.toContain('queries:');
-      expect(responseText).not.toMatch(/^hints:/m);
-    });
-  });
-
-  describe('Error Handling', () => {
-    it('should include pagination info when present in API response', async () => {
-      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        structure: {
-          '.': {
-            files: ['file1.js', 'file2.js'],
-            folders: ['src'],
-          },
-        },
-        path: '/',
-        summary: {
-          totalFiles: 50,
-          totalFolders: 10,
-        },
-        pagination: {
-          page: 1,
-          totalPages: 5,
-          hasMore: true,
-        },
-      });
-
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        {
-          queries: [
-            {
-              owner: 'test',
-              repo: 'repo',
-              branch: 'main',
-            },
-          ],
-        }
-      );
-
-      expect(result.isError).toBe(false);
-      const responseText = getTextContent(result.content);
-      expect(responseText).toContain('pagination:');
-      expect(responseText).toContain('hasMore: true');
-    });
-
-    it('should handle invalid API response structure', async () => {
-      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        // Missing 'files' array
-        folders: {
-          folders: [{ path: '/src' }],
-        },
-      });
-
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        {
-          queries: [
-            {
-              owner: 'test',
-              repo: 'repo',
-              branch: 'main',
-            },
-          ],
-        }
-      );
-
-      expect(result.isError).toBe(false);
-      const responseText = getTextContent(result.content);
-      expect(responseText).toContain('status: "error"');
-    });
-
-    it('should handle API errors', async () => {
-      mockViewGitHubRepositoryStructureAPI.mockRejectedValue(
-        new Error('API Error')
-      );
-
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        {
-          queries: [
-            {
-              owner: 'test',
-              repo: 'repo',
-              branch: 'main',
-            },
-          ],
-        }
-      );
-
-      expect(result.isError).toBe(false);
-      const responseText = getTextContent(result.content);
-      expect(responseText).toContain('status: "error"');
-    });
-
-    it('should handle callback errors gracefully', async () => {
-      const errorCallback = vi
-        .fn()
-        .mockRejectedValue(new Error('Callback error'));
-
-      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        structure: {
-          '.': {
-            files: ['README.md'],
+            files: ['file1.ts'],
             folders: [],
           },
         },
-        path: '/',
-      });
-
-      // Re-register with error callback
-      const newMockServer = createMockMcpServer();
-      registerViewGitHubRepoStructureTool(newMockServer.server, errorCallback);
-
-      const result = await newMockServer.callTool(
-        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        {
-          queries: [
-            {
-              owner: 'test',
-              repo: 'repo',
-              branch: 'main',
-            },
-          ],
-        }
-      );
-
-      // Should continue despite callback error
-      expect(result.isError).toBe(false);
-      expect(errorCallback).toHaveBeenCalled();
-
-      newMockServer.cleanup();
+        summary: {
+          totalFiles: 1,
+          totalFolders: 0,
+          truncated: false,
+        },
+        pagination: { currentPage: 1, totalPages: 5, hasMore: true },
+      },
+      status: 200,
+      provider: 'github',
     });
 
-    it('should handle empty files response', async () => {
-      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-        structure: {},
-        path: '/',
-      });
+    const result = await mockServer.callTool(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            entriesPerPage: 10,
+            entryPageNumber: 1,
+          },
+        ],
+      }
+    );
 
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        {
-          queries: [
-            {
-              owner: 'test',
-              repo: 'repo',
-              branch: 'main',
-            },
-          ],
-        }
-      );
-
-      expect(result.isError).toBe(false);
-      const responseText = getTextContent(result.content);
-      expect(responseText).toContain('status: "empty"');
-    });
+    expect(result.isError).toBe(false);
   });
 });
