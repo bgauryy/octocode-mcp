@@ -13,11 +13,15 @@ import {
 import { ResearchResponse } from '../utils/responseBuilder.js';
 import { parseToolResponse } from '../utils/responseParser.js';
 import { withLspResilience } from '../utils/resilience.js';
+import {
+  toLspDefinitionParams,
+  toLspReferencesParams,
+  toLspCallsParams,
+} from '../types/toolTypes.js';
+import { safeString, safeArray } from '../utils/responseFactory.js';
+import { isObject, hasProperty, hasNumberProperty, hasStringProperty } from '../types/guards.js';
 
 export const lspRoutes = Router();
-
-// Type for structured content (flexible)
-type StructuredData = Record<string, unknown>;
 
 // GET /lsp/definition - Go to symbol definition
 lspRoutes.get(
@@ -29,8 +33,7 @@ lspRoutes.get(
         lspDefinitionSchema
       );
       const rawResult = await withLspResilience(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        () => lspGotoDefinition({ queries } as any),
+        () => lspGotoDefinition(toLspDefinitionParams(queries)),
         'lspGotoDefinition'
       );
       const { data, isError, hints, research } = parseToolResponse(rawResult);
@@ -63,8 +66,7 @@ lspRoutes.get(
         lspReferencesSchema
       );
       const rawResult = await withLspResilience(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        () => lspFindReferences({ queries } as any),
+        () => lspFindReferences(toLspReferencesParams(queries)),
         'lspFindReferences'
       );
       const { data, isError, hints, research } = parseToolResponse(rawResult);
@@ -97,8 +99,7 @@ lspRoutes.get(
         lspCallsSchema
       );
       const rawResult = await withLspResilience(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        () => lspCallHierarchy({ queries } as any),
+        () => lspCallHierarchy(toLspCallsParams(queries)),
         'lspCallHierarchy'
       );
       const { data, isError, hints, research } = parseToolResponse(rawResult);
@@ -124,18 +125,18 @@ lspRoutes.get(
 
 // Helper: Extract locations from LSP result
 function extractLocations(
-  data: StructuredData,
+  data: Record<string, unknown>,
   type: 'definition' | 'references'
 ): Array<{ uri: string; line: number; preview?: string }> {
   // Handle definition results
-  if (type === 'definition' && data.definition) {
-    const def = data.definition as StructuredData;
-    if (def.uri) {
-      const range = (def.range || {}) as StructuredData;
-      const start = (range.start || {}) as StructuredData;
+  if (type === 'definition' && hasProperty(data, 'definition') && isObject(data.definition)) {
+    const def = data.definition as Record<string, unknown>;
+    if (typeof def.uri === 'string') {
+      const range = isObject(def.range) ? def.range as Record<string, unknown> : {};
+      const start = isObject(range.start) ? range.start as Record<string, unknown> : {};
       return [
         {
-          uri: String(def.uri),
+          uri: def.uri,
           line: (typeof start.line === 'number' ? start.line : 0) + 1,
           preview: typeof def.preview === 'string' ? def.preview : undefined,
         },
@@ -144,27 +145,29 @@ function extractLocations(
   }
 
   // Handle references results
-  if (type === 'references' && Array.isArray(data.references)) {
-    return data.references.map((ref: StructuredData) => {
-      const range = (ref.range || {}) as StructuredData;
-      const start = (range.start || {}) as StructuredData;
+  if (type === 'references' && hasProperty(data, 'references')) {
+    const refs = safeArray<Record<string, unknown>>(data, 'references');
+    return refs.map((ref) => {
+      const range = isObject(ref.range) ? ref.range : {};
+      const start = isObject(range.start) ? range.start : {};
       return {
-        uri: String(ref.uri || ''),
-        line: (typeof start.line === 'number' ? start.line : 0) + 1,
-        preview: typeof ref.preview === 'string' ? ref.preview : undefined,
+        uri: safeString(ref, 'uri'),
+        line: (hasNumberProperty(start, 'line') ? start.line : 0) + 1,
+        preview: hasStringProperty(ref, 'preview') ? ref.preview : undefined,
       };
     });
   }
 
   // Handle locations array (generic) - MCP returns range.start.line
-  if (Array.isArray(data.locations)) {
-    return data.locations.map((loc: StructuredData) => {
-      const range = (loc.range || {}) as StructuredData;
-      const start = (range.start || {}) as StructuredData;
+  if (hasProperty(data, 'locations')) {
+    const locs = safeArray<Record<string, unknown>>(data, 'locations');
+    return locs.map((loc) => {
+      const range = isObject(loc.range) ? loc.range : {};
+      const start = isObject(range.start) ? range.start : {};
       return {
-        uri: String(loc.uri || ''),
-        line: (typeof start.line === 'number' ? start.line : 0) + 1,
-        preview: typeof loc.content === 'string' ? loc.content : undefined,
+        uri: safeString(loc, 'uri'),
+        line: (hasNumberProperty(start, 'line') ? start.line : 0) + 1,
+        preview: hasStringProperty(loc, 'content') ? loc.content : undefined,
       };
     });
   }
@@ -174,27 +177,31 @@ function extractLocations(
 
 // Helper: Extract locations from call hierarchy result
 function extractCallHierarchyLocations(
-  data: StructuredData
+  data: Record<string, unknown>
 ): Array<{ uri: string; line: number; preview?: string }> {
   // Handle calls array
-  const calls = (data.calls ||
-    data.incomingCalls ||
-    data.outgoingCalls ||
-    []) as StructuredData[];
+  let calls: Record<string, unknown>[] = [];
+  if (hasProperty(data, 'calls') && Array.isArray(data.calls)) {
+    calls = data.calls;
+  } else if (hasProperty(data, 'incomingCalls') && Array.isArray(data.incomingCalls)) {
+    calls = data.incomingCalls;
+  } else if (hasProperty(data, 'outgoingCalls') && Array.isArray(data.outgoingCalls)) {
+    calls = data.outgoingCalls;
+  }
 
-  if (!Array.isArray(calls)) return [];
+  return calls.map((call) => {
+    const item = isObject(call.from) ? call.from : isObject(call.to) ? call.to : call;
+    const itemObj = isObject(item) ? item : {};
+    const range = isObject(itemObj.range) ? itemObj.range : {};
+    const start = isObject(range.start) ? range.start : {};
 
-  return calls.map((call: StructuredData) => {
-    const item = (call.from || call.to || call) as StructuredData;
-    const range = (item.range || {}) as StructuredData;
-    const start = (range.start || {}) as StructuredData;
+    const lineFromStart = hasNumberProperty(start, 'line') ? start.line : 0;
+    const lineFromItem = hasNumberProperty(itemObj, 'line') ? itemObj.line : 0;
 
     return {
-      uri: String(item.uri || ''),
-      line:
-        (typeof start.line === 'number' ? start.line : typeof item.line === 'number' ? item.line : 0) +
-        1,
-      preview: typeof item.name === 'string' ? item.name : undefined,
+      uri: safeString(itemObj, 'uri'),
+      line: (lineFromStart || lineFromItem) + 1,
+      preview: hasStringProperty(itemObj, 'name') ? itemObj.name : undefined,
     };
   });
 }

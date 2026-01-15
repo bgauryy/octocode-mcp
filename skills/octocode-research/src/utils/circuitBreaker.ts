@@ -1,3 +1,4 @@
+import { agentLog, warnLog, successLog, errorLog } from './colors.js';
 /**
  * Circuit breaker pattern for LSP and external services.
  *
@@ -31,9 +32,21 @@ export interface CircuitBreakerConfig {
   resetTimeoutMs: number;
 }
 
+/**
+ * Default circuit breaker configuration.
+ * Tuned for balance between fault tolerance and quick recovery.
+ */
 const DEFAULT_CONFIG: CircuitBreakerConfig = {
+  // 3 failures: Quick to detect persistent issues,
+  // but tolerant of occasional transient errors.
   failureThreshold: 3,
+
+  // 2 successes: Requires service to prove stability
+  // before fully resuming (prevents flapping).
   successThreshold: 2,
+
+  // 30s timeout: Allows services time to recover from
+  // rate limits or temporary outages before retrying.
   resetTimeoutMs: 30000,
 };
 
@@ -111,7 +124,7 @@ export async function withCircuitBreaker<T>(
     // Check if we should try half-open
     if (now - circuit.lastFailure > config.resetTimeoutMs) {
       circuit.state = 'half-open';
-      console.log(`🟡 Circuit ${name} entering half-open state`);
+      console.log(warnLog(`🟡 Circuit ${name} entering half-open state`));
     } else {
       // Circuit is open - use fallback or throw
       console.log(
@@ -134,7 +147,7 @@ export async function withCircuitBreaker<T>(
         circuit.state = 'closed';
         circuit.failures = 0;
         circuit.successes = 0;
-        console.log(`🟢 Circuit ${name} CLOSED after recovery`);
+        console.log(successLog(`🟢 Circuit ${name} CLOSED after recovery`));
       }
     } else {
       // Reset failures on success in closed state
@@ -151,7 +164,7 @@ export async function withCircuitBreaker<T>(
     if (circuit.state === 'half-open') {
       // Failed in half-open - back to open
       circuit.state = 'open';
-      console.log(`🔴 Circuit ${name} back to OPEN after half-open failure`);
+      console.log(errorLog(`🔴 Circuit ${name} back to OPEN after half-open failure`));
     } else if (circuit.failures >= config.failureThreshold) {
       // Too many failures - open circuit
       circuit.state = 'open';
@@ -191,7 +204,7 @@ export function resetCircuit(name: string): void {
   circuit.failures = 0;
   circuit.successes = 0;
   circuit.lastFailure = 0;
-  console.log(`🔄 Circuit ${name} manually reset to CLOSED`);
+  console.log(agentLog(`🔄 Circuit ${name} manually reset to CLOSED`));
 }
 
 /**
@@ -236,16 +249,17 @@ export class CircuitOpenError extends Error {
 // Pre-configured circuits
 // =============================================================================
 
-// Configure LSP circuit with faster recovery (LSP often just needs warm-up)
+// LSP servers are local - shorter timeout, quicker recovery expected.
+// 3 failures detects persistent issues; 10s timeout allows LSP restart.
 configureCircuit('lsp', {
-  failureThreshold: 3,
-  successThreshold: 1,
-  resetTimeoutMs: 10000, // 10s
+  failureThreshold: 3,    // 3 failures = likely persistent issue
+  successThreshold: 1,    // Single success proves LSP recovered
+  resetTimeoutMs: 10000,  // 10s: LSP should recover quickly if restarted
 });
-
-// Configure GitHub circuit with longer timeout (rate limits)
+// GitHub API has rate limits - longer backoff, fewer retries.
+// 2 failures quickly detects rate limiting; 60s allows limits to reset.
 configureCircuit('github', {
-  failureThreshold: 2,
-  successThreshold: 1,
-  resetTimeoutMs: 60000, // 60s
+  failureThreshold: 2,    // 2 failures = likely rate limited or down
+  successThreshold: 1,    // Single success proves API recovered
+  resetTimeoutMs: 60000,  // 60s: Give rate limits time to reset
 });

@@ -84,7 +84,7 @@ export const ResearchResponse = {
     /** Research context - preserved from the query */
     research?: ResearchContext;
   }): CallToolResult {
-    const { files, totalMatches, pagination, searchPattern, mcpHints = [], research } = results;
+    const { files, totalMatches, pagination, searchPattern, mcpHints = [] } = results;
 
     // Build summary
     const patternInfo = searchPattern ? ` for "${searchPattern}"` : '';
@@ -493,4 +493,4 @@ function detectLanguage(path: string): string {
 }
 
 // Re-export utilities for convenience
-export { QuickResult, StatusEmoji, ContentBuilder, createRoleBasedResult };
+export { QuickResult, StatusEmoji, ContentBuilder, createRoleBasedResult, detectLanguage as detectLanguageFromPath };

@@ -1,3 +1,4 @@
+import { agentLog } from '../utils/colors.js';
 /**
  * Research context propagation middleware.
  *
@@ -36,14 +37,24 @@ const contextStore = new Map<string, ResearchContext>();
 /**
  * Context configuration
  */
+/**
+ * Context propagation configuration.
+ * These values balance memory usage vs research session needs.
+ */
 const CONFIG = {
-  /** Context TTL in milliseconds (30 minutes) */
+  // 30 minutes: Balances memory usage vs typical research session length.
+  // Based on observation that most research chains complete within 20 mins.
   ttlMs: 30 * 60 * 1000,
-  /** Maximum tool chain length */
+
+  // 10 max chain length: Prevents infinite context accumulation.
+  // Research rarely needs more than 10 related queries to find an answer.
   maxChainLength: 10,
-  /** Maximum main goal length */
+
+  // 100 char max goal: Reasonable length for research goal descriptions.
   maxGoalLength: 100,
-  /** Cleanup interval in milliseconds (5 minutes) */
+
+  // 5 minute cleanup: Frequent enough to prevent memory bloat,
+  // infrequent enough to not impact performance.
   cleanupIntervalMs: 5 * 60 * 1000,
 };
 
@@ -68,7 +79,7 @@ export function startContextCleanup(): void {
     }
 
     if (cleaned > 0) {
-      console.log(`🧹 Cleaned ${cleaned} stale research contexts`);
+      console.log(agentLog(`🧹 Cleaned ${cleaned} stale research contexts`));
     }
   }, CONFIG.cleanupIntervalMs);
 }

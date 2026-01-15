@@ -18,11 +18,29 @@ This skill provides tools for code exploration. Your job is to **think like a re
 1. **Understand the question** - What does the user really want to know?
 2. **Choose tools based on context** - Match tools to the information needed
 3. **Adapt based on results** - Let findings guide next steps
-4. **Explain your reasoning** - Show how you're thinking, not just what you're doing
+4. **Explain your reasoning** - Show how you're thinking and reassoning steps, not just what you're doing
 
-**Reference guides** (read when needed, not upfront):
-- [research_local_prompt.md](./references/research_local_prompt.md) - Local codebase patterns
-- [research_external_prompt.md](./references/research_external_prompt.md) - GitHub/package patterns
+### ⚠️ IMPORTANT: Think About User Intent & Context
+
+**Before making any tool calls**, you MUST think about what the user wants and load the correct context:
+
+- **Local Research**: [research_local_prompt.md](./references/research_local_prompt.md)
+- **External Research**: [research_external_prompt.md](./references/research_external_prompt.md)
+
+Determine what type of research the user needs:
+
+| User Intent | Read This First | Focus |
+|-------------|-----------------|-------|
+| Explore **local codebase** | [research_local_prompt.md](./references/research_local_prompt.md) | LSP tools, local search, file content |
+| Explore **external code** (GitHub, packages) | [research_external_prompt.md](./references/research_external_prompt.md) | GitHub API, package search, repo exploration |
+| Both local and external | Read **both** prompts | Combine approaches |
+
+**Think first**: "Is the user asking about code in their workspace, or external libraries/repos?"
+
+### Reference Guides
+
+- [research_local_prompt.md](./references/research_local_prompt.md) - **Local codebase** patterns, LSP flows, semantic analysis
+- [research_external_prompt.md](./references/research_external_prompt.md) - **GitHub/package** patterns, external exploration
 - [output_protocol.md](./references/output_protocol.md) - How to present findings
 
 ---
@@ -261,6 +279,25 @@ Task({ prompt: "Research inventory management..." })
 ```
 
 See [task_integration.md](./references/task_integration.md) for orchestration patterns.
+
+---
+
+## Console Output Colors
+
+The skill uses a consistent color scheme for terminal output:
+
+| Category | Color | Purpose |
+|----------|-------|---------|
+| **Agent** | 🟣 Purple | Server messages, startup, shutdown, agent status |
+| **Results** | 🔵 Blue | Tool output, API responses, skill results |
+| **Success** | 🟢 Green | Successful operations |
+| **Error** | 🔴 Red | Errors and failures |
+| **Warning** | 🟡 Yellow | Warnings, rate limits |
+| **Dim** | Gray | Secondary info, route lists |
+
+This helps distinguish:
+- **What the agent is doing** (purple) vs **what the tools returned** (blue)
+- Quick visual scanning of logs for issues
 
 ---
 

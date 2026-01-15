@@ -1,3 +1,4 @@
+import { agentLog, warnLog, errorLog } from './colors.js';
 /**
  * GitHub API rate limit tracking and management.
  *
@@ -100,9 +101,9 @@ export function updateRateLimitFromHeaders(
 
   // Log warnings
   if (state.remaining < THRESHOLDS.warnBelow && state.remaining >= THRESHOLDS.limitBelow) {
-    console.log(`⚠️ ${service} rate limit warning: ${state.remaining} remaining`);
+    console.log(warnLog(`⚠️ ${service} rate limit warning: ${state.remaining} remaining`));
   } else if (state.isLimited) {
-    console.log(`🔴 ${service} rate limit critical: ${state.remaining} remaining`);
+    console.log(errorLog(`🔴 ${service} rate limit critical: ${state.remaining} remaining`));
   }
 }
 
@@ -139,7 +140,7 @@ export async function waitForRateLimit(
     return false;
   }
 
-  console.log(`⏳ ${service} rate limited - waiting ${Math.ceil(waitMs / 1000)}s`);
+  console.log(agentLog(`⏳ ${service} rate limited - waiting ${Math.ceil(waitMs / 1000)}s`));
   await sleep(waitMs + 1000); // Add 1s buffer
 
   // Clear limit after wait

@@ -4,11 +4,11 @@ import { parseAndValidate } from '../middleware/queryParser.js';
 import { packageSearchSchema } from '../validation/index.js';
 import { ResearchResponse } from '../utils/responseBuilder.js';
 import { parseToolResponse } from '../utils/responseParser.js';
+import { toPackageSearchParams } from '../types/toolTypes.js';
+import { safeString, safeArray } from '../utils/responseFactory.js';
+import { isObject, hasProperty, hasStringProperty } from '../types/guards.js';
 
 export const packageRoutes = Router();
-
-// Type for structured content (flexible)
-type StructuredData = Record<string, unknown>;
 
 // GET /package/search - Search npm/pypi packages
 packageRoutes.get(
@@ -19,19 +19,18 @@ packageRoutes.get(
         req.query as Record<string, unknown>,
         packageSearchSchema
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawResult = await packageSearch({ queries } as any);
+      const rawResult = await packageSearch(toPackageSearchParams(queries));
       const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       // Extract packages from result
       const packages = extractPackages(data);
-      const query = queries[0] as StructuredData;
+      const query = queries[0] as Record<string, unknown>;
       const registry = query.ecosystem === 'python' ? 'pypi' : 'npm';
 
       const response = ResearchResponse.packageSearch({
         packages,
         registry,
-        query: String(query.name || ''),
+        query: safeString(query, 'name'),
         mcpHints: hints,
         research,
       });
@@ -45,7 +44,7 @@ packageRoutes.get(
 
 // Helper: Extract packages from result
 function extractPackages(
-  data: StructuredData
+  data: Record<string, unknown>
 ): Array<{
   name: string;
   version?: string;
@@ -53,59 +52,71 @@ function extractPackages(
   repository?: string;
 }> {
   // Handle npm results
-  if (Array.isArray(data.npmResults)) {
-    return data.npmResults.map((pkg: StructuredData) => ({
-      name: String(pkg.name || ''),
-      version: typeof pkg.version === 'string' ? pkg.version : undefined,
-      description: typeof pkg.description === 'string' ? pkg.description : undefined,
-      repository:
-        typeof pkg.repository === 'string'
-          ? pkg.repository
-          : typeof pkg.repository === 'object' && pkg.repository !== null
-            ? String((pkg.repository as StructuredData).url || '')
-            : undefined,
-    }));
+  if (hasProperty(data, 'npmResults') && Array.isArray(data.npmResults)) {
+    return data.npmResults.map((pkg: unknown) => {
+      if (!isObject(pkg)) return { name: '' };
+      return {
+        name: safeString(pkg, 'name'),
+        version: hasStringProperty(pkg, 'version') ? pkg.version : undefined,
+        description: hasStringProperty(pkg, 'description') ? pkg.description : undefined,
+        repository: extractRepositoryUrl(pkg),
+      };
+    });
   }
 
   // Handle pypi results
-  if (Array.isArray(data.pypiResults)) {
-    return data.pypiResults.map((pkg: StructuredData) => ({
-      name: String(pkg.name || ''),
-      version: typeof pkg.version === 'string' ? pkg.version : undefined,
-      description: typeof pkg.description === 'string' ? pkg.description : undefined,
-      repository:
-        typeof pkg.homepage === 'string'
+  if (hasProperty(data, 'pypiResults') && Array.isArray(data.pypiResults)) {
+    return data.pypiResults.map((pkg: unknown) => {
+      if (!isObject(pkg)) return { name: '' };
+      return {
+        name: safeString(pkg, 'name'),
+        version: hasStringProperty(pkg, 'version') ? pkg.version : undefined,
+        description: hasStringProperty(pkg, 'description') ? pkg.description : undefined,
+        repository: hasStringProperty(pkg, 'homepage')
           ? pkg.homepage
-          : typeof pkg.project_url === 'string'
+          : hasStringProperty(pkg, 'project_url')
             ? pkg.project_url
             : undefined,
-    }));
+      };
+    });
   }
 
   // Handle generic packages array (MCP uses 'path' for package name, 'repoUrl' for repository)
-  if (Array.isArray(data.packages)) {
-    return data.packages.map((pkg: StructuredData) => ({
-      name: String(pkg.name || pkg.path || ''),
-      version: typeof pkg.version === 'string' ? pkg.version : undefined,
-      description: typeof pkg.description === 'string' ? pkg.description : undefined,
-      repository:
-        typeof pkg.repository === 'string'
-          ? pkg.repository
-          : typeof pkg.repoUrl === 'string'
-            ? pkg.repoUrl
-            : undefined,
-    }));
+  if (hasProperty(data, 'packages') && Array.isArray(data.packages)) {
+    return data.packages.map((pkg: unknown) => {
+      if (!isObject(pkg)) return { name: '' };
+      return {
+        name: safeString(pkg, 'name') || safeString(pkg, 'path'),
+        version: hasStringProperty(pkg, 'version') ? pkg.version : undefined,
+        description: hasStringProperty(pkg, 'description') ? pkg.description : undefined,
+        repository: extractRepositoryUrl(pkg),
+      };
+    });
   }
 
   // Handle results array (fallback)
-  if (Array.isArray(data.results)) {
-    return data.results.map((pkg: StructuredData) => ({
-      name: String(pkg.name || ''),
-      version: typeof pkg.version === 'string' ? pkg.version : undefined,
-      description: typeof pkg.description === 'string' ? pkg.description : undefined,
-      repository: typeof pkg.repository === 'string' ? pkg.repository : undefined,
-    }));
-  }
+  const results = safeArray<Record<string, unknown>>(data, 'results');
+  return results.map((pkg) => ({
+    name: safeString(pkg, 'name'),
+    version: hasStringProperty(pkg, 'version') ? pkg.version : undefined,
+    description: hasStringProperty(pkg, 'description') ? pkg.description : undefined,
+    repository: hasStringProperty(pkg, 'repository') ? pkg.repository : undefined,
+  }));
+}
 
-  return [];
+// Helper: Extract repository URL from various formats
+function extractRepositoryUrl(pkg: Record<string, unknown>): string | undefined {
+  if (hasStringProperty(pkg, 'repository')) {
+    return pkg.repository;
+  }
+  if (hasStringProperty(pkg, 'repoUrl')) {
+    return pkg.repoUrl;
+  }
+  if (hasProperty(pkg, 'repository') && isObject(pkg.repository)) {
+    const repo = pkg.repository;
+    if (hasStringProperty(repo, 'url')) {
+      return repo.url;
+    }
+  }
+  return undefined;
 }

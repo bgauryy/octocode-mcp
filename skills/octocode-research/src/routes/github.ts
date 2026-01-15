@@ -14,14 +14,25 @@ import {
   githubStructureSchema,
   githubPRsSchema,
 } from '../validation/index.js';
-import { ResearchResponse, QuickResult } from '../utils/responseBuilder.js';
+import { ResearchResponse, QuickResult, detectLanguageFromPath } from '../utils/responseBuilder.js';
 import { parseToolResponse } from '../utils/responseParser.js';
 import { withGitHubResilience } from '../utils/resilience.js';
+import {
+  toGitHubSearchParams,
+  toGitHubContentParams,
+  toGitHubReposParams,
+  toGitHubStructureParams,
+  toGitHubPRsParams,
+} from '../types/toolTypes.js';
+import {
+  safeString,
+  safeNumber,
+  safeArray,
+  transformPagination,
+} from '../utils/responseFactory.js';
+import { isObject, hasProperty, hasNumberProperty, hasBooleanProperty } from '../types/guards.js';
 
 export const githubRoutes = Router();
-
-// Type for structured content (flexible)
-type StructuredData = Record<string, unknown>;
 
 // GET /github/search - Search code on GitHub
 githubRoutes.get(
@@ -33,35 +44,27 @@ githubRoutes.get(
         githubSearchSchema
       );
       const rawResult = await withGitHubResilience(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        () => githubSearchCode({ queries } as any),
+        () => githubSearchCode(toGitHubSearchParams(queries)),
         'githubSearchCode'
       );
       const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       // Transform to role-based response
       // GitHub API returns text_matches as string array (snippets), not line numbers
-      const files = Array.isArray(data.files) ? data.files : [];
+      const files = safeArray<Record<string, unknown>>(data, 'files');
       const response = ResearchResponse.searchResults({
-        files: files.map((f: StructuredData) => {
-          const textMatches = Array.isArray(f.text_matches) ? f.text_matches : [];
+        files: files.map((f) => {
+          const textMatches = safeArray<string>(f, 'text_matches');
           const firstMatch = textMatches[0];
           return {
-            path: String(f.path || ''),
-            repo: typeof f.repo === 'string' ? f.repo : undefined,
+            path: safeString(f, 'path'),
+            repo: hasProperty(f, 'repo') && typeof f.repo === 'string' ? f.repo : undefined,
             matches: textMatches.length,
             preview: typeof firstMatch === 'string' ? firstMatch.trim().slice(0, 200) : undefined,
           };
         }),
-        totalMatches: typeof (data.pagination as StructuredData)?.totalMatches === 'number'
-          ? (data.pagination as StructuredData).totalMatches as number
-          : 0,
-        // Map MCP pagination fields (currentPage/totalPages) to skill format (page/total)
-        pagination: data.pagination ? {
-          page: (data.pagination as StructuredData).currentPage as number || 1,
-          total: (data.pagination as StructuredData).totalPages as number || 1,
-          hasMore: (data.pagination as StructuredData).hasMore === true,
-        } : undefined,
+        totalMatches: isObject(data.pagination) ? safeNumber(data.pagination, 'totalMatches', 0) : 0,
+        pagination: transformPagination(data.pagination),
         searchPattern: Array.isArray(queries[0]?.keywordsToSearch)
           ? queries[0].keywordsToSearch.join(' ')
           : undefined,
@@ -86,26 +89,25 @@ githubRoutes.get(
         githubContentSchema
       );
       const rawResult = await withGitHubResilience(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        () => githubGetFileContent({ queries } as any),
+        () => githubGetFileContent(toGitHubContentParams(queries)),
         'githubGetFileContent'
       );
       const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       // Transform to role-based response
       const response = ResearchResponse.fileContent({
-        path: String(data.path || queries[0]?.path || 'unknown'),
-        content: String(data.content || ''),
+        path: safeString(data, 'path', queries[0]?.path || 'unknown'),
+        content: safeString(data, 'content'),
         lines:
-          typeof data.startLine === 'number'
+          hasNumberProperty(data, 'startLine')
             ? {
-                start: data.startLine as number,
-                end: typeof data.endLine === 'number' ? data.endLine : (data.startLine as number),
+                start: data.startLine,
+                end: hasNumberProperty(data, 'endLine') ? data.endLine : data.startLine,
               }
             : undefined,
         language: detectLanguageFromPath(queries[0]?.path || ''),
-        totalLines: typeof data.totalLines === 'number' ? data.totalLines : undefined,
-        isPartial: typeof data.isPartial === 'boolean' ? data.isPartial : undefined,
+        totalLines: hasNumberProperty(data, 'totalLines') ? data.totalLines : undefined,
+        isPartial: hasBooleanProperty(data, 'isPartial') ? data.isPartial : undefined,
         mcpHints: hints,
         research,
       });
@@ -127,20 +129,19 @@ githubRoutes.get(
         githubReposSchema
       );
       const rawResult = await withGitHubResilience(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        () => githubSearchRepositories({ queries } as any),
+        () => githubSearchRepositories(toGitHubReposParams(queries)),
         'githubSearchRepositories'
       );
       const { data, isError, hints: mcpHints } = parseToolResponse(rawResult);
 
-      const repos = Array.isArray(data.repositories) ? data.repositories : [];
+      const repos = safeArray<Record<string, unknown>>(data, 'repositories');
       const summary =
         repos.length > 0
           ? `Found ${repos.length} repositories:\n` +
             repos
               .slice(0, 10)
-              .map((r: StructuredData) =>
-                `- ${r.owner}/${r.repo}${typeof r.stars === 'number' ? ` ⭐${r.stars}` : ''}\n  ${r.description || 'No description'}`
+              .map((r) =>
+                `- ${safeString(r, 'owner')}/${safeString(r, 'repo')}${hasNumberProperty(r, 'stars') ? ` ⭐${r.stars}` : ''}\n  ${safeString(r, 'description', 'No description')}`
               )
               .join('\n')
           : 'No repositories found';
@@ -175,18 +176,14 @@ githubRoutes.get(
         githubStructureSchema
       );
       const rawResult = await withGitHubResilience(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        () => githubViewRepoStructure({ queries } as any),
+        () => githubViewRepoStructure(toGitHubStructureParams(queries)),
         'githubViewRepoStructure'
       );
       const { data, isError, hints, research } = parseToolResponse(rawResult);
 
-      const structure = (data.structure || {}) as StructuredData;
-      const rootEntry = (structure['.'] || { files: [], folders: [] }) as {
-        files: string[];
-        folders: string[];
-      };
-      const summary = (data.summary || {}) as StructuredData;
+      const structure = isObject(data.structure) ? data.structure : {};
+      const rootEntry = isObject(structure['.']) ? structure['.'] as { files?: string[]; folders?: string[] } : { files: [], folders: [] };
+      const summary = isObject(data.summary) ? data.summary : {};
 
       const response = ResearchResponse.repoStructure({
         path: queries[0]?.path || '/',
@@ -194,9 +191,9 @@ githubRoutes.get(
           files: Array.isArray(rootEntry.files) ? rootEntry.files : [],
           folders: Array.isArray(rootEntry.folders) ? rootEntry.folders : [],
         },
-        depth: typeof queries[0]?.depth === 'number' ? queries[0].depth : undefined,
-        totalFiles: typeof summary.totalFiles === 'number' ? summary.totalFiles : undefined,
-        totalFolders: typeof summary.totalFolders === 'number' ? summary.totalFolders : undefined,
+        depth: hasNumberProperty(queries[0], 'depth') ? queries[0].depth : undefined,
+        totalFiles: hasNumberProperty(summary, 'totalFiles') ? summary.totalFiles : undefined,
+        totalFolders: hasNumberProperty(summary, 'totalFolders') ? summary.totalFolders : undefined,
         owner: queries[0]?.owner,
         repo: queries[0]?.repo,
         mcpHints: hints,
@@ -220,32 +217,26 @@ githubRoutes.get(
         githubPRsSchema
       );
       const rawResult = await withGitHubResilience(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        () => githubSearchPullRequests({ queries } as any),
+        () => githubSearchPullRequests(toGitHubPRsParams(queries)),
         'githubSearchPullRequests'
       );
       const { data, isError, hints, research } = parseToolResponse(rawResult);
 
-      const prs = Array.isArray(data.pull_requests) ? data.pull_requests : [];
+      const prs = safeArray<Record<string, unknown>>(data, 'pull_requests');
 
       const response = ResearchResponse.pullRequests({
-        prs: prs.map((pr: StructuredData) => ({
-          number: typeof pr.number === 'number' ? pr.number : 0,
-          title: String(pr.title || ''),
-          state: String(pr.state || ''),
-          author: typeof pr.author === 'string' ? pr.author : undefined,
-          url: typeof pr.url === 'string' ? pr.url : undefined,
+        prs: prs.map((pr) => ({
+          number: safeNumber(pr, 'number', 0),
+          title: safeString(pr, 'title'),
+          state: safeString(pr, 'state'),
+          author: hasProperty(pr, 'author') && typeof pr.author === 'string' ? pr.author : undefined,
+          url: hasProperty(pr, 'url') && typeof pr.url === 'string' ? pr.url : undefined,
         })),
         repo:
           queries[0]?.owner && queries[0]?.repo
             ? `${queries[0].owner}/${queries[0].repo}`
             : undefined,
-        // Map MCP pagination fields (currentPage/totalPages) to skill format (page/total)
-        pagination: data.pagination ? {
-          page: (data.pagination as StructuredData).currentPage as number || 1,
-          total: (data.pagination as StructuredData).totalPages as number || 1,
-          hasMore: (data.pagination as StructuredData).hasMore === true,
-        } : undefined,
+        pagination: transformPagination(data.pagination),
         mcpHints: hints,
         research,
       });
@@ -256,23 +247,3 @@ githubRoutes.get(
     }
   }
 );
-
-// Helper: Detect language from file path
-function detectLanguageFromPath(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase() || '';
-  const langMap: Record<string, string> = {
-    ts: 'typescript',
-    tsx: 'typescript',
-    js: 'javascript',
-    jsx: 'javascript',
-    py: 'python',
-    go: 'go',
-    rs: 'rust',
-    java: 'java',
-    md: 'markdown',
-    json: 'json',
-    yaml: 'yaml',
-    yml: 'yaml',
-  };
-  return langMap[ext] || '';
-}

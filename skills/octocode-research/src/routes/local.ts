@@ -12,14 +12,25 @@ import {
   localFindSchema,
   localStructureSchema,
 } from '../validation/index.js';
-import { ResearchResponse, QuickResult } from '../utils/responseBuilder.js';
+import { ResearchResponse, QuickResult, detectLanguageFromPath } from '../utils/responseBuilder.js';
 import { parseToolResponse } from '../utils/responseParser.js';
 import { withLocalResilience } from '../utils/resilience.js';
+import {
+  toLocalSearchParams,
+  toLocalContentParams,
+  toLocalFindParams,
+  toLocalStructureParams,
+} from '../types/toolTypes.js';
+import {
+  safeString,
+  safeNumber,
+  safeArray,
+  extractMatchLocations,
+  transformPagination,
+} from '../utils/responseFactory.js';
+import { isObject, hasProperty, hasNumberProperty, hasBooleanProperty } from '../types/guards.js';
 
 export const localRoutes = Router();
-
-// Type for structured content (flexible)
-type StructuredData = Record<string, unknown>;
 
 // GET /local/search - Search code with ripgrep
 localRoutes.get(
@@ -31,45 +42,31 @@ localRoutes.get(
         localSearchSchema
       );
       const rawResult = await withLocalResilience(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        () => localSearchCode({ queries } as any),
+        () => localSearchCode(toLocalSearchParams(queries)),
         'localSearchCode'
       );
       const { data, isError, hints, research } = parseToolResponse(rawResult);
 
-      const files = Array.isArray(data.files) ? data.files : [];
-      const pagination = (data.pagination || {}) as StructuredData;
+      const files = safeArray<Record<string, unknown>>(data, 'files');
+      const pagination = isObject(data.pagination) ? data.pagination : {};
 
       // Transform to role-based response
       // MCP returns matches[] array per file with line numbers
       const response = ResearchResponse.searchResults({
-        files: files.map((f: StructuredData) => {
-          const matchesArray = Array.isArray(f.matches) ? f.matches : [];
-          const firstMatch = matchesArray[0] as StructuredData | undefined;
+        files: files.map((f) => {
+          const matchesArray = safeArray<Record<string, unknown>>(f, 'matches');
+          const firstMatch = matchesArray[0];
           return {
-            path: String(f.path || ''),
-            matches: typeof f.matchCount === 'number' ? f.matchCount : matchesArray.length,
-            line: firstMatch && typeof firstMatch.line === 'number' ? firstMatch.line : undefined,
-            preview: firstMatch && typeof firstMatch.value === 'string' ? firstMatch.value.trim() : undefined,
+            path: safeString(f, 'path'),
+            matches: hasNumberProperty(f, 'matchCount') ? f.matchCount : matchesArray.length,
+            line: isObject(firstMatch) && hasNumberProperty(firstMatch, 'line') ? firstMatch.line : undefined,
+            preview: isObject(firstMatch) && hasProperty(firstMatch, 'value') && typeof firstMatch.value === 'string' ? firstMatch.value.trim() : undefined,
             // Preserve all match locations for detailed analysis
-            allMatches: matchesArray.map((m: StructuredData) => ({
-              line: typeof m.line === 'number' ? m.line : 0,
-              column: typeof m.column === 'number' ? m.column : undefined,
-              value: typeof m.value === 'string' ? m.value.trim() : undefined,
-              byteOffset: typeof m.byteOffset === 'number' ? m.byteOffset : undefined,
-              charOffset: typeof m.charOffset === 'number' ? m.charOffset : undefined,
-            })),
+            allMatches: extractMatchLocations(matchesArray),
           };
         }),
-        totalMatches: typeof data.totalMatches === 'number' ? data.totalMatches : 0,
-        pagination:
-          typeof pagination.currentPage === 'number'
-            ? {
-                page: pagination.currentPage as number,
-                total: typeof pagination.totalPages === 'number' ? pagination.totalPages : 1,
-                hasMore: pagination.hasMore === true,
-              }
-            : undefined,
+        totalMatches: safeNumber(data, 'totalMatches', 0),
+        pagination: transformPagination(pagination),
         searchPattern: queries[0]?.pattern,
         mcpHints: hints, // Pass through MCP workflow hints
         research, // Pass through research context
@@ -92,26 +89,25 @@ localRoutes.get(
         localContentSchema
       );
       const rawResult = await withLocalResilience(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        () => localGetFileContent({ queries } as any),
+        () => localGetFileContent(toLocalContentParams(queries)),
         'localGetFileContent'
       );
       const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       // Transform to role-based response
       const response = ResearchResponse.fileContent({
-        path: String(data.path || queries[0]?.path || 'unknown'),
-        content: String(data.content || ''),
+        path: safeString(data, 'path', queries[0]?.path || 'unknown'),
+        content: safeString(data, 'content'),
         lines:
-          typeof data.startLine === 'number'
+          hasNumberProperty(data, 'startLine')
             ? {
-                start: data.startLine as number,
-                end: typeof data.endLine === 'number' ? data.endLine : (data.startLine as number),
+                start: data.startLine,
+                end: hasNumberProperty(data, 'endLine') ? data.endLine : data.startLine,
               }
             : undefined,
         language: detectLanguageFromPath(queries[0]?.path || ''),
-        totalLines: typeof data.totalLines === 'number' ? data.totalLines : undefined,
-        isPartial: typeof data.isPartial === 'boolean' ? data.isPartial : undefined,
+        totalLines: hasNumberProperty(data, 'totalLines') ? data.totalLines : undefined,
+        isPartial: hasBooleanProperty(data, 'isPartial') ? data.isPartial : undefined,
         mcpHints: hints,
         research,
       });
@@ -131,20 +127,19 @@ localRoutes.get(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const queries = parseAndValidate(req.query as Record<string, unknown>, localFindSchema as any);
       const rawResult = await withLocalResilience(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        () => localFindFiles({ queries } as any),
+        () => localFindFiles(toLocalFindParams(queries)),
         'localFindFiles'
       );
       const { data, isError, hints: mcpHints } = parseToolResponse(rawResult);
 
-      const files = Array.isArray(data.files) ? data.files : [];
+      const files = safeArray<Record<string, unknown>>(data, 'files');
       const summary =
         files.length > 0
           ? `Found ${files.length} files:\n` +
             files
               .slice(0, 20)
-              .map((f: StructuredData) =>
-                `- ${f.path}${typeof f.size === 'number' ? ` (${formatSize(f.size)})` : ''}`
+              .map((f) =>
+                `- ${safeString(f, 'path')}${hasNumberProperty(f, 'size') ? ` (${formatSize(f.size)})` : ''}`
               )
               .join('\n')
           : 'No files found';
@@ -180,14 +175,13 @@ localRoutes.get(
         localStructureSchema
       );
       const rawResult = await withLocalResilience(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        () => localViewStructure({ queries } as any),
+        () => localViewStructure(toLocalStructureParams(queries)),
         'localViewStructure'
       );
       const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       // Parse structured output
-      const structuredOutput = String(data.structuredOutput || '');
+      const structuredOutput = safeString(data, 'structuredOutput');
       const files: string[] = [];
       const folders: string[] = [];
 
@@ -206,10 +200,9 @@ localRoutes.get(
       const response = ResearchResponse.repoStructure({
         path: queries[0]?.path || '.',
         structure: { files, folders },
-        depth: typeof queries[0]?.depth === 'number' ? queries[0].depth : undefined,
-        totalFiles: typeof data.totalFiles === 'number' ? data.totalFiles : undefined,
-        totalFolders:
-          typeof data.totalDirectories === 'number' ? data.totalDirectories : undefined,
+        depth: hasNumberProperty(queries[0], 'depth') ? queries[0].depth : undefined,
+        totalFiles: hasNumberProperty(data, 'totalFiles') ? data.totalFiles : undefined,
+        totalFolders: hasNumberProperty(data, 'totalDirectories') ? data.totalDirectories : undefined,
         mcpHints: hints,
         research,
       });
@@ -220,26 +213,6 @@ localRoutes.get(
     }
   }
 );
-
-// Helper: Detect language from file path
-function detectLanguageFromPath(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase() || '';
-  const langMap: Record<string, string> = {
-    ts: 'typescript',
-    tsx: 'typescript',
-    js: 'javascript',
-    jsx: 'javascript',
-    py: 'python',
-    go: 'go',
-    rs: 'rust',
-    java: 'java',
-    md: 'markdown',
-    json: 'json',
-    yaml: 'yaml',
-    yml: 'yaml',
-  };
-  return langMap[ext] || '';
-}
 
 // Helper: Format file size
 function formatSize(bytes: number): string {
