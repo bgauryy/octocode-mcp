@@ -453,3 +453,53 @@ export {
  * ```
  */
 export { withBasicSecurityValidation } from './security/withSecurityValidation.js';
+
+// ============================================================================
+// Response Formatting
+// ============================================================================
+
+/**
+ * Response utilities for creating MCP-compliant tool responses.
+ *
+ * Includes:
+ * - Legacy `createResult` for backwards compatibility
+ * - New role-based `createRoleBasedResult` with system/assistant/user content blocks
+ * - `ContentBuilder` for creating individual content blocks
+ * - `QuickResult` helpers for common patterns (success, empty, error, paginated)
+ *
+ * @example
+ * ```typescript
+ * import { createRoleBasedResult, ContentBuilder, QuickResult, StatusEmoji } from 'octocode-mcp/public';
+ *
+ * // Role-based response
+ * const result = createRoleBasedResult({
+ *   system: { hints: ['Use lineHint for LSP tools'] },
+ *   assistant: { summary: 'Found 3 files matching pattern' },
+ *   user: { message: 'Search complete', emoji: StatusEmoji.success },
+ *   data: { files: [...] }
+ * });
+ *
+ * // Quick helpers
+ * const success = QuickResult.success('Found 3 files', data, hints);
+ * const empty = QuickResult.empty('No matches found');
+ * const error = QuickResult.error('Invalid path', details);
+ * ```
+ */
+export {
+  // Legacy API (backwards compatible)
+  createResult,
+  createResponseFormat,
+  // New role-based API
+  createRoleBasedResult,
+  ContentBuilder,
+  QuickResult,
+  StatusEmoji,
+  StatusEmojis,
+} from './responses.js';
+
+export type {
+  ContentRole,
+  RoleContentBlock,
+  RoleBasedResultOptions,
+  RoleAnnotations,
+} from './responses.js';

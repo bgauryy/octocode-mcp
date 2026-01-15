@@ -39,9 +39,20 @@ export interface HintContext {
     | 'symbol_not_found'
     | 'file_not_found'
     | 'timeout'
-    | 'not_a_function';
+    | 'not_a_function'
+    | 'rate_limit';
   /** Original error message */
   originalError?: string;
+  /** HTTP status code (for error cases) */
+  status?: number;
+
+  // Rate limit context
+  /** Whether the error is a rate limit error */
+  isRateLimited?: boolean;
+  /** Seconds until rate limit resets */
+  retryAfter?: number;
+  /** Rate limit remaining (usually 0 for rate limit errors) */
+  rateLimitRemaining?: number;
 
   // Tool-specific context
   /** Whether matchString/pattern was used */

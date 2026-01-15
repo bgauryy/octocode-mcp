@@ -7,7 +7,12 @@ import {
 } from './utils/credentials/index.js';
 import { initializeSecureStorage } from 'octocode-shared';
 import { version } from '../package.json';
-import type { ServerConfig, TokenSourceType } from './types.js';
+import type {
+  ServerConfig,
+  TokenSourceType,
+  GitLabConfig,
+  GitLabTokenSourceType,
+} from './types.js';
 import { CONFIG_ERRORS } from './errorCodes.js';
 import { maskSensitiveData } from './security/mask.js';
 
@@ -17,8 +22,17 @@ interface TokenResolutionResult {
   source: TokenSourceType;
 }
 
+/** Result of GitLab token resolution with source tracking */
+interface GitLabTokenResolutionResult {
+  token: string | null;
+  source: GitLabTokenSourceType;
+}
+
 let config: ServerConfig | null = null;
 let initializationPromise: Promise<void> | null = null;
+
+// Cached GitLab configuration (resolved once at initialization)
+let gitlabConfig: GitLabConfig | null = null;
 
 // Injectable function for testing (gh CLI is passed to resolveTokenFull)
 let _getGithubCLIToken = getGithubCLIToken;
@@ -191,6 +205,49 @@ async function resolveGitHubToken(): Promise<TokenResolutionResult> {
   }
 }
 
+// ============================================================================
+// GITLAB TOKEN RESOLUTION
+// ============================================================================
+
+/** Default GitLab host */
+const DEFAULT_GITLAB_HOST = 'https://gitlab.com';
+
+/**
+ * Resolve GitLab token from environment variables.
+ * Priority: GITLAB_TOKEN > GL_TOKEN
+ */
+function resolveGitLabToken(): GitLabTokenResolutionResult {
+  // Check GITLAB_TOKEN first (primary)
+  const gitlabToken = process.env.GITLAB_TOKEN?.trim();
+  if (gitlabToken) {
+    return { token: gitlabToken, source: 'env:GITLAB_TOKEN' };
+  }
+
+  // Check GL_TOKEN (fallback)
+  const glToken = process.env.GL_TOKEN?.trim();
+  if (glToken) {
+    return { token: glToken, source: 'env:GL_TOKEN' };
+  }
+
+  return { token: null, source: 'none' };
+}
+
+/**
+ * Resolve GitLab configuration from environment variables.
+ * @returns GitLab configuration object
+ */
+function resolveGitLabConfig(): GitLabConfig {
+  const tokenResult = resolveGitLabToken();
+  const host = process.env.GITLAB_HOST?.trim() || DEFAULT_GITLAB_HOST;
+
+  return {
+    host,
+    token: tokenResult.token,
+    tokenSource: tokenResult.source,
+    isConfigured: tokenResult.token !== null,
+  };
+}
+
 export async function initialize(): Promise<void> {
   if (config !== null) {
     return;
@@ -207,6 +264,9 @@ export async function initialize(): Promise<void> {
     // Resolve token once at startup for initial config (source tracking)
     // Token is NOT cached - subsequent calls to getGitHubToken() will re-resolve
     const tokenResult = await resolveGitHubToken();
+
+    // Resolve GitLab configuration (cached for the session)
+    gitlabConfig = resolveGitLabConfig();
 
     // Parse logging flag (defaults to true unless explicitly 'false' or '0')
     const isLoggingEnabled = parseBooleanEnvDefaultTrue(process.env.LOG);
@@ -236,6 +296,7 @@ export async function initialize(): Promise<void> {
       loggingEnabled: isLoggingEnabled,
       enableLocal,
       tokenSource: tokenResult.source,
+      gitlab: gitlabConfig,
     };
   })();
 
@@ -245,6 +306,7 @@ export async function initialize(): Promise<void> {
 export function cleanup(): void {
   config = null;
   initializationPromise = null;
+  gitlabConfig = null;
 }
 
 export function getServerConfig(): ServerConfig {
@@ -292,4 +354,55 @@ export function isLoggingEnabled(): boolean {
 export async function getTokenSource(): Promise<TokenSourceType> {
   const result = await resolveGitHubToken();
   return result.source;
+}
+
+// ============================================================================
+// GITLAB CONFIGURATION EXPORTS
+// ============================================================================
+
+/**
+ * Get the GitLab configuration.
+ * Returns the cached configuration resolved at initialization.
+ * @returns GitLab configuration or null if not initialized
+ */
+export function getGitLabConfig(): GitLabConfig | null {
+  return gitlabConfig;
+}
+
+/**
+ * Get the GitLab API token.
+ * Always resolves fresh - not cached. Token can change at runtime.
+ * @returns GitLab token or null if not configured
+ */
+export function getGitLabToken(): string | null {
+  const result = resolveGitLabToken();
+  return result.token;
+}
+
+/**
+ * Get the GitLab host URL.
+ * @returns GitLab host URL (defaults to https://gitlab.com)
+ */
+export function getGitLabHost(): string {
+  return process.env.GITLAB_HOST?.trim() || DEFAULT_GITLAB_HOST;
+}
+
+/**
+ * Get the source of the current GitLab token.
+ * Returns the type indicating where the token was found:
+ * - 'env:GITLAB_TOKEN' for GITLAB_TOKEN env var
+ * - 'env:GL_TOKEN' for GL_TOKEN env var
+ * - 'none' if no token was found
+ */
+export function getGitLabTokenSource(): GitLabTokenSourceType {
+  const result = resolveGitLabToken();
+  return result.source;
+}
+
+/**
+ * Check if GitLab is configured with a valid token.
+ * @returns true if GitLab token is available
+ */
+export function isGitLabConfigured(): boolean {
+  return resolveGitLabToken().token !== null;
 }

@@ -5,32 +5,75 @@
 > **Principles**: Evidence First. Validate Findings. Cite Precisely. Quality Over Speed.
 > **Creativity**: Use semantic variations (e.g., 'auth' → 'login', 'security', 'credentials')
 
+<critical>
+**Show your reasoning**: Before each tool call, explain what you're looking for and why this tool/approach helps answer the user's question.
+</critical>
+
 ---
 
 ## STEP 0: Task Classification (MANDATORY BEFORE ANY TOOL CALL)
 
 Before making ANY tool call, classify the user's request:
 
-| Task Type | Indicators | Required Tools | Starting Point |
-|-----------|------------|----------------|----------------|
-| PACKAGE RESEARCH | "How does express work?", "lodash source" | `/package/search` first | Package name |
-| REPO EXPLORATION | "Show me the React codebase", "explore vercel/next.js" | `/github/structure` | Owner/repo |
-| CODE SEARCH | "Find JWT implementations", "how do others handle auth" | `/github/search` | Keywords |
-| HISTORY/ARCHAEOLOGY | "Why was this code written?", "when did X change" | `/github/prs` | Code location |
-| LIBRARY COMPARISON | "Compare express vs fastify" | Multiple `/package/search` | Package names |
+<task-classification>
+<task type="PACKAGE_RESEARCH" indicators="How does express work?, lodash source">
+<required-tools>/package/search first</required-tools>
+<starting-point>Package name</starting-point>
+</task>
+<task type="REPO_EXPLORATION" indicators="Show me the React codebase, explore vercel/next.js">
+<required-tools>/github/structure</required-tools>
+<starting-point>Owner/repo</starting-point>
+</task>
+<task type="CODE_SEARCH" indicators="Find JWT implementations, how do others handle auth">
+<required-tools>/github/search</required-tools>
+<starting-point>Keywords</starting-point>
+</task>
+<task type="HISTORY" indicators="Why was this code written?, when did X change">
+<required-tools>/github/prs</required-tools>
+<starting-point>Code location</starting-point>
+</task>
+<task type="COMPARISON" indicators="Compare express vs fastify">
+<required-tools>Multiple /package/search</required-tools>
+<starting-point>Package names</starting-point>
+</task>
+</task-classification>
 
 ---
 
 ## Trigger Word → Tool Mapping
 
-| User Says | REQUIRED Tool | Starting Action |
-|-----------|---------------|-----------------|
-| Package name (lodash, express, axios) | `/package/search` | Get repo URL |
-| "explore {owner}/{repo}" | `/github/structure` | View root, depth=1 |
-| "find code that does X" | `/github/search` | Keywords search |
-| "why was X written", "history of" | `/github/prs` | Search merged PRs |
-| "how do others implement X" | `/github/search` | Broad code search |
-| "compare X vs Y" | `/package/search` (both) | Get both repos |
+<trigger-actions>
+<trigger keywords="package name (lodash, express, axios)">
+<required>/package/search</required>
+<action>Get repo URL first</action>
+<thinking>Need to find the GitHub repo URL from the package registry</thinking>
+</trigger>
+<trigger keywords="explore {owner}/{repo}">
+<required>/github/structure</required>
+<action>View root, depth=1</action>
+<thinking>Need to understand the repository layout before diving into specific files</thinking>
+</trigger>
+<trigger keywords="find code that does X">
+<required>/github/search</required>
+<action>Keywords search</action>
+<thinking>Need to locate relevant code across the repository using keyword matching</thinking>
+</trigger>
+<trigger keywords="why was X written, history of">
+<required>/github/prs</required>
+<action>Search merged PRs</action>
+<thinking>Historical context lives in PRs - need to find discussions around the code changes</thinking>
+</trigger>
+<trigger keywords="how do others implement X">
+<required>/github/search</required>
+<action>Broad code search</action>
+<thinking>Need to find implementation patterns across multiple repositories</thinking>
+</trigger>
+<trigger keywords="compare X vs Y">
+<required>/package/search (both)</required>
+<action>Get both repos</action>
+<thinking>Need to gather information from both packages to make a fair comparison</thinking>
+</trigger>
+</trigger-actions>
 
 ---
 
@@ -93,6 +136,22 @@ curl "http://localhost:1987/github/prs?owner=expressjs&repo=express&query=router
 ### Pattern 1: Package → Source Research
 **When user asks**: "How does express work?", "Show me lodash source"
 
+<example type="good">
+<user-query>How does express middleware work?</user-query>
+<thinking>
+User asks about a package (express) → PACKAGE RESEARCH task.
+I need to: 1) Find the repo URL from npm, 2) Explore structure, 3) Search for middleware code.
+Starting with /package/search to get the GitHub repo location.
+</thinking>
+<flow>
+/package/search(name="express", ecosystem="npm")
+  → Extract owner/repo from repository.url
+  → /github/structure(owner, repo, depth=1)
+  → /github/search(keywordsToSearch=["middleware"])
+  → /github/content(path, matchString)
+</flow>
+</example>
+
 ```
 /package/search(name="express", ecosystem="npm")
   → Extract owner/repo from repository.url
@@ -105,6 +164,21 @@ curl "http://localhost:1987/github/prs?owner=expressjs&repo=express&query=router
 ### Pattern 2: Repository Exploration
 **When user asks**: "Explore facebook/react", "Show me the Next.js codebase"
 
+<example type="good">
+<user-query>Explore the React codebase</user-query>
+<thinking>
+User wants to explore a known repo → REPO EXPLORATION task.
+I have owner/repo (facebook/react), so I can start directly with /github/structure.
+Will explore root first, then identify key directories for deeper exploration.
+</thinking>
+<flow>
+/github/structure(owner="facebook", repo="react", depth=1)
+  → Identify key directories (packages/, src/)
+  → /github/structure(path="packages", depth=2)
+  → /github/search for specific concepts user asks about
+</flow>
+</example>
+
 ```
 /github/structure(owner, repo, branch, path="", depth=1)
   → Identify key directories (src/, lib/, packages/)
@@ -116,6 +190,20 @@ curl "http://localhost:1987/github/prs?owner=expressjs&repo=express&query=router
 ### Pattern 3: Code Archaeology
 **When user asks**: "Why was this code written?", "History of authentication changes"
 
+<example type="good">
+<user-query>Why was the authentication middleware rewritten?</user-query>
+<thinking>
+User asks about history/reasoning → HISTORY task.
+I need to find PRs that modified authentication code to understand the context.
+Starting with /github/search to locate auth files, then /github/prs to find related changes.
+</thinking>
+<flow>
+/github/search(keywordsToSearch=["auth", "middleware"])
+  → /github/prs(query="auth middleware", merged=true, type="metadata")
+  → /github/prs(prNumber=123, type="partialContent", withComments=true)
+</flow>
+</example>
+
 ```
 /github/search(owner, repo, keywordsToSearch=["auth"])
   → /github/prs(query="auth", state="closed", merged=true, type="metadata")
@@ -124,6 +212,21 @@ curl "http://localhost:1987/github/prs?owner=expressjs&repo=express&query=router
 
 ### Pattern 4: Broad Code Search
 **When user asks**: "How do others implement JWT?", "Examples of rate limiting"
+
+<example type="good">
+<user-query>How do popular libraries implement JWT verification?</user-query>
+<thinking>
+User wants cross-repo examples → CODE SEARCH task.
+No specific repo, so I'll use /github/search with broad keywords.
+Will find implementations, then explore the most relevant repos in detail.
+</thinking>
+<flow>
+/github/search(keywordsToSearch=["jwt", "verify"], extension="ts")
+  → Identify top repos from results
+  → /github/structure(owner, repo) for context
+  → /github/content(path, matchString) for implementation details
+</flow>
+</example>
 
 ```
 /github/search(keywordsToSearch=["jwt", "verify"], extension="ts", limit=20)
@@ -135,6 +238,21 @@ curl "http://localhost:1987/github/prs?owner=expressjs&repo=express&query=router
 ### Pattern 5: Library Comparison
 **When user asks**: "Compare express vs fastify", "Differences between axios and fetch"
 
+<example type="good">
+<user-query>Compare express and fastify routing</user-query>
+<thinking>
+User wants comparison → COMPARISON task.
+Need to research both packages in parallel to make fair comparison.
+Will use /package/search for both, then explore their routing implementations.
+</thinking>
+<flow>
+/package/search(name="express") & /package/search(name="fastify")
+  → /github/structure for both repos (parallel)
+  → /github/search in both for "router" patterns
+  → Compare architecture, API design, performance approaches
+</flow>
+</example>
+
 ```
 # Parallel package lookups
 /package/search(name="express") & /package/search(name="fastify")
@@ -145,126 +263,83 @@ curl "http://localhost:1987/github/prs?owner=expressjs&repo=express&query=router
 
 ---
 
-## Parallel Execution
-
-The server handles concurrent requests. Use parallel calls:
-
-```bash
-# Parallel structure exploration
-curl "http://localhost:1987/github/structure?owner=facebook&repo=react&path=packages/react" &
-curl "http://localhost:1987/github/structure?owner=facebook&repo=react&path=packages/react-dom" &
-wait
-
-# Parallel package lookups
-curl "http://localhost:1987/package/search?ecosystem=npm&name=express" &
-curl "http://localhost:1987/package/search?ecosystem=npm&name=fastify" &
-wait
-```
-
-**When to parallelize:**
-- Exploring multiple directories in same repo
-- Comparing multiple packages
-- Searching across multiple repos
-- Reading multiple files
-
----
-
-## Best Practices
-
-### ✅ DO
-- **Start with `/package/search`** for known package names (faster than repo search)
-- **Start `/github/structure` at root** with `depth=1`, then drill into subdirs
-- **Use `matchString`** in `/github/content` for large files
-- **Use `type="metadata"` first** in PR search, then `partialContent` for specific files
-- **Specify `owner` and `repo`** in `/github/search` for precision
-- **Use 1-2 filters max** in `/github/search`
-- **Run parallel calls** for independent operations
-
-### ❌ DON'T
-- Don't use `fullContent=true` on large files (300KB max)
-- Don't combine `extension` + `filename` + `path` in `/github/search`
-- Don't use `type="fullContent"` on large PRs (token expensive)
-- Don't run sequential calls that could be parallel
-- Don't skip PREPARE phase for known packages
+> **Parallel Execution**: See [task_integration.md](./task_integration.md) for parallel call patterns.
+>
+> **Best Practices**: See [SKILL.md](../SKILL.md#best-practices) for consolidated DO/DON'T list.
 
 ---
 
 ## Checkpoint: Before Reading Files
 
-**STOP and answer these questions:**
-
-1. Do I have the correct owner/repo/branch?
-   - NO → **STOP. Use `/package/search` or `/github/repos` first.**
-   - YES → Continue
-
-2. Do I know where the file is?
-   - NO → **STOP. Use `/github/structure` or `/github/search` first.**
-   - YES → Continue
-
-3. Is the file likely large?
-   - YES → Use `matchString` instead of `fullContent`
-   - NO → `fullContent=true` is OK for small configs
-
----
-
-## When Is Research Complete?
-
-Research is complete when you have:
-
-- ✅ **Clear answer** to the user's question
-- ✅ **Multiple evidence points** from the codebase
-- ✅ **Key code snippets** identified (up to 10 lines each)
-- ✅ **GitHub links** for all references
-- ✅ **Edge cases noted** (limitations, uncertainties)
-
-**Then**: Present summary → Ask user → Save if requested
+<checkpoint name="before-reading-files">
+<verify question="Do I have the correct owner/repo/branch?">
+<if-no>STOP - Use /package/search or /github/repos first</if-no>
+</verify>
+<verify question="Do I know where the file is?">
+<if-no>STOP - Use /github/structure or /github/search first</if-no>
+</verify>
+<verify question="Is the file likely large?">
+<if-yes>Use matchString instead of fullContent</if-yes>
+<if-no>fullContent=true is OK for small configs</if-no>
+</verify>
+</checkpoint>
 
 ---
 
-## Error Recovery
-
-| Error | Solution |
-|-------|----------|
-| Tool returns empty | Try semantic variants (auth→login→credentials→session) |
-| Too many results | Add `owner`/`repo`, use path filter, add keywords |
-| FILE_TOO_LARGE | Use `matchString` or `startLine`/`endLine` |
-| Rate limited | Reduce batch size, wait |
-| Package not found | Try alternative names, check npm/PyPI directly |
-| Dead end | Backtrack to last good state, try different entry point |
+> **Research Completion**: See [output_protocol.md](./output_protocol.md) for quality checklist and output format.
+>
+> **Error Recovery**: See [SKILL.md](../SKILL.md#error-recovery) for consolidated error handling.
 
 ---
 
 ## Multi-Research: Complex Questions
 
-For questions with **multiple independent aspects**:
+For questions with **multiple independent aspects**, use multi-agent orchestration.
+
+### When to Spawn Parallel Agents
+
+- **Library comparisons** (express vs fastify)
+- **Multi-package research** (how does X use Y?)
+- **Cross-repo investigations**
+
+### Orchestration Flow
+
+```
+1. DECOMPOSE: Identify independent axes
+2. SPAWN: Launch parallel Task agents (single message)
+3. MONITOR: Track via TodoWrite
+4. MERGE: Synthesize when all complete
+5. OUTPUT: Present unified comparison
+```
 
 ### Example
+
+```
 User: "How does Next.js handle routing, and how does it compare to Remix?"
 
-### Approach
-1. **Identify axes**: Next.js routing, Remix routing, Comparison
-2. **Research separately**: 
-   - Thread 1: Next.js routing (`/package/search` → explore → analyze)
-   - Thread 2: Remix routing (`/package/search` → explore → analyze)
-3. **Merge findings**: Compare approaches, highlight differences
-4. **Present together**: Single research doc with comparison
+Orchestrator:
+→ Task(prompt="Research Next.js routing...")  // Agent 1
+→ Task(prompt="Research Remix routing...")    // Agent 2
+→ Wait for all agents
+→ Merge findings into comparison table
+→ Present unified summary with differences
+```
 
-### Context Management
-- Keep each research thread focused
-- Don't mix Next.js and Remix findings during research
-- Merge only at OUTPUT phase with clear comparison
+### Agent Prompt Template
+
+```javascript
+Task({
+  subagent_type: "Explore",
+  prompt: `Research [PACKAGE/REPO] [SPECIFIC TOPIC].
+           Server: http://localhost:1987
+           Flow: /package/search → /github/structure → /github/content
+           Goal: [What evidence to gather]
+           Output: Summary with GitHub links and code snippets`
+})
+```
+
+> **Full orchestration guide**: See [output_protocol.md](./output_protocol.md#complex-research-multi-axis--deep-dives)
 
 ---
 
-## Output: GitHub Links
-
-Always include full GitHub links in output:
-
-```markdown
-## References
-- [Router implementation](https://github.com/expressjs/express/blob/master/lib/router/index.js#L42)
-- [Middleware chain](https://github.com/expressjs/express/blob/master/lib/router/route.js#L15-L30)
-- [PR #1234: Added async support](https://github.com/expressjs/express/pull/1234)
-```
-
-Format: `https://github.com/{owner}/{repo}/blob/{branch}/{path}#L{line}` or `#L{start}-L{end}` for ranges.
+> **Output Format**: See [output_protocol.md](./output_protocol.md) for GitHub link format and document templates.

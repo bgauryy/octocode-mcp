@@ -49,8 +49,9 @@
     "lint:fix": "eslint src --fix"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
     "express": "^4.21.2",
-    "octocode-mcp": "^11.1.4",
+    "octocode-mcp": "file:../../packages/octocode-mcp",
     "zod": "^3.24.1"
   },
   "devDependencies": {

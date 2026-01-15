@@ -1,9 +1,13 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { packageSearch } from '../index.js';
-import { parseAndValidate, sendToolResult } from '../middleware/queryParser.js';
+import { parseAndValidate } from '../middleware/queryParser.js';
 import { packageSearchSchema } from '../validation/index.js';
+import { ResearchResponse } from '../utils/responseBuilder.js';
 
 export const packageRoutes = Router();
+
+// Type for structured content (flexible)
+type StructuredData = Record<string, unknown>;
 
 // GET /package/search - Search npm/pypi packages
 packageRoutes.get(
@@ -15,10 +19,85 @@ packageRoutes.get(
         packageSearchSchema
       );
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await packageSearch({ queries } as any);
-      sendToolResult(res, result);
+      const rawResult = await packageSearch({ queries } as any);
+      const data = (rawResult.structuredContent || {}) as StructuredData;
+
+      // Extract packages from result
+      const packages = extractPackages(data);
+      const query = queries[0] as StructuredData;
+      const registry = (query.ecosystem || 'npm') as 'npm' | 'pypi';
+
+      const response = ResearchResponse.packageSearch({
+        packages,
+        registry,
+        query: String(query.name || ''),
+      });
+
+      res.status(rawResult.isError ? 500 : 200).json(response);
     } catch (error) {
       next(error);
     }
   }
 );
+
+// Helper: Extract packages from result
+function extractPackages(
+  data: StructuredData
+): Array<{
+  name: string;
+  version?: string;
+  description?: string;
+  repository?: string;
+}> {
+  // Handle npm results
+  if (Array.isArray(data.npmResults)) {
+    return data.npmResults.map((pkg: StructuredData) => ({
+      name: String(pkg.name || ''),
+      version: typeof pkg.version === 'string' ? pkg.version : undefined,
+      description: typeof pkg.description === 'string' ? pkg.description : undefined,
+      repository:
+        typeof pkg.repository === 'string'
+          ? pkg.repository
+          : typeof pkg.repository === 'object' && pkg.repository !== null
+            ? String((pkg.repository as StructuredData).url || '')
+            : undefined,
+    }));
+  }
+
+  // Handle pypi results
+  if (Array.isArray(data.pypiResults)) {
+    return data.pypiResults.map((pkg: StructuredData) => ({
+      name: String(pkg.name || ''),
+      version: typeof pkg.version === 'string' ? pkg.version : undefined,
+      description: typeof pkg.description === 'string' ? pkg.description : undefined,
+      repository:
+        typeof pkg.homepage === 'string'
+          ? pkg.homepage
+          : typeof pkg.project_url === 'string'
+            ? pkg.project_url
+            : undefined,
+    }));
+  }
+
+  // Handle generic packages array
+  if (Array.isArray(data.packages)) {
+    return data.packages.map((pkg: StructuredData) => ({
+      name: String(pkg.name || ''),
+      version: typeof pkg.version === 'string' ? pkg.version : undefined,
+      description: typeof pkg.description === 'string' ? pkg.description : undefined,
+      repository: typeof pkg.repository === 'string' ? pkg.repository : undefined,
+    }));
+  }
+
+  // Handle results array (fallback)
+  if (Array.isArray(data.results)) {
+    return data.results.map((pkg: StructuredData) => ({
+      name: String(pkg.name || ''),
+      version: typeof pkg.version === 'string' ? pkg.version : undefined,
+      description: typeof pkg.description === 'string' ? pkg.description : undefined,
+      repository: typeof pkg.repository === 'string' ? pkg.repository : undefined,
+    }));
+  }
+
+  return [];
+}

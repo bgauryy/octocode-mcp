@@ -1,6 +1,6 @@
 ---
 name: octocode-research
-description: Code research for external (GitHub) and local code exploration. Initiate when user wants to research some code or implementation or findind docs anywhere
+description: Code research for external (GitHub) and local code exploration. Initiate when user wants to research some code or implementation or finding docs anywhere
 ---
 
 # Octocode Research Skill
@@ -11,7 +11,28 @@ HTTP API server for code research at `http://localhost:1987`
 
 ---
 
-## ⚠️ CRITICAL: Always Check Server Health First
+## How to Use This Skill
+
+**Before starting research, read the relevant guides:**
+
+| Research Type | Read First |
+|---------------|------------|
+| **Local codebase** | [research_local_prompt.md](./references/research_local_prompt.md) - Task classification, flow patterns, LSP usage |
+| **GitHub/packages** | [research_external_prompt.md](./references/research_external_prompt.md) - Package lookup, repo exploration, PR search |
+| **Presenting results** | [output_protocol.md](./references/output_protocol.md) - Quality standards, adaptive output, when to save docs |
+
+**When using specific endpoints**, consult the endpoint reference for parameters and examples:
+- Each endpoint has a dedicated doc in `./references/` with HTTP examples and response structure
+
+**The reference docs explain:**
+- Which tools to use for which questions (task classification)
+- Required workflows (e.g., search → get lineHint → LSP tools)
+- Common mistakes to avoid
+- How to present findings based on question complexity
+
+---
+
+## CRITICAL: Always Check Server Health First
 
 **BEFORE making ANY API request**, you MUST verify the server is running:
 
@@ -34,18 +55,26 @@ curl -s http://localhost:1987/health
 
 ---
 
-## Quick Start
+## LSP + Local Tools Coordination (CRITICAL)
 
-```bash
-# 1. Check if server is running (ALWAYS DO THIS FIRST)
-curl -s http://localhost:1987/health || echo "NOT_RUNNING"
+<critical-coordination>
+**THE GOLDEN RULE**: Search first → Get lineHint → Then LSP
 
-# 2. Start server if needed
-./install.sh start
-
-# 3. View logs if issues
-./install.sh logs
 ```
+/local/search(pattern="X") → Response contains line numbers
+                ↓
+         Extract lineHint from matches[].line
+                ↓
+/lsp/definition OR /lsp/references OR /lsp/calls (with lineHint)
+```
+
+**NEVER**:
+- Call LSP tools without lineHint from search
+- Use `/lsp/calls` for types/variables (use `/lsp/references` instead)
+- Read files to understand flow (use `/lsp/calls`)
+
+**Full guide**: [lsp_local_coordination.md](./references/lsp_local_coordination.md)
+</critical-coordination>
 
 ---
 
@@ -86,14 +115,16 @@ curl -s http://localhost:1987/health || echo "NOT_RUNNING"
 
 ## Decision Tree
 
-```
-Is it LOCAL codebase?
-├── YES → /local/* + /lsp/*
-│   └── Flow question? → /lsp/calls REQUIRED
-│       📖 See: research_local_prompt.md
-└── NO  → /github/* or /package/*
-        📖 See: research_external_prompt.md
-```
+<decision-tree>
+<condition test="Is it LOCAL codebase?">
+<yes>Use /local/* + /lsp/* tools
+  <condition test="Flow question?">
+  <yes>/lsp/calls REQUIRED - see research_local_prompt.md</yes>
+  </condition>
+</yes>
+<no>Use /github/* or /package/* - see research_external_prompt.md</no>
+</condition>
+</decision-tree>
 
 ---
 
@@ -123,13 +154,26 @@ Is it LOCAL codebase?
 
 ## Critical Rules
 
-| Rule | Why |
-|------|-----|
-| **⚠️ Health check FIRST** | Server may not be running - check before ANY request |
-| **Search first → get lineHint → LSP** | LSP needs accurate line numbers |
-| **Use `/lsp/calls` for flow tracing** | File reading alone misses call relationships |
-| **Parallel calls for speed** | Server handles concurrent requests (3x faster) |
-| **Never guess line numbers** | Always get lineHint from search results |
+<critical-rules>
+<rule id="thinking">
+**IMPORTANT!** Always show your thinking and reasoning steps during research. Explain what you're looking for, why you chose specific tools/endpoints, and how findings connect to the research goal.
+</rule>
+<rule id="health-check">
+**Health check FIRST** - Server may not be running. Check /health before ANY request.
+</rule>
+<rule id="linehint">
+**Search first → get lineHint → LSP** - LSP tools need accurate line numbers from search results.
+</rule>
+<rule id="flow-tracing">
+**Use /lsp/calls for flow tracing** - File reading alone misses call relationships.
+</rule>
+<rule id="parallel">
+**Parallel calls for speed** - Server handles concurrent requests (3x faster).
+</rule>
+<rule id="no-guessing">
+**Never guess line numbers** - Always get lineHint from search results.
+</rule>
+</critical-rules>
 
 ---
 
@@ -159,10 +203,20 @@ All endpoints require research context:
 
 ## Output Protocol
 
-1. **Research until quality** - Multiple evidence points, flows traced
-2. **Present summary** - TL;DR + findings + evidence
-3. **Ask user** - Save? Continue? Something else?
-4. **Save if requested** - `.octocode/research/{session-name}/`
+**Adaptive output based on question complexity:**
+
+| Question Type | Output | Save Doc? |
+|---------------|--------|-----------|
+| Quick lookup | Direct answer + path | No |
+| Flow trace | Structured summary | Offer |
+| Multi-axis / Complex | Full research doc | Recommend |
+
+**Quality bar (all research)**:
+- **Fact-based**: Every claim backed by actual code
+- **Evidence-linked**: Path + line number for every finding
+- **Verified**: Cross-referenced where possible
+
+**Complex research**: Use multi-agent orchestration (spawn parallel Tasks)
 
 **Full guide**: [Output Protocol](./references/output_protocol.md)
 
@@ -189,9 +243,6 @@ cat ~/.octocode/logs/errors.log       # Errors
 **Question**: "How does authentication work?"
 
 ```bash
-# 0. ALWAYS check health first!
-curl -s http://localhost:1987/health || ./install.sh start
-
 # 1. Find entry points
 curl "http://localhost:1987/local/search?pattern=authenticate&path=/project/src"
 # → Found at line 15
@@ -208,11 +259,85 @@ curl "http://localhost:1987/local/content?path=...&startLine=10&endLine=30"
 
 ---
 
+## Best Practices
+
+<best-practices>
+<do>
+- **Search first** → get `lineHint` → then LSP tools
+- **Use `/lsp/calls`** for flow/trace questions
+- **Run parallel calls** for independent queries
+- **Use `mode=discovery`** for fast initial file discovery
+- **Use `matchString`** for large files instead of `fullContent`
+- **Use `depth=1`** for call hierarchy, chain manually
+- **Start `/github/structure` at root** with `depth=1`, drill into subdirs
+</do>
+<dont>
+- Don't read files to understand flow → Use `/lsp/calls`
+- Don't guess line numbers → Always search first
+- Don't use `/lsp/calls` on types/variables → Use `/lsp/references`
+- Don't use `fullContent=true` on large files
+- Don't combine too many filters in `/github/search`
+</dont>
+</best-practices>
+
+---
+
+## Error Recovery
+
+<error-recovery>
+<error type="server-not-running">
+<symptom>Connection refused, exit code 7</symptom>
+<solution>Check /health first, run `./install.sh start`</solution>
+</error>
+<error type="symbol-not-found">
+<symptom>Symbol not found in LSP response</symptom>
+<solution>Use `/local/search` to find correct line number</solution>
+</error>
+<error type="empty-result">
+<symptom>Empty result set from search</symptom>
+<solution>Try semantic variants (auth→login→credentials→session)</solution>
+</error>
+<error type="too-many-results">
+<symptom>Result set too large to process</symptom>
+<solution>Add filters (`path`, `type`, `excludeDir`, `owner`/`repo`)</solution>
+</error>
+<error type="file-too-large">
+<symptom>FILE_TOO_LARGE error</symptom>
+<solution>Use `matchString` or `startLine`/`endLine`</solution>
+</error>
+<error type="lsp-timeout">
+<symptom>LSP timeout on deep call hierarchy</symptom>
+<solution>Reduce `depth`, chain manually with `depth=1`</solution>
+</error>
+<error type="lsp-fails">
+<symptom>LSP returns error or empty</symptom>
+<solution>Fall back to `/local/search` results</solution>
+</error>
+<error type="rate-limited">
+<symptom>Rate limit exceeded (GitHub API)</symptom>
+<solution>Reduce batch size, wait</solution>
+</error>
+<error type="blocked">
+<symptom>Research blocked, no progress</symptom>
+<solution>Summarize attempts and ask user</solution>
+</error>
+</error-recovery>
+
+---
+
 ## Reference Guides
 
 | Guide | Purpose |
 |-------|---------|
 | [research_local_prompt.md](./references/research_local_prompt.md) | Local codebase research patterns |
 | [research_external_prompt.md](./references/research_external_prompt.md) | GitHub/package research patterns |
+| [lsp_local_coordination.md](./references/lsp_local_coordination.md) | **LSP + Local tools coordination (CRITICAL)** |
 | [task_integration.md](./references/task_integration.md) | Claude Code Task tool integration |
 | [output_protocol.md](./references/output_protocol.md) | Output format and document templates |
+
+## Technical Documentation
+
+| Doc | Purpose |
+|-----|---------|
+| [IMPROVEMENTS.md](./docs/IMPROVEMENTS.md) | Context propagation, retry logic, resilience patterns |
+| [RESPONSE_FORMAT_IMPROVEMENT.md](./docs/RESPONSE_FORMAT_IMPROVEMENT.md) | Response formatting enhancements |
