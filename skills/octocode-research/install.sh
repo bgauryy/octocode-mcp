@@ -305,6 +305,8 @@ show_usage() {
     echo "  GET /github/search       - Search GitHub code"
     echo "  GET /github/content      - Read GitHub files"
     echo "  GET /package/search      - Search npm/PyPI"
+    echo "  GET /tools/list          - List all tools (MCP format)"
+    echo "  GET /prompts/list        - List all prompts (MCP format)"
     echo ""
 }
 
