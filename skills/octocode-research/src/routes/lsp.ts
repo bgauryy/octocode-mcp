@@ -28,7 +28,7 @@ import { isObject, hasProperty, hasNumberProperty, hasStringProperty } from '../
 
 export const lspRoutes = Router();
 
-// GET /lsp/definition - Go to symbol definition
+// GET /lspGotoDefinition - Go to symbol definition
 lspRoutes.get(
   '/lspGotoDefinition',
   createRouteHandler({
@@ -52,7 +52,7 @@ lspRoutes.get(
   })
 );
 
-// GET /lsp/references - Find all references to a symbol
+// GET /lspFindReferences - Find all references to a symbol
 lspRoutes.get(
   '/lspFindReferences',
   createRouteHandler({
@@ -76,7 +76,7 @@ lspRoutes.get(
   })
 );
 
-// GET /lsp/calls - Get call hierarchy (incoming/outgoing)
+// GET /lspCallHierarchy - Get call hierarchy (incoming/outgoing)
 lspRoutes.get(
   '/lspCallHierarchy',
   createRouteHandler({

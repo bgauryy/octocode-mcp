@@ -39,7 +39,7 @@ import { isObject, hasProperty, hasNumberProperty, hasBooleanProperty } from '..
 
 export const githubRoutes = Router();
 
-// GET /github/search - Search code on GitHub
+// GET /githubSearchCode - Search code on GitHub
 githubRoutes.get(
   '/githubSearchCode',
   createRouteHandler({
@@ -75,7 +75,7 @@ githubRoutes.get(
   })
 );
 
-// GET /github/content - Read file from GitHub
+// GET /githubGetFileContent - Read file from GitHub
 githubRoutes.get(
   '/githubGetFileContent',
   createRouteHandler({
@@ -106,7 +106,7 @@ githubRoutes.get(
   })
 );
 
-// GET /github/repos - Search repositories
+// GET /githubSearchRepositories - Search repositories
 githubRoutes.get(
   '/githubSearchRepositories',
   createRouteHandler({
@@ -143,7 +143,7 @@ githubRoutes.get(
   })
 );
 
-// GET /github/structure - View repository structure
+// GET /githubViewRepoStructure - View repository structure
 githubRoutes.get(
   '/githubViewRepoStructure',
   createRouteHandler({
@@ -176,7 +176,7 @@ githubRoutes.get(
   })
 );
 
-// GET /github/prs - Search pull requests
+// GET /githubSearchPullRequests - Search pull requests
 githubRoutes.get(
   '/githubSearchPullRequests',
   createRouteHandler({

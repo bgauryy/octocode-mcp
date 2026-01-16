@@ -83,19 +83,19 @@ export async function startServer(): Promise<void> {
       
       // Routes in dim for secondary info
       console.log(dimLog(`  GET /health              - Server health check`));
-      console.log(dimLog(`  GET /local/search        - Search code (ripgrep)`));
-      console.log(dimLog(`  GET /local/content       - Read file content`));
-      console.log(dimLog(`  GET /local/find          - Find files`));
-      console.log(dimLog(`  GET /local/structure     - View directory tree`));
-      console.log(dimLog(`  GET /lsp/definition      - Go to definition`));
-      console.log(dimLog(`  GET /lsp/references      - Find references`));
-      console.log(dimLog(`  GET /lsp/calls           - Call hierarchy`));
-      console.log(dimLog(`  GET /github/search       - Search GitHub code`));
-      console.log(dimLog(`  GET /github/content      - Read GitHub files`));
-      console.log(dimLog(`  GET /github/repos        - Search repositories`));
-      console.log(dimLog(`  GET /github/structure    - View repo structure`));
-      console.log(dimLog(`  GET /github/prs          - Search pull requests`));
-      console.log(dimLog(`  GET /package/search      - Search npm/PyPI`));
+      console.log(dimLog(`  GET /localSearchCode         - Search code (ripgrep)`));
+      console.log(dimLog(`  GET /localGetFileContent     - Read file content`));
+      console.log(dimLog(`  GET /localFindFiles          - Find files`));
+      console.log(dimLog(`  GET /localViewStructure      - View directory tree`));
+      console.log(dimLog(`  GET /lspGotoDefinition       - Go to definition`));
+      console.log(dimLog(`  GET /lspFindReferences       - Find references`));
+      console.log(dimLog(`  GET /lspCallHierarchy        - Call hierarchy`));
+      console.log(dimLog(`  GET /githubSearchCode        - Search GitHub code`));
+      console.log(dimLog(`  GET /githubGetFileContent    - Read GitHub files`));
+      console.log(dimLog(`  GET /githubSearchRepositories- Search repositories`));
+      console.log(dimLog(`  GET /githubViewRepoStructure - View repo structure`));
+      console.log(dimLog(`  GET /githubSearchPullRequests- Search pull requests`));
+      console.log(dimLog(`  GET /packageSearch           - Search npm/PyPI`));
       console.log(dimLog(`  GET /tools/system        - System prompt (LOAD FIRST)`));
       console.log(dimLog(`  GET /tools/list          - List all tools (MCP format)`));
       console.log(dimLog(`  GET /tools/info          - List all tools`));

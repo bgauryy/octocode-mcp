@@ -270,4 +270,5 @@ RESEARCH TOOLS (use queries array + research params):
   GET /localViewStructure      → View directory tree
   GET /lspGotoDefinition       → Go to definition
   GET /lspFindReferences       → Find all usages
-  GET /lspCallHierarchy        → Call hierarchy```
+  GET /lspCallHierarchy        → Call hierarchy
+```

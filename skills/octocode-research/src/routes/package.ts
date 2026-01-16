@@ -11,7 +11,7 @@ import { isObject, hasProperty, hasStringProperty } from '../types/guards.js';
 
 export const packageRoutes = Router();
 
-// GET /package/search - Search npm/pypi packages
+// GET /packageSearch - Search npm/pypi packages
 packageRoutes.get(
   '/packageSearch',
   async (req: Request, res: Response, next: NextFunction) => {

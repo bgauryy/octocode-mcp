@@ -37,7 +37,7 @@ import { isObject, hasNumberProperty, hasBooleanProperty } from '../types/guards
 
 export const localRoutes = Router();
 
-// GET /local/search - Search code with ripgrep
+// GET /localSearchCode - Search code with ripgrep
 localRoutes.get(
   '/localSearchCode',
   createRouteHandler({
@@ -73,7 +73,7 @@ localRoutes.get(
   })
 );
 
-// GET /local/content - Read file contents
+// GET /localGetFileContent - Read file contents
 localRoutes.get(
   '/localGetFileContent',
   createRouteHandler({
@@ -104,7 +104,7 @@ localRoutes.get(
   })
 );
 
-// GET /local/find - Find files by metadata
+// GET /localFindFiles - Find files by metadata
 localRoutes.get(
   '/localFindFiles',
   createRouteHandler({
@@ -137,7 +137,7 @@ localRoutes.get(
   })
 );
 
-// GET /local/structure - View directory structure
+// GET /localViewStructure - View directory structure
 localRoutes.get(
   '/localViewStructure',
   createRouteHandler({
