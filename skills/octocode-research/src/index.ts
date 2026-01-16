@@ -109,7 +109,27 @@ export type {
 // Response Utilities (for custom result formatting)
 // ============================================================================
 
+// Legacy API (backwards compatible)
 export { createResult, createResponseFormat } from 'octocode-mcp/responses';
+
+// New Role-Based Response API
+export {
+  createRoleBasedResult,
+  ContentBuilder,
+  QuickResult,
+  StatusEmoji,
+  StatusEmojis,
+} from 'octocode-mcp/responses';
+
+export type {
+  ContentRole,
+  RoleContentBlock,
+  RoleBasedResultOptions,
+  RoleAnnotations,
+} from 'octocode-mcp/responses';
+
+// Research-specific response builders
+export { ResearchResponse } from './utils/responseBuilder.js';
 
 // ============================================================================
 // Tool Metadata & Configuration
@@ -134,6 +154,7 @@ export { withBasicSecurityValidation } from 'octocode-mcp/public';
 
 export {
   initialize,
+  initializeProviders,
   getGitHubToken,
   getToken,
   getTokenSource,

@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { logToolCall } from '../utils/logger.js';
+import { resultLog, errorLog } from '../utils/colors.js';
 
 export function requestLogger(
   req: Request,
@@ -7,17 +8,22 @@ export function requestLogger(
   next: NextFunction
 ): void {
   const start = Date.now();
-
+  
   res.on('finish', () => {
     const duration = Date.now() - start;
     const status = res.statusCode;
     const statusIcon = status >= 400 ? '❌' : '✅';
     const success = status < 400;
-
-    // Console output for immediate feedback
-    console.log(`${statusIcon} ${req.method} ${req.path} ${status} ${duration}ms`);
-
-    // Persist to ~/.octocode/logs/tools.log (skip health checks)
+    
+    // Results output in BLUE for success, RED for error
+    const resultMessage = `${statusIcon} ${req.method} ${req.path} ${status} ${duration}ms`;
+    
+    if (success) {
+      console.log(resultLog(resultMessage));
+    } else {
+      console.log(errorLog(resultMessage));
+    }
+    
     if (req.path !== '/health') {
       logToolCall({
         tool: extractToolName(req.path),
@@ -30,15 +36,10 @@ export function requestLogger(
       });
     }
   });
-
+  
   next();
 }
 
-/**
- * Extract tool name from request path.
- * /local/search -> localSearch
- * /github/content -> githubContent
- */
 function extractToolName(path: string): string {
   const parts = path.split('/').filter(Boolean);
   if (parts.length >= 2) {

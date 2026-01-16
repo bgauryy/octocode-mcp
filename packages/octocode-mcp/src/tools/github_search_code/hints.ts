@@ -34,5 +34,31 @@ export const hints: ToolHintGenerators = {
     return hints;
   },
 
-  error: (_ctx: HintContext = {}) => [],
+  error: (ctx: HintContext = {}) => {
+    const hints: (string | undefined)[] = [];
+
+    // Rate limit specific hints
+    if (ctx.isRateLimited) {
+      hints.push(
+        `Rate limited. ${ctx.retryAfter ? `Retry after ${ctx.retryAfter}s.` : 'Wait before retrying.'}`
+      );
+      hints.push(
+        'Consider: Use a different token, reduce request frequency, or use pagination.'
+      );
+    }
+
+    // Authentication hints
+    if (ctx.status === 401) {
+      hints.push('Check GITHUB_TOKEN is valid and not expired.');
+    }
+
+    // Permission hints
+    if (ctx.status === 403 && !ctx.isRateLimited) {
+      hints.push(
+        'Check token permissions. Required scopes: repo (for private repos).'
+      );
+    }
+
+    return hints;
+  },
 };

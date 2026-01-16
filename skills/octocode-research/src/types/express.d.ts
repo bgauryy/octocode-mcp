@@ -1,6 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare module 'express' {
-  import { IncomingMessage, ServerResponse } from 'http';
+  import { IncomingMessage, ServerResponse, Server } from 'http';
+
+  export interface ResearchContext {
+    sessionId: string;
+    mainGoal: string;
+    toolChain: string[];
+    startTime: number;
+    lastActivity: number;
+  }
 
   export interface Request extends IncomingMessage {
     query: Record<string, any>;
@@ -8,6 +16,7 @@ declare module 'express' {
     body: any;
     method: string;
     path: string;
+    researchContext?: ResearchContext;
   }
 
   export interface Response extends ServerResponse {
@@ -40,7 +49,7 @@ declare module 'express' {
   }
 
   export interface Express {
-    listen(port: number, callback?: () => void): void;
+    listen(port: number, callback?: () => void): Server;
     get(path: string, handler: RequestHandler): Express;
     use(path: string, router: Router): Express;
     use(handler: RequestHandler | ErrorRequestHandler): Express;

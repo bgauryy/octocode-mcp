@@ -10,7 +10,7 @@ import path from 'path';
  */
 const toNumber = (val: unknown) => {
   if (typeof val === 'number') return val;
-  if (typeof val === 'string' && /^-?\d+$/.test(val)) return parseInt(val, 10);
+  if (typeof val === 'string' && /^\d+$/.test(val)) return parseInt(val, 10);
   return val;
 };
 
@@ -41,7 +41,6 @@ const numericString = z.preprocess(toNumber, z.number().optional());
 const requiredNumber = z.preprocess(toNumber, z.number());
 const booleanString = z.preprocess(toBoolean, z.boolean().optional());
 const stringArray = z.preprocess(toArray, z.array(z.string()));
-const optionalStringArray = z.preprocess(toArray, z.array(z.string()).optional());
 
 /**
  * Safe path that blocks traversal attacks
@@ -70,60 +69,76 @@ const researchDefaults = {
 // Local Route Schemas
 // =============================================================================
 
-/**
- * localSearchCode - Ripgrep-based code search
- * Matches: packages/octocode-mcp/src/tools/local_ripgrep/scheme.ts
- */
 export const localSearchSchema = z
   .object({
     // Required
     pattern: z.string().min(1, 'Pattern is required'),
     path: safePath,
-    // Mode
+
+    // Workflow mode preset
     mode: z.enum(['discovery', 'paginated', 'detailed']).optional(),
-    // Pattern options
-    fixedString: booleanString,
-    perlRegex: booleanString,
+
+    // Pattern interpretation
+    fixedString: booleanString, // treat pattern as literal string
+    perlRegex: booleanString, // use PCRE2 regex engine
+
+    // Case sensitivity (smartCase is default in MCP)
     smartCase: booleanString,
     caseInsensitive: booleanString,
     caseSensitive: booleanString,
+
+    // Match behavior
     wholeWord: booleanString,
     invertMatch: booleanString,
     multiline: booleanString,
     multilineDotall: booleanString,
     lineRegexp: booleanString,
-    // File filters
-    type: z.string().optional(),
-    include: optionalStringArray,
-    exclude: optionalStringArray,
-    excludeDir: optionalStringArray,
+
+    // File filtering
+    type: z.string().optional(), // file type code like 'ts', 'py'
+    include: stringArray.optional(),
+    exclude: stringArray.optional(),
+    excludeDir: stringArray.optional(),
+    binaryFiles: z.enum(['text', 'without-match', 'binary']).optional(),
+
+    // Ignore control
     noIgnore: booleanString,
     hidden: booleanString,
     followSymlinks: booleanString,
-    binaryFiles: z.enum(['text', 'without-match', 'binary']).optional(),
-    // Output options
+
+    // Output control
     filesOnly: booleanString,
     filesWithoutMatch: booleanString,
     count: booleanString,
     countMatches: booleanString,
+    lineNumbers: booleanString,
+    column: booleanString,
+
+    // Context control
+    contextLines: numericString,
+    beforeContext: numericString,
+    afterContext: numericString,
+    context: numericString, // deprecated, use contextLines
+    matchContentLength: numericString,
+
+    // Match limiting
+    maxMatchesPerFile: numericString,
+    maxFiles: numericString,
+    maxResults: numericString, // deprecated, use limit
+
+    // Pagination
+    limit: numericString,
+    filesPerPage: numericString,
+    filePageNumber: numericString,
+    matchesPerPage: numericString,
+
+    // Stats & output format
     includeStats: booleanString,
     includeDistribution: booleanString,
     jsonOutput: booleanString,
     vimgrepFormat: booleanString,
-    // Context
-    contextLines: numericString,
-    beforeContext: numericString,
-    afterContext: numericString,
-    matchContentLength: numericString,
-    lineNumbers: booleanString,
-    column: booleanString,
-    // Pagination
-    maxMatchesPerFile: numericString,
-    maxFiles: numericString,
-    filesPerPage: numericString,
-    filePageNumber: numericString,
-    matchesPerPage: numericString,
-    // Advanced
+
+    // Advanced options
     threads: numericString,
     mmap: booleanString,
     noUnicode: booleanString,
@@ -134,35 +149,55 @@ export const localSearchSchema = z
     passthru: booleanString,
     debug: booleanString,
     showFileLastModified: booleanString,
+
     // Research context
     mainResearchGoal: z.string().optional(),
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
   })
-  .transform((data) => ({
-    ...researchDefaults,
-    ...data,
-  }));
+  .transform((data) => {
+    const result = {
+      ...researchDefaults,
+      ...data,
+    };
+    // Map deprecated params for backwards compat
+    if (result.contextLines === undefined && data.context !== undefined) {
+      result.contextLines = data.context;
+    }
+    if (result.limit === undefined && data.maxResults !== undefined) {
+      result.limit = data.maxResults;
+    }
+    // Convert single string include/exclude to arrays if needed
+    if (data.include && !Array.isArray(data.include)) {
+      result.include = [data.include as string];
+    }
+    if (data.exclude && !Array.isArray(data.exclude)) {
+      result.exclude = [data.exclude as string];
+    }
+    return result;
+  });
 
-/**
- * localGetFileContent - Read file content
- * Matches: packages/octocode-mcp/src/tools/local_fetch_content/scheme.ts
- */
 export const localContentSchema = z
   .object({
-    // Required
     path: safePath,
-    // Content extraction options
-    fullContent: booleanString,
+
+    // Line-based pagination
     startLine: numericString,
     endLine: numericString,
+    fullContent: booleanString,
+
+    // Pattern matching within file
     matchString: z.string().optional(),
     matchStringContextLines: numericString,
     matchStringIsRegex: booleanString,
     matchStringCaseSensitive: booleanString,
-    // Pagination
+
+    // Character-based pagination
     charOffset: numericString,
     charLength: numericString,
+
+    // Format detection
+
     // Research context
     mainResearchGoal: z.string().optional(),
     researchGoal: z.string().optional(),
@@ -174,118 +209,170 @@ export const localContentSchema = z
   }));
 
 /**
- * localFindFiles - Find files by metadata
- * Matches: packages/octocode-mcp/src/tools/local_find_files/scheme.ts
+ * Transform human-readable file type to MCP's Unix-style type codes
+ * MCP supports: f (file), d (directory), l (symlink), b (block device),
+ * c (character device), p (pipe/fifo), s (socket)
  */
+const fileTypeTransform = (val: string | undefined) => {
+  if (!val) return undefined;
+  const typeMap: Record<string, string | undefined> = {
+    // Human-readable aliases
+    file: 'f',
+    directory: 'd',
+    symlink: 'l',
+    block: 'b',
+    character: 'c',
+    pipe: 'p',
+    socket: 's',
+    all: undefined,
+    // MCP's native codes (pass through)
+    f: 'f',
+    d: 'd',
+    l: 'l',
+    b: 'b',
+    c: 'c',
+    p: 'p',
+    s: 's',
+  };
+  return typeMap[val] ?? val;
+};
+
 export const localFindSchema = z
   .object({
-    // Required
     path: safePath,
-    // Name filters
+    // MCP uses 'name' for filename filter, but we also accept 'pattern' for compatibility
+    pattern: z.string().optional(),
     name: z.string().optional(),
-    iname: z.string().optional(),
-    names: optionalStringArray,
+    names: stringArray.optional(), // array of filenames to search for
+    iname: z.string().optional(), // case-insensitive filename filter
     pathPattern: z.string().optional(),
     regex: z.string().optional(),
     regexType: z.enum(['posix-egrep', 'posix-extended', 'posix-basic']).optional(),
-    // Type filters
-    type: z.enum(['f', 'd', 'l', 'b', 'c', 'p', 's']).optional(),
+    // Type filter - accepts both human-readable and MCP codes
+    // MCP supports: f, d, l, b, c, p, s (Unix file type codes)
+    type: z
+      .enum([
+        // Human-readable aliases
+        'file', 'directory', 'symlink', 'block', 'character', 'pipe', 'socket', 'all',
+        // MCP native codes
+        'f', 'd', 'l', 'b', 'c', 'p', 's',
+      ])
+      .optional()
+      .transform(fileTypeTransform),
+    // File property filters
     empty: booleanString,
     executable: booleanString,
     readable: booleanString,
     writable: booleanString,
-    // Depth
+    permissions: z.string().optional(),
+    // Depth control
     maxDepth: numericString,
     minDepth: numericString,
     // Time filters
-    modifiedWithin: z.string().optional(),
+    modifiedWithin: z.string().optional(), // e.g., "1d", "2h"
     modifiedBefore: z.string().optional(),
     accessedWithin: z.string().optional(),
-    // Size filters
+    // Size filters (string format: "100k", "1M")
     sizeGreater: z.string().optional(),
     sizeLess: z.string().optional(),
-    // Other filters
-    permissions: z.string().optional(),
-    excludeDir: optionalStringArray,
-    // Output options
-    details: booleanString,
-    showFileLastModified: booleanString,
+    // Directory exclusion
+    excludeDir: stringArray.optional(),
     // Pagination
     limit: numericString,
+    maxResults: numericString, // deprecated, use limit
     filesPerPage: numericString,
     filePageNumber: numericString,
     charOffset: numericString,
     charLength: numericString,
+    // Output control
+    details: booleanString,
+    showFileLastModified: booleanString,
     // Research context
     mainResearchGoal: z.string().optional(),
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
   })
-  .transform((data) => ({
-    ...researchDefaults,
-    ...data,
-  }));
+  .transform((data) => {
+    // Map backwards compat params only if MCP param not provided
+    const result = {
+      ...researchDefaults,
+      ...data,
+    };
+    // Map pattern to name if name not provided (backwards compat)
+    if (result.name === undefined && data.pattern !== undefined) {
+      result.name = data.pattern;
+    }
+    // Map maxResults to limit if limit not provided (backwards compat)
+    if (result.limit === undefined && data.maxResults !== undefined) {
+      result.limit = data.maxResults;
+    }
+    return result;
+  });
 
-/**
- * localViewStructure - View directory structure
- * Matches: packages/octocode-mcp/src/tools/local_view_structure/scheme.ts
- */
 export const localStructureSchema = z
   .object({
-    // Required
     path: safePath,
-    // Display options
-    details: booleanString,
-    hidden: booleanString,
-    humanReadable: booleanString,
-    summary: booleanString,
-    showFileLastModified: booleanString,
-    // Sorting
-    sortBy: z.enum(['name', 'size', 'time', 'extension']).optional(),
-    reverse: booleanString,
+
     // Filtering
-    pattern: z.string().optional(),
+    pattern: z.string().optional(), // glob pattern
     directoriesOnly: booleanString,
     filesOnly: booleanString,
     extension: z.string().optional(),
-    extensions: optionalStringArray,
-    // Depth
+    extensions: z.string().optional(), // comma-separated
+
+    // Visibility control
+    hidden: booleanString, // MCP param name
+    showHidden: booleanString, // backwards compat
+
+    // Depth control
     depth: numericString,
     recursive: booleanString,
+
+    // Output control
+    details: booleanString,
+    humanReadable: booleanString,
+    summary: booleanString,
+    showFileLastModified: booleanString,
+
+    // Sorting
+    sortBy: z.enum(['name', 'size', 'time', 'extension']).optional(),
+    reverse: booleanString,
+
     // Pagination
     limit: numericString,
     entriesPerPage: numericString,
     entryPageNumber: numericString,
     charOffset: numericString,
     charLength: numericString,
+
     // Research context
     mainResearchGoal: z.string().optional(),
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
   })
-  .transform((data) => ({
-    ...researchDefaults,
-    ...data,
-  }));
+  .transform((data) => {
+    const result = {
+      ...researchDefaults,
+      ...data,
+    };
+    // Map backwards compat params
+    if (result.hidden === undefined && data.showHidden !== undefined) {
+      result.hidden = data.showHidden;
+    }
+    return result;
+  });
 
 // =============================================================================
 // LSP Route Schemas
 // =============================================================================
 
-/**
- * lspGotoDefinition - Jump to symbol definition
- * Matches: packages/octocode-mcp/src/tools/lsp_goto_definition/scheme.ts
- */
 export const lspDefinitionSchema = z
   .object({
-    // Required
     uri: safePath,
     symbolName: z.string().min(1, 'Symbol name is required'),
-    lineHint: requiredNumber.refine((n) => n >= 1, 'Line hint must be >= 1'),
-    // Options
-    orderHint: numericString,
-    contextLines: numericString,
-    // Research context
+    lineHint: requiredNumber.refine((n) => n >= 1, 'Line hint must be at least 1'),
+    orderHint: numericString.default(0),
+    contextLines: numericString.default(5),
     mainResearchGoal: z.string().optional(),
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
@@ -295,24 +382,16 @@ export const lspDefinitionSchema = z
     ...data,
   }));
 
-/**
- * lspFindReferences - Find all usages
- * Matches: packages/octocode-mcp/src/tools/lsp_find_references/scheme.ts
- */
 export const lspReferencesSchema = z
   .object({
-    // Required
     uri: safePath,
     symbolName: z.string().min(1, 'Symbol name is required'),
-    lineHint: requiredNumber.refine((n) => n >= 1, 'Line hint must be >= 1'),
-    // Options
-    orderHint: numericString,
-    includeDeclaration: booleanString,
-    contextLines: numericString,
-    // Pagination
-    referencesPerPage: numericString,
-    page: numericString,
-    // Research context
+    lineHint: requiredNumber.refine((n) => n >= 1, 'Line hint must be at least 1'),
+    orderHint: numericString.default(0),
+    includeDeclaration: booleanString.default(true),
+    contextLines: numericString.default(2),
+    referencesPerPage: numericString.default(20),
+    page: numericString.default(1),
     mainResearchGoal: z.string().optional(),
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
@@ -322,27 +401,19 @@ export const lspReferencesSchema = z
     ...data,
   }));
 
-/**
- * lspCallHierarchy - Trace call relationships
- * Matches: packages/octocode-mcp/src/tools/lsp_call_hierarchy/scheme.ts
- */
 export const lspCallsSchema = z
   .object({
-    // Required
     uri: safePath,
     symbolName: z.string().min(1, 'Symbol name is required'),
-    lineHint: requiredNumber.refine((n) => n >= 1, 'Line hint must be >= 1'),
+    lineHint: requiredNumber.refine((n) => n >= 1, 'Line hint must be at least 1'),
+    orderHint: numericString.default(0),
     direction: z.enum(['incoming', 'outgoing'], {
       errorMap: () => ({ message: "Direction must be 'incoming' or 'outgoing'" }),
     }),
-    // Options
-    orderHint: numericString,
-    depth: numericString,
-    contextLines: numericString,
-    // Pagination
-    callsPerPage: numericString,
-    page: numericString,
-    // Research context
+    depth: numericString.default(1),
+    contextLines: numericString.default(2),
+    callsPerPage: numericString.default(15),
+    page: numericString.default(1),
     mainResearchGoal: z.string().optional(),
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
@@ -356,26 +427,17 @@ export const lspCallsSchema = z
 // GitHub Route Schemas
 // =============================================================================
 
-/**
- * githubSearchCode - Search code on GitHub
- * Matches: packages/octocode-mcp/src/tools/github_search_code/scheme.ts
- */
 export const githubSearchSchema = z
   .object({
-    // Required
     keywordsToSearch: stringArray,
-    // Scope
     owner: z.string().optional(),
     repo: z.string().optional(),
-    // Filters
     path: z.string().optional(),
     extension: z.string().optional(),
     filename: z.string().optional(),
     match: z.enum(['file', 'path']).optional(),
-    // Pagination
     limit: numericString,
     page: numericString,
-    // Research context
     mainResearchGoal: z.string().optional(),
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
@@ -385,29 +447,19 @@ export const githubSearchSchema = z
     ...data,
   }));
 
-/**
- * githubGetFileContent - Read file from GitHub
- * Matches: packages/octocode-mcp/src/tools/github_fetch_content/scheme.ts
- */
 export const githubContentSchema = z
   .object({
-    // Required
     owner: z.string().min(1, 'Owner is required'),
     repo: z.string().min(1, 'Repo is required'),
     path: z.string().min(1, 'Path is required'),
-    // Options
     branch: z.string().optional(),
     fullContent: booleanString,
-    // Line range extraction
     startLine: numericString,
     endLine: numericString,
-    // Match string extraction
     matchString: z.string().optional(),
     matchStringContextLines: numericString,
-    // Pagination
     charOffset: numericString,
     charLength: numericString,
-    // Research context
     mainResearchGoal: z.string().optional(),
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
@@ -417,26 +469,20 @@ export const githubContentSchema = z
     ...data,
   }));
 
-/**
- * githubSearchRepositories - Search repositories on GitHub
- * Matches: packages/octocode-mcp/src/tools/github_search_repos/scheme.ts
- */
 export const githubReposSchema = z
   .object({
-    // Search terms (at least one required)
-    keywordsToSearch: optionalStringArray,
-    topicsToSearch: optionalStringArray,
-    // Scope
-    owner: z.string().optional(),
+    // Search terms (at least one of keywordsToSearch or topicsToSearch required)
+    keywordsToSearch: stringArray.optional(),
+    topicsToSearch: stringArray.optional(),
     // Filters
-    stars: z.string().optional(),
-    size: z.string().optional(),
-    created: z.string().optional(),
-    updated: z.string().optional(),
+    owner: z.string().optional(),
+    stars: z.string().optional(), // e.g., ">1000", "100..500"
+    size: z.string().optional(), // e.g., ">1000" (KB)
+    created: z.string().optional(), // e.g., ">2020-01-01"
+    updated: z.string().optional(), // e.g., ">2024-01-01"
     match: z.preprocess(toArray, z.array(z.enum(['name', 'description', 'readme'])).optional()),
-    // Sorting
-    sort: z.enum(['forks', 'stars', 'updated', 'best-match']).optional(),
-    // Pagination
+    // Sorting & pagination
+    sort: z.enum(['stars', 'forks', 'updated', 'best-match']).optional(),
     limit: numericString,
     page: numericString,
     // Research context
@@ -458,23 +504,15 @@ export const githubReposSchema = z
     ...data,
   }));
 
-/**
- * githubViewRepoStructure - View repository structure
- * Matches: packages/octocode-mcp/src/tools/github_view_repo_structure/scheme.ts
- */
 export const githubStructureSchema = z
   .object({
-    // Required
     owner: z.string().min(1, 'Owner is required'),
     repo: z.string().min(1, 'Repo is required'),
     branch: z.string().min(1, 'Branch is required'),
-    // Options
     path: z.string().optional(),
     depth: numericString,
-    // Pagination
     entriesPerPage: numericString,
     entryPageNumber: numericString,
-    // Research context
     mainResearchGoal: z.string().optional(),
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
@@ -484,23 +522,16 @@ export const githubStructureSchema = z
     ...data,
   }));
 
-/**
- * githubSearchPullRequests - Search PRs on GitHub
- * Matches: packages/octocode-mcp/src/tools/github_search_pull_requests/scheme.ts
- */
 export const githubPRsSchema = z
   .object({
-    // Search
+    // Search & scope
     query: z.string().optional(),
-    // Scope
     owner: z.string().optional(),
     repo: z.string().optional(),
     prNumber: numericString,
-    // State filters
-    state: z.enum(['open', 'closed']).optional(),
-    merged: booleanString,
-    draft: booleanString,
-    // People filters
+    // Match scope
+    match: z.preprocess(toArray, z.array(z.enum(['title', 'body', 'comments'])).optional()),
+    // User filters
     author: z.string().optional(),
     assignee: z.string().optional(),
     commenter: z.string().optional(),
@@ -508,37 +539,37 @@ export const githubPRsSchema = z
     mentions: z.string().optional(),
     'review-requested': z.string().optional(),
     'reviewed-by': z.string().optional(),
-    // Label/milestone filters
-    label: z.union([z.string(), stringArray]).optional(),
+    // Labels & metadata filters
+    label: z.preprocess(toArray, z.union([z.string(), z.array(z.string())]).optional()),
     'no-label': booleanString,
     'no-milestone': booleanString,
     'no-project': booleanString,
     'no-assignee': booleanString,
     // Branch filters
-    head: z.string().optional(),
     base: z.string().optional(),
-    // Date filters
+    head: z.string().optional(),
+    // State & date filters
+    state: z.enum(['open', 'closed']).optional(),
     created: z.string().optional(),
     updated: z.string().optional(),
     closed: z.string().optional(),
     'merged-at': z.string().optional(),
-    // Engagement filters
+    // Numeric filters (support range syntax like ">10", "5..20")
     comments: z.union([numericString, z.string()]).optional(),
     reactions: z.union([numericString, z.string()]).optional(),
     interactions: z.union([numericString, z.string()]).optional(),
-    // Match scope
-    match: z.preprocess(toArray, z.array(z.enum(['title', 'body', 'comments'])).optional()),
-    // Sorting
-    sort: z.enum(['created', 'updated', 'best-match']).optional(),
-    order: z.enum(['asc', 'desc']).optional(),
-    // Pagination
-    limit: numericString,
-    page: numericString,
+    // Boolean filters
+    merged: booleanString,
+    draft: booleanString,
     // Output shaping
-    type: z.enum(['metadata', 'fullContent', 'partialContent']).optional(),
     withComments: booleanString,
     withCommits: booleanString,
-    partialContentMetadata: z.string().optional(), // JSON string of array
+    type: z.enum(['metadata', 'fullContent', 'partialContent']).optional(),
+    // Sorting & pagination
+    sort: z.enum(['created', 'updated', 'best-match']).optional(),
+    order: z.enum(['asc', 'desc']).optional(),
+    limit: numericString,
+    page: numericString,
     // Research context
     mainResearchGoal: z.string().optional(),
     researchGoal: z.string().optional(),
@@ -553,20 +584,13 @@ export const githubPRsSchema = z
 // Package Route Schemas
 // =============================================================================
 
-/**
- * packageSearch - Search npm/PyPI packages
- * Matches: packages/octocode-mcp/src/tools/package_search/scheme.ts
- */
 export const packageSearchSchema = z
   .object({
-    // Required
     name: z.string().min(1, 'Package name is required'),
     ecosystem: z.enum(['npm', 'python']).optional().default('npm'),
-    // Options
     searchLimit: numericString,
     npmFetchMetadata: booleanString,
     pythonFetchMetadata: booleanString,
-    // Research context
     mainResearchGoal: z.string().optional(),
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),

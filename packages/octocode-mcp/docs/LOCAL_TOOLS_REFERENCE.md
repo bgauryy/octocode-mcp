@@ -70,10 +70,14 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `mode`: Workflow presets (`discovery`, `paginated`, `detailed`)
 - `filesOnly`: Return only file paths (fast discovery)
 - `contextLines`: Lines of context around matches
+- `beforeContext`/`afterContext`: Asymmetric context lines
 - `type`: File type filter (e.g., `ts`, `js`, `py`)
 - `include`/`exclude`: Glob patterns for filtering
+- `excludeDir`: Directories to exclude (e.g., `node_modules`)
+- `hidden`: Search hidden files (default: false)
 - `smartCase`: Smart case sensitivity (default: true)
 - `matchesPerPage`/`filesPerPage`/`filePageNumber`: Pagination controls
+- `multiline`: Enable multiline matching (memory intensive)
 
 **Critical:** Produces `lineHint` values **required** for all LSP tools.
 
@@ -95,6 +99,9 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `depth`: How deep to traverse (default: 1, max: 5)
 - `sortBy`: `name`, `size`, `time`, `extension` (default: `time`)
 - `filesOnly`/`directoriesOnly`: Filter by type
+- `hidden`: Show hidden files (default: false)
+- `humanReadable`: Format sizes (e.g., "1.2MB") (default: true)
+- `summary`: Include directory summary (default: true)
 - `pattern`: Filter by name pattern
 - `entriesPerPage`/`entryPageNumber`: Pagination controls
 
@@ -115,6 +122,7 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `path` (required): Starting directory
 - `name`/`iname`: Exact or case-insensitive name pattern
 - `regex`: Regex pattern for path matching
+- `regexType`: Regex flavor (`posix-egrep`, `posix-extended`, `posix-basic`)
 - `type`: `f` (file), `d` (directory), `l` (symlink)
 - `modifiedWithin`: Files changed in last N time (e.g., "7d", "2h")
 - `sizeGreater`/`sizeLess`: Size filters

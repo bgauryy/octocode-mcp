@@ -6,6 +6,7 @@ import { registerPrompts } from './prompts/prompts.js';
 import { clearAllCache } from './utils/http/cache.js';
 import { clearOctokitInstances } from './github/client.js';
 import { initialize, cleanup, getGitHubToken } from './serverConfig.js';
+import { initializeProviders } from './providers/factory.js';
 import { createLogger, LoggerFactory, Logger } from './utils/core/logger.js';
 import {
   initializeSession,
@@ -172,6 +173,9 @@ async function startServer() {
   try {
     // Initialize configuration
     await initialize();
+
+    // Initialize provider registry (GitHub + GitLab)
+    await initializeProviders();
     const content = await loadToolContent();
 
     // Initialize session tracking

@@ -12,12 +12,12 @@ This file **overrides** the root [`AGENTS.md`](../../AGENTS.md) for work within 
 
 Octocode MCP is an MCP server providing AI agents with code exploration tools:
 
-- **GitHub Research**: Search code, repositories, PRs, view structure, fetch content
+- **GitHub & GitLab**: Search code, repositories, PRs/MRs, view structure, fetch content
 - **Local Research**: Search code with ripgrep, browse directories, find files, read content
 - **LSP Intelligence**: Semantic code navigation with goto definition, find references, call hierarchy
 - **Package Discovery**: Search NPM/PyPI for packages and repository URLs
 
-**Key Docs**: [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) • [`README.md`](./README.md)
+**Key Docs**: [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) • [`PROVIDERS.md`](./docs/PROVIDERS.md) • [`README.md`](./README.md)
 
 ---
 
@@ -189,6 +189,27 @@ src/
 │   ├── errors.ts            # GitHub error handling
 │   └── errorConstants.ts    # GitHub-specific error codes
 │
+├── gitlab/                  # 🦊 GitLab API layer
+│   ├── index.ts             # GitLab module exports
+│   ├── client.ts            # GitLab API client
+│   ├── GitLabProvider.ts    # GitLab provider implementation
+│   ├── codeSearch.ts        # Code search operations
+│   ├── fileContent.ts       # File content retrieval
+│   ├── repoSearch.ts        # Repository search
+│   ├── repoStructure.ts     # Repository tree exploration
+│   ├── mergeRequestSearch.ts # MR search & diff retrieval
+│   └── errors.ts            # GitLab error handling
+│
+├── providers/               # 🔌 Multi-provider abstraction
+│   ├── index.ts             # Provider module exports
+│   ├── factory.ts           # Provider factory & registry
+│   ├── execute.ts           # Provider execution helpers
+│   ├── types.ts             # Provider type definitions
+│   ├── github/              # GitHub provider
+│   │   └── GitHubProvider.ts
+│   └── gitlab/              # GitLab provider
+│       └── GitLabProvider.ts
+│
 ├── lsp/                     # 🔤 Language Server Protocol
 │   ├── index.ts             # LSP module exports
 │   ├── client.ts            # LSP client (spawns servers, JSON-RPC)
@@ -319,11 +340,11 @@ tests/
 
 | Tool | Type | Local | Description |
 |------|------|-------|-------------|
-| `githubSearchCode` | search | ❌ | Search code across GitHub |
-| `githubGetFileContent` | content | ❌ | Fetch file content from repos |
-| `githubViewRepoStructure` | content | ❌ | Browse repository tree |
-| `githubSearchRepositories` | search | ❌ | Search GitHub repositories |
-| `githubSearchPullRequests` | history | ❌ | Search PRs and view diffs |
+| `githubSearchCode` | search | ❌ | Search code across GitHub/GitLab |
+| `githubGetFileContent` | content | ❌ | Fetch file content from GitHub/GitLab repos |
+| `githubViewRepoStructure` | content | ❌ | Browse GitHub/GitLab repository tree |
+| `githubSearchRepositories` | search | ❌ | Search GitHub/GitLab repositories |
+| `githubSearchPullRequests` | history | ❌ | Search PRs/MRs and view diffs |
 | `packageSearch` | search | ❌ | Search NPM/PyPI packages |
 | `localSearchCode` | search | ✅ | Search code with ripgrep |
 | `localViewStructure` | content | ✅ | Browse local directories |
@@ -459,6 +480,11 @@ yarn test:ui
 |----------|-------------|---------|
 | `GITHUB_TOKEN` | GitHub personal access token | - |
 | `GITHUB_API_URL` | GitHub API base URL | `https://api.github.com` |
+| `OCTOCODE_TOKEN` | Octocode-specific GitHub token (highest priority) | - |
+| `GH_TOKEN` | GitHub CLI compatible token | - |
+| `GITLAB_TOKEN` | GitLab personal access token | - |
+| `GL_TOKEN` | GitLab token (fallback) | - |
+| `GITLAB_HOST` | GitLab instance URL | `https://gitlab.com` |
 | `ENABLE_LOCAL` / `LOCAL` | Enable local filesystem tools | `false` |
 | `LOG` | Enable session logging | `true` |
 | `REQUEST_TIMEOUT` | API request timeout (ms) | `30000` |
@@ -474,12 +500,14 @@ yarn test:ui
 | Document | Description |
 |----------|-------------|
 | [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Deep dive into system design, data flows, security |
-| [`GITHUB_TOOLS_REFERENCE.md`](./docs/GITHUB_TOOLS_REFERENCE.md) | GitHub tools: search code/repos/PRs, content, packages |
+| [`GITHUB_GITLAB_TOOLS_REFERENCE.md`](./docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) | GitHub tools: search code/repos/PRs, content, packages |
 | [`LOCAL_TOOLS_REFERENCE.md`](./docs/LOCAL_TOOLS_REFERENCE.md) | Local + LSP tools: search, structure, files, semantic analysis |
+| [`TOOL_FLOWS.md`](./docs/TOOL_FLOWS.md) | Local Research Agent tool flows, best practices, and common mistakes |
 | [`HINTS_ARCHITECTURE.md`](./docs/HINTS_ARCHITECTURE.md) | Hints system: flow, sources, types, implementation |
 | [`LSP_TOOLS.md`](./docs/LSP_TOOLS.md) | LSP tools: supported languages, usage, configuration |
 | [`SESSION_PERSISTENCE.md`](./docs/SESSION_PERSISTENCE.md) | Session management: persistence, caching, telemetry |
 | [`TOKEN_RESOLUTION.md`](./docs/TOKEN_RESOLUTION.md) | GitHub token resolution: priority, sources, setup |
+| [`PROVIDERS.md`](./docs/PROVIDERS.md) | Provider selection, GitHub & GitLab credentials flow |
 | [`README.md`](./README.md) | Installation, usage, configuration |
 | [`../../AGENTS.md`](../../AGENTS.md) | Root monorepo guidelines |
 | [MCP Spec](https://modelcontextprotocol.io/) | Model Context Protocol specification |
@@ -500,6 +528,8 @@ yarn test:ui
 | Secret detection | `src/security/contentSanitizer.ts`, `src/security/regexes/` |
 | Path validation | `src/security/pathValidator.ts` |
 | GitHub client | `src/github/client.ts` |
+| GitLab client | `src/gitlab/client.ts` |
+| Provider factory | `src/providers/factory.ts`, `src/providers/execute.ts` |
 | LSP client | `src/lsp/client.ts` ([docs](./docs/LSP_TOOLS.md)) |
 | LSP config | `src/lsp/config.ts`, `src/lsp/manager.ts` |
 | Bulk operations | `src/utils/response/bulk.ts` |

@@ -1,3 +1,4 @@
+import { errorLog, warnLog } from './colors.js';
 /**
  * Cross-platform logging utility for Octocode Research Server
  *
@@ -28,6 +29,7 @@ const MAX_LOG_SIZE = 10 * 1024 * 1024;
 // ============================================================================
 
 let initialized = false;
+let fileLoggingEnabled = true;
 
 /**
  * Ensure the logs directory exists.
@@ -45,8 +47,12 @@ function ensureLogsDir(): void {
     }
     initialized = true;
   } catch (err) {
-    // Silently fail - logging should never crash the server
-    console.error('[Logger] Failed to create logs directory:', err);
+    // Fallback to stderr if file logging fails - logging should never crash the server
+    process.stderr.write(
+      `[Logger] Failed to create logs directory: ${err}\n` +
+      `Falling back to console-only logging.\n`
+    );
+    fileLoggingEnabled = false;
   }
 }
 
@@ -120,15 +126,20 @@ function formatLogEntry(level: string, message: string, data?: unknown): string 
  */
 function writeLog(logPath: string, entry: string): void {
   ensureLogsDir();
+
+  // Skip file logging if disabled due to previous failures
+  if (!fileLoggingEnabled) return;
+
   rotateIfNeeded(logPath);
 
   try {
     fs.appendFileSync(logPath, entry, { encoding: 'utf-8' });
   } catch (err) {
-    console.error('[Logger] Failed to write log:', err);
+    // Disable file logging on failure - logging should never crash the server
+    fileLoggingEnabled = false;
+    process.stderr.write(`[Logger] File write failed, disabling: ${err}\n`);
   }
 }
-
 // ============================================================================
 // Public API - Error Logger
 // ============================================================================
@@ -146,7 +157,7 @@ export function logError(message: string, error?: Error | unknown): void {
   writeLog(ERROR_LOG, entry);
 
   // Also write to console for visibility
-  console.error(`[ERROR] ${message}`, error || '');
+  console.error(errorLog(`[ERROR] ${message}`), error || '');
 }
 
 /**
@@ -155,7 +166,7 @@ export function logError(message: string, error?: Error | unknown): void {
 export function logWarn(message: string, data?: unknown): void {
   const entry = formatLogEntry('WARN', message, data);
   writeLog(ERROR_LOG, entry);
-  console.warn(`[WARN] ${message}`);
+  console.warn(warnLog(`[WARN] ${message}`));
 }
 
 // ============================================================================

@@ -22,6 +22,9 @@ vi.mock(
 vi.mock('../src/utils/exec/index.js');
 vi.mock('../src/serverConfig.js');
 vi.mock('../src/tools/toolsManager.js');
+vi.mock('../src/providers/factory.js', () => ({
+  initializeProviders: vi.fn().mockResolvedValue(undefined),
+}));
 
 // Import mocked functions
 import { registerPrompts } from '../src/prompts/prompts.js';

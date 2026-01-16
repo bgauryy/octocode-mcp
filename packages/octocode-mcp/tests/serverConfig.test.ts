@@ -843,6 +843,103 @@ describe('ServerConfig - Simplified Version', () => {
     });
   });
 
+  describe('Timeout Configuration Floor (MIN_TIMEOUT = 5000)', () => {
+    it('should allow timeout values above minimum (5000ms)', async () => {
+      process.env.REQUEST_TIMEOUT = '10000';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().timeout).toBe(10000);
+    });
+
+    it('should enforce minimum timeout of 5000ms', async () => {
+      process.env.REQUEST_TIMEOUT = '1000'; // Below 5s minimum
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().timeout).toBe(5000); // Clamped to MIN_TIMEOUT
+    });
+
+    it('should enforce minimum timeout for very low values', async () => {
+      process.env.REQUEST_TIMEOUT = '100';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().timeout).toBe(5000);
+    });
+
+    it('should use default timeout when REQUEST_TIMEOUT is zero (0 is falsy)', async () => {
+      // Note: 0 triggers || fallback to DEFAULT_TIMEOUT, then MIN_TIMEOUT check
+      process.env.REQUEST_TIMEOUT = '0';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().timeout).toBe(30000); // Falls back to default
+    });
+
+    it('should enforce minimum timeout for negative values', async () => {
+      process.env.REQUEST_TIMEOUT = '-5000';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().timeout).toBe(5000);
+    });
+
+    it('should use default timeout (30000) when REQUEST_TIMEOUT is not set', async () => {
+      delete process.env.REQUEST_TIMEOUT;
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().timeout).toBe(30000);
+    });
+
+    it('should use default timeout when REQUEST_TIMEOUT is invalid', async () => {
+      process.env.REQUEST_TIMEOUT = 'invalid';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().timeout).toBe(30000);
+    });
+  });
+
+  describe('MaxRetries Configuration Limits', () => {
+    it('should allow retry values within limits (0-10)', async () => {
+      process.env.MAX_RETRIES = '5';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().maxRetries).toBe(5);
+    });
+
+    it('should clamp retries to maximum of 10', async () => {
+      process.env.MAX_RETRIES = '15';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().maxRetries).toBe(10); // Clamped to MAX_RETRIES_LIMIT
+    });
+
+    it('should clamp retries to minimum of 0', async () => {
+      process.env.MAX_RETRIES = '-5';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().maxRetries).toBe(0); // Clamped to MIN_RETRIES
+    });
+
+    it('should use default retries when MAX_RETRIES is zero (0 is falsy)', async () => {
+      // Note: 0 triggers || fallback to DEFAULT_RETRIES
+      process.env.MAX_RETRIES = '0';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().maxRetries).toBe(3); // Falls back to default
+    });
+
+    it('should use default retries (3) when MAX_RETRIES is not set', async () => {
+      delete process.env.MAX_RETRIES;
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().maxRetries).toBe(3);
+    });
+
+    it('should use default retries when MAX_RETRIES is invalid', async () => {
+      process.env.MAX_RETRIES = 'invalid';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().maxRetries).toBe(3);
+    });
+  });
+
   describe('GITHUB_API_URL Configuration', () => {
     beforeEach(() => {
       delete process.env.GITHUB_API_URL;
@@ -904,6 +1001,192 @@ describe('ServerConfig - Simplified Version', () => {
       await initialize();
       // Note: trim() handles regular whitespace, unicode may vary
       expect(getServerConfig().enableLocal).toBe(true);
+    });
+  });
+
+  describe('GitLab Configuration Fresh Resolution (Issue #1 & #2)', () => {
+    let getGitLabConfig: typeof import('../src/serverConfig.js').getGitLabConfig;
+
+    beforeEach(async () => {
+      const serverConfig = await import('../src/serverConfig.js');
+      getGitLabConfig = serverConfig.getGitLabConfig;
+      // Clear any cached state
+      delete process.env.GITLAB_TOKEN;
+      delete process.env.GL_TOKEN;
+      delete process.env.GITLAB_HOST;
+    });
+
+    it('should resolve GitLab config fresh each time (no caching)', () => {
+      // First call - no token
+      const config1 = getGitLabConfig();
+      expect(config1.token).toBeNull();
+      expect(config1.isConfigured).toBe(false);
+
+      // Set token at runtime
+      process.env.GITLAB_TOKEN = 'fresh-token-1';
+
+      // Second call - should see the new token (fresh resolution)
+      const config2 = getGitLabConfig();
+      expect(config2.token).toBe('fresh-token-1');
+      expect(config2.isConfigured).toBe(true);
+
+      // Change token again
+      process.env.GITLAB_TOKEN = 'fresh-token-2';
+
+      // Third call - should see updated token
+      const config3 = getGitLabConfig();
+      expect(config3.token).toBe('fresh-token-2');
+    });
+
+    it('should pick up GitLab token deletion dynamically', () => {
+      process.env.GITLAB_TOKEN = 'initial-token';
+
+      const config1 = getGitLabConfig();
+      expect(config1.token).toBe('initial-token');
+
+      // Delete token at runtime
+      delete process.env.GITLAB_TOKEN;
+
+      const config2 = getGitLabConfig();
+      expect(config2.token).toBeNull();
+      expect(config2.isConfigured).toBe(false);
+    });
+
+    it('should pick up GL_TOKEN changes dynamically', () => {
+      process.env.GL_TOKEN = 'gl-token-1';
+
+      const config1 = getGitLabConfig();
+      expect(config1.token).toBe('gl-token-1');
+
+      process.env.GL_TOKEN = 'gl-token-2';
+
+      const config2 = getGitLabConfig();
+      expect(config2.token).toBe('gl-token-2');
+    });
+
+    it('should pick up GITLAB_HOST changes dynamically', () => {
+      process.env.GITLAB_TOKEN = 'test-token';
+
+      const config1 = getGitLabConfig();
+      expect(config1.host).toBe('https://gitlab.com'); // Default
+
+      process.env.GITLAB_HOST = 'https://gitlab.mycompany.com';
+
+      const config2 = getGitLabConfig();
+      expect(config2.host).toBe('https://gitlab.mycompany.com');
+    });
+
+    it('should always return GitLabConfig (not null)', () => {
+      // Even without token, should return config object (not null)
+      const config = getGitLabConfig();
+      expect(config).not.toBeNull();
+      expect(config.host).toBe('https://gitlab.com');
+      expect(config.isConfigured).toBe(false);
+    });
+  });
+
+  describe('Active Provider Configuration', () => {
+    // Import the functions we need to test
+    let getActiveProvider: typeof import('../src/serverConfig.js').getActiveProvider;
+    let getActiveProviderConfig: typeof import('../src/serverConfig.js').getActiveProviderConfig;
+    let isGitLabActive: typeof import('../src/serverConfig.js').isGitLabActive;
+
+    beforeEach(async () => {
+      // Dynamic import to get fresh module state
+      const serverConfig = await import('../src/serverConfig.js');
+      getActiveProvider = serverConfig.getActiveProvider;
+      getActiveProviderConfig = serverConfig.getActiveProviderConfig;
+      isGitLabActive = serverConfig.isGitLabActive;
+    });
+
+    it('should return github as default provider when no GitLab token', () => {
+      delete process.env.GITLAB_TOKEN;
+      delete process.env.GL_TOKEN;
+
+      expect(getActiveProvider()).toBe('github');
+    });
+
+    it('should return gitlab as provider when GITLAB_TOKEN is set', () => {
+      process.env.GITLAB_TOKEN = 'glpat-test-token';
+
+      expect(getActiveProvider()).toBe('gitlab');
+
+      delete process.env.GITLAB_TOKEN;
+    });
+
+    it('should return gitlab as provider when GL_TOKEN is set', () => {
+      process.env.GL_TOKEN = 'glpat-test-token';
+
+      expect(getActiveProvider()).toBe('gitlab');
+
+      delete process.env.GL_TOKEN;
+    });
+
+    it('should return github provider config when no GitLab token', () => {
+      delete process.env.GITLAB_TOKEN;
+      delete process.env.GL_TOKEN;
+      delete process.env.GITHUB_API_URL;
+
+      const config = getActiveProviderConfig();
+
+      expect(config.provider).toBe('github');
+      expect(config.baseUrl).toBeUndefined();
+      expect(config.token).toBeUndefined();
+    });
+
+    it('should return github provider config with custom API URL', () => {
+      delete process.env.GITLAB_TOKEN;
+      delete process.env.GL_TOKEN;
+      process.env.GITHUB_API_URL = 'https://github.mycompany.com/api/v3';
+
+      const config = getActiveProviderConfig();
+
+      expect(config.provider).toBe('github');
+      expect(config.baseUrl).toBe('https://github.mycompany.com/api/v3');
+
+      delete process.env.GITHUB_API_URL;
+    });
+
+    it('should return gitlab provider config when GITLAB_TOKEN is set', () => {
+      process.env.GITLAB_TOKEN = 'glpat-test-token';
+      delete process.env.GITLAB_HOST;
+
+      const config = getActiveProviderConfig();
+
+      expect(config.provider).toBe('gitlab');
+      expect(config.baseUrl).toBe('https://gitlab.com');
+      expect(config.token).toBe('glpat-test-token');
+
+      delete process.env.GITLAB_TOKEN;
+    });
+
+    it('should return gitlab provider config with custom host', () => {
+      process.env.GITLAB_TOKEN = 'glpat-test-token';
+      process.env.GITLAB_HOST = 'https://gitlab.mycompany.com';
+
+      const config = getActiveProviderConfig();
+
+      expect(config.provider).toBe('gitlab');
+      expect(config.baseUrl).toBe('https://gitlab.mycompany.com');
+      expect(config.token).toBe('glpat-test-token');
+
+      delete process.env.GITLAB_TOKEN;
+      delete process.env.GITLAB_HOST;
+    });
+
+    it('should return false for isGitLabActive when no GitLab token', () => {
+      delete process.env.GITLAB_TOKEN;
+      delete process.env.GL_TOKEN;
+
+      expect(isGitLabActive()).toBe(false);
+    });
+
+    it('should return true for isGitLabActive when GitLab token is set', () => {
+      process.env.GITLAB_TOKEN = 'glpat-test-token';
+
+      expect(isGitLabActive()).toBe(true);
+
+      delete process.env.GITLAB_TOKEN;
     });
   });
 });

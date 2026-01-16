@@ -201,6 +201,28 @@ export type TokenSourceType =
   | 'octocode-storage'
   | 'none';
 
+/**
+ * GitLab token source types for tracking where the GitLab token came from.
+ */
+export type GitLabTokenSourceType =
+  | 'env:GITLAB_TOKEN'
+  | 'env:GL_TOKEN'
+  | 'none';
+
+/**
+ * GitLab configuration for connecting to GitLab instances.
+ */
+export interface GitLabConfig {
+  /** GitLab host URL (default: https://gitlab.com) */
+  host: string;
+  /** GitLab API token */
+  token: string | null;
+  /** Source of the GitLab token */
+  tokenSource: GitLabTokenSourceType;
+  /** Whether GitLab is configured (has valid token) */
+  isConfigured: boolean;
+}
+
 /** Server configuration and feature flags */
 export interface ServerConfig {
   version: string;
@@ -214,6 +236,8 @@ export interface ServerConfig {
   loggingEnabled: boolean;
   enableLocal: boolean;
   tokenSource: TokenSourceType;
+  /** GitLab configuration (optional) */
+  gitlab?: GitLabConfig;
 }
 
 // ============================================================================

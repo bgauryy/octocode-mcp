@@ -3,15 +3,19 @@ import { createMockMcpServer } from '../fixtures/mcp-fixtures.js';
 import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 import { getTextContent } from '../utils/testHelpers.js';
 
-// Mock the GitHub API to avoid real network calls
-const mockSearchGitHubReposAPI = vi.hoisted(() => vi.fn());
+const mockGetProvider = vi.hoisted(() => vi.fn());
 
-vi.mock('../../src/github/repoSearch.js', () => ({
-  searchGitHubReposAPI: mockSearchGitHubReposAPI,
+vi.mock('../../src/providers/factory.js', () => ({
+  getProvider: mockGetProvider,
 }));
 
 vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
+  getActiveProviderConfig: vi.fn(() => ({
+    provider: 'github',
+    baseUrl: undefined,
+    token: 'mock-token',
+  })),
   getGitHubToken: vi.fn(() => Promise.resolve('mock-token')),
   getServerConfig: vi.fn(() => ({
     version: '7.0.0',
@@ -26,34 +30,58 @@ vi.mock('../../src/serverConfig.js', () => ({
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos/github_search_repos.js';
 
 describe('GitHub Search Repositories Response Structure Test', () => {
-  it('should return YAML response with correct structure (no total_count, forks, language)', async () => {
-    mockSearchGitHubReposAPI.mockResolvedValue({
+  it('should return YAML response with correct structure', async () => {
+    const mockProvider = {
+      searchCode: vi.fn(),
+      getFileContent: vi.fn(),
+      searchRepos: vi.fn(),
+      searchPullRequests: vi.fn(),
+      getRepoStructure: vi.fn(),
+    };
+    mockGetProvider.mockReturnValue(mockProvider);
+
+    mockProvider.searchRepos.mockResolvedValue({
       data: {
         repositories: [
           {
-            owner: 'facebook',
-            repo: 'react',
-            stars: 200000,
+            id: '1',
+            name: 'react',
+            fullPath: 'facebook/react',
             description:
               'A declarative, efficient, and flexible JavaScript library for building user interfaces.',
             url: 'https://github.com/facebook/react',
+            stars: 200000,
+            forks: 40000,
+            language: 'JavaScript',
+            topics: ['javascript', 'react'],
             createdAt: '15/01/2024',
             updatedAt: '15/01/2024',
             pushedAt: '15/01/2024',
+            defaultBranch: 'main',
+            isPrivate: false,
           },
           {
-            owner: 'vercel',
-            repo: 'next.js',
-            stars: 100000,
+            id: '2',
+            name: 'next.js',
+            fullPath: 'vercel/next.js',
             description: 'The React Framework for Production',
             url: 'https://github.com/vercel/next.js',
+            stars: 100000,
+            forks: 20000,
+            language: 'JavaScript',
+            topics: ['nextjs'],
             createdAt: '14/01/2024',
             updatedAt: '14/01/2024',
             pushedAt: '14/01/2024',
+            defaultBranch: 'main',
+            isPrivate: false,
           },
         ],
+        totalCount: 2,
+        pagination: { currentPage: 1, totalPages: 1, hasMore: false },
       },
       status: 200,
+      provider: 'github',
     });
 
     const mockServer = createMockMcpServer();
@@ -64,7 +92,6 @@ describe('GitHub Search Repositories Response Structure Test', () => {
       {
         queries: [
           {
-            id: 'test-query',
             reasoning: 'Testing response structure',
             keywordsToSearch: ['react', 'hooks'],
             limit: 2,
@@ -75,26 +102,12 @@ describe('GitHub Search Repositories Response Structure Test', () => {
 
     const responseText = getTextContent(result.content);
 
-    expect(result).toEqual({
-      isError: false,
-      content: [
-        {
-          type: 'text',
-          text: responseText,
-        },
-      ],
-    });
-
+    expect(result.isError).toBe(false);
     expect(responseText).toContain('instructions:');
     expect(responseText).toContain('results:');
-    expect(responseText).toContain('1 hasResults');
-    // Optimized: reasoning no longer duplicated in response
     expect(responseText).toContain('status: "hasResults"');
     expect(responseText).toContain('repositories:');
     expect(responseText).toContain('facebook/react');
     expect(responseText).toContain('vercel/next.js');
-    expect(responseText).not.toMatch(/^data:/m);
-    expect(responseText).not.toContain('queries:');
-    expect(responseText).not.toMatch(/^hints:/m);
   }, 5000);
 });

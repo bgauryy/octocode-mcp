@@ -1,330 +1,343 @@
 ---
 name: octocode-research
-description: Research code with evidence (external GitHub research)
+description: Code research for external (GitHub) and local code exploration. Initiate when user wants to research some code or implementation or finding docs anywhere
 ---
 
-# Research Agent - Code Forensics & Discovery
+# Octocode Research Skill
 
-## Flow Overview
-`PREPARE` → `DISCOVER` → `ANALYZE` → `OUTPUT`
+HTTP API server for code research at `http://localhost:1987`
 
----
-
-## 1. Agent Identity
-
-<agent_identity>
-Role: **Research Agent**. Expert Judicial Logician.
-**Objective**: Find answers for user questions using Octocode Research tools in logical, critical, and creative flows. Discover truth from actual codebases and docs.
-**Principles**: Evidence First. Validate Findings. Cite Precisely. Ask When Stuck.
-**Creativity**: Use semantic variations of search terms (e.g., 'auth' → 'login', 'security', 'credentials') to uncover connections.
-</agent_identity>
+> **Local Server**: Runs on user's machine with direct filesystem and LSP access.
 
 ---
 
-## 2. Scope & Tooling
+## How to Use This Skill
 
-<tools>
-> 🔍 **For local workspace search & LSP code intelligence, call the `octocode-local-search` skill if installed!**
-> This skill focuses on **external GitHub research**. Use `octocode-local-search` for local tools (`localSearchCode`, `localViewStructure`, `localFindFiles`, `localGetFileContent`) and LSP tools (`lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`).
+**Before starting research, read the relevant guides:**
 
-**Octocode Research (GitHub)**:
-| Tool | Purpose |
-|------|---------|
-| `githubSearchRepositories` | Discover repos by topics, stars, activity |
-| `githubViewRepoStructure` | Explore directory layout and file sizes |
-| `githubSearchCode` | Find patterns, implementations, file paths |
-| `githubGetFileContent` | Read file content with `matchString` targeting |
-| `githubSearchPullRequests` | Fetch PR metadata, diffs, comments, history |
-| `packageSearch` | Package metadata, versions, repo location |
+| Research Type | Read First |
+|---------------|------------|
+| **Local codebase** | [research_local_prompt.md](./references/research_local_prompt.md) - Task classification, flow patterns, LSP usage |
+| **GitHub/packages** | [research_external_prompt.md](./references/research_external_prompt.md) - Package lookup, repo exploration, PR search |
+| **Presenting results** | [output_protocol.md](./references/output_protocol.md) - Quality standards, adaptive output, when to save docs |
 
-**Task Management**:
-| Tool | Purpose |
-|------|---------|
-| `TodoWrite` | Track research progress and subtasks |
-| `Task` | Spawn parallel agents for independent research domains |
+**When using specific endpoints**, consult the endpoint reference for parameters and examples:
+- Each endpoint has a dedicated doc in `./references/` with HTTP examples and response structure
 
-**FileSystem**: `Read`, `Write`
-</tools>
-
-<location>
-**`.octocode/`** - Project root folder for Octocode artifacts. Create if missing and ask user to add to `.gitignore`.
-
-| Path | Purpose |
-|------|---------|
-| `.octocode/context/context.md` | User preferences & project context |
-| `.octocode/research/{session-name}/research_summary.md` | Temp research summary (ongoing) |
-| `.octocode/research/{session-name}/research.md` | Final research document |
-
-> `{session-name}` = short descriptive name (e.g., `auth-flow`, `api-migration`)
-</location>
-
-<userPreferences>
-Check `.octocode/context/context.md` for user context. Use it to ground research goals if relevant.
-</userPreferences>
+**The reference docs explain:**
+- Which tools to use for which questions (task classification)
+- Required workflows (e.g., search → get lineHint → LSP tools)
+- Common mistakes to avoid
+- How to present findings based on question complexity
 
 ---
 
-## 3. Decision Framework
+## CRITICAL: Always Check Server Health First
 
-<confidence>
-| Level | Certainty | Action |
-|-------|-----------|--------|
-| ✅ **HIGH** | Verified in active code | Use as evidence |
-| ⚠️ **MED** | Likely correct, missing context | Use with caveat |
-| ❓ **LOW** | Uncertain or conflicting | Investigate more OR ask user |
+**BEFORE making ANY API request**, you MUST verify the server is running:
 
-**Validation Rule**: Key findings require a second source unless primary is definitive (official docs, canonical implementation).
-</confidence>
+```bash
+# Step 1: ALWAYS check health first
+curl -s http://localhost:1987/health || echo "SERVER_NOT_RUNNING"
 
-<mindset>
-**Research when**:
-- User question requires code evidence
-- Need to understand implementation patterns
-- Tracing data/control flow across files/repos
-- Validating assumptions about behavior
+# Step 2: If not running, start the server
+cd /path/to/octocode-research && ./install.sh start
 
-**Skip research when**:
-- Answer is general knowledge (no code-specific evidence needed)
-- User already provided the answer/context
-- Trivial lookups better served by direct file read
-</mindset>
+# Step 3: Verify it's running
+curl -s http://localhost:1987/health
+# Expected: {"status":"ok","port":1987,"version":"2.0.0"}
 
-<octocode_results>
-- Tool results include: `mainResearchGoal`, `researchGoal`, `reasoning` - USE THESE to understand context
-- Results have hints for next steps - follow them
-- Empty results = wrong query, try semantic variants
-</octocode_results>
+# Step 4: NOW you can make API calls
 
----
-
-## 4. Research Flows
-
-<research_flows>
-**General Rule**: Research is a matrix/graph, not linear. Use the cheapest tool that can prove/disprove the hypothesis.
-
-> 🔍 **For local workspace exploration and LSP code intelligence, use the `octocode-local-search` skill!**
-
-**Starting Points (GitHub Research)**:
-| Need | GitHub Tool | Example |
-|------|-------------|---------|
-| Repository discovery | `githubSearchRepositories` | Find repos by topic/stars |
-| Package info | `packageSearch` | Metadata, repo location |
-| Remote repo structure | `githubViewRepoStructure` | Map external layout |
-| Pattern search | `githubSearchCode` | Find implementations |
-| File content | `githubGetFileContent` | Read with `matchString` |
-| PR History | `githubSearchPullRequests` | Why changes were made |
-
-**GitHub Transition Matrix**:
-| From Tool | Need... | Go To Tool |
-|-----------|---------|------------|
-| `githubSearchCode` | Context/Content | `githubGetFileContent` |
-| `githubSearchCode` | More Patterns | `githubSearchCode` (refine) |
-| `githubSearchCode` | Package Source | `packageSearch` |
-| `githubSearchRepositories` | Content | `githubGetFileContent` |
-| `githubSearchRepositories` | Structure | `githubViewRepoStructure` |
-| `packageSearch` | Repo Location | `githubViewRepoStructure` → `githubGetFileContent` |
-| `githubViewRepoStructure` | Find Pattern | `githubSearchCode` |
-| `githubSearchPullRequests` | File Content | `githubGetFileContent` |
-| `githubGetFileContent` | More Context | `githubGetFileContent` (widen scope) |
-| `githubGetFileContent` | New Pattern | `githubSearchCode` |
-</research_flows>
-
-<structural_code_vision>
-**Think Like a Parser (AST Mode)**:
-- **See the Tree**: Visualize AST. Root (Entry) → Nodes (Funcs/Classes) → Edges (Imports/Calls)
-- **Trace Dependencies**: `import {X} from 'Y'` is an edge → follow imports to source
-- **Contextualize Tokens**: "user" is meaningless alone → Find definition (`class User`, `interface User`)
-- **Follow the Flow**: Entry → Propagation → Termination
-- **Ignore Noise**: Focus on semantic nodes driving logic (public functions, handlers, services)
-
-> 💡 **For LSP-powered code intelligence (definitions, references, call hierarchy), use the `octocode-local-search` skill!**
-</structural_code_vision>
-
-<doc_vision>
-- Understand meta flows using updated docs
-- Use semantic search for variety (README, CONTRIBUTING, docs folder)
-- Prefer docs with recent `updated` dates
-</doc_vision>
-
-<context_awareness>
-**Repository Awareness**:
-- Identify Type: Client? Server? Library? Monorepo?
-- Check Activity: Active PRs = Active Repo
-- Critical Paths: Understand entry points & code flows first
-
-**Cross-Repository Awareness**:
-- Dependencies = Connections between repos
-- Trace URLs/API calls between services
-- Follow package imports to source repos
-</context_awareness>
-
----
-
-## 5. Execution Flow
-
-<key_principles>
-- **Align**: Each tool call supports a hypothesis
-- **Validate**:
-  - Output moves research forward
-  - **Validation Pattern**: Discover → Verify → Cross-check → Confirm
-  - **Rule of Two**: Validate key findings with second source unless primary is definitive
-  - **Real Code Only**: Ensure results are from active/real flows (not dead code, tests, deprecated)
-  - **Freshness**: Check `updated` dates. Avoid >1yr old projects/docs unless necessary
-- **Refine**: Weak reasoning? Change tool/query combination
-- **Efficiency**: Batch queries (1-3). Path search (`match="path"`) before content. Avoid loops
-- **Output**: Quality > Quantity
-- **User Checkpoint**: If scope unclear/too broad or blocked → Summarize and ask user
-- **Tasks**: Use `TodoWrite` to manage research tasks and subtasks (create/update ongoing!)
-- **Multi-Agent**: For independent hypotheses/domains, spawn parallel agents via `Task` tool
-- **No Time Estimates**: Never provide timing/duration estimates (e.g., "2-3 days", "few hours")
-</key_principles>
-
-<execution_lifecycle>
-### Phase 1: Preparation
-1. **Analyze**: Identify specific goals and missing context
-2. **Hypothesize**: Define what needs to be proved/disproved and success criteria
-3. **Strategize**: Determine efficient entry point (Repo? Package? Pattern?)
-4. **Parallelization Check**: Can hypotheses be researched independently? Consider spawning agents
-5. **User Checkpoint**: If scope >2 repos or unclear → STOP & ASK USER
-6. **Tasks**: Add all hypotheses as tasks via `TodoWrite`
-
-### Phase 2: Execution Loop (per task)
-Iterate Thought, Action, Observation:
-
-1. **THOUGHT**: Determine immediate next step
-2. **ACTION**: Execute Octocode tool call(s)
-3. **OBSERVATION**: Analyze results. Fact-check against expectations. Identify gaps
-4. **DECISION**: Refine strategy (BFS vs DFS)
-   - *Code Structure?* → Follow `<structural_code_vision>`
-   - *Docs?* → Follow `<doc_vision>`
-5. **SUBTASKS**: Add discovered subtasks
-6. **SUCCESS CHECK**: Enough evidence to answer?
-   - Yes → Move to Output Protocol
-   - No → Loop with refined query
-
-### Phase 3: Output
-- Generate answer with evidence
-- Ask user about next steps (see Output Protocol)
-</execution_lifecycle>
-
----
-
-## 6. Error Recovery
-
-<error_recovery>
-| Situation | Action |
-|-----------|--------|
-| Tool returns empty | Try semantic variants (auth→login→credentials) |
-| Too many results | Add filters (path, extension, owner/repo) |
-| Conflicting info | Find authoritative source OR ask user |
-| Rate limited | Reduce batch size, wait |
-| Dead end | Backtrack to last good state, try different entry point |
-| Blocked >2 attempts | Summarize what you tried → Ask user |
-</error_recovery>
-
----
-
-## 7. Multi-Agent Parallelization
-
-<multi_agent>
-> **Note**: Only applicable if parallel agents are supported by host environment.
-
-**When to Spawn Subagents**:
-- 2+ independent hypotheses (no shared dependencies)
-- Distinct repos/domains (e.g., `client` + `server`, `lib-a` + `lib-b`)
-- Separate subsystems (auth vs. payments vs. notifications)
-- Multiple external packages to research
-
-**How to Parallelize**:
-1. Use `TodoWrite` to create tasks and identify parallelizable research
-2. Use `Task` tool to spawn subagents with specific hypothesis/domain
-3. Each agent researches independently using GitHub tools
-4. Merge findings after all agents complete
-
-**Smart Parallelization Tips**:
-- **Preparation Phase**: Keep sequential - need unified hypothesis identification
-- **Execution Phase**: Parallelize across independent repos/domains
-- Use `TodoWrite` to track research progress per agent
-- Each agent should follow full research flow: `githubSearchRepositories` → `githubViewRepoStructure` → `githubSearchCode` → `githubGetFileContent`
-- Define clear boundaries: each agent owns specific repos/packages
-- Cross-reference findings during merge to identify connections
-
-**Example - Multi-Repo Research**:
-- Goal: "How does auth work across frontend and backend?"
-- Agent 1: Research `frontend-app` auth flow (login, token storage, guards)
-- Agent 2: Research `backend-api` auth flow (middleware, validation, sessions)
-- Merge: Combine into unified auth flow documentation, trace cross-repo dependencies
-
-**Example - Multi-Package Research**:
-- Goal: "Compare authentication libraries for Node.js"
-- Agent 1: Research `passport` using `packageSearch` → `githubViewRepoStructure` → `githubGetFileContent`
-- Agent 2: Research `next-auth` using same flow
-- Agent 3: Research `lucia-auth` using same flow
-- Merge: Create comparison matrix with pros/cons
-
-**Anti-patterns**:
-- Don't parallelize when hypotheses depend on each other's results
-- Don't spawn agents for simple single-repo research
-- Don't parallelize output generation (needs unified synthesis)
-</multi_agent>
-
----
-
-## 8. Output Protocol
-
-<output_flow>
-### Step 1: Chat Answer (MANDATORY)
-- Provide clear TL;DR answer with research results
-- Add evidence and references to code/docs (full GitHub links e.g. https://github.com/{{OWNER}}/{{REPO}}/blob/{{BRANCH}}/{{PATH}})
-- Include only important code chunks (up to 10 lines)
-
-### Step 2: Next Step Question (MANDATORY)
-Ask user:
-- "Create a research doc?" → Generate per `<output_structure>`
-- "Keep researching?" → Summarize to `research_summary.md`:
-  - What you know
-  - What you need to know
-  - Links to repos/docs/files
-  - Flows discovered
-  - Then continue from Phase 2
-</output_flow>
-
-<output_structure>
-**Location**: `.octocode/research/{session-name}/research.md`
-
-```markdown
-# Research Goal
-[User's question / research objective]
-
-# Answer
-[Overview TL;DR of findings]
-
-# Details
-[Include sections as applicable]
-
-## Visual Flows
-[Mermaid diagrams (`graph TD`) for code/data flows]
-
-## Code Flows
-[High-level flow between repositories/functions/packages/services]
-
-## Key Findings
-[Detailed evidence with code snippets]
-
-## Edge Cases / Caveats
-[Limitations, uncertainties, areas needing more research]
-
-# References
-- [Repo/file/doc links with descriptions]
-
----
-Created by Octocode MCP https://octocode.ai 🔍🐙
 ```
-</output_structure>
+
+**Why this matters**: The server runs locally and may not be started. Making API calls without checking health first will result in connection errors (exit code 7).
 
 ---
 
-## 9. References
+## LSP + Local Tools Coordination (CRITICAL)
 
-- **Tools**: [references/tool-reference.md](references/tool-reference.md) - Parameters & Tips
-- **Workflows**: [references/workflow-patterns.md](references/workflow-patterns.md) - Research Recipes
+<critical-coordination>
+**THE GOLDEN RULE**: Search first → Get lineHint → Then LSP
+
+```
+/local/search(pattern="X") → Response contains line numbers
+                ↓
+         Extract lineHint from matches[].line
+                ↓
+/lsp/definition OR /lsp/references OR /lsp/calls (with lineHint)
+```
+
+**NEVER**:
+- Call LSP tools without lineHint from search
+- Use `/lsp/calls` for types/variables (use `/lsp/references` instead)
+- Read files to understand flow (use `/lsp/calls`)
+
+**Full guide**: [lsp_local_coordination.md](./references/lsp_local_coordination.md)
+</critical-coordination>
+
+---
+
+## Available Endpoints
+
+**Base URL**: `http://localhost:1987`
+
+### Local Tools
+| Endpoint | Description | Docs |
+|----------|-------------|------|
+| `/local/search` | Search code patterns (ripgrep) | [ref](./references/localSearchCode.md) |
+| `/local/content` | Read file content | [ref](./references/localGetFileContent.md) |
+| `/local/structure` | Directory tree | [ref](./references/localViewStructure.md) |
+| `/local/find` | Find files by metadata | [ref](./references/localFindFiles.md) |
+
+### LSP Tools (Semantic)
+| Endpoint | Description | Docs |
+|----------|-------------|------|
+| `/lsp/definition` | Go to definition | [ref](./references/lspGotoDefinition.md) |
+| `/lsp/references` | Find all usages | [ref](./references/lspFindReferences.md) |
+| `/lsp/calls` | Call hierarchy | [ref](./references/lspCallHierarchy.md) |
+
+### GitHub Tools
+| Endpoint | Description | Docs |
+|----------|-------------|------|
+| `/github/search` | Search code | [ref](./references/githubSearchCode.md) |
+| `/github/content` | Read file | [ref](./references/githubGetFileContent.md) |
+| `/github/structure` | Repo tree | [ref](./references/githubViewRepoStructure.md) |
+| `/github/repos` | Search repos | [ref](./references/githubSearchRepositories.md) |
+| `/github/prs` | Search PRs | [ref](./references/githubSearchPullRequests.md) |
+
+### Package Tools
+| Endpoint | Description | Docs |
+|----------|-------------|------|
+| `/package/search` | npm/PyPI search | [ref](./references/packageSearch.md) |
+
+---
+
+## Decision Tree
+
+<decision-tree>
+<condition test="Is it LOCAL codebase?">
+<yes>Use /local/* + /lsp/* tools
+  <condition test="Flow question?">
+  <yes>/lsp/calls REQUIRED - see research_local_prompt.md</yes>
+  </condition>
+</yes>
+<no>Use /github/* or /package/* - see research_external_prompt.md</no>
+</condition>
+</decision-tree>
+
+---
+
+## Research Flows
+
+### Local: `DISCOVER → EXECUTE → VERIFY → OUTPUT`
+
+```
+/local/structure → understand layout
+/local/search → find symbols, get lineHint
+/lsp/calls → trace flow (incoming/outgoing)
+/local/content → read implementation (LAST)
+```
+
+### External: `PREPARE → DISCOVER → ANALYZE → OUTPUT`
+
+```
+/package/search → get repo URL
+/github/structure → explore layout
+/github/search → find code
+/github/content → read details
+```
+
+**Detailed guides**: [Local](./references/research_local_prompt.md) | [External](./references/research_external_prompt.md)
+
+---
+
+## Critical Rules
+
+<critical-rules>
+<rule id="thinking">
+**IMPORTANT!** Always show your thinking and reasoning steps during research. Explain what you're looking for, why you chose specific tools/endpoints, and how findings connect to the research goal.
+</rule>
+<rule id="health-check">
+**Health check FIRST** - Server may not be running. Check /health before ANY request.
+</rule>
+<rule id="linehint">
+**Search first → get lineHint → LSP** - LSP tools need accurate line numbers from search results.
+</rule>
+<rule id="flow-tracing">
+**Use /lsp/calls for flow tracing** - File reading alone misses call relationships.
+</rule>
+<rule id="parallel">
+**Parallel calls for speed** - Server handles concurrent requests (3x faster).
+</rule>
+<rule id="no-guessing">
+**Never guess line numbers** - Always get lineHint from search results.
+</rule>
+</critical-rules>
+
+---
+
+## Required Parameters
+
+All endpoints require research context:
+
+| Parameter | Purpose |
+|-----------|---------|
+| `mainResearchGoal` | Overall objective (constant across session) |
+| `researchGoal` | This query's specific goal |
+| `reasoning` | Why this approach helps |
+
+---
+
+## Integration Patterns
+
+| Pattern | When | How |
+|---------|------|-----|
+| **Direct Skill** | Simple questions | `/octocode-research` |
+| **Task + Explore** | Complex exploration | `Task(subagent_type="Explore")` |
+| **Parallel Tasks** | Multi-axis research | Multiple Tasks in one message |
+
+**Full guide**: [Task Integration](./references/task_integration.md)
+
+---
+
+## Output Protocol
+
+**Adaptive output based on question complexity:**
+
+| Question Type | Output | Save Doc? |
+|---------------|--------|-----------|
+| Quick lookup | Direct answer + path | No |
+| Flow trace | Structured summary | Offer |
+| Multi-axis / Complex | Full research doc | Recommend |
+
+**Quality bar (all research)**:
+- **Fact-based**: Every claim backed by actual code
+- **Evidence-linked**: Path + line number for every finding
+- **Verified**: Cross-referenced where possible
+
+**Complex research**: Use multi-agent orchestration (spawn parallel Tasks)
+
+**Full guide**: [Output Protocol](./references/output_protocol.md)
+
+---
+
+## Logging
+
+Logs: `~/.octocode/logs/`
+
+| File | Contents |
+|------|----------|
+| `tools.log` | All tool calls with params, duration |
+| `errors.log` | Validation/server errors |
+
+```bash
+tail -50 ~/.octocode/logs/tools.log   # Recent calls
+cat ~/.octocode/logs/errors.log       # Errors
+```
+
+---
+
+## Quick Example
+
+**Question**: "How does authentication work?"
+
+```bash
+# 1. Find entry points
+curl "http://localhost:1987/local/search?pattern=authenticate&path=/project/src"
+# → Found at line 15
+
+# 2. Trace flow (parallel)
+curl "http://localhost:1987/lsp/calls?uri=...&symbolName=authenticate&lineHint=15&direction=incoming" &
+curl "http://localhost:1987/lsp/calls?uri=...&symbolName=authenticate&lineHint=15&direction=outgoing" &
+
+# 3. Read implementation (after understanding flow)
+curl "http://localhost:1987/local/content?path=...&startLine=10&endLine=30"
+
+# 4. Present summary → Ask user → Save
+```
+
+---
+
+## Best Practices
+
+<best-practices>
+<do>
+- **Search first** → get `lineHint` → then LSP tools
+- **Use `/lsp/calls`** for flow/trace questions
+- **Run parallel calls** for independent queries
+- **Use `mode=discovery`** for fast initial file discovery
+- **Use `matchString`** for large files instead of `fullContent`
+- **Use `depth=1`** for call hierarchy, chain manually
+- **Start `/github/structure` at root** with `depth=1`, drill into subdirs
+</do>
+<dont>
+- Don't read files to understand flow → Use `/lsp/calls`
+- Don't guess line numbers → Always search first
+- Don't use `/lsp/calls` on types/variables → Use `/lsp/references`
+- Don't use `fullContent=true` on large files
+- Don't combine too many filters in `/github/search`
+</dont>
+</best-practices>
+
+---
+
+## Error Recovery
+
+<error-recovery>
+<error type="server-not-running">
+<symptom>Connection refused, exit code 7</symptom>
+<solution>Check /health first, run `./install.sh start`</solution>
+</error>
+<error type="symbol-not-found">
+<symptom>Symbol not found in LSP response</symptom>
+<solution>Use `/local/search` to find correct line number</solution>
+</error>
+<error type="empty-result">
+<symptom>Empty result set from search</symptom>
+<solution>Try semantic variants (auth→login→credentials→session)</solution>
+</error>
+<error type="too-many-results">
+<symptom>Result set too large to process</symptom>
+<solution>Add filters (`path`, `type`, `excludeDir`, `owner`/`repo`)</solution>
+</error>
+<error type="file-too-large">
+<symptom>FILE_TOO_LARGE error</symptom>
+<solution>Use `matchString` or `startLine`/`endLine`</solution>
+</error>
+<error type="lsp-timeout">
+<symptom>LSP timeout on deep call hierarchy</symptom>
+<solution>Reduce `depth`, chain manually with `depth=1`</solution>
+</error>
+<error type="lsp-fails">
+<symptom>LSP returns error or empty</symptom>
+<solution>Fall back to `/local/search` results</solution>
+</error>
+<error type="rate-limited">
+<symptom>Rate limit exceeded (GitHub API)</symptom>
+<solution>Reduce batch size, wait</solution>
+</error>
+<error type="blocked">
+<symptom>Research blocked, no progress</symptom>
+<solution>Summarize attempts and ask user</solution>
+</error>
+</error-recovery>
+
+---
+
+## Reference Guides
+
+| Guide | Purpose |
+|-------|---------|
+| [research_local_prompt.md](./references/research_local_prompt.md) | Local codebase research patterns |
+| [research_external_prompt.md](./references/research_external_prompt.md) | GitHub/package research patterns |
+| [lsp_local_coordination.md](./references/lsp_local_coordination.md) | **LSP + Local tools coordination (CRITICAL)** |
+| [task_integration.md](./references/task_integration.md) | Claude Code Task tool integration |
+| [output_protocol.md](./references/output_protocol.md) | Output format and document templates |
+
+## Technical Documentation
+
+| Doc | Purpose |
+|-----|---------|
+| [IMPROVEMENTS.md](./docs/IMPROVEMENTS.md) | Context propagation, retry logic, resilience patterns |
+| [RESPONSE_FORMAT_IMPROVEMENT.md](./docs/RESPONSE_FORMAT_IMPROVEMENT.md) | Response formatting enhancements |
