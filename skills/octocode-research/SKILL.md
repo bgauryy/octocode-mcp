@@ -11,17 +11,21 @@ This skill runs a local server that provides MCP-compatible tools enhanced with 
 
 **Rule**: Start server, then load system prompt first before discovering tools.
 
+**CRITICAL**: Use the `Bash` tool with `curl` commands for ALL API calls to localhost:1987. Do NOT use WebFetch or any Fetch tool - they don't support localhost URLs.
+
 ```bash
-# 1. Start Server (idempotent)
+# 1. Start Server (idempotent) - uses Bash tool
 ./install.sh start
 
-# 2. Load System Prompt (CRITICAL - load first!)
+# 2. Load System Prompt (CRITICAL - load first!) - uses Bash tool with curl
 curl -s http://localhost:1987/tools/system
 
-# 3. Discover Capabilities
+# 3. Discover Capabilities - uses Bash tool with curl
 curl -s http://localhost:1987/tools/list    # Get tools with schemas
 curl -s http://localhost:1987/prompts/list  # Get available prompts
 ```
+
+**All API interactions** with `localhost:1987` must use the **Bash tool** running `curl`, not WebFetch or Fetch tools.
 
 ## 2. Understand Context
 
@@ -88,12 +92,13 @@ Understand the intent of the user and choose the correct prompt to use
 | "plan", "design", "strategy" | `plan` | Implementation planning workflow |
 | "scaffold", "create new" | `generate` | Project generation templates |
 
-get prompt content
+get prompt content (use **Bash tool** with curl - NOT Fetch/WebFetch):
 
 ```bash
+# Use Bash tool to run these curl commands:
 curl -s http://localhost:1987/prompts/info/{prompt_name}
 
-# Examples:
+# Examples (all via Bash tool with curl):
 curl -s http://localhost:1987/prompts/info/research        # External code research (involves local search too if on existing code in IDE)
 curl -s http://localhost:1987/prompts/info/research_local  # Local codebase research
 curl -s http://localhost:1987/prompts/info/reviewPR        # PR review
@@ -157,6 +162,8 @@ User Input Example
 
 ## 4. API Format
 
+**IMPORTANT**: All API calls to localhost:1987 must use the **Bash tool** with `curl`. WebFetch and Fetch tools do NOT support localhost URLs.
+
 ### Required Parameters on each request for better reasoning
 ```
 mainResearchGoal=<overall objective>
@@ -165,12 +172,12 @@ reasoning=<why this approach>
 ```
 
 ### Rule
-**All routes are GET requests** with URL query parameters
+**All routes are GET requests** with URL query parameters. Use **Bash tool** with `curl` for all requests.
 
-Example: 
+Example (via Bash tool):
 
 ```bash
-# GitHub code search
+# GitHub code search - run via Bash tool
 curl -s "http://localhost:1987/githubSearchCode?queries=%5B%7B%22keywordsToSearch%22%3A%5B%22useState%22%5D%2C%22owner%22%3A%22facebook%22%2C%22repo%22%3A%22react%22%7D%5D&mainResearchGoal=Find%20useState&researchGoal=Search%20hooks&reasoning=Locate%20implementation"
 
 # Decoded queries param: [{"keywordsToSearch":["useState"],"owner":"facebook","repo":"react"}]
