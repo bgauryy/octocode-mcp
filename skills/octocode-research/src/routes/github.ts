@@ -41,7 +41,7 @@ export const githubRoutes = Router();
 
 // GET /github/search - Search code on GitHub
 githubRoutes.get(
-  '/search',
+  '/githubSearchCode',
   createRouteHandler({
     schema: githubSearchSchema,
     toParams: toGitHubSearchParams,
@@ -77,7 +77,7 @@ githubRoutes.get(
 
 // GET /github/content - Read file from GitHub
 githubRoutes.get(
-  '/content',
+  '/githubGetFileContent',
   createRouteHandler({
     schema: githubContentSchema,
     toParams: toGitHubContentParams,
@@ -108,7 +108,7 @@ githubRoutes.get(
 
 // GET /github/repos - Search repositories
 githubRoutes.get(
-  '/repos',
+  '/githubSearchRepositories',
   createRouteHandler({
     schema: githubReposSchema,
     toParams: toGitHubReposParams,
@@ -145,7 +145,7 @@ githubRoutes.get(
 
 // GET /github/structure - View repository structure
 githubRoutes.get(
-  '/structure',
+  '/githubViewRepoStructure',
   createRouteHandler({
     schema: githubStructureSchema,
     toParams: toGitHubStructureParams,
@@ -178,7 +178,7 @@ githubRoutes.get(
 
 // GET /github/prs - Search pull requests
 githubRoutes.get(
-  '/prs',
+  '/githubSearchPullRequests',
   createRouteHandler({
     schema: githubPRsSchema,
     toParams: toGitHubPRsParams,

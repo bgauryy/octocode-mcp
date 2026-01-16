@@ -30,7 +30,7 @@ export const lspRoutes = Router();
 
 // GET /lsp/definition - Go to symbol definition
 lspRoutes.get(
-  '/definition',
+  '/lspGotoDefinition',
   createRouteHandler({
     schema: lspDefinitionSchema,
     toParams: toLspDefinitionParams,
@@ -54,7 +54,7 @@ lspRoutes.get(
 
 // GET /lsp/references - Find all references to a symbol
 lspRoutes.get(
-  '/references',
+  '/lspFindReferences',
   createRouteHandler({
     schema: lspReferencesSchema,
     toParams: toLspReferencesParams,
@@ -78,7 +78,7 @@ lspRoutes.get(
 
 // GET /lsp/calls - Get call hierarchy (incoming/outgoing)
 lspRoutes.get(
-  '/calls',
+  '/lspCallHierarchy',
   createRouteHandler({
     schema: lspCallsSchema,
     toParams: toLspCallsParams,

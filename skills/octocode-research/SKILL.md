@@ -54,19 +54,19 @@ Make sure you understand the connections and relations of all context:
 
 | Route | Purpose | Key Params |
 |-------|---------|------------|
-| `/github/search` | Search code in repos | `keywordsToSearch`, `owner`, `repo` |
-| `/github/content` | Read file content | `owner`, `repo`, `path`, `matchString` |
-| `/github/structure` | View repo tree | `owner`, `repo`, `branch`, `depth` |
-| `/github/repos` | Search repositories | `keywordsToSearch`, `topicsToSearch` |
-| `/github/prs` | Search pull requests | `owner`, `repo`, `query`, `state` |
-| `/package/search` | Search npm/PyPI | `name`, `ecosystem` |
-| `/local/search` | Search local code | `pattern`, `path`, `filesOnly` |
-| `/local/content` | Read local file | `path`, `matchString` |
-| `/local/find` | Find files by metadata | `path`, `pattern`, `name`, `type` |
-| `/local/structure` | View directory tree | `path`, `depth` |
-| `/lsp/definition` | Go to definition | `uri`, `symbolName`, `lineHint` |
-| `/lsp/references` | Find all usages | `uri`, `symbolName`, `lineHint` |
-| `/lsp/calls` | Call hierarchy | `uri`, `symbolName`, `lineHint`, `direction` |
+| `/githubSearchCode` | Search code in repos | `keywordsToSearch`, `owner`, `repo` |
+| `/githubGetFileContent` | Read file content | `owner`, `repo`, `path`, `matchString` |
+| `/githubViewRepoStructure` | View repo tree | `owner`, `repo`, `branch`, `depth` |
+| `/githubSearchRepositories` | Search repositories | `keywordsToSearch`, `topicsToSearch` |
+| `/githubSearchPullRequests` | Search pull requests | `owner`, `repo`, `query`, `state` |
+| `/packageSearch` | Search npm/PyPI | `name`, `ecosystem` |
+| `/localSearchCode` | Search local code | `pattern`, `path`, `filesOnly` |
+| `/localGetFileContent` | Read local file | `path`, `matchString` |
+| `/localFindFiles` | Find files by metadata | `path`, `pattern`, `name`, `type` |
+| `/localViewStructure` | View directory tree | `path`, `depth` |
+| `/lspGotoDefinition` | Go to definition | `uri`, `symbolName`, `lineHint` |
+| `/lspFindReferences` | Find all usages | `uri`, `symbolName`, `lineHint` |
+| `/lspCallHierarchy` | Call hierarchy | `uri`, `symbolName`, `lineHint`, `direction` |
 
 **Available prompts**
 
@@ -168,7 +168,7 @@ Example:
 
 ```bash
 # GitHub code search
-curl -s "http://localhost:1987/github/search?queries=%5B%7B%22keywordsToSearch%22%3A%5B%22useState%22%5D%2C%22owner%22%3A%22facebook%22%2C%22repo%22%3A%22react%22%7D%5D&mainResearchGoal=Find%20useState&researchGoal=Search%20hooks&reasoning=Locate%20implementation"
+curl -s "http://localhost:1987/githubSearchCode?queries=%5B%7B%22keywordsToSearch%22%3A%5B%22useState%22%5D%2C%22owner%22%3A%22facebook%22%2C%22repo%22%3A%22react%22%7D%5D&mainResearchGoal=Find%20useState&researchGoal=Search%20hooks&reasoning=Locate%20implementation"
 
 # Decoded queries param: [{"keywordsToSearch":["useState"],"owner":"facebook","repo":"react"}]
 ```
@@ -195,16 +195,16 @@ You have access to powerful Octocode Research tools via the local HTTP server. F
 
 1. **Methodology**: Follow the "Evidence First" principle. Validate assumptions with code search/LSP before reading files.
 2. **Research Funnel**: 
-   - **Discover**: Use `/structure` endpoints to map layout.
-   - **Search**: Use `/search` endpoints to find patterns.
-   - **Locate**: Use `/lsp/*` endpoints for semantic navigation (Definition -> References -> Calls).
-   - **Read**: Use `/content` endpoints ONLY as the last step.
+   - **Discover**: Use `/*Structure` endpoints to map layout.
+   - **Search**: Use `/*Search*` endpoints to find patterns.
+   - **Locate**: Use `/lsp*` endpoints for semantic navigation (Definition -> References -> Calls).
+   - **Read**: Use `/*Content` endpoints ONLY as the last step.
 3. **Required Parameters**: Every API call MUST include `mainResearchGoal`, `researchGoal`, and `reasoning`.
 4. **Tool Preference**: Use these API endpoints instead of shell commands:
-   - `/local/search` > `grep`/`ripgrep`
-   - `/local/structure` > `ls`/`tree`
-   - `/local/content` > `cat`
-   - `/lsp/*` > Manual file reading for tracing
+   - `/localSearchCode` > `grep`/`ripgrep`
+   - `/localViewStructure` > `ls`/`tree`
+   - `/localGetFileContent` > `cat`
+   - `/lsp*` > Manual file reading for tracing
 5. **Communication**: Describe the *action* ("Tracing callers of X"), not the tool ("Calling /lsp/calls").
 6. **Parallel Execution**: If you intend to call multiple tools and there are no dependencies between the tool calls, make all of the independent tool calls in parallel. Prioritize calling tools simultaneously whenever the actions can be done in parallel rather than sequentially. However, if some tool calls depend on previous calls to inform dependent values like the parameters, do NOT call these tools in parallel and instead call them sequentially. Never use placeholders or guess missing parameters in tool calls.
 7. **Subagents**: In case of more than one research branches - you can use up to 2 subagents for research.
@@ -258,17 +258,16 @@ DISCOVERY (no params needed):
   GET /prompts/info/{name} → Specific prompt content
 
 RESEARCH TOOLS (use queries array + research params):
-  GET /github/search       → Search code in repos
-  GET /github/content      → Read file from repo
-  GET /github/structure    → View repo tree
-  GET /github/repos        → Search repositories
-  GET /github/prs          → Search pull requests
-  GET /package/search      → Search npm/PyPI
-  GET /local/search        → Search local code
-  GET /local/content       → Read local file
-  GET /local/find          → Find files by metadata
-  GET /local/structure     → View directory tree
-  GET /lsp/definition      → Go to definition
-  GET /lsp/references      → Find all usages
-  GET /lsp/calls           → Call hierarchy
-```
+  GET /githubSearchCode        → Search code in repos
+  GET /githubGetFileContent    → Read file from repo
+  GET /githubViewRepoStructure → View repo tree
+  GET /githubSearchRepositories→ Search repositories
+  GET /githubSearchPullRequests→ Search pull requests
+  GET /packageSearch           → Search npm/PyPI
+  GET /localSearchCode         → Search local code
+  GET /localGetFileContent     → Read local file
+  GET /localFindFiles          → Find files by metadata
+  GET /localViewStructure      → View directory tree
+  GET /lspGotoDefinition       → Go to definition
+  GET /lspFindReferences       → Find all usages
+  GET /lspCallHierarchy        → Call hierarchy```

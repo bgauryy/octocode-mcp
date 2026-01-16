@@ -39,7 +39,7 @@ export const localRoutes = Router();
 
 // GET /local/search - Search code with ripgrep
 localRoutes.get(
-  '/search',
+  '/localSearchCode',
   createRouteHandler({
     schema: localSearchSchema,
     toParams: toLocalSearchParams,
@@ -75,7 +75,7 @@ localRoutes.get(
 
 // GET /local/content - Read file contents
 localRoutes.get(
-  '/content',
+  '/localGetFileContent',
   createRouteHandler({
     schema: localContentSchema,
     toParams: toLocalContentParams,
@@ -106,7 +106,7 @@ localRoutes.get(
 
 // GET /local/find - Find files by metadata
 localRoutes.get(
-  '/find',
+  '/localFindFiles',
   createRouteHandler({
     schema: localFindSchema,
     toParams: toLocalFindParams,
@@ -139,7 +139,7 @@ localRoutes.get(
 
 // GET /local/structure - View directory structure
 localRoutes.get(
-  '/structure',
+  '/localViewStructure',
   createRouteHandler({
     schema: localStructureSchema,
     toParams: toLocalStructureParams,

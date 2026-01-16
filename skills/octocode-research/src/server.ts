@@ -28,10 +28,10 @@ export async function createServer(): Promise<Express> {
     res.json({ status: 'ok', port: PORT, version: '2.0.0' });
   });
   
-  app.use('/local', localRoutes);
-  app.use('/lsp', lspRoutes);
-  app.use('/github', githubRoutes);
-  app.use('/package', packageRoutes);
+  app.use('/', localRoutes);
+  app.use('/', lspRoutes);
+  app.use('/', githubRoutes);
+  app.use('/', packageRoutes);
   app.use('/tools', toolsRoutes);
   app.use('/prompts', promptsRoutes);
   

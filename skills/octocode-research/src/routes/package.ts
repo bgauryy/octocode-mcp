@@ -13,7 +13,7 @@ export const packageRoutes = Router();
 
 // GET /package/search - Search npm/pypi packages
 packageRoutes.get(
-  '/search',
+  '/packageSearch',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const queries = parseAndValidate(
