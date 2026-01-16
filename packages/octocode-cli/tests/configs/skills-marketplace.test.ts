@@ -37,12 +37,12 @@ describe('Skills Marketplace Registry', () => {
       }
     });
 
-    it('should include octocode-official as a local marketplace', () => {
+    it('should include octocode-skills as a local marketplace', () => {
       const octocode = SKILLS_MARKETPLACES.find(
-        m => m.id === 'octocode-official'
+        m => m.id === 'octocode-skills'
       );
       expect(octocode).toBeDefined();
-      expect(octocode?.type).toBe('local');
+      expect(octocode?.type).toBe('github');
       expect(octocode?.name).toContain('Octocode');
     });
 
@@ -63,7 +63,7 @@ describe('Skills Marketplace Registry', () => {
     it('should have valid GitHub URLs', () => {
       for (const marketplace of SKILLS_MARKETPLACES) {
         expect(marketplace.url).toMatch(
-          /^https:\/\/github\.com\/[\w-]+\/[\w-]+$/
+          /^https:\/\/github\.com\/[\w-]+\/[\w-]+((\/[\w-]+)*)?$/
         );
       }
     });
@@ -107,35 +107,37 @@ describe('Skills Marketplace Registry', () => {
   });
 
   describe('isLocalSource', () => {
-    it('should return true for local sources', () => {
+    it('should return false for GitHub sources', () => {
       const octocode = SKILLS_MARKETPLACES.find(
-        m => m.id === 'octocode-official'
+        m => m.id === 'octocode-skills'
       );
       expect(octocode).toBeDefined();
-      expect(isLocalSource(octocode!)).toBe(true);
+      expect(isLocalSource(octocode!)).toBe(false);
     });
 
-    it('should return false for GitHub sources', () => {
-      const buildWithClaude = SKILLS_MARKETPLACES.find(
-        m => m.id === 'buildwithclaude'
-      );
-      expect(buildWithClaude).toBeDefined();
-      expect(isLocalSource(buildWithClaude!)).toBe(false);
+    it('should return true for local sources', () => {
+      // Create a mock local source to test the function
+      const mockLocalSource = {
+        ...SKILLS_MARKETPLACES[0],
+        type: 'local' as const,
+      };
+      expect(isLocalSource(mockLocalSource)).toBe(true);
     });
   });
 
   describe('getLocalMarketplaces', () => {
     it('should return only local sources', () => {
       const localSources = getLocalMarketplaces();
-      expect(localSources.length).toBeGreaterThan(0);
+      // Currently all marketplaces are GitHub sources
+      expect(localSources.length).toBe(0);
       for (const source of localSources) {
         expect(source.type).toBe('local');
       }
     });
 
-    it('should include octocode-official', () => {
+    it('should not include octocode-skills (it is a github source)', () => {
       const localSources = getLocalMarketplaces();
-      expect(localSources.some(s => s.id === 'octocode-official')).toBe(true);
+      expect(localSources.some(s => s.id === 'octocode-skills')).toBe(false);
     });
   });
 
@@ -148,9 +150,9 @@ describe('Skills Marketplace Registry', () => {
       }
     });
 
-    it('should not include octocode-official', () => {
+    it('should include octocode-skills', () => {
       const githubSources = getGitHubMarketplaces();
-      expect(githubSources.some(s => s.id === 'octocode-official')).toBe(false);
+      expect(githubSources.some(s => s.id === 'octocode-skills')).toBe(true);
     });
   });
 
@@ -169,8 +171,12 @@ describe('Skills Marketplace Registry', () => {
     it('should return null for local sources without making API call', async () => {
       global.fetch = vi.fn();
 
-      const localSource = getLocalMarketplaces()[0];
-      const stars = await fetchMarketplaceStars(localSource);
+      // Create a mock local source since all current marketplaces are GitHub sources
+      const mockLocalSource = {
+        ...SKILLS_MARKETPLACES[0],
+        type: 'local' as const,
+      };
+      const stars = await fetchMarketplaceStars(mockLocalSource);
 
       expect(stars).toBeNull();
       expect(global.fetch).not.toHaveBeenCalled();

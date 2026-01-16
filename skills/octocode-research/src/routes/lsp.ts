@@ -18,22 +18,18 @@ import {
 import { ResearchResponse } from '../utils/responseBuilder.js';
 import { withLspResilience } from '../utils/resilience.js';
 import { createRouteHandler } from '../utils/routeFactory.js';
-import {
-  toLspDefinitionParams,
-  toLspReferencesParams,
-  toLspCallsParams,
-} from '../types/toolTypes.js';
+import { toQueryParams } from '../types/toolTypes.js';
 import { safeString, safeArray } from '../utils/responseFactory.js';
 import { isObject, hasProperty, hasNumberProperty, hasStringProperty } from '../types/guards.js';
 
 export const lspRoutes = Router();
 
-// GET /lsp/definition - Go to symbol definition
+// GET /lspGotoDefinition - Go to symbol definition
 lspRoutes.get(
-  '/definition',
+  '/lspGotoDefinition',
   createRouteHandler({
     schema: lspDefinitionSchema,
-    toParams: toLspDefinitionParams,
+    toParams: toQueryParams,
     toolFn: lspGotoDefinition,
     toolName: 'lspGotoDefinition',
     resilience: withLspResilience,
@@ -52,12 +48,12 @@ lspRoutes.get(
   })
 );
 
-// GET /lsp/references - Find all references to a symbol
+// GET /lspFindReferences - Find all references to a symbol
 lspRoutes.get(
-  '/references',
+  '/lspFindReferences',
   createRouteHandler({
     schema: lspReferencesSchema,
-    toParams: toLspReferencesParams,
+    toParams: toQueryParams,
     toolFn: lspFindReferences,
     toolName: 'lspFindReferences',
     resilience: withLspResilience,
@@ -76,12 +72,12 @@ lspRoutes.get(
   })
 );
 
-// GET /lsp/calls - Get call hierarchy (incoming/outgoing)
+// GET /lspCallHierarchy - Get call hierarchy (incoming/outgoing)
 lspRoutes.get(
-  '/calls',
+  '/lspCallHierarchy',
   createRouteHandler({
     schema: lspCallsSchema,
-    toParams: toLspCallsParams,
+    toParams: toQueryParams,
     toolFn: lspCallHierarchy,
     toolName: 'lspCallHierarchy',
     resilience: withLspResilience,

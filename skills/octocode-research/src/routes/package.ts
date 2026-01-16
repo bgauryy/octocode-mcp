@@ -5,15 +5,15 @@ import { packageSearchSchema } from '../validation/index.js';
 import { ResearchResponse } from '../utils/responseBuilder.js';
 import { parseToolResponse } from '../utils/responseParser.js';
 import { withPackageResilience } from '../utils/resilience.js';
-import { toPackageSearchParams } from '../types/toolTypes.js';
+import { toQueryParams } from '../types/toolTypes.js';
 import { safeString, safeArray } from '../utils/responseFactory.js';
 import { isObject, hasProperty, hasStringProperty } from '../types/guards.js';
 
 export const packageRoutes = Router();
 
-// GET /package/search - Search npm/pypi packages
+// GET /packageSearch - Search npm/pypi packages
 packageRoutes.get(
-  '/search',
+  '/packageSearch',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const queries = parseAndValidate(
@@ -21,7 +21,7 @@ packageRoutes.get(
         packageSearchSchema
       );
       const rawResult = await withPackageResilience(
-        () => packageSearch(toPackageSearchParams(queries)),
+        () => packageSearch(toQueryParams(queries)),
         'packageSearch'
       );
       const { data, isError, hints, research } = parseToolResponse(rawResult);

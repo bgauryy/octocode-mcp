@@ -1,5 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { loadToolContent, initialize } from 'octocode-mcp/public';
+import { getMcpContent } from '../mcpCache.js';
 import type { ListPromptsResponse, McpPrompt } from '../types/mcp.js';
 
 export const promptsRoutes = Router();
@@ -35,8 +35,7 @@ promptsRoutes.get('/list', async (
   next: NextFunction
 ) => {
   try {
-    await initialize();
-    const content = await loadToolContent();
+    const content = getMcpContent();
     
     // Use Object.entries to get both key and prompt
     // The key is what's used for lookup in /prompts/info/:promptName
@@ -75,8 +74,7 @@ promptsRoutes.get('/info/:promptName', async (
   next: NextFunction
 ) => {
   try {
-    await initialize();
-    const content = await loadToolContent();
+    const content = getMcpContent();
     const { promptName } = req.params;
     
     const prompt = content.prompts[promptName];

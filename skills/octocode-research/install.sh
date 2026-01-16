@@ -133,8 +133,15 @@ is_pid_valid() {
 
 # Check if port is occupied by another process
 is_port_occupied() {
-    if lsof -i :$PORT &>/dev/null 2>&1; then
-        return 0
+    # Try lsof first (most reliable on macOS/Linux)
+    if command -v lsof &>/dev/null; then
+        lsof -i :$PORT &>/dev/null && return 0
+    # Fallback to ss (common on Linux)
+    elif command -v ss &>/dev/null; then
+        ss -tuln | grep -q ":$PORT " && return 0
+    # Fallback to netstat (older systems)
+    elif command -v netstat &>/dev/null; then
+        netstat -an | grep -q "[:.]$PORT " && return 0
     fi
     return 1
 }
@@ -152,8 +159,13 @@ stop_server() {
         rm -f "$PID_FILE"
     fi
     # Kill any process on the port (only if it was ours)
-    local port_pid
-    port_pid=$(lsof -ti :$PORT 2>/dev/null || true)
+    local port_pid=""
+    if command -v lsof &>/dev/null; then
+        port_pid=$(lsof -ti :$PORT 2>/dev/null || true)
+    elif command -v ss &>/dev/null; then
+        # Extract PID from ss output - portable sed instead of grep -P (BSD compatible)
+        port_pid=$(ss -tlnp 2>/dev/null | grep ":$PORT " | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1 || true)
+    fi
     if [[ -n "$port_pid" ]]; then
         kill "$port_pid" 2>/dev/null || true
     fi
@@ -212,38 +224,41 @@ start_server() {
 
     log_server "Starting Octocode Research Server on port $PORT..."
 
-    # Build environment variables to pass to server
-    # This ensures GitHub/GitLab tokens are available even when started via nohup
-    local env_vars=""
+    # Build environment variables for the server process
+    # Export them so they're available to the subshell
+    local server_github_token=""
+    local server_gitlab_token=""
+    local server_gl_token=""
 
     # GitHub token (check multiple sources)
     if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-        env_vars="GITHUB_TOKEN=$GITHUB_TOKEN $env_vars"
+        server_github_token="$GITHUB_TOKEN"
     elif [[ -n "${GH_TOKEN:-}" ]]; then
-        env_vars="GITHUB_TOKEN=$GH_TOKEN $env_vars"
+        server_github_token="$GH_TOKEN"
     elif command -v gh &> /dev/null; then
         # Try to get token from GitHub CLI
-        local gh_token
-        gh_token=$(gh auth token 2>/dev/null || true)
-        if [[ -n "$gh_token" ]]; then
+        server_github_token=$(gh auth token 2>/dev/null || true)
+        if [[ -n "$server_github_token" ]]; then
             log_info "Using GitHub token from 'gh auth token'"
-            env_vars="GITHUB_TOKEN=$gh_token $env_vars"
         fi
     fi
 
     # GitLab tokens
     if [[ -n "${GITLAB_TOKEN:-}" ]]; then
-        env_vars="GITLAB_TOKEN=$GITLAB_TOKEN $env_vars"
+        server_gitlab_token="$GITLAB_TOKEN"
     fi
     if [[ -n "${GL_TOKEN:-}" ]]; then
-        env_vars="GL_TOKEN=$GL_TOKEN $env_vars"
+        server_gl_token="$GL_TOKEN"
     fi
 
-    # Preserve PATH for gh CLI access
-    env_vars="PATH=$PATH $env_vars"
-
-    # Start server in background with environment variables
-    nohup env $env_vars node dist/server.js > "$LOG_FILE" 2>&1 &
+    # Start server in background with environment variables (properly quoted)
+    (
+        export PATH="$PATH"
+        [[ -n "$server_github_token" ]] && export GITHUB_TOKEN="$server_github_token"
+        [[ -n "$server_gitlab_token" ]] && export GITLAB_TOKEN="$server_gitlab_token"
+        [[ -n "$server_gl_token" ]] && export GL_TOKEN="$server_gl_token"
+        exec node dist/server.js
+    ) > "$LOG_FILE" 2>&1 &
     local pid=$!
     echo "$pid" > "$PID_FILE"
 
@@ -255,15 +270,16 @@ start_server() {
             log_server "Health check: http://localhost:$PORT/health"
             echo ""
             log_info "API ready at http://localhost:$PORT"
-            
+
             # Log skill installation (async, non-blocking)
             local session_id
             session_id=$(get_or_create_session_id)
             log_skill_install "$session_id"
-            
+
             return 0
         fi
-        sleep 0.5
+        # Use fractional sleep if supported, fallback to 1 second
+        sleep 0.5 2>/dev/null || sleep 1
         ((retries--))
     done
 
@@ -295,16 +311,23 @@ show_usage() {
     echo "  curl http://localhost:$PORT/health"
     echo ""
     echo "API Routes:"
-    echo "  GET /health              - Server health check"
-    echo "  GET /local/search        - Search code (pattern, path)"
-    echo "  GET /local/content       - Read file (path)"
-    echo "  GET /local/structure     - View directory (path)"
-    echo "  GET /lsp/definition      - Go to definition"
-    echo "  GET /lsp/references      - Find references"
-    echo "  GET /lsp/calls           - Call hierarchy"
-    echo "  GET /github/search       - Search GitHub code"
-    echo "  GET /github/content      - Read GitHub files"
-    echo "  GET /package/search      - Search npm/PyPI"
+    echo "  GET /health                  - Server health check"
+    echo "  GET /localSearchCode         - Search code (pattern, path)"
+    echo "  GET /localGetFileContent     - Read file (path)"
+    echo "  GET /localViewStructure      - View directory (path)"
+    echo "  GET /localFindFiles          - Find files by metadata"
+    echo "  GET /lspGotoDefinition       - Go to definition"
+    echo "  GET /lspFindReferences       - Find references"
+    echo "  GET /lspCallHierarchy        - Call hierarchy"
+    echo "  GET /githubSearchCode        - Search GitHub code"
+    echo "  GET /githubGetFileContent    - Read GitHub files"
+    echo "  GET /githubSearchRepositories- Search repositories"
+    echo "  GET /githubViewRepoStructure - View repo structure"
+    echo "  GET /githubSearchPullRequests- Search pull requests"
+    echo "  GET /packageSearch           - Search npm/PyPI"
+    echo "  GET /tools/list              - List all tools (MCP format)"
+    echo "  GET /tools/system            - System prompt (load first!)"
+    echo "  GET /prompts/list            - List all prompts (MCP format)"
     echo ""
 }
 

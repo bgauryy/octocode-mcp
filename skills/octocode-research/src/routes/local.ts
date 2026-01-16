@@ -20,12 +20,7 @@ import {
 import { ResearchResponse, detectLanguageFromPath } from '../utils/responseBuilder.js';
 import { withLocalResilience } from '../utils/resilience.js';
 import { createRouteHandler } from '../utils/routeFactory.js';
-import {
-  toLocalSearchParams,
-  toLocalContentParams,
-  toLocalFindParams,
-  toLocalStructureParams,
-} from '../types/toolTypes.js';
+import { toQueryParams } from '../types/toolTypes.js';
 import {
   safeString,
   safeNumber,
@@ -37,12 +32,12 @@ import { isObject, hasNumberProperty, hasBooleanProperty } from '../types/guards
 
 export const localRoutes = Router();
 
-// GET /local/search - Search code with ripgrep
+// GET /localSearchCode - Search code with ripgrep
 localRoutes.get(
-  '/search',
+  '/localSearchCode',
   createRouteHandler({
     schema: localSearchSchema,
-    toParams: toLocalSearchParams,
+    toParams: toQueryParams,
     toolFn: localSearchCode,
     toolName: 'localSearchCode',
     resilience: withLocalResilience,
@@ -73,12 +68,12 @@ localRoutes.get(
   })
 );
 
-// GET /local/content - Read file contents
+// GET /localGetFileContent - Read file contents
 localRoutes.get(
-  '/content',
+  '/localGetFileContent',
   createRouteHandler({
     schema: localContentSchema,
-    toParams: toLocalContentParams,
+    toParams: toQueryParams,
     toolFn: localGetFileContent,
     toolName: 'localGetFileContent',
     resilience: withLocalResilience,
@@ -104,12 +99,12 @@ localRoutes.get(
   })
 );
 
-// GET /local/find - Find files by metadata
+// GET /localFindFiles - Find files by metadata
 localRoutes.get(
-  '/find',
+  '/localFindFiles',
   createRouteHandler({
     schema: localFindSchema,
-    toParams: toLocalFindParams,
+    toParams: toQueryParams,
     toolFn: localFindFiles,
     toolName: 'localFindFiles',
     resilience: withLocalResilience,
@@ -137,12 +132,12 @@ localRoutes.get(
   })
 );
 
-// GET /local/structure - View directory structure
+// GET /localViewStructure - View directory structure
 localRoutes.get(
-  '/structure',
+  '/localViewStructure',
   createRouteHandler({
     schema: localStructureSchema,
-    toParams: toLocalStructureParams,
+    toParams: toQueryParams,
     toolFn: localViewStructure,
     toolName: 'localViewStructure',
     resilience: withLocalResilience,

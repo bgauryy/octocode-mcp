@@ -1,14 +1,9 @@
 export { errorHandler, type ApiError } from './errorHandler.js';
 export { requestLogger } from './logger.js';
-export { parseQueryToArray, sendToolResult } from './queryParser.js';
+export { parseAndValidate, sendToolResult, ValidationError } from './queryParser.js';
 
-// Context propagation
+// Context propagation (minimal - full middleware removed as dead code)
 export {
-  contextPropagation,
-  getContext,
-  getContextualHints,
-  getActiveSessions,
-  clearAllContexts,
   startContextCleanup,
   stopContextCleanup,
   type ResearchContext,

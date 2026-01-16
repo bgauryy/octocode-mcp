@@ -22,13 +22,7 @@ import {
 import { ResearchResponse, QuickResult, detectLanguageFromPath } from '../utils/responseBuilder.js';
 import { withGitHubResilience } from '../utils/resilience.js';
 import { createRouteHandler } from '../utils/routeFactory.js';
-import {
-  toGitHubSearchParams,
-  toGitHubContentParams,
-  toGitHubReposParams,
-  toGitHubStructureParams,
-  toGitHubPRsParams,
-} from '../types/toolTypes.js';
+import { toQueryParams } from '../types/toolTypes.js';
 import {
   safeString,
   safeNumber,
@@ -39,12 +33,12 @@ import { isObject, hasProperty, hasNumberProperty, hasBooleanProperty } from '..
 
 export const githubRoutes = Router();
 
-// GET /github/search - Search code on GitHub
+// GET /githubSearchCode - Search code on GitHub
 githubRoutes.get(
-  '/search',
+  '/githubSearchCode',
   createRouteHandler({
     schema: githubSearchSchema,
-    toParams: toGitHubSearchParams,
+    toParams: toQueryParams,
     toolFn: githubSearchCode,
     toolName: 'githubSearchCode',
     resilience: withGitHubResilience,
@@ -75,12 +69,12 @@ githubRoutes.get(
   })
 );
 
-// GET /github/content - Read file from GitHub
+// GET /githubGetFileContent - Read file from GitHub
 githubRoutes.get(
-  '/content',
+  '/githubGetFileContent',
   createRouteHandler({
     schema: githubContentSchema,
-    toParams: toGitHubContentParams,
+    toParams: toQueryParams,
     toolFn: githubGetFileContent,
     toolName: 'githubGetFileContent',
     resilience: withGitHubResilience,
@@ -106,12 +100,12 @@ githubRoutes.get(
   })
 );
 
-// GET /github/repos - Search repositories
+// GET /githubSearchRepositories - Search repositories
 githubRoutes.get(
-  '/repos',
+  '/githubSearchRepositories',
   createRouteHandler({
     schema: githubReposSchema,
-    toParams: toGitHubReposParams,
+    toParams: toQueryParams,
     toolFn: githubSearchRepositories,
     toolName: 'githubSearchRepositories',
     resilience: withGitHubResilience,
@@ -143,12 +137,12 @@ githubRoutes.get(
   })
 );
 
-// GET /github/structure - View repository structure
+// GET /githubViewRepoStructure - View repository structure
 githubRoutes.get(
-  '/structure',
+  '/githubViewRepoStructure',
   createRouteHandler({
     schema: githubStructureSchema,
-    toParams: toGitHubStructureParams,
+    toParams: toQueryParams,
     toolFn: githubViewRepoStructure,
     toolName: 'githubViewRepoStructure',
     resilience: withGitHubResilience,
@@ -176,12 +170,12 @@ githubRoutes.get(
   })
 );
 
-// GET /github/prs - Search pull requests
+// GET /githubSearchPullRequests - Search pull requests
 githubRoutes.get(
-  '/prs',
+  '/githubSearchPullRequests',
   createRouteHandler({
     schema: githubPRsSchema,
-    toParams: toGitHubPRsParams,
+    toParams: toQueryParams,
     toolFn: githubSearchPullRequests,
     toolName: 'githubSearchPullRequests',
     resilience: withGitHubResilience,
