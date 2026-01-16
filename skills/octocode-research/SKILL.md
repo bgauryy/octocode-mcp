@@ -153,21 +153,17 @@ curl -s "http://localhost:1987/package/search" \
 
 **Auto-detect from user intent - only ask if truly ambiguous:**
 
-| Signal | Prompt | Load With |
-|--------|--------|-----------|
-| "this codebase", "our code", "my app" | `research_local` | `curl -s http://localhost:1987/prompts/info/research_local` |
-| Package names, "how does X work" | `research` | `curl -s http://localhost:1987/prompts/info/research` |
-| PR URLs, "review this PR" | `reviewPR` | `curl -s http://localhost:1987/prompts/info/reviewPR` |
-| "plan", "design", "strategy" | `plan` | `curl -s http://localhost:1987/prompts/info/plan` |
-| "scaffold", "create new" | `generate` | `curl -s http://localhost:1987/prompts/info/generate` |
+| Signal | Prompt | Why This Prompt |
+|--------|--------|------------------|
+| "this codebase", "our code", "my app" | `research_local` | Local filesystem + LSP tools for internal code |
+| Package names, "how does X work" | `research` | GitHub search for external libraries |
+| PR URLs, "review this PR" | `reviewPR` | Structured review with diff analysis |
+| "plan", "design", "strategy" | `plan` | Implementation planning workflow |
+| "scaffold", "create new" | `generate` | Project generation templates |
 
-**For research tasks, load the appropriate prompt:**
+**Internal implementation** (execute silently, don't show URLs to user):
 ```bash
-# External code (GitHub, npm packages)
-curl -s http://localhost:1987/prompts/info/research
-
-# Local codebase exploration
-curl -s http://localhost:1987/prompts/info/research_local
+curl -s http://localhost:1987/prompts/info/{prompt_name}
 ```
 
 ### Decision Flow
@@ -190,13 +186,26 @@ User Input
 - CLEAR intent → Inform and proceed immediately
 - AMBIGUOUS → Ask user to clarify
 
-**Rule 2: Inform, then execute**
-```
-✅ "I'll use research to explore React's useState implementation. Starting..."
-   [Immediately begins tool calls]
+**Rule 2: Announce prompt selection with reasoning**
+- ALWAYS tell the user which prompt you selected
+- ALWAYS explain WHY you chose that prompt
+- Execute curl commands silently (don't show URLs to user)
 
-❌ "Should I use research? Do you want me to proceed?"
-   [Unnecessary friction]
+```
+✅ Good prompt announcement:
+"I'll use the **reviewPR** prompt because you provided a GitHub PR URL.
+This gives me specialized tools for analyzing diffs, commits, and review comments."
+[Then load prompt silently and proceed]
+
+✅ Good prompt announcement:
+"Using **research_local** prompt - you're asking about React's internal implementation,
+which requires GitHub code search across the facebook/react repository."
+[Then load prompt silently and proceed]
+
+❌ Bad: "Loading curl -s http://localhost:1987/prompts/info/reviewPR"
+[Shows implementation details, no reasoning]
+
+❌ Bad: [Silently loads prompt without telling user which one or why]
 ```
 
 **Rule 3: Plan before executing**
@@ -220,6 +229,22 @@ User Input
    hooks must be called in the same order every render. Let me verify..."
 
 ❌ Bad: [Silently makes 10 API calls without explanation]
+```
+
+**Rule 5: Human-readable API interactions**
+- Describe WHAT you're doing, not the URL
+- Group related API calls when explaining
+- Focus on the research goal, not implementation details
+
+```
+✅ Good: "Searching React's codebase for useState implementation patterns..."
+✅ Good: "Reading the hook lifecycle code in ReactFiberHooks.js..."
+✅ Good: "Fetching PR #35520 details including diff and review comments..."
+✅ Good: "Looking up the express package to find its GitHub repository..."
+
+❌ Bad: Bash(curl -s "http://localhost:1987/github/search" --get --data-urlencode...)
+❌ Bad: Showing raw localhost:1987 URLs to the user
+❌ Bad: Displaying full curl commands with encoded parameters
 ```
 
 **Clear signals (proceed immediately):**
