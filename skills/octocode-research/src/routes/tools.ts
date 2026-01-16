@@ -11,7 +11,7 @@
  */
 
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { loadToolContent, initialize } from 'octocode-mcp/public';
+import { getMcpContent } from '../mcpCache.js';
 import { QuickResult } from '../utils/responseBuilder.js';
 import { transformToJsonSchema, type ListToolsResponse, type McpTool } from '../types/mcp.js';
 
@@ -52,8 +52,7 @@ toolsRoutes.get('/list', async (
   next: NextFunction
 ) => {
   try {
-    await initialize();
-    const content = await loadToolContent();
+    const content = getMcpContent();
     
     const tools: McpTool[] = Object.values(content.tools).map(tool => ({
       name: tool.name,
@@ -84,8 +83,7 @@ toolsRoutes.get('/info', async (
   next: NextFunction
 ) => {
   try {
-    await initialize();
-    const content = await loadToolContent();
+    const content = getMcpContent();
     
     const query = req.query as ToolsInfoQuery;
     const includeSchema = query.schema === 'true';
@@ -143,8 +141,7 @@ toolsRoutes.get('/info/:toolName', async (
   next: NextFunction
 ) => {
   try {
-    await initialize();
-    const content = await loadToolContent();
+    const content = getMcpContent();
     
     const { toolName } = req.params;
     const query = req.query as ToolsInfoQuery;
@@ -200,8 +197,7 @@ toolsRoutes.get('/metadata', async (
   next: NextFunction
 ) => {
   try {
-    await initialize();
-    const content = await loadToolContent();
+    const content = getMcpContent();
     
     res.json(QuickResult.success(
       'Metadata summary',
@@ -239,8 +235,7 @@ toolsRoutes.get('/system', async (
   next: NextFunction
 ) => {
   try {
-    await initialize();
-    const content = await loadToolContent();
+    const content = getMcpContent();
     
     res.json({
       instructions: content.instructions,

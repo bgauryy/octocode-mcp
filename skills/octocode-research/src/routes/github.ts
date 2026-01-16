@@ -22,13 +22,7 @@ import {
 import { ResearchResponse, QuickResult, detectLanguageFromPath } from '../utils/responseBuilder.js';
 import { withGitHubResilience } from '../utils/resilience.js';
 import { createRouteHandler } from '../utils/routeFactory.js';
-import {
-  toGitHubSearchParams,
-  toGitHubContentParams,
-  toGitHubReposParams,
-  toGitHubStructureParams,
-  toGitHubPRsParams,
-} from '../types/toolTypes.js';
+import { toQueryParams } from '../types/toolTypes.js';
 import {
   safeString,
   safeNumber,
@@ -44,7 +38,7 @@ githubRoutes.get(
   '/githubSearchCode',
   createRouteHandler({
     schema: githubSearchSchema,
-    toParams: toGitHubSearchParams,
+    toParams: toQueryParams,
     toolFn: githubSearchCode,
     toolName: 'githubSearchCode',
     resilience: withGitHubResilience,
@@ -80,7 +74,7 @@ githubRoutes.get(
   '/githubGetFileContent',
   createRouteHandler({
     schema: githubContentSchema,
-    toParams: toGitHubContentParams,
+    toParams: toQueryParams,
     toolFn: githubGetFileContent,
     toolName: 'githubGetFileContent',
     resilience: withGitHubResilience,
@@ -111,7 +105,7 @@ githubRoutes.get(
   '/githubSearchRepositories',
   createRouteHandler({
     schema: githubReposSchema,
-    toParams: toGitHubReposParams,
+    toParams: toQueryParams,
     toolFn: githubSearchRepositories,
     toolName: 'githubSearchRepositories',
     resilience: withGitHubResilience,
@@ -148,7 +142,7 @@ githubRoutes.get(
   '/githubViewRepoStructure',
   createRouteHandler({
     schema: githubStructureSchema,
-    toParams: toGitHubStructureParams,
+    toParams: toQueryParams,
     toolFn: githubViewRepoStructure,
     toolName: 'githubViewRepoStructure',
     resilience: withGitHubResilience,
@@ -181,7 +175,7 @@ githubRoutes.get(
   '/githubSearchPullRequests',
   createRouteHandler({
     schema: githubPRsSchema,
-    toParams: toGitHubPRsParams,
+    toParams: toQueryParams,
     toolFn: githubSearchPullRequests,
     toolName: 'githubSearchPullRequests',
     resilience: withGitHubResilience,

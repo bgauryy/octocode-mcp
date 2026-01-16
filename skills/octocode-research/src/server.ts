@@ -9,7 +9,8 @@ import { promptsRoutes } from './routes/prompts.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/logger.js';
 import { stopContextCleanup } from './middleware/contextPropagation.js';
-import { initialize, initializeProviders } from './index.js';
+import { initializeProviders } from './index.js';
+import { initializeMcpContent } from './mcpCache.js';
 import { getLogsPath } from './utils/logger.js';
 import { agentLog, successLog, errorLog, warnLog, dimLog } from './utils/colors.js';
 
@@ -17,7 +18,8 @@ const PORT = 1987;
 let server: Server | null = null;
 
 export async function createServer(): Promise<Express> {
-  await initialize();
+  // Load mcpContent ONCE at startup (includes initialize())
+  await initializeMcpContent();
   await initializeProviders();
   
   const app = express();
@@ -34,7 +36,38 @@ export async function createServer(): Promise<Express> {
   app.use('/', packageRoutes);
   app.use('/tools', toolsRoutes);
   app.use('/prompts', promptsRoutes);
-  
+
+  // 404 handler for undefined routes
+  app.use((req: Request, res: Response) => {
+    res.status(404).json({
+      success: false,
+      error: {
+        message: `Route not found: ${req.method} ${req.path}`,
+        code: 'NOT_FOUND',
+        availableRoutes: [
+          '/health',
+          '/localSearchCode',
+          '/localGetFileContent',
+          '/localFindFiles',
+          '/localViewStructure',
+          '/lspGotoDefinition',
+          '/lspFindReferences',
+          '/lspCallHierarchy',
+          '/githubSearchCode',
+          '/githubGetFileContent',
+          '/githubSearchRepositories',
+          '/githubViewRepoStructure',
+          '/githubSearchPullRequests',
+          '/packageSearch',
+          '/tools/list',
+          '/tools/system',
+          '/prompts/list',
+          '/prompts/info/:name',
+        ],
+      },
+    });
+  });
+
   app.use(errorHandler);
   
   return app;

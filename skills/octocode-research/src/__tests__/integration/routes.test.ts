@@ -14,6 +14,19 @@ import { githubRoutes } from '../../routes/github.js';
 import { lspRoutes } from '../../routes/lsp.js';
 import { packageRoutes } from '../../routes/package.js';
 
+// Mock the MCP cache
+vi.mock('../../mcpCache.js', () => ({
+  getMcpContent: vi.fn().mockReturnValue({
+    tools: {},
+    prompts: {},
+    instructions: 'Test instructions',
+    baseHints: [],
+    genericErrorHints: [],
+  }),
+  initializeMcpContent: vi.fn().mockResolvedValue({}),
+  isMcpInitialized: vi.fn().mockReturnValue(true),
+}));
+
 // Mock the MCP tools
 vi.mock('../../index.js', () => ({
   localSearchCode: vi.fn().mockResolvedValue({
@@ -57,28 +70,29 @@ vi.mock('../../index.js', () => ({
   }),
 }));
 
-// Create app factory with routes
+// Create app factory with routes (matching actual server.ts configuration)
 function createApp(): any {
   const app = express();
   app.use(express.json());
-  app.use('/local', localRoutes);
-  app.use('/github', githubRoutes);
-  app.use('/lsp', lspRoutes);
-  app.use('/package', packageRoutes);
+  // Routes are mounted at root, matching server.ts
+  app.use('/', localRoutes);
+  app.use('/', githubRoutes);
+  app.use('/', lspRoutes);
+  app.use('/', packageRoutes);
   return app;
 }
 
 describe('Route Validation', () => {
   describe('Local Routes', () => {
-    describe('GET /local/search', () => {
+    describe('GET /localSearchCode', () => {
       it('validates required pattern parameter', async () => {
-        const res = await request(createApp()).get('/local/search');
+        const res = await request(createApp()).get('/localSearchCode');
         expect(res.status).toBe(400);
       });
 
       it('accepts valid search request', async () => {
         const res = await request(createApp())
-          .get('/local/search')
+          .get('/localSearchCode')
           .query({ pattern: 'test', path: '/test' });
         expect(res.status).toBe(200);
         expect(res.body).toHaveProperty('content');
@@ -86,50 +100,50 @@ describe('Route Validation', () => {
 
       it('returns proper response structure', async () => {
         const res = await request(createApp())
-          .get('/local/search')
+          .get('/localSearchCode')
           .query({ pattern: 'test', path: '/test' });
         expect(res.body).toHaveProperty('content');
         expect(Array.isArray(res.body.content)).toBe(true);
       });
     });
 
-    describe('GET /local/content', () => {
+    describe('GET /localGetFileContent', () => {
       it('validates required path parameter', async () => {
-        const res = await request(createApp()).get('/local/content');
+        const res = await request(createApp()).get('/localGetFileContent');
         expect(res.status).toBe(400);
       });
 
       it('accepts valid content request', async () => {
         const res = await request(createApp())
-          .get('/local/content')
+          .get('/localGetFileContent')
           .query({ path: '/test/file.ts' });
         expect(res.status).toBe(200);
       });
     });
 
-    describe('GET /local/find', () => {
+    describe('GET /localFindFiles', () => {
       it('validates required path parameter', async () => {
-        const res = await request(createApp()).get('/local/find');
+        const res = await request(createApp()).get('/localFindFiles');
         expect(res.status).toBe(400);
       });
 
       it('accepts valid find request', async () => {
         const res = await request(createApp())
-          .get('/local/find')
+          .get('/localFindFiles')
           .query({ path: '/test' });
         expect(res.status).toBe(200);
       });
     });
 
-    describe('GET /local/structure', () => {
+    describe('GET /localViewStructure', () => {
       it('validates required path parameter', async () => {
-        const res = await request(createApp()).get('/local/structure');
+        const res = await request(createApp()).get('/localViewStructure');
         expect(res.status).toBe(400);
       });
 
       it('accepts valid structure request', async () => {
         const res = await request(createApp())
-          .get('/local/structure')
+          .get('/localViewStructure')
           .query({ path: '/test' });
         expect(res.status).toBe(200);
       });
@@ -137,15 +151,15 @@ describe('Route Validation', () => {
   });
 
   describe('GitHub Routes', () => {
-    describe('GET /github/search', () => {
+    describe('GET /githubSearchCode', () => {
       it('validates required parameters', async () => {
-        const res = await request(createApp()).get('/github/search');
+        const res = await request(createApp()).get('/githubSearchCode');
         expect(res.status).toBe(400);
       });
 
       it('accepts valid search request', async () => {
         const res = await request(createApp())
-          .get('/github/search')
+          .get('/githubSearchCode')
           .query({
             keywordsToSearch: 'test',
             mainResearchGoal: 'test',
@@ -156,15 +170,15 @@ describe('Route Validation', () => {
       });
     });
 
-    describe('GET /github/content', () => {
+    describe('GET /githubGetFileContent', () => {
       it('validates required parameters', async () => {
-        const res = await request(createApp()).get('/github/content');
+        const res = await request(createApp()).get('/githubGetFileContent');
         expect(res.status).toBe(400);
       });
 
       it('accepts valid content request', async () => {
         const res = await request(createApp())
-          .get('/github/content')
+          .get('/githubGetFileContent')
           .query({
             owner: 'test',
             repo: 'test',
@@ -177,10 +191,10 @@ describe('Route Validation', () => {
       });
     });
 
-    describe('GET /github/repos', () => {
+    describe('GET /githubSearchRepositories', () => {
       it('validates required keywords or topics', async () => {
         const res = await request(createApp())
-          .get('/github/repos')
+          .get('/githubSearchRepositories')
           .query({
             mainResearchGoal: 'test',
             researchGoal: 'test',
@@ -191,7 +205,7 @@ describe('Route Validation', () => {
 
       it('accepts valid repos request with keywords', async () => {
         const res = await request(createApp())
-          .get('/github/repos')
+          .get('/githubSearchRepositories')
           .query({
             keywordsToSearch: 'test-keyword',
             mainResearchGoal: 'test',
@@ -203,7 +217,7 @@ describe('Route Validation', () => {
 
       it('accepts valid repos request with topics', async () => {
         const res = await request(createApp())
-          .get('/github/repos')
+          .get('/githubSearchRepositories')
           .query({
             topicsToSearch: 'test-topic',
             mainResearchGoal: 'test',
@@ -214,15 +228,15 @@ describe('Route Validation', () => {
       });
     });
 
-    describe('GET /github/structure', () => {
+    describe('GET /githubViewRepoStructure', () => {
       it('validates required parameters', async () => {
-        const res = await request(createApp()).get('/github/structure');
+        const res = await request(createApp()).get('/githubViewRepoStructure');
         expect(res.status).toBe(400);
       });
 
       it('accepts valid structure request', async () => {
         const res = await request(createApp())
-          .get('/github/structure')
+          .get('/githubViewRepoStructure')
           .query({
             owner: 'test',
             repo: 'test',
@@ -235,10 +249,10 @@ describe('Route Validation', () => {
       });
     });
 
-    describe('GET /github/prs', () => {
+    describe('GET /githubSearchPullRequests', () => {
       it('accepts valid PRs request', async () => {
         const res = await request(createApp())
-          .get('/github/prs')
+          .get('/githubSearchPullRequests')
           .query({
             mainResearchGoal: 'test',
             researchGoal: 'test',
@@ -250,15 +264,15 @@ describe('Route Validation', () => {
   });
 
   describe('LSP Routes', () => {
-    describe('GET /lsp/definition', () => {
+    describe('GET /lspGotoDefinition', () => {
       it('validates required parameters', async () => {
-        const res = await request(createApp()).get('/lsp/definition');
+        const res = await request(createApp()).get('/lspGotoDefinition');
         expect(res.status).toBe(400);
       });
 
       it('accepts valid definition request', async () => {
         const res = await request(createApp())
-          .get('/lsp/definition')
+          .get('/lspGotoDefinition')
           .query({
             uri: 'file:///test.ts',
             symbolName: 'test',
@@ -268,15 +282,15 @@ describe('Route Validation', () => {
       });
     });
 
-    describe('GET /lsp/references', () => {
+    describe('GET /lspFindReferences', () => {
       it('validates required parameters', async () => {
-        const res = await request(createApp()).get('/lsp/references');
+        const res = await request(createApp()).get('/lspFindReferences');
         expect(res.status).toBe(400);
       });
 
       it('accepts valid references request', async () => {
         const res = await request(createApp())
-          .get('/lsp/references')
+          .get('/lspFindReferences')
           .query({
             uri: 'file:///test.ts',
             symbolName: 'test',
@@ -286,15 +300,15 @@ describe('Route Validation', () => {
       });
     });
 
-    describe('GET /lsp/calls', () => {
+    describe('GET /lspCallHierarchy', () => {
       it('validates required parameters', async () => {
-        const res = await request(createApp()).get('/lsp/calls');
+        const res = await request(createApp()).get('/lspCallHierarchy');
         expect(res.status).toBe(400);
       });
 
       it('accepts valid calls request', async () => {
         const res = await request(createApp())
-          .get('/lsp/calls')
+          .get('/lspCallHierarchy')
           .query({
             uri: 'file:///test.ts',
             symbolName: 'test',
@@ -307,15 +321,15 @@ describe('Route Validation', () => {
   });
 
   describe('Package Routes', () => {
-    describe('GET /package/search', () => {
+    describe('GET /packageSearch', () => {
       it('validates required parameters', async () => {
-        const res = await request(createApp()).get('/package/search');
+        const res = await request(createApp()).get('/packageSearch');
         expect(res.status).toBe(400);
       });
 
       it('accepts valid npm package search', async () => {
         const res = await request(createApp())
-          .get('/package/search')
+          .get('/packageSearch')
           .query({
             name: 'express',
             ecosystem: 'npm',
@@ -328,7 +342,7 @@ describe('Route Validation', () => {
 
       it('accepts valid python package search', async () => {
         const res = await request(createApp())
-          .get('/package/search')
+          .get('/packageSearch')
           .query({
             name: 'requests',
             ecosystem: 'python',
@@ -344,7 +358,7 @@ describe('Route Validation', () => {
   describe('Response Structure', () => {
     it('includes content array in all responses', async () => {
       const res = await request(createApp())
-        .get('/local/search')
+        .get('/localSearchCode')
         .query({ pattern: 'test', path: '/test' });
       expect(res.body).toHaveProperty('content');
       expect(Array.isArray(res.body.content)).toBe(true);
@@ -352,7 +366,7 @@ describe('Route Validation', () => {
 
     it('includes structuredContent in responses', async () => {
       const res = await request(createApp())
-        .get('/local/search')
+        .get('/localSearchCode')
         .query({ pattern: 'test', path: '/test' });
       expect(res.body).toHaveProperty('structuredContent');
     });

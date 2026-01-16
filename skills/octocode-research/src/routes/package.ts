@@ -5,7 +5,7 @@ import { packageSearchSchema } from '../validation/index.js';
 import { ResearchResponse } from '../utils/responseBuilder.js';
 import { parseToolResponse } from '../utils/responseParser.js';
 import { withPackageResilience } from '../utils/resilience.js';
-import { toPackageSearchParams } from '../types/toolTypes.js';
+import { toQueryParams } from '../types/toolTypes.js';
 import { safeString, safeArray } from '../utils/responseFactory.js';
 import { isObject, hasProperty, hasStringProperty } from '../types/guards.js';
 
@@ -21,7 +21,7 @@ packageRoutes.get(
         packageSearchSchema
       );
       const rawResult = await withPackageResilience(
-        () => packageSearch(toPackageSearchParams(queries)),
+        () => packageSearch(toQueryParams(queries)),
         'packageSearch'
       );
       const { data, isError, hints, research } = parseToolResponse(rawResult);
