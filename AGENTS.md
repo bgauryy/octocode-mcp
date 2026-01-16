@@ -20,7 +20,6 @@
 > | `cat <<EOF` | Create multi-line files | `cat > file.ts << 'EOF'` |
 > | `echo >>` | Append text to files | `echo "export *" >> index.ts` |
 > | `find -exec` | Batch operations | `find . -name "*.ts" -exec sed ...` |
-> | `chmod` | Change permissions | `chmod +x script.sh` |
 >
 > **Power Combos:**
 > ```bash

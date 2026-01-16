@@ -64,7 +64,7 @@ export const RETRY_CONFIGS = {
   },
 } as const satisfies Record<string, RetryConfig>;
 
-export type RetryCategory = keyof typeof RETRY_CONFIGS;
+type RetryCategory = keyof typeof RETRY_CONFIGS;
 
 /**
  * Context for retry logging
@@ -128,7 +128,7 @@ export async function withRetry<T>(
 /**
  * Convenience wrapper that selects config by category
  */
-export async function withCategoryRetry<T>(
+async function withCategoryRetry<T>(
   category: RetryCategory,
   operation: () => Promise<T>,
   context?: RetryContext
@@ -143,7 +143,7 @@ export async function withCategoryRetry<T>(
 /**
  * Check if error indicates GitHub rate limiting
  */
-export function isRateLimited(err: unknown): boolean {
+function isRateLimited(err: unknown): boolean {
   const error = err as { status?: number; message?: string };
   return (
     error?.status === 403 ||
@@ -156,7 +156,7 @@ export function isRateLimited(err: unknown): boolean {
 /**
  * Check if error indicates LSP server not ready
  */
-export function isLspNotReady(err: unknown): boolean {
+function isLspNotReady(err: unknown): boolean {
   const error = err as { message?: string; code?: string };
   return (
     error?.message?.includes('not initialized') ||
@@ -170,7 +170,7 @@ export function isLspNotReady(err: unknown): boolean {
 /**
  * Check if error is a timeout
  */
-export function isTimeout(err: unknown): boolean {
+function isTimeout(err: unknown): boolean {
   const error = err as { code?: string; message?: string };
   return (
     error?.code === 'ETIMEDOUT' ||
@@ -183,7 +183,7 @@ export function isTimeout(err: unknown): boolean {
 /**
  * Check if error is a server error (5xx)
  */
-export function isServerError(err: unknown): boolean {
+function isServerError(err: unknown): boolean {
   const error = err as { status?: number };
   const status = error?.status;
   return typeof status === 'number' && status >= 500 && status < 600;
@@ -192,7 +192,7 @@ export function isServerError(err: unknown): boolean {
 /**
  * Check if file is busy/locked
  */
-export function isFileBusy(err: unknown): boolean {
+function isFileBusy(err: unknown): boolean {
   const error = err as { code?: string };
   return error?.code === 'EBUSY' || error?.code === 'EAGAIN' || false;
 }
@@ -200,7 +200,7 @@ export function isFileBusy(err: unknown): boolean {
 /**
  * Check if connection was refused
  */
-export function isConnectionRefused(err: unknown): boolean {
+function isConnectionRefused(err: unknown): boolean {
   const error = err as { code?: string };
   return error?.code === 'ECONNREFUSED' || false;
 }
@@ -208,7 +208,7 @@ export function isConnectionRefused(err: unknown): boolean {
 /**
  * Check if symbol was not found (LSP)
  */
-export function isSymbolNotFound(err: unknown): boolean {
+function isSymbolNotFound(err: unknown): boolean {
   const error = err as { message?: string; code?: string };
   return (
     error?.message?.toLowerCase().includes('symbol not found') ||
@@ -228,7 +228,7 @@ const sleep = (ms: number): Promise<void> =>
 /**
  * Get suggested retry delay from error (if available)
  */
-export function getRetryAfter(err: unknown): number | null {
+function getRetryAfter(err: unknown): number | null {
   if (isRateLimited(err)) {
     const error = err as { headers?: Record<string, string> };
     const retryAfter = error?.headers?.['retry-after'];
@@ -248,7 +248,7 @@ export function getRetryAfter(err: unknown): number | null {
 /**
  * Determine if an error is recoverable
  */
-export function isRecoverable(err: unknown): boolean {
+function isRecoverable(err: unknown): boolean {
   return (
     isRateLimited(err) ||
     isLspNotReady(err) ||

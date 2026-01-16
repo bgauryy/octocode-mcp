@@ -5,7 +5,7 @@ import { z, type ZodSchema, ZodError } from 'zod';
  * Custom error class for validation failures.
  * Carries HTTP status code for proper error responses.
  */
-export class ValidationError extends Error {
+class ValidationError extends Error {
   statusCode: number;
   code: string;
   details: z.ZodIssue[];
@@ -96,7 +96,7 @@ function formatZodError(error: ZodError): string {
 /**
  * Send standardized tool result response.
  */
-export function sendToolResult(
+function sendToolResult(
   res: Response,
   result: {
     content?: Array<{ type: string; text?: string }>;
@@ -117,4 +117,4 @@ export function sendToolResult(
 }
 
 // Legacy function for backwards compatibility (deprecated)
-export { parseAndValidate as parseQueryToArray };
+// Internal alias: parseQueryToArray = parseAndValidate

@@ -283,7 +283,21 @@ start_server() {
         ((retries--))
     done
 
-    log_error "Server failed to start. Check logs:"
+    log_warn "Bash startup failed. Attempting fallback to Node.js server script..."
+    
+    # Try the Node.js script
+    if npm run server:start; then
+        log_server "Server started successfully using Node.js fallback!"
+        
+        # Log skill installation (async, non-blocking)
+        local session_id
+        session_id=$(get_or_create_session_id)
+        log_skill_install "$session_id"
+        
+        return 0
+    fi
+
+    log_error "Server failed to start (both bash and node). Check logs:"
     cat "$LOG_FILE" 2>/dev/null || true
     exit 1
 }

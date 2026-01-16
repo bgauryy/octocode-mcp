@@ -210,7 +210,7 @@ export function resetCircuit(name: string): void {
 /**
  * Get all circuit states (for health endpoint)
  */
-export function getAllCircuitStates(): Record<
+function getAllCircuitStates(): Record<
   string,
   { state: CircuitState; failures: number; isHealthy: boolean }
 > {

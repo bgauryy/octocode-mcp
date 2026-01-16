@@ -15,13 +15,13 @@ import { isObject, hasProperty, isArray, hasStringProperty, hasNumberProperty } 
 // Types
 // =============================================================================
 
-export interface RouteResponseOptions<T> {
+interface RouteResponseOptions<T> {
   toolName: string;
   transform: (data: Record<string, unknown>, parsed: ParsedResponse) => T;
   buildResponse: (transformed: T, parsed: ParsedResponse) => Record<string, unknown>;
 }
 
-export interface TransformContext {
+interface TransformContext {
   data: Record<string, unknown>;
   isError: boolean;
   hints: string[];
@@ -44,7 +44,7 @@ interface McpToolResponse {
 /**
  * Create a route handler with standardized error handling and transformation
  */
-export function createRouteHandler<T>(options: RouteResponseOptions<T>) {
+function createRouteHandler<T>(options: RouteResponseOptions<T>) {
   return async function handleToolResponse(
     rawResult: unknown,
     res: Response,
@@ -74,21 +74,21 @@ export function createRouteHandler<T>(options: RouteResponseOptions<T>) {
 /**
  * Extract file matches from search results with proper typing
  */
-export function extractFileMatches(data: unknown): FileMatch[] {
+function extractFileMatches(data: unknown): FileMatch[] {
   return extractFiles(data);
 }
 
 /**
  * Extract pagination info with proper typing
  */
-export function extractPaginationInfo(data: unknown): PaginationInfo | undefined {
+function extractPaginationInfo(data: unknown): PaginationInfo | undefined {
   return extractPagination(data);
 }
 
 /**
  * Extract total match count with proper typing
  */
-export function extractMatchCount(data: unknown): number {
+function extractMatchCount(data: unknown): number {
   return extractTotalMatches(data);
 }
 

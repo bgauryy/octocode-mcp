@@ -6,7 +6,7 @@
  * - RESULT (blue): Tool output, skill results
  */
 
-export const colors = {
+const colors = {
   // Reset
   reset: '\x1b[0m',
   

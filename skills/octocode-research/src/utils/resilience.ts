@@ -10,7 +10,7 @@ import { withRetry, type RetryConfig, RETRY_CONFIGS } from './retry.js';
 /**
  * Combined resilience configuration
  */
-export interface ResilienceConfig {
+interface ResilienceConfig {
   circuitBreaker?: Partial<CircuitBreakerConfig>;
   retry?: RetryConfig;
   /** Fallback value when circuit is open */
@@ -20,7 +20,7 @@ export interface ResilienceConfig {
 /**
  * Pre-configured resilience strategies
  */
-export const RESILIENCE_CONFIGS = {
+const RESILIENCE_CONFIGS = {
   github: {
     retry: RETRY_CONFIGS.github,
   },
@@ -35,7 +35,7 @@ export const RESILIENCE_CONFIGS = {
   },
 } as const;
 
-export type ResilienceCategory = keyof typeof RESILIENCE_CONFIGS;
+type ResilienceCategory = keyof typeof RESILIENCE_CONFIGS;
 
 /**
  * Execute an operation with combined circuit breaker + retry protection.
@@ -59,7 +59,7 @@ export type ResilienceCategory = keyof typeof RESILIENCE_CONFIGS;
  * );
  * ```
  */
-export async function withResilience<T>(
+async function withResilience<T>(
   category: ResilienceCategory,
   operation: () => Promise<T>,
   context?: { tool: string }

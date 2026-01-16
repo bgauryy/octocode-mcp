@@ -1,10 +1,12 @@
 /**
  * Tools Info Routes - Expose tool metadata via HTTP
- * 
+ *
  * Routes:
- *   GET /tools/info           - List all tools
- *   GET /tools/info/:toolName - Get specific tool info
- * 
+ *   GET  /tools/list            - List all tools (concise)
+ *   GET  /tools/info            - List all tools with details
+ *   GET  /tools/info/:toolName  - Get specific tool info
+ *   POST /tools/call/:toolName  - Execute a tool directly (simplified!)
+ *
  * Query params:
  *   schema=true  - Include schema information
  *   hints=true   - Include hints information
@@ -13,7 +15,29 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { getMcpContent } from '../mcpCache.js';
 import { QuickResult } from '../utils/responseBuilder.js';
-import { transformToJsonSchema, type ListToolsResponse, type McpTool } from '../types/mcp.js';
+import { transformToJsonSchema } from '../types/mcp.js';
+import {
+  githubSearchCode,
+  githubGetFileContent,
+  githubViewRepoStructure,
+  githubSearchRepositories,
+  githubSearchPullRequests,
+  packageSearch,
+  localSearchCode,
+  localGetFileContent,
+  localFindFiles,
+  localViewStructure,
+  lspGotoDefinition,
+  lspFindReferences,
+  lspCallHierarchy,
+} from '../index.js';
+import {
+  withGitHubResilience,
+  withLocalResilience,
+  withLspResilience,
+  withPackageResilience,
+} from '../utils/resilience.js';
+import { parseToolResponse } from '../utils/responseParser.js';
 
 export const toolsRoutes = Router();
 
@@ -26,52 +50,30 @@ interface ToolsInfoQuery {
 }
 
 /**
- * GET /tools/list - List all tools (MCP-compatible format)
- * 
- * Returns tool names, descriptions, and JSON schemas following MCP protocol.
- * This is the standard MCP tools/list format for tool discovery.
- * 
- * @example
- * GET /tools/list
- * 
- * Response:
- * {
- *   "tools": [
- *     {
- *       "name": "localSearchCode",
- *       "description": "Search code with ripgrep...",
- *       "inputSchema": { "$schema": "...", "type": "object", "properties": {...} }
- *     }
- *   ],
- *   "_meta": { "totalCount": 13, "version": "2.0.0" }
- * }
+ * GET /tools/list - Static list of all tools (concise discovery)
+ *
+ * Returns static JSON with tool names and short descriptions.
+ * Use /tools/info/:toolName to get full description + schema BEFORE calling a tool.
  */
-toolsRoutes.get('/list', async (
-  _req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const content = getMcpContent();
-    
-    const tools: McpTool[] = Object.values(content.tools).map(tool => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: transformToJsonSchema(tool.schema, tool.name),
-    }));
-    
-    const response: ListToolsResponse = {
-      tools,
-      _meta: {
-        totalCount: tools.length,
-        version: PACKAGE_VERSION,
-      },
-    };
-    
-    res.json(response);
-  } catch (error) {
-    next(error);
-  }
+toolsRoutes.get('/list', (_req: Request, res: Response) => {
+  res.json({
+    tools: [
+      { name: 'githubSearchCode', description: 'Search code in GitHub repos' },
+      { name: 'githubGetFileContent', description: 'Read file from GitHub repo' },
+      { name: 'githubViewRepoStructure', description: 'View GitHub repo tree' },
+      { name: 'githubSearchRepositories', description: 'Search GitHub repositories' },
+      { name: 'githubSearchPullRequests', description: 'Search pull requests' },
+      { name: 'packageSearch', description: 'Search npm/PyPI packages' },
+      { name: 'localSearchCode', description: 'Search local code with ripgrep' },
+      { name: 'localGetFileContent', description: 'Read local file content' },
+      { name: 'localFindFiles', description: 'Find files by pattern/metadata' },
+      { name: 'localViewStructure', description: 'View local directory tree' },
+      { name: 'lspGotoDefinition', description: 'Go to symbol definition' },
+      { name: 'lspFindReferences', description: 'Find all symbol references' },
+      { name: 'lspCallHierarchy', description: 'Get call hierarchy' },
+    ],
+    _hint: 'GET /tools/info/{name} for full schema before calling',
+  });
 });
 
 /**
@@ -133,7 +135,19 @@ toolsRoutes.get('/info', async (
 });
 
 /**
- * GET /tools/info/:toolName - Get info about a specific tool
+ * GET /tools/info/:toolName - Get full info for a specific tool (call before using!)
+ *
+ * Returns complete description, JSON schema, and hints for a tool.
+ * ALWAYS call this before using a tool to understand its parameters.
+ *
+ * @example
+ * GET /tools/info/localSearchCode
+ *
+ * Response includes:
+ * - name: Tool name
+ * - description: Full description with usage details
+ * - schema: Complete JSON schema with all parameters
+ * - hints: Success/empty result hints
  */
 toolsRoutes.get('/info/:toolName', async (
   req: Request,
@@ -142,46 +156,46 @@ toolsRoutes.get('/info/:toolName', async (
 ) => {
   try {
     const content = getMcpContent();
-    
+
     const { toolName } = req.params;
     const query = req.query as ToolsInfoQuery;
     const includeSchema = query.schema !== 'false';  // Default true for specific tool
     const includeHints = query.hints !== 'false';    // Default true for specific tool
-    
+
     const tool = content.tools[toolName];
-    
+
     if (!tool) {
       const availableTools = Object.keys(content.tools);
       res.status(404).json(QuickResult.empty(
         `Tool not found: ${toolName}`,
         [
           `Available tools: ${availableTools.slice(0, 5).join(', ')}...`,
-          'Check spelling or use /tools/info to list all tools',
+          'Check spelling or use /tools/list to see all tools',
         ]
       ));
       return;
     }
-    
+
     const result: Record<string, unknown> = {
       name: tool.name,
       description: tool.description,
     };
-    
+
     if (includeSchema) {
-      result.schema = tool.schema;
+      result.inputSchema = transformToJsonSchema(tool.schema, tool.name);
     }
-    
+
     if (includeHints) {
       result.hints = {
         hasResults: tool.hints.hasResults,
         empty: tool.hints.empty,
       };
     }
-    
+
     res.json(QuickResult.success(
       `Tool: ${tool.name}`,
       result,
-      ['Schema and hints included by default for specific tool queries']
+      ['Review schema carefully before calling this tool']
     ));
   } catch (error) {
     next(error);
@@ -216,13 +230,13 @@ toolsRoutes.get('/metadata', async (
 
 /**
  * GET /tools/system - Get the FULL system instructions
- * 
+ *
  * Returns the complete system prompt that should be loaded into context FIRST.
  * This defines the agent's behavior, methodology, and best practices.
- * 
+ *
  * @example
  * GET /tools/system
- * 
+ *
  * Response:
  * {
  *   "instructions": "## Expert Code Forensics Agent...",
@@ -236,13 +250,146 @@ toolsRoutes.get('/system', async (
 ) => {
   try {
     const content = getMcpContent();
-    
+
     res.json({
       instructions: content.instructions,
       _meta: {
         charCount: content.instructions.length,
         version: PACKAGE_VERSION,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================================================
+// Tool Registry - Maps tool names to functions and resilience wrappers
+// ============================================================================
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type ToolFn = (params: { queries: any[] }) => Promise<any>;
+type ResilienceFn = <T>(fn: () => Promise<T>, toolName: string) => Promise<T>;
+
+interface ToolEntry {
+  fn: ToolFn;
+  resilience: ResilienceFn;
+  category: 'github' | 'local' | 'lsp' | 'package';
+}
+
+const TOOL_REGISTRY: Record<string, ToolEntry> = {
+  // GitHub tools
+  githubSearchCode: { fn: githubSearchCode as ToolFn, resilience: withGitHubResilience, category: 'github' },
+  githubGetFileContent: { fn: githubGetFileContent as ToolFn, resilience: withGitHubResilience, category: 'github' },
+  githubViewRepoStructure: { fn: githubViewRepoStructure as ToolFn, resilience: withGitHubResilience, category: 'github' },
+  githubSearchRepositories: { fn: githubSearchRepositories as ToolFn, resilience: withGitHubResilience, category: 'github' },
+  githubSearchPullRequests: { fn: githubSearchPullRequests as ToolFn, resilience: withGitHubResilience, category: 'github' },
+
+  // Local tools
+  localSearchCode: { fn: localSearchCode as ToolFn, resilience: withLocalResilience, category: 'local' },
+  localGetFileContent: { fn: localGetFileContent as ToolFn, resilience: withLocalResilience, category: 'local' },
+  localFindFiles: { fn: localFindFiles as ToolFn, resilience: withLocalResilience, category: 'local' },
+  localViewStructure: { fn: localViewStructure as ToolFn, resilience: withLocalResilience, category: 'local' },
+
+  // LSP tools
+  lspGotoDefinition: { fn: lspGotoDefinition as ToolFn, resilience: withLspResilience, category: 'lsp' },
+  lspFindReferences: { fn: lspFindReferences as ToolFn, resilience: withLspResilience, category: 'lsp' },
+  lspCallHierarchy: { fn: lspCallHierarchy as ToolFn, resilience: withLspResilience, category: 'lsp' },
+
+  // Package tools
+  packageSearch: { fn: packageSearch as ToolFn, resilience: withPackageResilience, category: 'package' },
+};
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/**
+ * POST /tools/call/:toolName - Execute a tool directly with JSON body
+ *
+ * This is the SIMPLIFIED way to call tools. Instead of URL-encoded query params,
+ * just POST a JSON body with your queries array.
+ *
+ * @example
+ * POST /tools/call/localSearchCode
+ * Content-Type: application/json
+ *
+ * {
+ *   "queries": [{
+ *     "mainResearchGoal": "Find authentication handlers",
+ *     "researchGoal": "Locate auth middleware",
+ *     "reasoning": "Understanding auth flow",
+ *     "pattern": "authenticate",
+ *     "path": "/Users/me/project",
+ *     "type": "ts"
+ *   }]
+ * }
+ *
+ * Response:
+ * {
+ *   "tool": "localSearchCode",
+ *   "success": true,
+ *   "data": { ... parsed tool response ... },
+ *   "hints": ["Use lineHint for LSP tools", ...]
+ * }
+ */
+toolsRoutes.post('/call/:toolName', async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { toolName } = req.params;
+    const body = req.body as { queries?: unknown[] };
+
+    // Validate tool exists
+    const toolEntry = TOOL_REGISTRY[toolName];
+    if (!toolEntry) {
+      const availableTools = Object.keys(TOOL_REGISTRY);
+      res.status(404).json(QuickResult.empty(
+        `Tool not found: ${toolName}`,
+        [
+          `Available tools: ${availableTools.join(', ')}`,
+          'Check spelling or use GET /tools/list',
+        ]
+      ));
+      return;
+    }
+
+    // Validate queries array
+    if (!body.queries || !Array.isArray(body.queries) || body.queries.length === 0) {
+      res.status(400).json(QuickResult.empty(
+        'Missing or invalid queries array',
+        [
+          'Body must contain: { "queries": [{ ... }] }',
+          `Use GET /tools/info/${toolName} for schema`,
+        ]
+      ));
+      return;
+    }
+
+    // Validate query limit (1-3)
+    if (body.queries.length > 3) {
+      res.status(400).json(QuickResult.empty(
+        'Too many queries (max 3)',
+        ['Split into multiple requests for better performance']
+      ));
+      return;
+    }
+
+    // Execute tool with resilience
+    const rawResult = await toolEntry.resilience(
+      () => toolEntry.fn({ queries: body.queries! }),
+      toolName
+    );
+
+    // Parse response
+    const parsed = parseToolResponse(rawResult as { content: Array<{ type: string; text: string }> });
+
+    // Return simplified response
+    res.status(parsed.isError ? 500 : 200).json({
+      tool: toolName,
+      success: !parsed.isError,
+      data: parsed.data,
+      hints: parsed.hints,
+      research: parsed.research,
     });
   } catch (error) {
     next(error);

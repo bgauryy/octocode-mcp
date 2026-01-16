@@ -11,7 +11,7 @@
 
 import { agentLog } from '../utils/colors.js';
 
-export interface ResearchContext {
+interface ResearchContext {
   sessionId: string;
   mainGoal: string;
   toolChain: string[];
@@ -29,7 +29,7 @@ let cleanupInterval: NodeJS.Timeout | null = null;
  * Start the context cleanup interval.
  * Safe to call multiple times (idempotent).
  */
-export function startContextCleanup(): void {
+function startContextCleanup(): void {
   if (cleanupInterval) return;
 
   cleanupInterval = setInterval(() => {

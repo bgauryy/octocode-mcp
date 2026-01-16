@@ -31,7 +31,7 @@ export interface JsonSchemaProperty {
 /**
  * MCP Tool representation for /tools/list
  */
-export interface McpTool {
+interface McpTool {
   name: string;
   description: string;
   inputSchema: JsonSchema;
@@ -66,7 +66,7 @@ export interface ListResponseMeta {
 /**
  * Response type for GET /tools/list
  */
-export interface ListToolsResponse {
+interface ListToolsResponse {
   tools: McpTool[];
   _meta?: ListResponseMeta;
 }
