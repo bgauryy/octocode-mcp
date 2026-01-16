@@ -12,67 +12,176 @@ HTTP API server for intelligent code research at `http://localhost:1987`
 ## TL;DR
 
 ```
+0. ENSURE SERVER RUNNING (REQUIRED FIRST!)
+   → curl -s http://localhost:1987/health || ./install.sh start
+   → If health fails, START the server before anything else!
+
 1. Health check     → curl http://localhost:1987/health
 2. Load system      → curl http://localhost:1987/tools/system  (ADD to context!)
 3. List tools       → curl http://localhost:1987/tools/list
 4. List prompts     → curl http://localhost:1987/prompts/list
-5. CONFIRM with user → "I'll research using `research_local`. Proceed?"
+5. AUTO-DETECT prompt from user intent (see Prompt Selection)
+   → If CLEAR: Inform user "I'll use {{PROMPT_NAME}} to {{user research intention}}"
+   → If AMBIGUOUS: Ask user to clarify
 6. Load prompt      → curl http://localhost:1987/prompts/info/{name}
-7. Execute research → Use tools from /tools/list
+7. PLAN research    → Use TodoWrite to create research plan with steps
+8. Execute research → Use tools from /tools/list, update todos as you progress
 ```
 
 ---
 
 ## Agent UX Rules
 
-### Rule 1: Confirm Before Research
+### Rule 1: Auto-Detect Prompt from User Intent
 
-**ALWAYS ask user before loading a prompt:**
+**Analyze user input and automatically select the right prompt. DON'T ask unless truly ambiguous.**
 
+**CLEAR intent → Inform and proceed:**
 ```
 User: "How does auth work in this codebase?"
 
-Agent: "I'll investigate using the `research_local` prompt to explore
-       your local codebase. This will search for auth-related code,
+Agent: "I'll use `research_local` to explore your local codebase for auth patterns,
        trace function calls, and analyze the implementation.
 
-       Proceed with local research?"
+       Starting research..."
 
-       [Yes] [No, use GitHub research] [Other]
+       [Proceeds immediately - no question needed]
 ```
 
-### Rule 2: Clarify Ambiguous Intent
-
-**If user intent is unclear, ASK before proceeding:**
-
-| Ambiguous Request | Clarify With |
-|-------------------|--------------|
-| "Research this feature" | "Should I research your **local codebase** or **external GitHub repos**?" |
-| "Help me understand X" | "Do you want me to **research X** or **plan an implementation** for X?" |
-| "Look into this PR" | "Should I **review the PR** or **research the code** it changes?" |
-
-**Example:**
 ```
-User: "Look into how React handles state"
+User: "How does React implement useState?"
 
-Agent: "I can help with that! Should I:
-       1. `research` - Search GitHub for React's state implementation
-       2. `research_local` - Search your local codebase for state patterns
-
-       Which approach?"
-```
-
-### Rule 3: Explain What You'll Do
-
-**Before executing, briefly explain:**
-```
-Agent: "I'll use `research_local` to:
-       1. Search for 'auth' patterns in your codebase
-       2. Trace function calls using LSP
-       3. Read relevant implementations
+Agent: "I'll use `research` to explore React's GitHub repository and find
+       the useState implementation in the hooks source code.
 
        Starting research..."
+
+       [Proceeds immediately - "React" is external, clear signal]
 ```
+
+### Rule 2: Ask ONLY When Genuinely Ambiguous
+
+**Only ask when multiple prompts could reasonably apply:**
+
+| Ambiguous Signal | Why It's Ambiguous | Ask |
+|------------------|-------------------|-----|
+| "Research this feature" | No context - local or external? | ✅ Ask |
+| "Look into state management" | Could be their code or a library | ✅ Ask |
+| "How does X work" + no context | Unknown if X is local or external | ✅ Ask |
+
+**Clear Signals - DON'T ask:**
+
+| Clear Signal | Auto-Select | Why |
+|--------------|-------------|-----|
+| "in this codebase" / "in my code" / "our implementation" | `research_local` | Explicit local reference |
+| "in React" / "how does Express..." / package names | `research` | External library/framework |
+| PR URL like `github.com/.../pull/123` | `reviewPR` | PR URL is unambiguous |
+| "plan how to..." / "design a..." | `plan` | Planning intent clear |
+| "scaffold" / "create new project" | `generate` | Generation intent clear |
+
+**Example of asking (genuinely ambiguous):**
+```
+User: "Research the authentication flow"
+
+Agent: "I can research authentication in two ways:
+       1. `research_local` - Explore YOUR codebase's auth implementation
+       2. `research` - Find auth patterns in external GitHub repos
+
+       Which would you like?"
+```
+
+### Rule 3: Inform, Then Execute
+
+**When intent is clear, briefly state what you'll do and START immediately:**
+
+```
+Agent: "I'll use `research_local` to:
+       • Search for 'auth' patterns in your codebase
+       • Trace function calls using LSP
+       • Analyze the implementation
+
+       Starting research..."
+
+       [Immediately begins tool calls - no waiting for confirmation]
+```
+
+**Key difference from asking:**
+- ❌ "Proceed with local research?" → Unnecessary friction
+- ✅ "Starting research..." → Confident, efficient
+
+### Rule 4: Plan Before Executing
+
+**After selecting the prompt, create a research plan using TodoWrite:**
+
+```
+Agent: "I'll use `research` to explore React's useState implementation.
+
+       Research plan:
+       1. Search for useState in React's packages
+       2. Find the hooks source files
+       3. Trace the implementation flow
+       4. Analyze state update mechanism
+
+       Starting research..."
+
+       [Uses TodoWrite to track these steps]
+```
+
+**Why plan?**
+- Gives user visibility into research progress
+- Keeps research focused and organized
+- Enables tracking of multi-step investigations
+- Shows clear progress as steps complete
+
+---
+
+## Server Startup (MUST DO FIRST!)
+
+**⚠️ CRITICAL: The server MUST be running before any API calls!**
+
+### Step 1: Check if server is running
+
+```bash
+curl -s --connect-timeout 3 http://localhost:1987/health
+```
+
+**If health check succeeds** (returns JSON with `"status": "ok"`):
+→ Server is running, proceed to Discovery Flow
+
+**If health check fails** (exit code 7, connection refused, or timeout):
+→ Server is NOT running, you MUST start it first!
+
+### Step 2: Start server if not running
+
+```bash
+# Navigate to the skill directory and start the server
+cd skills/octocode-research && ./install.sh start
+```
+
+Or using the full path:
+```bash
+/path/to/octocode-mcp/skills/octocode-research/install.sh start
+```
+
+The install script will:
+- Check requirements (Node.js 20+)
+- Install dependencies if needed
+- Build the server if needed
+- Start the server in background on port 1987
+- Wait until server is healthy before returning
+
+### Step 3: Verify server is ready
+
+```bash
+curl -s http://localhost:1987/health
+```
+
+Expected response:
+```json
+{"status": "ok", "port": 1987, "version": "2.0.0"}
+```
+
+**Only proceed to Discovery Flow once health check passes!**
 
 ---
 
@@ -81,7 +190,10 @@ Agent: "I'll use `research_local` to:
 **Before ANY research**, follow this sequence:
 
 ```bash
-# 1. Health check
+# 0. FIRST - Ensure server is running (see "Server Startup" section above)
+curl -s --connect-timeout 3 http://localhost:1987/health || echo "SERVER NOT RUNNING - Start it first!"
+
+# 1. Health check (should pass if step 0 succeeded)
 curl -s http://localhost:1987/health
 
 # 2. SYSTEM PROMPT FIRST - Load into context immediately!
@@ -94,7 +206,9 @@ curl http://localhost:1987/tools/list
 # 4. List all prompts
 curl http://localhost:1987/prompts/list
 
-# 5. ⚠️ CONFIRM with user which prompt to use!
+# 5. AUTO-DETECT prompt from user intent (see Prompt Selection section)
+#    → If clear intent: Inform user and proceed
+#    → If ambiguous: Ask user to clarify
 
 # 6. Load selected prompt
 curl http://localhost:1987/prompts/info/{selected_prompt}
@@ -105,15 +219,97 @@ curl http://localhost:1987/prompts/info/{selected_prompt}
 
 ## Prompt Selection
 
-| User Intent | Prompt | When to Use |
-|-------------|--------|-------------|
-| Explore **local codebase** | `research_local` | User asks about their code, local files, workspace |
-| Explore **external code** | `research` | User asks about GitHub repos, open source, packages |
-| Review a **Pull Request** | `reviewPR` | User shares PR URL or asks for review |
-| **Plan** a feature/fix | `plan` | User wants implementation strategy before coding |
-| **Generate** a project | `generate` | User wants to scaffold a new project |
-| **Initialize** context | `init` | First interaction, setting up preferences |
-| **Help** with tools | `help` | User asks "what can you do?" |
+### Quick Reference
+
+| Prompt | Use When | Signal Keywords |
+|--------|----------|-----------------|
+| `research_local` | Explore local codebase | "this codebase", "my code", "our", "here", file paths |
+| `research` | Explore external code | Package names (React, Express), "how does X work", GitHub URLs |
+| `reviewPR` | Review a Pull Request | PR URLs, "review this PR", "check this pull request" |
+| `plan` | Plan implementation | "plan", "design", "how should I", "strategy for" |
+| `generate` | Scaffold new project | "scaffold", "create new", "generate", "bootstrap" |
+| `init` | Initialize context | First interaction, "set up", "configure" |
+| `help` | Explain capabilities | "what can you do", "help", "how do I use" |
+
+### Signal Detection Guide
+
+**`research_local`** - Local codebase exploration:
+```
+✅ "How does auth work in this codebase?"
+✅ "Find where UserService is used"
+✅ "What calls the handleSubmit function?"
+✅ "Explain our payment implementation"
+✅ "Search for error handling in src/"
+
+Signals: "this", "our", "my", "here", relative paths, local file references
+```
+
+**`research`** - External GitHub/package exploration:
+```
+✅ "How does React implement useState?"
+✅ "How does Express handle middleware?"
+✅ "Find examples of OAuth in popular repos"
+✅ "What's the implementation of lodash.debounce?"
+
+Signals: Known package/library names, "how does [library] work", external GitHub URLs
+```
+
+**`reviewPR`** - Pull request review:
+```
+✅ "Review https://github.com/org/repo/pull/123"
+✅ "Check this PR: [URL]"
+✅ "Review the changes in PR #456"
+
+Signals: PR URLs, "review", "PR", "pull request" + number/URL
+```
+
+**`plan`** - Implementation planning:
+```
+✅ "Plan how to add authentication"
+✅ "Design a caching strategy"
+✅ "How should I implement dark mode?"
+
+Signals: "plan", "design", "strategy", "how should I", "approach for"
+```
+
+### Decision Flow
+
+```
+User Input
+    │
+    ▼
+┌─────────────────────────────────────┐
+│ Contains PR URL?                    │──Yes──▶ `reviewPR`
+└─────────────────────────────────────┘
+    │ No
+    ▼
+┌─────────────────────────────────────┐
+│ Contains "plan/design/strategy"?    │──Yes──▶ `plan`
+└─────────────────────────────────────┘
+    │ No
+    ▼
+┌─────────────────────────────────────┐
+│ Contains "scaffold/generate/new"?   │──Yes──▶ `generate`
+└─────────────────────────────────────┘
+    │ No
+    ▼
+┌─────────────────────────────────────┐
+│ References local code?              │──Yes──▶ `research_local`
+│ ("this", "our", "my", paths)        │
+└─────────────────────────────────────┘
+    │ No
+    ▼
+┌─────────────────────────────────────┐
+│ References external library/repo?   │──Yes──▶ `research`
+│ (React, Express, GitHub URLs)       │
+└─────────────────────────────────────┘
+    │ No
+    ▼
+┌─────────────────────────────────────┐
+│ AMBIGUOUS - Ask user to clarify     │
+│ "Local codebase or external repos?" │
+└─────────────────────────────────────┘
+```
 
 ---
 
@@ -247,12 +443,22 @@ errorStatusHints: [...]       # Recovery strategies
 
 ---
 
-## Key Principles
+## Troubleshooting
 
-1. **Confirm intent** before starting research
-2. **Load system prompt** first (defines behavior)
-3. **Chain tools** logically (search → navigate → analyze → read)
-4. **Follow hints** in responses for next steps
-5. **Ask when stuck** - clarify with user, don't guess
+### Server not responding (exit code 7)
+```bash
+# Check if server is running
+lsof -i :1987
 
-> **Philosophy**: Discover capabilities dynamically. Let the data guide you.
+# If nothing on port, start the server
+cd skills/octocode-research && ./install.sh start
+
+# If something else on port, check what
+lsof -i :1987
+# May need to kill that process first
+```
+
+### Server crashes after health check passes
+- Possible token issue - check GITHUB_TOKEN is set
+- Run `./install.sh logs` to see error messages
+- Try `./install.sh restart` to reset state
