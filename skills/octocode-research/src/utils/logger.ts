@@ -182,6 +182,7 @@ export interface ToolLogEntry {
   success: boolean;
   error?: string;
   resultSize?: number;
+  requestId?: string;
 }
 
 /**
@@ -294,4 +295,25 @@ function createToolLogger(toolName: string) {
 
     next();
   };
+}
+
+// ============================================================================
+// Security Utilities
+// ============================================================================
+
+const SENSITIVE_KEYS = ['token', 'key', 'secret', 'password', 'auth', 'credential', 'api_key', 'apikey'];
+
+/**
+ * Sanitize query parameters by redacting sensitive values.
+ * Prevents accidental exposure of secrets in logs.
+ */
+export function sanitizeQueryParams(query: Record<string, unknown>): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(query)) {
+    const isSensitive = SENSITIVE_KEYS.some((s) => key.toLowerCase().includes(s));
+    sanitized[key] = isSensitive ? '[REDACTED]' : value;
+  }
+
+  return sanitized;
 }
