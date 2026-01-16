@@ -96,7 +96,7 @@ function formatZodError(error: ZodError): string {
 /**
  * Send standardized tool result response.
  */
-function sendToolResult(
+export function sendToolResult(
   res: Response,
   result: {
     content?: Array<{ type: string; text?: string }>;

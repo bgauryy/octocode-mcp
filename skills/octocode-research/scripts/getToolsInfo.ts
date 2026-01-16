@@ -82,7 +82,7 @@ export async function getToolsInfo(): Promise<ToolsInfoResult> {
   const tools = await fetchToolsListFromAPI();
   return {
     tools,
-    _hint: 'Use getToolInfo(toolName) for full schema before calling',
+    _hint: 'Use getToolInfo(toolName) for full schema before calling each tool - DO IT ONCE PER TOOL IN A SESSION',
   };
 }
 

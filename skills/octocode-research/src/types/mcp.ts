@@ -66,7 +66,7 @@ export interface ListResponseMeta {
 /**
  * Response type for GET /tools/list
  */
-interface ListToolsResponse {
+export interface ListToolsResponse {
   tools: McpTool[];
   _meta?: ListResponseMeta;
 }

@@ -21,7 +21,7 @@ interface RouteResponseOptions<T> {
   buildResponse: (transformed: T, parsed: ParsedResponse) => Record<string, unknown>;
 }
 
-interface TransformContext {
+export interface TransformContext {
   data: Record<string, unknown>;
   isError: boolean;
   hints: string[];
@@ -44,7 +44,7 @@ interface McpToolResponse {
 /**
  * Create a route handler with standardized error handling and transformation
  */
-function createRouteHandler<T>(options: RouteResponseOptions<T>) {
+export function createRouteHandler<T>(options: RouteResponseOptions<T>) {
   return async function handleToolResponse(
     rawResult: unknown,
     res: Response,
@@ -74,21 +74,21 @@ function createRouteHandler<T>(options: RouteResponseOptions<T>) {
 /**
  * Extract file matches from search results with proper typing
  */
-function extractFileMatches(data: unknown): FileMatch[] {
+export function extractFileMatches(data: unknown): FileMatch[] {
   return extractFiles(data);
 }
 
 /**
  * Extract pagination info with proper typing
  */
-function extractPaginationInfo(data: unknown): PaginationInfo | undefined {
+export function extractPaginationInfo(data: unknown): PaginationInfo | undefined {
   return extractPagination(data);
 }
 
 /**
  * Extract total match count with proper typing
  */
-function extractMatchCount(data: unknown): number {
+export function extractMatchCount(data: unknown): number {
   return extractTotalMatches(data);
 }
 

@@ -15,21 +15,21 @@ function isNonEmptyString(value: unknown): value is string {
 /**
  * Check if value is a positive finite number
  */
-function isPositiveNumber(value: unknown): value is number {
+export function isPositiveNumber(value: unknown): value is number {
   return typeof value === 'number' && value > 0 && Number.isFinite(value);
 }
 
 /**
  * Check if value is a non-negative finite number
  */
-function isNonNegativeNumber(value: unknown): value is number {
+export function isNonNegativeNumber(value: unknown): value is number {
   return typeof value === 'number' && value >= 0 && Number.isFinite(value);
 }
 
 /**
  * Check if value is an array of non-empty strings
  */
-function isStringArray(value: unknown): value is string[] {
+export function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isNonEmptyString);
 }
 

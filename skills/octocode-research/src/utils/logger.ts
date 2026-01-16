@@ -196,7 +196,7 @@ export function logToolCall(entry: ToolLogEntry): void {
 /**
  * Log a successful tool result.
  */
-function logToolSuccess(
+export function logToolSuccess(
   tool: string,
   route: string,
   method: string,
@@ -218,7 +218,7 @@ function logToolSuccess(
 /**
  * Log a failed tool invocation.
  */
-function logToolError(
+export function logToolError(
   tool: string,
   route: string,
   method: string,
@@ -251,14 +251,14 @@ export function getLogsPath(): string {
 /**
  * Get the path to the errors log file.
  */
-function getErrorLogPath(): string {
+export function getErrorLogPath(): string {
   return ERROR_LOG;
 }
 
 /**
  * Get the path to the tools log file.
  */
-function getToolsLogPath(): string {
+export function getToolsLogPath(): string {
   return TOOLS_LOG;
 }
 
@@ -270,7 +270,7 @@ function getToolsLogPath(): string {
  * Create a logging middleware that logs tool invocations.
  * Use this to wrap route handlers for automatic logging.
  */
-function createToolLogger(toolName: string) {
+export function createToolLogger(toolName: string) {
   return (
     req: { method: string; path: string; query: unknown },
     res: { statusCode: number; on: (event: string, cb: () => void) => void },

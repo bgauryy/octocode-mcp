@@ -16,7 +16,6 @@ import {
   createRoleBasedResult,
   QuickResult,
   StatusEmoji,
-  ContentBuilder,
 } from 'octocode-mcp/responses';
 
 // CallToolResult type from MCP SDK (re-exported via octocode-mcp)

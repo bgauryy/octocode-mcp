@@ -604,19 +604,19 @@ export const packageSearchSchema = z
 // Type Exports (output types after transform)
 // =============================================================================
 
-type LocalSearchQuery = z.output<typeof localSearchSchema>;
-type LocalContentQuery = z.output<typeof localContentSchema>;
-type LocalFindQuery = z.output<typeof localFindSchema>;
-type LocalStructureQuery = z.output<typeof localStructureSchema>;
+export type LocalSearchQuery = z.output<typeof localSearchSchema>;
+export type LocalContentQuery = z.output<typeof localContentSchema>;
+export type LocalFindQuery = z.output<typeof localFindSchema>;
+export type LocalStructureQuery = z.output<typeof localStructureSchema>;
 
-type LspDefinitionQuery = z.output<typeof lspDefinitionSchema>;
-type LspReferencesQuery = z.output<typeof lspReferencesSchema>;
-type LspCallsQuery = z.output<typeof lspCallsSchema>;
+export type LspDefinitionQuery = z.output<typeof lspDefinitionSchema>;
+export type LspReferencesQuery = z.output<typeof lspReferencesSchema>;
+export type LspCallsQuery = z.output<typeof lspCallsSchema>;
 
-type GithubSearchQuery = z.output<typeof githubSearchSchema>;
-type GithubContentQuery = z.output<typeof githubContentSchema>;
-type GithubReposQuery = z.output<typeof githubReposSchema>;
-type GithubStructureQuery = z.output<typeof githubStructureSchema>;
-type GithubPRsQuery = z.output<typeof githubPRsSchema>;
+export type GithubSearchQuery = z.output<typeof githubSearchSchema>;
+export type GithubContentQuery = z.output<typeof githubContentSchema>;
+export type GithubReposQuery = z.output<typeof githubReposSchema>;
+export type GithubStructureQuery = z.output<typeof githubStructureSchema>;
+export type GithubPRsQuery = z.output<typeof githubPRsSchema>;
 
-type PackageSearchQuery = z.output<typeof packageSearchSchema>;
+export type PackageSearchQuery = z.output<typeof packageSearchSchema>;

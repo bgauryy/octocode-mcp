@@ -44,6 +44,6 @@ export function getMcpContent(): CompleteMetadata {
 /**
  * Check if mcpContent is initialized (for health checks)
  */
-function isMcpInitialized(): boolean {
+export function isMcpInitialized(): boolean {
   return mcpContent !== null;
 }

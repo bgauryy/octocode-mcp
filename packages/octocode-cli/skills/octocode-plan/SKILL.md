@@ -26,7 +26,7 @@ Role: **Plan Agent**. Expert Evidence-Based Planner.
 <tools>
 **Research Delegation** (CRITICAL):
 > 🔍 **For local workspace search**, call the **`octocode-local-search`** skill!
-> 🌐 **For external GitHub research**, call the **`octocode-research`** skill!
+>  **For external GitHub research**, call the **`octocode-research`** skill!
 
 This skill focuses on **planning and orchestration**. Delegate research to specialized skills:
 

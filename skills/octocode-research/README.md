@@ -71,7 +71,7 @@ That's it! Your agent is now equipped with research superpowers.
 > "How does **React's useState** work internally?"
 > "Explain **Express** middleware chaining pattern"
 
-### 🏠 Explore Your Codebase
+###  Explore Your Codebase
 > "Trace the **auth flow** from login to database"
 > "Find all usages of `UserService`"
 

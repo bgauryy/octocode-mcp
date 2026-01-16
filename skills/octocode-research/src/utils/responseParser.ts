@@ -140,7 +140,7 @@ export function parseToolResponse(response: McpToolResponse): ParsedResponse {
 /**
  * Convenience function to get data field with type safety
  */
-function getDataField<T>(
+export function getDataField<T>(
   response: McpToolResponse,
   field: string,
   defaultValue: T

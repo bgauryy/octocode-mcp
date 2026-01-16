@@ -18,7 +18,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "octocode-research": "./dist/server.js"
+    "octocode-research": "./dist/server.js",
+    "octocode-research-cli": "./dist/cli.js"
   },
   "exports": {
     ".": {
@@ -28,13 +29,16 @@
     "./server": {
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
     }
   },
   "files": [
     "dist",
     "src",
-    "install.sh",
-    "start.sh",
+    "scripts",
     "SKILL.md",
     "LICENSE",
     "tsconfig.json"
@@ -60,6 +64,7 @@
     "express": "^4.21.2",
     "js-yaml": "^4.1.1",
     "octocode-mcp": "file:../../packages/octocode-mcp",
+    "octocode-shared": "file:../../packages/octocode-shared",
     "zod": "^3.24.1"
   },
   "devDependencies": {

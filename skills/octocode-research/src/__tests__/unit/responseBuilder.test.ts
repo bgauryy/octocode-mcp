@@ -4,7 +4,7 @@
  * @module tests/unit/responseBuilder
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ResearchResponse, detectLanguageFromPath } from '../../utils/responseBuilder.js';
 
 // Mock octocode-mcp responses module

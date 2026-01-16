@@ -253,7 +253,7 @@ async function showSkillsMenu(
 
   // Browse marketplace - always available
   choices.push({
-    name: '🌐 Browse Marketplace',
+    name: ' Browse Marketplace',
     value: 'marketplace',
     description: 'Community skills • installs on your behalf',
   });

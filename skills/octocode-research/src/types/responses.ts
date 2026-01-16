@@ -90,14 +90,14 @@ interface LspDefinition {
 /**
  * LSP reference location
  */
-interface LspReference extends LspDefinition {
+export interface LspReference extends LspDefinition {
   context?: string;
 }
 
 /**
  * LSP call hierarchy item
  */
-interface LspCallHierarchyItem {
+export interface LspCallHierarchyItem {
   name: string;
   kind?: number;
   uri: string;
@@ -112,7 +112,7 @@ interface LspCallHierarchyItem {
 /**
  * Repository structure result
  */
-interface RepoStructure {
+export interface RepoStructure {
   files?: string[];
   folders?: string[];
   totalFiles?: number;
@@ -147,7 +147,7 @@ function hasValidPagination(obj: unknown): obj is { pagination: PaginationInfo }
 /**
  * Check if an object is a SearchResult
  */
-function isSearchResult(obj: unknown): obj is SearchResult {
+export function isSearchResult(obj: unknown): obj is SearchResult {
   if (typeof obj !== 'object' || obj === null) return false;
   if (hasArrayProperty(obj, 'files')) {
     const files = (obj as { files: unknown[] }).files;
@@ -159,7 +159,7 @@ function isSearchResult(obj: unknown): obj is SearchResult {
 /**
  * Check if an object is an LspDefinition
  */
-function isLspDefinition(obj: unknown): obj is LspDefinition {
+export function isLspDefinition(obj: unknown): obj is LspDefinition {
   return (
     typeof obj === 'object' &&
     obj !== null &&

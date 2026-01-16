@@ -10,7 +10,7 @@ import { withRetry, type RetryConfig, RETRY_CONFIGS } from './retry.js';
 /**
  * Combined resilience configuration
  */
-interface ResilienceConfig {
+export interface ResilienceConfig {
   circuitBreaker?: Partial<CircuitBreakerConfig>;
   retry?: RetryConfig;
   /** Fallback value when circuit is open */

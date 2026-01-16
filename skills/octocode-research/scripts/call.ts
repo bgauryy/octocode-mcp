@@ -110,7 +110,7 @@ async function main(): Promise<void> {
 
   if (!quiet) {
     console.log();
-    log('🌐', `GET ${endpoint}`, colors.cyan);
+    log('', `GET ${endpoint}`, colors.cyan);
     if (Object.keys(params).length > 0) {
       console.log(`${colors.dim}   Params: ${JSON.stringify(params)}${colors.reset}`);
     }

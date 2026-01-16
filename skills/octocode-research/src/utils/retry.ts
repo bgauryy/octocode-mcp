@@ -128,7 +128,7 @@ export async function withRetry<T>(
 /**
  * Convenience wrapper that selects config by category
  */
-async function withCategoryRetry<T>(
+export async function withCategoryRetry<T>(
   category: RetryCategory,
   operation: () => Promise<T>,
   context?: RetryContext
@@ -242,7 +242,7 @@ function isConnectionRefused(err: unknown): boolean {
 /**
  * Check if symbol was not found (LSP)
  */
-function isSymbolNotFound(err: unknown): boolean {
+export function isSymbolNotFound(err: unknown): boolean {
   const error = err as { message?: string; code?: string };
 
   // Check error codes first (more reliable)
@@ -268,7 +268,7 @@ const sleep = (ms: number): Promise<void> =>
 /**
  * Get suggested retry delay from error (if available)
  */
-function getRetryAfter(err: unknown): number | null {
+export function getRetryAfter(err: unknown): number | null {
   if (isRateLimited(err)) {
     const error = err as { headers?: Record<string, string> };
     const retryAfter = error?.headers?.['retry-after'];
@@ -288,7 +288,7 @@ function getRetryAfter(err: unknown): number | null {
 /**
  * Determine if an error is recoverable
  */
-function isRecoverable(err: unknown): boolean {
+export function isRecoverable(err: unknown): boolean {
   return (
     isRateLimited(err) ||
     isLspNotReady(err) ||
