@@ -18,7 +18,7 @@ export const LOCAL_FIND_FILES_DESCRIPTION =
 /**
  * Find files query schema
  */
-const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
+export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
   path: z.string().describe(LOCAL_FIND_FILES.scope.path),
 
   maxDepth: z

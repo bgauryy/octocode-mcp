@@ -518,3 +518,53 @@ export type {
   RoleBasedResultOptions,
   RoleAnnotations,
 } from './responses.js';
+
+// ============================================================================
+// Zod Schemas - Tool Input Validation (Source of Truth)
+// ============================================================================
+
+/**
+ * Zod schemas for tool input validation.
+ * These are the authoritative schemas used by Octocode MCP tools.
+ * Use these for validation in skills and custom integrations.
+ *
+ * @example
+ * ```typescript
+ * import { GitHubCodeSearchQuerySchema, RipgrepQuerySchema } from 'octocode-mcp/public';
+ * import { zodToJsonSchema } from 'zod-to-json-schema';
+ *
+ * // Validate input
+ * const result = GitHubCodeSearchQuerySchema.safeParse(input);
+ *
+ * // Convert to JSON Schema for documentation
+ * const jsonSchema = zodToJsonSchema(RipgrepQuerySchema);
+ * ```
+ */
+
+// --- GitHub Tool Schemas ---
+export { GitHubCodeSearchQuerySchema } from './tools/github_search_code/scheme.js';
+export { GitHubViewRepoStructureQuerySchema } from './tools/github_view_repo_structure/scheme.js';
+export { GitHubReposSearchSingleQuerySchema } from './tools/github_search_repos/scheme.js';
+export { GitHubPullRequestSearchQuerySchema } from './tools/github_search_pull_requests/scheme.js';
+export { FileContentQuerySchema } from './tools/github_fetch_content/scheme.js';
+
+// --- Local Tool Schemas ---
+export { RipgrepQuerySchema } from './tools/local_ripgrep/scheme.js';
+export { FetchContentQuerySchema } from './tools/local_fetch_content/scheme.js';
+export { FindFilesQuerySchema } from './tools/local_find_files/scheme.js';
+export { ViewStructureQuerySchema } from './tools/local_view_structure/scheme.js';
+
+// --- LSP Tool Schemas ---
+export { LSPGotoDefinitionQuerySchema } from './tools/lsp_goto_definition/scheme.js';
+export { LSPFindReferencesQuerySchema } from './tools/lsp_find_references/scheme.js';
+export { LSPCallHierarchyQuerySchema } from './tools/lsp_call_hierarchy/scheme.js';
+
+// --- Package Search Schemas ---
+export {
+  PackageSearchQuerySchema,
+  NpmPackageQuerySchema,
+  PythonPackageQuerySchema,
+} from './tools/package_search/scheme.js';
+
+// --- Base Schemas (for extending) ---
+export { BaseQuerySchema, BaseQuerySchemaLocal } from './scheme/baseSchema.js';

@@ -90,7 +90,7 @@ ${colors.bold}Examples:${colors.reset}
   ./cli tools
   ./cli search pattern="auth" path="src"
   ./cli read path="src/server.ts"
-  ./cli /githubSearchCode owner="facebook" repo="react" keywords="hook"
+  ./cli /githubSearchCode owner="facebook" repo="react" keywordsToSearch="hook"
 
 ${colors.bold}Options:${colors.reset}
   --json    Output raw JSON (preferred for Agents)

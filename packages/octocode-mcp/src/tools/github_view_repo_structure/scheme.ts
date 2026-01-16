@@ -13,7 +13,7 @@ export const GITHUB_STRUCTURE_DEFAULTS = {
   MAX_ENTRIES_PER_PAGE: 200,
 } as const;
 
-const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
+export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
   owner: z
     .string()
     .min(1)

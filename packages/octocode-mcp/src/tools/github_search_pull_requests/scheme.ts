@@ -21,7 +21,7 @@ const DateRangeSchema = z.object({
     .describe(GITHUB_SEARCH_PULL_REQUESTS.filters.updated),
 });
 
-const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
+export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
   query: z
     .string()
     .optional()

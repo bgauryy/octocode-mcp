@@ -65,7 +65,8 @@
     "js-yaml": "^4.1.1",
     "octocode-mcp": "file:../../packages/octocode-mcp",
     "octocode-shared": "file:../../packages/octocode-shared",
-    "zod": "^3.24.1"
+    "zod": "^3.24.1",
+    "zod-to-json-schema": "^3.25.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",

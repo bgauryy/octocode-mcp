@@ -16,6 +16,25 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { getMcpContent } from '../mcpCache.js';
 import { QuickResult } from '../utils/responseBuilder.js';
 import { transformToJsonSchema } from '../types/mcp.js';
+import { zodToJsonSchema } from 'zod-to-json-schema';
+import type { ZodTypeAny } from 'zod';
+
+// Import Zod schemas from octocode-mcp (source of truth)
+import {
+  GitHubCodeSearchQuerySchema,
+  GitHubViewRepoStructureQuerySchema,
+  GitHubReposSearchSingleQuerySchema,
+  GitHubPullRequestSearchQuerySchema,
+  FileContentQuerySchema,
+  RipgrepQuerySchema,
+  FetchContentQuerySchema,
+  FindFilesQuerySchema,
+  ViewStructureQuerySchema,
+  LSPGotoDefinitionQuerySchema,
+  LSPFindReferencesQuerySchema,
+  LSPCallHierarchyQuerySchema,
+  PackageSearchQuerySchema,
+} from 'octocode-mcp/public';
 import {
   githubSearchCode,
   githubGetFileContent,
@@ -47,6 +66,50 @@ const PACKAGE_VERSION = '2.0.0';
 interface ToolsInfoQuery {
   schema?: string;
   hints?: string;
+}
+
+// ============================================================================
+// Zod Schema Registry - Maps tool names to their Zod schemas (source of truth)
+// ============================================================================
+
+const TOOL_ZOD_SCHEMAS: Record<string, ZodTypeAny> = {
+  // GitHub tools
+  githubSearchCode: GitHubCodeSearchQuerySchema,
+  githubGetFileContent: FileContentQuerySchema,
+  githubViewRepoStructure: GitHubViewRepoStructureQuerySchema,
+  githubSearchRepositories: GitHubReposSearchSingleQuerySchema,
+  githubSearchPullRequests: GitHubPullRequestSearchQuerySchema,
+  // Local tools
+  localSearchCode: RipgrepQuerySchema,
+  localGetFileContent: FetchContentQuerySchema,
+  localFindFiles: FindFilesQuerySchema,
+  localViewStructure: ViewStructureQuerySchema,
+  // LSP tools
+  lspGotoDefinition: LSPGotoDefinitionQuerySchema,
+  lspFindReferences: LSPFindReferencesQuerySchema,
+  lspCallHierarchy: LSPCallHierarchyQuerySchema,
+  // Package tools
+  packageSearch: PackageSearchQuerySchema,
+};
+
+/**
+ * Get JSON Schema for a tool from its Zod schema
+ * Returns proper JSON Schema with correct types, required fields, and validations
+ */
+function getToolJsonSchema(toolName: string): Record<string, unknown> | null {
+  const zodSchema = TOOL_ZOD_SCHEMAS[toolName];
+  if (!zodSchema) return null;
+
+  try {
+    // Convert Zod schema to JSON Schema
+    const jsonSchema = zodToJsonSchema(zodSchema, {
+      name: toolName,
+      $refStrategy: 'none', // Inline all references
+    });
+    return jsonSchema as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -182,7 +245,16 @@ toolsRoutes.get('/info/:toolName', async (
     };
 
     if (includeSchema) {
-      result.inputSchema = transformToJsonSchema(tool.schema, tool.name);
+      // Try to get the actual Zod schema (source of truth with correct types and required fields)
+      const zodJsonSchema = getToolJsonSchema(toolName);
+      if (zodJsonSchema) {
+        result.inputSchema = zodJsonSchema;
+        result._schemaSource = 'zod'; // Indicates this is from the authoritative Zod schema
+      } else {
+        // Fallback to metadata-based schema (less accurate)
+        result.inputSchema = transformToJsonSchema(tool.schema, tool.name);
+        result._schemaSource = 'metadata'; // Indicates this is a fallback
+      }
     }
 
     if (includeHints) {
