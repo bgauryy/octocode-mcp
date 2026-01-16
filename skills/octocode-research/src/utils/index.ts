@@ -18,4 +18,6 @@ export {
   getRateLimitHints,
   getAllRateLimitStates,
   setRateLimitState,
-} from './rateLimitHandler.js';export * from './colors.js';
+} from './rateLimitHandler.js';
+export * from './colors.js';
+export * from './routeFactory.js';

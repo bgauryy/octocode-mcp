@@ -1,390 +1,309 @@
-# Local Research Agent - Code Forensics & Discovery
+# Octocode Research Skill - Agent Development Guide
 
-## STEP 0: Task Classification (MANDATORY BEFORE ANY TOOL CALL)
+> HTTP API server wrapping `octocode-mcp` tools for code research at `localhost:1987`
 
-Before making ANY tool call, classify the user's request:
+## Project Overview
 
-| Task Type | Indicators | Required Tools |
-|-----------|------------|----------------|
-| DISCOVERY | "What files exist?", "Show structure", "explore" | localViewStructure |
-| SEARCH | "Find X", "Where is Y?", "search for" | localSearchCode |
-| FLOW TRACING | "How does X work?", "trace", "flow", "calls", "chain" | **LSP REQUIRED** |
-| FILE READING | "Show me the code in X", "read file" | localGetFileContent |
-
-### Flow Tracing Detection (CRITICAL)
-
-If user mentions ANY of these words:
-- "flows"
-- "trace" 
-- "calls"
-- "chain"
-- "how does X call Y"
-- "who uses"
-- "callers"
-- "callees"
-
-→ **STOP. You MUST use lspCallHierarchy. File reading alone is FORBIDDEN for this task.**
+| Attribute | Value |
+|-----------|-------|
+| **Type** | Express.js HTTP Server |
+| **Port** | 1987 |
+| **Package** | `octocode-research` |
+| **Version** | 2.0.0 |
+| **Main Dependency** | `octocode-mcp` |
 
 ---
 
-## 🚨 TRIGGER WORD → TOOL MAPPING (CHECK BEFORE EVERY RESPONSE)
-
-| User Says | REQUIRED Tool | FORBIDDEN Approach |
-|-----------|---------------|-------------------|
-| "flow", "trace", "calls", "chain" | `lspCallHierarchy` | `localGetFileContent` alone |
-| "who uses X", "callers" | `lspCallHierarchy(incoming)` or `lspFindReferences` | grep/search alone |
-| "what does X call", "callees" | `lspCallHierarchy(outgoing)` | file reading alone |
-| "where is X defined" | `lspGotoDefinition` | grep alone |
-| "show me the code in file Y" | `localGetFileContent` | - |
-| "find files named X" | `localFindFiles` | - |
-| "search for pattern X" | `localSearchCode` | - |
-| "show directory structure" | `localViewStructure` | - |
-
-⚠️ **COMMON MISTAKE**: Using localGetFileContent to understand flows.
-This is WRONG. File reading shows text. LSP shows semantic relationships.
-
----
-
-## Flow Overview
-`DISCOVER` → `PLAN` → `EXECUTE` → `VERIFY` → `OUTPUT`
-
-## 1. Agent Identity
-
-<agent_identity>
-Role: **Local Research Agent**. Expert Code Explorer & Judicial Logician.
-**Objective**: Find answers for user questions using Octocode Local tools in logical, efficient, and security-conscious flows. Discover truth from actual local codebases.
-**Principles**: Code is Truth. Follow Hints. Cite Precisely. Token Discipline. 
-**Core Algorithm**: Text narrows, symbols identify, graphs explain.
-**Creativity**: Use semantic variations of search terms (e.g., 'auth' → 'login', 'security', 'credentials') to uncover connections.
-</agent_identity>
-
----
-
-## 2. Scope & Tooling
-
-<tools>
-**Octocode Local Research**:
-
-| Tool | Purpose |
-|------|---------|
-| `localViewStructure` | Explore directories with sorting, size hints, depth control |
-| `localSearchCode` | Fast content search with discovery and pagination |
-| `localFindFiles` | Metadata search (name/time/size/perm) sorted by modified time |
-| `localGetFileContent` | Read file content with `matchString` targeting and pagination |
-| `lspGotoDefinition` | Navigate to symbol definition (semantic) |
-| `lspFindReferences` | Find all usages of a symbol (semantic) |
-| `lspCallHierarchy` | Trace function call relationships (semantic) |
-
-**Task Management**:
-| Tool | Purpose |
-|------|---------|
-| `TodoWrite` | Track research progress and subtasks |
-
-**FileSystem**: `Read`, `Write`, `Grep`, `Glob`
-</tools>
-
-<tool_details>
-**localViewStructure**:
-- Key params: `path`, `depth` (1–5, default 1), `entriesPerPage` (≤20), `details`, `hidden`, `extensions`, `pattern`
-- Tip: Start with `depth=1` at root, then `depth=2` on specific dirs. Avoid `depth>2` on large directories.
-
-**localSearchCode** (Lexical Search):
-- Key params: `pattern`, `path`, `filesOnly` (discovery), `type`, `include`, `exclude`, `excludeDir`, `matchesPerPage` (≤100), `filesPerPage` (≤20), `filePageNumber`
-- Tip: Use `filesOnly=true` or `mode="discovery"` for 5x faster file listing.
-
-**localFindFiles** (Scope Narrowing):
-- Key params: `path`, `iname` (case-insensitive), `modifiedWithin`, `sizeGreater`, `type`
-- Tip: Use `iname` for case-insensitive matching.
-
-**localGetFileContent** (Content Inspection):
-- Key params: `path`, `matchString` (+`matchStringContextLines`), `startLine`/`endLine`, `charOffset`/`charLength`
-- Tip: Use `matchString` for large files to avoid token waste.
-
-⚠️ **ANTI-PATTERN WARNING**:
-- ❌ DO NOT use this to "understand flows" → use lspCallHierarchy instead
-- ❌ DO NOT use this to "trace who calls what" → use lspCallHierarchy instead  
-- ❌ DO NOT use this to "see how functions connect" → use lspCallHierarchy instead
-- ✅ USE ONLY for: reading implementation details AFTER you've traced with LSP
-- ✅ USE ONLY for: reading config files, READMEs, or specific code sections
-
-**ASK YOURSELF BEFORE CALLING**:
-1. Am I trying to understand a FLOW? → Use LSP first
-2. Have I already traced with LSP? → If no, do that first
-3. Am I reading for specific implementation details? → OK to proceed
-
-**LSP Tools** (Semantic Analysis):
-- **Prerequisites**: EXACT symbol name (case-sensitive) and accurate `lineHint` (±2 lines).
-- `lspGotoDefinition`: Finds where symbol is defined. **ALWAYS use after localSearchCode**.
-- `lspFindReferences`: Finds usages. Use `includeDeclaration=false` to see only calls.
-
-**lspCallHierarchy** (Flow Tracing):
-- Traces function call relationships semantically
-- `direction`: "incoming" (who calls this) or "outgoing" (what this calls)
-- `depth`: 1 is fast, 2+ is slower but more complete
-
-🎯 **WHEN TO USE (HIGH PRIORITY)**:
-- User asks about "flows", "traces", "calls", "chains"
-- User asks "how does X work"
-- User asks "who uses X" (for functions)
-- User asks "what does X call"
-
-> **WHY THIS IS BETTER THAN FILE READING**:
-> - localGetFileContent: Shows text, you manually trace imports (error-prone)
-> - lspCallHierarchy: Shows ACTUAL runtime call relationships, handles:
->   - Indirect calls through interfaces
->   - Cross-file relationships  
->   - Inherited method calls
->   - Complete caller/callee chains in one query
-
-**REQUIRED BEFORE**: Always run localSearchCode first to get accurate `lineHint`
-</tool_details>
-
-<location>
-**`.octocode/`** - Project root folder for Octocode artifacts.
-- `.octocode/context/context.md`: User preferences & project context
-- `.octocode/research/{session-name}/research.md`: Final research document
-</location>
-
----
-
-## 3. Research Flows (ORDERED BY COMMON MISTAKES)
-
-<research_flows>
-**General Rule**: Research is a matrix/graph. The optimal flow is **The Funnel**.
-**The Mantra**: Text narrows, symbols identify, graphs explain.
-
-### 🚨 Flow 1: Flow Tracing (CHECK THIS FIRST - MOST COMMON MISTAKE)
-**When user asks**: "how does X work", "trace the flow", "who calls X", "what does X call"
-
-**90% of agents will read files. THIS IS WRONG.**
-
-**REQUIRED SEQUENCE**:
-1. `localSearchCode(pattern="functionName")` → Get exact line number
-2. `lspCallHierarchy(incoming, depth=2)` → **REQUIRED**: Who calls it
-3. `lspCallHierarchy(outgoing, depth=2)` → **REQUIRED**: What it calls
-4. `lspGotoDefinition` (chain for each hop) → Navigate deeper
-5. `localGetFileContent` → **LAST RESORT**: Only for impl details after tracing
-
-❌ **FORBIDDEN**: Skipping steps 2-4 and going straight to file reading.
-
-### Flow 2: The Golden Path (Semantic Probe) - "Pro Workflow"
-1. **PROBE**: `localSearchCode(pattern="X")` → Find unique anchor (error msg, constant).
-2. **READ**: `localGetFileContent` → Confirm context and find exact symbol.
-3. **PIVOT**: `lspGotoDefinition(lineHint=...)` → Jump to definition.
-4. **TRACE**: `lspFindReferences` / `lspCallHierarchy` → Graph traversal.
-
-### Flow 3: Local Codebase Discovery
-1. `localViewStructure(depth=2)` → See directories
-2. `localSearchCode(filesOnly=true)` → Find key modules
-3. LSP tools → Navigate and analyze
-4. `localGetFileContent(matchString)` → Read specific details
-
-### Flow 4: Impact Analysis (Pre-Refactor)
-1. `lspGotoDefinition` → Understand current implementation
-2. `lspCallHierarchy(incoming, depth=2)` → Find all callers (transitive)
-3. `lspFindReferences(includeDecl=false)` → Find type refs, re-exports, tests
-4. `localSearchCode(path="tests/")` → Check test coverage
-</research_flows>
-
-<decision_trees>
-**Tree 1: Problem Type & Solution**
-- **Text fragment to location?** → `localSearchCode` (Lexical)
-- **Symbol name to definition?** → `lspGotoDefinition` (Symbol Resolution)
-- **Behavior to implementation?** → `lspCallHierarchy` (Graph Traversal)
-
-**Tree 2: "Where is X defined?"**
-- Know exact symbol & line? → `lspGotoDefinition`
-- Know exact symbol? → `localSearchCode` (get line) → `lspGotoDefinition`
-- Don't know? → `localSearchCode` (pattern matching)
-
-**Tree 3: "Who uses X?"**
-- Function/Method? → `lspCallHierarchy` (for calls) or `lspFindReferences` (for all usages)
-- Type/Variable? → `lspFindReferences` (only option)
-
-**Tree 4: "How does X flow to Y?"**
-- MUST use: `localSearchCode` → `lspCallHierarchy(incoming)` → `lspCallHierarchy(outgoing)`
-- DO NOT just use `localGetFileContent` to read files.
-- Chain `lspGotoDefinition` for multi-hop tracing.
-</decision_trees>
-
----
-
-## 4. Execution & Best Practices
-
-<best_practices>
-### ✅ DO
-- **ALWAYS use Semantic Probe (:SP)**: `localSearchCode` → `lspGotoDefinition`. This is the single best way to understand code.
-- **Use The Funnel**: Scope → Lexical → Semantic → Graph.
-- Use `localSearchCode` before LSP to get accurate line numbers for `lineHint`.
-- Run independent LSP calls in **parallel** (3x faster).
-- Use `filesOnly=true` or `mode="discovery"` for initial discovery.
-- Set `contextLines=10+` for definitions to see full implementation.
-- Use `matchString` for large files.
-- Paginate large result sets.
-- Use `depth=1` for call hierarchy (10x faster than depth=3).
-- Use `iname` for case-insensitive file search.
-
-### ❌ DON'T
-- Don't read files (`localGetFileContent`) to understand flow. **Use `lspCallHierarchy` instead.**
-- Don't use partial symbol names with LSP (requires exact matches).
-- Don't guess line numbers (LSP searches ±2 lines).
-- Don't use `lspCallHierarchy` on types/variables.
-- Don't use `fullContent=true` on large files.
-- Don't run sequential calls that could be parallel.
-- **Never jump directly to LSP without lexical filtering first.**
-</best_practices>
-
-<checkpoint_validation>
-## CHECKPOINT: Before calling localGetFileContent
-
-**STOP and answer these questions:**
-
-1. ❓ Is the user asking about FLOWS, CALLS, or TRACES?
-   - YES → **STOP. Use lspCallHierarchy first.**
-   - NO → Continue to question 2
-
-2. ❓ Have I already traced the call hierarchy with LSP?
-   - NO → **STOP. Do that first.**
-   - YES → Continue to question 3
-
-3. ❓ Am I reading for specific implementation details (not flow understanding)?
-   - YES → ✅ Proceed with localGetFileContent
-   - NO → **STOP. Reconsider if LSP tools are needed.**
-
-**If you skip this checkpoint and read files for flow analysis, you are making an error.**
-</checkpoint_validation>
-
-<wrong_path_detection>
-## Wrong Path Detection (Self-Check)
-
-### Pattern: File Reading Without LSP for Flow Analysis
-
-**Detected if you have**:
-1. Called `localSearchCode` and found functions
-2. Called `localGetFileContent` to read those function files
-3. **WITHOUT** calling `lspCallHierarchy` or `lspGotoDefinition`
-
-**AND the user asked about**: "flows", "traces", "calls", "how does X work"
-
-**DIAGNOSIS**: You are on the WRONG PATH.
-
-**REMEDY**: 
-1. STOP reading files
-2. Go back to step 1 results (the line numbers from localSearchCode)
-3. Call `lspCallHierarchy` with those line numbers
-4. THEN read files only for implementation details
-
-### Pattern: Repeated File Reading
-
-**Detected if you have**:
-- Called `localGetFileContent` more than 3 times
-- Without any LSP calls in between
-- While investigating function relationships
-
-**DIAGNOSIS**: You are manually tracing imports. This is error-prone.
-
-**REMEDY**:
-1. STOP
-2. Use `lspCallHierarchy` to get the call graph automatically
-3. Let LSP handle the cross-file relationships
-</wrong_path_detection>
-
-<chaining_patterns>
-**Pattern A: Discovery Chain**
-`localViewStructure` → `localSearchCode(filesOnly)` → `localGetFileContent`
-
-**Pattern B: Symbol Chain**
-`localSearchCode` → `lspGotoDefinition` → `lspFindReferences` → `lspCallHierarchy`
-
-**Pattern C: Parallel Analysis Chain**
-`localSearchCode` → Parallel(`lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`) → Combined Results
-
-**Pattern E: Bidirectional Call Chain**
-`lspGotoDefinition` → Parallel(`lspCallHierarchy(incoming)`, `lspCallHierarchy(outgoing)`)
-</chaining_patterns>
-
-<error_recovery>
-- **Symbol not found**: Use `localSearchCode` to find correct line number.
-- **Empty result**: Try semantic variants or remove filters.
-- **Too many results**: Add filters (`path`, `type`, `excludeDir`).
-- **Timeout**: Reduce `depth` (LSP) or use `localGetFileContent`.
-- **Blocked**: Summarize attempts and ask user.
-</error_recovery>
-
----
-
-## 5. Output Protocol
-
-<pre_response_checklist>
-## PRE-RESPONSE CHECKLIST (Before sending tool calls)
-
-Before submitting your tool calls, verify:
-
-### For Flow/Trace Questions:
-- [ ] Did I classify this as a FLOW TRACING task?
-- [ ] Am I using `lspCallHierarchy`?
-- [ ] Am I NOT relying solely on `localGetFileContent`?
-
-### For "Who Uses X" Questions:
-- [ ] Am I using `lspFindReferences` or `lspCallHierarchy(incoming)`?
-- [ ] Am I NOT just grepping?
-
-### For "Where is X Defined" Questions:
-- [ ] Am I using `lspGotoDefinition`?
-- [ ] Did I get the line number first with `localSearchCode`?
-
-### General:
-- [ ] Did I check the TRIGGER WORD → TOOL MAPPING table?
-- [ ] Am I following the correct RESEARCH FLOW for this task type?
-
-**If any checkbox fails, reconsider your tool selection.**
-</pre_response_checklist>
-
-<output_flow>
-### Step 1: Chat Answer (MANDATORY)
-- Provide clear TL;DR answer with research results.
-- Add evidence and references to files (full paths).
-- Include only important code chunks (up to 10 lines).
-
-### Step 2: Next Step Question (MANDATORY)
-Ask user:
-- "Create a research doc?" → Generate per `<output_structure>`
-- "Keep researching?" → Summarize to `research_summary.md`.
-</output_flow>
-
-<output_structure>
-**Location**: `.octocode/research/{session-name}/research.md`
-
-```markdown
-# Research Goal
-[User's question / research objective]
-
-# Answer
-[Overview TL;DR of findings]
-
-# Details
-## Code Flows
-[High-level flow between files/functions/modules]
-
-## Key Findings
-[Detailed evidence with code snippets]
-
-## Edge Cases / Caveats
-[Limitations, uncertainties, areas needing more research]
-
-# References
-- [File paths with descriptions]
-
----
-Created by Octocode MCP 🔍🐙
+## Quick Commands
+
+```bash
+# Development
+yarn build          # Compile TypeScript
+yarn start          # Run compiled server
+yarn dev            # Run with tsx watch mode
+yarn test           # Run tests with Vitest
+yarn test:watch     # Watch mode testing
+yarn lint           # ESLint check
+yarn lint:fix       # Auto-fix lint issues
+
+# Installation & Running
+./install.sh start  # Install dependencies and start server
+./start.sh          # Start server (assumes installed)
 ```
-</output_structure>
 
-<verification_checklist>
-- [ ] Answer user's goal directly.
-- [ ] Follow The Funnel: Text narrows, symbols identify, graphs explain.
-- [ ] Use `localSearchCode` before LSP tools.
-- [ ] Use `matchString` or `charLength` for reading; avoid full dumps.
-- [ ] Include `mainResearchGoal`, `researchGoal`, `reasoning` consistently.
-- [ ] Stop and clarify if progress stalls (≥5 loops) or 3 consecutive empties.
-</verification_checklist>
+---
+
+## Project Structure
+
+```
+octocode-research/
+├── src/
+│   ├── server.ts              # Express server entry point
+│   ├── index.ts               # Re-exports from octocode-mcp
+│   ├── routes/
+│   │   ├── index.ts           # Route exports
+│   │   ├── local.ts           # /local/* - filesystem operations
+│   │   ├── lsp.ts             # /lsp/* - Language Server Protocol
+│   │   ├── github.ts          # /github/* - GitHub API
+│   │   ├── package.ts         # /package/* - npm/PyPI search
+│   │   ├── tools.ts           # /tools/* - tool discovery
+│   │   └── prompts.ts         # /prompts/* - prompt discovery
+│   ├── middleware/
+│   │   ├── index.ts           # Middleware exports
+│   │   ├── contextPropagation.ts  # Research session context
+│   │   ├── errorHandler.ts    # Error response formatting
+│   │   ├── logger.ts          # Request/response logging
+│   │   └── queryParser.ts     # Zod validation
+│   ├── validation/
+│   │   ├── index.ts           # Schema exports
+│   │   └── schemas.ts         # Zod schemas for all endpoints
+│   ├── utils/
+│   │   ├── index.ts           # Utility exports
+│   │   ├── colors.ts          # Console color functions
+│   │   ├── logger.ts          # File-based logging
+│   │   ├── responseBuilder.ts # Role-based response formatting
+│   │   ├── responseFactory.ts # Response creation helpers
+│   │   ├── responseParser.ts  # MCP response parsing
+│   │   ├── resilience.ts      # Resilience utilities
+│   │   ├── retry.ts           # Retry with backoff
+│   │   ├── circuitBreaker.ts  # Circuit breaker pattern
+│   │   └── rateLimitHandler.ts# GitHub rate limit tracking
+│   └── types/
+│       ├── index.ts           # Type exports
+│       ├── express.d.ts       # Express type extensions
+│       ├── guards.ts          # Type guard functions
+│       ├── mcp.ts             # MCP protocol types
+│       ├── responses.ts       # Response types
+│       └── toolTypes.ts       # Tool parameter types
+├── __tests__/
+│   └── integration/           # Integration tests
+├── docs/
+│   ├── ARCHITECTURE.md        # Architecture documentation
+│   ├── BUG_RESPONSE_FORMAT.md # Bug tracking format
+│   ├── DESIGN_LIST_TOOLS_PROMPTS.md  # API design doc
+│   └── IMPROVEMENTS.md        # Future improvements
+├── dist/                      # Compiled output
+├── SKILL.md                   # Skill definition for AI agents
+├── AGENTS.md                  # This file
+├── install.sh                 # Installation script
+├── start.sh                   # Startup script
+├── package.json
+├── tsconfig.json
+├── eslint.config.mjs
+└── vitest.config.ts           # Test configuration (if exists)
+```
+
+---
+
+## API Endpoints
+
+### Discovery Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Server health check |
+| `GET /tools/list` | List all tools (MCP format) |
+| `GET /tools/info` | List all tools (simplified) |
+| `GET /tools/info/:name` | Get specific tool info |
+| `GET /prompts/list` | List all prompts (MCP format) |
+| `GET /prompts/info/:name` | Get specific prompt info |
+
+### Local Filesystem (`/local/*`)
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /local/search` | Code search via ripgrep |
+| `GET /local/content` | Read file content |
+| `GET /local/find` | Find files by metadata |
+| `GET /local/structure` | View directory tree |
+
+### LSP Tools (`/lsp/*`)
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /lsp/definition` | Go to symbol definition |
+| `GET /lsp/references` | Find all references |
+| `GET /lsp/calls` | Call hierarchy (incoming/outgoing) |
+
+### GitHub Tools (`/github/*`)
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /github/search` | Search GitHub code |
+| `GET /github/content` | Read GitHub files |
+| `GET /github/repos` | Search repositories |
+| `GET /github/structure` | View repo structure |
+| `GET /github/prs` | Search pull requests |
+
+### Package Search (`/package/*`)
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /package/search` | Search npm/PyPI packages |
+
+---
+
+## Key Files & Responsibilities
+
+### Entry Points
+
+| File | Purpose |
+|------|---------|
+| `src/server.ts` | Express app creation, route mounting, graceful shutdown |
+| `src/index.ts` | Re-exports octocode-mcp functions with cleaner names |
+
+### Routes
+
+Each route file follows the pattern:
+1. Import tool function from `../index.js`
+2. Define Express Router
+3. Apply validation middleware
+4. Execute tool and format response
+
+### Middleware
+
+| File | Purpose |
+|------|---------|
+| `queryParser.ts` | Validates query params against Zod schemas |
+| `errorHandler.ts` | Catches errors, formats consistent responses |
+| `logger.ts` | Logs requests to console and file |
+| `contextPropagation.ts` | Maintains research session context |
+
+### Validation
+
+`schemas.ts` contains Zod schemas for ALL endpoints. When adding/modifying endpoints:
+1. Define schema in `validation/schemas.ts`
+2. Apply schema validation in route handler
+3. Update types in `types/` if needed
+
+---
+
+## Development Guidelines
+
+### Adding a New Endpoint
+
+1. **Add schema** in `src/validation/schemas.ts`
+2. **Create route handler** in appropriate `src/routes/*.ts`
+3. **Add route to server.ts** if new route group
+4. **Update types** if needed
+5. **Add tests** in `__tests__/`
+6. **Document** in docs/ARCHITECTURE.md
+
+### Code Style
+
+- **TypeScript strict mode** enabled
+- **Zod** for runtime validation
+- **Express async handlers** - wrap with try/catch or error middleware
+- **Consistent logging** - use `agentLog`, `successLog`, `errorLog` from colors.ts
+
+### Testing
+
+```bash
+yarn test                 # Run all tests
+yarn test:watch          # Watch mode
+yarn test -- --coverage  # With coverage report
+```
+
+---
+
+## Response Format
+
+All endpoints return standardized responses:
+
+```typescript
+// Success
+{
+  status: "hasResults" | "empty",
+  data: { ... },
+  _reasoning: {
+    mainResearchGoal: string,
+    researchGoal: string,
+    reasoning: string
+  }
+}
+
+// Error
+{
+  status: "error",
+  error: {
+    message: string,
+    code?: string
+  }
+}
+```
+
+---
+
+## Key Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `octocode-mcp` | Core tool implementations |
+| `express` | HTTP server framework |
+| `zod` | Schema validation |
+| `@modelcontextprotocol/sdk` | MCP format types |
+
+---
+
+## Documentation References
+
+| Doc | Purpose |
+|-----|---------|
+| [SKILL.md](./SKILL.md) | How AI agents should USE this skill |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Detailed architecture |
+| [docs/DESIGN_LIST_TOOLS_PROMPTS.md](./docs/DESIGN_LIST_TOOLS_PROMPTS.md) | API design decisions |
+
+---
+
+## Console Output Colors
+
+| Category | Color | Function |
+|----------|-------|----------|
+| Agent messages | 🟣 Purple | `agentLog()` |
+| Tool results | 🔵 Blue | `resultLog()` |
+| Success | 🟢 Green | `successLog()` |
+| Errors | 🔴 Red | `errorLog()` |
+| Warnings | 🟡 Yellow | `warnLog()` |
+| Secondary info | Gray | `dimLog()` |
+
+---
+
+## Troubleshooting
+
+### Server won't start
+```bash
+# Check if port 1987 is in use
+lsof -i :1987
+
+# Kill existing process
+kill -9 $(lsof -ti :1987)
+```
+
+### Build errors
+```bash
+# Clean and rebuild
+rm -rf dist/
+yarn build
+```
+
+### Missing dependencies
+```bash
+# Reinstall
+rm -rf node_modules/
+yarn install
+```
+
+---
+
+## Access Control
+
+| Path | Access |
+|------|--------|
+| `src/`, `__tests__/` | ✅ Auto |
+| `docs/` | ✅ Auto |
+| `*.json`, `*.config.*` | ⚠️ Ask first |
+| `.env*`, `node_modules/`, `dist/` | ❌ Never modify |
+
+---
+
+*This skill wraps `octocode-mcp` tools as HTTP endpoints. For tool-specific documentation, see the [octocode-mcp package](../../packages/octocode-mcp/AGENTS.md).*

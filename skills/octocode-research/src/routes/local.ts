@@ -1,20 +1,25 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+/**
+ * Local filesystem routes using route factory pattern.
+ * 
+ * @module routes/local
+ */
+
+import { Router } from 'express';
 import {
   localSearchCode,
   localGetFileContent,
   localFindFiles,
   localViewStructure,
 } from '../index.js';
-import { parseAndValidate } from '../middleware/queryParser.js';
 import {
   localSearchSchema,
   localContentSchema,
   localFindSchema,
   localStructureSchema,
 } from '../validation/index.js';
-import { ResearchResponse, QuickResult, detectLanguageFromPath } from '../utils/responseBuilder.js';
-import { parseToolResponse } from '../utils/responseParser.js';
+import { ResearchResponse, detectLanguageFromPath } from '../utils/responseBuilder.js';
 import { withLocalResilience } from '../utils/resilience.js';
+import { createRouteHandler } from '../utils/routeFactory.js';
 import {
   toLocalSearchParams,
   toLocalContentParams,
@@ -28,31 +33,25 @@ import {
   extractMatchLocations,
   transformPagination,
 } from '../utils/responseFactory.js';
-import { isObject, hasProperty, hasNumberProperty, hasBooleanProperty } from '../types/guards.js';
+import { isObject, hasNumberProperty, hasBooleanProperty } from '../types/guards.js';
 
 export const localRoutes = Router();
 
 // GET /local/search - Search code with ripgrep
 localRoutes.get(
   '/search',
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const queries = parseAndValidate(
-        req.query as Record<string, unknown>,
-        localSearchSchema
-      );
-      const rawResult = await withLocalResilience(
-        () => localSearchCode(toLocalSearchParams(queries)),
-        'localSearchCode'
-      );
-      const { data, isError, hints, research } = parseToolResponse(rawResult);
-
+  createRouteHandler({
+    schema: localSearchSchema,
+    toParams: toLocalSearchParams,
+    toolFn: localSearchCode,
+    toolName: 'localSearchCode',
+    resilience: withLocalResilience,
+    transform: (parsed, queries) => {
+      const { data, hints, research } = parsed;
       const files = safeArray<Record<string, unknown>>(data, 'files');
       const pagination = isObject(data.pagination) ? data.pagination : {};
 
-      // Transform to role-based response
-      // MCP returns matches[] array per file with line numbers
-      const response = ResearchResponse.searchResults({
+      return ResearchResponse.searchResults({
         files: files.map((f) => {
           const matchesArray = safeArray<Record<string, unknown>>(f, 'matches');
           const firstMatch = matchesArray[0];
@@ -60,127 +59,95 @@ localRoutes.get(
             path: safeString(f, 'path'),
             matches: hasNumberProperty(f, 'matchCount') ? f.matchCount : matchesArray.length,
             line: isObject(firstMatch) && hasNumberProperty(firstMatch, 'line') ? firstMatch.line : undefined,
-            preview: isObject(firstMatch) && hasProperty(firstMatch, 'value') && typeof firstMatch.value === 'string' ? firstMatch.value.trim() : undefined,
-            // Preserve all match locations for detailed analysis
+            preview: isObject(firstMatch) && typeof firstMatch.value === 'string' ? firstMatch.value.trim() : undefined,
             allMatches: extractMatchLocations(matchesArray),
           };
         }),
         totalMatches: safeNumber(data, 'totalMatches', 0),
         pagination: transformPagination(pagination),
         searchPattern: queries[0]?.pattern,
-        mcpHints: hints, // Pass through MCP workflow hints
-        research, // Pass through research context
+        mcpHints: hints,
+        research,
       });
-
-      res.status(isError ? 500 : 200).json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
+    },
+  })
 );
 
 // GET /local/content - Read file contents
 localRoutes.get(
   '/content',
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const queries = parseAndValidate(
-        req.query as Record<string, unknown>,
-        localContentSchema
-      );
-      const rawResult = await withLocalResilience(
-        () => localGetFileContent(toLocalContentParams(queries)),
-        'localGetFileContent'
-      );
-      const { data, isError, hints, research } = parseToolResponse(rawResult);
+  createRouteHandler({
+    schema: localContentSchema,
+    toParams: toLocalContentParams,
+    toolFn: localGetFileContent,
+    toolName: 'localGetFileContent',
+    resilience: withLocalResilience,
+    transform: (parsed, queries) => {
+      const { data, hints, research } = parsed;
 
-      // Transform to role-based response
-      const response = ResearchResponse.fileContent({
+      return ResearchResponse.fileContent({
         path: safeString(data, 'path', queries[0]?.path || 'unknown'),
         content: safeString(data, 'content'),
-        lines:
-          hasNumberProperty(data, 'startLine')
-            ? {
-                start: data.startLine,
-                end: hasNumberProperty(data, 'endLine') ? data.endLine : data.startLine,
-              }
-            : undefined,
+        lines: hasNumberProperty(data, 'startLine')
+          ? {
+              start: data.startLine,
+              end: hasNumberProperty(data, 'endLine') ? data.endLine : data.startLine,
+            }
+          : undefined,
         language: detectLanguageFromPath(queries[0]?.path || ''),
         totalLines: hasNumberProperty(data, 'totalLines') ? data.totalLines : undefined,
         isPartial: hasBooleanProperty(data, 'isPartial') ? data.isPartial : undefined,
         mcpHints: hints,
         research,
       });
-
-      res.status(isError ? 500 : 200).json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
+    },
+  })
 );
 
 // GET /local/find - Find files by metadata
 localRoutes.get(
   '/find',
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const queries = parseAndValidate(req.query as Record<string, unknown>, localFindSchema as any);
-      const rawResult = await withLocalResilience(
-        () => localFindFiles(toLocalFindParams(queries)),
-        'localFindFiles'
-      );
-      const { data, isError, hints: mcpHints } = parseToolResponse(rawResult);
-
+  createRouteHandler({
+    schema: localFindSchema,
+    toParams: toLocalFindParams,
+    toolFn: localFindFiles,
+    toolName: 'localFindFiles',
+    resilience: withLocalResilience,
+    transform: (parsed) => {
+      const { data, hints } = parsed;
       const files = safeArray<Record<string, unknown>>(data, 'files');
-      const summary =
-        files.length > 0
-          ? `Found ${files.length} files:\n` +
-            files
-              .slice(0, 20)
-              .map((f) =>
-                `- ${safeString(f, 'path')}${hasNumberProperty(f, 'size') ? ` (${formatSize(f.size)})` : ''}`
-              )
-              .join('\n')
-          : 'No files found';
+      
+      const summary = files.length > 0
+        ? `Found ${files.length} files:\n` +
+          files
+            .slice(0, 20)
+            .map((f) =>
+              `- ${safeString(f, 'path')}${hasNumberProperty(f, 'size') ? ` (${formatSize(f.size)})` : ''}`
+            )
+            .join('\n')
+        : 'No files found';
 
-      // Build hints - start with MCP hints, add contextual info
-      const hints: string[] = [...mcpHints];
-      const response =
-        files.length === 0
-          ? QuickResult.empty(summary, hints.length > 0 ? hints : [
-              'Try different name pattern',
-              'Check path filter',
-              'Use -iname for case-insensitive search',
-            ])
-          : QuickResult.success(summary, data, hints.length > 0 ? hints : [
-              'Use localGetFileContent to read file contents',
-              'Use localSearchCode to search within files',
-            ]);
+      const defaultHints = ['Use localGetFileContent to read file contents', 'Use localSearchCode to search within files'];
+      const emptyHints = ['Try different name pattern', 'Check path filter', 'Use -iname for case-insensitive search'];
 
-      res.status(isError ? 500 : 200).json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
+      return files.length === 0
+        ? { content: [{ type: 'text' as const, text: summary }], structuredContent: { status: 'empty', hints: emptyHints, data } }
+        : { content: [{ type: 'text' as const, text: summary }], structuredContent: { status: 'hasResults', hints: hints.length > 0 ? hints : defaultHints, data } };
+    },
+  })
 );
 
 // GET /local/structure - View directory structure
 localRoutes.get(
   '/structure',
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const queries = parseAndValidate(
-        req.query as Record<string, unknown>,
-        localStructureSchema
-      );
-      const rawResult = await withLocalResilience(
-        () => localViewStructure(toLocalStructureParams(queries)),
-        'localViewStructure'
-      );
-      const { data, isError, hints, research } = parseToolResponse(rawResult);
-
-      // Parse structured output
+  createRouteHandler({
+    schema: localStructureSchema,
+    toParams: toLocalStructureParams,
+    toolFn: localViewStructure,
+    toolName: 'localViewStructure',
+    resilience: withLocalResilience,
+    transform: (parsed, queries) => {
+      const { data, hints, research } = parsed;
       const structuredOutput = safeString(data, 'structuredOutput');
       const files: string[] = [];
       const folders: string[] = [];
@@ -197,7 +164,7 @@ localRoutes.get(
         }
       }
 
-      const response = ResearchResponse.repoStructure({
+      return ResearchResponse.repoStructure({
         path: queries[0]?.path || '.',
         structure: { files, folders },
         depth: hasNumberProperty(queries[0], 'depth') ? queries[0].depth : undefined,
@@ -206,12 +173,8 @@ localRoutes.get(
         mcpHints: hints,
         research,
       });
-
-      res.status(isError ? 500 : 200).json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
+    },
+  })
 );
 
 // Helper: Format file size

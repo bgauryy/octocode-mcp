@@ -4,6 +4,7 @@ import { parseAndValidate } from '../middleware/queryParser.js';
 import { packageSearchSchema } from '../validation/index.js';
 import { ResearchResponse } from '../utils/responseBuilder.js';
 import { parseToolResponse } from '../utils/responseParser.js';
+import { withPackageResilience } from '../utils/resilience.js';
 import { toPackageSearchParams } from '../types/toolTypes.js';
 import { safeString, safeArray } from '../utils/responseFactory.js';
 import { isObject, hasProperty, hasStringProperty } from '../types/guards.js';
@@ -19,7 +20,10 @@ packageRoutes.get(
         req.query as Record<string, unknown>,
         packageSearchSchema
       );
-      const rawResult = await packageSearch(toPackageSearchParams(queries));
+      const rawResult = await withPackageResilience(
+        () => packageSearch(toPackageSearchParams(queries)),
+        'packageSearch'
+      );
       const { data, isError, hints, research } = parseToolResponse(rawResult);
 
       // Extract packages from result

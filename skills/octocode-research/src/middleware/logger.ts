@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { logToolCall } from '../utils/logger.js';
-import { resultLog } from '../utils/colors.js';
+import { resultLog, errorLog } from '../utils/colors.js';
 
 export function requestLogger(
   req: Request,
@@ -15,9 +15,14 @@ export function requestLogger(
     const statusIcon = status >= 400 ? '❌' : '✅';
     const success = status < 400;
     
-    // Results output in BLUE
+    // Results output in BLUE for success, RED for error
     const resultMessage = `${statusIcon} ${req.method} ${req.path} ${status} ${duration}ms`;
-    console.log(resultLog(resultMessage));
+    
+    if (success) {
+      console.log(resultLog(resultMessage));
+    } else {
+      console.log(errorLog(resultMessage));
+    }
     
     if (req.path !== '/health') {
       logToolCall({

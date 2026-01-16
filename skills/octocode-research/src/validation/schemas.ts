@@ -197,7 +197,6 @@ export const localContentSchema = z
     charLength: numericString,
 
     // Format detection
-    minified: booleanString,
 
     // Research context
     mainResearchGoal: z.string().optional(),
@@ -271,7 +270,6 @@ export const localFindSchema = z
     minDepth: numericString,
     // Time filters
     modifiedWithin: z.string().optional(), // e.g., "1d", "2h"
-    modifiedAfter: z.string().optional(), // ISO date (kept for backwards compat)
     modifiedBefore: z.string().optional(),
     accessedWithin: z.string().optional(),
     // Size filters (string format: "100k", "1M")
@@ -335,7 +333,6 @@ export const localStructureSchema = z
     humanReadable: booleanString,
     summary: booleanString,
     showFileLastModified: booleanString,
-    includeFiles: booleanString, // backwards compat
 
     // Sorting
     sortBy: z.enum(['name', 'size', 'time', 'extension']).optional(),

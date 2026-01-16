@@ -1,4 +1,10 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+/**
+ * GitHub routes using route factory pattern.
+ * 
+ * @module routes/github
+ */
+
+import { Router } from 'express';
 import {
   githubSearchCode,
   githubGetFileContent,
@@ -6,7 +12,6 @@ import {
   githubViewRepoStructure,
   githubSearchPullRequests,
 } from '../index.js';
-import { parseAndValidate } from '../middleware/queryParser.js';
 import {
   githubSearchSchema,
   githubContentSchema,
@@ -15,8 +20,8 @@ import {
   githubPRsSchema,
 } from '../validation/index.js';
 import { ResearchResponse, QuickResult, detectLanguageFromPath } from '../utils/responseBuilder.js';
-import { parseToolResponse } from '../utils/responseParser.js';
 import { withGitHubResilience } from '../utils/resilience.js';
+import { createRouteHandler } from '../utils/routeFactory.js';
 import {
   toGitHubSearchParams,
   toGitHubContentParams,
@@ -37,22 +42,17 @@ export const githubRoutes = Router();
 // GET /github/search - Search code on GitHub
 githubRoutes.get(
   '/search',
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const queries = parseAndValidate(
-        req.query as Record<string, unknown>,
-        githubSearchSchema
-      );
-      const rawResult = await withGitHubResilience(
-        () => githubSearchCode(toGitHubSearchParams(queries)),
-        'githubSearchCode'
-      );
-      const { data, isError, hints, research } = parseToolResponse(rawResult);
-
-      // Transform to role-based response
-      // GitHub API returns text_matches as string array (snippets), not line numbers
+  createRouteHandler({
+    schema: githubSearchSchema,
+    toParams: toGitHubSearchParams,
+    toolFn: githubSearchCode,
+    toolName: 'githubSearchCode',
+    resilience: withGitHubResilience,
+    transform: (parsed, queries) => {
+      const { data, hints, research } = parsed;
       const files = safeArray<Record<string, unknown>>(data, 'files');
-      const response = ResearchResponse.searchResults({
+
+      return ResearchResponse.searchResults({
         files: files.map((f) => {
           const textMatches = safeArray<string>(f, 'text_matches');
           const firstMatch = textMatches[0];
@@ -68,124 +68,97 @@ githubRoutes.get(
         searchPattern: Array.isArray(queries[0]?.keywordsToSearch)
           ? queries[0].keywordsToSearch.join(' ')
           : undefined,
-        mcpHints: hints, // Pass through MCP workflow hints
-        research, // Pass through research context
+        mcpHints: hints,
+        research,
       });
-
-      res.status(isError ? 500 : 200).json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
+    },
+  })
 );
 
 // GET /github/content - Read file from GitHub
 githubRoutes.get(
   '/content',
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const queries = parseAndValidate(
-        req.query as Record<string, unknown>,
-        githubContentSchema
-      );
-      const rawResult = await withGitHubResilience(
-        () => githubGetFileContent(toGitHubContentParams(queries)),
-        'githubGetFileContent'
-      );
-      const { data, isError, hints, research } = parseToolResponse(rawResult);
+  createRouteHandler({
+    schema: githubContentSchema,
+    toParams: toGitHubContentParams,
+    toolFn: githubGetFileContent,
+    toolName: 'githubGetFileContent',
+    resilience: withGitHubResilience,
+    transform: (parsed, queries) => {
+      const { data, hints, research } = parsed;
 
-      // Transform to role-based response
-      const response = ResearchResponse.fileContent({
+      return ResearchResponse.fileContent({
         path: safeString(data, 'path', queries[0]?.path || 'unknown'),
         content: safeString(data, 'content'),
-        lines:
-          hasNumberProperty(data, 'startLine')
-            ? {
-                start: data.startLine,
-                end: hasNumberProperty(data, 'endLine') ? data.endLine : data.startLine,
-              }
-            : undefined,
+        lines: hasNumberProperty(data, 'startLine')
+          ? {
+              start: data.startLine,
+              end: hasNumberProperty(data, 'endLine') ? data.endLine : data.startLine,
+            }
+          : undefined,
         language: detectLanguageFromPath(queries[0]?.path || ''),
         totalLines: hasNumberProperty(data, 'totalLines') ? data.totalLines : undefined,
         isPartial: hasBooleanProperty(data, 'isPartial') ? data.isPartial : undefined,
         mcpHints: hints,
         research,
       });
-
-      res.status(isError ? 500 : 200).json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
+    },
+  })
 );
 
 // GET /github/repos - Search repositories
 githubRoutes.get(
   '/repos',
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const queries = parseAndValidate(
-        req.query as Record<string, unknown>,
-        githubReposSchema
-      );
-      const rawResult = await withGitHubResilience(
-        () => githubSearchRepositories(toGitHubReposParams(queries)),
-        'githubSearchRepositories'
-      );
-      const { data, isError, hints: mcpHints } = parseToolResponse(rawResult);
-
+  createRouteHandler({
+    schema: githubReposSchema,
+    toParams: toGitHubReposParams,
+    toolFn: githubSearchRepositories,
+    toolName: 'githubSearchRepositories',
+    resilience: withGitHubResilience,
+    transform: (parsed) => {
+      const { data, hints: mcpHints } = parsed;
       const repos = safeArray<Record<string, unknown>>(data, 'repositories');
-      const summary =
-        repos.length > 0
-          ? `Found ${repos.length} repositories:\n` +
-            repos
-              .slice(0, 10)
-              .map((r) =>
-                `- ${safeString(r, 'owner')}/${safeString(r, 'repo')}${hasNumberProperty(r, 'stars') ? ` ⭐${r.stars}` : ''}\n  ${safeString(r, 'description', 'No description')}`
-              )
-              .join('\n')
-          : 'No repositories found';
 
-      // Build hints - start with MCP hints, add contextual info
+      const summary = repos.length > 0
+        ? `Found ${repos.length} repositories:\n` +
+          repos
+            .slice(0, 10)
+            .map((r) =>
+              `- ${safeString(r, 'owner')}/${safeString(r, 'repo')}${hasNumberProperty(r, 'stars') ? ` ⭐${r.stars}` : ''}\n  ${safeString(r, 'description', 'No description')}`
+            )
+            .join('\n')
+        : 'No repositories found';
+
       const hints: string[] = [...mcpHints];
-      const response =
-        repos.length === 0
-          ? QuickResult.empty(summary, hints.length > 0 ? hints : [
-              'Try different search terms',
-              'Use topicsToSearch for topic-based search',
-            ])
-          : QuickResult.success(summary, data, hints.length > 0 ? hints : [
-              'Use githubViewRepoStructure to explore repo',
-              'Use githubSearchCode to search within repo',
-            ]);
-
-      res.status(isError ? 500 : 200).json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
+      return repos.length === 0
+        ? QuickResult.empty(summary, hints.length > 0 ? hints : [
+            'Try different search terms',
+            'Use topicsToSearch for topic-based search',
+          ])
+        : QuickResult.success(summary, data, hints.length > 0 ? hints : [
+            'Use githubViewRepoStructure to explore repo',
+            'Use githubSearchCode to search within repo',
+          ]);
+    },
+  })
 );
 
 // GET /github/structure - View repository structure
 githubRoutes.get(
   '/structure',
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const queries = parseAndValidate(
-        req.query as Record<string, unknown>,
-        githubStructureSchema
-      );
-      const rawResult = await withGitHubResilience(
-        () => githubViewRepoStructure(toGitHubStructureParams(queries)),
-        'githubViewRepoStructure'
-      );
-      const { data, isError, hints, research } = parseToolResponse(rawResult);
-
+  createRouteHandler({
+    schema: githubStructureSchema,
+    toParams: toGitHubStructureParams,
+    toolFn: githubViewRepoStructure,
+    toolName: 'githubViewRepoStructure',
+    resilience: withGitHubResilience,
+    transform: (parsed, queries) => {
+      const { data, hints, research } = parsed;
       const structure = isObject(data.structure) ? data.structure : {};
       const rootEntry = isObject(structure['.']) ? structure['.'] as { files?: string[]; folders?: string[] } : { files: [], folders: [] };
       const summary = isObject(data.summary) ? data.summary : {};
 
-      const response = ResearchResponse.repoStructure({
+      return ResearchResponse.repoStructure({
         path: queries[0]?.path || '/',
         structure: {
           files: Array.isArray(rootEntry.files) ? rootEntry.files : [],
@@ -199,32 +172,24 @@ githubRoutes.get(
         mcpHints: hints,
         research,
       });
-
-      res.status(isError ? 500 : 200).json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
+    },
+  })
 );
 
 // GET /github/prs - Search pull requests
 githubRoutes.get(
   '/prs',
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const queries = parseAndValidate(
-        req.query as Record<string, unknown>,
-        githubPRsSchema
-      );
-      const rawResult = await withGitHubResilience(
-        () => githubSearchPullRequests(toGitHubPRsParams(queries)),
-        'githubSearchPullRequests'
-      );
-      const { data, isError, hints, research } = parseToolResponse(rawResult);
-
+  createRouteHandler({
+    schema: githubPRsSchema,
+    toParams: toGitHubPRsParams,
+    toolFn: githubSearchPullRequests,
+    toolName: 'githubSearchPullRequests',
+    resilience: withGitHubResilience,
+    transform: (parsed, queries) => {
+      const { data, hints, research } = parsed;
       const prs = safeArray<Record<string, unknown>>(data, 'pull_requests');
 
-      const response = ResearchResponse.pullRequests({
+      return ResearchResponse.pullRequests({
         prs: prs.map((pr) => ({
           number: safeNumber(pr, 'number', 0),
           title: safeString(pr, 'title'),
@@ -232,18 +197,13 @@ githubRoutes.get(
           author: hasProperty(pr, 'author') && typeof pr.author === 'string' ? pr.author : undefined,
           url: hasProperty(pr, 'url') && typeof pr.url === 'string' ? pr.url : undefined,
         })),
-        repo:
-          queries[0]?.owner && queries[0]?.repo
-            ? `${queries[0].owner}/${queries[0].repo}`
-            : undefined,
+        repo: queries[0]?.owner && queries[0]?.repo
+          ? `${queries[0].owner}/${queries[0].repo}`
+          : undefined,
         pagination: transformPagination(data.pagination),
         mcpHints: hints,
         research,
       });
-
-      res.status(isError ? 500 : 200).json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
+    },
+  })
 );

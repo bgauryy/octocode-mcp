@@ -1,18 +1,23 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+/**
+ * LSP routes using route factory pattern.
+ * 
+ * @module routes/lsp
+ */
+
+import { Router } from 'express';
 import {
   lspGotoDefinition,
   lspFindReferences,
   lspCallHierarchy,
 } from '../index.js';
-import { parseAndValidate } from '../middleware/queryParser.js';
 import {
   lspDefinitionSchema,
   lspReferencesSchema,
   lspCallsSchema,
 } from '../validation/index.js';
 import { ResearchResponse } from '../utils/responseBuilder.js';
-import { parseToolResponse } from '../utils/responseParser.js';
 import { withLspResilience } from '../utils/resilience.js';
+import { createRouteHandler } from '../utils/routeFactory.js';
 import {
   toLspDefinitionParams,
   toLspReferencesParams,
@@ -26,101 +31,74 @@ export const lspRoutes = Router();
 // GET /lsp/definition - Go to symbol definition
 lspRoutes.get(
   '/definition',
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const queries = parseAndValidate(
-        req.query as Record<string, unknown>,
-        lspDefinitionSchema
-      );
-      const rawResult = await withLspResilience(
-        () => lspGotoDefinition(toLspDefinitionParams(queries)),
-        'lspGotoDefinition'
-      );
-      const { data, isError, hints, research } = parseToolResponse(rawResult);
-
-      // Extract locations from result
+  createRouteHandler({
+    schema: lspDefinitionSchema,
+    toParams: toLspDefinitionParams,
+    toolFn: lspGotoDefinition,
+    toolName: 'lspGotoDefinition',
+    resilience: withLspResilience,
+    transform: (parsed, queries) => {
+      const { data, hints, research } = parsed;
       const locations = extractLocations(data, 'definition');
 
-      const response = ResearchResponse.lspResult({
+      return ResearchResponse.lspResult({
         symbol: queries[0]?.symbolName || 'unknown',
         locations,
         type: 'definition',
         mcpHints: hints,
         research,
       });
-
-      res.status(isError ? 500 : 200).json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
+    },
+  })
 );
 
 // GET /lsp/references - Find all references to a symbol
 lspRoutes.get(
   '/references',
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const queries = parseAndValidate(
-        req.query as Record<string, unknown>,
-        lspReferencesSchema
-      );
-      const rawResult = await withLspResilience(
-        () => lspFindReferences(toLspReferencesParams(queries)),
-        'lspFindReferences'
-      );
-      const { data, isError, hints, research } = parseToolResponse(rawResult);
-
-      // Extract locations from result
+  createRouteHandler({
+    schema: lspReferencesSchema,
+    toParams: toLspReferencesParams,
+    toolFn: lspFindReferences,
+    toolName: 'lspFindReferences',
+    resilience: withLspResilience,
+    transform: (parsed, queries) => {
+      const { data, hints, research } = parsed;
       const locations = extractLocations(data, 'references');
 
-      const response = ResearchResponse.lspResult({
+      return ResearchResponse.lspResult({
         symbol: queries[0]?.symbolName || 'unknown',
         locations,
         type: 'references',
         mcpHints: hints,
         research,
       });
-
-      res.status(isError ? 500 : 200).json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
+    },
+  })
 );
 
 // GET /lsp/calls - Get call hierarchy (incoming/outgoing)
 lspRoutes.get(
   '/calls',
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const queries = parseAndValidate(
-        req.query as Record<string, unknown>,
-        lspCallsSchema
-      );
-      const rawResult = await withLspResilience(
-        () => lspCallHierarchy(toLspCallsParams(queries)),
-        'lspCallHierarchy'
-      );
-      const { data, isError, hints, research } = parseToolResponse(rawResult);
-
-      // Extract locations from result
+  createRouteHandler({
+    schema: lspCallsSchema,
+    toParams: toLspCallsParams,
+    toolFn: lspCallHierarchy,
+    toolName: 'lspCallHierarchy',
+    resilience: withLspResilience,
+    transform: (parsed, queries) => {
+      const { data, hints, research } = parsed;
       const locations = extractCallHierarchyLocations(data);
       const direction = queries[0]?.direction || 'incoming';
 
-      const response = ResearchResponse.lspResult({
+      return ResearchResponse.lspResult({
         symbol: queries[0]?.symbolName || 'unknown',
         locations,
         type: direction as 'incoming' | 'outgoing',
         mcpHints: hints,
         research,
       });
-
-      res.status(isError ? 500 : 200).json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
+    },
+  })
 );
 
 // Helper: Extract locations from LSP result

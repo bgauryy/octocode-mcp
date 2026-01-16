@@ -41,6 +41,18 @@ export const RETRY_CONFIGS = {
   },
 
   /**
+   * Package APIs (npm/PyPI) - similar to GitHub
+   */
+  package: {
+    maxAttempts: 3,
+    initialDelayMs: 1000,
+    maxDelayMs: 15000,
+    backoffMultiplier: 2,
+    retryOn: (err: unknown) =>
+      isRateLimited(err) || isServerError(err) || isTimeout(err),
+  },
+
+  /**
    * Local file operations - quick retries
    */
   local: {

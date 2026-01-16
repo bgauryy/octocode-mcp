@@ -30,6 +30,9 @@ export const RESILIENCE_CONFIGS = {
   lsp: {
     retry: RETRY_CONFIGS.lsp,
   },
+  package: {
+    retry: RETRY_CONFIGS.package,
+  },
 } as const;
 
 export type ResilienceCategory = keyof typeof RESILIENCE_CONFIGS;
@@ -97,4 +100,14 @@ export async function withLocalResilience<T>(
   toolName: string
 ): Promise<T> {
   return withResilience('local', operation, { tool: toolName });
+}
+
+/**
+ * Execute package API call (npm/PyPI) with resilience protection
+ */
+export async function withPackageResilience<T>(
+  operation: () => Promise<T>,
+  toolName: string
+): Promise<T> {
+  return withResilience('package', operation, { tool: toolName });
 }

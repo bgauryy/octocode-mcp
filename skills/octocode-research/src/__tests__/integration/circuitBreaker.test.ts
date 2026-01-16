@@ -26,7 +26,7 @@ describe('Circuit Breaker', () => {
     it('allows requests when circuit is closed', async () => {
       const result = await withCircuitBreaker('test', () => Promise.resolve('ok'));
       expect(result).toBe('ok');
-      expect(getCircuitState('test')).toBe('closed');
+      expect(getCircuitState('test').state).toBe('closed');
     });
 
     it('passes through function return values', async () => {
@@ -56,11 +56,11 @@ describe('Circuit Breaker', () => {
 
       // First failure
       await withCircuitBreaker('test', failingFn).catch(() => {});
-      expect(getCircuitState('test')).toBe('closed');
+      expect(getCircuitState('test').state).toBe('closed');
 
       // Second failure - should open circuit
       await withCircuitBreaker('test', failingFn).catch(() => {});
-      expect(getCircuitState('test')).toBe('open');
+      expect(getCircuitState('test').state).toBe('open');
     });
 
     it('rejects immediately when circuit is open', async () => {
@@ -90,7 +90,7 @@ describe('Circuit Breaker', () => {
 
       // Open the circuit
       await withCircuitBreaker('test', () => Promise.reject(new Error())).catch(() => {});
-      expect(getCircuitState('test')).toBe('open');
+      expect(getCircuitState('test').state).toBe('open');
 
       // Advance time past reset timeout
       vi.advanceTimersByTime(1100);
@@ -98,7 +98,7 @@ describe('Circuit Breaker', () => {
       // Next call should be allowed (half-open state)
       const result = await withCircuitBreaker('test', () => Promise.resolve('recovered'));
       expect(result).toBe('recovered');
-      expect(getCircuitState('test')).toBe('closed');
+      expect(getCircuitState('test').state).toBe('closed');
 
       vi.useRealTimers();
     });
@@ -120,7 +120,7 @@ describe('Circuit Breaker', () => {
 
       // Successful call should close circuit
       await withCircuitBreaker('test', () => Promise.resolve('ok'));
-      expect(getCircuitState('test')).toBe('closed');
+      expect(getCircuitState('test').state).toBe('closed');
 
       vi.useRealTimers();
     });
@@ -142,7 +142,7 @@ describe('Circuit Breaker', () => {
 
       // Another failure should reopen circuit
       await withCircuitBreaker('test', () => Promise.reject(new Error())).catch(() => {});
-      expect(getCircuitState('test')).toBe('open');
+      expect(getCircuitState('test').state).toBe('open');
 
       vi.useRealTimers();
     });
@@ -150,11 +150,11 @@ describe('Circuit Breaker', () => {
 
   describe('Pre-configured Circuits', () => {
     it('has LSP circuit configured', () => {
-      expect(getCircuitState('lsp')).toBe('closed');
+      expect(getCircuitState('lsp').state).toBe('closed');
     });
 
     it('has GitHub circuit configured', () => {
-      expect(getCircuitState('github')).toBe('closed');
+      expect(getCircuitState('github').state).toBe('closed');
     });
   });
 
@@ -191,11 +191,11 @@ describe('Circuit Breaker', () => {
 
       // Open circuit
       await withCircuitBreaker('test', () => Promise.reject(new Error())).catch(() => {});
-      expect(getCircuitState('test')).toBe('open');
+      expect(getCircuitState('test').state).toBe('open');
 
       // Reset
       resetCircuit('test');
-      expect(getCircuitState('test')).toBe('closed');
+      expect(getCircuitState('test').state).toBe('closed');
 
       // Should allow requests again
       const result = await withCircuitBreaker('test', () => Promise.resolve('ok'));

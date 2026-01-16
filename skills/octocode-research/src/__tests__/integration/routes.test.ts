@@ -81,15 +81,15 @@ describe('Route Validation', () => {
           .get('/local/search')
           .query({ pattern: 'test', path: '/test' });
         expect(res.status).toBe(200);
-        expect(res.body).toHaveProperty('role');
+        expect(res.body).toHaveProperty('content');
       });
 
       it('returns proper response structure', async () => {
         const res = await request(createApp())
           .get('/local/search')
           .query({ pattern: 'test', path: '/test' });
-        expect(res.body).toHaveProperty('role');
         expect(res.body).toHaveProperty('content');
+        expect(Array.isArray(res.body.content)).toBe(true);
       });
     });
 
@@ -178,10 +178,34 @@ describe('Route Validation', () => {
     });
 
     describe('GET /github/repos', () => {
-      it('accepts valid repos request', async () => {
+      it('validates required keywords or topics', async () => {
         const res = await request(createApp())
           .get('/github/repos')
           .query({
+            mainResearchGoal: 'test',
+            researchGoal: 'test',
+            reasoning: 'test',
+          });
+        expect(res.status).toBe(400);
+      });
+
+      it('accepts valid repos request with keywords', async () => {
+        const res = await request(createApp())
+          .get('/github/repos')
+          .query({
+            keywordsToSearch: 'test-keyword',
+            mainResearchGoal: 'test',
+            researchGoal: 'test',
+            reasoning: 'test',
+          });
+        expect(res.status).toBe(200);
+      });
+
+      it('accepts valid repos request with topics', async () => {
+        const res = await request(createApp())
+          .get('/github/repos')
+          .query({
+            topicsToSearch: 'test-topic',
             mainResearchGoal: 'test',
             researchGoal: 'test',
             reasoning: 'test',
@@ -318,18 +342,19 @@ describe('Route Validation', () => {
   });
 
   describe('Response Structure', () => {
-    it('includes role in all responses', async () => {
-      const res = await request(createApp())
-        .get('/local/search')
-        .query({ pattern: 'test', path: '/test' });
-      expect(res.body).toHaveProperty('role');
-    });
-
-    it('includes content in all responses', async () => {
+    it('includes content array in all responses', async () => {
       const res = await request(createApp())
         .get('/local/search')
         .query({ pattern: 'test', path: '/test' });
       expect(res.body).toHaveProperty('content');
+      expect(Array.isArray(res.body.content)).toBe(true);
+    });
+
+    it('includes structuredContent in responses', async () => {
+      const res = await request(createApp())
+        .get('/local/search')
+        .query({ pattern: 'test', path: '/test' });
+      expect(res.body).toHaveProperty('structuredContent');
     });
   });
 });
