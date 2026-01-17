@@ -104,14 +104,18 @@ octocode-research/
 │   │   ├── responseParser.ts   # MCP response parsing, hints extraction
 │   │   ├── retry.ts            # Retry with exponential backoff
 │   │   └── routeFactory.ts     # createRouteHandler() factory pattern
-│   └── types/
+│   ├── types/
 │       ├── express.d.ts   # Express type extensions
 │       ├── toolTypes.ts   # Tool type definitions
 │       ├── mcp.ts         # MCP type definitions
 │       ├── responses.ts   # Response type definitions
 │       └── guards.ts      # Type guard utilities
+│   └── __tests__/
+│       ├── integration/   # Integration tests
+│       └── unit/          # Unit tests
 ├── scripts/               # Bundled JavaScript (tsdown)
 ├── docs/                  # Architecture documentation
+├── references/            # Quick reference guides
 ├── SKILL.md              # Skill manifest & usage guide
 └── package.json
 ```

@@ -39,8 +39,8 @@ octocode-research/
 ├── src/
 │   ├── server.ts              # Express server entry point
 │   ├── index.ts               # Re-exports from octocode-mcp
+│   ├── mcpCache.ts            # MCP client caching
 │   ├── routes/
-│   │   ├── index.ts           # Route exports
 │   │   ├── local.ts           # Local tool handlers (used in tests)
 │   │   ├── lsp.ts             # LSP tool handlers (used in tests)
 │   │   ├── github.ts          # GitHub tool handlers (used in tests)
@@ -48,7 +48,6 @@ octocode-research/
 │   │   ├── tools.ts           # /tools/* - MAIN tool API (mounted)
 │   │   └── prompts.ts         # /prompts/* - prompt discovery (mounted)
 │   ├── middleware/
-│   │   ├── index.ts           # Middleware exports
 │   │   ├── contextPropagation.ts  # Research session context
 │   │   ├── errorHandler.ts    # Error response formatting
 │   │   ├── logger.ts          # Request/response logging
@@ -58,7 +57,6 @@ octocode-research/
 │   │   ├── schemas.ts         # HTTP schemas (import from octocode-mcp)
 │   │   └── httpPreprocess.ts  # HTTP query string preprocessing
 │   ├── utils/
-│   │   ├── index.ts           # Utility exports
 │   │   ├── colors.ts          # Console color functions
 │   │   ├── logger.ts          # File-based logging
 │   │   ├── responseBuilder.ts # Role-based response formatting
@@ -67,31 +65,39 @@ octocode-research/
 │   │   ├── resilience.ts      # Resilience utilities
 │   │   ├── retry.ts           # Retry with backoff
 │   │   ├── circuitBreaker.ts  # Circuit breaker pattern
-│   │   └── rateLimitHandler.ts# GitHub rate limit tracking
-│   └── types/
-│       ├── index.ts           # Type exports
-│       ├── express.d.ts       # Express type extensions
-│       ├── guards.ts          # Type guard functions
-│       ├── mcp.ts             # MCP protocol types
-│       ├── responses.ts       # Response types
-│       └── toolTypes.ts       # Tool parameter types
-├── __tests__/
-│   └── integration/           # Integration tests
+│   │   └── routeFactory.ts    # Route handler factory
+│   ├── types/
+│   │   ├── express.d.ts       # Express type extensions
+│   │   ├── guards.ts          # Type guard functions
+│   │   ├── mcp.ts             # MCP protocol types
+│   │   ├── responses.ts       # Response types
+│   │   └── toolTypes.ts       # Tool parameter types
+│   └── __tests__/
+│       ├── integration/       # Integration tests
+│       │   ├── circuitBreaker.test.ts
+│       │   └── routes.test.ts
+│       └── unit/              # Unit tests
+│           ├── circuitBreaker.test.ts
+│           ├── logger.test.ts
+│           ├── responseBuilder.test.ts
+│           └── retry.test.ts
 ├── docs/
 │   ├── API_REFERENCE.md       # Complete HTTP API reference
 │   ├── ARCHITECTURE.md        # Architecture documentation
-│   ├── BUG_RESPONSE_FORMAT.md # Bug tracking format
-│   ├── DESIGN_LIST_TOOLS_PROMPTS.md  # API design doc
-│   ├── FLOWS.md               # Main flows & connections
-│   └── IMPROVEMENTS.md        # Future improvements
-├── output/                    # Bundled output (server.js + server.d.ts)
+│   └── FLOWS.md               # Main flows & connections
+├── references/
+│   ├── GUARDRAILS.md          # Safety guardrails
+│   └── QUICK_DECISION_GUIDE.md # Quick decision reference
+├── scripts/                   # Bundled output
+│   ├── server.js              # Bundled server
+│   └── server.d.ts            # Type declarations
 ├── SKILL.md                   # Skill definition for AI agents
 ├── AGENTS.md                  # This file
 ├── tsdown.config.ts           # tsdown bundler configuration
 ├── package.json
 ├── tsconfig.json
 ├── eslint.config.mjs
-└── vitest.config.ts           # Test configuration (if exists)
+└── vitest.config.ts           # Test configuration
 ```
 
 ---
@@ -155,6 +161,7 @@ curl -X POST http://localhost:1987/tools/call/localSearchCode \
 |------|---------|
 | `src/server.ts` | Express app creation, route mounting, graceful shutdown |
 | `src/index.ts` | Re-exports octocode-mcp functions with cleaner names |
+| `src/mcpCache.ts` | MCP client instance caching and management |
 
 ### Routes
 
@@ -197,7 +204,7 @@ When adding/modifying endpoints:
 2. **Create route handler** in appropriate `src/routes/*.ts`
 3. **Add route to server.ts** if new route group
 4. **Update types** if needed
-5. **Add tests** in `__tests__/`
+5. **Add tests** in `src/__tests__/`
 6. **Document** in docs/ARCHITECTURE.md
 
 ### Code Style
@@ -284,6 +291,7 @@ yarn test -- --coverage  # With coverage report
 | [SKILL.md](./SKILL.md) | How AI agents should USE this skill |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Detailed architecture |
 | [docs/FLOWS.md](./docs/FLOWS.md) | Main flows & component connections |
+| [references/QUICK_DECISION_GUIDE.md](./references/QUICK_DECISION_GUIDE.md) | Quick decision reference |
 
 ---
 
@@ -314,7 +322,7 @@ kill -9 $(lsof -ti :1987)
 ### Build errors
 ```bash
 # Clean and rebuild
-rm -rf output/
+rm -rf scripts/
 npm run build
 ```
 
@@ -331,10 +339,10 @@ yarn install
 
 | Path | Access |
 |------|--------|
-| `src/`, `__tests__/` | ✅ Auto |
-| `docs/` | ✅ Auto |
+| `src/`, `src/__tests__/` | ✅ Auto |
+| `docs/`, `references/` | ✅ Auto |
 | `*.json`, `*.config.*` | ⚠️ Ask first |
-| `.env*`, `node_modules/`, `dist/` | ❌ Never modify |
+| `.env*`, `node_modules/`, `scripts/` | ❌ Never modify |
 
 ---
 

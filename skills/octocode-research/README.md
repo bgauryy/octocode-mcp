@@ -1,9 +1,9 @@
 <div align="center">
   <img src="https://github.com/bgauryy/octocode-mcp/raw/main/packages/octocode-mcp/assets/logo_white.png" width="400px" alt="Octocode Logo">
 
-  <h1>Octocode Research</h1>
-  
-  **Give your AI agent superpowers for code research** — lightweight, automated, and terminal-native.
+  <h1>Octocode Research Skill</h1>
+
+  **Your AI agent's code research engine** — auto-pilot research with MCP-like architecture.
 
   [![Skill](https://img.shields.io/badge/skill-agentskills.io-purple)](https://agentskills.io/what-are-skills)
   [![License](https://img.shields.io/badge/license-PolyForm--Small--Business-green)]()
@@ -12,109 +12,122 @@
 
 ---
 
-## 🚀 Why Use This Skill?
+## What Is This?
 
-**It's the efficient, automated version of Octocode MCP.**
+**Octocode Research** is an MCP-like skill that turns your AI agent into a code research expert. It automatically detects your intent, selects the optimal workflow, and conducts efficient multi-step research across local and external codebases.
 
-| Feature | Standard MCP | **Octocode Research Skill** |
-|---------|--------------|-----------------------------|
-| **Context** | Heavy (loads all tool schemas) | **Lightweight** (loads what needed when needed) |
-| **Workflow** | Manual prompt selection | **Auto-Pilot** (Agent picks the right prompt for you) |
-| **Execution** | Serial tool calls | **Parallel** (Fast, concurrent research) |
-| **Interface** | IDE / Editor | **Terminal-Native** (Runs anywhere via curl) |
+```
+Your Question → Intent Detection → Auto-Select Prompt → Smart Tool Chaining → Answer
+```
 
----
-
-## ✨ Key Capabilities
-
-### 🧠 Auto-Pilot Mode
-You don't need to know which tool to use. The skill **analyzes your request** and picks the perfect workflow:
-- *"How does X work?"* → **Research Mode** (GitHub + Docs)
-- *"Trace this function"* → **Local Mode** (LSP + Grep)
-- *"Review PR #123"* → **Review Mode** (Diff analysis)
-- *"Plan a feature"* → **Planning Mode** (Architecture design)
-
-### 🛡️ Safe & Secure
-Inherits the same robust security model as Octocode:
-- **Read-Only**: Safely researches external code without executing it.
-- **Sandboxed**: Strict boundaries between your code and external research data.
+**No manual configuration.** Ask anything about code — the skill figures out how to find the answer.
 
 ---
 
-## 🛠️ How It Works
+## How It Works
 
-This skill implements a **lightweight layer** similar to MCP to exchange tools, system prompts, and prompts—just like Octocode MCP—but with streamlined efficiency.
+### MCP-Like Architecture
 
-It manages research flows using **optimized context handling**, ensuring the agent receives exactly what it needs without the overhead.
+This skill implements a lightweight server (port 1987) that exposes tools, prompts, and system context — similar to the Model Context Protocol — but optimized for research workflows.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     AI Agent (Claude, etc.)                 │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Octocode Research Server                   │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │   Prompts   │  │    Tools    │  │   System Context    │  │
+│  │  research   │  │  GitHub API │  │  Decision guides    │  │
+│  │  local      │  │  Local LSP  │  │  Tool chaining      │  │
+│  │  reviewPR   │  │  File ops   │  │  Error recovery     │  │
+│  │  plan       │  │  Search     │  │  Best practices     │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+         Your Code       GitHub Repos    npm/PyPI
+```
+
+### Auto-Pilot Prompt Selection
+
+The skill includes specialized prompts for different research types. Your agent automatically selects the right one:
+
+| Your Intent | Auto-Selected Prompt | What Happens |
+|-------------|---------------------|--------------|
+| *"How does React useState work?"* | `research` | GitHub repo exploration, source code analysis |
+| *"Trace the auth flow in our app"* | `research_local` | LSP-powered semantic analysis, call hierarchies |
+| *"Review PR #123"* | `reviewPR` | Diff analysis, code review, change impact |
+| *"Plan adding caching to the API"* | `plan` | Architecture design, implementation steps |
+
+### Smart Tool Chaining
+
+Each research task follows optimized tool chains with built-in hints guiding the next step:
+
+```
+External Library Research:
+packageSearch → githubViewRepoStructure → githubSearchCode → githubGetFileContent
+
+Local Code Tracing:
+localSearchCode → lspGotoDefinition → lspCallHierarchy → localGetFileContent
+
+Impact Analysis:
+lspGotoDefinition → lspFindReferences → lspCallHierarchy(incoming) → tests check
+```
 
 ---
 
-## 🏁 Quick Start
+## Key Features
 
-### Option 1: Via Octocode CLI (Recommended)
+### Lightweight Context Loading
+Unlike traditional MCP that loads all tool schemas upfront, this skill loads context on-demand:
+- System prompt loaded once
+- Tool schemas fetched only when needed
+- Prompts selected based on intent
+
+### Parallel Execution
+Tools support bulk queries (1-3 per call) for concurrent research:
+```json
+{
+  "queries": [
+    {"pattern": "useState", "path": "packages/react"},
+    {"pattern": "useReducer", "path": "packages/react"}
+  ]
+}
+```
+
+### Response Hints
+Every tool response includes actionable hints for the next step:
+```json
+{
+  "data": { ... },
+  "hints": [
+    "Next: githubGetFileContent(path, matchString from text_matches)",
+    "Explore: githubViewRepoStructure around interesting paths"
+  ]
+}
+```
+
+### Research Tracking
+Built-in research params keep the agent focused:
+- `mainResearchGoal` — Overall objective
+- `researchGoal` — Current step's purpose
+- `reasoning` — Why this tool/approach
+
+---
+
+## Quick Start
+
+### Option 1: Octocode CLI (Recommended)
 
 ```bash
-# 1. Install Octocode CLI
+# Install and setup everything (auth + skill)
 npx octocode-cli
 
-# 2. Follow the prompts to set up GitHub auth and install skills
+# Follow the prompts to:
+# 1. Authenticate with GitHub
+# 2. Install the research skill
 ```
-
-### Option 2: Manual Installation
-
-```bash
-# 1. Clone and install
-cd skills/octocode-research
-npm install
-
-# 2. Set GitHub auth (choose one)
-export GITHUB_TOKEN="ghp_xxx"          # Environment variable
-# OR
-gh auth login                           # GitHub CLI
-
-# 3. Start server
-npm start
-
-# 4. Verify
-curl http://localhost:1987/health
-```
-
-### First Steps
-
-```bash
-# Load system prompt (do this FIRST)
-curl http://localhost:1987/tools/system
-
-# List available tools
-curl http://localhost:1987/tools/list
-
-# Get tool schema before using
-curl http://localhost:1987/tools/info/localSearchCode
-
-# Run your first search
-curl "http://localhost:1987/localSearchCode?pattern=export&path=src"
-```
-
-That's it! Your agent is now equipped with research superpowers.
-
----
-
-## 💡 What Can You Ask?
-
-### 🔍 Research External Code
-> "How does **React's useState** work internally?"
-> "Explain **Express** middleware chaining pattern"
-
-###  Explore Your Codebase
-> "Trace the **auth flow** from login to database"
-> "Find all usages of `UserService`"
-
-### 📋 Review & Plan
-> "Review this PR: **github.com/org/repo/pull/123**"
-> "Plan a **caching strategy** for our API"
-
----
-
-## License
-
-PolyForm-Small-Business-1.0.0
