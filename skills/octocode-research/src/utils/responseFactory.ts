@@ -1,71 +1,13 @@
 /**
- * Response builder factory for route handlers.
- * Eliminates duplicate transformation logic across route files.
+ * Response utilities for route handlers.
+ * Provides type-safe extractors and helpers for processing MCP responses.
  *
  * @module utils/responseFactory
  */
 
-import type { Response } from 'express';
-import { parseToolResponse, type ParsedResponse } from './responseParser.js';
 import type { FileMatch, PaginationInfo } from '../types/responses.js';
 import { extractFiles, extractPagination, extractTotalMatches } from '../types/responses.js';
 import { isObject, hasProperty, isArray, hasStringProperty, hasNumberProperty } from '../types/guards.js';
-
-// =============================================================================
-// Types
-// =============================================================================
-
-interface RouteResponseOptions<T> {
-  toolName: string;
-  transform: (data: Record<string, unknown>, parsed: ParsedResponse) => T;
-  buildResponse: (transformed: T, parsed: ParsedResponse) => Record<string, unknown>;
-}
-
-export interface TransformContext {
-  data: Record<string, unknown>;
-  isError: boolean;
-  hints: string[];
-  research?: string;
-}
-
-// =============================================================================
-// Factory Functions
-// =============================================================================
-
-/**
- * MCP tool response type for type casting
- */
-interface McpToolResponse {
-  content?: Array<{ type: string; text?: string }>;
-  structuredContent?: Record<string, unknown>;
-  isError?: boolean;
-}
-
-/**
- * Create a route handler with standardized error handling and transformation
- */
-export function createRouteHandler<T>(options: RouteResponseOptions<T>) {
-  return async function handleToolResponse(
-    rawResult: unknown,
-    res: Response,
-  ): Promise<Response> {
-    const parsed = parseToolResponse(rawResult as McpToolResponse);
-    const { data, isError } = parsed;
-
-    if (isError && hasProperty(data, 'error')) {
-      return res.status(500).json({
-        role: 'system',
-        content: `Error from ${options.toolName}: ${data.error || 'Unknown error'}`,
-        mcpHints: parsed.hints,
-      });
-    }
-
-    const transformed = options.transform(data, parsed);
-    const response = options.buildResponse(transformed, parsed);
-
-    return res.status(isError ? 500 : 200).json(response);
-  };
-}
 
 // =============================================================================
 // Common Extractors (Type-Safe)

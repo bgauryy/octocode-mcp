@@ -51,14 +51,48 @@ It manages research flows using **optimized context handling**, ensuring the age
 
 ## 🏁 Quick Start
 
+### Option 1: Via Octocode CLI (Recommended)
+
 ```bash
 # 1. Install Octocode CLI
 npx octocode-cli
 
-# 2. Set Github Auth 
+# 2. Follow the prompts to set up GitHub auth and install skills
+```
 
-# 3. Install Skill
+### Option 2: Manual Installation
 
+```bash
+# 1. Clone and install
+cd skills/octocode-research
+npm install
+
+# 2. Set GitHub auth (choose one)
+export GITHUB_TOKEN="ghp_xxx"          # Environment variable
+# OR
+gh auth login                           # GitHub CLI
+
+# 3. Start server
+npm run server:start
+
+# 4. Verify
+./cli health
+```
+
+### First Steps
+
+```bash
+# Load system prompt (do this FIRST)
+./cli system
+
+# List available tools
+./cli tools
+
+# Get tool schema before using
+./cli tools/info/localSearchCode
+
+# Run your first search
+./cli search pattern="export" path="src"
 ```
 
 That's it! Your agent is now equipped with research superpowers.

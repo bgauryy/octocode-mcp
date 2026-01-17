@@ -56,7 +56,8 @@ octocode-research/
 │   │   └── queryParser.ts     # Zod validation
 │   ├── validation/
 │   │   ├── index.ts           # Schema exports
-│   │   └── schemas.ts         # Zod schemas for all endpoints
+│   │   ├── schemas.ts         # HTTP schemas (import from octocode-mcp)
+│   │   └── httpPreprocess.ts  # HTTP query string preprocessing
 │   ├── utils/
 │   │   ├── index.ts           # Utility exports
 │   │   ├── colors.ts          # Console color functions
@@ -78,9 +79,11 @@ octocode-research/
 ├── __tests__/
 │   └── integration/           # Integration tests
 ├── docs/
+│   ├── API_REFERENCE.md       # Complete HTTP API reference
 │   ├── ARCHITECTURE.md        # Architecture documentation
 │   ├── BUG_RESPONSE_FORMAT.md # Bug tracking format
 │   ├── DESIGN_LIST_TOOLS_PROMPTS.md  # API design doc
+│   ├── FLOWS.md               # Main flows & connections
 │   └── IMPROVEMENTS.md        # Future improvements
 ├── dist/                      # Compiled output
 ├── SKILL.md                   # Skill definition for AI agents
@@ -171,10 +174,17 @@ Each route file follows the pattern:
 
 ### Validation
 
-`schemas.ts` contains Zod schemas for ALL endpoints. When adding/modifying endpoints:
-1. Define schema in `validation/schemas.ts`
-2. Apply schema validation in route handler
-3. Update types in `types/` if needed
+Schemas are imported from `octocode-mcp/public` (source of truth) and wrapped with HTTP preprocessing.
+
+| File | Purpose |
+|------|---------|
+| `schemas.ts` | HTTP-wrapped schemas importing from `octocode-mcp/public` |
+| `httpPreprocess.ts` | Query string conversion (string→number/boolean/array) |
+
+When adding/modifying endpoints:
+1. Check if schema exists in `octocode-mcp/public`
+2. Create HTTP wrapper in `validation/schemas.ts` with preprocessing
+3. Apply schema validation in route handler
 
 ---
 
@@ -250,8 +260,11 @@ All endpoints return standardized responses:
 | Doc | Purpose |
 |-----|---------|
 | [SKILL.md](./SKILL.md) | How AI agents should USE this skill |
+| [docs/API_REFERENCE.md](./docs/API_REFERENCE.md) | **Complete HTTP API reference with all routes** |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Detailed architecture |
-| [docs/DESIGN_LIST_TOOLS_PROMPTS.md](./docs/DESIGN_LIST_TOOLS_PROMPTS.md) | API design decisions |
+| [docs/FLOWS.md](./docs/FLOWS.md) | Main flows & component connections |
+| [docs/CLI_ARCHITECTURE.md](./docs/CLI_ARCHITECTURE.md) | CLI design & communication flow |
+| [docs/CLI_TOOL_REFERENCE.md](./docs/CLI_TOOL_REFERENCE.md) | Complete CLI tool reference |
 
 ---
 
