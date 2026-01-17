@@ -18,17 +18,16 @@
 
 ```bash
 # Development
-yarn build          # Compile TypeScript
-yarn start          # Run compiled server
-yarn dev            # Run with tsx watch mode
-yarn test           # Run tests with Vitest
-yarn test:watch     # Watch mode testing
-yarn lint           # ESLint check
-yarn lint:fix       # Auto-fix lint issues
+npm run build       # Bundle with tsdown
+npm start           # Run bundled server
+npm run dev         # Run with tsx watch mode
+npm test            # Run tests with Vitest
+npm run test:watch  # Watch mode testing
+npm run lint        # ESLint check
+npm run lint:fix    # Auto-fix lint issues
 
-# Installation & Running
-./install.sh start  # Install dependencies and start server
-./start.sh          # Start server (assumes installed)
+# Server Health Check
+curl http://localhost:1987/health
 ```
 
 ---
@@ -56,7 +55,8 @@ octocode-research/
 │   │   └── queryParser.ts     # Zod validation
 │   ├── validation/
 │   │   ├── index.ts           # Schema exports
-│   │   └── schemas.ts         # Zod schemas for all endpoints
+│   │   ├── schemas.ts         # HTTP schemas (import from octocode-mcp)
+│   │   └── httpPreprocess.ts  # HTTP query string preprocessing
 │   ├── utils/
 │   │   ├── index.ts           # Utility exports
 │   │   ├── colors.ts          # Console color functions
@@ -78,15 +78,16 @@ octocode-research/
 ├── __tests__/
 │   └── integration/           # Integration tests
 ├── docs/
+│   ├── API_REFERENCE.md       # Complete HTTP API reference
 │   ├── ARCHITECTURE.md        # Architecture documentation
 │   ├── BUG_RESPONSE_FORMAT.md # Bug tracking format
 │   ├── DESIGN_LIST_TOOLS_PROMPTS.md  # API design doc
+│   ├── FLOWS.md               # Main flows & connections
 │   └── IMPROVEMENTS.md        # Future improvements
-├── dist/                      # Compiled output
+├── output/                    # Bundled output (server.js + server.d.ts)
 ├── SKILL.md                   # Skill definition for AI agents
 ├── AGENTS.md                  # This file
-├── install.sh                 # Installation script
-├── start.sh                   # Startup script
+├── tsdown.config.ts           # tsdown bundler configuration
 ├── package.json
 ├── tsconfig.json
 ├── eslint.config.mjs
@@ -171,10 +172,17 @@ Each route file follows the pattern:
 
 ### Validation
 
-`schemas.ts` contains Zod schemas for ALL endpoints. When adding/modifying endpoints:
-1. Define schema in `validation/schemas.ts`
-2. Apply schema validation in route handler
-3. Update types in `types/` if needed
+Schemas are imported from `octocode-mcp/public` (source of truth) and wrapped with HTTP preprocessing.
+
+| File | Purpose |
+|------|---------|
+| `schemas.ts` | HTTP-wrapped schemas importing from `octocode-mcp/public` |
+| `httpPreprocess.ts` | Query string conversion (string→number/boolean/array) |
+
+When adding/modifying endpoints:
+1. Check if schema exists in `octocode-mcp/public`
+2. Create HTTP wrapper in `validation/schemas.ts` with preprocessing
+3. Apply schema validation in route handler
 
 ---
 
@@ -250,8 +258,9 @@ All endpoints return standardized responses:
 | Doc | Purpose |
 |-----|---------|
 | [SKILL.md](./SKILL.md) | How AI agents should USE this skill |
+| [docs/API_REFERENCE.md](./docs/API_REFERENCE.md) | **Complete HTTP API reference with all routes** |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Detailed architecture |
-| [docs/DESIGN_LIST_TOOLS_PROMPTS.md](./docs/DESIGN_LIST_TOOLS_PROMPTS.md) | API design decisions |
+| [docs/FLOWS.md](./docs/FLOWS.md) | Main flows & component connections |
 
 ---
 
@@ -282,8 +291,8 @@ kill -9 $(lsof -ti :1987)
 ### Build errors
 ```bash
 # Clean and rebuild
-rm -rf dist/
-yarn build
+rm -rf output/
+npm run build
 ```
 
 ### Missing dependencies

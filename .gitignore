@@ -13,7 +13,8 @@ coverage
 .env
 .cursor
 .context
-output
+# Exception for committed skill bundle
+!/skills/octocode-research/output/
 # sqlite DB
 mcp.sqlite
 

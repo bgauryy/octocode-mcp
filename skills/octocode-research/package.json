@@ -15,28 +15,23 @@
     "octocode",
     "mcp"
   ],
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "output/server.js",
+  "types": "output/server.d.ts",
   "bin": {
-    "octocode-research": "./dist/server.js",
-    "octocode-research-cli": "./dist/cli.js"
+    "octocode-research": "./output/server.js"
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./output/server.d.ts",
+      "import": "./output/server.js"
     },
     "./server": {
-      "types": "./dist/server.d.ts",
-      "import": "./dist/server.js"
-    },
-    "./cli": {
-      "types": "./dist/cli.d.ts",
-      "import": "./dist/cli.js"
+      "types": "./output/server.d.ts",
+      "import": "./output/server.js"
     }
   },
   "files": [
-    "dist",
+    "output",
     "src",
     "scripts",
     "SKILL.md",
@@ -44,8 +39,8 @@
     "tsconfig.json"
   ],
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/server.js",
+    "build": "tsdown",
+    "start": "node output/server.js",
     "dev": "tsx watch src/server.ts",
     "init": "npx tsx scripts/init.ts",
     "discover": "npx tsx scripts/discover.ts",
@@ -63,7 +58,7 @@
   "dependencies": {
     "express": "^4.21.2",
     "js-yaml": "^4.1.1",
-    "octocode-mcp": "11.2.0",
+    "octocode-mcp": "11.2.1",
     "octocode-shared": "^1.0.1",
     "zod": "^3.24.1",
     "zod-to-json-schema": "^3.25.1"
@@ -77,6 +72,7 @@
     "@vitest/coverage-v8": "^4.0.17",
     "eslint": "^9.27.0",
     "supertest": "^7.2.2",
+    "tsdown": "^0.20.0-beta.3",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.32.0",

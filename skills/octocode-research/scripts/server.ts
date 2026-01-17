@@ -61,7 +61,7 @@ function checkNodeVersion(): void {
 }
 
 function needsBuild(): boolean {
-  return !existsSync(join(getProjectRoot(), 'dist', 'server.js'));
+  return !existsSync(join(getProjectRoot(), 'output', 'server.js'));
 }
 
 function isMonorepo(): boolean {
@@ -242,7 +242,7 @@ async function start(): Promise<void> {
   const root = getProjectRoot();
   const logFd = openSync(LOG_FILE, 'a');
 
-  const child = spawn('node', ['dist/server.js'], {
+  const child = spawn('node', ['output/server.js'], {
     cwd: root,
     detached: process.platform !== 'win32',
     windowsHide: true,
