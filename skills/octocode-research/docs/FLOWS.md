@@ -153,15 +153,14 @@ Re-exports layer that:
 
 > **Note**: Only \`/tools/*\` and \`/prompts/*\` are mounted in production. The individual route files contain handler logic used by the unified \`/tools/call/:toolName\` endpoint.
 
-### 5. **Scripts (\`scripts/\`)**
+### 5. **Build Output (\`scripts/\`)**
 
-| Script | Purpose | Command |
-|--------|---------|---------|
-| \`server.ts\` | Server lifecycle management | \`npm run server:start|stop|restart|status\` |
-| \`init.ts\` | Initialize server + load system prompt | \`npm run init\` |
-| \`discover.ts\` | List available tools/prompts | \`npm run discover\` |
-| \`call.ts\` | Call a tool with params | \`npm run call\` |
-| \`prompt.ts\` | Load a specific prompt | \`npm run prompt\` |
+The bundled server output from tsdown:
+
+| File | Purpose |
+|------|---------|
+| \`server.js\` | Bundled server (standalone, all deps included) |
+| \`server.d.ts\` | TypeScript type declarations |
 
 ---
 
@@ -431,11 +430,12 @@ Running?        Not Running
 ### Start Server
 
 ```bash
-# Start server (idempotent - safe to run multiple times)
-npm run server:start
+# Development (with hot reload)
+npm run dev
 
-# Or using the CLI wrapper
-npx tsx scripts/server.ts start
+# Production (bundled)
+npm start
+# Or directly: node scripts/server.js
 ```
 
 ### HTTP Examples
@@ -530,11 +530,9 @@ CLOSED (normal) ──[3 failures]──► OPEN (reject all)
 | \`src/middleware/*.ts\` | Logging, validation, error handling |
 | \`src/utils/*.ts\` | Resilience, formatting, parsing |
 | \`src/validation/schemas.ts\` | Zod validation schemas |
-| \`scripts/server.ts\` | Server lifecycle management |
-| \`scripts/init.ts\` | Initialize + load system prompt |
-| \`output/server.js\` | Bundled server (tsdown output) |
+| \`scripts/server.js\` | Bundled server (tsdown output) |
 
 ---
 
 *Created by Octocode Research Skill*
-*Last validated: 2025-01-17*
+*Last validated: 2026-01-18*

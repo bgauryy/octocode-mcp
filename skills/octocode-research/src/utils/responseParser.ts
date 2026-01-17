@@ -34,6 +34,16 @@ export interface ResearchContext {
 }
 
 /**
+ * Single result item from bulk response
+ */
+export interface BulkResultItem {
+  id: number;
+  status: 'hasResults' | 'empty' | 'error';
+  data: Record<string, unknown>;
+  research: ResearchContext;
+}
+
+/**
  * Parsed response with data, hints, and research context
  */
 export interface ParsedResponse {
@@ -45,6 +55,31 @@ export interface ParsedResponse {
   research: ResearchContext;
   /** Raw status from MCP (hasResults, empty, error) */
   status: 'hasResults' | 'empty' | 'error' | 'unknown';
+}
+
+/**
+ * Parsed bulk response with all results
+ */
+export interface ParsedBulkResponse {
+  /** All results from bulk query */
+  results: BulkResultItem[];
+  /** Categorized hints by status */
+  hints: {
+    hasResults: string[];
+    empty: string[];
+    error: string[];
+  };
+  /** Bulk operation instructions */
+  instructions: string;
+  /** True if all queries failed */
+  isError: boolean;
+  /** Count of results by status */
+  counts: {
+    total: number;
+    hasResults: number;
+    empty: number;
+    error: number;
+  };
 }
 
 /**
@@ -148,4 +183,90 @@ export function getDataField<T>(
   const { data } = parseToolResponse(response);
   const value = data[field];
   return value !== undefined ? (value as T) : defaultValue;
+}
+
+/**
+ * Parse ALL results from a bulk MCP tool response.
+ * Use this when handling multiple queries to get all results.
+ *
+ * @param response - Raw MCP tool response
+ * @returns ParsedBulkResponse with all results and categorized hints
+ */
+export function parseToolResponseBulk(response: McpToolResponse): ParsedBulkResponse {
+  const emptyResult: ParsedBulkResponse = {
+    results: [],
+    hints: { hasResults: [], empty: [], error: [] },
+    instructions: '',
+    isError: true,
+    counts: { total: 0, hasResults: 0, empty: 0, error: 0 },
+  };
+
+  // Parse YAML from content text
+  if (!response.content || !response.content[0]?.text) {
+    return emptyResult;
+  }
+
+  try {
+    const parsed = yaml.load(response.content[0].text) as Record<string, unknown>;
+
+    if (!parsed || !Array.isArray(parsed.results)) {
+      return emptyResult;
+    }
+
+    // Extract all results
+    const results: BulkResultItem[] = [];
+    let hasResultsCount = 0;
+    let emptyCount = 0;
+    let errorCount = 0;
+
+    for (const result of parsed.results) {
+      if (!result || typeof result !== 'object') continue;
+
+      const r = result as Record<string, unknown>;
+      const status = String(r.status || 'unknown') as BulkResultItem['status'];
+
+      if (status === 'hasResults') hasResultsCount++;
+      else if (status === 'empty') emptyCount++;
+      else if (status === 'error') errorCount++;
+
+      results.push({
+        id: typeof r.id === 'number' ? r.id : results.length + 1,
+        status,
+        data: (r.data && typeof r.data === 'object' ? r.data : {}) as Record<string, unknown>,
+        research: {
+          mainResearchGoal: typeof r.mainResearchGoal === 'string' ? r.mainResearchGoal : undefined,
+          researchGoal: typeof r.researchGoal === 'string' ? r.researchGoal : undefined,
+          reasoning: typeof r.reasoning === 'string' ? r.reasoning : undefined,
+        },
+      });
+    }
+
+    // Extract categorized hints
+    const hints = {
+      hasResults: Array.isArray(parsed.hasResultsStatusHints)
+        ? (parsed.hasResultsStatusHints as string[])
+        : [],
+      empty: Array.isArray(parsed.emptyStatusHints)
+        ? (parsed.emptyStatusHints as string[])
+        : [],
+      error: Array.isArray(parsed.errorStatusHints)
+        ? (parsed.errorStatusHints as string[])
+        : [],
+    };
+
+    return {
+      results,
+      hints,
+      instructions: typeof parsed.instructions === 'string' ? parsed.instructions : '',
+      isError: errorCount === results.length && results.length > 0,
+      counts: {
+        total: results.length,
+        hasResults: hasResultsCount,
+        empty: emptyCount,
+        error: errorCount,
+      },
+    };
+  } catch {
+    return emptyResult;
+  }
 }

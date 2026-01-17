@@ -4,7 +4,7 @@ import { builtinModules } from 'module';
 export default defineConfig({
   entry: ['src/server.ts'],
   format: ['esm'],
-  outDir: 'output',
+  outDir: 'scripts',
   clean: true,
   target: 'node20',
   platform: 'node',

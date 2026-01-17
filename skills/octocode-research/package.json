@@ -15,45 +15,37 @@
     "octocode",
     "mcp"
   ],
-  "main": "output/server.js",
-  "types": "output/server.d.ts",
+  "main": "scripts/server.js",
+  "types": "scripts/server.d.ts",
   "bin": {
-    "octocode-research": "./output/server.js"
+    "octocode-research": "./scripts/server.js"
   },
   "exports": {
     ".": {
-      "types": "./output/server.d.ts",
-      "import": "./output/server.js"
+      "types": "./scripts/server.d.ts",
+      "import": "./scripts/server.js"
     },
     "./server": {
-      "types": "./output/server.d.ts",
-      "import": "./output/server.js"
+      "types": "./scripts/server.d.ts",
+      "import": "./scripts/server.js"
     }
   },
   "files": [
-    "output",
-    "src",
     "scripts",
+    "src",
     "SKILL.md",
+    "scripts",
     "LICENSE",
     "tsconfig.json"
   ],
   "scripts": {
     "build": "tsdown",
-    "start": "node output/server.js",
+    "start": "node scripts/server.js",
     "dev": "tsx watch src/server.ts",
-    "init": "npx tsx scripts/init.ts",
-    "discover": "npx tsx scripts/discover.ts",
-    "prompt": "npx tsx scripts/prompt.ts",
-    "call": "npx tsx scripts/call.ts",
-    "tools": "npx tsx scripts/getToolsInfo.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",
-    "lint:fix": "eslint src --fix",
-    "server": "npx tsx scripts/server.ts",
-    "server:start": "npx tsx scripts/server.ts start",
-    "server:stop": "npx tsx scripts/server.ts stop"
+    "lint:fix": "eslint src --fix"
   },
   "dependencies": {
     "express": "^4.21.2",

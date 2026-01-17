@@ -91,8 +91,9 @@ octocode-research/
 │   │   ├── logger.ts           # Request/response logging
 │   │   └── contextPropagation.ts # Shutdown cleanup
 │   ├── validation/
-│   │   ├── schemas.ts     # Zod schemas for all endpoints
-│   │   └── index.ts       # Schema exports
+│   │   ├── schemas.ts         # Zod schemas for all endpoints
+│   │   ├── httpPreprocess.ts  # Query string conversion (string→number/boolean/array)
+│   │   └── index.ts           # Schema exports
 │   ├── utils/
 │   │   ├── circuitBreaker.ts   # Circuit breaker pattern (3 states)
 │   │   ├── colors.ts           # Console output coloring
@@ -103,14 +104,18 @@ octocode-research/
 │   │   ├── responseParser.ts   # MCP response parsing, hints extraction
 │   │   ├── retry.ts            # Retry with exponential backoff
 │   │   └── routeFactory.ts     # createRouteHandler() factory pattern
-│   └── types/
+│   ├── types/
 │       ├── express.d.ts   # Express type extensions
 │       ├── toolTypes.ts   # Tool type definitions
 │       ├── mcp.ts         # MCP type definitions
 │       ├── responses.ts   # Response type definitions
 │       └── guards.ts      # Type guard utilities
-├── output/                # Bundled JavaScript (tsdown)
+│   └── __tests__/
+│       ├── integration/   # Integration tests
+│       └── unit/          # Unit tests
+├── scripts/               # Bundled JavaScript (tsdown)
 ├── docs/                  # Architecture documentation
+├── references/            # Quick reference guides
 ├── SKILL.md              # Skill manifest & usage guide
 └── package.json
 ```
@@ -452,4 +457,4 @@ The SKILL.md file contains the full prompt and workflow guidance for AI agent in
 
 ---
 
-*Last validated: 2025-01-17*
+*Last validated: 2026-01-18*
