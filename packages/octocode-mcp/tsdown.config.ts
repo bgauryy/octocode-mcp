@@ -29,6 +29,12 @@ const serverConfig = defineConfig({
     /^@napi-rs\/keyring-/, // Platform-specific native bindings
   ],
 
+  // Inline dynamic imports to prevent chunk files that may not be included in npm publish
+  // This ensures all code is bundled into a single index.js file
+  outputOptions: {
+    inlineDynamicImports: true,
+  },
+
   // Tree shaking - Rolldown has excellent tree shaking by default
   treeshake: true,
 
@@ -75,6 +81,11 @@ const publicConfig = defineConfig({
     /^@napi-rs\/keyring-/, // Platform-specific native bindings
   ],
 
+  // Inline dynamic imports to prevent chunk files
+  outputOptions: {
+    inlineDynamicImports: true,
+  },
+
   treeshake: true,
   minify: true,
   shims: true,
@@ -108,6 +119,11 @@ const responsesConfig = defineConfig({
     '@napi-rs/keyring', // Native module - cannot be bundled
     /^@napi-rs\/keyring-/, // Platform-specific native bindings
   ],
+
+  // Inline dynamic imports to prevent chunk files
+  outputOptions: {
+    inlineDynamicImports: true,
+  },
 
   treeshake: true,
   minify: true,
