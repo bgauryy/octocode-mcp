@@ -22,7 +22,7 @@ The **octocode-research** skill is a lightweight HTTP API server that wraps `oct
 
 - **HTTP Interface**: REST API on `localhost:1987`
 - **HTTP Clients**: curl, fetch, or any HTTP client
-- **Auto-Pilot**: Intelligent prompt selection based on user intent
+- **Unified Tool API**: All tools via `POST /tools/call/:toolName`
 - **Resilience**: Circuit breaker + retry patterns for reliability
 
 ```
@@ -64,18 +64,27 @@ The **octocode-research** skill is a lightweight HTTP API server that wraps `oct
 │ ┌──────────────────────────────────────────────────────────────────────────┐ │
 │ │                           MIDDLEWARE LAYER                                │ │
 │ │  ┌─────────────┐  ┌───────────────┐  ┌─────────────┐  ┌───────────────┐  │ │
-│ │  │requestLogger│→│queryParser/Zod│→│contextPropag│→│ errorHandler  │  │ │
+│ │  │requestLogger│→│  express.json │→│contextPropag│→│ errorHandler  │  │ │
 │ │  └─────────────┘  └───────────────┘  └─────────────┘  └───────────────┘  │ │
 │ └──────────────────────────────────────────────────────────────────────────┘ │
 │                                     │                                        │
 │                                     ▼                                        │
 │ ┌──────────────────────────────────────────────────────────────────────────┐ │
 │ │                            ROUTE HANDLERS                                 │ │
-│ │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐         │ │
-│ │  │ /local/*   │  │  /lsp/*    │  │ /github/*  │  │ /package/* │         │ │
-│ │  └─────┬──────┘  └─────┬──────┘  └─────┬──────┘  └─────┬──────┘         │ │
-│ │        │               │               │               │                 │ │
-│ │  ┌─────┴───────────────┴───────────────┴───────────────┴─────┐          │ │
+│ │  ┌─────────────────────────────────────────────────────────────────────┐ │ │
+│ │  │                         /tools/*                                     │ │ │
+│ │  │  • GET  /tools/list           - List all tools                      │ │ │
+│ │  │  • GET  /tools/info/:name     - Get tool schema                     │ │ │
+│ │  │  • GET  /tools/system         - Get system prompt                   │ │ │
+│ │  │  • POST /tools/call/:name     - Execute any tool                    │ │ │
+│ │  └─────────────────────────────────────────────────────────────────────┘ │ │
+│ │  ┌─────────────────────────────────────────────────────────────────────┐ │ │
+│ │  │                        /prompts/*                                   │ │ │
+│ │  │  • GET  /prompts/list         - List all prompts                    │ │ │
+│ │  │  • GET  /prompts/info/:name   - Get prompt details                  │ │ │
+│ │  └─────────────────────────────────────────────────────────────────────┘ │ │
+│ │        │                                                                 │ │
+│ │  ┌─────┴─────────────────────────────────────────────────────┐          │ │
 │ │  │                    RESILIENCE LAYER                        │          │ │
 │ │  │    (Circuit Breaker + Retry + Rate Limit Handling)        │          │ │
 │ │  └───────────────────────────┬────────────────────────────────┘          │ │
@@ -109,48 +118,50 @@ The **octocode-research** skill is a lightweight HTTP API server that wraps `oct
 
 ## Main Components
 
-### 1. **Server (`src/server.ts`)**
+### 1. **Server (\`src/server.ts\`)**
 
 The Express HTTP server that:
 - Initializes MCP content cache at startup
-- Mounts all route handlers
+- Mounts \`/tools\` and \`/prompts\` route handlers
 - Handles graceful shutdown
-- Exposes `/health` endpoint for monitoring
+- Exposes \`/health\` endpoint for monitoring
 
-### 2. **MCP Cache (`src/mcpCache.ts`)**
+### 2. **MCP Cache (\`src/mcpCache.ts\`)**
 
 Singleton cache that:
 - Loads tool metadata ONCE at startup
 - Provides fast access to tool schemas
 - Avoids repeated initialization costs
 
-### 3. **Index (`src/index.ts`)**
+### 3. **Index (\`src/index.ts\`)**
 
 Re-exports layer that:
-- Maps `octocode-mcp` functions to skill-friendly names
+- Maps \`octocode-mcp\` functions to skill-friendly names
 - Provides type exports for TypeScript consumers
 - Centralizes all tool imports
 
-### 4. **Routes (`src/routes/`)**
+### 4. **Routes (\`src/routes/\`)**
 
 | File | Endpoints | Purpose |
 |------|-----------|---------|
-| `local.ts` | `/localSearchCode`, `/localGetFileContent`, etc. | Filesystem operations |
-| `lsp.ts` | `/lspGotoDefinition`, `/lspFindReferences`, `/lspCallHierarchy` | Semantic analysis |
-| `github.ts` | `/githubSearchCode`, `/githubGetFileContent`, etc. | GitHub API |
-| `package.ts` | `/packageSearch` | npm/PyPI search |
-| `tools.ts` | `/tools/list`, `/tools/info/:name`, `/tools/call/:name` | Tool discovery & execution |
-| `prompts.ts` | `/prompts/list`, `/prompts/info/:name` | Prompt discovery |
+| \`tools.ts\` | \`/tools/list\`, \`/tools/info/:name\`, \`/tools/call/:name\`, \`/tools/system\` | **Main API** - Tool discovery & execution |
+| \`prompts.ts\` | \`/prompts/list\`, \`/prompts/info/:name\` | Prompt discovery |
+| \`local.ts\` | *(Not mounted - used in tests only)* | Filesystem operations handlers |
+| \`lsp.ts\` | *(Not mounted - used in tests only)* | Semantic analysis handlers |
+| \`github.ts\` | *(Not mounted - used in tests only)* | GitHub API handlers |
+| \`package.ts\` | *(Not mounted - used in tests only)* | npm/PyPI search handlers |
 
-### 5. **Scripts (`scripts/`)**
+> **Note**: Only \`/tools/*\` and \`/prompts/*\` are mounted in production. The individual route files contain handler logic used by the unified \`/tools/call/:toolName\` endpoint.
+
+### 5. **Scripts (\`scripts/\`)**
 
 | Script | Purpose | Command |
 |--------|---------|---------|
-| `server.ts` | Server lifecycle management | `npm run server:start\|stop\|restart\|status` |
-| `init.ts` | Initialize server + load system prompt | `npm run init` |
-| `discover.ts` | List available tools/prompts | `npm run discover` |
-| `call.ts` | Call a tool with params | `npm run call` |
-| `prompt.ts` | Load a specific prompt | `npm run prompt` |
+| \`server.ts\` | Server lifecycle management | \`npm run server:start|stop|restart|status\` |
+| \`init.ts\` | Initialize server + load system prompt | \`npm run init\` |
+| \`discover.ts\` | List available tools/prompts | \`npm run discover\` |
+| \`call.ts\` | Call a tool with params | \`npm run call\` |
+| \`prompt.ts\` | Load a specific prompt | \`npm run prompt\` |
 
 ---
 
@@ -242,14 +253,15 @@ Running?        Not Running
    │ createServer()                       │
    │  ├─ express()                        │
    │  ├─ use(requestLogger)               │
-   │  ├─ mount(/local*, /lsp*, etc.)      │
+   │  ├─ mount(/tools, toolsRoutes)       │
+   │  ├─ mount(/prompts, promptsRoutes)   │
    │  └─ use(errorHandler)                │
    └────────┬─────────────────────────────┘
             │
             ▼
    ┌──────────────────────────────────────┐
    │ app.listen(1987)                     │
-   │  └─ Server Ready! 🚀                 │
+   │  └─ Server Ready!                    │
    └──────────────────────────────────────┘
 ```
 
@@ -260,7 +272,8 @@ Running?        Not Running
 │                        TOOL EXECUTION FLOW                                  │
 └────────────────────────────────────────────────────────────────────────────┘
 
-   GET /localSearchCode?pattern=auth&path=src
+   POST /tools/call/localSearchCode
+   Body: { "queries": [{ "pattern": "auth", "path": "src", ... }] }
           │
           ▼
    ┌──────────────────────────────────────┐
@@ -271,41 +284,35 @@ Running?        Not Running
             │
             ▼
    ┌──────────────────────────────────────┐
-   │  Route Handler (routes/local.ts)     │
-   │  createRouteHandler({                │
-   │    schema: localSearchSchema,        │
-   │    toolFn: localSearchCode,          │
-   │    resilience: withLocalResilience,  │
-   │    transform: (parsed) => {...}      │
-   │  })                                  │
+   │  Route Handler (routes/tools.ts)     │
+   │  POST /tools/call/:toolName          │
+   │                                       │
+   │  1. Lookup tool in TOOL_REGISTRY     │
+   │  2. Validate queries array           │
+   │  3. Get resilience wrapper           │
    └────────┬─────────────────────────────┘
             │
             ▼
    ┌──────────────────────────────────────┐
-   │  Zod Validation (queryParser)        │
+   │  Body Validation                     │
    │                                       │
-   │  Input:  { pattern: "auth", ... }    │
-   │  Schema: localSearchSchema           │
-   │  Output: { queries: [validated] }    │
-   │                                       │
-   │  Transforms:                         │
-   │   - String "2" → Number 2            │
-   │   - String "true" → Boolean true     │
-   │   - String "a,b" → Array ["a","b"]   │
+   │  Input:  { queries: [...] }          │
+   │  Checks:                             │
+   │   - queries is array                 │
+   │   - 1-3 queries per request          │
+   │   - Tool exists in registry          │
    └────────┬─────────────────────────────┘
             │
             ▼
    ┌──────────────────────────────────────┐
    │  Resilience Wrapper                  │
    │                                       │
-   │  withLocalResilience(fn, toolName)   │
+   │  toolEntry.resilience(fn, toolName)  │
    │   ├─ Circuit Breaker Check           │
    │   │   └─ OPEN? → Fail fast           │
    │   │   └─ CLOSED/HALF-OPEN? → Proceed │
    │   ├─ Retry with Backoff              │
-   │   │   └─ maxAttempts: 2              │
-   │   │   └─ initialDelay: 100ms         │
-   │   │   └─ backoffMultiplier: 2x       │
+   │   │   └─ Config per tool category    │
    │   └─ Execute Tool Function           │
    └────────┬─────────────────────────────┘
             │
@@ -327,13 +334,6 @@ Running?        Not Running
    │  parseToolResponse(rawResult)        │
    │   ├─ Extract data, hints, research   │
    │   └─ Detect errors                   │
-   │                                       │
-   │  ResearchResponse.searchResults({    │
-   │    files: [...],                     │
-   │    totalMatches: N,                  │
-   │    pagination: {...},                │
-   │    mcpHints: [...]                   │
-   │  })                                  │
    └────────┬─────────────────────────────┘
             │
             ▼
@@ -341,12 +341,11 @@ Running?        Not Running
    │  HTTP Response                       │
    │                                       │
    │  {                                   │
-   │    content: [...],                   │
-   │    structuredContent: {              │
-   │      status: "hasResults",           │
-   │      hints: [...],                   │
-   │      data: {...}                     │
-   │    }                                 │
+   │    tool: "localSearchCode",          │
+   │    success: true,                    │
+   │    data: { ... },                    │
+   │    hints: [...],                     │
+   │    research: { ... }                 │
    │  }                                   │
    └──────────────────────────────────────┘
 ```
@@ -358,16 +357,13 @@ Running?        Not Running
 │                          DISCOVERY FLOW                                     │
 └────────────────────────────────────────────────────────────────────────────┘
 
-   ./cli tools                           ./cli tools/info/localSearchCode
-          │                                       │
-          ▼                                       ▼
-   GET /tools/list                        GET /tools/info/localSearchCode
+   GET /tools/list                       GET /tools/info/localSearchCode
           │                                       │
           ▼                                       ▼
    ┌──────────────────────┐              ┌──────────────────────┐
-   │  getMcpContent()     │              │  getMcpContent()     │
-   │   └─ Return cached   │              │   └─ Return cached   │
-   │      metadata        │              │      metadata        │
+   │  Static tool list    │              │  getMcpContent()     │
+   │  (hardcoded in       │              │   └─ Return cached   │
+   │   tools.ts)          │              │      metadata        │
    └────────┬─────────────┘              └────────┬─────────────┘
             │                                      │
             ▼                                      ▼
@@ -375,11 +371,11 @@ Running?        Not Running
    │  Return tool list:   │              │  Find tool by name:  │
    │   - name             │              │   - name             │
    │   - description      │              │   - description      │
-   │                      │              │   - inputSchema      │
-   │  (concise discovery) │              │   - hints            │
-   └──────────────────────┘              │                      │
-                                         │  (full schema)       │
-                                         └──────────────────────┘
+   │   - _hint: use       │              │   - inputSchema (Zod)│
+   │     /tools/info      │              │   - hints            │
+   │                      │              │                      │
+   │  (concise discovery) │              │  (full schema)       │
+   └──────────────────────┘              └──────────────────────┘
 ```
 
 ---
@@ -408,29 +404,23 @@ Running?        Not Running
               │                  │                             │
               ▼                  ▼                             ▼
       ┌───────────────┐  ┌───────────────┐            ┌───────────────┐
-      │ octocode-     │  │ src/mcpCache  │            │ src/routes/*  │
-      │ shared        │  │ .ts           │◄───────────│               │
-      │ (session)     │  └───────┬───────┘            └───────┬───────┘
-      └───────────────┘          │                            │
+      │ octocode-     │  │ src/mcpCache  │            │ src/routes/   │
+      │ shared        │  │ .ts           │◄───────────│ tools.ts      │
+      │ (session)     │  └───────┬───────┘            │ prompts.ts    │
+      └───────────────┘          │                    └───────┬───────┘
                                  │                            │
                                  ▼                            ▼
                          ┌───────────────┐            ┌───────────────┐
                          │ src/index.ts  │◄───────────│ src/utils/    │
-                         │ (re-exports)  │            │ routeFactory  │
+                         │ (re-exports)  │            │ resilience    │
                          └───────┬───────┘            └───────┬───────┘
                                  │                            │
                                  │                            │
                                  ▼                            ▼
                          ┌───────────────┐            ┌───────────────┐
                          │ octocode-mcp  │            │ src/utils/    │
-                         │ (tools)       │            │ resilience    │
-                         └───────────────┘            └───────────────┘
-                                                              │
-                                                              ▼
-                                                      ┌───────────────┐
-                                                      │ src/utils/    │
-                                                      │ circuitBreaker│
-                                                      │ retry.ts      │
+                         │ (tools)       │            │ circuitBreaker│
+                         └───────────────┘            │ retry.ts      │
                                                       └───────────────┘
 ```
 
@@ -452,50 +442,60 @@ npx tsx scripts/server.ts start
 
 ```bash
 # Discovery
+curl http://localhost:1987/health                        # Health check
 curl http://localhost:1987/tools/list                    # List all tools
 curl http://localhost:1987/tools/info/localSearchCode    # Get tool schema
-curl http://localhost:1987/prompts/list                  # List all prompts
 curl http://localhost:1987/tools/system                  # Load system prompt
+curl http://localhost:1987/prompts/list                  # List all prompts
 
-# Tool Execution
-curl "http://localhost:1987/localSearchCode?pattern=auth&path=src"
-curl "http://localhost:1987/localGetFileContent?path=src/server.ts"
-curl "http://localhost:1987/lspGotoDefinition?uri=file:///path/file.ts&symbolName=createServer&lineHint=20"
+# Tool Execution (ALL tools via POST /tools/call/:toolName)
+curl -X POST http://localhost:1987/tools/call/localSearchCode \
+  -H "Content-Type: application/json" \
+  -d '{"queries": [{"mainResearchGoal": "Find auth", "researchGoal": "Search", "reasoning": "Test", "pattern": "auth", "path": "src"}]}'
+
+curl -X POST http://localhost:1987/tools/call/lspGotoDefinition \
+  -H "Content-Type: application/json" \
+  -d '{"queries": [{"mainResearchGoal": "Find def", "researchGoal": "Locate", "reasoning": "Test", "uri": "file:///path/file.ts", "symbolName": "createServer", "lineHint": 20}]}'
 ```
 
 ### HTTP Endpoints
 
-| Category | Endpoint | Method |
-|----------|----------|--------|
-| Health | `/health` | GET |
-| **Local** | `/localSearchCode` | GET |
-| | `/localGetFileContent` | GET |
-| | `/localFindFiles` | GET |
-| | `/localViewStructure` | GET |
-| **LSP** | `/lspGotoDefinition` | GET |
-| | `/lspFindReferences` | GET |
-| | `/lspCallHierarchy` | GET |
-| **GitHub** | `/githubSearchCode` | GET |
-| | `/githubGetFileContent` | GET |
-| | `/githubViewRepoStructure` | GET |
-| | `/githubSearchRepositories` | GET |
-| | `/githubSearchPullRequests` | GET |
-| **Package** | `/packageSearch` | GET |
-| **Meta** | `/tools/list` | GET |
-| | `/tools/info/:name` | GET |
-| | `/tools/call/:name` | POST |
-| | `/tools/system` | GET |
-| | `/prompts/list` | GET |
-| | `/prompts/info/:name` | GET |
+| Category | Endpoint | Method | Description |
+|----------|----------|--------|-------------|
+| **Health** | \`/health\` | GET | Server health + circuit states |
+| **Discovery** | \`/tools/list\` | GET | List all tools (concise) |
+| | \`/tools/info/:name\` | GET | Get tool schema + hints |
+| | \`/tools/system\` | GET | Get system prompt |
+| | \`/prompts/list\` | GET | List all prompts |
+| | \`/prompts/info/:name\` | GET | Get prompt details |
+| **Execution** | \`/tools/call/:toolName\` | POST | **Execute any tool** |
+
+### Available Tools (via \`/tools/call/:toolName\`)
+
+| Tool Name | Category | Description |
+|-----------|----------|-------------|
+| \`localSearchCode\` | Local | Search code with ripgrep |
+| \`localGetFileContent\` | Local | Read local file content |
+| \`localFindFiles\` | Local | Find files by pattern/metadata |
+| \`localViewStructure\` | Local | View local directory tree |
+| \`lspGotoDefinition\` | LSP | Go to symbol definition |
+| \`lspFindReferences\` | LSP | Find all symbol references |
+| \`lspCallHierarchy\` | LSP | Get call hierarchy |
+| \`githubSearchCode\` | GitHub | Search code in GitHub repos |
+| \`githubGetFileContent\` | GitHub | Read file from GitHub repo |
+| \`githubViewRepoStructure\` | GitHub | View GitHub repo tree |
+| \`githubSearchRepositories\` | GitHub | Search GitHub repositories |
+| \`githubSearchPullRequests\` | GitHub | Search pull requests |
+| \`packageSearch\` | Package | Search npm/PyPI packages |
 
 ### Resilience Configuration
 
-| Service | Max Retries | Initial Delay | Max Delay |
-|---------|-------------|---------------|-----------|
-| GitHub | 3 | 1000ms | 10000ms |
-| LSP | 4 | 500ms | 5000ms |
-| Local | 2 | 100ms | 1000ms |
-| Package | 2 | 500ms | 3000ms |
+| Service | Max Attempts | Initial Delay | Max Delay | Backoff |
+|---------|--------------|---------------|-----------|---------|
+| GitHub | 3 | 1000ms | 30000ms | 3x |
+| LSP | 3 | 500ms | 5000ms | 2x |
+| Local | 2 | 100ms | 1000ms | 2x |
+| Package | 3 | 1000ms | 15000ms | 2x |
 
 ### Circuit Breaker States
 
@@ -508,23 +508,33 @@ CLOSED (normal) ──[3 failures]──► OPEN (reject all)
                           (probe)
 ```
 
+**Per-service configuration:**
+- **LSP**: 3 failures, 1 success, 10s timeout
+- **GitHub**: 2 failures, 1 success, 60s timeout
+
 ---
 
 ## Files Summary
 
 | File | Purpose |
 |------|---------|
-| `src/server.ts` | Express server, route mounting, graceful shutdown |
-| `src/index.ts` | Re-exports from octocode-mcp |
-| `src/mcpCache.ts` | Tool metadata caching |
-| `src/routes/*.ts` | HTTP endpoint handlers |
-| `src/middleware/*.ts` | Logging, validation, error handling |
-| `src/utils/*.ts` | Resilience, formatting, parsing |
-| `src/validation/schemas.ts` | Zod validation schemas |
-| `scripts/server.ts` | Server lifecycle management |
-| `scripts/init.ts` | Initialize + load system prompt |
-| `output/server.js` | Bundled server (tsdown output) |
+| \`src/server.ts\` | Express server, route mounting (\`/tools\`, \`/prompts\`), graceful shutdown |
+| \`src/index.ts\` | Re-exports from octocode-mcp |
+| \`src/mcpCache.ts\` | Tool metadata caching |
+| \`src/routes/tools.ts\` | **Main API** - \`/tools/call/:toolName\` and discovery |
+| \`src/routes/prompts.ts\` | Prompt discovery |
+| \`src/routes/local.ts\` | Handler logic (used by tools.ts registry) |
+| \`src/routes/lsp.ts\` | Handler logic (used by tools.ts registry) |
+| \`src/routes/github.ts\` | Handler logic (used by tools.ts registry) |
+| \`src/routes/package.ts\` | Handler logic (used by tools.ts registry) |
+| \`src/middleware/*.ts\` | Logging, validation, error handling |
+| \`src/utils/*.ts\` | Resilience, formatting, parsing |
+| \`src/validation/schemas.ts\` | Zod validation schemas |
+| \`scripts/server.ts\` | Server lifecycle management |
+| \`scripts/init.ts\` | Initialize + load system prompt |
+| \`output/server.js\` | Bundled server (tsdown output) |
 
 ---
 
-*Created by Octocode Research Skill 🔍🐙*
+*Created by Octocode Research Skill*
+*Last validated: 2025-01-17*

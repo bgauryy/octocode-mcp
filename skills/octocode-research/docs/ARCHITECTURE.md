@@ -4,6 +4,8 @@
 
 The `octocode-research` skill is an HTTP API server that provides code research capabilities. It runs on `localhost:1987` and exposes REST endpoints that wrap the `octocode-mcp` tool functions.
 
+**Key Design**: All tools are executed via a unified `POST /tools/call/:toolName` endpoint, NOT individual GET routes.
+
 ## Architecture
 
 ```
@@ -17,7 +19,7 @@ The `octocode-research` skill is an HTTP API server that provides code research 
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │                    Middleware Layer                          │ │
 │  │  • requestLogger - logs all tool calls                       │ │
-│  │  • queryParser - validates & transforms query params         │ │
+│  │  • express.json - parses JSON body                           │ │
 │  │  • contextPropagation - maintains research session context   │ │
 │  │  • errorHandler - standardizes error responses               │ │
 │  └─────────────────────────────────────────────────────────────┘ │
@@ -26,12 +28,9 @@ The `octocode-research` skill is an HTTP API server that provides code research 
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Route Handlers                            │
-│  • /local*    - Local filesystem tools (localSearchCode, etc.)  │
-│  • /lsp*      - Language Server Protocol tools                  │
-│  • /github*   - GitHub API tools                                │
-│  • /package*  - Package registry search                         │
-│  • /tools/*   - Tool discovery and execution                    │
+│  • /tools/*   - Tool discovery and execution (MAIN API)         │
 │  • /prompts/* - Prompt discovery                                │
+│  • /health    - Health check endpoint                           │
 └─────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼
@@ -80,17 +79,17 @@ octocode-research/
 │   ├── index.ts           # Re-exports from octocode-mcp
 │   ├── mcpCache.ts        # MCP content caching
 │   ├── routes/
-│   │   ├── local.ts       # /localSearchCode, /localGetFileContent, etc.
-│   │   ├── lsp.ts         # /lspGotoDefinition, /lspFindReferences, etc.
-│   │   ├── github.ts      # /githubSearchCode, /githubGetFileContent, etc.
-│   │   ├── package.ts     # /packageSearch
-│   │   ├── tools.ts       # /tools/list, /tools/info, /tools/call
-│   │   └── prompts.ts     # /prompts/list, /prompts/info
+│   │   ├── tools.ts       # /tools/* - MAIN API (list, info, call, system)
+│   │   ├── prompts.ts     # /prompts/list, /prompts/info
+│   │   ├── local.ts       # Handler logic (used by tools.ts TOOL_REGISTRY)
+│   │   ├── lsp.ts         # Handler logic (used by tools.ts TOOL_REGISTRY)
+│   │   ├── github.ts      # Handler logic (used by tools.ts TOOL_REGISTRY)
+│   │   └── package.ts     # Handler logic (used by tools.ts TOOL_REGISTRY)
 │   ├── middleware/
 │   │   ├── queryParser.ts      # Query validation with Zod
 │   │   ├── errorHandler.ts     # Error response formatting
 │   │   ├── logger.ts           # Request/response logging
-│   │   └── contextPropagation.ts # Shutdown cleanup (placeholder)
+│   │   └── contextPropagation.ts # Shutdown cleanup
 │   ├── validation/
 │   │   ├── schemas.ts     # Zod schemas for all endpoints
 │   │   └── index.ts       # Schema exports
@@ -102,7 +101,7 @@ octocode-research/
 │   │   ├── responseBuilder.ts  # Research-specific response formatting
 │   │   ├── responseFactory.ts  # Safe data extraction utilities
 │   │   ├── responseParser.ts   # MCP response parsing, hints extraction
-│   │   ├── retry.ts            # Retry with exponential backoff + jitter
+│   │   ├── retry.ts            # Retry with exponential backoff
 │   │   └── routeFactory.ts     # createRouteHandler() factory pattern
 │   └── types/
 │       ├── express.d.ts   # Express type extensions
@@ -110,10 +109,9 @@ octocode-research/
 │       ├── mcp.ts         # MCP type definitions
 │       ├── responses.ts   # Response type definitions
 │       └── guards.ts      # Type guard utilities
-├── dist/                  # Compiled JavaScript
+├── output/                # Bundled JavaScript (tsdown)
 ├── docs/                  # Architecture documentation
 ├── SKILL.md              # Skill manifest & usage guide
-├── install.sh            # Install/start script
 └── package.json
 ```
 
@@ -122,7 +120,8 @@ octocode-research/
 ### 1. Request Processing
 
 ```
-HTTP Request (GET /localSearchCode?pattern=foo&path=/src)
+HTTP Request: POST /tools/call/localSearchCode
+Body: { "queries": [{ "pattern": "foo", "path": "/src", ... }] }
         │
         ▼
 ┌─────────────────────────────────────────────┐
@@ -133,13 +132,15 @@ HTTP Request (GET /localSearchCode?pattern=foo&path=/src)
         │
         ▼
 ┌─────────────────────────────────────────────┐
-│  Route Handler                               │
-│  1. parseAndValidate(req.query, schema)      │
-│     - Validates with Zod                     │
-│     - Transforms types (string→number, etc)  │
-│     - Returns: query array                   │
-│  2. await toolFunction({ queries })          │
-│  3. Transform result to role-based response  │
+│  Route Handler (routes/tools.ts)             │
+│  POST /tools/call/:toolName                  │
+│                                              │
+│  1. Lookup tool in TOOL_REGISTRY             │
+│  2. Validate queries array (1-3 items)       │
+│  3. Get resilience wrapper for category      │
+│  4. Execute: resilience(() => toolFn(params))│
+│  5. Parse response with parseToolResponse()  │
+│  6. Return { tool, success, data, hints }    │
 └─────────────────────────────────────────────┘
         │
         ▼
@@ -152,66 +153,56 @@ HTTP Request (GET /localSearchCode?pattern=foo&path=/src)
 └─────────────────────────────────────────────┘
         │
         ▼
-HTTP Response (JSON with role-based content)
+HTTP Response (JSON)
 ```
 
-### 2. Query Validation
+### 2. Tool Registry
 
-The `parseAndValidate` function in `src/middleware/queryParser.ts`:
+The `routes/tools.ts` file contains a `TOOL_REGISTRY` that maps tool names to their functions and resilience wrappers:
 
-1. Accepts flat query parameters from HTTP request
-2. Validates using Zod schema (type coercion, constraints)
-3. Returns array format `[validatedQuery]` for bulk operation compatibility
-4. Supports batch mode via JSON-encoded `queries` parameter
+```typescript
+const TOOL_REGISTRY: Record<string, ToolEntry> = {
+  // GitHub tools
+  githubSearchCode: { fn: githubSearchCode, resilience: withGitHubResilience, category: 'github' },
+  githubGetFileContent: { fn: githubGetFileContent, resilience: withGitHubResilience, category: 'github' },
+  // ... more github tools
 
-**Example transformations:**
-- `depth=2` (string) → `2` (number)
-- `caseSensitive=true` (string) → `true` (boolean)
-- `keywordsToSearch=foo,bar` (string) → `["foo", "bar"]` (array)
+  // Local tools
+  localSearchCode: { fn: localSearchCode, resilience: withLocalResilience, category: 'local' },
+  localGetFileContent: { fn: localGetFileContent, resilience: withLocalResilience, category: 'local' },
+  // ... more local tools
+
+  // LSP tools
+  lspGotoDefinition: { fn: lspGotoDefinition, resilience: withLspResilience, category: 'lsp' },
+  lspFindReferences: { fn: lspFindReferences, resilience: withLspResilience, category: 'lsp' },
+  lspCallHierarchy: { fn: lspCallHierarchy, resilience: withLspResilience, category: 'lsp' },
+
+  // Package tools
+  packageSearch: { fn: packageSearch, resilience: withPackageResilience, category: 'package' },
+};
+```
 
 ### 3. Response Format
 
-The skill uses a **role-based response format** with content blocks:
+Tool execution returns a simplified response:
 
 ```typescript
 {
-  content: [
-    {
-      type: "text",
-      text: "Hints:\n- Use depth=2...",
-      annotations: {
-        audience: ["assistant"],      // For AI processing
-        priority: 1,
-        role: "system"
-      }
-    },
-    {
-      type: "text",
-      text: "Found 5 files matching...",
-      annotations: {
-        audience: ["assistant", "user"],  // For both
-        priority: 0.8,
-        role: "assistant"
-      }
-    },
-    {
-      type: "text",
-      text: "📁 Search complete",
-      annotations: {
-        audience: ["user"],           // For human display
-        priority: 0.6,
-        role: "user"
-      }
-    }
-  ],
-  structuredContent: { ... },  // Machine-readable data
-  isError: false
+  tool: "localSearchCode",
+  success: true,
+  data: { /* parsed tool response data */ },
+  hints: ["Use lineHint for LSP tools", ...],
+  research: {
+    mainResearchGoal: "...",
+    researchGoal: "...",
+    reasoning: "..."
+  }
 }
 ```
 
-### 4. Route Factory Pattern
+### 4. Route Factory Pattern (for legacy route handlers)
 
-All routes use `createRouteHandler()` from `src/utils/routeFactory.ts` for consistent handling:
+The individual route files (`local.ts`, `lsp.ts`, etc.) use `createRouteHandler()` from `src/utils/routeFactory.ts`:
 
 ```typescript
 createRouteHandler({
@@ -226,72 +217,52 @@ createRouteHandler({
 })
 ```
 
-This pattern ensures:
-- Consistent validation across all 13+ routes
-- Unified error handling
-- Applied resilience (circuit breaker + retry)
-- Response transformation per route type
+> **Note**: These route handlers are NOT mounted in production. They're used for tests and as reference implementations.
 
 ## Endpoint Reference
 
-### Local Tools
-
-| Endpoint | Method | Description | Key Params |
-|----------|--------|-------------|------------|
-| `/localSearchCode` | GET/POST | Search code with ripgrep | `pattern`, `path`, `type`, `include`, `exclude` |
-| `/localGetFileContent` | GET/POST | Read file content | `path`, `startLine`, `endLine` |
-| `/localViewStructure` | GET/POST | View directory tree | `path`, `depth`, `showHidden` |
-| `/localFindFiles` | GET/POST | Find files by metadata | `path`, `pattern`, `type`, `maxDepth` |
-
-### LSP Tools
-
-| Endpoint | Method | Description | Key Params |
-|----------|--------|-------------|------------|
-| `/lspGotoDefinition` | GET/POST | Go to symbol definition | `uri`, `symbolName`, `lineHint` |
-| `/lspFindReferences` | GET/POST | Find all references | `uri`, `symbolName`, `lineHint` |
-| `/lspCallHierarchy` | GET/POST | Call hierarchy | `uri`, `symbolName`, `lineHint`, `direction` |
-
-### GitHub Tools
-
-| Endpoint | Method | Description | Key Params |
-|----------|--------|-------------|------------|
-| `/githubSearchCode` | GET/POST | Search code | `keywordsToSearch`, `owner`, `repo`, `language` |
-| `/githubGetFileContent` | GET/POST | Read file | `owner`, `repo`, `path`, `branch` |
-| `/githubViewRepoStructure` | GET/POST | Repo tree | `owner`, `repo`, `branch`, `path`, `depth` |
-| `/githubSearchRepositories` | GET/POST | Search repos | `keywordsToSearch` or `topicsToSearch` |
-| `/githubSearchPullRequests` | GET/POST | Search PRs | `owner`, `repo`, `state`, `query` |
-
-### Package Tools
-
-| Endpoint | Method | Description | Key Params |
-|----------|--------|-------------|------------|
-| `/packageSearch` | GET/POST | Search npm/PyPI | `name`, `ecosystem` |
-
-### Meta Tools
+### Meta Tools (MAIN API)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/tools/list` | GET | List all available tools |
+| `/health` | GET | Server health, memory, circuit states |
+| `/tools/list` | GET | List all available tools (concise) |
 | `/tools/info/:toolName` | GET | Get tool schema and hints |
-| `/tools/call/:toolName` | POST | Execute a tool with JSON body |
+| `/tools/call/:toolName` | **POST** | **Execute any tool** |
 | `/tools/system` | GET | Get system prompt |
+| `/tools/metadata` | GET | Get raw metadata (advanced) |
 | `/prompts/list` | GET | List available prompts |
 | `/prompts/info/:promptName` | GET | Get prompt details |
 
+### Tool Execution
+
+**All tools are executed via POST /tools/call/:toolName**
+
+| Tool Name | Category | Description |
+|-----------|----------|-------------|
+| `localSearchCode` | Local | Search code with ripgrep |
+| `localGetFileContent` | Local | Read local file content |
+| `localViewStructure` | Local | View directory tree |
+| `localFindFiles` | Local | Find files by metadata |
+| `lspGotoDefinition` | LSP | Go to symbol definition |
+| `lspFindReferences` | LSP | Find all references |
+| `lspCallHierarchy` | LSP | Call hierarchy |
+| `githubSearchCode` | GitHub | Search code |
+| `githubGetFileContent` | GitHub | Read file |
+| `githubViewRepoStructure` | GitHub | Repo tree |
+| `githubSearchRepositories` | GitHub | Search repos |
+| `githubSearchPullRequests` | GitHub | Search PRs |
+| `packageSearch` | Package | Search npm/PyPI |
+
 ## Research Context Parameters
 
-All endpoints accept these optional parameters for context tracking:
+All tools accept these parameters for context tracking:
 
 | Parameter | Purpose |
 |-----------|---------|
 | `mainResearchGoal` | Overall research objective (constant across session) |
 | `researchGoal` | This specific query's goal |
 | `reasoning` | Why this approach/query helps |
-
-These flow through to tool results and help with:
-- Session correlation in logs
-- Contextual hints in responses
-- Research progress tracking
 
 ## Resilience Features
 
@@ -300,7 +271,7 @@ These flow through to tool results and help with:
 Four pre-configured resilience wrappers combine circuit breaker + retry:
 
 ```typescript
-// Usage in routes:
+// Usage in TOOL_REGISTRY:
 withGitHubResilience(operation, toolName)  // GitHub API calls
 withLspResilience(operation, toolName)     // Language server protocol
 withLocalResilience(operation, toolName)   // Local filesystem ops
@@ -309,14 +280,38 @@ withPackageResilience(operation, toolName) // npm/PyPI queries
 
 ### 2. Retry Logic (`src/utils/retry.ts`)
 
-Exponential backoff with jitter per service category:
+Exponential backoff per service category:
 
 ```typescript
 const RETRY_CONFIGS = {
-  github: { maxAttempts: 3, initialDelayMs: 1000, maxDelayMs: 10000, backoffMultiplier: 2 },
-  lsp: { maxAttempts: 4, initialDelayMs: 500, maxDelayMs: 5000, backoffMultiplier: 2 },
-  local: { maxAttempts: 2, initialDelayMs: 100, maxDelayMs: 1000, backoffMultiplier: 2 },
-  package: { maxAttempts: 2, initialDelayMs: 500, maxDelayMs: 3000, backoffMultiplier: 2 }
+  lsp: {
+    maxAttempts: 3,
+    initialDelayMs: 500,
+    maxDelayMs: 5000,
+    backoffMultiplier: 2,
+    retryOn: (err) => isLspNotReady(err) || isTimeout(err) || isConnectionRefused(err)
+  },
+  github: {
+    maxAttempts: 3,
+    initialDelayMs: 1000,
+    maxDelayMs: 30000,
+    backoffMultiplier: 3,
+    retryOn: (err) => isRateLimited(err) || isServerError(err) || isTimeout(err)
+  },
+  package: {
+    maxAttempts: 3,
+    initialDelayMs: 1000,
+    maxDelayMs: 15000,
+    backoffMultiplier: 2,
+    retryOn: (err) => isRateLimited(err) || isServerError(err) || isTimeout(err)
+  },
+  local: {
+    maxAttempts: 2,
+    initialDelayMs: 100,
+    maxDelayMs: 1000,
+    backoffMultiplier: 2,
+    retryOn: (err) => isFileBusy(err) || isTimeout(err)
+  }
 };
 ```
 
@@ -332,8 +327,25 @@ Prevents cascading failures with three states:
 
 **Default Configuration:**
 - `failureThreshold`: 3 failures before opening
-- `successThreshold`: 1 success to close from half-open
+- `successThreshold`: 2 successes to close from half-open
 - `resetTimeoutMs`: 30000ms (30 seconds)
+
+**Per-Service Overrides:**
+```typescript
+// LSP - shorter timeout for local service
+configureCircuit('lsp', {
+  failureThreshold: 3,
+  successThreshold: 1,
+  resetTimeoutMs: 10000,  // 10s
+});
+
+// GitHub - longer timeout for rate limits
+configureCircuit('github', {
+  failureThreshold: 2,
+  successThreshold: 1,
+  resetTimeoutMs: 60000,  // 60s
+});
+```
 
 **Key Functions:**
 - `withCircuitBreaker(name, operation, fallback?)` - Execute with protection
@@ -365,9 +377,9 @@ Logs are written to `~/.octocode/logs/`:
 **Log format:**
 ```json
 {
-  "tool": "localSearch",
-  "route": "/local/search",
-  "method": "GET",
+  "tool": "localSearchCode",
+  "route": "/tools/call/localSearchCode",
+  "method": "POST",
   "params": { "pattern": "function", "path": "/src" },
   "duration": 245,
   "success": true
@@ -397,23 +409,34 @@ This ensures compatibility with both structured and text-based tool outputs.
 
 ### Build
 ```bash
-npm run build  # TypeScript compilation
+npm run build  # TypeScript compilation with tsdown
 ```
 
 ### Start Server
 ```bash
-./install.sh start  # Install deps + start
-./install.sh health # Check if running
-./install.sh logs   # Tail logs
+npm run server:start  # Start detached server
+npm run server:stop   # Stop server
+npm run server:status # Check status
 ```
 
 ### Test Endpoints
 ```bash
+# Health check
 curl http://localhost:1987/health
-curl "http://localhost:1987/localSearchCode?pattern=export&path=/src"
+
+# List tools
+curl http://localhost:1987/tools/list
+
+# Get tool schema
+curl http://localhost:1987/tools/info/localSearchCode
+
+# Execute tool
+curl -X POST http://localhost:1987/tools/call/localSearchCode \
+  -H "Content-Type: application/json" \
+  -d '{"queries": [{"mainResearchGoal": "Test", "researchGoal": "Search", "reasoning": "Testing", "pattern": "export", "path": "/src"}]}'
 ```
 
-## Integration with Claude Code
+## Integration with AI Agents
 
 The skill is invoked via the Skill tool:
 ```
@@ -425,4 +448,8 @@ Or through Task agent for complex research:
 Task(subagent_type="Explore", prompt="Research how auth works")
 ```
 
-The SKILL.md file contains the full prompt and workflow guidance for Claude Code integration.
+The SKILL.md file contains the full prompt and workflow guidance for AI agent integration.
+
+---
+
+*Last validated: 2025-01-17*

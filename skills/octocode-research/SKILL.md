@@ -45,10 +45,7 @@ curl http://localhost:1987/health
 # 2. Load system prompt FIRST (defines agent behavior)
 curl http://localhost:1987/tools/system
 
-# 3. List available prompts
-curl http://localhost:1987/prompts/list
-
-# 4. Load prompt based on user intent
+# 3. Load prompt based on user intent (use table below)
 curl http://localhost:1987/prompts/info/{name}
 ```
 
@@ -80,8 +77,9 @@ curl http://localhost:1987/tools/list
 
 # 2. Get tool schema BEFORE calling (required!)
 curl http://localhost:1987/tools/info/{toolName}
+```
 
-## Tool Execution
+### Tool Execution
 
 **All tools called via: `POST /tools/call/{toolName}`**
 
@@ -147,7 +145,7 @@ curl -X POST http://localhost:1987/tools/call/localSearchCode \
 ## 5. RESEARCH
 
 <mission>
-- use tools to compleste the research plan
+- use tools to complete the research plan
 - use tools composition wisely to get the best results and coherent data
 </mission>
 
@@ -164,28 +162,28 @@ curl -X POST http://localhost:1987/tools/call/localSearchCode \
 </must>
 
 <response_handling>
-**CRITICAL: Every response contains `mcpHints` - YOU MUST READ AND FOLLOW THEM**
+**CRITICAL: Every response contains `hints` - YOU MUST READ AND FOLLOW THEM**
 
 Response structure:
 ```json
 {
-  "structuredContent": {
-    "files": [...],
-    "mcpHints": [           // ← MANDATORY TO READ!
-      "Use lineHint for LSP tools",
-      "lspGotoDefinition(uri, symbolName, lineHint=N)"
-    ],
-    "research": {
-      "mainResearchGoal": "...",
-      "researchGoal": "...",
-      "reasoning": "..."
-    }
+  "success": true,
+  "tool": "localSearchCode",
+  "data": { "files": [...], "totalMatches": 10 },
+  "hints": [                // ← MANDATORY TO READ!
+    "Use lineHint for LSP tools",
+    "lspGotoDefinition(uri, symbolName, lineHint=N)"
+  ],
+  "research": {
+    "mainResearchGoal": "...",
+    "researchGoal": "...",
+    "reasoning": "..."
   }
 }
 ```
 
 Before next tool call:
-1. READ `mcpHints` array - it tells you EXACTLY what to do next
+1. READ `hints` array - it tells you EXACTLY what to do next
 2. FOLLOW the hint guidance (e.g., "Use lineHint=N for LSP")
 3. PASS research params to maintain context continuity
 </response_handling>
@@ -195,7 +193,7 @@ Before next tool call:
    - `mainResearchGoal`: Overall objective
    - `researchGoal`: This specific step's goal
    - `reasoning`: Why this tool/params
-2. **Read Response** - check `mcpHints` FIRST
+2. **Read Response** - check `hints` FIRST
 3. **Follow Hints** - they guide the next step
 4. **Iterate** - use hint guidance for next tool
 </research_loop>
