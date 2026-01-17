@@ -5650,7 +5650,18 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"octocode-shared@npm:1.0.0, octocode-shared@workspace:packages/octocode-shared":
+"octocode-shared@npm:1.0.0":
+  version: 1.0.0
+  resolution: "octocode-shared@npm:1.0.0"
+  dependencies:
+    "@napi-rs/keyring": "npm:^1.2.0"
+    "@octokit/oauth-methods": "npm:^6.0.2"
+    "@octokit/request": "npm:^10.0.7"
+  checksum: 10c0/ef9b4927cc84821bd75e6d599999bfb14b3592cb27644a103adc7d62e841f1f5967df30283505890f4f4d0944e04569e62396f3103c3e42d553ef201529a156a
+  languageName: node
+  linkType: hard
+
+"octocode-shared@workspace:packages/octocode-shared":
   version: 0.0.0-use.local
   resolution: "octocode-shared@workspace:packages/octocode-shared"
   dependencies:

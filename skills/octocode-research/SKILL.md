@@ -47,13 +47,16 @@ Follow this cycle: **Initialize → Select Prompt → Plan → Execute → Outpu
 ## Phase 1: Initialization
 
 ```bash
-# 1. Start server (safe to run multiple times)
+# 1. Install dependencies (first time only)
+npm install
+
+# 2. Start server (safe to run multiple times)
 npm run server:start
 
-# 2. Verify server is running
+# 3. Verify server is running
 ./cli health              # Returns: {"status":"ok","port":1987,...}
 
-# 3. Load context
+# 4. Load context
 ./cli system              # System prompt (load FIRST)
 ./cli prompts             # Available prompts
 ```
