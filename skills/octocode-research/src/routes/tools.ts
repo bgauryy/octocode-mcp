@@ -56,7 +56,7 @@ import {
   withLspResilience,
   withPackageResilience,
 } from '../utils/resilience.js';
-import { parseToolResponse } from '../utils/responseParser.js';
+import { parseToolResponse, parseToolResponseBulk } from '../utils/responseParser.js';
 
 export const toolsRoutes = Router();
 
@@ -452,10 +452,27 @@ toolsRoutes.post('/call/:toolName', async (
       toolName
     );
 
-    // Parse response
-    const parsed = parseToolResponse(rawResult as { content: Array<{ type: string; text: string }> });
+    const mcpResponse = rawResult as { content: Array<{ type: string; text: string }> };
 
-    // Return simplified response
+    // For multiple queries, return bulk response format
+    if (body.queries.length > 1) {
+      const bulkParsed = parseToolResponseBulk(mcpResponse);
+
+      res.status(bulkParsed.isError ? 500 : 200).json({
+        tool: toolName,
+        bulk: true,
+        success: !bulkParsed.isError,
+        instructions: bulkParsed.instructions,
+        results: bulkParsed.results,
+        hints: bulkParsed.hints,
+        counts: bulkParsed.counts,
+      });
+      return;
+    }
+
+    // Single query - use existing response format for backward compatibility
+    const parsed = parseToolResponse(mcpResponse);
+
     res.status(parsed.isError ? 500 : 200).json({
       tool: toolName,
       success: !parsed.isError,

@@ -41,12 +41,12 @@ octocode-research/
 │   ├── index.ts               # Re-exports from octocode-mcp
 │   ├── routes/
 │   │   ├── index.ts           # Route exports
-│   │   ├── local.ts           # /local/* - filesystem operations
-│   │   ├── lsp.ts             # /lsp/* - Language Server Protocol
-│   │   ├── github.ts          # /github/* - GitHub API
-│   │   ├── package.ts         # /package/* - npm/PyPI search
-│   │   ├── tools.ts           # /tools/* - tool discovery
-│   │   └── prompts.ts         # /prompts/* - prompt discovery
+│   │   ├── local.ts           # Local tool handlers (used in tests)
+│   │   ├── lsp.ts             # LSP tool handlers (used in tests)
+│   │   ├── github.ts          # GitHub tool handlers (used in tests)
+│   │   ├── package.ts         # Package tool handlers (used in tests)
+│   │   ├── tools.ts           # /tools/* - MAIN tool API (mounted)
+│   │   └── prompts.ts         # /prompts/* - prompt discovery (mounted)
 │   ├── middleware/
 │   │   ├── index.ts           # Middleware exports
 │   │   ├── contextPropagation.ts  # Research session context
@@ -98,49 +98,52 @@ octocode-research/
 
 ## API Endpoints
 
-### Discovery Endpoints
+### Available Routes
 
 | Endpoint | Description |
 |----------|-------------|
 | `GET /health` | Server health check |
-| `GET /tools/list` | List all tools (MCP format) |
-| `GET /tools/info` | List all tools (simplified) |
-| `GET /tools/info/:name` | Get specific tool info |
-| `GET /prompts/list` | List all prompts (MCP format) |
-| `GET /prompts/info/:name` | Get specific prompt info |
+| `GET /tools/list` | List all tools (concise) |
+| `GET /tools/info` | List all tools with details |
+| `GET /tools/info/:toolName` | Get specific tool schema (call BEFORE using!) |
+| `GET /tools/system` | Get system prompt (load FIRST) |
+| `POST /tools/call/:toolName` | **Execute any tool** |
+| `GET /prompts/list` | List all prompts |
+| `GET /prompts/info/:promptName` | Get specific prompt content |
 
-### Local Filesystem (`/local/*`)
+### Tool Execution (Unified API)
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /local/search` | Code search via ripgrep |
-| `GET /local/content` | Read file content |
-| `GET /local/find` | Find files by metadata |
-| `GET /local/structure` | View directory tree |
+**All tools are called via `POST /tools/call/:toolName`** with JSON body:
 
-### LSP Tools (`/lsp/*`)
+```bash
+curl -X POST http://localhost:1987/tools/call/localSearchCode \
+  -H "Content-Type: application/json" \
+  -d '{"queries":[{
+    "pattern":"useState",
+    "path":"/project",
+    "mainResearchGoal":"Find React hooks",
+    "researchGoal":"Locate useState",
+    "reasoning":"Need source location"
+  }]}'
+```
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /lsp/definition` | Go to symbol definition |
-| `GET /lsp/references` | Find all references |
-| `GET /lsp/calls` | Call hierarchy (incoming/outgoing) |
+### Available Tools (via `/tools/call/:toolName`)
 
-### GitHub Tools (`/github/*`)
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /github/search` | Search GitHub code |
-| `GET /github/content` | Read GitHub files |
-| `GET /github/repos` | Search repositories |
-| `GET /github/structure` | View repo structure |
-| `GET /github/prs` | Search pull requests |
-
-### Package Search (`/package/*`)
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /package/search` | Search npm/PyPI packages |
+| Tool Name | Category | Description |
+|-----------|----------|-------------|
+| `localSearchCode` | Local | Code search via ripgrep |
+| `localGetFileContent` | Local | Read file content |
+| `localFindFiles` | Local | Find files by pattern/metadata |
+| `localViewStructure` | Local | View directory tree |
+| `lspGotoDefinition` | LSP | Go to symbol definition |
+| `lspFindReferences` | LSP | Find all references |
+| `lspCallHierarchy` | LSP | Call hierarchy (incoming/outgoing) |
+| `githubSearchCode` | GitHub | Search GitHub code |
+| `githubGetFileContent` | GitHub | Read GitHub files |
+| `githubSearchRepositories` | GitHub | Search repositories |
+| `githubViewRepoStructure` | GitHub | View repo structure |
+| `githubSearchPullRequests` | GitHub | Search pull requests |
+| `packageSearch` | Package | Search npm/PyPI packages |
 
 ---
 
@@ -216,27 +219,48 @@ yarn test -- --coverage  # With coverage report
 
 ## Response Format
 
-All endpoints return standardized responses:
+### Single Query Response (`POST /tools/call/:toolName`)
 
 ```typescript
-// Success
 {
-  status: "hasResults" | "empty",
-  data: { ... },
-  _reasoning: {
-    mainResearchGoal: string,
-    researchGoal: string,
-    reasoning: string
+  tool: "localSearchCode",
+  success: true,
+  data: { files: [...], totalMatches: 10 },
+  hints: ["Use lineHint for LSP tools", ...],
+  research: {
+    mainResearchGoal: "...",
+    researchGoal: "...",
+    reasoning: "..."
   }
 }
+```
 
-// Error
+### Bulk Query Response (2-3 queries)
+
+```typescript
 {
-  status: "error",
-  error: {
-    message: string,
-    code?: string
-  }
+  tool: "localSearchCode",
+  bulk: true,
+  success: true,
+  instructions: "...",
+  results: [
+    { id: 1, status: "hasResults", data: {...}, research: {...} },
+    { id: 2, status: "empty", data: {...}, research: {...} }
+  ],
+  hints: { hasResults: [...], empty: [...], error: [...] },
+  counts: { total: 2, hasResults: 1, empty: 1, error: 0 }
+}
+```
+
+### Error Response
+
+```typescript
+{
+  tool: "localSearchCode",
+  success: false,
+  data: {},
+  hints: ["Error recovery hint..."],
+  research: {...}
 }
 ```
 
@@ -258,7 +282,6 @@ All endpoints return standardized responses:
 | Doc | Purpose |
 |-----|---------|
 | [SKILL.md](./SKILL.md) | How AI agents should USE this skill |
-| [docs/API_REFERENCE.md](./docs/API_REFERENCE.md) | **Complete HTTP API reference with all routes** |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Detailed architecture |
 | [docs/FLOWS.md](./docs/FLOWS.md) | Main flows & component connections |
 
