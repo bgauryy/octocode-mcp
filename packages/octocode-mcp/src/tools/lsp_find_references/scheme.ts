@@ -78,7 +78,7 @@ const LSPFindReferencesBaseSchema = BaseQuerySchemaLocal.extend({
 /**
  * Single query schema for LSP find references
  */
-const LSPFindReferencesQuerySchema = LSPFindReferencesBaseSchema;
+export const LSPFindReferencesQuerySchema = LSPFindReferencesBaseSchema;
 
 /**
  * Bulk query schema for finding references across multiple symbols

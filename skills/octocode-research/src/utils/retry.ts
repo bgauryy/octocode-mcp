@@ -64,7 +64,7 @@ export const RETRY_CONFIGS = {
   },
 } as const satisfies Record<string, RetryConfig>;
 
-export type RetryCategory = keyof typeof RETRY_CONFIGS;
+type RetryCategory = keyof typeof RETRY_CONFIGS;
 
 /**
  * Context for retry logging
@@ -140,50 +140,84 @@ export async function withCategoryRetry<T>(
 // Error Type Detection
 // =============================================================================
 
+// Error codes for reliable detection (check these first)
+const RATE_LIMIT_CODES = [403, 429] as const;
+const RATE_LIMIT_PATTERNS = [/rate\s*limit/i, /too\s*many\s*requests/i] as const;
+
+const LSP_ERROR_CODES = ['LSP_NOT_READY', 'LSP_NOT_INITIALIZED', 'ECONNREFUSED'] as const;
+const LSP_ERROR_PATTERNS = [/not initialized/i, /server not started/i, /lsp.*not.*ready/i] as const;
+
+const TIMEOUT_CODES = ['ETIMEDOUT', 'ESOCKETTIMEDOUT', 'ECONNRESET'] as const;
+const TIMEOUT_PATTERNS = [/timeout/i, /timed?\s*out/i] as const;
+
+const FILE_BUSY_CODES = ['EBUSY', 'EAGAIN', 'ENOTEMPTY'] as const;
+
+const CONNECTION_REFUSED_CODES = ['ECONNREFUSED', 'ENOTFOUND', 'EHOSTUNREACH'] as const;
+
+const SYMBOL_NOT_FOUND_CODES = ['SYMBOL_NOT_FOUND', 'NOT_FOUND'] as const;
+const SYMBOL_NOT_FOUND_PATTERNS = [/symbol\s*not\s*found/i, /definition\s*not\s*found/i] as const;
+
 /**
  * Check if error indicates GitHub rate limiting
  */
-export function isRateLimited(err: unknown): boolean {
+function isRateLimited(err: unknown): boolean {
   const error = err as { status?: number; message?: string };
-  return (
-    error?.status === 403 ||
-    error?.status === 429 ||
-    error?.message?.toLowerCase().includes('rate limit') ||
-    false
-  );
+
+  // Check status codes first (more reliable)
+  if (error?.status && RATE_LIMIT_CODES.includes(error.status as 403 | 429)) {
+    return true;
+  }
+
+  // Fall back to message patterns
+  if (error?.message) {
+    return RATE_LIMIT_PATTERNS.some((pattern) => pattern.test(error.message!));
+  }
+
+  return false;
 }
 
 /**
  * Check if error indicates LSP server not ready
  */
-export function isLspNotReady(err: unknown): boolean {
+function isLspNotReady(err: unknown): boolean {
   const error = err as { message?: string; code?: string };
-  return (
-    error?.message?.includes('not initialized') ||
-    error?.message?.includes('server not started') ||
-    error?.message?.includes('LSP') ||
-    error?.code === 'LSP_NOT_READY' ||
-    false
-  );
+
+  // Check error codes first (more reliable)
+  if (error?.code && LSP_ERROR_CODES.includes(error.code as (typeof LSP_ERROR_CODES)[number])) {
+    return true;
+  }
+
+  // Fall back to message patterns
+  if (error?.message) {
+    return LSP_ERROR_PATTERNS.some((pattern) => pattern.test(error.message!));
+  }
+
+  return false;
 }
 
 /**
  * Check if error is a timeout
  */
-export function isTimeout(err: unknown): boolean {
+function isTimeout(err: unknown): boolean {
   const error = err as { code?: string; message?: string };
-  return (
-    error?.code === 'ETIMEDOUT' ||
-    error?.code === 'ESOCKETTIMEDOUT' ||
-    error?.message?.toLowerCase().includes('timeout') ||
-    false
-  );
+
+  // Check error codes first (more reliable)
+  if (error?.code && TIMEOUT_CODES.includes(error.code as (typeof TIMEOUT_CODES)[number])) {
+    return true;
+  }
+
+  // Fall back to message patterns
+  if (error?.message) {
+    return TIMEOUT_PATTERNS.some((pattern) => pattern.test(error.message!));
+  }
+
+  return false;
 }
 
 /**
  * Check if error is a server error (5xx)
  */
-export function isServerError(err: unknown): boolean {
+function isServerError(err: unknown): boolean {
   const error = err as { status?: number };
   const status = error?.status;
   return typeof status === 'number' && status >= 500 && status < 600;
@@ -192,17 +226,17 @@ export function isServerError(err: unknown): boolean {
 /**
  * Check if file is busy/locked
  */
-export function isFileBusy(err: unknown): boolean {
+function isFileBusy(err: unknown): boolean {
   const error = err as { code?: string };
-  return error?.code === 'EBUSY' || error?.code === 'EAGAIN' || false;
+  return error?.code != null && FILE_BUSY_CODES.includes(error.code as (typeof FILE_BUSY_CODES)[number]);
 }
 
 /**
  * Check if connection was refused
  */
-export function isConnectionRefused(err: unknown): boolean {
+function isConnectionRefused(err: unknown): boolean {
   const error = err as { code?: string };
-  return error?.code === 'ECONNREFUSED' || false;
+  return error?.code != null && CONNECTION_REFUSED_CODES.includes(error.code as (typeof CONNECTION_REFUSED_CODES)[number]);
 }
 
 /**
@@ -210,12 +244,18 @@ export function isConnectionRefused(err: unknown): boolean {
  */
 export function isSymbolNotFound(err: unknown): boolean {
   const error = err as { message?: string; code?: string };
-  return (
-    error?.message?.toLowerCase().includes('symbol not found') ||
-    error?.message?.toLowerCase().includes('not found') ||
-    error?.code === 'SYMBOL_NOT_FOUND' ||
-    false
-  );
+
+  // Check error codes first (more reliable)
+  if (error?.code && SYMBOL_NOT_FOUND_CODES.includes(error.code as (typeof SYMBOL_NOT_FOUND_CODES)[number])) {
+    return true;
+  }
+
+  // Fall back to message patterns
+  if (error?.message) {
+    return SYMBOL_NOT_FOUND_PATTERNS.some((pattern) => pattern.test(error.message!));
+  }
+
+  return false;
 }
 
 // =============================================================================

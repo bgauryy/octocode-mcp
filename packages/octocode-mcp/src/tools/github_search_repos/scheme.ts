@@ -5,7 +5,7 @@ import {
 } from '../../scheme/baseSchema.js';
 import { GITHUB_SEARCH_REPOS, TOOL_NAMES } from '../toolMetadata.js';
 
-const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
+export const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
   keywordsToSearch: z
     .array(z.string())
     .optional()

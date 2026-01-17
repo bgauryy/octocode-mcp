@@ -267,7 +267,7 @@ The CLI includes a skills marketplace with community-contributed skills:
 ```bash
 npx octocode
 # Select "🎯 Skills Manager"
-# Choose "🌐 Browse Marketplace"
+# Choose " Browse Marketplace"
 ```
 
 ---

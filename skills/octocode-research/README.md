@@ -41,11 +41,6 @@ Inherits the same robust security model as Octocode:
 
 ---
 
-
-https://github.com/user-attachments/assets/0b492a48-b983-4c8a-b793-9e7a6b73d789
-
-
-
 ## 🛠️ How It Works
 
 This skill implements a **lightweight layer** similar to MCP to exchange tools, system prompts, and prompts—just like Octocode MCP—but with streamlined efficiency.
@@ -76,7 +71,7 @@ That's it! Your agent is now equipped with research superpowers.
 > "How does **React's useState** work internally?"
 > "Explain **Express** middleware chaining pattern"
 
-### 🏠 Explore Your Codebase
+###  Explore Your Codebase
 > "Trace the **auth flow** from login to database"
 > "Find all usages of `UserService`"
 

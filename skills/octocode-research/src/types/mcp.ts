@@ -31,7 +31,7 @@ export interface JsonSchemaProperty {
 /**
  * MCP Tool representation for /tools/list
  */
-export interface McpTool {
+interface McpTool {
   name: string;
   description: string;
   inputSchema: JsonSchema;

@@ -53,7 +53,7 @@ const LSPGotoDefinitionBaseSchema = BaseQuerySchemaLocal.extend({
 /**
  * Single query schema for LSP goto definition
  */
-const LSPGotoDefinitionQuerySchema = LSPGotoDefinitionBaseSchema;
+export const LSPGotoDefinitionQuerySchema = LSPGotoDefinitionBaseSchema;
 
 /**
  * Bulk query schema for LSP goto definition (max 5 queries)

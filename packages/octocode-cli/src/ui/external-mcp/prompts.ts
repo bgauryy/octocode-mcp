@@ -50,7 +50,7 @@ function formatCategory(category: string): string {
  */
 function getCategoryIcon(category: MCPCategory): string {
   const icons: Record<MCPCategory, string> = {
-    'browser-automation': '🌐',
+    'browser-automation': '',
     database: '🗄️',
     'cloud-platform': '☁️',
     'developer-tools': '🛠️',

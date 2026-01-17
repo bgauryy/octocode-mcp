@@ -897,7 +897,7 @@ async function showGhCliGuidance(): Promise<void> {
     message: '',
     choices: [
       {
-        name: '🌐 Open GitHub CLI website',
+        name: ' Open GitHub CLI website',
         value: 'open-site',
       },
       new Separator() as unknown as {

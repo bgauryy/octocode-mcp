@@ -18,7 +18,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "octocode-research": "./dist/server.js"
+    "octocode-research": "./dist/server.js",
+    "octocode-research-cli": "./dist/cli.js"
   },
   "exports": {
     ".": {
@@ -28,13 +29,16 @@
     "./server": {
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
     }
   },
   "files": [
     "dist",
     "src",
-    "install.sh",
-    "start.sh",
+    "scripts",
     "SKILL.md",
     "LICENSE",
     "tsconfig.json"
@@ -43,17 +47,26 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
+    "init": "npx tsx scripts/init.ts",
+    "discover": "npx tsx scripts/discover.ts",
+    "prompt": "npx tsx scripts/prompt.ts",
+    "call": "npx tsx scripts/call.ts",
+    "tools": "npx tsx scripts/getToolsInfo.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",
-    "lint:fix": "eslint src --fix"
+    "lint:fix": "eslint src --fix",
+    "server": "npx tsx scripts/server.ts",
+    "server:start": "npx tsx scripts/server.ts start",
+    "server:stop": "npx tsx scripts/server.ts stop"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
     "express": "^4.21.2",
     "js-yaml": "^4.1.1",
     "octocode-mcp": "file:../../packages/octocode-mcp",
-    "zod": "^3.24.1"
+    "octocode-shared": "file:../../packages/octocode-shared",
+    "zod": "^3.24.1",
+    "zod-to-json-schema": "^3.25.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",
@@ -61,6 +74,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.15.29",
     "@types/supertest": "^6.0.3",
+    "@vitest/coverage-v8": "^4.0.17",
     "eslint": "^9.27.0",
     "supertest": "^7.2.2",
     "tsx": "^4.21.0",

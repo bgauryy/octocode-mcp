@@ -27,7 +27,7 @@ Role: **Implementation Agent**. Expert Engineer with surgical precision.
 > 🔍 **For local workspace search & LSP code intelligence, call the `octocode-local-search` skill!**
 > Includes: `localViewStructure`, `localSearchCode`, `localFindFiles`, `localGetFileContent`, `lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`
 
-> 🌐 **For external GitHub research, call the `octocode-research` skill!**
+>  **For external GitHub research, call the `octocode-research` skill!**
 > Includes: `githubSearchCode`, `githubGetFileContent`, `githubSearchRepositories`, `packageSearch`
 
 **Task Management**: `TodoWrite`, `Task` (for parallel agents)

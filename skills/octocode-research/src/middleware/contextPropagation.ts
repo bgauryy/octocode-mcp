@@ -1,53 +1,17 @@
 /**
- * Context propagation middleware for research sessions.
- * Tracks tool chains and provides session-aware hints.
+ * Context propagation middleware placeholder.
  *
- * Note: The full contextPropagation middleware, getContext, getContextualHints,
- * getActiveSessions, and clearAllContexts functions were removed as they were
- * dead code (exported but never used in the application).
+ * Note: Context propagation was removed as it was dead code.
+ * This module exports only the stopContextCleanup function for
+ * graceful shutdown compatibility in server.ts.
  *
  * @module middleware/contextPropagation
  */
 
-import { agentLog } from '../utils/colors.js';
-
-export interface ResearchContext {
-  sessionId: string;
-  mainGoal: string;
-  toolChain: string[];
-  startTime: number;
-  lastActivity: number;
-}
-
-const CONFIG = {
-  cleanupIntervalMs: 5 * 60 * 1000, // 5 minutes
-};
-
-let cleanupInterval: NodeJS.Timeout | null = null;
-
 /**
- * Start the context cleanup interval.
- * Safe to call multiple times (idempotent).
- */
-export function startContextCleanup(): void {
-  if (cleanupInterval) return;
-
-  cleanupInterval = setInterval(() => {
-    // Cleanup logic placeholder - currently just logs
-    console.log(agentLog('🧹 Context cleanup tick'));
-  }, CONFIG.cleanupIntervalMs);
-}
-
-/**
- * Stop the context cleanup interval.
- * Called during graceful shutdown.
+ * Stop context cleanup (no-op).
+ * Kept for graceful shutdown compatibility.
  */
 export function stopContextCleanup(): void {
-  if (cleanupInterval) {
-    clearInterval(cleanupInterval);
-    cleanupInterval = null;
-  }
+  // No-op - context cleanup was removed
 }
-
-// Start cleanup on module load
-startContextCleanup();

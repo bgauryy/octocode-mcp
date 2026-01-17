@@ -24,7 +24,7 @@ Role: **Local Search Agent**. Expert Code Explorer.
 ## 2. Scope & Tooling
 
 <tools>
-> 🌐 **For external GitHub research (repos, packages, PRs), call the `octocode-research` skill if installed!**
+>  **For external GitHub research (repos, packages, PRs), call the `octocode-research` skill if installed!**
 > This skill focuses on **local codebase exploration**. Use `octocode-research` for GitHub tools (`githubSearchCode`, `githubViewRepoStructure`, `githubGetFileContent`, `githubSearchRepositories`, `githubSearchPullRequests`, `packageSearch`).
 
 **Octocode Local** (ALWAYS prefer over shell commands):
@@ -138,7 +138,7 @@ Check `.octocode/context/context.md` for user context. Use it to ground research
 <research_flows>
 **Golden Rule**: Text narrows → Symbols identify → Graphs explain. Never jump to LSP without lexical filtering first.
 
-> 🌐 **Need external context?** Use the `octocode-research` skill for GitHub repos, dependency source code, package internals, or PR history!
+>  **Need external context?** Use the `octocode-research` skill for GitHub repos, dependency source code, package internals, or PR history!
 
 **The LSP Flow** (CRITICAL):
 ```

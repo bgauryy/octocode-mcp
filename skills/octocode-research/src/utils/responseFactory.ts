@@ -15,7 +15,7 @@ import { isObject, hasProperty, isArray, hasStringProperty, hasNumberProperty } 
 // Types
 // =============================================================================
 
-export interface RouteResponseOptions<T> {
+interface RouteResponseOptions<T> {
   toolName: string;
   transform: (data: Record<string, unknown>, parsed: ParsedResponse) => T;
   buildResponse: (transformed: T, parsed: ParsedResponse) => Record<string, unknown>;

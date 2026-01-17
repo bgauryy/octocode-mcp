@@ -16,7 +16,6 @@ import {
   createRoleBasedResult,
   QuickResult,
   StatusEmoji,
-  ContentBuilder,
 } from 'octocode-mcp/responses';
 
 // CallToolResult type from MCP SDK (re-exported via octocode-mcp)
@@ -493,4 +492,4 @@ function detectLanguage(path: string): string {
 }
 
 // Re-export utilities for convenience
-export { QuickResult, StatusEmoji, ContentBuilder, createRoleBasedResult, detectLanguage as detectLanguageFromPath };
+export { QuickResult, detectLanguage as detectLanguageFromPath };

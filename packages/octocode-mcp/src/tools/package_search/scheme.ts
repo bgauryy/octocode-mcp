@@ -17,7 +17,7 @@ const PackageBaseFields = {
     .describe(PACKAGE_SEARCH.options.searchLimit),
 };
 
-const NpmPackageQuerySchema = BaseQuerySchema.extend({
+export const NpmPackageQuerySchema = BaseQuerySchema.extend({
   ...PackageBaseFields,
   ecosystem: z.literal('npm').describe(PACKAGE_SEARCH.search.ecosystem),
   npmFetchMetadata: z
@@ -27,7 +27,7 @@ const NpmPackageQuerySchema = BaseQuerySchema.extend({
     .describe(PACKAGE_SEARCH.options.npmFetchMetadata),
 });
 
-const PythonPackageQuerySchema = BaseQuerySchema.extend({
+export const PythonPackageQuerySchema = BaseQuerySchema.extend({
   ...PackageBaseFields,
   ecosystem: z.literal('python').describe(PACKAGE_SEARCH.search.ecosystem),
   pythonFetchMetadata: z

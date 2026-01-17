@@ -22,7 +22,7 @@ export const LOCAL_VIEW_STRUCTURE_DESCRIPTION =
 /**
  * View structure query schema
  */
-const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
+export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
   path: z.string().describe(LOCAL_VIEW_STRUCTURE.scope.path),
 
   details: z

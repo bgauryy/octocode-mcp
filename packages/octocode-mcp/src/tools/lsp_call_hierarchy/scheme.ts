@@ -19,7 +19,7 @@ export const LSP_CALL_HIERARCHY_DESCRIPTION =
 /**
  * Single query schema for LSP call hierarchy
  */
-const LSPCallHierarchyQuerySchema = BaseQuerySchemaLocal.extend({
+export const LSPCallHierarchyQuerySchema = BaseQuerySchemaLocal.extend({
   uri: z.string().min(1).describe(LSP_CALL_HIERARCHY.scope.uri),
 
   symbolName: z

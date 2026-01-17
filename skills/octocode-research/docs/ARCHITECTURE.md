@@ -26,10 +26,12 @@ The `octocode-research` skill is an HTTP API server that provides code research 
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Route Handlers                            │
-│  • /local/*   - Local filesystem tools                          │
-│  • /lsp/*     - Language Server Protocol tools                  │
-│  • /github/*  - GitHub API tools                                │
-│  • /package/* - Package registry search                         │
+│  • /local*    - Local filesystem tools (localSearchCode, etc.)  │
+│  • /lsp*      - Language Server Protocol tools                  │
+│  • /github*   - GitHub API tools                                │
+│  • /package*  - Package registry search                         │
+│  • /tools/*   - Tool discovery and execution                    │
+│  • /prompts/* - Prompt discovery                                │
 └─────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼
@@ -76,29 +78,40 @@ octocode-research/
 ├── src/
 │   ├── server.ts          # Express server setup, route mounting
 │   ├── index.ts           # Re-exports from octocode-mcp
+│   ├── mcpCache.ts        # MCP content caching
 │   ├── routes/
-│   │   ├── local.ts       # /local/* endpoints
-│   │   ├── lsp.ts         # /lsp/* endpoints
-│   │   ├── github.ts      # /github/* endpoints
-│   │   └── package.ts     # /package/* endpoints
+│   │   ├── local.ts       # /localSearchCode, /localGetFileContent, etc.
+│   │   ├── lsp.ts         # /lspGotoDefinition, /lspFindReferences, etc.
+│   │   ├── github.ts      # /githubSearchCode, /githubGetFileContent, etc.
+│   │   ├── package.ts     # /packageSearch
+│   │   ├── tools.ts       # /tools/list, /tools/info, /tools/call
+│   │   └── prompts.ts     # /prompts/list, /prompts/info
 │   ├── middleware/
 │   │   ├── queryParser.ts      # Query validation with Zod
 │   │   ├── errorHandler.ts     # Error response formatting
 │   │   ├── logger.ts           # Request/response logging
-│   │   └── contextPropagation.ts # Session context tracking
+│   │   └── contextPropagation.ts # Shutdown cleanup (placeholder)
 │   ├── validation/
 │   │   ├── schemas.ts     # Zod schemas for all endpoints
 │   │   └── index.ts       # Schema exports
 │   ├── utils/
-│   │   ├── logger.ts           # File-based logging
-│   │   ├── responseBuilder.ts  # Role-based response formatting
-│   │   ├── retry.ts            # Retry with exponential backoff
-│   │   ├── circuitBreaker.ts   # Circuit breaker pattern
-│   │   └── rateLimitHandler.ts # GitHub rate limit tracking
+│   │   ├── circuitBreaker.ts   # Circuit breaker pattern (3 states)
+│   │   ├── colors.ts           # Console output coloring
+│   │   ├── logger.ts           # File-based logging to ~/.octocode/logs/
+│   │   ├── resilience.ts       # Combined circuit breaker + retry wrappers
+│   │   ├── responseBuilder.ts  # Research-specific response formatting
+│   │   ├── responseFactory.ts  # Safe data extraction utilities
+│   │   ├── responseParser.ts   # MCP response parsing, hints extraction
+│   │   ├── retry.ts            # Retry with exponential backoff + jitter
+│   │   └── routeFactory.ts     # createRouteHandler() factory pattern
 │   └── types/
-│       └── express.d.ts   # Express type extensions
+│       ├── express.d.ts   # Express type extensions
+│       ├── toolTypes.ts   # Tool type definitions
+│       ├── mcp.ts         # MCP type definitions
+│       ├── responses.ts   # Response type definitions
+│       └── guards.ts      # Type guard utilities
 ├── dist/                  # Compiled JavaScript
-├── references/            # Endpoint documentation
+├── docs/                  # Architecture documentation
 ├── SKILL.md              # Skill manifest & usage guide
 ├── install.sh            # Install/start script
 └── package.json
@@ -109,7 +122,7 @@ octocode-research/
 ### 1. Request Processing
 
 ```
-HTTP Request (GET /local/search?pattern=foo&path=/src)
+HTTP Request (GET /localSearchCode?pattern=foo&path=/src)
         │
         ▼
 ┌─────────────────────────────────────────────┐
@@ -196,40 +209,74 @@ The skill uses a **role-based response format** with content blocks:
 }
 ```
 
+### 4. Route Factory Pattern
+
+All routes use `createRouteHandler()` from `src/utils/routeFactory.ts` for consistent handling:
+
+```typescript
+createRouteHandler({
+  schema: zodSchema,                    // Zod validation schema
+  toParams: (query) => ({ queries }),   // Transform to MCP format
+  toolFn: localSearchCode,              // Tool function from index.ts
+  toolName: 'localSearchCode',          // For logging/resilience
+  resilience: withLocalResilience,      // Circuit breaker + retry
+  transform: (parsed, queries) => {     // Response transformation
+    return ResearchResponse.searchResults({ ... });
+  },
+})
+```
+
+This pattern ensures:
+- Consistent validation across all 13+ routes
+- Unified error handling
+- Applied resilience (circuit breaker + retry)
+- Response transformation per route type
+
 ## Endpoint Reference
 
 ### Local Tools
 
 | Endpoint | Method | Description | Key Params |
 |----------|--------|-------------|------------|
-| `/local/search` | GET | Search code with ripgrep | `pattern`, `path`, `type`, `include`, `exclude` |
-| `/local/content` | GET | Read file content | `path`, `startLine`, `endLine` |
-| `/local/structure` | GET | View directory tree | `path`, `depth`, `showHidden` |
-| `/local/find` | GET | Find files by metadata | `path`, `pattern`, `type`, `maxDepth` |
+| `/localSearchCode` | GET/POST | Search code with ripgrep | `pattern`, `path`, `type`, `include`, `exclude` |
+| `/localGetFileContent` | GET/POST | Read file content | `path`, `startLine`, `endLine` |
+| `/localViewStructure` | GET/POST | View directory tree | `path`, `depth`, `showHidden` |
+| `/localFindFiles` | GET/POST | Find files by metadata | `path`, `pattern`, `type`, `maxDepth` |
 
 ### LSP Tools
 
 | Endpoint | Method | Description | Key Params |
 |----------|--------|-------------|------------|
-| `/lsp/definition` | GET | Go to symbol definition | `uri`, `symbolName`, `lineHint` |
-| `/lsp/references` | GET | Find all references | `uri`, `symbolName`, `lineHint` |
-| `/lsp/calls` | GET | Call hierarchy | `uri`, `symbolName`, `lineHint`, `direction` |
+| `/lspGotoDefinition` | GET/POST | Go to symbol definition | `uri`, `symbolName`, `lineHint` |
+| `/lspFindReferences` | GET/POST | Find all references | `uri`, `symbolName`, `lineHint` |
+| `/lspCallHierarchy` | GET/POST | Call hierarchy | `uri`, `symbolName`, `lineHint`, `direction` |
 
 ### GitHub Tools
 
 | Endpoint | Method | Description | Key Params |
 |----------|--------|-------------|------------|
-| `/github/search` | GET | Search code | `keywordsToSearch`, `owner`, `repo`, `language` |
-| `/github/content` | GET | Read file | `owner`, `repo`, `path`, `branch` |
-| `/github/structure` | GET | Repo tree | `owner`, `repo`, `branch`, `path`, `depth` |
-| `/github/repos` | GET | Search repos | `keywordsToSearch` or `topicsToSearch` |
-| `/github/prs` | GET | Search PRs | `owner`, `repo`, `state`, `query` |
+| `/githubSearchCode` | GET/POST | Search code | `keywordsToSearch`, `owner`, `repo`, `language` |
+| `/githubGetFileContent` | GET/POST | Read file | `owner`, `repo`, `path`, `branch` |
+| `/githubViewRepoStructure` | GET/POST | Repo tree | `owner`, `repo`, `branch`, `path`, `depth` |
+| `/githubSearchRepositories` | GET/POST | Search repos | `keywordsToSearch` or `topicsToSearch` |
+| `/githubSearchPullRequests` | GET/POST | Search PRs | `owner`, `repo`, `state`, `query` |
 
 ### Package Tools
 
 | Endpoint | Method | Description | Key Params |
 |----------|--------|-------------|------------|
-| `/package/search` | GET | Search npm/PyPI | `name`, `ecosystem` |
+| `/packageSearch` | GET/POST | Search npm/PyPI | `name`, `ecosystem` |
+
+### Meta Tools
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/tools/list` | GET | List all available tools |
+| `/tools/info/:toolName` | GET | Get tool schema and hints |
+| `/tools/call/:toolName` | POST | Execute a tool with JSON body |
+| `/tools/system` | GET | Get system prompt |
+| `/prompts/list` | GET | List available prompts |
+| `/prompts/info/:promptName` | GET | Get prompt details |
 
 ## Research Context Parameters
 
@@ -248,33 +295,63 @@ These flow through to tool results and help with:
 
 ## Resilience Features
 
-### 1. Retry Logic (`src/utils/retry.ts`)
+### 1. Combined Resilience Layer (`src/utils/resilience.ts`)
+
+Four pre-configured resilience wrappers combine circuit breaker + retry:
+
+```typescript
+// Usage in routes:
+withGitHubResilience(operation, toolName)  // GitHub API calls
+withLspResilience(operation, toolName)     // Language server protocol
+withLocalResilience(operation, toolName)   // Local filesystem ops
+withPackageResilience(operation, toolName) // npm/PyPI queries
+```
+
+### 2. Retry Logic (`src/utils/retry.ts`)
+
+Exponential backoff with jitter per service category:
 
 ```typescript
 const RETRY_CONFIGS = {
-  lsp: { maxAttempts: 3, initialDelayMs: 500, backoffMultiplier: 2 },
-  github: { maxAttempts: 3, initialDelayMs: 1000, backoffMultiplier: 3 },
-  local: { maxAttempts: 2, initialDelayMs: 100, backoffMultiplier: 2 }
+  github: { maxAttempts: 3, initialDelayMs: 1000, maxDelayMs: 10000, backoffMultiplier: 2 },
+  lsp: { maxAttempts: 4, initialDelayMs: 500, maxDelayMs: 5000, backoffMultiplier: 2 },
+  local: { maxAttempts: 2, initialDelayMs: 100, maxDelayMs: 1000, backoffMultiplier: 2 },
+  package: { maxAttempts: 2, initialDelayMs: 500, maxDelayMs: 3000, backoffMultiplier: 2 }
 };
 ```
 
-### 2. Circuit Breaker (`src/utils/circuitBreaker.ts`)
+### 3. Circuit Breaker (`src/utils/circuitBreaker.ts`)
 
-Prevents cascading failures by tracking error rates and temporarily disabling failing services.
+Prevents cascading failures with three states:
 
-### 3. Rate Limit Handling (`src/utils/rateLimitHandler.ts`)
+| State | Behavior |
+|-------|----------|
+| **Closed** | Normal operation - requests pass through, failures tracked |
+| **Open** | Service unavailable - immediately reject/fallback |
+| **Half-Open** | After reset timeout, allows probe request to test recovery |
 
-Tracks GitHub API rate limits from response headers:
+**Default Configuration:**
+- `failureThreshold`: 3 failures before opening
+- `successThreshold`: 1 success to close from half-open
+- `resetTimeoutMs`: 30000ms (30 seconds)
+
+**Key Functions:**
+- `withCircuitBreaker(name, operation, fallback?)` - Execute with protection
+- `getCircuitState(name)` - Monitor circuit health
+- `configureCircuit(name, config)` - Customize thresholds
+- `resetCircuit(name)` - Manual reset
+- `getAllCircuitStates()` - Health dashboard (used in /health endpoint)
+
+### 4. Rate Limit Handling
+
+GitHub API rate limits are tracked from response headers:
 - Warns when approaching limits
 - Provides reset time hints
 - Suggests alternative tools when limited
 
-### 4. Context Propagation (`src/middleware/contextPropagation.ts`)
+### 5. Context Propagation (`src/middleware/contextPropagation.ts`)
 
-Maintains research session context across chained calls:
-- Session ID tracking
-- Tool chain history
-- Contextual hints based on usage patterns
+Manages cleanup of background contexts during graceful shutdown.
 
 ## Logging
 
@@ -297,42 +374,24 @@ Logs are written to `~/.octocode/logs/`:
 }
 ```
 
-## Known Issues
-
-### Response Format Mismatch (CRITICAL)
-
-**Issue:** The HTTP route handlers expect `rawResult.structuredContent` but the octocode-mcp bulk operation functions return data in `rawResult.content[0].text`.
-
-**Location:** All route files (`src/routes/*.ts`)
-
-**Current code:**
-```typescript
-const rawResult = await toolFunction({ queries } as any);
-const data = (rawResult.structuredContent || {}) as StructuredData;
-// data is always {} because structuredContent doesn't exist
-```
-
-**Expected from octocode-mcp:**
-```typescript
-{
-  content: [{ type: 'text', text: JSON.stringify(data) }],
-  isError: boolean
-}
-```
-
-**Fix options:**
-1. Parse `JSON.parse(rawResult.content[0].text)` to extract data
-2. Modify octocode-mcp to include `structuredContent` in bulk response
-3. Use different tool exports that return structured data directly
+## Notes
 
 ### GitHub Authentication
 
-The server uses `initialize()` from octocode-mcp to set up GitHub token resolution. Token is retrieved from:
+The server uses `initializeProviders()` from octocode-mcp to set up GitHub token resolution. Token is retrieved from:
 1. Environment variables (`GH_TOKEN`, `GITHUB_TOKEN`)
 2. GitHub CLI (`gh auth token`)
 3. Octocode secure storage
 
 If no token is available, GitHub API calls will be rate-limited and may fail.
+
+### Response Parsing
+
+The `responseParser.ts` module handles MCP tool responses with two strategies:
+1. **Preferred:** Use `structuredContent` directly when available
+2. **Fallback:** Parse YAML from `content[0].text` for legacy responses
+
+This ensures compatibility with both structured and text-based tool outputs.
 
 ## Development
 
@@ -351,7 +410,7 @@ npm run build  # TypeScript compilation
 ### Test Endpoints
 ```bash
 curl http://localhost:1987/health
-curl "http://localhost:1987/local/search?pattern=export&path=/src"
+curl "http://localhost:1987/localSearchCode?pattern=export&path=/src"
 ```
 
 ## Integration with Claude Code

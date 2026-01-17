@@ -52,7 +52,7 @@ export interface PaginationInfo {
 /**
  * Search result from localSearchCode or githubSearchCode
  */
-export interface SearchResult {
+interface SearchResult {
   files?: FileMatch[];
   totalMatches?: number;
   totalFiles?: number;
@@ -66,7 +66,7 @@ export interface SearchResult {
 /**
  * LSP position
  */
-export interface LspPosition {
+interface LspPosition {
   line: number;
   character: number;
 }
@@ -74,7 +74,7 @@ export interface LspPosition {
 /**
  * LSP range
  */
-export interface LspRange {
+interface LspRange {
   start: LspPosition;
   end: LspPosition;
 }
@@ -82,7 +82,7 @@ export interface LspRange {
 /**
  * LSP definition location
  */
-export interface LspDefinition {
+interface LspDefinition {
   uri: string;
   range: LspRange;
 }
@@ -126,7 +126,7 @@ export interface RepoStructure {
 /**
  * Check if an object is a FileMatch
  */
-export function isFileMatch(obj: unknown): obj is FileMatch {
+function isFileMatch(obj: unknown): obj is FileMatch {
   return (
     typeof obj === 'object' &&
     obj !== null &&
@@ -138,7 +138,7 @@ export function isFileMatch(obj: unknown): obj is FileMatch {
 /**
  * Check if an object has valid pagination info
  */
-export function hasValidPagination(obj: unknown): obj is { pagination: PaginationInfo } {
+function hasValidPagination(obj: unknown): obj is { pagination: PaginationInfo } {
   if (!hasProperty(obj, 'pagination')) return false;
   const p = obj.pagination;
   return typeof p === 'object' && p !== null;

@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { z } from 'zod';
-import { logError, logWarn } from '../utils/logger.js';
+import { logError, logWarn, sanitizeQueryParams } from '../utils/logger.js';
 
 export interface ApiError extends Error {
   statusCode?: number;
@@ -21,7 +21,7 @@ export function errorHandler(
   if (isValidationError) {
     logWarn(`[VALIDATION] ${req.method} ${req.path}: ${error.message}`, {
       path: req.path,
-      query: req.query,
+      query: sanitizeQueryParams(req.query as Record<string, unknown>),
       details: error.details,
     });
   } else {

@@ -1,55 +1,72 @@
 /**
- * getToolsInfo.ts - Async script to get information about available tools
- * 
+ * getToolsInfo.ts - Get tool information for agents
+ *
  * Usage:
- *   npx tsx scripts/getToolsInfo.ts [tool-name] [--schema] [--hints]
- * 
- * Examples:
- *   npx tsx scripts/getToolsInfo.ts                    # List all tools
- *   npx tsx scripts/getToolsInfo.ts localSearchCode    # Get specific tool info
- *   npx tsx scripts/getToolsInfo.ts --schema           # Include schema for all
- *   npx tsx scripts/getToolsInfo.ts githubSearchCode --hints  # Include hints
- * 
+ *   npx tsx scripts/getToolsInfo.ts                    # List all tools (names + descriptions)
+ *   npx tsx scripts/getToolsInfo.ts localSearchCode    # Get specific tool with full schema
+ *   npx tsx scripts/getToolsInfo.ts --json             # Output as JSON (all tools, lightweight)
+ *   npx tsx scripts/getToolsInfo.ts githubSearchCode --json  # Specific tool with full schema as JSON
+ *
+ * Flow:
+ *   1. Use getToolsInfo() for initial discovery (names + short descriptions)
+ *   2. Use getToolInfo(toolName) to get full schema BEFORE calling a tool
+ *
  * Can also be imported as a module:
  *   import { getToolsInfo, getToolInfo } from './scripts/getToolsInfo.js';
  *   const info = await getToolsInfo();
  */
 
-import { loadToolContent, initialize } from 'octocode-mcp/public';
-import type { CompleteMetadata } from 'octocode-mcp/public';
+import { colors, BASE_URL, handleConnectionError } from './common.js';
 
 // ============================================================================
 // Types
 // ============================================================================
 
+/** Lightweight tool info returned by /tools/list */
 export interface ToolSummary {
   name: string;
   description: string;
 }
 
-export interface ToolDetail extends ToolSummary {
-  schema?: Record<string, string>;
+/** Full tool info returned by /tools/info/:toolName */
+export interface ToolInfo {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
   hints?: {
-    hasResults: readonly string[];
-    empty: readonly string[];
+    hasResults: string[];
+    empty: string[];
   };
 }
 
 export interface ToolsInfoResult {
-  totalTools: number;
-  toolNames: string[];
-  tools: ToolSummary[] | ToolDetail[];
-  baseHints?: {
-    hasResults: readonly string[];
-    empty: readonly string[];
-  };
-  genericErrorHints?: readonly string[];
+  tools: ToolSummary[];
+  _hint: string;
 }
 
-export interface GetToolsInfoOptions {
-  includeSchema?: boolean;
-  includeHints?: boolean;
-  toolName?: string;
+// ============================================================================
+// API Functions
+// ============================================================================
+
+/** Fetch lightweight tool list (names + short descriptions) */
+async function fetchToolsListFromAPI(): Promise<ToolSummary[]> {
+  const response = await fetch(`${BASE_URL}/tools/list`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch tools: ${response.status}`);
+  }
+  const data = await response.json();
+  return data.tools || [];
+}
+
+/** Fetch full tool info (description + schema + hints) */
+async function fetchToolInfoFromAPI(toolName: string): Promise<ToolInfo | null> {
+  const response = await fetch(`${BASE_URL}/tools/info/${toolName}`);
+  if (!response.ok) {
+    if (response.status === 404) return null;
+    throw new Error(`Failed to fetch tool info: ${response.status}`);
+  }
+  const data = await response.json();
+  return data.data || null;
 }
 
 // ============================================================================
@@ -57,98 +74,26 @@ export interface GetToolsInfoOptions {
 // ============================================================================
 
 /**
- * Get information about all available tools
- * @param options - Options for what information to include
- * @returns Promise with tool information
+ * Get concise list of all available tools (names + short descriptions)
+ * Use this for initial discovery, then call getToolInfo() for full schema before using a tool.
+ * @returns Promise with tool names and short descriptions
  */
-export async function getToolsInfo(options: GetToolsInfoOptions = {}): Promise<ToolsInfoResult> {
-  await initialize();
-  const content = await loadToolContent();
-  
-  const { includeSchema = false, includeHints = false } = options;
-  
-  const toolNames = Object.keys(content.tools);
-  const tools = toolNames.map(name => {
-    const tool = content.tools[name];
-    const result: ToolDetail = {
-      name: tool.name,
-      description: tool.description,
-    };
-    
-    if (includeSchema) {
-      result.schema = tool.schema;
-    }
-    
-    if (includeHints) {
-      result.hints = {
-        hasResults: tool.hints.hasResults,
-        empty: tool.hints.empty,
-      };
-    }
-    
-    return result;
-  });
-  
-  const result: ToolsInfoResult = {
-    totalTools: toolNames.length,
-    toolNames,
+export async function getToolsInfo(): Promise<ToolsInfoResult> {
+  const tools = await fetchToolsListFromAPI();
+  return {
     tools,
+    _hint: 'Use getToolInfo(toolName) for full schema before calling each tool - DO IT ONCE PER TOOL IN A SESSION',
   };
-  
-  if (includeHints) {
-    result.baseHints = content.baseHints;
-    result.genericErrorHints = content.genericErrorHints;
-  }
-  
-  return result;
 }
 
 /**
- * Get information about a specific tool
+ * Get FULL information about a specific tool (description + schema + hints)
+ * ALWAYS call this before using a tool to understand its parameters!
  * @param toolName - Name of the tool to get info for
- * @param options - Options for what information to include
- * @returns Promise with tool information or null if not found
+ * @returns Promise with full tool information or null if not found
  */
-export async function getToolInfo(
-  toolName: string,
-  options: Omit<GetToolsInfoOptions, 'toolName'> = {}
-): Promise<ToolDetail | null> {
-  await initialize();
-  const content = await loadToolContent();
-  
-  const tool = content.tools[toolName];
-  if (!tool) {
-    return null;
-  }
-  
-  const { includeSchema = true, includeHints = true } = options;
-  
-  const result: ToolDetail = {
-    name: tool.name,
-    description: tool.description,
-  };
-  
-  if (includeSchema) {
-    result.schema = tool.schema;
-  }
-  
-  if (includeHints) {
-    result.hints = {
-      hasResults: tool.hints.hasResults,
-      empty: tool.hints.empty,
-      };
-  }
-  
-  return result;
-}
-
-/**
- * Get the raw complete metadata (for advanced use cases)
- * @returns Promise with complete metadata
- */
-export async function getRawMetadata(): Promise<CompleteMetadata> {
-  await initialize();
-  return loadToolContent();
+export async function getToolInfo(toolName: string): Promise<ToolInfo | null> {
+  return fetchToolInfoFromAPI(toolName);
 }
 
 /**
@@ -156,9 +101,8 @@ export async function getRawMetadata(): Promise<CompleteMetadata> {
  * @returns Promise with array of tool names
  */
 export async function listToolNames(): Promise<string[]> {
-  await initialize();
-  const content = await loadToolContent();
-  return Object.keys(content.tools);
+  const tools = await fetchToolsListFromAPI();
+  return tools.map((t) => t.name);
 }
 
 // ============================================================================
@@ -167,113 +111,115 @@ export async function listToolNames(): Promise<string[]> {
 
 function printUsage(): void {
   console.log(`
-Usage: npx tsx scripts/getToolsInfo.ts [tool-name] [options]
+${colors.bold}Usage:${colors.reset} npx tsx scripts/getToolsInfo.ts [tool-name] [options]
 
-Options:
-  --schema    Include schema information for tools
-  --hints     Include hints for tools
-  --json      Output as JSON (default is human-readable)
+${colors.bold}Options:${colors.reset}
+  --json      Output as JSON (for agent consumption)
   --help      Show this help message
 
-Examples:
+${colors.bold}Examples:${colors.reset}
   npx tsx scripts/getToolsInfo.ts                        # List all tools
   npx tsx scripts/getToolsInfo.ts localSearchCode        # Get specific tool
-  npx tsx scripts/getToolsInfo.ts --schema               # All tools with schema
-  npx tsx scripts/getToolsInfo.ts githubSearchCode --hints --json
+  npx tsx scripts/getToolsInfo.ts --json                 # All tools as JSON
+  npx tsx scripts/getToolsInfo.ts githubSearchCode --json # Tool with schema as JSON
 `);
 }
 
-function formatToolInfo(tool: ToolDetail, includeSchema: boolean, includeHints: boolean): string {
+/** Format lightweight tool summary for display */
+function formatToolSummary(tool: ToolSummary): string {
+  return `${colors.cyan}📦 ${tool.name}${colors.reset}\n   ${colors.dim}${tool.description}${colors.reset}`;
+}
+
+/** Format full tool info with schema for display */
+function formatToolFull(tool: ToolInfo): string {
   const lines: string[] = [];
-  lines.push(`📦 ${tool.name}`);
-  lines.push(`   ${tool.description}`);
-  
-  if (includeSchema && tool.schema) {
-    lines.push('   Schema:');
-    for (const [key, value] of Object.entries(tool.schema)) {
-      const truncated = value.length > 100 ? value.slice(0, 100) + '...' : value;
-      lines.push(`     • ${key}: ${truncated}`);
+  lines.push(`${colors.cyan}📦 ${tool.name}${colors.reset}`);
+
+  // Show full description
+  const firstLine = tool.description.split('\n')[0].replace(/^#+\s*/, '');
+  lines.push(`   ${colors.dim}${firstLine}${colors.reset}`);
+
+  // Show key parameters from schema
+  const schema = tool.inputSchema as { properties?: Record<string, unknown> };
+  if (schema.properties) {
+    const queriesSchema = schema.properties.queries as {
+      items?: { properties?: Record<string, { description?: string }> };
+    };
+    if (queriesSchema?.items?.properties) {
+      const params = Object.entries(queriesSchema.items.properties)
+        .filter(([key]) => !['mainResearchGoal', 'researchGoal', 'reasoning'].includes(key))
+        .slice(0, 5);
+
+      if (params.length > 0) {
+        lines.push(`   ${colors.yellow}Key params:${colors.reset}`);
+        for (const [key, value] of params) {
+          const desc = value.description ? ` - ${value.description.slice(0, 60)}` : '';
+          lines.push(`     ${colors.green}•${colors.reset} ${key}${colors.dim}${desc}${colors.reset}`);
+        }
+      }
     }
   }
-  
-  if (includeHints && tool.hints) {
-    if (tool.hints.hasResults.length > 0) {
-      lines.push('   Hints (hasResults):');
-      tool.hints.hasResults.slice(0, 3).forEach(h => lines.push(`     ✓ ${h}`));
-    }
-    if (tool.hints.empty.length > 0) {
-      lines.push('   Hints (empty):');
-      tool.hints.empty.slice(0, 3).forEach(h => lines.push(`     ⚠ ${h}`));
-    }
-  }
-  
+
   return lines.join('\n');
 }
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  
+
   // Parse flags
   const flags = {
-    schema: args.includes('--schema'),
-    hints: args.includes('--hints'),
     json: args.includes('--json'),
     help: args.includes('--help'),
   };
-  
+
   if (flags.help) {
     printUsage();
     process.exit(0);
   }
-  
+
   // Get tool name (first non-flag argument)
-  const toolName = args.find(a => !a.startsWith('--'));
-  
-  try {
-    if (toolName) {
-      // Get specific tool info
-      const info = await getToolInfo(toolName, {
-        includeSchema: flags.schema || true,  // Default to true for specific tool
-        includeHints: flags.hints || true,
-      });
-      
-      if (!info) {
-        console.error(`❌ Tool not found: ${toolName}`);
-        const names = await listToolNames();
-        console.error(`Available tools: ${names.join(', ')}`);
-        process.exit(1);
-      }
-      
-      if (flags.json) {
-        console.log(JSON.stringify(info, null, 2));
-      } else {
-        console.log(formatToolInfo(info, true, true));
-      }
-    } else {
-      // Get all tools info
-      const info = await getToolsInfo({
-        includeSchema: flags.schema,
-        includeHints: flags.hints,
-      });
-      
-      if (flags.json) {
-        console.log(JSON.stringify(info, null, 2));
-      } else {
-        console.log(`\n🔧 Available Tools (${info.totalTools}):\n`);
-        for (const tool of info.tools) {
-          console.log(formatToolInfo(tool as ToolDetail, flags.schema, flags.hints));
-          console.log();
-        }
-      }
+  const toolName = args.find((a) => !a.startsWith('--'));
+
+  if (toolName) {
+    // Get specific tool info (FULL schema)
+    const info = await getToolInfo(toolName);
+
+    if (!info) {
+      console.error(`❌ Tool not found: ${toolName}`);
+      const names = await listToolNames();
+      console.error(`Available tools: ${names.join(', ')}`);
+      process.exit(1);
     }
-  } catch (error) {
-    console.error('❌ Error loading tool info:', error);
-    process.exit(1);
+
+    if (flags.json) {
+      console.log(JSON.stringify(info, null, 2));
+    } else {
+      console.log();
+      console.log(formatToolFull(info));
+      console.log();
+      console.log(`${colors.dim}Run with --json for full schema${colors.reset}`);
+      console.log();
+    }
+  } else {
+    // Get all tools info (lightweight - names + descriptions only)
+    const info = await getToolsInfo();
+
+    if (flags.json) {
+      console.log(JSON.stringify(info, null, 2));
+    } else {
+      console.log(`\n${colors.bold}🔧 Available Tools (${info.tools.length})${colors.reset}\n`);
+      for (const tool of info.tools) {
+        console.log(formatToolSummary(tool));
+        console.log();
+      }
+      console.log(`${colors.dim}Use: npx tsx scripts/getToolsInfo.ts <toolName> for full schema${colors.reset}`);
+      console.log();
+    }
   }
 }
 
 // Run CLI if executed directly
 const isMainModule = import.meta.url === `file://${process.argv[1]}`;
 if (isMainModule) {
-  main();
+  main().catch(handleConnectionError);
 }

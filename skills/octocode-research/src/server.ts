@@ -12,6 +12,7 @@ import { stopContextCleanup } from './middleware/contextPropagation.js';
 import { initializeProviders } from './index.js';
 import { initializeMcpContent } from './mcpCache.js';
 import { getLogsPath } from './utils/logger.js';
+import { getAllCircuitStates } from './utils/circuitBreaker.js';
 import { agentLog, successLog, errorLog, warnLog, dimLog } from './utils/colors.js';
 
 const PORT = 1987;
@@ -27,7 +28,19 @@ export async function createServer(): Promise<Express> {
   app.use(requestLogger);
   
   app.get('/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', port: PORT, version: '2.0.0' });
+    const memoryUsage = process.memoryUsage();
+    res.json({
+      status: 'ok',
+      port: PORT,
+      version: '2.0.0',
+      uptime: Math.floor(process.uptime()),
+      memory: {
+        heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+        heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
+        rss: Math.round(memoryUsage.rss / 1024 / 1024),
+      },
+      circuits: getAllCircuitStates(),
+    });
   });
   
   app.use('/', localRoutes);
