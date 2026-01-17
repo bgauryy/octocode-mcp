@@ -56,6 +56,7 @@ export { STATIC_TOOL_NAMES } from './tools/toolNames.js';
 export {
   initializeToolMetadata,
   loadToolContent,
+  getMetadata,
   TOOL_NAMES,
   BASE_SCHEMA,
   DESCRIPTIONS,

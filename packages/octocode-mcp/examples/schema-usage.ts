@@ -88,6 +88,7 @@ import {
   STATIC_TOOL_NAMES,
   initializeToolMetadata,
   loadToolContent,
+  getMetadata,
   TOOL_NAMES,
   BASE_SCHEMA,
   DESCRIPTIONS,
@@ -976,6 +977,55 @@ console.log('\nloadToolContent:');
 console.log('  Type:', typeof loadToolContent);
 console.log('  Is function:', typeof loadToolContent === 'function' ? '✅' : '❌');
 
+// Test getMetadata
+console.log('\ngetMetadata:');
+console.log('  Type:', typeof getMetadata);
+console.log('  Is function:', typeof getMetadata === 'function' ? '✅' : '❌');
+if (typeof getMetadata === 'function') {
+  console.log('  Returns: Promise<CompleteMetadata>');
+  try {
+    const metadata = await getMetadata();
+    console.log('  Result: ✅ CompleteMetadata object');
+    console.log('  Keys:', Object.keys(metadata).join(', '));
+    console.log('  Tool count:', Object.keys(metadata.tools || {}).length);
+    console.log('  Has instructions:', !!metadata.instructions ? '✅' : '❌');
+    console.log('  Has prompts:', !!metadata.prompts ? '✅' : '❌');
+    console.log('  Has toolNames:', !!metadata.toolNames ? '✅' : '❌');
+    console.log('  Has baseSchema:', !!metadata.baseSchema ? '✅' : '❌');
+    console.log('  Has baseHints:', !!metadata.baseHints ? '✅' : '❌');
+    console.log('\n  Full metadata output:');
+    console.log(JSON.stringify(metadata, null, 2));
+    
+    // Show actual MCP protocol schema format (what MCP clients receive)
+    console.log('\n' + '─'.repeat(40));
+    console.log('MCP PROTOCOL SCHEMA FORMAT (How MCP clients see tool schemas):');
+    console.log('─'.repeat(40));
+    
+    // Convert a sample bulk schema to JSON Schema (MCP format)
+    const mcpSchemaExample = zodToJsonSchema(BulkRipgrepQuerySchema, {
+      $refStrategy: 'none', // Inline all definitions for MCP
+    });
+    console.log('\n📋 BulkRipgrepQuerySchema (MCP Protocol Format):');
+    console.log(JSON.stringify(mcpSchemaExample, null, 2));
+    
+    // Show GitHub tool schema in MCP format
+    const mcpGitHubSchema = zodToJsonSchema(GitHubCodeSearchBulkQuerySchema, {
+      $refStrategy: 'none',
+    });
+    console.log('\n📋 GitHubCodeSearchBulkQuerySchema (MCP Protocol Format):');
+    console.log(JSON.stringify(mcpGitHubSchema, null, 2));
+    
+    // Show LSP tool schema in MCP format
+    const mcpLSPSchema = zodToJsonSchema(BulkLSPCallHierarchySchema, {
+      $refStrategy: 'none',
+    });
+    console.log('\n📋 BulkLSPCallHierarchySchema (MCP Protocol Format):');
+    console.log(JSON.stringify(mcpLSPSchema, null, 2));
+  } catch (e) {
+    console.log('  Error:', e instanceof Error ? e.message : String(e));
+  }
+}
+
 // Test isToolInMetadata
 console.log('\nisToolInMetadata:');
 console.log('  Type:', typeof isToolInMetadata);
@@ -1074,7 +1124,7 @@ console.log('  📦 Base Schemas: 2 schemas');
 console.log('  🔧 Utilities: createBulkQuerySchema function');
 console.log('  📝 Metadata Types: 11 types');
 console.log('  📦 Metadata Constants: STATIC_TOOL_NAMES, TOOL_NAMES, BASE_SCHEMA, DESCRIPTIONS, TOOL_HINTS, GENERIC_ERROR_HINTS');
-console.log('  🔧 Metadata Functions: initializeToolMetadata, loadToolContent, isToolInMetadata, getToolHintsSync, getGenericErrorHintsSync, getDynamicHints');
+console.log('  🔧 Metadata Functions: initializeToolMetadata, loadToolContent, getMetadata, isToolInMetadata, getToolHintsSync, getGenericErrorHintsSync, getDynamicHints');
 
 console.log('\n  Total: 30 schemas + 11 types + 6 constants + 6 utility functions');
 
