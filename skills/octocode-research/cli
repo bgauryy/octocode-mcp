@@ -1,9 +1,0 @@
-#!/bin/sh
-# Wrapper for the compiled CLI
-# Falls back to tsx if dist/cli.js is missing (dev mode)
-
-if [ -f "dist/cli.js" ]; then
-  exec node dist/cli.js "$@"
-else
-  exec npx tsx src/cli.ts "$@"
-fi

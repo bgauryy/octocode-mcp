@@ -73,26 +73,26 @@ export GITHUB_TOKEN="ghp_xxx"          # Environment variable
 gh auth login                           # GitHub CLI
 
 # 3. Start server
-npm run server:start
+npm start
 
 # 4. Verify
-./cli health
+curl http://localhost:1987/health
 ```
 
 ### First Steps
 
 ```bash
 # Load system prompt (do this FIRST)
-./cli system
+curl http://localhost:1987/tools/system
 
 # List available tools
-./cli tools
+curl http://localhost:1987/tools/list
 
 # Get tool schema before using
-./cli tools/info/localSearchCode
+curl http://localhost:1987/tools/info/localSearchCode
 
 # Run your first search
-./cli search pattern="export" path="src"
+curl "http://localhost:1987/localSearchCode?pattern=export&path=src"
 ```
 
 That's it! Your agent is now equipped with research superpowers.

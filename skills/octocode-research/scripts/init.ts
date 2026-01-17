@@ -16,49 +16,26 @@ import { colors, log, checkServerHealth, BASE_URL, handleConnectionError } from 
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-async function startServerBash(): Promise<boolean> {
-  const installScript = join(__dirname, '..', 'install.sh');
-  
-  return new Promise((resolve) => {
-    const proc = spawn('bash', [installScript, 'start'], {
-      cwd: join(__dirname, '..'),
-      stdio: 'inherit',
-    });
-
-    proc.on('close', (code) => resolve(code === 0));
-    proc.on('error', () => resolve(false));
-  });
-}
-
-async function startServerNode(): Promise<boolean> {
-  log('🔄', 'Trying Node.js fallback...', colors.yellow);
-  
-  return new Promise((resolve) => {
-    const proc = spawn('npm', ['run', 'server:start'], {
-      cwd: join(__dirname, '..'),
-      stdio: 'inherit',
-      shell: true,
-    });
-
-    proc.on('close', (code) => resolve(code === 0));
-    proc.on('error', () => resolve(false));
-  });
-}
-
 async function startServer(): Promise<void> {
   log('🚀', 'Starting server...', colors.cyan);
 
-  // Try bash first, then Node.js fallback
-  const bashSuccess = await startServerBash();
-  
-  if (!bashSuccess) {
-    log('⚠️', 'Bash startup failed, trying Node.js fallback...', colors.yellow);
-    const nodeSuccess = await startServerNode();
-    
-    if (!nodeSuccess) {
-      throw new Error('Server failed to start (both bash and node failed)');
-    }
-  }
+  return new Promise((resolve, reject) => {
+    // Direct spawn - no shell injection risk
+    const proc = spawn('node', ['output/server.js'], {
+      cwd: join(__dirname, '..'),
+      stdio: 'inherit',
+      detached: true,
+    });
+
+    proc.unref();
+
+    proc.on('error', (err) => {
+      reject(new Error(`Server failed to start: ${err.message}`));
+    });
+
+    // Give the server a moment to start
+    setTimeout(() => resolve(), 1000);
+  });
 }
 
 async function waitForServer(maxAttempts = 10): Promise<boolean> {

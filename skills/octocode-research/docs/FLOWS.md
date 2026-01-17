@@ -9,9 +9,8 @@
 - [Main Components](#main-components)
 - [Core Flows](#core-flows)
   - [Server Startup Flow](#1-server-startup-flow)
-  - [CLI Command Flow](#2-cli-command-flow)
-  - [Tool Execution Flow](#3-tool-execution-flow)
-  - [Discovery Flow](#4-discovery-flow)
+  - [Tool Execution Flow](#2-tool-execution-flow)
+  - [Discovery Flow](#3-discovery-flow)
 - [Component Connections](#component-connections)
 - [Quick Reference](#quick-reference)
 
@@ -22,7 +21,7 @@
 The **octocode-research** skill is a lightweight HTTP API server that wraps `octocode-mcp` tools for code research. It provides:
 
 - **HTTP Interface**: REST API on `localhost:1987`
-- **CLI**: Command-line access to all endpoints
+- **HTTP Clients**: curl, fetch, or any HTTP client
 - **Auto-Pilot**: Intelligent prompt selection based on user intent
 - **Resilience**: Circuit breaker + retry patterns for reliability
 
@@ -30,12 +29,12 @@ The **octocode-research** skill is a lightweight HTTP API server that wraps `oct
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          OCTOCODE RESEARCH SKILL                            │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  CLI (./cli)  ←──────→  HTTP Server (port 1987)  ←──────→  octocode-mcp    │
-│                              │                                               │
-│                              ├─→ Local Tools (ripgrep, fs)                  │
-│                              ├─→ LSP Tools (semantic analysis)              │
-│                              ├─→ GitHub Tools (API)                         │
-│                              └─→ Package Tools (npm/PyPI)                   │
+│  HTTP Clients (curl/fetch)  ←──────→  HTTP Server (port 1987)  ←→ octocode-mcp │
+│                                            │                                 │
+│                                            ├─→ Local Tools (ripgrep, fs)    │
+│                                            ├─→ LSP Tools (semantic analysis)│
+│                                            ├─→ GitHub Tools (API)           │
+│                                            └─→ Package Tools (npm/PyPI)     │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -52,8 +51,8 @@ The **octocode-research** skill is a lightweight HTTP API server that wraps `oct
                           │                 │                 │
                           ▼                 ▼                 ▼
                     ┌─────────┐       ┌─────────┐       ┌─────────┐
-                    │   CLI   │       │  curl   │       │  fetch  │
-                    │ (./cli) │       │         │       │         │
+                    │  curl   │       │  fetch  │       │ HTTP    │
+                    │         │       │         │       │ Client  │
                     └────┬────┘       └────┬────┘       └────┬────┘
                          │                 │                 │
                          └─────────────────┼─────────────────┘
@@ -118,29 +117,21 @@ The Express HTTP server that:
 - Handles graceful shutdown
 - Exposes `/health` endpoint for monitoring
 
-### 2. **CLI (`src/cli.ts`)**
-
-Command-line interface that:
-- Parses arguments (`command param=value`)
-- Makes HTTP requests to the server
-- Formats output for human/agent readability
-- Provides shortcut aliases
-
-### 3. **MCP Cache (`src/mcpCache.ts`)**
+### 2. **MCP Cache (`src/mcpCache.ts`)**
 
 Singleton cache that:
 - Loads tool metadata ONCE at startup
 - Provides fast access to tool schemas
 - Avoids repeated initialization costs
 
-### 4. **Index (`src/index.ts`)**
+### 3. **Index (`src/index.ts`)**
 
 Re-exports layer that:
 - Maps `octocode-mcp` functions to skill-friendly names
 - Provides type exports for TypeScript consumers
 - Centralizes all tool imports
 
-### 5. **Routes (`src/routes/`)**
+### 4. **Routes (`src/routes/`)**
 
 | File | Endpoints | Purpose |
 |------|-----------|---------|
@@ -151,7 +142,7 @@ Re-exports layer that:
 | `tools.ts` | `/tools/list`, `/tools/info/:name`, `/tools/call/:name` | Tool discovery & execution |
 | `prompts.ts` | `/prompts/list`, `/prompts/info/:name` | Prompt discovery |
 
-### 6. **Scripts (`scripts/`)**
+### 5. **Scripts (`scripts/`)**
 
 | Script | Purpose | Command |
 |--------|---------|---------|
@@ -262,64 +253,7 @@ Running?        Not Running
    └──────────────────────────────────────┘
 ```
 
-### 2. CLI Command Flow
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                           CLI COMMAND FLOW                                  │
-└────────────────────────────────────────────────────────────────────────────┘
-
-   ./cli localSearchCode pattern="auth" path="src" type="ts"
-          │
-          ▼
-   ┌──────────────────────────────────────┐
-   │      src/cli.ts - parseArgs()        │
-   │                                       │
-   │  result = {                          │
-   │    endpoint: '/localSearchCode',     │
-   │    params: {                         │
-   │      pattern: 'auth',                │
-   │      path: 'src',                    │
-   │      type: 'ts'                      │
-   │    },                                │
-   │    options: { json: false }          │
-   │  }                                   │
-   └────────┬─────────────────────────────┘
-            │
-            ▼
-   ┌──────────────────────────────────────┐
-   │  Apply Aliases                       │
-   │                                       │
-   │  /tools    → /tools/list             │
-   │  /prompts  → /prompts/list           │
-   │  /system   → /tools/system           │
-   │  /search   → /localSearchCode        │
-   │  /read     → /localGetFileContent    │
-   └────────┬─────────────────────────────┘
-            │
-            ▼
-   ┌──────────────────────────────────────┐
-   │  Build URL with Query Params         │
-   │                                       │
-   │  http://localhost:1987/localSearchCode
-   │    ?pattern=auth&path=src&type=ts    │
-   └────────┬─────────────────────────────┘
-            │
-            ▼
-   ┌──────────────────────────────────────┐
-   │  fetch(url)                          │
-   └────────┬─────────────────────────────┘
-            │
-            ▼
-   ┌──────────────────────────────────────┐
-   │  Format & Display Output             │
-   │                                       │
-   │  --json → JSON.stringify(data)       │
-   │  default → formatted output          │
-   └──────────────────────────────────────┘
-```
-
-### 3. Tool Execution Flow
+### 2. Tool Execution Flow
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -417,7 +351,7 @@ Running?        Not Running
    └──────────────────────────────────────┘
 ```
 
-### 4. Discovery Flow
+### 3. Discovery Flow
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -514,23 +448,19 @@ npm run server:start
 npx tsx scripts/server.ts start
 ```
 
-### CLI Commands
+### HTTP Examples
 
 ```bash
 # Discovery
-./cli tools                    # List all tools
-./cli tools/info/localSearchCode  # Get tool schema
-./cli prompts                  # List all prompts
-./cli system                   # Load system prompt
+curl http://localhost:1987/tools/list                    # List all tools
+curl http://localhost:1987/tools/info/localSearchCode    # Get tool schema
+curl http://localhost:1987/prompts/list                  # List all prompts
+curl http://localhost:1987/tools/system                  # Load system prompt
 
 # Tool Execution
-./cli search pattern="auth" path="src"
-./cli read path="src/server.ts"
-./cli /lspGotoDefinition uri="file:///path/file.ts" symbolName="createServer" lineHint="20"
-
-# Options
-./cli search pattern="auth" --json    # Raw JSON output
-./cli health --quiet                  # Suppress headers
+curl "http://localhost:1987/localSearchCode?pattern=auth&path=src"
+curl "http://localhost:1987/localGetFileContent?path=src/server.ts"
+curl "http://localhost:1987/lspGotoDefinition?uri=file:///path/file.ts&symbolName=createServer&lineHint=20"
 ```
 
 ### HTTP Endpoints
@@ -585,7 +515,6 @@ CLOSED (normal) ──[3 failures]──► OPEN (reject all)
 | File | Purpose |
 |------|---------|
 | `src/server.ts` | Express server, route mounting, graceful shutdown |
-| `src/cli.ts` | CLI interface, argument parsing, HTTP client |
 | `src/index.ts` | Re-exports from octocode-mcp |
 | `src/mcpCache.ts` | Tool metadata caching |
 | `src/routes/*.ts` | HTTP endpoint handlers |
@@ -594,6 +523,7 @@ CLOSED (normal) ──[3 failures]──► OPEN (reject all)
 | `src/validation/schemas.ts` | Zod validation schemas |
 | `scripts/server.ts` | Server lifecycle management |
 | `scripts/init.ts` | Initialize + load system prompt |
+| `output/server.js` | Bundled server (tsdown output) |
 
 ---
 
