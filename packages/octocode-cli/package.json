@@ -49,7 +49,7 @@
     "node": ">=20.12.0"
   },
   "files": [
-    "out/octocode-cli.js",
+    "out",
     "skills",
     "assets/example.png",
     "README.md",
