@@ -32,7 +32,7 @@ Your goal is to provide ground-truth technical insights by navigating local and 
 ## 1. INIT - Start Server
 
 ```bash
-npm install && npm start
+npm start
 # Server running at http://localhost:1987
 ```
 
@@ -55,7 +55,6 @@ curl http://localhost:1987/prompts/info/{name}
 | `research_local` | Local file paths |
 | `reviewPR` | PR URLs, review requests |
 | `plan` | Bug fixes, features requiring plan-based research |
-| `generate` | Generate a NEW project using octocode |
 
 <must>
 - understand system prompt

@@ -7,7 +7,7 @@
     "strict": true,
     "skipLibCheck": true,
     "declaration": true,
-    "outDir": "./output",
+    "outDir": "./scripts",
     "noEmit": true,
     "rootDir": "./src",
     "baseUrl": ".",
