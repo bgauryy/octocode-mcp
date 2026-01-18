@@ -19,7 +19,7 @@ We collect **de-identified telemetry data** to maintain the stability and perfor
 ### What We DO NOT Collect
 - **Source Code**: Your code stays on your machine. We never upload or "peek" at your local files.
 - **Secrets & Env Vars**: We do not collect API keys, passwords, or environment variables.
-- **PII**: We do not collect names, emails, or IP addresses (IPs are anonymized before storage).
+- **PII**: We do not collect names, emails
 
 ## 3. Legal Basis (GDPR/CCPA)
 
@@ -27,7 +27,7 @@ For users in the EEA and UK, we process data based on **Legitimate Interest** (A
 
 ## 4. Data Retention
 
-We retain telemetry logs for a maximum of **360 days**. After this period, data is either permanently deleted or aggregated into high-level statistics that contain no session identifiers.
+We retain telemetry logs for a maximum of **90 days**. After this period, data is either permanently deleted or aggregated into high-level statistics that contain no session identifiers.
 
 ## 5. Consent and Data Disputes
 
