@@ -1,4 +1,4 @@
-# Manifest of Octocode for Context Driven Development
+# Manifest of Octocode for Research Driven Development
 
 > **Disclaimer**: This is an ongoing research document representing the main vision of Octocode. Algorithms and decisions might change; this document serves to demonstrate the main idea behind Octocode.
 >
@@ -6,14 +6,14 @@
 
 
 ## Overview
-This document serves as the **Manifest of Octocode for Context Driven Development (CDD)**. It introduces the methodology, the concept of **"Vibe-Research"**, the definition of **"Smart Research"**, and the **Process Context Oriented Flows** that drive high-quality software development. By leveraging Octocode's research capabilities, we shift from "guess-driven" to "research-driven" development without breaking your flow.
+This document serves as the **Manifest of Octocode for Research Driven Development (RDD)**. It introduces the methodology, the concept of **"Vibe-Research"**, the definition of **"Smart Research"**, and the **Process Context Oriented Flows** that drive high-quality software development. By leveraging Octocode's research capabilities, we shift from "guess-driven" to "research-driven" development without breaking your flow.
 
 ---
 
 ## Part 1: The Core Philosophy
 
-### What is Context Driven Development (CDD)?
-**Context Driven Development (CDD)** is the methodology that formalizes "vibe-research." It prioritizes **evidence gathering** and **context validation** before any code is implemented. The core philosophy is simple: **Code is Truth, but Context is the Map.**
+### What is Research Driven Development (RDD)?
+**Research Driven Development (RDD)** is the methodology that formalizes "vibe-research." It prioritizes **evidence gathering** and **context validation** before any code is implemented. The core philosophy is simple: **Code is Truth, but Context is the Map.**
 
 ### What is "Vibe-Research"?
 "Vibe-research" is the **intuitive flow state** enabled by Octocode's research engine. It transforms the often tedious process of gathering context into a seamless, conversational rhythm. Instead of context-switching, you stay in the "vibe" while Octocode handles the forensics.
@@ -25,8 +25,8 @@ This document serves as the **Manifest of Octocode for Context Driven Developmen
 *   **The Research**: Octocode instantly validates that feeling with `localSearchCode` and `lspCallHierarchy`.
 *   **The Result**: You move from "guessing" to "knowing" without breaking your coding stride.
 
-### The CDD Equation
-$$ CDD = (Static Context + Dynamic Context) \times Validation \times \epsilon$$
+### The RDD Equation
+$$ RDD = (Static Context + Dynamic Context) \times Validation \times \epsilon$$
 
 *   **Static Context (The Knowns)**: The immutable truth of your current code (`octocode-local`).
 *   **Dynamic Context (The Unknowns)**: External knowledge, history, and patterns (`octocode-external`).
@@ -50,7 +50,7 @@ $$Quality = \frac{Relevant\ Context}{Context\ Noise} \times Validation \times \e
 
 #### 1. The Attention Mechanism
 **Why Minimal is Better**: LLMs operate on an "attention mechanism," which assigns weights to different parts of the input. When the context is bloated with irrelevant information ("noise"), the model's attention is diluted, leading to hallucinations or missed details.
-*   **The CDD Advantage**: By providing **minimal, highly relevant context**, we maximize the agent's effective attention on the task at hand. A focused 2K context window often outperforms a noisy 50K window because the signal-to-noise ratio is higher.
+*   **The RDD Advantage**: By providing **minimal, highly relevant context**, we maximize the agent's effective attention on the task at hand. A focused 2K context window often outperforms a noisy 50K window because the signal-to-noise ratio is higher.
 
 #### 2. The Check-and-Balance Mechanism
 **The Reality Check**: A crucial component of this equation is the "check-and-balance" mechanism. This step validates that the gathered context (the map) faithfully represents the physical reality of the environment (the territory).
@@ -58,7 +58,7 @@ $$Quality = \frac{Relevant\ Context}{Context\ Noise} \times Validation \times \e
 *   **Outcome**: This ensures the agent never plans or implements based on hallucinations or outdated mental models.
 
 ### Patterns vs. Anti-Patterns
-| Principle | Anti-Pattern | CDD Pattern |
+| Principle | Anti-Pattern | RDD Pattern |
 |-----------|--------------|-------------|
 | **Focus** | Dump entire codebase | Surgical extraction via LSP |
 | **Relevance** | "Just in case" context | Evidence-based inclusion |
@@ -89,13 +89,13 @@ Verified against any external resource.
 *   **Sources**: Knowledge Bases, Jira, Slack, Logs, Vector DBs.
 *   **Hint-Driven**: Octocode receives hints and autonomously searches to validate context.
 
-#### 4. CDD Data (The "Session State")
-The artifacts generated during the CDD process itself.
+#### 4. RDD Data (The "Session State")
+The artifacts generated during the RDD process itself.
 *   **Sources**: `plan.md`, `research.md`, design docs.
 *   **Role**: Provides the immediate historical context and decisions made within the current session, acting as the bridge between steps.
 
 ### Context Creation
-**Octocode is the research initiator.** It proactively aggregates context from three primary sources to build the CDD map:
+**Octocode is the research initiator.** It proactively aggregates context from three primary sources to build the RDD map:
 
 *   **Known Stuff**: Structured knowledge retrieved from Vector DBs, Knowledge Graphs (KG), and established facts.
 *   **Dynamic Research**: Real-time exploration using Octocode tools to traverse code, flows, and external packages.
@@ -129,7 +129,7 @@ This workflow draws inspiration from **Generative Adversarial Networks (GANs)**,
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        CDD ADVERSARIAL FLOW                            │
+│                        RDD ADVERSARIAL FLOW                            │
 ├────────────────────────────────────────────────────────────────────────┤
 │                                                                        │
 │  1. PLAN             2. VERIFY            3. RESEARCH                  │
@@ -167,7 +167,7 @@ This workflow draws inspiration from **Generative Adversarial Networks (GANs)**,
 #### 3. Create Research (Generator)
 *   **Goal**: Gather evidence to answer the plan's questions.
 *   **Action**: Trace flows (LSP), find patterns (GitHub), validate hints.
-*   **Output**: `research.md` (The "CDD Data").
+*   **Output**: `research.md` (The "RDD Data").
 
 #### 4. Validate Research (Discriminator)
 *   **Goal**: Ensure research is sufficient and evidence-backed.
@@ -176,7 +176,7 @@ This workflow draws inspiration from **Generative Adversarial Networks (GANs)**,
 
 #### 5. Implement Plan (Generator)
 *   **Goal**: Execute the plan using the validated Research Context.
-*   **Input**: `plan.md` + `research.md` (CDD Data).
+*   **Input**: `plan.md` + `research.md` (RDD Data).
 *   **Output**: Code changes + Tests.
 
 #### 6. Validate Implementation (Discriminator)
@@ -197,10 +197,10 @@ If the Verifier is the same model as the Generator (e.g., both are GPT-4o or Cla
 
 ## Part 5: Concrete Instantiation & The Science
 
-### CDD Concrete Example
+### RDD Concrete Example
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                       CDD PIPELINE INSTANTIATION                                │
+│                       RDD PIPELINE INSTANTIATION                                │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                 │
 │   A₁ = PLAN              A₂ = RESEARCH           A₃ = IMPLEMENT                 │
