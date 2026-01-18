@@ -16,6 +16,13 @@
 
 **Octocode Research** is an MCP-like skill that turns your AI agent into a code research expert. It automatically detects your intent, selects the optimal workflow, and conducts efficient multi-step research across local and external codebases.
 
+> Example: How React Implemented UseState?
+
+
+https://github.com/user-attachments/assets/3c3997a3-2acb-4eba-81dd-233e0c9a8b30
+
+
+
 ```
 Your Question → Intent Detection → Auto-Select Prompt → Smart Tool Chaining → Answer
 ```
@@ -63,21 +70,6 @@ The skill includes specialized prompts for different research types. Your agent 
 | *"Review PR #123"* | `reviewPR` | Diff analysis, code review, change impact |
 | *"Plan adding caching to the API"* | `plan` | Architecture design, implementation steps |
 
-### Smart Tool Chaining
-
-Each research task follows optimized tool chains with built-in hints guiding the next step:
-
-```
-External Library Research:
-packageSearch → githubViewRepoStructure → githubSearchCode → githubGetFileContent
-
-Local Code Tracing:
-localSearchCode → lspGotoDefinition → lspCallHierarchy → localGetFileContent
-
-Impact Analysis:
-lspGotoDefinition → lspFindReferences → lspCallHierarchy(incoming) → tests check
-```
-
 ---
 
 ## Key Features
@@ -88,40 +80,32 @@ Unlike traditional MCP that loads all tool schemas upfront, this skill loads con
 - Tool schemas fetched only when needed
 - Prompts selected based on intent
 
-### Parallel Execution
-Tools support bulk queries (1-3 per call) for concurrent research:
-```json
-{
-  "queries": [
-    {"pattern": "useState", "path": "packages/react"},
-    {"pattern": "useReducer", "path": "packages/react"}
-  ]
-}
-```
+### Available Tools
 
-### Response Hints
-Every tool response includes actionable hints for the next step:
-```json
-{
-  "data": { ... },
-  "hints": [
-    "Next: githubGetFileContent(path, matchString from text_matches)",
-    "Explore: githubViewRepoStructure around interesting paths"
-  ]
-}
-```
-
-### Research Tracking
-Built-in research params keep the agent focused:
-- `mainResearchGoal` — Overall objective
-- `researchGoal` — Current step's purpose
-- `reasoning` — Why this tool/approach
+| Tool | Type | Description |
+|------|------|-------------|
+| **LSP Tools**  | Local | *Best for semantic code understanding* |
+| `lspGotoDefinition` | Local | Go to symbol definition |
+| `lspFindReferences` | Local | Find all symbol references |
+| `lspCallHierarchy` | Local | Get call hierarchy (incoming/outgoing) |
+| **Local Tools** | Local | *Filesystem & text search* |
+| `localSearchCode` | Local | Search local code with ripgrep |
+| `localGetFileContent` | Local | Read local file content |
+| `localFindFiles` | Local | Find files by pattern/metadata |
+| `localViewStructure` | Local | View local directory tree |
+| **External Tools** | External | *GitHub & package registries* |
+| `githubSearchCode` | External | Search code in GitHub repos |
+| `githubGetFileContent` | External | Read file from GitHub repo |
+| `githubViewRepoStructure` | External | View GitHub repo tree |
+| `githubSearchRepositories` | External | Search GitHub repositories |
+| `githubSearchPullRequests` | External | Search pull requests |
+| `packageSearch` | External | Search npm/PyPI packages |
 
 ---
 
 ## Quick Start
 
-### Option 1: Octocode CLI (Recommended)
+### Octocode CLI (Recommended)
 
 ```bash
 # Install and setup everything (auth + skill)
