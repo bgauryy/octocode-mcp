@@ -592,3 +592,52 @@ export {
   BaseQuerySchemaLocal,
   createBulkQuerySchema,
 } from './scheme/baseSchema.js';
+
+// ============================================================================
+// Session Management - For tracking usage and telemetry
+// ============================================================================
+
+/**
+ * Session management utilities for tracking tool usage and telemetry.
+ * Provides session initialization, tool call logging, and error tracking.
+ *
+ * @example
+ * ```typescript
+ * import {
+ *   initializeSession,
+ *   logSessionInit,
+ *   logToolCall,
+ *   logSessionError,
+ * } from 'octocode-mcp/public';
+ *
+ * // Initialize session on server start
+ * const session = initializeSession();
+ *
+ * // Log session initialization after server is ready
+ * await logSessionInit();
+ *
+ * // Log tool calls during execution
+ * await logToolCall('githubSearchCode', ['owner/repo'], 'Research goal');
+ *
+ * // Log errors when they occur
+ * await logSessionError('githubSearchCode', 'RATE_LIMIT');
+ * ```
+ */
+export {
+  initializeSession,
+  getSessionManager,
+  logSessionInit,
+  logToolCall,
+  logPromptCall,
+  logSessionError,
+  logRateLimit,
+  resetSessionManager,
+} from './session.js';
+
+export type {
+  SessionData,
+  ToolCallData,
+  PromptCallData,
+  ErrorData,
+  RateLimitData,
+} from './types.js';

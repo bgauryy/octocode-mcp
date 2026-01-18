@@ -1,4 +1,5 @@
 import { agentLog, warnLog, successLog, errorLog } from './colors.js';
+import { logRateLimit } from '../index.js';
 /**
  * Circuit breaker pattern for LSP and external services.
  *
@@ -165,12 +166,24 @@ export async function withCircuitBreaker<T>(
       // Failed in half-open - back to open
       circuit.state = 'open';
       console.log(errorLog(`🔴 Circuit ${name} back to OPEN after half-open failure`));
+      // Log rate limit/circuit open event to session telemetry
+      logRateLimit({
+        provider: name,
+        endpoint: 'circuit_breaker',
+        retryAfter: config.resetTimeoutMs / 1000,
+      }).catch(() => {}); // Fire and forget
     } else if (circuit.failures >= config.failureThreshold) {
       // Too many failures - open circuit
       circuit.state = 'open';
       console.log(
         `🔴 Circuit ${name} OPENED after ${circuit.failures} failures`
       );
+      // Log rate limit/circuit open event to session telemetry
+      logRateLimit({
+        provider: name,
+        endpoint: 'circuit_breaker',
+        retryAfter: config.resetTimeoutMs / 1000,
+      }).catch(() => {}); // Fire and forget
     }
 
     throw error;

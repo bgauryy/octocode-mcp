@@ -157,6 +157,47 @@ Response format Example (bulk):
   - ❌ File URI: uri="file:///path/to/file.ts" (not supported)    
 </lsp_tool_gotchas>
 
+## Data & Structure
+
+### Request Structure
+**POST** `/tools/call/:toolName`
+```json
+{
+  "queries": [{
+    "mainResearchGoal": "string",
+    "researchGoal": "string",
+    "reasoning": "string",
+    ...toolParams
+  }]
+}
+```
+
+### Response Structure
+```json
+{
+  "tool": "toolName",
+  "success": boolean,
+  "data": { ... },       // Tool-specific results
+  "hints": [ "..." ],    // CRITICAL: Guidance for next steps
+  "research": { ... }    // Echoed context
+}
+```
+
+### Bulk Response (Multi-Query)
+```json
+{
+  "bulk": true,
+  "results": [
+    { "id": 1, "status": "hasResults", "data": {...} },
+    { "id": 2, "status": "empty", "data": {...} }
+  ],
+  "hints": { 
+    "hasResults": [...], 
+    "empty": [...] 
+  }
+}
+```
+
 ---
 
 ## 4. PLAN
@@ -193,20 +234,6 @@ Response format Example (bulk):
 - If stuck - try another way with the context and tools you have
 </must>
 
-<response_handling>
-**CRITICAL: Every response contains `hints` - YOU MUST READ AND FOLLOW THEM**
-
-```json
-// Single query: hints is array
-{"success": true, "data": {...}, "hints": ["Use lineHint for LSP..."], "research": {...}}
-
-// Bulk query: hints is object (categorized by status)
-{"bulk": true, "results": [...], "hints": {"hasResults": [...], "empty": [...], "error": [...]}}
-```
-
-Before next tool call: READ hints → FOLLOW guidance → PASS research params
-</response_handling>
-
 <agents_spawn>
   <when>
 - **Parallelize** research across multiple codebases/files
@@ -222,15 +249,23 @@ Before next tool call: READ hints → FOLLOW guidance → PASS research params
 </agents_spawn>
 
 <research_loop>
-0. Use agents_spawn to research in parallel several (you can research in parallel for more efficiency)
 1. **Execute Tool** with research params:
    - `mainResearchGoal`: Overall objective
    - `researchGoal`: This specific step's goal
    - `reasoning`: Why this tool/params
 2. **Read Response** - check `hints` FIRST
 3. **Follow Hints** - they guide the next step
-4. **Iterate** - use hint guidance for next tool
+4. **Iterate** 
+  - use hint guidance for next tool and be context aware
+  - think of the next step wisely
+  - Use agents_spawn to research in parallel several (you can research in parallel for more efficiency)
+
 </research_loop>
+
+<response_handling>
+- **CRITICAL: Every response contains `hints` - YOU MUST READ AND FOLLOW THEM**
+- Before next tool call: READ hints → FOLLOW guidance → PASS research params
+</response_handling>
 
 <reasoning>
 - Think through steps to complete it (be thorough)
