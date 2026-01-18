@@ -44,8 +44,6 @@ curl http://localhost:1987/health
 # 2. Load system prompt FIRST (defines agent behavior)
 curl http://localhost:1987/tools/system
 
-# 3. Load prompt based on user intent (use table below)
-curl http://localhost:1987/prompts/info/{name}
 ```
 
 | Prompt Name  | When to Use |
@@ -54,6 +52,11 @@ curl http://localhost:1987/prompts/info/{name}
 | `research_local` | Local codebase exploration |
 | `reviewPR` | PR URLs, review requests |
 | `plan` | Bug fixes, features, refactors |
+
+```bash
+# 3. Load prompt based on user intent (use table below)
+curl http://localhost:1987/prompts/info/{Prompt Name }
+```
 
 <must>
 - understand system prompt

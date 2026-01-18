@@ -27,7 +27,7 @@ export default defineConfig({
   },
 
   treeshake: true,
-  minify: false, // Keep readable for debugging
+  minify: true, // Minified for production
   shims: true, // ESM shims for __dirname, etc.
   dts: true, // Generate type declarations (crucial for TypeScript consumers)
   sourcemap: false,
