@@ -5,9 +5,12 @@ import { errorLog, warnLog } from './colors.js';
  * Logs to ~/.octocode/logs/ (or %USERPROFILE%\.octocode\logs on Windows)
  * - errors.log: All errors and warnings
  * - tools.log: Tool invocation data and results
+ * 
+ * PERFORMANCE: Uses async file operations to avoid blocking event loop
  */
 
 import fs from 'node:fs';
+import { promises as fsAsync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -24,18 +27,46 @@ const TOOLS_LOG = path.join(LOGS_DIR, 'tools.log');
 // Max log file size before rotation (10MB)
 const MAX_LOG_SIZE = 10 * 1024 * 1024;
 
+// Max size for JSON.stringify to prevent memory spikes (100KB)
+const MAX_LOG_DATA_SIZE = 100 * 1024;
+
 // ============================================================================
-// Directory Initialization
+// Directory Initialization (async with sync fallback for startup)
 // ============================================================================
 
 let initialized = false;
 let fileLoggingEnabled = true;
+let initPromise: Promise<void> | null = null;
 
 /**
- * Ensure the logs directory exists.
- * Creates ~/.octocode/logs if it doesn't exist.
+ * Ensure the logs directory exists (async).
+ * Safe to call multiple times (idempotent).
  */
-function ensureLogsDir(): void {
+async function ensureLogsDirAsync(): Promise<void> {
+  if (initialized) return;
+  if (initPromise) return initPromise;
+
+  initPromise = (async () => {
+    try {
+      await fsAsync.mkdir(OCTOCODE_DIR, { recursive: true, mode: 0o755 });
+      await fsAsync.mkdir(LOGS_DIR, { recursive: true, mode: 0o755 });
+      initialized = true;
+    } catch (err) {
+      process.stderr.write(
+        `[Logger] Failed to create logs directory: ${err}\n` +
+        `Falling back to console-only logging.\n`
+      );
+      fileLoggingEnabled = false;
+    }
+  })();
+
+  return initPromise;
+}
+
+/**
+ * Sync initialization for startup only (blocking but necessary)
+ */
+function ensureLogsDirSync(): void {
   if (initialized) return;
 
   try {
@@ -47,7 +78,6 @@ function ensureLogsDir(): void {
     }
     initialized = true;
   } catch (err) {
-    // Fallback to stderr if file logging fails - logging should never crash the server
     process.stderr.write(
       `[Logger] Failed to create logs directory: ${err}\n` +
       `Falling back to console-only logging.\n`
@@ -57,48 +87,45 @@ function ensureLogsDir(): void {
 }
 
 // ============================================================================
-// Log Rotation
+// Log Rotation (async)
 // ============================================================================
 
 /**
- * Rotate log file if it exceeds max size.
- * Renames current log to {name}.{timestamp}.log
+ * Rotate log file if it exceeds max size (async).
  */
-function rotateIfNeeded(logPath: string): void {
+async function rotateIfNeededAsync(logPath: string): Promise<void> {
   try {
-    if (!fs.existsSync(logPath)) return;
+    const stats = await fsAsync.stat(logPath).catch(() => null);
+    if (!stats || stats.size < MAX_LOG_SIZE) return;
 
-    const stats = fs.statSync(logPath);
-    if (stats.size >= MAX_LOG_SIZE) {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const ext = path.extname(logPath);
-      const base = path.basename(logPath, ext);
-      const rotatedPath = path.join(LOGS_DIR, `${base}.${timestamp}${ext}`);
-      fs.renameSync(logPath, rotatedPath);
-
-      // Clean up old rotated logs (keep last 5)
-      cleanupOldLogs(base, ext, 5);
-    }
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const ext = path.extname(logPath);
+    const base = path.basename(logPath, ext);
+    const rotatedPath = path.join(LOGS_DIR, `${base}.${timestamp}${ext}`);
+    
+    await fsAsync.rename(logPath, rotatedPath);
+    await cleanupOldLogsAsync(base, ext, 5);
   } catch {
-    // Silently fail
+    // Silently fail - logging should never crash the server
   }
 }
 
 /**
- * Remove old rotated log files, keeping only the most recent ones.
+ * Remove old rotated log files, keeping only the most recent ones (async).
  */
-function cleanupOldLogs(baseName: string, ext: string, keep: number): void {
+async function cleanupOldLogsAsync(baseName: string, ext: string, keep: number): Promise<void> {
   try {
-    const files = fs
-      .readdirSync(LOGS_DIR)
+    const files = await fsAsync.readdir(LOGS_DIR);
+    const rotatedFiles = files
       .filter((f) => f.startsWith(baseName + '.') && f.endsWith(ext) && f !== baseName + ext)
       .sort()
       .reverse();
 
     // Remove files beyond the keep limit
-    files.slice(keep).forEach((f) => {
-      fs.unlinkSync(path.join(LOGS_DIR, f));
-    });
+    const toDelete = rotatedFiles.slice(keep);
+    await Promise.all(
+      toDelete.map((f) => fsAsync.unlink(path.join(LOGS_DIR, f)).catch(() => {}))
+    );
   } catch {
     // Silently fail
   }
@@ -109,43 +136,66 @@ function cleanupOldLogs(baseName: string, ext: string, keep: number): void {
 // ============================================================================
 
 /**
+ * Safely stringify data with size limit to prevent memory spikes
+ */
+function safeStringify(data: unknown): string {
+  if (data === undefined) return '';
+  
+  try {
+    const str = JSON.stringify(data, null, 2);
+    if (str.length > MAX_LOG_DATA_SIZE) {
+      return JSON.stringify({
+        _truncated: true,
+        _originalSize: str.length,
+        _message: 'Data too large for logging',
+      }, null, 2);
+    }
+    return str;
+  } catch {
+    return '[Circular or non-serializable data]';
+  }
+}
+
+/**
  * Format a log entry with timestamp and level.
  */
 function formatLogEntry(level: string, message: string, data?: unknown): string {
   const timestamp = new Date().toISOString();
-  const dataStr = data !== undefined ? `\n${JSON.stringify(data, null, 2)}` : '';
+  const dataStr = data !== undefined ? `\n${safeStringify(data)}` : '';
   return `[${timestamp}] [${level}] ${message}${dataStr}\n`;
 }
 
 // ============================================================================
-// Core Logging Functions
+// Core Logging Functions (async with fire-and-forget pattern)
 // ============================================================================
 
 /**
- * Write to a log file with rotation support.
+ * Write to a log file asynchronously (fire-and-forget).
+ * Never blocks the event loop.
  */
-function writeLog(logPath: string, entry: string): void {
-  ensureLogsDir();
-
-  // Skip file logging if disabled due to previous failures
+function writeLogAsync(logPath: string, entry: string): void {
   if (!fileLoggingEnabled) return;
 
-  rotateIfNeeded(logPath);
-
-  try {
-    fs.appendFileSync(logPath, entry, { encoding: 'utf-8' });
-  } catch (err) {
-    // Disable file logging on failure - logging should never crash the server
-    fileLoggingEnabled = false;
-    process.stderr.write(`[Logger] File write failed, disabling: ${err}\n`);
-  }
+  // Fire and forget - don't await
+  (async () => {
+    try {
+      await ensureLogsDirAsync();
+      await rotateIfNeededAsync(logPath);
+      await fsAsync.appendFile(logPath, entry, { encoding: 'utf-8' });
+    } catch (err) {
+      // Disable file logging on persistent failure
+      fileLoggingEnabled = false;
+      process.stderr.write(`[Logger] File write failed, disabling: ${err}\n`);
+    }
+  })();
 }
+
 // ============================================================================
 // Public API - Error Logger
 // ============================================================================
 
 /**
- * Log an error message.
+ * Log an error message (async, non-blocking).
  */
 export function logError(message: string, error?: Error | unknown): void {
   const errorData =
@@ -154,18 +204,18 @@ export function logError(message: string, error?: Error | unknown): void {
       : error;
 
   const entry = formatLogEntry('ERROR', message, errorData);
-  writeLog(ERROR_LOG, entry);
+  writeLogAsync(ERROR_LOG, entry);
 
   // Also write to console for visibility
   console.error(errorLog(`[ERROR] ${message}`), error || '');
 }
 
 /**
- * Log a warning message.
+ * Log a warning message (async, non-blocking).
  */
 export function logWarn(message: string, data?: unknown): void {
   const entry = formatLogEntry('WARN', message, data);
-  writeLog(ERROR_LOG, entry);
+  writeLogAsync(ERROR_LOG, entry);
   console.warn(warnLog(`[WARN] ${message}`));
 }
 
@@ -186,11 +236,11 @@ export interface ToolLogEntry {
 }
 
 /**
- * Log a tool invocation.
+ * Log a tool invocation (async, non-blocking).
  */
 export function logToolCall(entry: ToolLogEntry): void {
   const logEntry = formatLogEntry('TOOL', `${entry.method} ${entry.route}`, entry);
-  writeLog(TOOLS_LOG, logEntry);
+  writeLogAsync(TOOLS_LOG, logEntry);
 }
 
 /**
@@ -260,6 +310,14 @@ export function getErrorLogPath(): string {
  */
 export function getToolsLogPath(): string {
   return TOOLS_LOG;
+}
+
+/**
+ * Initialize logger synchronously (call at startup).
+ * After startup, all operations are async.
+ */
+export function initializeLogger(): void {
+  ensureLogsDirSync();
 }
 
 // ============================================================================

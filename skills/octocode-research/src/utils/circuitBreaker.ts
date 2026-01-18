@@ -263,3 +263,40 @@ configureCircuit('github', {
   successThreshold: 1,    // Single success proves API recovered
   resetTimeoutMs: 60000,  // 60s: Give rate limits time to reset
 });
+
+// =============================================================================
+// Cleanup Functions (Memory Leak Prevention)
+// =============================================================================
+
+/**
+ * Clear a specific circuit breaker.
+ * Use for testing or when a service is decommissioned.
+ * @param name - Circuit breaker name to clear
+ * @returns true if circuit existed and was cleared
+ */
+export function clearCircuit(name: string): boolean {
+  const existed = circuits.delete(name);
+  configs.delete(name);
+  if (existed) {
+    console.log(agentLog(`🧹 Circuit ${name} cleared`));
+  }
+  return existed;
+}
+
+/**
+ * Clear all circuit breakers.
+ * Use for testing cleanup or server shutdown.
+ */
+export function clearAllCircuits(): void {
+  const count = circuits.size;
+  circuits.clear();
+  configs.clear();
+  console.log(agentLog(`🧹 Cleared ${count} circuit(s)`));
+}
+
+/**
+ * Get the number of active circuits (for monitoring).
+ */
+export function getCircuitCount(): number {
+  return circuits.size;
+}

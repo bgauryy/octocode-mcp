@@ -7,14 +7,17 @@ import { requestLogger } from './middleware/logger.js';
 import { stopContextCleanup } from './middleware/contextPropagation.js';
 import { initializeProviders } from './index.js';
 import { initializeMcpContent } from './mcpCache.js';
-import { getLogsPath } from './utils/logger.js';
-import { getAllCircuitStates } from './utils/circuitBreaker.js';
+import { getLogsPath, initializeLogger } from './utils/logger.js';
+import { getAllCircuitStates, clearAllCircuits } from './utils/circuitBreaker.js';
 import { agentLog, successLog, errorLog, warnLog, dimLog } from './utils/colors.js';
 
 const PORT = 1987;
 let server: Server | null = null;
 
 export async function createServer(): Promise<Express> {
+  // Initialize logger first (sync for startup, async after)
+  initializeLogger();
+  
   // Load mcpContent ONCE at startup (includes initialize())
   await initializeMcpContent();
   await initializeProviders();
@@ -75,6 +78,9 @@ function gracefulShutdown(signal: string): void {
   
   stopContextCleanup();
   console.log(successLog('✅ Context cleanup stopped'));
+  
+  clearAllCircuits();
+  console.log(successLog('✅ Circuit breakers cleared'));
   
   if (server) {
     server.close((err) => {
