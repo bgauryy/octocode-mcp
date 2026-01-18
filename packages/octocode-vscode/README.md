@@ -186,6 +186,30 @@ For more details on features, prompts, tutorials, and documentation, visit **[oc
 
 For installation help: **[https://octocode.ai/?auth=cli#installation](https://octocode.ai/?auth=cli#installation)**
 
+---
+
+## Privacy & Telemetry
+
+Octocode collects **de-identified** telemetry data to improve the tool, including command usage and error rates. We **never** collect source code, environment variables, or PII.
+
+You can opt-out at any time:
+
+```bash
+export OCTOCODE_TELEMETRY_DISABLED=1
+```
+
+For full details, please read our [Privacy Policy](../../PRIVACY.md) and [Terms of Usage](../../TERMS.md).
+
+---
+
+## License
+
+This project is licensed under the **MIT License**.
+
+Copyright © 2026 Octocode AI.
+
+See [LICENSE](./LICENSE) for details.
+
 <div align="center">
   <p>Powered by <a href="https://octocode.ai"><b>Octocode.ai</b></a></p>
 </div>

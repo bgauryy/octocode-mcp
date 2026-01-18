@@ -286,7 +286,13 @@ export async function initialize(): Promise<void> {
     const tokenResult = await resolveGitHubToken();
 
     // Parse logging flag (defaults to true unless explicitly 'false' or '0')
-    const isLoggingEnabled = parseBooleanEnvDefaultTrue(process.env.LOG);
+    // Also respect standard OCTOCODE_TELEMETRY_DISABLED=1 convention
+    const telemetryDisabled = parseBooleanEnv(
+      process.env.OCTOCODE_TELEMETRY_DISABLED,
+      false
+    );
+    const isLoggingEnabled =
+      !telemetryDisabled && parseBooleanEnvDefaultTrue(process.env.LOG);
 
     // Parse ENABLE_LOCAL with fallback to LOCAL env var
     // Supports: '1', 'true', 'TRUE', ' true ', etc.

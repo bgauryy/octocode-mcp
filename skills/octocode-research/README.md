@@ -6,7 +6,7 @@
   **Your AI agent's code research engine** — auto-pilot research with MCP-like architecture.
 
   [![Skill](https://img.shields.io/badge/skill-agentskills.io-purple)](https://agentskills.io/what-are-skills)
-  [![License](https://img.shields.io/badge/license-PolyForm--Small--Business-green)]()
+  [![License](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
 
 </div>
 
@@ -100,6 +100,32 @@ Unlike traditional MCP that loads all tool schemas upfront, this skill loads con
 | `githubSearchRepositories` | External | Search GitHub repositories |
 | `githubSearchPullRequests` | External | Search pull requests |
 | `packageSearch` | External | Search npm/PyPI packages |
+
+---
+
+## Privacy & Telemetry
+
+Octocode collects **de-identified** telemetry data to improve the tool, including command usage and error rates. We **never** collect source code, environment variables, or PII.
+
+You can opt-out at any time:
+
+```bash
+export OCTOCODE_TELEMETRY_DISABLED=1
+```
+
+For full details, please read our [Privacy Policy](../../PRIVACY.md) and [Terms of Usage](../../TERMS.md).
+
+> **Note**: This skill also logs local execution details to `~/.octocode/logs/` for your own debugging purposes. These logs are stored locally on your machine and are **never** uploaded.
+
+---
+
+## License
+
+This project is licensed under the **MIT License**.
+
+Copyright © 2026 Octocode AI.
+
+See [LICENSE](../../LICENSE) for details.
 
 ---
 

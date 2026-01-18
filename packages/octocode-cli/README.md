@@ -4,7 +4,7 @@
 
 [![npm version](https://img.shields.io/npm/v/octocode-cli.svg?style=flat-square)](https://www.npmjs.com/package/octocode-cli)
 [![npm downloads](https://img.shields.io/npm/dm/octocode-cli.svg?style=flat-square)](https://www.npmjs.com/package/octocode-cli)
-[![License](https://img.shields.io/badge/license-PolyForm--Small--Business-blue.svg?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 
 **The unified installer and management hub for Octocode MCP servers and AI skills.**
 
@@ -191,8 +191,22 @@ octocode-cli status
 
 ---
 
+## Privacy & Telemetry
+
+Octocode collects **de-identified** telemetry data to improve the tool, including command usage and error rates. We **never** collect source code, environment variables, or PII.
+
+You can opt-out at any time:
+
+```bash
+export OCTOCODE_TELEMETRY_DISABLED=1
+```
+
+For full details, please read our [Privacy Policy](../../PRIVACY.md) and [Terms of Usage](../../TERMS.md).
+
+---
+
 ## 📄 License
 
-This project is licensed under the **PolyForm Small Business License 1.0.0**.
+This project is licensed under the **MIT License**.
 
-Copyright © 2024 Octocode AI.
+Copyright © 2026 Octocode AI.

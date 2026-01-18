@@ -6,7 +6,7 @@
   "homepage": "https://octocode.ai",
   "repository": "bgauryy/octocode-mcp.git",
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
-  "license": "PolyForm-Small-Business-1.0.0",
+  "license": "MIT",
   "type": "module",
   "devDependencies": {
     "@eslint/js": "^9.18.0",
