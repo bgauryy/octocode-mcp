@@ -29,7 +29,7 @@ export default defineConfig({
         banner: '#!/usr/bin/env node',
       },
     },
-    minify: false,
+    minify: true,
     emptyOutDir: true,
   },
 });

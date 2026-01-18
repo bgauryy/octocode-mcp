@@ -18,6 +18,7 @@ export default defineConfig({
         'credentials/index': resolve(__dirname, 'src/credentials/index.ts'),
         'platform/index': resolve(__dirname, 'src/platform/index.ts'),
         'session/index': resolve(__dirname, 'src/session/index.ts'),
+        'config/index': resolve(__dirname, 'src/config/index.ts'),
       },
       formats: ['es'],
       fileName: (format, entryName) => `${entryName}.js`,

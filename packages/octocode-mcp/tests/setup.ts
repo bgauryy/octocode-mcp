@@ -31,7 +31,52 @@ const sessionMockState = {
   deleted: false,
 };
 
+// Default config mock for getConfigSync
+const mockDefaultConfig = {
+  version: 1,
+  github: {
+    apiUrl: 'https://api.github.com',
+    defaultOrg: undefined,
+  },
+  gitlab: {
+    host: 'https://gitlab.com',
+    defaultGroup: undefined,
+  },
+  local: {
+    enabled: false,
+    allowedPaths: [],
+    excludePaths: ['node_modules', '.git', 'dist'],
+  },
+  tools: {
+    enabled: null,
+    disabled: null,
+  },
+  network: {
+    timeout: 30000,
+    maxRetries: 3,
+  },
+  telemetry: {
+    enabled: true,
+    logging: true,
+  },
+  lsp: {
+    enabled: true,
+    timeout: 10000,
+    languages: {},
+  },
+  research: {
+    defaultProvider: 'github',
+    maxQueriesPerBatch: 3,
+    maxResultsPerQuery: 10,
+  },
+  source: 'defaults',
+  configPath: undefined,
+};
+
 vi.mock('octocode-shared', () => ({
+  // Global config mock
+  getConfigSync: vi.fn(() => mockDefaultConfig),
+  getConfig: vi.fn(async () => mockDefaultConfig),
   _resetSessionState: vi.fn(() => {
     sessionMockState.sessionId = generateMockUUID();
     sessionMockState.deleted = false;

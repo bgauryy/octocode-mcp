@@ -7,7 +7,8 @@
     "shared",
     "credentials",
     "token-storage",
-    "platform"
+    "platform",
+    "config"
   ],
   "author": "Guy Bary <bgauryy@octocodeai.com>",
   "homepage": "https://octocode.ai",
@@ -53,6 +54,12 @@
       "import": "./dist/session/index.js",
       "require": "./dist/session/index.js",
       "default": "./dist/session/index.js"
+    },
+    "./config": {
+      "types": "./dist/config/index.d.ts",
+      "import": "./dist/config/index.js",
+      "require": "./dist/config/index.js",
+      "default": "./dist/config/index.js"
     }
   },
   "files": [
