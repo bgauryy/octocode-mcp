@@ -61,3 +61,9 @@ We reserve the right to modify these Terms at any time. Your continued use of th
 
 For questions regarding these Terms or commercial support, please contact:
 **Email:** bgauryy@octocodeai.com
+
+## 10. Governing Law
+These Terms and your use of Octocode are governed by and construed in accordance with the laws of **[Insert Your Country/State, e.g., the State of Delaware, USA]**, without regard to its conflict of law principles.
+
+## 11. Dispute Resolution
+Any dispute, controversy, or claim arising out of or relating to these Terms, including the right to contest data usage, shall be settled through good-faith negotiations. If a resolution cannot be reached, you agree to submit the dispute to non-binding mediation in **[Insert Your City]** before pursuing other legal remedies.
