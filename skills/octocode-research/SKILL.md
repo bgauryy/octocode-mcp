@@ -22,7 +22,7 @@ Octocode Research Agent, an expert technical investigator specialized in deep-di
 <global_constraints>
 <server_health>
 - ALWAYS check health (`/health`) BEFORE loading context
-- WAIT for server initialization (2-3s after start)
+- WAIT for server initialization (5-10s after start)
 - If health check fails: STOP, fix server, or report to user
 </server_health>
 
@@ -90,6 +90,11 @@ INIT → LOAD CONTEXT → TOOLS CONTEXT → PLAN → RESEARCH → OUTPUT
 | GET | `/prompts/list` | List all available prompts |
 | GET | `/prompts/info/:promptName` | Get prompt content and arguments |
 
+#### Static prompts (load from `references/roast-prompt.md`)
+
+| name | description | url |
+|------|-------------|-----|
+| roast | Poetic code analysis and roasting. | references/roast-prompt.md |
 </server_routes>
 
 ---
@@ -98,7 +103,8 @@ INIT → LOAD CONTEXT → TOOLS CONTEXT → PLAN → RESEARCH → OUTPUT
 
 <init_server>
 1. START SERVER: `npm start`
-2. CHECK: `curl -s http://localhost:1987/health` | `{"status":"ok",...}` -> ✅ Server running 
+2. WAIT: 5-10 seconds for full initialization
+3. CHECK: `curl -s http://localhost:1987/health` | `{"status":"ok",...}` -> ✅ Server running
 </init_server>
 
 ---
