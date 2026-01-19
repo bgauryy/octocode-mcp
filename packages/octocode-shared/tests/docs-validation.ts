@@ -17,10 +17,7 @@ import {
   storeCredentials,
 } from '../src/credentials/index.js';
 import { getConfig as gconf, loadConfig } from '../src/config/index.js';
-import {
-  getSessionId,
-  updateSessionStats,
-} from '../src/session/index.js';
+import { getSessionId, updateSessionStats } from '../src/session/index.js';
 import { isWindows, isMac, isLinux } from '../src/platform/index.js';
 
 // ============================================================================

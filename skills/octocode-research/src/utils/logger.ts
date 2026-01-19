@@ -241,7 +241,8 @@ export function logError(message: string, error?: Error | unknown): void {
   const consoleError = process.env.NODE_ENV === 'development'
     ? error
     : (error instanceof Error ? error.message : String(error || ''));
-  console.error(errorLog(`[ERROR] ${message}`), consoleError);
+  // Use %s format specifier to prevent format string injection from user-controlled message
+  console.error('%s %o', errorLog('[ERROR] ' + message), consoleError);
 }
 
 /**
@@ -250,7 +251,8 @@ export function logError(message: string, error?: Error | unknown): void {
 export function logWarn(message: string, data?: unknown): void {
   const entry = formatLogEntry('WARN', message, data);
   writeLogAsync(ERROR_LOG, entry);
-  console.warn(warnLog(`[WARN] ${message}`));
+  // Use %s format specifier to prevent format string injection from user-controlled message
+  console.warn('%s', warnLog('[WARN] ' + message));
 }
 
 // ============================================================================
