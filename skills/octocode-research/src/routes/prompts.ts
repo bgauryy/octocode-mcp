@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { getMcpContent } from '../mcpCache.js';
 import { logPromptCall } from '../index.js';
-import { errorQueue } from '../utils/errorQueue.js';
+import { fireAndForgetWithTimeout } from '../utils/asyncTimeout.js';
 
 export const promptsRoutes = Router();
 
@@ -108,7 +108,11 @@ promptsRoutes.get('/info/:promptName', async (
     }
 
     // Log prompt call for session telemetry
-    logPromptCall(promptName).catch(err => errorQueue.push(err, 'logPromptCall'));
+    fireAndForgetWithTimeout(
+      () => logPromptCall(promptName),
+      5000,
+      'logPromptCall'
+    );
 
     res.json({
       success: true,

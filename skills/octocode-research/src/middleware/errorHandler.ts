@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import type { z } from 'zod';
 import { logError, logWarn, sanitizeQueryParams } from '../utils/logger.js';
 import { logSessionError } from '../index.js';
-import { errorQueue } from '../utils/errorQueue.js';
+import { fireAndForgetWithTimeout } from '../utils/asyncTimeout.js';
 
 export interface ApiError extends Error {
   statusCode?: number;
@@ -35,7 +35,11 @@ export function errorHandler(
   const toolCallMatch = req.path.match(/^\/tools\/call\/(\w+)$/);
   const toolName = toolCallMatch ? toolCallMatch[1] : 'unknown';
   const errorCode = error.code ?? (isValidationError ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR');
-  logSessionError(toolName, errorCode).catch(err => errorQueue.push(err, 'logSessionError'));
+  fireAndForgetWithTimeout(
+    () => logSessionError(toolName, errorCode),
+    5000,
+    'logSessionError'
+  );
 
   const response: {
     success: false;

@@ -7,8 +7,9 @@ import { requestLogger } from './middleware/logger.js';
 import { initializeProviders, initializeSession, logSessionInit } from './index.js';
 import { initializeMcpContent } from './mcpCache.js';
 import { getLogsPath, initializeLogger } from './utils/logger.js';
-import { getAllCircuitStates, clearAllCircuits } from './utils/circuitBreaker.js';
+import { getAllCircuitStates, clearAllCircuits, stopCircuitCleanup } from './utils/circuitBreaker.js';
 import { agentLog, successLog, errorLog, warnLog, dimLog } from './utils/colors.js';
+import { fireAndForgetWithTimeout } from './utils/asyncTimeout.js';
 import { errorQueue } from './utils/errorQueue.js';
 
 const PORT = 1987;
@@ -31,6 +32,8 @@ export async function createServer(): Promise<Express> {
   
   app.get('/health', (_req: Request, res: Response) => {
     const memoryUsage = process.memoryUsage();
+    const recentErrors = errorQueue.getRecent(5);
+
     res.json({
       status: 'ok',
       port: PORT,
@@ -42,6 +45,14 @@ export async function createServer(): Promise<Express> {
         rss: Math.round(memoryUsage.rss / 1024 / 1024),
       },
       circuits: getAllCircuitStates(),
+      errors: {
+        queueSize: errorQueue.size,
+        recentErrors: recentErrors.map((e) => ({
+          timestamp: e.timestamp.toISOString(),
+          context: e.context,
+          message: e.error.message,
+        })),
+      },
     });
   });
   
@@ -78,7 +89,11 @@ export async function createServer(): Promise<Express> {
 function gracefulShutdown(signal: string): void {
   // Agent messages in PURPLE
   console.log(agentLog(`\n🛑 Received ${signal}. Starting graceful shutdown...`));
-  
+
+  // Stop periodic cleanup interval first
+  stopCircuitCleanup();
+  console.log(successLog('✅ Circuit cleanup interval stopped'));
+
   clearAllCircuits();
   console.log(successLog('✅ Circuit breakers cleared'));
   
@@ -121,7 +136,11 @@ export async function startServer(): Promise<void> {
       console.log(dimLog(`  GET  /prompts/info/:name      - Get prompt content`));
 
       // Log session initialization after server is ready
-      logSessionInit().catch(err => errorQueue.push(err, 'logSessionInit'));
+      fireAndForgetWithTimeout(
+        () => logSessionInit(),
+        5000,
+        'logSessionInit'
+      );
 
       resolve();
     });

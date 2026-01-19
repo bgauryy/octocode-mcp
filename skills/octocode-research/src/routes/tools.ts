@@ -57,7 +57,8 @@ import {
   withPackageResilience,
 } from '../utils/resilience.js';
 import { parseToolResponse, parseToolResponseBulk } from '../utils/responseParser.js';
-import { errorQueue } from '../utils/errorQueue.js';
+import { fireAndForgetWithTimeout } from '../utils/asyncTimeout.js';
+import { validateToolCallBody, getValidationHints } from '../validation/toolCallSchema.js';
 
 export const toolsRoutes = Router();
 
@@ -477,9 +478,19 @@ toolsRoutes.post('/call/:toolName', async (
   res: Response,
   next: NextFunction
 ) => {
+  // Set up AbortController for request cancellation
+  const abortController = new AbortController();
+  let isAborted = false;
+
+  req.on('close', () => {
+    if (!res.writableEnded) {
+      isAborted = true;
+      abortController.abort();
+    }
+  });
+
   try {
     const { toolName } = req.params;
-    const body = req.body as { queries?: unknown[] };
 
     // Validate tool exists
     const toolEntry = TOOL_REGISTRY[toolName];
@@ -498,56 +509,51 @@ toolsRoutes.post('/call/:toolName', async (
       return;
     }
 
-    // Validate queries array
-    if (!body.queries || !Array.isArray(body.queries) || body.queries.length === 0) {
+    // Validate request body using schema
+    const validation = validateToolCallBody(req.body);
+    if (!validation.success) {
       res.status(400).json({
         tool: toolName,
         success: false,
         data: null,
-        hints: [
-          'Missing or invalid queries array',
-          'Body must contain: { "queries": [{ ... }] }',
-          `Use GET /tools/info/${toolName} for schema`,
-        ],
+        hints: getValidationHints(toolName, validation.error!),
       });
       return;
     }
 
-    // Validate query limit (1-3)
-    if (body.queries.length > 3) {
-      res.status(400).json({
-        tool: toolName,
-        success: false,
-        data: null,
-        hints: [
-          'Too many queries (max 3)',
-          'Split into multiple requests for better performance',
-        ],
-      });
-      return;
-    }
+    const { queries } = validation.data!;
+
+    // Check if request was aborted before execution
+    if (isAborted) return;
 
     // Execute tool with resilience
     const rawResult = await toolEntry.resilience(
-      () => toolEntry.fn({ queries: body.queries! }),
+      () => toolEntry.fn({ queries }),
       toolName
     );
 
+    // Check if request was aborted after execution
+    if (isAborted) return;
+
     // Log tool call for session telemetry
-    const repos = extractReposFromQueries(body.queries!);
-    const researchParams = extractResearchParams(body.queries!);
-    logToolCall(
-      toolName,
-      repos,
-      researchParams.mainResearchGoal,
-      researchParams.researchGoal,
-      researchParams.reasoning
-    ).catch(err => errorQueue.push(err, 'logToolCall'));
+    const repos = extractReposFromQueries(queries);
+    const researchParams = extractResearchParams(queries);
+    fireAndForgetWithTimeout(
+      () => logToolCall(
+        toolName,
+        repos,
+        researchParams.mainResearchGoal,
+        researchParams.researchGoal,
+        researchParams.reasoning
+      ),
+      5000,
+      'logToolCall'
+    );
 
     const mcpResponse = rawResult as { content: Array<{ type: string; text: string }> };
 
     // For multiple queries, return bulk response format
-    if (body.queries.length > 1) {
+    if (queries.length > 1) {
       const bulkParsed = parseToolResponseBulk(mcpResponse);
 
       res.status(bulkParsed.isError ? 500 : 200).json({
@@ -573,6 +579,8 @@ toolsRoutes.post('/call/:toolName', async (
       research: parsed.research,
     });
   } catch (error) {
+    // Skip error handling if request was aborted
+    if (isAborted) return;
     next(error);
   }
 });

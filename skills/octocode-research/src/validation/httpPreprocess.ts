@@ -9,6 +9,7 @@
 
 import { z } from 'zod';
 import path from 'path';
+import os from 'os';
 
 // =============================================================================
 // Preprocessors - Convert HTTP query strings to proper types
@@ -59,16 +60,51 @@ export const booleanString = z.preprocess(toBoolean, z.boolean().optional());
 export const stringArray = z.preprocess(toArray, z.array(z.string()));
 
 /**
- * Safe path that blocks traversal attacks
+ * URL-encoded traversal patterns to detect
+ */
+const URL_ENCODED_TRAVERSAL = [
+  '%2e%2e',    // ..
+  '%2e%2e%2f', // ../
+  '%2e%2e%5c', // ..\
+  '%252e',     // double-encoded .
+  '%2f',       // /
+  '%5c',       // \
+] as const;
+
+/**
+ * Safe path that blocks traversal attacks.
+ *
+ * Validates:
+ * - No directory traversal (..)
+ * - No null bytes
+ * - No Windows backslashes on non-Windows systems
+ * - No URL-encoded traversal patterns
  */
 export const safePath = z.string().refine(
   (p) => {
+    // Check for null bytes
+    if (p.includes('\0')) return false;
+
+    // Normalize and check for traversal
     const normalized = path.normalize(p);
     if (normalized.includes('..')) return false;
-    if (p.includes('\0')) return false;
+
+    // Reject Windows backslashes on non-Windows (can bypass checks)
+    if (os.platform() !== 'win32' && p.includes('\\')) return false;
+
+    // Check for URL-encoded traversal patterns (case-insensitive)
+    const lowerPath = p.toLowerCase();
+    if (URL_ENCODED_TRAVERSAL.some((pattern) => lowerPath.includes(pattern))) {
+      return false;
+    }
+
     return true;
   },
-  { message: 'Path contains invalid traversal patterns' }
+  {
+    message:
+      'Path contains invalid characters or traversal patterns ' +
+      '(null bytes, .., \\, URL-encoded sequences)',
+  }
 );
 
 // =============================================================================

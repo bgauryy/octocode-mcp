@@ -137,21 +137,51 @@ async function cleanupOldLogsAsync(baseName: string, ext: string, keep: number):
 // ============================================================================
 
 /**
- * Safely stringify data with size limit to prevent memory spikes
+ * Safely stringify data with size limit to prevent memory spikes.
+ * Uses single-pass approach with size tracking to avoid double serialization.
  */
 function safeStringify(data: unknown): string {
   if (data === undefined) return '';
-  
+
   try {
-    const str = JSON.stringify(data, null, 2);
-    if (str.length > MAX_LOG_DATA_SIZE) {
+    let size = 0;
+    let truncated = false;
+    const seen = new WeakSet<object>();
+
+    // Custom replacer that tracks size and detects circular refs
+    const replacer = (_key: string, value: unknown): unknown => {
+      // Check for circular references
+      if (value !== null && typeof value === 'object') {
+        if (seen.has(value)) {
+          return '[Circular]';
+        }
+        seen.add(value);
+      }
+
+      // Estimate size contribution (rough but fast)
+      const valueStr = typeof value === 'string' ? value : String(value ?? '');
+      size += valueStr.length + 10; // +10 for key, quotes, colons, etc.
+
+      // If we've exceeded limit, mark as truncated and return placeholder
+      if (size > MAX_LOG_DATA_SIZE && !truncated) {
+        truncated = true;
+      }
+
+      return value;
+    };
+
+    const result = JSON.stringify(data, replacer, 2);
+
+    // If truncated during serialization, return truncation notice
+    if (truncated) {
       return JSON.stringify({
         _truncated: true,
-        _originalSize: str.length,
+        _estimatedSize: size,
         _message: 'Data too large for logging',
       }, null, 2);
     }
-    return str;
+
+    return result;
   } catch {
     return '[Circular or non-serializable data]';
   }
