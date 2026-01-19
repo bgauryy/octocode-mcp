@@ -100,11 +100,23 @@ INIT → LOAD CONTEXT → TOOLS CONTEXT → PLAN → RESEARCH → OUTPUT
 ---
 
 ## 1. INIT
-
+   
 <init_server>
-1. START SERVER: `npm start`
-2. WAIT: 5-10 seconds for full initialization
-3. CHECK: `curl -s http://localhost:1987/health` | `{"status":"ok",...}` -> ✅ Server running
+### Step 1: Check if Server is Already Running
+First, check if the server is responsive:
+`curl -s http://localhost:1987/health`
+
+**Scenario A: Server is Running**
+If you get a JSON response like `{"status":"ok",...}` or `{"status":"initializing",...}`:
+- **DO NOT** run `npm start` again.
+- If status is "initializing", wait a few seconds and check again until "ok".
+- Proceed to **2. LOAD CONTEXT**.
+
+**Scenario B: Server is NOT Running**
+If the command fails (connection refused):
+1. **START SERVER**: `npm start` (in background)
+2. **CHECK**: `curl -s http://localhost:1987/health`
+3. **WAIT**: If status is "initializing", wait until it becomes "ok".
 </init_server>
 
 ---

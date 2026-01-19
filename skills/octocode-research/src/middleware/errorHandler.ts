@@ -10,6 +10,8 @@ export interface ApiError extends Error {
   details?: z.ZodIssue[];
 }
 
+import { extractToolName } from '../utils/url.js';
+
 export function errorHandler(
   error: ApiError,
   req: Request,
@@ -31,9 +33,7 @@ export function errorHandler(
   }
 
   // Log error to session telemetry
-  // Extract tool name from path if it's a tool call (e.g., /tools/call/localSearchCode)
-  const toolCallMatch = req.path.match(/^\/tools\/call\/(\w+)$/);
-  const toolName = toolCallMatch ? toolCallMatch[1] : 'unknown';
+  const toolName = extractToolName(req.path);
   const errorCode = error.code ?? (isValidationError ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR');
   fireAndForgetWithTimeout(
     () => logSessionError(toolName, errorCode),

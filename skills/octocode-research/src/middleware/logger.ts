@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 import { logToolCall, sanitizeQueryParams } from '../utils/logger.js';
 import { resultLog, errorLog } from '../utils/colors.js';
+import { extractToolName } from '../utils/url.js';
 
 /**
  * Generate or retrieve request ID for log correlation.
@@ -58,10 +59,3 @@ export function requestLogger(
   next();
 }
 
-function extractToolName(path: string): string {
-  const parts = path.split('/').filter(Boolean);
-  if (parts.length >= 2) {
-    return parts[0] + parts[1].charAt(0).toUpperCase() + parts[1].slice(1);
-  }
-  return parts.join('/') || 'unknown';
-}

@@ -50,11 +50,21 @@ https://github.com/user-attachments/assets/d1260dbc-e7b6-4bec-909f-232ebee91ce9
 
 ## 🚀 Quick Start
 
-```bash
-# Install via Octocode CLI (recommended)
-npx octocode-cli
+### Option 1: Via Octocode CLI (Recommended)
 
-# Or run directly
+1. Run the CLI:
+   ```bash
+   npx octocode-cli
+   ```
+2. Navigate to: **Octocode Skills** → **Install**
+3. Select **octocode-research**
+
+> **Important**: Make sure you are authenticated with GitHub!
+> Run `npx octocode-cli` → **Manage Auth** to sign in.
+
+### Option 2: Manual Setup
+
+```bash
 cd skills/octocode-research
 npm install && npm start
 
