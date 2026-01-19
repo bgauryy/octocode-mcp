@@ -6,8 +6,6 @@
 
 import {
   getErrorStatus,
-  getErrorCode,
-  getErrorMessage,
   getErrorHeader,
   hasStatusIn,
   hasCodeIn,
