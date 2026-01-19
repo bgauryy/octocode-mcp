@@ -59,8 +59,12 @@ import {
 import { parseToolResponse, parseToolResponseBulk } from '../utils/responseParser.js';
 import { fireAndForgetWithTimeout } from '../utils/asyncTimeout.js';
 import { validateToolCallBody, getValidationHints } from '../validation/toolCallSchema.js';
+import { checkReadiness } from '../middleware/readiness.js';
 
 export const toolsRoutes = Router();
+
+// Apply readiness check middleware to all tools routes
+toolsRoutes.use(checkReadiness);
 
 // Package version for response metadata
 const PACKAGE_VERSION = '2.0.0';
@@ -478,12 +482,15 @@ toolsRoutes.post('/call/:toolName', async (
   res: Response,
   next: NextFunction
 ) => {
-  // Set up AbortController for request cancellation
+  // Set up AbortController for client disconnection handling
+  // NOTE: req.on('close') fires when request body is consumed, not client disconnect
+  // Use res.on('close') + socket.destroyed to detect actual client disconnection
   const abortController = new AbortController();
   let isAborted = false;
 
-  req.on('close', () => {
-    if (!res.writableEnded) {
+  res.on('close', () => {
+    // Only abort if client disconnected before we finished responding
+    if (!res.writableEnded && req.socket?.destroyed) {
       isAborted = true;
       abortController.abort();
     }
@@ -526,7 +533,7 @@ toolsRoutes.post('/call/:toolName', async (
     // Check if request was aborted before execution
     if (isAborted) return;
 
-    // Execute tool with resilience
+    // Execute tool with resilience (includes timeout + circuit breaker + retry)
     const rawResult = await toolEntry.resilience(
       () => toolEntry.fn({ queries }),
       toolName

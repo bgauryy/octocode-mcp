@@ -370,6 +370,100 @@ GitHub API rate limits are tracked from response headers:
 
 Manages cleanup of background contexts during graceful shutdown.
 
+### 6. Idle Auto-Restart (`src/server.ts`)
+
+The server automatically restarts after 1 hour of inactivity to free resources and reset state.
+
+**Configuration:**
+```typescript
+const MAX_IDLE_TIME_MS = 3600000;      // 1 hour
+const IDLE_CHECK_INTERVAL_MS = 300000;  // Check every 5 minutes
+```
+
+**Flow:**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Server Lifecycle                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  START                                                          │
+│    │                                                             │
+│    ▼                                                             │
+│  ┌──────────────────┐                                            │
+│  │  Server Running  │◄──────────────────────────────────┐        │
+│  └────────┬─────────┘                                   │        │
+│           │                                             │        │
+│           │  Every 5 minutes                            │        │
+│           ▼                                             │        │
+│  ┌──────────────────┐     idle < 60m      ┌───────────┐│        │
+│  │ checkIdleRestart │ ─────────────────► │  Continue  ││        │
+│  └────────┬─────────┘                     └───────────┘│        │
+│           │                                             │        │
+│           │ idle > 60m                                  │        │
+│           ▼                                             │        │
+│  ┌──────────────────┐                                   │        │
+│  │ gracefulShutdown │                                   │        │
+│  │  (IDLE_TIMEOUT)  │                                   │        │
+│  └────────┬─────────┘                                   │        │
+│           │                                             │        │
+│           ▼                                             │        │
+│  ┌──────────────────┐                                   │        │
+│  │ stopIdleCheck    │                                   │        │
+│  │ stopCircuitClean │                                   │        │
+│  │ clearCircuits    │                                   │        │
+│  │ closeHTTPServer  │                                   │        │
+│  └────────┬─────────┘                                   │        │
+│           │                                             │        │
+│           ▼                                             │        │
+│  ┌──────────────────┐       Orchestrator/PM2            │        │
+│  │  process.exit(0) │ ─────────────────────────────────►│        │
+│  └──────────────────┘       restarts server             │        │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key Functions:**
+| Function | Purpose |
+|----------|---------|
+| `checkIdleRestart()` | Periodic check (every 5m) - triggers restart if idle > 1h |
+| `startIdleCheck()` | Starts the interval after server initialization |
+| `stopIdleCheck()` | Stops interval during graceful shutdown |
+| `gracefulShutdown(signal)` | Handles SIGTERM, SIGINT, IDLE_TIMEOUT |
+
+**Request Handling:**
+- Every incoming request resets `lastRequestTime` via middleware
+- This includes `/health` checks - prevents false idle detection
+
+**Health Endpoint Response:**
+```json
+{
+  "status": "ok",
+  "idleTimeMs": 0,
+  "maxIdleTimeMs": 3600000,
+  "idleCheckIntervalMs": 300000,
+  ...
+}
+```
+
+**Logs:**
+```
+⏰ Idle check enabled: restart after 60m of inactivity
+⏰ Idle time: 35m / 60m                    (at 50% threshold)
+⚠️ Server idle for 61m (>60m). Initiating automatic restart...
+🔄 Performing automatic idle restart...
+🛑 Received IDLE_TIMEOUT. Starting graceful shutdown...
+✅ Idle check interval stopped
+✅ Circuit cleanup interval stopped
+✅ Circuit breakers cleared
+✅ HTTP server closed
+```
+
+**Why Auto-Restart?**
+1. **Memory cleanup** - Releases accumulated heap allocations
+2. **Circuit reset** - Clears any open circuit breakers
+3. **State refresh** - Reinitializes MCP content and providers
+4. **Resource hygiene** - Closes any lingering file handles or connections
+
 ## Logging
 
 Logs are written to `~/.octocode/logs/`:
@@ -457,4 +551,4 @@ The SKILL.md file contains the full prompt and workflow guidance for AI agent in
 
 ---
 
-*Last validated: 2026-01-18*
+*Last validated: 2026-01-19*

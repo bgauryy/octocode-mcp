@@ -2,8 +2,12 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { getMcpContent } from '../mcpCache.js';
 import { logPromptCall } from '../index.js';
 import { fireAndForgetWithTimeout } from '../utils/asyncTimeout.js';
+import { checkReadiness } from '../middleware/readiness.js';
 
 export const promptsRoutes = Router();
+
+// Apply readiness check middleware to all prompts routes
+promptsRoutes.use(checkReadiness);
 
 // Package version for response metadata
 const PACKAGE_VERSION = '2.0.0';

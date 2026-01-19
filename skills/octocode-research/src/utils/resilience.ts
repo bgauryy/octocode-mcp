@@ -1,11 +1,23 @@
 /**
- * Resilience utilities combining circuit breaker + retry for external API calls.
+ * Resilience utilities combining circuit breaker + retry + timeout for external API calls.
  *
  * @module utils/resilience
  */
 
 import { withCircuitBreaker, type CircuitBreakerConfig } from './circuitBreaker.js';
 import { withRetry, type RetryConfig, RETRY_CONFIGS } from './retry.js';
+import { withTimeout } from './asyncTimeout.js';
+
+/** Default timeout for MCP tool calls (30 seconds) */
+const DEFAULT_TOOL_TIMEOUT_MS = 30000;
+
+/** Timeout configuration per category */
+const TIMEOUT_CONFIGS = {
+  github: 60000,   // 60s for GitHub API (rate limiting, large responses)
+  local: 30000,    // 30s for local tools
+  lsp: 30000,      // 30s for LSP operations
+  package: 30000,  // 30s for package search
+} as const;
 
 /**
  * Combined resilience configuration
@@ -38,12 +50,14 @@ const RESILIENCE_CONFIGS = {
 type ResilienceCategory = keyof typeof RESILIENCE_CONFIGS;
 
 /**
- * Execute an operation with combined circuit breaker + retry protection.
+ * Execute an operation with combined timeout + circuit breaker + retry protection.
  *
- * The circuit breaker wraps the retry logic, meaning:
- * 1. If circuit is OPEN: immediately fail/fallback (no retries)
- * 2. If circuit is CLOSED/HALF-OPEN: attempt with retries
- * 3. Failures contribute to circuit state after retry exhaustion
+ * The protection layers work as follows:
+ * 1. TIMEOUT: Wraps entire operation to prevent hanging (outermost)
+ * 2. CIRCUIT BREAKER: If circuit is OPEN, fail fast (no retries/timeout)
+ * 3. RETRY: If circuit is CLOSED/HALF-OPEN, retry with backoff (innermost)
+ *
+ * Failures (including timeouts) contribute to circuit state.
  *
  * @param category - Resilience category ('github', 'local', 'lsp')
  * @param operation - Async operation to execute
@@ -65,11 +79,17 @@ async function withResilience<T>(
   context?: { tool: string }
 ): Promise<T> {
   const config = RESILIENCE_CONFIGS[category];
+  const timeoutMs = TIMEOUT_CONFIGS[category] || DEFAULT_TOOL_TIMEOUT_MS;
+  const toolName = context?.tool || category;
 
-  // Circuit breaker wraps retry
-  return withCircuitBreaker(category, async () => {
-    return withRetry(operation, config.retry, context);
-  });
+  // Timeout wraps circuit breaker wraps retry
+  return withTimeout(
+    () => withCircuitBreaker(category, async () => {
+      return withRetry(operation, config.retry, context);
+    }),
+    timeoutMs,
+    `${toolName}:timeout`
+  );
 }
 
 /**
