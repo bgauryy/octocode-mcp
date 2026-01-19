@@ -1,171 +1,350 @@
 # Octocode Configuration Reference
 
-This document details the configuration system for Octocode, explaining how to configure the MCP server and CLI using environment variables and the global configuration file.
-
-## Configuration Hierarchy
-
-Octocode resolves configuration in the following order (highest priority first):
-
-1.  **Environment Variables**: Override all other settings.
-2.  **Global Configuration File**: `~/.octocode/.octocoderc` (User-specific settings).
-3.  **Default Values**: Hardcoded fallbacks in the application.
+Configure Octocode to work with your GitHub/GitLab accounts, enable local code analysis, and customize tool behavior.
 
 ---
 
-## 1. Environment Variables
+## Quick Start
 
-Environment variables are the primary way to configure secrets (tokens) and runtime overrides.
+Most users only need to set an authentication token:
 
-### Authentication (Tokens)
+```bash
+# GitHub (choose one)
+export GITHUB_TOKEN="ghp_your_token_here"
+# or
+export GH_TOKEN="ghp_your_token_here"
 
-| Variable | Priority | Description |
-|----------|----------|-------------|
-| `OCTOCODE_TOKEN` | 1 | Octocode-specific GitHub token (Recommended). |
-| `GH_TOKEN` | 2 | GitHub CLI compatible token. |
-| `GITHUB_TOKEN` | 3 | Standard GitHub token. |
-| `GITLAB_TOKEN` | 1 | GitLab Personal Access Token. |
-| `GL_TOKEN` | 2 | GitLab token fallback. |
+# GitLab (if using GitLab)
+export GITLAB_TOKEN="glpat_your_token_here"
+```
 
-> **Note**: If `GITLAB_TOKEN` is present, Octocode defaults to GitLab mode unless specified otherwise.
-
-### Connectivity & Platform
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GITHUB_API_URL` | `https://api.github.com` | Base URL for GitHub API (useful for GHE). |
-| `GITLAB_HOST` | `https://gitlab.com` | Base URL for GitLab instance. |
-| `REQUEST_TIMEOUT` | `30000` | HTTP request timeout in milliseconds (min 5000). |
-| `MAX_RETRIES` | `3` | Maximum HTTP retry attempts (0-10). |
-
-### Feature Flags
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ENABLE_LOCAL` / `LOCAL` | `false` | Enable local filesystem tools (`local*`, `lsp*`). |
-| `LOG` | `true` | Enable session logging (unless telemetry disabled). |
-| `OCTOCODE_TELEMETRY_DISABLED` | `false` | Set to `1` or `true` to completely disable telemetry. |
-
-### Tool Control
-
-| Variable | Description |
-|----------|-------------|
-| `TOOLS_TO_RUN` | Comma-separated list of tools to run (whitelist). |
-| `ENABLE_TOOLS` | Comma-separated list of tools to enable. |
-| `DISABLE_TOOLS` | Comma-separated list of tools to disable. |
-
----
-
-## 2. Global Configuration File (`.octocoderc`)
-
-The `.octocoderc` file is located at `~/.octocode/.octocoderc`. It uses **JSON5** format, which supports comments (`//`, `/* */`) and trailing commas.
-
-### Example Configuration
+For persistent configuration, create `~/.octocode/.octocoderc`:
 
 ```jsonc
 {
   "version": 1,
-  
-  // GitHub Settings
+  "github": {
+    "defaultOrg": "your-org"  // Skip typing org name in searches
+  },
+  "local": {
+    "enabled": true  // Enable local code analysis
+  }
+}
+```
+
+---
+
+## Configuration by Use Case
+
+### Connect to GitHub
+
+**Environment Variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `OCTOCODE_TOKEN` | GitHub token (highest priority) |
+| `GH_TOKEN` | GitHub CLI compatible token |
+| `GITHUB_TOKEN` | Standard GitHub token |
+| `GITHUB_API_URL` | API URL for GitHub Enterprise (default: `https://api.github.com`) |
+
+**Config File:**
+
+```jsonc
+{
+  "github": {
+    "apiUrl": "https://github.mycompany.com/api/v3",  // For GHE
+    "defaultOrg": "my-org"  // Default organization for searches
+  }
+}
+```
+
+### Connect to GitLab
+
+**Environment Variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `GITLAB_TOKEN` | GitLab Personal Access Token |
+| `GL_TOKEN` | GitLab token (fallback) |
+| `GITLAB_HOST` | GitLab instance URL (default: `https://gitlab.com`) |
+
+**Config File:**
+
+```jsonc
+{
+  "gitlab": {
+    "host": "https://gitlab.mycompany.com",
+    "defaultGroup": "my-group"
+  },
+  "research": {
+    "defaultProvider": "gitlab"  // Use GitLab as default instead of GitHub
+  }
+}
+```
+
+### Enable Local Code Analysis
+
+Analyze code on your local filesystem with LSP-powered features.
+
+**Environment Variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `ENABLE_LOCAL` or `LOCAL` | Set to `true` to enable local tools |
+| `ALLOWED_PATHS` | Comma-separated allowed paths (e.g., `/home/me/projects,/tmp/code`) |
+| `WORKSPACE_ROOT` | Override workspace root detection |
+
+**Config File:**
+
+```jsonc
+{
+  "local": {
+    "enabled": true,
+    "allowedPaths": ["/Users/me/projects", "/tmp/sandbox"],  // Restrict access
+    "excludePaths": ["vendor", "build"]  // Additional folders to skip
+  }
+}
+```
+
+> **Default excludes:** `node_modules`, `.git`, `dist`, `coverage`, `__pycache__`, `.venv`, `venv`
+
+### Control Which Tools Are Available
+
+Enable only specific tools or disable unwanted ones.
+
+**Environment Variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `TOOLS_TO_RUN` | Whitelist: only run these tools (comma-separated) |
+| `ENABLE_TOOLS` | Enable specific tools |
+| `DISABLE_TOOLS` | Disable specific tools |
+
+**Config File:**
+
+```jsonc
+{
+  "tools": {
+    // Whitelist mode: only these tools are available
+    "enabled": ["githubSearchCode", "githubGetFileContent"],
+
+    // OR blacklist mode: hide specific tools
+    "disabled": ["githubSearchPullRequests"]
+  }
+}
+```
+
+### Tune Network Performance
+
+Adjust timeouts and retries for slow networks or large requests.
+
+**Environment Variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REQUEST_TIMEOUT` | `30000` | Request timeout in ms (min 5000, max 300000) |
+| `MAX_RETRIES` | `3` | Retry attempts for failed requests (0-10) |
+
+**Config File:**
+
+```jsonc
+{
+  "network": {
+    "timeout": 60000,   // 60 seconds
+    "maxRetries": 5
+  }
+}
+```
+
+### Configure LSP (Language Server Protocol)
+
+Customize language server behavior for local code analysis.
+
+**Config File:**
+
+```jsonc
+{
+  "lsp": {
+    "enabled": true,
+    "timeout": 15000,  // LSP request timeout (1000-60000 ms)
+    "languages": {
+      "python": {
+        "serverPath": "/usr/local/bin/pylsp"  // Custom server path
+      },
+      "typescript": {
+        "serverPath": null  // Use bundled server
+      }
+    }
+  }
+}
+```
+
+**Environment Variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `OCTOCODE_LSP_CONFIG` | Path to custom LSP servers config file |
+| `ENABLE_LSP_TOOL` | Set to `1` when native Claude Code LSP is available |
+| `OCTOCODE_FORCE_LSP` | Set to `1` to force Octocode LSP even if native is available |
+
+### Research Settings
+
+Control how code searches are executed.
+
+**Config File:**
+
+```jsonc
+{
+  "research": {
+    "defaultProvider": "github",  // or "gitlab"
+    "maxQueriesPerBatch": 3,      // Parallel queries (1-10)
+    "maxResultsPerQuery": 10      // Results per query (1-100)
+  }
+}
+```
+
+---
+
+## Privacy & Telemetry
+
+**Environment Variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `OCTOCODE_TELEMETRY_DISABLED` | Set to `1` or `true` to disable telemetry |
+| `LOG` | Set to `false` to disable session logging |
+| `REDACT_ERROR_PATHS` | Set to `true` to redact file paths in error messages |
+
+**Config File:**
+
+```jsonc
+{
+  "telemetry": {
+    "enabled": false,   // Disable anonymous usage stats
+    "logging": false    // Disable debug logging
+  }
+}
+```
+
+---
+
+## Full Example Configuration
+
+```jsonc
+{
+  "version": 1,
+
   "github": {
     "apiUrl": "https://api.github.com",
-    "defaultOrg": "wix-private"
+    "defaultOrg": "my-company"
   },
 
-  // GitLab Settings
   "gitlab": {
     "host": "https://gitlab.com",
     "defaultGroup": "my-group"
   },
 
-  // Local Filesystem Tools
   "local": {
     "enabled": true,
-    "allowedPaths": ["/Users/me/projects"], // Restrict access
-    "excludePaths": ["node_modules", "dist"] // Extra excludes
+    "allowedPaths": ["/Users/me/projects"],
+    "excludePaths": ["node_modules", "dist", "vendor"]
   },
 
-  // Tool Availability
   "tools": {
-    // "enabled": ["githubSearchCode"], // Whitelist mode (null = all)
-    "disabled": ["githubSearchPullRequests"] // Blacklist mode
+    "disabled": ["githubSearchPullRequests"]
   },
 
-  // Network & Performance
   "network": {
     "timeout": 30000,
     "maxRetries": 3
   },
 
-  // LSP Settings
   "lsp": {
     "enabled": true,
-    "timeout": 10000,
-    "languages": {
-      "python": {
-        "serverPath": "/usr/local/bin/pylsp"
-      }
-    }
+    "timeout": 10000
   },
 
-  // Research Defaults
   "research": {
     "defaultProvider": "github",
-    "maxQueriesPerBatch": 3, // Max parallel queries
+    "maxQueriesPerBatch": 3,
     "maxResultsPerQuery": 10
+  },
+
+  "telemetry": {
+    "enabled": true,
+    "logging": true
   }
 }
 ```
 
-### Section Reference
+---
 
-#### `github`
-*   `apiUrl` (string): GitHub API URL.
-*   `defaultOrg` (string): Default organization to search if none specified.
+## Configuration Hierarchy
 
-#### `gitlab`
-*   `host` (string): GitLab instance URL.
-*   `defaultGroup` (string): Default group to search.
+Settings are resolved in this order (highest priority first):
 
-#### `local`
-*   `enabled` (boolean): Enable local filesystem tools.
-*   `allowedPaths` (string[]): Whitelist of allowed absolute paths. If empty, all paths are allowed.
-*   `excludePaths` (string[]): Paths to always exclude from search/traversal.
-
-#### `tools`
-*   `enabled` (string[] | null): Whitelist of tool names. If set, ONLY these tools are available.
-*   `disabled` (string[] | null): Blacklist of tool names to hide.
-
-#### `network`
-*   `timeout` (number): Request timeout in ms (Min: 5000, Max: 300000).
-*   `maxRetries` (number): Max retries for failed requests (Min: 0, Max: 10).
-
-#### `telemetry`
-*   `enabled` (boolean): Enable anonymous usage stats.
-*   `logging` (boolean): Enable debug logging.
-
-#### `lsp`
-*   `enabled` (boolean): Enable LSP features.
-*   `timeout` (number): LSP request timeout in ms.
-*   `languages` (object): Per-language server config. Keys are language IDs (e.g., `python`, `typescript`).
-    *   `serverPath` (string): Absolute path to language server binary.
-
-#### `research`
-*   `defaultProvider` ("github" | "gitlab"): Default search provider.
-*   `maxQueriesPerBatch` (number): Max parallel sub-queries (1-10).
-*   `maxResultsPerQuery` (number): Max results per individual query (1-100).
+1. **Environment Variables** — Override all other settings
+2. **Config File** — `~/.octocode/.octocoderc` (JSON5 format with comments)
+3. **Defaults** — Built-in fallback values
 
 ---
 
-## 3. Defaults
+## Config File Location
 
-If configuration is missing, Octocode uses these defaults:
+| OS | Path |
+|----|------|
+| macOS/Linux | `~/.octocode/.octocoderc` |
+| Windows | `%USERPROFILE%\.octocode\.octocoderc` |
 
-| Setting | Default Value |
-|---------|---------------|
+The config file uses **JSON5** format, which supports:
+- Comments: `//` and `/* */`
+- Trailing commas
+- Unquoted keys
+
+---
+
+## Defaults Reference
+
+| Setting | Default |
+|---------|---------|
+| `github.apiUrl` | `https://api.github.com` |
+| `gitlab.host` | `https://gitlab.com` |
+| `local.enabled` | `false` |
+| `local.allowedPaths` | `[]` (all paths allowed) |
+| `local.excludePaths` | `['node_modules', '.git', 'dist', 'coverage', '__pycache__', '.venv', 'venv']` |
+| `tools.enabled` | `null` (all tools available) |
+| `tools.disabled` | `null` (no tools disabled) |
 | `network.timeout` | `30000` (30s) |
 | `network.maxRetries` | `3` |
-| `local.enabled` | `false` |
-| `local.excludePaths` | `['node_modules', '.git', 'dist', 'coverage', '__pycache__', '.venv', 'venv']` |
+| `lsp.enabled` | `true` |
+| `lsp.timeout` | `10000` (10s) |
+| `research.defaultProvider` | `'github'` |
 | `research.maxQueriesPerBatch` | `3` |
 | `research.maxResultsPerQuery` | `10` |
-| `lsp.timeout` | `10000` (10s) |
+| `telemetry.enabled` | `true` |
+| `telemetry.logging` | `true` |
+
+---
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| **Token not found** | Set `GITHUB_TOKEN` or `GH_TOKEN`. Or run `gh auth login` for GitHub CLI. |
+| **Local tools disabled** | Set `ENABLE_LOCAL=true` or add `"local": { "enabled": true }` to config |
+| **GitLab not working** | Set `GITLAB_TOKEN`. For self-hosted, also set `GITLAB_HOST`. |
+| **Timeout errors** | Increase `REQUEST_TIMEOUT` env var or `network.timeout` in config (max 300000ms) |
+| **Tool not available** | Check it's not in `tools.disabled`. If using whitelist, add to `tools.enabled`. |
+| **Config not loading** | Check JSON syntax. JSON5 allows comments but not other syntax errors. |
+
+### Debug Commands
+
+```bash
+# Check if config exists
+cat ~/.octocode/.octocoderc
+
+# Verify environment
+echo "GITHUB_TOKEN: ${GITHUB_TOKEN:+set}"
+echo "ENABLE_LOCAL: ${ENABLE_LOCAL:-not set}"
+echo "GITLAB_TOKEN: ${GITLAB_TOKEN:+set}"
+```

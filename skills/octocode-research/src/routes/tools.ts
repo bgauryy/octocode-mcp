@@ -57,6 +57,7 @@ import {
   withPackageResilience,
 } from '../utils/resilience.js';
 import { parseToolResponse, parseToolResponseBulk } from '../utils/responseParser.js';
+import { errorQueue } from '../utils/errorQueue.js';
 
 export const toolsRoutes = Router();
 
@@ -346,8 +347,31 @@ toolsRoutes.get('/system', async (
 // Tool Registry - Maps tool names to functions and resilience wrappers
 // ============================================================================
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-type ToolFn = (params: { queries: any[] }) => Promise<any>;
+import type { BaseQueryParams, QueryParamsResult } from '../types/toolTypes.js';
+
+/**
+ * Tool query input type - extends base query params.
+ */
+interface ToolQuery extends BaseQueryParams {
+  [key: string]: unknown;
+}
+
+/**
+ * Standard tool response structure.
+ */
+interface ToolResponse {
+  content?: Array<{ type: string; text?: string }>;
+  isError?: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * Tool function type with proper generics.
+ */
+type ToolFn<TQuery extends ToolQuery = ToolQuery> = (
+  params: QueryParamsResult<TQuery>
+) => Promise<ToolResponse>;
+
 type ResilienceFn = <T>(fn: () => Promise<T>, toolName: string) => Promise<T>;
 
 interface ToolEntry {
@@ -378,7 +402,6 @@ const TOOL_REGISTRY: Record<string, ToolEntry> = {
   // Package tools
   packageSearch: { fn: packageSearch as ToolFn, resilience: withPackageResilience, category: 'package' },
 };
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 /**
  * Extract repository identifiers from query parameters for session logging
@@ -519,7 +542,7 @@ toolsRoutes.post('/call/:toolName', async (
       researchParams.mainResearchGoal,
       researchParams.researchGoal,
       researchParams.reasoning
-    ).catch(() => {}); // Fire and forget
+    ).catch(err => errorQueue.push(err, 'logToolCall'));
 
     const mcpResponse = rawResult as { content: Array<{ type: string; text: string }> };
 

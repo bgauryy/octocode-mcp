@@ -4,13 +4,12 @@ import { toolsRoutes } from './routes/tools.js';
 import { promptsRoutes } from './routes/prompts.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/logger.js';
-import { stopContextCleanup } from './middleware/contextPropagation.js';
-import { createThrottleMiddleware, getThrottleConfig } from './middleware/throttle.js';
 import { initializeProviders, initializeSession, logSessionInit } from './index.js';
 import { initializeMcpContent } from './mcpCache.js';
 import { getLogsPath, initializeLogger } from './utils/logger.js';
 import { getAllCircuitStates, clearAllCircuits } from './utils/circuitBreaker.js';
 import { agentLog, successLog, errorLog, warnLog, dimLog } from './utils/colors.js';
+import { errorQueue } from './utils/errorQueue.js';
 
 const PORT = 1987;
 let server: Server | null = null;
@@ -28,15 +27,10 @@ export async function createServer(): Promise<Express> {
 
   const app = express();
   app.use(express.json());
-  
-  // Throttling: gradually slow down high-frequency requests
-  app.use(createThrottleMiddleware());
-  
   app.use(requestLogger);
   
   app.get('/health', (_req: Request, res: Response) => {
     const memoryUsage = process.memoryUsage();
-    const throttleConfig = getThrottleConfig();
     res.json({
       status: 'ok',
       port: PORT,
@@ -47,11 +41,6 @@ export async function createServer(): Promise<Express> {
         heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
         rss: Math.round(memoryUsage.rss / 1024 / 1024),
       },
-      throttle: {
-        windowMs: throttleConfig.windowMs,
-        delayAfter: throttleConfig.delayAfter,
-        maxDelayMs: throttleConfig.maxDelayMs,
-      },
       circuits: getAllCircuitStates(),
     });
   });
@@ -61,11 +50,11 @@ export async function createServer(): Promise<Express> {
   app.use('/prompts', promptsRoutes);
 
   // 404 handler for undefined routes
-  app.use((req: Request, res: Response) => {
+  app.use((_req: Request, res: Response) => {
     res.status(404).json({
       success: false,
       error: {
-        message: `Route not found: ${req.method} ${req.path}`,
+        message: 'Route not found',
         code: 'NOT_FOUND',
         availableRoutes: [
           'GET  /health',
@@ -89,9 +78,6 @@ export async function createServer(): Promise<Express> {
 function gracefulShutdown(signal: string): void {
   // Agent messages in PURPLE
   console.log(agentLog(`\n🛑 Received ${signal}. Starting graceful shutdown...`));
-  
-  stopContextCleanup();
-  console.log(successLog('✅ Context cleanup stopped'));
   
   clearAllCircuits();
   console.log(successLog('✅ Circuit breakers cleared'));
@@ -123,10 +109,8 @@ export async function startServer(): Promise<void> {
     server = httpServer;
     
     httpServer.on('listening', () => {
-      const throttle = getThrottleConfig();
       console.log(agentLog(`🔍 Octocode Research Server running on http://localhost:${PORT}`));
       console.log(agentLog(`📁 Logs: ${getLogsPath()}`));
-      console.log(agentLog(`🐢 Throttle: ${throttle.delayAfter} req/min before slowdown (max ${throttle.maxDelayMs/1000}s delay)`));
       console.log(agentLog(`\nRoutes:`));
       console.log(dimLog(`  GET  /health                  - Server health`));
       console.log(dimLog(`  GET  /tools/system            - System prompt (LOAD FIRST)`));
@@ -137,7 +121,7 @@ export async function startServer(): Promise<void> {
       console.log(dimLog(`  GET  /prompts/info/:name      - Get prompt content`));
 
       // Log session initialization after server is ready
-      logSessionInit().catch(() => {});
+      logSessionInit().catch(err => errorQueue.push(err, 'logSessionInit'));
 
       resolve();
     });

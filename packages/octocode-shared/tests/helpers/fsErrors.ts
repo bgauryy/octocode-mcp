@@ -8,7 +8,7 @@
 /**
  * Create a Node.js filesystem error with the proper structure
  */
-export function createFsError(
+function createFsError(
   code: string,
   message: string,
   path?: string

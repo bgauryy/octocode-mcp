@@ -49,8 +49,6 @@
   },
   "dependencies": {
     "express": "^4.21.2",
-    "express-rate-limit": "^8.2.1",
-    "express-slow-down": "^3.0.1",
     "js-yaml": "^4.1.1",
     "octocode-mcp": "file:../../packages/octocode-mcp",
     "octocode-shared": "^1.0.1",

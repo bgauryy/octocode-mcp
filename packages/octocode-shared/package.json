@@ -19,6 +19,11 @@
   },
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
+  "dependencies": {
+    "@napi-rs/keyring": "^1.2.0",
+    "@octokit/oauth-methods": "^6.0.2",
+    "@octokit/request": "^10.0.7"
+  },
   "devDependencies": {
     "@types/node": "^22.15.29",
     "@vitest/coverage-v8": "^4.0.16",
@@ -80,10 +85,5 @@
     "typecheck": "tsc --noEmit"
   },
   "type": "module",
-  "types": "dist/index.d.ts",
-  "dependencies": {
-    "@napi-rs/keyring": "^1.2.0",
-    "@octokit/oauth-methods": "^6.0.2",
-    "@octokit/request": "^10.0.7"
-  }
+  "types": "dist/index.d.ts"
 }

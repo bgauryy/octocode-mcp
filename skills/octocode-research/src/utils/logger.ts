@@ -1,4 +1,5 @@
 import { errorLog, warnLog } from './colors.js';
+import { errorQueue } from './errorQueue.js';
 /**
  * Cross-platform logging utility for Octocode Research Server
  *
@@ -124,7 +125,7 @@ async function cleanupOldLogsAsync(baseName: string, ext: string, keep: number):
     // Remove files beyond the keep limit
     const toDelete = rotatedFiles.slice(keep);
     await Promise.all(
-      toDelete.map((f) => fsAsync.unlink(path.join(LOGS_DIR, f)).catch(() => {}))
+      toDelete.map((f) => fsAsync.unlink(path.join(LOGS_DIR, f)).catch(err => errorQueue.push(err, 'cleanupOldLogs')))
     );
   } catch {
     // Silently fail
@@ -206,8 +207,11 @@ export function logError(message: string, error?: Error | unknown): void {
   const entry = formatLogEntry('ERROR', message, errorData);
   writeLogAsync(ERROR_LOG, entry);
 
-  // Also write to console for visibility
-  console.error(errorLog(`[ERROR] ${message}`), error || '');
+  // Also write to console for visibility (redact stack in production)
+  const consoleError = process.env.NODE_ENV === 'development'
+    ? error
+    : (error instanceof Error ? error.message : String(error || ''));
+  console.error(errorLog(`[ERROR] ${message}`), consoleError);
 }
 
 /**

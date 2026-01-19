@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
-import { logToolCall } from '../utils/logger.js';
+import { logToolCall, sanitizeQueryParams } from '../utils/logger.js';
 import { resultLog, errorLog } from '../utils/colors.js';
 
 /**
@@ -46,7 +46,7 @@ export function requestLogger(
         tool: extractToolName(req.path),
         route: req.path,
         method: req.method,
-        params: req.query as Record<string, unknown>,
+        params: sanitizeQueryParams(req.query as Record<string, unknown>),
         duration,
         success,
         error: success ? undefined : `HTTP ${status}`,

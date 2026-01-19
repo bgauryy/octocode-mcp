@@ -18,7 +18,7 @@ import { CONFIG_FILE_NAME } from './types.js';
 /**
  * Octocode configuration directory
  */
-export const OCTOCODE_DIR = join(HOME, '.octocode');
+const OCTOCODE_DIR = join(HOME, '.octocode');
 
 /**
  * Full path to configuration file
