@@ -1,0 +1,190 @@
+/**
+ * Configuration Loader Tests
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
+import {
+  loadConfig,
+  loadConfigSync,
+  configExists,
+  getConfigPath,
+  CONFIG_FILE_PATH,
+} from '../../src/config/loader.js';
+
+// Mock fs module
+vi.mock('node:fs', () => ({
+  existsSync: vi.fn(),
+  readFileSync: vi.fn(),
+  mkdirSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  unlinkSync: vi.fn(),
+}));
+
+describe('config/loader', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe('configExists', () => {
+    it('returns true when config file exists', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      expect(configExists()).toBe(true);
+      expect(existsSync).toHaveBeenCalledWith(CONFIG_FILE_PATH);
+    });
+
+    it('returns false when config file does not exist', () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+      expect(configExists()).toBe(false);
+    });
+  });
+
+  describe('getConfigPath', () => {
+    it('returns the config file path', () => {
+      const path = getConfigPath();
+      expect(path).toBe(CONFIG_FILE_PATH);
+      expect(path).toContain('.octocode');
+      expect(path).toContain('.octocoderc');
+    });
+  });
+
+  describe('loadConfigSync', () => {
+    it('returns error when file does not exist', () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      const result = loadConfigSync();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Config file does not exist');
+      expect(result.path).toBe(CONFIG_FILE_PATH);
+    });
+
+    it('returns empty config for empty file', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('');
+
+      const result = loadConfigSync();
+
+      expect(result.success).toBe(true);
+      expect(result.config).toEqual({});
+    });
+
+    it('parses valid JSON config', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        '{"version": 1, "github": {"apiUrl": "https://api.github.com"}}'
+      );
+
+      const result = loadConfigSync();
+
+      expect(result.success).toBe(true);
+      expect(result.config?.version).toBe(1);
+      expect(result.config?.github?.apiUrl).toBe('https://api.github.com');
+    });
+
+    it('parses JSON5 with single-line comments', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(`{
+        // This is a comment
+        "version": 1
+      }`);
+
+      const result = loadConfigSync();
+
+      expect(result.success).toBe(true);
+      expect(result.config?.version).toBe(1);
+    });
+
+    it('parses JSON5 with multi-line comments', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(`{
+        /* This is a
+           multi-line comment */
+        "version": 1
+      }`);
+
+      const result = loadConfigSync();
+
+      expect(result.success).toBe(true);
+      expect(result.config?.version).toBe(1);
+    });
+
+    it('parses JSON5 with trailing commas', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(`{
+        "version": 1,
+        "github": {
+          "apiUrl": "https://api.github.com",
+        },
+      }`);
+
+      const result = loadConfigSync();
+
+      expect(result.success).toBe(true);
+      expect(result.config?.version).toBe(1);
+    });
+
+    it('handles comments inside strings correctly', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(`{
+        "version": 1,
+        "github": {
+          "apiUrl": "https://api.github.com/v3 // not a comment"
+        }
+      }`);
+
+      const result = loadConfigSync();
+
+      expect(result.success).toBe(true);
+      expect(result.config?.github?.apiUrl).toBe(
+        'https://api.github.com/v3 // not a comment'
+      );
+    });
+
+    it('returns error for invalid JSON', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('{ invalid json }');
+
+      const result = loadConfigSync();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Failed to parse config file');
+    });
+
+    it('returns error for non-object config', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('"just a string"');
+
+      const result = loadConfigSync();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Config file must be a JSON object');
+    });
+
+    it('returns error for array config', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('[1, 2, 3]');
+
+      const result = loadConfigSync();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Config file must be a JSON object');
+    });
+  });
+
+  describe('loadConfig', () => {
+    it('returns same result as loadConfigSync', async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('{"version": 1}');
+
+      const asyncResult = await loadConfig();
+      const syncResult = loadConfigSync();
+
+      expect(asyncResult).toEqual(syncResult);
+    });
+  });
+});

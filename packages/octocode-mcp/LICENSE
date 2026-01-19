@@ -1,25 +1,21 @@
-PolyForm Small Business License 1.0.0
+MIT License
 
-Copyright (c) 2025 Guy Bary (bgauryy@octocodeai.com)
+Copyright (c) 2026 Guy Bary
 
-1. Rights Granted
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-The Licensor grants to each Licensee a non-exclusive, royalty-free, copyright license to do everything with the Software that would otherwise infringe the Licensor's copyright, provided that the Licensee meets the criteria of a "Small Business" as defined below.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-2. Small Business Definition
-
-A "Small Business" is an individual or a legal entity that, together with its Affiliates, has:
-(a) fewer than 100 employees; and
-(b) less than $1,000,000 USD (or equivalent in other currencies) in annual gross revenue.
-
-3. Conditions
-
-If the Licensee ceases to be a Small Business (e.g., grows larger than the limits above), this license terminates immediately. To continue using the Software, the Licensee must obtain a commercial license from the Licensor.
-
-4. Disclaimer
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-5. Contact for Commercial Licensing
-
-If you are an Enterprise (exceeding the Small Business limits) and wish to use this software, please contact the author at: bgauryy@octocodeai.com to purchase a commercial license.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

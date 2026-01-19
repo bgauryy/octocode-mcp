@@ -9,7 +9,7 @@
 
   <a href="https://www.npmjs.com/package/octocode-mcp"><img alt="npm version" src="https://img.shields.io/npm/v/octocode-mcp?label=npm&color=cb3837"></a>
   <a href="https://www.npmjs.com/package/octocode-mcp"><img alt="npm downloads" src="https://img.shields.io/npm/dm/octocode-mcp?color=cb3837"></a>
-  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green"></a>
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue"></a>
 
   <a href="https://octocode.ai"><img src="https://img.shields.io/badge/Website-007ACC?style=for-the-badge&logo=link&logoColor=white" alt="Website"></a>
   <a href="https://www.youtube.com/@Octocode-ai"><img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube Channel"></a>
@@ -585,6 +585,24 @@ If Octocode helps your AI development workflow:
 
 ---
 
+## Privacy & Telemetry
+
+Octocode collects **de-identified** telemetry data to improve the tool, including command usage and error rates. We **never** collect source code, environment variables, or PII.
+
+You can opt-out at any time:
+
+```bash
+export OCTOCODE_TELEMETRY_DISABLED=1
+```
+
+For full details, please read our [Privacy Policy](./PRIVACY.md) and [Terms of Usage](./TERMS.md).
+
+---
+
 ## License
 
-MIT - See [LICENSE](./LICENSE) for details.
+This project is licensed under the **MIT License**.
+
+Copyright © 2026 Octocode AI.
+
+See [LICENSE](./LICENSE) for details.

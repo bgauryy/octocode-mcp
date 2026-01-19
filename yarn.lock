@@ -5569,7 +5569,7 @@ __metadata:
     "@types/node": "npm:^22.15.29"
     "@vitest/coverage-v8": "npm:^4.0.16"
     eslint: "npm:^9.18.0"
-    octocode-shared: "npm:1.0.0"
+    octocode-shared: "npm:^1.0.0"
     open: "npm:^11.0.0"
     tsx: "npm:^4.21.0"
     typescript: "npm:^5.9.3"
@@ -5617,7 +5617,7 @@ __metadata:
     html-minifier-terser: "npm:^7.2.0"
     js-yaml: "npm:^4.1.1"
     node-cache: "npm:^5.1.2"
-    octocode-shared: "npm:1.0.0"
+    octocode-shared: "npm:^1.0.0"
     octokit: "npm:^5.0.5"
     terser: "npm:^5.44.1"
     tsdown: "npm:^0.18.3"
@@ -5650,18 +5650,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"octocode-shared@npm:1.0.0":
-  version: 1.0.0
-  resolution: "octocode-shared@npm:1.0.0"
-  dependencies:
-    "@napi-rs/keyring": "npm:^1.2.0"
-    "@octokit/oauth-methods": "npm:^6.0.2"
-    "@octokit/request": "npm:^10.0.7"
-  checksum: 10c0/ef9b4927cc84821bd75e6d599999bfb14b3592cb27644a103adc7d62e841f1f5967df30283505890f4f4d0944e04569e62396f3103c3e42d553ef201529a156a
-  languageName: node
-  linkType: hard
-
-"octocode-shared@workspace:packages/octocode-shared":
+"octocode-shared@npm:^1.0.0, octocode-shared@workspace:packages/octocode-shared":
   version: 0.0.0-use.local
   resolution: "octocode-shared@workspace:packages/octocode-shared"
   dependencies:

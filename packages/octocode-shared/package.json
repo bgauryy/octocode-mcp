@@ -1,13 +1,14 @@
 {
   "name": "octocode-shared",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Shared utilities for Octocode packages - credential management and platform detection",
   "keywords": [
     "octocode",
     "shared",
     "credentials",
     "token-storage",
-    "platform"
+    "platform",
+    "config"
   ],
   "author": "Guy Bary <bgauryy@octocodeai.com>",
   "homepage": "https://octocode.ai",
@@ -17,7 +18,12 @@
     "directory": "packages/octocode-shared"
   },
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
-  "license": "PolyForm-Small-Business-1.0.0",
+  "license": "MIT",
+  "dependencies": {
+    "@napi-rs/keyring": "^1.2.0",
+    "@octokit/oauth-methods": "^6.0.2",
+    "@octokit/request": "^10.0.7"
+  },
   "devDependencies": {
     "@types/node": "^22.15.29",
     "@vitest/coverage-v8": "^4.0.16",
@@ -53,6 +59,12 @@
       "import": "./dist/session/index.js",
       "require": "./dist/session/index.js",
       "default": "./dist/session/index.js"
+    },
+    "./config": {
+      "types": "./dist/config/index.d.ts",
+      "import": "./dist/config/index.js",
+      "require": "./dist/config/index.js",
+      "default": "./dist/config/index.js"
     }
   },
   "files": [
@@ -73,10 +85,5 @@
     "typecheck": "tsc --noEmit"
   },
   "type": "module",
-  "types": "dist/index.d.ts",
-  "dependencies": {
-    "@napi-rs/keyring": "^1.2.0",
-    "@octokit/oauth-methods": "^6.0.2",
-    "@octokit/request": "^10.0.7"
-  }
+  "types": "dist/index.d.ts"
 }

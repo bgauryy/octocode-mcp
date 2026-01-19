@@ -391,6 +391,12 @@ These are primarily used for testing and administrative purposes.
 |---------------------|--------|
 | `LOG` (unset) | Enable telemetry logging (default behavior) |
 | `LOG=false` or `LOG=0` | Disable telemetry (persistence still works) |
+| `OCTOCODE_TELEMETRY_DISABLED=1` | **Preferred:** Standard way to disable telemetry |
+
+## Privacy
+
+Octocode collects de-identified usage data to improve the tool. We do NOT collect source code or PII.
+See [PRIVACY.md](../../../PRIVACY.md) for full details.
 
 No configuration is needed for session persistence itself - it's always enabled.
 

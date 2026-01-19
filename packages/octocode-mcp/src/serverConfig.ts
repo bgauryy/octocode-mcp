@@ -6,7 +6,7 @@ import {
   type FullTokenResolution,
   type GhCliTokenGetter,
 } from './utils/credentials/index.js';
-import { initializeSecureStorage } from 'octocode-shared';
+import { initializeSecureStorage, getConfigSync } from 'octocode-shared';
 import { version } from '../package.json';
 import type {
   ServerConfig,
@@ -155,15 +155,20 @@ function parseBooleanEnv(
 }
 
 /**
- * Parse a boolean environment variable that defaults to true unless explicitly set to false.
- * @param value - The environment variable value
- * @returns true unless value is explicitly 'false'
+ * Parse LOG env var with "default to true" semantics.
+ * Returns true unless explicitly set to 'false' or '0'.
+ * Returns undefined if not set (to allow config fallback).
+ * @param value - The LOG environment variable value
+ * @returns true, false, or undefined for fallback
  */
-function parseBooleanEnvDefaultTrue(value: string | undefined): boolean {
-  if (value === undefined || value === null) return true;
+function parseLoggingEnv(value: string | undefined): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
   const trimmed = value.trim().toLowerCase();
-  if (trimmed === '') return true;
-  return trimmed !== 'false' && trimmed !== '0';
+  if (trimmed === '') return undefined;
+  // Only return false if explicitly set to 'false' or '0'
+  if (trimmed === 'false' || trimmed === '0') return false;
+  // Any other value (including 'true', '1', 'yes', 'anything') means enabled
+  return true;
 }
 
 async function resolveGitHubToken(): Promise<TokenResolutionResult> {
@@ -214,23 +219,19 @@ async function resolveGitHubToken(): Promise<TokenResolutionResult> {
 // GITLAB TOKEN RESOLUTION
 // ============================================================================
 
-/** Default GitLab host */
-const DEFAULT_GITLAB_HOST = 'https://gitlab.com';
-
 // ============================================================================
-// CONFIGURATION LIMITS
+// CONFIGURATION LIMITS (from octocode-shared/config)
+// These are kept as constants for clamping, actual defaults come from getConfigSync()
 // ============================================================================
 
 /** Minimum timeout - 5 seconds (prevents accidental misconfiguration) */
 const MIN_TIMEOUT = 5000;
-/** Default timeout - 30 seconds */
-const DEFAULT_TIMEOUT = 30000;
+/** Maximum timeout - 5 minutes */
+const MAX_TIMEOUT = 300000;
 /** Minimum retries */
 const MIN_RETRIES = 0;
 /** Maximum retries */
 const MAX_RETRIES_LIMIT = 10;
-/** Default retries */
-const DEFAULT_RETRIES = 3;
 
 /**
  * Resolve GitLab token from environment variables.
@@ -253,12 +254,14 @@ function resolveGitLabToken(): GitLabTokenResolutionResult {
 }
 
 /**
- * Resolve GitLab configuration from environment variables.
+ * Resolve GitLab configuration from environment variables and global config.
+ * Priority: env vars > ~/.octocode/.octocoderc > hardcoded defaults
  * @returns GitLab configuration object
  */
 function resolveGitLabConfig(): GitLabConfig {
+  const globalConfig = getConfigSync();
   const tokenResult = resolveGitLabToken();
-  const host = process.env.GITLAB_HOST?.trim() || DEFAULT_GITLAB_HOST;
+  const host = process.env.GITLAB_HOST?.trim() || globalConfig.gitlab.host;
 
   return {
     host,
@@ -281,42 +284,77 @@ export async function initialize(): Promise<void> {
     // This must happen before any token resolution to find credentials stored by CLI
     await initializeSecureStorage();
 
+    // Load global configuration from ~/.octocode/.octocoderc
+    // This provides defaults that can be overridden by environment variables
+    const globalConfig = getConfigSync();
+
     // Resolve token once at startup for initial config (source tracking)
     // Token is NOT cached - subsequent calls to getGitHubToken() will re-resolve
     const tokenResult = await resolveGitHubToken();
 
-    // Parse logging flag (defaults to true unless explicitly 'false' or '0')
-    const isLoggingEnabled = parseBooleanEnvDefaultTrue(process.env.LOG);
+    // Parse logging flag - env vars override global config
+    // Priority: OCTOCODE_TELEMETRY_DISABLED > LOG env var > config file > defaults
+    const envTelemetryDisabled = parseBooleanEnv(
+      process.env.OCTOCODE_TELEMETRY_DISABLED,
+      undefined as unknown as boolean
+    );
+    const telemetryDisabled =
+      envTelemetryDisabled ?? !globalConfig.telemetry.enabled;
 
-    // Parse ENABLE_LOCAL with fallback to LOCAL env var
-    // Supports: '1', 'true', 'TRUE', ' true ', etc.
-    const enableLocal =
-      parseBooleanEnv(process.env.ENABLE_LOCAL, false) ||
-      parseBooleanEnv(process.env.LOCAL, false);
+    // Parse LOG with special "default to true" semantics
+    // LOG='anything' → true, LOG='false'/'0' → false, LOG=undefined → config fallback
+    const envLogging = parseLoggingEnv(process.env.LOG);
+    const isLoggingEnabled =
+      !telemetryDisabled && (envLogging ?? globalConfig.telemetry.logging);
+
+    // Parse ENABLE_LOCAL with fallback to LOCAL env var, then global config
+    // Priority: ENABLE_LOCAL > LOCAL > config file > defaults
+    const envEnableLocal =
+      parseBooleanEnv(
+        process.env.ENABLE_LOCAL,
+        undefined as unknown as boolean
+      ) ?? parseBooleanEnv(process.env.LOCAL, undefined as unknown as boolean);
+    const enableLocal = envEnableLocal ?? globalConfig.local.enabled;
+
+    // Parse tools configuration - env vars override global config
+    const envToolsToRun = parseStringArray(process.env.TOOLS_TO_RUN);
+    const envEnableTools = parseStringArray(process.env.ENABLE_TOOLS);
+    const envDisableTools = parseStringArray(process.env.DISABLE_TOOLS);
+
+    // Parse timeout - env var overrides global config
+    const envTimeout = process.env.REQUEST_TIMEOUT?.trim();
+    const timeout = Math.max(
+      MIN_TIMEOUT,
+      Math.min(
+        MAX_TIMEOUT,
+        envTimeout
+          ? parseInt(envTimeout) || globalConfig.network.timeout
+          : globalConfig.network.timeout
+      )
+    );
+
+    // Parse retries - env var overrides global config
+    const envRetries = process.env.MAX_RETRIES?.trim();
+    const maxRetries = Math.max(
+      MIN_RETRIES,
+      Math.min(
+        MAX_RETRIES_LIMIT,
+        envRetries
+          ? parseInt(envRetries) || globalConfig.network.maxRetries
+          : globalConfig.network.maxRetries
+      )
+    );
 
     config = {
       version: version,
       githubApiUrl:
-        process.env.GITHUB_API_URL?.trim() || 'https://api.github.com',
-      toolsToRun: parseStringArray(process.env.TOOLS_TO_RUN),
-      enableTools: parseStringArray(process.env.ENABLE_TOOLS),
-      disableTools: parseStringArray(process.env.DISABLE_TOOLS),
+        process.env.GITHUB_API_URL?.trim() || globalConfig.github.apiUrl,
+      toolsToRun: envToolsToRun ?? globalConfig.tools.enabled ?? undefined,
+      enableTools: envEnableTools ?? undefined,
+      disableTools: envDisableTools ?? globalConfig.tools.disabled ?? undefined,
       enableLogging: isLoggingEnabled,
-      timeout: Math.max(
-        MIN_TIMEOUT,
-        parseInt(
-          process.env.REQUEST_TIMEOUT?.trim() || String(DEFAULT_TIMEOUT)
-        ) || DEFAULT_TIMEOUT
-      ),
-      maxRetries: Math.max(
-        MIN_RETRIES,
-        Math.min(
-          MAX_RETRIES_LIMIT,
-          parseInt(
-            process.env.MAX_RETRIES?.trim() || String(DEFAULT_RETRIES)
-          ) || DEFAULT_RETRIES
-        )
-      ),
+      timeout,
+      maxRetries,
       loggingEnabled: isLoggingEnabled,
       enableLocal,
       tokenSource: tokenResult.source,
@@ -405,10 +443,12 @@ export function getGitLabToken(): string | null {
 
 /**
  * Get the GitLab host URL.
+ * Priority: env var > config file > default
  * @returns GitLab host URL (defaults to https://gitlab.com)
  */
 export function getGitLabHost(): string {
-  return process.env.GITLAB_HOST?.trim() || DEFAULT_GITLAB_HOST;
+  const globalConfig = getConfigSync();
+  return process.env.GITLAB_HOST?.trim() || globalConfig.gitlab.host;
 }
 
 /**
@@ -445,7 +485,8 @@ export function getActiveProvider(): ProviderType {
 
 /**
  * Get active provider configuration for tool execution.
- * Returns provider type and base URL based on environment.
+ * Returns provider type and base URL based on environment and global config.
+ * Priority: env vars > config file > defaults
  */
 export function getActiveProviderConfig(): {
   provider: ProviderType;
@@ -459,9 +500,15 @@ export function getActiveProviderConfig(): {
       token: getGitLabToken() ?? undefined,
     };
   }
+  const globalConfig = getConfigSync();
+  const githubApiUrl =
+    process.env.GITHUB_API_URL?.trim() || globalConfig.github.apiUrl;
+  // Only set baseUrl if it's not the default
+  const baseUrl =
+    githubApiUrl !== 'https://api.github.com' ? githubApiUrl : undefined;
   return {
     provider: 'github',
-    baseUrl: process.env.GITHUB_API_URL?.trim() || undefined,
+    baseUrl,
   };
 }
 

@@ -161,3 +161,26 @@ export {
 } from 'octocode-mcp/public';
 
 export type { TokenSourceType } from 'octocode-mcp/public';
+
+// ============================================================================
+// Session Management (for tracking usage and telemetry)
+// ============================================================================
+
+export {
+  initializeSession,
+  getSessionManager,
+  logSessionInit,
+  logToolCall,
+  logPromptCall,
+  logSessionError,
+  logRateLimit,
+  resetSessionManager,
+} from 'octocode-mcp/public';
+
+export type {
+  SessionData,
+  ToolCallData,
+  PromptCallData,
+  ErrorData,
+  RateLimitData,
+} from 'octocode-mcp/public';

@@ -1,6 +1,6 @@
 {
   "name": "octocode-cli",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "description": "Interactive CLI installer for octocode-mcp - Configure MCP servers for Cursor, Claude Desktop, and more",
   "keywords": [
     "octocode",
@@ -25,7 +25,7 @@
     "directory": "packages/octocode-cli"
   },
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
-  "license": "PolyForm-Small-Business-1.0.0",
+  "license": "MIT",
   "bin": "./out/octocode-cli.js",
   "dependencies": {
     "@inquirer/prompts": "^8.1.0",
@@ -33,7 +33,7 @@
     "@octokit/auth-oauth-device": "^8.0.3",
     "@octokit/oauth-methods": "^6.0.2",
     "@octokit/request": "^10.0.7",
-    "octocode-shared": "1.0.0",
+    "octocode-shared": "^1.0.0",
     "open": "^11.0.0"
   },
   "devDependencies": {

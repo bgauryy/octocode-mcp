@@ -52,13 +52,8 @@ export function parseAndValidate<T>(
       }
     } catch (e) {
       if (e instanceof ValidationError) throw e;
-      // Log unexpected errors for debugging, but continue gracefully
-      // This typically happens when JSON.parse fails - fall through to single query mode
-      console.debug('[QueryParser] JSON parsing failed, trying single query mode', {
-        error: e instanceof Error ? e.message : String(e),
-        input: typeof query.queries === 'string' ? String(query.queries).slice(0, 100) : typeof query.queries,
-      });
-      // Fall through to single query parsing if JSON parse fails
+      // JSON.parse failed - fall through to single query mode silently
+      // (avoid logging untrusted input in production)
     }
   }
 

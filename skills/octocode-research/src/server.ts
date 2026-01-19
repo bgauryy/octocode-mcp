@@ -4,27 +4,36 @@ import { toolsRoutes } from './routes/tools.js';
 import { promptsRoutes } from './routes/prompts.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/logger.js';
-import { stopContextCleanup } from './middleware/contextPropagation.js';
-import { initializeProviders } from './index.js';
+import { initializeProviders, initializeSession, logSessionInit } from './index.js';
 import { initializeMcpContent } from './mcpCache.js';
-import { getLogsPath } from './utils/logger.js';
-import { getAllCircuitStates } from './utils/circuitBreaker.js';
+import { getLogsPath, initializeLogger } from './utils/logger.js';
+import { getAllCircuitStates, clearAllCircuits, stopCircuitCleanup } from './utils/circuitBreaker.js';
 import { agentLog, successLog, errorLog, warnLog, dimLog } from './utils/colors.js';
+import { fireAndForgetWithTimeout } from './utils/asyncTimeout.js';
+import { errorQueue } from './utils/errorQueue.js';
 
 const PORT = 1987;
 let server: Server | null = null;
 
 export async function createServer(): Promise<Express> {
+  // Initialize logger first (sync for startup, async after)
+  initializeLogger();
+  
   // Load mcpContent ONCE at startup (includes initialize())
   await initializeMcpContent();
   await initializeProviders();
-  
+
+  // Initialize session for telemetry tracking
+  initializeSession();
+
   const app = express();
   app.use(express.json());
   app.use(requestLogger);
   
   app.get('/health', (_req: Request, res: Response) => {
     const memoryUsage = process.memoryUsage();
+    const recentErrors = errorQueue.getRecent(5);
+
     res.json({
       status: 'ok',
       port: PORT,
@@ -36,6 +45,14 @@ export async function createServer(): Promise<Express> {
         rss: Math.round(memoryUsage.rss / 1024 / 1024),
       },
       circuits: getAllCircuitStates(),
+      errors: {
+        queueSize: errorQueue.size,
+        recentErrors: recentErrors.map((e) => ({
+          timestamp: e.timestamp.toISOString(),
+          context: e.context,
+          message: e.error.message,
+        })),
+      },
     });
   });
   
@@ -44,11 +61,11 @@ export async function createServer(): Promise<Express> {
   app.use('/prompts', promptsRoutes);
 
   // 404 handler for undefined routes
-  app.use((req: Request, res: Response) => {
+  app.use((_req: Request, res: Response) => {
     res.status(404).json({
       success: false,
       error: {
-        message: `Route not found: ${req.method} ${req.path}`,
+        message: 'Route not found',
         code: 'NOT_FOUND',
         availableRoutes: [
           'GET  /health',
@@ -72,9 +89,13 @@ export async function createServer(): Promise<Express> {
 function gracefulShutdown(signal: string): void {
   // Agent messages in PURPLE
   console.log(agentLog(`\n🛑 Received ${signal}. Starting graceful shutdown...`));
-  
-  stopContextCleanup();
-  console.log(successLog('✅ Context cleanup stopped'));
+
+  // Stop periodic cleanup interval first
+  stopCircuitCleanup();
+  console.log(successLog('✅ Circuit cleanup interval stopped'));
+
+  clearAllCircuits();
+  console.log(successLog('✅ Circuit breakers cleared'));
   
   if (server) {
     server.close((err) => {
@@ -113,6 +134,13 @@ export async function startServer(): Promise<void> {
       console.log(dimLog(`  POST /tools/call/:toolName    - Execute tool`));
       console.log(dimLog(`  GET  /prompts/list            - List prompts`));
       console.log(dimLog(`  GET  /prompts/info/:name      - Get prompt content`));
+
+      // Log session initialization after server is ready
+      fireAndForgetWithTimeout(
+        () => logSessionInit(),
+        5000,
+        'logSessionInit'
+      );
 
       resolve();
     });

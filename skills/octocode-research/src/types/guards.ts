@@ -8,7 +8,7 @@
 /**
  * Check if value is a non-empty string
  */
-function isNonEmptyString(value: unknown): value is string {
+export function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 

@@ -14,7 +14,6 @@
 
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { getMcpContent } from '../mcpCache.js';
-import { QuickResult } from '../utils/responseBuilder.js';
 import { transformToJsonSchema } from '../types/mcp.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { ZodTypeAny } from 'zod';
@@ -49,6 +48,7 @@ import {
   lspGotoDefinition,
   lspFindReferences,
   lspCallHierarchy,
+  logToolCall,
 } from '../index.js';
 import {
   withGitHubResilience,
@@ -57,6 +57,8 @@ import {
   withPackageResilience,
 } from '../utils/resilience.js';
 import { parseToolResponse, parseToolResponseBulk } from '../utils/responseParser.js';
+import { fireAndForgetWithTimeout } from '../utils/asyncTimeout.js';
+import { validateToolCallBody, getValidationHints } from '../validation/toolCallSchema.js';
 
 export const toolsRoutes = Router();
 
@@ -120,22 +122,25 @@ function getToolJsonSchema(toolName: string): Record<string, unknown> | null {
  */
 toolsRoutes.get('/list', (_req: Request, res: Response) => {
   res.json({
-    tools: [
-      { name: 'githubSearchCode', description: 'Search code in GitHub repos' },
-      { name: 'githubGetFileContent', description: 'Read file from GitHub repo' },
-      { name: 'githubViewRepoStructure', description: 'View GitHub repo tree' },
-      { name: 'githubSearchRepositories', description: 'Search GitHub repositories' },
-      { name: 'githubSearchPullRequests', description: 'Search pull requests' },
-      { name: 'packageSearch', description: 'Search npm/PyPI packages' },
-      { name: 'localSearchCode', description: 'Search local code with ripgrep' },
-      { name: 'localGetFileContent', description: 'Read local file content' },
-      { name: 'localFindFiles', description: 'Find files by pattern/metadata' },
-      { name: 'localViewStructure', description: 'View local directory tree' },
-      { name: 'lspGotoDefinition', description: 'Go to symbol definition' },
-      { name: 'lspFindReferences', description: 'Find all symbol references' },
-      { name: 'lspCallHierarchy', description: 'Get call hierarchy' },
-    ],
-    _hint: 'GET /tools/info/{name} for full schema before calling',
+    success: true,
+    data: {
+      tools: [
+        { name: 'githubSearchCode', description: 'Search code in GitHub repos' },
+        { name: 'githubGetFileContent', description: 'Read file from GitHub repo' },
+        { name: 'githubViewRepoStructure', description: 'View GitHub repo tree' },
+        { name: 'githubSearchRepositories', description: 'Search GitHub repositories' },
+        { name: 'githubSearchPullRequests', description: 'Search pull requests' },
+        { name: 'packageSearch', description: 'Search npm/PyPI packages' },
+        { name: 'localSearchCode', description: 'Search local code with ripgrep' },
+        { name: 'localGetFileContent', description: 'Read local file content' },
+        { name: 'localFindFiles', description: 'Find files by pattern/metadata' },
+        { name: 'localViewStructure', description: 'View local directory tree' },
+        { name: 'lspGotoDefinition', description: 'Go to symbol definition' },
+        { name: 'lspFindReferences', description: 'Find all symbol references' },
+        { name: 'lspCallHierarchy', description: 'Get call hierarchy' },
+      ],
+    },
+    hints: ['GET /tools/info/{name} for full schema before calling'],
   });
 });
 
@@ -181,17 +186,17 @@ toolsRoutes.get('/info', async (
       toolNames,
       tools,
     };
-    
+
     if (includeHints) {
       response.baseHints = content.baseHints;
       response.genericErrorHints = content.genericErrorHints;
     }
-    
-    res.json(QuickResult.success(
-      `Found ${toolNames.length} tools`,
-      response,
-      ['Use /tools/info/:toolName for specific tool details']
-    ));
+
+    res.json({
+      success: true,
+      data: response,
+      hints: ['Use /tools/info/:{{TOOL_NAME}} to get the scheme and description before using it'],
+    });
   } catch (error) {
     next(error);
   }
@@ -229,13 +234,15 @@ toolsRoutes.get('/info/:toolName', async (
 
     if (!tool) {
       const availableTools = Object.keys(content.tools);
-      res.status(404).json(QuickResult.empty(
-        `Tool not found: ${toolName}`,
-        [
+      res.status(404).json({
+        success: false,
+        data: null,
+        hints: [
+          `Tool not found: ${toolName}`,
           `Available tools: ${availableTools.slice(0, 5).join(', ')}...`,
           'Check spelling or use /tools/list to see all tools',
-        ]
-      ));
+        ],
+      });
       return;
     }
 
@@ -258,17 +265,17 @@ toolsRoutes.get('/info/:toolName', async (
     }
 
     if (includeHints) {
-      result.hints = {
+      result.toolHints = {
         hasResults: tool.hints.hasResults,
         empty: tool.hints.empty,
       };
     }
 
-    res.json(QuickResult.success(
-      `Tool: ${tool.name}`,
-      result,
-      ['Review schema carefully before calling this tool']
-    ));
+    res.json({
+      success: true,
+      data: result,
+      hints: ['Review schema carefully before calling this tool'],
+    });
   } catch (error) {
     next(error);
   }
@@ -284,17 +291,17 @@ toolsRoutes.get('/metadata', async (
 ) => {
   try {
     const content = getMcpContent();
-    
-    res.json(QuickResult.success(
-      'Metadata summary',
-      {
+
+    res.json({
+      success: true,
+      data: {
         instructions: content.instructions,
         toolCount: Object.keys(content.tools).length,
         promptCount: Object.keys(content.prompts).length,
         hasBaseSchema: !!content.baseSchema,
       },
-      ['Use /tools/info for detailed tool information']
-    ));
+      hints: ['Use /tools/info for detailed tool information'],
+    });
   } catch (error) {
     next(error);
   }
@@ -324,11 +331,13 @@ toolsRoutes.get('/system', async (
     const content = getMcpContent();
 
     res.json({
-      instructions: content.instructions,
-      _meta: {
+      success: true,
+      data: {
+        instructions: content.instructions,
         charCount: content.instructions.length,
         version: PACKAGE_VERSION,
       },
+      hints: ['Load this system prompt FIRST before using tools'],
     });
   } catch (error) {
     next(error);
@@ -339,8 +348,31 @@ toolsRoutes.get('/system', async (
 // Tool Registry - Maps tool names to functions and resilience wrappers
 // ============================================================================
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-type ToolFn = (params: { queries: any[] }) => Promise<any>;
+import type { BaseQueryParams, QueryParamsResult } from '../types/toolTypes.js';
+
+/**
+ * Tool query input type - extends base query params.
+ */
+interface ToolQuery extends BaseQueryParams {
+  [key: string]: unknown;
+}
+
+/**
+ * Standard tool response structure.
+ */
+interface ToolResponse {
+  content?: Array<{ type: string; text?: string }>;
+  isError?: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * Tool function type with proper generics.
+ */
+type ToolFn<TQuery extends ToolQuery = ToolQuery> = (
+  params: QueryParamsResult<TQuery>
+) => Promise<ToolResponse>;
+
 type ResilienceFn = <T>(fn: () => Promise<T>, toolName: string) => Promise<T>;
 
 interface ToolEntry {
@@ -371,7 +403,46 @@ const TOOL_REGISTRY: Record<string, ToolEntry> = {
   // Package tools
   packageSearch: { fn: packageSearch as ToolFn, resilience: withPackageResilience, category: 'package' },
 };
-/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/**
+ * Extract repository identifiers from query parameters for session logging
+ */
+function extractReposFromQueries(queries: unknown[]): string[] {
+  const repos: string[] = [];
+  for (const query of queries) {
+    const q = query as Record<string, unknown>;
+    // GitHub repos: owner/repo format
+    if (q.owner && q.repo) {
+      repos.push(`${q.owner}/${q.repo}`);
+    }
+    // Local paths
+    if (q.path && typeof q.path === 'string') {
+      repos.push(q.path);
+    }
+    // LSP uris
+    if (q.uri && typeof q.uri === 'string') {
+      repos.push(q.uri);
+    }
+  }
+  return [...new Set(repos)]; // Deduplicate
+}
+
+/**
+ * Extract research parameters from the first query for logging
+ */
+function extractResearchParams(queries: unknown[]): {
+  mainResearchGoal?: string;
+  researchGoal?: string;
+  reasoning?: string;
+} {
+  if (queries.length === 0) return {};
+  const q = queries[0] as Record<string, unknown>;
+  return {
+    mainResearchGoal: q.mainResearchGoal as string | undefined,
+    researchGoal: q.researchGoal as string | undefined,
+    reasoning: q.reasoning as string | undefined,
+  };
+}
 
 /**
  * POST /tools/call/:toolName - Execute a tool directly with JSON body
@@ -407,55 +478,82 @@ toolsRoutes.post('/call/:toolName', async (
   res: Response,
   next: NextFunction
 ) => {
+  // Set up AbortController for request cancellation
+  const abortController = new AbortController();
+  let isAborted = false;
+
+  req.on('close', () => {
+    if (!res.writableEnded) {
+      isAborted = true;
+      abortController.abort();
+    }
+  });
+
   try {
     const { toolName } = req.params;
-    const body = req.body as { queries?: unknown[] };
 
     // Validate tool exists
     const toolEntry = TOOL_REGISTRY[toolName];
     if (!toolEntry) {
       const availableTools = Object.keys(TOOL_REGISTRY);
-      res.status(404).json(QuickResult.empty(
-        `Tool not found: ${toolName}`,
-        [
+      res.status(404).json({
+        tool: toolName,
+        success: false,
+        data: null,
+        hints: [
+          `Tool not found: ${toolName}`,
           `Available tools: ${availableTools.join(', ')}`,
           'Check spelling or use GET /tools/list',
-        ]
-      ));
+        ],
+      });
       return;
     }
 
-    // Validate queries array
-    if (!body.queries || !Array.isArray(body.queries) || body.queries.length === 0) {
-      res.status(400).json(QuickResult.empty(
-        'Missing or invalid queries array',
-        [
-          'Body must contain: { "queries": [{ ... }] }',
-          `Use GET /tools/info/${toolName} for schema`,
-        ]
-      ));
+    // Validate request body using schema
+    const validation = validateToolCallBody(req.body);
+    if (!validation.success) {
+      res.status(400).json({
+        tool: toolName,
+        success: false,
+        data: null,
+        hints: getValidationHints(toolName, validation.error!),
+      });
       return;
     }
 
-    // Validate query limit (1-3)
-    if (body.queries.length > 3) {
-      res.status(400).json(QuickResult.empty(
-        'Too many queries (max 3)',
-        ['Split into multiple requests for better performance']
-      ));
-      return;
-    }
+    const { queries } = validation.data!;
+
+    // Check if request was aborted before execution
+    if (isAborted) return;
 
     // Execute tool with resilience
     const rawResult = await toolEntry.resilience(
-      () => toolEntry.fn({ queries: body.queries! }),
+      () => toolEntry.fn({ queries }),
       toolName
+    );
+
+    // Check if request was aborted after execution
+    if (isAborted) return;
+
+    // Log tool call for session telemetry
+    const repos = extractReposFromQueries(queries);
+    const researchParams = extractResearchParams(queries);
+    fireAndForgetWithTimeout(
+      () => logToolCall(
+        toolName,
+        repos,
+        researchParams.mainResearchGoal,
+        researchParams.researchGoal,
+        researchParams.reasoning
+      ),
+      5000,
+      'logToolCall'
     );
 
     const mcpResponse = rawResult as { content: Array<{ type: string; text: string }> };
 
     // For multiple queries, return bulk response format
-    if (body.queries.length > 1) {
+    if (queries.length > 1) {
       const bulkParsed = parseToolResponseBulk(mcpResponse);
 
       res.status(bulkParsed.isError ? 500 : 200).json({
@@ -481,6 +579,8 @@ toolsRoutes.post('/call/:toolName', async (
       research: parsed.research,
     });
   } catch (error) {
+    // Skip error handling if request was aborted
+    if (isAborted) return;
     next(error);
   }
 });

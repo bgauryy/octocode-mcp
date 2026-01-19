@@ -4,6 +4,14 @@
  * @module utils/retry
  */
 
+import {
+  getErrorStatus,
+  getErrorHeader,
+  hasStatusIn,
+  hasCodeIn,
+  messageMatches,
+} from '../types/errorGuards.js';
+
 export interface RetryConfig {
   maxAttempts: number;
   initialDelayMs: number;
@@ -161,101 +169,74 @@ const SYMBOL_NOT_FOUND_PATTERNS = [/symbol\s*not\s*found/i, /definition\s*not\s*
  * Check if error indicates GitHub rate limiting
  */
 function isRateLimited(err: unknown): boolean {
-  const error = err as { status?: number; message?: string };
-
   // Check status codes first (more reliable)
-  if (error?.status && RATE_LIMIT_CODES.includes(error.status as 403 | 429)) {
+  if (hasStatusIn(err, RATE_LIMIT_CODES)) {
     return true;
   }
 
   // Fall back to message patterns
-  if (error?.message) {
-    return RATE_LIMIT_PATTERNS.some((pattern) => pattern.test(error.message!));
-  }
-
-  return false;
+  return messageMatches(err, RATE_LIMIT_PATTERNS);
 }
 
 /**
  * Check if error indicates LSP server not ready
  */
 function isLspNotReady(err: unknown): boolean {
-  const error = err as { message?: string; code?: string };
-
   // Check error codes first (more reliable)
-  if (error?.code && LSP_ERROR_CODES.includes(error.code as (typeof LSP_ERROR_CODES)[number])) {
+  if (hasCodeIn(err, LSP_ERROR_CODES)) {
     return true;
   }
 
   // Fall back to message patterns
-  if (error?.message) {
-    return LSP_ERROR_PATTERNS.some((pattern) => pattern.test(error.message!));
-  }
-
-  return false;
+  return messageMatches(err, LSP_ERROR_PATTERNS);
 }
 
 /**
  * Check if error is a timeout
  */
 function isTimeout(err: unknown): boolean {
-  const error = err as { code?: string; message?: string };
-
   // Check error codes first (more reliable)
-  if (error?.code && TIMEOUT_CODES.includes(error.code as (typeof TIMEOUT_CODES)[number])) {
+  if (hasCodeIn(err, TIMEOUT_CODES)) {
     return true;
   }
 
   // Fall back to message patterns
-  if (error?.message) {
-    return TIMEOUT_PATTERNS.some((pattern) => pattern.test(error.message!));
-  }
-
-  return false;
+  return messageMatches(err, TIMEOUT_PATTERNS);
 }
 
 /**
  * Check if error is a server error (5xx)
  */
 function isServerError(err: unknown): boolean {
-  const error = err as { status?: number };
-  const status = error?.status;
-  return typeof status === 'number' && status >= 500 && status < 600;
+  const status = getErrorStatus(err);
+  return status !== undefined && status >= 500 && status < 600;
 }
 
 /**
  * Check if file is busy/locked
  */
 function isFileBusy(err: unknown): boolean {
-  const error = err as { code?: string };
-  return error?.code != null && FILE_BUSY_CODES.includes(error.code as (typeof FILE_BUSY_CODES)[number]);
+  return hasCodeIn(err, FILE_BUSY_CODES);
 }
 
 /**
  * Check if connection was refused
  */
 function isConnectionRefused(err: unknown): boolean {
-  const error = err as { code?: string };
-  return error?.code != null && CONNECTION_REFUSED_CODES.includes(error.code as (typeof CONNECTION_REFUSED_CODES)[number]);
+  return hasCodeIn(err, CONNECTION_REFUSED_CODES);
 }
 
 /**
  * Check if symbol was not found (LSP)
  */
 export function isSymbolNotFound(err: unknown): boolean {
-  const error = err as { message?: string; code?: string };
-
   // Check error codes first (more reliable)
-  if (error?.code && SYMBOL_NOT_FOUND_CODES.includes(error.code as (typeof SYMBOL_NOT_FOUND_CODES)[number])) {
+  if (hasCodeIn(err, SYMBOL_NOT_FOUND_CODES)) {
     return true;
   }
 
   // Fall back to message patterns
-  if (error?.message) {
-    return SYMBOL_NOT_FOUND_PATTERNS.some((pattern) => pattern.test(error.message!));
-  }
-
-  return false;
+  return messageMatches(err, SYMBOL_NOT_FOUND_PATTERNS);
 }
 
 // =============================================================================
@@ -270,8 +251,7 @@ const sleep = (ms: number): Promise<void> =>
  */
 export function getRetryAfter(err: unknown): number | null {
   if (isRateLimited(err)) {
-    const error = err as { headers?: Record<string, string> };
-    const retryAfter = error?.headers?.['retry-after'];
+    const retryAfter = getErrorHeader(err, 'retry-after');
     if (retryAfter) {
       return parseInt(retryAfter, 10) * 1000;
     }
