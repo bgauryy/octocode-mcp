@@ -1,6 +1,6 @@
 {
-  "name": "octocode-research",
-  "version": "2.0.0",
+  "name": "octocode-skill",
+  "version": "1.0.0",
   "type": "module",
   "description": "Code research server using octocode tools - HTTP API on port 1987",
   "author": "Guy Bary <bgauryy@octocodeai.com>",
@@ -34,8 +34,6 @@
     "scripts",
     "src",
     "SKILL.md",
-    "scripts",
-    "LICENSE",
     "tsconfig.json"
   ],
   "scripts": {
