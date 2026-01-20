@@ -30,12 +30,10 @@ export interface StoredCredentials {
 }
 
 /**
- * Result from storing credentials (keyring-first strategy)
+ * Result from storing credentials
  */
 export interface StoreResult {
   success: boolean;
-  /** True if fallback to encrypted file was used (keyring unavailable/failed) */
-  insecureStorageUsed: boolean;
 }
 
 /**
@@ -43,12 +41,11 @@ export interface StoreResult {
  */
 export interface DeleteResult {
   success: boolean;
-  deletedFromKeyring: boolean;
   deletedFromFile: boolean;
 }
 
 /**
- * Storage interface for credentials (file fallback)
+ * Storage interface for credentials (file storage)
  */
 export interface CredentialsStore {
   version: number;
@@ -60,15 +57,13 @@ export interface CredentialsStore {
  *
  * Priority order:
  * 1. Environment variables (OCTOCODE_TOKEN > GH_TOKEN > GITHUB_TOKEN)
- * 2. Native keychain (most secure for desktop)
- * 3. Encrypted file fallback (secure for headless)
- * 4. gh CLI stored token (external fallback)
+ * 2. Encrypted file storage (~/.octocode/credentials.json)
+ * 3. gh CLI stored token (external fallback)
  */
 export type TokenSource =
   | 'env:OCTOCODE_TOKEN'
   | 'env:GH_TOKEN'
   | 'env:GITHUB_TOKEN'
-  | 'keychain'
   | 'file'
   | 'gh-cli'
   | null;

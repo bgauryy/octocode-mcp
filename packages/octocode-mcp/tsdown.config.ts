@@ -24,9 +24,6 @@ const serverConfig = defineConfig({
   external: [
     ...builtinModules,
     ...builtinModules.map(m => `node:${m}`),
-    'keytar', // Native module - cannot be bundled
-    '@napi-rs/keyring', // Native module - cannot be bundled
-    /^@napi-rs\/keyring-/, // Platform-specific native bindings
   ],
 
   // Inline dynamic imports to prevent chunk files that may not be included in npm publish
@@ -76,9 +73,6 @@ const publicConfig = defineConfig({
   external: [
     ...builtinModules,
     ...builtinModules.map(m => `node:${m}`),
-    'keytar', // Native module - cannot be bundled
-    '@napi-rs/keyring', // Native module - cannot be bundled
-    /^@napi-rs\/keyring-/, // Platform-specific native bindings
   ],
 
   // Inline dynamic imports to prevent chunk files
@@ -115,9 +109,6 @@ const responsesConfig = defineConfig({
   external: [
     ...builtinModules,
     ...builtinModules.map(m => `node:${m}`),
-    'keytar', // Native module - cannot be bundled
-    '@napi-rs/keyring', // Native module - cannot be bundled
-    /^@napi-rs\/keyring-/, // Platform-specific native bindings
   ],
 
   // Inline dynamic imports to prevent chunk files

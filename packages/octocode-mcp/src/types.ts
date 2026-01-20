@@ -121,6 +121,12 @@ export interface QueryError {
 export interface BulkResponseConfig {
   toolName: string;
   keysPriority?: string[];
+  /**
+   * Maximum number of concurrent requests during bulk operations.
+   * Lower values reduce rate limiting risk, higher values improve throughput.
+   * @default 3
+   */
+  concurrency?: number;
 }
 
 /** Result of a promise with error isolation */

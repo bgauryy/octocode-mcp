@@ -211,9 +211,10 @@ export async function withCircuitBreaker<T>(
       // Log rate limit/circuit open event to session telemetry
       fireAndForgetWithTimeout(
         () => logRateLimit({
-          provider: name,
-          endpoint: 'circuit_breaker',
-          retryAfter: config.resetTimeoutMs / 1000,
+          limit_type: 'secondary',
+          api_method: 'circuit_breaker',
+          retry_after_seconds: config.resetTimeoutMs / 1000,
+          details: `Circuit '${name}' back to OPEN after half-open failure`
         }),
         5000,
         'logRateLimit'
@@ -227,9 +228,10 @@ export async function withCircuitBreaker<T>(
       // Log rate limit/circuit open event to session telemetry
       fireAndForgetWithTimeout(
         () => logRateLimit({
-          provider: name,
-          endpoint: 'circuit_breaker',
-          retryAfter: config.resetTimeoutMs / 1000,
+          limit_type: 'secondary',
+          api_method: 'circuit_breaker',
+          retry_after_seconds: config.resetTimeoutMs / 1000,
+          details: `Circuit '${name}' OPENED after ${circuit.failures} failures`
         }),
         5000,
         'logRateLimit'

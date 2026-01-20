@@ -1,11 +1,11 @@
 /**
  * Token Storage Utility
  *
- * Stores OAuth tokens securely using:
- * 1. System keychain (native OS commands) - preferred for desktop environments
- * 2. Encrypted file fallback (~/.octocode/credentials.json) - for CI/server
+ * Stores OAuth tokens securely using encrypted file storage (~/.octocode/credentials.json).
+ * Uses AES-256-GCM encryption with a random key stored in ~/.octocode/.key.
  *
- * Behavior matches gh CLI's credential storage approach.
+ * This provides a pure JavaScript solution that works across all environments
+ * (CI, containers, SSH, desktop) without native dependencies.
  */
 
 import {
@@ -28,57 +28,24 @@ import type {
   OAuthToken,
 } from './types.js';
 import { HOME } from '../platform/index.js';
-import * as keychain from './keychain.js';
+
+/**
+ * Mask sensitive data in error messages to prevent token leakage in logs.
+ * Matches common token patterns (GitHub tokens, OAuth tokens, etc.)
+ */
+function maskErrorMessage(message: string): string {
+  // Mask GitHub tokens (ghp_, gho_, ghu_, ghs_, ghr_ prefixes)
+  // Mask generic long alphanumeric strings that look like tokens
+  return message
+    .replace(/\b(ghp_|gho_|ghu_|ghs_|ghr_)[a-zA-Z0-9]{36,}\b/g, '***MASKED***')
+    .replace(/\b[a-zA-Z0-9]{40,}\b/g, '***MASKED***');
+}
 
 // Default OAuth client ID for octocode (same as CLI)
 const DEFAULT_CLIENT_ID = '178c6fc778ccc68e1d6a';
 const DEFAULT_HOSTNAME = 'github.com';
 
-// ============================================================================
-// TIMEOUT UTILITIES (like gh CLI's 3 second timeout)
-// ============================================================================
-
-const KEYRING_TIMEOUT_MS = 3000;
-
-/**
- * Timeout error for keyring operations
- */
-export class TimeoutError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'TimeoutError';
-  }
-}
-
-/**
- * Wrap a promise with a timeout (like gh CLI's keyring timeout)
- */
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new TimeoutError(`Operation timed out after ${ms}ms`)),
-        ms
-      )
-    ),
-  ]);
-}
-
-// Check if native keychain is available
-let _keychainAvailable: boolean | null = null;
-
-function checkKeychainAvailable(): boolean {
-  if (_keychainAvailable === null) {
-    _keychainAvailable = keychain.isKeychainAvailable();
-  }
-  return _keychainAvailable;
-}
-
-// Service name for keychain storage (like gh uses "gh:github.com")
-const KEYCHAIN_SERVICE = 'octocode-cli';
-
-// Storage constants for file fallback
+// Storage constants for file storage
 export const OCTOCODE_DIR = join(HOME, '.octocode');
 export const CREDENTIALS_FILE = join(OCTOCODE_DIR, 'credentials.json');
 export const KEY_FILE = join(OCTOCODE_DIR, '.key');
@@ -210,131 +177,8 @@ export function hasEnvToken(): boolean {
   return getTokenFromEnv() !== null;
 }
 
-// Track storage mode
-let _useSecureStorage: boolean | null = null;
-let _keychainInitialized = false;
-
-/**
- * Initialize secure storage by checking keychain availability.
- * Call this before using any credential functions to ensure keychain is checked.
- *
- * Note: Migration from file to keychain happens lazily on first credential access,
- * not at startup. This avoids triggering keychain permission prompts on every app launch.
- *
- * @returns true if secure storage (native keychain) is available
- */
-export async function initializeSecureStorage(): Promise<boolean> {
-  if (_keychainInitialized) {
-    return _useSecureStorage ?? false;
-  }
-
-  _keychainInitialized = true;
-  _useSecureStorage = checkKeychainAvailable();
-
-  // Note: Migration is now lazy - happens on first getCredentials() call
-  // This prevents keychain permission prompts on every app startup
-
-  return _useSecureStorage;
-}
-
-/**
- * Check if secure storage (native keychain) is available
- */
-export function isSecureStorageAvailable(): boolean {
-  if (_useSecureStorage !== null) {
-    return _useSecureStorage;
-  }
-
-  // Check current keychain availability
-  _useSecureStorage = checkKeychainAvailable();
-  return _useSecureStorage;
-}
-
-/**
- * Force set secure storage availability (for testing)
- * @internal
- */
-export function _setSecureStorageAvailable(available: boolean): void {
-  _useSecureStorage = available;
-  _keychainAvailable = available;
-  _keychainInitialized = true;
-}
-
-/**
- * Reset secure storage state (for testing)
- * @internal
- */
-export function _resetSecureStorageState(): void {
-  _useSecureStorage = null;
-  _keychainAvailable = null;
-  _keychainInitialized = false;
-}
-
 // ============================================================================
-// NATIVE KEYCHAIN SECURE STORAGE (Primary)
-// ============================================================================
-
-/**
- * Store credentials in system keychain
- */
-async function keychainStore(
-  hostname: string,
-  credentials: StoredCredentials
-): Promise<void> {
-  if (!checkKeychainAvailable()) {
-    throw new Error('Keychain not available');
-  }
-
-  const data = JSON.stringify(credentials);
-  await keychain.setPassword(KEYCHAIN_SERVICE, hostname, data);
-}
-
-/**
- * Get credentials from system keychain
- */
-async function keychainGet(
-  hostname: string
-): Promise<StoredCredentials | null> {
-  if (!checkKeychainAvailable()) return null;
-
-  try {
-    const data = await keychain.getPassword(KEYCHAIN_SERVICE, hostname);
-    if (!data) return null;
-    return JSON.parse(data) as StoredCredentials;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Delete credentials from system keychain
- */
-async function keychainDelete(hostname: string): Promise<boolean> {
-  if (!checkKeychainAvailable()) return false;
-
-  try {
-    return await keychain.deletePassword(KEYCHAIN_SERVICE, hostname);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * List all stored hostnames from keychain
- */
-async function keychainList(): Promise<string[]> {
-  if (!checkKeychainAvailable()) return [];
-
-  try {
-    const credentials = await keychain.findCredentials(KEYCHAIN_SERVICE);
-    return credentials.map(c => c.account);
-  } catch {
-    return [];
-  }
-}
-
-// ============================================================================
-// FILE-BASED ENCRYPTED STORAGE (Fallback)
+// FILE-BASED ENCRYPTED STORAGE
 // ============================================================================
 
 /**
@@ -421,7 +265,8 @@ export function readCredentialsStore(): CredentialsStore {
     );
     console.error(`  File: ${CREDENTIALS_FILE}`);
     if (error instanceof Error && error.message) {
-      console.error(`  Reason: ${error.message}\n`);
+      // Mask potential sensitive data in error messages
+      console.error(`  Reason: ${maskErrorMessage(error.message)}\n`);
     }
     return { version: 1, credentials: {} };
   }
@@ -435,38 +280,6 @@ function writeCredentialsStore(store: CredentialsStore): void {
 
   const encrypted = encrypt(JSON.stringify(store, null, 2));
   writeFileSync(CREDENTIALS_FILE, encrypted, { mode: 0o600 });
-}
-
-// ============================================================================
-// FILE CLEANUP HELPERS (for keyring-first strategy)
-// ============================================================================
-
-/**
- * Remove credentials from file storage (used after successful keyring store)
- */
-function removeFromFileStorage(hostname: string): boolean {
-  try {
-    const store = readCredentialsStore();
-    if (store.credentials[hostname]) {
-      delete store.credentials[hostname];
-
-      // Clean up files if no more credentials remain
-      if (Object.keys(store.credentials).length === 0) {
-        cleanupKeyFile();
-      } else {
-        writeCredentialsStore(store);
-      }
-      return true;
-    }
-    return false;
-  } catch (err) {
-    console.warn(
-      `[token-storage] Failed to remove from file storage: ${
-        err instanceof Error ? err.message : String(err)
-      }`
-    );
-    return false;
-  }
 }
 
 /**
@@ -486,30 +299,6 @@ function cleanupKeyFile(): void {
 }
 
 // ============================================================================
-// MIGRATION: Legacy file to keychain
-// ============================================================================
-
-/**
- * Migrate a single credential from file to keychain (lazy migration)
- * Called on first access to a file-stored credential.
- */
-async function migrateSingleCredential(
-  hostname: string,
-  credentials: StoredCredentials
-): Promise<void> {
-  try {
-    // Store in keychain
-    await withTimeout(keychainStore(hostname, credentials), KEYRING_TIMEOUT_MS);
-
-    // Remove from file storage after successful migration
-    removeFromFileStorage(hostname);
-  } catch {
-    // Migration failed - credential remains in file storage
-    // Don't log to avoid noise during normal operation
-  }
-}
-
-// ============================================================================
 // PUBLIC API
 // ============================================================================
 
@@ -524,15 +313,9 @@ function normalizeHostname(hostname: string): string {
 }
 
 /**
- * Store credentials using keyring-first strategy (like gh CLI)
+ * Store credentials using encrypted file storage
  *
- * Flow:
- * 1. Try keyring with timeout
- * 2. On success: remove from file storage (clean migration)
- * 3. On failure: fallback to encrypted file storage
- * 4. Invalidate cache to ensure fresh reads
- *
- * @returns StoreResult with insecureStorageUsed flag
+ * @returns StoreResult with success status
  */
 export async function storeCredentials(
   credentials: StoredCredentials
@@ -544,45 +327,21 @@ export async function storeCredentials(
     updatedAt: new Date().toISOString(),
   };
 
-  // 1. Try keyring FIRST (with timeout) - like gh CLI
-  if (isSecureStorageAvailable()) {
-    try {
-      await withTimeout(
-        keychainStore(hostname, normalizedCredentials),
-        KEYRING_TIMEOUT_MS
-      );
-
-      // 2. SUCCESS: Clean up file storage (single source of truth)
-      removeFromFileStorage(hostname);
-
-      // 3. Invalidate cache for this hostname
-      invalidateCredentialsCache(hostname);
-
-      return { success: true, insecureStorageUsed: false };
-    } catch (err) {
-      console.warn(
-        `[token-storage] Keyring storage failed, using file fallback: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      );
-    }
-  }
-
-  // 4. FALLBACK: Encrypted file storage
   try {
     const store = readCredentialsStore();
     store.credentials[hostname] = normalizedCredentials;
     writeCredentialsStore(store);
 
-    // 5. Invalidate cache for this hostname
+    // Invalidate cache for this hostname
     invalidateCredentialsCache(hostname);
 
-    return { success: true, insecureStorageUsed: true };
+    return { success: true };
   } catch (fileError) {
-    console.error(`[token-storage] CRITICAL: All storage methods failed!`);
-    console.error(
-      `  Error: ${fileError instanceof Error ? fileError.message : String(fileError)}`
-    );
+    console.error(`[token-storage] CRITICAL: Storage failed!`);
+    // Mask potential sensitive data in error messages
+    const errorMsg =
+      fileError instanceof Error ? fileError.message : String(fileError);
+    console.error(`  Error: ${maskErrorMessage(errorMsg)}`);
     throw new Error('Failed to store credentials');
   }
 }
@@ -596,13 +355,12 @@ export interface GetCredentialsOptions {
 }
 
 /**
- * Get credentials using keyring-first strategy (like gh CLI)
+ * Get credentials from encrypted file storage
  *
  * Flow:
  * 1. Check in-memory cache (unless bypassed)
- * 2. Try keyring with timeout
- * 3. Fallback to file storage (with lazy migration to keyring)
- * 4. Cache result for future calls
+ * 2. Read from file storage
+ * 3. Cache result for future calls
  *
  * @param hostname - GitHub hostname (default: 'github.com')
  * @param options - Optional settings (e.g., bypassCache)
@@ -619,8 +377,9 @@ export async function getCredentials(
     return credentialsCache.get(normalizedHostname)!.credentials;
   }
 
-  // 2. Fetch fresh credentials from storage
-  const credentials = await fetchCredentialsFromStorage(normalizedHostname);
+  // 2. Fetch from file storage
+  const store = readCredentialsStore();
+  const credentials = store.credentials[normalizedHostname] || null;
 
   // 3. Update cache (even if null - we cache the absence)
   if (credentials) {
@@ -637,54 +396,7 @@ export async function getCredentials(
 }
 
 /**
- * Internal: Fetch credentials from storage (keyring → file)
- */
-async function fetchCredentialsFromStorage(
-  normalizedHostname: string
-): Promise<StoredCredentials | null> {
-  // Try keyring first (with timeout)
-  if (isSecureStorageAvailable()) {
-    try {
-      const creds = await withTimeout(
-        keychainGet(normalizedHostname),
-        KEYRING_TIMEOUT_MS
-      );
-      if (creds) return creds;
-    } catch (err) {
-      // Timeout or error - try file fallback
-      if (!(err instanceof TimeoutError)) {
-        console.warn(
-          `[token-storage] Keyring read failed: ${
-            err instanceof Error ? err.message : String(err)
-          }`
-        );
-      }
-    }
-  }
-
-  // Fallback to file storage
-  const store = readCredentialsStore();
-  const fileCreds = store.credentials[normalizedHostname];
-
-  if (fileCreds) {
-    // Lazy migration: migrate this credential to keyring on first access
-    if (isSecureStorageAvailable()) {
-      migrateSingleCredential(normalizedHostname, fileCreds).catch(() => {
-        // Migration failed silently - credentials still available from file
-      });
-    }
-    return fileCreds;
-  }
-
-  return null;
-}
-
-/**
  * Get credentials synchronously (file storage only)
- *
- * ⚠️ WARNING: This only reads from file storage, not keyring.
- * Use getCredentials() (async) for the full keyring-first lookup.
- * This sync version is kept for backward compatibility only.
  *
  * @param hostname - GitHub hostname (default: 'github.com')
  * @returns Stored credentials from file or null if not found
@@ -698,12 +410,7 @@ export function getCredentialsSync(
 }
 
 /**
- * Delete credentials from both keyring and file storage
- *
- * Flow:
- * 1. Delete from keyring (with timeout, best-effort)
- * 2. Delete from file storage
- * 3. Return combined result with details
+ * Delete credentials from file storage
  *
  * @returns DeleteResult with details about what was deleted
  */
@@ -711,26 +418,9 @@ export async function deleteCredentials(
   hostname: string = 'github.com'
 ): Promise<DeleteResult> {
   const normalizedHostname = normalizeHostname(hostname);
-  let deletedFromKeyring = false;
   let deletedFromFile = false;
 
-  // 1. Delete from keyring (best-effort with timeout)
-  if (isSecureStorageAvailable()) {
-    try {
-      deletedFromKeyring = await withTimeout(
-        keychainDelete(normalizedHostname),
-        KEYRING_TIMEOUT_MS
-      );
-    } catch (err) {
-      console.warn(
-        `[token-storage] Keyring delete failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      );
-    }
-  }
-
-  // 2. Delete from file storage
+  // Delete from file storage
   const store = readCredentialsStore();
   if (store.credentials[normalizedHostname]) {
     delete store.credentials[normalizedHostname];
@@ -744,54 +434,25 @@ export async function deleteCredentials(
     deletedFromFile = true;
   }
 
-  // 3. Invalidate cache for this hostname
+  // Invalidate cache for this hostname
   invalidateCredentialsCache(normalizedHostname);
 
   return {
-    success: deletedFromKeyring || deletedFromFile,
-    deletedFromKeyring,
+    success: deletedFromFile,
     deletedFromFile,
   };
 }
 
 /**
- * List all stored hostnames (from both keyring and file)
+ * List all stored hostnames from file storage
  */
 export async function listStoredHosts(): Promise<string[]> {
-  const hosts = new Set<string>();
-
-  // Try keyring first (with timeout)
-  if (isSecureStorageAvailable()) {
-    try {
-      const keychainHosts = await withTimeout(
-        keychainList(),
-        KEYRING_TIMEOUT_MS
-      );
-      keychainHosts.forEach(h => hosts.add(h));
-    } catch (err) {
-      // Timeout or error - continue with file
-      if (!(err instanceof TimeoutError)) {
-        console.warn(
-          `[token-storage] Keyring list failed: ${
-            err instanceof Error ? err.message : String(err)
-          }`
-        );
-      }
-    }
-  }
-
-  // Also include file-based hosts
   const store = readCredentialsStore();
-  Object.keys(store.credentials).forEach(h => hosts.add(h));
-
-  return Array.from(hosts);
+  return Object.keys(store.credentials);
 }
 
 /**
  * List stored hosts synchronously (file storage only)
- *
- * ⚠️ WARNING: This only lists file storage, not keyring.
- * Use listStoredHosts() (async) for full list.
  */
 export function listStoredHostsSync(): string[] {
   const store = readCredentialsStore();
@@ -809,9 +470,6 @@ export async function hasCredentials(
 
 /**
  * Check if credentials exist synchronously (file storage only)
- *
- * ⚠️ WARNING: This only checks file storage, not keyring.
- * Use hasCredentials() (async) for full check.
  */
 export function hasCredentialsSync(hostname: string = 'github.com'): boolean {
   return getCredentialsSync(hostname) !== null;
@@ -841,17 +499,7 @@ export async function updateToken(
  * Get the credentials storage location (for display purposes)
  */
 export function getCredentialsFilePath(): string {
-  if (isSecureStorageAvailable()) {
-    return 'System Keychain (secure)';
-  }
   return CREDENTIALS_FILE;
-}
-
-/**
- * Alias for isSecureStorageAvailable (for backward compatibility)
- */
-export function isUsingSecureStorage(): boolean {
-  return isSecureStorageAvailable();
 }
 
 /**
@@ -894,7 +542,7 @@ export function isRefreshTokenExpired(credentials: StoredCredentials): boolean {
 }
 
 /**
- * Get token from stored credentials (keychain/file only)
+ * Get token from stored credentials (file only)
  *
  * Convenience function that retrieves credentials and returns just the token string.
  * Checks for token expiration before returning.
@@ -1007,9 +655,14 @@ export async function refreshAuthToken(
       hostname,
     };
   } catch (error) {
+    // Mask potential sensitive data in error messages
+    const errorMsg =
+      error instanceof Error
+        ? maskErrorMessage(error.message)
+        : 'Token refresh failed';
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Token refresh failed',
+      error: errorMsg,
     };
   }
 }
@@ -1105,8 +758,7 @@ export interface ResolvedToken {
  * 1. OCTOCODE_TOKEN env var
  * 2. GH_TOKEN env var
  * 3. GITHUB_TOKEN env var
- * 4. Native keychain (most secure for desktop)
- * 5. Encrypted file storage (~/.octocode/credentials.json)
+ * 4. Encrypted file storage (~/.octocode/credentials.json)
  *
  * NOTE: This does NOT refresh expired tokens. Use resolveTokenWithRefresh() for auto-refresh.
  *
@@ -1125,16 +777,12 @@ export async function resolveToken(
     };
   }
 
-  // Priority 4-5: Stored credentials (keychain → file)
+  // Priority 4: Stored credentials (file)
   const storedToken = await getToken(hostname);
   if (storedToken) {
-    // Determine if from keychain or file
-    const source: TokenSource = isSecureStorageAvailable()
-      ? 'keychain'
-      : 'file';
     return {
       token: storedToken,
-      source,
+      source: 'file',
     };
   }
 
@@ -1158,7 +806,7 @@ export interface ResolvedTokenWithRefresh extends ResolvedToken {
  *
  * This is the recommended function for token resolution. It will:
  * 1. Check environment variables first (OCTOCODE_TOKEN, GH_TOKEN, GITHUB_TOKEN)
- * 2. Check stored credentials (keychain → file)
+ * 2. Check stored credentials (file)
  * 3. If stored token is expired and has a refresh token, attempt to refresh
  * 4. Return the valid token with source information
  *
@@ -1166,7 +814,7 @@ export interface ResolvedTokenWithRefresh extends ResolvedToken {
  * 1. OCTOCODE_TOKEN env var
  * 2. GH_TOKEN env var
  * 3. GITHUB_TOKEN env var
- * 4. Stored credentials with auto-refresh (keychain → file)
+ * 4. Stored credentials with auto-refresh (file)
  *
  * @param hostname - GitHub hostname (default: 'github.com')
  * @param clientId - OAuth client ID for refresh (default: octocode client ID)
@@ -1186,16 +834,13 @@ export async function resolveTokenWithRefresh(
     };
   }
 
-  // Priority 4-5: Stored credentials with refresh (keychain → file)
+  // Priority 4: Stored credentials with refresh (file)
   const result = await getTokenWithRefresh(hostname, clientId);
 
   if (result.token) {
-    const source: TokenSource = isSecureStorageAvailable()
-      ? 'keychain'
-      : 'file';
     return {
       token: result.token,
-      source,
+      source: 'file',
       wasRefreshed: result.source === 'refreshed',
       username: result.username,
     };
@@ -1248,7 +893,7 @@ export type GhCliTokenGetter = (
  * 1. OCTOCODE_TOKEN env var
  * 2. GH_TOKEN env var
  * 3. GITHUB_TOKEN env var
- * 4. Octocode storage with auto-refresh (keychain → file, cached)
+ * 4. Octocode storage with auto-refresh (file, cached)
  * 5. gh CLI token (fallback via callback)
  *
  * @param options - Resolution options
@@ -1276,29 +921,13 @@ export async function resolveTokenFull(options?: {
     };
   }
 
-  // Priority 4-6: Resolve from storage/gh-cli (uses in-memory cache)
-  return resolveTokenFullInternalNoEnv(hostname, clientId, getGhCliToken);
-}
-
-/**
- * Internal token resolution skipping env vars (for use after env check)
- * This allows env vars to be checked before cache in resolveTokenFull
- */
-async function resolveTokenFullInternalNoEnv(
-  hostname: string,
-  clientId: string,
-  getGhCliToken?: GhCliTokenGetter
-): Promise<FullTokenResolution | null> {
-  // Priority 4-5: Octocode storage with auto-refresh (keychain → file)
+  // Priority 4: Resolve from storage (uses in-memory cache)
   const result = await getTokenWithRefresh(hostname, clientId);
 
   if (result.token) {
-    const source: TokenSource = isSecureStorageAvailable()
-      ? 'keychain'
-      : 'file';
     return {
       token: result.token,
-      source,
+      source: 'file',
       wasRefreshed: result.source === 'refreshed',
       username: result.username,
     };
@@ -1307,7 +936,7 @@ async function resolveTokenFullInternalNoEnv(
   // Capture refresh error if any
   const refreshError = result.refreshError;
 
-  // Priority 6: gh CLI token (fallback)
+  // Priority 5: gh CLI token (fallback)
   if (getGhCliToken) {
     try {
       const ghToken = await Promise.resolve(getGhCliToken(hostname));
@@ -1316,7 +945,7 @@ async function resolveTokenFullInternalNoEnv(
           token: ghToken.trim(),
           source: 'gh-cli',
           wasRefreshed: false,
-          refreshError, // Include any refresh error from step 4-5
+          refreshError, // Include any refresh error from step 4
         };
       }
     } catch {
@@ -1339,9 +968,6 @@ async function resolveTokenFullInternalNoEnv(
 
 /**
  * Get token synchronously (file storage only)
- *
- * ⚠️ WARNING: This only reads from file storage, not keyring.
- * Use getToken() (async) for the full keyring-first lookup.
  *
  * @param hostname - GitHub hostname (default: 'github.com')
  * @returns Token string or null if not found/expired

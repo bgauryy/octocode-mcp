@@ -5,9 +5,8 @@
  * 1. OCTOCODE_TOKEN env
  * 2. GH_TOKEN env
  * 3. GITHUB_TOKEN env
- * 4. Keychain (stored credentials)
- * 5. File (encrypted fallback)
- * 6. gh auth token (GitHub CLI) - fallback
+ * 4. File (encrypted storage ~/.octocode/credentials.json)
+ * 5. gh auth token (GitHub CLI) - fallback
  *
  * Note: Token resolution is DYNAMIC - no caching.
  * Each call to getGitHubToken() resolves fresh.
@@ -55,7 +54,7 @@ describe('Token Resolution Priority (TOKEN_RESOLUTION.md)', () => {
       | 'env:OCTOCODE_TOKEN'
       | 'env:GH_TOKEN'
       | 'env:GITHUB_TOKEN'
-      | 'keychain'
+      | 'file'
       | 'file'
       | 'gh-cli'
       | null
@@ -135,7 +134,7 @@ describe('Token Resolution Priority (TOKEN_RESOLUTION.md)', () => {
 
     it('should use stored credentials when env is empty (Priority 4-5)', async () => {
       mockResolveTokenFull.mockResolvedValue(
-        mockTokenResult('stored-token', 'keychain')
+        mockTokenResult('stored-token', 'file')
       );
 
       const token = await getGitHubToken();
@@ -251,17 +250,17 @@ describe('Token Resolution Priority (TOKEN_RESOLUTION.md)', () => {
   });
 
   describe('Stored Credentials Fallback (Priority 4-5)', () => {
-    it('should use keychain token when env is not available', async () => {
+    it('should use stored token when env is not available', async () => {
       mockResolveTokenFull.mockResolvedValue(
-        mockTokenResult('keychain-token', 'keychain')
+        mockTokenResult('stored-token', 'file')
       );
 
       const token = await getGitHubToken();
 
-      expect(token).toBe('keychain-token');
+      expect(token).toBe('stored-token');
     });
 
-    it('should use file token when keychain is not available', async () => {
+    it('should use file token from encrypted storage', async () => {
       mockResolveTokenFull.mockResolvedValue(
         mockTokenResult('file-token', 'file')
       );
@@ -273,7 +272,7 @@ describe('Token Resolution Priority (TOKEN_RESOLUTION.md)', () => {
 
     it('should handle storage errors gracefully', async () => {
       mockResolveTokenFull.mockRejectedValue(
-        new Error('Keychain access denied')
+        new Error('Storage access denied')
       );
 
       const token = await getGitHubToken();
@@ -415,7 +414,7 @@ describe('Token Resolution Priority (TOKEN_RESOLUTION.md)', () => {
     it('should NOT access gh CLI when storage token is available', async () => {
       // resolveTokenFull handles this internally - we just verify it's called once
       mockResolveTokenFull.mockResolvedValue(
-        mockTokenResult('stored-token', 'keychain')
+        mockTokenResult('stored-token', 'file')
       );
 
       await getGitHubToken();
@@ -471,9 +470,9 @@ describe('Token Resolution Priority (TOKEN_RESOLUTION.md)', () => {
     });
 
     it('should track source as octocode-storage when using stored credentials', async () => {
-      // 'keychain' and 'file' sources map to 'octocode-storage'
+      // 'file' and 'file' sources map to 'octocode-storage'
       mockResolveTokenFull.mockResolvedValue(
-        mockTokenResult('stored-token', 'keychain')
+        mockTokenResult('stored-token', 'file')
       );
 
       await initialize();
@@ -517,10 +516,8 @@ describe('Token Resolution Priority (TOKEN_RESOLUTION.md)', () => {
   });
 
   describe('Source Mapping', () => {
-    it('should map keychain source to octocode-storage', async () => {
-      mockResolveTokenFull.mockResolvedValue(
-        mockTokenResult('token', 'keychain')
-      );
+    it('should map file source to octocode-storage', async () => {
+      mockResolveTokenFull.mockResolvedValue(mockTokenResult('token', 'file'));
 
       await initialize();
 

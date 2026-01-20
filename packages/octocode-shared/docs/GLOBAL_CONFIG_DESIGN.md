@@ -31,7 +31,7 @@ Introduce a **global configuration file** at `~/.octocode/.octocoderc` that prov
 
 1. **Env Vars Win**: Environment variables always override config file settings
 2. **Fail-Safe Defaults**: Missing or malformed config falls back to hardcoded defaults
-3. **No Secrets in Config**: Tokens stay in keychain/env vars, not in `.octocoderc`
+3. **No Secrets in Config**: Tokens stay in file storage/env vars, not in `.octocoderc`
 4. **Backward Compatible**: Existing env var workflows continue to work unchanged
 
 ---

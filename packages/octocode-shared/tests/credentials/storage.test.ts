@@ -6,22 +6,12 @@
  *
  * ⚠️ IMPORTANT: All storage operations are MOCKED to prevent real credential access.
  * - fs module is fully mocked - no real file I/O
- * - keychain module is mocked - no real keychain access
  * - crypto module is mocked for predictable encryption behavior
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
-
-// Mock keychain to be unavailable - prevents real keychain access during tests
-vi.mock('../../src/credentials/keychain.js', () => ({
-  isKeychainAvailable: vi.fn().mockReturnValue(false),
-  setPassword: vi.fn(),
-  getPassword: vi.fn(),
-  deletePassword: vi.fn(),
-  findCredentials: vi.fn().mockReturnValue([]),
-}));
 
 // Mock @octokit/oauth-methods for token refresh tests
 vi.mock('@octokit/oauth-methods', () => ({
@@ -112,12 +102,6 @@ describe('Token Storage', () => {
 
     // Setup crypto mocks
     vi.mocked(crypto.randomBytes).mockReturnValue(mockIv as unknown as void);
-
-    // Ensure keychain is disabled (mocked)
-    const { _setSecureStorageAvailable, _resetSecureStorageState } =
-      await import('../../src/credentials/storage.js');
-    _resetSecureStorageState();
-    _setSecureStorageAvailable(false);
   });
 
   afterEach(() => {
@@ -138,26 +122,8 @@ describe('Token Storage', () => {
     }
   });
 
-  describe('isSecureStorageAvailable', () => {
-    it('should return false when keychain is unavailable', async () => {
-      const { isSecureStorageAvailable, _setSecureStorageAvailable } =
-        await import('../../src/credentials/storage.js');
-
-      _setSecureStorageAvailable(false);
-      expect(isSecureStorageAvailable()).toBe(false);
-    });
-
-    it('should return true when keychain is available', async () => {
-      const { isSecureStorageAvailable, _setSecureStorageAvailable } =
-        await import('../../src/credentials/storage.js');
-
-      _setSecureStorageAvailable(true);
-      expect(isSecureStorageAvailable()).toBe(true);
-    });
-  });
-
   describe('storeCredentials', () => {
-    it('should write encrypted credentials to file when keychain unavailable', async () => {
+    it('should write encrypted credentials to file', async () => {
       vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
         if (String(path).includes('.key')) return true;
         return false;
@@ -175,7 +141,6 @@ describe('Token Storage', () => {
       const result = await storeCredentials(createMockCredentials());
 
       expect(result.success).toBe(true);
-      expect(result.insecureStorageUsed).toBe(true);
     });
 
     it('should create .octocode directory if it does not exist', async () => {
@@ -409,17 +374,6 @@ describe('Token Storage', () => {
     });
   });
 
-  describe('TimeoutError', () => {
-    it('should export TimeoutError class', async () => {
-      const { TimeoutError } = await import('../../src/credentials/storage.js');
-
-      expect(TimeoutError).toBeDefined();
-      const error = new TimeoutError('test timeout');
-      expect(error.name).toBe('TimeoutError');
-      expect(error.message).toBe('test timeout');
-    });
-  });
-
   describe('constants', () => {
     it('should export storage path constants', async () => {
       const { OCTOCODE_DIR, CREDENTIALS_FILE, KEY_FILE } =
@@ -616,10 +570,7 @@ describe('Token Storage', () => {
       delete process.env.GITHUB_TOKEN;
 
       // Reset storage state
-      const { _resetSecureStorageState, _setSecureStorageAvailable } =
-        await import('../../src/credentials/storage.js');
-      _resetSecureStorageState();
-      _setSecureStorageAvailable(false);
+      await import('../../src/credentials/storage.js');
     });
 
     afterEach(() => {
@@ -692,7 +643,7 @@ describe('Token Storage', () => {
       });
     });
 
-    describe('Priority 4-5: Stored Credentials (Keychain/File)', () => {
+    describe('Priority 4: Stored Credentials (File)', () => {
       it('should fall back to stored credentials when no env vars', async () => {
         const storedCreds = createMockCredentials();
         const store = {
@@ -725,11 +676,11 @@ describe('Token Storage', () => {
 
         expect(result).toEqual({
           token: 'ghp_MOCK_TOKEN_00000000000000000000',
-          source: 'file', // Because keychain is unavailable
+          source: 'file',
         });
       });
 
-      it('should return keychain source when secure storage available', async () => {
+      it('should return file source for stored credentials', async () => {
         const storedCreds = createMockCredentials();
         const store = {
           version: 1,
@@ -755,17 +706,14 @@ describe('Token Storage', () => {
           mockDecipher as unknown as crypto.DecipherGCM
         );
 
-        const { resolveToken, _setSecureStorageAvailable } =
+        const { resolveToken } =
           await import('../../src/credentials/storage.js');
 
-        // Simulate keychain being available but empty
-        // The token comes from file storage, but source shows keychain
-        // if secure storage is available (as that's the preferred source)
-        _setSecureStorageAvailable(true);
+        // Source is always 'file'
         const result = await resolveToken();
 
         expect(result?.token).toBe('ghp_MOCK_TOKEN_00000000000000000000');
-        expect(result?.source).toBe('keychain');
+        expect(result?.source).toBe('file');
       });
 
       it('should return null when no token found anywhere', async () => {
@@ -1209,10 +1157,7 @@ describe('Token Storage', () => {
       delete process.env.GH_TOKEN;
       delete process.env.GITHUB_TOKEN;
 
-      const { _resetSecureStorageState, _setSecureStorageAvailable } =
-        await import('../../src/credentials/storage.js');
-      _resetSecureStorageState();
-      _setSecureStorageAvailable(false);
+      await import('../../src/credentials/storage.js');
     });
 
     afterEach(() => {
@@ -1326,10 +1271,7 @@ describe('Token Storage', () => {
       delete process.env.GH_TOKEN;
       delete process.env.GITHUB_TOKEN;
 
-      const { _resetSecureStorageState, _setSecureStorageAvailable } =
-        await import('../../src/credentials/storage.js');
-      _resetSecureStorageState();
-      _setSecureStorageAvailable(false);
+      await import('../../src/credentials/storage.js');
     });
 
     afterEach(() => {
@@ -1428,7 +1370,7 @@ describe('Token Storage', () => {
         expect(result?.username).toBe('__mock_user__');
       });
 
-      it('should return keychain source when secure storage available', async () => {
+      it('should return file source for stored credentials', async () => {
         const storedCreds = createMockCredentials();
         const store = {
           version: 1,
@@ -1454,18 +1396,17 @@ describe('Token Storage', () => {
           mockDecipher as unknown as crypto.DecipherGCM
         );
 
-        const { resolveTokenFull, _setSecureStorageAvailable } =
+        const { resolveTokenFull } =
           await import('../../src/credentials/storage.js');
 
-        _setSecureStorageAvailable(true);
         const result = await resolveTokenFull();
 
         expect(result?.token).toBe('ghp_MOCK_TOKEN_00000000000000000000');
-        expect(result?.source).toBe('keychain');
+        expect(result?.source).toBe('file');
       });
     });
 
-    describe('Priority 6: gh CLI Fallback', () => {
+    describe('Priority 5: gh CLI Fallback', () => {
       it('should call getGhCliToken when no env or stored token', async () => {
         vi.mocked(fs.existsSync).mockReturnValue(false);
 
@@ -2031,45 +1972,13 @@ describe('Token Storage', () => {
   });
 
   describe('getCredentialsFilePath', () => {
-    it('should return System Keychain when secure storage available', async () => {
-      const { getCredentialsFilePath, _setSecureStorageAvailable } =
+    it('should return file path', async () => {
+      const { getCredentialsFilePath, CREDENTIALS_FILE } =
         await import('../../src/credentials/storage.js');
 
-      _setSecureStorageAvailable(true);
-      const path = getCredentialsFilePath();
-
-      expect(path).toBe('System Keychain (secure)');
-    });
-
-    it('should return file path when secure storage unavailable', async () => {
-      const {
-        getCredentialsFilePath,
-        _setSecureStorageAvailable,
-        CREDENTIALS_FILE,
-      } = await import('../../src/credentials/storage.js');
-
-      _setSecureStorageAvailable(false);
       const path = getCredentialsFilePath();
 
       expect(path).toBe(CREDENTIALS_FILE);
-    });
-  });
-
-  describe('isUsingSecureStorage', () => {
-    it('should return true when secure storage available', async () => {
-      const { isUsingSecureStorage, _setSecureStorageAvailable } =
-        await import('../../src/credentials/storage.js');
-
-      _setSecureStorageAvailable(true);
-      expect(isUsingSecureStorage()).toBe(true);
-    });
-
-    it('should return false when secure storage unavailable', async () => {
-      const { isUsingSecureStorage, _setSecureStorageAvailable } =
-        await import('../../src/credentials/storage.js');
-
-      _setSecureStorageAvailable(false);
-      expect(isUsingSecureStorage()).toBe(false);
     });
   });
 
@@ -2455,20 +2364,6 @@ describe('Token Storage', () => {
       const result = getCredentialsSync('other-host.com');
 
       expect(result).toBeNull();
-    });
-  });
-
-  describe('initializeSecureStorage', () => {
-    it('should be exported and callable', async () => {
-      const { initializeSecureStorage } =
-        await import('../../src/credentials/storage.js');
-
-      // Function should be defined
-      expect(typeof initializeSecureStorage).toBe('function');
-
-      // Should return a promise
-      const result = initializeSecureStorage();
-      expect(result).toBeInstanceOf(Promise);
     });
   });
 

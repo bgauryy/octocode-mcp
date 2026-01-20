@@ -16,9 +16,6 @@ export default defineConfig({
   external: [
     ...builtinModules,
     ...builtinModules.map((m) => `node:${m}`),
-    'keytar', // Native module - cannot be bundled
-    '@napi-rs/keyring', // Native module - cannot be bundled
-    /^@napi-rs\/keyring-/, // Platform-specific native bindings
   ],
 
   // Single file output

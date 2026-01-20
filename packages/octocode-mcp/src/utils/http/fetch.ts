@@ -12,6 +12,9 @@ interface ExtendedError extends Error {
   retryable?: boolean;
 }
 
+/** Maximum delay cap for exponential backoff (60 seconds) */
+const MAX_BACKOFF_DELAY_MS = 60000;
+
 interface FetchWithRetriesOptions {
   /**
    * Maximum number of retry attempts (excluding the initial request)
@@ -23,6 +26,11 @@ interface FetchWithRetriesOptions {
    * @default 1000 (1 second)
    */
   initialDelayMs?: number;
+  /**
+   * Maximum delay in milliseconds for exponential backoff cap
+   * @default 60000 (60 seconds)
+   */
+  maxDelayMs?: number;
   /**
    * Custom headers to include in the request
    */
@@ -48,10 +56,10 @@ interface FetchWithRetriesOptions {
  * Fetches a URL with automatic retries and exponential backoff.
  *
  * Retry behavior:
- * - Retries on network errors, server errors (5xx), and rate limits (429)
+ * - Retries on network errors, server errors (5xx), request timeouts (408), and rate limits (429)
  * - Respects 'Retry-After' header for 429 responses
- * - Does NOT retry on client errors (4xx) except rate limits
- * - Uses exponential backoff: 1s, 2s, 4s (default) if no Retry-After header
+ * - Does NOT retry on client errors (4xx) except rate limits and timeouts
+ * - Uses exponential backoff: 1s, 2s, 4s, etc. (capped at 60s default)
  *
  * @param url - The URL to fetch
  * @param options - Configuration options for retries and request
@@ -71,8 +79,9 @@ export async function fetchWithRetries(
   options: FetchWithRetriesOptions = {}
 ): Promise<unknown> {
   const {
-    maxRetries = 10,
+    maxRetries = 3,
     initialDelayMs = 1000,
+    maxDelayMs = MAX_BACKOFF_DELAY_MS,
     headers = {},
     method = 'GET',
     includeVersion = false,
@@ -127,8 +136,11 @@ export async function fetchWithRetries(
         error.status = res.status;
         error.headers = res.headers;
 
+        // Retry on rate limits (429), request timeouts (408), and server errors (5xx)
         const isRetryable =
-          res.status === 429 || (res.status >= 500 && res.status < 600);
+          res.status === 429 ||
+          res.status === 408 ||
+          (res.status >= 500 && res.status < 600);
         error.retryable = isRetryable;
 
         throw error;
@@ -160,8 +172,13 @@ export async function fetchWithRetries(
         break;
       }
 
-      let delayMs = initialDelayMs * Math.pow(2, attempt - 1);
+      // Calculate delay with exponential backoff, capped at maxDelayMs
+      let delayMs = Math.min(
+        initialDelayMs * Math.pow(2, attempt - 1),
+        maxDelayMs
+      );
 
+      // Respect Retry-After header if present (but still cap at maxDelayMs)
       if (
         extendedError &&
         extendedError.headers &&
@@ -171,7 +188,7 @@ export async function fetchWithRetries(
         if (retryAfter) {
           const seconds = parseInt(retryAfter, 10);
           if (!isNaN(seconds)) {
-            delayMs = seconds * 1000;
+            delayMs = Math.min(seconds * 1000, maxDelayMs);
           }
         }
       }

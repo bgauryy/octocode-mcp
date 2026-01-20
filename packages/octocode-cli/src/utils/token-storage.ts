@@ -9,11 +9,6 @@
 
 // Re-export from the shared package
 export {
-  // Initialization
-  initializeSecureStorage,
-  isSecureStorageAvailable,
-  isUsingSecureStorage,
-
   // CRUD operations
   storeCredentials,
   getCredentials,
@@ -52,11 +47,4 @@ export {
   resolveTokenFull,
   type FullTokenResolution,
   type GhCliTokenGetter,
-
-  // Errors
-  TimeoutError,
-
-  // Testing utilities
-  _setSecureStorageAvailable,
-  _resetSecureStorageState,
 } from 'octocode-shared';

@@ -1,6 +1,6 @@
 {
   "name": "octocode-skill",
-  "version": "1.0.0",
+  "version": "2.2.0",
   "type": "module",
   "description": "Code research server using octocode tools - HTTP API on port 1987",
   "author": "Guy Bary <bgauryy@octocodeai.com>",
@@ -33,12 +33,20 @@
   "files": [
     "scripts",
     "src",
+    "ecosystem.config.cjs",
     "SKILL.md",
     "tsconfig.json"
   ],
   "scripts": {
     "build": "tsdown",
     "start": "node scripts/server.js",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop ecosystem.config.cjs",
+    "pm2:restart": "pm2 restart ecosystem.config.cjs",
+    "pm2:reload": "pm2 reload ecosystem.config.cjs",
+    "pm2:delete": "pm2 delete ecosystem.config.cjs",
+    "pm2:logs": "pm2 logs octocode-research",
+    "pm2:monit": "pm2 monit",
     "dev": "tsx watch src/server.ts",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -48,8 +56,8 @@
   "dependencies": {
     "express": "^4.21.2",
     "js-yaml": "^4.1.1",
-    "octocode-mcp": "^11.2.2",
-    "octocode-shared": "^1.0.1",
+    "octocode-mcp": "file:../../packages/octocode-mcp",
+    "octocode-shared": "file:../../packages/octocode-shared",
     "zod": "^3.24.1",
     "zod-to-json-schema": "^3.25.1"
   },

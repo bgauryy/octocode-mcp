@@ -148,7 +148,7 @@ function getSkillsState(): SkillsState {
 
 /**
  * Get unified application state
- * Uses async auth check to properly check keychain storage
+ * Uses async auth check to properly check credential storage
  */
 export async function getAppState(): Promise<AppState> {
   return {

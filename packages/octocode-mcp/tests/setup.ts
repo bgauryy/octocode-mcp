@@ -104,12 +104,8 @@ vi.mock('octocode-shared', () => ({
   }),
   ensureOctocodeDir: vi.fn(),
   OCTOCODE_DIR: '/mock/.octocode',
-  initializeSecureStorage: vi.fn().mockResolvedValue(undefined),
   getOctocodeToken: vi.fn().mockResolvedValue(null),
   getToken: vi.fn().mockResolvedValue(null),
-  isSecureStorageAvailable: vi.fn().mockReturnValue(false),
-  _resetSecureStorageState: vi.fn(),
-  _setSecureStorageAvailable: vi.fn(),
   getTokenFromEnv: vi.fn(() => {
     const envVars = ['OCTOCODE_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'];
     for (const v of envVars) {

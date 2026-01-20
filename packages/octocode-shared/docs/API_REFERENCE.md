@@ -61,7 +61,7 @@ type TokenSource =
   | 'env:OCTOCODE_TOKEN'
   | 'env:GH_TOKEN'
   | 'env:GITHUB_TOKEN'
-  | 'keychain'
+  
   | 'file'
   | 'gh-cli'
   | null;
@@ -74,7 +74,7 @@ Result from storing credentials.
 ```typescript
 interface StoreResult {
   success: boolean;
-  insecureStorageUsed: boolean;  // true if file storage was used
+  insecureStorageUsed: boolean;  // @deprecated Always true (file storage only)
 }
 ```
 
@@ -113,7 +113,7 @@ interface FullTokenResolution {
 
 **Resolution Order**:
 1. Environment variables (`OCTOCODE_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`)
-2. Stored credentials (keychain → file) with auto-refresh
+2. Stored credentials (file) with auto-refresh
 3. gh CLI fallback
 
 **Example**:
@@ -138,7 +138,7 @@ async function getTokenWithRefresh(
 interface TokenWithRefreshResult {
   token: string | null;
   refreshed: boolean;
-  source: 'keychain' | 'file' | null;
+  source: 'file' | null;
 }
 ```
 
@@ -212,9 +212,6 @@ const result = await storeCredentials({
   updatedAt: new Date().toISOString(),
 });
 
-if (result.insecureStorageUsed) {
-  console.warn('Credentials stored in file (keychain unavailable)');
-}
 ```
 
 ---
@@ -429,19 +426,19 @@ function invalidateCredentialsCache(hostname?: string): void
 
 #### `initializeSecureStorage()`
 
-Initialize keychain-backed storage.
+Initialize secure storage (deprecated - always returns false).
 
 ```typescript
 async function initializeSecureStorage(): Promise<boolean>
 ```
 
-Returns `true` if keychain is available.
+Returns `false` (keychain removed - file storage only).
 
 ---
 
 #### `isSecureStorageAvailable()`
 
-Check if keychain storage is available.
+Check if secure storage is available (always false - keychain removed).
 
 ```typescript
 function isSecureStorageAvailable(): boolean

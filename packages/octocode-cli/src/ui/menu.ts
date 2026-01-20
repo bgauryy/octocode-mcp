@@ -29,7 +29,6 @@ import {
   logout as oauthLogout,
   getAuthStatusAsync,
   getStoragePath,
-  isUsingSecureStorage,
   type VerificationInfo,
 } from '../features/github-oauth.js';
 import type { OctocodeAuthStatus } from '../types/index.js';
@@ -671,7 +670,7 @@ async function showAuthMenu(
     const userPart = octocodeCredentials.username
       ? ` (@${octocodeCredentials.username})`
       : '';
-    const storageType = isUsingSecureStorage() ? 'keychain' : 'file';
+    const storageType = 'file';
     choices.push({
       name: `🗑️  Delete Octocode token${userPart}`,
       value: 'logout',
@@ -960,7 +959,7 @@ function getDetailedAuthSource(status: OctocodeAuthStatus): string {
       return 'environment variable';
     }
     case 'octocode':
-      return isUsingSecureStorage() ? 'keychain' : 'file';
+      return 'file';
     default:
       return 'unknown';
   }

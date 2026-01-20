@@ -6,7 +6,7 @@ import {
   type FullTokenResolution,
   type GhCliTokenGetter,
 } from './utils/credentials/index.js';
-import { initializeSecureStorage, getConfigSync } from 'octocode-shared';
+import { getConfigSync } from 'octocode-shared';
 import { version } from '../package.json';
 import type {
   ServerConfig,
@@ -53,7 +53,7 @@ let _resolveTokenFull: ResolveTokenFullFn = resolveTokenFull;
  * Maps source strings from various systems to internal TokenSourceType.
  *
  * Handles sources from:
- * - octocode-shared: 'env:*', 'gh-cli', 'keychain', 'file'
+ * - octocode-shared: 'env:*', 'gh-cli', 'file'
  * - legacy tests: 'env', 'octocode', 'octocode-storage'
  *
  * @param source - Source string from resolver
@@ -77,8 +77,8 @@ function mapSharedSourceToInternal(
   // CLI source
   if (source === 'gh-cli') return 'gh-cli';
 
-  // Storage sources (keychain, file, octocode variants)
-  if (['keychain', 'file', 'octocode', 'octocode-storage'].includes(source)) {
+  // Storage sources (file, octocode variants)
+  if (['file', 'octocode', 'octocode-storage'].includes(source)) {
     return 'octocode-storage';
   }
 
@@ -171,6 +171,11 @@ function parseLoggingEnv(value: string | undefined): boolean | undefined {
   return true;
 }
 
+/** Check if debug logging is enabled via environment variable */
+const isDebugEnabled = () =>
+  process.env.OCTOCODE_DEBUG === 'true' ||
+  process.env.DEBUG?.includes('octocode');
+
 async function resolveGitHubToken(): Promise<TokenResolutionResult> {
   // Support legacy test mock (backward compatibility)
   if (_legacyResolveToken) {
@@ -184,8 +189,13 @@ async function resolveGitHubToken(): Promise<TokenResolutionResult> {
       }
       return { token: null, source: 'none' };
     } catch (error) {
-      if (error instanceof Error && error.message) {
-        error.message = maskSensitiveData(error.message);
+      const maskedMsg =
+        error instanceof Error
+          ? maskSensitiveData(error.message)
+          : 'Unknown error';
+      if (isDebugEnabled()) {
+        // eslint-disable-next-line no-console
+        console.debug('[octocode] Legacy token resolution failed:', maskedMsg);
       }
       return { token: null, source: 'none' };
     }
@@ -208,8 +218,13 @@ async function resolveGitHubToken(): Promise<TokenResolutionResult> {
 
     return { token: null, source: 'none' };
   } catch (error) {
-    if (error instanceof Error && error.message) {
-      error.message = maskSensitiveData(error.message);
+    const maskedMsg =
+      error instanceof Error
+        ? maskSensitiveData(error.message)
+        : 'Unknown error';
+    if (isDebugEnabled()) {
+      // eslint-disable-next-line no-console
+      console.debug('[octocode] Token resolution failed:', maskedMsg);
     }
     return { token: null, source: 'none' };
   }
@@ -280,10 +295,6 @@ export async function initialize(): Promise<void> {
   }
 
   initializationPromise = (async () => {
-    // Initialize secure storage FIRST (enables keychain access for stored tokens)
-    // This must happen before any token resolution to find credentials stored by CLI
-    await initializeSecureStorage();
-
     // Load global configuration from ~/.octocode/.octocoderc
     // This provides defaults that can be overridden by environment variables
     const globalConfig = getConfigSync();

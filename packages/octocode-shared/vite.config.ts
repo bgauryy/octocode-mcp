@@ -27,7 +27,6 @@ export default defineConfig({
       external: [
         ...builtinModules,
         ...builtinModules.map((m) => `node:${m}`),
-        '@napi-rs/keyring',
         '@octokit/oauth-methods',
         '@octokit/request',
       ],

@@ -267,7 +267,7 @@ main() → initializeSecureStorage() → runCLI() → [command handler] OR runIn
 ### Key Design Decisions
 
 - **Inquirer Prompts**: Dynamic loading for faster startup
-- **Token Security**: AES-256-GCM encryption with platform keychain integration
+- **Token Security**: AES-256-GCM encryption with platform file storage integration
 - **MCP Registry**: Centralized registry of 70+ validated MCP servers
 - **Skills System**: Markdown-based skill definitions for Claude Code
 
@@ -293,7 +293,7 @@ main() → initializeSecureStorage() → runCLI() → [command handler] OR runIn
 
 ### Security Considerations
 
-- **Token Storage**: Tokens are encrypted and stored in `~/.octocode/` with platform keychain backup
+- **Token Storage**: Tokens are encrypted and stored in `~/.octocode/` with platform file storage backup
 - **OAuth Flow**: Uses GitHub's device authorization flow for secure authentication
 - **No Credential Logging**: Never log tokens or sensitive data
 
@@ -319,7 +319,7 @@ main() → initializeSecureStorage() → runCLI() → [command handler] OR runIn
 
 ### Testing Notes
 
-- **Mock External Services**: Mock GitHub API, file system, and keychain operations
+- **Mock External Services**: Mock GitHub API, file system, and file storage operations
 - **Platform Tests**: Test cross-platform path resolution
 - **Interactive Tests**: Use mock prompts for interactive UI testing
 

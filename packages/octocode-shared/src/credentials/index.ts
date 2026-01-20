@@ -14,11 +14,6 @@ export type {
 
 // Storage functions
 export {
-  // Initialization
-  initializeSecureStorage,
-  isSecureStorageAvailable,
-  isUsingSecureStorage,
-
   // CRUD operations
   storeCredentials,
   getCredentials,
@@ -79,12 +74,7 @@ export {
   getEnvTokenSource,
   hasEnvToken,
 
-  // Errors
-  TimeoutError,
-
   // Testing utilities
-  _setSecureStorageAvailable,
-  _resetSecureStorageState,
   _getCacheStats,
   _resetCredentialsCache,
 } from './storage.js';

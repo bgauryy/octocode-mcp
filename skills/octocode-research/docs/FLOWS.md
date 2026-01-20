@@ -1,6 +1,7 @@
 # Octocode Research - Main Flows & Architecture
 
 > Understanding how the octocode-research skill works from server startup to tool execution.
+> **v2.1.0** - Process managed by PM2
 
 ## Table of Contents
 
@@ -11,6 +12,7 @@
   - [Server Startup Flow](#1-server-startup-flow)
   - [Tool Execution Flow](#2-tool-execution-flow)
   - [Discovery Flow](#3-discovery-flow)
+- [PM2 Process Management](#pm2-process-management)
 - [Component Connections](#component-connections)
 - [Quick Reference](#quick-reference)
 
@@ -170,65 +172,20 @@ The bundled server output from tsdown:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│                         SERVER STARTUP FLOW                                 │
+│                   SERVER STARTUP FLOW (PM2 Managed)                         │
 └────────────────────────────────────────────────────────────────────────────┘
 
-   npm run server:start
+   npm run pm2:start (or pm2 start ecosystem.config.cjs)
           │
           ▼
-   ┌──────────────────┐
-   │ scripts/server.ts │
-   │     start()       │
-   └────────┬─────────┘
-            │
-            ▼
    ┌──────────────────────────────────────┐
-   │ 1. Check if server already running   │
-   │    (GET /health)                     │
+   │     PM2 Process Manager              │
+   │  - Reads ecosystem.config.cjs        │
+   │  - Spawns node scripts/server.js     │
+   │  - Sets wait_ready: true             │
    └────────┬─────────────────────────────┘
             │
-    ┌───────┴───────┐
-    │               │
-Running?        Not Running
-    │               │
-    ▼               ▼
- [Done]    ┌──────────────────┐
-           │ 2. Check port    │
-           │    availability   │
-           └────────┬─────────┘
-                    │
-                    ▼
-           ┌──────────────────┐
-           │ 3. Install deps  │
-           │    (if needed)   │
-           └────────┬─────────┘
-                    │
-                    ▼
-           ┌──────────────────┐
-           │ 4. Build project │
-           │    (if needed)   │
-           └────────┬─────────┘
-                    │
-                    ▼
-           ┌──────────────────┐
-           │ 5. Resolve tokens│
-           │    (GH/GL auth)  │
-           └────────┬─────────┘
-                    │
-                    ▼
-           ┌──────────────────┐
-           │ 6. Spawn server  │
-           │    process       │
-           │    (detached)    │
-           └────────┬─────────┘
-                    │
-                    ▼
-           ┌──────────────────┐
-           │ 7. Wait for      │
-           │    health check  │
-           └────────┬─────────┘
-                    │
-                    ▼
+            ▼
    ┌──────────────────────────────────────┐
    │        src/server.ts                  │
    │        startServer()                  │
@@ -236,22 +193,12 @@ Running?        Not Running
             │
             ▼
    ┌──────────────────────────────────────┐
-   │ initializeMcpContent()               │
-   │  ├─ initialize() (octocode-mcp)      │
-   │  └─ loadToolContent() → mcpCache     │
-   └────────┬─────────────────────────────┘
-            │
-            ▼
-   ┌──────────────────────────────────────┐
-   │ initializeProviders()                │
-   │  └─ Setup GitHub token resolution    │
-   └────────┬─────────────────────────────┘
-            │
-            ▼
-   ┌──────────────────────────────────────┐
-   │ createServer()                       │
+   │ 1. createServer()                    │
+   │  ├─ initializeLogger()               │
+   │  ├─ initializeSession()              │
    │  ├─ express()                        │
    │  ├─ use(requestLogger)               │
+   │  ├─ mount(/health)                   │
    │  ├─ mount(/tools, toolsRoutes)       │
    │  ├─ mount(/prompts, promptsRoutes)   │
    │  └─ use(errorHandler)                │
@@ -259,7 +206,26 @@ Running?        Not Running
             │
             ▼
    ┌──────────────────────────────────────┐
-   │ app.listen(1987)                     │
+   │ 2. app.listen(1987)                  │
+   │  └─ HTTP server listening            │
+   │  └─ Status: "initializing"           │
+   └────────┬─────────────────────────────┘
+            │
+            ▼
+   ┌──────────────────────────────────────┐
+   │ 3. Background initialization (async) │
+   │  ├─ initializeMcpContent()           │
+   │  │   ├─ initialize() (octocode-mcp)  │
+   │  │   └─ loadToolContent() → cache    │
+   │  ├─ initializeProviders()            │
+   │  │   └─ Resolve GitHub token         │
+   │  └─ process.send('ready')  ◄─────────│── PM2 ready signal
+   └────────┬─────────────────────────────┘
+            │
+            ▼
+   ┌──────────────────────────────────────┐
+   │ 4. PM2 marks process "online"        │
+   │  └─ Status: "ok"                     │
    │  └─ Server Ready!                    │
    └──────────────────────────────────────┘
 ```
@@ -425,6 +391,74 @@ Running?        Not Running
 
 ---
 
+## PM2 Process Management
+
+The server is managed by PM2 for automatic restarts, monitoring, and log management.
+
+### PM2 Features
+
+| Feature | Configuration | Description |
+|---------|---------------|-------------|
+| **Cron Restart** | `0 * * * *` | Restarts every hour for memory hygiene |
+| **Memory Guard** | `500M` | Auto-restart if memory exceeds threshold |
+| **Ready Signal** | `wait_ready: true` | PM2 waits for `process.send('ready')` |
+| **Kill Timeout** | `10000ms` | Graceful shutdown timeout |
+| **Auto Restart** | `max_restarts: 10` | Restart on crash with backoff |
+
+### PM2 Commands
+
+```bash
+# NPM Scripts
+npm run pm2:start          # Start with PM2
+npm run pm2:stop           # Stop gracefully
+npm run pm2:restart        # Restart
+npm run pm2:reload         # Zero-downtime reload
+npm run pm2:delete         # Remove from PM2
+npm run pm2:logs           # View logs
+npm run pm2:monit          # Dashboard
+
+# Direct PM2 Commands
+pm2 status                 # List processes
+pm2 logs octocode-research # Tail logs
+pm2 describe octocode-research  # Process details
+```
+
+### Lifecycle Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           PM2 LIFECYCLE                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  pm2 start ──▶ [STARTING] ──▶ [WAITING READY] ──▶ [ONLINE]                 │
+│                                      │               │                      │
+│                    process.send('ready')             │                      │
+│                                                      │                      │
+│  ┌──────────────────────────────────────────────────┴──────────────────┐   │
+│  │                         RUNNING                                      │   │
+│  │  - Cron restart every hour                                          │   │
+│  │  - Memory check (restart if > 500MB)                                │   │
+│  │  - Auto-restart on crash (with backoff)                             │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│  SIGINT/SIGTERM ──────────────────▶│                                        │
+│                                    │                                        │
+│                    ┌───────────────┴───────────────┐                       │
+│                    │     gracefulShutdown()        │                       │
+│                    │  1. stopCircuitCleanup()      │                       │
+│                    │  2. clearAllCircuits()        │                       │
+│                    │  3. server.close()            │                       │
+│                    │  4. process.exit(0)           │                       │
+│                    └───────────────────────────────┘                       │
+│                                    │                                        │
+│                                    ▼                                        │
+│                           PM2 Auto-Restart                                  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## Quick Reference
 
 ### Start Server
@@ -433,9 +467,13 @@ Running?        Not Running
 # Development (with hot reload)
 npm run dev
 
-# Production (bundled)
+# Production (PM2 managed - RECOMMENDED)
+npm run pm2:start
+npm run pm2:logs           # View logs
+
+# Direct (no PM2)
 npm start
-# Or directly: node scripts/server.js
+# Or: node scripts/server.js
 ```
 
 ### HTTP Examples
@@ -518,21 +556,22 @@ CLOSED (normal) ──[3 failures]──► OPEN (reject all)
 
 | File | Purpose |
 |------|---------|
-| \`src/server.ts\` | Express server, route mounting (\`/tools\`, \`/prompts\`), graceful shutdown |
-| \`src/index.ts\` | Re-exports from octocode-mcp |
-| \`src/mcpCache.ts\` | Tool metadata caching |
-| \`src/routes/tools.ts\` | **Main API** - \`/tools/call/:toolName\` and discovery |
-| \`src/routes/prompts.ts\` | Prompt discovery |
-| \`src/routes/local.ts\` | Handler logic (used by tools.ts registry) |
-| \`src/routes/lsp.ts\` | Handler logic (used by tools.ts registry) |
-| \`src/routes/github.ts\` | Handler logic (used by tools.ts registry) |
-| \`src/routes/package.ts\` | Handler logic (used by tools.ts registry) |
-| \`src/middleware/*.ts\` | Logging, validation, error handling |
-| \`src/utils/*.ts\` | Resilience, formatting, parsing |
-| \`src/validation/schemas.ts\` | Zod validation schemas |
-| \`scripts/server.js\` | Bundled server (tsdown output) |
+| `ecosystem.config.cjs` | **PM2 configuration** - restart strategies, memory limits, ready signal |
+| `src/server.ts` | Express server, route mounting (`/tools`, `/prompts`), graceful shutdown |
+| `src/index.ts` | Re-exports from octocode-mcp |
+| `src/mcpCache.ts` | Tool metadata caching |
+| `src/routes/tools.ts` | **Main API** - `/tools/call/:toolName` and discovery |
+| `src/routes/prompts.ts` | Prompt discovery |
+| `src/routes/local.ts` | Handler logic (used by tools.ts registry) |
+| `src/routes/lsp.ts` | Handler logic (used by tools.ts registry) |
+| `src/routes/github.ts` | Handler logic (used by tools.ts registry) |
+| `src/routes/package.ts` | Handler logic (used by tools.ts registry) |
+| `src/middleware/*.ts` | Logging, validation, error handling |
+| `src/utils/*.ts` | Resilience, formatting, parsing |
+| `src/validation/schemas.ts` | Zod validation schemas |
+| `scripts/server.js` | Bundled server (tsdown output) |
 
 ---
 
-*Created by Octocode Research Skill*
-*Last validated: 2026-01-18*
+*Created by Octocode Research Skill v2.1.0*
+*Last validated: 2026-01-20*

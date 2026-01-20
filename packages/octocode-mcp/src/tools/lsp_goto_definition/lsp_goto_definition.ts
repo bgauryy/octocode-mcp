@@ -12,13 +12,14 @@ import {
   LSP_GOTO_DEFINITION_DESCRIPTION,
 } from './scheme.js';
 import { executeGotoDefinition } from './execution.js';
+import { STATIC_TOOL_NAMES } from '../toolNames.js';
 
 /**
  * Register the LSP Go To Definition tool with the MCP server.
  */
 export function registerLSPGotoDefinitionTool(server: McpServer) {
   return server.registerTool(
-    'lspGotoDefinition',
+    STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
     {
       description: LSP_GOTO_DEFINITION_DESCRIPTION,
       inputSchema: BulkLSPGotoDefinitionSchema as unknown as AnySchema,

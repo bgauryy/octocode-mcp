@@ -20,7 +20,6 @@
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
   "dependencies": {
-    "@napi-rs/keyring": "^1.2.0",
     "@octokit/oauth-methods": "^6.0.2",
     "@octokit/request": "^10.0.7"
   },
