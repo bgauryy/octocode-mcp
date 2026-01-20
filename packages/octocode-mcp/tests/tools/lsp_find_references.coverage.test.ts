@@ -352,9 +352,9 @@ describe('LSP Find References Coverage Tests', () => {
         return a.range.start.line - b.range.start.line;
       });
 
-      expect(refs[0].isDefinition).toBe(true);
-      expect(refs[1].uri).toBe('a.ts');
-      expect(refs[2].uri).toBe('b.ts');
+      expect(refs[0]!.isDefinition).toBe(true);
+      expect(refs[1]!.uri).toBe('a.ts');
+      expect(refs[2]!.uri).toBe('b.ts');
     });
 
     it('should sort by file name when both are usages', () => {
@@ -371,9 +371,9 @@ describe('LSP Find References Coverage Tests', () => {
         return a.range.start.line - b.range.start.line;
       });
 
-      expect(refs[0].uri).toBe('a.ts');
-      expect(refs[1].uri).toBe('b.ts');
-      expect(refs[2].uri).toBe('c.ts');
+      expect(refs[0]!.uri).toBe('a.ts');
+      expect(refs[1]!.uri).toBe('b.ts');
+      expect(refs[2]!.uri).toBe('c.ts');
     });
 
     it('should sort by line number in same file', () => {
@@ -390,9 +390,9 @@ describe('LSP Find References Coverage Tests', () => {
         return a.range.start.line - b.range.start.line;
       });
 
-      expect(refs[0].range.start.line).toBe(10);
-      expect(refs[1].range.start.line).toBe(20);
-      expect(refs[2].range.start.line).toBe(30);
+      expect(refs[0]!.range.start.line).toBe(10);
+      expect(refs[1]!.range.start.line).toBe(20);
+      expect(refs[2]!.range.start.line).toBe(30);
     });
   });
 
@@ -960,7 +960,7 @@ export function testFunction(param: string): string {
 
       registerLSPFindReferencesTool(mockServer as any);
 
-      const config = mockServer.registerTool.mock.calls[0][1];
+      const config = mockServer.registerTool.mock.calls[0]![1];
       expect(config.annotations.readOnlyHint).toBe(true);
       expect(config.annotations.destructiveHint).toBe(false);
       expect(config.annotations.idempotentHint).toBe(true);
@@ -1060,15 +1060,15 @@ export function testFunction(param: string): string {
       refs.sort(sortFn);
 
       // Definition should be first
-      expect(refs[0].isDefinition).toBe(true);
+      expect(refs[0]!.isDefinition).toBe(true);
       // Then sorted by file name
-      expect(refs[1].uri).toBe('a.ts');
+      expect(refs[1]!.uri).toBe('a.ts');
       // Then sorted by line number within same file
-      expect(refs[1].range.start.line).toBe(8);
-      expect(refs[2].range.start.line).toBe(15);
+      expect(refs[1]!.range.start.line).toBe(8);
+      expect(refs[2]!.range.start.line).toBe(15);
       // Then other files
-      expect(refs[3].uri).toBe('b.ts');
-      expect(refs[4].uri).toBe('c.ts');
+      expect(refs[3]!.uri).toBe('b.ts');
+      expect(refs[4]!.uri).toBe('c.ts');
     });
   });
 });

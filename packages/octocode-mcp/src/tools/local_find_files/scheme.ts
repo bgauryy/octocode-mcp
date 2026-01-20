@@ -143,6 +143,3 @@ export const BulkFindFilesSchema = createBulkQuerySchema(
   FindFilesQuerySchema,
   { maxQueries: 5 }
 );
-
-type _FindFilesQuery = z.infer<typeof FindFilesQuerySchema>;
-type _BulkFindFilesQuery = z.infer<typeof BulkFindFilesSchema>;

@@ -86,8 +86,7 @@ function createMockCodeSearchResult(): ProviderResponse<CodeSearchResult> {
       pagination: {
         currentPage: 1,
         totalPages: 1,
-        hasNextPage: false,
-        hasPreviousPage: false,
+        hasMore: false,
       },
     },
     status: 200,
@@ -136,8 +135,7 @@ function createMockRepoSearchResult(): ProviderResponse<RepoSearchResult> {
       pagination: {
         currentPage: 1,
         totalPages: 1,
-        hasNextPage: false,
-        hasPreviousPage: false,
+        hasMore: false,
       },
     },
     status: 200,
@@ -170,8 +168,7 @@ function createMockPullRequestSearchResult(): ProviderResponse<PullRequestSearch
       pagination: {
         currentPage: 1,
         totalPages: 1,
-        hasNextPage: false,
-        hasPreviousPage: false,
+        hasMore: false,
       },
     },
     status: 200,

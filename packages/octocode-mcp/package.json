@@ -44,7 +44,7 @@
     "html-minifier-terser": "^7.2.0",
     "js-yaml": "^4.1.1",
     "node-cache": "^5.1.2",
-    "octocode-shared": "^1.0.0",
+    "octocode-shared": "workspace:*",
     "octokit": "^5.0.5",
     "terser": "^5.44.1",
     "typescript": "^5.3.3",
@@ -72,28 +72,27 @@
   },
   "exports": {
     ".": {
+      "types": "./dist/public.d.ts",
       "import": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/public.d.ts"
     },
     "./public": {
       "types": "./dist/public.d.ts",
       "import": "./dist/public.js"
-    },
-    "./types": {
-      "types": "./dist/public.d.ts",
-      "import": "./dist/public.js"
-    },
-    "./responses": {
-      "types": "./dist/responses.d.ts",
-      "import": "./dist/responses.js"
     }
   },
   "files": [
-    "dist",
+    "dist/index.js",
+    "dist/public.js",
+    "dist/public.d.ts",
     "manifest.json",
     "server.json",
     "LICENSE"
   ],
   "main": "dist/index.js",
+  "types": "dist/public.d.ts",
   "mcp": {
     "type": "stdio",
     "command": "octocode-mcp",
@@ -101,7 +100,7 @@
   },
   "mcpName": "io.github.bgauryy/octocode-mcp",
   "scripts": {
-    "build": "yarn lint && yarn clean && tsdown",
+    "build": "yarn lint && yarn typecheck && yarn test && yarn clean && tsdown && tsc -p tsconfig.build.json",
     "build:bin": "bun build ./src/index.ts --compile --minify --sourcemap --outfile dist/octocode-mcp",
     "build:bin:all": "bun run build:bin:linux-x64 && bun run build:bin:linux-arm64 && bun run build:bin:linux-x64-musl && bun run build:bin:darwin-arm64 && bun run build:bin:darwin-x64 && bun run build:bin:windows-x64",
     "build:bin:darwin-arm64": "bun build ./src/index.ts --compile --minify --sourcemap --target=bun-darwin-arm64 --outfile dist/octocode-mcp-darwin-arm64",
@@ -110,7 +109,7 @@
     "build:bin:linux-x64": "bun build ./src/index.ts --compile --minify --sourcemap --target=bun-linux-x64 --outfile dist/octocode-mcp-linux-x64",
     "build:bin:linux-x64-musl": "bun build ./src/index.ts --compile --minify --sourcemap --target=bun-linux-x64-musl --outfile dist/octocode-mcp-linux-x64-musl",
     "build:bin:windows-x64": "bun build ./src/index.ts --compile --minify --sourcemap --target=bun-windows-x64 --outfile dist/octocode-mcp-windows-x64.exe",
-    "build:dev": "yarn clean && tsdown",
+    "build:dev": "yarn clean && tsdown && tsc -p tsconfig.build.json",
     "build:watch": "tsdown --watch",
     "clean": "rm -rf dist/",
     "debug": "npx @modelcontextprotocol/inspector node dist/index.js",
@@ -127,7 +126,7 @@
     "lint": "eslint src tests",
     "lint:fix": "eslint src tests --fix",
     "prepack": "yarn build",
-    "prepublishOnly": "yarn lint && yarn test && tsdown",
+    "prepublishOnly": "yarn lint && yarn test && tsdown && tsc -p tsconfig.build.json",
     "test": "vitest run --coverage",
     "test:coverage": "vitest run --coverage",
     "test:eval": "vitest run tests/evals/ --reporter=verbose",

@@ -1,6 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import { formatPRForResponse } from '../../src/github/pullRequestSearch.js';
-import type { GitHubPullRequestItem } from '../../src/github/githubAPI.js';
+import type {
+  GitHubPullRequestItem,
+  DiffEntry,
+} from '../../src/github/githubAPI.js';
+
+// Helper to create mock DiffEntry objects with required properties
+const createMockDiffEntry = (
+  overrides: Partial<DiffEntry> &
+    Pick<
+      DiffEntry,
+      'filename' | 'status' | 'additions' | 'deletions' | 'changes'
+    >
+): DiffEntry =>
+  ({
+    sha: 'mock-sha',
+    blob_url: 'https://github.com/mock/blob',
+    raw_url: 'https://github.com/mock/raw',
+    contents_url: 'https://api.github.com/mock/contents',
+    ...overrides,
+  }) as DiffEntry;
 
 describe('formatPRForResponse', () => {
   const createBasePR = (
@@ -227,27 +246,27 @@ describe('formatPRForResponse', () => {
         file_changes: {
           total_count: 3,
           files: [
-            {
+            createMockDiffEntry({
               filename: 'file1.ts',
               status: 'modified',
               additions: 10,
               deletions: 5,
               changes: 15,
-            },
-            {
+            }),
+            createMockDiffEntry({
               filename: 'file2.ts',
               status: 'added',
               additions: 50,
               deletions: 0,
               changes: 50,
-            },
-            {
+            }),
+            createMockDiffEntry({
               filename: 'file3.ts',
-              status: 'deleted',
+              status: 'removed',
               additions: 0,
               deletions: 30,
               changes: 30,
-            },
+            }),
           ],
         },
       });
@@ -272,22 +291,22 @@ describe('formatPRForResponse', () => {
         file_changes: {
           total_count: 2,
           files: [
-            {
+            createMockDiffEntry({
               filename: 'src/index.ts',
               status: 'modified',
               additions: 10,
               deletions: 5,
               changes: 15,
               patch: '@@ -1,5 +1,10 @@\n content',
-            },
-            {
+            }),
+            createMockDiffEntry({
               filename: 'src/utils.ts',
               status: 'added',
               additions: 20,
               deletions: 0,
               changes: 20,
               patch: '@@ -0,0 +1,20 @@\n new content',
-            },
+            }),
           ],
         },
       });
@@ -344,8 +363,8 @@ describe('formatPRForResponse', () => {
 
       expect(result.commit_details).toBeDefined();
       expect(result.commit_details).toHaveLength(1);
-      expect(result.commit_details![0].sha).toBe('abc123');
-      expect(result.commit_details![0].message).toBe('Fix bug');
+      expect(result.commit_details?.[0]?.sha).toBe('abc123');
+      expect(result.commit_details?.[0]?.message).toBe('Fix bug');
     });
 
     it('should not include commit_details when commits is undefined', () => {
@@ -408,13 +427,13 @@ describe('formatPRForResponse', () => {
         file_changes: {
           total_count: 1,
           files: [
-            {
+            createMockDiffEntry({
               filename: 'feature.ts',
               status: 'added',
               additions: 100,
               deletions: 0,
               changes: 100,
-            },
+            }),
           ],
         },
         _sanitization_warnings: ['Minor warning'],

@@ -70,6 +70,8 @@ describe('GitHub Client Branch Coverage', () => {
         enableLogging: true,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: true,
+        tokenSource: 'env:GH_TOKEN',
       });
 
       await getOctokit();
@@ -89,6 +91,8 @@ describe('GitHub Client Branch Coverage', () => {
         enableLogging: true,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: true,
+        tokenSource: 'env:GH_TOKEN',
       });
 
       await getOctokit();
@@ -108,6 +112,8 @@ describe('GitHub Client Branch Coverage', () => {
         enableLogging: true,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: true,
+        tokenSource: 'env:GH_TOKEN',
       });
 
       await getOctokit();

@@ -37,7 +37,13 @@ describe('File Operations - Branch Fallback & Caching', () => {
     const create404 = () =>
       new RequestError('Not Found', 404, {
         request: { method: 'GET', url: '', headers: {} },
-        response: { status: 404, url: '', headers: {}, data: {} },
+        response: {
+          status: 404,
+          url: '',
+          headers: {},
+          data: {},
+          retryCount: 0,
+        },
       });
 
     // Scenario: User asks for 'main', but repo uses 'develop'

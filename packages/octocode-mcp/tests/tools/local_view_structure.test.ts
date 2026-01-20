@@ -2342,9 +2342,10 @@ describe('localViewStructure', () => {
       }
       // Should have warnings about auto-pagination
       expect(result.warnings).toBeDefined();
-      expect(result.warnings?.length).toBeGreaterThan(0);
-      expect(result.warnings?.[0]).toContain('Auto-paginated');
-      expect(result.warnings?.[0]).toContain('exceeds');
+      const warnings = result.warnings as string[];
+      expect(warnings.length).toBeGreaterThan(0);
+      expect(warnings[0]).toContain('Auto-paginated');
+      expect(warnings[0]).toContain('exceeds');
     });
 
     it('should NOT auto-paginate when output is under MAX_OUTPUT_CHARS (2000)', async () => {

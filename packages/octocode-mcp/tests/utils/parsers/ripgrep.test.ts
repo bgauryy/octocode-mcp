@@ -9,10 +9,11 @@ import {
 } from '../../../src/utils/parsers/ripgrep.js';
 import type { RipgrepQuery } from '../../../src/tools/local_ripgrep/scheme.js';
 
-const baseQuery: RipgrepQuery = {
+// Minimal query for testing - only includes fields used by parser functions
+const baseQuery = {
   pattern: 'test',
   path: '/test/path',
-};
+} as RipgrepQuery;
 
 describe('parseRipgrepJson', () => {
   it('should parse basic match output', () => {

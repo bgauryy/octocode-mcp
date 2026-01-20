@@ -125,6 +125,8 @@ describe('GitHubProvider', () => {
             pagination: {
               currentPage: 1,
               totalPages: 1,
+              perPage: 10,
+              totalMatches: 1,
               hasMore: false,
             },
           },
@@ -142,7 +144,7 @@ describe('GitHubProvider', () => {
         expect(result.provider).toBe('github');
         expect(result.data).toBeDefined();
         expect(result.data?.items).toHaveLength(1);
-        expect(result.data?.items[0].path).toBe('src/index.ts');
+        expect(result.data!.items[0]!.path).toBe('src/index.ts');
         expect(mockSearchGitHubCodeAPI).toHaveBeenCalledWith(
           expect.objectContaining({
             keywordsToSearch: ['test'],
@@ -161,10 +163,12 @@ describe('GitHubProvider', () => {
             pagination: {
               currentPage: 2,
               totalPages: 3,
-              hasMore: true,
+              perPage: 10,
               totalMatches: 50,
+              hasMore: true,
             },
             _researchContext: {
+              foundFiles: [],
               repositoryContext: {
                 owner: 'owner',
                 repo: 'repo',
@@ -234,9 +238,12 @@ describe('GitHubProvider', () => {
             pagination: {
               currentPage: 1,
               totalPages: 1,
+              perPage: 10,
+              totalMatches: 2,
               hasMore: false,
             },
             _researchContext: {
+              foundFiles: ['src/utils.ts'],
               repositoryContext: {
                 owner: 'test',
                 repo: 'project',
@@ -254,8 +261,8 @@ describe('GitHubProvider', () => {
 
         const result = await provider.searchCode(query);
 
-        expect(result.data?.items[0].matches).toHaveLength(2);
-        expect(result.data?.items[0].lastModifiedAt).toBe(
+        expect(result.data!.items[0]!.matches).toHaveLength(2);
+        expect(result.data!.items[0]!.lastModifiedAt).toBe(
           '2024-01-15T10:00:00Z'
         );
         expect(result.data?.repositoryContext).toEqual({
@@ -273,14 +280,20 @@ describe('GitHubProvider', () => {
               {
                 path: 'test.ts',
                 matches: [],
-                url: undefined,
+                url: '',
                 repository: {
                   nameWithOwner: 'owner/repo',
                   url: 'https://github.com/owner/repo',
                 },
               },
             ],
-            pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+            pagination: {
+              currentPage: 1,
+              totalPages: 1,
+              perPage: 10,
+              totalMatches: 1,
+              hasMore: false,
+            },
           },
           status: 200,
         });
@@ -290,7 +303,7 @@ describe('GitHubProvider', () => {
           projectId: 'owner/repo',
         });
 
-        expect(result.data?.items[0].url).toBe('');
+        expect(result.data!.items[0]!.url).toBe('');
       });
 
       it('should handle pagination defaults when not provided', async () => {
@@ -322,6 +335,7 @@ describe('GitHubProvider', () => {
         mockSearchGitHubCodeAPI.mockResolvedValue({
           error: 'Rate limit exceeded',
           status: 403,
+          type: 'http',
           hints: ['Wait 60 seconds before retrying'],
         });
 
@@ -339,13 +353,10 @@ describe('GitHubProvider', () => {
       });
 
       it('should handle API error with object error (toString)', async () => {
-        const errorObj = {
-          message: 'Complex error',
-          toString: () => 'Error details',
-        };
         mockSearchGitHubCodeAPI.mockResolvedValue({
-          error: errorObj as any,
+          error: 'Error details',
           status: 500,
+          type: 'http',
         });
 
         const result = await provider.searchCode({
@@ -644,6 +655,7 @@ describe('GitHubProvider', () => {
         mockFetchGitHubFileContentAPI.mockResolvedValue({
           error: 'File not found',
           status: 404,
+          type: 'http',
           hints: ['Check the file path'],
         });
 
@@ -659,8 +671,9 @@ describe('GitHubProvider', () => {
 
       it('should handle API error with object error', async () => {
         mockFetchGitHubFileContentAPI.mockResolvedValue({
-          error: { toString: () => 'Detailed error' } as any,
+          error: 'Detailed error',
           status: 500,
+          type: 'http',
         });
 
         const result = await provider.getFileContent({
@@ -674,6 +687,7 @@ describe('GitHubProvider', () => {
       it('should default to status 500 when API error has no status', async () => {
         mockFetchGitHubFileContentAPI.mockResolvedValue({
           error: 'File content error without status',
+          type: 'http',
           // No status provided
         });
 
@@ -744,8 +758,9 @@ describe('GitHubProvider', () => {
             pagination: {
               currentPage: 1,
               totalPages: 10,
-              hasMore: true,
+              perPage: 10,
               totalMatches: 100,
+              hasMore: true,
             },
           },
           status: 200,
@@ -760,11 +775,11 @@ describe('GitHubProvider', () => {
         expect(result.status).toBe(200);
         expect(result.provider).toBe('github');
         expect(result.data?.repositories).toHaveLength(1);
-        expect(result.data?.repositories[0].name).toBe('react');
-        expect(result.data?.repositories[0].fullPath).toBe('facebook/react');
-        expect(result.data?.repositories[0].stars).toBe(200000);
-        expect(result.data?.repositories[0].forks).toBe(40000);
-        expect(result.data?.repositories[0].visibility).toBe('public');
+        expect(result.data!.repositories[0]!.name).toBe('react');
+        expect(result.data!.repositories[0]!.fullPath).toBe('facebook/react');
+        expect(result.data!.repositories[0]!.stars).toBe(200000);
+        expect(result.data!.repositories[0]!.forks).toBe(40000);
+        expect(result.data!.repositories[0]!.visibility).toBe('public');
       });
 
       it('should search repos with all query parameters', async () => {
@@ -774,8 +789,9 @@ describe('GitHubProvider', () => {
             pagination: {
               currentPage: 2,
               totalPages: 5,
-              hasMore: true,
+              perPage: 10,
               totalMatches: 50,
+              hasMore: true,
             },
           },
           status: 200,
@@ -794,7 +810,7 @@ describe('GitHubProvider', () => {
           reasoning: 'Need to evaluate testing options',
         };
 
-        const result = await provider.searchRepos(query);
+        await provider.searchRepos(query);
 
         expect(mockSearchGitHubReposAPI).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -814,7 +830,13 @@ describe('GitHubProvider', () => {
         mockSearchGitHubReposAPI.mockResolvedValue({
           data: {
             repositories: [],
-            pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+            pagination: {
+              currentPage: 1,
+              totalPages: 1,
+              perPage: 10,
+              totalMatches: 0,
+              hasMore: false,
+            },
           },
           status: 200,
         });
@@ -840,9 +862,20 @@ describe('GitHubProvider', () => {
                 owner: 'test',
                 repo: 'minimal',
                 url: 'https://github.com/test/minimal',
+                stars: 0,
+                description: '',
+                createdAt: '2024-01-01T00:00:00Z',
+                updatedAt: '2024-01-01T00:00:00Z',
+                pushedAt: '2024-01-01T00:00:00Z',
               },
             ],
-            pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+            pagination: {
+              currentPage: 1,
+              totalPages: 1,
+              perPage: 10,
+              totalMatches: 1,
+              hasMore: false,
+            },
           },
           status: 200,
         });
@@ -868,6 +901,11 @@ describe('GitHubProvider', () => {
                 owner: 'test',
                 repo: 'repo',
                 url: 'https://github.com/test/repo',
+                stars: 0,
+                description: '',
+                createdAt: '2024-01-01T00:00:00Z',
+                updatedAt: '2024-01-01T00:00:00Z',
+                pushedAt: '2024-01-01T00:00:00Z',
               },
             ],
           },
@@ -891,7 +929,13 @@ describe('GitHubProvider', () => {
         mockSearchGitHubReposAPI.mockResolvedValue({
           data: {
             repositories: [],
-            pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+            pagination: {
+              currentPage: 1,
+              totalPages: 1,
+              perPage: 10,
+              totalMatches: 0,
+              hasMore: false,
+            },
           },
           status: 200,
         });
@@ -915,6 +959,7 @@ describe('GitHubProvider', () => {
         mockSearchGitHubReposAPI.mockResolvedValue({
           error: 'Search failed',
           status: 422,
+          type: 'http',
           hints: ['Try different keywords'],
         });
 
@@ -931,6 +976,7 @@ describe('GitHubProvider', () => {
         mockSearchGitHubReposAPI.mockResolvedValue({
           error: { toString: () => 'Object error message' } as any,
           status: 400,
+          type: 'http',
         });
 
         const result = await provider.searchRepos({
@@ -993,12 +1039,21 @@ describe('GitHubProvider', () => {
               number: 123,
               title: 'Add new feature',
               body: 'This PR adds a cool feature',
+              url: 'https://api.github.com/repos/owner/repo/pulls/123',
               html_url: 'https://github.com/owner/repo/pull/123',
               state: 'open',
               draft: false,
+              merged: false,
               author: 'developer',
-              assignees: [{ login: 'reviewer' }],
-              labels: [{ name: 'enhancement' }],
+              assignees: [
+                {
+                  login: 'reviewer',
+                  id: 1,
+                  avatar_url: 'https://github.com/reviewer.png',
+                  html_url: 'https://github.com/reviewer',
+                },
+              ],
+              labels: [{ id: 1, name: 'enhancement', color: 'blue' }],
               head_ref: 'feature-branch',
               base_ref: 'main',
               head_sha: 'abc123',
@@ -1015,6 +1070,8 @@ describe('GitHubProvider', () => {
           pagination: {
             currentPage: 1,
             totalPages: 1,
+            perPage: 10,
+            totalMatches: 1,
             hasMore: false,
           },
         });
@@ -1029,11 +1086,11 @@ describe('GitHubProvider', () => {
         expect(result.status).toBe(200);
         expect(result.provider).toBe('github');
         expect(result.data?.items).toHaveLength(1);
-        expect(result.data?.items[0].number).toBe(123);
-        expect(result.data?.items[0].title).toBe('Add new feature');
-        expect(result.data?.items[0].state).toBe('open');
-        expect(result.data?.items[0].assignees).toEqual(['reviewer']);
-        expect(result.data?.items[0].labels).toEqual(['enhancement']);
+        expect(result.data!.items[0]!.number).toBe(123);
+        expect(result.data!.items[0]!.title).toBe('Add new feature');
+        expect(result.data!.items[0]!.state).toBe('open');
+        expect(result.data!.items[0]!.assignees).toEqual(['reviewer']);
+        expect(result.data!.items[0]!.labels).toEqual(['enhancement']);
         expect(result.data?.repositoryContext).toEqual({
           owner: 'owner',
           repo: 'repo',
@@ -1086,12 +1143,16 @@ describe('GitHubProvider', () => {
             {
               number: 100,
               title: 'Merged PR',
+              url: 'https://api.github.com/repos/owner/repo/pulls/100',
               state: 'closed',
+              draft: false,
               merged: true,
               merged_at: '2024-01-12T10:00:00Z',
               author: 'dev',
               head_ref: 'feature',
               base_ref: 'main',
+              head_sha: 'abc123',
+              base_sha: 'def456',
               created_at: '2024-01-10T10:00:00Z',
               updated_at: '2024-01-12T10:00:00Z',
             },
@@ -1103,8 +1164,8 @@ describe('GitHubProvider', () => {
           projectId: 'owner/repo',
         });
 
-        expect(result.data?.items[0].state).toBe('merged');
-        expect(result.data?.items[0].mergedAt).toBe('2024-01-12T10:00:00Z');
+        expect(result.data!.items[0]!.state).toBe('merged');
+        expect(result.data!.items[0]!.mergedAt).toBe('2024-01-12T10:00:00Z');
       });
 
       it('should search PRs with all query parameters', async () => {
@@ -1166,10 +1227,15 @@ describe('GitHubProvider', () => {
             {
               number: 1,
               title: 'Cross-repo PR',
+              url: 'https://api.github.com/repos/org/repo/pulls/1',
               state: 'open',
+              draft: false,
+              merged: false,
               author: 'user',
               head_ref: 'branch',
               base_ref: 'main',
+              head_sha: 'abc123',
+              base_sha: 'def456',
               created_at: '2024-01-01T10:00:00Z',
               updated_at: '2024-01-01T10:00:00Z',
             },
@@ -1197,10 +1263,15 @@ describe('GitHubProvider', () => {
             {
               number: 50,
               title: 'PR with details',
+              url: 'https://api.github.com/repos/owner/repo/pulls/50',
               state: 'open',
+              draft: false,
+              merged: false,
               author: 'dev',
               head_ref: 'branch',
               base_ref: 'main',
+              head_sha: 'abc123',
+              base_sha: 'def456',
               created_at: '2024-01-01T10:00:00Z',
               updated_at: '2024-01-01T10:00:00Z',
               comment_details: [
@@ -1212,17 +1283,15 @@ describe('GitHubProvider', () => {
                   updated_at: '2024-01-02T10:00:00Z',
                 },
               ],
-              file_changes: {
-                files: [
-                  {
-                    filename: 'src/index.ts',
-                    status: 'modified',
-                    additions: 10,
-                    deletions: 5,
-                    patch: '@@ -1,5 +1,10 @@',
-                  },
-                ],
-              },
+              file_changes: [
+                {
+                  filename: 'src/index.ts',
+                  status: 'modified',
+                  additions: 10,
+                  deletions: 5,
+                  patch: '@@ -1,5 +1,10 @@',
+                },
+              ],
             },
           ],
           total_count: 1,
@@ -1233,10 +1302,10 @@ describe('GitHubProvider', () => {
           withComments: true,
         });
 
-        expect(result.data?.items[0].comments).toHaveLength(1);
-        expect(result.data?.items[0].comments?.[0].author).toBe('reviewer');
-        expect(result.data?.items[0].fileChanges).toHaveLength(1);
-        expect(result.data?.items[0].fileChanges?.[0].path).toBe(
+        expect(result.data!.items[0]!.comments).toHaveLength(1);
+        expect(result.data!.items[0]!.comments?.[0]!.author).toBe('reviewer');
+        expect(result.data!.items[0]!.fileChanges).toHaveLength(1);
+        expect(result.data!.items[0]!.fileChanges?.[0]!.path).toBe(
           'src/index.ts'
         );
       });
@@ -1247,14 +1316,19 @@ describe('GitHubProvider', () => {
             {
               number: 1,
               title: 'Minimal PR',
+              url: 'https://api.github.com/repos/owner/repo/pulls/1',
               state: 'open',
+              draft: false,
+              merged: false,
               author: 'user',
               head_ref: 'branch',
               base_ref: 'main',
+              head_sha: 'abc123',
+              base_sha: 'def456',
               created_at: '2024-01-01T10:00:00Z',
               updated_at: '2024-01-01T10:00:00Z',
-              assignees: null,
-              labels: null,
+              assignees: undefined,
+              labels: undefined,
             },
           ],
           total_count: 1,
@@ -1264,8 +1338,8 @@ describe('GitHubProvider', () => {
           projectId: 'owner/repo',
         });
 
-        expect(result.data?.items[0].assignees).toEqual([]);
-        expect(result.data?.items[0].labels).toEqual([]);
+        expect(result.data!.items[0]!.assignees).toEqual([]);
+        expect(result.data!.items[0]!.labels).toEqual([]);
       });
 
       it('should handle assignees and labels as strings', async () => {
@@ -1274,14 +1348,35 @@ describe('GitHubProvider', () => {
             {
               number: 1,
               title: 'PR',
+              url: 'https://api.github.com/repos/owner/repo/pulls/1',
               state: 'open',
+              draft: false,
+              merged: false,
               author: 'user',
               head_ref: 'branch',
               base_ref: 'main',
+              head_sha: 'abc123',
+              base_sha: 'def456',
               created_at: '2024-01-01T10:00:00Z',
               updated_at: '2024-01-01T10:00:00Z',
-              assignees: ['user1', 'user2'],
-              labels: ['label1', 'label2'],
+              assignees: [
+                {
+                  login: 'user1',
+                  id: 1,
+                  avatar_url: 'https://github.com/user1.png',
+                  html_url: 'https://github.com/user1',
+                },
+                {
+                  login: 'user2',
+                  id: 2,
+                  avatar_url: 'https://github.com/user2.png',
+                  html_url: 'https://github.com/user2',
+                },
+              ],
+              labels: [
+                { id: 1, name: 'label1', color: 'red' },
+                { id: 2, name: 'label2', color: 'blue' },
+              ],
             },
           ],
           total_count: 1,
@@ -1291,20 +1386,25 @@ describe('GitHubProvider', () => {
           projectId: 'owner/repo',
         });
 
-        expect(result.data?.items[0].assignees).toEqual(['user1', 'user2']);
-        expect(result.data?.items[0].labels).toEqual(['label1', 'label2']);
+        expect(result.data!.items[0]!.assignees).toEqual(['user1', 'user2']);
+        expect(result.data!.items[0]!.labels).toEqual(['label1', 'label2']);
       });
 
-      it('should use head/base as fallback for refs', async () => {
+      it('should use head_ref and base_ref for branch refs', async () => {
         mockSearchGitHubPullRequestsAPI.mockResolvedValue({
           pull_requests: [
             {
               number: 1,
               title: 'PR',
+              url: 'https://api.github.com/repos/owner/repo/pulls/1',
               state: 'open',
+              draft: false,
+              merged: false,
               author: 'user',
-              head: 'feature-branch',
-              base: 'develop',
+              head_ref: 'feature-branch',
+              base_ref: 'develop',
+              head_sha: 'abc123',
+              base_sha: 'def456',
               created_at: '2024-01-01T10:00:00Z',
               updated_at: '2024-01-01T10:00:00Z',
             },
@@ -1316,8 +1416,8 @@ describe('GitHubProvider', () => {
           projectId: 'owner/repo',
         });
 
-        expect(result.data?.items[0].sourceBranch).toBe('feature-branch');
-        expect(result.data?.items[0].targetBranch).toBe('develop');
+        expect(result.data!.items[0]!.sourceBranch).toBe('feature-branch');
+        expect(result.data!.items[0]!.targetBranch).toBe('develop');
       });
 
       it('should fall back to empty string when no branch refs provided', async () => {
@@ -1326,9 +1426,15 @@ describe('GitHubProvider', () => {
             {
               number: 1,
               title: 'PR without refs',
+              url: 'https://api.github.com/repos/owner/repo/pulls/1',
               state: 'open',
+              draft: false,
+              merged: false,
               author: 'user',
-              // No head_ref, head, base_ref, or base provided
+              head_ref: '',
+              base_ref: '',
+              head_sha: 'abc123',
+              base_sha: 'def456',
               created_at: '2024-01-01T10:00:00Z',
               updated_at: '2024-01-01T10:00:00Z',
             },
@@ -1340,8 +1446,8 @@ describe('GitHubProvider', () => {
           projectId: 'owner/repo',
         });
 
-        expect(result.data?.items[0].sourceBranch).toBe('');
-        expect(result.data?.items[0].targetBranch).toBe('');
+        expect(result.data!.items[0]!.sourceBranch).toBe('');
+        expect(result.data!.items[0]!.targetBranch).toBe('');
       });
 
       it('should handle pagination defaults', async () => {
@@ -1444,6 +1550,7 @@ describe('GitHubProvider', () => {
           owner: 'test',
           repo: 'project',
           branch: 'main',
+          apiSource: true,
           path: '/',
           structure: {
             '.': {
@@ -1459,6 +1566,8 @@ describe('GitHubProvider', () => {
             totalFiles: 4,
             totalFolders: 2,
             truncated: false,
+            filtered: false,
+            originalCount: 6,
           },
           pagination: {
             currentPage: 1,
@@ -1490,12 +1599,15 @@ describe('GitHubProvider', () => {
           owner: 'test',
           repo: 'project',
           branch: 'develop',
+          apiSource: true,
           path: 'src/components',
           structure: {},
           summary: {
             totalFiles: 0,
             totalFolders: 0,
             truncated: false,
+            filtered: false,
+            originalCount: 0,
           },
         });
 
@@ -1535,9 +1647,16 @@ describe('GitHubProvider', () => {
           owner: 'test',
           repo: 'project',
           branch: 'HEAD',
+          apiSource: true,
           path: '/',
           structure: {},
-          summary: { totalFiles: 0, totalFolders: 0, truncated: false },
+          summary: {
+            totalFiles: 0,
+            totalFolders: 0,
+            truncated: false,
+            filtered: false,
+            originalCount: 0,
+          },
         });
 
         await provider.getRepoStructure({
@@ -1557,12 +1676,15 @@ describe('GitHubProvider', () => {
           owner: 'test',
           repo: 'empty-repo',
           branch: 'main',
+          apiSource: true,
           path: '/',
           structure: {},
           summary: {
             totalFiles: 0,
             totalFolders: 0,
             truncated: false,
+            filtered: false,
+            originalCount: 0,
           },
         });
 
@@ -1579,9 +1701,16 @@ describe('GitHubProvider', () => {
           owner: 'test',
           repo: 'project',
           branch: 'main',
+          apiSource: true,
           path: '/',
           structure: {},
-          summary: {},
+          summary: {
+            totalFiles: 0,
+            totalFolders: 0,
+            truncated: false,
+            filtered: false,
+            originalCount: 0,
+          },
         });
 
         const result = await provider.getRepoStructure({
@@ -1599,9 +1728,17 @@ describe('GitHubProvider', () => {
         mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
           owner: 'test',
           repo: 'project',
+          branch: '',
           path: '/',
+          apiSource: true,
           structure: {},
-          summary: { totalFiles: 0, totalFolders: 0, truncated: false },
+          summary: {
+            totalFiles: 0,
+            totalFolders: 0,
+            truncated: false,
+            filtered: false,
+            originalCount: 0,
+          },
         });
 
         const result = await provider.getRepoStructure({
@@ -1616,8 +1753,16 @@ describe('GitHubProvider', () => {
           owner: 'test',
           repo: 'project',
           branch: 'main',
+          path: '/',
+          apiSource: true,
           structure: {},
-          summary: { totalFiles: 0, totalFolders: 0, truncated: false },
+          summary: {
+            totalFiles: 0,
+            totalFolders: 0,
+            truncated: false,
+            filtered: false,
+            originalCount: 0,
+          },
         });
 
         const result = await provider.getRepoStructure({
@@ -1632,9 +1777,16 @@ describe('GitHubProvider', () => {
           owner: 'test',
           repo: 'project',
           branch: 'main',
+          apiSource: true,
           path: '/',
-          // structure is undefined
-          summary: { totalFiles: 0, totalFolders: 0, truncated: false },
+          structure: {},
+          summary: {
+            totalFiles: 0,
+            totalFolders: 0,
+            truncated: false,
+            filtered: false,
+            originalCount: 0,
+          },
         });
 
         const result = await provider.getRepoStructure({
@@ -1733,7 +1885,13 @@ describe('GitHubProvider', () => {
         data: {
           total_count: 0,
           items: [],
-          pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+          pagination: {
+            currentPage: 1,
+            totalPages: 1,
+            perPage: 10,
+            totalMatches: 0,
+            hasMore: false,
+          },
         },
         status: 200,
       });
@@ -1757,7 +1915,13 @@ describe('GitHubProvider', () => {
         data: {
           total_count: 0,
           items: [],
-          pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+          pagination: {
+            currentPage: 1,
+            totalPages: 1,
+            perPage: 10,
+            totalMatches: 0,
+            hasMore: false,
+          },
         },
         status: 200,
       });
@@ -1873,7 +2037,13 @@ describe('GitHubProvider', () => {
         data: {
           total_count: 0,
           items: [],
-          pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+          pagination: {
+            currentPage: 1,
+            totalPages: 1,
+            perPage: 10,
+            totalMatches: 0,
+            hasMore: false,
+          },
         },
         status: 200,
       });
@@ -1921,7 +2091,13 @@ describe('GitHubProvider', () => {
       mockSearchGitHubReposAPI.mockResolvedValue({
         data: {
           repositories: [],
-          pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+          pagination: {
+            currentPage: 1,
+            totalPages: 1,
+            perPage: 10,
+            totalMatches: 0,
+            hasMore: false,
+          },
         },
         status: 200,
       });
@@ -1973,9 +2149,16 @@ describe('GitHubProvider', () => {
         owner: 'test',
         repo: 'project',
         branch: 'main',
+        apiSource: true,
         path: '/',
         structure: {},
-        summary: { totalFiles: 0, totalFolders: 0, truncated: false },
+        summary: {
+          totalFiles: 0,
+          totalFolders: 0,
+          truncated: false,
+          filtered: false,
+          originalCount: 0,
+        },
       });
 
       await authenticatedProvider.getRepoStructure({

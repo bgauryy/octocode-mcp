@@ -236,8 +236,21 @@ describe('pagination utility', () => {
   });
 
   describe('generatePaginationHints', () => {
+    // Helper to add required byte fields for PaginationMetadata
+    const withByteFields = (
+      meta: Omit<
+        PaginationMetadata,
+        'byteOffset' | 'byteLength' | 'totalBytes'
+      > & { charOffset: number; charLength: number; totalChars: number }
+    ): PaginationMetadata => ({
+      ...meta,
+      byteOffset: meta.charOffset,
+      byteLength: meta.charLength,
+      totalBytes: meta.totalChars,
+    });
+
     it('should generate critical token warning for large content', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFields({
         paginatedContent: 'x'.repeat(200000),
         charOffset: 0,
         charLength: 200000,
@@ -246,7 +259,7 @@ describe('pagination utility', () => {
         estimatedTokens: 55000,
         currentPage: 1,
         totalPages: 1,
-      };
+      });
 
       const hints = generatePaginationHints(metadata);
 
@@ -255,7 +268,7 @@ describe('pagination utility', () => {
     });
 
     it('should generate warning for high token usage', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFields({
         paginatedContent: 'x'.repeat(100000),
         charOffset: 0,
         charLength: 100000,
@@ -264,7 +277,7 @@ describe('pagination utility', () => {
         estimatedTokens: 30001, // Must be > 30000 to trigger WARNING
         currentPage: 1,
         totalPages: 1,
-      };
+      });
 
       const hints = generatePaginationHints(metadata);
 
@@ -272,7 +285,7 @@ describe('pagination utility', () => {
     });
 
     it('should generate notice for moderate token usage', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFields({
         paginatedContent: 'x'.repeat(50000),
         charOffset: 0,
         charLength: 50000,
@@ -281,7 +294,7 @@ describe('pagination utility', () => {
         estimatedTokens: 15001, // Must be > 15000 to trigger NOTICE
         currentPage: 1,
         totalPages: 1,
-      };
+      });
 
       const hints = generatePaginationHints(metadata);
 
@@ -289,7 +302,7 @@ describe('pagination utility', () => {
     });
 
     it('should generate moderate usage message', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFields({
         paginatedContent: 'x'.repeat(20000),
         charOffset: 0,
         charLength: 20000,
@@ -298,7 +311,7 @@ describe('pagination utility', () => {
         estimatedTokens: 5001, // Must be > 5000 to trigger Moderate usage
         currentPage: 1,
         totalPages: 1,
-      };
+      });
 
       const hints = generatePaginationHints(metadata);
 
@@ -306,7 +319,7 @@ describe('pagination utility', () => {
     });
 
     it('should generate efficient query message for small content', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFields({
         paginatedContent: 'Hello World',
         charOffset: 0,
         charLength: 11,
@@ -315,7 +328,7 @@ describe('pagination utility', () => {
         estimatedTokens: 3,
         currentPage: 1,
         totalPages: 1,
-      };
+      });
 
       const hints = generatePaginationHints(metadata);
 
@@ -323,7 +336,7 @@ describe('pagination utility', () => {
     });
 
     it('should disable warnings when enableWarnings is false', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFields({
         paginatedContent: 'x'.repeat(200000),
         charOffset: 0,
         charLength: 200000,
@@ -332,7 +345,7 @@ describe('pagination utility', () => {
         estimatedTokens: 55000,
         currentPage: 1,
         totalPages: 1,
-      };
+      });
 
       const hints = generatePaginationHints(metadata, {
         enableWarnings: false,
@@ -343,7 +356,7 @@ describe('pagination utility', () => {
     });
 
     it('should include custom hints', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFields({
         paginatedContent: 'test',
         charOffset: 0,
         charLength: 4,
@@ -352,7 +365,7 @@ describe('pagination utility', () => {
         estimatedTokens: 1,
         currentPage: 1,
         totalPages: 1,
-      };
+      });
 
       const hints = generatePaginationHints(metadata, {
         customHints: ['Custom hint 1', 'Custom hint 2'],
@@ -363,7 +376,7 @@ describe('pagination utility', () => {
     });
 
     it('should include pagination info when hasMore is true', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFields({
         paginatedContent: 'Hello',
         charOffset: 0,
         charLength: 5,
@@ -373,7 +386,7 @@ describe('pagination utility', () => {
         estimatedTokens: 2,
         currentPage: 1,
         totalPages: 4,
-      };
+      });
 
       const hints = generatePaginationHints(metadata);
 
@@ -383,7 +396,7 @@ describe('pagination utility', () => {
     });
 
     it('should show final page message when offset > 0 and no more', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFields({
         paginatedContent: 'World',
         charOffset: 15,
         charLength: 5,
@@ -392,7 +405,7 @@ describe('pagination utility', () => {
         estimatedTokens: 2,
         currentPage: 4,
         totalPages: 4,
-      };
+      });
 
       const hints = generatePaginationHints(metadata);
 
@@ -400,7 +413,7 @@ describe('pagination utility', () => {
     });
 
     it('should not show navigation hints when on first page with no more', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFields({
         paginatedContent: 'Hello',
         charOffset: 0,
         charLength: 5,
@@ -409,7 +422,7 @@ describe('pagination utility', () => {
         estimatedTokens: 2,
         currentPage: 1,
         totalPages: 1,
-      };
+      });
 
       const hints = generatePaginationHints(metadata);
 
@@ -420,7 +433,7 @@ describe('pagination utility', () => {
     });
 
     it('should handle metadata without estimatedTokens', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFields({
         paginatedContent: 'Hello',
         charOffset: 0,
         charLength: 5,
@@ -429,7 +442,7 @@ describe('pagination utility', () => {
         nextCharOffset: 5,
         currentPage: 1,
         totalPages: 2,
-      };
+      });
 
       const hints = generatePaginationHints(metadata);
 
@@ -440,7 +453,7 @@ describe('pagination utility', () => {
     });
 
     it('should handle missing nextCharOffset when hasMore is true', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFields({
         paginatedContent: 'Hello',
         charOffset: 0,
         charLength: 5,
@@ -449,7 +462,7 @@ describe('pagination utility', () => {
         // nextCharOffset is intentionally missing
         currentPage: 1,
         totalPages: 2,
-      };
+      });
 
       const hints = generatePaginationHints(metadata);
 
@@ -458,7 +471,7 @@ describe('pagination utility', () => {
     });
 
     it('should include toolName in hints if provided', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFields({
         paginatedContent: 'Hello',
         charOffset: 0,
         charLength: 5,
@@ -468,7 +481,7 @@ describe('pagination utility', () => {
         estimatedTokens: 2,
         currentPage: 1,
         totalPages: 2,
-      };
+      });
 
       const hints = generatePaginationHints(metadata, {
         toolName: 'testTool',
@@ -635,8 +648,21 @@ describe('pagination utility', () => {
   });
 
   describe('createPaginationInfo', () => {
+    // Helper to add required byte fields for PaginationMetadata in this describe block
+    const withByteFieldsInfo = (
+      meta: Omit<
+        PaginationMetadata,
+        'byteOffset' | 'byteLength' | 'totalBytes'
+      > & { charOffset: number; charLength: number; totalChars: number }
+    ): PaginationMetadata => ({
+      ...meta,
+      byteOffset: meta.charOffset,
+      byteLength: meta.charLength,
+      totalBytes: meta.totalChars,
+    });
+
     it('should extract pagination info from metadata', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFieldsInfo({
         paginatedContent: 'Hello World',
         charOffset: 10,
         charLength: 11,
@@ -646,7 +672,7 @@ describe('pagination utility', () => {
         estimatedTokens: 3,
         currentPage: 2,
         totalPages: 10,
-      };
+      });
 
       const info = createPaginationInfo(metadata);
 
@@ -659,7 +685,7 @@ describe('pagination utility', () => {
     });
 
     it('should work for non-paginated content', () => {
-      const metadata: PaginationMetadata = {
+      const metadata: PaginationMetadata = withByteFieldsInfo({
         paginatedContent: 'Full content',
         charOffset: 0,
         charLength: 12,
@@ -668,7 +694,7 @@ describe('pagination utility', () => {
         estimatedTokens: 3,
         currentPage: 1,
         totalPages: 1,
-      };
+      });
 
       const info = createPaginationInfo(metadata);
 

@@ -6,7 +6,6 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs/promises';
-import * as path from 'path';
 
 // Mock fs/promises before importing the module
 vi.mock('fs/promises', () => ({
@@ -51,10 +50,10 @@ describe('LSP Find References Handler Tests', () => {
         registerTool: vi.fn().mockReturnValue('registered'),
       };
 
-      const result = registerLSPFindReferencesTool(mockServer as any);
+      registerLSPFindReferencesTool(mockServer as any);
 
       expect(mockServer.registerTool).toHaveBeenCalled();
-      expect(mockServer.registerTool.mock.calls[0][0]).toBe(
+      expect(mockServer.registerTool.mock.calls[0]![0]).toBe(
         'lspFindReferences'
       );
     });
@@ -66,11 +65,11 @@ describe('LSP Find References Handler Tests', () => {
         await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPFindReferencesTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({ queries: [] });
 
@@ -87,11 +86,11 @@ describe('LSP Find References Handler Tests', () => {
         await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPFindReferencesTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -126,11 +125,11 @@ describe('LSP Find References Handler Tests', () => {
         await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPFindReferencesTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       // Query without optional contextLines, referencesPerPage, page
       const result = await handler({
@@ -157,11 +156,11 @@ describe('LSP Find References Handler Tests', () => {
         await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPFindReferencesTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -213,10 +212,7 @@ describe('LSP Find References Handler Tests', () => {
 
       const totalPages = Math.ceil(totalReferences / referencesPerPage);
       const startIndex = (page - 1) * referencesPerPage;
-      const endIndex = Math.min(
-        startIndex + referencesPerPage,
-        totalReferences
-      );
+      Math.min(startIndex + referencesPerPage, totalReferences);
 
       const pagination = {
         currentPage: page,
@@ -244,11 +240,11 @@ describe('LSP Find References Handler Tests', () => {
         await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPFindReferencesTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -280,11 +276,11 @@ describe('LSP Find References Handler Tests', () => {
         await import('../../src/tools/lsp_find_references/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPFindReferencesTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [

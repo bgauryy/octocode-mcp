@@ -193,10 +193,12 @@ describe('Index Module', () => {
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: true,
+      enableLocal: false,
+      tokenSource: 'env:GITHUB_TOKEN',
     });
 
     // Mock registerTools to return success count based on config
-    mockRegisterTools.mockImplementation(() => {
+    mockRegisterTools.mockImplementation(async () => {
       return { successCount: 4, failedTools: [] }; // Default tools count
     });
   });
@@ -353,7 +355,7 @@ describe('Index Module', () => {
 
     it('should continue registering tools even if some fail', async () => {
       // Mock registerTools to return partial success
-      mockRegisterTools.mockImplementation(() => {
+      mockRegisterTools.mockImplementation(async () => {
         return {
           successCount: 3,
           failedTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
@@ -369,7 +371,7 @@ describe('Index Module', () => {
 
     it('should exit when no tools are successfully registered', async () => {
       // Make registerTools return no successful registrations
-      mockRegisterTools.mockImplementation(() => {
+      mockRegisterTools.mockImplementation(async () => {
         return { successCount: 0, failedTools: ['all'] };
       });
 
@@ -404,7 +406,7 @@ describe('Index Module', () => {
 
     it('should handle tool registration errors gracefully', async () => {
       // Mock registerTools to return partial success
-      mockRegisterTools.mockImplementation(() => {
+      mockRegisterTools.mockImplementation(async () => {
         return {
           successCount: 2,
           failedTools: [TOOL_NAMES.GITHUB_SEARCH_CODE],
@@ -421,7 +423,7 @@ describe('Index Module', () => {
 
     it('should handle multiple tool registration errors', async () => {
       // Mock registerTools to return partial success with multiple failures
-      mockRegisterTools.mockImplementation(() => {
+      mockRegisterTools.mockImplementation(async () => {
         return { successCount: 1, failedTools: ['tool1', 'tool2'] };
       });
 
@@ -435,7 +437,7 @@ describe('Index Module', () => {
 
     it('should handle all tool registration errors', async () => {
       // Mock registerTools to fail completely
-      mockRegisterTools.mockImplementation(() => {
+      mockRegisterTools.mockImplementation(async () => {
         return { successCount: 0, failedTools: ['all', 'tools', 'failed'] };
       });
 
@@ -713,7 +715,7 @@ describe('Index Module', () => {
 
     it('should exit when all tools are disabled', async () => {
       // Mock registerTools to return no successful registrations
-      mockRegisterTools.mockImplementation(() => {
+      mockRegisterTools.mockImplementation(async () => {
         return { successCount: 0, failedTools: [] };
       });
 

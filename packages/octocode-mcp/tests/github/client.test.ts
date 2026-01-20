@@ -63,6 +63,7 @@ describe('GitHub Client', () => {
       maxRetries: 3,
       loggingEnabled: true,
       enableLocal: true,
+      tokenSource: 'env:GH_TOKEN',
     });
   });
 
@@ -159,6 +160,8 @@ describe('GitHub Client', () => {
         enableLogging: true,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: true,
+        tokenSource: 'env:GH_TOKEN',
       });
 
       await getOctokit();
@@ -179,6 +182,8 @@ describe('GitHub Client', () => {
         enableLogging: true,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: true,
+        tokenSource: 'env:GH_TOKEN',
       });
 
       await getOctokit();

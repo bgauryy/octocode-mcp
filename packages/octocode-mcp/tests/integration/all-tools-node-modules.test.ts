@@ -225,10 +225,9 @@ describe('Integration Tests: All Tools on node_modules', () => {
         findResult.files &&
         findResult.files.length > 0
       ) {
+        const firstFile = findResult.files[0];
         testFile =
-          typeof findResult.files[0] === 'string'
-            ? findResult.files[0]
-            : findResult.files[0].path;
+          typeof firstFile === 'string' ? firstFile : (firstFile?.path ?? null);
       } else {
         // Fallback: try to find any JavaScript file
         const jsFileResult = await findFiles({
@@ -242,10 +241,11 @@ describe('Integration Tests: All Tools on node_modules', () => {
           jsFileResult.files &&
           jsFileResult.files.length > 0
         ) {
+          const firstJsFile = jsFileResult.files[0];
           testFile =
-            typeof jsFileResult.files[0] === 'string'
-              ? jsFileResult.files[0]
-              : jsFileResult.files[0].path;
+            typeof firstJsFile === 'string'
+              ? firstJsFile
+              : (firstJsFile?.path ?? null);
         }
       }
 
@@ -265,7 +265,6 @@ describe('Integration Tests: All Tools on node_modules', () => {
       const result = await fetchContent({
         path: testFile,
         fullContent: true,
-        minified: false,
         researchGoal: 'Read full package.json content',
         reasoning: 'Testing full content fetch',
       });

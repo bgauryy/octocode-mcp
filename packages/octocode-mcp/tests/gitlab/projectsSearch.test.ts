@@ -3,14 +3,12 @@ import {
   searchGitLabProjectsAPI,
   getGitLabProject,
   transformGitLabProject,
-  type GitLabProjectsSearchResult,
 } from '../../src/gitlab/projectsSearch.js';
 import { getGitlab } from '../../src/gitlab/client.js';
 import { handleGitLabAPIError } from '../../src/gitlab/errors.js';
 import type {
   GitLabProject,
   GitLabProjectsSearchQuery,
-  GitLabAPIResponse,
 } from '../../src/gitlab/types.js';
 
 vi.mock('../../src/gitlab/client.js');

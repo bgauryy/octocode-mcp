@@ -396,27 +396,21 @@ describe('Pull Request Search - Pagination', () => {
         }) as unknown as ReturnType<typeof getOctokit>
       );
 
-      // First call with context
+      // First call
       await searchGitHubPullRequestsAPI({
         query: 'fix bug',
         limit: 5,
         page: 1,
-        mainResearchGoal: 'Goal 1',
-        researchGoal: 'Research 1',
-        reasoning: 'Reason 1',
       });
 
-      // Second call with different context
+      // Second call with same params
       await searchGitHubPullRequestsAPI({
         query: 'fix bug',
         limit: 5,
         page: 1,
-        mainResearchGoal: 'Different Goal',
-        researchGoal: 'Different Research',
-        reasoning: 'Different Reason',
       });
 
-      // Should only call API once (context fields don't affect cache)
+      // Should only call API once due to caching
       expect(searchMock).toHaveBeenCalledTimes(1);
     });
   });

@@ -120,14 +120,14 @@ vi.mock('octocode-shared', () => ({
     return null;
   }),
   resolveTokenFull: vi.fn(async () => {
-    const envVars = [
+    const envVars: Array<[string, string]> = [
       ['OCTOCODE_TOKEN', 'env:OCTOCODE_TOKEN'],
       ['GH_TOKEN', 'env:GH_TOKEN'],
       ['GITHUB_TOKEN', 'env:GITHUB_TOKEN'],
     ];
     for (const [envVar, source] of envVars) {
-      if (process.env[envVar])
-        return { token: process.env[envVar], source, wasRefreshed: false };
+      const token = process.env[envVar];
+      if (token) return { token, source, wasRefreshed: false };
     }
     return null;
   }),

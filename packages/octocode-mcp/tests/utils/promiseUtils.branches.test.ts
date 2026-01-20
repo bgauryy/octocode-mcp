@@ -317,7 +317,6 @@ describe('promiseUtils - Branch Coverage', () => {
      * To test this branch, we mock Promise.allSettled to return a rejected result.
      */
     it('should handle rejected status from allSettled with Error reason', async () => {
-      const originalAllSettled = Promise.allSettled.bind(Promise);
       const mockAllSettled = vi
         .spyOn(Promise, 'allSettled')
         .mockImplementationOnce(async () => {

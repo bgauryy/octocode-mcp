@@ -106,6 +106,8 @@ describe('ToolsManager - Metadata Availability', () => {
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: true,
+      enableLocal: false,
+      tokenSource: 'env:GITHUB_TOKEN',
     });
   });
 
@@ -362,6 +364,8 @@ describe('ToolsManager - Metadata Availability', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       // githubSearchCode is not in metadata
@@ -394,6 +398,8 @@ describe('ToolsManager - Metadata Availability', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       // None of the specified tools are in metadata
@@ -431,6 +437,8 @@ describe('ToolsManager - Metadata Availability', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       // githubSearchCode is not in metadata, githubGetFileContent is disabled

@@ -46,6 +46,10 @@ import {
   fetchGitHubPullRequestByNumberAPI,
   transformPullRequestItemFromREST,
 } from '../../src/github/pullRequestSearch.js';
+import type { PullRequestSimple } from '../../src/github/githubAPI.js';
+
+// Type for mock PR items in tests - allows partial data
+type MockPRItem = Partial<PullRequestSimple>;
 
 describe('Pull Request Search', () => {
   let mockOctokit: {
@@ -339,8 +343,11 @@ describe('Pull Request Search', () => {
       expect(result.pull_requests?.[0]?.commit_details).toBeUndefined();
       // Error should be logged now
       expect(mockLogSessionError).toHaveBeenCalled();
-      // Warning should be present
-      expect(result.pull_requests?.[0]?._sanitization_warnings).toBeDefined();
+      // Warning should be present (using type assertion since _sanitization_warnings may not be in PullRequestInfo type)
+      const prWithWarnings = result.pull_requests?.[0] as
+        | { _sanitization_warnings?: string[] }
+        | undefined;
+      expect(prWithWarnings?._sanitization_warnings).toBeDefined();
     });
 
     it('should return error when no valid search parameters provided', async () => {
@@ -864,24 +871,27 @@ describe('Pull Request Search', () => {
 
   describe('transformPullRequestItemFromREST', () => {
     it('should transform REST API PR item correctly', async () => {
-      const mockItem = {
+      const mockItem: MockPRItem = {
         number: 789,
         title: 'Transform Test',
         state: 'open',
         draft: true,
-        user: { login: 'testuser' },
-        labels: [{ name: 'bug' }, { name: 'enhancement' }],
+        user: { login: 'testuser' } as PullRequestSimple['user'],
+        labels: [
+          { name: 'bug' },
+          { name: 'enhancement' },
+        ] as PullRequestSimple['labels'],
         created_at: '2023-01-01T00:00:00Z',
         updated_at: '2023-01-02T00:00:00Z',
         closed_at: null,
         html_url: 'https://github.com/test/repo/pull/789',
-        head: { ref: 'feature', sha: 'abc123' },
-        base: { ref: 'main', sha: 'def456' },
+        head: { ref: 'feature', sha: 'abc123' } as PullRequestSimple['head'],
+        base: { ref: 'main', sha: 'def456' } as PullRequestSimple['base'],
         body: 'Test body',
       };
 
       const result = await transformPullRequestItemFromREST(
-        mockItem,
+        mockItem as PullRequestSimple,
         { owner: 'test', repo: 'repo' },
         mockOctokit
       );
@@ -895,19 +905,19 @@ describe('Pull Request Search', () => {
     });
 
     it('should fetch file changes when type is fullContent', async () => {
-      const mockItem = {
+      const mockItem: MockPRItem = {
         number: 790,
         title: 'With Content',
         state: 'open',
         draft: false,
-        user: { login: 'testuser' },
-        labels: [],
+        user: { login: 'testuser' } as PullRequestSimple['user'],
+        labels: [] as PullRequestSimple['labels'],
         created_at: '2023-01-01T00:00:00Z',
         updated_at: '2023-01-02T00:00:00Z',
         closed_at: null,
         html_url: 'https://github.com/test/repo/pull/790',
-        head: { ref: 'feature', sha: 'abc123' },
-        base: { ref: 'main', sha: 'def456' },
+        head: { ref: 'feature', sha: 'abc123' } as PullRequestSimple['head'],
+        base: { ref: 'main', sha: 'def456' } as PullRequestSimple['base'],
         body: 'Test body',
       };
 
@@ -925,7 +935,7 @@ describe('Pull Request Search', () => {
       mockOctokit.rest.pulls.listFiles.mockResolvedValue({ data: mockFiles });
 
       const result = await transformPullRequestItemFromREST(
-        mockItem,
+        mockItem as PullRequestSimple,
         { owner: 'test', repo: 'repo', type: 'fullContent' },
         mockOctokit
       );
@@ -936,19 +946,19 @@ describe('Pull Request Search', () => {
     });
 
     it('should fetch comments when withComments is true', async () => {
-      const mockItem = {
+      const mockItem: MockPRItem = {
         number: 791,
         title: 'With Comments',
         state: 'open',
         draft: false,
-        user: { login: 'testuser' },
-        labels: [],
+        user: { login: 'testuser' } as PullRequestSimple['user'],
+        labels: [] as PullRequestSimple['labels'],
         created_at: '2023-01-01T00:00:00Z',
         updated_at: '2023-01-02T00:00:00Z',
         closed_at: null,
         html_url: 'https://github.com/test/repo/pull/791',
-        head: { ref: 'feature', sha: 'abc123' },
-        base: { ref: 'main', sha: 'def456' },
+        head: { ref: 'feature', sha: 'abc123' } as PullRequestSimple['head'],
+        base: { ref: 'main', sha: 'def456' } as PullRequestSimple['base'],
         body: 'Test body',
       };
 
@@ -967,7 +977,7 @@ describe('Pull Request Search', () => {
       });
 
       const result = await transformPullRequestItemFromREST(
-        mockItem,
+        mockItem as PullRequestSimple,
         { owner: 'test', repo: 'repo', withComments: true },
         mockOctokit
       );
@@ -978,19 +988,19 @@ describe('Pull Request Search', () => {
     });
 
     it('should handle sanitization warnings', async () => {
-      const mockItem = {
+      const mockItem: MockPRItem = {
         number: 792,
         title: 'Secret in title: ghp_token123',
         state: 'open',
         draft: false,
-        user: { login: 'testuser' },
-        labels: [],
+        user: { login: 'testuser' } as PullRequestSimple['user'],
+        labels: [] as PullRequestSimple['labels'],
         created_at: '2023-01-01T00:00:00Z',
         updated_at: '2023-01-02T00:00:00Z',
         closed_at: null,
         html_url: 'https://github.com/test/repo/pull/792',
-        head: { ref: 'feature', sha: 'abc123' },
-        base: { ref: 'main', sha: 'def456' },
+        head: { ref: 'feature', sha: 'abc123' } as PullRequestSimple['head'],
+        base: { ref: 'main', sha: 'def456' } as PullRequestSimple['base'],
         body: 'Body with secret: sk-openai123',
       };
 
@@ -1002,7 +1012,7 @@ describe('Pull Request Search', () => {
       );
 
       const result = await transformPullRequestItemFromREST(
-        mockItem,
+        mockItem as PullRequestSimple,
         { owner: 'test', repo: 'repo' },
         mockOctokit
       );
@@ -1012,19 +1022,19 @@ describe('Pull Request Search', () => {
     });
 
     it('should handle failed file changes fetch gracefully', async () => {
-      const mockItem = {
+      const mockItem: MockPRItem = {
         number: 793,
         title: 'Failed File Fetch',
         state: 'open',
         draft: false,
-        user: { login: 'testuser' },
-        labels: [],
+        user: { login: 'testuser' } as PullRequestSimple['user'],
+        labels: [] as PullRequestSimple['labels'],
         created_at: '2023-01-01T00:00:00Z',
         updated_at: '2023-01-02T00:00:00Z',
         closed_at: null,
         html_url: 'https://github.com/test/repo/pull/793',
-        head: { ref: 'feature', sha: 'abc123' },
-        base: { ref: 'main', sha: 'def456' },
+        head: { ref: 'feature', sha: 'abc123' } as PullRequestSimple['head'],
+        base: { ref: 'main', sha: 'def456' } as PullRequestSimple['base'],
         body: 'Test body',
       };
 
@@ -1033,7 +1043,7 @@ describe('Pull Request Search', () => {
       );
 
       const result = await transformPullRequestItemFromREST(
-        mockItem,
+        mockItem as PullRequestSimple,
         { owner: 'test', repo: 'repo', type: 'fullContent' },
         mockOctokit
       );
@@ -1044,19 +1054,19 @@ describe('Pull Request Search', () => {
     });
 
     it('should handle failed comments fetch gracefully', async () => {
-      const mockItem = {
+      const mockItem: MockPRItem = {
         number: 794,
         title: 'Failed Comments Fetch',
         state: 'open',
         draft: false,
-        user: { login: 'testuser' },
-        labels: [],
+        user: { login: 'testuser' } as PullRequestSimple['user'],
+        labels: [] as PullRequestSimple['labels'],
         created_at: '2023-01-01T00:00:00Z',
         updated_at: '2023-01-02T00:00:00Z',
         closed_at: null,
         html_url: 'https://github.com/test/repo/pull/794',
-        head: { ref: 'feature', sha: 'abc123' },
-        base: { ref: 'main', sha: 'def456' },
+        head: { ref: 'feature', sha: 'abc123' } as PullRequestSimple['head'],
+        base: { ref: 'main', sha: 'def456' } as PullRequestSimple['base'],
         body: 'Test body',
       };
 
@@ -1065,7 +1075,7 @@ describe('Pull Request Search', () => {
       );
 
       const result = await transformPullRequestItemFromREST(
-        mockItem,
+        mockItem as PullRequestSimple,
         { owner: 'test', repo: 'repo', withComments: true },
         mockOctokit
       );
@@ -1076,19 +1086,19 @@ describe('Pull Request Search', () => {
     });
 
     it('should fetch commits when withCommits is true', async () => {
-      const mockItem = {
+      const mockItem: MockPRItem = {
         number: 795,
         title: 'With Commits',
         state: 'open',
         draft: false,
-        user: { login: 'testuser' },
-        labels: [],
+        user: { login: 'testuser' } as PullRequestSimple['user'],
+        labels: [] as PullRequestSimple['labels'],
         created_at: '2023-01-01T00:00:00Z',
         updated_at: '2023-01-02T00:00:00Z',
         closed_at: null,
         html_url: 'https://github.com/test/repo/pull/795',
-        head: { ref: 'feature', sha: 'abc123' },
-        base: { ref: 'main', sha: 'def456' },
+        head: { ref: 'feature', sha: 'abc123' } as PullRequestSimple['head'],
+        base: { ref: 'main', sha: 'def456' } as PullRequestSimple['base'],
         body: 'Test body',
       };
 
@@ -1120,7 +1130,7 @@ describe('Pull Request Search', () => {
       });
 
       const result = await transformPullRequestItemFromREST(
-        mockItem,
+        mockItem as PullRequestSimple,
         { owner: 'test', repo: 'repo', withCommits: true },
         mockOctokit
       );
@@ -1140,19 +1150,19 @@ describe('Pull Request Search', () => {
     });
 
     it('should NOT fetch commits when withCommits is false/undefined', async () => {
-      const mockItem = {
+      const mockItem: MockPRItem = {
         number: 796,
         title: 'Without Commits',
         state: 'open',
         draft: false,
-        user: { login: 'testuser' },
-        labels: [],
+        user: { login: 'testuser' } as PullRequestSimple['user'],
+        labels: [] as PullRequestSimple['labels'],
         created_at: '2023-01-01T00:00:00Z',
         updated_at: '2023-01-02T00:00:00Z',
         closed_at: null,
         html_url: 'https://github.com/test/repo/pull/796',
-        head: { ref: 'feature', sha: 'abc123' },
-        base: { ref: 'main', sha: 'def456' },
+        head: { ref: 'feature', sha: 'abc123' } as PullRequestSimple['head'],
+        base: { ref: 'main', sha: 'def456' } as PullRequestSimple['base'],
         body: 'Test body',
       };
 
@@ -1160,7 +1170,7 @@ describe('Pull Request Search', () => {
       mockOctokit.rest.pulls.listCommits = vi.fn();
 
       const result = await transformPullRequestItemFromREST(
-        mockItem,
+        mockItem as PullRequestSimple,
         { owner: 'test', repo: 'repo' }, // withCommits undefined
         mockOctokit
       );
@@ -1170,11 +1180,11 @@ describe('Pull Request Search', () => {
     });
 
     it('should handle error when fetching commits gracefully', async () => {
-      const mockItem = {
+      const mockItem: MockPRItem = {
         number: 797,
         title: 'Commit Error',
         state: 'open',
-        user: { login: 'testuser' },
+        user: { login: 'testuser' } as PullRequestSimple['user'],
         html_url: 'url',
       };
 
@@ -1186,7 +1196,7 @@ describe('Pull Request Search', () => {
       });
 
       const result = await transformPullRequestItemFromREST(
-        mockItem,
+        mockItem as PullRequestSimple,
         { owner: 'test', repo: 'repo', withCommits: true },
         mockOctokit
       );
@@ -1199,7 +1209,11 @@ describe('Pull Request Search', () => {
     });
 
     it('should sort commits by date descending, handling missing dates', async () => {
-      const mockItem = { number: 798, title: 'Sort Test', state: 'open' };
+      const mockItem: MockPRItem = {
+        number: 798,
+        title: 'Sort Test',
+        state: 'open',
+      };
 
       const mockCommits = [
         {
@@ -1235,7 +1249,7 @@ describe('Pull Request Search', () => {
       });
 
       const result = await transformPullRequestItemFromREST(
-        mockItem,
+        mockItem as PullRequestSimple,
         { owner: 'test', repo: 'repo', withCommits: true },
         mockOctokit
       );

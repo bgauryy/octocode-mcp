@@ -59,7 +59,7 @@ describe('LSP Find References Tool', () => {
 
       registerLSPFindReferencesTool(mockServer as any);
 
-      const callArgs = mockServer.registerTool.mock.calls[0];
+      const callArgs = mockServer.registerTool.mock.calls[0]!;
       const toolConfig = callArgs[1];
 
       expect(toolConfig.annotations.openWorldHint).toBe(false);
@@ -77,7 +77,7 @@ describe('LSP Find References Tool', () => {
 
       registerLSPFindReferencesTool(mockServer as any);
 
-      const handler = mockServer.registerTool.mock.calls[0][2];
+      const handler = mockServer.registerTool.mock.calls[0]![2];
       expect(typeof handler).toBe('function');
     });
   });
@@ -219,9 +219,9 @@ describe('LSP Find References Tool', () => {
         return a.range.start.line - b.range.start.line;
       });
 
-      expect(refs[0].isDefinition).toBe(true);
-      expect(refs[1].uri).toBe('a.ts');
-      expect(refs[2].uri).toBe('b.ts');
+      expect(refs[0]!.isDefinition).toBe(true);
+      expect(refs[1]!.uri).toBe('a.ts');
+      expect(refs[2]!.uri).toBe('b.ts');
     });
   });
 });

@@ -13,7 +13,8 @@ vi.mock('child_process', () => ({
   ChildProcess: vi.fn(),
 }));
 
-const mockSpawn = spawn as ReturnType<typeof vi.fn>;
+const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<typeof vi.fn> &
+  typeof spawn;
 
 describe('Cross-Platform Command Detection', () => {
   let mockProcess: EventEmitter & { kill: ReturnType<typeof vi.fn> };
@@ -24,7 +25,7 @@ describe('Cross-Platform Command Detection', () => {
       kill: ReturnType<typeof vi.fn>;
     };
     mockProcess.kill = vi.fn();
-    mockSpawn.mockReturnValue(mockProcess);
+    (mockSpawn as ReturnType<typeof vi.fn>).mockReturnValue(mockProcess);
   });
 
   afterEach(() => {

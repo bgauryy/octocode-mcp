@@ -72,11 +72,11 @@ describe('LSP Goto Definition Handler Tests', () => {
         await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPGotoDefinitionTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({ queries: [] });
 
@@ -97,11 +97,11 @@ describe('LSP Goto Definition Handler Tests', () => {
         await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPGotoDefinitionTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -128,11 +128,11 @@ describe('LSP Goto Definition Handler Tests', () => {
         await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPGotoDefinitionTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -168,11 +168,11 @@ describe('LSP Goto Definition Handler Tests', () => {
         await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPGotoDefinitionTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -201,11 +201,11 @@ describe('LSP Goto Definition Handler Tests', () => {
         await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPGotoDefinitionTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -233,11 +233,11 @@ describe('LSP Goto Definition Handler Tests', () => {
         await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPGotoDefinitionTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -267,11 +267,11 @@ describe('LSP Goto Definition Handler Tests', () => {
         await import('../../src/tools/lsp_goto_definition/lsp_goto_definition.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPGotoDefinitionTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [

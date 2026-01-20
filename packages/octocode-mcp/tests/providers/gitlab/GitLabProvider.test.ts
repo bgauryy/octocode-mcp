@@ -18,6 +18,16 @@ import type {
   PullRequestQuery,
   RepoStructureQuery,
 } from '../../../src/providers/types.js';
+import type {
+  GitLabAPIResponse,
+  GitLabCodeSearchResult,
+} from '../../../src/gitlab/types.js';
+import type { GitLabProjectsSearchResult } from '../../../src/gitlab/projectsSearch.js';
+import type { GitLabMRSearchResult } from '../../../src/gitlab/mergeRequests.js';
+
+// Type alias for simpler mock response casting
+type MockProjectsResponse = GitLabAPIResponse<GitLabProjectsSearchResult>;
+type MockMRResponse = GitLabAPIResponse<GitLabMRSearchResult>;
 
 // Mock all GitLab API functions
 vi.mock('../../../src/gitlab/codeSearch.js');
@@ -82,7 +92,7 @@ describe('GitLabProvider', () => {
             ],
           },
           status: 200,
-        };
+        } as GitLabAPIResponse<GitLabCodeSearchResult>;
 
         vi.mocked(searchGitLabCodeAPI).mockResolvedValue(mockApiResponse);
 
@@ -116,7 +126,7 @@ describe('GitLabProvider', () => {
             ],
           },
           status: 200,
-        };
+        } as GitLabAPIResponse<GitLabCodeSearchResult>;
 
         vi.mocked(searchGitLabCodeAPI).mockResolvedValue(mockApiResponse);
 
@@ -230,6 +240,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           error: 'Search query is required',
           status: 400,
+          type: 'http' as const,
         };
 
         vi.mocked(searchGitLabCodeAPI).mockResolvedValue(mockApiResponse);
@@ -271,6 +282,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           error: 'Forbidden',
           status: 403,
+          type: 'http' as const,
           // No hints field
         };
 
@@ -292,6 +304,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           error: 'Search query is required',
           status: 400,
+          type: 'http' as const,
           hints: ['Global code search requires GitLab Premium tier.'],
         };
 
@@ -536,6 +549,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           error: 'File not found',
           status: 404,
+          type: 'http' as const,
           hints: ['Check the file path and ref'],
         };
 
@@ -580,6 +594,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           error: 'Forbidden',
           status: 403,
+          type: 'http' as const,
           // No hints field
         };
 
@@ -688,7 +703,7 @@ describe('GitLabProvider', () => {
             },
           },
           status: 200,
-        };
+        } as GitLabAPIResponse<GitLabProjectsSearchResult>;
 
         vi.mocked(searchGitLabProjectsAPI).mockResolvedValue(mockApiResponse);
 
@@ -778,7 +793,7 @@ describe('GitLabProvider', () => {
             pagination: { currentPage: 1, hasMore: false },
           },
           status: 200,
-        };
+        } as MockProjectsResponse;
 
         vi.mocked(searchGitLabProjectsAPI).mockResolvedValue(mockApiResponse);
 
@@ -815,7 +830,7 @@ describe('GitLabProvider', () => {
             pagination: { currentPage: 1, hasMore: false },
           },
           status: 200,
-        };
+        } as MockProjectsResponse;
 
         vi.mocked(searchGitLabProjectsAPI).mockResolvedValue(mockApiResponse);
 
@@ -856,7 +871,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           data: { projects: [], pagination: { hasMore: false } },
           status: 200,
-        };
+        } as unknown as MockProjectsResponse;
 
         vi.mocked(searchGitLabProjectsAPI).mockResolvedValue(mockApiResponse);
 
@@ -871,7 +886,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           data: { projects: [], pagination: { hasMore: false } },
           status: 200,
-        };
+        } as unknown as MockProjectsResponse;
 
         vi.mocked(searchGitLabProjectsAPI).mockResolvedValue(mockApiResponse);
 
@@ -886,7 +901,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           data: { projects: [], pagination: { hasMore: false } },
           status: 200,
-        };
+        } as unknown as MockProjectsResponse;
 
         vi.mocked(searchGitLabProjectsAPI).mockResolvedValue(mockApiResponse);
 
@@ -903,6 +918,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           error: 'Unauthorized',
           status: 401,
+          type: 'http' as const,
         };
 
         vi.mocked(searchGitLabProjectsAPI).mockResolvedValue(mockApiResponse);
@@ -933,6 +949,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           error: 'Forbidden',
           status: 403,
+          type: 'http' as const,
           // No hints field
         };
 
@@ -949,6 +966,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           error: 'Rate limited',
           status: 429,
+          type: 'http' as const,
           hints: ['Wait 60 seconds before retrying'],
         };
 
@@ -1032,7 +1050,7 @@ describe('GitLabProvider', () => {
             },
           },
           status: 200,
-        };
+        } as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1073,7 +1091,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as unknown as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1123,7 +1141,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as unknown as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1143,7 +1161,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as unknown as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1163,7 +1181,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as unknown as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1203,7 +1221,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as MockMRResponse;
 
         const mockNotesResponse = {
           data: [
@@ -1223,7 +1241,7 @@ describe('GitLabProvider', () => {
             },
           ],
           status: 200,
-        };
+        } as any;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockMRResponse
@@ -1262,7 +1280,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as MockMRResponse;
 
         const mockNotesResponse = {
           data: [
@@ -1282,7 +1300,7 @@ describe('GitLabProvider', () => {
             },
           ],
           status: 200,
-        };
+        } as any;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockMRResponse
@@ -1321,7 +1339,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockMRResponse
@@ -1362,7 +1380,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as MockMRResponse;
 
         const mockNotesResponse = {
           error: 'Notes unavailable',
@@ -1398,7 +1416,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           data: { mergeRequests: [], pagination: { hasMore: false } },
           status: 200,
-        };
+        } as unknown as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1415,7 +1433,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           data: { mergeRequests: [], pagination: { hasMore: false } },
           status: 200,
-        };
+        } as unknown as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1450,7 +1468,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1482,7 +1500,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1514,7 +1532,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1545,7 +1563,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as unknown as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1577,7 +1595,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1610,7 +1628,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1641,7 +1659,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as unknown as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1673,7 +1691,7 @@ describe('GitLabProvider', () => {
             pagination: { hasMore: false },
           },
           status: 200,
-        };
+        } as unknown as MockMRResponse;
 
         vi.mocked(searchGitLabMergeRequestsAPI).mockResolvedValue(
           mockApiResponse
@@ -1690,6 +1708,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           error: 'Project not found',
           status: 404,
+          type: 'http' as const,
           hints: ['Check the project ID'],
         };
 
@@ -1724,6 +1743,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           error: 'Forbidden',
           status: 403,
+          type: 'http' as const,
           // No hints field
         };
 
@@ -1919,6 +1939,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           error: 'Repository not found',
           status: 404,
+          type: 'http' as const,
           hints: ['Check project ID and permissions'],
         };
 
@@ -1953,6 +1974,7 @@ describe('GitLabProvider', () => {
         const mockApiResponse = {
           error: 'Access denied',
           status: 403,
+          type: 'http' as const,
           // No hints field
         };
 
@@ -2231,6 +2253,7 @@ describe('GitLabProvider', () => {
       const mockApiResponse = {
         error: 'Rate limited',
         status: 429,
+        type: 'http' as const,
         hints: ['Wait 60 seconds', 'Consider using a token'],
       };
 

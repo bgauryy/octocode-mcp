@@ -50,44 +50,6 @@ export type PullRequestSimple = components['schemas']['pull-request-simple'];
 /** Issue comment. Schema: components['schemas']['issue-comment'] */
 export type IssueComment = components['schemas']['issue-comment'];
 
-// ─── Rate Limit Types ───────────────────────────────────────────────────────
-/**
- * Rate limit resource info (core, search, graphql, etc.)
- * Schema: components['schemas']['rate-limit']
- */
-type _OctokitRateLimit = components['schemas']['rate-limit'];
-
-/**
- * Full rate limit overview response.
- * Schema: components['schemas']['rate-limit-overview']
- */
-type _OctokitRateLimitOverview = components['schemas']['rate-limit-overview'];
-
-// ─── User Types ─────────────────────────────────────────────────────────────
-/**
- * Simple user representation (minimal fields).
- * Schema: components['schemas']['simple-user']
- */
-type _OctokitSimpleUser = components['schemas']['simple-user'];
-
-/**
- * Public user profile with full details.
- * Schema: components['schemas']['public-user']
- */
-type _OctokitPublicUser = components['schemas']['public-user'];
-
-/**
- * Private user profile (authenticated user).
- * Schema: components['schemas']['private-user']
- */
-type _OctokitPrivateUser = components['schemas']['private-user'];
-
-// ─── Commit Types ───────────────────────────────────────────────────────────
-/**
- * Commit details. Schema: components['schemas']['commit']
- */
-type _OctokitCommit = components['schemas']['commit'];
-
 /** Commit file change information (merged from CommitFileItem) */
 export interface CommitFileInfo {
   filename: string;
@@ -109,19 +71,12 @@ export interface CommitInfo {
 
 export type GetContentParameters =
   RestEndpointMethodTypes['repos']['getContent']['parameters'];
-type _GetRepoResponse = RestEndpointMethodTypes['repos']['get']['response'];
 export type SearchCodeParameters =
   RestEndpointMethodTypes['search']['code']['parameters'];
 export type SearchCodeResponse =
   RestEndpointMethodTypes['search']['code']['response'];
 export type SearchReposParameters =
   RestEndpointMethodTypes['search']['repos']['parameters'];
-
-// Pull Request REST endpoint types
-type _PullsListResponse = RestEndpointMethodTypes['pulls']['list']['response'];
-type _PullsGetResponse = RestEndpointMethodTypes['pulls']['get']['response'];
-type _IssuesListCommentsResponse =
-  RestEndpointMethodTypes['issues']['listComments']['response'];
 
 export interface GitHubAPIError {
   error: string;

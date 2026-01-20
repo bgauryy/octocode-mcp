@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { clearAllCache } from '../../src/utils/http/cache.js';
+import type { NpmPackageResult } from '../../src/utils/package/common.js';
 
 // Mock executeNpmCommand
 const mockExecuteNpmCommand = vi.fn();
@@ -406,7 +407,8 @@ describe('npmPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        expect(result.packages[0]?.author).toBe('John Doe <john@example.com>');
+        const pkg = result.packages[0] as NpmPackageResult | undefined;
+        expect(pkg?.author).toBe('John Doe <john@example.com>');
       }
     });
 
@@ -432,7 +434,8 @@ describe('npmPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        expect(result.packages[0]?.author).toBe('Jane Doe');
+        const pkg = result.packages[0] as NpmPackageResult | undefined;
+        expect(pkg?.author).toBe('Jane Doe');
       }
     });
 
@@ -461,7 +464,8 @@ describe('npmPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        expect(result.packages[0]?.peerDependencies).toEqual({
+        const pkg = result.packages[0] as NpmPackageResult | undefined;
+        expect(pkg?.peerDependencies).toEqual({
           react: '^18.0.0',
           'react-dom': '^18.0.0',
         });
@@ -497,7 +501,7 @@ describe('npmPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        const pkg = result.packages[0];
+        const pkg = result.packages[0] as NpmPackageResult | undefined;
         expect(pkg?.description).toBe('A full featured package');
         expect(pkg?.keywords).toEqual(['test', 'example', 'demo']);
         expect(pkg?.license).toBe('MIT');
@@ -531,7 +535,8 @@ describe('npmPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        expect(result.packages[0]?.license).toBe('Apache-2.0');
+        const pkg = result.packages[0] as NpmPackageResult | undefined;
+        expect(pkg?.license).toBe('Apache-2.0');
       }
     });
 
@@ -559,9 +564,10 @@ describe('npmPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        expect(result.packages[0]?.description).toBeUndefined();
-        expect(result.packages[0]?.author).toBeUndefined();
-        expect(result.packages[0]?.peerDependencies).toBeUndefined();
+        const pkg = result.packages[0] as NpmPackageResult | undefined;
+        expect(pkg?.description).toBeUndefined();
+        expect(pkg?.author).toBeUndefined();
+        expect(pkg?.peerDependencies).toBeUndefined();
       }
     });
 
@@ -588,7 +594,8 @@ describe('npmPackage - branch coverage', () => {
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
         // Empty engines should not be included
-        expect(result.packages[0]?.engines).toBeUndefined();
+        const pkg = result.packages[0] as NpmPackageResult | undefined;
+        expect(pkg?.engines).toBeUndefined();
       }
     });
 
@@ -615,7 +622,8 @@ describe('npmPackage - branch coverage', () => {
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
         // Empty keywords should not be included
-        expect(result.packages[0]?.keywords).toBeUndefined();
+        const pkg = result.packages[0] as NpmPackageResult | undefined;
+        expect(pkg?.keywords).toBeUndefined();
       }
     });
 
@@ -642,7 +650,8 @@ describe('npmPackage - branch coverage', () => {
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
         // Empty dependencies should not be included
-        expect(result.packages[0]?.dependencies).toBeUndefined();
+        const pkg = result.packages[0] as NpmPackageResult | undefined;
+        expect(pkg?.dependencies).toBeUndefined();
       }
     });
 
@@ -669,7 +678,8 @@ describe('npmPackage - branch coverage', () => {
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
         // Empty peerDependencies should not be included
-        expect(result.packages[0]?.peerDependencies).toBeUndefined();
+        const pkg = result.packages[0] as NpmPackageResult | undefined;
+        expect(pkg?.peerDependencies).toBeUndefined();
       }
     });
 
@@ -696,7 +706,8 @@ describe('npmPackage - branch coverage', () => {
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
         // Author without name should not be included
-        expect(result.packages[0]?.author).toBeUndefined();
+        const pkg = result.packages[0] as NpmPackageResult | undefined;
+        expect(pkg?.author).toBeUndefined();
       }
     });
   });
@@ -756,8 +767,10 @@ describe('npmPackage - branch coverage', () => {
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
         expect(result.packages).toHaveLength(2);
-        expect(result.packages[0]?.description).toBe('Package 1 description');
-        expect(result.packages[1]?.description).toBe('Package 2 description');
+        const pkg0 = result.packages[0] as NpmPackageResult | undefined;
+        const pkg1 = result.packages[1] as NpmPackageResult | undefined;
+        expect(pkg0?.description).toBe('Package 1 description');
+        expect(pkg1?.description).toBe('Package 2 description');
       }
     });
 
@@ -794,8 +807,9 @@ describe('npmPackage - branch coverage', () => {
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
         expect(result.packages).toHaveLength(1);
-        expect(result.packages[0]?.path).toBe('pkg-1');
-        expect(result.packages[0]?.version).toBe('1.0.0');
+        const pkg = result.packages[0] as NpmPackageResult | undefined;
+        expect(pkg?.path).toBe('pkg-1');
+        expect(pkg?.version).toBe('1.0.0');
       }
     });
 
@@ -821,7 +835,8 @@ describe('npmPackage - branch coverage', () => {
 
       expect('packages' in result).toBe(true);
       if ('packages' in result) {
-        expect(result.packages[0]?.repoUrl).toBeNull();
+        const pkg = result.packages[0] as NpmPackageResult | undefined;
+        expect(pkg?.repoUrl).toBeNull();
       }
     });
 

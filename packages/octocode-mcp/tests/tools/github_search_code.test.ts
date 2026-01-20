@@ -193,7 +193,6 @@ describe('Quality Boosting and Research Goals', () => {
       owner: 'test',
       repo: 'repo',
       limit: 5,
-      minify: true,
     });
 
     expect(result).not.toHaveProperty('error');
@@ -218,7 +217,6 @@ describe('Quality Boosting and Research Goals', () => {
       owner: 'test',
       repo: 'repo',
       limit: 5,
-      minify: true,
     });
 
     expect(result).not.toHaveProperty('error');
@@ -242,7 +240,6 @@ describe('Quality Boosting and Research Goals', () => {
       owner: 'test',
       repo: 'repo',
       limit: 5,
-      minify: true,
     });
 
     expect(result).not.toHaveProperty('error');
@@ -266,8 +263,6 @@ describe('Quality Boosting and Research Goals', () => {
       owner: 'facebook',
       repo: 'react',
       limit: 5,
-
-      minify: true,
     });
 
     expect(result).not.toHaveProperty('error');
@@ -293,7 +288,6 @@ describe('Quality Boosting and Research Goals', () => {
       repo: 'repo',
       extension: 'tsx',
       limit: 5,
-      minify: true,
     });
 
     expect(result).not.toHaveProperty('error');

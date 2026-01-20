@@ -59,15 +59,14 @@ describe('Repo Search - Sorting', () => {
     const result = await searchGitHubReposAPI({
       keywordsToSearch: ['test'],
       sort: 'stars',
-      order: 'asc', // Request ASCENDING
     });
 
-    expect(result.data).toBeDefined();
-    if (result.data) {
+    if ('data' in result) {
+      expect(result.data).toBeDefined();
       expect(result.data.repositories.length).toBe(2);
       // Should match API order (A then B)
-      expect(result.data.repositories[0].repo).toBe('repoA');
-      expect(result.data.repositories[1].repo).toBe('repoB');
+      expect(result.data.repositories?.[0]?.repo).toBe('repoA');
+      expect(result.data.repositories?.[1]?.repo).toBe('repoB');
     }
   });
 });

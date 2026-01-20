@@ -55,7 +55,7 @@ describe('githubGetFileContent Tool Handler - Hints Fix', () => {
         apiResult,
         true,
         'GITHUB_FETCH_CONTENT',
-        paginationHints
+        { extraHints: paginationHints }
       );
 
       expect(result.status).toBe('hasResults');
@@ -90,7 +90,7 @@ describe('githubGetFileContent Tool Handler - Hints Fix', () => {
         apiResult,
         true,
         'GITHUB_FETCH_CONTENT',
-        paginationHints
+        { extraHints: paginationHints }
       );
 
       expect(result.status).toBe('hasResults');
@@ -125,7 +125,7 @@ describe('githubGetFileContent Tool Handler - Hints Fix', () => {
         apiResult,
         true,
         'GITHUB_FETCH_CONTENT',
-        paginationHints
+        { extraHints: paginationHints }
       );
 
       expect(result.status).toBe('hasResults');
@@ -167,7 +167,7 @@ describe('githubGetFileContent Tool Handler - Hints Fix', () => {
         apiResult,
         true,
         'GITHUB_FETCH_CONTENT',
-        paginationHints
+        { extraHints: paginationHints }
       );
 
       expect(result.hints).toContain(
@@ -207,7 +207,7 @@ describe('githubGetFileContent Tool Handler - Hints Fix', () => {
         apiResult,
         true,
         'GITHUB_FETCH_CONTENT',
-        paginationHints
+        { extraHints: paginationHints }
       );
 
       expect(result.hints).toContain('✓ Final page: Reached end of content');

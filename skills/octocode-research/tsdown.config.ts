@@ -2,7 +2,7 @@ import { defineConfig } from 'tsdown';
 import { builtinModules } from 'module';
 
 export default defineConfig({
-  entry: ['src/server.ts'],
+  entry: { server: 'src/server.ts' },
   format: ['esm'],
   outDir: 'scripts',
   clean: true,
@@ -29,7 +29,7 @@ export default defineConfig({
   dts: true, // Generate type declarations (crucial for TypeScript consumers)
   sourcemap: false,
 
-  // Output as index.js
+  // Output as server.js
   outExtensions: () => ({ js: '.js' }),
 
   // Shebang for direct execution
