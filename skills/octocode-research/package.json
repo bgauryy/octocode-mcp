@@ -56,8 +56,8 @@
   "dependencies": {
     "express": "^4.21.2",
     "js-yaml": "^4.1.1",
-    "octocode-mcp": "workspace:*",
-    "octocode-shared": "workspace:*",
+    "octocode-mcp": "workspace:^",
+    "octocode-shared": "workspace:^",
     "zod": "^3.24.1",
     "zod-to-json-schema": "^3.25.1"
   },
@@ -70,7 +70,7 @@
     "@vitest/coverage-v8": "^4.0.17",
     "eslint": "^9.27.0",
     "supertest": "^7.2.2",
-    "tsdown": "^0.20.0-beta.3",
+    "tsdown": "^0.18.3",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.32.0",

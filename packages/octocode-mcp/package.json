@@ -44,7 +44,7 @@
     "html-minifier-terser": "^7.2.0",
     "js-yaml": "^4.1.1",
     "node-cache": "^5.1.2",
-    "octocode-shared": "workspace:*",
+    "octocode-shared": "workspace:^",
     "octokit": "^5.0.5",
     "terser": "^5.44.1",
     "typescript": "^5.3.3",
