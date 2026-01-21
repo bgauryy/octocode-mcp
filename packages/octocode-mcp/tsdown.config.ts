@@ -1,50 +1,58 @@
-import { defineConfig } from 'tsdown';
+import { defineConfig, type UserConfig } from 'tsdown';
 import { builtinModules } from 'module';
 
-// Main server entry - single bundled CLI file
-const serverConfig = defineConfig({
-  entry: ['src/index.ts'],
+// Keep Node.js built-ins external (not bundled)
+const nodeBuiltins = [
+  ...builtinModules,
+  ...builtinModules.map(m => `node:${m}`),
+];
+
+// Shared configuration for all entry points
+const baseConfig: UserConfig = {
   format: ['esm'],
   outDir: 'dist',
-  clean: true,
   target: 'node18',
   platform: 'node',
 
-  // Configure .md files to be loaded as raw text
-  inputOptions: {
-    moduleTypes: {
-      '.md': 'text',
-    },
-  },
-
-  // Bundle ALL dependencies for standalone CLI execution
+  // Bundle ALL dependencies for standalone execution
   noExternal: [/.*/],
-  // Keep Node.js built-ins external
-  external: [...builtinModules, ...builtinModules.map(m => `node:${m}`)],
+  external: nodeBuiltins,
 
-  // Inline dynamic imports for single file output
+  // Single file output (no code-splitting)
   outputOptions: {
     inlineDynamicImports: true,
   },
 
   treeshake: true,
   minify: true,
-  shims: true,
-
-  // No type declarations - will use tsc separately
-  dts: false,
-
-  // NO sourcemaps
+  shims: true, // ESM shims for __dirname, require, etc.
+  dts: false, // Types generated separately via tsc
   sourcemap: false,
-
   outExtensions: () => ({ js: '.js' }),
-
-  // Shebang for CLI execution
-  banner: '#!/usr/bin/env node',
 
   define: {
     'process.env.NODE_ENV': '"production"',
   },
+};
+
+// Main CLI entry - standalone executable
+const mainConfig = defineConfig({
+  ...baseConfig,
+  entry: { index: 'src/index.ts' },
+  clean: true,
+  inputOptions: {
+    moduleTypes: {
+      '.md': 'text', // Load .md files as raw text
+    },
+  },
+  banner: '#!/usr/bin/env node',
 });
 
-export default serverConfig;
+// Public API for library consumers
+const publicConfig = defineConfig({
+  ...baseConfig,
+  entry: { public: 'src/public.ts' },
+  clean: false, // Don't clean - main build already did
+});
+
+export default [mainConfig, publicConfig];

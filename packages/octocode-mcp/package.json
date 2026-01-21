@@ -84,9 +84,8 @@
     }
   },
   "files": [
-    "dist/index.js",
-    "dist/public.js",
-    "dist/public.d.ts",
+    "dist/*.js",
+    "dist/*.d.ts",
     "manifest.json",
     "server.json",
     "LICENSE"

@@ -56,8 +56,8 @@
   "dependencies": {
     "express": "^4.21.2",
     "js-yaml": "^4.1.1",
-    "octocode-mcp": "file:../../packages/octocode-mcp",
-    "octocode-shared": "file:../../packages/octocode-shared",
+    "octocode-mcp": "workspace:*",
+    "octocode-shared": "workspace:*",
     "zod": "^3.24.1",
     "zod-to-json-schema": "^3.25.1"
   },
