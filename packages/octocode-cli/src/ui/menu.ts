@@ -1039,10 +1039,15 @@ async function runAuthFlow(): Promise<void> {
     const choice = await showAuthMenu(status);
 
     switch (choice) {
-      case 'login':
-        await runLoginFlow();
+      case 'login': {
+        const success = await runLoginFlow();
         console.log();
+        if (success) {
+          // Return to main menu after successful auth
+          inAuthMenu = false;
+        }
         break;
+      }
 
       case 'gh-guidance':
         await showGhCliGuidance();
