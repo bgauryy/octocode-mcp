@@ -158,7 +158,6 @@ async function createServer(content: CompleteMetadata): Promise<McpServer> {
   return new McpServer(SERVER_CONFIG, {
     capabilities: {
       prompts: {},
-      resources: {},
       tools: {},
       logging: {},
     },
@@ -190,7 +189,6 @@ async function startServer() {
     await registerAllTools(server, content);
     registerPrompts(server, content);
     await logger.info('Prompts ready');
-    await logger.info('Resources ready');
 
     // Setup shutdown handling
     const gracefulShutdown = createShutdownHandler(
