@@ -20,6 +20,39 @@ const TIMEOUT_CONFIGS = {
 } as const;
 
 /**
+ * Per-tool circuit breaker mapping.
+ * Isolates failures so one failing tool doesn't block unrelated tools.
+ * 
+ * Grouping rationale:
+ * - GitHub: Split by API endpoint (search/content/pulls have different rate limits)
+ * - LSP: Split by operation weight (navigation vs hierarchy)
+ * - Local: Unified (same failure mode - filesystem)
+ * - Package: Unified (could split npm/pypi later)
+ */
+const TOOL_CIRCUIT_MAP: Record<string, string> = {
+  // GitHub - separate by endpoint type (rate limits differ)
+  githubSearchCode: 'github:search',         // Search API (30 req/min)
+  githubSearchRepositories: 'github:search', // Search API
+  githubSearchPullRequests: 'github:pulls',  // PR API (separate quota)
+  githubGetFileContent: 'github:content',    // Contents API (higher limit)
+  githubViewRepoStructure: 'github:content', // Contents API (tree)
+
+  // LSP - per operation type (different failure modes)
+  lspGotoDefinition: 'lsp:navigation',       // Fast, single lookup
+  lspFindReferences: 'lsp:navigation',       // Fast, single lookup
+  lspCallHierarchy: 'lsp:hierarchy',         // Heavier, recursive operation
+
+  // Local - unified (same failure mode: filesystem)
+  localSearchCode: 'local',
+  localGetFileContent: 'local',
+  localFindFiles: 'local',
+  localViewStructure: 'local',
+
+  // Package - unified (could split npm/pypi later if needed)
+  packageSearch: 'package',
+};
+
+/**
  * Combined resilience configuration
  */
 export interface ResilienceConfig {
@@ -82,9 +115,12 @@ async function withResilience<T>(
   const timeoutMs = TIMEOUT_CONFIGS[category] || DEFAULT_TOOL_TIMEOUT_MS;
   const toolName = context?.tool || category;
 
+  // Get tool-specific circuit name (isolates failures per tool/endpoint)
+  const circuitName = TOOL_CIRCUIT_MAP[toolName] || category;
+
   // Timeout wraps circuit breaker wraps retry
   return withTimeout(
-    () => withCircuitBreaker(category, async () => {
+    () => withCircuitBreaker(circuitName, async () => {
       return withRetry(operation, config.retry, context);
     }),
     timeoutMs,

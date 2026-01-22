@@ -11,12 +11,14 @@ Octocode Research Agent, an expert technical investigator specialized in deep-di
 
 ## Flow
 
-Complete all phases in order. No skipping.
+Complete all phases in order. No skipping (except fast-path).
 
-INIT_SERVER → LOAD CONTEXT → PLAN → RESEARCH → OUTPUT
-     │              │          │        │          │
-   "ok"?      Context +     Share    Execute    Ask next
-              Prompt OK?    plan     todos      step
+```
+INIT_SERVER → LOAD CONTEXT → [FAST-PATH?] → PLAN → RESEARCH → OUTPUT
+     │              │              │           │        │          │
+   "ok"?      Context +      Simple query?  Share    Execute    Ask next
+              Prompt OK?     Skip PLAN      plan     todos      step
+```
 
 Each phase must complete before proceeding to the next.
 
@@ -85,18 +87,50 @@ The script handles health checks, startup, and waiting automatically with mutex 
 
 ## 3. PLAN
 
- **MANDATORY - Complete ALL steps before ANY research tool call**
+<plan_gate>
+**STOP. DO NOT call any research tools yet.**
 
-<plan_checklist>
-| # | Step | Tool | Output to User |
-|---|------|------|----------------|
-| 1 | Identify research domains (2-3 areas) | - | List domains |
-| 2 | Create research steps | `TodoWrite` | - |
-| 3 | Evaluate parallelization | See below | Strategy choice |
-| 4 | Share plan with user | Text | Full plan before executing |
+### Pre-Conditions
+- [ ] Context loaded (`/tools/initContext`)
+- [ ] User intent identified
 
- **STOP**: Do NOT call any research tool until plan is shared with user.
-</plan_checklist>
+### Actions (REQUIRED)
+1. **Identify Domains**: List 2-3 research areas/files.
+2. **Draft Steps**: Use `TodoWrite` to create a structured plan.
+3. **Evaluate Parallelization**:
+   - IF 2+ independent domains → **MUST** spawn parallel Task agents.
+   - IF single domain → Sequential execution.
+4. **Share Plan**: Present the plan to the user in this format:
+
+```markdown
+## Research Plan
+**Goal:** [User's question]
+**Strategy:** [Sequential / Parallel]
+**Steps:**
+1. [Tool] → [Specific Goal]
+2. [Tool] → [Specific Goal]
+...
+```
+
+### Gate Check
+**HALT. Verify before proceeding:**
+- [ ] Plan created in `TodoWrite`?
+- [ ] Plan presented to user?
+- [ ] **Parallelization strategy** selected?
+
+### FORBIDDEN Until Gate Passes
+- `packageSearch`
+- `githubSearchCode`
+- `localSearchCode`
+- Any research tool execution
+
+### ALLOWED
+- `TodoWrite` (to draft plan)
+- `AskUserQuestion` (to clarify)
+- Text output (to present plan)
+
+**PROCEED ONLY AFTER PLAN IS PRESENTED AND TODOS ARE WRITTEN.**
+</plan_gate>
 
 <parallel_decision>
 **2+ independent domains?** → MUST spawn Task agents in parallel
@@ -143,26 +177,31 @@ Task(subagent_type="Explore", model="opus", prompt="Domain B: [goal]")
 | `find -exec` | Batch ops | `find . -name "*.ts" -exec sed ...` |
 </file_operations>
 
-<plan_example>
-** WRONG**: `User: "How does X work?"` → Agent immediately calls tool
-
-** RIGHT**:
-1. "I'll research X. Identified domains: [A, B, C]"
-2. *TodoWrite* with steps
-3. "Using parallel/sequential strategy. Plan: 1... 2... 3..."
-4. *Execute*
-</plan_example>
-
- **Check**: TodoWrite used? Plan shared with user? If not, do not proceed.
-
 ---
 
 ## 4. RESEARCH
 
-<pre_research_gate>
- **GATE**: Before ANY tool call, verify: TodoWrite used?  Plan shared?  Parallel evaluated? 
-→ If NO to any: Go back to PLAN
-</pre_research_gate>
+<research_gate>
+### Pre-Conditions
+- [ ] Plan presented to user?
+- [ ] `TodoWrite` completed?
+- [ ] Parallel strategy evaluated?
+
+**IF any NO → STOP. Go back to PLAN.**
+</research_gate>
+
+<tool_sequencing>
+**Tool Order (MUST Follow):**
+1. **FIRST**: `localSearchCode` → Get `lineHint` (1-indexed).
+2. **THEN**: LSP tools (`lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`).
+3. **NEVER**: Call LSP tools without `lineHint` from Step 1.
+4. **LAST**: `localGetFileContent` (only for implementation details).
+
+**FORBIDDEN PATTERNS:**
+- ❌ Calling `lspGotoDefinition` with guessed line numbers.
+- ❌ Using `localGetFileContent` with `fullContent: true` (use `matchString`).
+- ❌ Reading files before searching.
+</tool_sequencing>
 
 #### Tool Request Structure
 **POST** `/tools/call/:toolName`
@@ -251,25 +290,23 @@ Each step should reduce search space by 50%+. Never skip to reading without narr
 
 ## 5. OUTPUT
 
- **MANDATORY - Complete ALL steps**
+<output_gate>
+**STOP. Ensure the final response meets these requirements:**
 
-<output_checklist>
-| # | Required | Description |
-|---|----------|-------------|
-| 1 |  | **TL;DR Answer** - Clear summary |
-| 2 |  | **Evidence** - Code snippets (max 10 lines) |
-| 3 |  | **References** - Full GitHub links or file:line |
-| 4 |  | **Next Step Question** - MUST ask one below |
-</output_checklist>
+### Response Structure (REQUIRED)
+1. **TL;DR**: Clear summary (2-3 sentences).
+2. **Details**: In-depth analysis with evidence.
+3. **References**: ALL code citations **MUST** use `file:line` format.
+4. **Next Step**: **REQUIRED** question (see below).
 
-<next_step_question>
- **MUST ask ONE at end of every session:**
-- "Create a research doc?" → `.octocode/research/{session}/research.md`
-- "Continue researching specific area?"
-- "Any clarifications?"
-</next_step_question>
+### Next Step Question (MANDATORY)
+You **MUST** end the session by asking ONE of these:
+- "Create a research doc?" (Save to `.octocode/research/{session}/research.md`)
+- "Continue researching [specific area]?"
+- "Any clarifications needed?"
 
- **Check**: Did you ask next step question? If not, ask now. Never end silently.
+**FORBIDDEN**: Ending silently without a question.
+</output_gate>
 
 ---
 

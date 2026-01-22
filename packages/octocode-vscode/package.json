@@ -26,7 +26,11 @@
     "agentic"
   ],
   "homepage": "https://octocode.ai",
-  "repository": "bgauryy/octocode-mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bgauryy/octocode-mcp.git",
+    "directory": "packages/octocode-vscode"
+  },
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
   "activationEvents": [
@@ -111,7 +115,7 @@
   },
   "displayName": "Octocode MCP",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.107.0"
   },
   "icon": "images/icon.png",
   "main": "./out/extension.js",
