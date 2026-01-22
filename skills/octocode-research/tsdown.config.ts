@@ -2,7 +2,10 @@ import { defineConfig } from 'tsdown';
 import { builtinModules } from 'module';
 
 export default defineConfig({
-  entry: { server: 'src/server.ts' },
+  entry: {
+    server: 'src/server.ts',
+    'server-init': 'src/server-init.ts',
+  },
   format: ['esm'],
   outDir: 'scripts',
   clean: true,
@@ -18,10 +21,8 @@ export default defineConfig({
     ...builtinModules.map((m) => `node:${m}`),
   ],
 
-  // Single file output
-  outputOptions: {
-    inlineDynamicImports: true,
-  },
+  // Code splitting disabled for standalone scripts
+  splitting: false,
 
   treeshake: true,
   minify: true,
