@@ -46,6 +46,10 @@ The **Octocode MCP Server** (`packages/octocode-mcp`) is the bridge between your
 
 The MCP Server provides the *capabilities* to see, touch, and understand code structure.
 
+
+https://github.com/user-attachments/assets/de8d14c0-2ead-46ed-895e-09144c9b5071
+
+
 ---
 
 ## 🧠 The Skill
@@ -63,6 +67,9 @@ It adds specialized capabilities **out-of-the-box (OOTB)**:
 4.  **Parallel Agents**: Handles spawning sub-agents for parallel execution of research tasks.
 
 This skill turns a generic AI model into a specialized **Research Architect**.
+
+https://github.com/user-attachments/assets/5b630763-2dee-4c2d-b5c1-6335396723ec
+
 
 ---
 
