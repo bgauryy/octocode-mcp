@@ -38,7 +38,7 @@ The Keychain (OS secure storage) exists as a storage option for several importan
 | **Env vars** | ⚠️ Medium | ❌ Per-session | Can leak in `ps e`, stored as plain text in shell profiles |
 | **`gh` CLI** | ✅ High | ✅ Yes | Requires installing GitHub CLI |
 | **Keychain** | ✅ Highest | ✅ Yes | May prompt for access on first use |
-| **Encrypted file** | ✅ High | ✅ Yes | Fallback when keychain unavailable |
+| **Encrypted file** | ✅ High | ✅ Yes | Fallback when file storage unavailable |
 
 **Key reasons for Keychain support:**
 
@@ -74,7 +74,7 @@ npx octocode-cli@latest
 During installation, select **"Login to GitHub"** from the menu. This will:
 
 1. Start a secure OAuth flow in your browser
-2. Store the token in your system keychain (or encrypted file as fallback)
+2. Store the token in your system file storage (or encrypted file as fallback)
 3. Make the token available to the MCP server automatically
 
 #### Manual Login After Installation
@@ -197,7 +197,7 @@ Token resolution always fetches fresh tokens for immediate propagation of change
 | **Fresh resolution** | Tokens are always resolved fresh on every request |
 | **Immediate propagation** | When you run `gh auth login` or set a new token, it takes effect immediately |
 | **No server restart** | Token changes are picked up dynamically without restarting the MCP server |
-| **Priority order** | Env vars → Stored credentials (keychain/file) → gh CLI |
+| **Priority order** | Env vars → Stored credentials (file storage/file) → gh CLI |
 
 ---
 
@@ -210,7 +210,7 @@ The MCP server tracks where the token was resolved from via the `tokenSource` fi
 | `env:OCTOCODE_TOKEN` | From OCTOCODE_TOKEN environment variable (Priority 1) |
 | `env:GH_TOKEN` | From GH_TOKEN environment variable (Priority 2) |
 | `env:GITHUB_TOKEN` | From GITHUB_TOKEN environment variable (Priority 3) |
-| `octocode-storage` | From keychain or encrypted file (Priority 4-5) |
+| `octocode-storage` | From file storage or encrypted file (Priority 4-5) |
 | `gh-cli` | From GitHub CLI (`gh auth token`) (Priority 6) |
 | `none` | No token found |
 
@@ -282,9 +282,9 @@ npx octocode-cli
 
 ### Keychain Access Denied
 
-On macOS, you may see a keychain access prompt. Click "Always Allow" to prevent future prompts.
+On macOS, you may see a file storage access prompt. Click "Always Allow" to prevent future prompts.
 
-If keychain is unavailable, credentials fall back to the encrypted file at `~/.octocode/credentials.json`.
+If file storage is unavailable, credentials fall back to the encrypted file at `~/.octocode/credentials.json`.
 
 ---
 

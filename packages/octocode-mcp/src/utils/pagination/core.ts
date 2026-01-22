@@ -67,21 +67,25 @@ export function applyPagination(
 
   if (mode === 'bytes') {
     // Byte mode: offset and length are in bytes
-    const buffer = Buffer.from(content, 'utf-8');
-    startBytePos = Math.min(offset, totalBytes);
-    endBytePos = Math.min(startBytePos + length, totalBytes);
+    // Convert byte positions to character positions first to avoid mid-character slicing
+    // This ensures we always slice on UTF-8 character boundaries
+    const requestedStartByte = Math.min(offset, totalBytes);
+    const requestedEndByte = Math.min(requestedStartByte + length, totalBytes);
 
-    // Extract content using byte positions
-    const slice = buffer.subarray(startBytePos, endBytePos);
-    paginatedContent = slice.toString('utf-8');
+    // Convert to character indices (this aligns to character boundaries)
+    startCharPos = byteToCharIndex(content, requestedStartByte);
+    endCharPos = byteToCharIndex(content, requestedEndByte);
 
-    // Calculate character positions from byte positions
-    startCharPos = byteToCharIndex(content, startBytePos);
-    endCharPos = byteToCharIndex(content, endBytePos);
+    // Extract content using safe character positions
+    paginatedContent = content.substring(startCharPos, endCharPos);
+
+    // Calculate actual byte positions from the aligned character positions
+    startBytePos = charToByteIndex(content, startCharPos);
+    endBytePos = charToByteIndex(content, endCharPos);
 
     hasMore = endBytePos < totalBytes;
     // Use actualOffset for page calculation if provided
-    const pageOffset = options.actualOffset ?? startBytePos;
+    const pageOffset = options.actualOffset ?? requestedStartByte;
     currentPage = Math.floor(pageOffset / length) + 1;
     totalPages = Math.ceil(totalBytes / length);
   } else {

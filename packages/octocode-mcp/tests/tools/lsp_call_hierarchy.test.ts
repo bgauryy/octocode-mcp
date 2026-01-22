@@ -62,7 +62,7 @@ describe('LSP Call Hierarchy Tool', () => {
 
       registerLSPCallHierarchyTool(mockServer as any);
 
-      const callArgs = mockServer.registerTool.mock.calls[0];
+      const callArgs = mockServer.registerTool.mock.calls[0]!;
       const toolConfig = callArgs[1];
 
       expect(toolConfig.annotations.openWorldHint).toBe(false);
@@ -80,7 +80,7 @@ describe('LSP Call Hierarchy Tool', () => {
 
       registerLSPCallHierarchyTool(mockServer as any);
 
-      const handler = mockServer.registerTool.mock.calls[0][2];
+      const handler = mockServer.registerTool.mock.calls[0]![2];
       expect(typeof handler).toBe('function');
     });
   });
@@ -376,9 +376,9 @@ describe('LSP Call Hierarchy Tool', () => {
       const results = parseRipgrepJsonOutput(output);
 
       expect(results.length).toBe(1);
-      expect(results[0].filePath).toBe('/test.ts');
-      expect(results[0].lineNumber).toBe(5);
-      expect(results[0].column).toBe(2);
+      expect(results[0]!.filePath).toBe('/test.ts');
+      expect(results[0]!.lineNumber).toBe(5);
+      expect(results[0]!.column).toBe(2);
     });
 
     it('should skip invalid JSON lines', () => {
@@ -420,9 +420,9 @@ describe('LSP Call Hierarchy Tool', () => {
       const results = parseGrepOutput(output);
 
       expect(results.length).toBe(1);
-      expect(results[0].filePath).toBe('/test.ts');
-      expect(results[0].lineNumber).toBe(5);
-      expect(results[0].lineContent).toBe('  myFunc();');
+      expect(results[0]!.filePath).toBe('/test.ts');
+      expect(results[0]!.lineNumber).toBe(5);
+      expect(results[0]!.lineContent).toBe('  myFunc();');
     });
 
     it('should handle multiple results', () => {
@@ -445,7 +445,7 @@ describe('LSP Call Hierarchy Tool', () => {
 
       const results = parseGrepOutput(output);
       expect(results.length).toBe(1);
-      expect(results[0].filePath).toBe('/test.ts');
+      expect(results[0]!.filePath).toBe('/test.ts');
     });
   });
 

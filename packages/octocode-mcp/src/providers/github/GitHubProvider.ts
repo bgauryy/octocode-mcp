@@ -46,125 +46,20 @@ import type {
   OptimizedCodeSearchResult,
   GitHubAPIError,
 } from '../../github/githubAPI.js';
+import { isGitHubAPIError } from '../../github/githubAPI.js';
 import { handleGitHubAPIError } from '../../github/errors.js';
 
-// Internal interfaces for type safety
-interface GitHubFileContentData {
-  path?: string;
-  content?: string;
-  contentLength?: number;
-  branch?: string;
-  lastModified?: string;
-  lastModifiedBy?: string;
-  pagination?: {
-    startLine?: number;
-    endLine?: number;
-    totalLines?: number;
-  };
-  isPartial?: boolean;
-  startLine?: number;
-  endLine?: number;
-}
-
-interface GitHubRepoData {
-  owner: string;
-  repo: string;
-  description?: string | null;
-  url: string;
-  defaultBranch?: string;
-  stars?: number;
-  forksCount?: number;
-  visibility?: string;
-  topics?: string[];
-  createdAt?: string;
-  updatedAt?: string;
-  pushedAt?: string;
-  openIssuesCount?: number;
-}
-
-interface GitHubRepoSearchData {
-  repositories: GitHubRepoData[];
-  pagination?: {
-    currentPage?: number;
-    totalPages?: number;
-    hasMore?: boolean;
-    totalMatches?: number;
-  };
-}
-
-interface GitHubPRData {
-  number: number;
-  title: string;
-  body?: string | null;
-  html_url?: string;
-  url?: string;
-  merged?: boolean;
-  state: string;
-  draft?: boolean;
-  author?: string;
-  assignees?: Array<{ login?: string } | string>;
-  labels?: Array<{ name?: string } | string>;
-  head_ref?: string;
-  head?: string;
-  base_ref?: string;
-  base?: string;
-  head_sha?: string;
-  base_sha?: string;
-  created_at?: string;
-  updated_at?: string;
-  closed_at?: string;
-  merged_at?: string;
-  comments?: number;
-  changed_files?: number;
-  additions?: number;
-  deletions?: number;
-  comment_details?: Array<{
-    id: string | number;
-    user?: string;
-    body?: string;
-    created_at?: string;
-    updated_at?: string;
-  }>;
-  file_changes?: {
-    files?: Array<{
-      filename: string;
-      status?: string;
-      additions?: number;
-      deletions?: number;
-      patch?: string;
-    }>;
-  };
-}
-
-interface GitHubPRSearchData {
-  pull_requests?: GitHubPRData[];
-  total_count?: number;
-  pagination?: {
-    currentPage?: number;
-    totalPages?: number;
-    hasMore?: boolean;
-    totalMatches?: number;
-  };
-}
-
-interface GitHubRepoStructureData {
-  owner: string;
-  repo: string;
-  branch?: string;
-  path?: string;
-  structure?: Record<string, { files: string[]; folders: string[] }>;
-  summary?: {
-    totalFiles?: number;
-    totalFolders?: number;
-    truncated?: boolean;
-  };
-  pagination?: {
-    currentPage?: number;
-    totalPages?: number;
-    hasMore?: boolean;
-  };
-  hints?: string[];
-}
+// Import actual types from tools (replacing local interface definitions)
+import type { ContentResultData } from '../../tools/github_fetch_content/types.js';
+import type {
+  SimplifiedRepository,
+  RepoSearchResult as GHRepoSearchResult,
+} from '../../tools/github_search_repos/types.js';
+import type {
+  PullRequestInfo,
+  PullRequestSearchResultData,
+} from '../../tools/github_search_pull_requests/types.js';
+import type { GitHubRepositoryStructureResult } from '../../tools/github_view_repo_structure/scheme.js';
 
 /**
  * GitHub Provider implementation.
@@ -176,8 +71,12 @@ export class GitHubProvider implements ICodeHostProvider {
   private authInfo?: AuthInfo;
 
   constructor(config?: ProviderConfig) {
-    this.authInfo = config?.authInfo;
-    if (config?.token) {
+    // Use AuthInfo if provided, otherwise construct from token
+    // The type assertion is safe because we only use the 'token' field from AuthInfo
+    // (see src/github/client.ts getOctokit function which accesses authInfo?.token)
+    if (config?.authInfo) {
+      this.authInfo = config.authInfo;
+    } else if (config?.token) {
       this.authInfo = { token: config.token } as AuthInfo;
     }
   }
@@ -209,26 +108,18 @@ export class GitHubProvider implements ICodeHostProvider {
 
       const result = await searchGitHubCodeAPI(githubQuery, this.authInfo);
 
-      // Check for error
-      if ('error' in result) {
-        const errorResult = result as {
-          error: string | { toString(): string };
-          status?: number;
-          hints?: string[];
-        };
+      // Check for error using type guard - no type assertions needed
+      if (isGitHubAPIError(result)) {
         return {
-          error:
-            typeof errorResult.error === 'string'
-              ? errorResult.error
-              : String(errorResult.error),
-          status: errorResult.status || 500,
+          error: result.error,
+          status: result.status || 500,
           provider: 'github',
-          hints: errorResult.hints,
+          hints: result.hints,
         };
       }
 
-      // Transform result
-      if (!('data' in result) || !result.data) {
+      // Transform result - after type guard, result is narrowed to success type
+      if (!result.data) {
         return {
           error: 'No data returned from GitHub API',
           status: 500,
@@ -317,24 +208,17 @@ export class GitHubProvider implements ICodeHostProvider {
         this.authInfo
       );
 
-      if ('error' in result) {
-        const errorResult = result as {
-          error: string | { toString(): string };
-          status?: number;
-          hints?: string[];
-        };
+      // Check for error using type guard
+      if (isGitHubAPIError(result)) {
         return {
-          error:
-            typeof errorResult.error === 'string'
-              ? errorResult.error
-              : String(errorResult.error),
-          status: errorResult.status || 500,
+          error: result.error,
+          status: result.status || 500,
           provider: 'github',
-          hints: errorResult.hints,
+          hints: result.hints,
         };
       }
 
-      if (!('data' in result) || !result.data) {
+      if (!result.data) {
         return {
           error: 'No data returned from GitHub API',
           status: 500,
@@ -353,7 +237,7 @@ export class GitHubProvider implements ICodeHostProvider {
   }
 
   private transformFileContentResult(
-    data: GitHubFileContentData,
+    data: ContentResultData,
     query: FileContentQuery
   ): FileContentResult {
     return {
@@ -433,10 +317,10 @@ export class GitHubProvider implements ICodeHostProvider {
   }
 
   private transformRepoSearchResult(
-    data: GitHubRepoSearchData
+    data: GHRepoSearchResult
   ): RepoSearchResult {
     const repositories: UnifiedRepository[] = data.repositories.map(
-      (repo: GitHubRepoData) => ({
+      (repo: SimplifiedRepository) => ({
         id: `${repo.owner}/${repo.repo}`,
         name: repo.repo,
         fullPath: `${repo.owner}/${repo.repo}`,
@@ -446,7 +330,8 @@ export class GitHubProvider implements ICodeHostProvider {
         defaultBranch: repo.defaultBranch || 'main',
         stars: repo.stars || 0,
         forks: repo.forksCount || 0,
-        visibility: repo.visibility || 'public',
+        visibility:
+          (repo.visibility as 'public' | 'private' | 'internal') || 'public',
         topics: repo.topics || [],
         createdAt: repo.createdAt,
         updatedAt: repo.updatedAt,
@@ -534,11 +419,11 @@ export class GitHubProvider implements ICodeHostProvider {
   }
 
   private transformPullRequestResult(
-    data: GitHubPRSearchData,
+    data: PullRequestSearchResultData,
     query: PullRequestQuery
   ): PullRequestSearchResult {
     const items: PullRequestItem[] = (data.pull_requests || []).map(
-      (pr: GitHubPRData) => ({
+      (pr: PullRequestInfo) => ({
         number: pr.number,
         title: pr.title,
         body: pr.body || null,
@@ -553,8 +438,8 @@ export class GitHubProvider implements ICodeHostProvider {
         labels:
           pr.labels?.map(l => (typeof l === 'string' ? l : (l.name ?? ''))) ||
           [],
-        sourceBranch: pr.head_ref || pr.head || '',
-        targetBranch: pr.base_ref || pr.base || '',
+        sourceBranch: pr.head_ref || '',
+        targetBranch: pr.base_ref || '',
         sourceSha: pr.head_sha,
         targetSha: pr.base_sha,
         createdAt: pr.created_at,
@@ -572,7 +457,7 @@ export class GitHubProvider implements ICodeHostProvider {
           createdAt: c.created_at,
           updatedAt: c.updated_at,
         })),
-        fileChanges: pr.file_changes?.files?.map(f => ({
+        fileChanges: pr.file_changes?.map(f => ({
           path: f.filename,
           status: f.status,
           additions: f.additions,
@@ -653,9 +538,7 @@ export class GitHubProvider implements ICodeHostProvider {
       }
 
       return {
-        data: this.transformRepoStructureResult(
-          result as unknown as GitHubRepoStructureData
-        ),
+        data: this.transformRepoStructureResult(result),
         status: 200,
         provider: 'github',
       };
@@ -665,7 +548,7 @@ export class GitHubProvider implements ICodeHostProvider {
   }
 
   private transformRepoStructureResult(
-    data: GitHubRepoStructureData
+    data: GitHubRepositoryStructureResult
   ): RepoStructureResult {
     return {
       projectPath: `${data.owner}/${data.repo}`,

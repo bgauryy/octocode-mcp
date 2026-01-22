@@ -120,8 +120,20 @@ async function executeRipgrepSearchInternal(
     ) as SearchContentResult;
   }
 
+  // Type guard: ensure path exists before validation
+  if (!configuredQuery.path) {
+    return createErrorResult(
+      new Error('Path is required for search'),
+      configuredQuery,
+      {
+        toolName: TOOL_NAMES.LOCAL_RIPGREP,
+        extra: { warnings: validation.warnings },
+      }
+    ) as SearchContentResult;
+  }
+  const queryWithPath = configuredQuery as RipgrepQuery & { path: string };
   const pathValidation = validateToolPath(
-    configuredQuery,
+    queryWithPath,
     TOOL_NAMES.LOCAL_RIPGREP
   );
   if (!pathValidation.isValid) {
@@ -231,8 +243,21 @@ async function executeGrepSearch(
     ) as SearchContentResult;
   }
 
+  // Type guard: ensure path exists before validation
+  if (!configuredQuery.path) {
+    return createErrorResult(
+      new Error('Path is required for search'),
+      configuredQuery,
+      {
+        toolName: TOOL_NAMES.LOCAL_RIPGREP,
+        extra: { warnings: [...grepWarnings, ...validation.warnings] },
+      }
+    ) as SearchContentResult;
+  }
+  const queryWithPath = configuredQuery as RipgrepQuery & { path: string };
+
   const pathValidation = validateToolPath(
-    configuredQuery,
+    queryWithPath,
     TOOL_NAMES.LOCAL_RIPGREP
   );
   if (!pathValidation.isValid) {

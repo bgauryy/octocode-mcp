@@ -79,9 +79,11 @@ export async function getMetadata(): Promise<CompleteMetadata> {
     const toolNames = raw.toolNames as unknown as ToolNames;
     const baseSchema = raw.baseSchema;
 
+    // After successful zod validation, properties are guaranteed to exist
+    // Type assertions are safe here since schema validation ensures required fields
     const result: CompleteMetadata = {
       instructions: raw.instructions,
-      prompts: raw.prompts,
+      prompts: raw.prompts as CompleteMetadata['prompts'],
       toolNames,
       baseSchema: {
         mainResearchGoal: baseSchema.mainResearchGoal,
@@ -90,8 +92,8 @@ export async function getMetadata(): Promise<CompleteMetadata> {
         bulkQuery: (toolName: string) =>
           baseSchema.bulkQueryTemplate.replace('{toolName}', toolName),
       },
-      tools: raw.tools,
-      baseHints: raw.baseHints,
+      tools: raw.tools as CompleteMetadata['tools'],
+      baseHints: raw.baseHints as CompleteMetadata['baseHints'],
       genericErrorHints: raw.genericErrorHints,
       bulkOperations: raw.bulkOperations,
     };

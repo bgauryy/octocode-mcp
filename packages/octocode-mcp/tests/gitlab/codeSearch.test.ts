@@ -703,7 +703,7 @@ describe('GitLab Code Search', () => {
       });
 
       expect(shouldCacheCallbacks.length).toBe(1);
-      const shouldCache = shouldCacheCallbacks[0];
+      const shouldCache = shouldCacheCallbacks[0]!;
 
       // Success response should be cached
       const successResponse = {
@@ -722,7 +722,7 @@ describe('GitLab Code Search', () => {
       });
 
       expect(shouldCacheCallbacks.length).toBe(1);
-      const shouldCache = shouldCacheCallbacks[0];
+      const shouldCache = shouldCacheCallbacks[0]!;
 
       // Error response should not be cached
       const errorResponse = {
@@ -742,7 +742,7 @@ describe('GitLab Code Search', () => {
       });
 
       expect(shouldCacheCallbacks.length).toBe(1);
-      const shouldCache = shouldCacheCallbacks[0];
+      const shouldCache = shouldCacheCallbacks[0]!;
 
       // Response with both data and error should not be cached
       const mixedResponse = {
@@ -762,7 +762,7 @@ describe('GitLab Code Search', () => {
       });
 
       expect(shouldCacheCallbacks.length).toBe(1);
-      const shouldCache = shouldCacheCallbacks[0];
+      const shouldCache = shouldCacheCallbacks[0]!;
 
       // Response without data property should not be cached
       const noDataResponse = {
@@ -1394,7 +1394,7 @@ describe('Edge Cases', () => {
     });
 
     if ('data' in result) {
-      expect(result.data.items[0].startline).toBe(0);
+      expect(result.data.items[0]!.startline).toBe(0);
     } else {
       expect.fail('Expected successful result');
     }

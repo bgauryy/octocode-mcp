@@ -1,8 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type {
-  GitLabFileContent,
-  GitLabAPIResponse,
-} from '../../src/gitlab/types.js';
+import type { GitLabFileContent } from '../../src/gitlab/types.js';
 
 // Mock the gitlab client module
 vi.mock('../../src/gitlab/client.js', () => ({
@@ -571,7 +568,7 @@ describe('GitLab File Content', () => {
         });
 
         // Get the shouldCache function from the call
-        const shouldCacheFn = mockWithDataCache.mock.calls[0][2]?.shouldCache;
+        const shouldCacheFn = mockWithDataCache.mock.calls[0]![2]?.shouldCache;
         expect(shouldCacheFn).toBeDefined();
 
         // Test that it caches successful responses

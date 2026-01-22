@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type {
   ICodeHostProvider,
   ProviderType,
@@ -86,9 +87,8 @@ function createMockProviderClass(type: ProviderType) {
           totalCount: 0,
           pagination: {
             currentPage: 1,
-            perPage: 10,
-            hasNextPage: false,
-            hasPreviousPage: false,
+            totalPages: 1,
+            hasMore: false,
           },
         },
       };
@@ -121,9 +121,8 @@ function createMockProviderClass(type: ProviderType) {
           totalCount: 0,
           pagination: {
             currentPage: 1,
-            perPage: 10,
-            hasNextPage: false,
-            hasPreviousPage: false,
+            totalPages: 1,
+            hasMore: false,
           },
         },
       };
@@ -140,9 +139,8 @@ function createMockProviderClass(type: ProviderType) {
           totalCount: 0,
           pagination: {
             currentPage: 1,
-            perPage: 10,
-            hasNextPage: false,
-            hasPreviousPage: false,
+            totalPages: 1,
+            hasMore: false,
           },
         },
       };
@@ -401,11 +399,11 @@ describe('Provider Factory', () => {
       it('should use authInfo.token for cache key when token not provided', () => {
         const config1: ProviderConfig = {
           type: 'github',
-          authInfo: { token: 'auth-token-1' },
+          authInfo: { token: 'auth-token-1' } as AuthInfo,
         };
         const config2: ProviderConfig = {
           type: 'github',
-          authInfo: { token: 'auth-token-2' },
+          authInfo: { token: 'auth-token-2' } as AuthInfo,
         };
 
         const provider1 = getProvider('github', config1);
@@ -617,7 +615,7 @@ describe('Provider Factory', () => {
       const config: ProviderConfig = {
         type: 'github',
         token: 'explicit-token',
-        authInfo: { token: 'auth-info-token' },
+        authInfo: { token: 'auth-info-token' } as AuthInfo,
       };
 
       const provider = getProvider('github', config);
@@ -627,7 +625,7 @@ describe('Provider Factory', () => {
     it('should use authInfo.token when token is not provided', () => {
       const config: ProviderConfig = {
         type: 'github',
-        authInfo: { token: 'auth-info-token' },
+        authInfo: { token: 'auth-info-token' } as AuthInfo,
       };
 
       const provider = getProvider('github', config);
@@ -940,7 +938,7 @@ describe('Provider Factory', () => {
         token: 'test-token',
         authInfo: {
           token: 'auth-token',
-        },
+        } as AuthInfo,
       };
 
       const provider = getProvider('github', config);

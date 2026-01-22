@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import axios from 'axios';
 import { deleteSession, _resetSessionState } from 'octocode-shared';
-import { sessionMockState } from './setup.js';
 
 // LOG environment variable is set in individual tests
 

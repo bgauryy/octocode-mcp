@@ -111,8 +111,8 @@ describe('LSP Client Module', () => {
       it(`should recognize ${ext} as ${languageId}`, async () => {
         // The language server configuration is internal, but we can verify
         // that supported extensions don't return null immediately
-        const { isLanguageServerAvailable } =
-          await import('../../src/lsp/index.js');
+        // Import to verify the module loads correctly
+        await import('../../src/lsp/index.js');
 
         // This will check if the extension is recognized
         // (actual availability depends on installed servers)
@@ -221,7 +221,7 @@ describe('LSP Client Module', () => {
     }
 
     it('should return "unknown" for unmapped kinds', () => {
-      const kind = 999;
+      // kind = 999 would be unmapped
       const result = 'unknown'; // Default
 
       expect(result).toBe('unknown');

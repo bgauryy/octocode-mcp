@@ -21,7 +21,6 @@ export default defineConfig({
         ...builtinModules,
         ...builtinModules.map(m => `node:${m}`),
         '@inquirer/prompts',
-        '@napi-rs/keyring', // Native addon - must be external
         '@octokit/oauth-methods', // Used by octocode-shared for token refresh
         '@octokit/request', // Used by octocode-shared
       ],

@@ -1,11 +1,20 @@
 # Octocode Research API Reference
 
 > HTTP API on `localhost:1987` - All tools via POST `/tools/call/:toolName`
+> **v2.1.0** - Process managed by PM2
 
 ## Quick Start
 
 ```bash
-npm start                                    # Start server
+# Development
+npm run dev                                  # Start with hot reload
+
+# Production (PM2)
+npm run pm2:start                            # Start with PM2
+npm run pm2:logs                             # View logs
+npm run pm2:monit                            # Dashboard
+
+# Health & Discovery
 curl http://localhost:1987/health            # Health check
 curl http://localhost:1987/tools/list        # List tools
 curl http://localhost:1987/tools/info/localSearchCode  # Get schema (BEFORE calling!)
@@ -40,12 +49,23 @@ Response:
 {
   "status": "ok",
   "port": 1987,
-  "version": "2.0.0",
+  "version": "2.1.0",
   "uptime": 123,
-  "memory": { "heapUsed": 36, "heapTotal": 41, "rss": 151 },
-  "circuits": { "local": { "state": "closed", "isHealthy": true }, ... }
+  "processManager": "pm2",
+  "memory": { "heapUsed": 27, "heapTotal": 42, "rss": 132 },
+  "circuits": {},
+  "errors": { "queueSize": 0, "recentErrors": [] }
 }
 ```
+
+| Field | Description |
+|-------|-------------|
+| `status` | `"ok"` when ready, `"initializing"` during startup |
+| `processManager` | Always `"pm2"` - server is managed by PM2 |
+| `uptime` | Seconds since process start |
+| `memory` | Heap and RSS memory usage in MB |
+| `circuits` | Circuit breaker states (empty when healthy) |
+| `errors` | Recent error queue for debugging |
 
 ### `GET /tools/list`
 ```bash
@@ -539,4 +559,4 @@ curl -X POST http://localhost:1987/tools/call/packageSearch \
 
 ---
 
-*Octocode Research v2.0.0*
+*Octocode Research v2.1.0*

@@ -24,7 +24,7 @@ describe('GitHubReposSearchQuerySchema', () => {
       const result = GitHubReposSearchQuerySchema.safeParse(invalidQuery);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.issues[0].message).toContain(
+        expect(result.error.issues[0]?.message).toContain(
           "At least one of 'keywordsToSearch' or 'topicsToSearch' is required"
         );
       }
@@ -43,7 +43,7 @@ describe('GitHubReposSearchQuerySchema', () => {
       const result = GitHubReposSearchQuerySchema.safeParse(invalidQuery);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.issues[0].message).toContain(
+        expect(result.error.issues[0]?.message).toContain(
           "At least one of 'keywordsToSearch' or 'topicsToSearch' is required"
         );
       }
@@ -144,7 +144,7 @@ describe('GitHubReposSearchQuerySchema', () => {
       const result = GitHubReposSearchQuerySchema.safeParse(validQuery);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.queries[0].owner).toBe('facebook');
+        expect(result.data.queries[0]?.owner).toBe('facebook');
       }
     });
 

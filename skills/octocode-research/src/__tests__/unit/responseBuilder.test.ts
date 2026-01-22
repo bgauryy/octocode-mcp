@@ -7,8 +7,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ResearchResponse, detectLanguageFromPath } from '../../utils/responseBuilder.js';
 
-// Mock octocode-mcp responses module
-vi.mock('octocode-mcp/responses', () => ({
+// Mock octocode-mcp public module
+vi.mock('octocode-mcp/public', () => ({
   createRoleBasedResult: vi.fn((opts) => ({
     content: [
       { type: 'text', text: opts.assistant?.summary || '' },

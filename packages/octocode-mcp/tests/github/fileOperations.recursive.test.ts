@@ -104,8 +104,8 @@ describe('GitHub File Operations - Recursive Directory Structure', () => {
         expect(Object.keys(result.structure).length).toBeGreaterThan(0);
         // Root should have files and folders
         expect(result.structure['.']).toBeDefined();
-        expect(result.structure['.'].files).toContain('README.md');
-        expect(result.structure['.'].folders).toContain('src');
+        expect(result.structure['.']?.files).toContain('README.md');
+        expect(result.structure['.']?.folders).toContain('src');
         // Should have made API calls
         expect(mockOctokit.rest.repos.getContent).toHaveBeenCalled();
       }
@@ -246,10 +246,10 @@ describe('GitHub File Operations - Recursive Directory Structure', () => {
       expect('structure' in result).toBe(true);
       if ('structure' in result) {
         // Root should have unique files
-        expect(result.structure['.'].files).toContain('index.ts');
+        expect(result.structure['.']?.files).toContain('index.ts');
         // src should have its own files
         expect(result.structure['src']).toBeDefined();
-        expect(result.structure['src'].files).toContain('index.ts');
+        expect(result.structure['src']?.files).toContain('index.ts');
       }
     });
 
@@ -328,8 +328,8 @@ describe('GitHub File Operations - Recursive Directory Structure', () => {
       if ('structure' in result) {
         // Should still return results from successful directories
         expect(result.structure['.']).toBeDefined();
-        expect(result.structure['.'].folders).toContain('src');
-        expect(result.structure['.'].folders).toContain('docs');
+        expect(result.structure['.']?.folders).toContain('src');
+        expect(result.structure['.']?.folders).toContain('docs');
       }
     });
 
@@ -429,9 +429,9 @@ describe('GitHub File Operations - Recursive Directory Structure', () => {
       expect('structure' in result).toBe(true);
       if ('structure' in result) {
         // Files should be sorted alphabetically
-        expect(result.structure['.'].files).toEqual(['file1.ts', 'file2.ts']);
+        expect(result.structure['.']?.files).toEqual(['file1.ts', 'file2.ts']);
         // Folders should be sorted alphabetically
-        expect(result.structure['.'].folders).toEqual(['docs', 'src']);
+        expect(result.structure['.']?.folders).toEqual(['docs', 'src']);
       }
     });
 
@@ -518,11 +518,11 @@ describe('GitHub File Operations - Recursive Directory Structure', () => {
       expect('structure' in result).toBe(true);
       if ('structure' in result) {
         // Should not include node_modules or .git
-        expect(result.structure['.'].folders).not.toContain('node_modules');
-        expect(result.structure['.'].folders).not.toContain('.git');
+        expect(result.structure['.']?.folders).not.toContain('node_modules');
+        expect(result.structure['.']?.folders).not.toContain('.git');
 
         // Should include src
-        expect(result.structure['.'].folders).toContain('src');
+        expect(result.structure['.']?.folders).toContain('src');
       }
     });
 
@@ -568,10 +568,10 @@ describe('GitHub File Operations - Recursive Directory Structure', () => {
       expect('structure' in result).toBe(true);
       if ('structure' in result) {
         // Should be limited (default is 50 for depth 1)
-        expect(result.structure['.'].files.length).toBeLessThanOrEqual(50);
+        expect(result.structure['.']?.files?.length).toBeLessThanOrEqual(50);
         expect(result.summary?.truncated).toBe(true);
         expect(result.summary?.originalCount).toBeGreaterThan(
-          result.structure['.'].files.length
+          result.structure['.']?.files?.length ?? 0
         );
       }
     });
@@ -654,7 +654,7 @@ describe('GitHub File Operations - Recursive Directory Structure', () => {
       if ('structure' in result) {
         // With depth=2, should have directory structure
         expect(result.structure['.']).toBeDefined();
-        expect(result.structure['.'].folders).toContain('src');
+        expect(result.structure['.']?.folders).toContain('src');
       }
     });
   });

@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
 import { getOctokit } from '../../src/github/client.js';
 import { clearAllCache } from '../../src/utils/http/cache.js';
+import { isGitHubAPISuccess } from '../../src/github/githubAPI.js';
 
 vi.mock('../../src/github/client.js');
 vi.mock('../../src/session.js', () => ({
@@ -74,15 +75,18 @@ describe('Pagination and Hints Fixes', () => {
         limit: 5,
       });
 
+      expect(isGitHubAPISuccess(result)).toBe(true);
+      if (!isGitHubAPISuccess(result)) return;
+
       expect(result.status).toBe(200);
-      expect(result.data?._researchContext?.repositoryContext).toBeDefined();
-      expect(result.data?._researchContext?.repositoryContext?.owner).toBe(
+      expect(result.data._researchContext?.repositoryContext).toBeDefined();
+      expect(result.data._researchContext?.repositoryContext?.owner).toBe(
         'facebook'
       );
-      expect(result.data?._researchContext?.repositoryContext?.repo).toBe(
+      expect(result.data._researchContext?.repositoryContext?.repo).toBe(
         'react'
       );
-      expect(result.data?._researchContext?.repositoryContext?.branch).toBe(
+      expect(result.data._researchContext?.repositoryContext?.branch).toBe(
         'main'
       );
     });
@@ -107,7 +111,10 @@ describe('Pagination and Hints Fixes', () => {
         limit: 5,
       });
 
-      expect(result.data?._researchContext?.repositoryContext?.branch).toBe(
+      expect(isGitHubAPISuccess(result)).toBe(true);
+      if (!isGitHubAPISuccess(result)) return;
+
+      expect(result.data._researchContext?.repositoryContext?.branch).toBe(
         'develop'
       );
     });
@@ -147,9 +154,12 @@ describe('Pagination and Hints Fixes', () => {
         limit: 5,
       });
 
-      expect(result.data?._researchContext?.repositoryContext).toBeDefined();
+      expect(isGitHubAPISuccess(result)).toBe(true);
+      if (!isGitHubAPISuccess(result)) return;
+
+      expect(result.data._researchContext?.repositoryContext).toBeDefined();
       expect(
-        result.data?._researchContext?.repositoryContext?.branch
+        result.data._researchContext?.repositoryContext?.branch
       ).toBeUndefined();
     });
 
@@ -201,8 +211,11 @@ describe('Pagination and Hints Fixes', () => {
         limit: 5,
       });
 
+      expect(isGitHubAPISuccess(result)).toBe(true);
+      if (!isGitHubAPISuccess(result)) return;
+
       // When files are from multiple repos, repositoryContext should be undefined
-      expect(result.data?._researchContext?.repositoryContext).toBeUndefined();
+      expect(result.data._researchContext?.repositoryContext).toBeUndefined();
     });
   });
 });

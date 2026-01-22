@@ -211,9 +211,10 @@ export async function withCircuitBreaker<T>(
       // Log rate limit/circuit open event to session telemetry
       fireAndForgetWithTimeout(
         () => logRateLimit({
-          provider: name,
-          endpoint: 'circuit_breaker',
-          retryAfter: config.resetTimeoutMs / 1000,
+          limit_type: 'secondary',
+          api_method: 'circuit_breaker',
+          retry_after_seconds: config.resetTimeoutMs / 1000,
+          details: `Circuit '${name}' back to OPEN after half-open failure`
         }),
         5000,
         'logRateLimit'
@@ -227,9 +228,10 @@ export async function withCircuitBreaker<T>(
       // Log rate limit/circuit open event to session telemetry
       fireAndForgetWithTimeout(
         () => logRateLimit({
-          provider: name,
-          endpoint: 'circuit_breaker',
-          retryAfter: config.resetTimeoutMs / 1000,
+          limit_type: 'secondary',
+          api_method: 'circuit_breaker',
+          retry_after_seconds: config.resetTimeoutMs / 1000,
+          details: `Circuit '${name}' OPENED after ${circuit.failures} failures`
         }),
         5000,
         'logRateLimit'
@@ -309,38 +311,84 @@ export class CircuitOpenError extends Error {
 }
 
 // =============================================================================
-// Pre-configured circuits
+// Pre-configured circuits (per-tool granularity)
 // =============================================================================
 
-// LSP servers are local - shorter timeout, quicker recovery expected.
-// 3 failures detects persistent issues; 10s timeout allows LSP restart.
-configureCircuit('lsp', {
-  failureThreshold: 3,    // 3 failures = likely persistent issue
-  successThreshold: 1,    // Single success proves LSP recovered
-  resetTimeoutMs: 10000,  // 10s: LSP should recover quickly if restarted
+// -----------------------------------------------------------------------------
+// GitHub circuits - split by API endpoint (different rate limits)
+// -----------------------------------------------------------------------------
+
+// GitHub Search API - aggressive rate limiting (30 req/min)
+configureCircuit('github:search', {
+  failureThreshold: 2,     // 2 failures = likely rate limited
+  successThreshold: 1,     // Single success proves API recovered
+  resetTimeoutMs: 60000,   // 60s: Give search rate limits time to reset
 });
-// GitHub API has rate limits - longer backoff, fewer retries.
-// 2 failures quickly detects rate limiting; 60s allows limits to reset.
+
+// GitHub Content API - higher limits, separate quota
+configureCircuit('github:content', {
+  failureThreshold: 3,     // 3 failures = more tolerant
+  successThreshold: 1,
+  resetTimeoutMs: 30000,   // 30s: Content API recovers faster
+});
+
+// GitHub PR API - separate quota from search
+configureCircuit('github:pulls', {
+  failureThreshold: 2,     // 2 failures = likely rate limited
+  successThreshold: 1,
+  resetTimeoutMs: 60000,   // 60s: PR API has similar limits to search
+});
+
+// Legacy fallback for any uncategorized github tools
 configureCircuit('github', {
-  failureThreshold: 2,    // 2 failures = likely rate limited or down
-  successThreshold: 1,    // Single success proves API recovered
-  resetTimeoutMs: 60000,  // 60s: Give rate limits time to reset
+  failureThreshold: 2,
+  successThreshold: 1,
+  resetTimeoutMs: 60000,
 });
 
-// Local file operations - quick retries, high tolerance.
-// 5 failures tolerates filesystem hiccups; 5s timeout for quick recovery.
+// -----------------------------------------------------------------------------
+// LSP circuits - split by operation weight
+// -----------------------------------------------------------------------------
+
+// LSP Navigation (definition, references) - fast, single lookup
+configureCircuit('lsp:navigation', {
+  failureThreshold: 3,     // 3 failures = likely LSP issue
+  successThreshold: 1,     // Single success proves LSP recovered
+  resetTimeoutMs: 10000,   // 10s: Quick recovery expected
+});
+
+// LSP Call Hierarchy - heavier recursive operation
+configureCircuit('lsp:hierarchy', {
+  failureThreshold: 2,     // 2 failures = operation too heavy or LSP struggling
+  successThreshold: 1,
+  resetTimeoutMs: 15000,   // 15s: Slightly longer for heavy ops
+});
+
+// Legacy fallback
+configureCircuit('lsp', {
+  failureThreshold: 3,
+  successThreshold: 1,
+  resetTimeoutMs: 10000,
+});
+
+// -----------------------------------------------------------------------------
+// Local circuits - unified (same failure mode: filesystem)
+// -----------------------------------------------------------------------------
+
 configureCircuit('local', {
-  failureThreshold: 5,    // 5 failures = likely persistent issue
-  successThreshold: 1,    // Single success proves local ops recovered
-  resetTimeoutMs: 5000,   // 5s: Local ops should recover quickly
+  failureThreshold: 5,     // 5 failures = likely persistent issue
+  successThreshold: 1,     // Single success proves local ops recovered
+  resetTimeoutMs: 5000,    // 5s: Local ops should recover quickly
 });
 
-// Package registries (npm/PyPI) - similar to GitHub but slightly faster.
-// 3 failures detects issues; 45s allows API rate limits to reset.
+// -----------------------------------------------------------------------------
+// Package circuits - unified (npm/PyPI)
+// -----------------------------------------------------------------------------
+
 configureCircuit('package', {
-  failureThreshold: 3,    // 3 failures = likely rate limited or down
-  successThreshold: 1,    // Single success proves API recovered
-  resetTimeoutMs: 45000,  // 45s: Slightly faster than GitHub
+  failureThreshold: 3,     // 3 failures = likely rate limited or down
+  successThreshold: 1,     // Single success proves API recovered
+  resetTimeoutMs: 45000,   // 45s: Slightly faster than GitHub
 });
 
 // =============================================================================

@@ -14,6 +14,9 @@ import type {
   PromiseResult,
 } from '../../types.js';
 
+/** Default concurrency for bulk operations */
+const DEFAULT_BULK_CONCURRENCY = 3;
+
 export async function executeBulkOperation<TQuery extends object>(
   queries: Array<TQuery>,
   processor: (query: TQuery, index: number) => Promise<ProcessedBulkResult>,
@@ -21,7 +24,8 @@ export async function executeBulkOperation<TQuery extends object>(
 ): Promise<CallToolResult> {
   const { results, errors } = await processBulkQueries<TQuery>(
     queries,
-    processor
+    processor,
+    config.concurrency ?? DEFAULT_BULK_CONCURRENCY
   );
   return createBulkResponse<TQuery>(config, results, errors, queries);
 }
@@ -183,11 +187,13 @@ function createBulkResponse<TQuery extends object>(
  *
  * @param queries - Array of query objects to process
  * @param processor - Async function that processes each query
+ * @param concurrency - Maximum number of concurrent operations
  * @returns Object containing successful results and errors
  */
 async function processBulkQueries<TQuery extends object>(
   queries: Array<TQuery>,
-  processor: (query: TQuery, index: number) => Promise<ProcessedBulkResult>
+  processor: (query: TQuery, index: number) => Promise<ProcessedBulkResult>,
+  concurrency: number
 ): Promise<{
   results: Array<{
     result: ProcessedBulkResult;
@@ -219,7 +225,7 @@ async function processBulkQueries<TQuery extends object>(
   const queryResults = await executeWithErrorIsolation(queryPromiseFunctions, {
     timeout: 60000,
     continueOnError: true,
-    concurrency: 3, // Limit concurrent requests to prevent rate limiting
+    concurrency, // Configurable concurrent requests to balance rate limiting vs throughput
     onError: (error: Error, index: number) => {
       errors.push({
         queryIndex: index,

@@ -112,8 +112,12 @@ describe('Code Search - Pagination', () => {
       });
 
       expect(result.status).toBe(200);
-      expect(result.data?.pagination).toBeDefined();
-      expect(result.data?.pagination?.currentPage).toBe(2);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination
+      ).toBeDefined();
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.currentPage
+      ).toBe(2);
     });
 
     it('should calculate totalPages correctly', async () => {
@@ -133,8 +137,12 @@ describe('Code Search - Pagination', () => {
         page: 1,
       });
 
-      expect(result.data?.pagination?.totalPages).toBe(10); // 95/10 = 9.5, ceil = 10
-      expect(result.data?.pagination?.totalMatches).toBe(95);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.totalPages
+      ).toBe(10); // 95/10 = 9.5, ceil = 10
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.totalMatches
+      ).toBe(95);
     });
 
     it('should cap totalPages at 10 (GitHub 1000 result limit)', async () => {
@@ -155,8 +163,12 @@ describe('Code Search - Pagination', () => {
       });
 
       // 5000 results, but GitHub caps at 1000, so 1000/100 = 10 pages max
-      expect(result.data?.pagination?.totalPages).toBe(10);
-      expect(result.data?.pagination?.totalMatches).toBe(1000); // Capped at 1000
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.totalPages
+      ).toBe(10);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.totalMatches
+      ).toBe(1000); // Capped at 1000
     });
 
     it('should set hasMore=true when more pages exist', async () => {
@@ -176,8 +188,12 @@ describe('Code Search - Pagination', () => {
         page: 1,
       });
 
-      expect(result.data?.pagination?.hasMore).toBe(true);
-      expect(result.data?.pagination?.totalPages).toBe(5);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.hasMore
+      ).toBe(true);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.totalPages
+      ).toBe(5);
     });
 
     it('should set hasMore=false on last page', async () => {
@@ -197,9 +213,15 @@ describe('Code Search - Pagination', () => {
         page: 5,
       });
 
-      expect(result.data?.pagination?.hasMore).toBe(false);
-      expect(result.data?.pagination?.currentPage).toBe(5);
-      expect(result.data?.pagination?.totalPages).toBe(5);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.hasMore
+      ).toBe(false);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.currentPage
+      ).toBe(5);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.totalPages
+      ).toBe(5);
     });
 
     it('should include perPage in pagination info', async () => {
@@ -219,7 +241,9 @@ describe('Code Search - Pagination', () => {
         page: 1,
       });
 
-      expect(result.data?.pagination?.perPage).toBe(25);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.perPage
+      ).toBe(25);
     });
   });
 
@@ -301,8 +325,12 @@ describe('Code Search - Pagination', () => {
         page: 1,
       });
 
-      expect(result.data?.pagination?.totalPages).toBe(1);
-      expect(result.data?.pagination?.hasMore).toBe(false);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.totalPages
+      ).toBe(1);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.hasMore
+      ).toBe(false);
     });
 
     it('should handle zero results', async () => {
@@ -322,9 +350,15 @@ describe('Code Search - Pagination', () => {
         page: 1,
       });
 
-      expect(result.data?.pagination?.totalPages).toBe(0);
-      expect(result.data?.pagination?.totalMatches).toBe(0);
-      expect(result.data?.pagination?.hasMore).toBe(false);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.totalPages
+      ).toBe(0);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.totalMatches
+      ).toBe(0);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.hasMore
+      ).toBe(false);
     });
 
     it('should use default limit of 30 when not specified', async () => {
@@ -343,7 +377,9 @@ describe('Code Search - Pagination', () => {
         page: 1,
       });
 
-      expect(result.data?.pagination?.perPage).toBe(30);
+      expect(
+        ('data' in result ? result.data : undefined)?.pagination?.perPage
+      ).toBe(30);
       expect(searchCodeMock).toHaveBeenCalledWith(
         expect.objectContaining({
           per_page: 30,

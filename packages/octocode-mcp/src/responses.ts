@@ -196,9 +196,12 @@ export function createRoleBasedResult(
   content.push(ContentBuilder.assistant(assistant.summary));
 
   if (assistant.details) {
-    content.push(
-      ContentBuilder.data(assistant.details, assistant.format || 'yaml')
-    );
+    // Only yaml and json are supported for data serialization
+    const dataFormat =
+      assistant.format === 'json' || assistant.format === 'yaml'
+        ? assistant.format
+        : 'yaml';
+    content.push(ContentBuilder.data(assistant.details, dataFormat));
   }
 
   // 3. User block (human-friendly summary)

@@ -29,8 +29,6 @@ vi.mock('../../src/providers/factory.js', () => ({
 }));
 
 import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code/github_search_code.js';
-import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos/github_search_repos.js';
-import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure/github_view_repo_structure.js';
 import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
 
 describe('Empty Arrays Removal in Responses', () => {

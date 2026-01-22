@@ -4,10 +4,13 @@ import type { CacheStats } from '../core/types.js';
 
 const VERSION = 'v1';
 
+/** Maximum age for pending requests before cleanup (5 minutes) */
+const PENDING_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
+
 const cache = new NodeCache({
   stdTTL: 86400,
   checkperiod: 3600,
-  maxKeys: 1000,
+  maxKeys: 5000, // Increased from 1000 for heavy usage scenarios
   deleteOnExpire: true,
   useClones: false,
 });
@@ -32,8 +35,25 @@ const CACHE_TTL_CONFIG = {
   default: 86400,
 } as const;
 
-// Track pending requests for deduplication
-const pendingRequests = new Map<string, Promise<unknown>>();
+// Track pending requests for deduplication with timestamps
+interface PendingRequest {
+  promise: Promise<unknown>;
+  startedAt: number;
+}
+const pendingRequests = new Map<string, PendingRequest>();
+
+/**
+ * Clean up stale pending requests that have exceeded max age.
+ * This prevents memory leaks from hung operations.
+ */
+function cleanupStalePendingRequests(): void {
+  const now = Date.now();
+  for (const [key, pending] of pendingRequests.entries()) {
+    if (now - pending.startedAt > PENDING_REQUEST_MAX_AGE_MS) {
+      pendingRequests.delete(key);
+    }
+  }
+}
 
 export function generateCacheKey(
   prefix: string,
@@ -119,8 +139,12 @@ export async function withDataCache<T>(
     }
   }
 
-  if (pendingRequests.has(cacheKey)) {
-    return pendingRequests.get(cacheKey) as Promise<T>;
+  // Clean up any stale pending requests periodically
+  cleanupStalePendingRequests();
+
+  const existingPending = pendingRequests.get(cacheKey);
+  if (existingPending) {
+    return existingPending.promise as Promise<T>;
   }
 
   const promise = (async () => {
@@ -154,7 +178,7 @@ export async function withDataCache<T>(
     }
   })();
 
-  pendingRequests.set(cacheKey, promise);
+  pendingRequests.set(cacheKey, { promise, startedAt: Date.now() });
   return promise as Promise<T>;
 }
 

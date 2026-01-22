@@ -13,18 +13,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   viewGitLabRepositoryStructureAPI,
   transformGitLabTree,
-  type GitLabRepoStructureResult,
 } from '../../src/gitlab/repoStructure.js';
 import { getGitlab } from '../../src/gitlab/client.js';
 import {
   handleGitLabAPIError,
   createGitLabError,
 } from '../../src/gitlab/errors.js';
-import {
-  generateCacheKey,
-  withDataCache,
-  clearAllCache,
-} from '../../src/utils/http/cache.js';
+import { generateCacheKey, withDataCache } from '../../src/utils/http/cache.js';
 import {
   shouldIgnoreDir,
   shouldIgnoreFile,

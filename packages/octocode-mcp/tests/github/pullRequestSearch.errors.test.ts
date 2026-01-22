@@ -56,13 +56,15 @@ describe('PR Search - Error Propagation', () => {
       type: 'fullContent', // Trigger file fetching
     });
 
-    expect(result.pull_requests.length).toBe(1);
-    const pr = result.pull_requests[0];
+    expect(result.pull_requests?.length).toBe(1);
+    const pr = result.pull_requests?.[0] as
+      | { _sanitization_warnings?: string[] }
+      | undefined;
 
     // Check that we have a warning
-    expect(pr._sanitization_warnings).toBeDefined();
+    expect(pr?._sanitization_warnings).toBeDefined();
     expect(
-      pr._sanitization_warnings?.some(w =>
+      pr?._sanitization_warnings?.some((w: string) =>
         w.includes('API Rate Limit Exceeded')
       )
     ).toBe(true);

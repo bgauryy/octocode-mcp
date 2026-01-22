@@ -1,6 +1,6 @@
 {
   "name": "octocode-skill",
-  "version": "1.0.0",
+  "version": "2.2.0",
   "type": "module",
   "description": "Code research server using octocode tools - HTTP API on port 1987",
   "author": "Guy Bary <bgauryy@octocodeai.com>",
@@ -33,23 +33,33 @@
   "files": [
     "scripts",
     "src",
+    "ecosystem.config.cjs",
     "SKILL.md",
     "tsconfig.json"
   ],
   "scripts": {
     "build": "tsdown",
     "start": "node scripts/server.js",
+    "server-init": "node scripts/server-init.js",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop ecosystem.config.cjs",
+    "pm2:restart": "pm2 restart ecosystem.config.cjs",
+    "pm2:reload": "pm2 reload ecosystem.config.cjs",
+    "pm2:delete": "pm2 delete ecosystem.config.cjs",
+    "pm2:logs": "pm2 logs octocode-research",
+    "pm2:monit": "pm2 monit",
     "dev": "tsx watch src/server.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",
-    "lint:fix": "eslint src --fix"
+    "lint:fix": "eslint src --fix",
+    "copy:claude": "rm -rf ~/.claude/skills/octocode-research && mkdir -p ~/.claude/skills && cp -r . ~/.claude/skills/octocode-research"
   },
   "dependencies": {
     "express": "^4.21.2",
     "js-yaml": "^4.1.1",
-    "octocode-mcp": "^11.2.2",
-    "octocode-shared": "^1.0.1",
+    "octocode-mcp": "workspace:^",
+    "octocode-shared": "workspace:^",
     "zod": "^3.24.1",
     "zod-to-json-schema": "^3.25.1"
   },
@@ -62,7 +72,7 @@
     "@vitest/coverage-v8": "^4.0.17",
     "eslint": "^9.27.0",
     "supertest": "^7.2.2",
-    "tsdown": "^0.20.0-beta.3",
+    "tsdown": "^0.18.3",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.32.0",

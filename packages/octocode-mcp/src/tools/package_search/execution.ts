@@ -63,7 +63,18 @@ export async function searchPackages(
     queries,
     async (query: PackageSearchQuery, _index: number) => {
       try {
-        const apiResult = await searchPackage(query);
+        // Type guard: ensure required fields exist
+        if (!query.ecosystem || !query.name) {
+          return createErrorResult(
+            'Both ecosystem and name are required for package search',
+            query
+          );
+        }
+        const validatedQuery = query as PackageSearchQuery & {
+          ecosystem: 'npm' | 'python';
+          name: string;
+        };
+        const apiResult = await searchPackage(validatedQuery);
 
         if (isPackageSearchError(apiResult)) {
           return createErrorResult(apiResult.error, query);

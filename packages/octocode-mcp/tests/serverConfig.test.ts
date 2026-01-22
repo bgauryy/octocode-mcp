@@ -31,7 +31,7 @@ function mockTokenResult(
     | 'env:OCTOCODE_TOKEN'
     | 'env:GH_TOKEN'
     | 'env:GITHUB_TOKEN'
-    | 'keychain'
+    | 'file'
     | 'file'
     | 'gh-cli'
     | null
@@ -70,7 +70,7 @@ function mockTokenResolution(
     | 'env:GITHUB_TOKEN'
     | 'env:GH_TOKEN'
     | 'env:OCTOCODE_TOKEN'
-    | 'keychain'
+    | 'file'
     | 'file'
     | 'gh-cli'
     | null = 'env:GITHUB_TOKEN'
@@ -117,43 +117,6 @@ describe('ServerConfig - Simplified Version', () => {
   });
 
   describe('Configuration Initialization', () => {
-    it('should call initializeSecureStorage before token resolution', async () => {
-      // This test verifies that initialize() calls initializeSecureStorage
-      // from octocode-shared before resolving tokens. This is critical for
-      // tokens stored via CLI login (which uses keychain) to be accessible.
-      //
-      // The actual call is verified by the integration - if initializeSecureStorage
-      // is not called, keychain tokens won't be accessible (source would be 'none'
-      // instead of 'keychain' or 'file' for stored credentials).
-
-      // Reset modules to get fresh imports
-      vi.resetModules();
-
-      // Spy on initializeSecureStorage from octocode-shared
-      const octocodeShared = await import('octocode-shared');
-      const initSpy = vi
-        .spyOn(octocodeShared, 'initializeSecureStorage')
-        .mockResolvedValue(true);
-
-      // Dynamically import serverConfig to use the spy
-      const serverConfigModule = await import('../src/serverConfig.js');
-
-      // Setup token mock before initialize
-      const mockResolve = vi.fn().mockResolvedValue(null);
-      serverConfigModule._setTokenResolvers({ resolveTokenFull: mockResolve });
-
-      // Run initialize
-      await serverConfigModule.initialize();
-
-      // Verify initializeSecureStorage was called
-      expect(initSpy).toHaveBeenCalledTimes(1);
-
-      // Cleanup
-      serverConfigModule.cleanup();
-      serverConfigModule._resetTokenResolvers();
-      initSpy.mockRestore();
-    });
-
     it('should initialize with default config', async () => {
       await initialize();
       const config = getServerConfig();
@@ -199,37 +162,6 @@ describe('ServerConfig - Simplified Version', () => {
       const config2 = getServerConfig();
 
       expect(config1).toBe(config2); // Same reference
-    });
-
-    it('should call initializeSecureStorage only once even with multiple initialize calls', async () => {
-      // Reset modules to get fresh imports
-      vi.resetModules();
-
-      // Spy on initializeSecureStorage
-      const octocodeShared = await import('octocode-shared');
-      const initSpy = vi
-        .spyOn(octocodeShared, 'initializeSecureStorage')
-        .mockResolvedValue(true);
-
-      // Dynamically import serverConfig
-      const serverConfigModule = await import('../src/serverConfig.js');
-
-      // Setup token mock
-      const mockResolve = vi.fn().mockResolvedValue(null);
-      serverConfigModule._setTokenResolvers({ resolveTokenFull: mockResolve });
-
-      // Call initialize multiple times
-      await serverConfigModule.initialize();
-      await serverConfigModule.initialize(); // Second call should be no-op
-      await serverConfigModule.initialize(); // Third call should be no-op
-
-      // initializeSecureStorage should only be called once (first initialize)
-      expect(initSpy).toHaveBeenCalledTimes(1);
-
-      // Cleanup
-      serverConfigModule.cleanup();
-      serverConfigModule._resetTokenResolvers();
-      initSpy.mockRestore();
     });
 
     it('should use default GitHub API URL', async () => {
@@ -321,7 +253,7 @@ describe('ServerConfig - Simplified Version', () => {
       delete process.env.GITHUB_TOKEN;
 
       // resolveTokenFull returns stored token
-      mockTokenResolution('octocode-stored-token', 'keychain');
+      mockTokenResolution('octocode-stored-token', 'file');
 
       const token = await getGitHubToken();
 
@@ -364,7 +296,7 @@ describe('ServerConfig - Simplified Version', () => {
       delete process.env.GITHUB_TOKEN;
 
       // Token is returned trimmed by resolveTokenFull
-      mockTokenResolution('octocode-token-with-spaces', 'keychain');
+      mockTokenResolution('octocode-token-with-spaces', 'file');
 
       const token = await getGitHubToken();
 

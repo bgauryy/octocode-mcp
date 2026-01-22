@@ -589,7 +589,7 @@ describe('Public Schema Exports', () => {
         PythonPackageQuerySchema,
       ];
 
-      singleSchemas.forEach((schema, index) => {
+      singleSchemas.forEach(schema => {
         expect(schema).toBeDefined();
         expect(schema instanceof z.ZodType).toBe(true);
       });
@@ -615,7 +615,7 @@ describe('Public Schema Exports', () => {
         PackageSearchBulkQuerySchema,
       ];
 
-      bulkSchemas.forEach((schema, index) => {
+      bulkSchemas.forEach(schema => {
         expect(schema).toBeDefined();
         expect(schema instanceof z.ZodType).toBe(true);
       });

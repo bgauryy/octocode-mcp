@@ -29,7 +29,6 @@ import {
   deleteCredentials,
   isTokenExpired,
   getCredentialsFilePath,
-  isUsingSecureStorage as tokenStorageIsUsingSecureStorage,
   getCredentialsSync,
   getEnvTokenSource,
   hasEnvToken,
@@ -225,7 +224,7 @@ export async function login(options: LoginOptions = {}): Promise<LoginResult> {
           : undefined;
     }
 
-    // Store credentials (keyring-first with file fallback)
+    // Store credentials in encrypted file storage
     const credentials: StoredCredentials = {
       hostname,
       username,
@@ -235,17 +234,7 @@ export async function login(options: LoginOptions = {}): Promise<LoginResult> {
       updatedAt: new Date().toISOString(),
     };
 
-    const storeResult = await storeCredentials(credentials);
-
-    // Warn user if fallback to file storage was used
-    if (storeResult.insecureStorageUsed) {
-      console.warn(
-        '\n  ⚠️  Credentials stored in encrypted file (keyring unavailable).'
-      );
-      console.warn(
-        '     For better security, ensure your system keyring is accessible.\n'
-      );
-    }
+    await storeCredentials(credentials);
 
     return {
       success: true,
@@ -310,7 +299,7 @@ export async function logout(
     }
   }
 
-  // Delete local credentials (from both keyring and file)
+  // Delete local credentials from file storage
   await deleteCredentials(hostname);
 
   return { success: true };
@@ -334,8 +323,7 @@ export async function refreshAuthToken(
 /**
  * Get current authentication status (sync version - file storage only)
  *
- * ⚠️ Note: This sync version only checks file storage, not keyring.
- * For full async check including keyring, use getAuthStatusAsync().
+ * Note: This is a sync version. For async version, use getAuthStatusAsync().
  *
  * Priority order (matching TOKEN_RESOLUTION.md):
  * 1-3. Environment variables (OCTOCODE_TOKEN, GH_TOKEN, GITHUB_TOKEN)
@@ -393,8 +381,8 @@ export function getAuthStatus(
  *
  * Priority order (matching TOKEN_RESOLUTION.md):
  * 1-3. Environment variables (OCTOCODE_TOKEN, GH_TOKEN, GITHUB_TOKEN)
- * 4-5. Octocode stored credentials (keyring-first, file fallback)
- * 6. gh CLI authentication (fallback)
+ * 4. Octocode stored credentials (encrypted file storage)
+ * 5. gh CLI authentication (fallback)
  */
 export async function getAuthStatusAsync(
   hostname: string = DEFAULT_HOSTNAME
@@ -411,7 +399,7 @@ export async function getAuthStatusAsync(
     };
   }
 
-  // 4-5. Check octocode's own storage (keyring-first)
+  // 4. Check octocode's file storage
   const credentials = await getCredentials(hostname);
   if (credentials) {
     const tokenExpired = isTokenExpired(credentials);
@@ -455,7 +443,7 @@ export async function getValidToken(
 }
 
 /**
- * Get token from octocode storage only (keyring-first)
+ * Get token from octocode file storage only
  *
  * Uses centralized getTokenWithRefresh from octocode-shared for auto-refresh.
  */
@@ -570,14 +558,6 @@ export async function getToken(
  */
 export function getStoragePath(): string {
   return getCredentialsFilePath();
-}
-
-/**
- * Check if using secure storage (keychain) vs file fallback
- * Returns true if keytar is available and initialized
- */
-export function isUsingSecureStorage(): boolean {
-  return tokenStorageIsUsingSecureStorage();
 }
 
 /**

@@ -57,7 +57,7 @@ describe('LSP Goto Definition Tool', () => {
 
       registerLSPGotoDefinitionTool(mockServer as any);
 
-      const callArgs = mockServer.registerTool.mock.calls[0];
+      const callArgs = mockServer.registerTool.mock.calls[0]!;
       const toolConfig = callArgs[1];
 
       expect(toolConfig.annotations.openWorldHint).toBe(false);
@@ -75,7 +75,7 @@ describe('LSP Goto Definition Tool', () => {
 
       registerLSPGotoDefinitionTool(mockServer as any);
 
-      const handler = mockServer.registerTool.mock.calls[0][2];
+      const handler = mockServer.registerTool.mock.calls[0]![2];
       expect(typeof handler).toBe('function');
     });
   });

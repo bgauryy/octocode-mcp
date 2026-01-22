@@ -90,7 +90,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
 
       registerLSPCallHierarchyTool(mockServer as any);
 
-      const config = mockServer.registerTool.mock.calls[0][1];
+      const config = mockServer.registerTool.mock.calls[0]![1];
       expect(config.annotations.title).toBe('Call Hierarchy');
       expect(config.annotations.readOnlyHint).toBe(true);
     });
@@ -102,11 +102,11 @@ describe('LSP Call Hierarchy Handler Tests', () => {
         await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPCallHierarchyTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({ queries: [] });
 
@@ -126,11 +126,11 @@ describe('LSP Call Hierarchy Handler Tests', () => {
         await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPCallHierarchyTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -158,11 +158,11 @@ describe('LSP Call Hierarchy Handler Tests', () => {
         await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPCallHierarchyTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -192,11 +192,11 @@ describe('LSP Call Hierarchy Handler Tests', () => {
         await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPCallHierarchyTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -225,11 +225,11 @@ describe('LSP Call Hierarchy Handler Tests', () => {
         await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPCallHierarchyTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -261,11 +261,11 @@ describe('LSP Call Hierarchy Handler Tests', () => {
         await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPCallHierarchyTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -294,11 +294,11 @@ describe('LSP Call Hierarchy Handler Tests', () => {
         await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPCallHierarchyTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -329,11 +329,11 @@ describe('LSP Call Hierarchy Handler Tests', () => {
         await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPCallHierarchyTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -363,11 +363,11 @@ describe('LSP Call Hierarchy Handler Tests', () => {
         await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPCallHierarchyTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [
@@ -507,11 +507,11 @@ describe('LSP Call Hierarchy Handler Tests', () => {
         await import('../../src/tools/lsp_call_hierarchy/index.js');
 
       const mockServer = {
-        registerTool: vi.fn((name, config, handler) => handler),
+        registerTool: vi.fn((_name, _config, handler) => handler),
       };
 
       registerLSPCallHierarchyTool(mockServer as any);
-      const handler = mockServer.registerTool.mock.results[0].value;
+      const handler = mockServer.registerTool.mock.results[0]!.value;
 
       const result = await handler({
         queries: [

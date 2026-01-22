@@ -312,6 +312,57 @@ toolsRoutes.get('/metadata', async (
 });
 
 /**
+ * GET /tools/schemas - Get all tools with their complete JSON schemas
+ *
+ * Returns all tool names with their full JSON schemas (from Zod).
+ * Useful for bulk schema retrieval without calling /info/:toolName for each.
+ *
+ * @example
+ * GET /tools/schemas
+ *
+ * Response:
+ * {
+ *   "success": true,
+ *   "data": {
+ *     "totalTools": 13,
+ *     "schemas": {
+ *       "localSearchCode": { "type": "object", "properties": {...} },
+ *       "githubSearchCode": { "type": "object", "properties": {...} },
+ *       ...
+ *     }
+ *   }
+ * }
+ */
+toolsRoutes.get('/schemas', async (
+  _req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const schemas: Record<string, Record<string, unknown>> = {};
+    const toolNames = Object.keys(TOOL_ZOD_SCHEMAS);
+    
+    for (const toolName of toolNames) {
+      const schema = getToolJsonSchema(toolName);
+      if (schema) {
+        schemas[toolName] = schema;
+      }
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        totalTools: toolNames.length,
+        schemas,
+      },
+      hints: ['All schemas derived from Zod (source of truth)'],
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * GET /tools/system - Get the FULL system instructions
  *
  * Returns the complete system prompt that should be loaded into context FIRST.
@@ -342,6 +393,55 @@ toolsRoutes.get('/system', async (
         version: PACKAGE_VERSION,
       },
       hints: ['Load this system prompt FIRST before using tools'],
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /tools/initContext - Combined system prompt and all tool schemas
+ *
+ * Combines /tools/system + /tools/schemas in one call for faster init.
+ * Returns:
+ * - system_prompt: Full instructions
+ * - tools_schema: All tool JSON schemas from Zod
+ *
+ * @example
+ * GET /tools/initContext
+ *
+ * Response:
+ * {
+ *   "success": true,
+ *   "system_prompt": "## Expert Code Forensics Agent...",
+ *   "tools_schema": { "localSearchCode": {...}, ... },
+ *   "_meta": { "promptCharCount": 5432, "toolsCount": 13, "version": "2.0.0" }
+ * }
+ */
+toolsRoutes.get('/initContext', async (
+  _req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const content = getMcpContent();
+
+    // Build schemas (same as /tools/schemas)
+    const schemas: Record<string, Record<string, unknown>> = {};
+    for (const toolName of Object.keys(TOOL_ZOD_SCHEMAS)) {
+      const schema = getToolJsonSchema(toolName);
+      if (schema) schemas[toolName] = schema;
+    }
+
+    res.json({
+      success: true,
+      system_prompt: content.instructions,
+      tools_schema: schemas,
+      _meta: {
+        promptCharCount: content.instructions.length,
+        toolsCount: Object.keys(schemas).length,
+        version: PACKAGE_VERSION,
+      },
     });
   } catch (error) {
     next(error);

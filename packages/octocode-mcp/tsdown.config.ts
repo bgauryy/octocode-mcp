@@ -1,143 +1,58 @@
-import { defineConfig } from 'tsdown';
+import { defineConfig, type UserConfig } from 'tsdown';
 import { builtinModules } from 'module';
 
-// Main server entry - bundled CLI with no types
-const serverConfig = defineConfig({
-  entry: ['src/index.ts'],
+// Keep Node.js built-ins external (not bundled)
+const nodeBuiltins = [
+  ...builtinModules,
+  ...builtinModules.map(m => `node:${m}`),
+];
+
+// Shared configuration for all entry points
+const baseConfig: UserConfig = {
   format: ['esm'],
   outDir: 'dist',
-  clean: true,
   target: 'node18',
   platform: 'node',
 
-  // Configure .md files to be loaded as raw text (like esbuild's loader option)
-  // This allows importing markdown files as strings for prompts
+  // Bundle ALL dependencies for standalone execution
+  noExternal: [/.*/],
+  external: nodeBuiltins,
+
+  // Single file output (no code-splitting)
+  outputOptions: {
+    inlineDynamicImports: true,
+  },
+
+  treeshake: true,
+  minify: true,
+  shims: true, // ESM shims for __dirname, require, etc.
+  dts: false, // Types generated separately via tsc
+  sourcemap: false,
+  outExtensions: () => ({ js: '.js' }),
+
+  define: {
+    'process.env.NODE_ENV': '"production"',
+  },
+};
+
+// Main CLI entry - standalone executable
+const mainConfig = defineConfig({
+  ...baseConfig,
+  entry: { index: 'src/index.ts' },
+  clean: true,
   inputOptions: {
     moduleTypes: {
-      '.md': 'text',
+      '.md': 'text', // Load .md files as raw text
     },
   },
-
-  // Bundle ALL dependencies for standalone CLI execution
-  noExternal: [/.*/],
-  // Keep Node.js built-ins and native modules external
-  external: [
-    ...builtinModules,
-    ...builtinModules.map(m => `node:${m}`),
-    'keytar', // Native module - cannot be bundled
-    '@napi-rs/keyring', // Native module - cannot be bundled
-    /^@napi-rs\/keyring-/, // Platform-specific native bindings
-  ],
-
-  // Inline dynamic imports to prevent chunk files that may not be included in npm publish
-  // This ensures all code is bundled into a single index.js file
-  outputOptions: {
-    inlineDynamicImports: true,
-  },
-
-  // Tree shaking - Rolldown has excellent tree shaking by default
-  treeshake: true,
-
-  // Minification
-  minify: true,
-
-  // ESM shims for __dirname, __filename, require (handled by tsdown)
-  shims: true,
-
-  // No type declarations needed for CLI
-  dts: false,
-
-  // No sourcemaps for production bundle
-  sourcemap: false,
-
-  // Output as .js for ESM (package.json has "type": "module")
-  outExtensions: () => ({ js: '.js' }),
-
-  // Shebang for CLI execution
   banner: '#!/usr/bin/env node',
-
-  // Remove debugger statements and set production mode
-  define: {
-    'process.env.NODE_ENV': '"production"',
-  },
 });
 
-// Public API entry - exports types and utilities for package consumers
+// Public API for library consumers
 const publicConfig = defineConfig({
-  entry: ['src/public.ts'],
-  format: ['esm'],
-  outDir: 'dist',
-  clean: false, // Don't clean - server build runs first
-  target: 'node18',
-  platform: 'node',
-
-  // Bundle dependencies for standalone use
-  noExternal: [/.*/],
-  external: [
-    ...builtinModules,
-    ...builtinModules.map(m => `node:${m}`),
-    'keytar', // Native module - cannot be bundled
-    '@napi-rs/keyring', // Native module - cannot be bundled
-    /^@napi-rs\/keyring-/, // Platform-specific native bindings
-  ],
-
-  // Inline dynamic imports to prevent chunk files
-  outputOptions: {
-    inlineDynamicImports: true,
-  },
-
-  treeshake: true,
-  minify: true,
-  shims: true,
-
-  // Generate type declarations for public API
-  dts: true,
-
-  sourcemap: false,
-  outExtensions: () => ({ js: '.js' }),
-
-  define: {
-    'process.env.NODE_ENV': '"production"',
-  },
+  ...baseConfig,
+  entry: { public: 'src/public.ts' },
+  clean: false, // Don't clean - main build already did
 });
 
-// Responses entry - exports result formatting utilities for skills
-const responsesConfig = defineConfig({
-  entry: ['src/responses.ts'],
-  format: ['esm'],
-  outDir: 'dist',
-  clean: false, // Don't clean - runs after server and public builds
-  target: 'node18',
-  platform: 'node',
-
-  // Bundle dependencies for standalone use
-  noExternal: [/.*/],
-  external: [
-    ...builtinModules,
-    ...builtinModules.map(m => `node:${m}`),
-    'keytar', // Native module - cannot be bundled
-    '@napi-rs/keyring', // Native module - cannot be bundled
-    /^@napi-rs\/keyring-/, // Platform-specific native bindings
-  ],
-
-  // Inline dynamic imports to prevent chunk files
-  outputOptions: {
-    inlineDynamicImports: true,
-  },
-
-  treeshake: true,
-  minify: true,
-  shims: true,
-
-  // Generate type declarations for responses API
-  dts: true,
-
-  sourcemap: false,
-  outExtensions: () => ({ js: '.js' }),
-
-  define: {
-    'process.env.NODE_ENV': '"production"',
-  },
-});
-
-export default [serverConfig, publicConfig, responsesConfig];
+export default [mainConfig, publicConfig];

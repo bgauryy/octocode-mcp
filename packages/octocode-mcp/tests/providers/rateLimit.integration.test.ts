@@ -44,7 +44,7 @@ describe('Rate Limit Integration Tests', () => {
     let provider: GitHubProvider;
 
     beforeEach(() => {
-      provider = new GitHubProvider({ token: 'test-token' });
+      provider = new GitHubProvider({ type: 'github', token: 'test-token' });
     });
 
     it('should extract rate limit info from primary rate limit error (403 with x-ratelimit headers)', async () => {
@@ -63,6 +63,7 @@ describe('Rate Limit Integration Tests', () => {
             message: 'API rate limit exceeded for user',
             documentation_url: 'https://docs.github.com/rest/rate-limiting',
           },
+          retryCount: 0,
         },
         request: {
           method: 'GET',
@@ -106,6 +107,7 @@ describe('Rate Limit Integration Tests', () => {
             data: {
               message: 'You have exceeded a secondary rate limit',
             },
+            retryCount: 0,
           },
           request: {
             method: 'GET',
@@ -138,6 +140,7 @@ describe('Rate Limit Integration Tests', () => {
           status: 404,
           headers: {},
           data: { message: 'Not Found' },
+          retryCount: 0,
         },
         request: {
           method: 'GET',
@@ -166,6 +169,7 @@ describe('Rate Limit Integration Tests', () => {
             'x-ratelimit-remaining': '100', // Not a rate limit issue
           },
           data: { message: 'Resource not accessible by integration' },
+          retryCount: 0,
         },
         request: {
           method: 'GET',

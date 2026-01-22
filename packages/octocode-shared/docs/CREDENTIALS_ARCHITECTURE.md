@@ -4,7 +4,7 @@
 
 ## Overview
 
-The credentials module provides secure token storage with encryption, keychain integration, automatic token refresh, and multi-source resolution. It's designed to be the single source of truth for GitHub authentication across all Octocode packages.
+The credentials module provides secure token storage with AES-256-GCM encryption, automatic token refresh, and multi-source resolution. It's designed to be the single source of truth for GitHub authentication across all Octocode packages.
 
 ---
 
@@ -23,20 +23,13 @@ The credentials module provides secure token storage with encryption, keychain i
 │         │ Not found?                                                         │
 │         ▼                                                                    │
 │  ┌──────────────┐   Priority: 2                                             │
-│  │   Keychain   │   ──────────                                              │
-│  │  (Native OS) │   macOS Keychain / Windows Credential Manager / libsecret │
-│  │              │   ✅ Auto-refresh for Octocode OAuth tokens               │
-│  └──────┬───────┘                                                            │
-│         │ Not available?                                                     │
-│         ▼                                                                    │
-│  ┌──────────────┐   Priority: 3                                             │
 │  │  Encrypted   │   ──────────                                              │
 │  │    File      │   ~/.octocode/credentials.json (AES-256-GCM)              │
 │  │              │   ✅ Auto-refresh for Octocode OAuth tokens               │
 │  └──────┬───────┘                                                            │
 │         │ Not found?                                                         │
 │         ▼                                                                    │
-│  ┌──────────────┐   Priority: 4 (Lowest)                                    │
+│  ┌──────────────┐   Priority: 3 (Lowest)                                    │
 │  │   gh CLI     │   ─────────────────────                                   │
 │  │   Fallback   │   `gh auth token` command                                 │
 │  │              │   ⚠️ No auto-refresh (gh CLI manages its own)             │
@@ -47,62 +40,16 @@ The credentials module provides secure token storage with encryption, keychain i
 
 ---
 
-## Storage Layers
+## Storage Layer: Encrypted File Storage
 
-### Layer 1: System Keychain (Preferred)
-
-**Library**: `@napi-rs/keyring` (native N-API bindings)
-
-| Platform | Backend |
-|----------|---------|
-| macOS | Keychain Services |
-| Windows | Windows Credential Manager |
-| Linux | libsecret (GNOME Keyring / KWallet) |
-
-```typescript
-import { AsyncEntry } from '@napi-rs/keyring';
-
-// Store credential
-const entry = new AsyncEntry('octocode-cli', 'github.com');
-await entry.setPassword(JSON.stringify(credentials));
-
-// Retrieve credential
-const data = await entry.getPassword();
-const credentials = JSON.parse(data);
-```
-
-**Advantages**:
-- OS-level security (encrypted at rest)
-- Survives reinstalls
-- No custom encryption key management
-
-**Timeout Protection**: All keychain operations have a 3-second timeout to prevent hangs:
-
-```typescript
-const KEYRING_TIMEOUT_MS = 3000;
-
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new TimeoutError(`Timed out after ${ms}ms`)), ms)
-    ),
-  ]);
-}
-```
-
----
-
-### Layer 2: Encrypted File Storage (Fallback)
-
-When keychain is unavailable (CI environments, containers, SSH sessions), credentials fall back to encrypted file storage.
+All credentials are stored in encrypted files. This provides a pure JavaScript solution that works across all environments (CI, containers, SSH, desktop) without native dependencies.
 
 **File Locations**:
 
 | File | Purpose | Permissions |
 |------|---------|-------------|
 | `~/.octocode/credentials.json` | Encrypted credentials | `0600` |
-| `~/.octocode/.key` | Encryption key | `0600` |
+| `~/.octocode/.key` | Encryption key (32 bytes, random) | `0600` |
 
 **Encryption Algorithm**: AES-256-GCM
 
@@ -244,7 +191,7 @@ export async function refreshAuthToken(
 
 ## In-Memory Caching
 
-To avoid repeated keychain/file reads, credentials are cached in memory:
+To avoid repeated file reads, credentials are cached in memory:
 
 ```typescript
 interface CachedCredentials {
@@ -299,36 +246,6 @@ function normalizeHostname(hostname: string): string {
 
 ---
 
-## Migration Strategy
-
-When keychain becomes available after credentials were stored in files, automatic migration occurs:
-
-```typescript
-async function fetchCredentialsFromStorage(hostname: string) {
-  // Try keychain first
-  if (isSecureStorageAvailable()) {
-    const creds = await keychainGet(hostname);
-    if (creds) return creds;
-  }
-  
-  // Fallback to file
-  const store = readCredentialsStore();
-  const fileCreds = store.credentials[hostname];
-  
-  if (fileCreds) {
-    // Migrate to keychain in background if available
-    if (isSecureStorageAvailable()) {
-      migrateSingleCredential(hostname, fileCreds).catch(() => {});
-    }
-    return fileCreds;
-  }
-  
-  return null;
-}
-```
-
----
-
 ## API Reference
 
 ### Primary Functions
@@ -345,7 +262,7 @@ async function fetchCredentialsFromStorage(hostname: string) {
 
 | Function | Purpose |
 |----------|---------|
-| `getCredentialsSync(host)` | Sync credential retrieval (file only) |
+| `getCredentialsSync(host)` | Sync credential retrieval |
 | `getTokenSync(host)` | Sync token retrieval (no refresh) |
 | `hasCredentialsSync(host)` | Sync credential existence check |
 
@@ -375,13 +292,12 @@ async function fetchCredentialsFromStorage(hostname: string) {
 1. **AES-256-GCM**: Authenticated encryption prevents tampering
 2. **Unique IVs**: Each encryption uses a random initialization vector
 3. **File Permissions**: `0600` (owner read/write only)
-4. **Keychain Priority**: Native OS security when available
-5. **Memory Cache TTL**: Credentials expire from memory after 5 minutes
-6. **Timeout Protection**: Keychain operations timeout after 3 seconds
+4. **Memory Cache TTL**: Credentials expire from memory after 5 minutes
+5. **Random Key Generation**: 32-byte cryptographically random key
 
 ### ⚠️ Limitations
 
-1. **File-based Key**: When keychain unavailable, encryption key is in `~/.octocode/.key`
+1. **File-based Key**: Encryption key is stored in `~/.octocode/.key`
 2. **Single-User**: Designed for single-user workstations, not multi-tenant
 3. **No HSM Support**: Does not integrate with hardware security modules
 4. **Trust on First Use**: No certificate pinning for token refresh endpoints
@@ -391,16 +307,6 @@ async function fetchCredentialsFromStorage(hostname: string) {
 ## Error Handling
 
 ```typescript
-// Keychain timeout
-try {
-  await getCredentials('github.com');
-} catch (error) {
-  if (error instanceof TimeoutError) {
-    // Keychain operation timed out (>3s)
-    // Falls back to file storage automatically
-  }
-}
-
 // Corrupted credentials file
 const store = readCredentialsStore();
 // Returns { version: 1, credentials: {} } on parse errors

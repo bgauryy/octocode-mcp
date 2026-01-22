@@ -36,11 +36,9 @@ describe('Provider Types', () => {
         ],
         totalCount: 1,
         pagination: {
-          page: 1,
-          perPage: 10,
+          currentPage: 1,
           totalPages: 1,
-          hasNextPage: false,
-          hasPreviousPage: false,
+          hasMore: false,
         },
       };
 

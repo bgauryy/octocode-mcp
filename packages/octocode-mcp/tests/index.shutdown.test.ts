@@ -65,7 +65,9 @@ vi.mock('../src/tools/toolMetadata.js', () => ({
 }));
 
 vi.mock('../src/tools/toolsManager.js', () => ({
-  registerTools: vi.fn(() => ({ successCount: 5, failedTools: [] })),
+  registerTools: vi.fn(() =>
+    Promise.resolve({ successCount: 5, failedTools: [] })
+  ),
 }));
 
 vi.mock('../src/prompts/prompts.js', () => ({
@@ -121,7 +123,7 @@ describe('index.ts - Server Lifecycle', () => {
       vi.mocked(getGitHubToken).mockResolvedValueOnce('test-token');
 
       const { registerTools } = await import('../src/tools/toolsManager.js');
-      vi.mocked(registerTools).mockReturnValueOnce({
+      vi.mocked(registerTools).mockResolvedValueOnce({
         successCount: 5,
         failedTools: [],
       });
@@ -153,7 +155,7 @@ describe('index.ts - Server Lifecycle', () => {
       );
 
       const { registerTools } = await import('../src/tools/toolsManager.js');
-      vi.mocked(registerTools).mockReturnValueOnce({
+      vi.mocked(registerTools).mockResolvedValueOnce({
         successCount: 3,
         failedTools: [],
       });
@@ -181,7 +183,7 @@ describe('index.ts - Server Lifecycle', () => {
       vi.mocked(getGitHubToken).mockResolvedValueOnce('test-token');
 
       const { registerTools } = await import('../src/tools/toolsManager.js');
-      vi.mocked(registerTools).mockReturnValueOnce({
+      vi.mocked(registerTools).mockResolvedValueOnce({
         successCount: 0,
         failedTools: [],
       });
@@ -199,7 +201,7 @@ describe('index.ts - Server Lifecycle', () => {
       vi.mocked(getGitHubToken).mockResolvedValueOnce('test-token');
 
       const { registerTools } = await import('../src/tools/toolsManager.js');
-      vi.mocked(registerTools).mockReturnValueOnce({
+      vi.mocked(registerTools).mockResolvedValueOnce({
         successCount: 0,
         failedTools: [],
       });
@@ -224,7 +226,7 @@ describe('index.ts - Server Lifecycle', () => {
       vi.mocked(getGitHubToken).mockResolvedValueOnce(null);
 
       const { registerTools } = await import('../src/tools/toolsManager.js');
-      vi.mocked(registerTools).mockReturnValueOnce({
+      vi.mocked(registerTools).mockResolvedValueOnce({
         successCount: 3,
         failedTools: [],
       });
@@ -264,7 +266,7 @@ describe('index.ts - Server Lifecycle', () => {
       );
 
       const { registerTools } = await import('../src/tools/toolsManager.js');
-      vi.mocked(registerTools).mockReturnValueOnce({
+      vi.mocked(registerTools).mockResolvedValueOnce({
         successCount: 5,
         failedTools: [],
       });
@@ -299,7 +301,7 @@ describe('index.ts - Server Lifecycle', () => {
       );
 
       const { registerTools } = await import('../src/tools/toolsManager.js');
-      vi.mocked(registerTools).mockReturnValueOnce({
+      vi.mocked(registerTools).mockResolvedValueOnce({
         successCount: 0,
         failedTools: [],
       });

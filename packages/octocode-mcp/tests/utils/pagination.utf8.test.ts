@@ -239,16 +239,18 @@ describe('UTF-8 Pagination - Byte/Character Separation', () => {
       expect(pages).toEqual(['👋🚀', '🌍💻']);
     });
 
-    it('should warn about mid-character slicing in byte mode', () => {
-      // When using arbitrary byte sizes, you may slice in the middle of a character
-      // This produces replacement characters (U+FFFD) in the output
+    it('should align to character boundaries in byte mode to prevent malformed output', () => {
+      // When using arbitrary byte sizes that would cut in the middle of a character,
+      // we now align to character boundaries to prevent malformed output with replacement characters
       const content = '你好'; // 6 bytes total (3 bytes per char)
-      const result = applyPagination(content, 0, 4, { mode: 'bytes' }); // 4 bytes cuts middle of 2nd char
+      const result = applyPagination(content, 0, 4, { mode: 'bytes' }); // 4 bytes would cut middle of 2nd char
 
-      // The Buffer.toString('utf-8') will produce a replacement character for incomplete sequences
-      // This is expected behavior - callers should use character mode or aligned byte sizes
-      expect(result.byteLength).toBe(4);
-      // Content may have replacement chars - this is intentional to show the limitation
+      // The fix aligns byte boundaries to character boundaries
+      // byteToCharIndex(content, 4) returns 2 (both chars) since buffer.slice(0,4).toString() produces 2 chars
+      // So we get both characters to prevent malformed output
+      expect(result.byteLength).toBe(6); // Full content (both CJK chars = 6 bytes)
+      expect(result.paginatedContent).toBe('你好');
+      // For precise byte-level control, callers should use character mode or calculate aligned byte sizes
     });
 
     it('should paginate through mixed content correctly in character mode', () => {

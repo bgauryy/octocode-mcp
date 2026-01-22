@@ -57,7 +57,7 @@ describe('Code Search - Total Count', () => {
     });
 
     expect(result.status).toBe(200);
-    if (result.data) {
+    if ('data' in result) {
       expect(result.data.total_count).toBe(1234);
       expect(result.data.items.length).toBe(1);
     }

@@ -223,26 +223,20 @@ describe('GitHub API Caching - Pagination', () => {
       ).toHaveBeenCalledTimes(1);
     });
 
-    it('should cache same page with different context fields', async () => {
+    it('should cache same page with same params', async () => {
       await searchGitHubPullRequestsAPI({
         query: 'fix',
         limit: 5,
         page: 1,
-        mainResearchGoal: 'Find PRs',
-        researchGoal: 'Research 1',
-        reasoning: 'Reason 1',
       });
 
       await searchGitHubPullRequestsAPI({
         query: 'fix',
         limit: 5,
         page: 1,
-        mainResearchGoal: 'DIFFERENT',
-        researchGoal: 'DIFFERENT',
-        reasoning: 'DIFFERENT',
       });
 
-      // Context fields should not affect cache - only 1 API call
+      // Same params should only result in 1 API call due to caching
       expect(
         mockOctokit.rest.search.issuesAndPullRequests
       ).toHaveBeenCalledTimes(1);

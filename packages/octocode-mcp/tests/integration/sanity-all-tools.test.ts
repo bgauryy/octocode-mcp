@@ -184,9 +184,9 @@ describe('Integration sanity: all tools', () => {
       matchesPerPage: 1,
     } as Parameters<typeof searchContentRipgrep>[0]);
     expect(rg.status).toBe('hasResults');
-    expect(rg.files?.[0].matchCount).toBe(2);
-    expect(rg.files?.[0].matches.length).toBe(1); // paginated matches
-    expect(rg.files?.[0].pagination?.totalPages).toBe(2);
+    expect(rg.files?.[0]?.matchCount).toBe(2);
+    expect(rg.files?.[0]?.matches?.length).toBe(1); // paginated matches
+    expect(rg.files?.[0]?.pagination?.totalPages).toBe(2);
 
     // 4) localGetFileContent: large file paginated and matchString
     mockReadFile.mockResolvedValueOnce('x'.repeat(20000));

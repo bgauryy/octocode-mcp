@@ -118,8 +118,3 @@ export const RESOURCE_LIMITS = {
   /** Token threshold for notice (>2.5K tokens) */
   TOKEN_NOTICE_THRESHOLD: 2500,
 } as const;
-
-/**
- * Type-safe access to RESOURCE_LIMITS
- */
-type _ResourceLimitsType = typeof RESOURCE_LIMITS;

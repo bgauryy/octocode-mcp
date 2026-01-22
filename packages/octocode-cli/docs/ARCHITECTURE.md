@@ -316,7 +316,7 @@ export async function login(hostname: string): Promise<LoginResult> {
   // 3. Poll for token
   const token = await pollForToken(deviceCode);
   
-  // 4. Store securely (keychain on macOS)
+  // 4. Store securely (encrypted file on macOS)
   await storeToken(hostname, token);
   
   return { success: true };

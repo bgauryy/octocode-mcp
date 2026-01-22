@@ -18,6 +18,9 @@ import { createHash } from 'crypto';
 // PROVIDER REGISTRY
 // ============================================================================
 
+/** Provider cache TTL (1 hour) - providers are re-created after this time */
+const PROVIDER_CACHE_TTL_MS = 60 * 60 * 1000;
+
 /**
  * Registry of provider classes by type.
  * Providers register themselves during module initialization.
@@ -28,10 +31,25 @@ const providerRegistry = new Map<
 >();
 
 /**
- * Cache of provider instances.
+ * Cached provider entry with TTL tracking.
+ */
+interface CachedProvider {
+  provider: ICodeHostProvider;
+  createdAt: number;
+}
+
+/**
+ * Cache of provider instances with TTL.
  * Key format: `${type}:${baseUrl}:${tokenHash}`
  */
-const instanceCache = new Map<string, ICodeHostProvider>();
+const instanceCache = new Map<string, CachedProvider>();
+
+/**
+ * Check if a cached provider entry is still valid (not expired).
+ */
+function isProviderCacheValid(entry: CachedProvider): boolean {
+  return Date.now() - entry.createdAt < PROVIDER_CACHE_TTL_MS;
+}
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -118,10 +136,15 @@ export function getProvider(
 ): ICodeHostProvider {
   const cacheKey = getCacheKey(type, config);
 
-  // Return cached instance if available
+  // Return cached instance if available and not expired
   const cached = instanceCache.get(cacheKey);
+  if (cached && isProviderCacheValid(cached)) {
+    return cached.provider;
+  }
+
+  // Remove expired entry if present
   if (cached) {
-    return cached;
+    instanceCache.delete(cacheKey);
   }
 
   // Get provider class from registry
@@ -139,8 +162,11 @@ export function getProvider(
     type,
   });
 
-  // Cache and return
-  instanceCache.set(cacheKey, provider);
+  // Cache with timestamp and return
+  instanceCache.set(cacheKey, {
+    provider,
+    createdAt: Date.now(),
+  });
   return provider;
 }
 

@@ -2,7 +2,10 @@ import { defineConfig } from 'tsdown';
 import { builtinModules } from 'module';
 
 export default defineConfig({
-  entry: ['src/server.ts'],
+  entry: {
+    server: 'src/server.ts',
+    'server-init': 'src/server-init.ts',
+  },
   format: ['esm'],
   outDir: 'scripts',
   clean: true,
@@ -16,15 +19,10 @@ export default defineConfig({
   external: [
     ...builtinModules,
     ...builtinModules.map((m) => `node:${m}`),
-    'keytar', // Native module - cannot be bundled
-    '@napi-rs/keyring', // Native module - cannot be bundled
-    /^@napi-rs\/keyring-/, // Platform-specific native bindings
   ],
 
-  // Single file output
-  outputOptions: {
-    inlineDynamicImports: true,
-  },
+  // Code splitting disabled for standalone scripts
+  splitting: false,
 
   treeshake: true,
   minify: true,
@@ -32,7 +30,7 @@ export default defineConfig({
   dts: true, // Generate type declarations (crucial for TypeScript consumers)
   sourcemap: false,
 
-  // Output as index.js
+  // Output as server.js
   outExtensions: () => ({ js: '.js' }),
 
   // Shebang for direct execution

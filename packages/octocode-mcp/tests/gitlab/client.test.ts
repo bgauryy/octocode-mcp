@@ -1,11 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock cache methods that will be referenced by the NodeCache mock
-const mockGet = vi.fn();
-const mockSet = vi.fn();
-const mockDel = vi.fn();
-const mockFlushAll = vi.fn();
-
 // Mock @gitbeaker/rest before importing the module under test
 vi.mock('@gitbeaker/rest', () => {
   const mockGitlabInstance = {
@@ -262,10 +256,10 @@ describe('GitLab Client', () => {
         getMockCacheMethods().get.mockReturnValue(undefined);
 
         await getGitlab({ host: 'https://gitlab1.com' });
-        const firstCacheKey = getMockCacheMethods().set.mock.calls[0][0];
+        const firstCacheKey = getMockCacheMethods().set.mock.calls[0]![0];
 
         await getGitlab({ host: 'https://gitlab2.com' });
-        const secondCacheKey = getMockCacheMethods().set.mock.calls[1][0];
+        const secondCacheKey = getMockCacheMethods().set.mock.calls[1]![0];
 
         expect(firstCacheKey).not.toBe(secondCacheKey);
       });
@@ -274,10 +268,10 @@ describe('GitLab Client', () => {
         getMockCacheMethods().get.mockReturnValue(undefined);
 
         await getGitlab({ token: 'glpat-token-1' });
-        const firstCacheKey = getMockCacheMethods().set.mock.calls[0][0];
+        const firstCacheKey = getMockCacheMethods().set.mock.calls[0]![0];
 
         await getGitlab({ token: 'glpat-token-2' });
-        const secondCacheKey = getMockCacheMethods().set.mock.calls[1][0];
+        const secondCacheKey = getMockCacheMethods().set.mock.calls[1]![0];
 
         expect(firstCacheKey).not.toBe(secondCacheKey);
       });
@@ -289,13 +283,13 @@ describe('GitLab Client', () => {
           token: 'glpat-test-token',
           host: 'https://gitlab.test.com',
         });
-        const firstCacheKey = getMockCacheMethods().set.mock.calls[0][0];
+        const firstCacheKey = getMockCacheMethods().set.mock.calls[0]![0];
 
         await getGitlab({
           token: 'glpat-test-token',
           host: 'https://gitlab.test.com',
         });
-        const secondCacheKey = getMockCacheMethods().set.mock.calls[1][0];
+        const secondCacheKey = getMockCacheMethods().set.mock.calls[1]![0];
 
         expect(firstCacheKey).toBe(secondCacheKey);
       });
@@ -308,7 +302,7 @@ describe('GitLab Client', () => {
 
         // The cache key should include a hash of the token
         expect(getMockCacheMethods().set).toHaveBeenCalled();
-        const cacheKey = getMockCacheMethods().set.mock.calls[0][0];
+        const cacheKey = getMockCacheMethods().set.mock.calls[0]![0];
         expect(cacheKey).toContain('gitlab:');
       });
     });
@@ -406,17 +400,17 @@ describe('GitLab Client', () => {
 
       clearGitLabClient();
 
-      const deleteKey = getMockCacheMethods().del.mock.calls[0][0];
+      const deleteKey = getMockCacheMethods().del.mock.calls[0]![0];
       expect(deleteKey).toContain('gitlab:');
       expect(deleteKey).toContain('https://gitlab.test.com');
     });
 
     it('should generate different delete keys for different configs', () => {
       clearGitLabClient({ token: 'token-1' });
-      const firstDeleteKey = getMockCacheMethods().del.mock.calls[0][0];
+      const firstDeleteKey = getMockCacheMethods().del.mock.calls[0]![0];
 
       clearGitLabClient({ token: 'token-2' });
-      const secondDeleteKey = getMockCacheMethods().del.mock.calls[1][0];
+      const secondDeleteKey = getMockCacheMethods().del.mock.calls[1]![0];
 
       expect(firstDeleteKey).not.toBe(secondDeleteKey);
     });
@@ -429,7 +423,7 @@ describe('GitLab Client', () => {
 
       await getGitlab({ host: 'https://custom.gitlab.com' });
 
-      const cacheKey = getMockCacheMethods().set.mock.calls[0][0];
+      const cacheKey = getMockCacheMethods().set.mock.calls[0]![0];
       expect(cacheKey).toContain('https://custom.gitlab.com');
     });
 
@@ -439,7 +433,7 @@ describe('GitLab Client', () => {
 
       await getGitlab({ token: rawToken });
 
-      const cacheKey = getMockCacheMethods().set.mock.calls[0][0];
+      const cacheKey = getMockCacheMethods().set.mock.calls[0]![0];
       // The raw token should not appear in the cache key
       expect(cacheKey).not.toContain(rawToken);
       // But there should be a hash component
@@ -455,7 +449,7 @@ describe('GitLab Client', () => {
       // clearGitLabClient will use the cache key generation without throwing
       clearGitLabClient();
 
-      const deleteKey = getMockCacheMethods().del.mock.calls[0][0];
+      const deleteKey = getMockCacheMethods().del.mock.calls[0]![0];
       // Should contain 'default' when no token is available
       expect(deleteKey).toContain('default');
     });

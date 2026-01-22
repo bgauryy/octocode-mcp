@@ -452,7 +452,7 @@ describe('GitLab Merge Requests', () => {
         });
 
         // state should be undefined when 'all' is passed
-        const callArgs = mockGitlab.MergeRequests.all.mock.calls[0][0];
+        const callArgs = mockGitlab.MergeRequests.all.mock.calls[0]![0];
         expect(callArgs.state).toBeUndefined();
       });
     });
@@ -536,7 +536,7 @@ describe('GitLab Merge Requests', () => {
 
         expect(result).toHaveProperty('data');
         // Should NOT have projectId in the call
-        const callArgs = mockGitlab.MergeRequests.all.mock.calls[0][0];
+        const callArgs = mockGitlab.MergeRequests.all.mock.calls[0]![0];
         expect(callArgs.projectId).toBeUndefined();
       });
     });
@@ -962,7 +962,7 @@ describe('GitLab Merge Requests', () => {
       expect(result).toHaveProperty('data');
       const data = (result as { data: GitLabMRNote[] }).data;
       expect(data).toHaveLength(1);
-      expect(data[0].body).toBe('User comment');
+      expect(data[0]!.body).toBe('User comment');
     });
 
     it('should work with string projectId', async () => {

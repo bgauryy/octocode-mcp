@@ -71,14 +71,11 @@ vi.mock('open', () => ({
 const ENV_TOKEN_VARS = ['OCTOCODE_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'];
 
 vi.mock('../../src/utils/token-storage.js', () => ({
-  storeCredentials: vi
-    .fn()
-    .mockResolvedValue({ success: true, insecureStorageUsed: false }),
+  storeCredentials: vi.fn().mockResolvedValue({ success: true }),
   getCredentials: vi.fn().mockResolvedValue(null),
   getCredentialsSync: vi.fn().mockReturnValue(null),
   deleteCredentials: vi.fn().mockResolvedValue({
     success: true,
-    deletedFromKeyring: false,
     deletedFromFile: true,
   }),
   isTokenExpired: vi.fn(),
@@ -87,7 +84,6 @@ vi.mock('../../src/utils/token-storage.js', () => ({
   getCredentialsFilePath: vi
     .fn()
     .mockReturnValue('/home/test/.octocode/credentials.json'),
-  isUsingSecureStorage: vi.fn().mockReturnValue(false),
   // Add hasEnvToken - checks if any env token is available
   hasEnvToken: vi.fn().mockImplementation(() => {
     for (const envVar of ENV_TOKEN_VARS) {
@@ -174,7 +170,7 @@ describe('GitHub OAuth', () => {
           if (!isExpired) {
             return {
               token: credentials.token.token,
-              source: 'keychain' as const,
+              source: 'file' as const,
               wasRefreshed: false,
               username: credentials.username,
             };
@@ -663,16 +659,6 @@ describe('GitHub OAuth', () => {
     });
   });
 
-  describe('isUsingSecureStorage', () => {
-    it('should return false (file storage)', async () => {
-      const { isUsingSecureStorage } =
-        await import('../../src/features/github-oauth.js');
-      const result = isUsingSecureStorage();
-
-      expect(result).toBe(false);
-    });
-  });
-
   describe('login', () => {
     it('should complete login flow successfully', async () => {
       const { createOAuthDeviceAuth } =
@@ -697,7 +683,6 @@ describe('GitHub OAuth', () => {
       // Re-mock storeCredentials to return proper StoreResult
       vi.mocked(storeCredentials).mockResolvedValue({
         success: true,
-        insecureStorageUsed: false,
       });
 
       const result = await login({
@@ -763,7 +748,6 @@ describe('GitHub OAuth', () => {
       // Re-mock storeCredentials
       vi.mocked(storeCredentials).mockResolvedValue({
         success: true,
-        insecureStorageUsed: false,
       });
 
       let capturedOnVerification: ((v: unknown) => void) | undefined;

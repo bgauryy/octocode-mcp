@@ -23,6 +23,14 @@ export const LOCAL_BASE_HINTS = {
 
 export const TOOL_NAME = 'localSearchCode';
 
+/**
+ * Filter out undefined values from hints array.
+ * Ensures clean hint arrays without null/undefined entries.
+ */
+function filterValidHints(hints: (string | undefined)[]): string[] {
+  return hints.filter((h): h is string => h !== undefined && h !== null);
+}
+
 export const hints: ToolHintGenerators = {
   hasResults: (ctx: HintContext = {}) => {
     const hints: (string | undefined)[] = [];
@@ -35,7 +43,7 @@ export const hints: ToolHintGenerators = {
     if (ctx.fileCount && ctx.fileCount > 1) {
       hints.push(...getMetadataDynamicHints(TOOL_NAME, 'multipleFiles'));
     }
-    return hints;
+    return filterValidHints(hints);
   },
 
   empty: (ctx: HintContext = {}) => {
@@ -43,18 +51,19 @@ export const hints: ToolHintGenerators = {
     if (ctx.searchEngine === 'grep') {
       hints.push(...getMetadataDynamicHints(TOOL_NAME, 'grepFallbackEmpty'));
     }
-    return hints;
+    return filterValidHints(hints);
   },
 
   error: (ctx: HintContext = {}) => {
     if (ctx.errorType === 'size_limit') {
-      return [
+      const hints = [
         `Too many results${ctx.matchCount ? ` (${ctx.matchCount} matches)` : ''}. Narrow pattern/scope.`,
         ...(ctx.path?.includes('node_modules')
           ? getMetadataDynamicHints(TOOL_NAME, 'nodeModulesSearch')
           : []),
         ...getMetadataDynamicHints(TOOL_NAME, 'largeResult'),
       ];
+      return filterValidHints(hints);
     }
     return [];
   },

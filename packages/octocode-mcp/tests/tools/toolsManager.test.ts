@@ -128,6 +128,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
@@ -166,6 +167,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
@@ -190,6 +192,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
@@ -211,6 +214,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
@@ -237,6 +241,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       await registerTools(mockServer);
@@ -257,6 +262,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       await registerTools(mockServer);
@@ -278,6 +284,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       await registerTools(mockServer);
@@ -299,6 +306,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
@@ -327,6 +335,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
@@ -349,6 +358,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
@@ -371,6 +381,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
@@ -393,6 +404,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       // Make first GitHub tool throw error
@@ -420,6 +432,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       // Make multiple GitHub tools throw errors
@@ -453,6 +466,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
@@ -477,6 +491,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
@@ -501,6 +516,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       // Make all local tools throw errors
@@ -529,6 +545,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
@@ -554,6 +571,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
@@ -582,6 +600,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       // Make first GitHub tool return null (tool unavailable)
@@ -621,6 +640,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
@@ -647,6 +667,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
@@ -672,6 +693,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
