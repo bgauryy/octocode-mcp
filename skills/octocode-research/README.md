@@ -50,17 +50,14 @@ https://github.com/user-attachments/assets/d1260dbc-e7b6-4bec-909f-232ebee91ce9
 
 ## 🚀 Quick Start
 
-### Option 1: Via Octocode CLI (Recommended)
+### Installation
 
-1. Run the CLI:
-   ```bash
-   npx octocode-cli
-   ```
-2. Navigate to: **Octocode Skills** → **Install**
-3. Select **octocode-research**
+```bash
+npx add-skill https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-research
+```
 
 > **Important**: Make sure you are authenticated with GitHub!
-> Run `npx octocode-cli` → **Manage Auth** to sign in.
+> See [Authentication Setup](../../packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) in the main README.
 
 ### Option 2: Manual Setup
 
@@ -483,6 +480,7 @@ See [Privacy Policy](../../PRIVACY.md) and [Terms](../../TERMS.md).
 | [docs/API_REFERENCE.md](./docs/API_REFERENCE.md) | Complete API reference |
 | [docs/FLOWS.md](./docs/FLOWS.md) | Request flow diagrams |
 | [references/QUICK_DECISION_GUIDE.md](./references/QUICK_DECISION_GUIDE.md) | Tool selection cheatsheet |
+| [../../docs/TROUBLESHOOTING.md](../../docs/TROUBLESHOOTING.md) | Common issues and solutions |
 
 ---
 

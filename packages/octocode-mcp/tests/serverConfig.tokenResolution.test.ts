@@ -15,7 +15,7 @@
  * the entire resolution chain. Tests for the actual priority chain logic
  * are in the octocode-shared package.
  *
- * @see packages/octocode-mcp/docs/TOKEN_RESOLUTION.md
+ * @see packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
@@ -30,7 +30,7 @@ import {
 } from '../src/serverConfig.js';
 import type { FullTokenResolution } from 'octocode-shared';
 
-describe('Token Resolution Priority (TOKEN_RESOLUTION.md)', () => {
+describe('Token Resolution Priority (AUTHENTICATION_SETUP.md)', () => {
   // Store original env values (not a reference to process.env!)
   const savedEnvVars: Record<string, string | undefined> = {};
 

@@ -202,4 +202,4 @@ Providers handle authentication differently but are initialized with a unified `
 - Uses `GITLAB_TOKEN` or `GL_TOKEN`.
 - Supports self-hosted instances via `GITLAB_HOST`.
 
-See [`TOKEN_RESOLUTION.md`](./TOKEN_RESOLUTION.md) for detailed authentication flows.
+See [`AUTHENTICATION_SETUP.md`](./AUTHENTICATION_SETUP.md) for detailed authentication flows.

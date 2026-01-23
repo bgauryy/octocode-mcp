@@ -325,7 +325,7 @@ export async function refreshAuthToken(
  *
  * Note: This is a sync version. For async version, use getAuthStatusAsync().
  *
- * Priority order (matching TOKEN_RESOLUTION.md):
+ * Priority order (matching AUTHENTICATION_SETUP.md):
  * 1-3. Environment variables (OCTOCODE_TOKEN, GH_TOKEN, GITHUB_TOKEN)
  * 4. Octocode stored credentials (file only for sync)
  * 5. gh CLI authentication (fallback)
@@ -379,7 +379,7 @@ export function getAuthStatus(
 /**
  * Get current authentication status (async - preferred)
  *
- * Priority order (matching TOKEN_RESOLUTION.md):
+ * Priority order (matching AUTHENTICATION_SETUP.md):
  * 1-3. Environment variables (OCTOCODE_TOKEN, GH_TOKEN, GITHUB_TOKEN)
  * 4. Octocode stored credentials (encrypted file storage)
  * 5. gh CLI authentication (fallback)

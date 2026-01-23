@@ -942,7 +942,7 @@ $ octocode config validate
 - [`API_REFERENCE.md`](./API_REFERENCE.md) - Current API documentation
 - [`CREDENTIALS_ARCHITECTURE.md`](./CREDENTIALS_ARCHITECTURE.md) - Token storage (separate from config)
 - [`SESSION_PERSISTENCE.md`](./SESSION_PERSISTENCE.md) - Session storage patterns
-- [`../../octocode-mcp/docs/TOKEN_RESOLUTION.md`](../../octocode-mcp/docs/TOKEN_RESOLUTION.md) - Token resolution flow
+- [`../../octocode-mcp/docs/AUTHENTICATION_SETUP.md`](../../octocode-mcp/docs/AUTHENTICATION_SETUP.md) - Token resolution flow
 
 ---
 

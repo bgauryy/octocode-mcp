@@ -142,31 +142,31 @@ skills/{skill-name}/
 └── references/           # Supporting documentation (optional)
 ```
 
-For complete details, see [`SKILLS_GUIDE.md`](./packages/octocode-cli/docs/SKILLS_GUIDE.md).
+For complete details, see [`SKILLS_GUIDE.md`](../packages/octocode-cli/docs/SKILLS_GUIDE.md).
 
 ## 📚 Package Documentation
 
 ### octocode-mcp
 | Document | Description |
 |----------|-------------|
-| [GITHUB_TOOLS_REFERENCE.md](./packages/octocode-mcp/docs/GITHUB_TOOLS_REFERENCE.md) | GitHub API tools usage guide |
-| [LOCAL_TOOLS_REFERENCE.md](./packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) | Local codebase exploration tools |
-| [LSP_TOOLS.md](./packages/octocode-mcp/docs/LSP_TOOLS.md) | LSP-powered code intelligence |
-| [HINTS_ARCHITECTURE.md](./packages/octocode-mcp/docs/HINTS_ARCHITECTURE.md) | Hint system design & patterns |
+| [GITHUB_GITLAB_TOOLS_REFERENCE.md](../packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) | GitHub & GitLab API tools usage guide |
+| [LOCAL_TOOLS_REFERENCE.md](../packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) | Local codebase exploration tools |
+| [LSP_TOOLS.md](../packages/octocode-mcp/docs/LSP_TOOLS.md) | LSP-powered code intelligence |
+| [HINTS_ARCHITECTURE.md](../packages/octocode-mcp/docs/HINTS_ARCHITECTURE.md) | Hint system design & patterns |
 
 ### octocode-cli
 | Document | Description |
 |----------|-------------|
-| [CLI_REFERENCE.md](./packages/octocode-cli/docs/CLI_REFERENCE.md) | Complete CLI commands reference |
-| [MENU_FLOW.md](./packages/octocode-cli/docs/MENU_FLOW.md) | Interactive menu system documentation |
-| [ARCHITECTURE.md](./packages/octocode-cli/docs/ARCHITECTURE.md) | Technical architecture and design patterns |
+| [CLI_REFERENCE.md](../packages/octocode-cli/docs/CLI_REFERENCE.md) | Complete CLI commands reference |
+| [MENU_FLOW.md](../packages/octocode-cli/docs/MENU_FLOW.md) | Interactive menu system documentation |
+| [ARCHITECTURE.md](../packages/octocode-cli/docs/ARCHITECTURE.md) | Technical architecture and design patterns |
 
 ### octocode-shared
 | Document | Description |
 |----------|-------------|
-| [CREDENTIALS_ARCHITECTURE.md](./packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) | Token storage, encryption, keychain |
-| [SESSION_PERSISTENCE.md](./packages/octocode-shared/docs/SESSION_PERSISTENCE.md) | Deferred writes, exit handlers |
-| [API_REFERENCE.md](./packages/octocode-shared/docs/API_REFERENCE.md) | Complete API documentation |
+| [CREDENTIALS_ARCHITECTURE.md](../packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) | Token storage, encryption, keychain |
+| [SESSION_PERSISTENCE.md](../packages/octocode-shared/docs/SESSION_PERSISTENCE.md) | Deferred writes, exit handlers |
+| [API_REFERENCE.md](../packages/octocode-shared/docs/API_REFERENCE.md) | Complete API documentation |
 
 ## 🤖 Agent Compatibility
 
