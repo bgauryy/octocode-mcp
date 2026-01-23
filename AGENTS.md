@@ -96,12 +96,12 @@ Each package has specific guidelines that **override** this root file:
 - **GitHub & GitLab Tools**: [packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md](./packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md)
 - **Local Tools**: [packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md](./packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md)
 - **LSP Tools**: [packages/octocode-mcp/docs/LSP_TOOLS.md](./packages/octocode-mcp/docs/LSP_TOOLS.md)
-- **Architecture**: [packages/octocode-mcp/docs/ARCHITECTURE_REFERENCE.md](./packages/octocode-mcp/docs/ARCHITECTURE_REFERENCE.md)
+- **Request Flow**: [packages/octocode-mcp/docs/REQUEST_FLOW.md](./packages/octocode-mcp/docs/REQUEST_FLOW.md)
 - **Evals**: [packages/octocode-mcp/docs/EVALS.md](./packages/octocode-mcp/docs/EVALS.md)
 - **Hints**: [packages/octocode-mcp/docs/HINTS_ARCHITECTURE.md](./packages/octocode-mcp/docs/HINTS_ARCHITECTURE.md)
 - **Providers**: [packages/octocode-mcp/docs/PROVIDERS.md](./packages/octocode-mcp/docs/PROVIDERS.md)
 - **Session Persistence**: [packages/octocode-mcp/docs/SESSION_PERSISTENCE.md](./packages/octocode-mcp/docs/SESSION_PERSISTENCE.md)
-- **Token Resolution**: [packages/octocode-mcp/docs/TOKEN_RESOLUTION.md](./packages/octocode-mcp/docs/TOKEN_RESOLUTION.md)
+- **Token Resolution**: [packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md](./packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
 
 ### Octocode Shared
 - **API Reference**: [packages/octocode-shared/docs/API_REFERENCE.md](./packages/octocode-shared/docs/API_REFERENCE.md)

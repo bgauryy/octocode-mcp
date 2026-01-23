@@ -506,7 +506,7 @@ yarn test:ui
 | [`HINTS_ARCHITECTURE.md`](./docs/HINTS_ARCHITECTURE.md) | Hints system: flow, sources, types, implementation |
 | [`LSP_TOOLS.md`](./docs/LSP_TOOLS.md) | LSP tools: supported languages, usage, configuration |
 | [`SESSION_PERSISTENCE.md`](./docs/SESSION_PERSISTENCE.md) | Session management: persistence, caching, telemetry |
-| [`TOKEN_RESOLUTION.md`](./docs/TOKEN_RESOLUTION.md) | GitHub token resolution: priority, sources, setup |
+| [`AUTHENTICATION_SETUP.md`](./docs/AUTHENTICATION_SETUP.md) | GitHub token resolution: priority, sources, setup |
 | [`PROVIDERS.md`](./docs/PROVIDERS.md) | Provider selection, GitHub & GitLab credentials flow |
 | [`README.md`](./README.md) | Installation, usage, configuration |
 | [`../../AGENTS.md`](../../AGENTS.md) | Root monorepo guidelines |

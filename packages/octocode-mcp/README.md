@@ -158,7 +158,7 @@ This will automatically:
 curl -fsSL https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/install/install.sh | sh
 ```
 
-**[Full Binary Installation Guide →](../../docs/BINARY_INSTALLATION.md)** — Manual downloads, MCP configs, troubleshooting
+See [Troubleshooting Guide](../../docs/TROUBLESHOOTING.md) for common issues and solutions.
 
 ---
 
@@ -544,7 +544,7 @@ Add the `GITHUB_API_URL` environment variable to your MCP configuration:
 
 **Default:** If not specified, defaults to `https://api.github.com` (public GitHub).
 
-**Note:** Ensure your GitHub Enterprise token has the same scopes as documented in the [Authentication Guide](../../docs/AUTH_GUIDE.md).
+**Note:** Ensure your GitHub Enterprise token has the same scopes as documented in the [Authentication Setup](./docs/AUTHENTICATION_SETUP.md).
 
 ---
 
@@ -680,9 +680,9 @@ Comprehensive security analysis of a repository. Identifies vulnerabilities, rev
 | Resource | Description | Link |
 |----------|-------------|------|
 | **Official Website** | Interactive tutorials, demos, community | [octocode.ai](https://octocode.ai) |
-| **Binary Installation** | Standalone binary download and setup | [BINARY_INSTALLATION.md](../../docs/BINARY_INSTALLATION.md) |
-| **Configuration Guide** | Environment variables and server configuration | [CONFIGURATION.md](../../docs/CONFIGURATION.md) |
-| **Authentication Guide** | Setup instructions and troubleshooting | [AUTH_GUIDE.md](../../docs/AUTH_GUIDE.md) |
+| **Configuration Guide** | Environment variables and server configuration | [CONFIGURATION_REFERENCE.md](../../docs/CONFIGURATION_REFERENCE.md) |
+| **Authentication Guide** | Setup instructions for GitHub & GitLab | [Authentication Setup](./docs/AUTHENTICATION_SETUP.md) |
+| **Troubleshooting** | Common issues and solutions | [Troubleshooting Guide](../../docs/TROUBLESHOOTING.md) |
 | **YouTube Channel** | Video tutorials and demonstrations | [Octocode on YouTube](https://www.youtube.com/@Octocode-ai) |
 
 

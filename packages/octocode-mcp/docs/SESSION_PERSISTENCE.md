@@ -404,7 +404,7 @@ No configuration is needed for session persistence itself - it's always enabled.
 
 ## Related Documentation
 
-- [TOKEN_RESOLUTION.md](./TOKEN_RESOLUTION.md) - GitHub token resolution flow
+- [AUTHENTICATION_SETUP.md](./AUTHENTICATION_SETUP.md) - GitHub token resolution flow
 - [HINTS_ARCHITECTURE.md](./HINTS_ARCHITECTURE.md) - Dynamic hints system
 - [octocode-shared AGENTS.md](../../octocode-shared/AGENTS.md) - Shared package documentation
 

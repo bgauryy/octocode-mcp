@@ -113,13 +113,31 @@ Everything you need to master Octocode:
 - [**Research Skill Guide**](./skills/octocode-research/README.md) - How to use the research agent.
 
 ### 🛠️ Reference
-- [**GitHub Tools**](./packages/octocode-mcp/docs/GITHUB_TOOLS_REFERENCE.md)
+- [**Authentication Setup**](./packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) - GitHub & GitLab authentication
+- [**GitHub & GitLab Tools**](./packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md)
 - [**Local Tools**](./packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md)
 - [**LSP Tools**](./packages/octocode-mcp/docs/LSP_TOOLS.md)
+- [**Troubleshooting**](./docs/TROUBLESHOOTING.md) - Common issues and solutions
 
 ---
-
 ## Installation Guide
+
+### Quick Install Commands
+
+**MCP Server** 
+```bash
+npx octocode-cli
+```
+
+**Research Skill** (Autonomous research agent):
+```bash
+npx add-skill https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-research
+```
+
+> ⚠️ **Authentication Required**: Both require GitHub authentication.
+> See [Authentication Setup](./packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) for details.
+
+---
 
 ### Option 1: Octocode CLI (Recommended)
 
