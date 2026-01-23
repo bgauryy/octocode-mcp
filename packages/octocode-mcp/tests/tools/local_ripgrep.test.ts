@@ -266,22 +266,15 @@ describe('localSearchCode', () => {
     });
 
     it('should report correct totalMatches when filesOnly=true', async () => {
-      // When filesOnly=true, ripgrep uses JSON output with match counts per file
-      const jsonOutput = [
-        '{"type":"begin","data":{"path":{"text":"file1.ts"}}}',
-        '{"type":"match","data":{"path":{"text":"file1.ts"},"lines":{"text":"match1"},"line_number":1,"absolute_offset":0,"submatches":[{"match":{"text":"test"},"start":0,"end":4}]}}',
-        '{"type":"match","data":{"path":{"text":"file1.ts"},"lines":{"text":"match2"},"line_number":2,"absolute_offset":10,"submatches":[{"match":{"text":"test"},"start":0,"end":4}]}}',
-        '{"type":"end","data":{"path":{"text":"file1.ts"}}}',
-        '{"type":"begin","data":{"path":{"text":"file2.ts"}}}',
-        '{"type":"match","data":{"path":{"text":"file2.ts"},"lines":{"text":"match3"},"line_number":1,"absolute_offset":0,"submatches":[{"match":{"text":"test"},"start":0,"end":4}]}}',
-        '{"type":"end","data":{"path":{"text":"file2.ts"}}}',
-        '{"type":"summary","data":{"elapsed_total":{"human":"0.001s"},"stats":{"elapsed":{"human":"0.001s"},"searches":2,"searches_with_match":2,"bytes_searched":100,"bytes_printed":50,"matched_lines":3,"matches":3}}}',
-      ].join('\n');
+      // When filesOnly=true, ripgrep uses -l flag which outputs plain text
+      // (one filename per line, no JSON output)
+      // BUG FIX: We no longer use --json with -l as they're incompatible
+      const plainTextOutput = ['file1.ts', 'file2.ts'].join('\n');
 
       mockSafeExec.mockResolvedValue({
         success: true,
         code: 0,
-        stdout: jsonOutput,
+        stdout: plainTextOutput,
         stderr: '',
       });
 
@@ -293,8 +286,8 @@ describe('localSearchCode', () => {
 
       expect(result.status).toBe('hasResults');
       expect(result.totalFiles).toBe(2);
-      // BUG FIX: totalMatches should report actual count, not 0
-      expect(result.totalMatches).toBe(3);
+      // In filesOnly mode, each file counts as 1 match (we know it matched but not how many times)
+      expect(result.totalMatches).toBe(2);
     });
 
     it('should include context lines', async () => {

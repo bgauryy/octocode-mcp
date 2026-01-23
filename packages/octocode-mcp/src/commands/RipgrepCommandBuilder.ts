@@ -219,7 +219,13 @@ export class RipgrepCommandBuilder extends BaseCommandBuilder {
       }
     }
 
-    this.addFlag('--json');
+    // Only add --json when NOT in plain text output modes
+    // -l (filesOnly) and --files-without-match output plain text (one item per line)
+    // These flags are mutually exclusive with --json in ripgrep
+    const isPlainTextOutput = query.filesOnly || query.filesWithoutMatch;
+    if (!isPlainTextOutput) {
+      this.addFlag('--json');
+    }
 
     if (query.threads !== undefined) {
       this.addOption('-j', query.threads);
