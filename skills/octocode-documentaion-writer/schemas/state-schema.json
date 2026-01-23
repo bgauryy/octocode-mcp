@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://docgen.v3/state.json",
+  "$id": "https://octocode-documentaion-writer.v3/state.json",
   "title": "Orchestration State",
   "description": "State tracking for documentation generation pipeline",
   "type": "object",

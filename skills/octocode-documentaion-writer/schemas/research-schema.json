@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://docgen.v3/research.json",
+  "$id": "https://octocode-documentaion-writer.v3/research.json",
   "title": "Research Findings Output",
   "description": "Answers and context gathered for engineering questions",
   "type": "object",
