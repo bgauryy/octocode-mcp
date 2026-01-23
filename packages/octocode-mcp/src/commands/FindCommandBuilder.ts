@@ -120,12 +120,23 @@ export class FindCommandBuilder extends BaseCommandBuilder {
       this.addFlag('-empty');
     }
 
+    // Size filters - normalize suffix for cross-platform compatibility
+    // BUG FIX: macOS BSD find only accepts lowercase 'k' for kilobytes
+    // Linux GNU find accepts both 'K' and 'k', plus 'M', 'G' etc.
+    // Before: sizeGreater="10K" → find -size +10K → FAILS on macOS
+    // After:  sizeGreater="10K" → find -size +10k → WORKS on all platforms
     if (query.sizeGreater) {
-      this.addOption('-size', `+${query.sizeGreater}`);
+      this.addOption(
+        '-size',
+        `+${this.normalizeSizeForPlatform(query.sizeGreater)}`
+      );
     }
 
     if (query.sizeLess) {
-      this.addOption('-size', `-${query.sizeLess}`);
+      this.addOption(
+        '-size',
+        `-${this.normalizeSizeForPlatform(query.sizeLess)}`
+      );
     }
 
     if (query.modifiedWithin) {
@@ -279,6 +290,68 @@ export class FindCommandBuilder extends BaseCommandBuilder {
         return { value: value * 30, unit: '-atime' };
       default:
         return { value, unit: '-atime' };
+    }
+  }
+
+  /**
+   * Normalizes size suffix for cross-platform compatibility.
+   *
+   * PLATFORM DIFFERENCES:
+   * - macOS BSD find: Only supports 'c' (bytes) and 'k' (kilobytes) - LOWERCASE ONLY
+   * - Linux GNU find: Supports 'c', 'w', 'b', 'k', 'K', 'M', 'G' (case-sensitive)
+   *
+   * BUG FIX HISTORY:
+   * Before: Users passing "10K" would get "find: -size: +10K: illegal trailing character" on macOS
+   * After:  "10K" is normalized to "10k", works on both macOS and Linux
+   *
+   * EXAMPLES:
+   * - "10K" → "10k" (kilobytes, normalized for macOS)
+   * - "10k" → "10k" (already lowercase)
+   * - "100" → "100" (bytes, no suffix)
+   * - "1M" → "1048576c" (megabytes converted to bytes for macOS compatibility)
+   * - "1G" → "1073741824c" (gigabytes converted to bytes for macOS compatibility)
+   *
+   * @param size - Size string like "10k", "10K", "1M", "1G", or raw number
+   * @returns Normalized size string compatible with both macOS and Linux
+   */
+  private normalizeSizeForPlatform(size: string): string {
+    // Match number followed by optional suffix
+    const match = size.match(/^(\d+)([ckKMGmg])?$/);
+    if (!match || !match[1]) {
+      return size; // Return as-is if invalid format
+    }
+
+    const value = parseInt(match[1], 10);
+    const suffix = match[2];
+
+    if (!suffix) {
+      // No suffix means bytes (works on all platforms)
+      return size;
+    }
+
+    const upperSuffix = suffix.toUpperCase();
+
+    switch (upperSuffix) {
+      case 'C':
+        // Bytes - use lowercase for consistency
+        return `${value}c`;
+      case 'K':
+        // Kilobytes - macOS only accepts lowercase 'k'
+        return `${value}k`;
+      case 'M':
+        // Megabytes - macOS doesn't support 'M', convert to bytes
+        if (this.isMacOS) {
+          return `${value * 1024 * 1024}c`;
+        }
+        return `${value}M`;
+      case 'G':
+        // Gigabytes - macOS doesn't support 'G', convert to bytes
+        if (this.isMacOS) {
+          return `${value * 1024 * 1024 * 1024}c`;
+        }
+        return `${value}G`;
+      default:
+        return size;
     }
   }
 }

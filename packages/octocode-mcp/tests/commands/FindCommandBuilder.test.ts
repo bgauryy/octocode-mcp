@@ -191,7 +191,14 @@ describe('FindCommandBuilder', () => {
         .build();
 
       expect(args).toContain('-size');
-      expect(args).toContain('+10M');
+      // Platform-aware: macOS converts M/G to bytes (c suffix), Linux keeps M/G
+      // BUG FIX: macOS BSD find only supports 'c' (bytes) and 'k' (kilobytes)
+      const isMacOS = process.platform === 'darwin';
+      if (isMacOS) {
+        expect(args).toContain(`+${10 * 1024 * 1024}c`); // 10M in bytes
+      } else {
+        expect(args).toContain('+10M');
+      }
     });
 
     it('should handle sizeLess', () => {
@@ -201,7 +208,13 @@ describe('FindCommandBuilder', () => {
         .build();
 
       expect(args).toContain('-size');
-      expect(args).toContain('-1G');
+      // Platform-aware: macOS converts M/G to bytes (c suffix), Linux keeps M/G
+      const isMacOS = process.platform === 'darwin';
+      if (isMacOS) {
+        expect(args).toContain(`-${1 * 1024 * 1024 * 1024}c`); // 1G in bytes
+      } else {
+        expect(args).toContain('-1G');
+      }
     });
 
     it('should handle modifiedWithin with days', () => {

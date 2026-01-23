@@ -248,9 +248,13 @@ describe('localFindFiles', () => {
       });
 
       expect(result.status).toBe('hasResults');
+      // Platform-aware: macOS converts M/G to bytes (c suffix), Linux keeps M/G
+      // BUG FIX: macOS BSD find only supports 'c' (bytes) and 'k' (kilobytes)
+      const isMacOS = process.platform === 'darwin';
+      const expectedSize = isMacOS ? `+${1 * 1024 * 1024}c` : '+1M';
       expect(mockSafeExec).toHaveBeenCalledWith(
         'find',
-        expect.arrayContaining(['-size', '+1M'])
+        expect.arrayContaining(['-size', expectedSize])
       );
     });
 
