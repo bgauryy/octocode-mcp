@@ -34,6 +34,23 @@ import {
   parseGrepOutput,
 } from '../../utils/parsers/ripgrep.js';
 
+/**
+ * Parse ripgrep plain text output (filesOnly or filesWithoutMatch mode).
+ * When using -l (--files-with-matches) or --files-without-match flags,
+ * ripgrep outputs one filename per line instead of JSON.
+ *
+ * @param stdout - Plain text output from ripgrep (one filename per line)
+ * @returns Array of file matches with path only (no match details)
+ */
+function parseFilesOnlyOutput(stdout: string): RipgrepFileMatches[] {
+  const lines = stdout.trim().split('\n').filter(Boolean);
+  return lines.map(path => ({
+    path,
+    matchCount: 1, // At least one match exists (that's why file is listed)
+    matches: [], // No match details in plain text mode
+  }));
+}
+
 export async function searchContentRipgrep(
   query: RipgrepQuery
 ): Promise<SearchContentResult> {
@@ -205,10 +222,23 @@ async function executeRipgrepSearchInternal(
     ) as SearchContentResult;
   }
 
-  const { files: parsedFiles, stats } = parseRipgrepJson(
-    result.stdout,
-    configuredQuery
-  );
+  // Handle both JSON and plain text output modes
+  // filesOnly (-l) and filesWithoutMatch (--files-without-match) output plain text
+  const isPlainTextOutput =
+    configuredQuery.filesOnly || configuredQuery.filesWithoutMatch;
+
+  let parsedFiles: RipgrepFileMatches[];
+  let stats: SearchStats = {};
+
+  if (isPlainTextOutput) {
+    // Plain text output: one filename per line (no JSON)
+    parsedFiles = parseFilesOnlyOutput(result.stdout);
+  } else {
+    // JSON output: structured match data with line numbers, columns, etc.
+    const parsed = parseRipgrepJson(result.stdout, configuredQuery);
+    parsedFiles = parsed.files;
+    stats = parsed.stats;
+  }
 
   return buildSearchResult(
     parsedFiles,
