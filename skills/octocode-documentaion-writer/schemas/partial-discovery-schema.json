@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://docgen.v3/partial-discovery.json",
+  "$id": "https://octocode-documentaion-writer.v3/partial-discovery.json",
   "title": "Partial Discovery Output",
   "description": "Schema for partial results from discovery sub-agents",
   "type": "object",

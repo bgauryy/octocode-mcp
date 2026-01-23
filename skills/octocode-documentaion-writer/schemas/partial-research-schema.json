@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://docgen.v3/partial-research.json",
+  "$id": "https://octocode-documentaion-writer.v3/partial-research.json",
   "title": "Partial Research Output",
   "description": "Schema for partial research results from parallel research agents",
   "type": "object",

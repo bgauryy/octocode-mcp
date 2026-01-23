@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Documentation Structure Schema",
-  "description": "Centralized definition of rigid documentation structure for all docgen agents and commands",
+  "description": "Centralized definition of rigid documentation structure for all octocode-documentaion-writer agents and commands",
   "version": "1.0.0",
   "structure": {
     "description": "Complete documentation structure with files and folders",
@@ -334,7 +334,7 @@
       "qa-validator"
     ],
     "commands": [
-      "docgen"
+      "octocode-documentaion-writer"
     ],
     "reference_example": {
       "description": "Load and use this schema in agents/commands",
