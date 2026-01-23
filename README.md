@@ -58,7 +58,7 @@ https://github.com/user-attachments/assets/de8d14c0-2ead-46ed-895e-09144c9b5071
 
 > **[Agent Skills](https://agentskills.io/what-are-skills)** are a lightweight, open format for extending AI agent capabilities with specialized knowledge and workflows.
 
-While the MCP provides the tools, the dedicated **[Octocode Research Skill](./skills/octocode-research)** provides a way to run Octocode wihtout indication what you need.
+Octocode is supported in both MCP and as a skill!
 
 It adds specialized capabilities **out-of-the-box (OOTB)**:
 1.  **Correct Prompts**: Auto-injects the Research Driven Development system prompts.
@@ -67,6 +67,8 @@ It adds specialized capabilities **out-of-the-box (OOTB)**:
 4.  **Parallel Agents**: Handles spawning sub-agents for parallel execution of research tasks.
 
 This skill turns a generic AI model into a specialized **Research Architect**.
+
+> **💡 Tip**: Ask Octocode to "roast your code" and you will get a surprise! 🔥🎭
 
 https://github.com/user-attachments/assets/5b630763-2dee-4c2d-b5c1-6335396723ec
 
@@ -110,47 +112,56 @@ Everything you need to master Octocode:
 
 ### 📖 Core Concepts
 - [**The Manifest**](./MANIFEST.md) - The philosophy behind RDD.
-- [**Research Skill Guide**](./skills/octocode-research/README.md) - How to use the research agent.
 
 ### 🛠️ Reference
 - [**Authentication Setup**](./packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) - GitHub & GitLab authentication
-- [**GitHub & GitLab Tools**](./packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md)
-- [**Local Tools**](./packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md)
-- [**LSP Tools**](./packages/octocode-mcp/docs/LSP_TOOLS.md)
+- [**Configuration Reference**](./docs/CONFIGURATION_REFERENCE.md) - MCP server configuration options
 - [**Troubleshooting**](./docs/TROUBLESHOOTING.md) - Common issues and solutions
 
 ---
 ## Installation Guide
 
-### Quick Install Commands
-
-**MCP Server** 
-```bash
-npx octocode-cli
-```
-
-**Research Skill** (Autonomous research agent):
-```bash
-npx add-skill https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-research
-```
-
-> ⚠️ **Authentication Required**: Both require GitHub authentication.
+> **Prerequisites**: GitHub authentication is required for all installations.  
 > See [Authentication Setup](./packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) for details.
+
+### Quick Install
+
+| Component | Command | Description |
+|-----------|---------|-------------|
+| **MCP Server** | `npx octocode-cli` | GitHub, Local FS & LSP tools for your AI |
+| **Research Skill** | `npx add-skill octocode-research` | Autonomous research agent capabilities |
 
 ---
 
-### Option 1: Octocode CLI (Recommended)
+### Recommended: Octocode CLI
+
+The CLI is the easiest way to install and manage everything:
 
 ```bash
 npx octocode-cli
 ```
-→ Interactive menu for GitHub auth, MCP installation, and AI skills.
 
-### Option 2: One-Click Install
+**Features:**
+- Interactive setup wizard
+- GitHub OAuth authentication  
+- MCP server installation
+- Skills marketplace
+
+---
+
+### Alternative Installation Methods
+
+<details>
+<summary><strong>One-Click Install (Cursor)</strong></summary>
 
 [<img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Install in Cursor">](https://cursor.com/en/install-mcp?name=octocode&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJvY3RvY29kZS1tY3BAbGF0ZXN0Il19)
 
-### Option 3: Manual Configuration
+</details>
+
+<details>
+<summary><strong>Manual Configuration</strong></summary>
+
+Add to your MCP configuration file:
 
 ```json
 {
@@ -162,6 +173,17 @@ npx octocode-cli
   }
 }
 ```
+
+</details>
+
+<details>
+<summary><strong>Research Skill (Direct Install)</strong></summary>
+
+```bash
+npx add-skill https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-research
+```
+
+</details>
 
 ---
 
