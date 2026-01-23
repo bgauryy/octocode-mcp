@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://docgen.v3/qa-results.json",
+  "title": "QA Validator Results",
+  "description": "Final quality assurance report from Phase 6",
+  "type": "object",
+  "required": ["metadata", "overall_score", "quality_rating", "ready_for_use", "question_coverage", "gaps"],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["version", "generated_at", "repository_path"],
+      "properties": {
+        "version": { "type": "string", "const": "3.0" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "repository_path": { "type": "string" },
+        "agent": { "type": "string", "const": "qa-validator" }
+      }
+    },
+    "overall_score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Calculated quality score"
+    },
+    "quality_rating": {
+      "type": "string",
+      "enum": ["excellent", "good", "fair", "needs-improvement"],
+      "description": "Categorical rating based on score"
+    },
+    "ready_for_use": {
+      "type": "boolean",
+      "description": "Whether the documentation is considered sufficient for release"
+    },
+    "question_coverage": {
+      "type": "object",
+      "required": ["total", "answered", "coverage_percent"],
+      "properties": {
+        "total": { "type": "integer" },
+        "answered": { "type": "integer" },
+        "coverage_percent": { "type": "number" },
+        "unanswered_questions": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "validation_details": {
+      "type": "object",
+      "properties": {
+        "structure_valid": { "type": "boolean" },
+        "core_files_present": { "type": "boolean" },
+        "broken_links": { "type": "integer" },
+        "mermaid_syntax_errors": { "type": "integer" }
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "description", "fix"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "warning", "info"]
+          },
+          "description": { "type": "string" },
+          "location": { "type": "string" },
+          "fix": { "type": "string" }
+        }
+      }
+    }
+  }
+}
