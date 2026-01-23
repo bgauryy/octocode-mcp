@@ -2,6 +2,12 @@
 
 Welcome to the comprehensive documentation for **Octocode MCP** - a Model Context Protocol (MCP) server that provides intelligent code context for AI systems.
 
+> **Generated with [octocode-documentation-writer](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-documentaion-writer) skill**
+>
+> ```bash
+> npx add-skill https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-documentaion-writer
+> ```
+
 ---
 
 ## Table of Contents

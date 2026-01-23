@@ -2,6 +2,12 @@
 
 This directory contains comprehensive documentation for Octocode MCP (Model Context Protocol server).
 
+> **📝 Generated with [octocode-documentation-writer](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-documentaion-writer) skill**
+>
+> ```bash
+> npx add-skill https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-documentaion-writer
+> ```
+
 ## Documentation Files
 
 ### PRIMARY Documentation (Created by Documentation Writer 1)
