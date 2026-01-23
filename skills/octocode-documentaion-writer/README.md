@@ -131,12 +131,6 @@ The generated documentation will be saved in the `documentation/` directory with
 - `documentation/QA-SUMMARY.md`: A summary of the quality assurance check.
 - `.context/`: Intermediate state files (analysis, research, assignments) - useful for debugging or manual inspection.
 
-## 🛠️ Requirements
-
-- A code repository with source files (`.ts`, `.js`, `.py`, `.go`, `.rs`, etc.).
-- The repository path must exist and be a valid directory.
-- Avoid running on build directories (e.g., `dist`, `node_modules`).
-
 ---
 
 ## License
