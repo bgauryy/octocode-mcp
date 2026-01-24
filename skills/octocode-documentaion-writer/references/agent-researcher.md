@@ -17,7 +17,8 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
 
 <inputs>
     <input name="REPOSITORY_PATH">Absolute path to repository root</input>
-    <input name="analysis">.context/analysis.json (Context)</input>
+    <input name="analysis">.context/analysis.json (Context for components, flows, architecture)</input>
+    <input name="static_analysis">.context/static-analysis/static-analysis.json (Entry points, module graph, export flows)</input>
     <input name="questions_batch">JSON array of question objects to research (subset of questions.json). Each object contains: id, text, documentation_target, priority, research_strategy, and category fields.</input>
 </inputs>
 
@@ -103,131 +104,8 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
     </tool_protocol>
 </guidelines>
 
-<orchestration_logic>
-<!-- This section defines how the Orchestrator invokes this agent -->
-```javascript
-// === PHASE 3: RESEARCHER ===
+---
 
-// Helper function to split array into chunks
-function chunkArray(array, chunkSize) {
-  const chunks = [];
-  for (let i = 0; i < array.length; i += chunkSize) {
-    chunks.push(array.slice(i, i + chunkSize));
-  }
-  return chunks;
-}
+## Orchestrator Integration
 
-if (previous_phase_complete && (START_PHASE != "research-complete")):
-  update_state({
-    phase: "research-running",
-    current_agent: "researcher"
-  })
-
-  DISPLAY: "🔬 Researcher Agent [Running...]"
-  DISPLAY: "   Analyzing questions and executing research strategies..."
-  DISPLAY: ""
-
-  // Read agent specification
-  AGENT_SPEC = Read("references/agent-researcher.md")
-
-  // Read questions
-  questions_data = JSON.parse(Read(CONTEXT_DIR + "/questions.json"))
-  all_questions = questions_data.questions
-
-  // Strategy: Parallelize if > 15 questions
-  // Split into chunks of ~15 questions
-  chunks = chunkArray(all_questions, 15)
-
-  parallel_tasks = chunks.map((chunk, index) => ({
-    id: "researcher-" + index,
-    description: `Researcher ${index}: ${chunk.length} questions`,
-    prompt: `
-      ${AGENT_SPEC}
-
-      REPOSITORY_PATH = "${REPOSITORY_PATH}"
-
-      RESEARCH TASK:
-      Research the following questions (JSON array):
-      ${JSON.stringify(chunk)}
-      
-      <execution_protocol>
-      **CRITICAL INSTRUCTIONS**:
-      1. **EVIDENCE FIRST**: Every finding MUST cite a file and line number.
-      2. **TOOL ORDER**: 
-         - Search First (get lineHint)
-         - Then LSP (use lineHint)
-         - Then Read (confirm text)
-      3. **OUTPUT FORMAT**: You MUST write to ${CONTEXT_DIR}/research-results/partial-research-${index}.json in the EXACT JSON schema defined.
-      </execution_protocol>
-
-      Write your findings to: ${CONTEXT_DIR}/research-results/partial-research-${index}.json
-    `
-  }))
-
-  results = Task_Parallel(parallel_tasks)
-
-  // Aggregate results from all parallel researchers
-  all_findings = []
-  total_answered = 0
-  total_partial = 0
-  total_not_found = 0
-
-  results.forEach((res, index) => {
-    try {
-      // Read the partial results file written by each researcher
-      partial_file = Read(CONTEXT_DIR + `/research-results/partial-research-${index}.json`)
-      partial_data = JSON.parse(partial_file)
-
-      // Merge findings into aggregate
-      if (partial_data.findings && Array.isArray(partial_data.findings)) {
-        partial_data.findings.forEach(finding => {
-          all_findings.push(finding)
-          // Track status counts
-          if (finding.status === "answered") total_answered++
-          else if (finding.status === "partial") total_partial++
-          else if (finding.status === "not_found") total_not_found++
-        })
-      }
-    } catch (error) {
-      WARN: `Failed to parse partial-research-${index}.json: ${error.message}`
-    }
-  })
-
-  // Validate we got findings
-  if (all_findings.length === 0):
-    ERROR: "Researcher agents failed to produce any findings"
-    update_state({
-      phase: "research-failed",
-      errors: [{
-        phase: "researcher",
-        message: "No findings produced by any researcher agent",
-        timestamp: new Date().toISOString(),
-        recoverable: true
-      }]
-    })
-    DISPLAY: "❌ Researcher Agent [Failed - No findings]"
-    EXIT code 1
-
-  // Write merged research.json (matching research-schema.json)
-  Write(CONTEXT_DIR + "/research.json", JSON.stringify({
-    metadata: {
-      version: "3.0",
-      generated_at: new Date().toISOString(),
-      agent: "researcher",
-      total_questions_researched: all_findings.length
-    },
-    findings: all_findings
-  }, null, 2))
-
-  // Success
-  update_state({
-    phase: "research-complete",
-    completed_agents: ["discovery-analysis", "engineer-questions", "researcher"],
-    current_agent: null
-  })
-
-  DISPLAY: "✅ Researcher Agent [Complete]"
-  DISPLAY: `   Questions researched: ${all_findings.length}`
-  DISPLAY: `   Answered: ${total_answered}, Partial: ${total_partial}, Not Found: ${total_not_found}`
-  DISPLAY: ""
-```
+> **Execution Logic:** See [PIPELINE.md](./PIPELINE.md) for how the orchestrator invokes this agent, including spawn configuration, validation gates, and error handling.

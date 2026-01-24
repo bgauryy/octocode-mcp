@@ -54,10 +54,12 @@ graph TD
 ## Input & Configuration
 
 - **Repository Root**: `${REPOSITORY_PATH}`
+- **Context Directory**: `${CONTEXT_DIR}` (`.context/`)
 - **State**: `.context/state.json`
-- **Schema**: `t Output Structure)
-- **Partial Schema**: `n` (Sub-agent Output Structure)
-- **Tasks**: `Definitions)
+- **Static Analysis**: `.context/static-analysis.json` (from Phase 0)
+- **Schema**: `schemas/analysis-schema.json` (Full Output Structure)
+- **Partial Schema**: `schemas/partial-discovery-schema.json` (Sub-agent Output Structure)
+- **Tasks**: `schemas/tasks-config.json` (Agent Definitions)
 
 ## Mission
 
@@ -153,15 +155,16 @@ These templates are used by the Orchestrator to spawn parallel agents.
   <task>Determine primary language (highest count)</task>
   <task>Find language-specific manifests (package.json, Cargo.toml, requirements.txt, go.mod, etc.)</task>
   <task>Extract project metadata (name, version, description)</task>
+  <task>**USE STATIC ANALYSIS**: Read `${CONTEXT_DIR}/static-analysis.json` for pre-computed entry points and dependencies</task>
 
   **OUTPUT FORMAT (REQUIRED):**
-  You MUST output to JSON matching `
+  You MUST output to JSON matching `schemas/partial-discovery-schema.json#/definitions/1a-language`
 </instructions>
 
 <output>
   <path>${CONTEXT_DIR}/partial-1a-language.json</path>
   <format>JSON</format>
-  <schema_ref>n (1A: Language & Manifests)</schema_ref>
+  <schema_ref>schemas/partial-discovery-schema.json (1A: Language & Manifests)</schema_ref>
 </output>
 </subagent>
 
@@ -176,15 +179,16 @@ These templates are used by the Orchestrator to spawn parallel agents.
   <task>Discover components (directories with 3+ source files)</task>
   <task>Identify component boundaries and purposes</task>
   <task>Extract component descriptions from README/comments</task>
-  
+  <task>**USE STATIC ANALYSIS**: Read `${CONTEXT_DIR}/static-analysis.json` for `files[]` roles and `architecture.layers`</task>
+
   **OUTPUT FORMAT (REQUIRED):**
-  You MUST output to JSON matching `
+  You MUST output to JSON matching `schemas/partial-discovery-schema.json#/definitions/1b-components`
 </instructions>
 
 <output>
   <path>${CONTEXT_DIR}/partial-1b-components.json</path>
   <format>JSON</format>
-  <schema_ref>n (1B: Components)</schema_ref>
+  <schema_ref>schemas/partial-discovery-schema.json (1B: Components)</schema_ref>
 </output>
 </subagent>
 
@@ -199,15 +203,16 @@ These templates are used by the Orchestrator to spawn parallel agents.
   <task>Map internal dependencies (import/require statements)</task>
   <task>Detect external dependencies from manifest files</task>
   <task>Build dependency relationships</task>
+  <task>**USE STATIC ANALYSIS**: Read `${CONTEXT_DIR}/static-analysis.json` for `module_graph.internalDependencies`, `dependencies`, and `dependency_usage`</task>
 
   **OUTPUT FORMAT (REQUIRED):**
-  You MUST output to JSON matching `
+  You MUST output to JSON matching `schemas/partial-discovery-schema.json#/definitions/1c-dependencies`
 </instructions>
 
 <output>
   <path>${CONTEXT_DIR}/partial-1c-dependencies.json</path>
   <format>JSON</format>
-  <schema_ref>n (1C: Dependencies)</schema_ref>
+  <schema_ref>schemas/partial-discovery-schema.json (1C: Dependencies)</schema_ref>
 </output>
 </subagent>
 
@@ -223,16 +228,17 @@ These templates are used by the Orchestrator to spawn parallel agents.
   <task>Document public APIs (exported functions/classes)</task>
   <task>Identify entry points (main files, index files)</task>
   <task>Use LSP tools to verify call chains</task>
-  
+  <task>**USE STATIC ANALYSIS**: Read `${CONTEXT_DIR}/static-analysis.json` for `entry_points`, `public_api`, and `export_flows`</task>
+
   **REQUIRED:** Use `lspCallHierarchy` for flow tracing.
   **OUTPUT FORMAT (REQUIRED):**
-  You MUST output to JSON matching `
+  You MUST output to JSON matching `schemas/partial-discovery-schema.json#/definitions/1d-flows-apis`
 </instructions>
 
 <output>
   <path>${CONTEXT_DIR}/partial-1d-flows-apis.json</path>
   <format>JSON</format>
-  <schema_ref>n (1D: Flows & APIs)</schema_ref>
+  <schema_ref>schemas/partial-discovery-schema.json (1D: Flows & APIs)</schema_ref>
 </output>
 </subagent>
 
@@ -251,9 +257,10 @@ These templates are used by the Orchestrator to spawn parallel agents.
     - ${CONTEXT_DIR}/partial-1d-flows-apis.json
   </task>
   <task>Merge them into a single comprehensive analysis.json</task>
-  <task>Ensure strictly follows `
+  <task>Ensure output strictly follows `schemas/analysis-schema.json`</task>
+  <task>Include data from `${CONTEXT_DIR}/static-analysis.json` as foundation</task>
   <task>Clean up partial files after successful merge</task>
-  
+
   **GATE:** Do NOT output if critical errors are found in partials.
 </instructions>
 
@@ -265,152 +272,6 @@ These templates are used by the Orchestrator to spawn parallel agents.
 
 ---
 
-## Orchestrator Execution Logic
+## Orchestrator Integration
 
-This section defines how the orchestrator invokes and manages this agent.
-
-### Task_Parallel Definition
-
-```typescript
-/**
- * Task_Parallel - Executes multiple sub-agent tasks concurrently
- *
- * @param tasks - Array of task definitions to execute in parallel
- * @returns Array of TaskResult objects in the same order as input tasks
- *
- * Each task in the input array should have:
- *   - id: string          - Unique identifier for the task
- *   - description: string - Human-readable description of what the task does
- *   - critical: boolean   - If true, failure of this task fails the entire pipeline
- *   - prompt: string      - The full prompt to send to the sub-agent
- *
- * Each TaskResult in the output array contains:
- *   - id: string          - The task id (matches input)
- *   - status: "success" | "failed" - Execution result
- *   - critical: boolean   - Whether this was a critical task
- *   - error?: string      - Error message if status is "failed"
- *   - output?: any        - Task output if status is "success"
- */
-type Task_Parallel = (tasks: TaskDefinition[]) => TaskResult[]
-```
-
-### Parallel Agents Configuration
-
-The following agents run in parallel during discovery. Agents marked as `critical: true`
-must succeed for the pipeline to continue - their outputs are foundational for later phases.
-
-| Agent ID | Critical | Rationale |
-|----------|----------|-----------|
-| 1a-language | **true** | Language detection is foundational - all other analysis depends on it |
-| 1b-components | false | Component discovery is helpful but not blocking |
-| 1c-dependencies | false | Dependency mapping can be incomplete without blocking |
-| 1d-flows-apis | **true** | Flow/API discovery is essential for documentation structure |
-
-### Execution Logic
-
-```javascript
-// === PHASE 1: DISCOVERY+ANALYSIS ===
-if (START_PHASE == "initialized" || START_PHASE == "discovery-analysis-failed"):
-  update_state({
-    phase: "discovery-analysis-running",
-    current_agent: "discovery-analysis"
-  })
-
-  // Load configuration and agent spec
-  TASKS_CONFIG = JSON.parse(Read("
-  AGENT_SPEC = Read("references/agent-discovery-analysis.md")
-
-  DISPLAY: "🔍 Discovery+Analysis Agents [Running in Parallel...]"
-  DISPLAY: "   " + TASKS_CONFIG.parallel_agents.length + " parallel agents analyzing repository..."
-  DISPLAY: ""
-
-  // === RUN IN PARALLEL ===
-  // Dynamically build tasks from schema and XML subagent definitions
-  // Note: critical flag determines if task failure should halt the pipeline
-  parallel_tasks = TASKS_CONFIG.parallel_agents.map(agent => ({
-    id: agent.id,
-    description: agent.description,
-    critical: agent.critical,  // From TASKS_CONFIG - see parallel_agents definition
-    prompt: `
-      ${AGENT_SPEC}
-
-      *** YOUR ASSIGNMENT ***
-      Use the instruction set: <subagent id="${agent.subagent_id}">
-    `
-  }))
-
-  // Execute all tasks concurrently and collect results
-  // Returns: Array of { id, status, critical, error?, output? }
-  PARALLEL_RESULTS = Task_Parallel(parallel_tasks)
-  
-  // === END PARALLEL ===
-
-  // Check for failures in parallel execution
-  failed_agents = PARALLEL_RESULTS.filter(r => r.status == "failed")
-  
-  if (failed_agents.length > 0):
-    critical_failures = failed_agents.filter(a => a.critical == true)
-    
-    if (critical_failures.length > 0):
-      // GATE: CRITICAL FAILURE
-      ERROR: "Critical agent(s) failed: " + critical_failures.map(a => a.id).join(", ")
-      update_state({
-        phase: "discovery-analysis-failed",
-        errors: critical_failures.map(a => ({
-          phase: "discovery-analysis",
-          agent: a.id,
-          message: a.error || "Agent failed to complete",
-          timestamp: new Date().toISOString(),
-          recoverable: false
-        }))
-      })
-      DISPLAY: "❌ Discovery+Analysis Agents [Failed]"
-      EXIT code 1
-    else:
-      WARN: "Some agents failed but proceeding: " + failed_agents.map(a => a.id).join(", ")
-
-  DISPLAY: "   ✅ All parallel agents completed"
-  DISPLAY: ""
-
-  // === AGGREGATION STEP ===
-  DISPLAY: "   🔄 Aggregating results from parallel agents..."
-  
-  AGGREGATION_RESULT = Task({
-    subagent_type: "general-purpose",
-    description: TASKS_CONFIG.aggregation.description,
-    prompt: `
-      ${AGENT_SPEC}
-      
-      *** YOUR ASSIGNMENT ***
-      Use the instruction set: <subagent id="${TASKS_CONFIG.aggregation.subagent_id}">
-    `
-  })
-
-  // === VALIDATION & COMPLETION ===
-  
-  // GATE: ANALYSIS FILE EXISTENCE
-  if (!exists(CONTEXT_DIR + "/analysis.json")):
-    ERROR: "Discovery+Analysis Agents failed to produce analysis.json"
-    EXIT code 1
-
-  // Validate JSON against schema
-  try:
-    analysis = Read(CONTEXT_DIR + "/analysis.json")
-    parsed = JSON.parse(analysis)
-    // GATE: CRITICAL SCHEMA ERRORS
-    if (parsed.errors && parsed.errors.some(e => e.severity == "critical")):
-      ERROR: "Critical errors in analysis"
-      EXIT code 1
-  catch (error):
-    ERROR: "analysis.json is invalid JSON"
-    EXIT code 1
-
-  // Success
-  update_state({
-    phase: "discovery-analysis-complete",
-    completed_agents: ["discovery-analysis"],
-    current_agent: null
-  })
-
-  DISPLAY: "✅ Discovery+Analysis Agents [Complete]"
-```
+> **Execution Logic:** See [PIPELINE.md](./PIPELINE.md) for how the orchestrator invokes this agent, including spawn configuration, validation gates, and error handling.

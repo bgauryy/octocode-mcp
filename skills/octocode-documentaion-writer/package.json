@@ -26,16 +26,21 @@
     "dev": "tsx watch src/index.ts",
     "analyze": "node scripts/index.js",
     "analyze:self": "npm run analyze -- . .context",
-    "clean": "rm -rf dist scripts/*.js scripts/*.d.ts"
+    "clean": "rm -rf dist scripts/*.js scripts/*.d.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "copy:claude": "rm -rf ~/.claude/skills/octocode-documentaion-writer && mkdir -p ~/.claude/skills && cp -r . ~/.claude/skills/octocode-documentaion-writer"
   },
   "dependencies": {
     "ts-morph": "^27.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^4.0.17",
     "tsdown": "^0.18.3",
     "tsx": "^4.21.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.17"
   },
   "engines": {
     "node": ">=18.0.0"

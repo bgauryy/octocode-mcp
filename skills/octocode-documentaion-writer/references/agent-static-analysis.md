@@ -13,16 +13,7 @@ You are an **EXPERT STATIC ANALYSIS ENGINEER** running automated code analysis t
 
 **LANGUAGE CHECK FIRST (REQUIRED)**
 
-The analyzer script **ONLY supports TypeScript/JavaScript** projects:
-
-| Language | Supported | Action |
-|----------|-----------|--------|
-| TypeScript (`.ts`, `.tsx`) | ✅ Yes | Run analyzer script |
-| JavaScript (`.js`, `.jsx`) | ✅ Yes | Run analyzer script |
-| Python (`.py`) | ❌ No | Skip script → output structure only |
-| Go (`.go`) | ❌ No | Skip script → output structure only |
-| Rust (`.rs`) | ❌ No | Skip script → output structure only |
-| Java (`.java`) | ❌ No | Skip script → output structure only |
+> **Supported Languages:** See [ANALYZER.md](./ANALYZER.md#supported-languages)
 
 **Decision Flow:**
 1. Check if `package.json` exists in repository root
@@ -109,15 +100,7 @@ The `octocode-documentaion-writer` package contains static analyzer built with `
 
 ---
 
-#### CLI Usage
-
-```
-node dist/src/index.js <repo-path> [output-path]
-
-Arguments:
-  repo-path    Path to the repository root (must contain package.json)
-  output-path  Optional path for output files (defaults to repo-path/scripts/)
-```
+> **CLI Usage:** See [ANALYZER.md](./ANALYZER.md#cli-usage)
 
 ---
 
@@ -208,16 +191,7 @@ npm run analyze -- /Users/dev/my-project /Users/dev/my-project/.context
 
 ---
 
-#### Output Files
-
-| File | Description |
-|------|-------------|
-| `analysis.json` | **Primary output** - structured data for Phase 1 agents |
-| `ANALYSIS_SUMMARY.md` | Human-readable overview |
-| `PUBLIC_API.md` | All exported functions, classes, types |
-| `DEPENDENCIES.md` | Dependency tree and issues |
-| `INSIGHTS.md` | Circular deps, unused exports, orphan files |
-| `MODULE_GRAPH.md` | Mermaid diagram of file relationships |
+> **Output Files:** See [ANALYZER.md](./ANALYZER.md#output-files)
 
 ### Step 3: Transform Output
 
@@ -228,6 +202,7 @@ The analyzer produces multiple files. Consolidate into `static-analysis.json`:
 analysis = JSON.parse(Read(CONTEXT_DIR + '/analysis.json'))
 
 // Transform to static-analysis.json format
+// NOTE: Field paths must match the actual EnhancedRepoAnalysis structure from src/types.ts
 static_analysis = {
   generated_at: new Date().toISOString(),
   repository_path: REPOSITORY_PATH,
@@ -241,17 +216,17 @@ static_analysis = {
   },
 
   module_graph: {
-    total_files: analysis.stats.totalFiles,
-    total_exports: analysis.stats.totalExports,
-    files: transform_module_graph(analysis.moduleGraph)
+    total_files: analysis.moduleGraph.totalFiles,      // from moduleGraph, not stats
+    total_exports: analysis.moduleGraph.totalExports,  // from moduleGraph, not stats
+    files: transform_module_graph(analysis.files)      // use analysis.files array
   },
 
   dependencies: {
-    production: analysis.package.dependencies.production,
-    development: analysis.package.dependencies.development,
-    unused: analysis.insights.unusedDependencies,
-    unlisted: analysis.insights.unlistedDependencies,
-    misplaced: analysis.insights.misplacedDependencies
+    production: analysis.dependencies.declared.production,    // nested under declared
+    development: analysis.dependencies.declared.development,  // nested under declared
+    unused: analysis.dependencies.unused,                     // from dependencies, not insights
+    unlisted: analysis.dependencies.unlisted,                 // from dependencies, not insights
+    misplaced: analysis.dependencies.misplaced                // from dependencies, not insights
   },
 
   public_api: analysis.publicAPI,
@@ -260,8 +235,14 @@ static_analysis = {
     circular_dependencies: analysis.insights.circularDependencies,
     orphan_files: analysis.insights.orphanFiles || [],
     unused_exports: analysis.insights.unusedExports,
-    complexity_hotspots: identify_hotspots(analysis.moduleGraph)
-  }
+    complexity_hotspots: analysis.insights.largestFiles || []  // use largestFiles as proxy
+  },
+
+  // Enhanced fields (pass through directly)
+  architecture: analysis.architecture,
+  export_flows: analysis.exportFlows,
+  dependency_usage: analysis.dependencyUsage,
+  exports_map: analysis.exportsMap
 }
 
 // Write consolidated output
@@ -272,7 +253,7 @@ Write(CONTEXT_DIR + '/static-analysis.json', JSON.stringify(static_analysis, nul
 
 ```javascript
 // GATE: Validate required fields exist
-required_fields = ['entry_points', 'module_graph', 'dependencies']
+required_fields = ['entry_points', 'module_graph', 'dependencies', 'public_api', 'insights']
 
 for (field of required_fields) {
   if (!static_analysis[field]) {
@@ -286,77 +267,30 @@ if (static_analysis.entry_points.all.length === 0) {
   WARN: "No entry points discovered - subsequent phases may have limited scope"
 }
 
+// GATE: Validate module graph has files
+if (static_analysis.module_graph.total_files === 0) {
+  WARN: "No files analyzed - check excludePatterns or repository structure"
+}
+
 // Success
 DISPLAY: "Static analysis complete:"
 DISPLAY: `  Entry points: ${static_analysis.entry_points.all.length}`
 DISPLAY: `  Files analyzed: ${static_analysis.module_graph.total_files}`
-DISPLAY: `  Dependencies: ${Object.keys(static_analysis.dependencies.production).length} prod, ${Object.keys(static_analysis.dependencies.development).length} dev`
+DISPLAY: `  Dependencies: ${static_analysis.dependencies.production.length} prod, ${static_analysis.dependencies.development.length} dev`
+DISPLAY: `  Architecture: ${static_analysis.architecture?.pattern || 'not detected'}`
 ```
 
 ## Output Schema
 
-The `static-analysis.json` must conform to this structure:
+The `static-analysis.json` must conform to `EnhancedRepoAnalysis` from `src/types.ts`.
 
-```typescript
-interface StaticAnalysis {
-  generated_at: string;          // ISO timestamp
-  repository_path: string;       // Absolute path
-  project_type: 'node' | 'python' | 'go' | 'rust' | 'java' | 'unknown';
+> **Complete Type Definitions:** See [ANALYZER.md - Type Definitions](./ANALYZER.md#type-definitions)
 
-  entry_points: {
-    main: string | null;         // Main entry (e.g., "src/index.ts")
-    bin: Record<string, string>; // CLI binaries
-    exports: Record<string, string>; // Package exports
-    all: string[];               // All unique entry points
-  };
-
-  module_graph: {
-    total_files: number;
-    total_exports: number;
-    files: Array<{
-      path: string;              // Relative path
-      imports: string[];         // Files this imports
-      imported_by: string[];     // Files that import this
-      exports: string[];         // Export names
-      role: 'entry' | 'internal' | 'test' | 'config';
-    }>;
-  };
-
-  dependencies: {
-    production: Record<string, string>;
-    development: Record<string, string>;
-    unused: string[];
-    unlisted: string[];
-    misplaced: string[];
-  };
-
-  public_api: Array<{
-    entry_point: string;
-    exports: Array<{
-      name: string;
-      kind: 'function' | 'class' | 'interface' | 'type' | 'variable' | 'const';
-      signature?: string;
-    }>;
-  }>;
-
-  insights: {
-    circular_dependencies: Array<{
-      cycle: string[];
-      severity: 'warning' | 'error';
-    }>;
-    orphan_files: string[];
-    unused_exports: Array<{
-      file: string;
-      export: string;
-    }>;
-    complexity_hotspots: Array<{
-      file: string;
-      reason: string;
-      score: number;
-    }>;
-  };
-}
-```
+**Key fields required by orchestrator:**
+- `entry_points.all` - Array of all entry point paths
+- `module_graph.total_files` - Number of analyzed files
+- `architecture.pattern` - Detected architecture pattern
+- `fallback` - Boolean indicating limited analysis mode
 
 ## Error Handling
 
@@ -387,12 +321,17 @@ try {
     generated_at: new Date().toISOString(),
     repository_path: REPOSITORY_PATH,
     project_type: 'unknown',
-    entry_points: { all: [] },
-    module_graph: { total_files: 0, files: [] },
-    dependencies: { production: {}, development: {}, unused: [], unlisted: [], misplaced: [] },
+    entry_points: { main: null, bin: {}, exports: {}, all: [] },
+    module_graph: { total_files: 0, total_exports: 0, total_imports: 0, files: [], internalDependencies: [], externalDependencies: [] },
+    dependencies: { production: [], development: [], unused: [], unlisted: [], misplaced: [] },
     public_api: [],
-    insights: { circular_dependencies: [], orphan_files: [], unused_exports: [], complexity_hotspots: [] },
-    error: error.message
+    insights: { circular_dependencies: [], orphan_files: [], unused_exports: [], barrel_files: [], largest_files: [], most_imported: [], type_only_files: [] },
+    architecture: null,
+    export_flows: null,
+    dependency_usage: null,
+    exports_map: null,
+    fallback: true,
+    fallback_reason: error.message
   }, null, 2))
 
   WARN: "Proceeding with minimal static analysis data"
@@ -451,13 +390,15 @@ function run_fallback_analysis() {
       total_files: source_files.length,
       total_imports: 0,
       total_exports: 0,
-      files: []  // Would require language-specific parser
+      files: [],  // Would require language-specific parser
+      internalDependencies: [],
+      externalDependencies: []
     },
 
     // Empty - requires package manifest parsing
     dependencies: {
-      declared: { production: [], development: [], peer: [] },
-      used: { production: [], development: [] },
+      production: [],
+      development: [],
       unused: [],
       unlisted: [],
       misplaced: []
@@ -469,8 +410,17 @@ function run_fallback_analysis() {
       circular_dependencies: [],  // Would require import graph
       orphan_files: [],
       unused_exports: [],
-      complexity_hotspots: []
+      barrel_files: [],
+      largest_files: [],
+      most_imported: [],
+      type_only_files: []
     },
+
+    // No enhanced fields for fallback
+    architecture: null,
+    export_flows: null,
+    dependency_usage: null,
+    exports_map: null,
 
     // Mark as fallback - Phase 1 agents should do deeper discovery
     fallback: true,
@@ -489,150 +439,8 @@ function run_fallback_analysis() {
 
 ---
 
-## Orchestrator Execution Logic
+## Orchestrator Integration
 
-This section defines how the orchestrator invokes this agent.
+> **Execution Logic:** See [PIPELINE.md - Phase 0: Static Analysis](./PIPELINE.md#phase-0-static-analysis) for how the orchestrator invokes this agent.
 
-### Execution Logic
-
-```javascript
-// === PHASE 0: STATIC ANALYSIS ===
-if (START_PHASE == "initialized" || START_PHASE == "static-analysis-failed"):
-  update_state({
-    phase: "static-analysis-running",
-    current_agent: "static-analysis"
-  })
-
-  DISPLAY: "📊 Phase 0: Static Analysis [Running...]"
-  DISPLAY: "   Analyzing repository structure and entry points..."
-  DISPLAY: ""
-
-  // Get skill package path (where the analyzer lives)
-  SKILL_PACKAGE_PATH = resolve_skill_path("octocode-documentaion-writer")
-
-  // Spawn single agent to run static analysis
-  STATIC_ANALYSIS_RESULT = Task({
-    subagent_type: "general-purpose",
-    model: "sonnet",
-    description: "Static Analysis - Entry Points",
-    prompt: `
-      You are the Static Analysis Agent.
-
-      **CONTEXT:**
-      - Repository Path: ${REPOSITORY_PATH}
-      - Context Directory: ${CONTEXT_DIR}
-      - Skill Package Path: ${SKILL_PACKAGE_PATH}
-
-      **YOUR MISSION:**
-      Run the static analyzer to discover entry points, build module graph, and analyze dependencies.
-
-      **EXECUTION STEPS:**
-
-      1. **Run the analyzer script (REQUIRED):**
-
-         The script uses POSITIONAL arguments (not flags):
-         \`\`\`
-         node dist/src/index.js <repo-path> <output-path>
-         \`\`\`
-
-         Run via npm:
-         \`\`\`bash
-         cd "${SKILL_PACKAGE_PATH}" && npm run analyze -- "${REPOSITORY_PATH}" "${CONTEXT_DIR}"
-         \`\`\`
-
-         Or direct node execution:
-         \`\`\`bash
-         node "${SKILL_PACKAGE_PATH}/dist/src/index.js" "${REPOSITORY_PATH}" "${CONTEXT_DIR}"
-         \`\`\`
-
-      2. **Verify the script output:**
-         - The script outputs: analysis.json, ANALYSIS_SUMMARY.md, PUBLIC_API.md, etc.
-         - Read ${CONTEXT_DIR}/analysis.json to verify it was created
-
-      3. **Transform to static-analysis.json format:**
-         - Read the analysis.json produced by the script
-         - Transform to static-analysis.json schema (see schemas/static-analysis-schema.json)
-         - Include: entry_points, module_graph, dependencies, public_api, insights
-
-      4. **Validate:**
-         - Ensure entry_points.all has at least 1 entry
-         - Ensure module_graph.total_files > 0
-
-      **OUTPUT:**
-      Write the final static-analysis.json to ${CONTEXT_DIR}/static-analysis.json
-
-      **ON ERROR:**
-      If the analyzer script fails, create a minimal static-analysis.json with fallback: true
-      so subsequent phases can proceed with limited data.
-    `
-  })
-
-  // === VALIDATION ===
-
-  // GATE: OUTPUT FILE EXISTENCE
-  if (!exists(CONTEXT_DIR + "/static-analysis.json")):
-    ERROR: "Static Analysis Agent failed to produce static-analysis.json"
-    update_state({
-      phase: "static-analysis-failed",
-      errors: [{
-        phase: "static-analysis",
-        message: "No output file produced",
-        timestamp: new Date().toISOString(),
-        recoverable: true
-      }]
-    })
-    EXIT code 1
-
-  // Validate JSON and check for critical issues
-  try:
-    static_analysis = JSON.parse(Read(CONTEXT_DIR + "/static-analysis.json"))
-
-    // WARN if fallback mode
-    if (static_analysis.fallback):
-      WARN: "Static analysis ran in fallback mode - limited data available"
-
-    // WARN if no entry points
-    if (!static_analysis.entry_points?.all?.length):
-      WARN: "No entry points discovered - Phase 1 will need to discover them"
-
-  catch (error):
-    ERROR: "static-analysis.json is invalid JSON"
-    EXIT code 1
-
-  // Success
-  update_state({
-    phase: "static-analysis-complete",
-    completed_agents: ["static-analysis"],
-    current_agent: null,
-    static_analysis_summary: {
-      entry_points_count: static_analysis.entry_points?.all?.length || 0,
-      files_analyzed: static_analysis.module_graph?.total_files || 0,
-      fallback_mode: static_analysis.fallback || false
-    }
-  })
-
-  DISPLAY: "✅ Phase 0: Static Analysis [Complete]"
-  DISPLAY: `   Entry points discovered: ${static_analysis.entry_points?.all?.length || 0}`
-  DISPLAY: `   Files analyzed: ${static_analysis.module_graph?.total_files || 0}`
-  DISPLAY: ""
-```
-
-### Integration with Phase 1
-
-Phase 1 (Discovery+Analysis) now receives pre-computed data:
-
-```javascript
-// In Phase 1 agents, read static analysis results
-static_analysis = JSON.parse(Read(CONTEXT_DIR + "/static-analysis.json"))
-
-// Use entry points directly instead of discovering them
-known_entry_points = static_analysis.entry_points.all
-
-// Use module graph to understand file relationships
-file_relationships = static_analysis.module_graph.files
-
-// Use dependency data
-dependencies = static_analysis.dependencies
-```
-
-This reduces redundant work and provides a solid foundation for semantic analysis in Phase 1.
+> **Integration with Phase 1:** Phase 1 agents read `static-analysis.json` to access pre-computed entry points, module graph, and architecture data.

@@ -59,7 +59,7 @@ This command orchestrates specialized AI agents in 7 phases to analyze your code
   **Orchestrator** (Phase 4)
   Agent: Opus
   What: Groups questions by file target and assigns exclusive file ownership to writers
-  Input: `questions.json` + `research.json` + `static-analysis.json`
+  Input: `analysis.json` + `questions.json` + `research.json` + `static-analysis.json`
   Output: `work-assignments.json` (file-based assignments for parallel writers)
   Uses from static-analysis: `architecture.layers`, `files[].role`, `moduleGraph`
   </phase_4>
@@ -147,40 +147,28 @@ Message 4: Task(description="Discovery 1D") → wait for result
 
 ---
 
-## Execution Flow
+## Setup & Initialization
 
-> **See [docs/EXECUTION_FLOW.md](docs/EXECUTION_FLOW.md) for the complete execution flow diagram, dynamic agent scaling rules, and parallel execution specifications.**
-
----
-
-## Pre-Flight Checks
-
-> **See [docs/PRE_FLIGHT_CHECKS.md](docs/PRE_FLIGHT_CHECKS.md) for the complete validation requirements that must pass before documentation generation begins.**
+> **See [references/SETUP.md](references/SETUP.md) for pre-flight validation checks and workspace initialization process.**
 
 ---
 
-## Initialize Workspace
+## Pipeline Execution
 
-> **See [docs/INITIALIZE_WORKSPACE.md](docs/INITIALIZE_WORKSPACE.md) for the complete workspace initialization process and state management.**
-
----
-
-## Agent Pipeline Execution
-
-> **See [docs/AGENT_PIPELINE.md](docs/AGENT_PIPELINE.md) for the complete agent pipeline with all 7 phases (0-6), their configurations, gates, and implementation references.**
+> **See [references/PIPELINE.md](references/PIPELINE.md) for the complete execution flow diagram, all 7 phases (0-6), dynamic agent scaling, gates, and implementation references.**
 
 ---
 
 ## Static Analysis Integration
 
-> **See [docs/STATIC_ANALYSIS_INTEGRATION.md](docs/STATIC_ANALYSIS_INTEGRATION.md) for how `static-analysis.json` feeds into each phase of the pipeline.**
+> **See [references/STATIC_ANALYSIS_INTEGRATION.md](references/STATIC_ANALYSIS_INTEGRATION.md) for how `static-analysis.json` feeds into each phase of the pipeline.**
 
-> **See [docs/ANALYZER.md](docs/ANALYZER.md) for the analyzer API documentation, exported functions, and type definitions.**
+> **See [references/ANALYZER.md](references/ANALYZER.md) for the analyzer API documentation, exported functions, and type definitions.**
 
 ---
 
 ## Completion, Error Recovery & Helper Functions
 
-> **See [docs/COMPLETION_AND_RECOVERY.md](docs/COMPLETION_AND_RECOVERY.md) for completion flow, error recovery mechanisms, helper functions, and retry/data preservation logic.**
+> **See [references/COMPLETION_AND_RECOVERY.md](references/COMPLETION_AND_RECOVERY.md) for completion flow, error recovery mechanisms, helper functions, and retry/data preservation logic.**
 
 ---

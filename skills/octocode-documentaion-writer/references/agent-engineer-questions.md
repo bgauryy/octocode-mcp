@@ -26,7 +26,8 @@ Goal: Bridge the gap between raw analysis and human-readable documentation by ge
 <inputs>
 1. `REPOSITORY_PATH`: Absolute path to repository root.
 2. `.context/analysis.json`: Repository analysis (provides context).
-3. ``: **SINGLE SOURCE OF TRUTH** for documentation structure.
+3. `.context/static-analysis/static-analysis.json`: Static analysis output (entry points, dependencies, architecture).
+4. `schemas/documentation-structure.json`: **SINGLE SOURCE OF TRUTH** for documentation structure.
 </inputs>
 
 <process_workflow>
@@ -110,7 +111,7 @@ Goal: Bridge the gap between raw analysis and human-readable documentation by ge
 
 <output_requirements>
 **OUTPUT FORMAT (REQUIRED):**
-Write `.context/questions.json` adhering **STRICTLY** to `
+Write `.context/questions.json` adhering **STRICTLY** to `schemas/questions-schema.json`.
 
 <json_structure>
 {
@@ -143,102 +144,11 @@ Write `.context/questions.json` adhering **STRICTLY** to `
 2. [ ] Does **EVERY** question have a valid `documentation_target` from the schema?
 3. [ ] Are IDs unique (q001, q002...)?
 4. [ ] Is the JSON valid?
-5. [ ] Did I **STRICTLY** follow `
+5. [ ] Did I **STRICTLY** follow `schemas/questions-schema.json`?
 
 **FORBIDDEN:** Writing `.context/questions.json` if any check fails.
 </final_gate>
 
-## Orchestrator Execution Logic
+## Orchestrator Integration
 
-```javascript
-// === PHASE 2: ENGINEER QUESTIONS ===
-if (previous_phase_complete && (START_PHASE != "engineer-questions-complete")):
-  update_state({
-    phase: "engineer-questions-running",
-    current_agent: "engineer-questions"
-  })
-
-  DISPLAY: "🤔 Engineer Questions Agent [Running...]"
-  DISPLAY: "   Generating comprehensive documentation questions..."
-  DISPLAY: ""
-
-  // Read agent specification
-  AGENT_SPEC = Read("references/agent-engineer-questions.md")
-
-  RESULT = Task({
-    subagent_type: "general-purpose",
-    description: "Generate comprehensive documentation questions",
-    prompt: `
-${AGENT_SPEC}
-
-REPOSITORY_PATH = ${REPOSITORY_PATH}
-
-Execute the mission defined in the agent specification.
-Write questions.json to ${CONTEXT_DIR}/questions.json
-
-Use model: opus
-    `
-  })
-
-  // Check result
-  if (!exists(CONTEXT_DIR + "/questions.json")):
-    ERROR: "Engineer Questions Agent failed to produce questions.json"
-    update_state({
-      phase: "engineer-questions-failed",
-      errors: [{
-        phase: "engineer-questions",
-        message: "questions.json not created",
-        timestamp: new Date().toISOString(),
-        recoverable: false
-      }]
-    })
-    DISPLAY: "❌ Engineer Questions Agent [Failed]"
-    DISPLAY: "Error: questions.json not created. Cannot proceed."
-    EXIT code 1
-
-  // Validate JSON
-  try:
-    questions_file = Read(CONTEXT_DIR + "/questions.json")
-    parsed_questions = JSON.parse(questions_file)
-
-    // Validate structure
-    if (!parsed_questions.questions || parsed_questions.questions.length < 10):
-      ERROR: "questions.json has fewer than 10 questions"
-      EXIT code 1
-
-    // Validate all questions have documentation_target
-    missing_targets = parsed_questions.questions.filter(q => !q.documentation_target)
-    if (missing_targets.length > 0):
-      WARN: missing_targets.length + " questions missing documentation_target"
-
-    total_questions = parsed_questions.summary.total_questions
-
-  catch (error):
-    ERROR: "questions.json is invalid JSON: " + error.message
-    update_state({
-      phase: "engineer-questions-failed",
-      errors: [{
-        phase: "engineer-questions",
-        message: "Invalid JSON: " + error.message,
-        timestamp: new Date().toISOString(),
-        recoverable: false
-      }]
-    })
-    DISPLAY: "❌ Engineer Questions Agent [Failed - Invalid JSON]"
-    EXIT code 1
-
-  // Success
-  update_state({
-    phase: "engineer-questions-complete",
-    completed_agents: ["discovery-analysis", "engineer-questions"],
-    current_agent: null
-  })
-
-  DISPLAY: "✅ Engineer Questions Agent [Complete]"
-  DISPLAY: "   Total questions: {total_questions}"
-  DISPLAY: "   Critical: {parsed_questions.summary.by_priority.critical}"
-  DISPLAY: "   High: {parsed_questions.summary.by_priority.high}"
-  DISPLAY: "   Medium: {parsed_questions.summary.by_priority.medium}"
-  DISPLAY: "   Low: {parsed_questions.summary.by_priority.low}"
-  DISPLAY: ""
-```
+> **Execution Logic:** See [PIPELINE.md](./PIPELINE.md) for how the orchestrator invokes this agent, including spawn configuration, validation gates, and error handling.

@@ -2,6 +2,32 @@
 
 > **Review this document to understand the completion flow, error recovery mechanisms, helper functions, and retry logic.**
 
+---
+
+## State Synchronization
+
+<state_sync_gate>
+**CRITICAL: STOP. Read this before implementing any agent.**
+
+### The Rule
+Only the main orchestrator process MUST update `state.json`.
+
+### FORBIDDEN
+- Parallel agents (Discovery 1A-1D, Researchers, Writers) calling `update_state()`
+- Direct modification of `state.json` from sub-agents
+- Any concurrent writes to `state.json`
+
+### REQUIRED
+- Parallel agents MUST use `save_partial_result()` instead
+- Orchestrator MUST aggregate partial results after all agents complete
+- Orchestrator MUST be the ONLY process calling `update_state()`
+
+### Why This Matters
+Race conditions from concurrent `state.json` writes will corrupt pipeline state and cause unrecoverable failures.
+</state_sync_gate>
+
+---
+
 ## Completion
 
 ```javascript
@@ -81,16 +107,15 @@ function handle_critical_failure(phase, error):
 
 ## Helper Functions
 
-> **IMPORTANT: State Synchronization**
-> Only the main orchestrator process should update `state.json`. Individual parallel agents
-> (Discovery 1A-1D, Researchers, Writers) must NOT directly modify `state.json` to avoid
-> race conditions. Parallel agents should only write to their designated partial result files
-> in `partials/<phase>/<task_id>.json`. The orchestrator aggregates these results and updates
-> `state.json` after all parallel agents complete.
-
 ```javascript
-// NOTE: This function should ONLY be called by the main orchestrator process,
-// never by parallel sub-agents. Parallel agents use save_partial_result() instead.
+// ============================================================
+// CRITICAL: STATE UPDATE RULES
+// ============================================================
+// This function MUST ONLY be called by the main orchestrator.
+// FORBIDDEN: Parallel sub-agents calling this function.
+// REQUIRED: Sub-agents must use save_partial_result() instead.
+// ============================================================
+
 function update_state(updates):
   current_state = Read(CONTEXT_DIR + "/state.json")
   parsed = JSON.parse(current_state)
@@ -115,7 +140,22 @@ function count_files(path, patterns, excludeDir):
 
 ## Retry & Data Preservation Logic
 
-**CRITICAL**: Never lose partial work. All agents support retry with state preservation.
+<retry_gate>
+**CRITICAL: Never lose partial work.**
+
+### The Rule
+All agents MUST support retry with state preservation.
+
+### REQUIRED
+- Save partial results BEFORE reporting failure
+- Use atomic writes (temp file + rename) to prevent corruption
+- Load existing partial results when retrying
+
+### FORBIDDEN
+- Overwriting successful output without backup
+- Losing partial work on retry
+- Concurrent aggregation without file locks
+</retry_gate>
 
 ```javascript
 const RETRY_CONFIG = {
@@ -304,3 +344,15 @@ function should_skip_task(phase_name, task_id):
   partial = load_partial_result(phase_name, task_id)
   return partial?.success === true
 ```
+
+---
+
+## Critical Rules Summary
+
+**REMEMBER:** These rules apply to ALL phases:
+
+1. **NEVER** update `state.json` from parallel agents
+2. **ALWAYS** use `save_partial_result()` from sub-agents
+3. **ALWAYS** save partial work before reporting failure
+4. **ALWAYS** use atomic writes for data integrity
+5. **NEVER** overwrite successful output without backup

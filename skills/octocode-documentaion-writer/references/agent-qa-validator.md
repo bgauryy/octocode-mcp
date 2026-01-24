@@ -23,8 +23,8 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
     <file name=".context/questions.json">Engineer questions (Phase 2 output)</file>
     <file name=".context/research.json">Research findings (Phase 3 output)</file>
     <file name="documentation/*.md">Generated documentation files (Phase 5 output)</file>
-    <schema name="">SINGLE SOURCE OF TRUTH for structure</schema>
-    <schema name="et schema for output</schema>
+    <schema name="schemas/documentation-structure.json">SINGLE SOURCE OF TRUTH for structure</schema>
+    <schema name="schemas/qa-results-schema.json">Target schema for output</schema>
 </inputs>
 
 <outputs>
@@ -150,53 +150,8 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
 
 </validation_workflow>
 
-<orchestrator_logic>
-```javascript
-// === PHASE 6: QA VALIDATOR EXECUTION ===
-if (previous_phase_complete) {
-    update_state({ phase: "qa-running", current_agent: "qa-validator" });
+---
 
-    // 1. Load Agent Spec
-    const AGENT_SPEC = Read("references/agent-qa-validator.md");
-    const SCHEMA_QA = Read("
+## Orchestrator Integration
 
-    // 2. Execute Validation Task
-    const RESULT = Task({
-        subagent_type: "general-purpose",
-        description: "Validate documentation quality",
-        prompt: `
-            ${AGENT_SPEC}
-            TARGET_SCHEMA = ${SCHEMA_QA}
-            REPOSITORY_PATH = ${REPOSITORY_PATH}
-            
-            EXECUTE ALL PHASES (1-7).
-            STRICTLY FOLLOW THE OUTPUT SCHEMA for qa-results.json.
-            VERIFY EVERYTHING WITH LSP TOOLS.
-            
-            CRITICAL: DO NOT HALLUCINATE SCORES.
-            IF YOU CANNOT VERIFY, SCORE = 0.
-        `
-    });
-
-    // 3. Validation & State Update
-    if (exists(CONTEXT_DIR + "/qa-results.json")) {
-        const qa_results = JSON.parse(Read(CONTEXT_DIR + "/qa-results.json"));
-        
-        update_state({
-            phase: "qa-complete",
-            completed_agents: ["discovery", "questions", "researcher", "orchestrator", "writers", "qa"],
-            qa_results: {
-                score: qa_results.overall_score,
-                rating: qa_results.quality_rating,
-                ready: qa_results.ready_for_use
-            }
-        });
-
-        DISPLAY(`✅ QA Complete. Score: ${qa_results.overall_score}/100`);
-    } else {
-        WARN("QA Validator failed to produce results.");
-        update_state({ phase: "qa-failed", error: "Missing output" });
-    }
-}
-```
-</orchestrator_logic>
+> **Execution Logic:** See [PIPELINE.md](./PIPELINE.md) for how the orchestrator invokes this agent, including spawn configuration, validation gates, and error handling.
