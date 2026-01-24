@@ -198,9 +198,9 @@ describe('Local Tools Flow Integration', () => {
     });
   });
 
-  describe('ENABLE_LOCAL=false flow', () => {
-    it('should NOT register local tools when ENABLE_LOCAL is not set', async () => {
-      // Don't set ENABLE_LOCAL (defaults to false)
+  describe('ENABLE_LOCAL default (true) flow', () => {
+    it('should register local tools when ENABLE_LOCAL is not set (default is true)', async () => {
+      // Don't set ENABLE_LOCAL (defaults to true)
 
       const { initialize, isLocalEnabled, cleanup } =
         await import('../../src/serverConfig.js');
@@ -209,24 +209,26 @@ describe('Local Tools Flow Integration', () => {
 
       await initialize();
 
-      // Verify isLocalEnabled returns false
-      expect(isLocalEnabled()).toBe(false);
+      // Verify isLocalEnabled returns true (default)
+      expect(isLocalEnabled()).toBe(true);
 
       const result = await registerTools(mockServer);
 
-      // Should only register 6 GitHub tools
-      expect(result.successCount).toBe(6);
+      // Should register all 13 tools (6 GitHub + 4 local + 3 LSP)
+      expect(result.successCount).toBe(13);
 
-      // Local tools should NOT be registered
-      expect(mockLocalRipgrepRegister).not.toHaveBeenCalled();
-      expect(mockLocalViewStructureRegister).not.toHaveBeenCalled();
-      expect(mockLocalFindFilesRegister).not.toHaveBeenCalled();
-      expect(mockLocalFetchContentRegister).not.toHaveBeenCalled();
+      // Local tools should be registered (default is now true)
+      expect(mockLocalRipgrepRegister).toHaveBeenCalled();
+      expect(mockLocalViewStructureRegister).toHaveBeenCalled();
+      expect(mockLocalFindFilesRegister).toHaveBeenCalled();
+      expect(mockLocalFetchContentRegister).toHaveBeenCalled();
 
-      // GitHub tools should still be registered
+      // GitHub tools should also be registered
       expect(mockGitHubSearchCodeRegister).toHaveBeenCalled();
     });
+  });
 
+  describe('ENABLE_LOCAL=false flow', () => {
     it('should NOT register local tools when ENABLE_LOCAL=false', async () => {
       process.env.ENABLE_LOCAL = 'false';
 

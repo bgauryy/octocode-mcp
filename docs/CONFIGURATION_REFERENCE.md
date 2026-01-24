@@ -309,7 +309,7 @@ The config file uses **JSON5** format, which supports:
 |---------|---------|
 | `github.apiUrl` | `https://api.github.com` |
 | `gitlab.host` | `https://gitlab.com` |
-| `local.enabled` | `false` |
+| `local.enabled` | `true` |
 | `local.allowedPaths` | `[]` (all paths allowed) |
 | `local.excludePaths` | `['node_modules', '.git', 'dist', 'coverage', '__pycache__', '.venv', 'venv']` |
 | `tools.enabled` | `null` (all tools available) |

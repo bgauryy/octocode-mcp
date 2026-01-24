@@ -41,7 +41,7 @@ export const DEFAULT_GITLAB_CONFIG: RequiredGitLabConfig = {
  * Default local tools configuration
  */
 export const DEFAULT_LOCAL_CONFIG: RequiredLocalConfig = {
-  enabled: false,
+  enabled: true,
   allowedPaths: [],
   excludePaths: [
     'node_modules',
