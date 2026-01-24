@@ -371,7 +371,7 @@ export async function resolveConfig(): Promise<ResolvedConfig> {
  * ```typescript
  * const config = await getConfig();
  * console.log(config.github.apiUrl); // 'https://api.github.com'
- * console.log(config.local.enabled); // false (or true if ENABLE_LOCAL=true)
+ * console.log(config.local.enabled); // true (or false if ENABLE_LOCAL=false)
  * ```
  */
 export async function getConfig(): Promise<ResolvedConfig> {
@@ -434,7 +434,7 @@ export function invalidateConfigCache(): void {
  * @example
  * ```typescript
  * const apiUrl = getConfigValue('github.apiUrl'); // 'https://api.github.com'
- * const enabled = getConfigValue('local.enabled'); // false
+ * const enabled = getConfigValue('local.enabled'); // true
  * ```
  */
 export function getConfigValue<T = unknown>(path: string): T | undefined {

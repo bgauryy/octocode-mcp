@@ -195,7 +195,7 @@ export interface GitLabConfigOptions {
  * Local filesystem tools configuration
  */
 export interface LocalConfigOptions {
-  /** Enable local filesystem tools (default: false) */
+  /** Enable local filesystem tools (default: true) */
   enabled?: boolean;
   /** Restrict to specific paths (empty = all allowed) */
   allowedPaths?: string[];
@@ -479,7 +479,7 @@ export { getConfig, getConfigSync, reloadConfig } from './resolver.js';
  * ```typescript
  * const config = await getConfig();
  * console.log(config.github.apiUrl); // 'https://api.github.com'
- * console.log(config.local.enabled); // false (or true if ENABLE_LOCAL=true)
+ * console.log(config.local.enabled); // true (or false if ENABLE_LOCAL=false)
  * ```
  */
 export async function getConfig(): Promise<ResolvedConfig>;
@@ -556,7 +556,7 @@ export function validateConfig(config: unknown): {
 function parseServerConfig(): ServerConfig {
   return {
     githubApiUrl: process.env.GITHUB_API_URL?.trim() || 'https://api.github.com',
-    enableLocal: parseBooleanEnv(process.env.ENABLE_LOCAL, false),
+    enableLocal: parseBooleanEnv(process.env.ENABLE_LOCAL, true),
     // ... more env parsing
   };
 }

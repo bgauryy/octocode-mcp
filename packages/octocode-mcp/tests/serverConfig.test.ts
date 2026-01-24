@@ -549,10 +549,10 @@ describe('ServerConfig - Simplified Version', () => {
       delete process.env.LOCAL;
     });
 
-    it('should default to false when ENABLE_LOCAL is not set', async () => {
+    it('should default to true when ENABLE_LOCAL is not set', async () => {
       mockSpawnFailure();
       await initialize();
-      expect(getServerConfig().enableLocal).toBe(false);
+      expect(getServerConfig().enableLocal).toBe(true);
     });
 
     it('should enable local when ENABLE_LOCAL is "true"', async () => {
@@ -611,17 +611,22 @@ describe('ServerConfig - Simplified Version', () => {
       expect(getServerConfig().enableLocal).toBe(true);
     });
 
-    it('should return false for invalid ENABLE_LOCAL values', async () => {
-      const invalidValues = [
-        'false',
-        'FALSE',
-        '0',
-        'no',
-        'yes',
-        'enabled',
-        '',
-        '   ',
-      ];
+    it('should return false for explicit false ENABLE_LOCAL values', async () => {
+      const explicitFalseValues = ['false', 'FALSE', '0'];
+
+      for (const value of explicitFalseValues) {
+        cleanup();
+        delete process.env.ENABLE_LOCAL;
+        delete process.env.LOCAL;
+        process.env.ENABLE_LOCAL = value;
+        mockSpawnFailure();
+        await initialize();
+        expect(getServerConfig().enableLocal).toBe(false);
+      }
+    });
+
+    it('should return true (default) for invalid/unrecognized ENABLE_LOCAL values', async () => {
+      const invalidValues = ['no', 'yes', 'enabled', '', '   '];
 
       for (const value of invalidValues) {
         cleanup();
@@ -630,7 +635,7 @@ describe('ServerConfig - Simplified Version', () => {
         process.env.ENABLE_LOCAL = value;
         mockSpawnFailure();
         await initialize();
-        expect(getServerConfig().enableLocal).toBe(false);
+        expect(getServerConfig().enableLocal).toBe(true);
       }
     });
 

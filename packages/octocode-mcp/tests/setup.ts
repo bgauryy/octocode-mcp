@@ -43,7 +43,7 @@ const mockDefaultConfig = {
     defaultGroup: undefined,
   },
   local: {
-    enabled: false,
+    enabled: true,
     allowedPaths: [],
     excludePaths: ['node_modules', '.git', 'dist'],
   },
@@ -131,6 +131,7 @@ vi.mock('octocode-shared', () => ({
     }
     return null;
   }),
+  invalidateConfigCache: vi.fn(),
 }));
 
 // Export for tests that need to access the mock state

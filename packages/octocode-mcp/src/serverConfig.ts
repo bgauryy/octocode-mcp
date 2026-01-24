@@ -6,7 +6,7 @@ import {
   type FullTokenResolution,
   type GhCliTokenGetter,
 } from './utils/credentials/index.js';
-import { getConfigSync } from 'octocode-shared';
+import { getConfigSync, invalidateConfigCache } from 'octocode-shared';
 import { version } from '../package.json';
 import type {
   ServerConfig,
@@ -151,7 +151,10 @@ function parseBooleanEnv(
   if (value === undefined || value === null) return defaultValue;
   const trimmed = value.trim().toLowerCase();
   if (trimmed === '') return defaultValue;
-  return trimmed === 'true' || trimmed === '1';
+  if (trimmed === 'true' || trimmed === '1') return true;
+  if (trimmed === 'false' || trimmed === '0') return false;
+  // Unrecognized values fall back to default (allows ?? to work)
+  return defaultValue;
 }
 
 /**
@@ -379,6 +382,7 @@ export async function initialize(): Promise<void> {
 export function cleanup(): void {
   config = null;
   initializationPromise = null;
+  invalidateConfigCache(); // Reset shared config cache to pick up new defaults/env vars
 }
 
 export function getServerConfig(): ServerConfig {

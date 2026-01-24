@@ -16,6 +16,7 @@ import type {
   ErrorData,
   RateLimitData,
 } from './types.js';
+import { isLocalTool } from './tools/toolNames.js';
 
 /**
  * SessionManager handles both:
@@ -60,13 +61,18 @@ class SessionManager {
       this.session = result.session;
     }
 
-    const data: ToolCallData = {
-      tool_name: toolName,
-      repos,
-      ...(mainResearchGoal && { mainResearchGoal }),
-      ...(researchGoal && { researchGoal }),
-      ...(reasoning && { reasoning }),
-    };
+    const data: ToolCallData = !isLocalTool(toolName)
+      ? {
+          tool_name: toolName,
+          repos,
+          ...(mainResearchGoal && { mainResearchGoal }),
+          ...(researchGoal && { researchGoal }),
+          ...(reasoning && { reasoning }),
+        }
+      : {
+          tool_name: toolName,
+          repos: [],
+        };
     await this.sendLog('tool_call', data);
   }
 

@@ -10,7 +10,7 @@
  * // Async (recommended)
  * const config = await getConfig();
  * console.log(config.github.apiUrl);  // 'https://api.github.com'
- * console.log(config.local.enabled);  // false (or true if ENABLE_LOCAL=true)
+ * console.log(config.local.enabled);  // true (or false if ENABLE_LOCAL=false)
  *
  * // Sync (for hot paths)
  * const config = getConfigSync();
