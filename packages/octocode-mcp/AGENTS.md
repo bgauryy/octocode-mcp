@@ -485,7 +485,6 @@ yarn test:ui
 | `GITLAB_TOKEN` | GitLab personal access token | - |
 | `GL_TOKEN` | GitLab token (fallback) | - |
 | `GITLAB_HOST` | GitLab instance URL | `https://gitlab.com` |
-| `ENABLE_LOCAL` / `LOCAL` | Enable local filesystem tools | `false` |
 | `LOG` | Enable session logging | `true` |
 | `REQUEST_TIMEOUT` | API request timeout (ms) | `30000` |
 | `MAX_RETRIES` | Maximum retry attempts | `3` |

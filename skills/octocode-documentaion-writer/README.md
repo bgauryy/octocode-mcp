@@ -133,6 +133,87 @@ The generated documentation will be saved in the `documentation/` directory with
 
 ---
 
+## 🔬 Repository Analyzer (Programmatic API)
+
+The skill includes a **programmatic TypeScript API** for analyzing repositories. Located in `src/`, this module:
+
+- **Extracts AST** from TypeScript/JavaScript files using ts-morph
+- **Builds dependency graphs** (internal and external)
+- **Analyzes package.json** entry points and exports
+- **Detects code patterns** (barrels, circular deps, unused exports)
+
+### Installation
+
+```bash
+cd skills/octocode-documentaion-writer/src
+npm install
+npm run build
+```
+
+### Usage
+
+```typescript
+import { analyzeRepository } from '@octocode/repo-analyzer';
+
+// Full analysis with file output
+const analysis = await analyzeRepository(
+  '/path/to/repo',    // Must contain package.json
+  '/path/to/output'   // Optional, defaults to .octocode/analysis
+);
+
+// Quick analysis (in-memory only)
+import { quickAnalyze } from '@octocode/repo-analyzer';
+const result = await quickAnalyze('/path/to/repo');
+```
+
+### Output Files
+
+When running full analysis, generates:
+
+| File | Description |
+|------|-------------|
+| `analysis.json` | Complete analysis data (JSON) |
+| `ANALYSIS_SUMMARY.md` | Overview with stats |
+| `PUBLIC_API.md` | Exported functions/classes/types |
+| `DEPENDENCIES.md` | Dependency analysis & issues |
+| `INSIGHTS.md` | Code quality insights |
+| `MODULE_GRAPH.md` | Mermaid dependency visualization |
+
+### Analysis Output Structure
+
+```typescript
+interface RepoAnalysis {
+  metadata: { version, generatedAt, duration };
+  package: { name, version, entryPoints, dependencies };
+  publicAPI: [{ entryPoint, exports }];
+  moduleGraph: { totalFiles, internalDependencies, externalDependencies };
+  dependencies: { declared, used, unused, unlisted, misplaced };
+  files: [{ path, role, exportCount, importCount }];
+  insights: {
+    unusedExports,
+    circularDependencies,
+    barrelFiles,
+    orphanFiles,
+    mostImported
+  };
+}
+```
+
+### Architecture
+
+Based on [Knip's architecture](https://knip.dev):
+
+```
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  CONFIGURE  │───>│    BUILD    │───>│   ANALYZE   │───>│   OUTPUT    │
+│             │    │             │    │             │    │             │
+│ package.json│    │ ts-morph AST│    │ Walk graph  │    │ JSON/MD     │
+│ Entry points│    │ Module graph│    │ Find issues │    │ Mermaid     │
+└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
+```
+
+---
+
 ## License
 
 MIT License © 2026 Octocode

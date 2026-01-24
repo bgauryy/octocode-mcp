@@ -43,9 +43,7 @@ vi.mock('../../src/serverConfig.js', () => ({
     timeout: 30000,
     maxRetries: 3,
     loggingEnabled: false,
-    enableLocal: false,
   }),
-  isLocalEnabled: vi.fn().mockReturnValue(false),
 }));
 
 describe('Tool Invocation Callback', () => {

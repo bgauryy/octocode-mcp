@@ -238,9 +238,6 @@ TOOLS_TO_RUN="githubSearchCode,localSearchCode"
 
 # Disable specific tools
 DISABLE_TOOLS="packageSearch"
-
-# Enable local tools
-ENABLE_LOCAL="true"
 ```
 → [Tool configuration guide](./06-deployment.md#tool-configuration)
 

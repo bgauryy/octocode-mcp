@@ -64,7 +64,6 @@ vi.mock('../../src/tools/toolConfig.js', () => {
 
 vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn(),
-  isLocalEnabled: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock('../../src/session.js', () => ({
@@ -106,7 +105,6 @@ describe('ToolsManager - Metadata Availability', () => {
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: true,
-      enableLocal: false,
       tokenSource: 'env:GITHUB_TOKEN',
     });
   });
@@ -364,7 +362,6 @@ describe('ToolsManager - Metadata Availability', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -398,7 +395,6 @@ describe('ToolsManager - Metadata Availability', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -437,7 +433,6 @@ describe('ToolsManager - Metadata Availability', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
-        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 

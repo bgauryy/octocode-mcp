@@ -5,7 +5,6 @@ import { registerTools } from '../../src/tools/toolsManager.js';
 // Don't mock toolConfig - use real DEFAULT_TOOLS
 vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn(),
-  isLocalEnabled: vi.fn(),
 }));
 
 vi.mock('../../src/tools/toolMetadata.js', async () => {
@@ -71,7 +70,7 @@ vi.mock('../../src/utils/bulkOperations.js', () => ({
   }),
 }));
 
-import { getServerConfig, isLocalEnabled } from '../../src/serverConfig.js';
+import { getServerConfig } from '../../src/serverConfig.js';
 
 describe('Tool Count Verification', () => {
   const originalStderr = process.stderr.write;
@@ -85,7 +84,7 @@ describe('Tool Count Verification', () => {
     process.stderr.write = originalStderr;
   });
 
-  it('should register exactly 6 tools WITHOUT local enabled', async () => {
+  it('should register exactly 13 tools (6 GitHub + 4 Local + 3 LSP)', async () => {
     vi.mocked(getServerConfig).mockReturnValue({
       version: '1.0.0',
       githubApiUrl: 'https://api.github.com',
@@ -93,30 +92,8 @@ describe('Tool Count Verification', () => {
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: true,
-      enableLocal: false,
       tokenSource: 'env:GITHUB_TOKEN',
     });
-    vi.mocked(isLocalEnabled).mockReturnValue(false);
-
-    const mockServer = {} as McpServer;
-    const result = await registerTools(mockServer);
-
-    expect(result.successCount).toBe(6);
-    expect(result.failedTools).toHaveLength(0);
-  });
-
-  it('should register exactly 10 tools WITH local enabled', async () => {
-    vi.mocked(getServerConfig).mockReturnValue({
-      version: '1.0.0',
-      githubApiUrl: 'https://api.github.com',
-      enableLogging: true,
-      timeout: 30000,
-      maxRetries: 3,
-      loggingEnabled: true,
-      enableLocal: true,
-      tokenSource: 'env:GITHUB_TOKEN',
-    });
-    vi.mocked(isLocalEnabled).mockReturnValue(true);
 
     const mockServer = {
       registerTool: vi.fn(),

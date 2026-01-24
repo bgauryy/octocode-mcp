@@ -363,9 +363,6 @@ interface ServerConfig {
     enableTools: string[] | null;      // ENABLE_TOOLS (additive)
     disableTools: string[] | null;     // DISABLE_TOOLS (subtractive)
   };
-  local: {
-    enabled: boolean;                  // ENABLE_LOCAL
-  };
   network: {
     timeout: number;                   // REQUEST_TIMEOUT
     maxRetries: number;                // MAX_RETRIES
@@ -404,7 +401,6 @@ graph TD
    - `TOOLS_TO_RUN` (exclusive mode) - Only these tools enabled
    - `ENABLE_TOOLS` (additive mode) - Add to default enabled tools
    - `DISABLE_TOOLS` (subtractive mode) - Remove from enabled tools
-   - `ENABLE_LOCAL` / `LOCAL` - Enable/disable all local tools
 
 2. **Authentication:**
    - Octocode storage (OAuth tokens from octocode-cli)
@@ -444,11 +440,6 @@ export async function initialize(): Promise<void> {
   const enableTools = parseStringArray(process.env.ENABLE_TOOLS);
   const disableTools = parseStringArray(process.env.DISABLE_TOOLS);
 
-  // Parse local tools flag
-  const enableLocal = parseBooleanEnv(process.env.ENABLE_LOCAL) ??
-                      parseBooleanEnv(process.env.LOCAL) ??
-                      globalConfig.local.enabled;
-
   // Build config object
   _config = {
     github: {
@@ -467,9 +458,6 @@ export async function initialize(): Promise<void> {
       toolsToRun,
       enableTools,
       disableTools,
-    },
-    local: {
-      enabled: enableLocal,
     },
     network: {
       timeout: parseTimeout(process.env.REQUEST_TIMEOUT) ?? 30000,

@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ALL_TOOLS, type ToolConfig } from './toolConfig.js';
-import { getServerConfig, isLocalEnabled } from '../serverConfig.js';
+import { getServerConfig } from '../serverConfig.js';
 import { ToolInvocationCallback } from '../types.js';
 import { isToolInMetadata } from './toolMetadata.js';
 import { logSessionError } from '../session.js';
@@ -21,7 +21,6 @@ export async function registerTools(
   successCount: number;
   failedTools: string[];
 }> {
-  const localEnabled = isLocalEnabled();
   const filterConfig = getToolFilterConfig();
 
   // Warn about configuration conflicts
@@ -40,7 +39,7 @@ export async function registerTools(
 
   for (const tool of ALL_TOOLS) {
     // Step 1: Check if tool should be enabled
-    if (!isToolEnabled(tool, localEnabled, filterConfig)) {
+    if (!isToolEnabled(tool, filterConfig)) {
       continue;
     }
 
@@ -94,21 +93,11 @@ function getToolFilterConfig(): ToolFilterConfig {
 
 /**
  * Check if tool should be enabled based on:
- * 1. Local tools require ENABLE_LOCAL
- * 2. TOOLS_TO_RUN (if set, only these tools are enabled)
- * 3. DISABLE_TOOLS (takes precedence over ENABLE_TOOLS)
- * 4. ENABLE_TOOLS or isDefault
+ * 1. TOOLS_TO_RUN (if set, only these tools are enabled)
+ * 2. DISABLE_TOOLS (takes precedence over ENABLE_TOOLS)
+ * 3. ENABLE_TOOLS or isDefault
  */
-function isToolEnabled(
-  tool: ToolConfig,
-  localEnabled: boolean,
-  config: ToolFilterConfig
-): boolean {
-  // Local tools require ENABLE_LOCAL
-  if (tool.isLocal && !localEnabled) {
-    return false;
-  }
-
+function isToolEnabled(tool: ToolConfig, config: ToolFilterConfig): boolean {
   const { toolsToRun, enableTools, disableTools } = config;
 
   // TOOLS_TO_RUN takes full precedence

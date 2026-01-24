@@ -14,7 +14,6 @@ Complete guide to configuring octocode-mcp through environment variables, token 
   - [TOOLS_TO_RUN (Exclusive Mode)](#tools_to_run-exclusive-mode)
   - [ENABLE_TOOLS (Additive Mode)](#enable_tools-additive-mode)
   - [DISABLE_TOOLS (Subtractive Mode)](#disable_tools-subtractive-mode)
-  - [ENABLE_LOCAL (Local Tools Toggle)](#enable_local-local-tools-toggle)
 - [LSP Configuration](#lsp-configuration)
   - [Environment Variable Override](#environment-variable-override)
   - [User Configuration File](#user-configuration-file)
@@ -250,7 +249,7 @@ GitLab clients are cached with a 5-minute TTL:
 
 ## Tool Filtering
 
-Control which tools are available through four environment variables: `TOOLS_TO_RUN`, `ENABLE_TOOLS`, `DISABLE_TOOLS`, and `ENABLE_LOCAL`.
+Control which tools are available through three environment variables: `TOOLS_TO_RUN`, `ENABLE_TOOLS`, and `DISABLE_TOOLS`.
 
 ### Tool Names Reference
 
@@ -321,42 +320,15 @@ Control which tools are available through four environment variables: `TOOLS_TO_
 
 **Result:** All default tools except `githubSearchRepositories` and `packageSearch`.
 
-### ENABLE_LOCAL (Local Tools Toggle)
-
-**Behavior:** Enable/disable ALL local tools collectively.
-
-**Values:** `true`, `false`, `1`, `0`
-
-**Alternative:** `LOCAL` (same behavior)
-
-```json
-{
-  "env": {
-    "ENABLE_LOCAL": "false"
-  }
-}
-```
-
-**Result:** Local tools (localSearchCode, localGetFileContent, localViewStructure, localFindFiles) are disabled.
-
-**Affected Tools:**
-- `localSearchCode`
-- `localGetFileContent`
-- `localViewStructure`
-- `localFindFiles`
-
-**Not Affected:** LSP tools (these are separate)
-
 ### Configuration Priority
 
 The filtering logic applies in this order:
 
 1. **If `TOOLS_TO_RUN` is set:** ONLY those tools are enabled (exclusive mode)
 2. **Else:**
-   - Start with default enabled tools from global config
+   - Start with default enabled tools (all tools)
    - Add tools from `ENABLE_TOOLS`
    - Remove tools from `DISABLE_TOOLS`
-   - Apply `ENABLE_LOCAL` filter
 
 ### Examples
 
@@ -377,27 +349,24 @@ Only GitHub code exploration tools, no local or LSP tools.
 ```json
 {
   "env": {
-    "ENABLE_LOCAL": "true",
-    "ENABLE_TOOLS": "lspGotoDefinition,lspFindReferences",
     "DISABLE_TOOLS": "githubSearchRepositories"
   }
 }
 ```
 
-All local tools + LSP navigation, but no repository search.
+All tools except repository search.
 
-#### Example 3: Security-Conscious Mode
+#### Example 3: Disable Specific Tools
 
 ```json
 {
   "env": {
-    "ENABLE_LOCAL": "false",
-    "DISABLE_TOOLS": "packageSearch"
+    "DISABLE_TOOLS": "packageSearch,localSearchCode"
   }
 }
 ```
 
-Only GitHub tools (no local filesystem access, no external package registries).
+All tools except package search and local code search.
 
 ## LSP Configuration
 
@@ -828,8 +797,6 @@ All local tool paths are validated against:
 | `TOOLS_TO_RUN` | `string` | - | Comma-separated list of tools (exclusive) |
 | `ENABLE_TOOLS` | `string` | - | Comma-separated list to enable (additive) |
 | `DISABLE_TOOLS` | `string` | - | Comma-separated list to disable (subtractive) |
-| `ENABLE_LOCAL` | `boolean` | `true` | Enable/disable local tools |
-| `LOCAL` | `boolean` | - | Alternative to ENABLE_LOCAL |
 | `REQUEST_TIMEOUT` | `number` | `120000` | HTTP timeout in milliseconds (5000-300000) |
 | `MAX_RETRIES` | `number` | `3` | Max retry attempts (0-10) |
 | `OCTOCODE_TELEMETRY_DISABLED` | `boolean` | `false` | Disable telemetry |
@@ -852,8 +819,6 @@ All local tool paths are validated against:
         "GITHUB_TOKEN": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "GITHUB_API_URL": "https://api.github.com",
 
-        "ENABLE_LOCAL": "true",
-        "ENABLE_TOOLS": "lspGotoDefinition,lspFindReferences",
         "DISABLE_TOOLS": "packageSearch",
 
         "OCTOCODE_TS_SERVER_PATH": "/usr/local/bin/typescript-language-server",
@@ -917,7 +882,6 @@ With GitHub CLI (`gh auth login`) already configured, this is sufficient for ful
       "env": {
         "GITHUB_TOKEN": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 
-        "ENABLE_LOCAL": "false",
         "TOOLS_TO_RUN": "githubSearchCode,githubGetFileContent,githubViewRepoStructure",
 
         "OCTOCODE_TELEMETRY_DISABLED": "true",
@@ -931,7 +895,7 @@ With GitHub CLI (`gh auth login`) already configured, this is sufficient for ful
 }
 ```
 
-Only GitHub code exploration, no local filesystem access, minimal network exposure.
+Only GitHub code exploration tools, minimal network exposure. Use `DISABLE_TOOLS` to selectively disable local tools if needed.
 
 ## Troubleshooting
 
@@ -952,8 +916,7 @@ Only GitHub code exploration, no local filesystem access, minimal network exposu
 **Solutions:**
 1. Check `TOOLS_TO_RUN` isn't too restrictive
 2. Verify tool not in `DISABLE_TOOLS`
-3. For local tools: ensure `ENABLE_LOCAL=true`
-4. Check tool name spelling (case-sensitive)
+3. Check tool name spelling (case-sensitive)
 
 ### LSP Not Working
 
