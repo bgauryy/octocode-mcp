@@ -73,6 +73,7 @@ vi.mock('../../src/tools/toolMetadata.js', async () => {
 
 vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn(),
+  isLocalEnabled: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock('../../src/session.js', () => ({
@@ -80,12 +81,13 @@ vi.mock('../../src/session.js', () => ({
 }));
 
 import { ALL_TOOLS, type ToolConfig } from '../../src/tools/toolConfig.js';
-import { getServerConfig } from '../../src/serverConfig.js';
+import { getServerConfig, isLocalEnabled } from '../../src/serverConfig.js';
 import { TOOL_NAMES, isToolInMetadata } from '../../src/tools/toolMetadata.js';
 import { logSessionError } from '../../src/session.js';
 
 const mockGetServerConfig = vi.mocked(getServerConfig);
 const mockIsToolAvailableSync = vi.mocked(isToolInMetadata);
+const mockIsLocalEnabled = vi.mocked(isLocalEnabled);
 const mockLogSessionError = vi.mocked(logSessionError);
 
 describe('ToolsManager', () => {
@@ -103,6 +105,7 @@ describe('ToolsManager', () => {
 
     // Reset mocks to default state
     mockIsToolAvailableSync.mockReturnValue(true);
+    mockIsLocalEnabled.mockReturnValue(false); // Default: local tools disabled
 
     // Reset all tool function mocks
     ALL_TOOLS.forEach(tool => {
@@ -115,7 +118,8 @@ describe('ToolsManager', () => {
   });
 
   describe('Default Configuration (no env vars)', () => {
-    it('should register all default tools including local tools', async () => {
+    it('should register only default GitHub tools when ENABLE_LOCAL is false', async () => {
+      mockIsLocalEnabled.mockReturnValue(false);
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -123,25 +127,28 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
 
-      // Should register tools - exact count depends on mock setup
+      // Should register default GitHub tools (5 tools)
       expect(result.successCount).toBeGreaterThan(0);
+      expect(typeof result.successCount).toBe('number');
       expect(result.failedTools).toBeDefined();
       expect(Array.isArray(result.failedTools)).toBe(true);
 
-      // Verify tools were called (both GitHub and local)
+      // Verify GitHub tools were called
       const githubTools = ALL_TOOLS.filter(t => !t.isLocal);
       githubTools.forEach(tool => {
         expect(tool.fn).toHaveBeenCalled();
       });
 
+      // Verify local tools were NOT called
       const localTools = ALL_TOOLS.filter(t => t.isLocal);
       localTools.forEach(tool => {
-        expect(tool.fn).toHaveBeenCalled();
+        expect(tool.fn).not.toHaveBeenCalled();
       });
     });
   });
@@ -159,6 +166,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -183,6 +191,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -204,6 +213,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -230,6 +240,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -250,6 +261,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -271,6 +283,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -292,6 +305,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -320,6 +334,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -342,6 +357,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -364,6 +380,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -386,6 +403,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -413,6 +431,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -437,7 +456,8 @@ describe('ToolsManager', () => {
   });
 
   describe('Local Tools Registration', () => {
-    it('should always register local tools', async () => {
+    it('should register local tools when ENABLE_LOCAL is set', async () => {
+      mockIsLocalEnabled.mockReturnValue(true);
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -445,13 +465,14 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: true,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
 
-      // Should register tools - local tools are always included
-      expect(result.successCount).toBeGreaterThan(0);
+      // Should register both GitHub and local tools (5 GitHub + 4 local = 9)
+      expect(result.successCount).toBeGreaterThanOrEqual(4);
 
       // Verify local tools were called
       const localTools = ALL_TOOLS.filter(t => t.isLocal);
@@ -460,7 +481,8 @@ describe('ToolsManager', () => {
       });
     });
 
-    it('should handle local tools registration failure gracefully', async () => {
+    it('should not register local tools when ENABLE_LOCAL is not set', async () => {
+      mockIsLocalEnabled.mockReturnValue(false);
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -468,6 +490,32 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
+      });
+
+      const result = await registerTools(mockServer);
+
+      // Should only register GitHub tools, not local tools
+      expect(result.successCount).toBeGreaterThanOrEqual(0);
+
+      // Verify local tools were NOT called
+      const localTools = ALL_TOOLS.filter(t => t.isLocal);
+      localTools.forEach(tool => {
+        expect(tool.fn).not.toHaveBeenCalled();
+      });
+    });
+
+    it('should handle local tools registration failure gracefully', async () => {
+      mockIsLocalEnabled.mockReturnValue(true);
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        enableLogging: true,
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: true,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -496,6 +544,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -513,6 +562,7 @@ describe('ToolsManager', () => {
 
     it('should skip local tools when isToolInMetadata returns false (local tools check metadata like GitHub tools)', async () => {
       mockIsToolAvailableSync.mockReturnValue(false);
+      mockIsLocalEnabled.mockReturnValue(true);
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -520,6 +570,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: true,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -548,6 +599,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -587,6 +639,7 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -603,7 +656,8 @@ describe('ToolsManager', () => {
   });
 
   describe('Unified tool registration (ALL_TOOLS)', () => {
-    it('should register all tools from ALL_TOOLS', async () => {
+    it('should register all tools from ALL_TOOLS when ENABLE_LOCAL is true', async () => {
+      mockIsLocalEnabled.mockReturnValue(true);
       mockIsToolAvailableSync.mockReturnValue(true);
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
@@ -612,18 +666,49 @@ describe('ToolsManager', () => {
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
+        enableLocal: true,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
 
-      // Should register all tools (GitHub + local + LSP)
+      // Should register all tools (GitHub + local)
       expect(result.successCount).toBe(ALL_TOOLS.length);
       expect(result.failedTools).toHaveLength(0);
 
       // Verify all tools were called
       ALL_TOOLS.forEach(tool => {
         expect(tool.fn).toHaveBeenCalled();
+      });
+    });
+
+    it('should correctly filter local tools when ENABLE_LOCAL is false', async () => {
+      mockIsLocalEnabled.mockReturnValue(false);
+      mockIsToolAvailableSync.mockReturnValue(true);
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        enableLogging: true,
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: false,
+        tokenSource: 'env:GITHUB_TOKEN',
+      });
+
+      const result = await registerTools(mockServer);
+
+      // Should only register GitHub tools
+      const githubToolCount = ALL_TOOLS.filter(t => !t.isLocal).length;
+      expect(result.successCount).toBe(githubToolCount);
+
+      // Verify only GitHub tools were called
+      ALL_TOOLS.forEach(tool => {
+        if (tool.isLocal) {
+          expect(tool.fn).not.toHaveBeenCalled();
+        } else {
+          expect(tool.fn).toHaveBeenCalled();
+        }
       });
     });
   });

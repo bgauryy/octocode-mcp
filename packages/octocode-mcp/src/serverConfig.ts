@@ -6,7 +6,7 @@ import {
   type FullTokenResolution,
   type GhCliTokenGetter,
 } from './utils/credentials/index.js';
-import { getConfigSync } from 'octocode-shared';
+import { getConfigSync, invalidateConfigCache } from 'octocode-shared';
 import { version } from '../package.json';
 import type {
   ServerConfig,
@@ -151,7 +151,10 @@ function parseBooleanEnv(
   if (value === undefined || value === null) return defaultValue;
   const trimmed = value.trim().toLowerCase();
   if (trimmed === '') return defaultValue;
-  return trimmed === 'true' || trimmed === '1';
+  if (trimmed === 'true' || trimmed === '1') return true;
+  if (trimmed === 'false' || trimmed === '0') return false;
+  // Unrecognized values fall back to default (allows ?? to work)
+  return defaultValue;
 }
 
 /**
@@ -318,6 +321,15 @@ export async function initialize(): Promise<void> {
     const isLoggingEnabled =
       !telemetryDisabled && (envLogging ?? globalConfig.telemetry.logging);
 
+    // Parse ENABLE_LOCAL with fallback to LOCAL env var, then global config
+    // Priority: ENABLE_LOCAL > LOCAL > config file > defaults
+    const envEnableLocal =
+      parseBooleanEnv(
+        process.env.ENABLE_LOCAL,
+        undefined as unknown as boolean
+      ) ?? parseBooleanEnv(process.env.LOCAL, undefined as unknown as boolean);
+    const enableLocal = envEnableLocal ?? globalConfig.local.enabled;
+
     // Parse tools configuration - env vars override global config
     const envToolsToRun = parseStringArray(process.env.TOOLS_TO_RUN);
     const envEnableTools = parseStringArray(process.env.ENABLE_TOOLS);
@@ -358,6 +370,7 @@ export async function initialize(): Promise<void> {
       timeout,
       maxRetries,
       loggingEnabled: isLoggingEnabled,
+      enableLocal,
       tokenSource: tokenResult.source,
       gitlab: resolveGitLabConfig(),
     };
@@ -369,6 +382,7 @@ export async function initialize(): Promise<void> {
 export function cleanup(): void {
   config = null;
   initializationPromise = null;
+  invalidateConfigCache(); // Reset shared config cache to pick up new defaults/env vars
 }
 
 export function getServerConfig(): ServerConfig {
@@ -394,6 +408,10 @@ export async function getGitHubToken(): Promise<string | null> {
 
 export async function getToken(): Promise<string | null> {
   return getGitHubToken();
+}
+
+export function isLocalEnabled(): boolean {
+  return getServerConfig().enableLocal;
 }
 
 export function isLoggingEnabled(): boolean {

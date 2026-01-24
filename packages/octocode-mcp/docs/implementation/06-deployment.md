@@ -502,6 +502,7 @@ echo 'export GITLAB_HOST="https://gitlab.your-company.com"' >> ~/.bashrc
       "args": ["octocode-mcp@latest"],
       "env": {
         "GITHUB_TOKEN": "ghp_your_token_here",
+        "ENABLE_LOCAL": "true",
         "OCTOCODE_DEBUG": "false"
       }
     }
@@ -716,6 +717,10 @@ ENABLE_TOOLS="lspFindReferences,lspCallHierarchy"
 
 # Subtractive mode: REMOVE these tools from enabled
 DISABLE_TOOLS="githubSearchRepositories,packageSearch"
+
+# Enable/disable all local tools
+ENABLE_LOCAL="true"  # or "false", "1", "0"
+LOCAL="true"         # Alternative to ENABLE_LOCAL
 ```
 
 **Network Configuration:**
@@ -776,6 +781,7 @@ GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxxx
 GITLAB_HOST=https://gitlab.company.com
 
 # Tools
+ENABLE_LOCAL=true
 DISABLE_TOOLS=packageSearch
 
 # Network
@@ -800,7 +806,8 @@ ALLOWED_PATHS=/Users/username/projects,/opt/repos
       "args": ["octocode-mcp@latest"],
       "env": {
         "GITHUB_TOKEN": "${GITHUB_TOKEN}",
-        "GITLAB_TOKEN": "${GITLAB_TOKEN}"
+        "GITLAB_TOKEN": "${GITLAB_TOKEN}",
+        "ENABLE_LOCAL": "true"
       }
     }
   }
@@ -1108,6 +1115,9 @@ sudo apt install ripgrep    # Ubuntu/Debian
 # Is tool disabled?
 echo $DISABLE_TOOLS
 
+# Are local tools disabled?
+echo $ENABLE_LOCAL
+
 # Enable specific tool
 export ENABLE_TOOLS="localSearchCode"
 ```
@@ -1222,6 +1232,7 @@ WORKDIR /app
 
 # Expose environment variables
 ENV GITHUB_TOKEN=""
+ENV ENABLE_LOCAL="true"
 
 # Run MCP server
 CMD ["octocode-mcp"]
@@ -1237,6 +1248,7 @@ docker build -t octocode-mcp:latest .
 docker run -d \
   --name octocode-mcp \
   -e GITHUB_TOKEN="${GITHUB_TOKEN}" \
+  -e ENABLE_LOCAL="true" \
   -v /path/to/code:/workspace:ro \
   octocode-mcp:latest
 
@@ -1262,6 +1274,7 @@ User=octocode
 Group=octocode
 WorkingDirectory=/opt/octocode-mcp
 Environment="GITHUB_TOKEN=ghp_xxxxx"
+Environment="ENABLE_LOCAL=true"
 Environment="NODE_ENV=production"
 ExecStart=/usr/bin/npx octocode-mcp@latest
 Restart=on-failure
@@ -1307,6 +1320,7 @@ module.exports = {
     args: 'octocode-mcp@latest',
     env: {
       GITHUB_TOKEN: 'ghp_xxxxx',
+      ENABLE_LOCAL: 'true',
       NODE_ENV: 'production'
     },
     instances: 1,

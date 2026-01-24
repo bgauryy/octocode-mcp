@@ -63,6 +63,7 @@ describe('GitHub Fetch Content Tool', () => {
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: true,
+      enableLocal: false,
       tokenSource: 'env:GITHUB_TOKEN',
     });
 

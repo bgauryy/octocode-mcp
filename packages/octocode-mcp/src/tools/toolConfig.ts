@@ -90,7 +90,7 @@ export const PACKAGE_SEARCH: ToolConfig = {
   fn: registerPackageSearchTool,
 };
 
-// Local Tools (isLocal: true) - local filesystem and LSP tools
+// Local Tools (isLocal: true) - only registered when ENABLE_LOCAL is true
 export const LOCAL_RIPGREP: ToolConfig = {
   name: TOOL_NAMES.LOCAL_RIPGREP,
   description: getDescription(TOOL_NAMES.LOCAL_RIPGREP),
@@ -158,8 +158,8 @@ const LSP_CALL_HIERARCHY: ToolConfig = {
 /**
  * All tools in ONE place - the single source of truth for tool registration.
  * GitHub tools first, then local tools.
- 
- * Local tools  provide local filesystem and LSP functionality.
+ *
+ * Local tools (isLocal: true) are only registered when ENABLE_LOCAL config is true.
  */
 export const ALL_TOOLS: ToolConfig[] = [
   // GitHub tools (6 tools)

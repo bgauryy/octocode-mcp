@@ -84,7 +84,9 @@ vi.mock('../../src/serverConfig.js', () => ({
     timeout: 30000,
     maxRetries: 3,
     loggingEnabled: true,
+    enableLocal: true,
   }),
+  isLocalEnabled: vi.fn().mockReturnValue(true),
 }));
 
 vi.mock('../../src/session.js', () => ({
@@ -135,11 +137,10 @@ describe('Local Tools Registration (TDD)', () => {
     process.stderr.write = originalStderr;
   });
 
-  it('should register all local tools', async () => {
+  it('should register all 4 local tools when ENABLE_LOCAL is true', async () => {
     const result = await registerTools(mockServer);
 
-    // Local tools are always registered - check that we get at least 4 local tools
-    expect(result.successCount).toBeGreaterThanOrEqual(4);
+    expect(result.successCount).toBe(4);
     expect(result.failedTools).toHaveLength(0);
   });
 
