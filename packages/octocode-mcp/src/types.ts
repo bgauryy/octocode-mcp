@@ -240,7 +240,6 @@ export interface ServerConfig {
   timeout: number;
   maxRetries: number;
   loggingEnabled: boolean;
-  enableLocal: boolean;
   tokenSource: TokenSourceType;
   /** GitLab configuration (optional) */
   gitlab?: GitLabConfig;

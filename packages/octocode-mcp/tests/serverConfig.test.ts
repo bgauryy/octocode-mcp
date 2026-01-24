@@ -99,8 +99,6 @@ describe('ServerConfig - Simplified Version', () => {
     delete process.env.DISABLE_TOOLS;
     delete process.env.LOG;
     delete process.env.TEST_GITHUB_TOKEN;
-    delete process.env.ENABLE_LOCAL;
-    delete process.env.LOCAL;
     delete process.env.GITHUB_API_URL;
     delete process.env.REQUEST_TIMEOUT;
     delete process.env.MAX_RETRIES;
@@ -543,154 +541,6 @@ describe('ServerConfig - Simplified Version', () => {
     });
   });
 
-  describe('ENABLE_LOCAL Configuration', () => {
-    beforeEach(() => {
-      delete process.env.ENABLE_LOCAL;
-      delete process.env.LOCAL;
-    });
-
-    it('should default to false when ENABLE_LOCAL is not set', async () => {
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(false);
-    });
-
-    it('should enable local when ENABLE_LOCAL is "true"', async () => {
-      process.env.ENABLE_LOCAL = 'true';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
-    });
-
-    it('should enable local when ENABLE_LOCAL is "1"', async () => {
-      process.env.ENABLE_LOCAL = '1';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
-    });
-
-    it('should handle ENABLE_LOCAL with leading/trailing whitespace', async () => {
-      process.env.ENABLE_LOCAL = '  true  ';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
-    });
-
-    it('should handle ENABLE_LOCAL with tabs and newlines', async () => {
-      process.env.ENABLE_LOCAL = '\t true \n';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
-    });
-
-    it('should handle ENABLE_LOCAL with uppercase', async () => {
-      process.env.ENABLE_LOCAL = 'TRUE';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
-    });
-
-    it('should handle ENABLE_LOCAL with mixed case', async () => {
-      process.env.ENABLE_LOCAL = 'TrUe';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
-    });
-
-    it('should handle ENABLE_LOCAL with whitespace and uppercase', async () => {
-      process.env.ENABLE_LOCAL = '  TRUE  ';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
-    });
-
-    it('should handle ENABLE_LOCAL = "1" with whitespace', async () => {
-      process.env.ENABLE_LOCAL = ' 1 ';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
-    });
-
-    it('should return false for invalid ENABLE_LOCAL values', async () => {
-      const invalidValues = [
-        'false',
-        'FALSE',
-        '0',
-        'no',
-        'yes',
-        'enabled',
-        '',
-        '   ',
-      ];
-
-      for (const value of invalidValues) {
-        cleanup();
-        delete process.env.ENABLE_LOCAL;
-        delete process.env.LOCAL;
-        process.env.ENABLE_LOCAL = value;
-        mockSpawnFailure();
-        await initialize();
-        expect(getServerConfig().enableLocal).toBe(false);
-      }
-    });
-
-    it('should use LOCAL as fallback when ENABLE_LOCAL is not set', async () => {
-      delete process.env.ENABLE_LOCAL;
-      process.env.LOCAL = 'true';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
-    });
-
-    it('should use LOCAL = "1" as fallback', async () => {
-      delete process.env.ENABLE_LOCAL;
-      process.env.LOCAL = '1';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
-    });
-
-    it('should handle LOCAL with whitespace', async () => {
-      delete process.env.ENABLE_LOCAL;
-      process.env.LOCAL = '  true  ';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
-    });
-
-    it('should prefer ENABLE_LOCAL over LOCAL when both are set', async () => {
-      process.env.ENABLE_LOCAL = 'true';
-      process.env.LOCAL = 'false';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
-    });
-
-    it('should use LOCAL if ENABLE_LOCAL is empty', async () => {
-      process.env.ENABLE_LOCAL = '';
-      process.env.LOCAL = 'true';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
-    });
-
-    it('should use LOCAL if ENABLE_LOCAL is whitespace-only', async () => {
-      process.env.ENABLE_LOCAL = '   ';
-      process.env.LOCAL = '1';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
-    });
-
-    it('should return false if both ENABLE_LOCAL and LOCAL are false', async () => {
-      process.env.ENABLE_LOCAL = 'false';
-      process.env.LOCAL = 'false';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(false);
-    });
-  });
-
   describe('LOG Configuration with Whitespace', () => {
     beforeEach(() => {
       delete process.env.LOG;
@@ -907,7 +757,6 @@ describe('ServerConfig - Simplified Version', () => {
 
   describe('Configuration Edge Cases', () => {
     it('should handle all configs with various whitespace simultaneously', async () => {
-      process.env.ENABLE_LOCAL = '  true  ';
       process.env.LOG = '  false  ';
       process.env.GITHUB_API_URL = '  https://custom.api.com  ';
       process.env.REQUEST_TIMEOUT = '  45000  ';
@@ -918,21 +767,11 @@ describe('ServerConfig - Simplified Version', () => {
       await initialize();
       const config = getServerConfig();
 
-      expect(config.enableLocal).toBe(true);
       expect(config.loggingEnabled).toBe(false);
       expect(config.githubApiUrl).toBe('https://custom.api.com');
       expect(config.timeout).toBe(45000);
       expect(config.maxRetries).toBe(7);
       expect(config.toolsToRun).toEqual(['tool1', 'tool2']);
-    });
-
-    it('should handle unicode whitespace characters', async () => {
-      // Non-breaking space and other unicode whitespace
-      process.env.ENABLE_LOCAL = '\u00A0true\u00A0';
-      mockSpawnFailure();
-      await initialize();
-      // Note: trim() handles regular whitespace, unicode may vary
-      expect(getServerConfig().enableLocal).toBe(true);
     });
   });
 

@@ -1,7 +1,7 @@
 /**
  * Integration test for local tools flow
- * Tests the complete path from ENABLE_LOCAL env var to tool registration
- * WITHOUT mocking the critical path (serverConfig → isLocalEnabled → toolsManager)
+ * Tests that local tools are always registered
+ * WITHOUT mocking the critical path (serverConfig -> toolsManager)
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -96,8 +96,6 @@ describe('Local Tools Flow Integration', () => {
     vi.clearAllMocks();
 
     // Reset environment
-    delete process.env.ENABLE_LOCAL;
-    delete process.env.LOCAL;
     delete process.env.GITHUB_TOKEN;
     delete process.env.TOOLS_TO_RUN;
     delete process.env.ENABLE_TOOLS;
@@ -121,21 +119,14 @@ describe('Local Tools Flow Integration', () => {
     process.stderr.write = originalStderr;
   });
 
-  describe('ENABLE_LOCAL=true flow', () => {
-    it('should register ALL 4 local tools when ENABLE_LOCAL=true', async () => {
-      // Set environment BEFORE importing/initializing
-      process.env.ENABLE_LOCAL = 'true';
-
+  describe('Local tools always registered', () => {
+    it('should register ALL 13 tools (6 GitHub + 4 local + 3 LSP)', async () => {
       // Import fresh modules
-      const { initialize, isLocalEnabled } =
-        await import('../../src/serverConfig.js');
+      const { initialize } = await import('../../src/serverConfig.js');
       const { registerTools } = await import('../../src/tools/toolsManager.js');
 
-      // Initialize config (parses ENABLE_LOCAL)
+      // Initialize config
       await initialize();
-
-      // Verify isLocalEnabled returns true
-      expect(isLocalEnabled()).toBe(true);
 
       // Register tools
       const result = await registerTools(mockServer);
@@ -158,92 +149,6 @@ describe('Local Tools Flow Integration', () => {
       expect(mockGitHubSearchPRsRegister).toHaveBeenCalledTimes(1);
       expect(mockPackageSearchRegister).toHaveBeenCalledTimes(1);
     });
-
-    it('should register local tools when LOCAL=true (fallback)', async () => {
-      process.env.LOCAL = 'true';
-
-      const { initialize, isLocalEnabled, cleanup } =
-        await import('../../src/serverConfig.js');
-      cleanup(); // Reset state
-      const { registerTools } = await import('../../src/tools/toolsManager.js');
-
-      await initialize();
-
-      expect(isLocalEnabled()).toBe(true);
-
-      const result = await registerTools(mockServer);
-
-      // All local tools should be registered
-      expect(mockLocalRipgrepRegister).toHaveBeenCalled();
-      expect(mockLocalViewStructureRegister).toHaveBeenCalled();
-      expect(mockLocalFindFilesRegister).toHaveBeenCalled();
-      expect(mockLocalFetchContentRegister).toHaveBeenCalled();
-      expect(result.successCount).toBe(13);
-    });
-
-    it('should register local tools when ENABLE_LOCAL=1', async () => {
-      process.env.ENABLE_LOCAL = '1';
-
-      const { initialize, isLocalEnabled, cleanup } =
-        await import('../../src/serverConfig.js');
-      cleanup();
-      const { registerTools } = await import('../../src/tools/toolsManager.js');
-
-      await initialize();
-
-      expect(isLocalEnabled()).toBe(true);
-
-      const result = await registerTools(mockServer);
-      expect(result.successCount).toBe(13);
-    });
-  });
-
-  describe('ENABLE_LOCAL=false flow', () => {
-    it('should NOT register local tools when ENABLE_LOCAL is not set', async () => {
-      // Don't set ENABLE_LOCAL (defaults to false)
-
-      const { initialize, isLocalEnabled, cleanup } =
-        await import('../../src/serverConfig.js');
-      cleanup();
-      const { registerTools } = await import('../../src/tools/toolsManager.js');
-
-      await initialize();
-
-      // Verify isLocalEnabled returns false
-      expect(isLocalEnabled()).toBe(false);
-
-      const result = await registerTools(mockServer);
-
-      // Should only register 6 GitHub tools
-      expect(result.successCount).toBe(6);
-
-      // Local tools should NOT be registered
-      expect(mockLocalRipgrepRegister).not.toHaveBeenCalled();
-      expect(mockLocalViewStructureRegister).not.toHaveBeenCalled();
-      expect(mockLocalFindFilesRegister).not.toHaveBeenCalled();
-      expect(mockLocalFetchContentRegister).not.toHaveBeenCalled();
-
-      // GitHub tools should still be registered
-      expect(mockGitHubSearchCodeRegister).toHaveBeenCalled();
-    });
-
-    it('should NOT register local tools when ENABLE_LOCAL=false', async () => {
-      process.env.ENABLE_LOCAL = 'false';
-
-      const { initialize, isLocalEnabled, cleanup } =
-        await import('../../src/serverConfig.js');
-      cleanup();
-      const { registerTools } = await import('../../src/tools/toolsManager.js');
-
-      await initialize();
-
-      expect(isLocalEnabled()).toBe(false);
-
-      const result = await registerTools(mockServer);
-
-      expect(result.successCount).toBe(6); // Only GitHub tools
-      expect(mockLocalRipgrepRegister).not.toHaveBeenCalled();
-    });
   });
 
   describe('Tool names verification', () => {
@@ -259,8 +164,6 @@ describe('Local Tools Flow Integration', () => {
     });
 
     it('should register tools with names matching API metadata', async () => {
-      process.env.ENABLE_LOCAL = 'true';
-
       const { initialize, cleanup } = await import('../../src/serverConfig.js');
       cleanup();
       const { registerTools } = await import('../../src/tools/toolsManager.js');

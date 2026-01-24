@@ -318,15 +318,6 @@ export async function initialize(): Promise<void> {
     const isLoggingEnabled =
       !telemetryDisabled && (envLogging ?? globalConfig.telemetry.logging);
 
-    // Parse ENABLE_LOCAL with fallback to LOCAL env var, then global config
-    // Priority: ENABLE_LOCAL > LOCAL > config file > defaults
-    const envEnableLocal =
-      parseBooleanEnv(
-        process.env.ENABLE_LOCAL,
-        undefined as unknown as boolean
-      ) ?? parseBooleanEnv(process.env.LOCAL, undefined as unknown as boolean);
-    const enableLocal = envEnableLocal ?? globalConfig.local.enabled;
-
     // Parse tools configuration - env vars override global config
     const envToolsToRun = parseStringArray(process.env.TOOLS_TO_RUN);
     const envEnableTools = parseStringArray(process.env.ENABLE_TOOLS);
@@ -367,7 +358,6 @@ export async function initialize(): Promise<void> {
       timeout,
       maxRetries,
       loggingEnabled: isLoggingEnabled,
-      enableLocal,
       tokenSource: tokenResult.source,
       gitlab: resolveGitLabConfig(),
     };
@@ -404,10 +394,6 @@ export async function getGitHubToken(): Promise<string | null> {
 
 export async function getToken(): Promise<string | null> {
   return getGitHubToken();
-}
-
-export function isLocalEnabled(): boolean {
-  return getServerConfig().enableLocal;
 }
 
 export function isLoggingEnabled(): boolean {
