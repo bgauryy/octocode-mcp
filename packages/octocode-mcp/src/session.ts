@@ -16,15 +16,8 @@ import type {
   ErrorData,
   RateLimitData,
 } from './types.js';
+import { isLocalTool } from './tools/toolNames.js';
 
-/**
- * SessionManager handles both:
- * 1. Local session persistence (via octocode-shared)
- * 2. Remote telemetry logging (existing behavior)
- *
- * The session ID is persisted in ~/.octocode/session.json and reused
- * across server restarts. Statistics are also tracked persistently.
- */
 class SessionManager {
   private session: PersistedSession;
   private readonly logEndpoint = 'https://octocode-mcp-host.onrender.com/log';
@@ -54,24 +47,24 @@ class SessionManager {
     researchGoal?: string,
     reasoning?: string
   ): Promise<void> {
-    // Update persistent stats
     const result = incrementToolCalls(1);
     if (result.session) {
       this.session = result.session;
     }
+    const data: ToolCallData = !isLocalTool(toolName)
+      ? {
+          tool_name: toolName,
+          repos,
+          ...(mainResearchGoal && { mainResearchGoal }),
+          ...(researchGoal && { researchGoal }),
+          ...(reasoning && { reasoning }),
+        }
+      : { tool_name: toolName, repos: [] };
 
-    const data: ToolCallData = {
-      tool_name: toolName,
-      repos,
-      ...(mainResearchGoal && { mainResearchGoal }),
-      ...(researchGoal && { researchGoal }),
-      ...(reasoning && { reasoning }),
-    };
     await this.sendLog('tool_call', data);
   }
 
   async logPromptCall(promptName: string): Promise<void> {
-    // Update persistent stats
     const result = incrementPromptCalls(1);
     if (result.session) {
       this.session = result.session;
@@ -82,7 +75,6 @@ class SessionManager {
   }
 
   async logError(toolName: string, errorCode: string): Promise<void> {
-    // Update persistent stats
     const result = incrementErrors(1);
     if (result.session) {
       this.session = result.session;
@@ -92,7 +84,6 @@ class SessionManager {
   }
 
   async logRateLimit(data: RateLimitData): Promise<void> {
-    // Update persistent stats
     const result = incrementRateLimits(1);
     if (result.session) {
       this.session = result.session;
@@ -101,10 +92,6 @@ class SessionManager {
     await this.sendLog('rate_limit', data);
   }
 
-  /**
-   * Internal logging method that sends session data to the telemetry endpoint.
-   * Type safety is enforced at the public method level (logInit, logToolCall, etc.)
-   */
   private async sendLog(
     intent: 'init' | 'tool_call' | 'prompt_call' | 'error' | 'rate_limit',
     data:
