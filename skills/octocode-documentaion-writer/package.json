@@ -1,0 +1,45 @@
+{
+  "name": "octocode-documentaion-writer",
+  "version": "1.0.0",
+  "description": "Repository documentation generator with AST analysis, dependency graph, and public API extraction",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
+    }
+  },
+  "bin": {
+    "octocode-doc-writer": "./dist/src/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "analyze": "node --loader ts-node/esm src/index.ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "ts-morph": "^27.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "typescript",
+    "ast",
+    "analyzer",
+    "dependency-graph",
+    "documentation",
+    "code-analysis",
+    "octocode"
+  ],
+  "author": "Octocode",
+  "license": "MIT"
+}
