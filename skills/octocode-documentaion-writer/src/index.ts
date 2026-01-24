@@ -1,33 +1,24 @@
-/**
- * Repository Analyzer
- * Main entry point for analyzing a repository/package
- *
- * Based on Knip's architecture patterns:
- * 1. Configuration - Parse package.json, discover entry points
- * 2. Build - Create module graph using ts-morph AST analysis
- * 3. Analyze - Walk graph to find dependencies, unused code, etc.
- * 4. Output - Generate documentation and reports
- */
-
 import * as path from 'path';
 import * as fs from 'fs';
-import type { RepoAnalysis, AnalysisOptions } from './types.js';
+import type { EnhancedRepoAnalysis, AnalysisOptions, PackageJson } from './types.js';
 import {
   analyzePackageJson,
-  
   isMonorepo,
+  analyzeExportsMap,
 } from './package-analyzer.js';
-import { buildModuleGraph, markEntryPoints } from './module-graph.js';
-import { analyzeDependencies } from './dependency-analyzer.js';
+import { buildModuleGraph, markEntryPoints, buildExportFlows } from './module-graph.js';
+import { analyzeDependencies, analyzeDetailedDependencyUsage, detectArchitecture } from './dependency-analyzer.js';
 import { generateAnalysisOutput, writeAnalysisOutput } from './output.js';
 
 export * from './types.js';
-export { analyzePackageJson, isMonorepo } from './package-analyzer.js';
-export { buildModuleGraph } from './module-graph.js';
+export { analyzePackageJson, isMonorepo, analyzeExportsMap } from './package-analyzer.js';
+export { buildModuleGraph, buildExportFlows } from './module-graph.js';
 export {
   analyzeDependencies,
   findCircularDependencies,
   findUnusedExports,
+  analyzeDetailedDependencyUsage,
+  detectArchitecture,
 } from './dependency-analyzer.js';
 
 /**
@@ -36,20 +27,22 @@ export {
  * @param repoPath - Path to the repository root (must contain package.json)
  * @param outputPath - Path to output the analysis results (optional, defaults to scripts/)
  * @param options - Additional analysis options
- * @returns The complete analysis result
+ * @returns The complete analysis result with enhanced features
  *
  * @example
  * ```typescript
  * const analysis = await analyzeRepository('/path/to/repo', '/path/to/output');
  * console.log(analysis.package.name);
  * console.log(analysis.insights.unusedExports);
+ * console.log(analysis.exportFlows); // NEW: Export flow tracking
+ * console.log(analysis.architecture); // NEW: Architecture detection
  * ```
  */
 export async function analyzeRepository(
   repoPath: string,
   outputPath?: string,
   options: Partial<AnalysisOptions> = {}
-): Promise<RepoAnalysis> {
+): Promise<EnhancedRepoAnalysis> {
   const startTime = Date.now();
 
   // Resolve paths
@@ -68,6 +61,8 @@ export async function analyzeRepository(
 
   // Phase 1: Configuration Discovery
   console.log('🔍 Phase 1: Discovering configuration...');
+  const packageJsonContent = await fs.promises.readFile(packageJsonPath, 'utf-8');
+  const packageJson: PackageJson = JSON.parse(packageJsonContent);
   const packageConfig = await analyzePackageJson(packageJsonPath);
   console.log(`   Package: ${packageConfig.name}@${packageConfig.version}`);
   console.log(`   Entry points: ${packageConfig.entryPoints.all.size}`);
@@ -123,14 +118,22 @@ export async function analyzeRepository(
   console.log(`   Unlisted dependencies: ${dependencyAnalysis.unlisted.length}`);
   console.log(`   Misplaced dependencies: ${dependencyAnalysis.misplaced.length}`);
 
-  // Phase 4: Generate Output
-  console.log('📝 Phase 4: Generating output...');
+  // Phase 4: Enhanced Analysis
+  console.log('🔬 Phase 4: Enhanced analysis...');
+  const architecture = detectArchitecture(moduleGraph);
+  console.log(`   Architecture pattern: ${architecture.pattern}`);
+  console.log(`   Layers detected: ${architecture.layers.length}`);
+  console.log(`   Layer violations: ${architecture.violations.length}`);
+
+  // Phase 5: Generate Output
+  console.log('📝 Phase 5: Generating output...');
   const analysis = generateAnalysisOutput(
     moduleGraph,
     packageConfig,
     dependencyAnalysis,
     rootPath,
-    startTime
+    startTime,
+    packageJson
   );
 
   // Write output files
@@ -140,11 +143,17 @@ export async function analyzeRepository(
   console.log(`\n✅ Analysis complete in ${duration}ms`);
   console.log(`📁 Output written to: ${outputDir}`);
   console.log(`   - analysis.json`);
+  if (analysis.files.length > 300) {
+    console.log(`   - static-analysis-files-*.json (split chunks)`);
+  }
   console.log(`   - ANALYSIS_SUMMARY.md`);
   console.log(`   - PUBLIC_API.md`);
   console.log(`   - DEPENDENCIES.md`);
   console.log(`   - INSIGHTS.md`);
   console.log(`   - MODULE_GRAPH.md`);
+  console.log(`   - EXPORT_FLOWS.md (NEW)`);
+  console.log(`   - ARCHITECTURE.md (NEW)`);
+  console.log(`   - DEPENDENCY_USAGE.md (NEW)`);
 
   return analysis;
 }
@@ -155,7 +164,7 @@ export async function analyzeRepository(
 export async function quickAnalyze(
   repoPath: string,
   options: Partial<AnalysisOptions> = {}
-): Promise<RepoAnalysis> {
+): Promise<EnhancedRepoAnalysis> {
   const startTime = Date.now();
   const rootPath = path.resolve(repoPath);
 
@@ -164,6 +173,8 @@ export async function quickAnalyze(
     throw new Error(`No package.json found at ${rootPath}`);
   }
 
+  const packageJsonContent = await fs.promises.readFile(packageJsonPath, 'utf-8');
+  const packageJson: PackageJson = JSON.parse(packageJsonContent);
   const packageConfig = await analyzePackageJson(packageJsonPath);
   const moduleGraph = await buildModuleGraph({
     rootPath,
@@ -178,7 +189,8 @@ export async function quickAnalyze(
     packageConfig,
     dependencyAnalysis,
     rootPath,
-    startTime
+    startTime,
+    packageJson
   );
 }
 

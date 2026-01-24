@@ -1,9 +1,3 @@
-/**
- * Module Graph Builder
- * Uses ts-morph to analyze TypeScript/JavaScript files and build a dependency graph
- * Based on Knip's get-imports-and-exports.ts pattern
- */
-
 import {
   Project,
   SourceFile,
@@ -28,6 +22,8 @@ import type {
   FileRole,
   Position,
   AnalysisOptions,
+  ExportFlow,
+  EnhancedExportInfo,
 } from './types.js';
 
 /**
@@ -436,17 +432,20 @@ export async function buildModuleGraph(
   for (const sourceFile of project.getSourceFiles()) {
     const filePath = sourceFile.getFilePath();
     const shouldExclude = finalExcludePatterns.some((pattern) => {
-      // Simple glob matching
+      // Simple glob matching - escape dots first, then convert globs
       const regex = new RegExp(
         pattern
-          .replace(/\*\*/g, '.*')
-          .replace(/\*/g, '[^/]*')
-          .replace(/\./g, '\\.')
+          .replace(/\./g, '\\.')     // Escape dots first
+          .replace(/\*\*/g, '.*')    // ** = any path
+          .replace(/\*/g, '[^/]*')   // * = any segment
       );
       return regex.test(filePath);
     });
 
-    if (shouldExclude) {
+    // Also exclude node_modules by path check (backup)
+    const isNodeModules = filePath.includes('/node_modules/') || filePath.includes('\\node_modules\\');
+
+    if (shouldExclude || isNodeModules) {
       project.removeSourceFile(sourceFile);
     }
   }
@@ -525,4 +524,173 @@ export function markEntryPoints(
       }
     }
   }
+}
+
+// ============================================================================
+// Export Flow Analysis
+// ============================================================================
+
+/**
+ * Extract release tag from JSDoc (@public, @internal, @beta, @alpha)
+ */
+export function extractReleaseTag(jsDoc: string | undefined): EnhancedExportInfo['releaseTag'] {
+  if (!jsDoc) return undefined;
+
+  if (jsDoc.includes('@internal')) return 'internal';
+  if (jsDoc.includes('@alpha')) return 'alpha';
+  if (jsDoc.includes('@beta')) return 'beta';
+  if (jsDoc.includes('@public')) return 'public';
+
+  return undefined;
+}
+
+/**
+ * Find the original source file for a re-exported symbol
+ */
+function findOriginalSource(
+  graph: ModuleGraph,
+  filePath: string,
+  exportName: string,
+  visited: Set<string> = new Set()
+): string | undefined {
+  if (visited.has(filePath)) return undefined;
+  visited.add(filePath);
+
+  const node = graph.get(filePath);
+  if (!node) return undefined;
+
+  const exportInfo = node.exports.find((e) => e.name === exportName);
+
+  if (!exportInfo) return undefined;
+
+  // If it's not a re-export, this is the original source
+  if (!exportInfo.isReExport) {
+    return filePath;
+  }
+
+  // It's a re-export - find where it comes from
+  for (const [importedPath, imports] of node.imports.internal) {
+    for (const imp of imports) {
+      if (imp.identifiers.includes(exportName) || imp.identifiers.some((id) => id.startsWith('* as '))) {
+        // Recursively trace to origin
+        const origin = findOriginalSource(graph, importedPath, exportName, visited);
+        if (origin) return origin;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Trace where an export originates and how it flows through barrels
+ */
+export function traceExportOrigin(
+  graph: ModuleGraph,
+  filePath: string,
+  exportName: string,
+  visited: Set<string> = new Set()
+): ExportFlow {
+  const defaultFlow: ExportFlow = {
+    definedIn: filePath,
+    exportType: 'named',
+    reExportChain: [],
+    publicFrom: [],
+    conditions: [],
+  };
+
+  if (visited.has(filePath)) return defaultFlow;
+  visited.add(filePath);
+
+  const node = graph.get(filePath);
+  if (!node) return defaultFlow;
+
+  const exportInfo = node.exports.find((e) => e.name === exportName);
+
+  if (!exportInfo) return defaultFlow;
+
+  // If it's not a re-export, this is the origin
+  if (!exportInfo.isReExport) {
+    return {
+      definedIn: filePath,
+      exportType: exportInfo.isDefault ? 'default' : 'named',
+      reExportChain: [],
+      publicFrom: [],
+      conditions: [],
+    };
+  }
+
+  // It's a re-export - find where it comes from
+  for (const [importedPath, imports] of node.imports.internal) {
+    for (const imp of imports) {
+      const isNamespaceImport = imp.identifiers.some((id) => id.startsWith('* as '));
+      if (imp.identifiers.includes(exportName) || isNamespaceImport) {
+        const originFlow = traceExportOrigin(graph, importedPath, exportName, visited);
+        return {
+          ...originFlow,
+          reExportChain: [node.relativePath, ...originFlow.reExportChain],
+        };
+      }
+    }
+  }
+
+  return defaultFlow;
+}
+
+/**
+ * Build export flows for all exports in the graph
+ */
+export function buildExportFlows(
+  graph: ModuleGraph,
+  entryPaths: Set<string>
+): Map<string, ExportFlow> {
+  const flows = new Map<string, ExportFlow>();
+
+  // Find all entry point files
+  const entryFiles = new Set<string>();
+  for (const [filePath, node] of graph) {
+    if (node.role === 'entry' || entryPaths.has(filePath)) {
+      entryFiles.add(filePath);
+    }
+  }
+
+  // For each entry point, trace all exports
+  for (const entryPath of entryFiles) {
+    const entryNode = graph.get(entryPath);
+    if (!entryNode) continue;
+
+    for (const exp of entryNode.exports) {
+      const flowKey = `${exp.name}`;
+
+      if (!flows.has(flowKey)) {
+        const flow = traceExportOrigin(graph, entryPath, exp.name);
+        flow.publicFrom.push(entryNode.relativePath);
+        flows.set(flowKey, flow);
+      } else {
+        // Add this entry point to existing flow
+        const existingFlow = flows.get(flowKey)!;
+        if (!existingFlow.publicFrom.includes(entryNode.relativePath)) {
+          existingFlow.publicFrom.push(entryNode.relativePath);
+        }
+      }
+    }
+  }
+
+  return flows;
+}
+
+/**
+ * Enhance export info with flow tracking and release tags
+ */
+export function enhanceExportInfo(
+  exportInfo: ExportInfo,
+  flow: ExportFlow | undefined,
+  originalSource: string | undefined
+): EnhancedExportInfo {
+  return {
+    ...exportInfo,
+    flow,
+    originalSource,
+    releaseTag: extractReleaseTag(exportInfo.jsDoc),
+  };
 }

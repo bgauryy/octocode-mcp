@@ -1,0 +1,457 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "static-analysis-schema.json",
+  "title": "Static Analysis Output (analysis.json)",
+  "description": "Schema matching the actual output of the analyzer script - entry points, module graph, dependencies, and insights",
+  "type": "object",
+  "required": ["metadata", "package", "publicAPI", "moduleGraph", "dependencies", "files", "insights", "architecture"],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "description": "Analysis metadata",
+      "required": ["version", "generatedAt", "repositoryPath", "analysisType", "duration"],
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "Schema version"
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when analysis was generated"
+        },
+        "repositoryPath": {
+          "type": "string",
+          "description": "Absolute path to the analyzed repository"
+        },
+        "analysisType": {
+          "type": "string",
+          "enum": ["full", "partial"],
+          "description": "Type of analysis performed"
+        },
+        "duration": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Analysis duration in milliseconds"
+        }
+      }
+    },
+    "package": {
+      "type": "object",
+      "description": "Package configuration from package.json",
+      "required": ["name", "version", "entryPoints", "dependencies", "scripts", "keywords"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Package name"
+        },
+        "version": {
+          "type": "string",
+          "description": "Package version"
+        },
+        "description": {
+          "type": "string",
+          "description": "Package description"
+        },
+        "entryPoints": {
+          "type": "object",
+          "description": "All discovered entry points",
+          "required": ["all"],
+          "properties": {
+            "main": {
+              "type": "string",
+              "description": "Main entry from package.json 'main' field"
+            },
+            "module": {
+              "type": "string",
+              "description": "ESM entry from package.json 'module' field"
+            },
+            "types": {
+              "type": "string",
+              "description": "Types entry from package.json 'types' or 'typings' field"
+            },
+            "exports": {
+              "type": "object",
+              "description": "Package exports from package.json 'exports' field",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "bin": {
+              "type": "object",
+              "description": "CLI binaries from package.json 'bin' field",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "all": {
+              "type": "array",
+              "description": "All unique entry points discovered (serialized from Set)",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "dependencies": {
+          "type": "object",
+          "description": "Dependencies from package.json",
+          "required": ["production", "development", "peer", "all"],
+          "properties": {
+            "production": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "development": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "peer": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "all": {
+              "type": "array",
+              "description": "All dependencies combined (serialized from Set)",
+              "items": { "type": "string" }
+            }
+          }
+        },
+        "scripts": {
+          "type": "object",
+          "description": "npm scripts",
+          "additionalProperties": { "type": "string" }
+        },
+        "workspaces": {
+          "type": "array",
+          "description": "Monorepo workspace patterns",
+          "items": { "type": "string" }
+        },
+        "repository": {
+          "type": "string",
+          "description": "Repository URL"
+        },
+        "keywords": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "publicAPI": {
+      "type": "array",
+      "description": "Public API exports grouped by entry point",
+      "items": {
+        "type": "object",
+        "required": ["entryPoint", "exports"],
+        "properties": {
+          "entryPoint": {
+            "type": "string",
+            "description": "Relative path to the entry point file"
+          },
+          "exports": {
+            "type": "array",
+            "description": "Exports from this entry point",
+            "items": {
+              "type": "object",
+              "required": ["name", "type", "isDefault", "isReExport", "position"],
+              "properties": {
+                "name": { "type": "string" },
+                "type": {
+                  "type": "string",
+                  "enum": ["function", "class", "interface", "type", "enum", "const", "variable", "default", "unknown"]
+                },
+                "isDefault": { "type": "boolean" },
+                "isReExport": { "type": "boolean" },
+                "signature": { "type": "string" },
+                "jsDoc": { "type": "string" },
+                "members": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": { "type": "string" },
+                      "type": { "type": "string" },
+                      "isPrivate": { "type": "boolean" },
+                      "isStatic": { "type": "boolean" },
+                      "signature": { "type": "string" }
+                    }
+                  }
+                },
+                "position": {
+                  "type": "object",
+                  "properties": {
+                    "line": { "type": "integer" },
+                    "column": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "moduleGraph": {
+      "type": "object",
+      "description": "Module dependency graph summary",
+      "required": ["totalFiles", "totalImports", "totalExports", "internalDependencies", "externalDependencies"],
+      "properties": {
+        "totalFiles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalImports": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalExports": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "internalDependencies": {
+          "type": "array",
+          "description": "File-to-file import relationships",
+          "items": {
+            "type": "object",
+            "required": ["from", "to", "importCount", "identifiers"],
+            "properties": {
+              "from": { "type": "string" },
+              "to": { "type": "string" },
+              "importCount": { "type": "integer" },
+              "identifiers": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        },
+        "externalDependencies": {
+          "type": "array",
+          "description": "External package usage",
+          "items": {
+            "type": "object",
+            "required": ["name", "usedBy", "isDeclared", "isDevOnly"],
+            "properties": {
+              "name": { "type": "string" },
+              "usedBy": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "isDeclared": { "type": "boolean" },
+              "isDevOnly": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "description": "Dependency analysis results",
+      "required": ["declared", "used", "unused", "unlisted", "misplaced"],
+      "properties": {
+        "declared": {
+          "type": "object",
+          "properties": {
+            "production": { "type": "array", "items": { "type": "string" } },
+            "development": { "type": "array", "items": { "type": "string" } },
+            "peer": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "used": {
+          "type": "object",
+          "properties": {
+            "production": { "type": "array", "items": { "type": "string" } },
+            "development": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "unused": {
+          "type": "array",
+          "description": "Declared but not imported",
+          "items": { "type": "string" }
+        },
+        "unlisted": {
+          "type": "array",
+          "description": "Imported but not declared",
+          "items": { "type": "string" }
+        },
+        "misplaced": {
+          "type": "array",
+          "description": "Production deps only used in tests",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "description": "Per-file analysis",
+      "items": {
+        "type": "object",
+        "required": ["path", "relativePath", "role", "exportCount", "importCount", "externalImportCount", "linesOfCode", "isBarrel", "isEntryPoint"],
+        "properties": {
+          "path": { "type": "string" },
+          "relativePath": { "type": "string" },
+          "role": {
+            "type": "string",
+            "enum": ["entry", "config", "test", "util", "component", "service", "type", "barrel", "unknown"]
+          },
+          "exportCount": { "type": "integer" },
+          "importCount": { "type": "integer" },
+          "externalImportCount": { "type": "integer" },
+          "linesOfCode": { "type": "integer" },
+          "isBarrel": { "type": "boolean" },
+          "isEntryPoint": { "type": "boolean" }
+        }
+      }
+    },
+    "insights": {
+      "type": "object",
+      "description": "Code analysis insights",
+      "required": ["unusedExports", "circularDependencies", "barrelFiles", "largestFiles", "mostImported", "orphanFiles", "typeOnlyFiles"],
+      "properties": {
+        "unusedExports": {
+          "type": "array",
+          "description": "Exports not imported anywhere",
+          "items": {
+            "type": "object",
+            "required": ["file", "export", "type"],
+            "properties": {
+              "file": { "type": "string" },
+              "export": { "type": "string" },
+              "type": { "type": "string" }
+            }
+          }
+        },
+        "circularDependencies": {
+          "type": "array",
+          "description": "Circular dependency chains",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "barrelFiles": {
+          "type": "array",
+          "description": "Index/barrel files that re-export",
+          "items": { "type": "string" }
+        },
+        "largestFiles": {
+          "type": "array",
+          "description": "Top 10 files by export count",
+          "items": { "type": "string" }
+        },
+        "mostImported": {
+          "type": "array",
+          "description": "Most frequently imported files",
+          "items": {
+            "type": "object",
+            "required": ["file", "importedByCount"],
+            "properties": {
+              "file": { "type": "string" },
+              "importedByCount": { "type": "integer" }
+            }
+          }
+        },
+        "orphanFiles": {
+          "type": "array",
+          "description": "Files not imported by anyone and not entry points",
+          "items": { "type": "string" }
+        },
+        "typeOnlyFiles": {
+          "type": "array",
+          "description": "Files containing only type definitions",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "exportFlows": {
+      "type": "object",
+      "description": "Symbol flow analysis through barrel files",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["exportType", "definedIn", "reExportChain", "publicFrom", "conditions"],
+        "properties": {
+          "exportType": { "type": "string" },
+          "definedIn": { "type": "string" },
+          "reExportChain": { "type": "array", "items": { "type": "string" } },
+          "publicFrom": { "type": "array", "items": { "type": "string" } },
+          "conditions": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "architecture": {
+      "type": "object",
+      "description": "Detected architecture pattern and layers",
+      "required": ["pattern", "layers", "violations"],
+      "properties": {
+        "pattern": { "type": "string" },
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "description", "files", "dependsOn"],
+            "properties": {
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "files": { "type": "array", "items": { "type": "string" } },
+              "dependsOn": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "violations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from", "to", "fromLayer", "toLayer"],
+            "properties": {
+              "from": { "type": "string" },
+              "to": { "type": "string" },
+              "fromLayer": { "type": "string" },
+              "toLayer": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "dependencyUsage": {
+      "type": "object",
+      "description": "Detailed usage of each dependency",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["package", "declaredAs", "stats", "usageLocations"],
+        "properties": {
+          "package": { "type": "string" },
+          "declaredAs": { "type": "string" },
+          "stats": {
+            "type": "object",
+            "required": ["filesUsedIn", "totalImports", "typeOnlyCount", "uniqueSymbols"],
+            "properties": {
+              "filesUsedIn": { "type": "integer" },
+              "totalImports": { "type": "integer" },
+              "typeOnlyCount": { "type": "integer" },
+              "uniqueSymbols": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "usageLocations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["file", "isTypeOnly", "isDynamic", "isNamespace"],
+              "properties": {
+                "file": { "type": "string" },
+                "isTypeOnly": { "type": "boolean" },
+                "isDynamic": { "type": "boolean" },
+                "isNamespace": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "exportsMap": {
+      "type": "object",
+      "description": "Analysis of package.json exports field",
+      "additionalProperties": {
+        "type": "object"
+      }
+    }
+  }
+}

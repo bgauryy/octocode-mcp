@@ -1,9 +1,3 @@
-/**
- * Dependency Analyzer
- * Analyzes dependencies from the module graph
- * Based on Knip's DependencyDeputy pattern
- */
-
 import type {
   ModuleGraph,
   DependencyInfo,
@@ -11,7 +5,11 @@ import type {
   DependencyEdge,
   ExternalDependency,
   UnusedExport,
-  
+  DependencyUsage,
+  DependencyUsageLocation,
+  ArchitectureAnalysis,
+  ArchitectureLayer,
+  LayerViolation,
 } from './types.js';
 
 /**
@@ -413,4 +411,269 @@ export function findTypeOnlyFiles(graph: ModuleGraph): string[] {
   }
 
   return typeOnly;
+}
+
+// ============================================================================
+// Detailed Dependency Usage Analysis (Priority 2)
+// ============================================================================
+
+/**
+ * Get the declared type for a package
+ */
+function getDeclaredType(
+  pkgName: string,
+  declaredDeps: DependencyInfo
+): DependencyUsage['declaredAs'] {
+  if (declaredDeps.production.includes(pkgName)) return 'production';
+  if (declaredDeps.development.includes(pkgName)) return 'development';
+  if (declaredDeps.peer.includes(pkgName)) return 'peer';
+  return 'unlisted';
+}
+
+/**
+ * Analyze detailed dependency usage - which symbols are imported from each package
+ */
+export function analyzeDetailedDependencyUsage(
+  graph: ModuleGraph,
+  declaredDeps: DependencyInfo
+): Map<string, DependencyUsage> {
+  const usage = new Map<string, DependencyUsage>();
+
+  for (const [_filePath, node] of graph) {
+    for (const externalPkg of node.imports.external) {
+      // Get or create usage entry
+      let depUsage = usage.get(externalPkg);
+      if (!depUsage) {
+        depUsage = {
+          package: externalPkg,
+          declaredAs: getDeclaredType(externalPkg, declaredDeps),
+          usageLocations: [],
+          stats: {
+            totalImports: 0,
+            uniqueSymbols: [],
+            filesUsedIn: 0,
+            typeOnlyCount: 0,
+          },
+        };
+        usage.set(externalPkg, depUsage);
+      }
+
+      // Extract import details from the internal imports map
+      // Note: External packages are tracked separately, so we infer from file context
+      const usageLocation: DependencyUsageLocation = {
+        file: node.relativePath,
+        symbols: [], // Would need AST re-analysis for full symbol extraction
+        isNamespace: false,
+        isDefault: false,
+        isTypeOnly: false,
+        isDynamic: false,
+      };
+
+      depUsage.usageLocations.push(usageLocation);
+    }
+  }
+
+  // Calculate stats for each dependency
+  for (const [_pkg, depUsage] of usage) {
+    const allSymbols = depUsage.usageLocations.flatMap((l) => l.symbols);
+    depUsage.stats = {
+      totalImports: depUsage.usageLocations.length,
+      uniqueSymbols: [...new Set(allSymbols)],
+      filesUsedIn: new Set(depUsage.usageLocations.map((l) => l.file)).size,
+      typeOnlyCount: depUsage.usageLocations.filter((l) => l.isTypeOnly).length,
+    };
+  }
+
+  return usage;
+}
+
+// ============================================================================
+// Architecture Layer Detection (Priority 4)
+// ============================================================================
+
+const DEFAULT_LAYERS: Omit<ArchitectureLayer, 'files'>[] = [
+  {
+    name: 'presentation',
+    paths: ['**/components/**', '**/pages/**', '**/views/**', '**/ui/**'],
+    dependsOn: ['domain', 'infrastructure', 'shared'],
+    description: 'UI layer - components, pages, views',
+  },
+  {
+    name: 'domain',
+    paths: ['**/domain/**', '**/models/**', '**/entities/**', '**/core/**'],
+    dependsOn: ['shared'],
+    description: 'Business logic - domain models, entities',
+  },
+  {
+    name: 'infrastructure',
+    paths: ['**/services/**', '**/api/**', '**/repositories/**', '**/adapters/**'],
+    dependsOn: ['domain', 'shared'],
+    description: 'External services - APIs, repositories',
+  },
+  {
+    name: 'shared',
+    paths: ['**/utils/**', '**/helpers/**', '**/lib/**', '**/types/**', '**/common/**'],
+    dependsOn: [],
+    description: 'Shared utilities - types, helpers',
+  },
+];
+
+/**
+ * Match a file path against a glob pattern
+ */
+function matchesPattern(filePath: string, pattern: string): boolean {
+  const normalizedPath = filePath.replace(/\\/g, '/').toLowerCase();
+  const normalizedPattern = pattern.replace(/\\/g, '/').toLowerCase();
+
+  // Convert glob to regex
+  const regex = new RegExp(
+    normalizedPattern
+      .replace(/\*\*/g, '.*')
+      .replace(/\*/g, '[^/]*')
+      .replace(/\./g, '\\.')
+  );
+
+  return regex.test(normalizedPath);
+}
+
+/**
+ * Detect the architecture pattern based on directory structure
+ */
+function detectArchitecturePattern(
+  graph: ModuleGraph
+): ArchitectureAnalysis['pattern'] {
+  const paths = [...graph.values()].map((n) => n.relativePath.replace(/\\/g, '/'));
+
+  // Check for monorepo
+  if (paths.some((p) => p.includes('/packages/') || p.includes('/apps/'))) {
+    return 'monorepo';
+  }
+
+  // Check for feature-based (features/, modules/)
+  if (paths.some((p) => p.includes('/features/') || p.includes('/modules/'))) {
+    return 'feature-based';
+  }
+
+  // Check for layered (components/, services/, utils/)
+  const hasComponents = paths.some((p) => p.includes('/components/'));
+  const hasServices = paths.some((p) => p.includes('/services/'));
+  const hasUtils = paths.some((p) => p.includes('/utils/'));
+  if (hasComponents && (hasServices || hasUtils)) {
+    return 'layered';
+  }
+
+  // Check for flat (all in src/ with minimal nesting)
+  const srcPaths = paths.filter((p) => p.startsWith('src/'));
+  if (srcPaths.length > 0) {
+    const maxDepth = Math.max(...srcPaths.map((p) => p.split('/').length));
+    if (maxDepth <= 3) {
+      return 'flat';
+    }
+  }
+
+  return 'unknown';
+}
+
+/**
+ * Assign files to architecture layers
+ */
+function assignFilesToLayers(
+  graph: ModuleGraph,
+  layerDefs: Omit<ArchitectureLayer, 'files'>[]
+): ArchitectureLayer[] {
+  const layers: ArchitectureLayer[] = layerDefs.map((def) => ({
+    ...def,
+    files: [],
+  }));
+
+  for (const [_filePath, node] of graph) {
+    const relativePath = node.relativePath;
+
+    for (const layer of layers) {
+      const matches = layer.paths.some((pattern) =>
+        matchesPattern(relativePath, pattern)
+      );
+      if (matches) {
+        layer.files.push(relativePath);
+        break; // File belongs to first matching layer
+      }
+    }
+  }
+
+  return layers;
+}
+
+/**
+ * Find layer violations where lower layers import from higher layers
+ */
+function findLayerViolations(
+  graph: ModuleGraph,
+  layers: ArchitectureLayer[]
+): LayerViolation[] {
+  const violations: LayerViolation[] = [];
+
+  // Build file-to-layer mapping
+  const fileToLayer = new Map<string, string>();
+  for (const layer of layers) {
+    for (const file of layer.files) {
+      fileToLayer.set(file, layer.name);
+    }
+  }
+
+  // Build layer dependency rules
+  const layerAllowedDeps = new Map<string, Set<string>>();
+  for (const layer of layers) {
+    layerAllowedDeps.set(layer.name, new Set([layer.name, ...layer.dependsOn]));
+  }
+
+  // Check each import for violations
+  for (const [_filePath, node] of graph) {
+    const fromLayer = fileToLayer.get(node.relativePath);
+    if (!fromLayer) continue;
+
+    const allowedDeps = layerAllowedDeps.get(fromLayer);
+    if (!allowedDeps) continue;
+
+    for (const [importedPath, _imports] of node.imports.internal) {
+      const importedNode = graph.get(importedPath);
+      if (!importedNode) continue;
+
+      const toLayer = fileToLayer.get(importedNode.relativePath);
+      if (!toLayer) continue;
+
+      // Check if this is a violation
+      if (!allowedDeps.has(toLayer)) {
+        violations.push({
+          from: node.relativePath,
+          to: importedNode.relativePath,
+          fromLayer,
+          toLayer,
+        });
+      }
+    }
+  }
+
+  return violations;
+}
+
+/**
+ * Detect architecture pattern and analyze layers
+ */
+export function detectArchitecture(graph: ModuleGraph): ArchitectureAnalysis {
+  const pattern = detectArchitecturePattern(graph);
+  const layers = assignFilesToLayers(graph, DEFAULT_LAYERS);
+  const violations = findLayerViolations(graph, layers);
+
+  // Mark layers with violations
+  for (const layer of layers) {
+    layer.violatedBy = violations
+      .filter((v) => v.toLayer === layer.name)
+      .map((v) => v.from);
+  }
+
+  return {
+    pattern,
+    layers: layers.filter((l) => l.files.length > 0), // Only include layers with files
+    violations,
+  };
 }

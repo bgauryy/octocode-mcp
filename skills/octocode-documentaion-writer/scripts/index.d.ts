@@ -1,4 +1,6 @@
-export interface PackageJson {
+#!/usr/bin/env node
+//#region src/types.d.ts
+interface PackageJson {
   name?: string;
   version?: string;
   description?: string;
@@ -12,20 +14,25 @@ export interface PackageJson {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
-  workspaces?: string[] | { packages: string[] };
-  repository?: string | { type: string; url: string };
+  workspaces?: string[] | {
+    packages: string[];
+  };
+  repository?: string | {
+    type: string;
+    url: string;
+  };
   keywords?: string[];
-  author?: string | { name: string; email?: string };
+  author?: string | {
+    name: string;
+    email?: string;
+  };
   license?: string;
 }
-
-export type ExportsField = string | ExportsObject | (string | ExportsObject)[];
-
-export interface ExportsObject {
+type ExportsField = string | ExportsObject | (string | ExportsObject)[];
+interface ExportsObject {
   [key: string]: string | ExportsObject | null;
 }
-
-export interface PackageConfig {
+interface PackageConfig {
   name: string;
   version: string;
   description?: string;
@@ -36,8 +43,7 @@ export interface PackageConfig {
   repository?: string;
   keywords: string[];
 }
-
-export interface EntryPoints {
+interface EntryPoints {
   main?: string;
   module?: string;
   types?: string;
@@ -45,31 +51,18 @@ export interface EntryPoints {
   bin?: Map<string, string>;
   all: Set<string>;
 }
-
-export interface DependencyInfo {
+interface DependencyInfo {
   production: string[];
   development: string[];
   peer: string[];
   all: Set<string>;
 }
-
-export type SymbolType =
-  | 'function'
-  | 'class'
-  | 'interface'
-  | 'type'
-  | 'enum'
-  | 'const'
-  | 'variable'
-  | 'default'
-  | 'unknown';
-
-export interface Position {
+type SymbolType = 'function' | 'class' | 'interface' | 'type' | 'enum' | 'const' | 'variable' | 'default' | 'unknown';
+interface Position {
   line: number;
   column: number;
 }
-
-export interface ImportInfo {
+interface ImportInfo {
   specifier: string;
   resolvedPath?: string;
   identifiers: string[];
@@ -77,8 +70,7 @@ export interface ImportInfo {
   isDynamic: boolean;
   position: Position;
 }
-
-export interface ExportInfo {
+interface ExportInfo {
   name: string;
   type: SymbolType;
   isDefault: boolean;
@@ -88,16 +80,14 @@ export interface ExportInfo {
   signature?: string;
   position: Position;
 }
-
-export interface MemberInfo {
+interface MemberInfo {
   name: string;
   type: SymbolType;
   isPrivate: boolean;
   isStatic: boolean;
   signature?: string;
 }
-
-export interface FileNode {
+interface FileNode {
   path: string;
   relativePath: string;
   imports: {
@@ -110,25 +100,9 @@ export interface FileNode {
   scripts: Set<string>;
   role: FileRole;
 }
-
-export type FileRole =
-  | 'entry'
-  | 'config'
-  | 'test'
-  | 'util'
-  | 'component'
-  | 'service'
-  | 'type'
-  | 'barrel'
-  | 'unknown';
-
-export type ModuleGraph = Map<string, FileNode>;
-
-// ============================================================================
-// Analysis Output Types
-// ============================================================================
-
-export interface RepoAnalysis {
+type FileRole = 'entry' | 'config' | 'test' | 'util' | 'component' | 'service' | 'type' | 'barrel' | 'unknown';
+type ModuleGraph = Map<string, FileNode>;
+interface RepoAnalysis {
   metadata: AnalysisMetadata;
   package: PackageConfig;
   publicAPI: PublicAPIEntry[];
@@ -137,43 +111,37 @@ export interface RepoAnalysis {
   files: FileAnalysis[];
   insights: AnalysisInsights;
 }
-
-export interface AnalysisMetadata {
+interface AnalysisMetadata {
   version: string;
   generatedAt: string;
   repositoryPath: string;
   analysisType: 'full' | 'partial';
   duration: number;
 }
-
-export interface PublicAPIEntry {
+interface PublicAPIEntry {
   entryPoint: string;
   exports: ExportInfo[];
 }
-
-export interface ModuleGraphSummary {
+interface ModuleGraphSummary {
   totalFiles: number;
   totalImports: number;
   totalExports: number;
   internalDependencies: DependencyEdge[];
   externalDependencies: ExternalDependency[];
 }
-
-export interface DependencyEdge {
+interface DependencyEdge {
   from: string;
   to: string;
   importCount: number;
   identifiers: string[];
 }
-
-export interface ExternalDependency {
+interface ExternalDependency {
   name: string;
   usedBy: string[];
   isDeclared: boolean;
   isDevOnly: boolean;
 }
-
-export interface DependencyAnalysis {
+interface DependencyAnalysis {
   declared: {
     production: string[];
     development: string[];
@@ -185,10 +153,9 @@ export interface DependencyAnalysis {
   };
   unused: string[];
   unlisted: string[];
-  misplaced: string[]; // prod deps only used in tests
+  misplaced: string[];
 }
-
-export interface FileAnalysis {
+interface FileAnalysis {
   path: string;
   relativePath: string;
   role: FileRole;
@@ -199,8 +166,7 @@ export interface FileAnalysis {
   isBarrel: boolean;
   isEntryPoint: boolean;
 }
-
-export interface AnalysisInsights {
+interface AnalysisInsights {
   unusedExports: UnusedExport[];
   circularDependencies: string[][];
   barrelFiles: string[];
@@ -209,55 +175,36 @@ export interface AnalysisInsights {
   orphanFiles: string[];
   typeOnlyFiles: string[];
 }
-
-export interface UnusedExport {
+interface UnusedExport {
   file: string;
   export: string;
   type: SymbolType;
 }
-
-export interface MostImportedFile {
+interface MostImportedFile {
   file: string;
   importedByCount: number;
 }
-
-// ============================================================================
-// Export Flow Analysis (Priority 1)
-// ============================================================================
-
-export interface ExportFlow {
+interface ExportFlow {
   /** Where the symbol is originally defined */
   definedIn: string;
-
   /** How it's exported from the source file */
   exportType: 'named' | 'default' | 'namespace';
-
   /** Re-export chain: barrel files it passes through */
   reExportChain: string[];
-
   /** Public entry points that expose this symbol */
   publicFrom: string[];
-
   /** Which package.json export conditions expose it */
   conditions: string[];
 }
-
-export interface EnhancedExportInfo extends ExportInfo {
+interface EnhancedExportInfo extends ExportInfo {
   /** Symbol flow tracking */
   flow?: ExportFlow;
-
   /** For re-exports: original source file */
   originalSource?: string;
-
   /** Release tag from JSDoc (@public, @internal, @beta, @alpha) */
   releaseTag?: 'public' | 'internal' | 'beta' | 'alpha';
 }
-
-// ============================================================================
-// Detailed Dependency Usage (Priority 2)
-// ============================================================================
-
-export interface DependencyUsageLocation {
+interface DependencyUsageLocation {
   file: string;
   symbols: string[];
   isNamespace: boolean;
@@ -265,33 +212,23 @@ export interface DependencyUsageLocation {
   isTypeOnly: boolean;
   isDynamic: boolean;
 }
-
-export interface DependencyUsageStats {
+interface DependencyUsageStats {
   totalImports: number;
   uniqueSymbols: string[];
   filesUsedIn: number;
   typeOnlyCount: number;
 }
-
-export interface DependencyUsage {
+interface DependencyUsage {
   /** Package name */
   package: string;
-
   /** Is it declared in dependencies/devDependencies/peerDependencies? */
   declaredAs: 'production' | 'development' | 'peer' | 'unlisted';
-
   /** All locations where it's imported */
   usageLocations: DependencyUsageLocation[];
-
   /** Summary stats */
   stats: DependencyUsageStats;
 }
-
-// ============================================================================
-// Architecture Layer Detection (Priority 4)
-// ============================================================================
-
-export interface ArchitectureLayer {
+interface ArchitectureLayer {
   name: string;
   description: string;
   paths: string[];
@@ -299,85 +236,57 @@ export interface ArchitectureLayer {
   files: string[];
   violatedBy?: string[];
 }
-
-export interface LayerViolation {
+interface LayerViolation {
   from: string;
   to: string;
   fromLayer: string;
   toLayer: string;
 }
-
-export interface FeatureBoundary {
+interface FeatureBoundary {
   name: string;
   entryPoint: string;
   files: string[];
   externalDeps: string[];
 }
-
-export interface ArchitectureAnalysis {
+interface ArchitectureAnalysis {
   /** Detected architecture pattern */
   pattern: 'layered' | 'feature-based' | 'flat' | 'monorepo' | 'unknown';
-
   /** Detected layers */
   layers: ArchitectureLayer[];
-
   /** Layer violations (lower layer importing higher) */
   violations: LayerViolation[];
-
   /** Feature boundaries (for feature-based architecture) */
   features?: FeatureBoundary[];
 }
-
-// ============================================================================
-// Package.json Exports Map Analysis (Priority 5)
-// ============================================================================
-
-export interface ExportsCondition {
+interface ExportsCondition {
   condition: string;
   target: string;
   resolved?: string;
 }
-
-export interface ExportsPath {
+interface ExportsPath {
   path: string;
   conditions: ExportsCondition[];
   exports?: string[];
 }
-
-export interface ExportsMapAnalysis {
+interface ExportsMapAnalysis {
   /** All export paths (., ./utils, ./types, etc.) */
   paths: ExportsPath[];
-
   /** Wildcards like "./*" */
   wildcards: string[];
-
   /** Files that are NOT exposed via exports (internal only) */
   internalOnly: string[];
 }
-
-// ============================================================================
-// Enhanced Analysis Output
-// ============================================================================
-
-export interface EnhancedRepoAnalysis extends RepoAnalysis {
+interface EnhancedRepoAnalysis extends RepoAnalysis {
   /** Export flow tracking */
   exportFlows?: Record<string, ExportFlow>;
-
   /** Detailed dependency usage */
   dependencyUsage?: Record<string, DependencyUsage>;
-
   /** Architecture analysis */
   architecture?: ArchitectureAnalysis;
-
   /** Package.json exports map analysis */
   exportsMap?: ExportsMapAnalysis;
 }
-
-// ============================================================================
-// Analysis Options
-// ============================================================================
-
-export interface AnalysisOptions {
+interface AnalysisOptions {
   rootPath: string;
   outputPath?: string;
   includeTests?: boolean;
@@ -388,3 +297,75 @@ export interface AnalysisOptions {
   /** Enable enhanced analysis features */
   enhanced?: boolean;
 }
+//#endregion
+//#region src/package-analyzer.d.ts
+/**
+ * Analyze a package.json file
+ */
+declare function analyzePackageJson(packageJsonPath: string): Promise<PackageConfig>;
+/**
+ * Check if a directory is a monorepo
+ */
+declare function isMonorepo(rootPath: string): Promise<boolean>;
+/**
+ * Analyze the package.json exports field
+ */
+declare function analyzeExportsMap(packageJson: PackageJson, rootPath: string, graph?: ModuleGraph): ExportsMapAnalysis;
+//#endregion
+//#region src/module-graph.d.ts
+/**
+ * Build the module graph from a TypeScript/JavaScript project
+ */
+declare function buildModuleGraph(options: AnalysisOptions): Promise<ModuleGraph>;
+/**
+ * Build export flows for all exports in the graph
+ */
+declare function buildExportFlows(graph: ModuleGraph, entryPaths: Set<string>): Map<string, ExportFlow>;
+//#endregion
+//#region src/dependency-analyzer.d.ts
+/**
+ * Analyze dependencies comparing declared vs used
+ */
+declare function analyzeDependencies(graph: ModuleGraph, declaredDeps: DependencyInfo): DependencyAnalysis;
+/**
+ * Find circular dependencies in the module graph
+ */
+declare function findCircularDependencies(graph: ModuleGraph): string[][];
+/**
+ * Find unused exports in the module graph
+ */
+declare function findUnusedExports(graph: ModuleGraph, entryPoints: Set<string>): UnusedExport[];
+/**
+ * Analyze detailed dependency usage - which symbols are imported from each package
+ */
+declare function analyzeDetailedDependencyUsage(graph: ModuleGraph, declaredDeps: DependencyInfo): Map<string, DependencyUsage>;
+/**
+ * Detect architecture pattern and analyze layers
+ */
+declare function detectArchitecture(graph: ModuleGraph): ArchitectureAnalysis;
+//#endregion
+//#region src/index.d.ts
+/**
+ * Analyze a repository/package and output documentation
+ *
+ * @param repoPath - Path to the repository root (must contain package.json)
+ * @param outputPath - Path to output the analysis results (optional, defaults to scripts/)
+ * @param options - Additional analysis options
+ * @returns The complete analysis result with enhanced features
+ *
+ * @example
+ * ```typescript
+ * const analysis = await analyzeRepository('/path/to/repo', '/path/to/output');
+ * console.log(analysis.package.name);
+ * console.log(analysis.insights.unusedExports);
+ * console.log(analysis.exportFlows); // NEW: Export flow tracking
+ * console.log(analysis.architecture); // NEW: Architecture detection
+ * ```
+ */
+declare function analyzeRepository(repoPath: string, outputPath?: string, options?: Partial<AnalysisOptions>): Promise<EnhancedRepoAnalysis>;
+/**
+ * Quick analysis - returns just the analysis without writing files
+ */
+declare function quickAnalyze(repoPath: string, options?: Partial<AnalysisOptions>): Promise<EnhancedRepoAnalysis>;
+//#endregion
+export { AnalysisInsights, AnalysisMetadata, AnalysisOptions, ArchitectureAnalysis, ArchitectureLayer, DependencyAnalysis, DependencyEdge, DependencyInfo, DependencyUsage, DependencyUsageLocation, DependencyUsageStats, EnhancedExportInfo, EnhancedRepoAnalysis, EntryPoints, ExportFlow, ExportInfo, ExportsCondition, ExportsField, ExportsMapAnalysis, ExportsObject, ExportsPath, ExternalDependency, FeatureBoundary, FileAnalysis, FileNode, FileRole, ImportInfo, LayerViolation, MemberInfo, ModuleGraph, ModuleGraphSummary, MostImportedFile, PackageConfig, PackageJson, Position, PublicAPIEntry, RepoAnalysis, SymbolType, UnusedExport, analyzeDependencies, analyzeDetailedDependencyUsage, analyzeExportsMap, analyzePackageJson, analyzeRepository, buildExportFlows, buildModuleGraph, detectArchitecture, findCircularDependencies, findUnusedExports, isMonorepo, quickAnalyze };

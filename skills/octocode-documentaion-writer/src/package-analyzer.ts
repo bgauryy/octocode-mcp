@@ -1,9 +1,3 @@
-/**
- * Package.json Analyzer
- * Extracts entry points, dependencies, and package metadata
- * Based on Knip's getEntrySpecifiersFromManifest pattern
- */
-
 import * as fs from 'fs';
 import * as path from 'path';
 import type {
@@ -12,6 +6,9 @@ import type {
   EntryPoints,
   DependencyInfo,
   ExportsField,
+  ExportsMapAnalysis,
+  ExportsPath,
+  ModuleGraph,
 } from './types.js';
 
 /**
@@ -251,4 +248,146 @@ export async function isMonorepo(rootPath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// ============================================================================
+// Package.json Exports Map Analysis (Priority 5)
+// ============================================================================
+
+/**
+ * Resolve an export path to an actual file path
+ */
+function resolveExportPath(exportTarget: string, rootPath: string): string {
+  // Remove leading ./ if present
+  const cleanTarget = exportTarget.startsWith('./') ? exportTarget.slice(2) : exportTarget;
+  return path.join(rootPath, cleanTarget);
+}
+
+/**
+ * Process an export entry (string, object, or array)
+ */
+function processExportEntry(
+  exportPath: string,
+  value: ExportsField,
+  exposedFiles: Set<string>,
+  rootPath: string
+): ExportsPath {
+  const result: ExportsPath = {
+    path: exportPath,
+    conditions: [],
+  };
+
+  if (typeof value === 'string') {
+    // Simple: "./utils": "./dist/utils.js"
+    const resolved = resolveExportPath(value, rootPath);
+    exposedFiles.add(resolved);
+    result.conditions.push({
+      condition: 'default',
+      target: value,
+      resolved,
+    });
+  } else if (Array.isArray(value)) {
+    // Array of fallbacks - take the first
+    for (const item of value) {
+      if (typeof item === 'string') {
+        const resolved = resolveExportPath(item, rootPath);
+        exposedFiles.add(resolved);
+        result.conditions.push({
+          condition: 'default',
+          target: item,
+          resolved,
+        });
+        break;
+      }
+    }
+  } else if (typeof value === 'object' && value !== null) {
+    // Conditional: { "import": "./esm/index.js", "require": "./cjs/index.js" }
+    for (const [condition, target] of Object.entries(value)) {
+      if (target === null) continue;
+
+      if (typeof target === 'string') {
+        const resolved = resolveExportPath(target, rootPath);
+        exposedFiles.add(resolved);
+        result.conditions.push({
+          condition,
+          target,
+          resolved,
+        });
+      } else if (typeof target === 'object') {
+        // Nested conditions - recurse
+        const nested = processExportEntry(exportPath, target as ExportsField, exposedFiles, rootPath);
+        result.conditions.push(...nested.conditions);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Analyze the package.json exports field
+ */
+export function analyzeExportsMap(
+  packageJson: PackageJson,
+  rootPath: string,
+  graph?: ModuleGraph
+): ExportsMapAnalysis {
+  const exports = packageJson.exports;
+  const allFiles = graph ? new Set(graph.keys()) : new Set<string>();
+
+  if (!exports) {
+    return {
+      paths: [],
+      wildcards: [],
+      internalOnly: [...allFiles],
+    };
+  }
+
+  const analysis: ExportsMapAnalysis = {
+    paths: [],
+    wildcards: [],
+    internalOnly: [],
+  };
+
+  const exposedFiles = new Set<string>();
+
+  // Process exports field
+  if (typeof exports === 'string') {
+    analysis.paths.push(processExportEntry('.', exports, exposedFiles, rootPath));
+  } else if (typeof exports === 'object' && !Array.isArray(exports)) {
+    for (const [exportPath, value] of Object.entries(exports)) {
+      if (value === null) continue;
+
+      // Check for wildcards
+      if (exportPath.includes('*')) {
+        analysis.wildcards.push(exportPath);
+        continue;
+      }
+
+      analysis.paths.push(processExportEntry(exportPath, value as ExportsField, exposedFiles, rootPath));
+    }
+  }
+
+  // Find internal-only files (files not exposed via exports)
+  if (graph) {
+    for (const filePath of graph.keys()) {
+      // Normalize paths for comparison
+      const isExposed = [...exposedFiles].some((exposed) => {
+        const normalizedExposed = path.normalize(exposed);
+        const normalizedFile = path.normalize(filePath);
+        return normalizedFile === normalizedExposed ||
+               normalizedFile.replace(/\.(ts|tsx)$/, '.js') === normalizedExposed ||
+               normalizedFile.replace(/\.(ts|tsx)$/, '.d.ts') === normalizedExposed;
+      });
+
+      if (!isExposed) {
+        const node = graph.get(filePath);
+        if (node) {
+          analysis.internalOnly.push(node.relativePath);
+        }
+      }
+    }
+  }
+
+  return analysis;
 }

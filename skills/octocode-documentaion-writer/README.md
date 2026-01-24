@@ -201,8 +201,6 @@ interface RepoAnalysis {
 
 ### Architecture
 
-Based on [Knip's architecture](https://knip.dev):
-
 ```
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
 │  CONFIGURE  │───>│    BUILD    │───>│   ANALYZE   │───>│   OUTPUT    │

@@ -3,29 +3,38 @@
   "version": "1.0.0",
   "description": "Repository documentation generator with AST analysis, dependency graph, and public API extraction",
   "type": "module",
-  "main": "dist/src/index.js",
-  "types": "dist/src/index.d.ts",
+  "main": "scripts/index.js",
+  "types": "scripts/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/src/index.js",
-      "types": "./dist/src/index.d.ts"
+      "types": "./scripts/index.d.ts",
+      "import": "./scripts/index.js"
     }
   },
   "bin": {
-    "octocode-doc-writer": "./dist/src/index.js"
+    "octocode-doc-writer": "./scripts/index.js"
   },
+  "files": [
+    "scripts",
+    "src",
+    "schemas",
+    "SKILL.md",
+    "tsconfig.json"
+  ],
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "analyze": "node --loader ts-node/esm src/index.ts",
-    "clean": "rm -rf dist"
+    "build": "tsdown",
+    "dev": "tsx watch src/index.ts",
+    "analyze": "node scripts/index.js",
+    "analyze:self": "npm run analyze -- . .context",
+    "clean": "rm -rf dist scripts/*.js scripts/*.d.ts"
   },
   "dependencies": {
     "ts-morph": "^27.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "ts-node": "^10.9.0",
+    "tsdown": "^0.18.3",
+    "tsx": "^4.21.0",
     "typescript": "^5.0.0"
   },
   "engines": {
