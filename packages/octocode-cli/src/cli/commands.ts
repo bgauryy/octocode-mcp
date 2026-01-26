@@ -43,15 +43,6 @@ function getIDEDisplayName(ide: string): string {
   // Capitalize as fallback
   return ide.charAt(0).toUpperCase() + ide.slice(1);
 }
-import { copyDirectory, dirExists, listSubdirectories } from '../utils/fs.js';
-import { getSkillsSourceDir, getSkillsDestDir } from '../utils/skills.js';
-import { quickSync } from '../ui/sync/index.js';
-import {
-  readAllClientConfigs,
-  analyzeSyncState,
-  getClientDisplayName,
-} from '../features/sync.js';
-import path from 'node:path';
 
 type GetTokenSource = 'octocode' | 'gh' | 'auto';
 
@@ -303,7 +294,9 @@ const loginCommand: CLICommand = {
       );
       console.log();
       console.log(`  ${dim('To switch accounts, logout first:')}`);
-      console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode logout')}`);
+      console.log(
+        `    ${c('cyan', '→')} ${c('yellow', 'octocode auth logout')}`
+      );
       console.log();
       return;
     }
@@ -369,7 +362,7 @@ const loginCommand: CLICommand = {
 const logoutCommand: CLICommand = {
   name: 'logout',
   description: 'Sign out from GitHub',
-  usage: 'octocode logout [--hostname <host>]',
+  usage: 'octocode auth logout [--hostname <host>]',
   options: [
     {
       name: 'hostname',
@@ -392,7 +385,9 @@ const logoutCommand: CLICommand = {
       );
       console.log();
       console.log(`  ${dim('To login:')}`);
-      console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode login')}`);
+      console.log(
+        `    ${c('cyan', '→')} ${c('yellow', 'octocode auth login')}`
+      );
       console.log();
       return;
     }
@@ -554,7 +549,7 @@ async function showAuthStatus(hostname: string = 'github.com'): Promise<void> {
     console.log(`  ${c('yellow', '⚠')} ${c('yellow', 'Not authenticated')}`);
     console.log();
     console.log(`  ${bold('To authenticate:')}`);
-    console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode login')}`);
+    console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode auth login')}`);
     console.log(`    ${dim('or')}`);
     console.log(`    ${c('cyan', '→')} ${c('yellow', 'gh auth login')}`);
   }
@@ -562,127 +557,6 @@ async function showAuthStatus(hostname: string = 'github.com'): Promise<void> {
   console.log(`  ${dim('Credentials stored in:')} ${getStoragePath()}`);
   console.log();
 }
-
-/**
- * Skills command
- */
-const skillsCommand: CLICommand = {
-  name: 'skills',
-  aliases: ['sk'],
-  description: 'Install Octocode skills for Claude Code',
-  usage: 'octocode skills [install|list]',
-  options: [
-    {
-      name: 'force',
-      short: 'f',
-      description: 'Overwrite existing skills',
-    },
-  ],
-  handler: async (args: ParsedArgs) => {
-    const subcommand = args.args[0] || 'list';
-    const force = Boolean(args.options['force'] || args.options['f']);
-
-    const srcDir = getSkillsSourceDir();
-    const destDir = getSkillsDestDir();
-
-    // Check if skills source exists
-    if (!dirExists(srcDir)) {
-      console.log();
-      console.log(`  ${c('red', '✗')} Skills directory not found`);
-      console.log(`  ${dim('Expected:')} ${srcDir}`);
-      console.log();
-      process.exitCode = 1;
-      return;
-    }
-
-    const availableSkills = listSubdirectories(srcDir).filter(
-      name => !name.startsWith('.')
-    );
-
-    if (subcommand === 'list') {
-      console.log();
-      console.log(`  ${bold('📚 Available Octocode Skills')}`);
-      console.log();
-
-      if (availableSkills.length === 0) {
-        console.log(`  ${dim('No skills available.')}`);
-      } else {
-        for (const skill of availableSkills) {
-          const installed = dirExists(path.join(destDir, skill));
-          const status = installed
-            ? c('green', '✓ installed')
-            : dim('not installed');
-          console.log(`  ${c('cyan', '•')} ${skill} ${status}`);
-        }
-      }
-
-      console.log();
-      console.log(`  ${dim('To install:')} octocode skills install`);
-      console.log(`  ${dim('Destination:')} ${destDir}`);
-      console.log();
-      return;
-    }
-
-    if (subcommand === 'install') {
-      console.log();
-      console.log(`  ${bold('📦 Installing Octocode Skills')}`);
-      console.log();
-
-      if (availableSkills.length === 0) {
-        console.log(`  ${c('yellow', '⚠')} No skills to install.`);
-        console.log();
-        return;
-      }
-
-      const spinner = new Spinner('Installing skills...').start();
-      let installed = 0;
-      let skipped = 0;
-
-      for (const skill of availableSkills) {
-        const skillSrc = path.join(srcDir, skill);
-        const skillDest = path.join(destDir, skill);
-
-        if (dirExists(skillDest) && !force) {
-          skipped++;
-          continue;
-        }
-
-        if (copyDirectory(skillSrc, skillDest)) {
-          installed++;
-        }
-      }
-
-      spinner.succeed('Skills installation complete!');
-      console.log();
-
-      if (installed > 0) {
-        console.log(
-          `  ${c('green', '✓')} Installed ${installed} skill(s) to ${destDir}`
-        );
-      }
-      if (skipped > 0) {
-        console.log(
-          `  ${c('yellow', '⚠')} Skipped ${skipped} existing skill(s)`
-        );
-        console.log(
-          `  ${dim('Use')} ${c('cyan', '--force')} ${dim('to overwrite.')}`
-        );
-      }
-
-      console.log();
-      console.log(`  ${bold('Skills are now available in Claude Code!')}`);
-      console.log();
-      return;
-    }
-
-    // Unknown subcommand
-    console.log();
-    console.log(`  ${c('red', '✗')} Unknown subcommand: ${subcommand}`);
-    console.log(`  ${dim('Usage:')} octocode skills [install|list]`);
-    console.log();
-    process.exitCode = 1;
-  },
-};
 
 /**
  * Token command - return the OAuth token
@@ -784,7 +658,9 @@ const tokenCommand: CLICommand = {
         );
         console.log();
         console.log(`  ${dim('To login with Octocode:')}`);
-        console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode login')}`);
+        console.log(
+          `    ${c('cyan', '→')} ${c('yellow', 'octocode auth login')}`
+        );
         console.log();
         console.log(`  ${dim('Or use gh CLI token:')}`);
         console.log(
@@ -806,7 +682,9 @@ const tokenCommand: CLICommand = {
         console.log(`  ${c('yellow', '⚠')} Not authenticated to ${hostname}`);
         console.log();
         console.log(`  ${dim('To login:')}`);
-        console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode login')}`);
+        console.log(
+          `    ${c('cyan', '→')} ${c('yellow', 'octocode auth login')}`
+        );
         console.log(`    ${dim('or')}`);
         console.log(`    ${c('cyan', '→')} ${c('yellow', 'gh auth login')}`);
       }
@@ -835,207 +713,10 @@ const tokenCommand: CLICommand = {
 };
 
 /**
- * Status command - show authentication status
- */
-const statusCommand: CLICommand = {
-  name: 'status',
-  aliases: ['s'],
-  description: 'Show GitHub authentication status',
-  usage: 'octocode status [--hostname <host>]',
-  options: [
-    {
-      name: 'hostname',
-      short: 'H',
-      description: 'GitHub Enterprise hostname (default: github.com)',
-      hasValue: true,
-    },
-  ],
-  handler: async (args: ParsedArgs) => {
-    const hostnameOpt = args.options['hostname'] ?? args.options['H'];
-    const hostname =
-      (typeof hostnameOpt === 'string' ? hostnameOpt : undefined) ||
-      'github.com';
-    const status = getAuthStatus(hostname);
-
-    console.log();
-    if (status.authenticated) {
-      console.log(
-        `  ${c('green', '✓')} Logged in as ${c('cyan', status.username || 'unknown')}`
-      );
-      console.log(`  ${dim('Host:')} ${status.hostname}`);
-      console.log(
-        `  ${dim('Source:')} ${formatTokenSource(status.tokenSource || 'none')}`
-      );
-      if (status.tokenExpired) {
-        console.log(
-          `  ${c('yellow', '⚠')} Token has expired - please login again`
-        );
-      }
-    } else {
-      console.log(`  ${c('yellow', '⚠')} Not logged in`);
-      console.log();
-      console.log(`  ${dim('To login:')}`);
-      console.log(`    ${c('cyan', '→')} ${c('yellow', 'octocode login')}`);
-      console.log(`    ${dim('or')}`);
-      console.log(`    ${c('cyan', '→')} ${c('yellow', 'gh auth login')}`);
-    }
-    console.log();
-  },
-};
-
-/**
- * Sync command - synchronize MCP configs across all clients
- */
-const syncCommand: CLICommand = {
-  name: 'sync',
-  aliases: ['sy'],
-  description: 'Sync MCP configurations across all IDE clients',
-  usage: 'octocode sync [--force] [--dry-run] [--status]',
-  options: [
-    {
-      name: 'force',
-      short: 'f',
-      description: 'Auto-resolve conflicts (use first variant)',
-    },
-    {
-      name: 'dry-run',
-      short: 'n',
-      description: 'Show what would be synced without making changes',
-    },
-    {
-      name: 'status',
-      short: 's',
-      description: 'Show sync status without syncing',
-    },
-  ],
-  handler: async (args: ParsedArgs) => {
-    const force = Boolean(args.options['force'] || args.options['f']);
-    const dryRun = Boolean(args.options['dry-run'] || args.options['n']);
-    const statusOnly = Boolean(args.options['status'] || args.options['s']);
-
-    // Status-only mode
-    if (statusOnly) {
-      console.log();
-      console.log(`  ${bold('🔄 MCP Sync Status')}`);
-      console.log();
-
-      const spinner = new Spinner('Scanning configurations...').start();
-      const snapshots = readAllClientConfigs();
-      const analysis = analyzeSyncState(snapshots);
-      spinner.stop();
-
-      // Show client summary
-      console.log(
-        `  ${bold('Clients:')} ${analysis.summary.clientsWithConfig} with MCP configs`
-      );
-      console.log();
-
-      for (const snapshot of analysis.clients) {
-        const name = getClientDisplayName(snapshot.client);
-        const icon = snapshot.exists ? c('green', '●') : c('dim', '○');
-        const mcpInfo = snapshot.exists
-          ? `${snapshot.mcpCount} MCPs`
-          : dim('no config');
-        console.log(`    ${icon} ${name}: ${mcpInfo}`);
-      }
-
-      console.log();
-      console.log(`  ${bold('MCPs:')}`);
-      console.log(
-        `    ${c('cyan', '•')} ${analysis.summary.totalUniqueMCPs} unique MCPs`
-      );
-
-      if (analysis.summary.consistentMCPs > 0) {
-        console.log(
-          `    ${c('green', '✓')} ${analysis.summary.consistentMCPs} fully synced`
-        );
-      }
-      if (analysis.summary.needsSyncCount > 0) {
-        console.log(
-          `    ${c('yellow', '○')} ${analysis.summary.needsSyncCount} can be auto-synced`
-        );
-      }
-      if (analysis.summary.conflictCount > 0) {
-        console.log(
-          `    ${c('red', '!')} ${analysis.summary.conflictCount} have conflicts`
-        );
-      }
-
-      console.log();
-
-      if (
-        analysis.summary.needsSyncCount > 0 ||
-        analysis.summary.conflictCount > 0
-      ) {
-        console.log(
-          `  ${dim('Run')} ${c('cyan', 'octocode sync')} ${dim('to synchronize.')}`
-        );
-        if (analysis.summary.conflictCount > 0) {
-          console.log(
-            `  ${dim('Use')} ${c('cyan', '--force')} ${dim('to auto-resolve conflicts.')}`
-          );
-        }
-        console.log();
-      }
-
-      return;
-    }
-
-    // Sync mode
-    console.log();
-    console.log(`  ${bold('🔄 MCP Sync')}`);
-    console.log();
-
-    const spinner = new Spinner('Analyzing configurations...').start();
-
-    const result = await quickSync({ force, dryRun });
-
-    if (result.syncPerformed) {
-      if (result.success) {
-        spinner.succeed(result.message);
-        console.log();
-        console.log(`  ${bold('Next:')} Restart your IDEs to apply changes.`);
-      } else {
-        spinner.fail(result.message);
-        process.exitCode = 1;
-      }
-    } else {
-      spinner.stop();
-      if (result.success) {
-        console.log(`  ${c('green', '✓')} ${result.message}`);
-      } else {
-        console.log(`  ${c('yellow', '⚠')} ${result.message}`);
-        if (!force && result.message.includes('conflict')) {
-          console.log();
-          console.log(`  ${dim('Options:')}`);
-          console.log(
-            `    ${c('cyan', '•')} Run ${c('cyan', 'octocode')} for interactive mode`
-          );
-          console.log(
-            `    ${c('cyan', '•')} Use ${c('cyan', '--force')} to auto-resolve`
-          );
-        }
-        process.exitCode = 1;
-      }
-    }
-
-    console.log();
-  },
-};
-
-/**
  * All available commands
+ * Note: login/logout/status are accessed via `auth` subcommands
  */
-const commands: CLICommand[] = [
-  installCommand,
-  authCommand,
-  loginCommand,
-  logoutCommand,
-  skillsCommand,
-  tokenCommand,
-  statusCommand,
-  syncCommand,
-];
+const commands: CLICommand[] = [installCommand, authCommand, tokenCommand];
 
 /**
  * Find a command by name or alias

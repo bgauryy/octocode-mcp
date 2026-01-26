@@ -27,7 +27,6 @@ octocode status
 | `skills` | - | Install/manage AI skills |
 | `token` | - | Display or manage GitHub tokens |
 | `status` | - | Show environment and auth status |
-| `sync` | - | Sync MCP configurations across clients |
 
 ---
 
@@ -196,24 +195,6 @@ octocode status [--hostname <host>]
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
 | `--hostname` | `-H` | GitHub hostname | `github.com` |
-
----
-
-### `octocode sync`
-
-Synchronize MCP configurations across all configured clients.
-
-```bash
-octocode sync [--force] [--dry-run] [--status]
-```
-
-**Options:**
-
-| Option | Short | Description | Default |
-|--------|-------|-------------|---------|
-| `--force` | `-f` | Auto-resolve conflicts | `false` |
-| `--dry-run` | - | Preview changes without applying | `false` |
-| `--status` | - | Show sync status only | `false` |
 
 ---
 

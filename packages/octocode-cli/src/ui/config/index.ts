@@ -5,8 +5,6 @@
  * Configurations are saved as environment variables in the MCP server config.
  */
 
-export { runInspectFlow } from './inspect-flow.js';
-
 import { c, bold, dim } from '../../utils/colors.js';
 import {
   loadInquirer,
@@ -109,8 +107,7 @@ interface ConfigOption {
   toolCategory?: 'all' | 'github' | 'local';
 }
 
-type ConfigMenuChoice = 'edit' | 'view' | 'show-json' | 'back';
-type EditConfigChoice = string | 'save' | 'reset' | 'back';
+type EditConfigChoice = string | 'save' | 'reset' | 'view-json' | 'back';
 
 /**
  * All available configuration options
@@ -268,75 +265,12 @@ function parseBooleanValue(value: string): boolean {
 }
 
 /**
- * Show configuration submenu
- */
-async function showConfigMenu(): Promise<ConfigMenuChoice> {
-  const choice = await select<ConfigMenuChoice>({
-    message: '',
-    choices: [
-      {
-        name: '🔧 Edit configuration',
-        value: 'edit',
-        description: 'Configure all octocode-mcp settings for a client',
-      },
-      {
-        name: '📋 View all configuration options',
-        value: 'view',
-        description: 'Show available environment variables and their defaults',
-      },
-      {
-        name: '📄 Show current JSON config',
-        value: 'show-json',
-        description: 'Display the actual MCP config JSON for a client',
-      },
-      new Separator() as unknown as { name: string; value: ConfigMenuChoice },
-      {
-        name: `${c('dim', '← Back to main menu')}`,
-        value: 'back',
-      },
-    ],
-    pageSize: 10,
-    loop: false,
-    theme: {
-      prefix: '  ',
-      style: {
-        highlight: (text: string) => c('cyan', text),
-      },
-    },
-  });
-
-  return choice;
-}
-
-/**
  * Run the configuration options flow
+ * Goes directly to the edit flow - no submenu needed
  */
 export async function runConfigOptionsFlow(): Promise<void> {
   await loadInquirer();
-
-  // Show submenu
-  const choice = await showConfigMenu();
-
-  switch (choice) {
-    case 'view':
-      showConfigInfo();
-      // Wait for user to press enter before returning
-      await pressEnterToContinue();
-      break;
-
-    case 'edit':
-      await runEditConfigFlow();
-      break;
-
-    case 'show-json':
-      await showCurrentJsonConfig();
-      break;
-
-    case 'back':
-    default:
-      // Just return to main menu
-      break;
-  }
+  await runEditConfigFlow();
 }
 
 /**
@@ -859,6 +793,11 @@ async function showEditConfigMenu(
   }
 
   choices.push({
+    name: `${c('cyan', '📄')} View JSON`,
+    value: 'view-json',
+    description: 'Show raw JSON configuration',
+  });
+  choices.push({
     name: `${c('yellow', '↺')} Reset to defaults`,
     value: 'reset',
     description: 'Clear all custom configuration',
@@ -1022,6 +961,32 @@ async function runEditConfigFlow(): Promise<void> {
         break;
       }
 
+      case 'view-json': {
+        // Show JSON inline without leaving the edit flow
+        const octocodeConfig = config.mcpServers?.octocode;
+        console.log();
+        console.log(`  ${dim('─'.repeat(50))}`);
+        const jsonString = JSON.stringify(
+          { octocode: octocodeConfig },
+          null,
+          2
+        );
+        const lines = jsonString.split('\n');
+        for (const line of lines) {
+          const highlighted = line
+            .replace(/"([^"]+)":/g, `${c('cyan', '"$1"')}:`)
+            .replace(/: "([^"]+)"/g, `: ${c('green', '"$1"')}`)
+            .replace(/: (\d+)/g, `: ${c('yellow', '$1')}`)
+            .replace(/: (true|false)/g, `: ${c('magenta', '$1')}`);
+          console.log(`  ${highlighted}`);
+        }
+        console.log(`  ${dim('─'.repeat(50))}`);
+        console.log(`  ${dim('Path:')} ${c('cyan', configPath)}`);
+        console.log();
+        await pressEnterToContinue();
+        break;
+      }
+
       case 'back': {
         // Check for unsaved changes
         const hasUnsavedChanges =
@@ -1073,149 +1038,5 @@ async function runEditConfigFlow(): Promise<void> {
         break;
       }
     }
-  }
-}
-
-/**
- * Show current JSON configuration for a client
- */
-async function showCurrentJsonConfig(): Promise<void> {
-  // Select MCP client
-  const selection = await selectMCPClient();
-  if (!selection) return;
-
-  const { client, customPath } = selection;
-  const clientInfo = MCP_CLIENTS[client];
-  const configPath = customPath || getMCPConfigPath(client);
-
-  // Read existing config
-  const config = readMCPConfig(configPath);
-  if (!config) {
-    console.log();
-    console.log(`  ${c('red', '✗')} Failed to read config file: ${configPath}`);
-    console.log();
-    return;
-  }
-
-  // Check if octocode is configured
-  if (!isOctocodeConfigured(config)) {
-    console.log();
-    console.log(
-      `  ${c('yellow', '⚠')} Octocode is not configured for ${clientInfo.name}.`
-    );
-    console.log(
-      `  ${dim('Please install Octocode first using "Install octocode-mcp".')}`
-    );
-    console.log();
-    return;
-  }
-
-  // Get the octocode configuration
-  const octocodeConfig = config.mcpServers?.octocode;
-
-  console.log();
-  console.log(
-    `  ${dim('Client:')} ${clientInfo.name} ${dim('•')} ${c('cyan', configPath)}`
-  );
-  console.log();
-
-  // Pretty print the octocode config
-  const jsonString = JSON.stringify({ octocode: octocodeConfig }, null, 2);
-  const lines = jsonString.split('\n');
-  for (const line of lines) {
-    // Syntax highlight the JSON
-    const highlighted = line
-      .replace(/"([^"]+)":/g, `${c('cyan', '"$1"')}:`) // keys
-      .replace(/: "([^"]+)"/g, `: ${c('green', '"$1"')}`) // string values
-      .replace(/: (\d+)/g, `: ${c('yellow', '$1')}`) // number values
-      .replace(/: (true|false)/g, `: ${c('magenta', '$1')}`); // boolean values
-    console.log(`  ${highlighted}`);
-  }
-
-  console.log();
-
-  // Ask if user wants to open the config file
-  await promptOpenConfigFile(configPath);
-}
-
-/**
- * Get example value for a config option
- */
-function getExampleValue(option: ConfigOption): string {
-  switch (option.id) {
-    case 'enableLocal':
-      return 'ENABLE_LOCAL=1';
-    case 'githubApiUrl':
-      return 'GITHUB_API_URL=https://github.mycompany.com/api/v3';
-    case 'toolsToRun':
-      return 'TOOLS_TO_RUN=githubSearchCode,githubGetFileContent';
-    case 'enableTools':
-      return 'ENABLE_TOOLS=localSearchCode,localFindFiles';
-    case 'disableTools':
-      return 'DISABLE_TOOLS=githubSearchPullRequests';
-    case 'requestTimeout':
-      return 'REQUEST_TIMEOUT=60000';
-    case 'maxRetries':
-      return 'MAX_RETRIES=5';
-    default:
-      return `${option.envVar}=${option.defaultValue}`;
-  }
-}
-
-/**
- * Get display default value for a config option
- */
-function getDisplayDefault(option: ConfigOption): string {
-  if (option.type === 'array') {
-    return option.id === 'toolsToRun' ? '(all tools)' : '(none)';
-  }
-  return option.defaultValue;
-}
-
-/**
- * Show all configuration options with explanations
- */
-function showConfigInfo(): void {
-  console.log();
-  console.log(`  ${bold('All Available Configuration Options')}`);
-  console.log();
-  console.log(
-    `  ${dim('These options can be set as environment variables in your MCP config.')}`
-  );
-  console.log(
-    `  ${dim('Add them to the "env" object in your octocode server configuration.')}`
-  );
-  console.log();
-  console.log(`  ${dim('Example config:')}`);
-  console.log(`  ${dim('{')}
-  ${dim('  "mcpServers": {')}
-  ${dim('    "octocode": {')}
-  ${dim('      "command": "npx",')}
-  ${dim('      "args": ["octocode-mcp@latest"],')}
-  ${c('green', '      "env": { "ENABLE_LOCAL": "1" }')}
-  ${dim('    }')}
-  ${dim('  }')}
-  ${dim('}')}`);
-  console.log();
-  console.log(c('blue', '━'.repeat(66)));
-  console.log();
-
-  for (const option of ALL_CONFIG_OPTIONS) {
-    const typeColor =
-      option.type === 'boolean'
-        ? 'green'
-        : option.type === 'number'
-          ? 'yellow'
-          : option.type === 'array'
-            ? 'magenta'
-            : 'cyan';
-
-    console.log(`  ${c('cyan', option.envVar)} ${dim(`(${option.type})`)}`);
-    console.log(`    ${option.description}`);
-    console.log(`    ${dim('Default:')} ${getDisplayDefault(option)}`);
-    console.log(
-      `    ${dim('Example:')} ${c(typeColor, getExampleValue(option))}`
-    );
-    console.log();
   }
 }

@@ -9,43 +9,13 @@ import {
   getAllClientInstallStatus,
   type ClientInstallStatus,
 } from '../utils/mcp-config.js';
-import { getSkillsSourceDir, getSkillsDestDir } from '../utils/skills.js';
-import { dirExists, listSubdirectories } from '../utils/fs.js';
 import { detectCurrentClient } from '../utils/mcp-paths.js';
 import { getAuthStatusAsync } from '../features/github-oauth.js';
 import type { OctocodeAuthStatus } from '../types/index.js';
-import path from 'node:path';
 
 // ============================================================================
 // State Types
 // ============================================================================
-
-/**
- * Skill installation info
- */
-interface SkillInfo {
-  name: string;
-  installed: boolean;
-  srcPath: string;
-  destPath: string;
-}
-
-/**
- * Skills state - counts bundled and all installed skills
- */
-export interface SkillsState {
-  sourceExists: boolean;
-  destDir: string;
-  skills: SkillInfo[];
-  /** Count of bundled skills that are installed */
-  installedCount: number;
-  /** Count of bundled skills not yet installed */
-  notInstalledCount: number;
-  /** Total count of ALL installed skills (bundled + marketplace) */
-  totalInstalledCount: number;
-  allInstalled: boolean;
-  hasSkills: boolean;
-}
 
 /**
  * Octocode MCP installation state
@@ -66,7 +36,6 @@ interface OctocodeState {
  */
 export interface AppState {
   octocode: OctocodeState;
-  skills: SkillsState;
   currentClient: string | null;
   githubAuth: OctocodeAuthStatus;
 }
@@ -96,64 +65,12 @@ function getOctocodeState(): OctocodeState {
 }
 
 /**
- * Get Skills state - includes counts for both bundled and all installed
- */
-function getSkillsState(): SkillsState {
-  const srcDir = getSkillsSourceDir();
-  const destDir = getSkillsDestDir();
-
-  // Count ALL installed skills (bundled + marketplace) from destination directory
-  const totalInstalledCount = dirExists(destDir)
-    ? listSubdirectories(destDir).filter(name => !name.startsWith('.')).length
-    : 0;
-
-  if (!dirExists(srcDir)) {
-    return {
-      sourceExists: false,
-      destDir,
-      skills: [],
-      installedCount: 0,
-      notInstalledCount: 0,
-      totalInstalledCount,
-      allInstalled: false,
-      hasSkills: false,
-    };
-  }
-
-  const availableSkills = listSubdirectories(srcDir).filter(
-    name => !name.startsWith('.')
-  );
-
-  const skills: SkillInfo[] = availableSkills.map(skill => ({
-    name: skill,
-    installed: dirExists(path.join(destDir, skill)),
-    srcPath: path.join(srcDir, skill),
-    destPath: path.join(destDir, skill),
-  }));
-
-  const installedCount = skills.filter(s => s.installed).length;
-  const notInstalledCount = skills.filter(s => !s.installed).length;
-
-  return {
-    sourceExists: true,
-    destDir,
-    skills,
-    installedCount,
-    notInstalledCount,
-    totalInstalledCount,
-    allInstalled: notInstalledCount === 0 && skills.length > 0,
-    hasSkills: skills.length > 0,
-  };
-}
-
-/**
  * Get unified application state
  * Uses async auth check to properly check credential storage
  */
 export async function getAppState(): Promise<AppState> {
   return {
     octocode: getOctocodeState(),
-    skills: getSkillsState(),
     currentClient: detectCurrentClient(),
     githubAuth: await getAuthStatusAsync(),
   };

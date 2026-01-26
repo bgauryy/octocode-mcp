@@ -143,9 +143,8 @@ npx octocode-cli
 
 **Features:**
 - Interactive setup wizard
-- GitHub OAuth authentication  
+- GitHub OAuth authentication
 - MCP server installation
-- Skills marketplace
 
 ---
 

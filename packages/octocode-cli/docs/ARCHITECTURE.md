@@ -19,9 +19,9 @@ The Octocode CLI is an interactive installer and management tool for the Octocod
 │                       ▼                                         │
 │  ┌─────────────────────────────────────────────────────────┐    │
 │  │                    Features Layer                       │    │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐    │    │
-│  │  │ Install  │ │  Auth    │ │  Skills  │ │   Sync   │    │    │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘    │    │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐                 │    │
+│  │  │ Install  │ │  Auth    │ │  Skills  │                 │    │
+│  │  └──────────┘ └──────────┘ └──────────┘                 │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                       │                                         │
 │  ┌─────────────────────────────────────────────────────────┐    │
@@ -58,15 +58,13 @@ packages/octocode-cli/
 │   │   ├── install/          # Install flow UI
 │   │   ├── config/           # Configuration UI
 │   │   ├── skills-menu/      # Skills management UI
-│   │   ├── external-mcp/     # External MCP installer
-│   │   └── sync/             # Sync flow UI
+│   │   └── external-mcp/     # External MCP installer
 │   │
 │   ├── features/             # Core business logic
 │   │   ├── install.ts        # Installation logic
 │   │   ├── gh-auth.ts        # GitHub CLI auth
 │   │   ├── github-oauth.ts   # OAuth authentication
-│   │   ├── node-check.ts     # Node.js environment checks
-│   │   └── sync.ts           # Config synchronization
+│   │   └── node-check.ts     # Node.js environment checks
 │   │
 │   ├── configs/              # Configuration data
 │   │   ├── mcp-registry.ts   # MCP server registry
@@ -171,7 +169,6 @@ const commands: CLICommand[] = [
   skillsCommand,
   tokenCommand,
   statusCommand,
-  syncCommand,
 ];
 ```
 
@@ -529,14 +526,6 @@ User Input → Validation → Config Building → File Writing
 Device Code Request → User Authorization → Token Polling → Secure Storage
          │                    │                  │              │
          └── GitHub API ──────┴── Browser ───────┴── Keychain ──┘
-```
-
-### Sync Flow
-
-```
-Read All Configs → Analyze Differences → Resolve Conflicts → Apply Changes
-       │                   │                    │                │
-       └── Per Client ─────┴── Diff Algorithm ──┴── User Input ──┘
 ```
 
 ---

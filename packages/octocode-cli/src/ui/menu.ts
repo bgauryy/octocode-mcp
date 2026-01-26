@@ -15,14 +15,10 @@ import {
   checkAndPrintEnvironmentWithLoader,
   hasEnvironmentIssues,
 } from './install/index.js';
-import { runConfigOptionsFlow, runInspectFlow } from './config/index.js';
-import { runExternalMCPFlow } from './external-mcp/index.js';
-import { runSyncFlow } from './sync/index.js';
+import { runConfigOptionsFlow } from './config/index.js';
 import { printGoodbye, printWelcome } from './header.js';
 import { Spinner } from '../utils/spinner.js';
-import { runSkillsMenu } from './skills-menu/index.js';
-import { runOctocodeSkillsFlow } from './skills-menu/marketplace.js';
-import { getAppState, type AppState, type SkillsState } from './state.js';
+import { getAppState, type AppState } from './state.js';
 import { MCP_CLIENTS, type ClientInstallStatus } from '../utils/mcp-config.js';
 import {
   login as oauthLogin,
@@ -39,6 +35,7 @@ import {
 } from '../features/gh-auth.js';
 import { getCredentials, hasEnvToken } from '../utils/token-storage.js';
 import open from 'open';
+import { spawn } from 'node:child_process';
 
 /**
  * Wait for user to press enter
@@ -51,15 +48,9 @@ async function pressEnterToContinue(): Promise<void> {
   });
 }
 
-type MenuChoice =
-  | 'octocode'
-  | 'octocode-skills'
-  | 'skills'
-  | 'auth'
-  | 'mcp-config'
-  | 'exit';
+type MenuChoice = 'octocode' | 'auth' | 'exit';
 
-type OctocodeMenuChoice = 'configure' | 'install' | 'back';
+type OctocodeMenuChoice = 'mcp' | 'skill' | 'install' | 'back';
 
 /**
  * Get friendly client names for display
@@ -84,75 +75,6 @@ function printInstalledIDEs(installedClients: ClientInstallStatus[]): void {
       `    ${dim('•')} ${dim(clientName)} ${dim('→')} ${c('cyan', client.configPath)}`
     );
   }
-}
-
-/**
- * Build skills menu item based on state (for main menu)
- */
-function buildSkillsMenuItem(skills: SkillsState): {
-  name: string;
-  value: MenuChoice;
-  description: string;
-} {
-  if (!skills.sourceExists || !skills.hasSkills) {
-    return {
-      name: '🧠 Manage System Skills',
-      value: 'skills',
-      description: dim('Not available'),
-    };
-  }
-
-  if (skills.allInstalled) {
-    return {
-      name: `🧠 Manage System Skills ${c('green', '✓')}`,
-      value: 'skills',
-      description: `${skills.totalInstalledCount} installed • Research, PR Review & more`,
-    };
-  }
-
-  if (skills.totalInstalledCount > 0) {
-    return {
-      name: '🧠 Manage System Skills',
-      value: 'skills',
-      description: `${skills.totalInstalledCount}/${skills.skills.length} installed • Get more skills!`,
-    };
-  }
-
-  // No skills installed - encourage installation
-  return {
-    name: `🧠 ${bold('Manage System Skills')} ${c('cyan', '★')}`,
-    value: 'skills',
-    description: `${c('cyan', '→')} Install skills for AI-powered coding workflows`,
-  };
-}
-
-/**
- * Build Octocode Skills menu item
- * Shows ✓ if any octocode skills are installed
- */
-function buildOctocodeSkillsMenuItem(skills: SkillsState): {
-  name: string;
-  value: MenuChoice;
-  description: string;
-} {
-  // Check if any octocode-* skills are installed
-  const octocodeSkillsInstalled = skills.skills.filter(
-    s => s.name.startsWith('octocode-') && s.installed
-  ).length;
-
-  if (octocodeSkillsInstalled > 0) {
-    return {
-      name: `🐙 Octocode Skills ${c('green', '✓')}`,
-      value: 'octocode-skills',
-      description: `${octocodeSkillsInstalled} installed • Research, planning & review`,
-    };
-  }
-
-  return {
-    name: '🐙 Octocode Skills',
-    value: 'octocode-skills',
-    description: 'Install AI-powered research, planning & review skills',
-  };
 }
 
 /**
@@ -222,13 +144,6 @@ function buildStatusLine(state: AppState): string {
     parts.push(`${c('yellow', '○')} Not installed`);
   }
 
-  // Skills status - use totalInstalledCount from centralized state
-  if (state.skills.totalInstalledCount > 0) {
-    parts.push(`${c('green', '●')} ${state.skills.totalInstalledCount} skills`);
-  } else if (state.skills.sourceExists && state.skills.hasSkills) {
-    parts.push(`${c('yellow', '○')} ${state.skills.skills.length} skills`);
-  }
-
   return parts.join(dim('  │  '));
 }
 
@@ -275,20 +190,11 @@ function buildOctocodeMenuItem(state: AppState): {
  * Guides users to set up auth and use best practices
  */
 function printContextualHints(state: AppState): void {
-  // ─── AUTH HINT (Priority 1) ───
+  // ─── AUTH HINT ───
   if (!state.githubAuth.authenticated) {
     console.log();
     console.log(
       `  ${c('yellow', '⚠')} ${bold('Auth required!')} Run ${c('cyan', '🔑 Manage Auth')} to access GitHub repos`
-    );
-  } else if (
-    state.octocode.isInstalled &&
-    state.skills.totalInstalledCount === 0
-  ) {
-    // ─── SKILLS HINT (Priority 2) ───
-    console.log();
-    console.log(
-      `  ${c('cyan', '💡')} ${dim('Boost your AI coding:')} Install ${c('magenta', 'Skills')} for research, PR review & more!`
     );
   }
 
@@ -297,9 +203,6 @@ function printContextualHints(state: AppState): void {
   console.log(`  ${c('yellow', 'Hints:')}`);
   console.log(
     c('yellow', `     ▸ Prompts:  Use /research, /plan, /implement in chat`)
-  );
-  console.log(
-    c('yellow', `     ▸ Skills:   Add via 🐙 Octocode Skills in main menu`)
   );
   console.log(
     c(
@@ -311,12 +214,6 @@ function printContextualHints(state: AppState): void {
     c(
       'yellow',
       `     ▸ Auth:     Supports Octocode OAuth and gh CLI (if installed)`
-    )
-  );
-  console.log(
-    c(
-      'yellow',
-      `     ▸ MCP:      Manage all system MCP servers via Manage System MCP`
     )
   );
 }
@@ -344,21 +241,8 @@ async function showMainMenu(state: AppState): Promise<MenuChoice> {
   // ─── OCTOCODE ───
   choices.push(buildOctocodeMenuItem(state));
 
-  // ─── OCTOCODE SKILLS ───
-  choices.push(buildOctocodeSkillsMenuItem(state.skills));
-
-  // ─── SKILLS ───
-  choices.push(buildSkillsMenuItem(state.skills));
-
   // ─── AUTH ───
   choices.push(buildAuthMenuItem(state.githubAuth));
-
-  // ─── MCP CONFIGURATION ───
-  choices.push({
-    name: '⚡ Manage System MCP',
-    value: 'mcp-config',
-    description: 'Add, sync and configure MCP across all IDEs',
-  });
 
   // ─── EXIT ───
   choices.push(
@@ -424,14 +308,21 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
     });
   }
 
-  // ─── CONFIGURE (only when installed) ───
+  // ─── MCP CONFIGURATION (only when installed) ───
   if (state.octocode.isInstalled) {
     choices.push({
-      name: '⚙️  Configure Octocode',
-      value: 'configure',
+      name: '🔌 MCP Configuration',
+      value: 'mcp',
       description: 'Server options & preferences',
     });
   }
+
+  // ─── INSTALL SKILLS ───
+  choices.push({
+    name: '🎯 Install Skills',
+    value: 'skill',
+    description: 'Add octocode-research skill',
+  });
 
   // ─── BACK ───
   choices.push(
@@ -461,6 +352,86 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
   });
 
   return choice;
+}
+
+/**
+ * Run skill installation flow
+ */
+async function runSkillInstallFlow(): Promise<void> {
+  const SKILL_URL =
+    'https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-research';
+
+  console.log();
+  console.log(`  ${bold('🎯 Install octocode-research Skill')}`);
+  console.log();
+  console.log(
+    `  ${dim('This skill adds AI-powered code research capabilities:')}`
+  );
+  console.log(
+    `     ${dim('•')} Deep code exploration with LSP semantic analysis`
+  );
+  console.log(`     ${dim('•')} GitHub research & PR archaeology`);
+  console.log(`     ${dim('•')} Planning before implementation`);
+  console.log();
+
+  const confirm = await selectWithCancel<'yes' | 'no'>({
+    message: 'Install octocode-research skill?',
+    choices: [
+      { name: 'Yes, install skill', value: 'yes' },
+      { name: 'No, cancel', value: 'no' },
+    ],
+    theme: {
+      prefix: '  ',
+      style: {
+        highlight: (text: string) => c('green', text),
+      },
+    },
+  });
+
+  if (confirm !== 'yes') {
+    console.log();
+    console.log(`  ${dim('Installation cancelled.')}`);
+    return;
+  }
+
+  console.log();
+  console.log(
+    `  ${dim('Running:')} ${c('cyan', `npx add-skill ${SKILL_URL}`)}`
+  );
+  console.log();
+
+  try {
+    // Run npx add-skill with inherited stdio for interactive output
+    const child = spawn('npx', ['add-skill', SKILL_URL], {
+      stdio: 'inherit',
+      shell: true,
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      child.on('close', code => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`Process exited with code ${code}`));
+        }
+      });
+      child.on('error', reject);
+    });
+
+    console.log();
+    console.log(`  ${c('green', '✓')} Skill installation completed`);
+  } catch (error) {
+    console.log();
+    console.log(
+      `  ${c('red', '✗')} Installation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+    console.log();
+    console.log(`  ${dim('You can try running manually:')}`);
+    console.log(`  ${c('cyan', `npx add-skill ${SKILL_URL}`)}`);
+  }
+
+  console.log();
+  await pressEnterToContinue();
 }
 
 /**
@@ -497,106 +468,13 @@ async function runOctocodeFlow(): Promise<void> {
         console.log();
         break;
 
-      case 'configure':
+      case 'mcp':
         await runConfigOptionsFlow();
         console.log();
         break;
 
-      case 'back':
-      default:
-        inMenu = false;
-        break;
-    }
-  }
-}
-
-// ============================================================================
-// MCP Configuration Flow
-// ============================================================================
-
-type MCPConfigChoice = 'sync' | 'marketplace' | 'inspect' | 'back';
-
-/**
- * Show MCP configuration submenu
- */
-async function showMCPConfigMenu(): Promise<MCPConfigChoice> {
-  const choices: Array<{
-    name: string;
-    value: MCPConfigChoice;
-    description?: string;
-  }> = [];
-
-  choices.push({
-    name: 'ℹ Show MCP details',
-    value: 'inspect',
-    description: 'View and manage configured MCP servers',
-  });
-
-  choices.push({
-    name: '🔄 Sync Configurations',
-    value: 'sync',
-    description: 'Sync MCP configs across all IDEs',
-  });
-
-  choices.push({
-    name: '🔌 MCP Marketplace',
-    value: 'marketplace',
-    description: 'Browse and install community MCP servers',
-  });
-
-  choices.push(
-    new Separator() as unknown as {
-      name: string;
-      value: MCPConfigChoice;
-      description?: string;
-    }
-  );
-
-  choices.push({
-    name: `${c('dim', '← Back to main menu')}`,
-    value: 'back',
-  });
-
-  const choice = await selectWithCancel<MCPConfigChoice>({
-    message: '',
-    choices,
-    pageSize: 12,
-    loop: false,
-    theme: {
-      prefix: '  ',
-      style: {
-        highlight: (text: string) => c('magenta', text),
-      },
-    },
-  });
-
-  return choice;
-}
-
-/**
- * Run MCP configuration flow (submenu)
- */
-async function runMCPConfigFlow(): Promise<void> {
-  await loadInquirer();
-  console.log();
-
-  let inMenu = true;
-  while (inMenu) {
-    const choice = await showMCPConfigMenu();
-
-    switch (choice) {
-      case 'inspect':
-        await runInspectFlow();
-        break;
-
-      case 'sync':
-        await runSyncFlow();
-        console.log();
-        break;
-
-      case 'marketplace':
-        await runExternalMCPFlow();
-        console.log();
+      case 'skill':
+        await runSkillInstallFlow();
         break;
 
       case 'back':
@@ -824,7 +702,7 @@ async function runLoginFlow(): Promise<boolean> {
     console.log(`     ${dim('•')} Make sure you copied the code correctly`);
     console.log(`     ${dim('•')} Check your browser didn't block the popup`);
     console.log(
-      `     ${dim('•')} Try running ${c('cyan', 'octocode login')} again`
+      `     ${dim('•')} Try running ${c('cyan', 'octocode auth login')} again`
     );
   }
   console.log();
@@ -943,34 +821,12 @@ async function showGhCliGuidance(): Promise<void> {
 /**
  * Display auth status - clean, simple status line
  */
-/**
- * Get detailed auth source for display
- */
-function getDetailedAuthSource(status: OctocodeAuthStatus): string {
-  switch (status.tokenSource) {
-    case 'gh-cli':
-      return 'gh CLI';
-    case 'env': {
-      // Show which env var (e.g., "env:GH_TOKEN" → "GH_TOKEN")
-      if (status.envTokenSource) {
-        const varName = status.envTokenSource.replace('env:', '');
-        return `${varName} env var`;
-      }
-      return 'environment variable';
-    }
-    case 'octocode':
-      return 'file';
-    default:
-      return 'unknown';
-  }
-}
-
 function displayAuthStatus(status: OctocodeAuthStatus): void {
   console.log(`  ${bold('🔐 GitHub Authentication')}`);
   console.log();
 
   if (status.authenticated) {
-    const source = getDetailedAuthSource(status);
+    const source = getAuthSourceDisplay(status);
 
     // For env tokens, we can't get username, so show different message
     if (status.tokenSource === 'env') {
@@ -1111,20 +967,8 @@ async function handleMenuChoice(choice: MenuChoice): Promise<boolean> {
       await runOctocodeFlow();
       return true;
 
-    case 'octocode-skills':
-      await runOctocodeSkillsFlow();
-      return true;
-
-    case 'skills':
-      await runSkillsMenu();
-      return true;
-
     case 'auth':
       await runAuthFlow();
-      return true;
-
-    case 'mcp-config':
-      await runMCPConfigFlow();
       return true;
 
     case 'exit':

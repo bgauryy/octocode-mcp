@@ -14,16 +14,13 @@
 
 </div>
 
-**Octocode CLI** is the essential companion for AI-assisted development. It streamlines the installation of [octocode-mcp](https://www.npmjs.com/package/octocode-mcp), manages authentication across multiple AI clients, and keeps your MCP configurations synchronized.
+**Octocode CLI** is the essential companion for AI-assisted development. It streamlines the installation of [octocode-mcp](https://www.npmjs.com/package/octocode-mcp) and manages authentication across multiple AI clients.
 
 ---
 
 ## ✨ Key Features
 
 - **🚀 One-Step Installation**: Instantly configure `octocode-mcp` for Cursor, Claude Desktop, Windsurf, Zed, and more.
-- **🔌 MCP Marketplace**: Browse and install over 70+ community-vetted MCP servers directly from your terminal.
-- **🧠 AI Skills Manager**: Install and update specialized AI coding skills for Claude Code (`research`, `local-search`, `implement`, `plan`, `pr-review`, `roast`).
-- **🔄 Universal Sync**: Keep your MCP configurations and authentication states synchronized across all your IDEs.
 - **🔐 Secure Authentication**: Enterprise-grade token management with encrypted storage and multiple auth providers.
 
 ---
@@ -47,10 +44,7 @@ The recommended way to use Octocode CLI. Access all features through a unified m
 | Menu Item | Description |
 |-----------|-------------|
 | **🐙 Octocode MCP** | Install and configure Octocode MCP for your IDEs |
-| **🐙 Octocode Skills** | Install AI-powered research, planning & review skills |
-| **🧠 Manage System Skills** | Browse skills marketplace and manage installed skills |
 | **🔑 Manage Auth** | Sign in/out via Octocode OAuth or gh CLI |
-| **⚡ Manage System MCP** | Sync configs, browse MCP marketplace, inspect settings |
 
 ```bash
 npx octocode-cli
@@ -117,25 +111,7 @@ octocode-cli token --source
 octocode-cli token --json
 ```
 
-#### 4. Sync Configurations
-
-Keep your MCP settings consistent across different editors.
-
-```bash
-# Sync all IDEs
-octocode-cli sync
-
-# Preview changes (dry run)
-octocode-cli sync --dry-run
-
-# Show sync status
-octocode-cli sync --status
-
-# Force sync (auto-resolve conflicts)
-octocode-cli sync --force
-```
-
-#### 5. Manage Skills
+#### 4. Manage Skills
 
 Install AI skills for Claude Code.
 

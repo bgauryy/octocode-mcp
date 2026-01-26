@@ -24,21 +24,10 @@ export function showHelp(): void {
     `    ${c('magenta', 'install')}     Configure octocode-mcp for an IDE`
   );
   console.log(
-    `    ${c('magenta', 'skills')}      Install Octocode skills for Claude Code`
+    `    ${c('magenta', 'auth')}        Manage GitHub authentication (login/logout/status)`
   );
   console.log(
-    `    ${c('magenta', 'sync')}        Sync MCP configurations across all IDEs`
-  );
-  console.log(
-    `    ${c('magenta', 'auth')}        Manage GitHub authentication`
-  );
-  console.log(`    ${c('magenta', 'login')}       Authenticate with GitHub`);
-  console.log(`    ${c('magenta', 'logout')}      Sign out from GitHub`);
-  console.log(
-    `    ${c('magenta', 'status')}      Show GitHub authentication status`
-  );
-  console.log(
-    `    ${c('magenta', 'token')}       Print the stored GitHub OAuth token`
+    `    ${c('magenta', 'token')}       Print the GitHub token for scripting`
   );
   console.log();
   console.log(`  ${bold('OPTIONS')}`);
@@ -59,17 +48,14 @@ export function showHelp(): void {
     `    ${c('yellow', 'octocode install --ide claude --method direct')}`
   );
   console.log();
-  console.log(`    ${dim('# Check GitHub authentication')}`);
-  console.log(`    ${c('yellow', 'octocode auth')}`);
+  console.log(`    ${dim('# Authenticate with GitHub')}`);
+  console.log(`    ${c('yellow', 'octocode auth login')}`);
   console.log();
-  console.log(`    ${dim('# Get token from Octocode (default)')}`);
-  console.log(`    ${c('yellow', 'octocode token')}`);
+  console.log(`    ${dim('# Check authentication status')}`);
+  console.log(`    ${c('yellow', 'octocode auth status')}`);
   console.log();
-  console.log(`    ${dim('# Get token from gh CLI')}`);
-  console.log(`    ${c('yellow', 'octocode token --type=gh')}`);
-  console.log();
-  console.log(`    ${dim('# Install Octocode skills')}`);
-  console.log(`    ${c('yellow', 'octocode skills install')}`);
+  console.log(`    ${dim('# Get token for scripting')}`);
+  console.log(`    ${c('yellow', 'GITHUB_TOKEN=$(octocode token)')}`);
   console.log();
   console.log(c('magenta', `  ─── 🔍🐙 ${bold('https://octocode.ai')} ───`));
   console.log();

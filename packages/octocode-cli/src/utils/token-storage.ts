@@ -28,11 +28,9 @@ export {
 
   // Token refresh (centralized in shared)
   refreshAuthToken,
-  type RefreshResult,
 
   // Token retrieval with auto-refresh
   getTokenWithRefresh,
-  type TokenWithRefreshResult,
 
   // Utility
   getCredentialsFilePath,
@@ -41,10 +39,7 @@ export {
   getTokenFromEnv,
   getEnvTokenSource,
   hasEnvToken,
-  ENV_TOKEN_VARS,
 
   // Full token resolution (recommended)
   resolveTokenFull,
-  type FullTokenResolution,
-  type GhCliTokenGetter,
 } from 'octocode-shared';
