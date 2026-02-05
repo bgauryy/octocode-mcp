@@ -48,7 +48,6 @@ Technical documentation for the shared utilities:
 | [`API_REFERENCE.md`](./docs/API_REFERENCE.md) | Complete API documentation for all modules |
 | [`CREDENTIALS_ARCHITECTURE.md`](./docs/CREDENTIALS_ARCHITECTURE.md) | Token storage, encryption, file storage integration, refresh flow |
 | [`SESSION_PERSISTENCE.md`](./docs/SESSION_PERSISTENCE.md) | Deferred writes, exit handlers, statistics tracking |
-| [`GLOBAL_CONFIG_DESIGN.md`](./docs/GLOBAL_CONFIG_DESIGN.md) | Global configuration system design |
 
 ---
 

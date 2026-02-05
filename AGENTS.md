@@ -102,4 +102,3 @@ Each package has specific guidelines that **override** this root file:
 - **API Reference**: [packages/octocode-shared/docs/API_REFERENCE.md](./packages/octocode-shared/docs/API_REFERENCE.md)
 - **Credentials**: [packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md](./packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md)
 - **Session Persistence**: [packages/octocode-shared/docs/SESSION_PERSISTENCE.md](./packages/octocode-shared/docs/SESSION_PERSISTENCE.md)
-- **Global Config**: [packages/octocode-shared/docs/GLOBAL_CONFIG_DESIGN.md](./packages/octocode-shared/docs/GLOBAL_CONFIG_DESIGN.md)

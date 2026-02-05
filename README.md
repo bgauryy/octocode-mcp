@@ -96,12 +96,14 @@ It handles:
 
 Everything you need to master Octocode:
 
-### 📦 Packages in this Monorepo
+### 📦 Packages
 - **[octocode-mcp](./packages/octocode-mcp)**: The core MCP server for GitHub, Local FS, and LSP.
 - **[octocode-cli](./packages/octocode-cli)**: The command-line interface for managing Octocode.
-- **[octocode-research](./skills/octocode-research)**: The Research Skill for autonomous RDD.
 - **[octocode-vscode](./packages/octocode-vscode)**: VS Code extension for authentication.
 - **[octocode-shared](./packages/octocode-shared)**: Shared utilities and types.
+
+### 🎯 Skills
+- **[octocode-research](./skills/octocode-research)**: The Research Skill for autonomous RDD.
 
 ### 🎥 Tutorials
 - [**Octocode AI YouTube Channel**](https://www.youtube.com/@Octocode-ai) - Video tutorials and deep dives.

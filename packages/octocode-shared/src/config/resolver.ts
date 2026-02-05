@@ -17,7 +17,7 @@ import type {
   RequiredNetworkConfig,
   RequiredTelemetryConfig,
   RequiredLspConfig,
-  RequiredResearchConfig,
+  RequiredSecurityConfig,
 } from './types.js';
 import {
   DEFAULT_CONFIG,
@@ -28,7 +28,7 @@ import {
   DEFAULT_NETWORK_CONFIG,
   DEFAULT_TELEMETRY_CONFIG,
   DEFAULT_LSP_CONFIG,
-  DEFAULT_RESEARCH_CONFIG,
+  DEFAULT_SECURITY_CONFIG,
   MIN_TIMEOUT,
   MAX_TIMEOUT,
   MIN_RETRIES,
@@ -115,7 +115,6 @@ function resolveGitHub(
 
   return {
     apiUrl: envApiUrl || fileConfig?.apiUrl || DEFAULT_GITHUB_CONFIG.apiUrl,
-    defaultOrg: fileConfig?.defaultOrg ?? DEFAULT_GITHUB_CONFIG.defaultOrg,
   };
 }
 
@@ -130,8 +129,6 @@ function resolveGitLab(
 
   return {
     host: envHost || fileConfig?.host || DEFAULT_GITLAB_CONFIG.host,
-    defaultGroup:
-      fileConfig?.defaultGroup ?? DEFAULT_GITLAB_CONFIG.defaultGroup,
   };
 }
 
@@ -141,14 +138,22 @@ function resolveGitLab(
 function resolveLocal(
   fileConfig?: OctocodeConfig['local']
 ): RequiredLocalConfig {
-  // Env var: ENABLE_LOCAL
+  // Env vars: ENABLE_LOCAL, WORKSPACE_ROOT, ALLOWED_PATHS
   const envEnableLocal = parseBooleanEnv(process.env.ENABLE_LOCAL);
+  const envWorkspaceRoot = process.env.WORKSPACE_ROOT?.trim() || undefined;
+  const envAllowedPaths = parseStringArrayEnv(process.env.ALLOWED_PATHS);
 
   return {
     enabled:
       envEnableLocal ?? fileConfig?.enabled ?? DEFAULT_LOCAL_CONFIG.enabled,
-    allowedPaths: fileConfig?.allowedPaths ?? DEFAULT_LOCAL_CONFIG.allowedPaths,
-    excludePaths: fileConfig?.excludePaths ?? DEFAULT_LOCAL_CONFIG.excludePaths,
+    allowedPaths:
+      envAllowedPaths ??
+      fileConfig?.allowedPaths ??
+      DEFAULT_LOCAL_CONFIG.allowedPaths,
+    workspaceRoot:
+      envWorkspaceRoot ??
+      fileConfig?.workspaceRoot ??
+      DEFAULT_LOCAL_CONFIG.workspaceRoot,
   };
 }
 
@@ -158,18 +163,25 @@ function resolveLocal(
 function resolveTools(
   fileConfig?: OctocodeConfig['tools']
 ): RequiredToolsConfig {
-  // Env vars: TOOLS_TO_RUN, ENABLE_TOOLS, DISABLE_TOOLS
+  // Env vars: TOOLS_TO_RUN, ENABLE_TOOLS, DISABLE_TOOLS, DISABLE_PROMPTS
   const envToolsToRun = parseStringArrayEnv(process.env.TOOLS_TO_RUN);
   const envEnableTools = parseStringArrayEnv(process.env.ENABLE_TOOLS);
   const envDisableTools = parseStringArrayEnv(process.env.DISABLE_TOOLS);
-
-  // TOOLS_TO_RUN and ENABLE_TOOLS both set 'enabled'
-  const envEnabled = envToolsToRun ?? envEnableTools;
+  const envDisablePrompts = parseBooleanEnv(process.env.DISABLE_PROMPTS);
 
   return {
-    enabled: envEnabled ?? fileConfig?.enabled ?? DEFAULT_TOOLS_CONFIG.enabled,
+    enabled:
+      envToolsToRun ?? fileConfig?.enabled ?? DEFAULT_TOOLS_CONFIG.enabled,
+    enableAdditional:
+      envEnableTools ??
+      fileConfig?.enableAdditional ??
+      DEFAULT_TOOLS_CONFIG.enableAdditional,
     disabled:
       envDisableTools ?? fileConfig?.disabled ?? DEFAULT_TOOLS_CONFIG.disabled,
+    disablePrompts:
+      envDisablePrompts ??
+      fileConfig?.disablePrompts ??
+      DEFAULT_TOOLS_CONFIG.disablePrompts,
   };
 }
 
@@ -207,7 +219,6 @@ function resolveTelemetry(
   const envLogging = parseBooleanEnv(process.env.LOG);
 
   return {
-    enabled: fileConfig?.enabled ?? DEFAULT_TELEMETRY_CONFIG.enabled,
     logging:
       envLogging ?? fileConfig?.logging ?? DEFAULT_TELEMETRY_CONFIG.logging,
   };
@@ -217,28 +228,35 @@ function resolveTelemetry(
  * Resolve LSP configuration.
  */
 function resolveLsp(fileConfig?: OctocodeConfig['lsp']): RequiredLspConfig {
+  // Env vars: OCTOCODE_LSP_CONFIG, OCTOCODE_FORCE_LSP
+  const envConfigPath = process.env.OCTOCODE_LSP_CONFIG?.trim() || undefined;
+  const envForceMcpLsp =
+    process.env.OCTOCODE_FORCE_LSP === '1' ? true : undefined;
+
   return {
-    enabled: fileConfig?.enabled ?? DEFAULT_LSP_CONFIG.enabled,
-    timeout: fileConfig?.timeout ?? DEFAULT_LSP_CONFIG.timeout,
-    languages: fileConfig?.languages ?? DEFAULT_LSP_CONFIG.languages,
+    configPath:
+      envConfigPath ?? fileConfig?.configPath ?? DEFAULT_LSP_CONFIG.configPath,
+    forceMcpLsp:
+      envForceMcpLsp ??
+      fileConfig?.forceMcpLsp ??
+      DEFAULT_LSP_CONFIG.forceMcpLsp,
   };
 }
 
 /**
- * Resolve research configuration.
+ * Resolve security configuration.
  */
-function resolveResearch(
-  fileConfig?: OctocodeConfig['research']
-): RequiredResearchConfig {
+function resolveSecurity(
+  fileConfig?: OctocodeConfig['security']
+): RequiredSecurityConfig {
+  // Env var: REDACT_ERROR_PATHS
+  const envRedact = parseBooleanEnv(process.env.REDACT_ERROR_PATHS);
+
   return {
-    defaultProvider:
-      fileConfig?.defaultProvider ?? DEFAULT_RESEARCH_CONFIG.defaultProvider,
-    maxQueriesPerBatch:
-      fileConfig?.maxQueriesPerBatch ??
-      DEFAULT_RESEARCH_CONFIG.maxQueriesPerBatch,
-    maxResultsPerQuery:
-      fileConfig?.maxResultsPerQuery ??
-      DEFAULT_RESEARCH_CONFIG.maxResultsPerQuery,
+    redactErrorPaths:
+      envRedact ??
+      fileConfig?.redactErrorPaths ??
+      DEFAULT_SECURITY_CONFIG.redactErrorPaths,
   };
 }
 
@@ -262,12 +280,18 @@ function buildResolvedConfig(
     process.env.GITHUB_API_URL !== undefined ||
     process.env.GITLAB_HOST !== undefined ||
     process.env.ENABLE_LOCAL !== undefined ||
+    process.env.WORKSPACE_ROOT !== undefined ||
+    process.env.ALLOWED_PATHS !== undefined ||
     process.env.TOOLS_TO_RUN !== undefined ||
     process.env.ENABLE_TOOLS !== undefined ||
     process.env.DISABLE_TOOLS !== undefined ||
+    process.env.DISABLE_PROMPTS !== undefined ||
     process.env.REQUEST_TIMEOUT !== undefined ||
     process.env.MAX_RETRIES !== undefined ||
-    process.env.LOG !== undefined;
+    process.env.LOG !== undefined ||
+    process.env.OCTOCODE_LSP_CONFIG !== undefined ||
+    process.env.OCTOCODE_FORCE_LSP !== undefined ||
+    process.env.REDACT_ERROR_PATHS !== undefined;
 
   // Determine source
   let source: ResolvedConfig['source'];
@@ -288,7 +312,7 @@ function buildResolvedConfig(
     network: resolveNetwork(fileConfig?.network),
     telemetry: resolveTelemetry(fileConfig?.telemetry),
     lsp: resolveLsp(fileConfig?.lsp),
-    research: resolveResearch(fileConfig?.research),
+    security: resolveSecurity(fileConfig?.security),
     source,
     configPath: hasFile ? configPath : undefined,
   };

@@ -1,101 +1,125 @@
-# Octocode Configuration Reference
+# Octocode MCP — Configuration Reference
 
-All configuration is done via environment variables in your MCP client settings.
+Complete reference for all Octocode configuration options.
+
+**Two ways to configure:**
+1. **Environment variables** — per-session, highest priority
+2. **Global config file** (`.octocoderc`) — persistent defaults
+
+| Platform | Config Path |
+|----------|-------------|
+| macOS / Linux | `~/.octocode/.octocoderc` |
+| Windows | `%USERPROFILE%\.octocode\.octocoderc` |
+
+> For `.octocoderc` setup and examples, see [Global Config](./GLOBAL_CONFIG.md).
+
+---
+
+## Resolution Priority
+
+```
+Environment Variable → .octocoderc File → Hardcoded Default
+     (wins)              (fallback)           (last resort)
+```
 
 ---
 
 ## Authentication
 
-### GitHub
+### GitHub Tokens
 
-| Variable | Description |
-|----------|-------------|
+| Env Variable | Description |
+|---|---|
 | `OCTOCODE_TOKEN` | GitHub token (highest priority) |
 | `GH_TOKEN` | GitHub CLI compatible token |
 | `GITHUB_TOKEN` | GitHub Actions token (lowest priority) |
-| `GITHUB_API_URL` | GitHub Enterprise URL (default: `https://api.github.com`) |
 
-**Token Resolution Order:** `OCTOCODE_TOKEN` → `GH_TOKEN` → `GITHUB_TOKEN` → `~/.octocode/credentials.json` → `gh auth token`
+**Resolution order:** `OCTOCODE_TOKEN` > `GH_TOKEN` > `GITHUB_TOKEN` > `~/.octocode/credentials.json` > `gh auth token`
+
+### GitLab Tokens
+
+| Env Variable | Description |
+|---|---|
+| `GITLAB_TOKEN` | GitLab personal access token (primary) |
+| `GL_TOKEN` | GitLab token (fallback) |
+
+> Setting `GITLAB_TOKEN` or `GL_TOKEN` activates GitLab as the provider instead of GitHub.
+
+**Note:** Auth tokens have no `.octocoderc` equivalent — secrets should not be stored in config files.
+
+---
+
+## All Configuration Options
+
+### GitHub
+
+| Option | Env Variable | `.octocoderc` Field | Default |
+|---|---|---|---|
+| API URL | `GITHUB_API_URL` | `github.apiUrl` | `https://api.github.com` |
 
 ### GitLab
 
-| Variable | Description |
-|----------|-------------|
-| `GITLAB_TOKEN` | GitLab personal access token (primary) |
-| `GL_TOKEN` | GitLab token (fallback) |
-| `GITLAB_HOST` | GitLab instance URL (default: `https://gitlab.com`) |
+| Option | Env Variable | `.octocoderc` Field | Default |
+|---|---|---|---|
+| Host URL | `GITLAB_HOST` | `gitlab.host` | `https://gitlab.com` |
 
-> Setting `GITLAB_TOKEN` or `GL_TOKEN` makes GitLab the active provider instead of GitHub.
+### Local Filesystem
 
----
+| Option | Env Variable | `.octocoderc` Field | Default |
+|---|---|---|---|
+| Enable local tools | `ENABLE_LOCAL` | `local.enabled` | `true` |
+| Workspace root | `WORKSPACE_ROOT` | `local.workspaceRoot` | Current directory |
+| Allowed paths | `ALLOWED_PATHS` | `local.allowedPaths` | `[]` (all paths) |
 
-## Local Code Analysis
+### Tools
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ENABLE_LOCAL` | `true` | Enable local filesystem tools |
-| `WORKSPACE_ROOT` | Current directory | Root directory for path validation |
-| `ALLOWED_PATHS` | All paths | Comma-separated allowed directories |
+| Option | Env Variable | `.octocoderc` Field | Default |
+|---|---|---|---|
+| Tool whitelist | `TOOLS_TO_RUN` | `tools.enabled` | `null` (all tools) |
+| Additional tools | `ENABLE_TOOLS` | `tools.enableAdditional` | `null` |
+| Disabled tools | `DISABLE_TOOLS` | `tools.disabled` | `null` |
+| Disable prompts | `DISABLE_PROMPTS` | `tools.disablePrompts` | `false` |
 
----
+**Tool filtering priority:**
+1. `enabled`/`TOOLS_TO_RUN` — strict whitelist (ignores other settings)
+2. `disabled`/`DISABLE_TOOLS` — removes from available set
+3. `enableAdditional`/`ENABLE_TOOLS` — adds to default set
 
-## Tools
+> **Warning:** `TOOLS_TO_RUN` cannot be combined with `ENABLE_TOOLS`/`DISABLE_TOOLS`.
 
-| Variable | Description |
-|----------|-------------|
-| `TOOLS_TO_RUN` | Whitelist: only these tools are available (comma-separated). Takes full precedence over other filters. |
-| `ENABLE_TOOLS` | Enable specific tools in addition to defaults (comma-separated). Ignored if `TOOLS_TO_RUN` is set. |
-| `DISABLE_TOOLS` | Blacklist: hide these tools (comma-separated). Takes precedence over `ENABLE_TOOLS`. |
-| `DISABLE_PROMPTS` | Set `true` to disable MCP prompts/slash commands |
+### Network
 
-**Tool Filtering Priority:**
-1. `TOOLS_TO_RUN` — strict whitelist (only listed tools, ignores everything else)
-2. `DISABLE_TOOLS` — removes tools from available set
-3. `ENABLE_TOOLS` — adds tools to default set
+| Option | Env Variable | `.octocoderc` Field | Default | Range |
+|---|---|---|---|---|
+| Request timeout (ms) | `REQUEST_TIMEOUT` | `network.timeout` | `30000` | 5000–300000 |
+| Max retries | `MAX_RETRIES` | `network.maxRetries` | `3` | 0–10 |
 
-> **Warning**: `TOOLS_TO_RUN` cannot be used together with `ENABLE_TOOLS`/`DISABLE_TOOLS`. If set, `TOOLS_TO_RUN` is used exclusively.
+### Telemetry
 
----
+| Option | Env Variable | `.octocoderc` Field | Default |
+|---|---|---|---|
+| Logging | `LOG` | `telemetry.logging` | `true` |
 
-## Network
+### LSP (Language Server)
 
-| Variable | Default | Range | Description |
-|----------|---------|-------|-------------|
-| `REQUEST_TIMEOUT` | `30000` | 5000-300000 | Request timeout in milliseconds |
-| `MAX_RETRIES` | `3` | 0-10 | Retry attempts for failed requests |
+| Option | Env Variable | `.octocoderc` Field | Default |
+|---|---|---|---|
+| Config file path | `OCTOCODE_LSP_CONFIG` | `lsp.configPath` | — |
+| Force MCP LSP | `OCTOCODE_FORCE_LSP` | `lsp.forceMcpLsp` | `false` |
 
----
+> **Note:** `OCTOCODE_FORCE_LSP` must be set to `1` (not `true`) to enable.
 
-## LSP (Language Server)
+### Security
 
-| Variable | Description |
-|----------|-------------|
-| `OCTOCODE_LSP_CONFIG` | Path to custom LSP servers config file |
-| `OCTOCODE_FORCE_LSP` | Set `1` to force octocode-mcp LSP tools in Claude Code (overrides native LSP) |
-
----
-
-## Telemetry
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LOG` | `true` | Enable anonymous telemetry |
+| Option | Env Variable | `.octocoderc` Field | Default |
+|---|---|---|---|
+| Redact error paths | `REDACT_ERROR_PATHS` | `security.redactErrorPaths` | `false` |
 
 ---
 
-## Security
+## MCP Client Examples
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REDACT_ERROR_PATHS` | `false` | Set `true` to redact filesystem paths in error messages |
-
-> **Production Tip**: Enable `REDACT_ERROR_PATHS=true` to hide workspace structure in error messages.
-
----
-
-## MCP Configuration Examples
-
-### Claude Desktop / Cursor
+### Claude Desktop / Cursor — Basic
 
 ```json
 {
@@ -104,59 +128,7 @@ All configuration is done via environment variables in your MCP client settings.
       "command": "npx",
       "args": ["-y", "octocode-mcp@latest"],
       "env": {
-        "GITHUB_TOKEN": "SOME_TOKEN"
-      }
-    }
-  }
-}
-```
-
-### With GitLab
-
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["-y", "octocode-mcp@latest"],
-      "env": {
-        "GITLAB_TOKEN": "SOME_TOKEN",
-        "GITLAB_HOST": "https://gitlab.mycompany.com"
-      }
-    }
-  }
-}
-```
-
-### With Local Tools Disabled
-
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["-y", "octocode-mcp@latest"],
-      "env": {
-        "GITHUB_TOKEN": "SOME_TOKEN",
-        "ENABLE_LOCAL": "false"
-      }
-    }
-  }
-}
-```
-
-### With Tool Filtering
-
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["-y", "octocode-mcp@latest"],
-      "env": {
-        "GITHUB_TOKEN": "SOME_TOKEN",
-        "TOOLS_TO_RUN": "githubSearchCode,githubGetFileContent",
-        "DISABLE_PROMPTS": "true"
+        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx"
       }
     }
   }
@@ -172,7 +144,7 @@ All configuration is done via environment variables in your MCP client settings.
       "command": "npx",
       "args": ["-y", "octocode-mcp@latest"],
       "env": {
-        "GITHUB_TOKEN": "SOME_TOKEN",
+        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx",
         "GITHUB_API_URL": "https://github.mycompany.com/api/v3"
       }
     }
@@ -180,7 +152,7 @@ All configuration is done via environment variables in your MCP client settings.
 }
 ```
 
-### With Network Tuning
+### GitLab
 
 ```json
 {
@@ -189,7 +161,58 @@ All configuration is done via environment variables in your MCP client settings.
       "command": "npx",
       "args": ["-y", "octocode-mcp@latest"],
       "env": {
-        "GITHUB_TOKEN": "SOME_TOKEN",
+        "GITLAB_TOKEN": "glpat-xxxxxxxxxxxx",
+        "GITLAB_HOST": "https://gitlab.mycompany.com"
+      }
+    }
+  }
+}
+```
+
+### Local Tools Disabled
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["-y", "octocode-mcp@latest"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx",
+        "ENABLE_LOCAL": "false"
+      }
+    }
+  }
+}
+```
+
+### Tool Whitelist
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["-y", "octocode-mcp@latest"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx",
+        "TOOLS_TO_RUN": "githubSearchCode,githubGetFileContent,githubViewRepoStructure"
+      }
+    }
+  }
+}
+```
+
+### Network Tuning
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["-y", "octocode-mcp@latest"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx",
         "REQUEST_TIMEOUT": "60000",
         "MAX_RETRIES": "5"
       }
@@ -198,7 +221,7 @@ All configuration is done via environment variables in your MCP client settings.
 }
 ```
 
-### With Telemetry Disabled
+### Production (No Logging, Redacted Paths)
 
 ```json
 {
@@ -207,8 +230,9 @@ All configuration is done via environment variables in your MCP client settings.
       "command": "npx",
       "args": ["-y", "octocode-mcp@latest"],
       "env": {
-        "GITHUB_TOKEN": "SOME_TOKEN",
-        "LOG": "false"
+        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx",
+        "LOG": "false",
+        "REDACT_ERROR_PATHS": "true"
       }
     }
   }
@@ -223,7 +247,7 @@ All configuration is done via environment variables in your MCP client settings.
 |---------|----------|
 | Token not found | Set `GITHUB_TOKEN` or `GH_TOKEN` in env |
 | Local tools disabled | Set `ENABLE_LOCAL=true` |
-| GitLab not working | Set `GITLAB_TOKEN`, and `GITLAB_HOST` for self-hosted |
+| GitLab not working | Set `GITLAB_TOKEN` and `GITLAB_HOST` for self-hosted |
 | Timeout errors | Increase `REQUEST_TIMEOUT` (max 300000) |
 | Tool not available | Check `TOOLS_TO_RUN` whitelist or `DISABLE_TOOLS` blacklist |
 
@@ -235,3 +259,10 @@ echo "GITLAB_TOKEN: ${GITLAB_TOKEN:+set}"
 echo "ENABLE_LOCAL: ${ENABLE_LOCAL:-not set}"
 echo "LOG: ${LOG:-not set}"
 ```
+
+---
+
+## See Also
+
+- [Global Config](./GLOBAL_CONFIG.md) — `.octocoderc` file setup and examples
+- [Troubleshooting](./TROUBLESHOOTING.md) — Common issues and solutions

@@ -35,6 +35,7 @@ import fs from 'fs';
 import os from 'os';
 import type { PathValidationResult } from '../utils/core/types.js';
 import { shouldIgnore } from './ignoredPathFilter.js';
+import { getConfigSync } from 'octocode-shared';
 
 /**
  * PathValidator configuration options
@@ -63,9 +64,16 @@ export class PathValidator {
     const opts: PathValidatorOptions =
       typeof options === 'string' ? { workspaceRoot: options } : options || {};
 
-    const root = opts.workspaceRoot
-      ? this.expandTilde(opts.workspaceRoot)
-      : process.cwd();
+    // Priority: explicit option > env var WORKSPACE_ROOT > config > CWD
+    let rootSource = opts.workspaceRoot;
+    if (!rootSource) {
+      try {
+        rootSource = getConfigSync().local.workspaceRoot;
+      } catch {
+        // Config not loaded yet, fall through
+      }
+    }
+    const root = rootSource ? this.expandTilde(rootSource) : process.cwd();
 
     this.allowedRoots = [path.resolve(root)];
 
@@ -85,6 +93,7 @@ export class PathValidator {
     }
 
     // Add roots from ALLOWED_PATHS environment variable (comma-separated)
+    // or from global config local.allowedPaths
     const envPaths = process.env.ALLOWED_PATHS;
     if (envPaths) {
       const paths = envPaths
@@ -93,6 +102,17 @@ export class PathValidator {
         .filter(p => p.length > 0);
       for (const envPath of paths) {
         this.addAllowedRoot(envPath);
+      }
+    } else {
+      try {
+        const configPaths = getConfigSync().local.allowedPaths;
+        if (configPaths) {
+          for (const configPath of configPaths) {
+            this.addAllowedRoot(configPath);
+          }
+        }
+      } catch {
+        // Config not loaded yet, skip
       }
     }
   }

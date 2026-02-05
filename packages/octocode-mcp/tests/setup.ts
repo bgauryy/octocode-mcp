@@ -32,42 +32,39 @@ const sessionMockState = {
 };
 
 // Default config mock for getConfigSync
+// Note: This mock matches the actual ResolvedConfig structure after dead code cleanup
 const mockDefaultConfig = {
   version: 1,
   github: {
     apiUrl: 'https://api.github.com',
-    defaultOrg: undefined,
   },
   gitlab: {
     host: 'https://gitlab.com',
-    defaultGroup: undefined,
   },
   local: {
     enabled: true,
     allowedPaths: [],
-    excludePaths: ['node_modules', '.git', 'dist'],
+    workspaceRoot: undefined,
   },
   tools: {
     enabled: null,
+    enableAdditional: null,
     disabled: null,
+    disablePrompts: false,
   },
   network: {
     timeout: 30000,
     maxRetries: 3,
   },
   telemetry: {
-    enabled: true,
     logging: true,
   },
   lsp: {
-    enabled: true,
-    timeout: 10000,
-    languages: {},
+    configPath: undefined,
+    forceMcpLsp: false,
   },
-  research: {
-    defaultProvider: 'github',
-    maxQueriesPerBatch: 3,
-    maxResultsPerQuery: 10,
+  security: {
+    redactErrorPaths: false,
   },
   source: 'defaults',
   configPath: undefined,

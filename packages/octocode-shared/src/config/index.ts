@@ -44,8 +44,7 @@ export type {
   NetworkConfigOptions,
   TelemetryConfigOptions,
   LspConfigOptions,
-  LspLanguageConfig,
-  ResearchConfigOptions,
+  SecurityConfigOptions,
 
   // Section types (resolved)
   RequiredGitHubConfig,
@@ -55,7 +54,7 @@ export type {
   RequiredNetworkConfig,
   RequiredTelemetryConfig,
   RequiredLspConfig,
-  RequiredResearchConfig,
+  RequiredSecurityConfig,
 } from './types.js';
 
 // ============================================================================
@@ -74,19 +73,13 @@ export {
   DEFAULT_NETWORK_CONFIG,
   DEFAULT_TELEMETRY_CONFIG,
   DEFAULT_LSP_CONFIG,
-  DEFAULT_RESEARCH_CONFIG,
+  DEFAULT_SECURITY_CONFIG,
 
   // Limits
   MIN_TIMEOUT,
   MAX_TIMEOUT,
   MIN_RETRIES,
   MAX_RETRIES,
-  MIN_QUERIES_PER_BATCH,
-  MAX_QUERIES_PER_BATCH,
-  MIN_RESULTS_PER_QUERY,
-  MAX_RESULTS_PER_QUERY,
-  LSP_MIN_TIMEOUT,
-  LSP_MAX_TIMEOUT,
 } from './defaults.js';
 
 export { CONFIG_FILE_PATH } from './loader.js';

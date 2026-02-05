@@ -10,12 +10,20 @@
 
 import path from 'path';
 import os from 'os';
+import { getConfigSync } from 'octocode-shared';
 
 /**
  * Whether to redact full paths in error messages.
- * Set REDACT_ERROR_PATHS=true in production to hide workspace structure.
+ * Set REDACT_ERROR_PATHS=true or security.redactErrorPaths in .octocoderc.
+ * Uses a getter to allow config to be loaded lazily.
  */
-const REDACT_PATHS = process.env.REDACT_ERROR_PATHS === 'true';
+function shouldRedactPaths(): boolean {
+  try {
+    return getConfigSync().security.redactErrorPaths;
+  } catch {
+    return process.env.REDACT_ERROR_PATHS === 'true';
+  }
+}
 
 /**
  * Redacts a filesystem path for safe inclusion in error messages.
@@ -33,7 +41,7 @@ export function redactPath(
   absolutePath: string,
   workspaceRoot?: string
 ): string {
-  if (!REDACT_PATHS) {
+  if (!shouldRedactPaths()) {
     return absolutePath;
   }
 

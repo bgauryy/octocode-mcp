@@ -24,16 +24,13 @@ describe('config/validator', () => {
         version: 1,
         github: {
           apiUrl: 'https://api.github.com',
-          defaultOrg: 'my-org',
         },
         gitlab: {
           host: 'https://gitlab.com',
-          defaultGroup: 'my-group',
         },
         local: {
           enabled: true,
           allowedPaths: ['/home/user/projects'],
-          excludePaths: ['node_modules'],
         },
         tools: {
           enabled: ['githubSearchCode'],
@@ -44,21 +41,14 @@ describe('config/validator', () => {
           maxRetries: 3,
         },
         telemetry: {
-          enabled: true,
           logging: true,
         },
         lsp: {
-          enabled: true,
-          timeout: 10000,
-          languages: {
-            typescript: { serverPath: null },
-            python: { serverPath: 'pylsp' },
-          },
+          configPath: '~/.octocode/lsp-servers.json',
+          forceMcpLsp: false,
         },
-        research: {
-          defaultProvider: 'github',
-          maxQueriesPerBatch: 3,
-          maxResultsPerQuery: 10,
+        security: {
+          redactErrorPaths: false,
         },
       });
 
@@ -112,16 +102,6 @@ describe('config/validator', () => {
           true
         );
       });
-
-      it('rejects non-string defaultOrg', () => {
-        const result = validateConfig({
-          github: { defaultOrg: 123 },
-        });
-        expect(result.valid).toBe(false);
-        expect(result.errors.some(e => e.includes('github.defaultOrg'))).toBe(
-          true
-        );
-      });
     });
 
     describe('local validation', () => {
@@ -141,16 +121,6 @@ describe('config/validator', () => {
         expect(result.errors.some(e => e.includes('local.allowedPaths'))).toBe(
           true
         );
-      });
-
-      it('rejects non-string items in excludePaths', () => {
-        const result = validateConfig({
-          local: { excludePaths: [123, 'node_modules'] },
-        });
-        expect(result.valid).toBe(false);
-        expect(
-          result.errors.some(e => e.includes('local.excludePaths[0]'))
-        ).toBe(true);
       });
     });
 
@@ -224,16 +194,6 @@ describe('config/validator', () => {
     });
 
     describe('telemetry validation', () => {
-      it('rejects non-boolean enabled', () => {
-        const result = validateConfig({
-          telemetry: { enabled: 1 },
-        });
-        expect(result.valid).toBe(false);
-        expect(result.errors.some(e => e.includes('telemetry.enabled'))).toBe(
-          true
-        );
-      });
-
       it('rejects non-boolean logging', () => {
         const result = validateConfig({
           telemetry: { logging: 'true' },
@@ -246,45 +206,24 @@ describe('config/validator', () => {
     });
 
     describe('lsp validation', () => {
-      it('rejects non-object languages', () => {
+      it('rejects non-string configPath', () => {
         const result = validateConfig({
-          lsp: { languages: 'typescript' },
+          lsp: { configPath: 123 },
         });
         expect(result.valid).toBe(false);
-        expect(result.errors.some(e => e.includes('lsp.languages'))).toBe(true);
+        expect(result.errors.some(e => e.includes('lsp.configPath'))).toBe(
+          true
+        );
       });
 
-      it('validates language config objects', () => {
+      it('rejects non-boolean forceMcpLsp', () => {
         const result = validateConfig({
-          lsp: {
-            languages: {
-              typescript: { serverPath: 123 },
-            },
-          },
+          lsp: { forceMcpLsp: 'true' },
         });
         expect(result.valid).toBe(false);
-        expect(result.errors.some(e => e.includes('serverPath'))).toBe(true);
-      });
-    });
-
-    describe('research validation', () => {
-      it('rejects invalid defaultProvider', () => {
-        const result = validateConfig({
-          research: { defaultProvider: 'bitbucket' },
-        });
-        expect(result.valid).toBe(false);
-        expect(
-          result.errors.some(e => e.includes('Must be "github" or "gitlab"'))
-        ).toBe(true);
-      });
-
-      it('accepts valid providers', () => {
-        expect(
-          validateConfig({ research: { defaultProvider: 'github' } }).valid
-        ).toBe(true);
-        expect(
-          validateConfig({ research: { defaultProvider: 'gitlab' } }).valid
-        ).toBe(true);
+        expect(result.errors.some(e => e.includes('lsp.forceMcpLsp'))).toBe(
+          true
+        );
       });
     });
 

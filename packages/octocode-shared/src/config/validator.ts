@@ -12,12 +12,6 @@ import {
   MAX_TIMEOUT,
   MIN_RETRIES,
   MAX_RETRIES,
-  MIN_QUERIES_PER_BATCH,
-  MAX_QUERIES_PER_BATCH,
-  MIN_RESULTS_PER_QUERY,
-  MAX_RESULTS_PER_QUERY,
-  LSP_MIN_TIMEOUT,
-  LSP_MAX_TIMEOUT,
 } from './defaults.js';
 
 // ============================================================================
@@ -151,27 +145,6 @@ function validateString(value: unknown, field: string): string | null {
   return null;
 }
 
-/**
- * Validate provider value.
- *
- * @param value - Value to validate
- * @param field - Field name for error messages
- * @returns Error message or null if valid
- */
-function validateProvider(value: unknown, field: string): string | null {
-  if (value === undefined || value === null) return null;
-
-  if (typeof value !== 'string') {
-    return `${field}: Must be a string`;
-  }
-
-  if (!['github', 'gitlab'].includes(value)) {
-    return `${field}: Must be "github" or "gitlab"`;
-  }
-
-  return null;
-}
-
 // ============================================================================
 // SECTION VALIDATORS
 // ============================================================================
@@ -188,9 +161,6 @@ function validateGitHub(github: unknown, errors: string[]): void {
 
   const apiUrlError = validateUrl(gh.apiUrl, 'github.apiUrl');
   if (apiUrlError) errors.push(apiUrlError);
-
-  const defaultOrgError = validateString(gh.defaultOrg, 'github.defaultOrg');
-  if (defaultOrgError) errors.push(defaultOrgError);
 }
 
 function validateGitLab(gitlab: unknown, errors: string[]): void {
@@ -205,12 +175,6 @@ function validateGitLab(gitlab: unknown, errors: string[]): void {
 
   const hostError = validateUrl(gl.host, 'gitlab.host');
   if (hostError) errors.push(hostError);
-
-  const defaultGroupError = validateString(
-    gl.defaultGroup,
-    'gitlab.defaultGroup'
-  );
-  if (defaultGroupError) errors.push(defaultGroupError);
 }
 
 function validateLocal(local: unknown, errors: string[]): void {
@@ -232,11 +196,11 @@ function validateLocal(local: unknown, errors: string[]): void {
   );
   if (allowedPathsError) errors.push(allowedPathsError);
 
-  const excludePathsError = validateStringArray(
-    loc.excludePaths,
-    'local.excludePaths'
+  const workspaceRootError = validateString(
+    loc.workspaceRoot,
+    'local.workspaceRoot'
   );
-  if (excludePathsError) errors.push(excludePathsError);
+  if (workspaceRootError) errors.push(workspaceRootError);
 }
 
 function validateTools(tools: unknown, errors: string[]): void {
@@ -252,11 +216,23 @@ function validateTools(tools: unknown, errors: string[]): void {
   const enabledError = validateNullableStringArray(t.enabled, 'tools.enabled');
   if (enabledError) errors.push(enabledError);
 
+  const enableAdditionalError = validateNullableStringArray(
+    t.enableAdditional,
+    'tools.enableAdditional'
+  );
+  if (enableAdditionalError) errors.push(enableAdditionalError);
+
   const disabledError = validateNullableStringArray(
     t.disabled,
     'tools.disabled'
   );
   if (disabledError) errors.push(disabledError);
+
+  const disablePromptsError = validateBoolean(
+    t.disablePrompts,
+    'tools.disablePrompts'
+  );
+  if (disablePromptsError) errors.push(disablePromptsError);
 }
 
 function validateNetwork(network: unknown, errors: string[]): void {
@@ -296,9 +272,6 @@ function validateTelemetry(telemetry: unknown, errors: string[]): void {
 
   const tel = telemetry as Record<string, unknown>;
 
-  const enabledError = validateBoolean(tel.enabled, 'telemetry.enabled');
-  if (enabledError) errors.push(enabledError);
-
   const loggingError = validateBoolean(tel.logging, 'telemetry.logging');
   if (loggingError) errors.push(loggingError);
 }
@@ -313,75 +286,28 @@ function validateLsp(lsp: unknown, errors: string[]): void {
 
   const l = lsp as Record<string, unknown>;
 
-  const enabledError = validateBoolean(l.enabled, 'lsp.enabled');
-  if (enabledError) errors.push(enabledError);
+  const configPathError = validateString(l.configPath, 'lsp.configPath');
+  if (configPathError) errors.push(configPathError);
 
-  const timeoutError = validateNumberRange(
-    l.timeout,
-    'lsp.timeout',
-    LSP_MIN_TIMEOUT,
-    LSP_MAX_TIMEOUT
-  );
-  if (timeoutError) errors.push(timeoutError);
-
-  // Validate languages object
-  if (l.languages !== undefined && l.languages !== null) {
-    if (typeof l.languages !== 'object' || Array.isArray(l.languages)) {
-      errors.push('lsp.languages: Must be an object');
-    } else {
-      const langs = l.languages as Record<string, unknown>;
-      for (const [lang, config] of Object.entries(langs)) {
-        if (config !== null && typeof config !== 'object') {
-          errors.push(`lsp.languages.${lang}: Must be an object or null`);
-        } else if (config && typeof config === 'object') {
-          const langConfig = config as Record<string, unknown>;
-          if (
-            langConfig.serverPath !== undefined &&
-            langConfig.serverPath !== null
-          ) {
-            const pathError = validateString(
-              langConfig.serverPath,
-              `lsp.languages.${lang}.serverPath`
-            );
-            if (pathError) errors.push(pathError);
-          }
-        }
-      }
-    }
-  }
+  const forceMcpLspError = validateBoolean(l.forceMcpLsp, 'lsp.forceMcpLsp');
+  if (forceMcpLspError) errors.push(forceMcpLspError);
 }
 
-function validateResearch(research: unknown, errors: string[]): void {
-  if (research === undefined || research === null) return;
+function validateSecurity(security: unknown, errors: string[]): void {
+  if (security === undefined || security === null) return;
 
-  if (typeof research !== 'object' || Array.isArray(research)) {
-    errors.push('research: Must be an object');
+  if (typeof security !== 'object' || Array.isArray(security)) {
+    errors.push('security: Must be an object');
     return;
   }
 
-  const res = research as Record<string, unknown>;
+  const sec = security as Record<string, unknown>;
 
-  const providerError = validateProvider(
-    res.defaultProvider,
-    'research.defaultProvider'
+  const redactError = validateBoolean(
+    sec.redactErrorPaths,
+    'security.redactErrorPaths'
   );
-  if (providerError) errors.push(providerError);
-
-  const batchError = validateNumberRange(
-    res.maxQueriesPerBatch,
-    'research.maxQueriesPerBatch',
-    MIN_QUERIES_PER_BATCH,
-    MAX_QUERIES_PER_BATCH
-  );
-  if (batchError) errors.push(batchError);
-
-  const resultsError = validateNumberRange(
-    res.maxResultsPerQuery,
-    'research.maxResultsPerQuery',
-    MIN_RESULTS_PER_QUERY,
-    MAX_RESULTS_PER_QUERY
-  );
-  if (resultsError) errors.push(resultsError);
+  if (redactError) errors.push(redactError);
 }
 
 // ============================================================================
@@ -428,7 +354,7 @@ export function validateConfig(config: unknown): ValidationResult {
   validateNetwork(cfg.network, errors);
   validateTelemetry(cfg.telemetry, errors);
   validateLsp(cfg.lsp, errors);
-  validateResearch(cfg.research, errors);
+  validateSecurity(cfg.security, errors);
 
   // Check for unknown top-level keys
   const knownKeys = new Set([
@@ -441,7 +367,7 @@ export function validateConfig(config: unknown): ValidationResult {
     'network',
     'telemetry',
     'lsp',
-    'research',
+    'security',
   ]);
 
   for (const key of Object.keys(cfg)) {

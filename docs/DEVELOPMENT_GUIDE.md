@@ -124,20 +124,32 @@ packageSearch → githubViewRepoStructure → githubSearchCode → githubGetFile
 
 Skills are markdown-based instruction sets that teach AI assistants specific tasks.
 
+### Skills Locations
+
+Skills are organized in two directories:
+
+| Location | Purpose |
+|----------|---------|
+| `skills/` | Advanced/experimental skills (documentation, optimization, research server) |
+| `packages/octocode-cli/skills/` | CLI-distributed skills (shipped with `octocode-cli` npm package) |
+
 ### Official Skills
 
-| Skill | Description | Flow |
-|-------|-------------|------|
-| `octocode-research` | Evidence-first code forensics (external GitHub) | PREPARE → DISCOVER → ANALYZE → OUTPUT |
-| `octocode-local-search` | Local-first code exploration and discovery | DISCOVER → PLAN → EXECUTE → VERIFY → OUTPUT |
-| `octocode-implement` | Research-driven feature implementation from specs | SPEC → CONTEXT → PLAN → RESEARCH → IMPLEMENT → VALIDATE |
-| `octocode-plan` | Adaptive research & implementation planning | UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY |
-| `octocode-pr-review` | Defects-first PR review across 6+ domains | CONTEXT → CHECKPOINT → ANALYSIS → FINALIZE → REPORT |
-| `octocode-roast` | Brutally honest code review with comedic flair | SCOPE → ROAST → INVENTORY → SPOTLIGHT → REDEMPTION |
+| Skill | Description | Flow | Location |
+|-------|-------------|------|----------|
+| `octocode-research` | Evidence-first code forensics (external GitHub) | PREPARE → DISCOVER → ANALYZE → OUTPUT | root |
+| `octocode-local-search` | Local-first code exploration and discovery | DISCOVER → PLAN → EXECUTE → VERIFY → OUTPUT | cli |
+| `octocode-implement` | Research-driven feature implementation from specs | SPEC → CONTEXT → PLAN → RESEARCH → IMPLEMENT → VALIDATE | cli |
+| `octocode-plan` | Adaptive research & implementation planning | UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY | cli |
+| `octocode-pr-review` | Defects-first PR review across 6+ domains | CONTEXT → CHECKPOINT → ANALYSIS → FINALIZE → REPORT | cli |
+| `octocode-roast` | Brutally honest code review with comedic flair | SCOPE → ROAST → INVENTORY → SPOTLIGHT → REDEMPTION | both |
+| `octocode-documentaion-writer` | Multi-agent documentation generation pipeline | DISCOVER → QUESTIONS → RESEARCH → ORCHESTRATE → WRITE → QA | root |
+| `octocode-prompt-optimizer` | Transform weak prompts into reliable agent protocols | READ → UNDERSTAND → RATE → FIX → VALIDATE | root |
 
 ### Skill Structure
+
 ```
-skills/{skill-name}/
+{skill-name}/
 ├── SKILL.md              # Main reference (<500 lines)
 └── references/           # Supporting documentation (optional)
 ```
@@ -167,7 +179,6 @@ For complete details, see [`SKILLS_GUIDE.md`](../packages/octocode-cli/docs/SKIL
 | [API_REFERENCE.md](../packages/octocode-shared/docs/API_REFERENCE.md) | Complete API documentation |
 | [CREDENTIALS_ARCHITECTURE.md](../packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) | Token storage, encryption, keychain |
 | [SESSION_PERSISTENCE.md](../packages/octocode-shared/docs/SESSION_PERSISTENCE.md) | Deferred writes, exit handlers |
-| [GLOBAL_CONFIG_DESIGN.md](../packages/octocode-shared/docs/GLOBAL_CONFIG_DESIGN.md) | Global configuration system |
 
 ## 🤖 Agent Compatibility
 

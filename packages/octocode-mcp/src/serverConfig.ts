@@ -196,9 +196,11 @@ export async function initialize(): Promise<void> {
     const enableLocal =
       parseBooleanEnv(process.env.ENABLE_LOCAL) ?? globalConfig.local.enabled;
 
-    // Parse DISABLE_PROMPTS - default false (prompts enabled by default)
+    // Parse DISABLE_PROMPTS - env var overrides global config
     const disablePrompts =
-      parseBooleanEnv(process.env.DISABLE_PROMPTS) ?? false;
+      parseBooleanEnv(process.env.DISABLE_PROMPTS) ??
+      globalConfig.tools.disablePrompts ??
+      false;
 
     // Parse tools configuration - env vars override global config
     const envToolsToRun = parseStringArray(process.env.TOOLS_TO_RUN);
@@ -234,7 +236,8 @@ export async function initialize(): Promise<void> {
       githubApiUrl:
         process.env.GITHUB_API_URL?.trim() || globalConfig.github.apiUrl,
       toolsToRun: envToolsToRun ?? globalConfig.tools.enabled ?? undefined,
-      enableTools: envEnableTools ?? undefined,
+      enableTools:
+        envEnableTools ?? globalConfig.tools.enableAdditional ?? undefined,
       disableTools: envDisableTools ?? globalConfig.tools.disabled ?? undefined,
       enableLogging: isLoggingEnabled,
       timeout,

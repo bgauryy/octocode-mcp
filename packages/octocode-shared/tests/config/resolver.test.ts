@@ -156,7 +156,7 @@ describe('config/resolver', () => {
       it('parses ENABLE_TOOLS as string array', () => {
         process.env.ENABLE_TOOLS = 'localSearchCode, localViewStructure';
         const config = resolveConfigSync();
-        expect(config.tools.enabled).toEqual([
+        expect(config.tools.enableAdditional).toEqual([
           'localSearchCode',
           'localViewStructure',
         ]);
@@ -284,7 +284,7 @@ describe('config/resolver', () => {
       vi.mocked(readFileSync).mockReturnValue(
         JSON.stringify({
           version: 1,
-          github: { apiUrl: 'https://api.github.com', defaultOrg: 'my-org' },
+          github: { apiUrl: 'https://api.github.com' },
           local: { enabled: true },
         })
       );
@@ -296,7 +296,6 @@ describe('config/resolver', () => {
 
     it('gets nested value', () => {
       expect(getConfigValue('github.apiUrl')).toBe('https://api.github.com');
-      expect(getConfigValue('github.defaultOrg')).toBe('my-org');
       expect(getConfigValue('local.enabled')).toBe(true);
     });
 
@@ -312,7 +311,7 @@ describe('config/resolver', () => {
       vi.mocked(existsSync).mockReturnValue(true);
       vi.mocked(readFileSync).mockReturnValue(
         JSON.stringify({
-          github: { defaultOrg: 'my-org' },
+          github: { apiUrl: 'https://custom.github.com/api/v3' },
           // local not specified - should use defaults
         })
       );
@@ -320,13 +319,9 @@ describe('config/resolver', () => {
       const config = resolveConfigSync();
 
       // File value
-      expect(config.github.defaultOrg).toBe('my-org');
+      expect(config.github.apiUrl).toBe('https://custom.github.com/api/v3');
       // Default value (not in file)
-      expect(config.github.apiUrl).toBe(DEFAULT_CONFIG.github.apiUrl);
       expect(config.local.enabled).toBe(DEFAULT_CONFIG.local.enabled);
-      expect(config.local.excludePaths).toEqual(
-        DEFAULT_CONFIG.local.excludePaths
-      );
     });
   });
 

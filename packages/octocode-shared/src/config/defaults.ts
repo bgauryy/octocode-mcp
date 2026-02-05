@@ -13,7 +13,7 @@ import type {
   RequiredNetworkConfig,
   RequiredTelemetryConfig,
   RequiredLspConfig,
-  RequiredResearchConfig,
+  RequiredSecurityConfig,
   ResolvedConfig,
 } from './types.js';
 
@@ -26,7 +26,6 @@ import type {
  */
 export const DEFAULT_GITHUB_CONFIG: RequiredGitHubConfig = {
   apiUrl: 'https://api.github.com',
-  defaultOrg: undefined,
 };
 
 /**
@@ -34,7 +33,6 @@ export const DEFAULT_GITHUB_CONFIG: RequiredGitHubConfig = {
  */
 export const DEFAULT_GITLAB_CONFIG: RequiredGitLabConfig = {
   host: 'https://gitlab.com',
-  defaultGroup: undefined,
 };
 
 /**
@@ -43,15 +41,7 @@ export const DEFAULT_GITLAB_CONFIG: RequiredGitLabConfig = {
 export const DEFAULT_LOCAL_CONFIG: RequiredLocalConfig = {
   enabled: true,
   allowedPaths: [],
-  excludePaths: [
-    'node_modules',
-    '.git',
-    'dist',
-    'coverage',
-    '__pycache__',
-    '.venv',
-    'venv',
-  ],
+  workspaceRoot: undefined,
 };
 
 /**
@@ -59,7 +49,9 @@ export const DEFAULT_LOCAL_CONFIG: RequiredLocalConfig = {
  */
 export const DEFAULT_TOOLS_CONFIG: RequiredToolsConfig = {
   enabled: null,
+  enableAdditional: null,
   disabled: null,
+  disablePrompts: false,
 };
 
 /**
@@ -74,7 +66,6 @@ export const DEFAULT_NETWORK_CONFIG: RequiredNetworkConfig = {
  * Default telemetry configuration
  */
 export const DEFAULT_TELEMETRY_CONFIG: RequiredTelemetryConfig = {
-  enabled: true,
   logging: true,
 };
 
@@ -82,18 +73,15 @@ export const DEFAULT_TELEMETRY_CONFIG: RequiredTelemetryConfig = {
  * Default LSP configuration
  */
 export const DEFAULT_LSP_CONFIG: RequiredLspConfig = {
-  enabled: true,
-  timeout: 10000,
-  languages: {},
+  configPath: undefined,
+  forceMcpLsp: false,
 };
 
 /**
- * Default research configuration
+ * Default security configuration
  */
-export const DEFAULT_RESEARCH_CONFIG: RequiredResearchConfig = {
-  defaultProvider: 'github',
-  maxQueriesPerBatch: 3,
-  maxResultsPerQuery: 10,
+export const DEFAULT_SECURITY_CONFIG: RequiredSecurityConfig = {
+  redactErrorPaths: false,
 };
 
 // ============================================================================
@@ -113,7 +101,7 @@ export const DEFAULT_CONFIG: Omit<ResolvedConfig, 'source' | 'configPath'> = {
   network: DEFAULT_NETWORK_CONFIG,
   telemetry: DEFAULT_TELEMETRY_CONFIG,
   lsp: DEFAULT_LSP_CONFIG,
-  research: DEFAULT_RESEARCH_CONFIG,
+  security: DEFAULT_SECURITY_CONFIG,
 };
 
 // ============================================================================
@@ -131,21 +119,3 @@ export const MIN_RETRIES = 0;
 
 /** Maximum retries */
 export const MAX_RETRIES = 10;
-
-/** Minimum queries per batch */
-export const MIN_QUERIES_PER_BATCH = 1;
-
-/** Maximum queries per batch */
-export const MAX_QUERIES_PER_BATCH = 10;
-
-/** Minimum results per query */
-export const MIN_RESULTS_PER_QUERY = 1;
-
-/** Maximum results per query */
-export const MAX_RESULTS_PER_QUERY = 100;
-
-/** LSP minimum timeout */
-export const LSP_MIN_TIMEOUT = 1000;
-
-/** LSP maximum timeout */
-export const LSP_MAX_TIMEOUT = 60000;

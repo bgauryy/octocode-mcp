@@ -8,6 +8,7 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { createRequire } from 'module';
+import { getConfigSync } from 'octocode-shared';
 import type {
   LanguageServerConfig,
   LanguageServerCommand,
@@ -429,9 +430,18 @@ export async function loadUserConfig(
 ): Promise<Record<string, UserLanguageServerConfig>> {
   const configPaths: string[] = [];
 
-  // 1. Environment variable
-  if (process.env.OCTOCODE_LSP_CONFIG) {
-    configPaths.push(process.env.OCTOCODE_LSP_CONFIG);
+  // 1. Environment variable or global config
+  const lspConfigPath =
+    process.env.OCTOCODE_LSP_CONFIG ||
+    (() => {
+      try {
+        return getConfigSync().lsp.configPath;
+      } catch {
+        return undefined;
+      }
+    })();
+  if (lspConfigPath) {
+    configPaths.push(lspConfigPath);
   }
 
   // 2. Workspace-level config

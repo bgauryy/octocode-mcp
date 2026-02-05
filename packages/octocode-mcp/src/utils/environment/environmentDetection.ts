@@ -4,6 +4,8 @@
  * @module utils/environment/environmentDetection
  */
 
+import { getConfigSync } from 'octocode-shared';
+
 /**
  * Detected environment types
  */
@@ -61,9 +63,16 @@ export function detectEnvironment(): Environment {
 export function shouldUseMCPLsp(): boolean {
   const env = detectEnvironment();
 
-  // Force octocode-mcp LSP if explicitly requested
+  // Force octocode-mcp LSP if explicitly requested (env var or config)
   if (process.env.OCTOCODE_FORCE_LSP === '1') {
     return true;
+  }
+  try {
+    if (getConfigSync().lsp.forceMcpLsp) {
+      return true;
+    }
+  } catch {
+    // Config not loaded yet, fall through
   }
 
   // Defer to native LSP in Claude Code
