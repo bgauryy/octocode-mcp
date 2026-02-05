@@ -141,10 +141,9 @@ function resolveGitLab(
 function resolveLocal(
   fileConfig?: OctocodeConfig['local']
 ): RequiredLocalConfig {
-  // Env vars: ENABLE_LOCAL, LOCAL
+  // Env var: ENABLE_LOCAL
   const envEnableLocal =
-    parseBooleanEnv(process.env.ENABLE_LOCAL) ??
-    parseBooleanEnv(process.env.LOCAL);
+    parseBooleanEnv(process.env.ENABLE_LOCAL);
 
   return {
     enabled:
@@ -205,19 +204,11 @@ function resolveNetwork(
 function resolveTelemetry(
   fileConfig?: OctocodeConfig['telemetry']
 ): RequiredTelemetryConfig {
-  // Env vars: LOG, OCTOCODE_TELEMETRY_DISABLED
+  // Env var: LOG
   const envLogging = parseBooleanEnv(process.env.LOG);
-  const envTelemetryDisabled = parseBooleanEnv(
-    process.env.OCTOCODE_TELEMETRY_DISABLED
-  );
-
-  // OCTOCODE_TELEMETRY_DISABLED is inverted (true = disabled)
-  const envEnabled =
-    envTelemetryDisabled !== undefined ? !envTelemetryDisabled : undefined;
 
   return {
-    enabled:
-      envEnabled ?? fileConfig?.enabled ?? DEFAULT_TELEMETRY_CONFIG.enabled,
+    enabled: fileConfig?.enabled ?? DEFAULT_TELEMETRY_CONFIG.enabled,
     logging:
       envLogging ?? fileConfig?.logging ?? DEFAULT_TELEMETRY_CONFIG.logging,
   };
@@ -272,14 +263,12 @@ function buildResolvedConfig(
     process.env.GITHUB_API_URL !== undefined ||
     process.env.GITLAB_HOST !== undefined ||
     process.env.ENABLE_LOCAL !== undefined ||
-    process.env.LOCAL !== undefined ||
     process.env.TOOLS_TO_RUN !== undefined ||
     process.env.ENABLE_TOOLS !== undefined ||
     process.env.DISABLE_TOOLS !== undefined ||
     process.env.REQUEST_TIMEOUT !== undefined ||
     process.env.MAX_RETRIES !== undefined ||
-    process.env.LOG !== undefined ||
-    process.env.OCTOCODE_TELEMETRY_DISABLED !== undefined;
+    process.env.LOG !== undefined;
 
   // Determine source
   let source: ResolvedConfig['source'];

@@ -36,14 +36,12 @@ describe('config/resolver', () => {
     delete process.env.GITHUB_API_URL;
     delete process.env.GITLAB_HOST;
     delete process.env.ENABLE_LOCAL;
-    delete process.env.LOCAL;
     delete process.env.TOOLS_TO_RUN;
     delete process.env.ENABLE_TOOLS;
     delete process.env.DISABLE_TOOLS;
     delete process.env.REQUEST_TIMEOUT;
     delete process.env.MAX_RETRIES;
     delete process.env.LOG;
-    delete process.env.OCTOCODE_TELEMETRY_DISABLED;
   });
 
   afterEach(() => {
@@ -146,19 +144,6 @@ describe('config/resolver', () => {
         expect(resolveConfigSync().local.enabled).toBe(false);
       });
 
-      it('parses LOCAL as fallback for ENABLE_LOCAL', () => {
-        process.env.LOCAL = 'true';
-        const config = resolveConfigSync();
-        expect(config.local.enabled).toBe(true);
-      });
-
-      it('ENABLE_LOCAL takes precedence over LOCAL', () => {
-        process.env.ENABLE_LOCAL = 'false';
-        process.env.LOCAL = 'true';
-        const config = resolveConfigSync();
-        expect(config.local.enabled).toBe(false);
-      });
-
       it('parses TOOLS_TO_RUN as string array', () => {
         process.env.TOOLS_TO_RUN = 'githubSearchCode,packageSearch';
         const config = resolveConfigSync();
@@ -217,16 +202,6 @@ describe('config/resolver', () => {
         process.env.LOG = 'false';
         const config = resolveConfigSync();
         expect(config.telemetry.logging).toBe(false);
-      });
-
-      it('parses OCTOCODE_TELEMETRY_DISABLED (inverted)', () => {
-        process.env.OCTOCODE_TELEMETRY_DISABLED = 'true';
-        const config = resolveConfigSync();
-        expect(config.telemetry.enabled).toBe(false);
-
-        _resetConfigCache();
-        process.env.OCTOCODE_TELEMETRY_DISABLED = 'false';
-        expect(resolveConfigSync().telemetry.enabled).toBe(true);
       });
     });
   });

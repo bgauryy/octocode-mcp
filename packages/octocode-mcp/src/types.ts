@@ -241,6 +241,8 @@ export interface ServerConfig {
   maxRetries: number;
   loggingEnabled: boolean;
   enableLocal: boolean;
+  /** Whether prompts/slash commands are disabled */
+  disablePrompts: boolean;
   tokenSource: TokenSourceType;
   /** GitLab configuration (optional) */
   gitlab?: GitLabConfig;

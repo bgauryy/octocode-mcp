@@ -94,6 +94,7 @@ describe('Tool Count Verification', () => {
       maxRetries: 3,
       loggingEnabled: true,
       enableLocal: false,
+      disablePrompts: false,
       tokenSource: 'env:GITHUB_TOKEN',
     });
     vi.mocked(isLocalEnabled).mockReturnValue(false);
@@ -114,6 +115,7 @@ describe('Tool Count Verification', () => {
       maxRetries: 3,
       loggingEnabled: true,
       enableLocal: true,
+      disablePrompts: false,
       tokenSource: 'env:GITHUB_TOKEN',
     });
     vi.mocked(isLocalEnabled).mockReturnValue(true);

@@ -97,7 +97,6 @@ describe('Local Tools Flow Integration', () => {
 
     // Reset environment
     delete process.env.ENABLE_LOCAL;
-    delete process.env.LOCAL;
     delete process.env.GITHUB_TOKEN;
     delete process.env.TOOLS_TO_RUN;
     delete process.env.ENABLE_TOOLS;
@@ -157,28 +156,6 @@ describe('Local Tools Flow Integration', () => {
       expect(mockGitHubSearchReposRegister).toHaveBeenCalledTimes(1);
       expect(mockGitHubSearchPRsRegister).toHaveBeenCalledTimes(1);
       expect(mockPackageSearchRegister).toHaveBeenCalledTimes(1);
-    });
-
-    it('should register local tools when LOCAL=true (fallback)', async () => {
-      process.env.LOCAL = 'true';
-
-      const { initialize, isLocalEnabled, cleanup } =
-        await import('../../src/serverConfig.js');
-      cleanup(); // Reset state
-      const { registerTools } = await import('../../src/tools/toolsManager.js');
-
-      await initialize();
-
-      expect(isLocalEnabled()).toBe(true);
-
-      const result = await registerTools(mockServer);
-
-      // All local tools should be registered
-      expect(mockLocalRipgrepRegister).toHaveBeenCalled();
-      expect(mockLocalViewStructureRegister).toHaveBeenCalled();
-      expect(mockLocalFindFilesRegister).toHaveBeenCalled();
-      expect(mockLocalFetchContentRegister).toHaveBeenCalled();
-      expect(result.successCount).toBe(13);
     });
 
     it('should register local tools when ENABLE_LOCAL=1', async () => {

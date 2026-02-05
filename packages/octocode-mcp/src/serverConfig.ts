@@ -174,11 +174,6 @@ function parseLoggingEnv(value: string | undefined): boolean | undefined {
   return true;
 }
 
-/** Check if debug logging is enabled via environment variable */
-const isDebugEnabled = () =>
-  process.env.OCTOCODE_DEBUG === 'true' ||
-  process.env.DEBUG?.includes('octocode');
-
 async function resolveGitHubToken(): Promise<TokenResolutionResult> {
   // Support legacy test mock (backward compatibility)
   if (_legacyResolveToken) {
@@ -191,15 +186,7 @@ async function resolveGitHubToken(): Promise<TokenResolutionResult> {
         };
       }
       return { token: null, source: 'none' };
-    } catch (error) {
-      const maskedMsg =
-        error instanceof Error
-          ? maskSensitiveData(error.message)
-          : 'Unknown error';
-      if (isDebugEnabled()) {
-        // eslint-disable-next-line no-console
-        console.debug('[octocode] Legacy token resolution failed:', maskedMsg);
-      }
+    } catch {
       return { token: null, source: 'none' };
     }
   }
@@ -220,15 +207,7 @@ async function resolveGitHubToken(): Promise<TokenResolutionResult> {
     }
 
     return { token: null, source: 'none' };
-  } catch (error) {
-    const maskedMsg =
-      error instanceof Error
-        ? maskSensitiveData(error.message)
-        : 'Unknown error';
-    if (isDebugEnabled()) {
-      // eslint-disable-next-line no-console
-      console.debug('[octocode] Token resolution failed:', maskedMsg);
-    }
+  } catch {
     return { token: null, source: 'none' };
   }
 }
@@ -306,29 +285,25 @@ export async function initialize(): Promise<void> {
     // Token is NOT cached - subsequent calls to getGitHubToken() will re-resolve
     const tokenResult = await resolveGitHubToken();
 
-    // Parse logging flag - env vars override global config
-    // Priority: OCTOCODE_TELEMETRY_DISABLED > LOG env var > config file > defaults
-    const envTelemetryDisabled = parseBooleanEnv(
-      process.env.OCTOCODE_TELEMETRY_DISABLED,
-      undefined as unknown as boolean
-    );
-    const telemetryDisabled =
-      envTelemetryDisabled ?? !globalConfig.telemetry.enabled;
-
     // Parse LOG with special "default to true" semantics
     // LOG='anything' → true, LOG='false'/'0' → false, LOG=undefined → config fallback
     const envLogging = parseLoggingEnv(process.env.LOG);
-    const isLoggingEnabled =
-      !telemetryDisabled && (envLogging ?? globalConfig.telemetry.logging);
+    const isLoggingEnabled = envLogging ?? globalConfig.telemetry.logging;
 
-    // Parse ENABLE_LOCAL with fallback to LOCAL env var, then global config
-    // Priority: ENABLE_LOCAL > LOCAL > config file > defaults
-    const envEnableLocal =
-      parseBooleanEnv(
-        process.env.ENABLE_LOCAL,
-        undefined as unknown as boolean
-      ) ?? parseBooleanEnv(process.env.LOCAL, undefined as unknown as boolean);
+    // Parse ENABLE_LOCAL from environment, then global config
+    // Priority: ENABLE_LOCAL > config file > defaults
+    const envEnableLocal = parseBooleanEnv(
+      process.env.ENABLE_LOCAL,
+      undefined as unknown as boolean
+    );
     const enableLocal = envEnableLocal ?? globalConfig.local.enabled;
+
+    // Parse DISABLE_PROMPTS - default false (prompts enabled by default)
+    const envDisablePrompts = parseBooleanEnv(
+      process.env.DISABLE_PROMPTS,
+      undefined as unknown as boolean
+    );
+    const disablePrompts = envDisablePrompts ?? false;
 
     // Parse tools configuration - env vars override global config
     const envToolsToRun = parseStringArray(process.env.TOOLS_TO_RUN);
@@ -371,6 +346,7 @@ export async function initialize(): Promise<void> {
       maxRetries,
       loggingEnabled: isLoggingEnabled,
       enableLocal,
+      disablePrompts,
       tokenSource: tokenResult.source,
       gitlab: resolveGitLabConfig(),
     };
@@ -416,6 +392,10 @@ export function isLocalEnabled(): boolean {
 
 export function isLoggingEnabled(): boolean {
   return config?.loggingEnabled ?? false;
+}
+
+export function arePromptsEnabled(): boolean {
+  return !(config?.disablePrompts ?? false);
 }
 
 /**

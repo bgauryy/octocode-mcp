@@ -5,7 +5,12 @@ import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { registerPrompts } from './prompts/prompts.js';
 import { clearAllCache } from './utils/http/cache.js';
 import { clearOctokitInstances } from './github/client.js';
-import { initialize, cleanup, getGitHubToken } from './serverConfig.js';
+import {
+  initialize,
+  cleanup,
+  getGitHubToken,
+  arePromptsEnabled,
+} from './serverConfig.js';
 import { initializeProviders } from './providers/factory.js';
 import { createLogger, LoggerFactory, Logger } from './utils/core/logger.js';
 import {
@@ -155,12 +160,21 @@ export async function registerAllTools(
 // =============================================================================
 
 async function createServer(content: CompleteMetadata): Promise<McpServer> {
+  const capabilities: {
+    prompts?: Record<string, never>;
+    tools: Record<string, never>;
+    logging: Record<string, never>;
+  } = {
+    tools: {},
+    logging: {},
+  };
+
+  if (arePromptsEnabled()) {
+    capabilities.prompts = {};
+  }
+
   return new McpServer(SERVER_CONFIG, {
-    capabilities: {
-      prompts: {},
-      tools: {},
-      logging: {},
-    },
+    capabilities,
     instructions: content.instructions,
   });
 }
@@ -187,8 +201,12 @@ async function startServer() {
 
     // Register tools and prompts
     await registerAllTools(server, content);
-    registerPrompts(server, content);
-    await logger.info('Prompts ready');
+    if (arePromptsEnabled()) {
+      registerPrompts(server, content);
+      await logger.info('Prompts ready');
+    } else {
+      await logger.info('Prompts disabled via DISABLE_PROMPTS');
+    }
 
     // Setup shutdown handling
     const gracefulShutdown = createShutdownHandler(
