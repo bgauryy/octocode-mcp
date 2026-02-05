@@ -10,7 +10,7 @@ import {
   PullRequestItem,
   IssueComment,
 } from './githubAPI';
-import type { PullRequestSearchResult } from '../types';
+import type { PullRequestSearchResult } from '../tools/github_search_pull_requests/types.js';
 import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 import { TOOL_NAMES } from '../tools/toolMetadata.js';

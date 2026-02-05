@@ -4,7 +4,10 @@
  */
 import { RequestError } from 'octokit';
 import type { GetContentParameters, GitHubAPIResponse } from './githubAPI';
-import type { FileContentQuery, ContentResult } from '../types';
+import type {
+  FileContentQuery,
+  ContentResult,
+} from '../tools/github_fetch_content/types.js';
 import type { GitHubApiFileItem } from '../tools/github_view_repo_structure/scheme.js';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from '../utils/minifier/index.js';

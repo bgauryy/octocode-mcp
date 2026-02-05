@@ -1,5 +1,5 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { GitHubCodeSearchQuery, SearchResult } from '../../types.js';
+import type { GitHubCodeSearchQuery, SearchResult } from './types.js';
 import { TOOL_NAMES } from '../toolMetadata.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';

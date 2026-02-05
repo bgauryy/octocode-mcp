@@ -3,7 +3,10 @@ import type {
   RepoSearchResultItem,
   GitHubAPIResponse,
 } from './githubAPI';
-import type { GitHubReposSearchQuery, SimplifiedRepository } from '../types';
+import type {
+  GitHubReposSearchQuery,
+  SimplifiedRepository,
+} from '../tools/github_search_repos/types.js';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildRepoSearchQuery } from './queryBuilders';

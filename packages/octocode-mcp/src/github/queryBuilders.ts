@@ -1,4 +1,5 @@
-import type { GitHubCodeSearchQuery, GitHubReposSearchQuery } from '../types';
+import type { GitHubCodeSearchQuery } from '../tools/github_search_code/types.js';
+import type { GitHubReposSearchQuery } from '../tools/github_search_repos/types.js';
 import { GitHubPullRequestsSearchParams } from './githubAPI';
 
 export function getOwnerQualifier(owner: string): string {

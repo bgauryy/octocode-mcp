@@ -7,25 +7,29 @@ import {
 } from './utils/credentials/index.js';
 import { getConfigSync, invalidateConfigCache } from 'octocode-shared';
 import { version } from '../package.json';
-import type {
-  ServerConfig,
-  TokenSourceType,
-  GitLabConfig,
-  GitLabTokenSourceType,
-} from './types.js';
+import type { ServerConfig, TokenSourceType } from './types.js';
 import { CONFIG_ERRORS } from './errorCodes.js';
 import { maskSensitiveData } from './security/mask.js';
+import {
+  getGitLabConfig as resolveGitLabConfig,
+  getGitLabToken,
+  getGitLabHost,
+  isGitLabConfigured,
+} from './gitlabConfig.js';
+
+// Re-export GitLab functions for API compatibility
+export {
+  getGitLabConfig,
+  getGitLabToken,
+  getGitLabHost,
+  getGitLabTokenSource,
+  isGitLabConfigured,
+} from './gitlabConfig.js';
 
 /** Result of token resolution with source tracking */
 interface TokenResolutionResult {
   token: string | null;
   source: TokenSourceType;
-}
-
-/** Result of GitLab token resolution with source tracking */
-interface GitLabTokenResolutionResult {
-  token: string | null;
-  source: GitLabTokenSourceType;
 }
 
 let config: ServerConfig | null = null;
@@ -102,20 +106,15 @@ function parseStringArray(value?: string): string[] | undefined {
  * Parse a boolean environment variable with support for various formats.
  * Handles whitespace, casing, and common truthy/falsy values.
  * @param value - The environment variable value
- * @param defaultValue - Default value if undefined/empty
- * @returns Parsed boolean value
+ * @returns true, false, or undefined if not set/recognized
  */
-function parseBooleanEnv(
-  value: string | undefined,
-  defaultValue: boolean
-): boolean {
-  if (value === undefined || value === null) return defaultValue;
+function parseBooleanEnv(value: string | undefined): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
   const trimmed = value.trim().toLowerCase();
-  if (trimmed === '') return defaultValue;
+  if (trimmed === '') return undefined;
   if (trimmed === 'true' || trimmed === '1') return true;
   if (trimmed === 'false' || trimmed === '0') return false;
-  // Unrecognized values fall back to default (allows ?? to work)
-  return defaultValue;
+  return undefined;
 }
 
 /**
@@ -158,12 +157,7 @@ async function resolveGitHubToken(): Promise<TokenResolutionResult> {
 }
 
 // ============================================================================
-// GITLAB TOKEN RESOLUTION
-// ============================================================================
-
-// ============================================================================
-// CONFIGURATION LIMITS (from octocode-shared/config)
-// These are kept as constants for clamping, actual defaults come from getConfigSync()
+// CONFIGURATION LIMITS
 // ============================================================================
 
 /** Minimum timeout - 5 seconds (prevents accidental misconfiguration) */
@@ -174,44 +168,6 @@ const MAX_TIMEOUT = 300000;
 const MIN_RETRIES = 0;
 /** Maximum retries */
 const MAX_RETRIES_LIMIT = 10;
-
-/**
- * Resolve GitLab token from environment variables.
- * Priority: GITLAB_TOKEN > GL_TOKEN
- */
-function resolveGitLabToken(): GitLabTokenResolutionResult {
-  // Check GITLAB_TOKEN first (primary)
-  const gitlabToken = process.env.GITLAB_TOKEN?.trim();
-  if (gitlabToken) {
-    return { token: gitlabToken, source: 'env:GITLAB_TOKEN' };
-  }
-
-  // Check GL_TOKEN (fallback)
-  const glToken = process.env.GL_TOKEN?.trim();
-  if (glToken) {
-    return { token: glToken, source: 'env:GL_TOKEN' };
-  }
-
-  return { token: null, source: 'none' };
-}
-
-/**
- * Resolve GitLab configuration from environment variables and global config.
- * Priority: env vars > ~/.octocode/.octocoderc > hardcoded defaults
- * @returns GitLab configuration object
- */
-function resolveGitLabConfig(): GitLabConfig {
-  const globalConfig = getConfigSync();
-  const tokenResult = resolveGitLabToken();
-  const host = process.env.GITLAB_HOST?.trim() || globalConfig.gitlab.host;
-
-  return {
-    host,
-    token: tokenResult.token,
-    tokenSource: tokenResult.source,
-    isConfigured: tokenResult.token !== null,
-  };
-}
 
 export async function initialize(): Promise<void> {
   if (config !== null) {
@@ -237,18 +193,10 @@ export async function initialize(): Promise<void> {
 
     // Parse ENABLE_LOCAL from environment, then global config
     // Priority: ENABLE_LOCAL > config file > defaults
-    const envEnableLocal = parseBooleanEnv(
-      process.env.ENABLE_LOCAL,
-      undefined as unknown as boolean
-    );
-    const enableLocal = envEnableLocal ?? globalConfig.local.enabled;
+    const enableLocal = parseBooleanEnv(process.env.ENABLE_LOCAL) ?? globalConfig.local.enabled;
 
     // Parse DISABLE_PROMPTS - default false (prompts enabled by default)
-    const envDisablePrompts = parseBooleanEnv(
-      process.env.DISABLE_PROMPTS,
-      undefined as unknown as boolean
-    );
-    const disablePrompts = envDisablePrompts ?? false;
+    const disablePrompts = parseBooleanEnv(process.env.DISABLE_PROMPTS) ?? false;
 
     // Parse tools configuration - env vars override global config
     const envToolsToRun = parseStringArray(process.env.TOOLS_TO_RUN);
@@ -355,60 +303,6 @@ export function arePromptsEnabled(): boolean {
 export async function getTokenSource(): Promise<TokenSourceType> {
   const result = await resolveGitHubToken();
   return result.source;
-}
-
-// ============================================================================
-// GITLAB CONFIGURATION EXPORTS
-// ============================================================================
-
-/**
- * Get the GitLab configuration.
- * Always resolves fresh - no caching. Let environment handle changes.
- * Token can change at runtime (deletion, refresh, new login).
- * @returns GitLab configuration
- */
-export function getGitLabConfig(): GitLabConfig {
-  return resolveGitLabConfig();
-}
-
-/**
- * Get the GitLab API token.
- * Always resolves fresh - not cached. Token can change at runtime.
- * @returns GitLab token or null if not configured
- */
-export function getGitLabToken(): string | null {
-  const result = resolveGitLabToken();
-  return result.token;
-}
-
-/**
- * Get the GitLab host URL.
- * Priority: env var > config file > default
- * @returns GitLab host URL (defaults to https://gitlab.com)
- */
-export function getGitLabHost(): string {
-  const globalConfig = getConfigSync();
-  return process.env.GITLAB_HOST?.trim() || globalConfig.gitlab.host;
-}
-
-/**
- * Get the source of the current GitLab token.
- * Returns the type indicating where the token was found:
- * - 'env:GITLAB_TOKEN' for GITLAB_TOKEN env var
- * - 'env:GL_TOKEN' for GL_TOKEN env var
- * - 'none' if no token was found
- */
-export function getGitLabTokenSource(): GitLabTokenSourceType {
-  const result = resolveGitLabToken();
-  return result.source;
-}
-
-/**
- * Check if GitLab is configured with a valid token.
- * @returns true if GitLab token is available
- */
-export function isGitLabConfigured(): boolean {
-  return resolveGitLabToken().token !== null;
 }
 
 // ============================================================================
