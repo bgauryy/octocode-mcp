@@ -193,10 +193,12 @@ export async function initialize(): Promise<void> {
 
     // Parse ENABLE_LOCAL from environment, then global config
     // Priority: ENABLE_LOCAL > config file > defaults
-    const enableLocal = parseBooleanEnv(process.env.ENABLE_LOCAL) ?? globalConfig.local.enabled;
+    const enableLocal =
+      parseBooleanEnv(process.env.ENABLE_LOCAL) ?? globalConfig.local.enabled;
 
     // Parse DISABLE_PROMPTS - default false (prompts enabled by default)
-    const disablePrompts = parseBooleanEnv(process.env.DISABLE_PROMPTS) ?? false;
+    const disablePrompts =
+      parseBooleanEnv(process.env.DISABLE_PROMPTS) ?? false;
 
     // Parse tools configuration - env vars override global config
     const envToolsToRun = parseStringArray(process.env.TOOLS_TO_RUN);

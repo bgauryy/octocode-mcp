@@ -59,7 +59,7 @@ export class PathValidator {
    * @param options - Configuration options (or legacy string for workspace root)
    */
   constructor(options?: string | PathValidatorOptions) {
-    // Support legacy string argument 
+    // Support legacy string argument
     const opts: PathValidatorOptions =
       typeof options === 'string' ? { workspaceRoot: options } : options || {};
 

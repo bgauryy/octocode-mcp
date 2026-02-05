@@ -99,7 +99,7 @@ export const ContentBuilder = {
   },
 
   /**
-   * Data content: Serialized data block 
+   * Data content: Serialized data block
    * Low priority (0.3) - detailed data for agent reference
    */
   data(data: unknown, format: 'yaml' | 'json' = 'yaml'): RoleContentBlock {

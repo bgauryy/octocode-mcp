@@ -9,7 +9,7 @@ export class ContentSanitizer {
       content: secretsResult.sanitizedContent,
       hasSecrets: secretsResult.hasSecrets,
       secretsDetected: secretsResult.secretsDetected,
-      warnings: secretsResult.secretsDetected, // Alias 
+      warnings: secretsResult.secretsDetected, // Alias
     };
   }
 

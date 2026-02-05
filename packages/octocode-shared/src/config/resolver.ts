@@ -142,8 +142,7 @@ function resolveLocal(
   fileConfig?: OctocodeConfig['local']
 ): RequiredLocalConfig {
   // Env var: ENABLE_LOCAL
-  const envEnableLocal =
-    parseBooleanEnv(process.env.ENABLE_LOCAL);
+  const envEnableLocal = parseBooleanEnv(process.env.ENABLE_LOCAL);
 
   return {
     enabled:
