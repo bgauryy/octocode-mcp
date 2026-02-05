@@ -55,7 +55,7 @@ You can disable telemetry by using any of the following methods:
 
 **Environment Variable:**
 ```bash
-export OCTOCODE_TELEMETRY_DISABLED=1
+export LOG=false
 ```
 
 **Config File:**

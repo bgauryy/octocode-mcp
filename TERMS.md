@@ -36,7 +36,7 @@ While the software is free to use, we offer commercial support packages for ente
 
 We collect certain de-identified usage data to improve the software. Octocode never collects Personally Identifiable Information (PII), Secrets (OR API Keys) or actual code. By using Octocode, you acknowledge that we may collect and use data as described in our [Privacy Policy](./PRIVACY.md).
 
-You may opt-out of telemetry at any time by setting the environment variable `OCTOCODE_TELEMETRY_DISABLED=1` or configuring your user settings as described in the Privacy Policy.
+You may opt-out of telemetry at any time by setting the environment variable `LOG=false` or configuring your user settings as described in the Privacy Policy.
 
 ## 5. Prohibited Conduct
 

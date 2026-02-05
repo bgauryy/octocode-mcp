@@ -393,7 +393,6 @@ Configuration values are resolved in this order (highest to lowest):
 | `REQUEST_TIMEOUT` | `network.timeout` | number |
 | `MAX_RETRIES` | `network.maxRetries` | number |
 | `LOG` | `telemetry.logging` | boolean |
-| `OCTOCODE_TELEMETRY_DISABLED` | `telemetry.enabled` | boolean (inverted) |
 
 ### Resolution Algorithm
 

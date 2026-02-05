@@ -17,7 +17,7 @@ Octocode MCP is an MCP server providing AI agents with code exploration tools:
 - **LSP Intelligence**: Semantic code navigation with goto definition, find references, call hierarchy
 - **Package Discovery**: Search NPM/PyPI for packages and repository URLs
 
-**Key Docs**: [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) • [`PROVIDERS.md`](./docs/PROVIDERS.md) • [`README.md`](./README.md)
+**Key Docs**: [`LOCAL_TOOLS_REFERENCE.md`](./docs/LOCAL_TOOLS_REFERENCE.md) • [`GITHUB_GITLAB_TOOLS_REFERENCE.md`](./docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) • [`README.md`](./README.md)
 
 ---
 
@@ -363,7 +363,7 @@ LSP (Language Server Protocol) tools provide **semantic** code intelligence:
 - **30+ languages supported** - Python, Go, Rust, Java, C/C++, etc. (requires server installation)
 - **Cross-platform** - macOS, Linux, Windows
 
-See [`LSP_TOOLS.md`](./docs/LSP_TOOLS.md) for full documentation.
+See [`LOCAL_TOOLS_REFERENCE.md`](./docs/LOCAL_TOOLS_REFERENCE.md) for full documentation.
 
 ---
 
@@ -485,7 +485,8 @@ yarn test:ui
 | `GITLAB_TOKEN` | GitLab personal access token | - |
 | `GL_TOKEN` | GitLab token (fallback) | - |
 | `GITLAB_HOST` | GitLab instance URL | `https://gitlab.com` |
-| `ENABLE_LOCAL` / `LOCAL` | Enable local filesystem tools | `true` |
+| `ENABLE_LOCAL` | Enable local filesystem tools | `true` |
+| `DISABLE_PROMPTS` | Disable prompts/slash commands | `false` |
 | `LOG` | Enable session logging | `true` |
 | `REQUEST_TIMEOUT` | API request timeout (ms) | `30000` |
 | `MAX_RETRIES` | Maximum retry attempts | `3` |
@@ -499,15 +500,9 @@ yarn test:ui
 
 | Document | Description |
 |----------|-------------|
-| [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Deep dive into system design, data flows, security |
-| [`GITHUB_GITLAB_TOOLS_REFERENCE.md`](./docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) | GitHub tools: search code/repos/PRs, content, packages |
+| [`GITHUB_GITLAB_TOOLS_REFERENCE.md`](./docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) | GitHub/GitLab tools: search code/repos/PRs, content, packages |
 | [`LOCAL_TOOLS_REFERENCE.md`](./docs/LOCAL_TOOLS_REFERENCE.md) | Local + LSP tools: search, structure, files, semantic analysis |
-| [`TOOL_FLOWS.md`](./docs/TOOL_FLOWS.md) | Local Research Agent tool flows, best practices, and common mistakes |
-| [`HINTS_ARCHITECTURE.md`](./docs/HINTS_ARCHITECTURE.md) | Hints system: flow, sources, types, implementation |
-| [`LSP_TOOLS.md`](./docs/LSP_TOOLS.md) | LSP tools: supported languages, usage, configuration |
-| [`SESSION_PERSISTENCE.md`](./docs/SESSION_PERSISTENCE.md) | Session management: persistence, caching, telemetry |
-| [`AUTHENTICATION_SETUP.md`](./docs/AUTHENTICATION_SETUP.md) | GitHub token resolution: priority, sources, setup |
-| [`PROVIDERS.md`](./docs/PROVIDERS.md) | Provider selection, GitHub & GitLab credentials flow |
+| [`AUTHENTICATION_SETUP.md`](./docs/AUTHENTICATION_SETUP.md) | GitHub/GitLab authentication setup |
 | [`README.md`](./README.md) | Installation, usage, configuration |
 | [`../../AGENTS.md`](../../AGENTS.md) | Root monorepo guidelines |
 | [MCP Spec](https://modelcontextprotocol.io/) | Model Context Protocol specification |
@@ -523,14 +518,14 @@ yarn test:ui
 | Entry point | `src/index.ts` |
 | Tool registration | `src/tools/toolsManager.ts`, `src/tools/toolConfig.ts` |
 | Tool modules | `src/tools/<tool_name>/` (scheme.ts, execution.ts, types.ts) |
-| Hints system | `src/hints/` ([docs](./docs/HINTS_ARCHITECTURE.md)) |
+| Hints system | `src/hints/` |
 | Security wrapper | `src/security/withSecurityValidation.ts` |
 | Secret detection | `src/security/contentSanitizer.ts`, `src/security/regexes/` |
 | Path validation | `src/security/pathValidator.ts` |
 | GitHub client | `src/github/client.ts` |
 | GitLab client | `src/gitlab/client.ts` |
 | Provider factory | `src/providers/factory.ts`, `src/providers/execute.ts` |
-| LSP client | `src/lsp/client.ts` ([docs](./docs/LSP_TOOLS.md)) |
+| LSP client | `src/lsp/client.ts` |
 | LSP config | `src/lsp/config.ts`, `src/lsp/manager.ts` |
 | Bulk operations | `src/utils/response/bulk.ts` |
 | Response formatting | `src/responses.ts` |

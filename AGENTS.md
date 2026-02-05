@@ -83,8 +83,9 @@ Each package has specific guidelines that **override** this root file:
 ## Key References
 
 ### Core
-- **Development Standards**: [docs/DEVELOPMENT_GUIDE.md](./docs/DEVELOPMENT_GUIDE.md)
-- **Context Driven Dev**: [docs/CONTEXT_DRIVEN_DEVELOPMENT_SESSION.md](./docs/CONTEXT_DRIVEN_DEVELOPMENT_SESSION.md)
+- **Development Guide**: [docs/DEVELOPMENT_GUIDE.md](./docs/DEVELOPMENT_GUIDE.md)
+- **Configuration Reference**: [docs/CONFIGURATION_REFERENCE.md](./docs/CONFIGURATION_REFERENCE.md)
+- **Troubleshooting**: [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)
 
 ### Octocode CLI
 - **Skills Guide**: [packages/octocode-cli/docs/SKILLS_GUIDE.md](./packages/octocode-cli/docs/SKILLS_GUIDE.md)
@@ -95,15 +96,10 @@ Each package has specific guidelines that **override** this root file:
 ### Octocode MCP
 - **GitHub & GitLab Tools**: [packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md](./packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md)
 - **Local Tools**: [packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md](./packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md)
-- **LSP Tools**: [packages/octocode-mcp/docs/LSP_TOOLS.md](./packages/octocode-mcp/docs/LSP_TOOLS.md)
-- **Request Flow**: [packages/octocode-mcp/docs/REQUEST_FLOW.md](./packages/octocode-mcp/docs/REQUEST_FLOW.md)
-- **Evals**: [packages/octocode-mcp/docs/EVALS.md](./packages/octocode-mcp/docs/EVALS.md)
-- **Hints**: [packages/octocode-mcp/docs/HINTS_ARCHITECTURE.md](./packages/octocode-mcp/docs/HINTS_ARCHITECTURE.md)
-- **Providers**: [packages/octocode-mcp/docs/PROVIDERS.md](./packages/octocode-mcp/docs/PROVIDERS.md)
-- **Session Persistence**: [packages/octocode-mcp/docs/SESSION_PERSISTENCE.md](./packages/octocode-mcp/docs/SESSION_PERSISTENCE.md)
-- **Token Resolution**: [packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md](./packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
+- **Authentication**: [packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md](./packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
 
 ### Octocode Shared
 - **API Reference**: [packages/octocode-shared/docs/API_REFERENCE.md](./packages/octocode-shared/docs/API_REFERENCE.md)
 - **Credentials**: [packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md](./packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md)
 - **Session Persistence**: [packages/octocode-shared/docs/SESSION_PERSISTENCE.md](./packages/octocode-shared/docs/SESSION_PERSISTENCE.md)
+- **Global Config**: [packages/octocode-shared/docs/GLOBAL_CONFIG_DESIGN.md](./packages/octocode-shared/docs/GLOBAL_CONFIG_DESIGN.md)

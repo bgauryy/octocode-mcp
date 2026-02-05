@@ -245,7 +245,7 @@ MCP Client → Octocode MCP → Language Server (spawned)
 - **Depth Parameter**: Capped at 3 to prevent resource exhaustion
 - **Path Redaction**: When `REDACT_ERROR_PATHS=true`, full paths hidden in errors
 
-> For complete LSP documentation including architecture, all 30+ supported languages, and advanced configuration, see [LSP_TOOLS.md](./LSP_TOOLS.md).
+> LSP tools work standalone - no IDE required. TypeScript/JavaScript bundled; other languages need server installation.
 
 ---
 

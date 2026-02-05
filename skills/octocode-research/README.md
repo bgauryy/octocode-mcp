@@ -462,7 +462,7 @@ We collect **de-identified** telemetry to improve the tool:
 
 Opt-out anytime:
 ```bash
-export OCTOCODE_TELEMETRY_DISABLED=1
+export LOG=false
 ```
 
 Local logs stored at `~/.octocode/logs/` for your debugging — **never uploaded**.
