@@ -296,8 +296,8 @@ export interface RateLimitData {
 }
 
 // ============================================================================
-// GITHUB TOOL TYPES (duplicated for backward compatibility)
-// These types are also defined in their respective tool directories
+// GITHUB TOOL TYPES
+// Canonical types used by github/* modules
 // ============================================================================
 
 /** Query parameters for fetching GitHub file content */

@@ -61,15 +61,10 @@ const MAX_RETRY_AFTER_SECONDS = 60;
 const createThrottleOptions = () => ({
   onRateLimit: (
     retryAfter: number,
-    options: { method: string; url: string },
+    _options: { method: string; url: string },
     _octokit: Octokit,
     retryCount: number
   ) => {
-    // eslint-disable-next-line no-console
-    console.warn(
-      `Rate limit hit for ${options.method} ${options.url}, ` +
-        `retry ${retryCount + 1}/${MAX_RATE_LIMIT_RETRIES} after ${retryAfter}s`
-    );
     // Retry if under max retries and wait is reasonable
     return (
       retryCount < MAX_RATE_LIMIT_RETRIES &&
@@ -78,15 +73,10 @@ const createThrottleOptions = () => ({
   },
   onSecondaryRateLimit: (
     retryAfter: number,
-    options: { method: string; url: string },
+    _options: { method: string; url: string },
     _octokit: Octokit,
     retryCount: number
   ) => {
-    // eslint-disable-next-line no-console
-    console.warn(
-      `Secondary rate limit hit for ${options.method} ${options.url}, ` +
-        `retry ${retryCount + 1}/${MAX_RATE_LIMIT_RETRIES} after ${retryAfter}s`
-    );
     return (
       retryCount < MAX_RATE_LIMIT_RETRIES &&
       retryAfter < MAX_RETRY_AFTER_SECONDS

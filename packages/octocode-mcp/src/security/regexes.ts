@@ -2,7 +2,7 @@
  * Sensitive data pattern detection regexes
  * @module security/regexes
  *
- * Re-exports from modular category files for backward compatibility.
+ * Re-exports from modular category files .
  * For new code, prefer importing from specific category modules:
  *
  * @example

@@ -478,8 +478,8 @@ export { withBasicSecurityValidation } from './security/withSecurityValidation.j
  * Response utilities for creating MCP-compliant tool responses.
  *
  * Includes:
- * - Legacy `createResult` for backwards compatibility
- * - New role-based `createRoleBasedResult` with system/assistant/user content blocks
+ * - `createResult` for basic responses
+ * - `createRoleBasedResult` with system/assistant/user content blocks
  * - `ContentBuilder` for creating individual content blocks
  * - `QuickResult` helpers for common patterns (success, empty, error, paginated)
  *
@@ -502,10 +502,10 @@ export { withBasicSecurityValidation } from './security/withSecurityValidation.j
  * ```
  */
 export {
-  // Legacy API (backwards compatible)
+  // Basic API
   createResult,
   createResponseFormat,
-  // New role-based API
+  // Role-based API
   createRoleBasedResult,
   ContentBuilder,
   QuickResult,

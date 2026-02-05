@@ -1,7 +1,6 @@
 import type { ProviderType } from './providers/types.js';
 import { getGithubCLIToken } from './utils/exec/index.js';
 import {
-  getEnvTokenSource,
   resolveTokenFull,
   type FullTokenResolution,
   type GhCliTokenGetter,
@@ -35,12 +34,6 @@ let initializationPromise: Promise<void> | null = null;
 // Injectable function for testing (gh CLI is passed to resolveTokenFull)
 let _getGithubCLIToken = getGithubCLIToken;
 
-// Legacy mock for backward compatibility with existing tests
-// Maps { token, source } format to the new split functions
-type ResolvedToken = { token: string; source: string } | null;
-type ResolveTokenFn = () => Promise<ResolvedToken>;
-let _legacyResolveToken: ResolveTokenFn | null = null;
-
 // Injectable resolveTokenFull for testing
 type ResolveTokenFullFn = (options?: {
   hostname?: string;
@@ -50,35 +43,23 @@ type ResolveTokenFullFn = (options?: {
 let _resolveTokenFull: ResolveTokenFullFn = resolveTokenFull;
 
 /**
- * Maps source strings from various systems to internal TokenSourceType.
+ * Maps source strings from octocode-shared to internal TokenSourceType.
  *
- * Handles sources from:
- * - octocode-shared: 'env:*', 'gh-cli', 'file'
- * - legacy tests: 'env', 'octocode', 'octocode-storage'
- *
- * @param source - Source string from resolver
- * @param getEnvSource - Optional function to get specific env var name
+ * @param source - Source string from resolver ('env:*', 'gh-cli', 'file')
  */
 function mapSharedSourceToInternal(
-  source: string | null | undefined,
-  getEnvSource?: () => string | null
+  source: string | null | undefined
 ): TokenSourceType {
   if (!source) return 'none';
 
   // Already prefixed env source
   if (source.startsWith('env:')) return source as TokenSourceType;
 
-  // Plain 'env' from legacy - need to determine specific env var
-  if (source === 'env') {
-    const specific = getEnvSource?.();
-    return (specific as TokenSourceType) ?? 'env:GITHUB_TOKEN';
-  }
-
   // CLI source
   if (source === 'gh-cli') return 'gh-cli';
 
-  // Storage sources (file, octocode variants)
-  if (['file', 'octocode', 'octocode-storage'].includes(source)) {
+  // Storage sources
+  if (source === 'file' || source === 'octocode-storage') {
     return 'octocode-storage';
   }
 
@@ -87,11 +68,7 @@ function mapSharedSourceToInternal(
 
 /**
  * @internal - For testing only
- * Supports both new and legacy APIs:
- * - New: Use `resolveTokenFull` to mock the entire resolution chain
- * - Legacy: Use `getGithubCLIToken` to mock gh CLI fallback
- * Note: Legacy `getTokenFromEnv`, `getOctocodeToken`, `getOctocodeTokenWithRefresh`
- *       are deprecated - use `resolveTokenFull` instead.
+ * Use `resolveTokenFull` to mock the entire resolution chain
  */
 export function _setTokenResolvers(resolvers: {
   getGithubCLIToken?: typeof getGithubCLIToken;
@@ -111,22 +88,6 @@ export function _setTokenResolvers(resolvers: {
 export function _resetTokenResolvers(): void {
   _getGithubCLIToken = getGithubCLIToken;
   _resolveTokenFull = resolveTokenFull;
-  _legacyResolveToken = null;
-}
-
-/**
- * @internal - For testing only (LEGACY API - backward compatibility)
- * Sets a mock function that returns { token, source } | null
- */
-export function _setResolveTokenFn(fn: ResolveTokenFn): void {
-  _legacyResolveToken = fn;
-}
-
-/**
- * @internal - For testing only (LEGACY API - backward compatibility)
- */
-export function _resetResolveTokenFn(): void {
-  _legacyResolveToken = null;
 }
 
 function parseStringArray(value?: string): string[] | undefined {
@@ -175,22 +136,6 @@ function parseLoggingEnv(value: string | undefined): boolean | undefined {
 }
 
 async function resolveGitHubToken(): Promise<TokenResolutionResult> {
-  // Support legacy test mock (backward compatibility)
-  if (_legacyResolveToken) {
-    try {
-      const resolved = await _legacyResolveToken();
-      if (resolved?.token) {
-        return {
-          token: resolved.token,
-          source: mapSharedSourceToInternal(resolved.source, getEnvTokenSource),
-        };
-      }
-      return { token: null, source: 'none' };
-    } catch {
-      return { token: null, source: 'none' };
-    }
-  }
-
   // Delegate to octocode-shared's resolveTokenFull for centralized logic
   // Priority: env vars (1-3) → octocode storage (4-5) → gh CLI (6)
   try {

@@ -160,10 +160,8 @@ export async function findReferences(
           query
         );
         if (result) return result;
-      } catch (error) {
+      } catch {
         // Fall back to pattern matching if LSP fails
-        // eslint-disable-next-line no-console
-        console.debug('LSP reference lookup failed, using fallback:', error);
       }
     }
 

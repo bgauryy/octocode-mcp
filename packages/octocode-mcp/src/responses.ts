@@ -16,7 +16,7 @@ export type {
 } from './types/responseTypes.js';
 
 // ============================================================================
-// LEGACY API (backwards compatible)
+// BASIC RESULT API
 // ============================================================================
 
 export function createResult(options: {
@@ -99,7 +99,7 @@ export const ContentBuilder = {
   },
 
   /**
-   * Data content: Serialized data block for backwards compatibility
+   * Data content: Serialized data block 
    * Low priority (0.3) - detailed data for agent reference
    */
   data(data: unknown, format: 'yaml' | 'json' = 'yaml'): RoleContentBlock {

@@ -90,17 +90,13 @@ export class LSPClient {
     // Start listening
     this.connection.listen();
 
-    // Handle process errors
-    this.process.on('error', err => {
-      // eslint-disable-next-line no-console
-      console.error('LSP process error:', err);
+    // Handle process errors silently - errors propagate through the connection
+    this.process.on('error', () => {
+      // Errors are handled by the connection layer
     });
 
-    this.process.stderr?.on('data', data => {
-      // Log stderr for debugging but don't fail
-      // eslint-disable-next-line no-console
-      console.debug('LSP stderr:', data.toString());
-    });
+    // Ignore stderr - language servers often write debug info there
+    this.process.stderr?.on('data', () => {});
 
     // Initialize the language server
     await this.initialize();
