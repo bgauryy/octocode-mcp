@@ -25,7 +25,7 @@ import { hints as lspGotoDefinitionHints } from '../tools/lsp_goto_definition/hi
 import { hints as lspFindReferencesHints } from '../tools/lsp_find_references/hints.js';
 import { hints as lspCallHierarchyHints } from '../tools/lsp_call_hierarchy/hints.js';
 
-// Re-export LOCAL_BASE_HINTS from local_ripgrep for backwards compatibility
+// Re-export LOCAL_BASE_HINTS from local_ripgrep
 export { LOCAL_BASE_HINTS } from '../tools/local_ripgrep/hints.js';
 
 /**

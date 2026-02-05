@@ -195,7 +195,7 @@ Octocode collects **de-identified** telemetry data to improve the tool, includin
 You can opt-out at any time:
 
 ```bash
-export OCTOCODE_TELEMETRY_DISABLED=1
+export LOG=false
 ```
 
 For full details, please read our [Privacy Policy](../../PRIVACY.md) and [Terms of Usage](../../TERMS.md).

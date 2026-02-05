@@ -132,31 +132,24 @@ describe('LSPClient Coverage', () => {
       );
     });
 
-    it('should handle process error', async () => {
+    it('should handle process error silently', async () => {
       mockConnection.sendRequest.mockResolvedValueOnce({});
       await client.start();
 
-      const consoleSpy = vi
-        .spyOn(console, 'error')
-        .mockImplementation(() => {});
-      mockProcess.emit('error', new Error('Process failed'));
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'LSP process error:',
-        expect.any(Error)
-      );
-      consoleSpy.mockRestore();
+      // Should not throw when process emits an error
+      expect(() => {
+        mockProcess.emit('error', new Error('Process failed'));
+      }).not.toThrow();
     });
 
-    it('should handle stderr data', async () => {
+    it('should handle stderr data silently', async () => {
       mockConnection.sendRequest.mockResolvedValueOnce({});
       await client.start();
 
-      const consoleSpy = vi
-        .spyOn(console, 'debug')
-        .mockImplementation(() => {});
-      mockProcess.stderr.emit('data', Buffer.from('stderr output'));
-      expect(consoleSpy).toHaveBeenCalledWith('LSP stderr:', 'stderr output');
-      consoleSpy.mockRestore();
+      // Should not throw when stderr emits data
+      expect(() => {
+        mockProcess.stderr.emit('data', Buffer.from('stderr output'));
+      }).not.toThrow();
     });
   });
 

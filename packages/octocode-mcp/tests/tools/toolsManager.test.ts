@@ -128,6 +128,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -167,6 +168,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -192,6 +194,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -214,6 +217,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -241,6 +245,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -262,6 +267,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -284,6 +290,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -306,6 +313,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -335,6 +343,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -358,6 +367,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -381,6 +391,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -404,6 +415,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -432,6 +444,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -466,6 +479,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -491,6 +505,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -516,6 +531,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -545,6 +561,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -571,6 +588,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -600,6 +618,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -640,6 +659,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -667,6 +687,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -693,6 +714,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 

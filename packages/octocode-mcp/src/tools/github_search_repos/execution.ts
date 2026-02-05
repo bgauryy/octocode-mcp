@@ -3,7 +3,7 @@ import type {
   GitHubReposSearchQuery,
   SimplifiedRepository,
   RepoSearchResult,
-} from '../../types.js';
+} from './types.js';
 import {
   TOOL_NAMES,
   getDynamicHints as getMetadataDynamicHints,

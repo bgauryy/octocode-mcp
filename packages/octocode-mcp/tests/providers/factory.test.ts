@@ -985,7 +985,7 @@ describe('Provider Factory Error Handling', () => {
   });
 
   describe('initializeProviders error handling', () => {
-    it('should log error when GitHub provider fails to load', async () => {
+    it('should not register GitHub provider when it fails to load', async () => {
       // Mock GitHub provider to throw
       vi.doMock('../../src/providers/github/GitHubProvider.js', () => {
         throw new Error('GitHub provider load failed');
@@ -999,18 +999,16 @@ describe('Provider Factory Error Handling', () => {
       }));
 
       // Import factory after mocks are set up
-      const { initializeProviders } =
+      const { initializeProviders, isProviderRegistered } =
         await import('../../src/providers/factory.js');
 
       await initializeProviders();
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'Failed to initialize GitHub provider:',
-        expect.any(Error)
-      );
+      // GitHub should not be registered due to failure
+      expect(isProviderRegistered('github')).toBe(false);
     });
 
-    it('should log warning when GitLab provider fails to load', async () => {
+    it('should not register GitLab provider when it fails to load', async () => {
       // Mock GitHub provider to succeed
       vi.doMock('../../src/providers/github/GitHubProvider.js', () => ({
         GitHubProvider: class MockGitHubProvider {
@@ -1024,15 +1022,13 @@ describe('Provider Factory Error Handling', () => {
       });
 
       // Import factory after mocks are set up
-      const { initializeProviders } =
+      const { initializeProviders, isProviderRegistered } =
         await import('../../src/providers/factory.js');
 
       await initializeProviders();
 
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
-        'GitLab provider not available:',
-        expect.any(Error)
-      );
+      // GitLab should not be registered due to failure
+      expect(isProviderRegistered('gitlab')).toBe(false);
     });
 
     it('should handle both providers failing to load', async () => {
@@ -1046,19 +1042,14 @@ describe('Provider Factory Error Handling', () => {
       });
 
       // Import factory after mocks are set up
-      const { initializeProviders } =
+      const { initializeProviders, isProviderRegistered } =
         await import('../../src/providers/factory.js');
 
       await initializeProviders();
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'Failed to initialize GitHub provider:',
-        expect.any(Error)
-      );
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
-        'GitLab provider not available:',
-        expect.any(Error)
-      );
+      // Neither provider should be registered
+      expect(isProviderRegistered('github')).toBe(false);
+      expect(isProviderRegistered('gitlab')).toBe(false);
     });
 
     it('should continue initialization after GitHub provider failure', async () => {

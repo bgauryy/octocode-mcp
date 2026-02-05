@@ -43,7 +43,7 @@ import {
 // Store credentials securely
 await storeCredentials('github.com', {
   username: 'user',
-  token: { token: 'ghp_xxx', tokenType: 'oauth' },
+  token: { token: 'SOME_TOKEN', tokenType: 'oauth' },
   gitProtocol: 'https',
 });
 

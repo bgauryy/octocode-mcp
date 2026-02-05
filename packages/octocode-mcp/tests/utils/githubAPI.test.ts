@@ -109,7 +109,7 @@ import {
   viewGitHubRepositoryStructureAPI,
 } from '../../src/github/fileOperations.js';
 import { searchGitHubPullRequestsAPI } from '../../src/github/pullRequestSearch.js';
-import type { GitHubCodeSearchQuery } from '../../src/types.js';
+import type { GitHubCodeSearchQuery } from '../../src/tools/github_search_code/types.js';
 import { initialize, cleanup } from '../../src/serverConfig.js';
 
 describe('GitHub API Utils', () => {

@@ -6,6 +6,7 @@ import {
   getToken,
   getServerConfig,
   isLoggingEnabled,
+  arePromptsEnabled,
   _setTokenResolvers,
   _resetTokenResolvers,
 } from '../src/serverConfig.js';
@@ -100,11 +101,11 @@ describe('ServerConfig - Simplified Version', () => {
     delete process.env.LOG;
     delete process.env.TEST_GITHUB_TOKEN;
     delete process.env.ENABLE_LOCAL;
-    delete process.env.LOCAL;
     delete process.env.GITHUB_API_URL;
     delete process.env.REQUEST_TIMEOUT;
     delete process.env.MAX_RETRIES;
     delete process.env.OCTOCODE_TOKEN;
+    delete process.env.DISABLE_PROMPTS;
 
     // Set up injectable mock for token resolution
     setupTokenMocks();
@@ -546,7 +547,6 @@ describe('ServerConfig - Simplified Version', () => {
   describe('ENABLE_LOCAL Configuration', () => {
     beforeEach(() => {
       delete process.env.ENABLE_LOCAL;
-      delete process.env.LOCAL;
     });
 
     it('should default to true when ENABLE_LOCAL is not set', async () => {
@@ -617,7 +617,6 @@ describe('ServerConfig - Simplified Version', () => {
       for (const value of explicitFalseValues) {
         cleanup();
         delete process.env.ENABLE_LOCAL;
-        delete process.env.LOCAL;
         process.env.ENABLE_LOCAL = value;
         mockSpawnFailure();
         await initialize();
@@ -631,68 +630,105 @@ describe('ServerConfig - Simplified Version', () => {
       for (const value of invalidValues) {
         cleanup();
         delete process.env.ENABLE_LOCAL;
-        delete process.env.LOCAL;
         process.env.ENABLE_LOCAL = value;
         mockSpawnFailure();
         await initialize();
         expect(getServerConfig().enableLocal).toBe(true);
       }
     });
+  });
 
-    it('should use LOCAL as fallback when ENABLE_LOCAL is not set', async () => {
-      delete process.env.ENABLE_LOCAL;
-      process.env.LOCAL = 'true';
-      mockSpawnFailure();
-      await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
+  describe('DISABLE_PROMPTS Configuration', () => {
+    beforeEach(() => {
+      delete process.env.DISABLE_PROMPTS;
     });
 
-    it('should use LOCAL = "1" as fallback', async () => {
-      delete process.env.ENABLE_LOCAL;
-      process.env.LOCAL = '1';
+    it('should default to false when DISABLE_PROMPTS is not set', async () => {
       mockSpawnFailure();
       await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
+      expect(getServerConfig().disablePrompts).toBe(false);
+      expect(arePromptsEnabled()).toBe(true);
     });
 
-    it('should handle LOCAL with whitespace', async () => {
-      delete process.env.ENABLE_LOCAL;
-      process.env.LOCAL = '  true  ';
+    it('should disable prompts when DISABLE_PROMPTS is "true"', async () => {
+      process.env.DISABLE_PROMPTS = 'true';
       mockSpawnFailure();
       await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
+      expect(getServerConfig().disablePrompts).toBe(true);
+      expect(arePromptsEnabled()).toBe(false);
     });
 
-    it('should prefer ENABLE_LOCAL over LOCAL when both are set', async () => {
-      process.env.ENABLE_LOCAL = 'true';
-      process.env.LOCAL = 'false';
+    it('should disable prompts when DISABLE_PROMPTS is "1"', async () => {
+      process.env.DISABLE_PROMPTS = '1';
       mockSpawnFailure();
       await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
+      expect(getServerConfig().disablePrompts).toBe(true);
+      expect(arePromptsEnabled()).toBe(false);
     });
 
-    it('should use LOCAL if ENABLE_LOCAL is empty', async () => {
-      process.env.ENABLE_LOCAL = '';
-      process.env.LOCAL = 'true';
+    it('should handle DISABLE_PROMPTS with leading/trailing whitespace', async () => {
+      process.env.DISABLE_PROMPTS = '  true  ';
       mockSpawnFailure();
       await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
+      expect(getServerConfig().disablePrompts).toBe(true);
+      expect(arePromptsEnabled()).toBe(false);
     });
 
-    it('should use LOCAL if ENABLE_LOCAL is whitespace-only', async () => {
-      process.env.ENABLE_LOCAL = '   ';
-      process.env.LOCAL = '1';
+    it('should handle DISABLE_PROMPTS with uppercase', async () => {
+      process.env.DISABLE_PROMPTS = 'TRUE';
       mockSpawnFailure();
       await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
+      expect(getServerConfig().disablePrompts).toBe(true);
+      expect(arePromptsEnabled()).toBe(false);
     });
 
-    it('should return false if both ENABLE_LOCAL and LOCAL are false', async () => {
-      process.env.ENABLE_LOCAL = 'false';
-      process.env.LOCAL = 'false';
+    it('should handle DISABLE_PROMPTS with mixed case', async () => {
+      process.env.DISABLE_PROMPTS = 'TrUe';
       mockSpawnFailure();
       await initialize();
-      expect(getServerConfig().enableLocal).toBe(false);
+      expect(getServerConfig().disablePrompts).toBe(true);
+      expect(arePromptsEnabled()).toBe(false);
+    });
+
+    it('should handle DISABLE_PROMPTS = "1" with whitespace', async () => {
+      process.env.DISABLE_PROMPTS = ' 1 ';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().disablePrompts).toBe(true);
+      expect(arePromptsEnabled()).toBe(false);
+    });
+
+    it('should return false (prompts enabled) for explicit false values', async () => {
+      const explicitFalseValues = ['false', 'FALSE', '0'];
+
+      for (const value of explicitFalseValues) {
+        cleanup();
+        delete process.env.DISABLE_PROMPTS;
+        process.env.DISABLE_PROMPTS = value;
+        mockSpawnFailure();
+        await initialize();
+        expect(getServerConfig().disablePrompts).toBe(false);
+        expect(arePromptsEnabled()).toBe(true);
+      }
+    });
+
+    it('should return false (prompts enabled) for invalid/unrecognized values', async () => {
+      const invalidValues = ['no', 'yes', 'disabled', '', '   '];
+
+      for (const value of invalidValues) {
+        cleanup();
+        delete process.env.DISABLE_PROMPTS;
+        process.env.DISABLE_PROMPTS = value;
+        mockSpawnFailure();
+        await initialize();
+        expect(getServerConfig().disablePrompts).toBe(false);
+        expect(arePromptsEnabled()).toBe(true);
+      }
+    });
+
+    it('should return false for arePromptsEnabled when config is not initialized', () => {
+      // cleanup() is called in beforeEach, so config is null
+      expect(arePromptsEnabled()).toBe(true); // Returns true when config is null (default)
     });
   });
 

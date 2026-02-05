@@ -116,10 +116,8 @@ export async function processCallHierarchy(
           content
         );
         if (result) return result;
-      } catch (error) {
+      } catch {
         // Fall back to pattern matching if LSP fails
-        // eslint-disable-next-line no-console
-        console.debug('LSP call hierarchy failed, using fallback:', error);
       }
     }
 

@@ -3,7 +3,7 @@
  * Handles viewing and navigating repository directory structures
  */
 import { RequestError } from 'octokit';
-import type { GitHubViewRepoStructureQuery } from '../types';
+import type { GitHubViewRepoStructureQuery } from '../tools/github_view_repo_structure/types.js';
 import type {
   GitHubApiFileItem,
   GitHubRepositoryStructureResult,

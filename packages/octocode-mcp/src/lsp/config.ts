@@ -489,10 +489,6 @@ export function resolveLanguageServer(config: {
       // Validate bin entry exists and is a string
       const binRelativePath = pkg.bin?.['typescript-language-server'];
       if (!binRelativePath || typeof binRelativePath !== 'string') {
-        // eslint-disable-next-line no-console
-        console.debug(
-          'Invalid bin entry in typescript-language-server package.json'
-        );
         return { command: config.command, args: config.args };
       }
 
@@ -502,8 +498,6 @@ export function resolveLanguageServer(config: {
       // SECURITY: Validate the resolved path before using it
       const validation = validateLSPServerPath(binPath, pkgDir);
       if (!validation.isValid) {
-        // eslint-disable-next-line no-console
-        console.error(`LSP server path validation failed: ${validation.error}`);
         return { command: config.command, args: config.args };
       }
 
@@ -511,9 +505,8 @@ export function resolveLanguageServer(config: {
         command: process.execPath,
         args: [validation.resolvedPath!, ...config.args],
       };
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.debug('Could not resolve bundled typescript-language-server:', e);
+    } catch {
+      // Bundled server not available - fall back to command
     }
   }
 

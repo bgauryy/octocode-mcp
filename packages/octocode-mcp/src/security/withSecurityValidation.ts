@@ -114,12 +114,12 @@ function handleBulk(toolName: string, params: Record<string, unknown>): void {
  * Logs a single query with its specific repos and research fields.
  */
 function handleQuery(toolName: string, query: Record<string, unknown>): void {
-  const repos = extractRepoOwnerFromSingleQuery(query);
+  const repos = extractRepoOwnerFromQuery(query);
   if (repos.length === 0) {
     return;
   }
 
-  const researchFields = extractResearchFieldsFromSingleQuery(query);
+  const researchFields = extractResearchFieldsFromQuery(query);
   logToolCall(
     toolName,
     repos,
@@ -165,58 +165,54 @@ function getQueriesArray(
   return undefined;
 }
 
-/**
- * Extracts research fields from a single query object.
- * Used for logging individual queries in bulk operations.
- */
-function extractResearchFieldsFromSingleQuery(query: Record<string, unknown>): {
+/** Research fields extracted from a query */
+interface ResearchFields {
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
-} {
-  return {
-    ...(typeof query.mainResearchGoal === 'string' &&
-      query.mainResearchGoal && {
-        mainResearchGoal: query.mainResearchGoal,
-      }),
-    ...(typeof query.researchGoal === 'string' &&
-      query.researchGoal && { researchGoal: query.researchGoal }),
-    ...(typeof query.reasoning === 'string' &&
-      query.reasoning && { reasoning: query.reasoning }),
-  };
 }
 
-export function extractResearchFields(params: Record<string, unknown>): {
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-} {
+/**
+ * Extracts research fields from a single query object.
+ */
+function extractResearchFieldsFromQuery(
+  query: Record<string, unknown>
+): ResearchFields {
+  const fields: ResearchFields = {};
+  if (typeof query.mainResearchGoal === 'string' && query.mainResearchGoal) {
+    fields.mainResearchGoal = query.mainResearchGoal;
+  }
+  if (typeof query.researchGoal === 'string' && query.researchGoal) {
+    fields.researchGoal = query.researchGoal;
+  }
+  if (typeof query.reasoning === 'string' && query.reasoning) {
+    fields.reasoning = query.reasoning;
+  }
+  return fields;
+}
+
+/**
+ * Extracts and aggregates research fields from params (single or bulk).
+ */
+export function extractResearchFields(
+  params: Record<string, unknown>
+): ResearchFields {
+  const queries = getQueriesArray(params);
+
+  if (!queries) {
+    return extractResearchFieldsFromQuery(params);
+  }
+
+  // Aggregate fields from all queries
   const mainGoals = new Set<string>();
   const goals = new Set<string>();
   const reasonings = new Set<string>();
 
-  const processQuery = (query: Record<string, unknown>) => {
-    if (typeof query.mainResearchGoal === 'string' && query.mainResearchGoal) {
-      mainGoals.add(query.mainResearchGoal);
-    }
-    if (typeof query.researchGoal === 'string' && query.researchGoal) {
-      goals.add(query.researchGoal);
-    }
-    if (typeof query.reasoning === 'string' && query.reasoning) {
-      reasonings.add(query.reasoning);
-    }
-  };
-
-  if (
-    params.queries &&
-    Array.isArray(params.queries) &&
-    params.queries.length > 0
-  ) {
-    for (const query of params.queries) {
-      processQuery(query as Record<string, unknown>);
-    }
-  } else {
-    processQuery(params);
+  for (const query of queries) {
+    const fields = extractResearchFieldsFromQuery(query);
+    if (fields.mainResearchGoal) mainGoals.add(fields.mainResearchGoal);
+    if (fields.researchGoal) goals.add(fields.researchGoal);
+    if (fields.reasoning) reasonings.add(fields.reasoning);
   }
 
   return {
@@ -231,142 +227,48 @@ export function extractResearchFields(params: Record<string, unknown>): {
 }
 
 /**
- * Extracts repository identifiers from a single query object.
- * Used for logging individual queries in bulk operations.
+ * Extracts repository identifier from a single query object.
  *
- * Supports multiple parameter formats:
- * - Combined repository field: `repository: "owner/repo"`
- * - Separate owner/repo fields: `owner: "owner", repo: "repo"`
- * - Owner only: `owner: "owner"` (for tools like github_search_repos)
- *
- * @param query - A single query object containing repository information
- * @returns Array of repository identifiers (typically one, but can be multiple for some tools)
- *
- * @example
- * extractRepoOwnerFromSingleQuery({ repository: "facebook/react" })
- * // Returns: ["facebook/react"]
- *
- * @example
- * extractRepoOwnerFromSingleQuery({ owner: "microsoft", repo: "vscode" })
- * // Returns: ["microsoft/vscode"]
- *
- * @example
- * extractRepoOwnerFromSingleQuery({ owner: "vercel" })
- * // Returns: ["vercel"]
+ * Supports formats: `repository: "owner/repo"`, `owner + repo`, or `owner` only.
  */
-function extractRepoOwnerFromSingleQuery(
-  query: Record<string, unknown>
-): string[] {
-  const repos: string[] = [];
-
+function extractRepoOwnerFromQuery(query: Record<string, unknown>): string[] {
   const repository =
     typeof query.repository === 'string' ? query.repository : undefined;
 
   if (repository && repository.includes('/')) {
-    repos.push(repository);
-  } else {
-    const repo = typeof query.repo === 'string' ? query.repo : undefined;
-    const owner = typeof query.owner === 'string' ? query.owner : undefined;
-
-    if (owner && repo) {
-      repos.push(`${owner}/${repo}`);
-    } else if (owner) {
-      repos.push(owner);
-    }
+    return [repository];
   }
 
-  return repos;
+  const repo = typeof query.repo === 'string' ? query.repo : undefined;
+  const owner = typeof query.owner === 'string' ? query.owner : undefined;
+
+  if (owner && repo) {
+    return [`${owner}/${repo}`];
+  }
+  if (owner) {
+    return [owner];
+  }
+  return [];
 }
 
 /**
- * Extracts repository identifiers from tool parameters for logging purposes.
- *
- * Supports multiple parameter formats:
- * - Combined repository field: `repository: "owner/repo"`
- * - Separate owner/repo fields: `owner: "owner", repo: "repo"`
- * - Owner only: `owner: "owner"` (for tools like github_search_repos)
- *
- * Works with both bulk operations (queries array) and single operations (direct params).
- *
- * @param params - The tool parameters containing repository information
- * @returns Array of unique repository identifiers (e.g., ["owner/repo", "owner2/repo2", "owner3"])
- *
- * @example
- * // Combined repository format
- * extractRepoOwnerFromParams({ queries: [{ repository: "facebook/react" }] })
- * // Returns: ["facebook/react"]
- *
- * @example
- * // Separate owner/repo format
- * extractRepoOwnerFromParams({ queries: [{ owner: "microsoft", repo: "vscode" }] })
- * // Returns: ["microsoft/vscode"]
- *
- * @example
- * // Owner only format (for repository search)
- * extractRepoOwnerFromParams({ queries: [{ owner: "vercel" }] })
- * // Returns: ["vercel"]
- *
- * @example
- * // Multiple queries with mixed formats
- * extractRepoOwnerFromParams({
- *   queries: [
- *     { repository: "facebook/react" },
- *     { owner: "microsoft", repo: "vscode" },
- *     { owner: "vercel" }
- *   ]
- * })
- * // Returns: ["facebook/react", "microsoft/vscode", "vercel"]
+ * Extracts unique repository identifiers from params (single or bulk).
  */
 export function extractRepoOwnerFromParams(
   params: Record<string, unknown>
 ): string[] {
-  const repoOwnerSet = new Set<string>();
+  const queries = getQueriesArray(params);
 
-  if (
-    params.queries &&
-    Array.isArray(params.queries) &&
-    params.queries.length > 0
-  ) {
-    for (const query of params.queries) {
-      const queryObj = query as Record<string, unknown>;
-
-      const repository =
-        typeof queryObj.repository === 'string'
-          ? queryObj.repository
-          : undefined;
-
-      if (repository && repository.includes('/')) {
-        repoOwnerSet.add(repository);
-      } else {
-        const repo =
-          typeof queryObj.repo === 'string' ? queryObj.repo : undefined;
-        const owner =
-          typeof queryObj.owner === 'string' ? queryObj.owner : undefined;
-
-        if (owner && repo) {
-          repoOwnerSet.add(`${owner}/${repo}`);
-        } else if (owner) {
-          repoOwnerSet.add(owner);
-        }
-      }
-    }
-  } else {
-    const repository =
-      typeof params.repository === 'string' ? params.repository : undefined;
-
-    if (repository && repository.includes('/')) {
-      repoOwnerSet.add(repository);
-    } else {
-      const repo = typeof params.repo === 'string' ? params.repo : undefined;
-      const owner = typeof params.owner === 'string' ? params.owner : undefined;
-
-      if (owner && repo) {
-        repoOwnerSet.add(`${owner}/${repo}`);
-      } else if (owner) {
-        repoOwnerSet.add(owner);
-      }
-    }
+  if (!queries) {
+    return extractRepoOwnerFromQuery(params);
   }
 
-  return Array.from(repoOwnerSet);
+  // Aggregate and dedupe repos from all queries
+  const repoSet = new Set<string>();
+  for (const query of queries) {
+    for (const repo of extractRepoOwnerFromQuery(query)) {
+      repoSet.add(repo);
+    }
+  }
+  return Array.from(repoSet);
 }

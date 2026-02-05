@@ -16,7 +16,7 @@ import {
  */
 type LocalErrorResult = UnifiedErrorResult;
 
-// Re-export createErrorResult for backwards compatibility during migration
+// Re-export createErrorResult  during migration
 // Consumers should migrate to importing directly from '../response/error.js'
 export { createErrorResult };
 

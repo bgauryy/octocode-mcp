@@ -47,9 +47,8 @@ export async function createClient(
   try {
     await client.start();
     return client;
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('Failed to start LSP client:', error);
+  } catch {
+    // LSP start failed - return null to indicate unavailability
     return null;
   }
 }

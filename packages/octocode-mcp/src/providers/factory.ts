@@ -248,19 +248,16 @@ export async function initializeProviders(): Promise<void> {
   try {
     const { GitHubProvider } = await import('./github/GitHubProvider.js');
     registerProvider('github', GitHubProvider);
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('Failed to initialize GitHub provider:', error);
+  } catch {
+    // GitHub provider initialization failed - will be unavailable
   }
 
   // Import and register GitLab provider
   try {
     const { GitLabProvider } = await import('./gitlab/GitLabProvider.js');
     registerProvider('gitlab', GitLabProvider);
-  } catch (error) {
+  } catch {
     // GitLab provider is optional - don't fail if not available
-    // eslint-disable-next-line no-console
-    console.warn('GitLab provider not available:', error);
   }
 }
 

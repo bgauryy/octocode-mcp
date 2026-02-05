@@ -4,7 +4,8 @@ import {
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
 import { GITHUB_VIEW_REPO_STRUCTURE, TOOL_NAMES } from '../toolMetadata.js';
-import type { DirectoryEntry, PaginationInfo } from '../../types.js';
+import type { PaginationInfo } from '../../types.js';
+import type { DirectoryEntry } from './types.js';
 import type { ContentDirectoryEntry } from '../../github/githubAPI.js';
 
 /** Default entries per page for GitHub repo structure pagination */

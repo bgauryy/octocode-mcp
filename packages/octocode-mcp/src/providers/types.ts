@@ -17,7 +17,7 @@ import type { PaginationInfo } from '../types.js';
 
 /**
  * Supported code hosting providers.
- * Default is 'github' for backward compatibility.
+ * Default is 'github' .
  */
 export type ProviderType = 'github' | 'gitlab';
 

@@ -2,10 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { AnySchema } from '../../types/toolTypes.js';
 import { withSecurityValidation } from '../../security/withSecurityValidation.js';
-import type {
-  ToolInvocationCallback,
-  GitHubViewRepoStructureQuery,
-} from '../../types.js';
+import type { ToolInvocationCallback } from '../../types.js';
+import type { GitHubViewRepoStructureQuery } from './types.js';
 import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata.js';
 import { GitHubViewRepoStructureBulkQuerySchema } from './scheme.js';
 import { invokeCallbackSafely } from '../utils.js';

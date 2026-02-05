@@ -150,9 +150,8 @@ For complete details, see [`SKILLS_GUIDE.md`](../packages/octocode-cli/docs/SKIL
 | Document | Description |
 |----------|-------------|
 | [GITHUB_GITLAB_TOOLS_REFERENCE.md](../packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) | GitHub & GitLab API tools usage guide |
-| [LOCAL_TOOLS_REFERENCE.md](../packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) | Local codebase exploration tools |
-| [LSP_TOOLS.md](../packages/octocode-mcp/docs/LSP_TOOLS.md) | LSP-powered code intelligence |
-| [HINTS_ARCHITECTURE.md](../packages/octocode-mcp/docs/HINTS_ARCHITECTURE.md) | Hint system design & patterns |
+| [LOCAL_TOOLS_REFERENCE.md](../packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) | Local codebase + LSP tools reference |
+| [AUTHENTICATION_SETUP.md](../packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) | GitHub/GitLab authentication setup |
 
 ### octocode-cli
 | Document | Description |
@@ -160,13 +159,15 @@ For complete details, see [`SKILLS_GUIDE.md`](../packages/octocode-cli/docs/SKIL
 | [CLI_REFERENCE.md](../packages/octocode-cli/docs/CLI_REFERENCE.md) | Complete CLI commands reference |
 | [MENU_FLOW.md](../packages/octocode-cli/docs/MENU_FLOW.md) | Interactive menu system documentation |
 | [ARCHITECTURE.md](../packages/octocode-cli/docs/ARCHITECTURE.md) | Technical architecture and design patterns |
+| [SKILLS_GUIDE.md](../packages/octocode-cli/docs/SKILLS_GUIDE.md) | AI skills system guide |
 
 ### octocode-shared
 | Document | Description |
 |----------|-------------|
+| [API_REFERENCE.md](../packages/octocode-shared/docs/API_REFERENCE.md) | Complete API documentation |
 | [CREDENTIALS_ARCHITECTURE.md](../packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) | Token storage, encryption, keychain |
 | [SESSION_PERSISTENCE.md](../packages/octocode-shared/docs/SESSION_PERSISTENCE.md) | Deferred writes, exit handlers |
-| [API_REFERENCE.md](../packages/octocode-shared/docs/API_REFERENCE.md) | Complete API documentation |
+| [GLOBAL_CONFIG_DESIGN.md](../packages/octocode-shared/docs/GLOBAL_CONFIG_DESIGN.md) | Global configuration system |
 
 ## 🤖 Agent Compatibility
 

@@ -107,6 +107,7 @@ describe('ToolsManager - Metadata Availability', () => {
       maxRetries: 3,
       loggingEnabled: true,
       enableLocal: false,
+      disablePrompts: false,
       tokenSource: 'env:GITHUB_TOKEN',
     });
   });
@@ -365,6 +366,7 @@ describe('ToolsManager - Metadata Availability', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -399,6 +401,7 @@ describe('ToolsManager - Metadata Availability', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -438,6 +441,7 @@ describe('ToolsManager - Metadata Availability', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
 

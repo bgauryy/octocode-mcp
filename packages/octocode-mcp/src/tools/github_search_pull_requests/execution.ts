@@ -2,7 +2,7 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type {
   GitHubPullRequestSearchQuery,
   PullRequestSearchResult,
-} from '../../types.js';
+} from './types.js';
 import { TOOL_NAMES } from '../toolMetadata.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';

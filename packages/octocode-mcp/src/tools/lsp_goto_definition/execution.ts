@@ -121,10 +121,8 @@ async function gotoDefinition(
           content
         );
         if (result) return result;
-      } catch (error) {
+      } catch {
         // Fall back to symbol resolver if LSP fails
-        // eslint-disable-next-line no-console
-        console.debug('LSP lookup failed, using fallback:', error);
       }
     }
 

@@ -72,7 +72,7 @@ describe('sanitizeQueryParams', () => {
   it('handles partial matches in key names', () => {
     const query = {
       access_token: 'token123',
-      github_token: 'ghp_xxx',
+      github_token: 'SOME_TOKEN',
       auth_header: 'Bearer xyz',
     };
     const result = sanitizeQueryParams(query);
@@ -103,7 +103,7 @@ describe('sanitizeQueryParams', () => {
     const query = {
       owner: 'anthropic',
       repo: 'claude',
-      token: 'ghp_xxxxx',
+      token: 'SOME_TOKENxx',
       branch: 'main',
       apikey: 'key123',
     };

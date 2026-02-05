@@ -35,12 +35,10 @@ import { searchGitHubPullRequestsAPI } from '../../github/pullRequestSearch.js';
 import { viewGitHubRepositoryStructureAPI } from '../../github/repoStructure.js';
 
 // Import GitHub-specific types
-import type {
-  GitHubCodeSearchQuery,
-  GitHubReposSearchQuery,
-  GitHubViewRepoStructureQuery,
-  FileContentQuery as GHFileContentQuery,
-} from '../../types.js';
+import type { FileContentQuery as GHFileContentQuery } from '../../tools/github_fetch_content/types.js';
+import type { GitHubCodeSearchQuery } from '../../tools/github_search_code/types.js';
+import type { GitHubReposSearchQuery } from '../../tools/github_search_repos/types.js';
+import type { GitHubViewRepoStructureQuery } from '../../tools/github_view_repo_structure/types.js';
 import type {
   GitHubPullRequestsSearchParams,
   OptimizedCodeSearchResult,

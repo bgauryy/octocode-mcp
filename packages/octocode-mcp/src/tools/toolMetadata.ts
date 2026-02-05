@@ -3,7 +3,7 @@
  *
  * @deprecated Import directly from './toolMetadata/index.js' for cleaner imports.
  *
- * This file maintains backward compatibility with existing imports.
+ * This file maintains  with existing imports.
  * All functionality has been split into:
  * - schemas.ts - Zod validation schemas
  * - state.ts - Metadata initialization and caching

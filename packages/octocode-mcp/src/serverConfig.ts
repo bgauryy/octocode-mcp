@@ -1,21 +1,30 @@
 import type { ProviderType } from './providers/types.js';
 import { getGithubCLIToken } from './utils/exec/index.js';
 import {
-  getEnvTokenSource,
   resolveTokenFull,
   type FullTokenResolution,
   type GhCliTokenGetter,
 } from './utils/credentials/index.js';
 import { getConfigSync, invalidateConfigCache } from 'octocode-shared';
 import { version } from '../package.json';
-import type {
-  ServerConfig,
-  TokenSourceType,
-  GitLabConfig,
-  GitLabTokenSourceType,
-} from './types.js';
+import type { ServerConfig, TokenSourceType } from './types.js';
 import { CONFIG_ERRORS } from './errorCodes.js';
 import { maskSensitiveData } from './security/mask.js';
+import {
+  getGitLabConfig as resolveGitLabConfig,
+  getGitLabToken,
+  getGitLabHost,
+  isGitLabConfigured,
+} from './gitlabConfig.js';
+
+// Re-export GitLab functions for API compatibility
+export {
+  getGitLabConfig,
+  getGitLabToken,
+  getGitLabHost,
+  getGitLabTokenSource,
+  isGitLabConfigured,
+} from './gitlabConfig.js';
 
 /** Result of token resolution with source tracking */
 interface TokenResolutionResult {
@@ -23,23 +32,11 @@ interface TokenResolutionResult {
   source: TokenSourceType;
 }
 
-/** Result of GitLab token resolution with source tracking */
-interface GitLabTokenResolutionResult {
-  token: string | null;
-  source: GitLabTokenSourceType;
-}
-
 let config: ServerConfig | null = null;
 let initializationPromise: Promise<void> | null = null;
 
 // Injectable function for testing (gh CLI is passed to resolveTokenFull)
 let _getGithubCLIToken = getGithubCLIToken;
-
-// Legacy mock for backward compatibility with existing tests
-// Maps { token, source } format to the new split functions
-type ResolvedToken = { token: string; source: string } | null;
-type ResolveTokenFn = () => Promise<ResolvedToken>;
-let _legacyResolveToken: ResolveTokenFn | null = null;
 
 // Injectable resolveTokenFull for testing
 type ResolveTokenFullFn = (options?: {
@@ -50,35 +47,23 @@ type ResolveTokenFullFn = (options?: {
 let _resolveTokenFull: ResolveTokenFullFn = resolveTokenFull;
 
 /**
- * Maps source strings from various systems to internal TokenSourceType.
+ * Maps source strings from octocode-shared to internal TokenSourceType.
  *
- * Handles sources from:
- * - octocode-shared: 'env:*', 'gh-cli', 'file'
- * - legacy tests: 'env', 'octocode', 'octocode-storage'
- *
- * @param source - Source string from resolver
- * @param getEnvSource - Optional function to get specific env var name
+ * @param source - Source string from resolver ('env:*', 'gh-cli', 'file')
  */
 function mapSharedSourceToInternal(
-  source: string | null | undefined,
-  getEnvSource?: () => string | null
+  source: string | null | undefined
 ): TokenSourceType {
   if (!source) return 'none';
 
   // Already prefixed env source
   if (source.startsWith('env:')) return source as TokenSourceType;
 
-  // Plain 'env' from legacy - need to determine specific env var
-  if (source === 'env') {
-    const specific = getEnvSource?.();
-    return (specific as TokenSourceType) ?? 'env:GITHUB_TOKEN';
-  }
-
   // CLI source
   if (source === 'gh-cli') return 'gh-cli';
 
-  // Storage sources (file, octocode variants)
-  if (['file', 'octocode', 'octocode-storage'].includes(source)) {
+  // Storage sources
+  if (source === 'file' || source === 'octocode-storage') {
     return 'octocode-storage';
   }
 
@@ -87,11 +72,7 @@ function mapSharedSourceToInternal(
 
 /**
  * @internal - For testing only
- * Supports both new and legacy APIs:
- * - New: Use `resolveTokenFull` to mock the entire resolution chain
- * - Legacy: Use `getGithubCLIToken` to mock gh CLI fallback
- * Note: Legacy `getTokenFromEnv`, `getOctocodeToken`, `getOctocodeTokenWithRefresh`
- *       are deprecated - use `resolveTokenFull` instead.
+ * Use `resolveTokenFull` to mock the entire resolution chain
  */
 export function _setTokenResolvers(resolvers: {
   getGithubCLIToken?: typeof getGithubCLIToken;
@@ -111,22 +92,6 @@ export function _setTokenResolvers(resolvers: {
 export function _resetTokenResolvers(): void {
   _getGithubCLIToken = getGithubCLIToken;
   _resolveTokenFull = resolveTokenFull;
-  _legacyResolveToken = null;
-}
-
-/**
- * @internal - For testing only (LEGACY API - backward compatibility)
- * Sets a mock function that returns { token, source } | null
- */
-export function _setResolveTokenFn(fn: ResolveTokenFn): void {
-  _legacyResolveToken = fn;
-}
-
-/**
- * @internal - For testing only (LEGACY API - backward compatibility)
- */
-export function _resetResolveTokenFn(): void {
-  _legacyResolveToken = null;
 }
 
 function parseStringArray(value?: string): string[] | undefined {
@@ -141,20 +106,15 @@ function parseStringArray(value?: string): string[] | undefined {
  * Parse a boolean environment variable with support for various formats.
  * Handles whitespace, casing, and common truthy/falsy values.
  * @param value - The environment variable value
- * @param defaultValue - Default value if undefined/empty
- * @returns Parsed boolean value
+ * @returns true, false, or undefined if not set/recognized
  */
-function parseBooleanEnv(
-  value: string | undefined,
-  defaultValue: boolean
-): boolean {
-  if (value === undefined || value === null) return defaultValue;
+function parseBooleanEnv(value: string | undefined): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
   const trimmed = value.trim().toLowerCase();
-  if (trimmed === '') return defaultValue;
+  if (trimmed === '') return undefined;
   if (trimmed === 'true' || trimmed === '1') return true;
   if (trimmed === 'false' || trimmed === '0') return false;
-  // Unrecognized values fall back to default (allows ?? to work)
-  return defaultValue;
+  return undefined;
 }
 
 /**
@@ -174,36 +134,7 @@ function parseLoggingEnv(value: string | undefined): boolean | undefined {
   return true;
 }
 
-/** Check if debug logging is enabled via environment variable */
-const isDebugEnabled = () =>
-  process.env.OCTOCODE_DEBUG === 'true' ||
-  process.env.DEBUG?.includes('octocode');
-
 async function resolveGitHubToken(): Promise<TokenResolutionResult> {
-  // Support legacy test mock (backward compatibility)
-  if (_legacyResolveToken) {
-    try {
-      const resolved = await _legacyResolveToken();
-      if (resolved?.token) {
-        return {
-          token: resolved.token,
-          source: mapSharedSourceToInternal(resolved.source, getEnvTokenSource),
-        };
-      }
-      return { token: null, source: 'none' };
-    } catch (error) {
-      const maskedMsg =
-        error instanceof Error
-          ? maskSensitiveData(error.message)
-          : 'Unknown error';
-      if (isDebugEnabled()) {
-        // eslint-disable-next-line no-console
-        console.debug('[octocode] Legacy token resolution failed:', maskedMsg);
-      }
-      return { token: null, source: 'none' };
-    }
-  }
-
   // Delegate to octocode-shared's resolveTokenFull for centralized logic
   // Priority: env vars (1-3) → octocode storage (4-5) → gh CLI (6)
   try {
@@ -220,26 +151,13 @@ async function resolveGitHubToken(): Promise<TokenResolutionResult> {
     }
 
     return { token: null, source: 'none' };
-  } catch (error) {
-    const maskedMsg =
-      error instanceof Error
-        ? maskSensitiveData(error.message)
-        : 'Unknown error';
-    if (isDebugEnabled()) {
-      // eslint-disable-next-line no-console
-      console.debug('[octocode] Token resolution failed:', maskedMsg);
-    }
+  } catch {
     return { token: null, source: 'none' };
   }
 }
 
 // ============================================================================
-// GITLAB TOKEN RESOLUTION
-// ============================================================================
-
-// ============================================================================
-// CONFIGURATION LIMITS (from octocode-shared/config)
-// These are kept as constants for clamping, actual defaults come from getConfigSync()
+// CONFIGURATION LIMITS
 // ============================================================================
 
 /** Minimum timeout - 5 seconds (prevents accidental misconfiguration) */
@@ -250,44 +168,6 @@ const MAX_TIMEOUT = 300000;
 const MIN_RETRIES = 0;
 /** Maximum retries */
 const MAX_RETRIES_LIMIT = 10;
-
-/**
- * Resolve GitLab token from environment variables.
- * Priority: GITLAB_TOKEN > GL_TOKEN
- */
-function resolveGitLabToken(): GitLabTokenResolutionResult {
-  // Check GITLAB_TOKEN first (primary)
-  const gitlabToken = process.env.GITLAB_TOKEN?.trim();
-  if (gitlabToken) {
-    return { token: gitlabToken, source: 'env:GITLAB_TOKEN' };
-  }
-
-  // Check GL_TOKEN (fallback)
-  const glToken = process.env.GL_TOKEN?.trim();
-  if (glToken) {
-    return { token: glToken, source: 'env:GL_TOKEN' };
-  }
-
-  return { token: null, source: 'none' };
-}
-
-/**
- * Resolve GitLab configuration from environment variables and global config.
- * Priority: env vars > ~/.octocode/.octocoderc > hardcoded defaults
- * @returns GitLab configuration object
- */
-function resolveGitLabConfig(): GitLabConfig {
-  const globalConfig = getConfigSync();
-  const tokenResult = resolveGitLabToken();
-  const host = process.env.GITLAB_HOST?.trim() || globalConfig.gitlab.host;
-
-  return {
-    host,
-    token: tokenResult.token,
-    tokenSource: tokenResult.source,
-    isConfigured: tokenResult.token !== null,
-  };
-}
 
 export async function initialize(): Promise<void> {
   if (config !== null) {
@@ -306,29 +186,19 @@ export async function initialize(): Promise<void> {
     // Token is NOT cached - subsequent calls to getGitHubToken() will re-resolve
     const tokenResult = await resolveGitHubToken();
 
-    // Parse logging flag - env vars override global config
-    // Priority: OCTOCODE_TELEMETRY_DISABLED > LOG env var > config file > defaults
-    const envTelemetryDisabled = parseBooleanEnv(
-      process.env.OCTOCODE_TELEMETRY_DISABLED,
-      undefined as unknown as boolean
-    );
-    const telemetryDisabled =
-      envTelemetryDisabled ?? !globalConfig.telemetry.enabled;
-
     // Parse LOG with special "default to true" semantics
     // LOG='anything' → true, LOG='false'/'0' → false, LOG=undefined → config fallback
     const envLogging = parseLoggingEnv(process.env.LOG);
-    const isLoggingEnabled =
-      !telemetryDisabled && (envLogging ?? globalConfig.telemetry.logging);
+    const isLoggingEnabled = envLogging ?? globalConfig.telemetry.logging;
 
-    // Parse ENABLE_LOCAL with fallback to LOCAL env var, then global config
-    // Priority: ENABLE_LOCAL > LOCAL > config file > defaults
-    const envEnableLocal =
-      parseBooleanEnv(
-        process.env.ENABLE_LOCAL,
-        undefined as unknown as boolean
-      ) ?? parseBooleanEnv(process.env.LOCAL, undefined as unknown as boolean);
-    const enableLocal = envEnableLocal ?? globalConfig.local.enabled;
+    // Parse ENABLE_LOCAL from environment, then global config
+    // Priority: ENABLE_LOCAL > config file > defaults
+    const enableLocal =
+      parseBooleanEnv(process.env.ENABLE_LOCAL) ?? globalConfig.local.enabled;
+
+    // Parse DISABLE_PROMPTS - default false (prompts enabled by default)
+    const disablePrompts =
+      parseBooleanEnv(process.env.DISABLE_PROMPTS) ?? false;
 
     // Parse tools configuration - env vars override global config
     const envToolsToRun = parseStringArray(process.env.TOOLS_TO_RUN);
@@ -371,6 +241,7 @@ export async function initialize(): Promise<void> {
       maxRetries,
       loggingEnabled: isLoggingEnabled,
       enableLocal,
+      disablePrompts,
       tokenSource: tokenResult.source,
       gitlab: resolveGitLabConfig(),
     };
@@ -418,6 +289,10 @@ export function isLoggingEnabled(): boolean {
   return config?.loggingEnabled ?? false;
 }
 
+export function arePromptsEnabled(): boolean {
+  return !(config?.disablePrompts ?? false);
+}
+
 /**
  * Get the source of the current GitHub token.
  * Always resolves fresh - no caching. Token source can change at runtime.
@@ -430,60 +305,6 @@ export function isLoggingEnabled(): boolean {
 export async function getTokenSource(): Promise<TokenSourceType> {
   const result = await resolveGitHubToken();
   return result.source;
-}
-
-// ============================================================================
-// GITLAB CONFIGURATION EXPORTS
-// ============================================================================
-
-/**
- * Get the GitLab configuration.
- * Always resolves fresh - no caching. Let environment handle changes.
- * Token can change at runtime (deletion, refresh, new login).
- * @returns GitLab configuration
- */
-export function getGitLabConfig(): GitLabConfig {
-  return resolveGitLabConfig();
-}
-
-/**
- * Get the GitLab API token.
- * Always resolves fresh - not cached. Token can change at runtime.
- * @returns GitLab token or null if not configured
- */
-export function getGitLabToken(): string | null {
-  const result = resolveGitLabToken();
-  return result.token;
-}
-
-/**
- * Get the GitLab host URL.
- * Priority: env var > config file > default
- * @returns GitLab host URL (defaults to https://gitlab.com)
- */
-export function getGitLabHost(): string {
-  const globalConfig = getConfigSync();
-  return process.env.GITLAB_HOST?.trim() || globalConfig.gitlab.host;
-}
-
-/**
- * Get the source of the current GitLab token.
- * Returns the type indicating where the token was found:
- * - 'env:GITLAB_TOKEN' for GITLAB_TOKEN env var
- * - 'env:GL_TOKEN' for GL_TOKEN env var
- * - 'none' if no token was found
- */
-export function getGitLabTokenSource(): GitLabTokenSourceType {
-  const result = resolveGitLabToken();
-  return result.source;
-}
-
-/**
- * Check if GitLab is configured with a valid token.
- * @returns true if GitLab token is available
- */
-export function isGitLabConfigured(): boolean {
-  return resolveGitLabToken().token !== null;
 }
 
 // ============================================================================
