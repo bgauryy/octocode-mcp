@@ -85,16 +85,6 @@ export interface TelemetryConfigOptions {
 export interface LspConfigOptions {
   /** Path to custom LSP servers config file (default: ~/.octocode/lsp-servers.json) */
   configPath?: string;
-  /** Force octocode-mcp LSP tools even when native LSP is available (default: false) */
-  forceMcpLsp?: boolean;
-}
-
-/**
- * Security configuration
- */
-export interface SecurityConfigOptions {
-  /** Redact filesystem paths in error messages (default: false) */
-  redactErrorPaths?: boolean;
 }
 
 // ============================================================================
@@ -123,8 +113,6 @@ export interface OctocodeConfig {
   telemetry?: TelemetryConfigOptions;
   /** LSP settings */
   lsp?: LspConfigOptions;
-  /** Security settings */
-  security?: SecurityConfigOptions;
 }
 
 /**
@@ -162,11 +150,6 @@ export interface RequiredTelemetryConfig {
 
 export interface RequiredLspConfig {
   configPath: string | undefined;
-  forceMcpLsp: boolean;
-}
-
-export interface RequiredSecurityConfig {
-  redactErrorPaths: boolean;
 }
 
 /**
@@ -189,8 +172,6 @@ export interface ResolvedConfig {
   telemetry: RequiredTelemetryConfig;
   /** LSP settings */
   lsp: RequiredLspConfig;
-  /** Security settings */
-  security: RequiredSecurityConfig;
   /** Source of this configuration */
   source: 'file' | 'defaults' | 'mixed';
   /** Path to config file (if loaded from file) */

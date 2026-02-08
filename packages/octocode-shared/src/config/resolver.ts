@@ -17,7 +17,6 @@ import type {
   RequiredNetworkConfig,
   RequiredTelemetryConfig,
   RequiredLspConfig,
-  RequiredSecurityConfig,
 } from './types.js';
 import {
   DEFAULT_CONFIG,
@@ -28,7 +27,6 @@ import {
   DEFAULT_NETWORK_CONFIG,
   DEFAULT_TELEMETRY_CONFIG,
   DEFAULT_LSP_CONFIG,
-  DEFAULT_SECURITY_CONFIG,
   MIN_TIMEOUT,
   MAX_TIMEOUT,
   MIN_RETRIES,
@@ -228,35 +226,11 @@ function resolveTelemetry(
  * Resolve LSP configuration.
  */
 function resolveLsp(fileConfig?: OctocodeConfig['lsp']): RequiredLspConfig {
-  // Env vars: OCTOCODE_LSP_CONFIG, OCTOCODE_FORCE_LSP
   const envConfigPath = process.env.OCTOCODE_LSP_CONFIG?.trim() || undefined;
-  const envForceMcpLsp =
-    process.env.OCTOCODE_FORCE_LSP === '1' ? true : undefined;
 
   return {
     configPath:
       envConfigPath ?? fileConfig?.configPath ?? DEFAULT_LSP_CONFIG.configPath,
-    forceMcpLsp:
-      envForceMcpLsp ??
-      fileConfig?.forceMcpLsp ??
-      DEFAULT_LSP_CONFIG.forceMcpLsp,
-  };
-}
-
-/**
- * Resolve security configuration.
- */
-function resolveSecurity(
-  fileConfig?: OctocodeConfig['security']
-): RequiredSecurityConfig {
-  // Env var: REDACT_ERROR_PATHS
-  const envRedact = parseBooleanEnv(process.env.REDACT_ERROR_PATHS);
-
-  return {
-    redactErrorPaths:
-      envRedact ??
-      fileConfig?.redactErrorPaths ??
-      DEFAULT_SECURITY_CONFIG.redactErrorPaths,
   };
 }
 
@@ -289,9 +263,7 @@ function buildResolvedConfig(
     process.env.REQUEST_TIMEOUT !== undefined ||
     process.env.MAX_RETRIES !== undefined ||
     process.env.LOG !== undefined ||
-    process.env.OCTOCODE_LSP_CONFIG !== undefined ||
-    process.env.OCTOCODE_FORCE_LSP !== undefined ||
-    process.env.REDACT_ERROR_PATHS !== undefined;
+    process.env.OCTOCODE_LSP_CONFIG !== undefined;
 
   // Determine source
   let source: ResolvedConfig['source'];
@@ -312,7 +284,6 @@ function buildResolvedConfig(
     network: resolveNetwork(fileConfig?.network),
     telemetry: resolveTelemetry(fileConfig?.telemetry),
     lsp: resolveLsp(fileConfig?.lsp),
-    security: resolveSecurity(fileConfig?.security),
     source,
     configPath: hasFile ? configPath : undefined,
   };

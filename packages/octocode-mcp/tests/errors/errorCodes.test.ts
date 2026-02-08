@@ -233,7 +233,8 @@ describe('Local Error Codes', () => {
       expect(error.errorCode).toBe(
         LOCAL_TOOL_ERROR_CODES.PATH_VALIDATION_FAILED
       );
-      expect(error.message).toContain('/invalid/path');
+      // redactPath reduces outside-workspace paths to filename
+      expect(error.message).toContain('path');
     });
 
     it('should create fileAccessFailed error', () => {
@@ -241,7 +242,8 @@ describe('Local Error Codes', () => {
       const error = ToolErrors.fileAccessFailed('/missing/file.txt', cause);
 
       expect(error.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.FILE_ACCESS_FAILED);
-      expect(error.message).toContain('/missing/file.txt');
+      // redactPath reduces outside-workspace paths to filename
+      expect(error.message).toContain('file.txt');
       expect(error.context).toEqual({
         path: '/missing/file.txt',
         errorCode: undefined,
@@ -337,7 +339,8 @@ describe('Local Error Codes', () => {
       const error = ToolErrors.fileReadFailed('/test/file.txt', cause);
 
       expect(error.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.FILE_READ_FAILED);
-      expect(error.message).toContain('/test/file.txt');
+      // redactPath reduces outside-workspace paths to filename
+      expect(error.message).toContain('file.txt');
       expect(error.stack).toContain('Caused by:');
     });
 

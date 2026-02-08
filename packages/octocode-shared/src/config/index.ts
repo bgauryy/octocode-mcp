@@ -44,7 +44,6 @@ export type {
   NetworkConfigOptions,
   TelemetryConfigOptions,
   LspConfigOptions,
-  SecurityConfigOptions,
 
   // Section types (resolved)
   RequiredGitHubConfig,
@@ -54,7 +53,6 @@ export type {
   RequiredNetworkConfig,
   RequiredTelemetryConfig,
   RequiredLspConfig,
-  RequiredSecurityConfig,
 } from './types.js';
 
 // ============================================================================
@@ -73,7 +71,6 @@ export {
   DEFAULT_NETWORK_CONFIG,
   DEFAULT_TELEMETRY_CONFIG,
   DEFAULT_LSP_CONFIG,
-  DEFAULT_SECURITY_CONFIG,
 
   // Limits
   MIN_TIMEOUT,

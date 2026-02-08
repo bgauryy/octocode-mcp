@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import os from 'os';
+import { describe, it, expect } from 'vitest';
 import {
   CONFIG_ERRORS,
   VALIDATION_ERRORS,
@@ -11,6 +12,7 @@ import {
   PROMISE_ERRORS,
   ALL_ERROR_CODES,
   TOOL_ERRORS,
+  redactPath,
 } from '../src/errorCodes.js';
 
 describe('errorCodes', () => {
@@ -343,78 +345,139 @@ describe('errorCodes', () => {
   });
 
   describe('redactPath function', () => {
-    const originalEnv = process.env.REDACT_ERROR_PATHS;
+    // --- Project-relative paths (primary behavior) ---
+    // Local tools enforce workspace boundaries via PathValidator,
+    // so paths always resolve to meaningful project-relative output.
 
-    afterEach(() => {
-      if (originalEnv === undefined) {
-        delete process.env.REDACT_ERROR_PATHS;
-      } else {
-        process.env.REDACT_ERROR_PATHS = originalEnv;
-      }
+    it.each([
+      // [description, absolutePath, workspace, expected]
+      ['unix source file', '/project/src/file.ts', '/project', 'src/file.ts'],
+      ['unix .env', '/project/.env', '/project', '.env'],
+      [
+        'unix .env.production',
+        '/project/.env.production',
+        '/project',
+        '.env.production',
+      ],
+      [
+        'unix nested secrets',
+        '/project/config/secrets/key.json',
+        '/project',
+        'config/secrets/key.json',
+      ],
+      [
+        'unix deeply nested',
+        '/project/a/b/c/d/e/file.ts',
+        '/project',
+        'a/b/c/d/e/file.ts',
+      ],
+      ['unix workspace root itself', '/project', '/project', '.'],
+      [
+        'unix trailing slash on root',
+        '/project/src/file.ts',
+        '/project/',
+        'src/file.ts',
+      ],
+      [
+        'unix double slashes',
+        '/project//src//file.ts',
+        '/project',
+        'src/file.ts',
+      ],
+      [
+        'win backslash paths',
+        'C:\\Users\\dev\\project\\src\\file.ts',
+        'C:\\Users\\dev\\project',
+        'src/file.ts',
+      ],
+      [
+        'win .env',
+        'C:\\Users\\dev\\project\\.env',
+        'C:\\Users\\dev\\project',
+        '.env',
+      ],
+      [
+        'win nested config',
+        'C:\\Users\\dev\\project\\config\\secrets\\key.json',
+        'C:\\Users\\dev\\project',
+        'config/secrets/api-key.json'.replace('api-key.json', 'key.json'),
+      ],
+      [
+        'win mixed slashes',
+        'C:\\Users\\dev\\project/src\\config/.env.local',
+        'C:\\Users\\dev\\project',
+        'src/config/.env.local',
+      ],
+    ])('%s → %s', (_desc, absolutePath, workspace, expected) => {
+      expect(redactPath(absolutePath, workspace)).toBe(expected);
     });
 
-    it('should return unredacted path when REDACT_ERROR_PATHS is not set', async () => {
-      delete process.env.REDACT_ERROR_PATHS;
-      // Re-import to get fresh module with current env
-      vi.resetModules();
-      const { redactPath: freshRedactPath } =
-        await import('../src/errorCodes.js');
-      const result = freshRedactPath('/home/user/project/file.ts');
-      expect(result).toBe('/home/user/project/file.ts');
-    });
-
-    it('should return unredacted path when REDACT_ERROR_PATHS is false', async () => {
-      process.env.REDACT_ERROR_PATHS = 'false';
-      vi.resetModules();
-      const { redactPath: freshRedactPath } =
-        await import('../src/errorCodes.js');
-      const result = freshRedactPath('/home/user/project/file.ts');
-      expect(result).toBe('/home/user/project/file.ts');
-    });
-
-    it('should show relative path when within workspace root', async () => {
-      process.env.REDACT_ERROR_PATHS = 'true';
-      vi.resetModules();
-      const { redactPath: freshRedactPath } =
-        await import('../src/errorCodes.js');
-      const result = freshRedactPath(
-        '/workspace/project/src/file.ts',
-        '/workspace/project'
-      );
-      expect(result).toBe('src/file.ts');
-    });
-
-    it('should return dot for workspace root path itself', async () => {
-      process.env.REDACT_ERROR_PATHS = 'true';
-      vi.resetModules();
-      const { redactPath: freshRedactPath } =
-        await import('../src/errorCodes.js');
-      const result = freshRedactPath(
+    // --- Prefix collision prevention ---
+    it.each([
+      [
+        '/workspace/project-secret/creds.json',
         '/workspace/project',
-        '/workspace/project'
-      );
-      expect(result).toBe('.');
+        'creds.json',
+      ],
+      ['/home/user-backup/secret.key', '/home/user', 'secret.key'],
+      [
+        'C:\\Users\\dev\\project-secret\\creds.json',
+        'C:\\Users\\dev\\project',
+        'creds.json',
+      ],
+    ])(
+      'prefix collision: %s with root %s → %s',
+      (absolutePath, workspace, expected) => {
+        expect(redactPath(absolutePath, workspace)).toBe(expected);
+      }
+    );
+
+    // --- Path traversal normalization (defense-in-depth) ---
+    it.each([
+      ['/project/src/../../../etc/passwd', '/project', 'passwd'],
+      ['C:\\project\\..\\..\\Windows\\System32\\SAM', 'C:\\project', 'SAM'],
+    ])('traversal: %s → %s', (absolutePath, workspace, expected) => {
+      expect(redactPath(absolutePath, workspace)).toBe(expected);
     });
 
-    it('should use tilde for home directory paths', async () => {
-      process.env.REDACT_ERROR_PATHS = 'true';
-      vi.resetModules();
-      const { redactPath: freshRedactPath } =
-        await import('../src/errorCodes.js');
-      const os = await import('os');
+    // --- Defense-in-depth fallbacks ---
+    it('home directory fallback → ~/...', () => {
       const homeDir = os.homedir();
-      const result = freshRedactPath(`${homeDir}/documents/file.ts`);
-      expect(result).toBe('~/documents/file.ts');
+      expect(redactPath(`${homeDir}/documents/file.ts`)).toBe(
+        '~/documents/file.ts'
+      );
     });
 
-    it('should show only filename for paths outside known roots', async () => {
-      process.env.REDACT_ERROR_PATHS = 'true';
-      vi.resetModules();
-      const { redactPath: freshRedactPath } =
-        await import('../src/errorCodes.js');
-      // Use a path that's unlikely to match home or workspace
-      const result = freshRedactPath('/var/log/app/error.log');
-      expect(result).toBe('error.log');
+    it('outside all roots fallback → filename only', () => {
+      expect(redactPath('/var/log/app/error.log', '/unrelated/workspace')).toBe(
+        'error.log'
+      );
+    });
+
+    it('UNC path outside workspace → filename only', () => {
+      expect(
+        redactPath('\\\\server\\share\\secrets\\key.pem', 'C:\\project')
+      ).toBe('key.pem');
+    });
+
+    // --- Edge cases ---
+    it('empty path → empty string', () => {
+      expect(redactPath('')).toBe('');
+    });
+
+    // --- Auto-resolve workspaceRoot (real caller behavior) ---
+    // Callers don't pass workspaceRoot: ToolErrors.fileAccessFailed(path, error)
+    // So redactPath resolves it from config/CWD automatically.
+    it('auto-resolves workspaceRoot from CWD when not provided', () => {
+      const cwd = process.cwd();
+      expect(redactPath(`${cwd}/src/test-file.ts`)).toBe('src/test-file.ts');
+    });
+
+    it('auto-resolves for nested paths without explicit workspace', () => {
+      const cwd = process.cwd();
+      expect(redactPath(`${cwd}/packages/octocode-mcp/src/errorCodes.ts`)).toBe(
+        'packages/octocode-mcp/src/errorCodes.ts'
+      );
     });
   });
 });

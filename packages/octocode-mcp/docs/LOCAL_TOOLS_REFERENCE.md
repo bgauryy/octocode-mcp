@@ -15,6 +15,13 @@ Octocode MCP provides **7 tools** across 2 categories for code research and expl
 
 ---
 
+## Quick Start
+
+1. Enable local tools: set `ENABLE_LOCAL=true`.
+2. Find a symbol: `localSearchCode` (get `lineHint`).
+3. Use LSP: `lspGotoDefinition` / `lspFindReferences` / `lspCallHierarchy`.
+4. Read details last: `localGetFileContent`.
+
 ## Tools at a Glance
 
 ### Local Tools
@@ -158,6 +165,8 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 
 Semantic code intelligence tools that understand language structure. **All require `lineHint` from `localSearchCode`.**
 
+Local tools must be enabled (`ENABLE_LOCAL` / `local.enabled`) for LSP tools to be available.
+
 ### How LSP Works
 
 ```
@@ -243,7 +252,7 @@ MCP Client → Octocode MCP → Language Server (spawned)
 - **Symlink Resolution**: Paths resolved before access to prevent traversal attacks
 - **Symbol Name Length**: Limited to 255 characters
 - **Depth Parameter**: Capped at 3 to prevent resource exhaustion
-- **Path Redaction**: When `REDACT_ERROR_PATHS=true`, full paths hidden in errors
+- **Path Redaction**: Paths are always redacted in errors for security.
 
 > LSP tools work standalone - no IDE required. TypeScript/JavaScript bundled; other languages need server installation.
 
@@ -276,6 +285,8 @@ Override language server paths:
 ### Custom Configuration
 
 Config files are loaded in priority order:
+
+Optional: set only if you want a custom path. If unset, workspace/home fallbacks are used.
 
 1. `OCTOCODE_LSP_CONFIG=/path/to/config.json` (env var)
 2. `.octocode/lsp-servers.json` (workspace)

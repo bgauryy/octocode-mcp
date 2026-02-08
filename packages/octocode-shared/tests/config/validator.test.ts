@@ -45,10 +45,6 @@ describe('config/validator', () => {
         },
         lsp: {
           configPath: '~/.octocode/lsp-servers.json',
-          forceMcpLsp: false,
-        },
-        security: {
-          redactErrorPaths: false,
         },
       });
 
@@ -139,6 +135,76 @@ describe('config/validator', () => {
         expect(result.valid).toBe(false);
         expect(result.errors.some(e => e.includes('tools.enabled'))).toBe(true);
       });
+
+      it('accepts null enableAdditional', () => {
+        const result = validateConfig({
+          tools: { enableAdditional: null },
+        });
+        expect(result.valid).toBe(true);
+      });
+
+      it('rejects non-array enableAdditional', () => {
+        const result = validateConfig({
+          tools: { enableAdditional: 'localSearchCode' },
+        });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e => e.includes('tools.enableAdditional'))
+        ).toBe(true);
+      });
+
+      it('accepts valid enableAdditional array', () => {
+        const result = validateConfig({
+          tools: { enableAdditional: ['localSearchCode', 'lspGotoDefinition'] },
+        });
+        expect(result.valid).toBe(true);
+      });
+
+      it('rejects non-array disabled', () => {
+        const result = validateConfig({
+          tools: { disabled: 'packageSearch' },
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e => e.includes('tools.disabled'))).toBe(
+          true
+        );
+      });
+
+      it('accepts valid disabled array', () => {
+        const result = validateConfig({
+          tools: { disabled: ['packageSearch'] },
+        });
+        expect(result.valid).toBe(true);
+      });
+
+      it('rejects non-boolean disablePrompts', () => {
+        const result = validateConfig({
+          tools: { disablePrompts: 'true' },
+        });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e => e.includes('tools.disablePrompts'))
+        ).toBe(true);
+      });
+
+      it('accepts valid boolean disablePrompts', () => {
+        const result = validateConfig({
+          tools: { disablePrompts: true },
+        });
+        expect(result.valid).toBe(true);
+      });
+
+      it('rejects non-object tools', () => {
+        const result = validateConfig({ tools: 'invalid' });
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e => e.includes('tools: Must be an object'))).toBe(true);
+      });
+
+      it('rejects array tools', () => {
+        const result = validateConfig({ tools: [] });
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e => e.includes('tools: Must be an object'))).toBe(true);
+      });
     });
 
     describe('network validation', () => {
@@ -211,19 +277,233 @@ describe('config/validator', () => {
           lsp: { configPath: 123 },
         });
         expect(result.valid).toBe(false);
-        expect(result.errors.some(e => e.includes('lsp.configPath'))).toBe(
+        expect(result.errors.some(e => e.includes('lsp.configPath'))).toBe(true);
+      });
+    });
+
+    describe('gitlab validation', () => {
+      it('accepts valid host URL', () => {
+        const result = validateConfig({
+          gitlab: { host: 'https://gitlab.example.com' },
+        });
+        expect(result.valid).toBe(true);
+      });
+
+      it('rejects invalid host URL', () => {
+        const result = validateConfig({
+          gitlab: { host: 'not-a-url' },
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e => e.includes('gitlab.host'))).toBe(true);
+      });
+
+      it('rejects non-http/https host URL', () => {
+        const result = validateConfig({
+          gitlab: { host: 'ftp://gitlab.example.com' },
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e => e.includes('Only http/https'))).toBe(
           true
         );
       });
 
-      it('rejects non-boolean forceMcpLsp', () => {
+      it('rejects non-object gitlab', () => {
+        const result = validateConfig({ gitlab: 'invalid' });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e => e.includes('gitlab: Must be an object'))
+        ).toBe(true);
+      });
+
+      it('rejects array gitlab', () => {
+        const result = validateConfig({ gitlab: [] });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e => e.includes('gitlab: Must be an object'))
+        ).toBe(true);
+      });
+    });
+
+    describe('local validation (extended)', () => {
+      it('rejects non-string workspaceRoot', () => {
         const result = validateConfig({
-          lsp: { forceMcpLsp: 'true' },
+          local: { workspaceRoot: 123 },
         });
         expect(result.valid).toBe(false);
-        expect(result.errors.some(e => e.includes('lsp.forceMcpLsp'))).toBe(
+        expect(
+          result.errors.some(e => e.includes('local.workspaceRoot'))
+        ).toBe(true);
+      });
+
+      it('accepts valid workspaceRoot string', () => {
+        const result = validateConfig({
+          local: { workspaceRoot: '/home/user/project' },
+        });
+        expect(result.valid).toBe(true);
+      });
+
+      it('rejects non-string items in allowedPaths', () => {
+        const result = validateConfig({
+          local: { allowedPaths: [123, '/valid/path'] },
+        });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e => e.includes('local.allowedPaths'))
+        ).toBe(true);
+      });
+
+      it('rejects non-object local', () => {
+        const result = validateConfig({ local: 'invalid' });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e => e.includes('local: Must be an object'))
+        ).toBe(true);
+      });
+
+      it('rejects array local', () => {
+        const result = validateConfig({ local: [] });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e => e.includes('local: Must be an object'))
+        ).toBe(true);
+      });
+    });
+
+    describe('github validation (extended)', () => {
+      it('rejects non-object github', () => {
+        const result = validateConfig({ github: 'invalid' });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e => e.includes('github: Must be an object'))
+        ).toBe(true);
+      });
+
+      it('rejects array github', () => {
+        const result = validateConfig({ github: [] });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e => e.includes('github: Must be an object'))
+        ).toBe(true);
+      });
+    });
+
+    describe('network validation (extended)', () => {
+      it('rejects non-object network', () => {
+        const result = validateConfig({ network: 'invalid' });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e => e.includes('network: Must be an object'))
+        ).toBe(true);
+      });
+
+      it('rejects NaN timeout', () => {
+        const result = validateConfig({
+          network: { timeout: NaN },
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e => e.includes('network.timeout'))).toBe(
           true
         );
+      });
+
+      it('rejects NaN maxRetries', () => {
+        const result = validateConfig({
+          network: { maxRetries: NaN },
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e => e.includes('network.maxRetries'))).toBe(
+          true
+        );
+      });
+
+      it('accepts boundary values for timeout', () => {
+        const minResult = validateConfig({
+          network: { timeout: MIN_TIMEOUT },
+        });
+        expect(minResult.valid).toBe(true);
+
+        const maxResult = validateConfig({
+          network: { timeout: MAX_TIMEOUT },
+        });
+        expect(maxResult.valid).toBe(true);
+      });
+
+      it('accepts boundary values for maxRetries', () => {
+        const minResult = validateConfig({
+          network: { maxRetries: MIN_RETRIES },
+        });
+        expect(minResult.valid).toBe(true);
+
+        const maxResult = validateConfig({
+          network: { maxRetries: MAX_RETRIES },
+        });
+        expect(maxResult.valid).toBe(true);
+      });
+    });
+
+    describe('telemetry validation (extended)', () => {
+      it('rejects non-object telemetry', () => {
+        const result = validateConfig({ telemetry: 'invalid' });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e => e.includes('telemetry: Must be an object'))
+        ).toBe(true);
+      });
+
+      it('accepts valid boolean logging', () => {
+        expect(
+          validateConfig({ telemetry: { logging: true } }).valid
+        ).toBe(true);
+        expect(
+          validateConfig({ telemetry: { logging: false } }).valid
+        ).toBe(true);
+      });
+    });
+
+    describe('lsp validation (extended)', () => {
+      it('accepts valid configPath string', () => {
+        const result = validateConfig({
+          lsp: { configPath: '/path/to/lsp.json' },
+        });
+        expect(result.valid).toBe(true);
+      });
+
+      it('accepts null configPath', () => {
+        const result = validateConfig({
+          lsp: { configPath: null },
+        });
+        expect(result.valid).toBe(true);
+      });
+
+      it('rejects non-object lsp', () => {
+        const result = validateConfig({ lsp: 'invalid' });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e => e.includes('lsp: Must be an object'))
+        ).toBe(true);
+      });
+    });
+
+    describe('$schema key', () => {
+      it('allows $schema key without warning', () => {
+        const result = validateConfig({
+          $schema: 'https://octocode.dev/schemas/octocoderc.json',
+          version: 1,
+        });
+        expect(result.valid).toBe(true);
+        expect(result.warnings).toHaveLength(0);
+      });
+    });
+
+    describe('multiple errors', () => {
+      it('reports all validation errors at once', () => {
+        const result = validateConfig({
+          github: { apiUrl: 'not-a-url' },
+          network: { timeout: -1, maxRetries: 999 },
+          telemetry: { logging: 'yes' },
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors.length).toBeGreaterThanOrEqual(4);
       });
     });
 
@@ -239,6 +519,36 @@ describe('config/validator', () => {
             w.includes('Unknown configuration key: unknownKey')
           )
         ).toBe(true);
+      });
+
+      it('warns about multiple unknown keys', () => {
+        const result = validateConfig({
+          unknownA: 1,
+          unknownB: 2,
+        });
+        expect(result.valid).toBe(true);
+        expect(result.warnings).toHaveLength(2);
+      });
+    });
+
+    describe('returned config on success', () => {
+      it('returns config object when valid', () => {
+        const input = {
+          version: 1,
+          github: { apiUrl: 'https://api.github.com' },
+        };
+        const result = validateConfig(input);
+        expect(result.valid).toBe(true);
+        expect(result.config).toBeDefined();
+        expect(result.config?.version).toBe(1);
+      });
+
+      it('returns undefined config when invalid', () => {
+        const result = validateConfig({
+          github: { apiUrl: 'not-a-url' },
+        });
+        expect(result.valid).toBe(false);
+        expect(result.config).toBeUndefined();
       });
     });
   });

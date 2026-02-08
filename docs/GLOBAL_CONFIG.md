@@ -56,6 +56,16 @@ Use `.octocoderc` for settings that rarely change between sessions. Use environm
 
 ---
 
+## When to Use Each Section
+
+- `github`: change API base URL (e.g., GitHub Enterprise).
+- `gitlab`: point to self-hosted GitLab.
+- `local`: control local tools access and workspace boundaries.
+- `tools`: whitelist/blacklist MCP tools or disable prompts.
+- `network`: tune timeouts and retries for slow networks.
+- `telemetry`: toggle logging output.
+- `lsp`: provide a custom LSP server config path (optional).
+
 ## Complete Schema
 
 ```jsonc
@@ -94,17 +104,18 @@ Use `.octocoderc` for settings that rarely change between sessions. Use environm
   },
 
   "lsp": {
-    "configPath": null,                    // OCTOCODE_LSP_CONFIG env override (no default)
-    "forceMcpLsp": false                   // OCTOCODE_FORCE_LSP env override (set to "1")
+    "configPath": null,                    // Optional custom LSP servers config path (OCTOCODE_LSP_CONFIG)
   },
-
-  "security": {
-    "redactErrorPaths": false              // REDACT_ERROR_PATHS env override
-  }
 }
 ```
 
+> Note: If `local.workspaceRoot` is not set, runtime components fall back to the current working directory.
+
 ---
+
+> MCP LSP tools are enabled only when local tools are enabled (`ENABLE_LOCAL` / `local.enabled`).
+
+> Custom LSP config file path is optional. If unset, Octocode uses `.octocode/lsp-servers.json` in the workspace (when available) and then the user home.
 
 ## Common Configurations
 
@@ -167,9 +178,6 @@ Use `.octocoderc` for settings that rarely change between sessions. Use environm
 
 ```jsonc
 {
-  "security": {
-    "redactErrorPaths": true
-  },
   "network": {
     "timeout": 60000,
     "maxRetries": 5
@@ -178,6 +186,8 @@ Use `.octocoderc` for settings that rarely change between sessions. Use environm
 ```
 
 ---
+
+> Note: Paths in errors are always redacted for security; there is no configuration toggle.
 
 ## Validation
 

@@ -1,10 +1,3 @@
-/**
- * Default Configuration Values
- *
- * Used when ~/.octocode/.octocoderc is missing or fields are undefined.
- * These values provide safe, non-breaking defaults.
- */
-
 import type {
   RequiredGitHubConfig,
   RequiredGitLabConfig,
@@ -13,7 +6,6 @@ import type {
   RequiredNetworkConfig,
   RequiredTelemetryConfig,
   RequiredLspConfig,
-  RequiredSecurityConfig,
   ResolvedConfig,
 } from './types.js';
 
@@ -74,14 +66,6 @@ export const DEFAULT_TELEMETRY_CONFIG: RequiredTelemetryConfig = {
  */
 export const DEFAULT_LSP_CONFIG: RequiredLspConfig = {
   configPath: undefined,
-  forceMcpLsp: false,
-};
-
-/**
- * Default security configuration
- */
-export const DEFAULT_SECURITY_CONFIG: RequiredSecurityConfig = {
-  redactErrorPaths: false,
 };
 
 // ============================================================================
@@ -101,7 +85,6 @@ export const DEFAULT_CONFIG: Omit<ResolvedConfig, 'source' | 'configPath'> = {
   network: DEFAULT_NETWORK_CONFIG,
   telemetry: DEFAULT_TELEMETRY_CONFIG,
   lsp: DEFAULT_LSP_CONFIG,
-  security: DEFAULT_SECURITY_CONFIG,
 };
 
 // ============================================================================

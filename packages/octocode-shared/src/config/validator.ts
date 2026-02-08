@@ -289,25 +289,6 @@ function validateLsp(lsp: unknown, errors: string[]): void {
   const configPathError = validateString(l.configPath, 'lsp.configPath');
   if (configPathError) errors.push(configPathError);
 
-  const forceMcpLspError = validateBoolean(l.forceMcpLsp, 'lsp.forceMcpLsp');
-  if (forceMcpLspError) errors.push(forceMcpLspError);
-}
-
-function validateSecurity(security: unknown, errors: string[]): void {
-  if (security === undefined || security === null) return;
-
-  if (typeof security !== 'object' || Array.isArray(security)) {
-    errors.push('security: Must be an object');
-    return;
-  }
-
-  const sec = security as Record<string, unknown>;
-
-  const redactError = validateBoolean(
-    sec.redactErrorPaths,
-    'security.redactErrorPaths'
-  );
-  if (redactError) errors.push(redactError);
 }
 
 // ============================================================================
@@ -354,7 +335,6 @@ export function validateConfig(config: unknown): ValidationResult {
   validateNetwork(cfg.network, errors);
   validateTelemetry(cfg.telemetry, errors);
   validateLsp(cfg.lsp, errors);
-  validateSecurity(cfg.security, errors);
 
   // Check for unknown top-level keys
   const knownKeys = new Set([
@@ -367,7 +347,6 @@ export function validateConfig(config: unknown): ValidationResult {
     'network',
     'telemetry',
     'lsp',
-    'security',
   ]);
 
   for (const key of Object.keys(cfg)) {

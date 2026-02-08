@@ -61,10 +61,6 @@ const mockDefaultConfig = {
   },
   lsp: {
     configPath: undefined,
-    forceMcpLsp: false,
-  },
-  security: {
-    redactErrorPaths: false,
   },
   source: 'defaults',
   configPath: undefined,

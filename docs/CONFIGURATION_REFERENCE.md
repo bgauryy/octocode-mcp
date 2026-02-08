@@ -68,8 +68,10 @@ Environment Variable → .octocoderc File → Hardcoded Default
 | Option | Env Variable | `.octocoderc` Field | Default |
 |---|---|---|---|
 | Enable local tools | `ENABLE_LOCAL` | `local.enabled` | `true` |
-| Workspace root | `WORKSPACE_ROOT` | `local.workspaceRoot` | Current directory |
+| Workspace root | `WORKSPACE_ROOT` | `local.workspaceRoot` | Current working directory (runtime fallback) |
 | Allowed paths | `ALLOWED_PATHS` | `local.allowedPaths` | `[]` (all paths) |
+
+> Note: If `local.workspaceRoot` is not set, runtime components fall back to the current working directory (and some tools also honor `WORKSPACE_ROOT` directly).
 
 ### Tools
 
@@ -105,17 +107,11 @@ Environment Variable → .octocoderc File → Hardcoded Default
 | Option | Env Variable | `.octocoderc` Field | Default |
 |---|---|---|---|
 | Config file path | `OCTOCODE_LSP_CONFIG` | `lsp.configPath` | — |
-| Force MCP LSP | `OCTOCODE_FORCE_LSP` | `lsp.forceMcpLsp` | `false` |
 
-> **Note:** `OCTOCODE_FORCE_LSP` must be set to `1` (not `true`) to enable.
+> Optional. Set only if you want a custom LSP server config file path. If unset, Octocode falls back to workspace and home `.octocode/lsp-servers.json`.
 
-### Security
 
-| Option | Env Variable | `.octocoderc` Field | Default |
-|---|---|---|---|
-| Redact error paths | `REDACT_ERROR_PATHS` | `security.redactErrorPaths` | `false` |
-
----
+> Note: Paths in errors are always redacted for security; there is no configuration toggle.
 
 ## MCP Client Examples
 
@@ -221,7 +217,7 @@ Environment Variable → .octocoderc File → Hardcoded Default
 }
 ```
 
-### Production (No Logging, Redacted Paths)
+### Production (No Logging)
 
 ```json
 {
@@ -231,8 +227,7 @@ Environment Variable → .octocoderc File → Hardcoded Default
       "args": ["-y", "octocode-mcp@latest"],
       "env": {
         "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx",
-        "LOG": "false",
-        "REDACT_ERROR_PATHS": "true"
+        "LOG": "false"
       }
     }
   }
