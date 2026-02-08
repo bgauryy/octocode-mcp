@@ -66,10 +66,22 @@ const mockDefaultConfig = {
   configPath: undefined,
 };
 
+// Helper to build config dynamically (respects ENABLE_LOCAL env var)
+const buildMockConfig = () => ({
+  ...mockDefaultConfig,
+  local: {
+    ...mockDefaultConfig.local,
+    enabled:
+      process.env.ENABLE_LOCAL !== undefined
+        ? process.env.ENABLE_LOCAL !== 'false'
+        : true,
+  },
+});
+
 vi.mock('octocode-shared', () => ({
-  // Global config mock
-  getConfigSync: vi.fn(() => mockDefaultConfig),
-  getConfig: vi.fn(async () => mockDefaultConfig),
+  // Global config mock - re-evaluates ENABLE_LOCAL on each call
+  getConfigSync: vi.fn(() => buildMockConfig()),
+  getConfig: vi.fn(async () => buildMockConfig()),
   _resetSessionState: vi.fn(() => {
     sessionMockState.sessionId = generateMockUUID();
     sessionMockState.deleted = false;
@@ -125,6 +137,7 @@ vi.mock('octocode-shared', () => ({
     return null;
   }),
   invalidateConfigCache: vi.fn(),
+  _resetConfigCache: vi.fn(),
 }));
 
 // Export for tests that need to access the mock state

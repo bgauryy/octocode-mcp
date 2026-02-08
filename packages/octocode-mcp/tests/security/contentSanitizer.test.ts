@@ -434,12 +434,12 @@ describe('ContentSanitizer', () => {
         const result = ContentSanitizer.sanitizeContent(content);
 
         expect(result).toEqual({
-          content: 'OpenAI key: [REDACTED-OPENAIAPIKEY]',
+          content: 'OpenAI key: [REDACTED-OPENAIAPIKEYLEGACY]',
 
           hasSecrets: true,
 
-          secretsDetected: ['openaiApiKey'],
-          warnings: ['openaiApiKey'],
+          secretsDetected: ['openaiApiKeyLegacy'],
+          warnings: ['openaiApiKeyLegacy'],
         });
       });
 
@@ -592,7 +592,7 @@ describe('ContentSanitizer', () => {
           content: `
           # Configuration file
           GITHUB_TOKEN=[REDACTED-GITHUBTOKENS]
-          OPENAI_API_KEY=[REDACTED-OPENAIAPIKEY]
+          OPENAI_API_KEY=[REDACTED-OPENAIAPIKEYLEGACY]
           AWS_ACCESS_KEY_ID=[REDACTED-AWSACCESSKEYID]
           DATABASE_URL=[REDACTED-POSTGRESQLCONNECTIONSTRING]
         `,
@@ -600,13 +600,13 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: [
-            'openaiApiKey',
+            'openaiApiKeyLegacy',
             'awsAccessKeyId',
             'postgresqlConnectionString',
             'githubTokens',
           ],
           warnings: [
-            'openaiApiKey',
+            'openaiApiKeyLegacy',
             'awsAccessKeyId',
             'postgresqlConnectionString',
             'githubTokens',

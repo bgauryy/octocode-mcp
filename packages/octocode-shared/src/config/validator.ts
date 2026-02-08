@@ -288,7 +288,6 @@ function validateLsp(lsp: unknown, errors: string[]): void {
 
   const configPathError = validateString(l.configPath, 'lsp.configPath');
   if (configPathError) errors.push(configPathError);
-
 }
 
 // ============================================================================

@@ -1,5 +1,6 @@
 import os from 'os';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { getConfigSync } from 'octocode-shared';
 import {
   CONFIG_ERRORS,
   VALIDATION_ERRORS,
@@ -448,6 +449,11 @@ describe('errorCodes', () => {
       );
     });
 
+    it('home directory exact match → ~', () => {
+      const homeDir = os.homedir();
+      expect(redactPath(homeDir, '/unrelated/workspace')).toBe('~');
+    });
+
     it('outside all roots fallback → filename only', () => {
       expect(redactPath('/var/log/app/error.log', '/unrelated/workspace')).toBe(
         'error.log'
@@ -478,6 +484,20 @@ describe('errorCodes', () => {
       expect(redactPath(`${cwd}/packages/octocode-mcp/src/errorCodes.ts`)).toBe(
         'packages/octocode-mcp/src/errorCodes.ts'
       );
+    });
+
+    it('auto-resolves workspaceRoot from config when set', () => {
+      const mockedGetConfig = vi.mocked(getConfigSync);
+      // Override config to return a custom workspaceRoot
+      mockedGetConfig.mockReturnValueOnce({
+        ...mockedGetConfig(),
+        local: {
+          enabled: true,
+          allowedPaths: [],
+          workspaceRoot: '/custom/root',
+        },
+      });
+      expect(redactPath('/custom/root/src/file.ts')).toBe('src/file.ts');
     });
   });
 });
