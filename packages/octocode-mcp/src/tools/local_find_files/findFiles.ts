@@ -161,7 +161,7 @@ export async function findFiles(
     let paginationMetadata: PaginationMetadata | null = null;
 
     if (query.charLength) {
-      // Robust pagination: Select items that fit in the window instead of slicing JSON string
+      // Pagination: select items that fit in the char window instead of slicing the JSON string
       const fullJson = serializeForPagination(paginatedFiles, false);
       const totalChars = fullJson.length;
 

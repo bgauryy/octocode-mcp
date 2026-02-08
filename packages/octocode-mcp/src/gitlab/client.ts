@@ -43,13 +43,16 @@ function getGitLabToken(): string | undefined {
 // CLIENT CACHING
 // ============================================================================
 
+const CACHE_TTL_SECONDS = 5 * 60;
+const CACHE_CHECK_PERIOD_SECONDS = 60;
+
 /**
  * Cache for GitLab client instances.
  * TTL of 5 minutes for token freshness checks.
  */
 const clientCache = new NodeCache({
-  stdTTL: 300, // 5 minutes
-  checkperiod: 60,
+  stdTTL: CACHE_TTL_SECONDS,
+  checkperiod: CACHE_CHECK_PERIOD_SECONDS,
   useClones: false,
 });
 

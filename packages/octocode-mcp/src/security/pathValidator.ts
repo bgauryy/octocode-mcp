@@ -204,7 +204,7 @@ export class PathValidator {
         sanitizedPath: realPath,
       };
     } catch (error) {
-      // Comprehensive error handling for different failure modes
+      // Handle specific filesystem errors (ENOENT, EACCES, etc.)
       if (error instanceof Error) {
         const nodeError = error as Error & { code?: string };
 

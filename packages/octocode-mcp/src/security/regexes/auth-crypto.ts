@@ -273,17 +273,17 @@ export const cryptographicPatterns: SensitiveDataPattern[] = [
 ];
 
 export const privateKeyPatterns: SensitiveDataPattern[] = [
-  // Comprehensive Private Key Detection
+  // Private Key Detection
   {
     name: 'privateKeyPem',
-    description: 'Private key in PEM format (comprehensive)',
+    description: 'Private key in PEM format (all key types)',
     regex:
       /-----BEGIN\s?(?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED)\s+)?PRIVATE\s+KEY(?:\s+BLOCK)?-----[\s\S]*?-----END\s?(?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED)\s+)?PRIVATE\s+KEY(?:\s+BLOCK)?-----/g,
     matchAccuracy: 'high',
   },
   {
     name: 'pgpPrivateKeyBlock',
-    description: 'PGP private key block (comprehensive)',
+    description: 'PGP private key block (BEGIN to END)',
     regex:
       /-----BEGIN\s+PGP\s+PRIVATE\s+KEY\s+BLOCK-----[\s\S]*?-----END\s+PGP\s+PRIVATE\s+KEY\s+BLOCK-----/g,
     matchAccuracy: 'high',
