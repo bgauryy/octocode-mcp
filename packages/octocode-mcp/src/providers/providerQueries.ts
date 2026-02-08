@@ -1,0 +1,170 @@
+/**
+ * Provider Query Type Definitions
+ * Unified query types for provider-agnostic code hosting operations.
+ */
+
+import type { ProviderType } from './types.js';
+
+/**
+ * Base query interface with common fields across all providers.
+ */
+export interface BaseProviderQuery {
+  /** Provider to use (default: 'github') */
+  provider?: ProviderType;
+  /** Research context fields */
+  mainResearchGoal?: string;
+  researchGoal?: string;
+  reasoning?: string;
+}
+
+/**
+ * Unified code search query parameters.
+ */
+export interface CodeSearchQuery extends BaseProviderQuery {
+  /** Keywords to search for in code */
+  keywords: string[];
+  /**
+   * Project identifier:
+   * - GitHub: 'owner/repo'
+   * - GitLab: numeric ID or 'group/project'
+   */
+  projectId?: string;
+  /** Filter by file path pattern */
+  path?: string;
+  /** Filter by filename */
+  filename?: string;
+  /** Filter by file extension (without dot) */
+  extension?: string;
+  /** Branch, tag, or commit reference */
+  ref?: string;
+  /** Maximum results per page (max 100) */
+  limit?: number;
+  /** Page number for pagination */
+  page?: number;
+}
+
+/**
+ * Unified file content query parameters.
+ */
+export interface FileContentQuery extends BaseProviderQuery {
+  /**
+   * Project identifier:
+   * - GitHub: 'owner/repo'
+   * - GitLab: numeric ID or 'group/project'
+   */
+  projectId: string;
+  /** File path within the repository */
+  path: string;
+  /** Branch, tag, or commit reference (required for GitLab) */
+  ref?: string;
+  /** Start line number for partial content */
+  startLine?: number;
+  /** End line number for partial content */
+  endLine?: number;
+  /** String to search for in file content */
+  matchString?: string;
+  /** Context lines around match */
+  matchStringContextLines?: number;
+  /** Character offset for byte-range fetching */
+  charOffset?: number;
+  /** Character length for byte-range fetching */
+  charLength?: number;
+  /** Whether to fetch full content */
+  fullContent?: boolean;
+}
+
+/**
+ * Unified repository search query parameters.
+ */
+export interface RepoSearchQuery extends BaseProviderQuery {
+  /** Keywords to search for */
+  keywords?: string[];
+  /** Topics/tags to filter by */
+  topics?: string[];
+  /** Owner/organization filter */
+  owner?: string;
+  /** Minimum stars (GitHub only, GitLab: client-side filter) */
+  minStars?: number;
+  /** Visibility filter */
+  visibility?: 'public' | 'private' | 'internal';
+  /** Sort by field */
+  sort?: 'stars' | 'forks' | 'updated' | 'created' | 'best-match';
+  /** Sort order */
+  order?: 'asc' | 'desc';
+  /** Maximum results per page */
+  limit?: number;
+  /** Page number */
+  page?: number;
+}
+
+/**
+ * Unified pull/merge request search query parameters.
+ */
+export interface PullRequestQuery extends BaseProviderQuery {
+  /**
+   * Project identifier (optional for cross-repo search):
+   * - GitHub: 'owner/repo'
+   * - GitLab: numeric ID or 'group/project'
+   */
+  projectId?: string;
+  /**
+   * PR/MR number within the project:
+   * - GitHub: PR number
+   * - GitLab: MR iid (project-scoped)
+   */
+  number?: number;
+  /** State filter */
+  state?: 'open' | 'closed' | 'merged' | 'all';
+  /** Author username */
+  author?: string;
+  /** Assignee username */
+  assignee?: string;
+  /** Label filter */
+  labels?: string[];
+  /** Base branch filter */
+  baseBranch?: string;
+  /** Head branch filter */
+  headBranch?: string;
+  /** Created date filter (ISO 8601 or range like '>2024-01-01') */
+  created?: string;
+  /** Updated date filter */
+  updated?: string;
+  /** Include PR comments */
+  withComments?: boolean;
+  /** Include commit details */
+  withCommits?: boolean;
+  /** Content type */
+  type?: 'metadata' | 'fullContent' | 'partialContent';
+  /** Sort field */
+  sort?: 'created' | 'updated' | 'best-match';
+  /** Sort order */
+  order?: 'asc' | 'desc';
+  /** Maximum results */
+  limit?: number;
+  /** Page number */
+  page?: number;
+}
+
+/**
+ * Unified repository structure query parameters.
+ */
+export interface RepoStructureQuery extends BaseProviderQuery {
+  /**
+   * Project identifier:
+   * - GitHub: 'owner/repo'
+   * - GitLab: numeric ID or 'group/project'
+   */
+  projectId: string;
+  /** Branch, tag, or commit reference */
+  ref?: string;
+  /** Subdirectory path */
+  path?: string;
+  /** Maximum depth to traverse */
+  depth?: number;
+  /** Whether to fetch recursively */
+  recursive?: boolean;
+  /** Entries per page for pagination */
+  entriesPerPage?: number;
+  /** Page number for entries */
+  entryPageNumber?: number;
+}

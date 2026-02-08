@@ -240,7 +240,7 @@ async function searchNpmPackageViaSearch(
           hints: ['Try a different search term'],
         };
       }
-      searchResults = validation.data;
+      searchResults = validation.data as NpmCliSearchResult[];
     } catch {
       return {
         error: 'Failed to parse npm search output',

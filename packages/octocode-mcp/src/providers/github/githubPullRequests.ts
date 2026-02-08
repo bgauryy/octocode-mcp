@@ -1,0 +1,178 @@
+/**
+ * GitHub Pull Request Search
+ *
+ * Extracted from GitHubProvider for better modularity.
+ *
+ * @module providers/github/githubPullRequests
+ */
+
+import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import type {
+  ProviderResponse,
+  PullRequestQuery,
+  PullRequestSearchResult,
+  PullRequestItem,
+} from '../types.js';
+
+import { searchGitHubPullRequestsAPI } from '../../github/pullRequestSearch.js';
+
+import type { GitHubPullRequestsSearchParams } from '../../github/githubAPI.js';
+
+import type {
+  PullRequestInfo,
+  PullRequestSearchResultData,
+} from '../../tools/github_search_pull_requests/types.js';
+
+/**
+ * Parse a unified projectId into owner and repo.
+ * GitHub format: 'owner/repo'
+ */
+export function parseGitHubProjectId(projectId?: string): {
+  owner?: string;
+  repo?: string;
+} {
+  if (!projectId) {
+    return { owner: undefined, repo: undefined };
+  }
+
+  const parts = projectId.split('/');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new Error(
+      `Invalid GitHub projectId format: '${projectId}'. Expected 'owner/repo'.`
+    );
+  }
+
+  return { owner: parts[0], repo: parts[1] };
+}
+
+/**
+ * Transform GitHub pull request result to unified format.
+ */
+export function transformPullRequestResult(
+  data: PullRequestSearchResultData,
+  query: PullRequestQuery,
+  parseProjectId: (projectId?: string) => {
+    owner?: string;
+    repo?: string;
+  } = parseGitHubProjectId
+): PullRequestSearchResult {
+  const items: PullRequestItem[] = (data.pull_requests || []).map(
+    (pr: PullRequestInfo) => ({
+      number: pr.number,
+      title: pr.title,
+      body: pr.body || null,
+      url: pr.html_url || pr.url,
+      state: pr.merged ? 'merged' : pr.state,
+      draft: pr.draft || false,
+      author: pr.author,
+      assignees:
+        pr.assignees?.map(a => (typeof a === 'string' ? a : (a.login ?? ''))) ||
+        [],
+      labels:
+        pr.labels?.map(l => (typeof l === 'string' ? l : (l.name ?? ''))) || [],
+      sourceBranch: pr.head_ref || '',
+      targetBranch: pr.base_ref || '',
+      sourceSha: pr.head_sha,
+      targetSha: pr.base_sha,
+      createdAt: pr.created_at,
+      updatedAt: pr.updated_at,
+      closedAt: pr.closed_at,
+      mergedAt: pr.merged_at,
+      commentsCount: pr.comments,
+      changedFilesCount: pr.changed_files,
+      additions: pr.additions,
+      deletions: pr.deletions,
+      comments: pr.comment_details?.map(c => ({
+        id: c.id,
+        author: c.user,
+        body: c.body,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+      })),
+      fileChanges: pr.file_changes?.map(f => ({
+        path: f.filename,
+        status: f.status,
+        additions: f.additions,
+        deletions: f.deletions,
+        patch: f.patch,
+      })),
+    })
+  );
+
+  const { owner, repo } = query.projectId
+    ? parseProjectId(query.projectId)
+    : { owner: undefined, repo: undefined };
+
+  return {
+    items,
+    totalCount: data.total_count || items.length,
+    pagination: {
+      currentPage: data.pagination?.currentPage || 1,
+      totalPages: data.pagination?.totalPages || 1,
+      hasMore: data.pagination?.hasMore || false,
+      totalMatches: data.pagination?.totalMatches,
+    },
+    repositoryContext: owner && repo ? { owner, repo } : undefined,
+  };
+}
+
+/**
+ * Search pull requests on GitHub.
+ */
+export async function searchPullRequests(
+  query: PullRequestQuery,
+  authInfo?: AuthInfo,
+  parseProjectId: (projectId?: string) => {
+    owner?: string;
+    repo?: string;
+  } = parseGitHubProjectId
+): Promise<ProviderResponse<PullRequestSearchResult>> {
+  const { owner, repo } = query.projectId
+    ? parseProjectId(query.projectId)
+    : { owner: undefined, repo: undefined };
+
+  const githubParams: GitHubPullRequestsSearchParams = {
+    owner,
+    repo,
+    prNumber: query.number,
+    state:
+      query.state === 'merged'
+        ? 'closed'
+        : query.state === 'all'
+          ? undefined
+          : query.state,
+    merged: query.state === 'merged' ? true : undefined,
+    author: query.author,
+    assignee: query.assignee,
+    label: query.labels,
+    base: query.baseBranch,
+    head: query.headBranch,
+    created: query.created,
+    updated: query.updated,
+    withComments: query.withComments,
+    withCommits: query.withCommits,
+    type: query.type,
+    sort: query.sort,
+    order: query.order,
+    limit: query.limit,
+    page: query.page,
+  };
+
+  const result = await searchGitHubPullRequestsAPI(githubParams, authInfo);
+
+  if (result.error) {
+    return {
+      error:
+        typeof result.error === 'string' ? result.error : String(result.error),
+      status: 500,
+      provider: 'github',
+      hints: result.hints,
+    };
+  }
+
+  return {
+    data: transformPullRequestResult(result, query, parseProjectId),
+    status: 200,
+    provider: 'github',
+  };
+}
