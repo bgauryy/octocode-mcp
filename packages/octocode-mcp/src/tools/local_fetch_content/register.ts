@@ -6,6 +6,7 @@ import {
   LOCAL_FETCH_CONTENT_DESCRIPTION,
 } from './scheme.js';
 import { executeFetchContent } from './execution.js';
+import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
 
 /**
  * Register the local fetch content tool with the MCP server.
@@ -25,6 +26,6 @@ export function registerLocalFetchContentTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    executeFetchContent
+    withBasicSecurityValidation(executeFetchContent)
   );
 }

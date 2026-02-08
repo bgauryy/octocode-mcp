@@ -62,7 +62,7 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
   };
 }
 
-export function withBasicSecurityValidation<T extends Record<string, unknown>>(
+export function withBasicSecurityValidation<T extends object>(
   toolHandler: (sanitizedArgs: T) => Promise<CallToolResult>
 ): (args: unknown) => Promise<CallToolResult> {
   return async (args: unknown): Promise<CallToolResult> => {

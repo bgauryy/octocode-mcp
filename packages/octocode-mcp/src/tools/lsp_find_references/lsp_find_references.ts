@@ -38,6 +38,8 @@ import { getHints } from '../../hints/index.js';
 import { STATIC_TOOL_NAMES } from '../toolNames.js';
 import { ToolErrors } from '../../errorCodes.js';
 import { executeFindReferences } from './execution.js';
+import { RipgrepMatchOnlySchema } from '../../utils/parsers/schemas.js';
+import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
 
 // Lazy-load exec to avoid module-level dependency on child_process
 // which can cause issues with test mocks
@@ -66,7 +68,7 @@ export function registerLSPFindReferencesTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    executeFindReferences
+    withBasicSecurityValidation(executeFindReferences)
   );
 }
 
@@ -500,7 +502,10 @@ async function searchReferencesInWorkspace(
 
     for (const line of lines) {
       try {
-        const parsed = JSON.parse(line);
+        const raw = JSON.parse(line);
+        const validation = RipgrepMatchOnlySchema.safeParse(raw);
+        if (!validation.success) continue;
+        const parsed = validation.data;
         if (parsed.type === 'match') {
           const match = parsed.data;
           const filePath = match.path.text;

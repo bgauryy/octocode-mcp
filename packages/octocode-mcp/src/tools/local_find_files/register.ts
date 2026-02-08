@@ -3,6 +3,7 @@ import type { AnySchema } from '../../types/toolTypes.js';
 import { TOOL_NAMES } from '../toolMetadata.js';
 import { BulkFindFilesSchema, LOCAL_FIND_FILES_DESCRIPTION } from './scheme.js';
 import { executeFindFiles } from './execution.js';
+import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
 
 /**
  * Register the local find files tool with the MCP server.
@@ -22,6 +23,6 @@ export function registerLocalFindFilesTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    executeFindFiles
+    withBasicSecurityValidation(executeFindFiles)
   );
 }

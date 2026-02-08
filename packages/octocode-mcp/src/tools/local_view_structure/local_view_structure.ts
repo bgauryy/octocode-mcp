@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { executeViewStructure } from './execution.js';
 import type { AnySchema } from '../../types/toolTypes.js';
+import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
 import { LsCommandBuilder } from '../../commands/LsCommandBuilder.js';
 import {
   safeExec,
@@ -51,7 +52,7 @@ export function registerLocalViewStructureTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    executeViewStructure
+    withBasicSecurityValidation(executeViewStructure)
   );
 }
 

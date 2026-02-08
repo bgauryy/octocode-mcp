@@ -7,7 +7,7 @@
  *
  *   INPUT  (LLM → tool):
  *     - GitHub tools:  withSecurityValidation → ContentSanitizer.validateInputParameters
- *     - Local tools:   NO withSecurityValidation wrapper (inputs not sanitized!)
+ *     - Local tools:   withBasicSecurityValidation → ContentSanitizer.validateInputParameters
  *
  *   OUTPUT (tool → LLM):
  *     - All tools → executeBulkOperation → createResponseFormat → sanitizeText
@@ -25,6 +25,7 @@ import { describe, it, expect } from 'vitest';
 import { ContentSanitizer } from '../../src/security/contentSanitizer.js';
 import { maskSensitiveData } from '../../src/security/mask.js';
 import { createResponseFormat } from '../../src/responses.js';
+import { withBasicSecurityValidation } from '../../src/security/withSecurityValidation.js';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // SECTION 1: OUTPUT Sanitization – createResponseFormat Pipeline
@@ -476,15 +477,16 @@ describe('SAN-04: Input Validation – validateInputParameters', () => {
 
 describe('SAN-05: Architecture – Security Wrapper Coverage', () => {
   /**
-   * CRITICAL ARCHITECTURAL FINDING:
+   * ARCHITECTURE:
    *
    * - GitHub tools: Wrapped with withSecurityValidation → inputs ARE sanitized
-   * - Local tools: NOT wrapped with withSecurityValidation → inputs NOT sanitized
+   * - Local tools: Wrapped with withBasicSecurityValidation → inputs ARE sanitized
+   * - LSP tools:   Wrapped with withBasicSecurityValidation → inputs ARE sanitized
    *
-   * However, ALL tools pass through createResponseFormat on OUTPUT,
+   * ALL tools pass through createResponseFormat on OUTPUT,
    * which applies ContentSanitizer + maskSensitiveData.
    *
-   * Local tools have separate protections:
+   * Local tools have additional protections:
    * - Path validation via validateToolPath (prevents filesystem escapes)
    * - Command validation via validateCommand (prevents injection)
    * - Ignored path filtering (prevents reading sensitive files)
@@ -727,6 +729,155 @@ describe('SAN-07: Edge Cases & Bypass Attempts', () => {
         data: { content: undefined },
       });
       expect(result).toBeDefined();
+    });
+  });
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SECTION 8: withBasicSecurityValidation Integration
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+describe('SAN-08: withBasicSecurityValidation – Local Tool Integration', () => {
+  /**
+   * Tests that withBasicSecurityValidation correctly wraps tool handlers,
+   * rejecting dangerous inputs before they reach the execution function.
+   */
+
+  function getTextContent(result: {
+    content: Array<{ type: string; text?: string }>;
+  }): string {
+    const item = result.content[0]!;
+    expect(item.type).toBe('text');
+    return (item as { type: 'text'; text: string }).text;
+  }
+
+  describe('Prototype pollution keys are rejected', () => {
+    it('should reject __proto__ key in input', async () => {
+      const mockHandler = async (args: Record<string, unknown>) => ({
+        content: [{ type: 'text' as const, text: JSON.stringify(args) }],
+      });
+      const wrapped = withBasicSecurityValidation(mockHandler);
+
+      const params = { normal: 'value' };
+      Object.defineProperty(params, '__proto__', {
+        value: { admin: true },
+        enumerable: true,
+      });
+
+      const result = await wrapped(params);
+      expect(getTextContent(result)).toContain('Security validation failed');
+      expect(result.isError).toBe(true);
+    });
+
+    it('should reject constructor key in input', async () => {
+      const mockHandler = async (args: Record<string, unknown>) => ({
+        content: [{ type: 'text' as const, text: JSON.stringify(args) }],
+      });
+      const wrapped = withBasicSecurityValidation(mockHandler);
+
+      const result = await wrapped({ constructor: 'evil' });
+      expect(getTextContent(result)).toContain('Security validation failed');
+      expect(result.isError).toBe(true);
+    });
+
+    it('should reject prototype key in input', async () => {
+      const mockHandler = async (args: Record<string, unknown>) => ({
+        content: [{ type: 'text' as const, text: JSON.stringify(args) }],
+      });
+      const wrapped = withBasicSecurityValidation(mockHandler);
+
+      const result = await wrapped({ prototype: 'evil' });
+      expect(getTextContent(result)).toContain('Security validation failed');
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe('Oversized strings are truncated before execution', () => {
+    it('should truncate strings over 10,000 chars', async () => {
+      let receivedArgs: Record<string, unknown> | undefined;
+      const mockHandler = async (args: Record<string, unknown>) => {
+        receivedArgs = args;
+        return {
+          content: [{ type: 'text' as const, text: 'ok' }],
+        };
+      };
+      const wrapped = withBasicSecurityValidation(mockHandler);
+
+      const longString = 'x'.repeat(15000);
+      await wrapped({ pattern: longString });
+
+      expect(receivedArgs).toBeDefined();
+      expect((receivedArgs!['pattern'] as string).length).toBe(10000);
+    });
+  });
+
+  describe('Secrets in input params are redacted', () => {
+    it('should redact secrets in string params before execution', async () => {
+      let receivedArgs: Record<string, unknown> | undefined;
+      const mockHandler = async (args: Record<string, unknown>) => {
+        receivedArgs = args;
+        return {
+          content: [{ type: 'text' as const, text: 'ok' }],
+        };
+      };
+      const wrapped = withBasicSecurityValidation(mockHandler);
+
+      await wrapped({
+        pattern: 'search for sk_live_abcdefghijklmnopqrstuvwx in code',
+      });
+
+      expect(receivedArgs).toBeDefined();
+      expect(receivedArgs!['pattern'] as string).not.toContain(
+        'sk_live_abcdefghijklmnopqrstuvwx'
+      );
+    });
+  });
+
+  describe('Clean inputs pass through to handler', () => {
+    it('should pass clean params to the handler unchanged', async () => {
+      let receivedArgs: Record<string, unknown> | undefined;
+      const mockHandler = async (args: Record<string, unknown>) => {
+        receivedArgs = args;
+        return {
+          content: [{ type: 'text' as const, text: 'ok' }],
+        };
+      };
+      const wrapped = withBasicSecurityValidation(mockHandler);
+
+      await wrapped({
+        queries: [{ pattern: 'function hello', path: '/src' }],
+      });
+
+      expect(receivedArgs).toBeDefined();
+      const queries = receivedArgs!['queries'] as Array<
+        Record<string, unknown>
+      >;
+      expect(queries[0]!['pattern']).toBe('function hello');
+      expect(queries[0]!['path']).toBe('/src');
+    });
+  });
+
+  describe('Invalid input is rejected', () => {
+    it('should reject null input', async () => {
+      const mockHandler = async (args: Record<string, unknown>) => ({
+        content: [{ type: 'text' as const, text: JSON.stringify(args) }],
+      });
+      const wrapped = withBasicSecurityValidation(mockHandler);
+
+      const result = await wrapped(null);
+      expect(getTextContent(result)).toContain('Security validation failed');
+      expect(result.isError).toBe(true);
+    });
+
+    it('should reject non-object input', async () => {
+      const mockHandler = async (args: Record<string, unknown>) => ({
+        content: [{ type: 'text' as const, text: JSON.stringify(args) }],
+      });
+      const wrapped = withBasicSecurityValidation(mockHandler);
+
+      const result = await wrapped('string input');
+      expect(getTextContent(result)).toContain('Security validation failed');
+      expect(result.isError).toBe(true);
     });
   });
 });
