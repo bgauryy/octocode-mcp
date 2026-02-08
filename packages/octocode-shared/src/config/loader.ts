@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { HOME } from '../platform/index.js';
 import type { OctocodeConfig, LoadConfigResult } from './types.js';
 import { CONFIG_FILE_NAME } from './types.js';
+import { OctocodeConfigSchema } from './schemas.js';
 
 // ============================================================================
 // CONSTANTS
@@ -178,22 +179,19 @@ export function loadConfigSync(): LoadConfigResult {
     // Parse JSON5-like content
     const parsed = parseJson5(content);
 
-    // Validate it's an object
-    if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      Array.isArray(parsed)
-    ) {
+    // Validate structure with Zod schema
+    const result = OctocodeConfigSchema.safeParse(parsed);
+    if (!result.success) {
       return {
         success: false,
-        error: 'Config file must be a JSON object',
+        error: `Config file has invalid structure: ${result.error.issues[0]?.message ?? 'unknown error'}`,
         path,
       };
     }
 
     return {
       success: true,
-      config: parsed as OctocodeConfig,
+      config: result.data as OctocodeConfig,
       path,
     };
   } catch (error) {

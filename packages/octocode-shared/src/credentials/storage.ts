@@ -14,6 +14,8 @@ import {
   readFileSync,
   writeFileSync,
   unlinkSync,
+  statSync,
+  chmodSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
@@ -28,6 +30,7 @@ import type {
   OAuthToken,
 } from './types.js';
 import { HOME } from '../platform/index.js';
+import { CredentialsStoreSchema } from './schemas.js';
 
 /**
  * Mask sensitive data in error messages to prevent token leakage in logs.
@@ -78,7 +81,10 @@ function isCacheValid(hostname: string): boolean {
   if (!cached) return false;
 
   const age = Date.now() - cached.cachedAt;
-  return age < CACHE_TTL_MS;
+  if (age >= CACHE_TTL_MS) return false;
+
+  // Don't serve expired tokens from cache
+  return !isTokenExpired(cached.credentials);
 }
 
 /**
@@ -188,6 +194,11 @@ function getOrCreateKey(): Buffer {
   ensureOctocodeDir();
 
   if (existsSync(KEY_FILE)) {
+    // Verify key file permissions are not too permissive (group/others should have no access)
+    const mode = statSync(KEY_FILE).mode & 0o777;
+    if (mode & 0o077) {
+      chmodSync(KEY_FILE, 0o600);
+    }
     return Buffer.from(readFileSync(KEY_FILE, 'utf8'), 'hex');
   }
 
@@ -257,7 +268,16 @@ export function readCredentialsStore(): CredentialsStore {
   try {
     const encryptedContent = readFileSync(CREDENTIALS_FILE, 'utf8');
     const decrypted = decrypt(encryptedContent);
-    return JSON.parse(decrypted) as CredentialsStore;
+    const parsed = JSON.parse(decrypted);
+    const result = CredentialsStoreSchema.safeParse(parsed);
+    if (!result.success) {
+      console.error(
+        '\n  ⚠ Warning: Credentials file has invalid format. Starting fresh.'
+      );
+      console.error(`  File: ${CREDENTIALS_FILE}`);
+      return { version: 1, credentials: {} };
+    }
+    return result.data;
   } catch (error) {
     // Credentials file is corrupted or key changed - warn user
     console.error(

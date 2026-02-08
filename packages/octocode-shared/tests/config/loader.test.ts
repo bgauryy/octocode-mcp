@@ -162,7 +162,7 @@ describe('config/loader', () => {
       const result = loadConfigSync();
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Config file must be a JSON object');
+      expect(result.error).toContain('Config file has invalid structure');
     });
 
     it('returns error for array config', () => {
@@ -172,7 +172,39 @@ describe('config/loader', () => {
       const result = loadConfigSync();
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Config file must be a JSON object');
+      expect(result.error).toContain('Config file has invalid structure');
+    });
+
+    it('returns error for null config', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('null');
+
+      const result = loadConfigSync();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Config file has invalid structure');
+    });
+
+    it('returns error when version is not an integer', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('{"version": 1.5}');
+
+      const result = loadConfigSync();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Config file has invalid structure');
+    });
+
+    it('accepts config with unknown extra keys via passthrough', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        '{"version": 1, "customKey": "value"}'
+      );
+
+      const result = loadConfigSync();
+
+      expect(result.success).toBe(true);
+      expect(result.config?.version).toBe(1);
     });
   });
 

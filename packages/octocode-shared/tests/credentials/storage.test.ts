@@ -32,6 +32,8 @@ vi.mock('node:fs', () => ({
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
   unlinkSync: vi.fn(),
+  statSync: vi.fn(),
+  chmodSync: vi.fn(),
 }));
 
 // Mock crypto module - Provides predictable encryption for tests
@@ -102,6 +104,11 @@ describe('Token Storage', () => {
 
     // Setup crypto mocks
     vi.mocked(crypto.randomBytes).mockReturnValue(mockIv as unknown as void);
+
+    // Default statSync mock: key file has correct permissions (0o600)
+    vi.mocked(fs.statSync).mockReturnValue({
+      mode: 0o100600,
+    } as ReturnType<typeof fs.statSync>);
   });
 
   afterEach(() => {
@@ -2037,7 +2044,7 @@ describe('Token Storage', () => {
           type: 'token',
           tokenType: 'oauth',
         },
-      } as unknown as ReturnType<typeof mockRefreshToken>);
+      } as unknown as Awaited<ReturnType<typeof mockRefreshToken>>);
 
       const { refreshAuthToken, _resetCredentialsCache } =
         await import('../../src/credentials/storage.js');
@@ -2148,7 +2155,9 @@ describe('Token Storage', () => {
       );
 
       // Mock to capture the baseUrl
-      vi.mocked(mockRequest.defaults).mockReturnValue(vi.fn());
+      vi.mocked(mockRequest.defaults).mockReturnValue(
+        vi.fn() as unknown as ReturnType<typeof mockRequest.defaults>
+      );
       vi.mocked(mockRefreshToken).mockRejectedValue(new Error('Expected'));
 
       const { refreshAuthToken, _resetCredentialsCache } =
@@ -2244,7 +2253,7 @@ describe('Token Storage', () => {
           type: 'token',
           tokenType: 'oauth',
         },
-      } as unknown as ReturnType<typeof mockRefreshToken>);
+      } as unknown as Awaited<ReturnType<typeof mockRefreshToken>>);
 
       const { getTokenWithRefresh, _resetCredentialsCache } =
         await import('../../src/credentials/storage.js');
@@ -2686,6 +2695,282 @@ describe('Token Storage', () => {
       const stats = _getCacheStats();
       expect(stats.size).toBe(1);
       expect(stats.entries[0].hostname).toBe('github.enterprise.com');
+    });
+
+    it('should not serve expired tokens from cache even within TTL', async () => {
+      // Create credentials with a token that expires in 2 minutes (within 5-min buffer = expired)
+      const nearFuture = new Date(Date.now() + 2 * 60 * 1000);
+      const credentials = createMockCredentials({
+        token: {
+          token: 'ghp_EXPIRING_TOKEN_000000000000000000',
+          tokenType: 'oauth' as const,
+          expiresAt: nearFuture.toISOString(),
+        },
+      });
+      const store = {
+        version: 1,
+        credentials: { 'github.com': credentials },
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { getCredentials, _resetCredentialsCache, _getCacheStats } =
+        await import('../../src/credentials/storage.js');
+
+      _resetCredentialsCache();
+
+      // First call populates cache
+      await getCredentials('github.com');
+      expect(_getCacheStats().size).toBe(1);
+
+      // Cache entry exists but should be invalid due to expired token
+      const stats = _getCacheStats();
+      expect(stats.entries[0].valid).toBe(false);
+
+      // Second call should re-read from storage (not serve stale cache)
+      vi.mocked(crypto.createDecipheriv).mockClear();
+      await getCredentials('github.com');
+      expect(crypto.createDecipheriv).toHaveBeenCalled();
+    });
+  });
+
+  describe('Key File Permissions', () => {
+    it('should fix key file permissions if too permissive', async () => {
+      // Mock key file exists with permissive mode (0o644)
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      // statSync returns permissive mode (0o644 = owner rw, group r, others r)
+      const { statSync, chmodSync } = await import('node:fs');
+      vi.mocked(statSync).mockReturnValue({
+        mode: 0o100644,
+      } as ReturnType<typeof statSync>);
+
+      const mockDecipher = {
+        update: vi
+          .fn()
+          .mockReturnValue(JSON.stringify({ version: 1, credentials: {} })),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { readCredentialsStore } =
+        await import('../../src/credentials/storage.js');
+
+      readCredentialsStore();
+
+      // chmodSync should have been called to fix permissions
+      expect(chmodSync).toHaveBeenCalledWith(
+        expect.stringContaining('.key'),
+        0o600
+      );
+    });
+
+    it('should not call chmod when key file has correct permissions', async () => {
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      // statSync returns correct mode (0o600)
+      const { statSync, chmodSync } = await import('node:fs');
+      vi.mocked(statSync).mockReturnValue({
+        mode: 0o100600,
+      } as ReturnType<typeof statSync>);
+
+      const mockDecipher = {
+        update: vi
+          .fn()
+          .mockReturnValue(JSON.stringify({ version: 1, credentials: {} })),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { readCredentialsStore } =
+        await import('../../src/credentials/storage.js');
+
+      readCredentialsStore();
+
+      // chmodSync should NOT have been called
+      expect(chmodSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Credential Store Zod Validation', () => {
+    it('should reject credentials with invalid structure', async () => {
+      const invalidStore = {
+        version: 'not-a-number',
+        credentials: {},
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const { statSync } = await import('node:fs');
+      vi.mocked(statSync).mockReturnValue({
+        mode: 0o100600,
+      } as ReturnType<typeof statSync>);
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(invalidStore)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const consoleErrorSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+
+      const { readCredentialsStore } =
+        await import('../../src/credentials/storage.js');
+
+      const result = readCredentialsStore();
+
+      // Should return empty store instead of invalid data
+      expect(result).toEqual({ version: 1, credentials: {} });
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('invalid format')
+      );
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('should reject credentials with missing required fields', async () => {
+      const storeWithBadCreds = {
+        version: 1,
+        credentials: {
+          'github.com': {
+            hostname: 'github.com',
+            // missing username, token, etc.
+          },
+        },
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const { statSync } = await import('node:fs');
+      vi.mocked(statSync).mockReturnValue({
+        mode: 0o100600,
+      } as ReturnType<typeof statSync>);
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(storeWithBadCreds)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const consoleErrorSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+
+      const { readCredentialsStore } =
+        await import('../../src/credentials/storage.js');
+
+      const result = readCredentialsStore();
+
+      expect(result).toEqual({ version: 1, credentials: {} });
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('should accept valid credential store data', async () => {
+      const validStore = {
+        version: 1,
+        credentials: {
+          'github.com': createMockCredentials(),
+        },
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const { statSync } = await import('node:fs');
+      vi.mocked(statSync).mockReturnValue({
+        mode: 0o100600,
+      } as ReturnType<typeof statSync>);
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(validStore)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { readCredentialsStore } =
+        await import('../../src/credentials/storage.js');
+
+      const result = readCredentialsStore();
+
+      expect(result.version).toBe(1);
+      expect(result.credentials['github.com'].hostname).toBe('github.com');
+      expect(result.credentials['github.com'].token.token).toBe(
+        'ghp_MOCK_TOKEN_00000000000000000000'
+      );
     });
   });
 });
