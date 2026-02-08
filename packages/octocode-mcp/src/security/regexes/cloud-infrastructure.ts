@@ -4,7 +4,7 @@ export const awsPatterns: SensitiveDataPattern[] = [
   {
     name: 'awsAccessKeyId',
     description: 'AWS access key ID',
-    regex: /\b((?:AKIA|ABIA|ACCA)[A-Z0-9]{16})\b/g,
+    regex: /\b((?:AKIA|ABIA|ACCA|ASIA)[A-Z0-9]{16})\b/g,
     matchAccuracy: 'high',
   },
   {
@@ -80,7 +80,8 @@ export const analyticsModernPatterns: SensitiveDataPattern[] = [
   {
     name: 'vercelToken',
     description: 'Vercel API token',
-    regex: /\bvercel_[a-zA-Z0-9]{24}\b/g,
+    regex: /\bvercel_[a-zA-Z0-9]{24,}\b/g,
+    matchAccuracy: 'high',
   },
   {
     name: 'posthogApiKey',
@@ -110,17 +111,11 @@ export const analyticsModernPatterns: SensitiveDataPattern[] = [
 ];
 
 export const cloudProviderPatterns: SensitiveDataPattern[] = [
-  // Google Cloud Platform
+  // Google Cloud Platform / Google AI (consolidated - covers GCP, Gemini, YouTube, Maps, etc.)
   {
     name: 'googleApiKey',
-    description: 'Google API key',
+    description: 'Google API key (GCP, Gemini, Maps, YouTube, etc.)',
     regex: /\bAIza[a-zA-Z0-9_-]{30,}\b/g,
-    matchAccuracy: 'high',
-  },
-  {
-    name: 'googleAiApiKey',
-    description: 'Google AI API key',
-    regex: /\bAIza[0-9A-Za-z_-]{30,}\b/g,
     matchAccuracy: 'high',
   },
   {
@@ -152,8 +147,17 @@ export const cloudProviderPatterns: SensitiveDataPattern[] = [
     name: 'azureSubscriptionId',
     description: 'Azure subscription ID',
     regex:
-      /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.onmicrosoft\.com\b/g,
+      /\b['"]?(?:AZURE|azure)?_?(?:SUBSCRIPTION|subscription)_?(?:ID|id)?['"]?\s*(?::|=>|=)\s*['"]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}['"]?\b/gi,
     matchAccuracy: 'high',
+    fileContext: /(?:\.env|config|settings|secrets)/i,
+  },
+  {
+    name: 'azureTenantDomain',
+    description: 'Azure tenant domain (onmicrosoft.com)',
+    regex:
+      /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.onmicrosoft\.com\b/gi,
+    matchAccuracy: 'medium',
+    fileContext: /(?:\.env|config|settings|secrets)/i,
   },
   {
     name: 'azureCosmosDbConnectionString',
@@ -226,19 +230,7 @@ export const cloudProviderPatterns: SensitiveDataPattern[] = [
   },
 
   // Communication Platforms
-  {
-    name: 'discordBotToken',
-    description: 'Discord bot token',
-    regex: /\b[MN][A-Za-z\d]{23}\.[\w-]{6}\.[\w-]{27}\b/g,
-    matchAccuracy: 'high',
-  },
-  {
-    name: 'discordWebhookUrl',
-    description: 'Discord webhook URL',
-    regex:
-      /\bhttps:\/\/discord\.com\/api\/webhooks\/[0-9]{18}\/[A-Za-z0-9_-]{68}\b/g,
-    matchAccuracy: 'high',
-  },
+  // NOTE: Discord bot token & webhook URL patterns are in communications.ts (discordSocialBotToken, discordSocialWebhookUrl)
   {
     name: 'telegramBotToken',
     description: 'Telegram bot token',
@@ -443,6 +435,62 @@ export const cloudProviderPatterns: SensitiveDataPattern[] = [
     regex: /\bsha256~[\w-]{43}\b/g,
     matchAccuracy: 'high',
   },
+
+  // --- New Cloud Provider Patterns ---
+
+  // Deno Deploy Access Token
+  {
+    name: 'denoDeployToken',
+    description: 'Deno Deploy access token',
+    regex: /\bddp_[a-zA-Z0-9]{40}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Resend API Key
+  {
+    name: 'resendApiKey',
+    description: 'Resend email API key',
+    regex: /\bre_[a-zA-Z0-9]{30,}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Azure OpenAI API Key
+  {
+    name: 'azureOpenaiApiKey',
+    description: 'Azure OpenAI API key',
+    regex:
+      /\b['"]?(?:AZURE_OPENAI|azure_openai)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{32}['"]?\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Railway API Token
+  {
+    name: 'railwayApiToken',
+    description: 'Railway API token',
+    regex:
+      /\b['"]?(?:RAILWAY|railway)_?(?:API|api)?_?(?:TOKEN|token)['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}['"]?\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Convex Deploy Key
+  {
+    name: 'convexDeployKey',
+    description: 'Convex deployment key',
+    regex: /\b(?:prod|dev):[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]{40,}\b/g,
+    matchAccuracy: 'medium',
+  },
+  // Upstash Kafka
+  {
+    name: 'upstashKafkaCredentials',
+    description: 'Upstash Kafka REST credentials',
+    regex:
+      /\b['"]?(?:UPSTASH_KAFKA)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9=_-]{40,}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Cloudflare Workers API Token (distinct prefix format)
+  {
+    name: 'cloudflareApiTokenPrefixed',
+    description: 'Cloudflare Access team domain (not API token)',
+    regex: /\b[A-Za-z0-9_-]{40}\.cloudflareaccess\.com\b/g,
+    matchAccuracy: 'high',
+    fileContext: /(?:\.env|config|settings|secrets)/i,
+  },
 ];
 
 export const databasePatterns: SensitiveDataPattern[] = [
@@ -459,20 +507,29 @@ export const databasePatterns: SensitiveDataPattern[] = [
     regex: /\bmysql:\/\/[^:]+:[^@]+@[^/\s]+\/[^?\s]+\b/gi,
     matchAccuracy: 'high',
   },
+  {
+    name: 'jdbcConnectionStringWithCredentials',
+    description: 'JDBC connection string with embedded credentials',
+    regex: /\bjdbc:(?:postgresql|mysql):\/\/[^:]+:[^@]+@[^/\s]+\b/gi,
+    matchAccuracy: 'medium',
+    fileContext: /(?:\.env|config|settings|secrets)/i,
+  },
 
   // NoSQL Databases
   {
     name: 'mongodbConnectionString',
-    description: 'MongoDB connection string with credentials',
+    description:
+      'MongoDB connection string with credentials (incl. mongodb+srv://)',
     regex:
-      /\bmongodb:\/\/[a-zA-Z0-9._-]+:[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:[0-9]+\/[a-zA-Z0-9._-]+\b/g,
+      /\bmongodb(?:\+srv)?:\/\/[a-zA-Z0-9._%-]+:[a-zA-Z0-9._%-]+@[a-zA-Z0-9._-]+(?::[0-9]+)?(?:\/[a-zA-Z0-9._-]*)?\b/g,
     matchAccuracy: 'high',
   },
   {
     name: 'redisConnectionString',
-    description: 'Redis connection string with credentials',
+    description:
+      'Redis connection string with credentials (incl. rediss:// TLS)',
     regex:
-      /\bredis:\/\/[a-zA-Z0-9._-]+:[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:[0-9]+\b/g,
+      /\brediss?:\/\/[a-zA-Z0-9._%-]+:[a-zA-Z0-9._%-]+@[a-zA-Z0-9._-]+:[0-9]+\b/g,
     matchAccuracy: 'high',
   },
   {
@@ -585,5 +642,21 @@ export const databasePatterns: SensitiveDataPattern[] = [
     regex:
       /\b['"]?(?:upstash)(?:[\s\w.-]{0,20})(?:token|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9=]{40,}['"]?\b/gi,
     matchAccuracy: 'medium',
+  },
+  // Supabase JWT (anon/service_role keys are JWTs starting with eyJ)
+  {
+    name: 'supabaseJwtKey',
+    description: 'Supabase anon or service_role key (JWT format)',
+    regex:
+      /\b['"]?(?:SUPABASE|supabase)_?(?:ANON|SERVICE_ROLE|anon|service_role)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(eyJ[a-zA-Z0-9_-]{100,})['"]?\b/g,
+    matchAccuracy: 'high',
+  },
+  // CockroachDB connection string
+  {
+    name: 'cockroachdbConnectionString',
+    description: 'CockroachDB connection string with credentials',
+    regex:
+      /\bpostgresql:\/\/[^:]+:[^@]+@[^/\s]*cockroachlabs\.cloud[^?\s]*\b/gi,
+    matchAccuracy: 'high',
   },
 ];

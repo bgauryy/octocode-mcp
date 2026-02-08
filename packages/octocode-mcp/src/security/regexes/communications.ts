@@ -33,6 +33,14 @@ export const slackPatterns: SensitiveDataPattern[] = [
       /(?:https?:\/\/)?hooks\.slack\.com\/(?:services|workflows|triggers)\/[A-Za-z0-9+/]{43,56}/gi,
     matchAccuracy: 'high',
   },
+  {
+    name: 'slackWebhookUrlClassic',
+    description: 'Slack classic incoming webhook URL',
+    regex:
+      /\bhttps:\/\/hooks\.slack\.com\/services\/[A-Z0-9]{8,12}\/[A-Z0-9]{8,12}\/[A-Za-z0-9]{20,32}\b/g,
+    matchAccuracy: 'high',
+    fileContext: /(?:\.env|config|settings|secrets)/i,
+  },
   // Slack App Token
   {
     name: 'slackAppToken',
@@ -93,6 +101,49 @@ export const slackPatterns: SensitiveDataPattern[] = [
     description: 'Sendinblue (Brevo) API token',
     regex: /\bxkeysib-[a-f0-9]{64}-[a-z0-9]{16}\b/g,
     matchAccuracy: 'high',
+  },
+
+  // --- New Communication Patterns ---
+
+  // Pusher App Secret
+  {
+    name: 'pusherAppSecret',
+    description: 'Pusher app secret',
+    regex:
+      /\b['"]?(?:PUSHER|pusher)_?(?:APP|app)?_?(?:SECRET|secret)['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{20}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Stream Chat/Activity API Secret
+  {
+    name: 'streamApiSecret',
+    description: 'Stream (GetStream.io) API secret',
+    regex:
+      /\b['"]?(?:STREAM|stream|GETSTREAM)_?(?:API|api)?_?(?:SECRET|secret|KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{40,}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Postmark Server Token
+  {
+    name: 'postmarkServerToken',
+    description: 'Postmark server API token',
+    regex: /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g,
+    matchAccuracy: 'medium',
+    fileContext: /postmark/i,
+  },
+  // Vonage / Nexmo API Secret
+  {
+    name: 'vonageApiSecret',
+    description: 'Vonage/Nexmo API secret',
+    regex:
+      /\b['"]?(?:VONAGE|NEXMO|vonage|nexmo)_?(?:API|api)?_?(?:SECRET|secret)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{16}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Customer.io API Key
+  {
+    name: 'customerIoApiKey',
+    description: 'Customer.io API key',
+    regex:
+      /\b['"]?(?:CUSTOMERIO|customer_io|CUSTOMER_IO)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{32,}['"]?\b/gi,
+    matchAccuracy: 'medium',
   },
 ];
 

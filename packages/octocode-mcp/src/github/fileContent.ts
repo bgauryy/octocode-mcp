@@ -575,7 +575,10 @@ async function processFileContentAPI(
   }
 
   // NOW sanitize the OUTPUT content (after extraction, before return)
-  const sanitizationResult = ContentSanitizer.sanitizeContent(finalContent);
+  const sanitizationResult = ContentSanitizer.sanitizeContent(
+    finalContent,
+    filePath
+  );
   finalContent = sanitizationResult.content;
 
   if (sanitizationResult.hasSecrets) {

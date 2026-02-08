@@ -2,6 +2,9 @@ import { defineConfig } from 'vitest/config';
 import { readFileSync } from 'fs';
 
 export default defineConfig({
+  esbuild: { sourcemap: false },
+  build: { sourcemap: false },
+  server: { sourcemapIgnoreList: () => true },
   test: {
     environment: 'node',
     globals: true,

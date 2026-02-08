@@ -197,13 +197,17 @@ describe('config/validator', () => {
       it('rejects non-object tools', () => {
         const result = validateConfig({ tools: 'invalid' });
         expect(result.valid).toBe(false);
-        expect(result.errors.some(e => e.includes('tools: Must be an object'))).toBe(true);
+        expect(
+          result.errors.some(e => e.includes('tools: Must be an object'))
+        ).toBe(true);
       });
 
       it('rejects array tools', () => {
         const result = validateConfig({ tools: [] });
         expect(result.valid).toBe(false);
-        expect(result.errors.some(e => e.includes('tools: Must be an object'))).toBe(true);
+        expect(
+          result.errors.some(e => e.includes('tools: Must be an object'))
+        ).toBe(true);
       });
     });
 
@@ -277,7 +281,9 @@ describe('config/validator', () => {
           lsp: { configPath: 123 },
         });
         expect(result.valid).toBe(false);
-        expect(result.errors.some(e => e.includes('lsp.configPath'))).toBe(true);
+        expect(result.errors.some(e => e.includes('lsp.configPath'))).toBe(
+          true
+        );
       });
     });
 
@@ -330,9 +336,9 @@ describe('config/validator', () => {
           local: { workspaceRoot: 123 },
         });
         expect(result.valid).toBe(false);
-        expect(
-          result.errors.some(e => e.includes('local.workspaceRoot'))
-        ).toBe(true);
+        expect(result.errors.some(e => e.includes('local.workspaceRoot'))).toBe(
+          true
+        );
       });
 
       it('accepts valid workspaceRoot string', () => {
@@ -347,9 +353,9 @@ describe('config/validator', () => {
           local: { allowedPaths: [123, '/valid/path'] },
         });
         expect(result.valid).toBe(false);
-        expect(
-          result.errors.some(e => e.includes('local.allowedPaths'))
-        ).toBe(true);
+        expect(result.errors.some(e => e.includes('local.allowedPaths'))).toBe(
+          true
+        );
       });
 
       it('rejects non-object local', () => {
@@ -451,12 +457,12 @@ describe('config/validator', () => {
       });
 
       it('accepts valid boolean logging', () => {
-        expect(
-          validateConfig({ telemetry: { logging: true } }).valid
-        ).toBe(true);
-        expect(
-          validateConfig({ telemetry: { logging: false } }).valid
-        ).toBe(true);
+        expect(validateConfig({ telemetry: { logging: true } }).valid).toBe(
+          true
+        );
+        expect(validateConfig({ telemetry: { logging: false } }).valid).toBe(
+          true
+        );
       });
     });
 

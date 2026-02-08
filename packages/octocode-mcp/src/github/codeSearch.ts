@@ -177,7 +177,8 @@ async function transformToOptimizedFormat(
           let processedFragment = match.fragment;
 
           const sanitizationResult = ContentSanitizer.sanitizeContent(
-            processedFragment || ''
+            processedFragment || '',
+            item.path
           );
           processedFragment = sanitizationResult.content;
 

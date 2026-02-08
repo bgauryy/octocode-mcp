@@ -198,6 +198,78 @@ export const developerToolsPatterns: SensitiveDataPattern[] = [
       /\b['"]?(?:algolia)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{32}['"]?\b/gi,
     matchAccuracy: 'medium',
   },
+
+  // --- New Developer Tools Patterns ---
+
+  // Clerk Secret Key
+  {
+    name: 'clerkSecretKey',
+    description: 'Clerk secret key',
+    regex: /\bsk_(?:live|test)_[a-zA-Z0-9]{24,}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Clerk Publishable Key
+  {
+    name: 'clerkPublishableKey',
+    description: 'Clerk publishable key',
+    regex: /\bpk_(?:live|test)_[a-zA-Z0-9]{24,}\b/g,
+    matchAccuracy: 'medium',
+  },
+  // LaunchDarkly SDK Key
+  {
+    name: 'launchdarklySdkKey',
+    description: 'LaunchDarkly SDK key',
+    regex:
+      /\bsdk-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Vercel OIDC Token
+  {
+    name: 'vercelOidcToken',
+    description: 'Vercel OIDC token',
+    regex:
+      /\b['"]?(?:VERCEL_OIDC_TOKEN)['"]?\s*(?::|=>|=)\s*['"]?eyJ[a-zA-Z0-9_-]{100,}['"]?\b/g,
+    matchAccuracy: 'high',
+  },
+  // NOTE: Turso database token pattern is in cloud-infrastructure.ts (tursoDatabaseToken) - covers both libsql and turso prefixes
+  // Novu API Key
+  {
+    name: 'novuApiKey',
+    description: 'Novu API key',
+    regex:
+      /\b['"]?(?:NOVU|novu)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{32,}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Trigger.dev API Key
+  {
+    name: 'triggerDevApiKey',
+    description: 'Trigger.dev API key',
+    regex: /\btr_(?:dev|prod)_[a-zA-Z0-9]{20,}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Nx Cloud Access Token
+  {
+    name: 'nxCloudAccessToken',
+    description: 'Nx Cloud access token',
+    regex:
+      /\b['"]?(?:NX_CLOUD_ACCESS_TOKEN|nxCloudAccessToken)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{36,}['"]?\b/g,
+    matchAccuracy: 'medium',
+  },
+  // Depot API Token
+  {
+    name: 'depotToken',
+    description: 'Depot.dev build token',
+    regex: /\bdpt_[a-zA-Z0-9]{40,}\b/g,
+    matchAccuracy: 'high',
+  },
+  // Grafbase API Key
+  {
+    name: 'grafbaseApiKey',
+    description: 'Grafbase API key',
+    regex:
+      /\b['"]?(?:GRAFBASE|grafbase)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?eyJ[a-zA-Z0-9_-]{50,}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
 ];
 
 export const versionControlPatterns: SensitiveDataPattern[] = [
@@ -225,12 +297,7 @@ export const versionControlPatterns: SensitiveDataPattern[] = [
     regex: /\bglcbt-[0-9a-zA-Z]{1,5}_[0-9a-zA-Z_-]{20}\b/g,
     matchAccuracy: 'high',
   },
-  {
-    name: 'gitlabRunnerAuthToken',
-    description: 'GitLab runner authentication token',
-    regex: /\bglrt-[0-9a-zA-Z_-]{20}\b/g,
-    matchAccuracy: 'high',
-  },
+  // NOTE: gitlabRunnerAuthToken removed - identical regex to gitlabRunnerToken above (glrt-[A-Za-z0-9_-]{20})
   {
     name: 'gitlabPipelineTriggerToken',
     description: 'GitLab pipeline trigger token',
@@ -248,6 +315,13 @@ export const versionControlPatterns: SensitiveDataPattern[] = [
     description: 'GitHub personal access token (classic)',
     regex: /\b((?:ghp|gho|ghu|ghs|ghr|github_pat)_[a-zA-Z0-9_]{36,255})\b/g,
     matchAccuracy: 'high',
+  },
+  {
+    name: 'githubFineGrainedToken',
+    description: 'GitHub fine-grained personal access token',
+    regex: /\bgithub_pat_[A-Za-z0-9_]{82}\b/g,
+    matchAccuracy: 'high',
+    fileContext: /(?:\.env|config|settings|secrets)/i,
   },
   {
     name: 'githubAppInstallationToken',
@@ -319,6 +393,12 @@ export const mappingMonitoringPatterns: SensitiveDataPattern[] = [
     name: 'mapboxSecretToken',
     description: 'Mapbox secret access token',
     regex: /\bsk\.eyJ[a-zA-Z0-9._-]{87}\b/g,
+    matchAccuracy: 'high',
+  },
+  {
+    name: 'mapboxPublicToken',
+    description: 'Mapbox public access token',
+    regex: /\bpk\.eyJ[a-zA-Z0-9._-]{80,}\b/g,
     matchAccuracy: 'high',
   },
   // Monitoring & Analytics

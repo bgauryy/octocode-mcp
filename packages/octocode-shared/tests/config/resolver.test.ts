@@ -455,10 +455,7 @@ describe('config/resolver', () => {
         process.env.ALLOWED_PATHS = '/env/path1,/env/path2';
 
         const config = resolveConfigSync();
-        expect(config.local.allowedPaths).toEqual([
-          '/env/path1',
-          '/env/path2',
-        ]);
+        expect(config.local.allowedPaths).toEqual(['/env/path1', '/env/path2']);
       });
 
       it('file overrides default', () => {
@@ -714,9 +711,7 @@ describe('config/resolver', () => {
         vi.mocked(existsSync).mockReturnValue(false);
 
         const config = resolveConfigSync();
-        expect(config.telemetry.logging).toBe(
-          DEFAULT_CONFIG.telemetry.logging
-        );
+        expect(config.telemetry.logging).toBe(DEFAULT_CONFIG.telemetry.logging);
       });
     });
 
