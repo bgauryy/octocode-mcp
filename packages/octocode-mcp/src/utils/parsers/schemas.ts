@@ -1,0 +1,111 @@
+/**
+ * Zod schemas for ripgrep JSON output validation.
+ *
+ * Validates parsed ripgrep --json output before type-asserting.
+ * Used by the ripgrep parser, LSP find references, and call hierarchy tools.
+ */
+
+import { z } from 'zod';
+
+// ============================================================================
+// RIPGREP JSON MESSAGE SCHEMAS
+// ============================================================================
+
+const RipgrepPathSchema = z.object({ text: z.string() });
+
+const RipgrepSubmatchSchema = z.object({
+  match: z.object({ text: z.string() }).optional(),
+  start: z.number(),
+  end: z.number(),
+});
+
+export const RipgrepJsonMatchSchema = z.object({
+  type: z.literal('match'),
+  data: z.object({
+    path: RipgrepPathSchema,
+    lines: z.object({ text: z.string() }),
+    line_number: z.number(),
+    absolute_offset: z.number(),
+    submatches: z.array(RipgrepSubmatchSchema),
+  }),
+});
+
+export const RipgrepJsonContextSchema = z.object({
+  type: z.literal('context'),
+  data: z.object({
+    path: RipgrepPathSchema,
+    lines: z.object({ text: z.string() }),
+    line_number: z.number(),
+    absolute_offset: z.number(),
+  }),
+});
+
+export const RipgrepJsonBeginSchema = z.object({
+  type: z.literal('begin'),
+  data: z.object({ path: RipgrepPathSchema }),
+});
+
+export const RipgrepJsonEndSchema = z.object({
+  type: z.literal('end'),
+  data: z.object({
+    path: RipgrepPathSchema,
+    stats: z
+      .object({
+        elapsed: z.object({ human: z.string() }),
+        searches: z.number(),
+        searches_with_match: z.number(),
+      })
+      .optional(),
+  }),
+});
+
+export const RipgrepJsonSummarySchema = z.object({
+  type: z.literal('summary'),
+  data: z.object({
+    elapsed_total: z.object({ human: z.string() }),
+    stats: z.object({
+      elapsed: z.object({ human: z.string() }),
+      searches: z.number(),
+      searches_with_match: z.number(),
+      bytes_searched: z.number(),
+      bytes_printed: z.number(),
+      matched_lines: z.number(),
+      matches: z.number(),
+    }),
+  }),
+});
+
+/**
+ * Validates any ripgrep JSON message line.
+ * Use safeParse() to validate individual lines from --json output.
+ */
+export const RipgrepJsonMessageSchema = z.discriminatedUnion('type', [
+  RipgrepJsonMatchSchema,
+  RipgrepJsonContextSchema,
+  RipgrepJsonBeginSchema,
+  RipgrepJsonEndSchema,
+  RipgrepJsonSummarySchema,
+]);
+
+export type ValidatedRipgrepJsonMessage = z.infer<
+  typeof RipgrepJsonMessageSchema
+>;
+
+/**
+ * Lightweight schema for ripgrep match-only parsing.
+ * Used by LSP tools that only care about match entries.
+ * Permissive on submatches — only requires `start` (some contexts omit `end`/`match`).
+ */
+export const RipgrepMatchOnlySchema = z.object({
+  type: z.literal('match'),
+  data: z.object({
+    path: z.object({ text: z.string() }),
+    lines: z.object({ text: z.string() }),
+    line_number: z.number(),
+    submatches: z
+      .array(z.object({ start: z.number() }).passthrough())
+      .optional(),
+  }),
+});
+
+export type ValidatedRipgrepMatch = z.infer<typeof RipgrepMatchOnlySchema>;

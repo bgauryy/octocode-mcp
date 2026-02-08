@@ -2862,8 +2862,8 @@ describe('Token Storage', () => {
         mockDecipher as unknown as crypto.DecipherGCM
       );
 
-      const consoleErrorSpy = vi
-        .spyOn(console, 'error')
+      const consoleWarnSpy = vi
+        .spyOn(console, 'warn')
         .mockImplementation(() => {});
 
       const { readCredentialsStore } =
@@ -2873,11 +2873,13 @@ describe('Token Storage', () => {
 
       // Should return empty store instead of invalid data
       expect(result).toEqual({ version: 1, credentials: {} });
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('invalid format')
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        '[token-storage]',
+        'Credentials file has invalid format — starting fresh',
+        expect.objectContaining({ file: expect.any(String) })
       );
 
-      consoleErrorSpy.mockRestore();
+      consoleWarnSpy.mockRestore();
     });
 
     it('should reject credentials with missing required fields', async () => {
@@ -2915,8 +2917,8 @@ describe('Token Storage', () => {
         mockDecipher as unknown as crypto.DecipherGCM
       );
 
-      const consoleErrorSpy = vi
-        .spyOn(console, 'error')
+      const consoleWarnSpy = vi
+        .spyOn(console, 'warn')
         .mockImplementation(() => {});
 
       const { readCredentialsStore } =
@@ -2926,7 +2928,7 @@ describe('Token Storage', () => {
 
       expect(result).toEqual({ version: 1, credentials: {} });
 
-      consoleErrorSpy.mockRestore();
+      consoleWarnSpy.mockRestore();
     });
 
     it('should accept valid credential store data', async () => {

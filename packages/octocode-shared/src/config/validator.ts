@@ -112,6 +112,33 @@ function validateStringArray(value: unknown, field: string): string | null {
 }
 
 /**
+ * Validate allowedPaths array elements for security.
+ * Rejects empty strings, relative paths, and path traversal attempts.
+ *
+ * @param paths - Array of path strings to validate
+ * @returns Array of error messages (empty if all valid)
+ */
+function validateAllowedPathElements(paths: unknown[]): string[] {
+  const errors: string[] = [];
+  for (let i = 0; i < paths.length; i++) {
+    const p = paths[i];
+    if (typeof p !== 'string') continue; // already caught by validateStringArray
+    if (p.trim() === '') {
+      errors.push(`local.allowedPaths[${i}]: empty or whitespace-only path`);
+    } else if (!p.startsWith('/') && !p.startsWith('~')) {
+      errors.push(
+        `local.allowedPaths[${i}]: must be absolute path or start with ~ (got "${p}")`
+      );
+    } else if (p.includes('..')) {
+      errors.push(
+        `local.allowedPaths[${i}]: path traversal (..) not allowed (got "${p}")`
+      );
+    }
+  }
+  return errors;
+}
+
+/**
  * Validate a nullable string array.
  *
  * @param value - Value to validate
@@ -194,7 +221,14 @@ function validateLocal(local: unknown, errors: string[]): void {
     loc.allowedPaths,
     'local.allowedPaths'
   );
-  if (allowedPathsError) errors.push(allowedPathsError);
+  if (allowedPathsError) {
+    errors.push(allowedPathsError);
+  } else if (Array.isArray(loc.allowedPaths)) {
+    const pathErrors = validateAllowedPathElements(
+      loc.allowedPaths as unknown[]
+    );
+    errors.push(...pathErrors);
+  }
 
   const workspaceRootError = validateString(
     loc.workspaceRoot,

@@ -13,9 +13,9 @@ import type {
   LanguageServerConfig,
   LanguageServerCommand,
   UserLanguageServerConfig,
-  LSPConfigFile,
 } from './types.js';
 import { validateLSPServerPath } from './validation.js';
+import { LSPConfigFileSchema } from './schemas.js';
 
 const require = createRequire(import.meta.url);
 
@@ -455,9 +455,15 @@ export async function loadUserConfig(
   for (const configPath of configPaths) {
     try {
       const content = await fs.readFile(configPath, 'utf-8');
-      const config: LSPConfigFile = JSON.parse(content);
+      const raw = JSON.parse(content);
+      const validation = LSPConfigFileSchema.safeParse(raw);
+      if (!validation.success) continue;
+      const config = validation.data;
       if (config.languageServers) {
-        return config.languageServers;
+        return config.languageServers as unknown as Record<
+          string,
+          UserLanguageServerConfig
+        >;
       }
     } catch {
       // Config file doesn't exist or is invalid, try next

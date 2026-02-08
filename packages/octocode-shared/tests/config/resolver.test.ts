@@ -954,5 +954,57 @@ describe('config/resolver', () => {
       expect(config.source).toBe('defaults');
       expect(config.github.apiUrl).toBe(DEFAULT_CONFIG.github.apiUrl);
     });
+
+    it('falls back to defaults when config has validation errors', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({
+          version: 1,
+          github: { apiUrl: 'not-a-valid-url' },
+          local: { enabled: true },
+        })
+      );
+
+      const config = resolveConfigSync();
+
+      // Invalid config is dropped entirely — falls back to defaults
+      expect(config.source).toBe('defaults');
+      expect(config.github.apiUrl).toBe(DEFAULT_CONFIG.github.apiUrl);
+      expect(config.local.enabled).toBe(DEFAULT_CONFIG.local.enabled);
+    });
+
+    it('loads config normally when validation has only warnings', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({
+          version: 1,
+          local: { enabled: false },
+          unknownKey: 'triggers warning but not error',
+        })
+      );
+
+      const config = resolveConfigSync();
+
+      // Warnings don't prevent config from loading
+      expect(config.source).toBe('file');
+      expect(config.local.enabled).toBe(false);
+    });
+
+    it('env overrides still apply when invalid config falls back to defaults', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({
+          version: 1,
+          network: { timeout: -999 },
+        })
+      );
+      process.env.ENABLE_LOCAL = 'false';
+
+      const config = resolveConfigSync();
+
+      // Invalid config dropped, but env override still applies
+      expect(config.local.enabled).toBe(false);
+      expect(config.network.timeout).toBe(DEFAULT_CONFIG.network.timeout);
+    });
   });
 });

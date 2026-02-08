@@ -112,3 +112,6 @@ export {
   _resetConfigCache,
   _getCacheState,
 } from './resolver.js';
+
+// Schemas
+export { OctocodeConfigSchema } from './schemas.js';

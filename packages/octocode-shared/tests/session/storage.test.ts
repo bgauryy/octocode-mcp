@@ -248,6 +248,41 @@ describe('Session Storage', () => {
       const session = readSession();
       expect(session).toBeNull();
     });
+
+    it('should return null for malformed session data (missing fields)', () => {
+      // Write session missing required fields (stats, lastActiveAt)
+      mockFileStore.set(
+        SESSION_FILE,
+        JSON.stringify({
+          version: 1,
+          sessionId: 'test-id',
+        })
+      );
+
+      _resetSessionState();
+
+      const session = readSession();
+      expect(session).toBeNull();
+    });
+
+    it('should return null for session with wrong field types', () => {
+      // Write session with stats as a string instead of object
+      mockFileStore.set(
+        SESSION_FILE,
+        JSON.stringify({
+          version: 1,
+          sessionId: 'test-id',
+          createdAt: '2026-01-09T10:00:00.000Z',
+          lastActiveAt: '2026-01-09T10:00:00.000Z',
+          stats: 'not-an-object',
+        })
+      );
+
+      _resetSessionState();
+
+      const session = readSession();
+      expect(session).toBeNull();
+    });
   });
 
   describe('incrementToolCalls', () => {

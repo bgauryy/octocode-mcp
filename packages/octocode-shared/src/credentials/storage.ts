@@ -31,6 +31,9 @@ import type {
 } from './types.js';
 import { HOME } from '../platform/index.js';
 import { CredentialsStoreSchema } from './schemas.js';
+import { createLogger } from '../logger/index.js';
+
+const logger = createLogger('token-storage');
 
 /**
  * Mask sensitive data in error messages to prevent token leakage in logs.
@@ -271,23 +274,25 @@ export function readCredentialsStore(): CredentialsStore {
     const parsed = JSON.parse(decrypted);
     const result = CredentialsStoreSchema.safeParse(parsed);
     if (!result.success) {
-      console.error(
-        '\n  ⚠ Warning: Credentials file has invalid format. Starting fresh.'
-      );
-      console.error(`  File: ${CREDENTIALS_FILE}`);
+      logger.warn('Credentials file has invalid format — starting fresh', {
+        file: CREDENTIALS_FILE,
+      });
       return { version: 1, credentials: {} };
     }
     return result.data;
   } catch (error) {
     // Credentials file is corrupted or key changed - warn user
-    console.error(
-      '\n  ⚠ Warning: Could not read credentials file. You may need to login again.'
+    const reason =
+      error instanceof Error && error.message
+        ? maskErrorMessage(error.message)
+        : undefined;
+    logger.warn(
+      'Could not read credentials file — you may need to login again',
+      {
+        file: CREDENTIALS_FILE,
+        ...(reason && { reason }),
+      }
     );
-    console.error(`  File: ${CREDENTIALS_FILE}`);
-    if (error instanceof Error && error.message) {
-      // Mask potential sensitive data in error messages
-      console.error(`  Reason: ${maskErrorMessage(error.message)}\n`);
-    }
     return { version: 1, credentials: {} };
   }
 }
@@ -357,11 +362,11 @@ export async function storeCredentials(
 
     return { success: true };
   } catch (fileError) {
-    console.error(`[token-storage] CRITICAL: Storage failed!`);
-    // Mask potential sensitive data in error messages
     const errorMsg =
       fileError instanceof Error ? fileError.message : String(fileError);
-    console.error(`  Error: ${maskErrorMessage(errorMsg)}`);
+    logger.error('CRITICAL: Storage failed', {
+      error: maskErrorMessage(errorMsg),
+    });
     throw new Error('Failed to store credentials');
   }
 }

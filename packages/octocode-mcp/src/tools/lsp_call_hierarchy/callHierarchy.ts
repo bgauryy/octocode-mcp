@@ -28,6 +28,7 @@ import type {
   ExactPosition,
 } from '../../lsp/types.js';
 import type { LSPCallHierarchyQuery } from './scheme.js';
+import { RipgrepMatchOnlySchema } from '../../utils/parsers/schemas.js';
 import { safeExec, checkCommandAvailability } from '../../utils/exec/index.js';
 import { ToolErrors } from '../../errorCodes.js';
 
@@ -987,16 +988,16 @@ export function parseRipgrepJsonOutput(output: string): CallSite[] {
 
   for (const line of lines) {
     try {
-      const json = JSON.parse(line);
-      if (json.type === 'match' && json.data) {
-        const data = json.data;
-        results.push({
-          filePath: data.path?.text || '',
-          lineNumber: data.line_number || 0,
-          column: data.submatches?.[0]?.start || 0,
-          lineContent: data.lines?.text || '',
-        });
-      }
+      const raw = JSON.parse(line);
+      const validation = RipgrepMatchOnlySchema.safeParse(raw);
+      if (!validation.success) continue;
+      const data = validation.data.data;
+      results.push({
+        filePath: data.path.text,
+        lineNumber: data.line_number,
+        column: data.submatches?.[0]?.start || 0,
+        lineContent: data.lines.text,
+      });
     } catch {
       // Skip invalid JSON lines
     }

@@ -193,18 +193,19 @@ describe('Session Storage Edge Cases', () => {
         );
         _resetSessionState();
 
-        // Current behavior: Session without stats is considered valid
-        // This is a potential gap - stats validation is not performed
+        // Zod validation rejects sessions missing required fields (stats)
         const readBack = readSession();
-        expect(readBack).not.toBeNull();
-        expect(readBack?.sessionId).toBe('test-uuid');
-        // stats field will be undefined
-        expect(readBack?.stats).toBeUndefined();
+        expect(readBack).toBeNull();
 
-        // getOrCreateSession updates lastActiveAt and returns it with undefined stats
-        // This could cause NaN issues when incrementing
+        // getOrCreateSession creates a fresh session since the file is invalid
         const session = getOrCreateSession();
-        expect(session.sessionId).toBe('test-uuid');
+        expect(session.sessionId).not.toBe('test-uuid');
+        expect(session.stats).toEqual({
+          toolCalls: 0,
+          promptCalls: 0,
+          errors: 0,
+          rateLimits: 0,
+        });
       });
     });
 
@@ -225,22 +226,14 @@ describe('Session Storage Edge Cases', () => {
         );
         _resetSessionState();
 
-        // Current behavior: May cause NaN when incrementing missing fields
-        // The session reads successfully but incrementing undefined fields
-        // produces NaN
+        // Zod validation rejects sessions with partial stats (missing required fields)
         const session = readSession();
-        expect(session).not.toBeNull();
-        expect(session?.stats.toolCalls).toBe(5);
+        expect(session).toBeNull();
 
-        // Incrementing rate limits on partial stats
+        // No session loaded, so increment fails gracefully
         const result = incrementRateLimits(1);
-
-        // Document current behavior: undefined + 1 = NaN
-        // This is a potential bug that should be fixed
-        const rateLimits = result.session?.stats.rateLimits;
-        // The implementation adds to undefined, resulting in NaN
-        // We test that it either produces NaN (current bug) or 1 (fixed)
-        expect(rateLimits === 1 || Number.isNaN(rateLimits)).toBe(true);
+        expect(result.success).toBe(false);
+        expect(result.session).toBeNull();
       });
     });
 
@@ -261,16 +254,13 @@ describe('Session Storage Edge Cases', () => {
         );
         _resetSessionState();
 
-        const result = incrementRateLimits(1);
+        // Zod validation rejects sessions with non-numeric stat values
+        const session = readSession();
+        expect(session).toBeNull();
 
-        // Document behavior: Adding to non-numeric results in NaN
-        // The implementation doesn't validate types
-        const rateLimits = result.session?.stats.rateLimits;
-        expect(
-          rateLimits === 1 ||
-            Number.isNaN(rateLimits) ||
-            typeof rateLimits === 'string'
-        ).toBe(true);
+        const result = incrementRateLimits(1);
+        expect(result.success).toBe(false);
+        expect(result.session).toBeNull();
       });
 
       it('should handle negative stats values', () => {
@@ -694,33 +684,33 @@ describe('Session Storage Edge Cases', () => {
 
     describe('Signal Handler Registration', () => {
       it('should register SIGINT handler', () => {
-        const onceSpy = vi.spyOn(process, 'once');
+        const onSpy = vi.spyOn(process, 'on');
 
         _resetSessionState();
         getOrCreateSession();
         incrementRateLimits(1);
 
-        const sigintCalls = onceSpy.mock.calls.filter(
+        const sigintCalls = onSpy.mock.calls.filter(
           call => call[0] === 'SIGINT'
         );
         expect(sigintCalls.length).toBe(1);
 
-        onceSpy.mockRestore();
+        onSpy.mockRestore();
       });
 
       it('should register SIGTERM handler', () => {
-        const onceSpy = vi.spyOn(process, 'once');
+        const onSpy = vi.spyOn(process, 'on');
 
         _resetSessionState();
         getOrCreateSession();
         incrementRateLimits(1);
 
-        const sigtermCalls = onceSpy.mock.calls.filter(
+        const sigtermCalls = onSpy.mock.calls.filter(
           call => call[0] === 'SIGTERM'
         );
         expect(sigtermCalls.length).toBe(1);
 
-        onceSpy.mockRestore();
+        onSpy.mockRestore();
       });
     });
 

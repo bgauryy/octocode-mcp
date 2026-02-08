@@ -6,6 +6,11 @@ import {
   NpmPackageResult,
   DeprecationInfo,
 } from './common.js';
+import {
+  NpmViewResultSchema,
+  NpmSearchOutputSchema,
+  NpmDeprecationOutputSchema,
+} from './schemas.js';
 
 interface NpmViewResult {
   name: string;
@@ -147,9 +152,12 @@ async function fetchPackageDetails(
 
     let data: NpmViewResult;
     try {
-      const parsed = JSON.parse(output);
-      data = Array.isArray(parsed) ? parsed[0] : parsed;
-      if (!data) return null;
+      const raw = JSON.parse(output);
+      const toParse = Array.isArray(raw) ? raw[0] : raw;
+      if (!toParse) return null;
+      const validation = NpmViewResultSchema.safeParse(toParse);
+      if (!validation.success) return null;
+      data = validation.data as NpmViewResult;
     } catch {
       return null;
     }
@@ -224,18 +232,19 @@ async function searchNpmPackageViaSearch(
           totalFound: 0,
         };
       }
-      searchResults = JSON.parse(output);
+      const raw = JSON.parse(output);
+      const validation = NpmSearchOutputSchema.safeParse(raw);
+      if (!validation.success) {
+        return {
+          error: 'Invalid npm search response format',
+          hints: ['Try a different search term'],
+        };
+      }
+      searchResults = validation.data;
     } catch {
       return {
         error: 'Failed to parse npm search output',
         hints: ['Try a different search term', 'Check npm CLI version'],
-      };
-    }
-
-    if (!Array.isArray(searchResults)) {
-      return {
-        error: 'Invalid npm search response format',
-        hints: ['Try a different search term'],
       };
     }
 
@@ -326,7 +335,9 @@ export async function checkNpmDeprecation(
     }
 
     try {
-      const message = JSON.parse(output);
+      const raw = JSON.parse(output);
+      const validation = NpmDeprecationOutputSchema.safeParse(raw);
+      const message = validation.success ? validation.data : output;
       return {
         deprecated: true,
         message:

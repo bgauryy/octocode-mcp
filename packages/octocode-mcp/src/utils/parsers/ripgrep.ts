@@ -5,73 +5,9 @@ import type {
   RipgrepMatch,
   SearchStats,
 } from '../core/types.js';
+import { RipgrepJsonMessageSchema } from './schemas.js';
 
-interface RipgrepJsonMatch {
-  type: 'match';
-  data: {
-    path: { text: string };
-    lines: { text: string };
-    line_number: number;
-    absolute_offset: number;
-    submatches: Array<{
-      match: { text: string };
-      start: number;
-      end: number;
-    }>;
-  };
-}
-
-interface RipgrepJsonContext {
-  type: 'context';
-  data: {
-    path: { text: string };
-    lines: { text: string };
-    line_number: number;
-    absolute_offset: number;
-  };
-}
-
-interface RipgrepJsonBegin {
-  type: 'begin';
-  data: {
-    path: { text: string };
-  };
-}
-
-interface RipgrepJsonEnd {
-  type: 'end';
-  data: {
-    path: { text: string };
-    stats?: {
-      elapsed: { human: string };
-      searches: number;
-      searches_with_match: number;
-    };
-  };
-}
-
-interface RipgrepJsonSummary {
-  type: 'summary';
-  data: {
-    elapsed_total: { human: string };
-    stats: {
-      elapsed: { human: string };
-      searches: number;
-      searches_with_match: number;
-      bytes_searched: number;
-      bytes_printed: number;
-      matched_lines: number;
-      matches: number;
-    };
-  };
-}
-
-type RipgrepJsonMessage =
-  | RipgrepJsonMatch
-  | RipgrepJsonContext
-  | RipgrepJsonBegin
-  | RipgrepJsonEnd
-  | RipgrepJsonSummary;
+// Ripgrep JSON types are now validated via Zod schemas in ./schemas.ts
 
 export function parseRipgrepJson(
   jsonOutput: string,
@@ -107,7 +43,10 @@ export function parseRipgrepJson(
     }
 
     try {
-      const msg: RipgrepJsonMessage = JSON.parse(line);
+      const parsed = JSON.parse(line);
+      const validation = RipgrepJsonMessageSchema.safeParse(parsed);
+      if (!validation.success) continue;
+      const msg = validation.data;
 
       if (msg.type === 'match') {
         const path = msg.data.path.text;

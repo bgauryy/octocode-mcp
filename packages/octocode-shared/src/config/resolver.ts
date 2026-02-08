@@ -34,6 +34,9 @@ import {
 } from './defaults.js';
 import { loadConfigSync, configExists } from './loader.js';
 import { validateConfig } from './validator.js';
+import { createLogger } from '../logger/index.js';
+
+const logger = createLogger('octocode-config');
 
 // ============================================================================
 // IN-MEMORY CACHE
@@ -306,25 +309,29 @@ export function resolveConfigSync(): ResolvedConfig {
     if (validation.warnings.length > 0) {
       // Log warnings but continue
       for (const warning of validation.warnings) {
-        console.warn(`[octocode-config] Warning: ${warning}`);
+        logger.warn(`Warning: ${warning}`);
       }
     }
 
     if (!validation.valid) {
-      // Log errors and fall back to defaults for invalid fields
+      // Log errors and fall back to defaults — invalid config is not loaded
       for (const error of validation.errors) {
-        console.warn(`[octocode-config] Validation error: ${error}`);
+        logger.warn(`Validation error: ${error}`);
       }
+      logger.warn(
+        'Config file has validation errors — falling back to defaults with env overrides'
+      );
+      return buildResolvedConfig(undefined);
     }
 
-    // Build resolved config (validation errors don't prevent loading valid fields)
+    // Config is valid — build resolved config from file + defaults + env
     return buildResolvedConfig(loadResult.config, loadResult.path);
   }
 
   // No file or file error - use defaults with env overrides
   if (loadResult.error && configExists()) {
     // File exists but failed to parse - log warning
-    console.warn(`[octocode-config] ${loadResult.error}`);
+    logger.warn(loadResult.error);
   }
 
   return buildResolvedConfig(undefined);

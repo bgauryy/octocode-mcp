@@ -18,12 +18,16 @@ import {
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { OCTOCODE_DIR, ensureOctocodeDir } from '../credentials/storage.js';
+import { createLogger } from '../logger/index.js';
+import { PersistedSessionSchema } from './schemas.js';
 import type {
   PersistedSession,
   SessionStats,
   SessionUpdateResult,
   SessionOptions,
 } from './types.js';
+
+const logger = createLogger('session');
 
 // Storage constants
 export const SESSION_FILE = join(OCTOCODE_DIR, 'session.json');
@@ -78,8 +82,8 @@ function registerExitHandlers(): void {
 
   // Register handlers
   process.on('exit', exitListener);
-  process.once('SIGINT', sigintListener);
-  process.once('SIGTERM', sigtermListener);
+  process.on('SIGINT', sigintListener);
+  process.on('SIGTERM', sigtermListener);
 }
 
 /**
@@ -157,20 +161,13 @@ function readSessionFromDisk(): PersistedSession | null {
 
   try {
     const content = readFileSync(SESSION_FILE, 'utf8');
-    const session = JSON.parse(content) as PersistedSession;
-
-    // Validate schema version
-    if (session.version !== CURRENT_VERSION) {
-      // Future: handle migrations here
+    const parsed = JSON.parse(content);
+    const result = PersistedSessionSchema.safeParse(parsed);
+    if (!result.success) {
+      logger.warn('Session file has invalid format', { file: SESSION_FILE });
       return null;
     }
-
-    // Validate required fields
-    if (!session.sessionId || !session.createdAt) {
-      return null;
-    }
-
-    return session;
+    return result.data;
   } catch {
     // Invalid JSON or read error - return null to create new session
     return null;
@@ -247,16 +244,23 @@ export function flushSession(): void {
   }
 }
 
+/** Guard flag to prevent re-entrant flushes from rapid signal delivery */
+let isFlushing = false;
+
 /**
  * Flush session to disk synchronously (for exit handlers)
  */
 export function flushSessionSync(): void {
+  if (isFlushing) return;
   if (isDirty && cachedSession) {
+    isFlushing = true;
     try {
       writeSessionToDisk(cachedSession);
       isDirty = false;
     } catch {
       // Best effort - don't throw on exit
+    } finally {
+      isFlushing = false;
     }
   }
 }
@@ -428,6 +432,7 @@ export function deleteSession(): boolean {
 export function _resetSessionState(): void {
   cachedSession = null;
   isDirty = false;
+  isFlushing = false;
   stopFlushTimer();
   unregisterExitHandlers();
 }

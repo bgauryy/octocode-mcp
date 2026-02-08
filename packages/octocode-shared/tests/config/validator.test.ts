@@ -375,6 +375,86 @@ describe('config/validator', () => {
       });
     });
 
+    describe('allowedPaths element validation', () => {
+      it('rejects empty string in allowedPaths', () => {
+        const result = validateConfig({
+          local: { allowedPaths: ['', '/valid/path'] },
+        });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e =>
+            e.includes('local.allowedPaths[0]: empty or whitespace-only')
+          )
+        ).toBe(true);
+      });
+
+      it('rejects whitespace-only string in allowedPaths', () => {
+        const result = validateConfig({
+          local: { allowedPaths: ['   '] },
+        });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e =>
+            e.includes('local.allowedPaths[0]: empty or whitespace-only')
+          )
+        ).toBe(true);
+      });
+
+      it('rejects relative path in allowedPaths', () => {
+        const result = validateConfig({
+          local: { allowedPaths: ['foo/bar'] },
+        });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e =>
+            e.includes('must be absolute path or start with ~')
+          )
+        ).toBe(true);
+      });
+
+      it('rejects path traversal in allowedPaths', () => {
+        const result = validateConfig({
+          local: { allowedPaths: ['/valid/../etc'] },
+        });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e => e.includes('path traversal (..) not allowed'))
+        ).toBe(true);
+      });
+
+      it('accepts valid absolute path in allowedPaths', () => {
+        const result = validateConfig({
+          local: { allowedPaths: ['/Users/me/code'] },
+        });
+        expect(result.valid).toBe(true);
+        expect(result.errors).toHaveLength(0);
+      });
+
+      it('accepts valid tilde path in allowedPaths', () => {
+        const result = validateConfig({
+          local: { allowedPaths: ['~/Documents'] },
+        });
+        expect(result.valid).toBe(true);
+        expect(result.errors).toHaveLength(0);
+      });
+
+      it('reports multiple path errors at once', () => {
+        const result = validateConfig({
+          local: { allowedPaths: ['', 'relative', '/good/../bad'] },
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors.length).toBe(3);
+      });
+
+      it('accepts empty allowedPaths array', () => {
+        const result = validateConfig({
+          local: { allowedPaths: [] },
+        });
+        expect(result.valid).toBe(true);
+        expect(result.errors).toHaveLength(0);
+      });
+    });
+
     describe('github validation (extended)', () => {
       it('rejects non-object github', () => {
         const result = validateConfig({ github: 'invalid' });
