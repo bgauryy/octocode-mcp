@@ -158,6 +158,45 @@ describe('PathValidator', () => {
       expect(result.error).toContain('outside allowed directories');
     });
 
+    it('should redact absolute path in outside-workspace error message', () => {
+      const strictValidator = new PathValidator({
+        workspaceRoot: testWorkspace,
+        includeHomeDir: false,
+      });
+      const secretPath = '/var/private/secrets/important.key';
+      const result = strictValidator.validate(secretPath);
+      expect(result.isValid).toBe(false);
+      // Error should NOT leak the full absolute path
+      expect(result.error).not.toContain('/var/private/secrets');
+      // Should contain a redacted form (basename fallback)
+      expect(result.error).toContain('important.key');
+    });
+
+    it('should redact path in ignored-path error message', () => {
+      const result = validator.validate(`${testWorkspace}/.env`);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('ignored');
+      // Error should contain project-relative path, not absolute
+      expect(result.error).not.toContain(testWorkspace);
+      expect(result.error).toContain('.env');
+    });
+
+    it('should redact path in traversal error message', () => {
+      const strictValidator = new PathValidator({
+        workspaceRoot: testWorkspace,
+        includeHomeDir: false,
+      });
+      const traversalPath = `${testWorkspace}/../../../etc/shadow`;
+      const result = strictValidator.validate(traversalPath);
+      expect(result.isValid).toBe(false);
+      // Error must NOT contain the full absolute workspace path (it should be redacted)
+      expect(result.error).not.toContain(testWorkspace);
+      // Error must NOT contain the full original traversal path
+      expect(result.error).not.toContain(traversalPath);
+      // Should still indicate the path is outside allowed dirs
+      expect(result.error).toContain('outside allowed directories');
+    });
+
     it('should handle tilde expansion in validate', () => {
       const result = validator.validate('~/');
       expect(result.isValid).toBe(true);
@@ -471,6 +510,30 @@ describe('PathValidator', () => {
       }
     });
 
+    it('should redact symlink target path in error message', () => {
+      // Mock realpathSync to return a path outside workspace
+      const outsidePath = '/etc/secrets/private.key';
+      const mockRealpathSync = vi
+        .spyOn(fs, 'realpathSync')
+        .mockReturnValue(outsidePath);
+
+      try {
+        const strictValidator = new PathValidator({
+          workspaceRoot: testWorkspace,
+          includeHomeDir: false,
+        });
+        const result = strictValidator.validate(`${testWorkspace}/link`);
+        expect(result.isValid).toBe(false);
+        // Error should NOT contain the full absolute path
+        expect(result.error).not.toContain('/etc/secrets/private.key');
+        // Error should still indicate it's about a symlink target
+        expect(result.error).toContain('Symlink target');
+        expect(result.error).toContain('outside allowed directories');
+      } finally {
+        mockRealpathSync.mockRestore();
+      }
+    });
+
     it('should reject symlink target in ignored path', async () => {
       // Mock realpathSync to return a .git path
       const gitPath = `${testWorkspace}/.git/config`;
@@ -483,6 +546,110 @@ describe('PathValidator', () => {
         const result = v.validate(`${testWorkspace}/link-to-git`);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('ignored');
+      } finally {
+        mockRealpathSync.mockRestore();
+      }
+    });
+  });
+
+  describe('Error message path redaction', () => {
+    it('should redact paths in EACCES error messages', () => {
+      const mockRealpathSync = vi
+        .spyOn(fs, 'realpathSync')
+        .mockImplementation(() => {
+          const error = new Error('Permission denied') as ErrnoException;
+          error.code = 'EACCES';
+          throw error;
+        });
+
+      try {
+        const v = new PathValidator(testWorkspace);
+        const result = v.validate(`${testWorkspace}/protected-file`);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('Permission denied');
+        // Error should NOT contain the full workspace path
+        expect(result.error).not.toContain(testWorkspace);
+      } finally {
+        mockRealpathSync.mockRestore();
+      }
+    });
+
+    it('should redact paths in ELOOP error messages', () => {
+      const mockRealpathSync = vi
+        .spyOn(fs, 'realpathSync')
+        .mockImplementation(() => {
+          const error = new Error('Too many symbolic links') as ErrnoException;
+          error.code = 'ELOOP';
+          throw error;
+        });
+
+      try {
+        const v = new PathValidator(testWorkspace);
+        const result = v.validate(`${testWorkspace}/loop-link`);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('Symlink loop');
+        // Error should NOT contain the full workspace path
+        expect(result.error).not.toContain(testWorkspace);
+      } finally {
+        mockRealpathSync.mockRestore();
+      }
+    });
+
+    it('should redact paths in ENAMETOOLONG error messages', () => {
+      const mockRealpathSync = vi
+        .spyOn(fs, 'realpathSync')
+        .mockImplementation(() => {
+          const error = new Error('Name too long') as ErrnoException;
+          error.code = 'ENAMETOOLONG';
+          throw error;
+        });
+
+      try {
+        const v = new PathValidator(testWorkspace);
+        const result = v.validate(`${testWorkspace}/very-long-name`);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('Path name too long');
+        // Error should NOT contain the full workspace path
+        expect(result.error).not.toContain(testWorkspace);
+      } finally {
+        mockRealpathSync.mockRestore();
+      }
+    });
+
+    it('should redact paths in unexpected error messages', () => {
+      const mockRealpathSync = vi
+        .spyOn(fs, 'realpathSync')
+        .mockImplementation(() => {
+          const error = new Error('Something went wrong') as ErrnoException;
+          error.code = 'UNKNOWN';
+          throw error;
+        });
+
+      try {
+        const v = new PathValidator(testWorkspace);
+        const result = v.validate(`${testWorkspace}/problem-file`);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('Unexpected error');
+        // Error should NOT contain the full workspace path
+        expect(result.error).not.toContain(testWorkspace);
+      } finally {
+        mockRealpathSync.mockRestore();
+      }
+    });
+
+    it('should redact symlink-to-ignored-path error messages', () => {
+      const gitPath = `${testWorkspace}/.git/config`;
+      const mockRealpathSync = vi
+        .spyOn(fs, 'realpathSync')
+        .mockReturnValue(gitPath);
+
+      try {
+        const v = new PathValidator(testWorkspace);
+        const result = v.validate(`${testWorkspace}/link-to-git`);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('ignored');
+        // Error should NOT contain the full absolute path
+        expect(result.error).not.toContain(testWorkspace);
       } finally {
         mockRealpathSync.mockRestore();
       }

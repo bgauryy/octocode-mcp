@@ -889,6 +889,46 @@ describe('config/resolver', () => {
       getConfigSync();
       expect(_getCacheState().cached).toBe(true);
     });
+
+    it('expires cache after TTL and reloads fresh config', () => {
+      vi.useFakeTimers();
+
+      try {
+        // Initial load with local.enabled = false
+        vi.mocked(existsSync).mockReturnValue(true);
+        vi.mocked(readFileSync).mockReturnValue(
+          JSON.stringify({ version: 1, local: { enabled: false } })
+        );
+
+        const config1 = getConfigSync();
+        expect(config1.local.enabled).toBe(false);
+        const callsAfterFirst = vi.mocked(existsSync).mock.calls.length;
+
+        // Within TTL - should return cached (no new fs calls)
+        const config2 = getConfigSync();
+        expect(config2).toBe(config1); // Same reference
+        expect(vi.mocked(existsSync).mock.calls.length).toBe(callsAfterFirst);
+
+        // Change underlying data
+        vi.mocked(readFileSync).mockReturnValue(
+          JSON.stringify({ version: 1, local: { enabled: true } })
+        );
+
+        // Advance past 60s TTL
+        vi.advanceTimersByTime(61000);
+
+        // Should reload and get new config
+        const config3 = getConfigSync();
+        expect(config3).not.toBe(config1); // Different reference
+        expect(config3.local.enabled).toBe(true);
+        // Should have made new fs calls
+        expect(vi.mocked(existsSync).mock.calls.length).toBeGreaterThan(
+          callsAfterFirst
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe('getConfig', () => {

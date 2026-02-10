@@ -2975,4 +2975,112 @@ describe('Token Storage', () => {
       );
     });
   });
+
+  describe('tokenRefresh dependency injection', () => {
+    it('refreshAuthToken accepts injected deps and calls getCredentials', async () => {
+      const { refreshAuthToken: refreshAuthTokenCore } = await import(
+        '../../src/credentials/tokenRefresh.js'
+      );
+
+      const mockGetCredentials = vi.fn().mockResolvedValue(null);
+      const mockUpdateToken = vi.fn();
+
+      const result = await refreshAuthTokenCore(
+        { getCredentials: mockGetCredentials, updateToken: mockUpdateToken },
+        'github.com'
+      );
+
+      expect(mockGetCredentials).toHaveBeenCalledWith('github.com');
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Not logged in');
+    });
+
+    it('refreshAuthToken uses injected getCredentials to find credentials', async () => {
+      const { refreshAuthToken: refreshAuthTokenCore } = await import(
+        '../../src/credentials/tokenRefresh.js'
+      );
+
+      const mockGetCredentials = vi.fn().mockResolvedValue({
+        hostname: 'github.com',
+        username: 'testuser',
+        token: {
+          token: 'expired-token',
+          tokenType: 'oauth',
+          // No refreshToken => cannot refresh
+        },
+      });
+      const mockUpdateToken = vi.fn();
+
+      const result = await refreshAuthTokenCore(
+        { getCredentials: mockGetCredentials, updateToken: mockUpdateToken },
+        'github.com'
+      );
+
+      expect(mockGetCredentials).toHaveBeenCalledWith('github.com');
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('does not support refresh');
+      expect(mockUpdateToken).not.toHaveBeenCalled();
+    });
+
+    it('getTokenWithRefresh returns none when injected getCredentials returns null', async () => {
+      const { getTokenWithRefresh: getTokenWithRefreshCore } = await import(
+        '../../src/credentials/tokenRefresh.js'
+      );
+
+      const mockGetCredentials = vi.fn().mockResolvedValue(null);
+      const mockUpdateToken = vi.fn();
+
+      const result = await getTokenWithRefreshCore(
+        { getCredentials: mockGetCredentials, updateToken: mockUpdateToken },
+        'github.com'
+      );
+
+      expect(mockGetCredentials).toHaveBeenCalledWith('github.com');
+      expect(result.token).toBeNull();
+      expect(result.source).toBe('none');
+    });
+
+    it('getTokenWithRefresh returns stored token via injected deps', async () => {
+      const { getTokenWithRefresh: getTokenWithRefreshCore } = await import(
+        '../../src/credentials/tokenRefresh.js'
+      );
+
+      const futureDate = new Date(
+        Date.now() + 24 * 60 * 60 * 1000
+      ).toISOString();
+      const mockGetCredentials = vi.fn().mockResolvedValue({
+        hostname: 'github.com',
+        username: 'testuser',
+        token: {
+          token: 'valid-token',
+          tokenType: 'oauth',
+          expiresAt: futureDate,
+        },
+      });
+      const mockUpdateToken = vi.fn();
+
+      const result = await getTokenWithRefreshCore(
+        { getCredentials: mockGetCredentials, updateToken: mockUpdateToken },
+        'github.com'
+      );
+
+      expect(result.token).toBe('valid-token');
+      expect(result.source).toBe('stored');
+      expect(result.username).toBe('testuser');
+      expect(mockUpdateToken).not.toHaveBeenCalled();
+    });
+
+    it('storage.ts wrapper binds its own getCredentials/updateToken', async () => {
+      // Verify that storage.ts re-exports work with the bound deps
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+
+      const { refreshAuthToken } =
+        await import('../../src/credentials/storage.js');
+
+      // Should work with the 2-arg public API (hostname, clientId)
+      const result = await refreshAuthToken('github.com');
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Not logged in');
+    });
+  });
 });

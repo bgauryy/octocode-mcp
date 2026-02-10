@@ -36,6 +36,7 @@ import os from 'os';
 import type { PathValidationResult } from '../utils/core/types.js';
 import { shouldIgnore } from './ignoredPathFilter.js';
 import { getConfigSync } from 'octocode-shared';
+import { redactPath } from '../errors/pathUtils.js';
 
 /**
  * PathValidator configuration options
@@ -168,14 +169,14 @@ export class PathValidator {
     if (!isAllowed) {
       return {
         isValid: false,
-        error: `Path '${inputPath}' is outside allowed directories. Allowed roots: ${this.allowedRoots.join(', ')}`,
+        error: `Path '${redactPath(inputPath)}' is outside allowed directories`,
       };
     }
 
     if (shouldIgnore(absolutePath)) {
       return {
         isValid: false,
-        error: `Path '${inputPath}' is in an ignored directory or matches an ignored pattern`,
+        error: `Path '${redactPath(inputPath)}' is in an ignored directory or matches an ignored pattern`,
       };
     }
 
@@ -188,14 +189,14 @@ export class PathValidator {
       if (!isRealPathAllowed) {
         return {
           isValid: false,
-          error: `Symlink target '${realPath}' is outside allowed directories`,
+          error: `Symlink target '${redactPath(realPath)}' is outside allowed directories`,
         };
       }
 
       if (shouldIgnore(realPath)) {
         return {
           isValid: false,
-          error: `Symlink target '${realPath}' is in an ignored directory or matches an ignored pattern`,
+          error: `Symlink target '${redactPath(realPath)}' is in an ignored directory or matches an ignored pattern`,
         };
       }
 
@@ -220,7 +221,7 @@ export class PathValidator {
         if (nodeError.code === 'EACCES') {
           return {
             isValid: false,
-            error: `Permission denied accessing path: ${inputPath}`,
+            error: `Permission denied accessing path: ${redactPath(inputPath)}`,
           };
         }
 
@@ -228,7 +229,7 @@ export class PathValidator {
         if (nodeError.code === 'ELOOP') {
           return {
             isValid: false,
-            error: `Symlink loop detected at path: ${inputPath}`,
+            error: `Symlink loop detected at path: ${redactPath(inputPath)}`,
           };
         }
 
@@ -236,7 +237,7 @@ export class PathValidator {
         if (nodeError.code === 'ENAMETOOLONG') {
           return {
             isValid: false,
-            error: `Path name too long: ${inputPath}`,
+            error: `Path name too long: ${redactPath(inputPath)}`,
           };
         }
       }
@@ -245,7 +246,7 @@ export class PathValidator {
       // Unknown filesystem errors could indicate security issues
       return {
         isValid: false,
-        error: `Unexpected error validating path: ${inputPath}`,
+        error: `Unexpected error validating path: ${redactPath(inputPath)}`,
       };
     }
   }

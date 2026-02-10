@@ -422,30 +422,6 @@ function invalidateCredentialsCache(hostname?: string): void
 
 ---
 
-### Secure Storage
-
-#### `initializeSecureStorage()`
-
-Initialize secure storage (deprecated - always returns false).
-
-```typescript
-async function initializeSecureStorage(): Promise<boolean>
-```
-
-Returns `false` (keychain removed - file storage only).
-
----
-
-#### `isSecureStorageAvailable()`
-
-Check if secure storage is available (always false - keychain removed).
-
-```typescript
-function isSecureStorageAvailable(): boolean
-```
-
----
-
 ### Low-Level Functions
 
 #### `encrypt(data)`

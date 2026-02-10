@@ -5,9 +5,12 @@
  */
 
 import type { TokenSource } from './types.js';
-import { getTokenFromEnv, getEnvTokenSource } from './storage.js';
-import { getToken } from './storage.js';
-import { getTokenWithRefresh } from './tokenRefresh.js';
+import {
+  getTokenFromEnv,
+  getEnvTokenSource,
+  getToken,
+  getTokenWithRefresh,
+} from './storage.js';
 
 // Default OAuth client ID for octocode (same as CLI)
 const DEFAULT_CLIENT_ID = '178c6fc778ccc68e1d6a';

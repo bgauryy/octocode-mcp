@@ -43,9 +43,9 @@ import {
   writeCredentialsStore,
 } from './credentialEncryption.js';
 import {
-  refreshAuthToken,
+  refreshAuthToken as _refreshAuthTokenCore,
   type RefreshResult,
-  getTokenWithRefresh,
+  getTokenWithRefresh as _getTokenWithRefreshCore,
   type TokenWithRefreshResult,
 } from './tokenRefresh.js';
 import {
@@ -383,13 +383,33 @@ export {
   KEY_FILE,
 };
 
-// Token refresh
-export {
-  refreshAuthToken,
-  getTokenWithRefresh,
-  type RefreshResult,
-  type TokenWithRefreshResult,
-};
+// Token refresh — bound wrappers that inject storage dependencies,
+// breaking the circular import between tokenRefresh.ts and storage.ts.
+/** @see _refreshAuthTokenCore for implementation details */
+export async function refreshAuthToken(
+  hostname?: string,
+  clientId?: string
+): Promise<RefreshResult> {
+  return _refreshAuthTokenCore(
+    { getCredentials, updateToken },
+    hostname,
+    clientId
+  );
+}
+
+/** @see _getTokenWithRefreshCore for implementation details */
+export async function getTokenWithRefresh(
+  hostname?: string,
+  clientId?: string
+): Promise<TokenWithRefreshResult> {
+  return _getTokenWithRefreshCore(
+    { getCredentials, updateToken },
+    hostname,
+    clientId
+  );
+}
+
+export type { RefreshResult, TokenWithRefreshResult };
 
 // Token resolution
 export {

@@ -127,8 +127,6 @@ import { ... } from 'octocode-shared/session';
 | `hasCredentials` | Function | Check if credentials exist |
 | `isTokenExpired` | Function | Check token expiration |
 | `isRefreshTokenExpired` | Function | Check refresh token expiration |
-| `initializeSecureStorage` | Function | Initialize file storage-backed storage |
-| `isSecureStorageAvailable` | Function | Check if secure storage works |
 | `getTokenFromEnv` | Function | Get token from environment |
 | `hasEnvToken` | Function | Check for env token |
 | `OAuthToken` | Type | OAuth token structure |

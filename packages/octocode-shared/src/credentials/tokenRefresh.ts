@@ -2,12 +2,14 @@
  * Token Refresh
  *
  * OAuth token refresh logic for expired tokens.
+ *
+ * Dependencies (getCredentials, updateToken) are injected via parameters
+ * to avoid a circular import with storage.ts.
  */
 
 import { refreshToken as octokitRefreshToken } from '@octokit/oauth-methods';
 import { request } from '@octokit/request';
-import type { OAuthToken } from './types.js';
-import { getCredentials, updateToken } from './storage.js';
+import type { OAuthToken, StoredCredentials } from './types.js';
 import { isRefreshTokenExpired, isTokenExpired } from './credentialUtils.js';
 
 // Default OAuth client ID for octocode (same as CLI)
@@ -46,18 +48,31 @@ export interface RefreshResult {
   error?: string;
 }
 
+/** Dependency: function to get credentials from storage */
+export type GetCredentialsFn = (
+  hostname?: string
+) => Promise<StoredCredentials | null>;
+
+/** Dependency: function to update a token in storage */
+export type UpdateTokenFn = (
+  hostname: string,
+  token: OAuthToken
+) => Promise<boolean>;
+
 /**
  * Refresh an expired OAuth token using the refresh token
  *
+ * @param deps - Injected dependencies (getCredentials, updateToken)
  * @param hostname - GitHub hostname (default: 'github.com')
  * @param clientId - OAuth client ID (default: octocode client ID)
  * @returns RefreshResult with success status and error details
  */
 export async function refreshAuthToken(
+  deps: { getCredentials: GetCredentialsFn; updateToken: UpdateTokenFn },
   hostname: string = DEFAULT_HOSTNAME,
   clientId: string = DEFAULT_CLIENT_ID
 ): Promise<RefreshResult> {
-  const credentials = await getCredentials(hostname);
+  const credentials = await deps.getCredentials(hostname);
 
   if (!credentials) {
     return {
@@ -99,7 +114,7 @@ export async function refreshAuthToken(
       refreshTokenExpiresAt: response.authentication.refreshTokenExpiresAt,
     };
 
-    await updateToken(hostname, newToken);
+    await deps.updateToken(hostname, newToken);
 
     return {
       success: true,
@@ -140,15 +155,17 @@ export interface TokenWithRefreshResult {
  * NOTE: This does NOT check environment variables. Use resolveTokenWithRefresh()
  * for full resolution including env vars.
  *
+ * @param deps - Injected dependencies (getCredentials, updateToken)
  * @param hostname - GitHub hostname (default: 'github.com')
  * @param clientId - OAuth client ID for refresh (default: octocode client ID)
  * @returns TokenWithRefreshResult with token, source, and any refresh errors
  */
 export async function getTokenWithRefresh(
+  deps: { getCredentials: GetCredentialsFn; updateToken: UpdateTokenFn },
   hostname: string = DEFAULT_HOSTNAME,
   clientId: string = DEFAULT_CLIENT_ID
 ): Promise<TokenWithRefreshResult> {
-  const credentials = await getCredentials(hostname);
+  const credentials = await deps.getCredentials(hostname);
 
   if (!credentials || !credentials.token) {
     return { token: null, source: 'none' };
@@ -165,11 +182,11 @@ export async function getTokenWithRefresh(
 
   // Token is expired - try to refresh if we have a refresh token
   if (credentials.token.refreshToken) {
-    const refreshResult = await refreshAuthToken(hostname, clientId);
+    const refreshResult = await refreshAuthToken(deps, hostname, clientId);
 
     if (refreshResult.success) {
       // Get the updated credentials after refresh
-      const updatedCredentials = await getCredentials(hostname);
+      const updatedCredentials = await deps.getCredentials(hostname);
       if (updatedCredentials?.token.token) {
         return {
           token: updatedCredentials.token.token,
