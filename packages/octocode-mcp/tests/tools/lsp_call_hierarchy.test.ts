@@ -132,12 +132,12 @@ describe('LSP Call Hierarchy Tool', () => {
         else if (/\btype\b/.test(line)) kind = 'type';
         else if (
           /\bconst\b/.test(line) &&
-          !/=.*(?:function|\(.*\)\s*=>)/.test(line)
+          !/=.*(?:function|\([^)]*\)\s*=>)/.test(line)
         )
           kind = 'constant';
         else if (
           /\b(?:let|var)\b/.test(line) &&
-          !/=.*(?:function|\(.*\)\s*=>)/.test(line)
+          !/=.*(?:function|\([^)]*\)\s*=>)/.test(line)
         )
           kind = 'variable';
         else if (/\benum\b/.test(line)) kind = 'enum';
@@ -446,6 +446,29 @@ describe('LSP Call Hierarchy Tool', () => {
       const results = parseGrepOutput(output);
       expect(results.length).toBe(1);
       expect(results[0]!.filePath).toBe('/test.ts');
+    });
+
+    it('should not hang on ReDoS input with repeated a:0:a pattern', () => {
+      const start = Date.now();
+      const malicious = 'a:0:a'.repeat(500);
+      parseGrepOutput(malicious);
+      expect(Date.now() - start).toBeLessThan(50);
+    });
+
+    it('should handle colons in filepath', () => {
+      const output = '/test:dir/file.ts:10:test content';
+      const results = parseGrepOutput(output);
+      expect(results.length).toBe(1);
+      expect(results[0]!.filePath).toBe('/test:dir/file.ts');
+      expect(results[0]!.lineNumber).toBe(10);
+      expect(results[0]!.lineContent).toBe('test content');
+    });
+
+    it('should handle colons in content', () => {
+      const output = '/file.ts:5:a ? b : c';
+      const results = parseGrepOutput(output);
+      expect(results.length).toBe(1);
+      expect(results[0]!.lineContent).toBe('a ? b : c');
     });
   });
 

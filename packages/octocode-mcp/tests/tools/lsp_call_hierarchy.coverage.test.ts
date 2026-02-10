@@ -588,6 +588,24 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
     it('should infer let arrow function as function not variable', () => {
       expect(inferSymbolKind('let myFunc = (x) => x')).toBe('function');
     });
+
+    it('should not hang on ReDoS input with repeated = chars', () => {
+      const start = Date.now();
+      const malicious = 'const x =' + '='.repeat(1000);
+      inferSymbolKind(malicious);
+      expect(Date.now() - start).toBeLessThan(50);
+    });
+
+    it('should not hang on ReDoS input with repeated ( chars', () => {
+      const start = Date.now();
+      const malicious = 'const x =(' + '('.repeat(1000);
+      inferSymbolKind(malicious);
+      expect(Date.now() - start).toBeLessThan(50);
+    });
+
+    it('should infer var arrow function as function not variable', () => {
+      expect(inferSymbolKind('var myFunc = (a, b) => a + b')).toBe('function');
+    });
   });
 
   describe('createRange', () => {

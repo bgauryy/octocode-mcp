@@ -184,13 +184,11 @@ export function parseGrepOutput(
     }
   } else {
     for (const line of lines) {
-      const match = line.match(/^(.+?):(\d+):(.*)$/);
-      if (match) {
-        const [, matchPath, lineNumStr, matchContent] = match;
-        // These are guaranteed to be defined when the regex matches
-        const path = matchPath!;
-        const content = matchContent!;
-        const lineNumber = parseInt(lineNumStr!, 10);
+      const match = line.match(/:(\d+):/);
+      if (match?.index && match.index > 0) {
+        const path = line.substring(0, match.index);
+        const content = line.substring(match.index + match[0].length);
+        const lineNumber = parseInt(match[1]!, 10);
 
         if (!fileMap.has(path)) {
           fileMap.set(path, []);

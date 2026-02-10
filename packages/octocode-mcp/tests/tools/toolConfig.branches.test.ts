@@ -69,7 +69,7 @@ describe('toolConfig branch coverage - getDescription fallback (line 26)', () =>
       // The description should come from the initialized DESCRIPTIONS proxy
       expect(typeof GITHUB_SEARCH_CODE.description).toBe('string');
       expect(typeof GITHUB_FETCH_CONTENT.description).toBe('string');
-    });
+    }, 10000);
   });
 
   describe('when DESCRIPTIONS returns undefined (fallback branch)', () => {

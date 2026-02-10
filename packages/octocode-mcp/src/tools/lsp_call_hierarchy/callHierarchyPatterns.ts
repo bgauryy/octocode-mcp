@@ -531,14 +531,16 @@ export function parseGrepOutput(output: string): CallSite[] {
   const lines = output.split('\n').filter(line => line.trim());
 
   for (const line of lines) {
-    const match = line.match(/^(.+?):(\d+):(.*)$/);
-    if (match) {
-      const [, filePath, lineNum, content] = match;
+    const match = line.match(/:(\d+):/);
+    if (match?.index && match.index > 0) {
+      const filePath = line.substring(0, match.index);
+      const lineNum = match[1]!;
+      const content = line.substring(match.index + match[0].length);
       results.push({
-        filePath: filePath || '',
-        lineNumber: parseInt(lineNum || '0', 10),
+        filePath,
+        lineNumber: parseInt(lineNum, 10),
         column: 0,
-        lineContent: content || '',
+        lineContent: content,
       });
     }
   }

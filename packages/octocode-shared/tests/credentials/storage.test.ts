@@ -2978,9 +2978,8 @@ describe('Token Storage', () => {
 
   describe('tokenRefresh dependency injection', () => {
     it('refreshAuthToken accepts injected deps and calls getCredentials', async () => {
-      const { refreshAuthToken: refreshAuthTokenCore } = await import(
-        '../../src/credentials/tokenRefresh.js'
-      );
+      const { refreshAuthToken: refreshAuthTokenCore } =
+        await import('../../src/credentials/tokenRefresh.js');
 
       const mockGetCredentials = vi.fn().mockResolvedValue(null);
       const mockUpdateToken = vi.fn();
@@ -2996,9 +2995,8 @@ describe('Token Storage', () => {
     });
 
     it('refreshAuthToken uses injected getCredentials to find credentials', async () => {
-      const { refreshAuthToken: refreshAuthTokenCore } = await import(
-        '../../src/credentials/tokenRefresh.js'
-      );
+      const { refreshAuthToken: refreshAuthTokenCore } =
+        await import('../../src/credentials/tokenRefresh.js');
 
       const mockGetCredentials = vi.fn().mockResolvedValue({
         hostname: 'github.com',
@@ -3023,9 +3021,8 @@ describe('Token Storage', () => {
     });
 
     it('getTokenWithRefresh returns none when injected getCredentials returns null', async () => {
-      const { getTokenWithRefresh: getTokenWithRefreshCore } = await import(
-        '../../src/credentials/tokenRefresh.js'
-      );
+      const { getTokenWithRefresh: getTokenWithRefreshCore } =
+        await import('../../src/credentials/tokenRefresh.js');
 
       const mockGetCredentials = vi.fn().mockResolvedValue(null);
       const mockUpdateToken = vi.fn();
@@ -3041,9 +3038,8 @@ describe('Token Storage', () => {
     });
 
     it('getTokenWithRefresh returns stored token via injected deps', async () => {
-      const { getTokenWithRefresh: getTokenWithRefreshCore } = await import(
-        '../../src/credentials/tokenRefresh.js'
-      );
+      const { getTokenWithRefresh: getTokenWithRefreshCore } =
+        await import('../../src/credentials/tokenRefresh.js');
 
       const futureDate = new Date(
         Date.now() + 24 * 60 * 60 * 1000

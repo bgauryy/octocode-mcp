@@ -270,9 +270,12 @@ export function inferSymbolKind(line: string): SymbolKind {
   if (/\bclass\b/.test(line)) return 'class';
   if (/\binterface\b/.test(line)) return 'interface';
   if (/\btype\b/.test(line)) return 'type';
-  if (/\bconst\b/.test(line) && !/=.*(?:function|\(.*\)\s*=>)/.test(line))
+  if (/\bconst\b/.test(line) && !/=.*(?:function|\([^)]*\)\s*=>)/.test(line))
     return 'constant';
-  if (/\b(?:let|var)\b/.test(line) && !/=.*(?:function|\(.*\)\s*=>)/.test(line))
+  if (
+    /\b(?:let|var)\b/.test(line) &&
+    !/=.*(?:function|\([^)]*\)\s*=>)/.test(line)
+  )
     return 'variable';
   if (/\benum\b/.test(line)) return 'enum';
   if (/\bnamespace\b/.test(line)) return 'namespace';
