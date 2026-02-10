@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://octocode-documentaion-writer.v3/partial-research.json",
-  "title": "Partial Research Output",
-  "description": "Schema for partial research results from parallel research agents",
+  "$id": "https://octocode-documentation-writer.v3/research.json",
+  "title": "Research Findings Output",
+  "description": "Answers and context gathered for engineering questions",
   "type": "object",
   "required": [
     "metadata",
@@ -12,30 +12,30 @@
     "metadata": {
       "type": "object",
       "required": [
-        "version",
         "generated_at",
-        "repository_path",
-        "batch_id"
+        "version",
+        "agent",
+        "total_questions_researched",
+        "repository_path"
       ],
       "properties": {
-        "version": {
-          "type": "string",
-          "const": "3.0"
-        },
         "generated_at": {
           "type": "string",
           "format": "date-time"
         },
-        "repository_path": {
-          "type": "string"
+        "version": {
+          "type": "string",
+          "const": "3.0"
         },
         "agent": {
           "type": "string",
           "const": "researcher"
         },
-        "batch_id": {
-          "type": "string",
-          "description": "ID of the research batch (e.g. researcher-0)"
+        "total_questions_researched": {
+          "type": "integer"
+        },
+        "repository_path": {
+          "type": "string"
         }
       }
     },
@@ -51,7 +51,8 @@
         ],
         "properties": {
           "question_id": {
-            "type": "string"
+            "type": "string",
+            "description": "ID matching the question from questions.json"
           },
           "status": {
             "type": "string",
@@ -63,7 +64,8 @@
             ]
           },
           "answer": {
-            "type": "string"
+            "type": "string",
+            "description": "Comprehensive answer to the question based on code evidence"
           },
           "code_references": {
             "type": "array",
@@ -88,8 +90,12 @@
               }
             }
           },
-          "missing_context": {
-            "type": "string"
+          "related_symbols": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Functions, classes, or types relevant to this finding"
           }
         }
       }

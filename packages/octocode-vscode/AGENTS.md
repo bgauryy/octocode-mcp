@@ -17,7 +17,7 @@ Octocode VS Code Extension is the management hub for Octocode MCP:
 - **Multi-Client Support**: Works with Cursor, Windsurf, Antigravity, Trae, Cline, Roo Code
 - **Token Sync**: Automatically syncs GitHub tokens across all MCP configurations
 
-**Key Docs**: [`README.md`](./README.md) • [Root AGENTS.md](../../AGENTS.md)
+**Key Docs**: [`README.md`](./README.md) • [Root AGENTS.md](../../AGENTS.md) • [Authentication Setup](../../packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
 
 ---
 

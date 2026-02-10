@@ -116,6 +116,7 @@ Everything you need to master Octocode:
 - [**The Manifest**](./MANIFEST.md) - The philosophy behind RDD.
 
 ### 🛠️ Reference
+- [**Development Guide**](./docs/DEVELOPMENT_GUIDE.md) - Monorepo setup, TDD, and agent guidelines
 - [**Authentication Setup**](./packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) - GitHub & GitLab authentication
 - [**Configuration**](./docs/CONFIGURATION_REFERENCE.md) - Environment variables, `.octocoderc` config file, and examples
 - [**Troubleshooting**](./docs/TROUBLESHOOTING.md) - Common issues and solutions

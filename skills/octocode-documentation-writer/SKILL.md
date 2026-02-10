@@ -1,6 +1,6 @@
 ---
-name: octocode-documentaion-writer
-description: Generate comprehensive documentation with intelligent orchestration and parallel execution
+name: octocode-documentation-writer
+description: This skill should be used when the user asks to "generate documentation", "document this project", "create docs", "write documentation", "update documentation", "document all APIs", "generate onboarding docs", "create developer docs", or needs comprehensive codebase documentation. Orchestrates parallel AI agents to analyze code and produce documentation files.
 ---
 
 # Repository Documentation Generator
@@ -122,7 +122,7 @@ Message 4: Task(description="Discovery 1D") → wait for result
 
 ```mermaid
 flowchart TB
-    Start([/octocode-documentaion-writer PATH]) --> Validate[Pre-Flight Validation]
+    Start([/octocode-documentation-writer PATH]) --> Validate[Pre-Flight Validation]
     Validate --> Init[Initialize Workspace]
 
     Init --> P1[Phase 1: Discovery+Analysis]
@@ -555,7 +555,7 @@ function handle_critical_failure(phase, error):
   DISPLAY: ""
 
   if (error.recoverable):
-    DISPLAY: "This error is recoverable. Run /octocode-documentaion-writer again to resume."
+    DISPLAY: "This error is recoverable. Run /octocode-documentation-writer again to resume."
     DISPLAY: "State saved in: {CONTEXT_DIR}/state.json"
   else:
     DISPLAY: "This error is not recoverable. Please check the error and try again."

@@ -286,7 +286,7 @@ After loading, you MUST verbalize:
 
 1. **Identify Domains**: List research areas/files to explore.
 2. **Draft Steps**: Create a structured plan with clear milestones.
-   **REQUIRED**: Use your TodoWrite tool.
+   **REQUIRED**: Use your TaskCreate tool (or runtime equivalent, e.g., `TodoWrite`).
 3. **Evaluate Parallelization**:
    - **IF** multiple independent domains → **MUST** spawn parallel Task agents.
    - **IF** single domain → Sequential execution.
@@ -311,14 +311,14 @@ Proceed? (yes/no)
 - Any research tools
 
 #### ALLOWED During Planning
-- `TodoWrite` (to draft plan)
+- `TaskCreate`/`TaskUpdate` (to draft plan)
 - `AskUserQuestion` (to confirm)
 - Text output (to present plan)
 
 #### Gate Verification
 
 **HALT. Verify before proceeding:**
-- [ ] Plan created in `TodoWrite`?
+- [ ] Plan tasks created via `TaskCreate`?
 - [ ] Plan presented to user in EXACT format above?
 - [ ] Parallelization strategy selected?
 - [ ] **User approval obtained?** (said "yes", "go", "proceed", or similar)
@@ -406,7 +406,7 @@ Agent capabilities are defined by the tools loaded in context.
 
 #### IF Coming from PLAN Phase:
 - [ ] Plan presented to user?
-- [ ] `TodoWrite` completed?
+- [ ] Tasks created and tracked?
 - [ ] Parallel strategy evaluated?
 - [ ] **User approved the plan?**
 
@@ -539,7 +539,7 @@ If `session.json` exists with state ≠ DONE → Ask user: "Resume from last che
 - [ ] Completion trigger identified?
 - [ ] Key findings have file:line references?
 - [ ] Checkpoints saved if research was extensive?
-- [ ] TodoWrite items marked complete?
+- [ ] Tasks marked complete via `TaskUpdate`?
 
 **IF ALL checked → PROCEED to Phase 5 (OUTPUT)**
 **IF ANY unchecked → Complete missing items first**
@@ -556,7 +556,7 @@ If `session.json` exists with state ≠ DONE → Ask user: "Resume from last che
 
 - [ ] Completion trigger met? (goal achieved / stuck / user satisfied / scope complete)
 - [ ] Key findings documented with file:line refs?
-- [ ] TodoWrite items updated?
+- [ ] Tasks updated via `TaskUpdate`?
 
 **IF parallel agents were spawned:**
 - [ ] All domain-*.md files read and incorporated?
@@ -627,7 +627,7 @@ You **MUST** end the session by asking ONE of these:
 
 <agent_self_check>
 **After each tool call:** Hints followed? On track?
-**Periodically:** TodoWrite updated? User informed of progress?
+**Periodically:** Task progress updated via `TaskUpdate`? User informed of progress?
 **If stuck:** STOP and ask user.
 
 **Phase gates:** Server "ok" → Context + prompt stated → Fast-path evaluated → Plan approved → Research (follow hints) → Checkpoint when needed → Output (TL;DR + refs + question)

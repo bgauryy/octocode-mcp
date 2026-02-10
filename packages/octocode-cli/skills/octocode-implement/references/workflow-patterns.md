@@ -377,7 +377,7 @@ Profile/Identify → Understand Current Flow → Find Optimization Patterns → 
 
 ## Checklist Before Declaring Done
 
-- [ ] **All tasks complete?** (Per TodoWrite)
+- [ ] **All tasks complete?** (Per `TaskList`)
 - [ ] **Patterns followed?** (No new patterns)
 - [ ] **Tests added?** (Coverage maintained)
 - [ ] **Validation passed?** (Compile, lint, test)

@@ -52,7 +52,7 @@ Key principles:
 - **Refine**: Weak reasoning? Change tool/query.
 - **Efficiency**: Batch queries (1-3). Metadata before content.
 - **User Checkpoint**: Unclear scope or blocked? Ask user.
-- **Tasks**: Use `TodoWrite` to track progress.
+- **Tasks**: Use `TaskCreate`/`TaskUpdate` to track progress.
 - **No Time Estimates**: Never provide timing/duration estimates.
 
 ---

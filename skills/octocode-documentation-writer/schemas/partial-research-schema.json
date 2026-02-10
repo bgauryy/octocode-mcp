@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://octocode-documentaion-writer.v3/research.json",
-  "title": "Research Findings Output",
-  "description": "Answers and context gathered for engineering questions",
+  "$id": "https://octocode-documentation-writer.v3/partial-research.json",
+  "title": "Partial Research Output",
+  "description": "Schema for partial research results from parallel research agents",
   "type": "object",
   "required": [
     "metadata",
@@ -12,26 +12,30 @@
     "metadata": {
       "type": "object",
       "required": [
-        "generated_at",
         "version",
-        "agent",
-        "total_questions_researched"
+        "generated_at",
+        "repository_path",
+        "batch_id"
       ],
       "properties": {
+        "version": {
+          "type": "string",
+          "const": "3.0"
+        },
         "generated_at": {
           "type": "string",
           "format": "date-time"
         },
-        "version": {
-          "type": "string",
-          "const": "3.0"
+        "repository_path": {
+          "type": "string"
         },
         "agent": {
           "type": "string",
           "const": "researcher"
         },
-        "total_questions_researched": {
-          "type": "integer"
+        "batch_id": {
+          "type": "string",
+          "description": "ID of the research batch (e.g. researcher-0)"
         }
       }
     },
@@ -47,8 +51,7 @@
         ],
         "properties": {
           "question_id": {
-            "type": "string",
-            "description": "ID matching the question from questions.json"
+            "type": "string"
           },
           "status": {
             "type": "string",
@@ -60,8 +63,7 @@
             ]
           },
           "answer": {
-            "type": "string",
-            "description": "Comprehensive answer to the question based on code evidence"
+            "type": "string"
           },
           "code_references": {
             "type": "array",
@@ -86,12 +88,8 @@
               }
             }
           },
-          "related_symbols": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Functions, classes, or types relevant to this finding"
+          "missing_context": {
+            "type": "string"
           }
         }
       }

@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://octocode-documentaion-writer.v3/qa-results.json",
+  "$id": "https://octocode-documentation-writer.v3/qa-results.json",
   "title": "QA Validator Results",
   "description": "Final quality assurance report from Phase 6",
   "type": "object",

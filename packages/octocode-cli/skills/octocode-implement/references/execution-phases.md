@@ -19,7 +19,7 @@ Scope: Read spec file, identify tasks, classify complexity
 2. **Extract Tasks**: Identify discrete implementation tasks
 3. **Classify Complexity**: Simple | Medium | Complex | Epic
 4. **Identify Dependencies**: What depends on what?
-5. **Create Master Todo**: Add all tasks via `TodoWrite`
+5. **Create Master Todo**: Add all tasks via `TaskCreate`
 
 **Deliverable**: Structured task list with dependencies.
 
@@ -269,19 +269,17 @@ Scope: Check specific requirement against code
 | IMPLEMENT | Partial | Parallel for independent components |
 | VALIDATE | Yes | Parallel: Tech, Spec, Regression validators |
 
-### TodoWrite Integration
+### Task Tracking Integration
 
 **Master Task Flow**:
 ```
-TodoWrite([
-  { id: "spec", content: "Parse specification", status: "completed" },
-  { id: "spec-validate", content: "Validate spec completeness", status: "in_progress" },
-  { id: "context", content: "Discover codebase context", status: "pending" },
-  { id: "plan", content: "Create implementation plan", status: "pending" },
-  { id: "research", content: "Deep research per task", status: "pending" },
-  { id: "implement", content: "Implement changes", status: "pending" },
-  { id: "validate", content: "Validate against spec", status: "pending" }
-])
+TaskCreate({ subject: "Parse specification", status: "completed" })
+TaskCreate({ subject: "Validate spec completeness", status: "in_progress" })
+TaskCreate({ subject: "Discover codebase context", status: "pending" })
+TaskCreate({ subject: "Create implementation plan", status: "pending" })
+TaskCreate({ subject: "Deep research per task", status: "pending" })
+TaskCreate({ subject: "Implement changes", status: "pending" })
+TaskCreate({ subject: "Validate against spec", status: "pending" })
 ```
 
 ### Spawning Subagents with Task Tool

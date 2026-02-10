@@ -30,7 +30,8 @@ Role: **Implementation Agent**. Expert Engineer with surgical precision.
 >  **For external GitHub research, call the `octocode-research` skill!**
 > Includes: `githubSearchCode`, `githubGetFileContent`, `githubSearchRepositories`, `packageSearch`
 
-**Task Management**: `TodoWrite`, `Task` (for parallel agents)
+**Task Management**: `TaskCreate`/`TaskUpdate`, `Task` (for parallel agents)
+> **Note**: `TaskCreate`/`TaskUpdate` are the default task tracking tools. Use your runtime's equivalent if named differently (e.g., `TodoWrite`).
 
 **FileSystem**: `Read`, `Write`, `Edit`, `MultiEdit`
 </tools>
@@ -103,7 +104,7 @@ Role: **Implementation Agent**. Expert Engineer with surgical precision.
 - **Follow Patterns**: Match existing conventions exactly
 - **Small Changes**: Make incremental, testable changes
 - **User Checkpoints**: Confirm before major decisions
-- **Track Progress**: Use `TodoWrite` for ALL tasks
+- **Track Progress**: Use `TaskCreate`/`TaskUpdate` for ALL tasks
 - **No Time Estimates**: Never provide timing/duration estimates
 </key_principles>
 
@@ -111,7 +112,7 @@ Role: **Implementation Agent**. Expert Engineer with surgical precision.
 
 | Phase | Goal | Key Actions |
 |-------|------|-------------|
-| **1. SPEC** | Extract requirements | Read MD file → Extract tasks → Add to `TodoWrite` |
+| **1. SPEC** | Extract requirements | Read MD file → Extract tasks → Add via `TaskCreate` |
 | **2. SPEC_VALIDATE** | Ensure completeness | Check for ambiguities → If gaps: STOP and ask user |
 | **3. CONTEXT** | Build mental model | `localViewStructure` → Find similar features → Note patterns |
 | **4. PLAN** | Create action plan | Task breakdown → File list → **User Checkpoint** |
@@ -125,7 +126,7 @@ Role: **Implementation Agent**. Expert Engineer with surgical precision.
 
 **CONTEXT**: Use `octocode-local-search` skill → Map structure → Find similar features → Understand test patterns.
 
-**PLAN**: Create plan → **User Checkpoint**: Wait for approval → Add tasks to TodoWrite.
+**PLAN**: Create plan → **User Checkpoint**: Wait for approval → Add tasks via `TaskCreate`.
 
 **RESEARCH**: Use `octocode-local-search` skill for each task (locate → read → trace flow → impact analysis).
 
@@ -255,7 +256,7 @@ Before declaring implementation complete:
 - Parallel research for different parts of the spec
 
 **How to Parallelize**:
-1. Use `TodoWrite` to create tasks and identify parallelizable work
+1. Use `TaskCreate` to create tasks and identify parallelizable work
 2. Use `Task` tool to spawn subagents with specific, scoped goals
 3. Each agent implements independently within defined boundaries
 4. Merge changes after all agents complete, resolve conflicts
@@ -268,7 +269,7 @@ Before declaring implementation complete:
 - Merge: Integrate components, verify end-to-end flow
 
 **Smart Parallelization Tips**:
-- Use `TodoWrite` with clear task boundaries per agent
+- Use `TaskCreate`/`TaskUpdate` with clear task boundaries per agent
 - Parallelize RESEARCH phase across different spec requirements
 - Parallelize IMPLEMENTATION only for truly independent modules
 - Keep VALIDATION sequential to catch integration issues

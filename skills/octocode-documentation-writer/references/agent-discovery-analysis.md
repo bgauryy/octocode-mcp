@@ -2,7 +2,8 @@
 name: Discovery+Analysis Agent
 description: Adaptive repository analysis that discovers language, architecture, flows, APIs, and integrations through intelligent exploration. Supports monorepos and polyglot environments.
 model: opus
-tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent, lspGotoDefinition, lspFindReferences, lspCallHierarchy, Read, Write, TaskTool, Task---
+tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent, lspGotoDefinition, lspFindReferences, lspCallHierarchy, Read, Write, TaskTool, Task
+---
 
 # Discovery+Analysis Agent - ADAPTIVE, GENERIC & COMPREHENSIVE
 
@@ -55,9 +56,9 @@ graph TD
 
 - **Repository Root**: `${REPOSITORY_PATH}`
 - **State**: `.context/state.json`
-- **Schema**: `t Output Structure)
-- **Partial Schema**: `n` (Sub-agent Output Structure)
-- **Tasks**: `Definitions)
+- **Schema**: `schemas/analysis-schema.json` (Full Output Structure)
+- **Partial Schema**: `schemas/partial-discovery-schema.json` (Sub-agent Output Structure)
+- **Tasks**: `schemas/discovery-tasks.json` (Task Definitions)
 
 ## Mission
 
@@ -155,13 +156,13 @@ These templates are used by the Orchestrator to spawn parallel agents.
   <task>Extract project metadata (name, version, description)</task>
 
   **OUTPUT FORMAT (REQUIRED):**
-  You MUST output to JSON matching `
+  You MUST output to JSON matching `schemas/partial-discovery-schema.json`
 </instructions>
 
 <output>
   <path>${CONTEXT_DIR}/partial-1a-language.json</path>
   <format>JSON</format>
-  <schema_ref>n (1A: Language & Manifests)</schema_ref>
+  <schema_ref>schemas/partial-discovery-schema.json (1A: Language & Manifests)</schema_ref>
 </output>
 </subagent>
 
@@ -178,13 +179,13 @@ These templates are used by the Orchestrator to spawn parallel agents.
   <task>Extract component descriptions from README/comments</task>
   
   **OUTPUT FORMAT (REQUIRED):**
-  You MUST output to JSON matching `
+  You MUST output to JSON matching `schemas/partial-discovery-schema.json`
 </instructions>
 
 <output>
   <path>${CONTEXT_DIR}/partial-1b-components.json</path>
   <format>JSON</format>
-  <schema_ref>n (1B: Components)</schema_ref>
+  <schema_ref>schemas/partial-discovery-schema.json (1B: Components)</schema_ref>
 </output>
 </subagent>
 
@@ -201,13 +202,13 @@ These templates are used by the Orchestrator to spawn parallel agents.
   <task>Build dependency relationships</task>
 
   **OUTPUT FORMAT (REQUIRED):**
-  You MUST output to JSON matching `
+  You MUST output to JSON matching `schemas/partial-discovery-schema.json`
 </instructions>
 
 <output>
   <path>${CONTEXT_DIR}/partial-1c-dependencies.json</path>
   <format>JSON</format>
-  <schema_ref>n (1C: Dependencies)</schema_ref>
+  <schema_ref>schemas/partial-discovery-schema.json (1C: Dependencies)</schema_ref>
 </output>
 </subagent>
 
@@ -226,13 +227,13 @@ These templates are used by the Orchestrator to spawn parallel agents.
   
   **REQUIRED:** Use `lspCallHierarchy` for flow tracing.
   **OUTPUT FORMAT (REQUIRED):**
-  You MUST output to JSON matching `
+  You MUST output to JSON matching `schemas/partial-discovery-schema.json`
 </instructions>
 
 <output>
   <path>${CONTEXT_DIR}/partial-1d-flows-apis.json</path>
   <format>JSON</format>
-  <schema_ref>n (1D: Flows & APIs)</schema_ref>
+  <schema_ref>schemas/partial-discovery-schema.json (1D: Flows & APIs)</schema_ref>
 </output>
 </subagent>
 
@@ -251,7 +252,7 @@ These templates are used by the Orchestrator to spawn parallel agents.
     - ${CONTEXT_DIR}/partial-1d-flows-apis.json
   </task>
   <task>Merge them into a single comprehensive analysis.json</task>
-  <task>Ensure strictly follows `
+  <task>Ensure strictly follows `schemas/analysis-schema.json`</task>
   <task>Clean up partial files after successful merge</task>
   
   **GATE:** Do NOT output if critical errors are found in partials.
@@ -317,7 +318,7 @@ if (START_PHASE == "initialized" || START_PHASE == "discovery-analysis-failed"):
   })
 
   // Load configuration and agent spec
-  TASKS_CONFIG = JSON.parse(Read("
+  TASKS_CONFIG = JSON.parse(Read("schemas/discovery-tasks.json"))
   AGENT_SPEC = Read("references/agent-discovery-analysis.md")
 
   DISPLAY: "🔍 Discovery+Analysis Agents [Running in Parallel...]"

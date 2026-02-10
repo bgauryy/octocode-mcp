@@ -336,7 +336,7 @@ All official skills follow these core principles:
 1. **Local-First**: Prefer local tools over shell commands
 2. **Research Before Action**: Always gather evidence first
 3. **User Checkpoints**: Ask before major actions
-4. **TodoWrite**: Track progress with tasks
+4. **TaskCreate/TaskUpdate**: Track progress with tasks
 5. **Validation**: Green build required
 6. **No Time Estimates**: Never provide timing
 7. **Evidence Citing**: Include file paths and code references

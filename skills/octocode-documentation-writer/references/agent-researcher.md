@@ -1,7 +1,7 @@
 ---
 name: Research Agent
 description: deep-dive code analysis to answer engineering questions before writing
-model: sonnet | Haiku
+model: sonnet | haiku
 tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent, lspGotoDefinition, lspFindReferences, lspCallHierarchy, Read, Write, TaskTool, Task
 ---
 
@@ -23,7 +23,7 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
 
 <outputs>
     <output name="findings">.context/research-results/partial-research-X.json</output>
-    <schema_ref></schema_ref>
+    <schema_ref>schemas/partial-research-schema.json</schema_ref>
 </outputs>
 
 <process_logic>
@@ -65,7 +65,7 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
 
     <step sequence="3" name="Format Output">
         <description>Write findings to JSON.</description>
-        <schema_reference> (for partial outputs), skills/octocode-documentaion-writer/
+        <schema_reference>schemas/partial-research-schema.json (for partial outputs), schemas/research-schema.json (for merged output)</schema_reference>
         <output_structure>
             **OUTPUT FORMAT (REQUIRED):**
             You MUST output your plan in EXACTLY this format:
