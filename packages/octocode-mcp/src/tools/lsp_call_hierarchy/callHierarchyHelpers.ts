@@ -263,6 +263,24 @@ export async function createCallHierarchyItemFromSite(
 }
 
 /**
+ * Check if a line contains a function assignment (= function or = arrow function).
+ * Uses indexOf-based checks to avoid polynomial-time regex backtracking (ReDoS).
+ * @internal Exported for testing
+ */
+export function isFunctionAssignment(line: string): boolean {
+  const eqIndex = line.indexOf('=');
+  if (eqIndex === -1) return false;
+  const afterEq = line.slice(eqIndex + 1);
+  // Check for "function" keyword after "="
+  if (/\bfunction\b/.test(afterEq)) return true;
+  // Check for arrow function: "=>" after ")"
+  if (/\)\s*=>/.test(afterEq)) return true;
+  // Check for single-param arrow: "identifier =>"
+  if (/[a-zA-Z_$]\s*=>/.test(afterEq)) return true;
+  return false;
+}
+
+/**
  * Infer symbol kind from line content
  * @internal Exported for testing
  */
@@ -270,12 +288,8 @@ export function inferSymbolKind(line: string): SymbolKind {
   if (/\bclass\b/.test(line)) return 'class';
   if (/\binterface\b/.test(line)) return 'interface';
   if (/\btype\b/.test(line)) return 'type';
-  if (/\bconst\b/.test(line) && !/=.*(?:function|\([^)]*\)\s*=>)/.test(line))
-    return 'constant';
-  if (
-    /\b(?:let|var)\b/.test(line) &&
-    !/=.*(?:function|\([^)]*\)\s*=>)/.test(line)
-  )
+  if (/\bconst\b/.test(line) && !isFunctionAssignment(line)) return 'constant';
+  if (/\b(?:let|var)\b/.test(line) && !isFunctionAssignment(line))
     return 'variable';
   if (/\benum\b/.test(line)) return 'enum';
   if (/\bnamespace\b/.test(line)) return 'namespace';

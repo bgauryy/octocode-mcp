@@ -18,11 +18,24 @@ import {
  */
 export function parseFilesOnlyOutput(stdout: string): RipgrepFileMatches[] {
   const lines = stdout.trim().split('\n').filter(Boolean);
-  return lines.map(path => ({
-    path,
-    matchCount: 1, // At least one match exists (that's why file is listed)
-    matches: [], // No match details in plain text mode
-  }));
+  return lines
+    .filter(line => !isRipgrepStatsLine(line))
+    .map(path => ({
+      path,
+      matchCount: 1, // At least one match exists (that's why file is listed)
+      matches: [], // No match details in plain text mode
+    }));
+}
+
+/**
+ * Detect ripgrep --stats summary lines that may appear in plain text output.
+ * Stats lines follow patterns like "N files contained matches", "N files searched", etc.
+ */
+function isRipgrepStatsLine(line: string): boolean {
+  return (
+    /^\d+\s/.test(line) &&
+    /\b(?:files|bytes|seconds|matches|searched|printed|spent)\b/.test(line)
+  );
 }
 
 /**

@@ -267,6 +267,34 @@ describe('RipgrepCommandBuilder', () => {
       expect(args).toContain('--stats');
     });
 
+    it('should NOT include --stats when filesOnly is true even if includeStats is true', () => {
+      const query = createQuery({
+        pattern: 'function',
+        path: './src',
+        includeStats: true,
+        filesOnly: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).not.toContain('--stats');
+      expect(args).toContain('-l');
+    });
+
+    it('should NOT include --stats when filesWithoutMatch is true even if includeStats is true', () => {
+      const query = createQuery({
+        pattern: 'function',
+        path: './src',
+        includeStats: true,
+        filesWithoutMatch: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).not.toContain('--stats');
+      expect(args).toContain('--files-without-match');
+    });
+
     it('should enable JSON output', () => {
       const query = createQuery({
         pattern: 'export',

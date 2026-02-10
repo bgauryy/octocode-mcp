@@ -127,6 +127,7 @@ export {
   extractFunctionBody,
 } from './callHierarchyPatterns.js';
 export {
+  isFunctionAssignment,
   inferSymbolKind,
   createRange,
   escapeRegex,

@@ -75,13 +75,15 @@ export async function callHierarchyWithLSP(
 
     // Get calls based on direction
     if (query.direction === 'incoming') {
-      // Recursively gather incoming calls up to specified depth
+      const contextLines = query.contextLines ?? 2;
+
+      // Gather calls without enhancement for efficient pagination
       const allIncomingCalls = await gatherIncomingCallsRecursive(
         client,
         targetItem,
         depth,
         visited,
-        query.contextLines ?? 2
+        0 // Gather without content enhancement
       );
 
       if (allIncomingCalls.length === 0) {
@@ -103,19 +105,25 @@ export async function callHierarchyWithLSP(
         };
       }
 
-      // Apply pagination to flattened results
+      // Apply pagination first, then enhance only visible items
       const { paginatedItems, pagination } = paginateResults(
         allIncomingCalls,
         query.callsPerPage ?? 15,
         query.page ?? 1
       );
 
+      // Lazy enhancement: only add content snippets to paginated items
+      const enhancedItems =
+        contextLines > 0
+          ? await enhanceIncomingCalls(paginatedItems, contextLines)
+          : paginatedItems;
+
       return {
         status: 'hasResults',
         item: enhancedTargetItem,
         direction: 'incoming',
         depth,
-        incomingCalls: paginatedItems,
+        incomingCalls: enhancedItems,
         pagination,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
@@ -126,13 +134,15 @@ export async function callHierarchyWithLSP(
         ],
       };
     } else {
-      // Recursively gather outgoing calls up to specified depth
+      const contextLines = query.contextLines ?? 2;
+
+      // Gather calls without enhancement for efficient pagination
       const allOutgoingCalls = await gatherOutgoingCallsRecursive(
         client,
         targetItem,
         depth,
         visited,
-        query.contextLines ?? 2
+        0 // Gather without content enhancement
       );
 
       if (allOutgoingCalls.length === 0) {
@@ -153,19 +163,25 @@ export async function callHierarchyWithLSP(
         };
       }
 
-      // Apply pagination to flattened results
+      // Apply pagination first, then enhance only visible items
       const { paginatedItems, pagination } = paginateResults(
         allOutgoingCalls,
         query.callsPerPage ?? 15,
         query.page ?? 1
       );
 
+      // Lazy enhancement: only add content snippets to paginated items
+      const enhancedItems =
+        contextLines > 0
+          ? await enhanceOutgoingCalls(paginatedItems, contextLines)
+          : paginatedItems;
+
       return {
         status: 'hasResults',
         item: enhancedTargetItem,
         direction: 'outgoing',
         depth,
-        outgoingCalls: paginatedItems,
+        outgoingCalls: enhancedItems,
         pagination,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
@@ -195,7 +211,10 @@ export async function gatherIncomingCallsRecursive(
   if (remainingDepth <= 0 || !client) return [];
 
   const directCalls = await client.getIncomingCalls(item);
-  const enhancedCalls = await enhanceIncomingCalls(directCalls, contextLines);
+  const enhancedCalls =
+    contextLines > 0
+      ? await enhanceIncomingCalls(directCalls, contextLines)
+      : directCalls;
 
   if (remainingDepth === 1) {
     return enhancedCalls;
@@ -236,7 +255,10 @@ export async function gatherOutgoingCallsRecursive(
   if (remainingDepth <= 0 || !client) return [];
 
   const directCalls = await client.getOutgoingCalls(item);
-  const enhancedCalls = await enhanceOutgoingCalls(directCalls, contextLines);
+  const enhancedCalls =
+    contextLines > 0
+      ? await enhanceOutgoingCalls(directCalls, contextLines)
+      : directCalls;
 
   if (remainingDepth === 1) {
     return enhancedCalls;

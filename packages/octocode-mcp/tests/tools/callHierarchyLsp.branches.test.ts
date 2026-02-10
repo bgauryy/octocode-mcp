@@ -326,6 +326,40 @@ describe('LSP Call Hierarchy - Branch Coverage Tests', () => {
       expect(result).toHaveLength(2); // Both direct and nested calls
       expect(mockClient.getIncomingCalls).toHaveBeenCalledTimes(2); // Called recursively
     });
+
+    it('should skip enhancement when contextLines is 0', async () => {
+      const { enhanceIncomingCalls } =
+        await import('../../src/tools/lsp_call_hierarchy/callHierarchyHelpers.js');
+      const incomingCall = {
+        from: {
+          ...mockCallHierarchyItem,
+          name: 'callerFunction',
+          uri: '/workspace/src/caller.ts',
+          range: {
+            start: { line: 10, character: 0 },
+            end: { line: 10, character: 20 },
+          },
+        },
+        fromRanges: [
+          {
+            start: { line: 10, character: 0 },
+            end: { line: 10, character: 20 },
+          },
+        ],
+      };
+      vi.mocked(mockClient.getIncomingCalls).mockResolvedValue([incomingCall]);
+
+      const result = await gatherIncomingCallsRecursive(
+        mockClient as any,
+        mockCallHierarchyItem,
+        1,
+        new Set(),
+        0 // contextLines = 0
+      );
+
+      expect(result).toHaveLength(1);
+      expect(enhanceIncomingCalls).not.toHaveBeenCalled();
+    });
   });
 
   describe('gatherOutgoingCallsRecursive - Branch Coverage', () => {
@@ -466,6 +500,37 @@ describe('LSP Call Hierarchy - Branch Coverage Tests', () => {
 
       expect(result).toHaveLength(2); // Both direct and nested calls
       expect(mockClient.getOutgoingCalls).toHaveBeenCalledTimes(2); // Called recursively
+    });
+
+    it('should skip enhancement when contextLines is 0', async () => {
+      const { enhanceOutgoingCalls } =
+        await import('../../src/tools/lsp_call_hierarchy/callHierarchyHelpers.js');
+      const outgoingCall = {
+        to: {
+          ...mockCallHierarchyItem,
+          name: 'calleeFunction',
+          uri: '/workspace/src/callee.ts',
+          range: {
+            start: { line: 15, character: 0 },
+            end: { line: 15, character: 20 },
+          },
+        },
+        fromRanges: [
+          { start: { line: 4, character: 0 }, end: { line: 4, character: 20 } },
+        ],
+      };
+      vi.mocked(mockClient.getOutgoingCalls).mockResolvedValue([outgoingCall]);
+
+      const result = await gatherOutgoingCallsRecursive(
+        mockClient as any,
+        mockCallHierarchyItem,
+        1,
+        new Set(),
+        0 // contextLines = 0
+      );
+
+      expect(result).toHaveLength(1);
+      expect(enhanceOutgoingCalls).not.toHaveBeenCalled();
     });
   });
 });

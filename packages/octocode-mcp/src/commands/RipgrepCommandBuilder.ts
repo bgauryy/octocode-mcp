@@ -235,7 +235,7 @@ export class RipgrepCommandBuilder extends BaseCommandBuilder {
       this.addFlag('--no-mmap');
     }
 
-    if (query.includeStats) {
+    if (query.includeStats && !isPlainTextOutput) {
       this.addFlag('--stats');
     }
 

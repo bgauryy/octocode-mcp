@@ -8,6 +8,7 @@ export {
   parseRipgrepJsonOutput,
   parseGrepOutput,
   extractFunctionBody,
+  isFunctionAssignment,
   inferSymbolKind,
   createRange,
   escapeRegex,
