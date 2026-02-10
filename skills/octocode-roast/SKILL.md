@@ -1,6 +1,6 @@
 ---
 name: octocode-roast
-description: Brutally honest roasts of your code with fixes
+description: This skill should be used when the user asks to "roast my code", "review code brutally", "find code sins", "what's wrong with my code", "shame my code", "critique this code", "find antipatterns", "code quality roast", or wants entertaining but actionable code criticism with severity-ranked fixes. Delivers brutally honest roasts with file:line citations and redemption paths.
 ---
 
 # Octocode Roast
@@ -374,7 +374,7 @@ Before delivering:
 - Monorepo with separate packages to roast
 
 **How to Parallelize**:
-1. Use `TodoWrite` to identify independent roast domains
+1. Use `TaskCreate` (or runtime equivalent, e.g., `TodoWrite`) to identify independent roast domains
 2. Use `Task` tool to spawn subagents per domain/sin category
 3. Each agent hunts sins independently using local tools
 4. Merge findings, deduplicate, prioritize by severity
@@ -386,7 +386,7 @@ Before delivering:
   - Agent 2: Hunt FELONIES (any abuse, N+1 queries, callback hell)
   - Agent 3: Hunt CRIMES + SLOP (magic numbers, AI hallucinations)
 - **Phase 4-6 (Autopsy + Redemption)**: Keep sequential - needs unified prioritization
-- Use `TodoWrite` to track sins found per agent
+- Use `TaskUpdate` to track sins found per agent
 - Each agent uses: `localViewStructure` → `localSearchCode` → `lspFindReferences` → `localGetFileContent`
 
 **Example**:

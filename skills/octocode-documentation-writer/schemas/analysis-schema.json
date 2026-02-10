@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://octocode-documentaion-writer.v3/analysis.json",
+  "$id": "https://octocode-documentation-writer.v3/analysis.json",
   "title": "Repository Analysis Output",
   "description": "Complete analysis output from Discovery+Analysis Agent",
   "type": "object",

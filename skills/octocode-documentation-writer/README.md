@@ -36,7 +36,7 @@ Agents struggle with writing documentation because:
 ### Installation
 
 ```bash
-npx add-skill https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-documentaion-writer
+npx add-skill https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-documentation-writer
 ```
 
 ### 🔌 Octocode MCP Setup (Required)

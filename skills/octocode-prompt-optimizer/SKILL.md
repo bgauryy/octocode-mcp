@@ -1,12 +1,12 @@
 ---
 name: octocode-prompt-optimizer
-description: Activate when user provides a prompt, SKILL.md, or agent instruction and requests optimization. Transforms weak instructions into reliable, enforceable agent protocols.
+description: This skill should be used when the user asks to "optimize this prompt", "improve this SKILL.md", "make this prompt more reliable", "fix my agent instructions", "review this AGENTS.md", "strengthen this prompt", "my agent keeps skipping steps", "add enforcement to instructions", or needs to transform weak prompts into reliable, enforceable agent protocols. Uses a 6-step gated flow (with Fast/Full modes), command strengthening, gate injection, and failure mode analysis.
 ---
 
 # Prompt Optimizer Skill
 
 <what>
-Analyzes and improves prompts, documentation, and agent instructions using prompt engineering best practices.
+Analyzes and improves instructional prompts, documentation, and agent instructions using prompt engineering best practices while preserving original intent.
 </what>
 
 <when_to_use>
@@ -15,6 +15,7 @@ Analyzes and improves prompts, documentation, and agent instructions using promp
 - Instructions lack enforcement
 - Output format is inconsistent
 - Reviewing any instruction document or prompt
+- Strengthening agent-operational text without changing business/domain logic
 </when_to_use>
 
 <global_forbidden priority="maximum">
@@ -26,7 +27,7 @@ Analyzes and improves prompts, documentation, and agent instructions using promp
 5. Outputting without validation
 6. Over-strengthening soft guidance
 7. Skipping gates or checkboxes
-8. Bloating prompts - fixes MUST NOT increase line count >10% unless adding required gates
+8. Bloating prompts - target line count increase <10%; if >10%, MUST document a one-line justification in VALIDATE
 
 **Triple Lock:**
 - **STATE:** You MUST preserve working logic AND follow all gates in order
@@ -39,15 +40,19 @@ Analyzes and improves prompts, documentation, and agent instructions using promp
 
 <tool_control priority="high">
 **FORBIDDEN tools during optimization:**
-- Shell commands that modify files directly
-- Any tool that executes code
+- Direct file/system modification that bypasses quality gates
+- Any tool usage that executes code or commands unrelated to prompt optimization
 - Tools that skip the READ→UNDERSTAND→RATE→FIX→VALIDATE flow
 
 **ALLOWED tools:**
-- Read (to read prompt files)
-- StrReplace/Write (ONLY after VALIDATE step passes)
-- AskQuestion (for clarification)
+- Read-only file access (to read prompt files)
+- Safe file edit/write capability (ONLY after VALIDATE step passes)
+- Clarification question capability (for user clarification)
 - Text output (all phases)
+
+**Compatibility note (REQUIRED):**
+- Map capability names to the active runtime's tool names.
+- Example aliases: read-only file access = Read/ReadFile/localGetFileContent; safe file edit/write = Write/StrReplace/ApplyPatch.
 </tool_control>
 
 ---
@@ -71,6 +76,25 @@ READ → UNDERSTAND → RATE → FIX → VALIDATE → OUTPUT
 | 6 | **OUTPUT** optimized document | Format followed exactly | N/A |
 
 **CRITICAL:** You MUST complete each gate before proceeding. DO NOT skip steps.
+
+### Adaptive Mode Selector (REQUIRED)
+| Mode | Use When | Allowed Compression | Non-negotiables |
+|------|----------|---------------------|-----------------|
+| **Fast Path** | Short/single-purpose prompt, low ambiguity, <=3 logical parts, no unresolved unknowns | READ+UNDERSTAND may be combined; RATE+FIX may be compacted into one section if issues table is still produced | VALIDATE and intent-preservation checks are ALWAYS required |
+| **Full Path** | Multi-section prompt, high ambiguity, >=4 logical parts, conflicting constraints, or Critical/High risk | No compression. Execute each gate separately | All gates and templates required |
+
+**Mode selection rules (REQUIRED):**
+- **IF** any unknown blocks progress, conflicting instructions exist, or Critical/High issues are likely → **THEN** use Full Path.
+- **IF** prompt is simple and unambiguous with low risk → **THEN** Fast Path is allowed.
+- **IF** uncertain which mode applies → **THEN** default to Full Path.
+
+### Minimum Execution Profile (Very Small Tasks)
+- **IF** task is very small and unambiguous → **THEN** use Fast Path with concise outputs.
+- **MUST:** preserve intent, perform a minimal issue scan, and pass VALIDATE before output.
+- **MUST:** follow selected output variant format.
+- **IF** ambiguity, conflict, or High/Critical risk appears → **THEN** escalate to Full Path immediately.
+
+**Global enforcement baseline:** `global_forbidden` and VALIDATE are source-of-truth constraints for every gate; gate sections focus on step-specific requirements.
 </execution_flow>
 
 ---
@@ -98,10 +122,9 @@ READ → UNDERSTAND → RATE → FIX → VALIDATE → OUTPUT
 ### FORBIDDEN
 - Making ANY changes before reading
 - Skipping sections
-- Proceeding without completing all checkboxes
 
 ### ALLOWED
-- Read tool only
+- Read-only file access only
 - Text output to confirm reading
 
 ### On Failure
@@ -169,7 +192,6 @@ READ → UNDERSTAND → RATE → FIX → VALIDATE → OUTPUT
 ### FORBIDDEN
 - Proceeding without understanding the goal
 - Making changes based on assumptions
-- Skipping output format
 
 ### ALLOWED
 - Text output (understanding summary)
@@ -227,7 +249,6 @@ READ → UNDERSTAND → RATE → FIX → VALIDATE → OUTPUT
 - Fixing issues before completing rating
 - Ignoring critical issues
 - Skipping weak word scan
-- Proceeding without issues table
 
 ### ALLOWED
 - Text output (issues table)
@@ -286,8 +307,15 @@ READ → UNDERSTAND → RATE → FIX → VALIDATE → OUTPUT
 3. REQUIRE: "REQUIRED: Verify X complete"
 ```
 
-### Reasoning Block (REQUIRED Before Changes)
-**REQUIRED:** Before making changes, produce a `<reasoning>` block:
+### Reasoning Block (CONDITIONAL REQUIRED Before Changes)
+**REQUIRED when:**
+- Full Path is active, OR
+- Fast Path has any Critical/High issue.
+
+**Optional when:**
+- Fast Path has only Medium/Low issues; include one-line rationale instead.
+
+Before making changes (when required), produce a `<reasoning>` block:
 ```markdown
 <reasoning>
 1. **Current state:** [What exists now]
@@ -328,14 +356,14 @@ READ → UNDERSTAND → RATE → FIX → VALIDATE → OUTPUT
 - [ ] All Critical issues fixed
 - [ ] All High issues fixed
 - [ ] Medium/Low addressed or documented as skipped
-- [ ] Reasoning block produced before changes
+- [ ] Reasoning requirement satisfied (block produced OR Fast Path low-risk rationale documented)
 
 ### FORBIDDEN
 - Over-strengthening soft guidance (keep "should" for optional items)
 - Changing logic that already works
 - Adding unnecessary complexity
 - Skipping Critical/High issues
-- Bloating: fixes that increase line count >10% without adding required gates
+- Bloating: >10% line increase without explicit justification in VALIDATE
 
 ### ALLOWED
 - Text output (draft fixes)
@@ -367,7 +395,8 @@ READ → UNDERSTAND → RATE → FIX → VALIDATE → OUTPUT
 - [ ] Logical flow preserved
 - [ ] Original intent preserved
 - [ ] Triple Lock applied to critical rules
-- [ ] Line count increase <10% (unless adding required gates)
+- [ ] Line count target met (<10%) OR justified exception documented
+- [ ] Any >10% increase includes one-line reason linked to required gate/clarity fixes
 
 **Additional checks (if applicable):**
 - [ ] Gates have Pre-Conditions, Gate Check, FORBIDDEN, ALLOWED, On Failure
@@ -380,7 +409,7 @@ READ → UNDERSTAND → RATE → FIX → VALIDATE → OUTPUT
 - [ ] Steps/outputs referenced by name, not position
 - [ ] All cross-references are unambiguous
 - [ ] No implicit "the" references without clear antecedent
-- [ ] XML tags for attention-critical sections
+- [ ] XML tags are optional; use only for attention-control needs (Markdown remains default)
 
 ### Reflection (REQUIRED)
 MUST answer these questions:
@@ -408,6 +437,7 @@ MUST answer these questions:
 - Outputting without completing validation
 - Skipping checklist items
 - Proceeding with failed checks
+- Using XML tags outside attention-control needs (Markdown remains default)
 
 ### ALLOWED
 - Text output (validation results)
@@ -430,8 +460,14 @@ MUST answer these questions:
 - [ ] All REQUIRED checks passed
 - [ ] No intent changes confirmed
 
-### Output Format (REQUIRED - DO NOT deviate)
+### Output Format (REQUIRED - select variant by user intent)
 
+**Selection rule (REQUIRED):**
+- **IF** user requests complete rewritten document → **THEN** use Variant A.
+- **IF** user requests minimal edits/delta only → **THEN** use Variant B.
+- **IF** user does not specify → **THEN** default to Variant A.
+
+**Common report header (REQUIRED for both variants):**
 ```markdown
 # Optimization Complete
 
@@ -446,18 +482,29 @@ MUST answer these questions:
 | Command Strengthening | [N] | [Brief example] |
 | Gates Added/Fixed | [N] | [Brief example] |
 | Redundancy Removed | [N] | [Brief example] |
+```
 
+**Variant A - Full Document (default):**
+```markdown
 ## Optimized Document
 [Full optimized content]
 ```
 
+**Variant B - Patch-Style Delta (minimal edits):**
+```markdown
+## Patch-Style Delta
+| Section | Before | After | Why |
+|---------|--------|-------|-----|
+| [Section name] | [Old text] | [New text] | [Reason] |
+```
+
 ### FORBIDDEN
-- Deviating from output format
+- Deviating from selected output variant
 - Outputting without validation pass
-- Omitting the optimized document
+- Omitting required deliverable (full document for Variant A, patch-style delta for Variant B)
 
 ### ALLOWED
-- StrReplace/Write to save optimized content
+- Safe file edit/write capability to save optimized content
 - Text output (summary + document)
 
 ### On Failure
@@ -486,62 +533,62 @@ MUST answer these questions:
 
 ---
 
+## Reference: Conflict Resolution Micro-Protocol
+
+<conflict_protocol>
+Use this protocol when instructions conflict:
+
+1. **Detect** - Name the two conflicting instructions explicitly.
+2. **Resolve** - Apply precedence table (highest priority wins).
+3. **Document** - Add one-line note: "Conflict: [A] vs [B] -> Resolved by [priority N rule]".
+4. **Continue** - Proceed using the resolved instruction only.
+
+**FORBIDDEN:** Proceeding while both conflicting instructions remain active.
+</conflict_protocol>
+
+---
+
 ## Reference: Context Patterns
 
 <reasoning_patterns>
 ### State Summaries (Context Retention)
-Use at the start of complex phases to prevent "forgetting":
-```markdown
-<phase_start>
-**State Summary:**
-- **Goal:** [What are we solving?]
-- **Progress:** [What is already done?]
-- **Next:** [Immediate next step]
-- **Blockers:** [Any issues?]
-</phase_start>
-```
+Use concise summaries only when needed to preserve context:
+- Goal
+- Progress
+- Next step
+- Blockers (if any)
 
-**REQUIRED:** For multi-step fixes, produce a state summary every 3 fixes.
+**Conditional requirement:**
+- Full Path: produce a state summary at each phase transition or context shift.
+- Fast Path: produce a state summary only when context shifts materially.
 </reasoning_patterns>
 
 ---
 ## Reference: High-Value vs Low-Value Content
 
 <content_guide>
-### REMOVE (Low Value)
-| Pattern | Action |
-|---------|--------|
-| Explanatory prose without actionable constraints | DELETE |
-| Numeric scoring systems | Replace with pass/fail |
-| Repeated examples | Keep 1-2 best |
-| Long prose paragraphs | Convert to tables |
-| Hedging language | Replace with MUST or DELETE |
-| Emoji as instructions | Replace with strong command words (unless prompt output requires emoji) |
-
-### KEEP (High Value)
-| Pattern | Example |
-|---------|---------|
-| Tables with actions | `| Pattern | Action |` |
-| Imperative verbs | STOP, EXECUTE, VERIFY |
-| FORBIDDEN/ALLOWED lists | Clear capability control |
-| IF/THEN conditionals | `**IF** X → **THEN** Y` |
-| Gate checkpoints | STOP before transitions |
+| Keep (High Value) | Remove/Reduce (Low Value) |
+|-------------------|---------------------------|
+| Tables with explicit actions | Explanatory prose without constraints |
+| Imperative verbs (STOP, VERIFY, EXECUTE) | Repeated examples (keep 1-2) |
+| FORBIDDEN/ALLOWED lists | Long paragraphs that can be tables |
+| IF/THEN decision rules | Hedging language in critical rules |
+| Markdown default + optional XML for attention control | Emoji used as instructions (unless required by output) |
 </content_guide>
 
 ---
 
 ## Quick Reference
 
-| Goal | Pattern |
+Use this only as a mnemonic; gate sections are source of truth.
+
+| Need | Pattern |
 |------|---------|
-| Force a stop | `**STOP. DO NOT proceed.**` |
-| Require action | `**REQUIRED:** You MUST [action]` |
-| Ban action | `**FORBIDDEN:** [action] until [condition]` |
-| Force format | `**OUTPUT FORMAT (REQUIRED):** [template]` |
-| Create checkpoint | `### Gate Check` with `- [ ]` items |
-| Handle errors | `**IF** [error] → **THEN** [recovery]` |
-| Critical rule | Triple Lock: STATE + FORBID + REQUIRE |
-| Replace emoji | Emoji → strong command word (MUST, FORBIDDEN, etc.) |
+| Stop/Checkpoint | `**STOP. DO NOT proceed.**` + `### Gate Check` |
+| Mandatory action | `**REQUIRED:** You MUST [action]` |
+| Prohibited action | `**FORBIDDEN:** [action]` |
+| Decision logic | `**IF** [condition] → **THEN** [action]` |
+| Critical rule hardening | Triple Lock: STATE + FORBID + REQUIRE |
 
 ---
 
@@ -550,47 +597,10 @@ Use at the start of complex phases to prevent "forgetting":
 <common_mistakes>
 | Mistake | Why It Fails | Fix |
 |---------|--------------|-----|
-| Skipping UNDERSTAND step | Fixes wrong things, breaks working logic | ALWAYS produce Understanding output first |
-| Fixing before RATE complete | Misses issues, inconsistent severity handling | Complete issues table before ANY fix |
 | Over-strengthening soft guidance | "prefer" → "MUST" breaks optional flexibility | Keep "should/prefer" for truly optional items |
 | Using "it/this/that" | Agent loses context, applies fix to wrong element | Name every entity explicitly |
-| Outputting without VALIDATE | Weak words remain, conflicts undetected | MUST complete all checklist items |
 | Changing working logic | User trusted original behavior | FORBIDDEN: If the logic works, don't touch it |
-| Bloating the prompt | Verbose fixes overwhelm context, reduce density | MUST keep fixes concise; <10% line increase |
+| Overusing XML tags | Noise and style drift without reliability gain | Keep Markdown default; use XML only for attention control |
 </common_mistakes>
 
 ---
-
-## Before/After Example
-
-<before_after_example>
-### Before (Weak)
-```
-Consider checking the file before making changes.
-You should validate the output.
-Handle any errors that occur.
-If needed, retry the operation.
-```
-
-### After (Strong)
-```
-**REQUIRED:** You MUST read the file completely before making ANY changes.
-**FORBIDDEN:** Outputting without validation.
-
-### On Error
-- **IF** file unreadable → **THEN** ask user for correct path
-- **IF** validation fails → **THEN** return to FIX step
-
-### Retry Logic
-- **IF** operation fails AND retry_count < 3 → **THEN** retry with exponential backoff
-- **IF** retry_count >= 3 → **THEN** STOP and report failure to user
-```
-
-### Changes Applied
-| Original | Issue | Fixed |
-|----------|-------|-------|
-| "Consider checking" | Weak word in critical action | "REQUIRED: You MUST" |
-| "should validate" | Weak enforcement | "FORBIDDEN: without validation" |
-| "Handle any errors" | Ambiguous instruction | Explicit IF/THEN for each error |
-| "If needed, retry" | Vague condition | Specific retry count + backoff |
-</before_after_example>

@@ -23,8 +23,8 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
     <file name=".context/questions.json">Engineer questions (Phase 2 output)</file>
     <file name=".context/research.json">Research findings (Phase 3 output)</file>
     <file name="documentation/*.md">Generated documentation files (Phase 5 output)</file>
-    <schema name="">SINGLE SOURCE OF TRUTH for structure</schema>
-    <schema name="et schema for output</schema>
+    <schema name="schemas/documentation-structure.json">SINGLE SOURCE OF TRUTH for structure</schema>
+    <schema name="schemas/qa-results-schema.json">Target schema for output</schema>
 </inputs>
 
 <outputs>
@@ -158,7 +158,7 @@ if (previous_phase_complete) {
 
     // 1. Load Agent Spec
     const AGENT_SPEC = Read("references/agent-qa-validator.md");
-    const SCHEMA_QA = Read("
+    const SCHEMA_QA = Read("schemas/qa-results-schema.json")
 
     // 2. Execute Validation Task
     const RESULT = Task({

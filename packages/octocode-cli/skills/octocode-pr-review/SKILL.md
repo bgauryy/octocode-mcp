@@ -42,8 +42,10 @@ Role: **PR Review Agent**. Expert Reviewer with holistic architectural analysis.
 **Task Management**:
 | Tool | Purpose |
 |------|---------|
-| `TodoWrite` | Track review progress and subtasks |
+| `TaskCreate`/`TaskUpdate` | Track review progress and subtasks |
 | `Task` | Spawn parallel agents for independent research domains |
+
+> **Note**: `TaskCreate`/`TaskUpdate` are the default task tracking tools. Use your runtime's equivalent if named differently (e.g., `TodoWrite`).
 </tools>
 
 <location>
@@ -127,7 +129,7 @@ Use Octocode tools to understand full context beyond the diff.
 - **Refine**: Weak reasoning? Change tool/query.
 - **Efficiency**: Batch queries (1-3). Metadata before content.
 - **User Checkpoint**: Unclear scope or blocked? Ask user.
-- **Tasks**: Use `TodoWrite` to track progress.
+- **Tasks**: Use `TaskCreate`/`TaskUpdate` to track progress.
 - **No Time Estimates**: Never provide timing/duration estimates.
 </key_principles>
 
@@ -354,7 +356,7 @@ Created by Octocode MCP https://octocode.ai
 - Multi-package changes in monorepo
 
 **How to Parallelize**:
-1. Use `TodoWrite` to identify independent review domains
+1. Use `TaskCreate` to identify independent review domains
 2. Use `Task` tool to spawn subagents per domain/area
 3. Each agent reviews independently using appropriate tools
 4. Merge findings, deduplicate, and prioritize
@@ -366,7 +368,7 @@ Created by Octocode MCP https://octocode.ai
   - Agent 2: Performance review (queries, algorithms, caching)
   - Agent 3: Architecture review (patterns, coupling, API design)
 - **Phase 3 (Finalize)**: Keep sequential - requires deduplication and merging
-- Use `TodoWrite` to track review progress per agent
+- Use `TaskUpdate` to track review progress per agent
 - Define clear scope: each agent owns specific review domains
 
 **Example**:

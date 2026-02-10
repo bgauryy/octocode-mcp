@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://octocode-documentaion-writer.v3/work-assignments.json",
+  "$id": "https://octocode-documentation-writer.v3/work-assignments.json",
   "title": "Orchestrator Work Assignments",
-  "description": "Output from Phase 2.5 Orchestrator defining file ownership and agent tasks",
+  "description": "Output from Phase 4 Orchestrator defining file ownership and agent tasks",
   "type": "object",
   "required": ["metadata", "strategy", "assignments", "file_groups"],
   "properties": {

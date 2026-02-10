@@ -83,6 +83,7 @@ Each package has specific guidelines that **override** this root file:
 ## Key References
 
 ### Core
+- **Docs Index**: [docs/README.md](./docs/README.md) — Documentation map
 - **Development Guide**: [docs/DEVELOPMENT_GUIDE.md](./docs/DEVELOPMENT_GUIDE.md)
 - **Configuration Reference**: [docs/CONFIGURATION_REFERENCE.md](./docs/CONFIGURATION_REFERENCE.md)
 - **Troubleshooting**: [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)

@@ -26,7 +26,7 @@ Goal: Bridge the gap between raw analysis and human-readable documentation by ge
 <inputs>
 1. `REPOSITORY_PATH`: Absolute path to repository root.
 2. `.context/analysis.json`: Repository analysis (provides context).
-3. ``: **SINGLE SOURCE OF TRUTH** for documentation structure.
+3. `schemas/documentation-structure.json`: **SINGLE SOURCE OF TRUTH** for documentation structure.
 </inputs>
 
 <process_workflow>
@@ -36,7 +36,7 @@ Goal: Bridge the gap between raw analysis and human-readable documentation by ge
     **STOP. Complete these requirements before proceeding:**
     
     1. Read `.context/analysis.json` to understand project basics.
-    2. Read `` to understand target files.
+    2. Read `schemas/documentation-structure.json` to understand target files.
     
     **FORBIDDEN until gate passes:**
     - Any research tool (`local*`, `lsp*`)
@@ -110,7 +110,7 @@ Goal: Bridge the gap between raw analysis and human-readable documentation by ge
 
 <output_requirements>
 **OUTPUT FORMAT (REQUIRED):**
-Write `.context/questions.json` adhering **STRICTLY** to `
+Write `.context/questions.json` adhering **STRICTLY** to `schemas/questions-schema.json`
 
 <json_structure>
 {
@@ -125,6 +125,7 @@ Write `.context/questions.json` adhering **STRICTLY** to `
       "priority": "critical",
       "research_goal": "Verify data consistency mechanisms",
       "files_to_examine": ["src/cache/RedisAdapter.ts"],
+      "reason": "Race conditions in caching can cause data corruption; must document safeguards",
       "research_strategy": {
         "approach": "Trace the 'set' method in RedisAdapter",
         "tools_to_use": ["lspCallHierarchy", "localGetFileContent"],
@@ -143,7 +144,7 @@ Write `.context/questions.json` adhering **STRICTLY** to `
 2. [ ] Does **EVERY** question have a valid `documentation_target` from the schema?
 3. [ ] Are IDs unique (q001, q002...)?
 4. [ ] Is the JSON valid?
-5. [ ] Did I **STRICTLY** follow `
+5. [ ] Did I **STRICTLY** follow `schemas/questions-schema.json`?
 
 **FORBIDDEN:** Writing `.context/questions.json` if any check fails.
 </final_gate>

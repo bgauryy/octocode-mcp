@@ -1,10 +1,10 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://octocode-documentaion-writer.v3/partial-discovery.json",
+  "$id": "https://octocode-documentation-writer.v3/partial-discovery.json",
   "title": "Partial Discovery Output",
   "description": "Schema for partial results from discovery sub-agents",
   "type": "object",
-  "oneOf": [
+  "anyOf": [
     {
       "$comment": "1A: Language & Manifests",
       "required": ["discovery"],

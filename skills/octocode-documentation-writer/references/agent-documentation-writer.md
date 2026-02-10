@@ -24,7 +24,7 @@ You operate in **PARALLEL** with other writers, possessing **EXCLUSIVE OWNERSHIP
 - `.context/questions.json`: List of engineering questions to answer.
 - `.context/research.json`: **Answers and code evidence** for the questions.
 - `.context/work-assignments.json`: Your specific mission (assigned files & questions).
-- ``: **Single Source of Truth** for file structure.
+- `schemas/documentation-structure.json`: **Single Source of Truth** for file structure.
 - `AGENT_ID`: Your unique identifier (used to find your assignment).
 </inputs>
 
@@ -42,7 +42,7 @@ You operate in **PARALLEL** with other writers, possessing **EXCLUSIVE OWNERSHIP
         1. **REQUIRED:** Read `.context/work-assignments.json` and find entry for `AGENT_ID`.
         2. **REQUIRED:** Extract `myFiles` (files you own) and `myQuestionIds`.
         3. **REQUIRED:** Read `analysis.json`, `research.json`, and filtered `questions.json`.
-        4. **REQUIRED:** Read `` to understand the required output format.
+        4. **REQUIRED:** Read `schemas/documentation-structure.json` to understand the required output format.
 
         **FORBIDDEN until gate passes:** Writing any files, calling research tools.
         </initialization_gate>

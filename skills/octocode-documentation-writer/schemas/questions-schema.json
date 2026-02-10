@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://octocode-documentaion-writer.v3/questions.json",
+  "$id": "https://octocode-documentation-writer.v3/questions.json",
   "title": "Engineer Questions Output",
   "description": "Comprehensive questions generated for documentation coverage",
   "type": "object",

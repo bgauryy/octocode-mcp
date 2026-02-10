@@ -143,7 +143,7 @@ Skills are organized in two directories:
 | `octocode-plan` | Adaptive research & implementation planning | UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY | cli |
 | `octocode-pr-review` | Defects-first PR review across 6+ domains | CONTEXT → CHECKPOINT → ANALYSIS → FINALIZE → REPORT | cli |
 | `octocode-roast` | Brutally honest code review with comedic flair | SCOPE → ROAST → INVENTORY → SPOTLIGHT → REDEMPTION | both |
-| `octocode-documentaion-writer` | Multi-agent documentation generation pipeline | DISCOVER → QUESTIONS → RESEARCH → ORCHESTRATE → WRITE → QA | root |
+| `octocode-documentation-writer` | Multi-agent documentation generation pipeline | DISCOVER → QUESTIONS → RESEARCH → ORCHESTRATE → WRITE → QA | root |
 | `octocode-prompt-optimizer` | Transform weak prompts into reliable agent protocols | READ → UNDERSTAND → RATE → FIX → VALIDATE | root |
 
 ### Skill Structure
