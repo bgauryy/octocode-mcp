@@ -963,15 +963,19 @@ describe('SEC-08: Home Directory Boundary', () => {
 
 describe('SEC-09: End-to-End Attack Scenarios', () => {
   describe('Scenario: Read /etc/passwd via path traversal', () => {
+    // Use enough ../  to guarantee reaching filesystem root on any platform
+    // (CI workspace can be deep, e.g. /home/runner/work/org/repo/packages/pkg)
+    const deepTraversal = '../'.repeat(30);
+
     it('PathValidator blocks the traversal', () => {
       const v = strictValidator();
-      const r = v.validate(`${WORKSPACE}/../../../../../etc/passwd`);
+      const r = v.validate(`${WORKSPACE}/${deepTraversal}etc/passwd`);
       expect(r.isValid).toBe(false);
     });
 
     it('validateToolPath blocks for localGetFileContent', () => {
       const r = validateToolPath(
-        toolQuery(`${WORKSPACE}/../../../../../etc/passwd`),
+        toolQuery(`${WORKSPACE}/${deepTraversal}etc/passwd`),
         'localGetFileContent'
       );
       expect(r.isValid).toBe(false);
