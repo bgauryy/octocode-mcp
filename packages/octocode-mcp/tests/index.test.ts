@@ -195,7 +195,6 @@ describe('Index Module', () => {
       githubApiUrl: 'https://api.github.com',
       enableTools: [],
       disableTools: [],
-      enableLogging: true,
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: true,

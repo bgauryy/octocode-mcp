@@ -187,6 +187,11 @@ describe('config/resolver', () => {
         expect(resolveConfigSync().network.timeout).toBe(300000);
       });
 
+      it('clamps REQUEST_TIMEOUT=0 to MIN_TIMEOUT (5000)', () => {
+        process.env.REQUEST_TIMEOUT = '0';
+        expect(resolveConfigSync().network.timeout).toBe(5000);
+      });
+
       it('parses MAX_RETRIES as number', () => {
         process.env.MAX_RETRIES = '5';
         const config = resolveConfigSync();
@@ -202,10 +207,27 @@ describe('config/resolver', () => {
         expect(resolveConfigSync().network.maxRetries).toBe(10);
       });
 
-      it('parses LOG as boolean', () => {
+      it('allows MAX_RETRIES=0 (valid value, no retries)', () => {
+        process.env.MAX_RETRIES = '0';
+        expect(resolveConfigSync().network.maxRetries).toBe(0);
+      });
+
+      it('parses LOG=false as false', () => {
         process.env.LOG = 'false';
         const config = resolveConfigSync();
         expect(config.telemetry.logging).toBe(false);
+      });
+
+      it('parses LOG=yes as true (default-to-true semantics)', () => {
+        process.env.LOG = 'yes';
+        const config = resolveConfigSync();
+        expect(config.telemetry.logging).toBe(true);
+      });
+
+      it('parses LOG=anything as true (default-to-true semantics)', () => {
+        process.env.LOG = 'anything';
+        const config = resolveConfigSync();
+        expect(config.telemetry.logging).toBe(true);
       });
 
       it('parses WORKSPACE_ROOT', () => {
@@ -686,7 +708,7 @@ describe('config/resolver', () => {
     });
 
     describe('telemetry.logging (LOG)', () => {
-      it('env overrides file', () => {
+      it('LOG=false overrides file logging: true', () => {
         vi.mocked(existsSync).mockReturnValue(true);
         vi.mocked(readFileSync).mockReturnValue(
           JSON.stringify({ telemetry: { logging: true } })
@@ -695,6 +717,28 @@ describe('config/resolver', () => {
 
         const config = resolveConfigSync();
         expect(config.telemetry.logging).toBe(false);
+      });
+
+      it('LOG=yes overrides file logging: false (default-to-true semantics)', () => {
+        vi.mocked(existsSync).mockReturnValue(true);
+        vi.mocked(readFileSync).mockReturnValue(
+          JSON.stringify({ telemetry: { logging: false } })
+        );
+        process.env.LOG = 'yes';
+
+        const config = resolveConfigSync();
+        expect(config.telemetry.logging).toBe(true);
+      });
+
+      it('LOG=anything overrides file logging: false', () => {
+        vi.mocked(existsSync).mockReturnValue(true);
+        vi.mocked(readFileSync).mockReturnValue(
+          JSON.stringify({ telemetry: { logging: false } })
+        );
+        process.env.LOG = 'enabled';
+
+        const config = resolveConfigSync();
+        expect(config.telemetry.logging).toBe(true);
       });
 
       it('file overrides default', () => {

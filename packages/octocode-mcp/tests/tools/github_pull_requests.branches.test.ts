@@ -47,7 +47,6 @@ vi.mock('../../src/serverConfig.js', () => ({
   })),
   getServerConfig: vi.fn(() => ({
     version: '1.0.0',
-    enableLogging: true,
     timeout: 30000,
     maxRetries: 3,
     loggingEnabled: false,

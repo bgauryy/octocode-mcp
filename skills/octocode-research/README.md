@@ -479,7 +479,6 @@ See [Privacy Policy](../../PRIVACY.md) and [Terms](../../TERMS.md).
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Full architecture details |
 | [docs/API_REFERENCE.md](./docs/API_REFERENCE.md) | Complete API reference |
 | [docs/FLOWS.md](./docs/FLOWS.md) | Request flow diagrams |
-| [references/QUICK_DECISION_GUIDE.md](./references/QUICK_DECISION_GUIDE.md) | Tool selection cheatsheet |
 | [../../docs/TROUBLESHOOTING.md](../../docs/TROUBLESHOOTING.md) | Common issues and solutions |
 
 ---

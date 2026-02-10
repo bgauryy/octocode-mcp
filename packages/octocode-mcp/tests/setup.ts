@@ -66,17 +66,93 @@ const mockDefaultConfig = {
   configPath: undefined,
 };
 
-// Helper to build config dynamically (respects ENABLE_LOCAL env var)
-const buildMockConfig = () => ({
-  ...mockDefaultConfig,
-  local: {
-    ...mockDefaultConfig.local,
-    enabled:
-      process.env.ENABLE_LOCAL !== undefined
-        ? process.env.ENABLE_LOCAL !== 'false'
-        : true,
-  },
-});
+// Env var parsing helpers (mirrors octocode-shared resolverSections.ts behavior)
+function mockParseBooleanEnv(value: string | undefined): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === '') return undefined;
+  if (trimmed === 'true' || trimmed === '1') return true;
+  if (trimmed === 'false' || trimmed === '0') return false;
+  return undefined;
+}
+
+function mockParseLoggingEnv(value: string | undefined): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === '') return undefined;
+  if (trimmed === 'false' || trimmed === '0') return false;
+  return true;
+}
+
+function mockParseIntEnv(value: string | undefined): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  const trimmed = value.trim();
+  if (trimmed === '') return undefined;
+  const parsed = parseInt(trimmed, 10);
+  if (isNaN(parsed)) return undefined;
+  return parsed;
+}
+
+function mockParseStringArrayEnv(
+  value: string | undefined
+): string[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  const trimmed = value.trim();
+  if (trimmed === '') return undefined;
+  return trimmed
+    .split(',')
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+}
+
+// Helper to build config dynamically (mirrors shared module's resolver behavior)
+const buildMockConfig = () => {
+  const envEnableLocal = mockParseBooleanEnv(process.env.ENABLE_LOCAL);
+  const envLogging = mockParseLoggingEnv(process.env.LOG);
+  const envTimeout = mockParseIntEnv(process.env.REQUEST_TIMEOUT);
+  const envMaxRetries = mockParseIntEnv(process.env.MAX_RETRIES);
+  const envApiUrl = process.env.GITHUB_API_URL?.trim();
+  const envGitlabHost = process.env.GITLAB_HOST?.trim();
+  const envToolsToRun = mockParseStringArrayEnv(process.env.TOOLS_TO_RUN);
+  const envEnableTools = mockParseStringArrayEnv(process.env.ENABLE_TOOLS);
+  const envDisableTools = mockParseStringArrayEnv(process.env.DISABLE_TOOLS);
+  const envDisablePrompts = mockParseBooleanEnv(process.env.DISABLE_PROMPTS);
+
+  let timeout = envTimeout ?? mockDefaultConfig.network.timeout;
+  timeout = Math.max(5000, Math.min(300000, timeout));
+
+  let maxRetries = envMaxRetries ?? mockDefaultConfig.network.maxRetries;
+  maxRetries = Math.max(0, Math.min(10, maxRetries));
+
+  return {
+    ...mockDefaultConfig,
+    github: {
+      apiUrl: envApiUrl || mockDefaultConfig.github.apiUrl,
+    },
+    gitlab: {
+      host: envGitlabHost || mockDefaultConfig.gitlab.host,
+    },
+    local: {
+      ...mockDefaultConfig.local,
+      enabled: envEnableLocal ?? mockDefaultConfig.local.enabled,
+    },
+    tools: {
+      enabled: envToolsToRun ?? mockDefaultConfig.tools.enabled,
+      enableAdditional:
+        envEnableTools ?? mockDefaultConfig.tools.enableAdditional,
+      disabled: envDisableTools ?? mockDefaultConfig.tools.disabled,
+      disablePrompts:
+        envDisablePrompts ?? mockDefaultConfig.tools.disablePrompts,
+    },
+    network: {
+      timeout,
+      maxRetries,
+    },
+    telemetry: {
+      logging: envLogging ?? mockDefaultConfig.telemetry.logging,
+    },
+  };
+};
 
 vi.mock('octocode-shared', () => ({
   // Global config mock - re-evaluates ENABLE_LOCAL on each call

@@ -267,7 +267,7 @@ MCP Client → Octocode MCP → Language Server (spawned)
 | **Bundled** | TypeScript (`.ts`, `.tsx`), JavaScript (`.js`, `.jsx`, `.mjs`, `.cjs`) |
 | **Requires Install** | Python, Go, Rust, Java, Kotlin, C/C++, C#, Ruby, PHP, Swift, Dart, Lua, Zig, Elixir, Scala, Haskell, OCaml, Clojure, Vue, Svelte, YAML, TOML, JSON, HTML, CSS, Bash, SQL, GraphQL, Terraform |
 
-For full installation commands, see [LSP_TOOLS.md](./LSP_TOOLS.md#supported-languages).
+For additional language servers, check your language's official LSP server documentation.
 
 ### Environment Variables
 

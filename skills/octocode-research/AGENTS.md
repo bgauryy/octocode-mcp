@@ -86,8 +86,7 @@ octocode-research/
 │   ├── ARCHITECTURE.md        # Architecture documentation
 │   └── FLOWS.md               # Main flows & connections
 ├── references/
-│   ├── GUARDRAILS.md          # Safety guardrails
-│   └── QUICK_DECISION_GUIDE.md # Quick decision reference
+│   └── GUARDRAILS.md          # Safety guardrails
 ├── scripts/                   # Bundled output
 │   ├── server.js              # Bundled server
 │   └── server.d.ts            # Type declarations
@@ -291,7 +290,6 @@ yarn test -- --coverage  # With coverage report
 | [SKILL.md](./SKILL.md) | How AI agents should USE this skill |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Detailed architecture |
 | [docs/FLOWS.md](./docs/FLOWS.md) | Main flows & component connections |
-| [references/QUICK_DECISION_GUIDE.md](./references/QUICK_DECISION_GUIDE.md) | Quick decision reference |
 
 ---
 

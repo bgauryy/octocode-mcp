@@ -123,7 +123,6 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -163,7 +162,6 @@ describe('ToolsManager', () => {
           TOOL_NAMES.GITHUB_SEARCH_CODE,
           TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         ],
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -189,7 +187,6 @@ describe('ToolsManager', () => {
           'nonExistentTool',
           TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         ],
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -212,7 +209,6 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         toolsToRun: ['nonExistentTool1', 'nonExistentTool2'],
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -240,7 +236,6 @@ describe('ToolsManager', () => {
         githubApiUrl: 'https://api.github.com',
         toolsToRun: [TOOL_NAMES.GITHUB_SEARCH_CODE],
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -262,7 +257,6 @@ describe('ToolsManager', () => {
         githubApiUrl: 'https://api.github.com',
         toolsToRun: [TOOL_NAMES.GITHUB_SEARCH_CODE],
         disableTools: [TOOL_NAMES.GITHUB_FETCH_CONTENT],
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -285,7 +279,6 @@ describe('ToolsManager', () => {
         toolsToRun: [TOOL_NAMES.GITHUB_SEARCH_CODE],
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         disableTools: [TOOL_NAMES.GITHUB_FETCH_CONTENT],
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -308,7 +301,6 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -338,7 +330,6 @@ describe('ToolsManager', () => {
           TOOL_NAMES.GITHUB_SEARCH_CODE,
           TOOL_NAMES.GITHUB_FETCH_CONTENT,
         ],
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -362,7 +353,6 @@ describe('ToolsManager', () => {
         githubApiUrl: 'https://api.github.com',
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         disableTools: [TOOL_NAMES.GITHUB_SEARCH_CODE],
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -386,7 +376,6 @@ describe('ToolsManager', () => {
         githubApiUrl: 'https://api.github.com',
         enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         disableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS], // Same tool in both lists
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -410,7 +399,6 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -439,7 +427,6 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -474,7 +461,6 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -500,7 +486,6 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -526,7 +511,6 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -556,7 +540,6 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -583,7 +566,6 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -613,7 +595,6 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -654,7 +635,6 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -682,7 +662,6 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
@@ -709,7 +688,6 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
-        enableLogging: true,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,

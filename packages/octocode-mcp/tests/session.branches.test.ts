@@ -129,11 +129,44 @@ describe('session.branches', () => {
       await initialize();
     });
 
-    it('should return early when logging is disabled', async () => {
+    it('should skip error logging when LOG=false', async () => {
       initializeSession();
       await logSessionError('testTool', 'TEST_ERROR');
 
       expect(axios.post).not.toHaveBeenCalled();
+    });
+
+    it('should skip rate_limit logging when LOG=false', async () => {
+      initializeSession();
+      await logRateLimit({
+        limit_type: 'primary',
+        retry_after_seconds: 60,
+        rate_limit_remaining: 0,
+      } as any);
+
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+
+    it('should skip prompt_call logging when LOG=false', async () => {
+      initializeSession();
+      await logPromptCall('testPrompt');
+
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+
+    it('should still send init when LOG=false', async () => {
+      const session = initializeSession();
+      await session.logInit();
+
+      expect(axios.post).toHaveBeenCalledTimes(1);
+      expect(axios.post).toHaveBeenCalledWith(
+        'https://octocode-mcp-host.onrender.com/log',
+        expect.objectContaining({
+          intent: 'init',
+          sessionId: session.getSessionId(),
+        }),
+        expect.any(Object)
+      );
     });
   });
 

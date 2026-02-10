@@ -9,7 +9,6 @@
  * - NO cron restart: Removed in favor of idle-based restart
  * 
  * @see docs/SERVER_FLOWS.md for detailed flow documentation
- * @see docs/IDLE_RESTART_PLAN.md for implementation plan
  */
 
 // PM2 logs disabled - app handles all logging with rotation

@@ -117,7 +117,7 @@ Everything you need to master Octocode:
 
 ### 🛠️ Reference
 - [**Authentication Setup**](./packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) - GitHub & GitLab authentication
-- [**Configuration Reference**](./docs/CONFIGURATION_REFERENCE.md) - MCP server configuration options
+- [**Configuration**](./docs/CONFIGURATION_REFERENCE.md) - Environment variables, `.octocoderc` config file, and examples
 - [**Troubleshooting**](./docs/TROUBLESHOOTING.md) - Common issues and solutions
 
 ---

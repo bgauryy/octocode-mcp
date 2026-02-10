@@ -113,5 +113,8 @@ export {
   _getCacheState,
 } from './resolver.js';
 
+// Env var parsing utilities
+export { parseLoggingEnv } from './resolverSections.js';
+
 // Schemas
 export { OctocodeConfigSchema } from './schemas.js';

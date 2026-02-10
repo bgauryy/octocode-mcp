@@ -34,12 +34,10 @@ function resolveGitLabToken(): GitLabTokenResolutionResult {
  * Priority: env vars > ~/.octocode/.octocoderc > hardcoded defaults
  */
 function resolveGitLabConfig(): GitLabConfig {
-  const globalConfig = getConfigSync();
   const tokenResult = resolveGitLabToken();
-  const host = process.env.GITLAB_HOST?.trim() || globalConfig.gitlab.host;
 
   return {
-    host,
+    host: getConfigSync().gitlab.host,
     token: tokenResult.token,
     tokenSource: tokenResult.source,
     isConfigured: tokenResult.token !== null,
@@ -67,8 +65,7 @@ export function getGitLabToken(): string | null {
  * Priority: env var > config file > default
  */
 export function getGitLabHost(): string {
-  const globalConfig = getConfigSync();
-  return process.env.GITLAB_HOST?.trim() || globalConfig.gitlab.host;
+  return getConfigSync().gitlab.host;
 }
 
 /**

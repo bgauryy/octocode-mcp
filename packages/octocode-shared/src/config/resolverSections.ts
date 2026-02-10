@@ -80,6 +80,26 @@ export function parseStringArrayEnv(
     .filter(s => s.length > 0);
 }
 
+/**
+ * Parse LOG env var with "default to true" semantics.
+ * Returns true unless explicitly set to 'false' or '0'.
+ * Returns undefined if not set (to allow config fallback).
+ *
+ * @param value - The LOG environment variable value
+ * @returns true, false, or undefined for fallback
+ */
+export function parseLoggingEnv(
+  value: string | undefined
+): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === '') return undefined;
+  // Only return false if explicitly set to 'false' or '0'
+  if (trimmed === 'false' || trimmed === '0') return false;
+  // Any other value (including 'true', '1', 'yes', 'anything') means enabled
+  return true;
+}
+
 // ============================================================================
 // SECTION RESOLVERS
 // ============================================================================
@@ -195,8 +215,8 @@ export function resolveNetwork(
 export function resolveTelemetry(
   fileConfig?: OctocodeConfig['telemetry']
 ): RequiredTelemetryConfig {
-  // Env var: LOG
-  const envLogging = parseBooleanEnv(process.env.LOG);
+  // Env var: LOG - uses "default to true" semantics
+  const envLogging = parseLoggingEnv(process.env.LOG);
 
   return {
     logging:

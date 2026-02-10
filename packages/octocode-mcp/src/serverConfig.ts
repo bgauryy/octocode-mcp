@@ -94,46 +94,6 @@ export function _resetTokenResolvers(): void {
   _resolveTokenFull = resolveTokenFull;
 }
 
-function parseStringArray(value?: string): string[] | undefined {
-  if (!value?.trim()) return undefined;
-  return value
-    .split(',')
-    .map(s => s.trim())
-    .filter(s => s.length > 0);
-}
-
-/**
- * Parse a boolean environment variable with support for various formats.
- * Handles whitespace, casing, and common truthy/falsy values.
- * @param value - The environment variable value
- * @returns true, false, or undefined if not set/recognized
- */
-function parseBooleanEnv(value: string | undefined): boolean | undefined {
-  if (value === undefined || value === null) return undefined;
-  const trimmed = value.trim().toLowerCase();
-  if (trimmed === '') return undefined;
-  if (trimmed === 'true' || trimmed === '1') return true;
-  if (trimmed === 'false' || trimmed === '0') return false;
-  return undefined;
-}
-
-/**
- * Parse LOG env var with "default to true" semantics.
- * Returns true unless explicitly set to 'false' or '0'.
- * Returns undefined if not set (to allow config fallback).
- * @param value - The LOG environment variable value
- * @returns true, false, or undefined for fallback
- */
-function parseLoggingEnv(value: string | undefined): boolean | undefined {
-  if (value === undefined || value === null) return undefined;
-  const trimmed = value.trim().toLowerCase();
-  if (trimmed === '') return undefined;
-  // Only return false if explicitly set to 'false' or '0'
-  if (trimmed === 'false' || trimmed === '0') return false;
-  // Any other value (including 'true', '1', 'yes', 'anything') means enabled
-  return true;
-}
-
 async function resolveGitHubToken(): Promise<TokenResolutionResult> {
   // Delegate to octocode-shared's resolveTokenFull for centralized logic
   // Priority: env vars (1-3) → octocode storage (4-5) → gh CLI (6)
@@ -156,19 +116,6 @@ async function resolveGitHubToken(): Promise<TokenResolutionResult> {
   }
 }
 
-// ============================================================================
-// CONFIGURATION LIMITS
-// ============================================================================
-
-/** Minimum timeout - 5 seconds (prevents accidental misconfiguration) */
-const MIN_TIMEOUT = 5000;
-/** Maximum timeout - 5 minutes */
-const MAX_TIMEOUT = 300000;
-/** Minimum retries */
-const MIN_RETRIES = 0;
-/** Maximum retries */
-const MAX_RETRIES_LIMIT = 10;
-
 export async function initialize(): Promise<void> {
   if (config !== null) {
     return;
@@ -178,73 +125,25 @@ export async function initialize(): Promise<void> {
   }
 
   initializationPromise = (async () => {
-    // Load global configuration from ~/.octocode/.octocoderc
-    // This provides defaults that can be overridden by environment variables
-    const globalConfig = getConfigSync();
+    // Load fully-resolved configuration from ~/.octocode/.octocoderc
+    // Already handles: env vars > config file > hardcoded defaults
+    const resolved = getConfigSync();
 
     // Resolve token once at startup for initial config (source tracking)
     // Token is NOT cached - subsequent calls to getGitHubToken() will re-resolve
     const tokenResult = await resolveGitHubToken();
 
-    // Parse LOG with special "default to true" semantics
-    // LOG='anything' → true, LOG='false'/'0' → false, LOG=undefined → config fallback
-    const envLogging = parseLoggingEnv(process.env.LOG);
-    const isLoggingEnabled = envLogging ?? globalConfig.telemetry.logging;
-
-    // Parse ENABLE_LOCAL from environment, then global config
-    // Priority: ENABLE_LOCAL > config file > defaults
-    const enableLocal =
-      parseBooleanEnv(process.env.ENABLE_LOCAL) ?? globalConfig.local.enabled;
-
-    // Parse DISABLE_PROMPTS - env var overrides global config
-    const disablePrompts =
-      parseBooleanEnv(process.env.DISABLE_PROMPTS) ??
-      globalConfig.tools.disablePrompts ??
-      false;
-
-    // Parse tools configuration - env vars override global config
-    const envToolsToRun = parseStringArray(process.env.TOOLS_TO_RUN);
-    const envEnableTools = parseStringArray(process.env.ENABLE_TOOLS);
-    const envDisableTools = parseStringArray(process.env.DISABLE_TOOLS);
-
-    // Parse timeout - env var overrides global config
-    const envTimeout = process.env.REQUEST_TIMEOUT?.trim();
-    const timeout = Math.max(
-      MIN_TIMEOUT,
-      Math.min(
-        MAX_TIMEOUT,
-        envTimeout
-          ? parseInt(envTimeout) || globalConfig.network.timeout
-          : globalConfig.network.timeout
-      )
-    );
-
-    // Parse retries - env var overrides global config
-    const envRetries = process.env.MAX_RETRIES?.trim();
-    const maxRetries = Math.max(
-      MIN_RETRIES,
-      Math.min(
-        MAX_RETRIES_LIMIT,
-        envRetries
-          ? parseInt(envRetries) || globalConfig.network.maxRetries
-          : globalConfig.network.maxRetries
-      )
-    );
-
     config = {
       version: version,
-      githubApiUrl:
-        process.env.GITHUB_API_URL?.trim() || globalConfig.github.apiUrl,
-      toolsToRun: envToolsToRun ?? globalConfig.tools.enabled ?? undefined,
-      enableTools:
-        envEnableTools ?? globalConfig.tools.enableAdditional ?? undefined,
-      disableTools: envDisableTools ?? globalConfig.tools.disabled ?? undefined,
-      enableLogging: isLoggingEnabled,
-      timeout,
-      maxRetries,
-      loggingEnabled: isLoggingEnabled,
-      enableLocal,
-      disablePrompts,
+      githubApiUrl: resolved.github.apiUrl,
+      toolsToRun: resolved.tools.enabled ?? undefined,
+      enableTools: resolved.tools.enableAdditional ?? undefined,
+      disableTools: resolved.tools.disabled ?? undefined,
+      timeout: resolved.network.timeout,
+      maxRetries: resolved.network.maxRetries,
+      loggingEnabled: resolved.telemetry.logging,
+      enableLocal: resolved.local.enabled,
+      disablePrompts: resolved.tools.disablePrompts,
       tokenSource: tokenResult.source,
       gitlab: resolveGitLabConfig(),
     };
@@ -339,9 +238,7 @@ export function getActiveProviderConfig(): {
       token: getGitLabToken() ?? undefined,
     };
   }
-  const globalConfig = getConfigSync();
-  const githubApiUrl =
-    process.env.GITHUB_API_URL?.trim() || globalConfig.github.apiUrl;
+  const githubApiUrl = getConfigSync().github.apiUrl;
   // Only set baseUrl if it's not the default
   const baseUrl =
     githubApiUrl !== 'https://api.github.com' ? githubApiUrl : undefined;

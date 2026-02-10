@@ -507,8 +507,7 @@ octocode-research/
 │   ├── FLOWS.md               # Flow diagrams
 │   └── SKILL_RESEARCH.md      # This document
 ├── references/
-│   ├── GUARDRAILS.md          # Safety guardrails
-│   └── QUICK_DECISION_GUIDE.md # Tool selection guide
+│   └── GUARDRAILS.md          # Safety guardrails
 ├── scripts/
 │   ├── server.js              # Bundled server (tsdown)
 │   └── server.d.ts            # Type declarations
@@ -567,7 +566,6 @@ curl -X POST http://localhost:1987/tools/call/localSearchCode \
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Full architecture details |
 | [FLOWS.md](./FLOWS.md) | Request flow diagrams |
 | [API_REFERENCE.md](./API_REFERENCE.md) | HTTP API reference |
-| [QUICK_DECISION_GUIDE.md](../references/QUICK_DECISION_GUIDE.md) | Tool selection |
 | [GUARDRAILS.md](../references/GUARDRAILS.md) | Safety rules |
 
 ---

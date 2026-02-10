@@ -49,7 +49,6 @@ describe('Empty Arrays Removal in Responses', () => {
       version: '4.0.5',
       enableTools: [],
       disableTools: [],
-      enableLogging: true,
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: false,
