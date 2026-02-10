@@ -2,12 +2,14 @@
  * Core LSP Find References Implementation
  *
  * Contains the Language Server Protocol implementation for finding references.
+ * Uses lazy enhancement: filter → paginate → enhance only visible page.
  *
  * @module tools/lsp_find_references/lspReferencesCore
  */
 
 import { readFile } from 'fs/promises';
 import * as path from 'path';
+import picomatch from 'picomatch';
 
 import type {
   FindReferencesResult,
@@ -24,7 +26,32 @@ import { STATIC_TOOL_NAMES } from '../toolNames.js';
 const TOOL_NAME = STATIC_TOOL_NAMES.LSP_FIND_REFERENCES;
 
 /**
- * Use LSP client to find references
+ * Check if a relative file path matches include/exclude glob patterns.
+ * - If excludePattern is set and path matches any, return false.
+ * - If includePattern is set, path must match at least one.
+ * - If neither is set, return true (no filtering).
+ *
+ * @internal Exported for testing
+ */
+export function matchesFilePatterns(
+  relativePath: string,
+  includePattern?: string[],
+  excludePattern?: string[]
+): boolean {
+  if (excludePattern?.length) {
+    const isExcluded = picomatch(excludePattern);
+    if (isExcluded(relativePath)) return false;
+  }
+  if (includePattern?.length) {
+    const isIncluded = picomatch(includePattern);
+    return isIncluded(relativePath);
+  }
+  return true;
+}
+
+/**
+ * Use LSP client to find references.
+ * Applies file pattern filtering and lazy enhancement (paginate-then-enhance).
  */
 export async function findReferencesWithLSP(
   filePath: string,
@@ -58,30 +85,75 @@ export async function findReferencesWithLSP(
       };
     }
 
-    // Enhance with context and convert to ReferenceLocation
-    const contextLines = query.contextLines ?? 2;
-    const referenceLocations: ReferenceLocation[] = [];
+    // Step 1: Convert to raw reference locations (no file I/O yet)
+    const rawLocations: RawReferenceLocation[] = locations.map(loc => {
+      const relativeUri = path.relative(workspaceRoot, loc.uri);
+      const isDefinition =
+        loc.uri === filePath &&
+        loc.range.start.line === position.line &&
+        loc.range.start.character === position.character;
 
-    for (const loc of locations) {
-      const refLoc = await enhanceReferenceLocation(
-        loc,
-        workspaceRoot,
-        contextLines,
-        filePath,
-        position,
-        query.symbolName
-      );
-      referenceLocations.push(refLoc);
+      return {
+        uri: relativeUri || loc.uri,
+        absoluteUri: loc.uri,
+        range: loc.range,
+        content: loc.content,
+        isDefinition,
+      };
+    });
+
+    const totalUnfiltered = rawLocations.length;
+
+    // Step 2: Apply file pattern filtering
+    const hasFilters =
+      query.includePattern?.length || query.excludePattern?.length;
+    const filteredLocations = hasFilters
+      ? rawLocations.filter(loc =>
+          matchesFilePatterns(
+            loc.uri,
+            query.includePattern,
+            query.excludePattern
+          )
+        )
+      : rawLocations;
+
+    if (filteredLocations.length === 0) {
+      return {
+        status: 'empty',
+        totalReferences: 0,
+        researchGoal: query.researchGoal,
+        reasoning: query.reasoning,
+        hints: [
+          ...getHints(TOOL_NAME, 'empty'),
+          `Found ${totalUnfiltered} reference(s) but none matched the file patterns`,
+          query.includePattern?.length
+            ? `Include patterns: ${query.includePattern.join(', ')}`
+            : '',
+          query.excludePattern?.length
+            ? `Exclude patterns: ${query.excludePattern.join(', ')}`
+            : '',
+          'Try broader patterns or remove filtering to see all results',
+        ].filter(Boolean),
+      };
     }
 
-    // Apply pagination
+    // Step 3: Paginate the filtered results
     const referencesPerPage = query.referencesPerPage ?? 20;
     const page = query.page ?? 1;
-    const totalReferences = referenceLocations.length;
+    const totalReferences = filteredLocations.length;
     const totalPages = Math.ceil(totalReferences / referencesPerPage);
     const startIndex = (page - 1) * referencesPerPage;
     const endIndex = Math.min(startIndex + referencesPerPage, totalReferences);
-    const paginatedReferences = referenceLocations.slice(startIndex, endIndex);
+    const paginatedRaw = filteredLocations.slice(startIndex, endIndex);
+
+    // Step 4: Lazy enhancement -- only enhance the current page with content
+    const contextLines = query.contextLines ?? 2;
+    const paginatedReferences: ReferenceLocation[] = [];
+
+    for (const raw of paginatedRaw) {
+      const enhanced = await enhanceReferenceLocation(raw, contextLines);
+      paginatedReferences.push(enhanced);
+    }
 
     // Determine if references span multiple files
     const uniqueFiles = new Set(paginatedReferences.map(ref => ref.uri));
@@ -99,6 +171,12 @@ export async function findReferencesWithLSP(
       ...getHints(TOOL_NAME, 'hasResults'),
       `Found ${totalReferences} reference(s) via Language Server`,
     ];
+
+    if (hasFilters && totalUnfiltered !== totalReferences) {
+      hints.push(
+        `Filtered: ${totalReferences} of ${totalUnfiltered} total references match patterns.`
+      );
+    }
 
     if (pagination.hasMore) {
       hints.push(
@@ -126,42 +204,45 @@ export async function findReferencesWithLSP(
 }
 
 /**
- * Enhance a code snippet with context and determine if it's a definition
+ * Raw reference location before content enhancement.
+ * Keeps the absolute URI for file reading while using relative for output.
+ */
+interface RawReferenceLocation {
+  uri: string;
+  absoluteUri: string;
+  range: LSPRange;
+  content: string;
+  isDefinition: boolean;
+}
+
+/**
+ * Enhance a raw reference location with context snippets.
+ * Only called for paginated (visible) items to minimize file I/O.
  */
 async function enhanceReferenceLocation(
-  loc: { uri: string; range: LSPRange; content: string },
-  workspaceRoot: string,
-  contextLines: number,
-  sourceFilePath: string,
-  sourcePosition: ExactPosition,
-  _symbolName: string
+  raw: RawReferenceLocation,
+  contextLines: number
 ): Promise<ReferenceLocation> {
-  let content = loc.content;
-  let displayStartLine = loc.range.start.line + 1;
-  let displayEndLine = loc.range.end.line + 1;
-
-  // Determine if this is the definition (same file and position)
-  const isDefinition =
-    loc.uri === sourceFilePath &&
-    loc.range.start.line === sourcePosition.line &&
-    loc.range.start.character === sourcePosition.character;
+  let content = raw.content;
+  let displayStartLine = raw.range.start.line + 1;
+  let displayEndLine = raw.range.end.line + 1;
 
   // Get context if needed
   if (contextLines > 0) {
     try {
-      const fileContent = await readFile(loc.uri, 'utf-8');
+      const fileContent = await readFile(raw.absoluteUri, 'utf-8');
       const lines = fileContent.split(/\r?\n/);
-      const startLine = Math.max(0, loc.range.start.line - contextLines);
+      const startLine = Math.max(0, raw.range.start.line - contextLines);
       const endLine = Math.min(
         lines.length - 1,
-        loc.range.end.line + contextLines
+        raw.range.end.line + contextLines
       );
 
       const snippetLines = lines.slice(startLine, endLine + 1);
       content = snippetLines
         .map((line, i) => {
           const lineNum = startLine + i + 1;
-          const isTarget = lineNum === loc.range.start.line + 1;
+          const isTarget = lineNum === raw.range.start.line + 1;
           const marker = isTarget ? '>' : ' ';
           return `${marker}${String(lineNum).padStart(4, ' ')}| ${line}`;
         })
@@ -174,15 +255,12 @@ async function enhanceReferenceLocation(
     }
   }
 
-  // Make path relative to workspace
-  const relativeUri = path.relative(workspaceRoot, loc.uri);
-
   return {
-    uri: relativeUri || loc.uri,
-    range: loc.range,
+    uri: raw.uri,
+    range: raw.range,
     content,
-    isDefinition,
-    symbolKind: isDefinition ? 'function' : undefined,
+    isDefinition: raw.isDefinition,
+    symbolKind: raw.isDefinition ? 'function' : undefined,
     displayRange: {
       startLine: displayStartLine,
       endLine: displayEndLine,

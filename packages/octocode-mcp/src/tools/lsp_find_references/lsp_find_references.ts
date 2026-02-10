@@ -169,9 +169,14 @@ export async function findReferences(
 }
 
 // Re-export functions from focused modules
-export { findReferencesWithLSP } from './lspReferencesCore.js';
+export {
+  findReferencesWithLSP,
+  matchesFilePatterns,
+} from './lspReferencesCore.js';
 export {
   findReferencesWithPatternMatching,
   findWorkspaceRoot,
   isLikelyDefinition,
+  buildRipgrepGlobArgs,
+  buildGrepFilterArgs,
 } from './lspReferencesPatterns.js';

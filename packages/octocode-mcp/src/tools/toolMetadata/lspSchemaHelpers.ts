@@ -35,6 +35,10 @@ export const LSP_FIND_REFERENCES = createSchemaHelper(
     referencesPerPage: string;
     page: string;
   };
+  filtering: {
+    includePattern: string;
+    excludePattern: string;
+  };
 };
 
 export const LSP_CALL_HIERARCHY = createSchemaHelper(

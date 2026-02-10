@@ -19,6 +19,8 @@ export interface LSPFindReferencesQuery {
   includeDeclaration?: boolean;
   page?: number;
   referencesPerPage?: number;
+  includePattern?: string[];
+  excludePattern?: string[];
   researchGoal?: string;
   reasoning?: string;
 }
