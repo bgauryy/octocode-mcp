@@ -73,6 +73,22 @@ const LSPFindReferencesBaseSchema = BaseQuerySchemaLocal.extend({
     .optional()
     .default(1)
     .describe(LSP_FIND_REFERENCES.pagination.page),
+
+  includePattern: z
+    .array(z.string())
+    .optional()
+    .describe(
+      LSP_FIND_REFERENCES.filtering.includePattern ||
+        'Glob patterns to include (e.g. ["**/*.test.ts", "**/src/**"]). Only matching files are returned.'
+    ),
+
+  excludePattern: z
+    .array(z.string())
+    .optional()
+    .describe(
+      LSP_FIND_REFERENCES.filtering.excludePattern ||
+        'Glob patterns to exclude (e.g. ["**/node_modules/**", "**/dist/**"]). Matching files are removed.'
+    ),
 });
 
 /**

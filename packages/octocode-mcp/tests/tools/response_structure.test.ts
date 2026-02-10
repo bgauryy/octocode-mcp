@@ -84,7 +84,6 @@ describe('Response Structure Tests - All Tools', () => {
 
     mockGetServerConfig.mockReturnValue({
       version: '1.0.0',
-      enableLogging: false,
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: false,

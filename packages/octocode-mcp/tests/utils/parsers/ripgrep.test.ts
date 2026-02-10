@@ -451,4 +451,20 @@ describe('parseGrepOutput', () => {
 
     expect(files).toHaveLength(2);
   });
+
+  it('should not hang on ReDoS input with repeated a:0:a pattern', () => {
+    const start = Date.now();
+    const malicious = 'a:0:a'.repeat(500);
+    parseGrepOutput(malicious, baseQuery);
+    expect(Date.now() - start).toBeLessThan(50);
+  });
+
+  it('should handle colons in content after line number', () => {
+    const output = '/test/file.ts:10:obj.key ? a : b';
+
+    const files = parseGrepOutput(output, baseQuery);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]!.matches[0]!.value).toBe('obj.key ? a : b');
+  });
 });

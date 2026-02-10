@@ -1,11 +1,32 @@
 import type { SensitiveDataPattern } from './types.js';
 
 export const aiProviderPatterns: SensitiveDataPattern[] = [
-  // OpenAI & Compatible
+  // OpenAI - Legacy format (pre-2024)
   {
-    name: 'openaiApiKey',
-    description: 'OpenAI API key',
+    name: 'openaiApiKeyLegacy',
+    description: 'OpenAI API key (legacy format)',
     regex: /\b(sk-[a-zA-Z0-9_-]+T3BlbkFJ[a-zA-Z0-9_-]+)\b/g,
+    matchAccuracy: 'high',
+  },
+  // OpenAI - Project-scoped keys (current format since 2024)
+  {
+    name: 'openaiProjectApiKey',
+    description: 'OpenAI project-scoped API key',
+    regex: /\bsk-proj-[a-zA-Z0-9_-]{20,}\b/g,
+    matchAccuracy: 'high',
+  },
+  // OpenAI - Service account keys
+  {
+    name: 'openaiServiceAccountKey',
+    description: 'OpenAI service account API key',
+    regex: /\bsk-svcacct-[a-zA-Z0-9_-]{20,}\b/g,
+    matchAccuracy: 'high',
+  },
+  // OpenAI - Admin keys
+  {
+    name: 'openaiAdminKey',
+    description: 'OpenAI admin API key',
+    regex: /\bsk-admin-[a-zA-Z0-9_-]{20,}\b/g,
     matchAccuracy: 'high',
   },
   {
@@ -54,11 +75,11 @@ export const aiProviderPatterns: SensitiveDataPattern[] = [
     matchAccuracy: 'high',
   },
 
-  // Anthropic (Claude)
+  // Anthropic (Claude) - relaxed length/suffix constraint
   {
     name: 'anthropicApiKey',
     description: 'Anthropic API key',
-    regex: /\b(sk-ant-(?:admin01|api03)-[\w-]{93}AA)\b/g,
+    regex: /\bsk-ant-(?:admin01|api03|sid01)-[\w-]{80,120}\b/g,
     matchAccuracy: 'high',
   },
   // Mistral AI
@@ -75,11 +96,12 @@ export const aiProviderPatterns: SensitiveDataPattern[] = [
     regex: /\btvly-[a-zA-Z0-9]{30,}\b/g,
     matchAccuracy: 'high',
   },
-  // DeepSeek
+  // DeepSeek (context-based to avoid false positives with generic sk- prefix)
   {
     name: 'deepseekApiKey',
     description: 'DeepSeek API key',
-    regex: /\bsk-[a-zA-Z0-9]{32,64}\b/g,
+    regex:
+      /\b['"]?(?:DEEPSEEK|deepseek|DeepSeek)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?sk-[a-zA-Z0-9]{32,64}['"]?\b/g,
     matchAccuracy: 'medium',
   },
   // Together AI
@@ -127,11 +149,12 @@ export const aiProviderPatterns: SensitiveDataPattern[] = [
       /\b['"]?(?:AI21|ai21)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{40,64}['"]?\b/g,
     matchAccuracy: 'medium',
   },
-  // Stability AI
+  // Stability AI (context-based to avoid false positives with generic sk- prefix)
   {
     name: 'stabilityApiKey',
     description: 'Stability AI API key',
-    regex: /\bsk-[a-zA-Z0-9]{48,}\b/g,
+    regex:
+      /\b['"]?(?:STABILITY|stability|Stability)_?(?:AI|ai)?_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?sk-[a-zA-Z0-9]{48,}['"]?\b/g,
     matchAccuracy: 'medium',
   },
   // Voyage AI
@@ -140,5 +163,67 @@ export const aiProviderPatterns: SensitiveDataPattern[] = [
     description: 'Voyage AI API key',
     regex: /\bpa-[a-zA-Z0-9]{40,}\b/g,
     matchAccuracy: 'high',
+  },
+
+  // --- New AI Provider Patterns ---
+
+  // ElevenLabs
+  {
+    name: 'elevenLabsApiKey',
+    description: 'ElevenLabs API key',
+    regex: /\b(?:xi-)[a-zA-Z0-9]{32,}\b/g,
+    matchAccuracy: 'high',
+  },
+
+  // Assemblyai
+  {
+    name: 'assemblyaiApiKey',
+    description: 'AssemblyAI API key',
+    regex:
+      /\b['"]?(?:ASSEMBLYAI|assemblyai|AssemblyAI)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{32}['"]?\b/g,
+    matchAccuracy: 'medium',
+  },
+
+  // Pinecone (prefix-based - newer format)
+  {
+    name: 'pineconeApiKeyPrefixed',
+    description: 'Pinecone API key (prefixed format)',
+    regex: /\bpcsk_[a-zA-Z0-9_]{50,}\b/g,
+    matchAccuracy: 'high',
+  },
+
+  // Weights & Biases (wandb)
+  {
+    name: 'wandbApiKey',
+    description: 'Weights & Biases API key',
+    regex: /\b[a-f0-9]{40}\b/g,
+    matchAccuracy: 'medium',
+    fileContext: /wandb/i,
+  },
+
+  // Comet ML
+  {
+    name: 'cometApiKey',
+    description: 'Comet ML API key',
+    regex:
+      /\b['"]?(?:COMET|comet)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{32,64}['"]?\b/g,
+    matchAccuracy: 'medium',
+  },
+
+  // Langchain / LangSmith
+  {
+    name: 'langchainApiKey',
+    description: 'LangChain/LangSmith API key',
+    regex: /\blsv2_[a-zA-Z0-9_]{20,}\b/g,
+    matchAccuracy: 'high',
+  },
+
+  // Unstructured.io
+  {
+    name: 'unstructuredApiKey',
+    description: 'Unstructured.io API key',
+    regex:
+      /\b['"]?(?:UNSTRUCTURED|unstructured)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{32,}['"]?\b/g,
+    matchAccuracy: 'medium',
   },
 ];

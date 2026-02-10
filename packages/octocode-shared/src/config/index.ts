@@ -44,8 +44,6 @@ export type {
   NetworkConfigOptions,
   TelemetryConfigOptions,
   LspConfigOptions,
-  LspLanguageConfig,
-  ResearchConfigOptions,
 
   // Section types (resolved)
   RequiredGitHubConfig,
@@ -55,7 +53,6 @@ export type {
   RequiredNetworkConfig,
   RequiredTelemetryConfig,
   RequiredLspConfig,
-  RequiredResearchConfig,
 } from './types.js';
 
 // ============================================================================
@@ -74,19 +71,12 @@ export {
   DEFAULT_NETWORK_CONFIG,
   DEFAULT_TELEMETRY_CONFIG,
   DEFAULT_LSP_CONFIG,
-  DEFAULT_RESEARCH_CONFIG,
 
   // Limits
   MIN_TIMEOUT,
   MAX_TIMEOUT,
   MIN_RETRIES,
   MAX_RETRIES,
-  MIN_QUERIES_PER_BATCH,
-  MAX_QUERIES_PER_BATCH,
-  MIN_RESULTS_PER_QUERY,
-  MAX_RESULTS_PER_QUERY,
-  LSP_MIN_TIMEOUT,
-  LSP_MAX_TIMEOUT,
 } from './defaults.js';
 
 export { CONFIG_FILE_PATH } from './loader.js';
@@ -122,3 +112,9 @@ export {
   _resetConfigCache,
   _getCacheState,
 } from './resolver.js';
+
+// Env var parsing utilities
+export { parseLoggingEnv } from './resolverSections.js';
+
+// Schemas
+export { OctocodeConfigSchema } from './schemas.js';

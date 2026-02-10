@@ -2,13 +2,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { executeViewStructure } from './execution.js';
 import type { AnySchema } from '../../types/toolTypes.js';
+import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
 import { LsCommandBuilder } from '../../commands/LsCommandBuilder.js';
 import {
   safeExec,
   checkCommandAvailability,
   getMissingCommandError,
 } from '../../utils/exec/index.js';
-import { getExtension } from '../../utils/file/filters.js';
 import { getHints } from '../../hints/index.js';
 import { STATIC_TOOL_NAMES, TOOL_NAMES } from '../toolMetadata.js';
 import {
@@ -19,19 +19,25 @@ import {
   applyPagination,
   generatePaginationHints,
 } from '../../utils/pagination/index.js';
-import { formatFileSize, parseFileSize } from '../../utils/file/size.js';
+import { parseFileSize } from '../../utils/file/size.js';
 import { RESOURCE_LIMITS, DEFAULTS } from '../../utils/core/constants.js';
 import type {
   ViewStructureQuery,
   ViewStructureResult,
 } from '../../utils/core/types.js';
-import fs from 'fs';
 import path from 'path';
 import { ToolErrors } from '../../errorCodes.js';
 import {
   BulkViewStructureSchema,
   LOCAL_VIEW_STRUCTURE_DESCRIPTION,
 } from './scheme.js';
+import {
+  applyEntryFilters,
+  formatEntryString,
+  type DirectoryEntry,
+} from './structureFilters.js';
+import { parseLsSimple, parseLsLongFormat } from './structureParser.js';
+import { walkDirectory } from './structureWalker.js';
 
 /**
  * Register the local view structure tool with the MCP server.
@@ -51,125 +57,8 @@ export function registerLocalViewStructureTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    executeViewStructure
+    withBasicSecurityValidation(executeViewStructure)
   );
-}
-
-/**
- * Internal directory entry for processing
- */
-interface DirectoryEntry {
-  name: string;
-  type: 'file' | 'directory' | 'symlink';
-  size?: string;
-  modified?: string;
-  permissions?: string;
-  extension?: string;
-  depth?: number;
-}
-
-/**
- * Apply query filters to entry list
- * Used by both CLI and recursive paths to ensure consistent filtering
- */
-function applyEntryFilters(
-  entries: DirectoryEntry[],
-  query: ViewStructureQuery
-): DirectoryEntry[] {
-  let filtered = entries;
-
-  if (query.pattern) {
-    const pattern = query.pattern;
-
-    const isGlob =
-      pattern.includes('*') || pattern.includes('?') || pattern.includes('[');
-
-    if (isGlob) {
-      // First escape regex metacharacters INCLUDING glob characters (* and ?)
-      // so they can be converted to regex patterns in the next step
-      let regexPattern = pattern.replace(/[.+^${}()|[\]\\*?]/g, '\\$&');
-
-      // Convert escaped glob characters to regex equivalents
-      regexPattern = regexPattern
-        .replace(/\\\*/g, '.*')
-        .replace(/\\\?/g, '.')
-        .replace(/\\\[!/g, '[^')
-        .replace(/\\\[/g, '[')
-        .replace(/\\\]/g, ']');
-
-      try {
-        const regex = new RegExp(`^${regexPattern}$`, 'i');
-        filtered = filtered.filter(e => {
-          // For recursive mode, entry.name is the relative path (e.g., "subdir/file.ts")
-          // Pattern should match the filename part only for consistency
-          const filename = e.name.includes('/')
-            ? e.name.split('/').pop()!
-            : e.name;
-          return regex.test(filename);
-        });
-      } catch {
-        filtered = filtered.filter(e => {
-          const filename = e.name.includes('/')
-            ? e.name.split('/').pop()!
-            : e.name;
-          return filename.includes(pattern);
-        });
-      }
-    } else {
-      filtered = filtered.filter(e => {
-        // For recursive mode, entry.name is the relative path (e.g., "subdir/file.ts")
-        // Pattern should match the filename part only for consistency
-        const filename = e.name.includes('/')
-          ? e.name.split('/').pop()!
-          : e.name;
-        return filename.includes(pattern);
-      });
-    }
-  }
-
-  if (query.extension) {
-    filtered = filtered.filter(e => e.extension === query.extension);
-  }
-
-  if (query.extensions && query.extensions.length > 0) {
-    const extensions = query.extensions;
-    filtered = filtered.filter(
-      e => e.extension && extensions.includes(e.extension)
-    );
-  }
-
-  if (query.directoriesOnly) {
-    filtered = filtered.filter(e => e.type === 'directory');
-  }
-
-  if (query.filesOnly) {
-    filtered = filtered.filter(e => e.type === 'file');
-  }
-
-  return filtered;
-}
-
-/**
- * Format directory entry as compact string
- * Format: [TYPE] name (size) .ext
- */
-function formatEntryString(entry: DirectoryEntry, indent: number = 0): string {
-  const indentation = '  '.repeat(indent);
-  const typeMarker =
-    entry.type === 'directory'
-      ? '[DIR] '
-      : entry.type === 'symlink'
-        ? '[LINK]'
-        : '[FILE]';
-  const nameDisplay =
-    entry.type === 'directory' ? `${entry.name}/` : entry.name;
-
-  if (entry.type === 'file' && entry.size) {
-    const extStr = entry.extension ? ` .${entry.extension}` : '';
-    return `${indentation}${typeMarker} ${nameDisplay} (${entry.size})${extStr}`;
-  } else {
-    return `${indentation}${typeMarker} ${nameDisplay}`;
-  }
 }
 
 export async function viewStructure(
@@ -390,91 +279,6 @@ export async function viewStructure(
   }
 }
 
-async function parseLsSimple(
-  output: string,
-  basePath: string,
-  showModified: boolean = false
-): Promise<DirectoryEntry[]> {
-  const lines = output.split('\n').filter(line => line.trim());
-
-  const statPromises = lines.map(async name => {
-    const fullPath = path.join(basePath, name);
-    try {
-      const stats = await fs.promises.lstat(fullPath);
-      const entry: DirectoryEntry = {
-        name,
-        type: stats.isDirectory()
-          ? ('directory' as const)
-          : stats.isSymbolicLink()
-            ? ('symlink' as const)
-            : ('file' as const),
-        size: formatFileSize(stats.size),
-        extension: getExtension(name),
-      };
-      if (showModified) {
-        entry.modified = stats.mtime.toISOString();
-      }
-      return entry;
-    } catch {
-      return {
-        name,
-        type: 'file' as const,
-        extension: getExtension(name),
-      };
-    }
-  });
-
-  return await Promise.all(statPromises);
-}
-
-function parseLsLongFormat(
-  output: string,
-  showModified: boolean = false
-): DirectoryEntry[] {
-  const lines = output.split('\n').filter(line => line.trim());
-  const entries: DirectoryEntry[] = [];
-
-  for (const line of lines) {
-    if (line.startsWith('total ')) continue;
-
-    const match = line.match(
-      /^([\w-]+[@+]?)\s+\d+\s+\w+\s+\w+\s+([\d.]+[KMGT]?)\s+(\w+\s+\d+\s+[\d:]+)\s+(.+)$/
-    );
-
-    if (match && match[1] && match[2] && match[3] && match[4]) {
-      const permissions = match[1];
-      const sizeStr = match[2];
-      const modified = match[3];
-      const name = match[4];
-
-      let size = 0;
-      if (/^\d+$/.test(sizeStr)) {
-        size = parseInt(sizeStr, 10);
-      } else {
-        size = parseFileSize(sizeStr);
-      }
-
-      let type: 'file' | 'directory' | 'symlink' = 'file';
-      if (permissions.startsWith('d')) type = 'directory';
-      else if (permissions.startsWith('l')) type = 'symlink';
-
-      const entry: DirectoryEntry = {
-        name,
-        type,
-        size: formatFileSize(size),
-        permissions,
-        extension: getExtension(name),
-      };
-      if (showModified) {
-        entry.modified = modified;
-      }
-      entries.push(entry);
-    }
-  }
-
-  return entries;
-}
-
 async function viewStructureRecursive(
   query: ViewStructureQuery,
   basePath: string,
@@ -671,67 +475,4 @@ async function viewStructureRecursive(
     ...(warnings.length > 0 && { warnings }),
     hints: [...baseHints, ...entryPaginationHints, ...paginationHints],
   };
-}
-
-async function walkDirectory(
-  basePath: string,
-  currentPath: string,
-  depth: number,
-  maxDepth: number,
-  entries: DirectoryEntry[],
-  maxEntries: number = 10000,
-  showHidden: boolean = false,
-  showModified: boolean = false
-): Promise<void> {
-  if (depth >= maxDepth) return;
-  if (entries.length >= maxEntries) return;
-
-  try {
-    const items = await fs.promises.readdir(currentPath);
-
-    for (const item of items) {
-      // Skip hidden files if not requested
-      if (!showHidden && item.startsWith('.')) continue;
-
-      const fullPath = path.join(currentPath, item);
-      const relativePath = path.relative(basePath, fullPath);
-
-      try {
-        const stats = await fs.promises.lstat(fullPath);
-
-        let type: 'file' | 'directory' | 'symlink' = 'file';
-        if (stats.isDirectory()) type = 'directory';
-        else if (stats.isSymbolicLink()) type = 'symlink';
-
-        const entry: DirectoryEntry = {
-          name: relativePath,
-          type,
-          size: formatFileSize(stats.size),
-          extension: getExtension(item),
-          depth: depth, // Store correct depth from walker
-        };
-        if (showModified) {
-          entry.modified = stats.mtime.toISOString();
-        }
-        entries.push(entry);
-
-        if (type === 'directory') {
-          await walkDirectory(
-            basePath,
-            fullPath,
-            depth + 1,
-            maxDepth,
-            entries,
-            maxEntries,
-            showHidden,
-            showModified
-          );
-        }
-      } catch {
-        // Skip inaccessible items
-      }
-    }
-  } catch {
-    // Skip unreadable directories
-  }
 }

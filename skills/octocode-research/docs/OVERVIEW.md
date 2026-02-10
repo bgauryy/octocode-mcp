@@ -151,6 +151,7 @@ Re-exports layer that maps `octocode-mcp` functions to skill-friendly names:
 | `/tools/info/:toolName` | GET | Get tool JSON schema + hints |
 | `/tools/info` | GET | List all tools with details |
 | `/tools/system` | GET | Get system prompt (load FIRST) |
+| `/tools/initContext` | GET | Combined system prompt + all tool schemas (recommended for init) |
 | `/tools/metadata` | GET | Get raw metadata (advanced) |
 | `/prompts/list` | GET | List all prompts (MCP-compatible format) |
 | `/prompts/info/:promptName` | GET | Get prompt content and arguments |
@@ -307,18 +308,9 @@ export async function withLocalResilience<T>(operation: () => Promise<T>, toolNa
 export async function withPackageResilience<T>(operation: () => Promise<T>, toolName: string): Promise<T>
 ```
 
-### 4. Request Throttling (`src/middleware/throttle.ts`)
+### 4. Readiness Check (`src/middleware/readiness.ts`)
 
-Uses `express-slow-down` for gradual slowdown:
-
-| Config | Value | Description |
-|--------|-------|-------------|
-| `windowMs` | 60000 | 1 minute window |
-| `delayAfter` | 50 | Requests before slowdown |
-| `delayMs` | 500 | Initial delay increment |
-| `maxDelayMs` | 10000 | Maximum delay (10s) |
-
-**Backoff formula:** `delay = 500ms × 1.5^(excess-1)` capped at 10s
+Middleware that verifies the server is ready to handle requests before processing them. Returns 503 Service Unavailable if the server is still initializing.
 
 ---
 
@@ -473,11 +465,10 @@ octocode-research/
 │   │   ├── github.ts          # Handler logic (tests)
 │   │   └── package.ts         # Handler logic (tests)
 │   ├── middleware/
-│   │   ├── contextPropagation.ts  # Shutdown cleanup
 │   │   ├── errorHandler.ts    # Error response formatting
 │   │   ├── logger.ts          # Request/response logging
 │   │   ├── queryParser.ts     # Zod validation
-│   │   └── throttle.ts        # Rate limiting
+│   │   └── readiness.ts       # Server readiness check
 │   ├── validation/
 │   │   ├── index.ts           # Schema exports
 │   │   ├── schemas.ts         # HTTP schemas (from octocode-mcp)
@@ -505,10 +496,9 @@ octocode-research/
 │   ├── API_REFERENCE.md       # HTTP API reference
 │   ├── ARCHITECTURE.md        # Architecture documentation
 │   ├── FLOWS.md               # Flow diagrams
-│   └── SKILL_RESEARCH.md      # This document
+│   └── OVERVIEW.md            # This document
 ├── references/
-│   ├── GUARDRAILS.md          # Safety guardrails
-│   └── QUICK_DECISION_GUIDE.md # Tool selection guide
+│   └── GUARDRAILS.md          # Safety guardrails
 ├── scripts/
 │   ├── server.js              # Bundled server (tsdown)
 │   └── server.d.ts            # Type declarations
@@ -567,7 +557,6 @@ curl -X POST http://localhost:1987/tools/call/localSearchCode \
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Full architecture details |
 | [FLOWS.md](./FLOWS.md) | Request flow diagrams |
 | [API_REFERENCE.md](./API_REFERENCE.md) | HTTP API reference |
-| [QUICK_DECISION_GUIDE.md](../references/QUICK_DECISION_GUIDE.md) | Tool selection |
 | [GUARDRAILS.md](../references/GUARDRAILS.md) | Safety rules |
 
 ---

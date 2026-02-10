@@ -5,6 +5,7 @@
 import path from 'path';
 import fs from 'fs';
 import type { PathValidationResult } from '../utils/core/types.js';
+import { getConfigSync } from 'octocode-shared';
 
 /**
  * Gets the workspace root directory
@@ -17,6 +18,16 @@ function getWorkspaceRoot(workspaceRoot?: string): string {
 
   if (process.env.WORKSPACE_ROOT) {
     return path.resolve(process.env.WORKSPACE_ROOT);
+  }
+
+  // Fallback to global config
+  try {
+    const configRoot = getConfigSync().local.workspaceRoot;
+    if (configRoot) {
+      return path.resolve(configRoot);
+    }
+  } catch {
+    // Config not loaded yet, fall through
   }
 
   return process.cwd();

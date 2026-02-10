@@ -242,7 +242,6 @@ export interface ServerConfig {
   toolsToRun?: string[];
   enableTools?: string[];
   disableTools?: string[];
-  enableLogging: boolean;
   timeout: number;
   maxRetries: number;
   loggingEnabled: boolean;

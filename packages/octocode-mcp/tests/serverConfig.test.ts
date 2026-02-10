@@ -6,7 +6,9 @@ import {
   getToken,
   getServerConfig,
   isLoggingEnabled,
+  isLocalEnabled,
   arePromptsEnabled,
+  getTokenSource,
   _setTokenResolvers,
   _resetTokenResolvers,
 } from '../src/serverConfig.js';
@@ -125,7 +127,24 @@ describe('ServerConfig - Simplified Version', () => {
       expect(typeof config.version).toEqual('string');
       expect(config.timeout).toEqual(30000);
       expect(config.maxRetries).toEqual(3);
-      expect(config.enableLogging).toEqual(true);
+      expect(config.loggingEnabled).toEqual(true);
+    });
+
+    it('should have correct defaults for all fields when no env vars set', async () => {
+      mockSpawnFailure();
+      await initialize();
+      const config = getServerConfig();
+
+      expect(config.githubApiUrl).toBe('https://api.github.com');
+      expect(config.toolsToRun).toBeUndefined();
+      expect(config.enableTools).toBeUndefined();
+      expect(config.disableTools).toBeUndefined();
+      expect(config.timeout).toBe(30000);
+      expect(config.maxRetries).toBe(3);
+      expect(config.loggingEnabled).toBe(true);
+      expect(config.enableLocal).toBe(true);
+      expect(config.disablePrompts).toBe(false);
+      expect(config.tokenSource).toBe('none');
     });
 
     it('should initialize with environment variables', async () => {
@@ -135,18 +154,18 @@ describe('ServerConfig - Simplified Version', () => {
       await initialize();
       const config = getServerConfig();
 
-      expect(config.enableLogging).toBe(true);
+      expect(config.loggingEnabled).toBe(true);
       expect(config.timeout).toBe(60000);
       expect(config.maxRetries).toBe(5);
     });
 
-    it('should disable enableLogging when LOG is false', async () => {
+    it('should disable logging when LOG is false', async () => {
       process.env.LOG = 'false';
 
       await initialize();
       const config = getServerConfig();
 
-      expect(config.enableLogging).toBe(false);
+      expect(config.loggingEnabled).toBe(false);
     });
 
     it('should throw when accessing config before initialization', () => {
@@ -638,6 +657,78 @@ describe('ServerConfig - Simplified Version', () => {
     });
   });
 
+  describe('isLocalEnabled() helper', () => {
+    it('should return true when enableLocal is true (default)', async () => {
+      delete process.env.ENABLE_LOCAL;
+      mockSpawnFailure();
+      await initialize();
+      expect(isLocalEnabled()).toBe(true);
+    });
+
+    it('should return false when ENABLE_LOCAL is "false"', async () => {
+      process.env.ENABLE_LOCAL = 'false';
+      mockSpawnFailure();
+      await initialize();
+      expect(isLocalEnabled()).toBe(false);
+    });
+
+    it('should throw when config is not initialized', () => {
+      expect(() => isLocalEnabled()).toThrow();
+    });
+  });
+
+  describe('getTokenSource()', () => {
+    it('should return "none" when no token is available', async () => {
+      mockSpawnFailure();
+      const source = await getTokenSource();
+      expect(source).toBe('none');
+    });
+
+    it('should return "env:GITHUB_TOKEN" when GITHUB_TOKEN is set', async () => {
+      mockTokenResolution('test-token', 'env:GITHUB_TOKEN');
+      const source = await getTokenSource();
+      expect(source).toBe('env:GITHUB_TOKEN');
+    });
+
+    it('should return "env:GH_TOKEN" when GH_TOKEN is the source', async () => {
+      mockTokenResolution('test-token', 'env:GH_TOKEN');
+      const source = await getTokenSource();
+      expect(source).toBe('env:GH_TOKEN');
+    });
+
+    it('should return "env:OCTOCODE_TOKEN" when OCTOCODE_TOKEN is the source', async () => {
+      mockTokenResolution('test-token', 'env:OCTOCODE_TOKEN');
+      const source = await getTokenSource();
+      expect(source).toBe('env:OCTOCODE_TOKEN');
+    });
+
+    it('should return "gh-cli" when token comes from CLI', async () => {
+      mockSpawnSuccess('cli-token');
+      const source = await getTokenSource();
+      expect(source).toBe('gh-cli');
+    });
+
+    it('should return "octocode-storage" when token comes from file storage', async () => {
+      mockTokenResolution('stored-token', 'file');
+      const source = await getTokenSource();
+      expect(source).toBe('octocode-storage');
+    });
+
+    it('should resolve fresh each time (no caching)', async () => {
+      mockResolveTokenFull.mockResolvedValueOnce(
+        mockTokenResult('token-1', 'env:GITHUB_TOKEN')
+      );
+      const source1 = await getTokenSource();
+      expect(source1).toBe('env:GITHUB_TOKEN');
+
+      mockResolveTokenFull.mockResolvedValueOnce(
+        mockTokenResult('token-2', 'gh-cli')
+      );
+      const source2 = await getTokenSource();
+      expect(source2).toBe('gh-cli');
+    });
+  });
+
   describe('DISABLE_PROMPTS Configuration', () => {
     beforeEach(() => {
       delete process.env.DISABLE_PROMPTS;
@@ -838,12 +929,12 @@ describe('ServerConfig - Simplified Version', () => {
       expect(getServerConfig().timeout).toBe(5000);
     });
 
-    it('should use default timeout when REQUEST_TIMEOUT is zero (0 is falsy)', async () => {
-      // Note: 0 triggers || fallback to DEFAULT_TIMEOUT, then MIN_TIMEOUT check
+    it('should clamp REQUEST_TIMEOUT=0 to MIN_TIMEOUT (5000)', async () => {
+      // 0 is a valid integer, clamped to MIN_TIMEOUT by shared config resolver
       process.env.REQUEST_TIMEOUT = '0';
       mockSpawnFailure();
       await initialize();
-      expect(getServerConfig().timeout).toBe(30000); // Falls back to default
+      expect(getServerConfig().timeout).toBe(5000); // Clamped to MIN_TIMEOUT
     });
 
     it('should enforce minimum timeout for negative values', async () => {
@@ -851,6 +942,13 @@ describe('ServerConfig - Simplified Version', () => {
       mockSpawnFailure();
       await initialize();
       expect(getServerConfig().timeout).toBe(5000);
+    });
+
+    it('should enforce maximum timeout of 300000ms (5 minutes)', async () => {
+      process.env.REQUEST_TIMEOUT = '500000'; // Above MAX_TIMEOUT
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().timeout).toBe(300000); // Clamped to MAX_TIMEOUT
     });
 
     it('should use default timeout (30000) when REQUEST_TIMEOUT is not set', async () => {
@@ -890,12 +988,12 @@ describe('ServerConfig - Simplified Version', () => {
       expect(getServerConfig().maxRetries).toBe(0); // Clamped to MIN_RETRIES
     });
 
-    it('should use default retries when MAX_RETRIES is zero (0 is falsy)', async () => {
-      // Note: 0 triggers || fallback to DEFAULT_RETRIES
+    it('should allow MAX_RETRIES=0 (valid value, no retries)', async () => {
+      // 0 is a valid integer within [MIN_RETRIES, MAX_RETRIES] range
       process.env.MAX_RETRIES = '0';
       mockSpawnFailure();
       await initialize();
-      expect(getServerConfig().maxRetries).toBe(3); // Falls back to default
+      expect(getServerConfig().maxRetries).toBe(0); // Valid: no retries
     });
 
     it('should use default retries (3) when MAX_RETRIES is not set', async () => {

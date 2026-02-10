@@ -5,7 +5,6 @@
  */
 
 import { spawn, ChildProcess } from 'child_process';
-import { promises as fs } from 'fs';
 import * as path from 'path';
 import {
   createMessageConnection,
@@ -17,22 +16,6 @@ import {
   InitializeParams,
   InitializeResult,
   InitializedParams,
-  DefinitionParams,
-  ReferenceParams,
-  Location,
-  LocationLink,
-  Position,
-  TextDocumentIdentifier,
-  CallHierarchyPrepareParams,
-  CallHierarchyItem as LSPCallHierarchyItem,
-  CallHierarchyIncomingCallsParams,
-  CallHierarchyOutgoingCallsParams,
-  CallHierarchyIncomingCall,
-  CallHierarchyOutgoingCall,
-  DidOpenTextDocumentParams,
-  DidCloseTextDocumentParams,
-  TextDocumentItem,
-  SymbolKind as LSPSymbolKind,
 } from 'vscode-languageserver-protocol';
 import type {
   ExactPosition,
@@ -42,9 +25,9 @@ import type {
   OutgoingCall,
   LanguageServerConfig,
 } from './types.js';
-import { toUri, fromUri } from './uri.js';
-import { convertSymbolKind } from './symbols.js';
-import { detectLanguageId } from './config.js';
+import { toUri } from './uri.js';
+import { LSPDocumentManager } from './lspDocumentManager.js';
+import { LSPOperations } from './lspOperations.js';
 
 /**
  * LSP Client class
@@ -54,12 +37,15 @@ export class LSPClient {
   private process: ChildProcess | null = null;
   private connection: MessageConnection | null = null;
   private initialized = false;
-  private openFiles = new Map<string, number>(); // uri -> version
   private config: LanguageServerConfig;
   private initializeResult: InitializeResult | null = null;
+  private documentManager: LSPDocumentManager;
+  private operations: LSPOperations;
 
   constructor(config: LanguageServerConfig) {
     this.config = config;
+    this.documentManager = new LSPDocumentManager(config);
+    this.operations = new LSPOperations(this.documentManager);
   }
 
   /**
@@ -158,58 +144,24 @@ export class LSPClient {
     await this.connection.sendNotification('initialized', initializedParams);
 
     this.initialized = true;
+
+    // Update document manager and operations with connection
+    this.documentManager.setConnection(this.connection, this.initialized);
+    this.operations.setConnection(this.connection, this.initialized);
   }
 
   /**
    * Open a text document (required before LSP operations)
    */
   async openDocument(filePath: string): Promise<void> {
-    if (!this.connection || !this.initialized) {
-      throw new Error('LSP client not initialized');
-    }
-
-    const uri = toUri(filePath);
-
-    // Already open?
-    if (this.openFiles.has(uri)) {
-      return;
-    }
-
-    const content = await fs.readFile(filePath, 'utf-8');
-    const languageId = this.config.languageId ?? detectLanguageId(filePath);
-
-    const params: DidOpenTextDocumentParams = {
-      textDocument: {
-        uri,
-        languageId,
-        version: 1,
-        text: content,
-      } as TextDocumentItem,
-    };
-
-    await this.connection.sendNotification('textDocument/didOpen', params);
-    this.openFiles.set(uri, 1);
+    return this.documentManager.openDocument(filePath);
   }
 
   /**
    * Close a text document
    */
   async closeDocument(filePath: string): Promise<void> {
-    if (!this.connection || !this.initialized) {
-      return;
-    }
-
-    const uri = toUri(filePath);
-    if (!this.openFiles.has(uri)) {
-      return;
-    }
-
-    const params: DidCloseTextDocumentParams = {
-      textDocument: { uri } as TextDocumentIdentifier,
-    };
-
-    await this.connection.sendNotification('textDocument/didClose', params);
-    this.openFiles.delete(uri);
+    return this.documentManager.closeDocument(filePath);
   }
 
   /**
@@ -219,31 +171,7 @@ export class LSPClient {
     filePath: string,
     position: ExactPosition
   ): Promise<CodeSnippet[]> {
-    if (!this.connection || !this.initialized) {
-      throw new Error('LSP client not initialized');
-    }
-
-    await this.openDocument(filePath);
-
-    try {
-      const params: DefinitionParams = {
-        textDocument: { uri: toUri(filePath) } as TextDocumentIdentifier,
-        position: {
-          line: position.line,
-          character: position.character,
-        } as Position,
-      };
-
-      const result = (await this.connection.sendRequest(
-        'textDocument/definition',
-        params
-      )) as Location | Location[] | LocationLink[] | null;
-
-      return this.locationsToSnippets(result);
-    } finally {
-      // Close document to prevent memory leak
-      await this.closeDocument(filePath);
-    }
+    return this.operations.gotoDefinition(filePath, position);
   }
 
   /**
@@ -254,32 +182,11 @@ export class LSPClient {
     position: ExactPosition,
     includeDeclaration = true
   ): Promise<CodeSnippet[]> {
-    if (!this.connection || !this.initialized) {
-      throw new Error('LSP client not initialized');
-    }
-
-    await this.openDocument(filePath);
-
-    try {
-      const params: ReferenceParams = {
-        textDocument: { uri: toUri(filePath) } as TextDocumentIdentifier,
-        position: {
-          line: position.line,
-          character: position.character,
-        } as Position,
-        context: { includeDeclaration },
-      };
-
-      const result = (await this.connection.sendRequest(
-        'textDocument/references',
-        params
-      )) as Location[] | null;
-
-      return this.locationsToSnippets(result);
-    } finally {
-      // Close document to prevent memory leak
-      await this.closeDocument(filePath);
-    }
+    return this.operations.findReferences(
+      filePath,
+      position,
+      includeDeclaration
+    );
   }
 
   /**
@@ -289,209 +196,21 @@ export class LSPClient {
     filePath: string,
     position: ExactPosition
   ): Promise<CallHierarchyItem[]> {
-    if (!this.connection || !this.initialized) {
-      throw new Error('LSP client not initialized');
-    }
-
-    await this.openDocument(filePath);
-
-    try {
-      const params: CallHierarchyPrepareParams = {
-        textDocument: { uri: toUri(filePath) } as TextDocumentIdentifier,
-        position: {
-          line: position.line,
-          character: position.character,
-        } as Position,
-      };
-
-      const result = await this.connection.sendRequest(
-        'textDocument/prepareCallHierarchy',
-        params
-      );
-
-      if (!result || !Array.isArray(result)) {
-        return [];
-      }
-
-      return (result as LSPCallHierarchyItem[]).map(item =>
-        this.convertCallHierarchyItem(item)
-      );
-    } finally {
-      // Close document to prevent memory leak
-      await this.closeDocument(filePath);
-    }
+    return this.operations.prepareCallHierarchy(filePath, position);
   }
 
   /**
    * Get incoming calls (who calls this function)
    */
   async getIncomingCalls(item: CallHierarchyItem): Promise<IncomingCall[]> {
-    if (!this.connection || !this.initialized) {
-      throw new Error('LSP client not initialized');
-    }
-
-    const params: CallHierarchyIncomingCallsParams = {
-      item: this.toProtocolCallHierarchyItem(item),
-    };
-
-    const result = await this.connection.sendRequest(
-      'callHierarchy/incomingCalls',
-      params
-    );
-
-    if (!result || !Array.isArray(result)) {
-      return [];
-    }
-
-    return (result as CallHierarchyIncomingCall[]).map(call => ({
-      from: this.convertCallHierarchyItem(call.from),
-      fromRanges: call.fromRanges.map(r => ({
-        start: { line: r.start.line, character: r.start.character },
-        end: { line: r.end.line, character: r.end.character },
-      })),
-    }));
+    return this.operations.getIncomingCalls(item);
   }
 
   /**
    * Get outgoing calls (what this function calls)
    */
   async getOutgoingCalls(item: CallHierarchyItem): Promise<OutgoingCall[]> {
-    if (!this.connection || !this.initialized) {
-      throw new Error('LSP client not initialized');
-    }
-
-    const params: CallHierarchyOutgoingCallsParams = {
-      item: this.toProtocolCallHierarchyItem(item),
-    };
-
-    const result = await this.connection.sendRequest(
-      'callHierarchy/outgoingCalls',
-      params
-    );
-
-    if (!result || !Array.isArray(result)) {
-      return [];
-    }
-
-    return (result as CallHierarchyOutgoingCall[]).map(call => ({
-      to: this.convertCallHierarchyItem(call.to),
-      fromRanges: call.fromRanges.map(r => ({
-        start: { line: r.start.line, character: r.start.character },
-        end: { line: r.end.line, character: r.end.character },
-      })),
-    }));
-  }
-
-  /**
-   * Convert Location/LocationLink to CodeSnippet
-   */
-  private async locationsToSnippets(
-    result: Location | Location[] | LocationLink[] | null
-  ): Promise<CodeSnippet[]> {
-    if (!result) return [];
-
-    const locations = Array.isArray(result) ? result : [result];
-    const snippets: CodeSnippet[] = [];
-
-    for (const loc of locations) {
-      const uri = 'targetUri' in loc ? loc.targetUri : loc.uri;
-      const range = 'targetRange' in loc ? loc.targetRange : loc.range;
-
-      const filePath = fromUri(uri);
-      let content = '';
-
-      try {
-        const fileContent = await fs.readFile(filePath, 'utf-8');
-        const lines = fileContent.split(/\r?\n/);
-        const startLine = range.start.line;
-        const endLine = range.end.line;
-        content = lines
-          .slice(startLine, endLine + 1)
-          .map((line, i) => `${startLine + i + 1}\t${line}`)
-          .join('\n');
-      } catch {
-        content = `[Could not read file: ${filePath}]`;
-      }
-
-      snippets.push({
-        uri: filePath,
-        range: {
-          start: { line: range.start.line, character: range.start.character },
-          end: { line: range.end.line, character: range.end.character },
-        },
-        content,
-        displayRange: {
-          startLine: range.start.line + 1,
-          endLine: range.end.line + 1,
-        },
-      });
-    }
-
-    return snippets;
-  }
-
-  /**
-   * Convert LSP CallHierarchyItem to our CallHierarchyItem
-   */
-  private convertCallHierarchyItem(
-    item: LSPCallHierarchyItem
-  ): CallHierarchyItem {
-    return {
-      name: item.name,
-      kind: convertSymbolKind(item.kind),
-      uri: fromUri(item.uri),
-      range: {
-        start: {
-          line: item.range.start.line,
-          character: item.range.start.character,
-        },
-        end: { line: item.range.end.line, character: item.range.end.character },
-      },
-      selectionRange: {
-        start: {
-          line: item.selectionRange.start.line,
-          character: item.selectionRange.start.character,
-        },
-        end: {
-          line: item.selectionRange.end.line,
-          character: item.selectionRange.end.character,
-        },
-      },
-      displayRange: {
-        startLine: item.range.start.line + 1,
-        endLine: item.range.end.line + 1,
-      },
-    };
-  }
-
-  /**
-   * Convert our CallHierarchyItem to LSP protocol item
-   */
-  private toProtocolCallHierarchyItem(
-    item: CallHierarchyItem
-  ): LSPCallHierarchyItem {
-    return {
-      name: item.name,
-      kind: LSPSymbolKind.Function, // Default to function
-      uri: toUri(item.uri),
-      range: {
-        start: {
-          line: item.range.start.line,
-          character: item.range.start.character,
-        },
-        end: { line: item.range.end.line, character: item.range.end.character },
-      },
-      selectionRange: {
-        start: {
-          line: item.selectionRange.start.line,
-          character: item.selectionRange.start.character,
-        },
-        end: {
-          line: item.selectionRange.end.line,
-          character: item.selectionRange.end.character,
-        },
-      },
-    };
+    return this.operations.getOutgoingCalls(item);
   }
 
   /**
@@ -511,10 +230,7 @@ export class LSPClient {
 
     try {
       // Close all open documents
-      for (const uri of Array.from(this.openFiles.keys())) {
-        const filePath = fromUri(uri);
-        await this.closeDocument(filePath);
-      }
+      await this.documentManager.closeAllDocuments();
 
       // Send shutdown request
       await this.connection.sendRequest('shutdown');
@@ -529,6 +245,16 @@ export class LSPClient {
       this.process?.kill();
       this.process = null;
       this.initialized = false;
+
+      // Clear connection from managers
+      this.documentManager.setConnection(
+        null as unknown as MessageConnection,
+        false
+      );
+      this.operations.setConnection(
+        null as unknown as MessageConnection,
+        false
+      );
     }
   }
 }

@@ -8,174 +8,27 @@
  * and flushed to disk every 60 seconds or on process exit.
  */
 
-import {
-  existsSync,
-  readFileSync,
-  writeFileSync,
-  unlinkSync,
-  renameSync,
-} from 'node:fs';
-import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { OCTOCODE_DIR, ensureOctocodeDir } from '../credentials/storage.js';
 import type {
   PersistedSession,
   SessionStats,
   SessionUpdateResult,
   SessionOptions,
 } from './types.js';
-
-// Storage constants
-export const SESSION_FILE = join(OCTOCODE_DIR, 'session.json');
+import { deleteSessionFile } from './sessionDiskIO.js';
+import {
+  readSession as readSessionFromCache,
+  writeSession as writeSessionToCache,
+  flushSession as flushSessionFromCache,
+  flushSessionSync as flushSessionSyncFromCache,
+  clearCache,
+  stopFlushTimer,
+  unregisterExitHandlers,
+  resetCacheState,
+} from './sessionCache.js';
 
 // Current schema version
 const CURRENT_VERSION = 1 as const;
-
-// Batch save interval (60 seconds)
-const FLUSH_INTERVAL_MS = 60_000;
-
-// ─── In-Memory Cache & Batch Saving ─────────────────────────────────────────
-
-/** In-memory session cache */
-let cachedSession: PersistedSession | null = null;
-
-/** Whether the cache has unsaved changes */
-let isDirty = false;
-
-/** Timer for periodic flush */
-let flushTimer: ReturnType<typeof setInterval> | null = null;
-
-/** Whether exit handlers are registered */
-let exitHandlersRegistered = false;
-
-/** Stored listener references for cleanup */
-let exitListener: (() => void) | null = null;
-let sigintListener: (() => void) | null = null;
-let sigtermListener: (() => void) | null = null;
-
-/**
- * Register process exit handlers to flush session on shutdown.
- *
- * IMPORTANT: This is a library module - we flush data but NEVER call process.exit().
- * The consuming application owns the process lifecycle.
- */
-function registerExitHandlers(): void {
-  if (exitHandlersRegistered) return;
-  exitHandlersRegistered = true;
-
-  // Create listener functions (stored for cleanup in tests)
-  exitListener = () => {
-    flushSessionSync();
-  };
-  sigintListener = () => {
-    flushSessionSync();
-    // Don't call process.exit() - let the application decide
-  };
-  sigtermListener = () => {
-    flushSessionSync();
-    // Don't call process.exit() - let the application decide
-  };
-
-  // Register handlers
-  process.on('exit', exitListener);
-  process.once('SIGINT', sigintListener);
-  process.once('SIGTERM', sigtermListener);
-}
-
-/**
- * Unregister exit handlers (for testing only)
- * @internal
- */
-function unregisterExitHandlers(): void {
-  if (exitListener) {
-    process.removeListener('exit', exitListener);
-    exitListener = null;
-  }
-  if (sigintListener) {
-    process.removeListener('SIGINT', sigintListener);
-    sigintListener = null;
-  }
-  if (sigtermListener) {
-    process.removeListener('SIGTERM', sigtermListener);
-    sigtermListener = null;
-  }
-  exitHandlersRegistered = false;
-}
-
-/**
- * Start the periodic flush timer
- */
-function startFlushTimer(): void {
-  if (flushTimer) return;
-
-  flushTimer = setInterval(() => {
-    if (isDirty && cachedSession) {
-      writeSessionToDisk(cachedSession);
-      isDirty = false;
-    }
-  }, FLUSH_INTERVAL_MS);
-
-  // Don't prevent process from exiting
-  flushTimer.unref();
-}
-
-/**
- * Stop the periodic flush timer
- */
-function stopFlushTimer(): void {
-  if (flushTimer) {
-    clearInterval(flushTimer);
-    flushTimer = null;
-  }
-}
-
-/**
- * Write session directly to disk (internal)
- * Uses atomic write (temp file + rename) to prevent corruption on crash
- */
-function writeSessionToDisk(session: PersistedSession): void {
-  ensureOctocodeDir();
-
-  const tempFile = `${SESSION_FILE}.tmp`;
-
-  // Write to temp file first
-  writeFileSync(tempFile, JSON.stringify(session, null, 2), {
-    mode: 0o600,
-  });
-
-  // Atomic rename (POSIX guarantees atomicity)
-  renameSync(tempFile, SESSION_FILE);
-}
-
-/**
- * Read session directly from disk (internal)
- */
-function readSessionFromDisk(): PersistedSession | null {
-  if (!existsSync(SESSION_FILE)) {
-    return null;
-  }
-
-  try {
-    const content = readFileSync(SESSION_FILE, 'utf8');
-    const session = JSON.parse(content) as PersistedSession;
-
-    // Validate schema version
-    if (session.version !== CURRENT_VERSION) {
-      // Future: handle migrations here
-      return null;
-    }
-
-    // Validate required fields
-    if (!session.sessionId || !session.createdAt) {
-      return null;
-    }
-
-    return session;
-  } catch {
-    // Invalid JSON or read error - return null to create new session
-    return null;
-  }
-}
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
@@ -210,17 +63,7 @@ function createNewSession(): PersistedSession {
  * @returns The persisted session or null if not found/invalid
  */
 export function readSession(): PersistedSession | null {
-  // Return from cache if available
-  if (cachedSession) {
-    return cachedSession;
-  }
-
-  // Load from disk and cache
-  const session = readSessionFromDisk();
-  if (session) {
-    cachedSession = session;
-  }
-  return session;
+  return readSessionFromCache();
 }
 
 /**
@@ -228,12 +71,7 @@ export function readSession(): PersistedSession | null {
  * Changes are buffered and flushed every 60 seconds or on process exit.
  */
 export function writeSession(session: PersistedSession): void {
-  cachedSession = session;
-  isDirty = true;
-
-  // Ensure exit handlers and flush timer are set up
-  registerExitHandlers();
-  startFlushTimer();
+  writeSessionToCache(session);
 }
 
 /**
@@ -241,24 +79,14 @@ export function writeSession(session: PersistedSession): void {
  * Use this when you need to ensure data is persisted (e.g., before critical operations)
  */
 export function flushSession(): void {
-  if (isDirty && cachedSession) {
-    writeSessionToDisk(cachedSession);
-    isDirty = false;
-  }
+  flushSessionFromCache();
 }
 
 /**
  * Flush session to disk synchronously (for exit handlers)
  */
 export function flushSessionSync(): void {
-  if (isDirty && cachedSession) {
-    try {
-      writeSessionToDisk(cachedSession);
-      isDirty = false;
-    } catch {
-      // Best effort - don't throw on exit
-    }
-  }
+  flushSessionSyncFromCache();
 }
 
 /**
@@ -273,14 +101,14 @@ export function getOrCreateSession(options?: SessionOptions): PersistedSession {
   // Force new session if requested
   if (options?.forceNew) {
     const newSession = createNewSession();
-    writeSession(newSession);
+    writeSessionToCache(newSession);
     // Flush immediately for new sessions to ensure ID is persisted
-    flushSession();
+    flushSessionFromCache();
     return newSession;
   }
 
   // Try to load existing session (from cache or disk)
-  const existingSession = readSession();
+  const existingSession = readSessionFromCache();
 
   if (existingSession) {
     // Update lastActiveAt timestamp
@@ -288,17 +116,17 @@ export function getOrCreateSession(options?: SessionOptions): PersistedSession {
       ...existingSession,
       lastActiveAt: new Date().toISOString(),
     };
-    writeSession(updatedSession);
+    writeSessionToCache(updatedSession);
     // Flush immediately on first load to persist lastActiveAt
-    flushSession();
+    flushSessionFromCache();
     return updatedSession;
   }
 
   // Create new session
   const newSession = createNewSession();
-  writeSession(newSession);
+  writeSessionToCache(newSession);
   // Flush immediately for new sessions to ensure ID is persisted
-  flushSession();
+  flushSessionFromCache();
   return newSession;
 }
 
@@ -307,7 +135,7 @@ export function getOrCreateSession(options?: SessionOptions): PersistedSession {
  * @returns The session ID or null if no session exists
  */
 export function getSessionId(): string | null {
-  const session = readSession();
+  const session = readSessionFromCache();
   return session?.sessionId ?? null;
 }
 
@@ -321,7 +149,7 @@ export function getSessionId(): string | null {
 export function updateSessionStats(
   updates: Partial<SessionStats>
 ): SessionUpdateResult {
-  const session = readSession();
+  const session = readSessionFromCache();
 
   if (!session) {
     return { success: false, session: null };
@@ -342,7 +170,7 @@ export function updateSessionStats(
   };
 
   // Write to cache (batched to disk every 60s)
-  writeSession(updatedSession);
+  writeSessionToCache(updatedSession);
   return { success: true, session: updatedSession };
 }
 
@@ -378,7 +206,7 @@ export function incrementRateLimits(count: number = 1): SessionUpdateResult {
  * Reset session statistics to zero
  */
 export function resetSessionStats(): SessionUpdateResult {
-  const session = readSession();
+  const session = readSessionFromCache();
 
   if (!session) {
     return { success: false, session: null };
@@ -390,7 +218,7 @@ export function resetSessionStats(): SessionUpdateResult {
     stats: createDefaultStats(),
   };
 
-  writeSession(updatedSession);
+  writeSessionToCache(updatedSession);
   return { success: true, session: updatedSession };
 }
 
@@ -401,23 +229,13 @@ export function resetSessionStats(): SessionUpdateResult {
  */
 export function deleteSession(): boolean {
   // Clear cache
-  cachedSession = null;
-  isDirty = false;
+  clearCache();
 
   // Stop flush timer and unregister handlers
   stopFlushTimer();
   unregisterExitHandlers();
 
-  if (!existsSync(SESSION_FILE)) {
-    return false;
-  }
-
-  try {
-    unlinkSync(SESSION_FILE);
-    return true;
-  } catch {
-    return false;
-  }
+  return deleteSessionFile();
 }
 
 /**
@@ -426,8 +244,8 @@ export function deleteSession(): boolean {
  * @internal
  */
 export function _resetSessionState(): void {
-  cachedSession = null;
-  isDirty = false;
-  stopFlushTimer();
-  unregisterExitHandlers();
+  resetCacheState();
 }
+
+// Re-export SESSION_FILE constant
+export { SESSION_FILE } from './sessionDiskIO.js';

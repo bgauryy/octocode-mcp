@@ -20,7 +20,7 @@ The `octocode-research` skill is an HTTP API server that provides code research 
 │  │                    Middleware Layer                          │ │
 │  │  • requestLogger - logs all tool calls                       │ │
 │  │  • express.json - parses JSON body                           │ │
-│  │  • contextPropagation - maintains research session context   │ │
+│  │  • readiness - server readiness check                        │ │
 │  │  • errorHandler - standardizes error responses               │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
@@ -89,7 +89,7 @@ octocode-research/
 │   │   ├── queryParser.ts      # Query validation with Zod
 │   │   ├── errorHandler.ts     # Error response formatting
 │   │   ├── logger.ts           # Request/response logging
-│   │   └── contextPropagation.ts # Shutdown cleanup
+│   │   └── readiness.ts         # Server readiness check
 │   ├── validation/
 │   │   ├── schemas.ts         # Zod schemas for all endpoints
 │   │   ├── httpPreprocess.ts  # Query string conversion (string→number/boolean/array)
@@ -366,9 +366,9 @@ GitHub API rate limits are tracked from response headers:
 - Provides reset time hints
 - Suggests alternative tools when limited
 
-### 5. Context Propagation (`src/middleware/contextPropagation.ts`)
+### 5. Readiness Check (`src/middleware/readiness.ts`)
 
-Manages cleanup of background contexts during graceful shutdown.
+Ensures the MCP server is initialized before handling requests. Returns `503 SERVER_INITIALIZING` if the server hasn't completed startup.
 
 ### 6. Idle Auto-Restart (`src/server.ts`)
 

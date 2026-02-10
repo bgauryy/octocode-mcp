@@ -1,6 +1,9 @@
 /**
  * GitHub Repository Structure Operations
- * Handles viewing and navigating repository directory structures
+ * Orchestrates viewing and navigating repository directory structures.
+ * Split into focused modules:
+ *   - repoStructurePagination.ts: post-cache pagination application
+ *   - repoStructureRecursive.ts: recursive directory content fetching
  */
 import { RequestError } from 'octokit';
 import type { GitHubViewRepoStructureQuery } from '../tools/github_view_repo_structure/types.js';
@@ -10,7 +13,7 @@ import type {
   GitHubRepositoryStructureError,
 } from '../tools/github_view_repo_structure/scheme.js';
 import { GITHUB_STRUCTURE_DEFAULTS as STRUCTURE_DEFAULTS } from '../tools/github_view_repo_structure/scheme.js';
-import { getOctokit, OctokitWithThrottling } from './client';
+import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { generateCacheKey, withDataCache } from '../utils/http/cache';
 import { generateStructurePaginationHints } from '../utils/pagination/index.js';
@@ -20,138 +23,8 @@ import { TOOL_NAMES } from '../tools/toolMetadata.js';
 import { REPOSITORY_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
-/**
- * Apply pagination to cached structure result
- * Rebuilds structure from cached items based on pagination params
- */
-function applyStructurePagination(
-  cachedResult: GitHubRepositoryStructureResult,
-  params: GitHubViewRepoStructureQuery
-): GitHubRepositoryStructureResult {
-  const cachedItems = cachedResult._cachedItems;
-
-  if (!cachedItems || cachedItems.length === 0) {
-    const { _cachedItems, ...result } = cachedResult;
-    return result;
-  }
-
-  const entriesPerPage =
-    params.entriesPerPage ?? STRUCTURE_DEFAULTS.ENTRIES_PER_PAGE;
-  const entryPageNumber = params.entryPageNumber ?? 1;
-  const totalEntries = cachedItems.length;
-  const totalPages = Math.max(1, Math.ceil(totalEntries / entriesPerPage));
-  const startIdx = (entryPageNumber - 1) * entriesPerPage;
-  const endIdx = Math.min(startIdx + entriesPerPage, totalEntries);
-
-  const paginatedItems = cachedItems.slice(startIdx, endIdx);
-
-  const structure: Record<string, { files: string[]; folders: string[] }> = {};
-  const basePath = cachedResult.path === '/' ? '' : cachedResult.path;
-
-  const getRelativeParent = (itemPath: string): string => {
-    let relativePath = itemPath;
-    if (basePath && itemPath.startsWith(basePath)) {
-      relativePath = itemPath.slice(basePath.length);
-      if (relativePath.startsWith('/')) {
-        relativePath = relativePath.slice(1);
-      }
-    }
-
-    const lastSlash = relativePath.lastIndexOf('/');
-    if (lastSlash === -1) {
-      return '.'; // Root level
-    }
-    return relativePath.slice(0, lastSlash);
-  };
-
-  const getItemName = (itemPath: string): string => {
-    const lastSlash = itemPath.lastIndexOf('/');
-    return lastSlash === -1 ? itemPath : itemPath.slice(lastSlash + 1);
-  };
-
-  for (const item of paginatedItems) {
-    const parentDir = getRelativeParent(item.path);
-
-    if (!structure[parentDir]) {
-      structure[parentDir] = { files: [], folders: [] };
-    }
-
-    const itemName = getItemName(item.path);
-    if (item.type === 'file') {
-      structure[parentDir].files.push(itemName);
-    } else {
-      structure[parentDir].folders.push(itemName);
-    }
-  }
-
-  for (const dir of Object.keys(structure)) {
-    const entry = structure[dir];
-    if (entry) {
-      entry.files.sort();
-      entry.folders.sort();
-    }
-  }
-
-  const sortedStructure: Record<
-    string,
-    { files: string[]; folders: string[] }
-  > = {};
-  const sortedKeys = Object.keys(structure).sort((a, b) => {
-    if (a === '.') return -1;
-    if (b === '.') return 1;
-    return a.localeCompare(b);
-  });
-  for (const key of sortedKeys) {
-    const entry = structure[key];
-    if (entry) {
-      sortedStructure[key] = entry;
-    }
-  }
-
-  const pageFiles = paginatedItems.filter(i => i.type === 'file').length;
-  const pageFolders = paginatedItems.filter(i => i.type === 'dir').length;
-  const allFiles = cachedItems.filter(i => i.type === 'file').length;
-  const allFolders = cachedItems.filter(i => i.type === 'dir').length;
-
-  const hasMore = entryPageNumber < totalPages;
-  const paginationInfo = {
-    currentPage: entryPageNumber,
-    totalPages,
-    hasMore,
-    entriesPerPage,
-    totalEntries,
-  };
-
-  const hints = generateStructurePaginationHints(paginationInfo, {
-    owner: cachedResult.owner,
-    repo: cachedResult.repo,
-    branch: cachedResult.branch,
-    path: basePath,
-    depth: params.depth ?? 1,
-    pageFiles,
-    pageFolders,
-    allFiles,
-    allFolders,
-  });
-
-  return {
-    owner: cachedResult.owner,
-    repo: cachedResult.repo,
-    branch: cachedResult.branch,
-    path: cachedResult.path,
-    apiSource: cachedResult.apiSource,
-    summary: {
-      totalFiles: allFiles,
-      totalFolders: allFolders,
-      truncated: hasMore,
-      filtered: true,
-      originalCount: totalEntries,
-    },
-    structure: sortedStructure,
-    pagination: paginationInfo,
-    hints,
-  };
-}
+import { applyStructurePagination } from './repoStructurePagination.js';
+import { fetchDirectoryContentsRecursivelyAPI } from './repoStructureRecursive.js';
 
 export async function viewGitHubRepositoryStructureAPI(
   params: GitHubViewRepoStructureQuery,
@@ -363,14 +236,11 @@ async function viewGitHubRepositoryStructureAPIInternal(
       if (a.type !== b.type) {
         return a.type === 'dir' ? -1 : 1;
       }
-
       const aDepth = a.path.split('/').length;
       const bDepth = b.path.split('/').length;
-
       if (aDepth !== bDepth) {
         return aDepth - bDepth;
       }
-
       return a.path.localeCompare(b.path);
     });
 
@@ -396,10 +266,9 @@ async function viewGitHubRepositoryStructureAPIInternal(
           relativePath = relativePath.slice(1);
         }
       }
-
       const lastSlash = relativePath.lastIndexOf('/');
       if (lastSlash === -1) {
-        return '.'; // Root level
+        return '.';
       }
       return relativePath.slice(0, lastSlash);
     };
@@ -411,11 +280,9 @@ async function viewGitHubRepositoryStructureAPIInternal(
 
     for (const item of paginatedItems) {
       const parentDir = getRelativeParent(item.path);
-
       if (!structure[parentDir]) {
         structure[parentDir] = { files: [], folders: [] };
       }
-
       const itemName = getItemName(item.path);
       if (item.type === 'file') {
         structure[parentDir].files.push(itemName);
@@ -494,7 +361,6 @@ async function viewGitHubRepositoryStructureAPIInternal(
       structure: sortedStructure,
       pagination: paginationInfo,
       hints,
-      // Include cached items for post-cache pagination
       ...(noPaginationRequested && {
         _cachedItems: filteredItems.map(item => ({
           path: item.path,
@@ -514,87 +380,5 @@ async function viewGitHubRepositoryStructureAPIInternal(
       rateLimitRemaining: apiError.rateLimitRemaining,
       rateLimitReset: apiError.rateLimitReset,
     };
-  }
-}
-
-/**
- * Recursively fetch directory contents using API
- */
-async function fetchDirectoryContentsRecursivelyAPI(
-  octokit: InstanceType<typeof OctokitWithThrottling>,
-  owner: string,
-  repo: string,
-  branch: string,
-  path: string,
-  currentDepth: number,
-  maxDepth: number,
-  visitedPaths: Set<string> = new Set()
-): Promise<GitHubApiFileItem[]> {
-  if (currentDepth > maxDepth || visitedPaths.has(path)) {
-    return [];
-  }
-
-  visitedPaths.add(path);
-
-  try {
-    const result = await octokit.rest.repos.getContent({
-      owner,
-      repo,
-      path: path || undefined,
-      ref: branch,
-    });
-
-    const items = Array.isArray(result.data) ? result.data : [result.data];
-    const apiItems: GitHubApiFileItem[] = items.map(
-      (item: GitHubApiFileItem) => ({
-        name: item.name,
-        path: item.path,
-        type: item.type as 'file' | 'dir',
-        size: 'size' in item ? item.size : undefined,
-        download_url: 'download_url' in item ? item.download_url : undefined,
-        url: item.url,
-        html_url: item.html_url,
-        git_url: item.git_url,
-        sha: item.sha,
-      })
-    );
-
-    const allItems: GitHubApiFileItem[] = [...apiItems];
-
-    if (currentDepth < maxDepth) {
-      const directories = apiItems.filter(item => item.type === 'dir');
-
-      const concurrencyLimit = 3;
-      for (let i = 0; i < directories.length; i += concurrencyLimit) {
-        const batch = directories.slice(i, i + concurrencyLimit);
-
-        const promises = batch.map(async dir => {
-          try {
-            const subItems = await fetchDirectoryContentsRecursivelyAPI(
-              octokit,
-              owner,
-              repo,
-              branch,
-              dir.path,
-              currentDepth + 1,
-              maxDepth,
-              visitedPaths // Pass reference, not copy
-            );
-            return subItems;
-          } catch {
-            return [];
-          }
-        });
-
-        const results = await Promise.all(promises);
-        results.forEach(subItems => {
-          allItems.push(...subItems);
-        });
-      }
-    }
-
-    return allItems;
-  } catch {
-    return [];
   }
 }

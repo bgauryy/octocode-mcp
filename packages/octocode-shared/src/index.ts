@@ -19,3 +19,6 @@ export * from './session/index.js';
 
 // Re-export everything from config
 export * from './config/index.js';
+
+// Re-export everything from logger
+export * from './logger/index.js';

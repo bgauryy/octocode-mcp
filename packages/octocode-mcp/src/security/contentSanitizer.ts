@@ -2,8 +2,11 @@ import { allRegexPatterns } from './regexes.js';
 import type { SanitizationResult, ValidationResult } from '../types.js';
 
 export class ContentSanitizer {
-  public static sanitizeContent(content: string): SanitizationResult {
-    const secretsResult = this.detectSecrets(content);
+  public static sanitizeContent(
+    content: string,
+    filePath?: string
+  ): SanitizationResult {
+    const secretsResult = this.detectSecrets(content, filePath);
 
     return {
       content: secretsResult.sanitizedContent,
@@ -13,7 +16,10 @@ export class ContentSanitizer {
     };
   }
 
-  private static detectSecrets(content: string): {
+  private static detectSecrets(
+    content: string,
+    filePath?: string
+  ): {
     hasSecrets: boolean;
     secretsDetected: string[];
     sanitizedContent: string;
@@ -23,6 +29,12 @@ export class ContentSanitizer {
 
     try {
       for (const pattern of allRegexPatterns) {
+        if (pattern.fileContext) {
+          if (!filePath || !pattern.fileContext.test(filePath)) {
+            continue;
+          }
+        }
+
         const matches = sanitizedContent.match(pattern.regex);
         if (matches && matches.length > 0) {
           matches.forEach(_match => secretsDetectedSet.add(pattern.name));

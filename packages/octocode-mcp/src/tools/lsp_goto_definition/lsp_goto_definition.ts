@@ -13,6 +13,7 @@ import {
 } from './scheme.js';
 import { executeGotoDefinition } from './execution.js';
 import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
 
 /**
  * Register the LSP Go To Definition tool with the MCP server.
@@ -31,7 +32,7 @@ export function registerLSPGotoDefinitionTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    executeGotoDefinition
+    withBasicSecurityValidation(executeGotoDefinition)
   );
 }
 

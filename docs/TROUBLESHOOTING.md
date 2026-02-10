@@ -110,8 +110,8 @@ Simply paste the output into your conversation and let the agent resolve it.
 
 | Check | Description |
 |-------|-------------|
-| Node.js version | Minimum 18.12.0 required |
-| npm version | Minimum 8.0.0 required |
+| Node.js version | Minimum 20.0.0 required |
+| npm version | Minimum 10.0.0 required |
 | PATH configuration | Ensures Node is accessible |
 | Multiple installations | Detects nvm, homebrew, system conflicts |
 | Permission issues | Identifies npm/node_modules ownership problems |
@@ -119,7 +119,7 @@ Simply paste the output into your conversation and let the agent resolve it.
 ### Manual Verification (if needed)
 
 ```bash
-node --version  # Should be >= 18.12.0
+node --version  # Should be >= 20.0.0
 npm --version   # Should be >= 8.0.0
 which node      # Check which Node is being used
 which npm       # Should match Node installation

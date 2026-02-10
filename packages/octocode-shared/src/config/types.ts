@@ -25,8 +25,6 @@ export const CONFIG_FILE_NAME = '.octocoderc';
 export interface GitHubConfigOptions {
   /** GitHub API URL (default: https://api.github.com) */
   apiUrl?: string;
-  /** Default organization for searches */
-  defaultOrg?: string;
 }
 
 /**
@@ -35,20 +33,18 @@ export interface GitHubConfigOptions {
 export interface GitLabConfigOptions {
   /** GitLab instance URL (default: https://gitlab.com) */
   host?: string;
-  /** Default group for searches */
-  defaultGroup?: string;
 }
 
 /**
  * Local filesystem tools configuration
  */
 export interface LocalConfigOptions {
-  /** Enable local filesystem tools (default: false) */
+  /** Enable local filesystem tools (default: true) */
   enabled?: boolean;
   /** Restrict to specific paths (empty = all allowed) */
   allowedPaths?: string[];
-  /** Always exclude these paths */
-  excludePaths?: string[];
+  /** Root directory for path validation (default: cwd()) */
+  workspaceRoot?: string;
 }
 
 /**
@@ -57,8 +53,12 @@ export interface LocalConfigOptions {
 export interface ToolsConfigOptions {
   /** Whitelist of tools to enable (null = all) */
   enabled?: string[] | null;
+  /** Additional tools to enable on top of defaults */
+  enableAdditional?: string[] | null;
   /** Blacklist of tools to disable */
   disabled?: string[] | null;
+  /** Disable MCP prompts/slash commands (default: false) */
+  disablePrompts?: boolean;
 }
 
 /**
@@ -75,42 +75,16 @@ export interface NetworkConfigOptions {
  * Telemetry and logging configuration
  */
 export interface TelemetryConfigOptions {
-  /** Enable session telemetry (default: true) */
-  enabled?: boolean;
   /** Enable debug logging (default: true) */
   logging?: boolean;
-}
-
-/**
- * LSP language server configuration
- */
-export interface LspLanguageConfig {
-  /** Custom server path (null = use bundled/detected) */
-  serverPath?: string | null;
 }
 
 /**
  * LSP tools configuration
  */
 export interface LspConfigOptions {
-  /** Enable LSP tools (default: true) */
-  enabled?: boolean;
-  /** LSP operation timeout in ms (default: 10000) */
-  timeout?: number;
-  /** Per-language server configuration */
-  languages?: Record<string, LspLanguageConfig>;
-}
-
-/**
- * Research behavior defaults
- */
-export interface ResearchConfigOptions {
-  /** Default provider: "github" | "gitlab" */
-  defaultProvider?: 'github' | 'gitlab';
-  /** Max parallel queries per batch (default: 3) */
-  maxQueriesPerBatch?: number;
-  /** Default limit for search results (default: 10) */
-  maxResultsPerQuery?: number;
+  /** Path to custom LSP servers config file (default: ~/.octocode/lsp-servers.json) */
+  configPath?: string;
 }
 
 // ============================================================================
@@ -139,8 +113,6 @@ export interface OctocodeConfig {
   telemetry?: TelemetryConfigOptions;
   /** LSP settings */
   lsp?: LspConfigOptions;
-  /** Research defaults */
-  research?: ResearchConfigOptions;
 }
 
 /**
@@ -148,23 +120,23 @@ export interface OctocodeConfig {
  */
 export interface RequiredGitHubConfig {
   apiUrl: string;
-  defaultOrg: string | undefined;
 }
 
 export interface RequiredGitLabConfig {
   host: string;
-  defaultGroup: string | undefined;
 }
 
 export interface RequiredLocalConfig {
   enabled: boolean;
   allowedPaths: string[];
-  excludePaths: string[];
+  workspaceRoot: string | undefined;
 }
 
 export interface RequiredToolsConfig {
   enabled: string[] | null;
+  enableAdditional: string[] | null;
   disabled: string[] | null;
+  disablePrompts: boolean;
 }
 
 export interface RequiredNetworkConfig {
@@ -173,20 +145,11 @@ export interface RequiredNetworkConfig {
 }
 
 export interface RequiredTelemetryConfig {
-  enabled: boolean;
   logging: boolean;
 }
 
 export interface RequiredLspConfig {
-  enabled: boolean;
-  timeout: number;
-  languages: Record<string, LspLanguageConfig>;
-}
-
-export interface RequiredResearchConfig {
-  defaultProvider: 'github' | 'gitlab';
-  maxQueriesPerBatch: number;
-  maxResultsPerQuery: number;
+  configPath: string | undefined;
 }
 
 /**
@@ -209,8 +172,6 @@ export interface ResolvedConfig {
   telemetry: RequiredTelemetryConfig;
   /** LSP settings */
   lsp: RequiredLspConfig;
-  /** Research defaults */
-  research: RequiredResearchConfig;
   /** Source of this configuration */
   source: 'file' | 'defaults' | 'mixed';
   /** Path to config file (if loaded from file) */

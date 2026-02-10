@@ -21,7 +21,8 @@
   "license": "MIT",
   "dependencies": {
     "@octokit/oauth-methods": "^6.0.2",
-    "@octokit/request": "^10.0.7"
+    "@octokit/request": "^10.0.7",
+    "zod": "^3.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",

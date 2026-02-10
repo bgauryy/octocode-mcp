@@ -180,8 +180,8 @@ For detailed API documentation, see [docs/API_REFERENCE.md](./docs/API_REFERENCE
 ## Architecture
 
 - [Credentials Architecture](./docs/CREDENTIALS_ARCHITECTURE.md) - Secure token storage design
-- [Global Config Design](./docs/GLOBAL_CONFIG_DESIGN.md) - Configuration system design
 - [Session Persistence](./docs/SESSION_PERSISTENCE.md) - Session management design
+- [Configuration](../../docs/CONFIGURATION_REFERENCE.md) - Configuration reference (env vars and `.octocoderc`)
 
 ## Development
 

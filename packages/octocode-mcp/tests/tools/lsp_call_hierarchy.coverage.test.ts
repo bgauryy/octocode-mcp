@@ -10,6 +10,7 @@ import {
   parseRipgrepJsonOutput,
   parseGrepOutput,
   extractFunctionBody,
+  isFunctionAssignment,
   inferSymbolKind,
   createRange,
 } from '../../src/tools/lsp_call_hierarchy/index.js';
@@ -587,6 +588,108 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
 
     it('should infer let arrow function as function not variable', () => {
       expect(inferSymbolKind('let myFunc = (x) => x')).toBe('function');
+    });
+
+    it('should not hang on ReDoS input with repeated = chars', () => {
+      const start = Date.now();
+      const malicious = 'const x =' + '='.repeat(1000);
+      inferSymbolKind(malicious);
+      expect(Date.now() - start).toBeLessThan(50);
+    });
+
+    it('should not hang on ReDoS input with repeated ( chars', () => {
+      const start = Date.now();
+      const malicious = 'const x =(' + '('.repeat(1000);
+      inferSymbolKind(malicious);
+      expect(Date.now() - start).toBeLessThan(50);
+    });
+
+    it('should infer var arrow function as function not variable', () => {
+      expect(inferSymbolKind('var myFunc = (a, b) => a + b')).toBe('function');
+    });
+
+    it('should infer single-param arrow function as function', () => {
+      expect(inferSymbolKind('const fn = x => x + 1')).toBe('function');
+    });
+
+    it('should infer async function expression as function', () => {
+      expect(inferSymbolKind('const fn = async function() {}')).toBe(
+        'function'
+      );
+    });
+  });
+
+  describe('isFunctionAssignment', () => {
+    it('should return false when no = sign present', () => {
+      expect(isFunctionAssignment('function foo() {}')).toBe(false);
+      expect(isFunctionAssignment('class MyClass {}')).toBe(false);
+      expect(isFunctionAssignment('const x')).toBe(false);
+    });
+
+    it('should detect function keyword after =', () => {
+      expect(isFunctionAssignment('const fn = function() {}')).toBe(true);
+      expect(isFunctionAssignment('let fn = function named() {}')).toBe(true);
+      expect(isFunctionAssignment('var fn = async function() {}')).toBe(true);
+    });
+
+    it('should detect arrow function with parenthesized params', () => {
+      expect(isFunctionAssignment('const fn = () => {}')).toBe(true);
+      expect(isFunctionAssignment('const fn = (x) => x')).toBe(true);
+      expect(isFunctionAssignment('const fn = (a, b) => a + b')).toBe(true);
+      expect(isFunctionAssignment('let fn = async (x) => x')).toBe(true);
+    });
+
+    it('should detect single-param arrow function without parens', () => {
+      expect(isFunctionAssignment('const fn = x => x + 1')).toBe(true);
+      expect(isFunctionAssignment('let fn = item => item.id')).toBe(true);
+    });
+
+    it('should return false for non-function assignments', () => {
+      expect(isFunctionAssignment('const x = 1;')).toBe(false);
+      expect(isFunctionAssignment('let name = "hello";')).toBe(false);
+      expect(isFunctionAssignment('var obj = {};')).toBe(false);
+      expect(isFunctionAssignment('const arr = [1, 2, 3];')).toBe(false);
+    });
+
+    it('should not hang on ReDoS input with repeated = chars', () => {
+      const start = Date.now();
+      const malicious = 'const x =' + '='.repeat(10000);
+      isFunctionAssignment(malicious);
+      expect(Date.now() - start).toBeLessThan(50);
+    });
+
+    it('should not hang on ReDoS input with repeated ( chars', () => {
+      const start = Date.now();
+      const malicious = 'const x =(' + '('.repeat(10000);
+      isFunctionAssignment(malicious);
+      expect(Date.now() - start).toBeLessThan(50);
+    });
+
+    it('should not hang on ReDoS input with repeated =( pattern', () => {
+      const start = Date.now();
+      const malicious = 'const x =' + '=('.repeat(5000);
+      isFunctionAssignment(malicious);
+      expect(Date.now() - start).toBeLessThan(50);
+    });
+
+    it('should not hang on ReDoS input with repeated ) chars', () => {
+      const start = Date.now();
+      const malicious = 'const x =' + ')'.repeat(10000) + '=>';
+      isFunctionAssignment(malicious);
+      expect(Date.now() - start).toBeLessThan(50);
+    });
+
+    it('should handle empty string', () => {
+      expect(isFunctionAssignment('')).toBe(false);
+    });
+
+    it('should handle = at end of line', () => {
+      expect(isFunctionAssignment('const x =')).toBe(false);
+    });
+
+    it('should only check after the first = sign', () => {
+      // "function" before = should not match
+      expect(isFunctionAssignment('const x = 42')).toBe(false);
     });
   });
 

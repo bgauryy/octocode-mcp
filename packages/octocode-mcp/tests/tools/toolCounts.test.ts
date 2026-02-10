@@ -89,7 +89,6 @@ describe('Tool Count Verification', () => {
     vi.mocked(getServerConfig).mockReturnValue({
       version: '1.0.0',
       githubApiUrl: 'https://api.github.com',
-      enableLogging: true,
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: true,
@@ -110,7 +109,6 @@ describe('Tool Count Verification', () => {
     vi.mocked(getServerConfig).mockReturnValue({
       version: '1.0.0',
       githubApiUrl: 'https://api.github.com',
-      enableLogging: true,
       timeout: 30000,
       maxRetries: 3,
       loggingEnabled: true,

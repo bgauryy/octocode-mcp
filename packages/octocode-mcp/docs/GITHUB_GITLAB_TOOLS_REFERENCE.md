@@ -143,7 +143,9 @@ owner="mygroup", repo="myproject", keywordsToSearch=["middleware"]
 - `created`: Creation date filters
 - `updated`: Last update date
 - `sort`: Sorting field (`forks`, `stars`, `updated`, `best-match`)
+- `match`: Match scope (`name`, `description`, `readme`)
 - `limit`: Results per page (default: 10)
+- `page`: Page number (default: 1, max: 10)
 
 **Example queries:**
 
@@ -178,7 +180,7 @@ owner="wix-private", keywordsToSearch=["auth-service"]
 - `owner`: Repository owner / GitLab Group
 - `repo`: Repository name / GitLab Project
 - `query`: Free-text search
-- `state`: `open`, `closed` (GitHub) / `merged`, `all` (GitLab)
+- `state`: `open`, `closed`
 - `author`: User filter
 - `assignee`: Assignee filter
 - `label`: Label filter (string or array)
@@ -191,7 +193,18 @@ owner="wix-private", keywordsToSearch=["auth-service"]
 - `type`: `metadata`, `fullContent`, `partialContent`
 - `withComments`: Include comments/notes
 - `withCommits`: Include commit list
-- `partialContentMetadata`: Specific files to fetch diff for
+- `partialContentMetadata`: Specific files to fetch diff for (`[{ file, additions?, deletions? }]`)
+- `limit`: Max results (default: 5, max: 10)
+- `page`: Page number (default: 1, max: 10)
+
+**Additional filters:**
+- `head`/`base`: Branch filters (source/target branch)
+- `commenter`/`involves`/`mentions`: User involvement filters
+- `review-requested`/`reviewed-by`: Review filters
+- `no-label`/`no-milestone`/`no-project`/`no-assignee`: Negative filters
+- `closed`/`merged-at`: Date-based close/merge filters
+- `comments`/`reactions`/`interactions`: Numeric range filters
+- `match`: Search scope (`title`, `body`, `comments`)
 
 **Example queries:**
 
@@ -227,7 +240,7 @@ Tools for reading file content and browsing repository structure.
 
 | Feature | GitHub | GitLab |
 |---------|--------|--------|
-| **Branch** | Auto-detected or specified | **Required** (`branch` param) |
+| **Branch** | Optional (auto-detects default) | **Required** (`branch` param) |
 | **Identifier** | `owner` + `repo` + `path` | `owner` + `repo` + `path` + `branch` |
 
 **Key parameters:**
@@ -286,7 +299,7 @@ path="package.json", fullContent=true, owner="org", repo="repo"
 **Key parameters:**
 - `owner`: Repository owner / GitLab Group
 - `repo`: Repository name / GitLab Project
-- `branch`: Branch name
+- `branch` (required): Branch name (required for both GitHub and GitLab)
 - `path`: Starting path (default: root `""`)
 - `depth`: Traversal depth (1-2, default: 1)
 - `entriesPerPage`: Entries per page (default: 50, max: 200)

@@ -35,6 +35,8 @@ import fs from 'fs';
 import os from 'os';
 import type { PathValidationResult } from '../utils/core/types.js';
 import { shouldIgnore } from './ignoredPathFilter.js';
+import { getConfigSync } from 'octocode-shared';
+import { redactPath } from '../errors/pathUtils.js';
 
 /**
  * PathValidator configuration options
@@ -63,9 +65,16 @@ export class PathValidator {
     const opts: PathValidatorOptions =
       typeof options === 'string' ? { workspaceRoot: options } : options || {};
 
-    const root = opts.workspaceRoot
-      ? this.expandTilde(opts.workspaceRoot)
-      : process.cwd();
+    // Priority: explicit option > env var WORKSPACE_ROOT > config > CWD
+    let rootSource = opts.workspaceRoot;
+    if (!rootSource) {
+      try {
+        rootSource = getConfigSync().local.workspaceRoot;
+      } catch {
+        // Config not loaded yet, fall through
+      }
+    }
+    const root = rootSource ? this.expandTilde(rootSource) : process.cwd();
 
     this.allowedRoots = [path.resolve(root)];
 
@@ -85,6 +94,7 @@ export class PathValidator {
     }
 
     // Add roots from ALLOWED_PATHS environment variable (comma-separated)
+    // or from global config local.allowedPaths
     const envPaths = process.env.ALLOWED_PATHS;
     if (envPaths) {
       const paths = envPaths
@@ -93,6 +103,17 @@ export class PathValidator {
         .filter(p => p.length > 0);
       for (const envPath of paths) {
         this.addAllowedRoot(envPath);
+      }
+    } else {
+      try {
+        const configPaths = getConfigSync().local.allowedPaths;
+        if (configPaths) {
+          for (const configPath of configPaths) {
+            this.addAllowedRoot(configPath);
+          }
+        }
+      } catch {
+        // Config not loaded yet, skip
       }
     }
   }
@@ -148,14 +169,14 @@ export class PathValidator {
     if (!isAllowed) {
       return {
         isValid: false,
-        error: `Path '${inputPath}' is outside allowed directories. Allowed roots: ${this.allowedRoots.join(', ')}`,
+        error: `Path '${redactPath(inputPath)}' is outside allowed directories`,
       };
     }
 
     if (shouldIgnore(absolutePath)) {
       return {
         isValid: false,
-        error: `Path '${inputPath}' is in an ignored directory or matches an ignored pattern`,
+        error: `Path '${redactPath(inputPath)}' is in an ignored directory or matches an ignored pattern`,
       };
     }
 
@@ -168,14 +189,14 @@ export class PathValidator {
       if (!isRealPathAllowed) {
         return {
           isValid: false,
-          error: `Symlink target '${realPath}' is outside allowed directories`,
+          error: `Symlink target '${redactPath(realPath)}' is outside allowed directories`,
         };
       }
 
       if (shouldIgnore(realPath)) {
         return {
           isValid: false,
-          error: `Symlink target '${realPath}' is in an ignored directory or matches an ignored pattern`,
+          error: `Symlink target '${redactPath(realPath)}' is in an ignored directory or matches an ignored pattern`,
         };
       }
 
@@ -184,7 +205,7 @@ export class PathValidator {
         sanitizedPath: realPath,
       };
     } catch (error) {
-      // Comprehensive error handling for different failure modes
+      // Handle specific filesystem errors (ENOENT, EACCES, etc.)
       if (error instanceof Error) {
         const nodeError = error as Error & { code?: string };
 
@@ -200,7 +221,7 @@ export class PathValidator {
         if (nodeError.code === 'EACCES') {
           return {
             isValid: false,
-            error: `Permission denied accessing path: ${inputPath}`,
+            error: `Permission denied accessing path: ${redactPath(inputPath)}`,
           };
         }
 
@@ -208,7 +229,7 @@ export class PathValidator {
         if (nodeError.code === 'ELOOP') {
           return {
             isValid: false,
-            error: `Symlink loop detected at path: ${inputPath}`,
+            error: `Symlink loop detected at path: ${redactPath(inputPath)}`,
           };
         }
 
@@ -216,7 +237,7 @@ export class PathValidator {
         if (nodeError.code === 'ENAMETOOLONG') {
           return {
             isValid: false,
-            error: `Path name too long: ${inputPath}`,
+            error: `Path name too long: ${redactPath(inputPath)}`,
           };
         }
       }
@@ -225,7 +246,7 @@ export class PathValidator {
       // Unknown filesystem errors could indicate security issues
       return {
         isValid: false,
-        error: `Unexpected error validating path: ${inputPath}`,
+        error: `Unexpected error validating path: ${redactPath(inputPath)}`,
       };
     }
   }

@@ -107,10 +107,6 @@ class SessionManager {
     await this.sendLog('rate_limit', data);
   }
 
-  /**
-   * Internal logging method that sends session data to the telemetry endpoint.
-   * Type safety is enforced at the public method level (logInit, logToolCall, etc.)
-   */
   private async sendLog(
     intent: 'init' | 'tool_call' | 'prompt_call' | 'error' | 'rate_limit',
     data:
@@ -120,7 +116,8 @@ class SessionManager {
       | RateLimitData
       | Record<string, never>
   ): Promise<void> {
-    if (!isLoggingEnabled()) {
+    // Session init always logs (with session ID) — LOG gates everything else
+    if (intent !== 'init' && !isLoggingEnabled()) {
       return;
     }
 

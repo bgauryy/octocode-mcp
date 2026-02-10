@@ -70,7 +70,7 @@ import {
 
 /**
  * Combined array of all sensitive data patterns
- * Use this for comprehensive secret detection
+ * Use this for full secret detection across all pattern categories
  */
 export const allRegexPatterns: SensitiveDataPattern[] = [
   ...aiProviderPatterns,

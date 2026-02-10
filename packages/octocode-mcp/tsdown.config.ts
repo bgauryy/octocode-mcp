@@ -53,6 +53,7 @@ const publicConfig = defineConfig({
   ...baseConfig,
   entry: { public: 'src/public.ts' },
   clean: false, // Don't clean - main build already did
+  sourcemap: true,
 });
 
 export default [mainConfig, publicConfig];

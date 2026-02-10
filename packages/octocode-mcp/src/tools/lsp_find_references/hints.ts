@@ -36,6 +36,22 @@ export const hints: ToolHintGenerators = {
     if ((ctx as Record<string, unknown>).isFallback) {
       hints.push(...getMetadataDynamicHints(TOOL_NAME, 'fallbackMode'));
     }
+    if ((ctx as Record<string, unknown>).isFiltered) {
+      const filtered = (ctx as Record<string, unknown>).filteredCount as
+        | number
+        | undefined;
+      const total = (ctx as Record<string, unknown>).totalUnfiltered as
+        | number
+        | undefined;
+      if (filtered !== undefined && total !== undefined) {
+        hints.push(
+          `Filtered: ${filtered} of ${total} total references match patterns.`
+        );
+      }
+      hints.push(
+        'Use includePattern/excludePattern to narrow results by file path.'
+      );
+    }
     return hints;
   },
 
@@ -44,6 +60,19 @@ export const hints: ToolHintGenerators = {
     const hints: (string | undefined)[] = [];
     if ((ctx as Record<string, unknown>).symbolName) {
       hints.push(...getMetadataDynamicHints(TOOL_NAME, 'symbolNotFound'));
+    }
+    if ((ctx as Record<string, unknown>).filteredAll) {
+      hints.push(
+        'All references were excluded by file patterns. Try broader patterns or remove filtering.'
+      );
+    }
+    if (!(ctx as Record<string, unknown>).filteredAll) {
+      hints.push(
+        'TIP: Use includePattern to search only specific files (e.g. ["**/*.test.ts"]).'
+      );
+      hints.push(
+        'TIP: Use excludePattern to skip files (e.g. ["**/node_modules/**", "**/dist/**"]).'
+      );
     }
     return hints;
   },

@@ -9,6 +9,7 @@ import {
   shouldUseMCPLsp,
   getLspEnvironmentHint,
 } from '../../../src/utils/environment/environmentDetection.js';
+import { _resetConfigCache } from 'octocode-shared';
 
 describe('Environment Detection', () => {
   const originalEnv = { ...process.env };
@@ -16,11 +17,11 @@ describe('Environment Detection', () => {
   beforeEach(() => {
     // Clear environment variables
     delete process.env.ENABLE_LSP_TOOL;
-    delete process.env.OCTOCODE_FORCE_LSP;
     delete process.env.VSCODE_PID;
     delete process.env.VSCODE_IPC_HOOK;
     delete process.env.CURSOR_CHANNEL;
     delete process.env.CURSOR_TRACE_ID;
+    _resetConfigCache();
   });
 
   afterEach(() => {
@@ -72,61 +73,34 @@ describe('Environment Detection', () => {
   });
 
   describe('shouldUseMCPLsp', () => {
-    it('should return true in standalone mode', () => {
+    it('should return true when local tools are enabled by default', () => {
       expect(shouldUseMCPLsp()).toBe(true);
     });
 
-    it('should return true in VSCode', () => {
-      process.env.VSCODE_PID = '12345';
-      expect(shouldUseMCPLsp()).toBe(true);
-    });
-
-    it('should return true in Cursor', () => {
-      process.env.CURSOR_CHANNEL = 'stable';
-      expect(shouldUseMCPLsp()).toBe(true);
-    });
-
-    it('should return false in Claude Code with native LSP', () => {
-      process.env.ENABLE_LSP_TOOL = '1';
+    it('should return false when ENABLE_LOCAL is false', () => {
+      process.env.ENABLE_LOCAL = 'false';
+      _resetConfigCache();
       expect(shouldUseMCPLsp()).toBe(false);
     });
 
-    it('should return true when OCTOCODE_FORCE_LSP is set', () => {
-      process.env.ENABLE_LSP_TOOL = '1';
-      process.env.OCTOCODE_FORCE_LSP = '1';
+    it('should return true when ENABLE_LOCAL is true', () => {
+      process.env.ENABLE_LOCAL = 'true';
+      _resetConfigCache();
       expect(shouldUseMCPLsp()).toBe(true);
-    });
-
-    it('should only check for exact "1" value for force flag', () => {
-      process.env.ENABLE_LSP_TOOL = '1';
-      process.env.OCTOCODE_FORCE_LSP = 'true';
-      expect(shouldUseMCPLsp()).toBe(false);
     });
   });
 
   describe('getLspEnvironmentHint', () => {
-    it('should return null in standalone mode', () => {
+    it('should return null when local tools are enabled', () => {
       expect(getLspEnvironmentHint()).toBeNull();
     });
 
-    it('should return hint when native LSP is available', () => {
-      process.env.ENABLE_LSP_TOOL = '1';
+    it('should return hint when local tools are disabled', () => {
+      process.env.ENABLE_LOCAL = 'false';
+      _resetConfigCache();
       const hint = getLspEnvironmentHint();
-
       expect(hint).not.toBeNull();
-      expect(hint).toContain('Native Claude Code LSP detected');
-      expect(hint).toContain('OCTOCODE_FORCE_LSP=1');
-    });
-
-    it('should return null when force flag is set', () => {
-      process.env.ENABLE_LSP_TOOL = '1';
-      process.env.OCTOCODE_FORCE_LSP = '1';
-      expect(getLspEnvironmentHint()).toBeNull();
-    });
-
-    it('should not return hint for ENABLE_LSP_TOOL=0', () => {
-      process.env.ENABLE_LSP_TOOL = '0';
-      expect(getLspEnvironmentHint()).toBeNull();
+      expect(hint).toContain('Local tools are disabled');
     });
   });
 });

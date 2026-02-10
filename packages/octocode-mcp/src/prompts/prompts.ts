@@ -3,8 +3,7 @@ import { z } from 'zod';
 import { logPromptCall } from '../session.js';
 import type { CompleteMetadata } from '../tools/toolMetadata.js';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type PromptHandler = (args: any) => Promise<{
+type PromptHandler = (args: unknown) => Promise<{
   messages: Array<{
     role: 'user' | 'assistant';
     content: { type: 'text'; text: string };
@@ -79,7 +78,7 @@ export function registerPrompts(
       };
     };
 
-    // @ts-expect-error - Type instantiation depth exceeded with dynamic Zod schemas
+    // @ts-expect-error - TS2589: Zod's inferred type from dynamic argsShape exceeds type instantiation depth. Safe because the shape is built from z.string() only.
     server.registerPrompt(
       prompt.name,
       {

@@ -4,16 +4,20 @@
 
 ## Package Overview
 
-`octocode-shared` provides three modules, available via separate entry points:
+`octocode-shared` provides five modules, available via separate entry points:
 
 ```typescript
 // All exports
 import { ... } from 'octocode-shared';
 
-// Module-specific imports
+// Module-specific imports (subpath exports)
 import { ... } from 'octocode-shared/credentials';
 import { ... } from 'octocode-shared/platform';
 import { ... } from 'octocode-shared/session';
+import { ... } from 'octocode-shared/config';
+
+// Logger is available via the main entry point only
+import { createLogger, setLogHandler } from 'octocode-shared';
 ```
 
 ---
@@ -74,7 +78,6 @@ Result from storing credentials.
 ```typescript
 interface StoreResult {
   success: boolean;
-  insecureStorageUsed: boolean;  // @deprecated Always true (file storage only)
 }
 ```
 
@@ -85,7 +88,6 @@ Result from deleting credentials.
 ```typescript
 interface DeleteResult {
   success: boolean;
-  deletedFromKeyring: boolean;
   deletedFromFile: boolean;
 }
 ```
@@ -101,13 +103,16 @@ interface DeleteResult {
 ```typescript
 async function resolveTokenFull(options?: {
   hostname?: string;
+  clientId?: string;
   getGhCliToken?: GhCliTokenGetter;
-}): Promise<FullTokenResolution>
+}): Promise<FullTokenResolution | null>
 
 interface FullTokenResolution {
-  token: string | null;
-  source: TokenSource;
-  refreshed?: boolean;
+  token: string;
+  source: TokenSource | 'gh-cli';
+  wasRefreshed?: boolean;
+  username?: string;
+  refreshError?: string;
 }
 ```
 
@@ -132,20 +137,22 @@ Get token from stored credentials with automatic refresh.
 
 ```typescript
 async function getTokenWithRefresh(
-  hostname?: string
+  hostname?: string,
+  clientId?: string
 ): Promise<TokenWithRefreshResult>
 
 interface TokenWithRefreshResult {
   token: string | null;
-  refreshed: boolean;
-  source: 'file' | null;
+  source: 'stored' | 'refreshed' | 'none';
+  username?: string;
+  refreshError?: string;
 }
 ```
 
 **Example**:
 ```typescript
 const result = await getTokenWithRefresh('github.com');
-if (result.refreshed) {
+if (result.source === 'refreshed') {
   console.log('Token was refreshed');
 }
 ```
@@ -160,9 +167,11 @@ Resolve token without refresh (sync-safe).
 async function resolveToken(hostname?: string): Promise<ResolvedToken>
 
 interface ResolvedToken {
-  token: string | null;
+  token: string;
   source: TokenSource;
 }
+// Note: resolveToken() returns ResolvedToken | null
+// The token field is non-null when the object is returned
 ```
 
 ---
@@ -173,13 +182,16 @@ Resolve token with auto-refresh for Octocode tokens.
 
 ```typescript
 async function resolveTokenWithRefresh(
-  hostname?: string
-): Promise<ResolvedTokenWithRefresh>
+  hostname?: string,
+  clientId?: string
+): Promise<ResolvedTokenWithRefresh | null>
 
 interface ResolvedTokenWithRefresh {
   token: string | null;
   source: TokenSource;
-  refreshed?: boolean;
+  wasRefreshed?: boolean;
+  username?: string;
+  refreshError?: string;
 }
 ```
 
@@ -189,7 +201,7 @@ interface ResolvedTokenWithRefresh {
 
 #### `storeCredentials(credentials)`
 
-Store credentials securely (keychain preferred, file fallback).
+Store credentials securely (encrypted file storage).
 
 ```typescript
 async function storeCredentials(
@@ -290,19 +302,20 @@ function getTokenSync(hostname?: string): string | null
 
 ---
 
-#### `refreshAuthToken(credentials, clientId?)`
+#### `refreshAuthToken(hostname?, clientId?)`
 
 Manually refresh an OAuth token.
 
 ```typescript
 async function refreshAuthToken(
-  credentials: StoredCredentials,
+  hostname?: string,
   clientId?: string
 ): Promise<RefreshResult>
 
 interface RefreshResult {
   success: boolean;
-  token?: string;
+  username?: string;
+  hostname?: string;
   error?: string;
 }
 ```
@@ -422,30 +435,6 @@ function invalidateCredentialsCache(hostname?: string): void
 
 ---
 
-### Secure Storage
-
-#### `initializeSecureStorage()`
-
-Initialize secure storage (deprecated - always returns false).
-
-```typescript
-async function initializeSecureStorage(): Promise<boolean>
-```
-
-Returns `false` (keychain removed - file storage only).
-
----
-
-#### `isSecureStorageAvailable()`
-
-Check if secure storage is available (always false - keychain removed).
-
-```typescript
-function isSecureStorageAvailable(): boolean
-```
-
----
-
 ### Low-Level Functions
 
 #### `encrypt(data)`
@@ -490,18 +479,6 @@ function ensureOctocodeDir(): void
 | `ENV_TOKEN_VARS` | `['OCTOCODE_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN']` | Env var priority |
 
 ---
-
-### Errors
-
-#### `TimeoutError`
-
-Thrown when keychain operations exceed timeout (3 seconds).
-
-```typescript
-class TimeoutError extends Error {
-  name: 'TimeoutError';
-}
-```
 
 ---
 
@@ -812,12 +789,6 @@ Functions prefixed with `_` are exported for testing purposes:
 ### Credentials
 
 ```typescript
-// Reset keychain availability state
-_resetSecureStorageState(): void
-
-// Override keychain availability
-_setSecureStorageAvailable(available: boolean): void
-
 // Get cache statistics
 _getCacheStats(): { size: number; entries: Array<...> }
 
@@ -831,6 +802,177 @@ _resetCredentialsCache(): void
 // Reset all session state (cache, timer, handlers)
 _resetSessionState(): void
 ```
+
+### Config
+
+```typescript
+// Reset configuration cache
+_resetConfigCache(): void
+
+// Get cache state for debugging
+_getCacheState(): { hasConfig: boolean; ... }
+```
+
+### Logger
+
+```typescript
+// Get the current custom log handler (or null)
+_getLogHandler(): ((entry: LogEntry) => void) | null
+```
+
+---
+
+## Config Module
+
+### Configuration Loading
+
+#### `getConfig()`
+
+Load and resolve configuration (async).
+
+```typescript
+async function getConfig(): Promise<ResolvedConfig>
+```
+
+---
+
+#### `getConfigSync()`
+
+Load and resolve configuration (sync).
+
+```typescript
+function getConfigSync(): ResolvedConfig
+```
+
+---
+
+#### `reloadConfig()`
+
+Force reload configuration from disk.
+
+```typescript
+async function reloadConfig(): Promise<ResolvedConfig>
+```
+
+---
+
+#### `invalidateConfigCache()`
+
+Invalidate the in-memory config cache.
+
+```typescript
+function invalidateConfigCache(): void
+```
+
+---
+
+### Configuration Types
+
+#### `OctocodeConfig`
+
+User-facing configuration (from `.octocoderc`).
+
+```typescript
+interface OctocodeConfig {
+  $schema?: string;
+  version?: number;
+  github?: { apiUrl?: string };
+  gitlab?: { host?: string };
+  local?: { enabled?: boolean; allowedPaths?: string[]; workspaceRoot?: string };
+  tools?: { enabled?: string[] | null; enableAdditional?: string[] | null; disabled?: string[] | null; disablePrompts?: boolean };
+  network?: { timeout?: number; maxRetries?: number };
+  telemetry?: { logging?: boolean };
+  lsp?: { configPath?: string };
+}
+```
+
+---
+
+#### `ResolvedConfig`
+
+Fully resolved configuration with all defaults applied.
+
+```typescript
+interface ResolvedConfig {
+  version: number;
+  github: { apiUrl: string };
+  gitlab: { host: string };
+  local: { enabled: boolean; allowedPaths: string[]; workspaceRoot: string | undefined };
+  tools: { enabled: string[] | null; enableAdditional: string[] | null; disabled: string[] | null; disablePrompts: boolean };
+  network: { timeout: number; maxRetries: number };
+  telemetry: { logging: boolean };
+  lsp: { configPath: string | undefined };
+  source: 'file' | 'defaults' | 'mixed';
+  configPath?: string;
+}
+```
+
+---
+
+### Constants
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `CONFIG_FILE_NAME` | `.octocoderc` | Config file name |
+
+---
+
+## Logger Module
+
+### Types
+
+#### `LogLevel`
+
+```typescript
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+```
+
+#### `LogEntry`
+
+```typescript
+interface LogEntry {
+  level: LogLevel;
+  module: string;
+  message: string;
+  data?: Record<string, unknown>;
+}
+```
+
+---
+
+### Functions
+
+#### `createLogger(module)`
+
+Create a logger instance for a named module.
+
+```typescript
+function createLogger(module: string): {
+  debug: (message: string, data?: Record<string, unknown>) => void;
+  info: (message: string, data?: Record<string, unknown>) => void;
+  warn: (message: string, data?: Record<string, unknown>) => void;
+  error: (message: string, data?: Record<string, unknown>) => void;
+}
+```
+
+**Example**:
+```typescript
+const logger = createLogger('my-module');
+logger.info('Starting up', { version: '1.0.0' });
+logger.error('Something failed', { code: 'ERR_001' });
+```
+
+---
+
+#### `setLogHandler(handler)`
+
+Override the default console log handler with a custom handler.
+
+```typescript
+function setLogHandler(handler: ((entry: LogEntry) => void) | null): void
+```
+
+Pass `null` to restore the default console handler.
 
 ---
 
@@ -847,6 +989,12 @@ import { isMac, isWindows, HOME } from 'octocode-shared/platform';
 
 // Only session
 import { getOrCreateSession, incrementToolCalls } from 'octocode-shared/session';
+
+// Only config
+import { getConfigSync, reloadConfig } from 'octocode-shared/config';
+
+// Logger (via main entry only - no subpath export)
+import { createLogger } from 'octocode-shared';
 ```
 
 ### Alternative: Main Entry Point
@@ -857,6 +1005,8 @@ import {
   getTokenWithRefresh,  // credentials
   isMac,                // platform
   getOrCreateSession,   // session
+  getConfigSync,        // config
+  createLogger,         // logger
 } from 'octocode-shared';
 ```
 

@@ -3,8 +3,8 @@ import type { SensitiveDataPattern } from './types.js';
 export const paymentProviderPatterns: SensitiveDataPattern[] = [
   {
     name: 'stripeSecretKey',
-    description: 'Stripe secret key (sk_*, rk_*)',
-    regex: /\b[rs]k_live_[a-zA-Z0-9]{20,247}\b/g,
+    description: 'Stripe secret key - live and test (sk_*, rk_*)',
+    regex: /\b[rs]k_(?:live|test)_[a-zA-Z0-9]{20,247}\b/g,
     matchAccuracy: 'high',
   },
   {
@@ -12,6 +12,12 @@ export const paymentProviderPatterns: SensitiveDataPattern[] = [
     description: 'Stripe webhook signing secret',
     regex: /\bwhsec_[a-zA-Z0-9]{32,}\b/g,
     matchAccuracy: 'high',
+  },
+  {
+    name: 'stripePublishableKey',
+    description: 'Stripe publishable key (can indicate key pair presence)',
+    regex: /\bpk_(?:live|test)_[a-zA-Z0-9]{20,247}\b/g,
+    matchAccuracy: 'medium',
   },
   // PayPal
   {
@@ -159,6 +165,38 @@ export const paymentProviderPatterns: SensitiveDataPattern[] = [
     regex:
       /\baccess-(?:sandbox|development|production)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g,
     matchAccuracy: 'high',
+  },
+  // Plaid Client ID
+  {
+    name: 'plaidClientId',
+    description: 'Plaid client ID',
+    regex:
+      /\b['"]?(?:PLAID|plaid)_?(?:CLIENT|client)_?(?:ID|id)['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{24}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Lemon Squeezy API Key
+  {
+    name: 'lemonSqueezyApiKey',
+    description: 'Lemon Squeezy API key',
+    regex:
+      /\b['"]?(?:LEMONSQUEEZY|LEMON_SQUEEZY|lemonsqueezy)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?eyJ[a-zA-Z0-9_-]{100,}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Paddle API Key
+  {
+    name: 'paddleApiKey',
+    description: 'Paddle API key',
+    regex:
+      /\b['"]?(?:PADDLE|paddle)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?pdl_(?:live|sdbx)_[a-zA-Z0-9]{40,}['"]?\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Mollie API Key
+  {
+    name: 'mollieApiKey',
+    description: 'Mollie API key',
+    regex: /\b(?:live|test)_[a-zA-Z0-9]{30,}\b/g,
+    matchAccuracy: 'medium',
+    fileContext: /mollie/i,
   },
 ];
 

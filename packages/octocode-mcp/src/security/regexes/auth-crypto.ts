@@ -22,6 +22,14 @@ export const authPatterns: SensitiveDataPattern[] = [
     matchAccuracy: 'high',
   },
   {
+    name: 'googleOauthRefreshToken',
+    description: 'Google OAuth refresh token',
+    regex:
+      /\b['"]?(?:GOOGLE|google)?_?(?:OAUTH|oauth)?_?(?:REFRESH|refresh)?_?(?:TOKEN|token)['"]?\s*(?::|=>|=)\s*['"]?(1\/\/0[a-zA-Z0-9._-]{40,})['"]?\b/g,
+    matchAccuracy: 'high',
+    fileContext: /(?:\.env|config|settings|secrets)/i,
+  },
+  {
     name: 'onePasswordSecretKey',
     description: '1Password secret key',
     regex:
@@ -46,6 +54,40 @@ export const authPatterns: SensitiveDataPattern[] = [
     regex:
       /\b(?:sc|ext|scauth|authress)_[a-z0-9]+\.[a-z0-9]+\.acc[_-][a-z0-9-]+\.[a-z0-9+/_=-]+\b/gi,
     matchAccuracy: 'high',
+  },
+
+  // --- New Auth Patterns ---
+
+  // Auth0 Client Secret
+  {
+    name: 'auth0ClientSecret',
+    description: 'Auth0 client secret',
+    regex:
+      /\b['"]?(?:AUTH0|auth0)_?(?:CLIENT|client)?_?(?:SECRET|secret)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9_-]{32,64}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Auth0 Management API Token
+  {
+    name: 'auth0ManagementToken',
+    description: 'Auth0 Management API token',
+    regex:
+      /\b['"]?(?:AUTH0|auth0)_?(?:MANAGEMENT|management|MGMT)?_?(?:API)?_?(?:TOKEN|token)['"]?\s*(?::|=>|=)\s*['"]?eyJ[a-zA-Z0-9_-]{50,}['"]?\b/gi,
+    matchAccuracy: 'high',
+  },
+  // Supertokens API Key
+  {
+    name: 'supertokensApiKey',
+    description: 'SuperTokens API key',
+    regex:
+      /\b['"]?(?:SUPERTOKENS|supertokens)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9_-]{30,}['"]?\b/gi,
+    matchAccuracy: 'medium',
+  },
+  // Basic Auth header (base64-encoded credentials)
+  {
+    name: 'basicAuthHeader',
+    description: 'Basic authentication header with credentials',
+    regex: /\bBasic\s+[A-Za-z0-9+/]{20,}={0,2}\b/gi,
+    matchAccuracy: 'medium',
   },
 ];
 
@@ -231,17 +273,17 @@ export const cryptographicPatterns: SensitiveDataPattern[] = [
 ];
 
 export const privateKeyPatterns: SensitiveDataPattern[] = [
-  // Comprehensive Private Key Detection
+  // Private Key Detection
   {
     name: 'privateKeyPem',
-    description: 'Private key in PEM format (comprehensive)',
+    description: 'Private key in PEM format (all key types)',
     regex:
       /-----BEGIN\s?(?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED)\s+)?PRIVATE\s+KEY(?:\s+BLOCK)?-----[\s\S]*?-----END\s?(?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED)\s+)?PRIVATE\s+KEY(?:\s+BLOCK)?-----/g,
     matchAccuracy: 'high',
   },
   {
     name: 'pgpPrivateKeyBlock',
-    description: 'PGP private key block (comprehensive)',
+    description: 'PGP private key block (BEGIN to END)',
     regex:
       /-----BEGIN\s+PGP\s+PRIVATE\s+KEY\s+BLOCK-----[\s\S]*?-----END\s+PGP\s+PRIVATE\s+KEY\s+BLOCK-----/g,
     matchAccuracy: 'high',

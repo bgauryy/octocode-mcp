@@ -48,10 +48,10 @@ octocode-research/
 │   │   ├── tools.ts           # /tools/* - MAIN tool API (mounted)
 │   │   └── prompts.ts         # /prompts/* - prompt discovery (mounted)
 │   ├── middleware/
-│   │   ├── contextPropagation.ts  # Research session context
 │   │   ├── errorHandler.ts    # Error response formatting
 │   │   ├── logger.ts          # Request/response logging
-│   │   └── queryParser.ts     # Zod validation
+│   │   ├── queryParser.ts     # Zod validation
+│   │   └── readiness.ts       # Server readiness check
 │   ├── validation/
 │   │   ├── index.ts           # Schema exports
 │   │   ├── schemas.ts         # HTTP schemas (import from octocode-mcp)
@@ -86,8 +86,7 @@ octocode-research/
 │   ├── ARCHITECTURE.md        # Architecture documentation
 │   └── FLOWS.md               # Main flows & connections
 ├── references/
-│   ├── GUARDRAILS.md          # Safety guardrails
-│   └── QUICK_DECISION_GUIDE.md # Quick decision reference
+│   └── GUARDRAILS.md          # Safety guardrails
 ├── scripts/                   # Bundled output
 │   ├── server.js              # Bundled server
 │   └── server.d.ts            # Type declarations
@@ -113,6 +112,7 @@ octocode-research/
 | `GET /tools/info` | List all tools with details |
 | `GET /tools/info/:toolName` | Get specific tool schema (call BEFORE using!) |
 | `GET /tools/system` | Get system prompt (load FIRST) |
+| `GET /tools/initContext` | Combined system prompt + all tool schemas (recommended for init) |
 | `POST /tools/call/:toolName` | **Execute any tool** |
 | `GET /prompts/list` | List all prompts |
 | `GET /prompts/info/:promptName` | Get specific prompt content |
@@ -178,7 +178,7 @@ Each route file follows the pattern:
 | `queryParser.ts` | Validates query params against Zod schemas |
 | `errorHandler.ts` | Catches errors, formats consistent responses |
 | `logger.ts` | Logs requests to console and file |
-| `contextPropagation.ts` | Maintains research session context |
+| `readiness.ts` | Server readiness check middleware |
 
 ### Validation
 
@@ -291,7 +291,6 @@ yarn test -- --coverage  # With coverage report
 | [SKILL.md](./SKILL.md) | How AI agents should USE this skill |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Detailed architecture |
 | [docs/FLOWS.md](./docs/FLOWS.md) | Main flows & component connections |
-| [references/QUICK_DECISION_GUIDE.md](./references/QUICK_DECISION_GUIDE.md) | Quick decision reference |
 
 ---
 
