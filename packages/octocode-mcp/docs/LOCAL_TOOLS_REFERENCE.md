@@ -86,6 +86,39 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `matchesPerPage`/`filesPerPage`/`filePageNumber`: Pagination controls
 - `multiline`: Enable multiline matching (memory intensive)
 
+**Additional parameters:**
+- `fixedString`: Fixed string search instead of regex
+- `perlRegex`: Use Perl regex mode
+- `caseInsensitive`/`caseSensitive`: Explicit case control
+- `wholeWord`: Match whole words only
+- `invertMatch`: Invert match (show non-matching lines)
+- `noIgnore`: Disable .gitignore filtering
+- `followSymlinks`: Follow symbolic links
+- `filesWithoutMatch`: Show files without any match
+- `count`/`countMatches`: Return match counts instead of content
+- `matchContentLength`: Max chars per match (default: 200, max: 800)
+- `lineNumbers`: Include line numbers (default: true)
+- `column`: Include column information
+- `maxMatchesPerFile`: Limit matches per file (1-100)
+- `maxFiles`: Limit total files (1-1000)
+- `multilineDotall`: Multiline with `.` matching newlines
+- `binaryFiles`: Binary file handling (`text`, `without-match`, `binary`)
+- `includeStats`: Include search statistics (default: true)
+- `includeDistribution`: Include match distribution (default: true)
+- `sort`: Sort results (`path`, `modified`, `accessed`, `created`)
+- `sortReverse`: Reverse sort order
+- `showFileLastModified`: Show file modification timestamps
+- `threads`: Thread count for parallel search (1-32)
+- `jsonOutput`: Output results in JSON format
+- `vimgrepFormat`: Vim-compatible grep output format
+- `mmap`: Use memory-mapped I/O
+- `noUnicode`: Disable Unicode handling
+- `encoding`: Input character encoding
+- `noMessages`: Suppress ripgrep messages
+- `lineRegexp`: Apply regex per line
+- `passthru`: Print all lines from matched files
+- `debug`: Enable debug output
+
 **Critical:** Produces `lineHint` values **required** for all LSP tools.
 
 ---
@@ -103,14 +136,24 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 
 **Key parameters:**
 - `path` (required): Directory to explore
-- `depth`: How deep to traverse (default: 1, max: 5)
+- `depth`: How deep to traverse (max: 5). When both `depth` and `recursive` are omitted, lists single-level only. When `recursive=true` and `depth` is omitted, traverses up to 5 levels.
 - `sortBy`: `name`, `size`, `time`, `extension` (default: `time`)
 - `filesOnly`/`directoriesOnly`: Filter by type
 - `hidden`: Show hidden files (default: false)
 - `humanReadable`: Format sizes (e.g., "1.2MB") (default: true)
 - `summary`: Include directory summary (default: true)
 - `pattern`: Filter by name pattern
-- `entriesPerPage`/`entryPageNumber`: Pagination controls
+- `entriesPerPage`: Entries per page (default: 20, max: 20)
+- `entryPageNumber`: Page number (default: 1)
+
+**Additional parameters:**
+- `details`: Include size, permissions, timestamps (default: false)
+- `reverse`: Reverse sort order
+- `extension`/`extensions`: Filter by file extension(s)
+- `recursive`: Enable recursive traversal
+- `limit`: Max entries returned (1-10000)
+- `charOffset`/`charLength`: Character-based pagination for large outputs
+- `showFileLastModified`: Show file modification timestamps (default: false)
 
 ---
 
@@ -128,11 +171,28 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 **Key parameters:**
 - `path` (required): Starting directory
 - `name`/`iname`: Exact or case-insensitive name pattern
+- `names`: Multiple name patterns (array)
 - `regex`: Regex pattern for path matching
 - `regexType`: Regex flavor (`posix-egrep`, `posix-extended`, `posix-basic`)
-- `type`: `f` (file), `d` (directory), `l` (symlink)
+- `type`: `f` (file), `d` (directory), `l` (symlink), `b`, `c`, `p`, `s`
 - `modifiedWithin`: Files changed in last N time (e.g., "7d", "2h")
 - `sizeGreater`/`sizeLess`: Size filters
+
+**Additional parameters:**
+- `maxDepth`/`minDepth`: Depth control (1-10 / 0-10)
+- `pathPattern`: Glob pattern for path matching
+- `modifiedBefore`: Files modified before a date
+- `accessedWithin`: Files accessed within a time period
+- `empty`: Find empty files/directories
+- `permissions`: Filter by permission string
+- `executable`/`readable`/`writable`: Permission flags
+- `excludeDir`: Directories to exclude (array)
+- `limit`: Max results (1-10000)
+- `details`: Include file metadata (default: true)
+- `filesPerPage`: Results per page (default: 20, max: 20)
+- `filePageNumber`: Page number (default: 1)
+- `charOffset`/`charLength`: Character-based pagination
+- `showFileLastModified`: Show modification timestamps (default: true)
 
 ---
 
