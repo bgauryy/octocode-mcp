@@ -20,7 +20,7 @@ export class SymbolResolutionError extends Error {
     symbolName: string,
     lineHint: number,
     reason: string,
-    searchRadius: number = 2
+    searchRadius: number = 5
   ) {
     super(
       `Could not find symbol '${symbolName}' at or near line ${lineHint}. ${reason}`
@@ -37,7 +37,7 @@ export class SymbolResolutionError extends Error {
  * Configuration for symbol resolver
  */
 interface SymbolResolverConfig {
-  /** Number of lines to search above and below lineHint (default: 2) */
+  /** Number of lines to search above and below lineHint (default: 5) */
   lineSearchRadius?: number;
 }
 
@@ -63,7 +63,7 @@ export class SymbolResolver {
   private readonly lineSearchRadius: number;
 
   constructor(config?: SymbolResolverConfig) {
-    this.lineSearchRadius = config?.lineSearchRadius ?? 2;
+    this.lineSearchRadius = config?.lineSearchRadius ?? 5;
   }
 
   /**
@@ -237,7 +237,7 @@ export class SymbolResolver {
 /**
  * Default symbol resolver instance
  */
-export const defaultResolver = new SymbolResolver({ lineSearchRadius: 2 });
+export const defaultResolver = new SymbolResolver({ lineSearchRadius: 5 });
 
 /**
  * Convenience function to resolve symbol position

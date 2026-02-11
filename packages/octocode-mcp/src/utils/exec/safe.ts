@@ -5,7 +5,7 @@
 
 import { validateCommand } from '../../security/commandValidator.js';
 import { validateExecutionContext } from '../../security/executionContextValidator.js';
-import { spawnWithTimeout } from './spawn.js';
+import { spawnWithTimeout, validateArgs } from './spawn.js';
 import type { ExecResult, ExecOptions } from '../core/types.js';
 
 /**
@@ -25,6 +25,14 @@ export async function safeExec(
   if (!commandValidation.isValid) {
     throw new Error(
       `Command validation failed: ${commandValidation.error || 'Command not allowed'}`
+    );
+  }
+
+  // Validate arguments (null bytes, length limits)
+  const argsValidation = validateArgs(args);
+  if (!argsValidation.valid) {
+    throw new Error(
+      `Argument validation failed: ${argsValidation.error || 'Invalid arguments'}`
     );
   }
 
@@ -51,7 +59,6 @@ export async function safeExec(
     cwd,
     env,
     maxOutputSize,
-    removeEnvVars: ['NODE_OPTIONS'],
   });
 
   // Convert SpawnResult to ExecResult format

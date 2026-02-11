@@ -184,21 +184,21 @@ describe('LSP Find References Tool', () => {
   });
 
   describe('findWorkspaceRoot', () => {
-    it('should return a directory path', () => {
+    it('should return a directory path', async () => {
       // findWorkspaceRoot always returns a valid directory path
-      const result = findWorkspaceRoot('/some/path/to/file.ts');
+      const result = await findWorkspaceRoot('/some/path/to/file.ts');
       expect(typeof result).toBe('string');
       expect(result.length).toBeGreaterThan(0);
     });
 
-    it('should handle deep paths', () => {
+    it('should handle deep paths', async () => {
       const deepPath = '/a/b/c/d/e/f/g/h/i/j/file.ts';
-      const result = findWorkspaceRoot(deepPath);
+      const result = await findWorkspaceRoot(deepPath);
       expect(typeof result).toBe('string');
     });
 
-    it('should handle relative paths', () => {
-      const result = findWorkspaceRoot('src/file.ts');
+    it('should handle relative paths', async () => {
+      const result = await findWorkspaceRoot('src/file.ts');
       expect(typeof result).toBe('string');
     });
   });

@@ -343,7 +343,7 @@ line3`;
 
     it('should use default search radius', () => {
       const error = new SymbolResolutionError('sym', 10, 'reason');
-      expect(error.searchRadius).toBe(2);
+      expect(error.searchRadius).toBe(5);
     });
   });
 
@@ -352,7 +352,7 @@ line3`;
       expect(defaultResolver).toBeInstanceOf(SymbolResolver);
     });
 
-    it('should have default lineSearchRadius of 2', () => {
+    it('should have default lineSearchRadius of 5', () => {
       const content = `line1
 line2
 line3

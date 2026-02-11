@@ -101,6 +101,7 @@ export class GrepCommandBuilder extends BaseCommandBuilder {
     this.addFlag('-H');
     this.addFlag('-I');
     this.addOption('--color', 'never');
+    this.addArg('--');
     this.addArg(pattern);
     this.addArg(path);
     return this;
@@ -258,6 +259,8 @@ export class GrepCommandBuilder extends BaseCommandBuilder {
       this.addFlag('-x');
     }
 
+    // End option parsing so user-provided pattern/path cannot be interpreted as flags.
+    this.addArg('--');
     this.addArg(query.pattern);
     this.addArg(query.path);
 

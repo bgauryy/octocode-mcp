@@ -27,6 +27,15 @@ describe('LsCommandBuilder', () => {
       expect(command).toBe('ls');
       expect(args).toContain('/path');
     });
+
+    it('should insert -- before path in simple mode', () => {
+      const builder = new LsCommandBuilder();
+      const { args } = builder.simple('--sort=time').build();
+
+      const separatorIndex = args.indexOf('--');
+      expect(separatorIndex).toBeGreaterThan(-1);
+      expect(args[separatorIndex + 1]).toBe('--sort=time');
+    });
   });
 
   describe('fromQuery', () => {
@@ -202,6 +211,15 @@ describe('LsCommandBuilder', () => {
       const { args } = builder.fromQuery({ path: '/test/dir' }).build();
 
       expect(args[args.length - 1]).toBe('/test/dir');
+    });
+
+    it('should insert -- before path in fromQuery mode', () => {
+      const builder = new LsCommandBuilder();
+      const { args } = builder.fromQuery({ path: '--sort=time' }).build();
+
+      const separatorIndex = args.indexOf('--');
+      expect(separatorIndex).toBeGreaterThan(-1);
+      expect(args[separatorIndex + 1]).toBe('--sort=time');
     });
   });
 

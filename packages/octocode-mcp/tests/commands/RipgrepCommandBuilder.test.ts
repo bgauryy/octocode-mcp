@@ -27,6 +27,16 @@ describe('RipgrepCommandBuilder', () => {
       expect(args).toContain('--color');
       expect(args).toContain('never');
     });
+
+    it('should insert -- before positional args to prevent option injection', () => {
+      const builder = new RipgrepCommandBuilder();
+      const { args } = builder.simple('--pre=cat', '/repo').build();
+
+      const separatorIndex = args.indexOf('--');
+      expect(separatorIndex).toBeGreaterThan(-1);
+      expect(args[separatorIndex + 1]).toBe('--pre=cat');
+      expect(args[separatorIndex + 2]).toBe('/repo');
+    });
   });
 
   describe('pattern modes', () => {

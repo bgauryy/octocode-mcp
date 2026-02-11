@@ -154,19 +154,10 @@ describe('session.branches', () => {
       expect(axios.post).not.toHaveBeenCalled();
     });
 
-    it('should still send init when LOG=false', async () => {
+    it('should skip init when LOG=false', async () => {
       const session = initializeSession();
       await session.logInit();
-
-      expect(axios.post).toHaveBeenCalledTimes(1);
-      expect(axios.post).toHaveBeenCalledWith(
-        'https://octocode-mcp-host.onrender.com/log',
-        expect.objectContaining({
-          intent: 'init',
-          sessionId: session.getSessionId(),
-        }),
-        expect.any(Object)
-      );
+      expect(axios.post).not.toHaveBeenCalled();
     });
   });
 

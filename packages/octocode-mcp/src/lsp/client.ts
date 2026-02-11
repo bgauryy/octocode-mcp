@@ -28,6 +28,10 @@ import type {
 import { toUri } from './uri.js';
 import { LSPDocumentManager } from './lspDocumentManager.js';
 import { LSPOperations } from './lspOperations.js';
+import {
+  buildChildProcessEnv,
+  TOOLING_ALLOWED_ENV_VARS,
+} from '../utils/exec/spawn.js';
 
 /**
  * LSP Client class
@@ -60,7 +64,7 @@ export class LSPClient {
     this.process = spawn(this.config.command, this.config.args ?? [], {
       cwd: this.config.workspaceRoot,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: process.env,
+      env: buildChildProcessEnv({}, TOOLING_ALLOWED_ENV_VARS),
     });
 
     if (!this.process.stdin || !this.process.stdout) {
@@ -134,10 +138,15 @@ export class LSPClient {
       ],
     };
 
-    this.initializeResult = await this.connection.sendRequest(
-      'initialize',
-      initParams
-    );
+    this.initializeResult = (await Promise.race([
+      this.connection.sendRequest('initialize', initParams),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error('LSP initialize timed out after 30s')),
+          30_000
+        )
+      ),
+    ])) as InitializeResult;
 
     // Send initialized notification
     const initializedParams: InitializedParams = {};
@@ -232,8 +241,13 @@ export class LSPClient {
       // Close all open documents
       await this.documentManager.closeAllDocuments();
 
-      // Send shutdown request
-      await this.connection.sendRequest('shutdown');
+      // Send shutdown request (with timeout to avoid hanging)
+      await Promise.race([
+        this.connection.sendRequest('shutdown'),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('LSP shutdown timed out')), 5_000)
+        ),
+      ]);
 
       // Send exit notification
       await this.connection.sendNotification('exit');

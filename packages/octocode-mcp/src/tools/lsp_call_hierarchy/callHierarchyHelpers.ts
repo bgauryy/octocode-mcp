@@ -253,7 +253,11 @@ export async function createCallHierarchyItemFromSite(
     kind: 'function' as SymbolKind,
     uri: site.filePath,
     range: createRange(site.lineNumber - 1, 0, site.lineContent.length),
-    selectionRange: createRange(site.lineNumber - 1, site.column, 10),
+    selectionRange: createRange(
+      site.lineNumber - 1,
+      site.column,
+      enclosingFunctionName.length
+    ),
     content,
     displayRange: {
       startLine: site.lineNumber,

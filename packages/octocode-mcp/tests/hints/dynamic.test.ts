@@ -454,7 +454,7 @@ describe('Dynamic Hints', () => {
       const hints = getDynamicHints(
         STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
         'empty',
-        { searchRadius: 2, lineHint: 50 } as HintContext
+        { searchRadius: 5, lineHint: 50 } as HintContext
       );
       // Should return hints from empty metadata
       expect(hints.length).toBeGreaterThanOrEqual(0);

@@ -83,8 +83,8 @@ export const MINIFY_CONFIG: MinifyConfig = {
     cjs: { strategy: 'terser' },
 
     // TypeScript - aggressive with c-style comments
-    ts: { strategy: 'aggressive', comments: 'c-style' },
-    tsx: { strategy: 'aggressive', comments: 'c-style' },
+    ts: { strategy: 'conservative', comments: 'c-style' },
+    tsx: { strategy: 'conservative', comments: 'c-style' },
 
     // Indentation-sensitive languages - conservative
     py: { strategy: 'conservative', comments: 'hash' },

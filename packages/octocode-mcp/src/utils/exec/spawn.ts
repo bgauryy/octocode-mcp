@@ -15,10 +15,104 @@ interface SpawnWithTimeoutOptions {
   cwd?: string;
   /** Environment variables to merge with process.env */
   env?: Record<string, string | undefined>;
-  /** Maximum output size in bytes before killing process (default: unlimited) */
+  /** Environment variables to allow from process.env (opt-in) */
+  allowEnvVars?: readonly string[];
+  /** Maximum output size in bytes before killing process (default: 10MB) */
   maxOutputSize?: number;
-  /** Environment variables to explicitly remove */
-  removeEnvVars?: string[];
+}
+
+/**
+ * Legacy denylist kept for audit visibility.
+ * Process spawning now uses allowlist-only env propagation.
+ */
+export const SENSITIVE_ENV_VARS = [
+  'NODE_OPTIONS',
+  'GITHUB_TOKEN',
+  'GH_TOKEN',
+  'GITLAB_TOKEN',
+  'GL_TOKEN',
+  'OCTOCODE_TOKEN',
+  'GITHUB_PERSONAL_ACCESS_TOKEN',
+  'NPM_TOKEN',
+  'AWS_SECRET_ACCESS_KEY',
+  'AWS_SESSION_TOKEN',
+] as const;
+
+/**
+ * Default allowlist for environment variables propagated to child processes.
+ * All other variables are blocked unless explicitly provided via options.env.
+ */
+export const CORE_ALLOWED_ENV_VARS = [
+  // Command resolution/runtime
+  'PATH',
+  // Temp directories
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  // Windows command/runtime support
+  'SYSTEMROOT',
+  'WINDIR',
+  'COMSPEC',
+  'PATHEXT',
+] as const;
+
+/**
+ * User profile variables needed by tooling that reads local config/state
+ * (e.g., gh auth, npm user config, some language servers).
+ */
+export const TOOLING_ALLOWED_ENV_VARS = [
+  ...CORE_ALLOWED_ENV_VARS,
+  'HOME',
+  'USERPROFILE',
+  'APPDATA',
+  'LOCALAPPDATA',
+] as const;
+
+/**
+ * Default allowlist for local process execution.
+ * Keep this minimal for local tools and generic subprocesses.
+ */
+export const DEFAULT_ALLOWED_ENV_VARS = CORE_ALLOWED_ENV_VARS;
+
+/**
+ * Proxy env vars are intentionally NOT included in core/default allowlists.
+ * Commands that truly need network proxy support must opt in explicitly.
+ */
+export const PROXY_ENV_VARS = [
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'NO_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'no_proxy',
+] as const;
+
+const DEFAULT_MAX_OUTPUT_SIZE_BYTES = 10 * 1024 * 1024;
+
+export function buildChildProcessEnv(
+  envOverrides: Record<string, string | undefined> = {},
+  allowEnvVars: readonly string[] = DEFAULT_ALLOWED_ENV_VARS
+): typeof process.env {
+  const childEnv: Record<string, string | undefined> = {};
+  const allowlist = new Set(allowEnvVars);
+
+  for (const key of allowEnvVars) {
+    const value = process.env[key];
+    if (value !== undefined) {
+      childEnv[key] = value;
+    }
+  }
+
+  for (const [key, value] of Object.entries(envOverrides)) {
+    if (!allowlist.has(key)) continue;
+    if (value === undefined) {
+      delete childEnv[key];
+    } else {
+      childEnv[key] = value;
+    }
+  }
+
+  return childEnv as typeof process.env;
 }
 
 /**
@@ -46,8 +140,8 @@ interface SpawnResult {
  */
 interface ProcessState {
   killed: boolean;
-  stdout: string;
-  stderr: string;
+  stdoutChunks: string[];
+  stderrChunks: string[];
   totalOutputSize: number;
 }
 
@@ -69,33 +163,25 @@ export function spawnWithTimeout(
     timeout = 30000,
     cwd,
     env = {},
-    maxOutputSize,
-    removeEnvVars = ['NODE_OPTIONS'],
+    allowEnvVars = DEFAULT_ALLOWED_ENV_VARS,
+    maxOutputSize = DEFAULT_MAX_OUTPUT_SIZE_BYTES,
   } = options;
 
   return new Promise(resolve => {
     const state: ProcessState = {
       killed: false,
-      stdout: '',
-      stderr: '',
+      stdoutChunks: [],
+      stderrChunks: [],
       totalOutputSize: 0,
     };
 
-    // Build environment with removals
-    const processEnv: Record<string, string | undefined> = {
-      ...process.env,
-      ...env,
-    };
-
-    // Remove specified env vars
-    for (const key of removeEnvVars) {
-      processEnv[key] = undefined;
-    }
+    const getStdout = (): string => state.stdoutChunks.join('');
+    const getStderr = (): string => state.stderrChunks.join('');
 
     // Spawn options
     const spawnOptions: SpawnOptions = {
       cwd,
-      env: processEnv as typeof process.env,
+      env: buildChildProcessEnv(env, allowEnvVars),
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout,
     };
@@ -124,8 +210,8 @@ export function spawnWithTimeout(
         state.killed = true;
         childProcess.kill('SIGTERM');
         resolve({
-          stdout: state.stdout,
-          stderr: state.stderr,
+          stdout: getStdout(),
+          stderr: getStderr(),
           exitCode: null,
           success: false,
           error: new Error(`Command timeout after ${timeout}ms`),
@@ -136,14 +222,14 @@ export function spawnWithTimeout(
 
     // Helper to check and handle output size limit
     const checkOutputLimit = (): boolean => {
-      if (maxOutputSize && state.totalOutputSize > maxOutputSize) {
+      if (state.totalOutputSize > maxOutputSize) {
         if (!state.killed) {
           state.killed = true;
           childProcess.kill('SIGKILL');
           clearTimeout(timeoutHandle);
           resolve({
-            stdout: state.stdout,
-            stderr: state.stderr,
+            stdout: getStdout(),
+            stderr: getStderr(),
             exitCode: null,
             success: false,
             error: new Error('Output size limit exceeded'),
@@ -164,7 +250,7 @@ export function spawnWithTimeout(
 
       if (checkOutputLimit()) return;
 
-      state.stdout += chunk;
+      state.stdoutChunks.push(chunk);
     });
 
     // Collect stderr
@@ -176,7 +262,7 @@ export function spawnWithTimeout(
 
       if (checkOutputLimit()) return;
 
-      state.stderr += chunk;
+      state.stderrChunks.push(chunk);
     });
 
     // Handle process close
@@ -186,8 +272,8 @@ export function spawnWithTimeout(
       clearTimeout(timeoutHandle);
 
       resolve({
-        stdout: state.stdout,
-        stderr: state.stderr,
+        stdout: getStdout(),
+        stderr: getStderr(),
         exitCode: code,
         success: code === 0,
       });
@@ -201,8 +287,8 @@ export function spawnWithTimeout(
       clearTimeout(timeoutHandle);
 
       resolve({
-        stdout: state.stdout,
-        stderr: state.stderr,
+        stdout: getStdout(),
+        stderr: getStderr(),
         exitCode: null,
         success: false,
         error,
@@ -223,18 +309,17 @@ export function spawnWithTimeout(
 export function spawnCheckSuccess(
   command: string,
   args: string[],
-  timeoutMs: number = 10000
+  timeoutMs: number = 10000,
+  options: { allowEnvVars?: readonly string[] } = {}
 ): Promise<boolean> {
   return new Promise(resolve => {
     let killed = false;
+    const { allowEnvVars = DEFAULT_ALLOWED_ENV_VARS } = options;
 
     const childProcess = spawn(command, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: timeoutMs,
-      env: {
-        ...process.env,
-        NODE_OPTIONS: undefined,
-      },
+      env: buildChildProcessEnv({}, allowEnvVars),
     });
 
     childProcess.on('close', code => {
@@ -275,23 +360,22 @@ export function spawnCheckSuccess(
 export function spawnCollectStdout(
   command: string,
   args: string[],
-  timeoutMs: number = 10000
+  timeoutMs: number = 10000,
+  options: { allowEnvVars?: readonly string[] } = {}
 ): Promise<string | null> {
   return new Promise(resolve => {
     let killed = false;
-    let stdout = '';
+    const stdoutChunks: string[] = [];
+    const { allowEnvVars = TOOLING_ALLOWED_ENV_VARS } = options;
 
     const childProcess = spawn(command, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: timeoutMs,
-      env: {
-        ...process.env,
-        NODE_OPTIONS: undefined,
-      },
+      env: buildChildProcessEnv({}, allowEnvVars),
     });
 
     childProcess.stdout?.on('data', data => {
-      stdout += data.toString();
+      stdoutChunks.push(data.toString());
     });
 
     childProcess.stderr?.on('data', () => {
@@ -301,7 +385,7 @@ export function spawnCollectStdout(
     childProcess.on('close', code => {
       if (!killed) {
         if (code === 0) {
-          const trimmed = stdout.trim();
+          const trimmed = stdoutChunks.join('').trim();
           resolve(trimmed || null);
         } else {
           resolve(null);

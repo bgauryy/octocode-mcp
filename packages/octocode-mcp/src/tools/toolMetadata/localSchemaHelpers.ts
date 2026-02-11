@@ -131,6 +131,9 @@ export const LOCAL_FIND_FILES = createSchemaHelper(
     charOffset: string;
     charLength: string;
   };
+  sorting: {
+    sortBy: string;
+  };
   options: {
     maxDepth: string;
     minDepth: string;

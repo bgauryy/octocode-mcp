@@ -47,9 +47,12 @@ function loadConfig(): OctocodeConfig {
 function saveConfig(config: OctocodeConfig): void {
   try {
     if (!existsSync(OCTOCODE_DIR)) {
-      mkdirSync(OCTOCODE_DIR, { recursive: true });
+      mkdirSync(OCTOCODE_DIR, { recursive: true, mode: 0o700 });
     }
-    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), {
+      encoding: 'utf-8',
+      mode: 0o600,
+    });
   } catch {
     // Ignore errors
   }

@@ -465,6 +465,7 @@ async function viewStructureRecursive(
   return {
     status,
     path: query.path,
+    cwd: process.cwd(),
     structuredOutput,
     totalFiles,
     totalDirectories,

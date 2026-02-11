@@ -82,8 +82,8 @@ describe('MinifierV2', () => {
     });
   });
 
-  describe('TypeScript Aggressive Strategy', () => {
-    it('should use aggressive strategy for TypeScript files (not terser)', async () => {
+  describe('TypeScript Conservative Strategy', () => {
+    it('should use conservative strategy for TypeScript files (preserves readability)', async () => {
       const tsCode = `// Single line comment
 interface User {
   name: string;
@@ -98,8 +98,8 @@ function greet(user: User): string {
 
       const result = await minifyContent(tsCode, 'test.ts');
 
-      // Should use aggressive strategy, not terser
-      expect(result.type).toBe('aggressive');
+      // Should use conservative strategy, not terser — preserves readability
+      expect(result.type).toBe('conservative');
       expect(result.failed).toBe(false);
 
       // Should remove comments
@@ -107,16 +107,16 @@ function greet(user: User): string {
       expect(result.content).not.toContain('/* Multi-line comment');
       expect(result.content).not.toContain('describing the function */');
 
-      // Should preserve TypeScript syntax
+      // Should preserve TypeScript syntax with indentation (conservative keeps structure)
       expect(result.content).toContain('interface User');
-      expect(result.content).toContain('name:string');
-      expect(result.content).toContain('function greet(user:User):string');
+      expect(result.content).toContain('name: string');
+      expect(result.content).toContain('function greet(user: User): string');
 
       // Terser should NOT be called for .ts files
       expect(mockMinify).not.toHaveBeenCalled();
     });
 
-    it('should handle TSX files with aggressive strategy', async () => {
+    it('should handle TSX files with conservative strategy', async () => {
       const tsxCode = `// Component comment
 import React from 'react';
 
@@ -131,23 +131,23 @@ export const Header: React.FC<Props> = ({ title }) => {
 
       const result = await minifyContent(tsxCode, 'Header.tsx');
 
-      expect(result.type).toBe('aggressive');
+      expect(result.type).toBe('conservative');
       expect(result.failed).toBe(false);
 
       // Should remove comments
       expect(result.content).not.toContain('// Component comment');
       expect(result.content).not.toContain('/* Main component */');
 
-      // Should preserve TSX/TypeScript syntax
+      // Should preserve TSX/TypeScript syntax with indentation (conservative)
       expect(result.content).toContain('interface Props');
-      expect(result.content).toContain('title:string');
+      expect(result.content).toContain('title: string');
       expect(result.content).toContain('React.FC<Props>');
 
       // Terser should NOT be called for .tsx files
       expect(mockMinify).not.toHaveBeenCalled();
     });
 
-    it('should handle complex TypeScript with generics and type annotations', async () => {
+    it('should handle complex TypeScript with generics preserving structure', async () => {
       const tsCode = `// Utility types
 type Partial<T> = {
   [P in keyof T]?: T[P];
@@ -171,7 +171,7 @@ enum Status {
 
       const result = await minifyContent(tsCode, 'utils.ts');
 
-      expect(result.type).toBe('aggressive');
+      expect(result.type).toBe('conservative');
       expect(result.failed).toBe(false);
 
       // Should remove all comments
@@ -189,7 +189,7 @@ enum Status {
       expect(result.content).toContain('enum Status');
     });
 
-    it('should never fail on TypeScript files (unlike terser)', async () => {
+    it('should never fail on TypeScript files (conservative is safe)', async () => {
       // TypeScript code that would cause terser to fail
       const tsCode = `
 interface ComplexType<T extends Record<string, unknown>> {
@@ -207,9 +207,9 @@ const handler: <T>(input: T) => T = (input) => input;
 
       const result = await minifyContent(tsCode, 'complex.ts');
 
-      // Should ALWAYS succeed with aggressive strategy
+      // Should ALWAYS succeed with conservative strategy
       expect(result.failed).toBe(false);
-      expect(result.type).toBe('aggressive');
+      expect(result.type).toBe('conservative');
 
       // Content should be minified (smaller)
       expect(result.content.length).toBeLessThan(tsCode.length);

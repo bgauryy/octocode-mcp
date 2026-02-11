@@ -151,11 +151,13 @@ describe('File Pattern Filtering - Unit Tests', () => {
 
   describe('buildRipgrepGlobArgs', () => {
     let buildRipgrepGlobArgs: typeof import('../../src/tools/lsp_find_references/lspReferencesPatterns.js').buildRipgrepGlobArgs;
+    let buildRipgrepSearchArgs: typeof import('../../src/tools/lsp_find_references/lspReferencesPatterns.js').buildRipgrepSearchArgs;
 
     beforeEach(async () => {
       const mod =
         await import('../../src/tools/lsp_find_references/lspReferencesPatterns.js');
       buildRipgrepGlobArgs = mod.buildRipgrepGlobArgs;
+      buildRipgrepSearchArgs = mod.buildRipgrepSearchArgs;
     });
 
     it('should return empty array when no patterns', () => {
@@ -189,6 +191,15 @@ describe('File Pattern Filtering - Unit Tests', () => {
         '--glob',
         '!**/node_modules/**',
       ]);
+    });
+
+    it('should add -- separator before symbol and workspace root', () => {
+      const args = buildRipgrepSearchArgs('/workspace', '--pre=cat');
+      const separatorIndex = args.indexOf('--');
+
+      expect(separatorIndex).toBeGreaterThan(-1);
+      expect(args[separatorIndex + 1]).toBe('--pre=cat');
+      expect(args[separatorIndex + 2]).toBe('/workspace');
     });
   });
 
@@ -229,6 +240,25 @@ describe('File Pattern Filtering - Unit Tests', () => {
     it('should combine include and exclude', () => {
       const result = buildGrepFilterArgs(['**/*.ts'], ['**/node_modules/**']);
       expect(result).toBe('--include="*.ts" --exclude-dir="node_modules"');
+    });
+  });
+
+  describe('buildGrepSearchArgs', () => {
+    let buildGrepSearchArgs: typeof import('../../src/tools/lsp_find_references/lspReferencesPatterns.js').buildGrepSearchArgs;
+
+    beforeEach(async () => {
+      const mod =
+        await import('../../src/tools/lsp_find_references/lspReferencesPatterns.js');
+      buildGrepSearchArgs = mod.buildGrepSearchArgs;
+    });
+
+    it('should add -- separator before symbol and workspace root', () => {
+      const args = buildGrepSearchArgs('/workspace', '--include=*');
+      const separatorIndex = args.indexOf('--');
+
+      expect(separatorIndex).toBeGreaterThan(-1);
+      expect(args[separatorIndex + 1]).toBe('--include=\\*');
+      expect(args[separatorIndex + 2]).toBe('/workspace');
     });
   });
 });

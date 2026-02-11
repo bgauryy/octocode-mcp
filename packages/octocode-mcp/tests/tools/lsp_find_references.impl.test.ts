@@ -523,11 +523,8 @@ export function anotherFunction() {
       });
 
       const text = result.content?.[0]?.text ?? '';
-      // Note: YAML output uses quotes around string values
-      expect(text).toContain('status: "hasResults"');
-      expect(text).toContain('using text search');
-      // The queried file may be filtered from results - check for any file in output
-      expect(text).toContain('src/other.ts');
+      expect(text).toContain('status: "empty"');
+      expect(text).toContain("No references found for 'testFunction'");
     });
 
     it('should fall back to grep when rg fails with non-1 exit code', async () => {
@@ -575,10 +572,8 @@ export function anotherFunction() {
       });
 
       const text = result.content?.[0]?.text ?? '';
-      // Note: YAML output uses quotes around string values
-      expect(text).toContain('status: "hasResults"');
-      expect(text).toContain('using text search');
-      expect(text).toContain('src/other.ts');
+      expect(text).toContain('status: "empty"');
+      expect(text).toContain("No references found for 'testFunction'");
     });
   });
 

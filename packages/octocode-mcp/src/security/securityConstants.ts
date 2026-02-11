@@ -4,15 +4,17 @@
 
 /**
  * Allowed Linux commands (whitelist)
- * Only commands actually used by the 4 active tools:
+ * Only commands actually used by the active tools:
  * - rg: Ripgrep for fast pattern searching (used by localSearchCode)
  * - ls: List directory contents (used by localViewStructure)
  * - find: Search for files and directories (used by localFindFiles)
+ * - grep: Pattern search fallback (used by lspFindReferences pattern matching)
  */
 export const ALLOWED_COMMANDS = [
   'rg', // Ripgrep - Fast pattern search (localSearchCode tool)
   'ls', // List directory contents (localViewStructure tool)
   'find', // Find files/directories recursively (localFindFiles tool)
+  'grep', // Pattern search fallback (lspFindReferences pattern matching)
 ] as const;
 
 /**

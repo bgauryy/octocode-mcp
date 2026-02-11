@@ -959,6 +959,27 @@ describe('localViewStructure', () => {
       }
     });
 
+    it('should include cwd in recursive results (consistency with non-recursive)', async () => {
+      mockReaddir.mockResolvedValue(['file.txt']);
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date(),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+      });
+
+      // Recursive results should include cwd just like non-recursive
+      expect(result.cwd).toBeDefined();
+      expect(typeof result.cwd).toBe('string');
+      expect(result.cwd).toBe(process.cwd());
+    });
+
     it('should handle max depth limit for recursive', async () => {
       mockReaddir.mockResolvedValue(['file.txt']);
       mockLstat.mockResolvedValue({

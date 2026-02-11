@@ -73,6 +73,7 @@ export class LsCommandBuilder extends BaseCommandBuilder {
       this.addFlag('-1');
     }
 
+    this.addArg('--');
     this.addArg(query.path);
 
     return this;
@@ -82,6 +83,7 @@ export class LsCommandBuilder extends BaseCommandBuilder {
    * Simple directory listing
    */
   simple(path: string): this {
+    this.addArg('--');
     this.addArg(path);
     return this;
   }
@@ -146,6 +148,7 @@ export class LsCommandBuilder extends BaseCommandBuilder {
    * Set the path to list
    */
   path(path: string): this {
+    this.addArg('--');
     this.addArg(path);
     return this;
   }

@@ -21,6 +21,40 @@ export { LANGUAGE_SERVER_COMMANDS } from './lspRegistry.js';
 import { LANGUAGE_SERVER_COMMANDS } from './lspRegistry.js';
 
 const require = createRequire(import.meta.url);
+const DANGEROUS_SHELL_COMMANDS = new Set([
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'dash',
+  'ksh',
+  'cmd',
+  'cmd.exe',
+  'powershell',
+  'powershell.exe',
+  'pwsh',
+  'pwsh.exe',
+]);
+
+function isSafeUserLspCommand(command: string): boolean {
+  const normalized = path.basename(command).toLowerCase();
+  return !DANGEROUS_SHELL_COMMANDS.has(normalized);
+}
+
+function sanitizeUserLanguageServers(
+  config: Record<string, UserLanguageServerConfig>
+): Record<string, UserLanguageServerConfig> {
+  const sanitized: Record<string, UserLanguageServerConfig> = {};
+
+  for (const [extension, server] of Object.entries(config)) {
+    if (!isSafeUserLspCommand(server.command)) {
+      continue;
+    }
+    sanitized[extension] = server;
+  }
+
+  return sanitized;
+}
 
 /**
  * Load user-defined language server configs from config files.
@@ -67,10 +101,12 @@ export async function loadUserConfig(
       if (!validation.success) continue;
       const config = validation.data;
       if (config.languageServers) {
-        return config.languageServers as unknown as Record<
-          string,
-          UserLanguageServerConfig
-        >;
+        return sanitizeUserLanguageServers(
+          config.languageServers as unknown as Record<
+            string,
+            UserLanguageServerConfig
+          >
+        );
       }
     } catch {
       // Config file doesn't exist or is invalid, try next

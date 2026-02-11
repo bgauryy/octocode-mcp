@@ -18,7 +18,7 @@ vi.mock('../../src/lsp/index.js', () => {
     searchRadius: number;
     symbolName: string;
     lineHint: number;
-    constructor(message: string, searchRadius: number = 2) {
+    constructor(message: string, searchRadius: number = 5) {
       super(message);
       this.name = 'SymbolResolutionError';
       this.searchRadius = searchRadius;
@@ -47,7 +47,7 @@ vi.mock('../../src/tools/lsp_find_references/lspReferencesPatterns.js', () => ({
     locations: [],
     totalReferences: 0,
   }),
-  findWorkspaceRoot: vi.fn(() => '/workspace'),
+  findWorkspaceRoot: vi.fn(async () => '/workspace'),
   isLikelyDefinition: vi.fn(),
 }));
 
@@ -150,7 +150,7 @@ describe('LSP Find References - Branch Coverage Tests', () => {
       reasoning: 'test',
     } as any);
 
-    vi.mocked(patternModule.findWorkspaceRoot).mockReturnValue('/workspace');
+    vi.mocked(patternModule.findWorkspaceRoot).mockResolvedValue('/workspace');
     vi.mocked(coreModule.findReferencesWithLSP).mockResolvedValue(null);
   });
 
@@ -252,14 +252,15 @@ describe('LSP Find References - Branch Coverage Tests', () => {
       ).toHaveBeenCalled();
     });
 
-    it('should use LSP result when LSP returns a result (line 151)', async () => {
+    it('should merge LSP and pattern results when both return data (line 151)', async () => {
       vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
       const lspResult = {
         status: 'hasResults' as const,
-        locations: [{ uri: '/test.ts' }],
+        locations: [{ uri: '/test.ts', range: { start: { line: 0 } } }],
         totalReferences: 1,
         researchGoal: 'test',
         reasoning: 'test',
+        hints: [],
       };
       vi.mocked(coreModule.findReferencesWithLSP).mockResolvedValue(
         lspResult as any
@@ -268,17 +269,22 @@ describe('LSP Find References - Branch Coverage Tests', () => {
       const result = await findReferences(baseQuery);
 
       expect(result.status).toBe('hasResults');
+      // Pattern matching is always called for hybrid merge
       expect(
         patternModule.findReferencesWithPatternMatching
-      ).not.toHaveBeenCalled();
+      ).toHaveBeenCalled();
     });
 
-    it('should use findWorkspaceRoot when WORKSPACE_ROOT env not set (line 140)', async () => {
+    it('should use process.cwd() when WORKSPACE_ROOT env not set (line 137)', async () => {
       delete process.env.WORKSPACE_ROOT;
+      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/mock/cwd');
 
       await findReferences(baseQuery);
 
-      expect(patternModule.findWorkspaceRoot).toHaveBeenCalled();
+      expect(cwdSpy).toHaveBeenCalled();
+      // findWorkspaceRoot is no longer called - process.cwd() is used instead
+      expect(patternModule.findWorkspaceRoot).not.toHaveBeenCalled();
+      cwdSpy.mockRestore();
     });
   });
 });

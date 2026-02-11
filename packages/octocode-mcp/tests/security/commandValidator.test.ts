@@ -18,6 +18,12 @@ describe('commandValidator', () => {
         expect(validateCommand('ls', ['-la'])).toEqual({ isValid: true });
       });
 
+      it('should allow grep as a whitelisted command', () => {
+        expect(validateCommand('grep', ['-rn', 'pattern', './src'])).toEqual({
+          isValid: true,
+        });
+      });
+
       it('should reject non-whitelisted commands', () => {
         const result = validateCommand('rm', ['-rf', '/']);
 
@@ -267,6 +273,18 @@ describe('commandValidator', () => {
 
         expect(result.isValid).toBe(true);
       });
+
+      it('should reject disallowed runtime execution flags like --pre', () => {
+        const result = validateCommand('rg', ['--pre=cat', 'pattern', './src']);
+
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('not allowed');
+      });
+
+      it('should allow literal dash-prefixed patterns after -- separator', () => {
+        const result = validateCommand('rg', ['--', '--pre=cat', './src']);
+        expect(result.isValid).toBe(true);
+      });
     });
 
     describe('find pattern detection', () => {
@@ -359,6 +377,73 @@ describe('commandValidator', () => {
         ]);
 
         expect(result.isValid).toBe(true);
+      });
+
+      it('should allow find traversal/runtime-safe operators used by builder', () => {
+        const result = validateCommand('find', [
+          '/workspace',
+          '-maxdepth',
+          '5',
+          '(',
+          '-name',
+          '*.ts',
+          '-o',
+          '-iname',
+          '*.tsx',
+          ')',
+          '-prune',
+          '-o',
+          '-type',
+          'f',
+          '-print0',
+        ]);
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should reject destructive find operator -delete', () => {
+        const result = validateCommand('find', [
+          '.',
+          '-name',
+          '*.log',
+          '-delete',
+        ]);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('not allowed');
+      });
+
+      it('should reject command-execution operator -execdir', () => {
+        const result = validateCommand('find', [
+          '.',
+          '-name',
+          '*.ts',
+          '-execdir',
+          'sh',
+          '-c',
+          'id',
+          '+',
+        ]);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('not allowed');
+      });
+
+      it('should reject prompt-based execution operator -okdir', () => {
+        const result = validateCommand('find', [
+          '.',
+          '-name',
+          '*.ts',
+          '-okdir',
+          'echo',
+          'x',
+          '+',
+        ]);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('not allowed');
+      });
+
+      it('should reject unsupported find operator -quit', () => {
+        const result = validateCommand('find', ['.', '-name', '*.ts', '-quit']);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('not allowed');
       });
     });
 

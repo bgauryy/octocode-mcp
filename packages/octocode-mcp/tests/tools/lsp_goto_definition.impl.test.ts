@@ -45,7 +45,10 @@ import * as fs from 'fs/promises';
 import * as lspModule from '../../src/lsp/index.js';
 
 // Import the module under test after mocks are set up
-import { registerLSPGotoDefinitionTool } from '../../src/tools/lsp_goto_definition/lsp_goto_definition.js';
+import {
+  registerLSPGotoDefinitionTool,
+  isImportOrReExport,
+} from '../../src/tools/lsp_goto_definition/lsp_goto_definition.js';
 
 describe('LSP Goto Definition Implementation Tests', () => {
   const sampleTypeScriptContent = `
@@ -505,6 +508,397 @@ export interface Config {
 
       expect(result).toBeDefined();
       expect(result.content?.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Import Chain Detection (isImportOrReExport)', () => {
+    it('should detect named import', () => {
+      expect(isImportOrReExport("import { Foo } from './module'")).toBe(true);
+    });
+
+    it('should detect default import', () => {
+      expect(isImportOrReExport("import Foo from './module'")).toBe(true);
+    });
+
+    it('should detect namespace import', () => {
+      expect(isImportOrReExport("import * as Foo from './module'")).toBe(true);
+    });
+
+    it('should detect named re-export', () => {
+      expect(isImportOrReExport("export { Foo } from './module'")).toBe(true);
+    });
+
+    it('should detect wildcard re-export', () => {
+      expect(isImportOrReExport("export * from './module'")).toBe(true);
+    });
+
+    it('should detect re-export with rename', () => {
+      expect(
+        isImportOrReExport("export { default as Foo } from './module'")
+      ).toBe(true);
+    });
+
+    it('should detect import with double quotes', () => {
+      expect(isImportOrReExport('import { Foo } from "./module"')).toBe(true);
+    });
+
+    it('should detect import with .js extension', () => {
+      expect(
+        isImportOrReExport("import { ToolError } from './ToolError.js'")
+      ).toBe(true);
+    });
+
+    it('should NOT detect regular export', () => {
+      expect(isImportOrReExport('export function foo() {}')).toBe(false);
+    });
+
+    it('should NOT detect regular variable', () => {
+      expect(isImportOrReExport('const foo = 1;')).toBe(false);
+    });
+
+    it('should NOT detect class definition', () => {
+      expect(isImportOrReExport('export class Foo {}')).toBe(false);
+    });
+
+    it('should NOT detect interface', () => {
+      expect(isImportOrReExport('export interface Foo {}')).toBe(false);
+    });
+
+    it('should handle leading whitespace', () => {
+      expect(isImportOrReExport("  import { Foo } from './module'")).toBe(true);
+    });
+
+    it('should handle empty string', () => {
+      expect(isImportOrReExport('')).toBe(false);
+    });
+  });
+
+  describe('Import Chaining via LSP', () => {
+    it('should chain through import when LSP resolves to same-file import', async () => {
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+      const sourcePath = `${process.cwd()}/src/source.ts`;
+
+      const mockGotoDefinition = vi.fn();
+      // First call: resolves to import line in same file
+      mockGotoDefinition.mockResolvedValueOnce([
+        {
+          uri: testPath,
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 40 },
+          },
+          content: "import { Foo } from './source'",
+        },
+      ]);
+      // Second call (chain): resolves to source definition in different file
+      mockGotoDefinition.mockResolvedValueOnce([
+        {
+          uri: sourcePath,
+          range: {
+            start: { line: 5, character: 0 },
+            end: { line: 5, character: 20 },
+          },
+          content: 'export class Foo {}',
+        },
+      ]);
+
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(lspModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
+        gotoDefinition: mockGotoDefinition,
+      } as any);
+
+      vi.mocked(fs.readFile).mockImplementation(async p => {
+        const path = typeof p === 'string' ? p : String(p);
+        if (path === testPath) {
+          return "import { Foo } from './source'\n\nconst x = new Foo();";
+        }
+        if (path === sourcePath) {
+          return 'const a = 1;\nconst b = 2;\nconst c = 3;\nconst d = 4;\nconst e = 5;\nexport class Foo {}\nconst f = 6;';
+        }
+        throw new Error(`Unexpected: ${path}`);
+      });
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'Foo',
+            lineHint: 3,
+            contextLines: 1,
+            researchGoal: 'Find Foo definition',
+            reasoning: 'Testing import chaining',
+          },
+        ],
+      });
+
+      const text = result.content?.[0]?.text ?? '';
+      // Should resolve to source file, not the import
+      expect(text).toContain(sourcePath);
+      expect(text).toContain('Followed import chain to source definition');
+      // gotoDefinition should be called twice (original + chain)
+      expect(mockGotoDefinition).toHaveBeenCalledTimes(2);
+      expect(mockGotoDefinition).toHaveBeenNthCalledWith(2, testPath, {
+        line: 0,
+        character: 9, // "Foo" in: import { Foo } from './source'
+      });
+    });
+
+    it('should NOT chain when result is in a different file', async () => {
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+      const defsPath = `${process.cwd()}/src/defs.ts`;
+
+      const mockGotoDefinition = vi.fn().mockResolvedValue([
+        {
+          uri: defsPath, // Different file — no chaining needed
+          range: {
+            start: { line: 5, character: 0 },
+            end: { line: 5, character: 20 },
+          },
+          content: 'export function helper() {}',
+        },
+      ]);
+
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(lspModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
+        gotoDefinition: mockGotoDefinition,
+      } as any);
+
+      vi.mocked(fs.readFile).mockImplementation(async p => {
+        const path = typeof p === 'string' ? p : String(p);
+        if (path === testPath) return 'const x = helper();';
+        if (path === defsPath)
+          return 'a\nb\nc\nd\ne\nexport function helper() {}\nf';
+        throw new Error(`Unexpected: ${path}`);
+      });
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'helper',
+            lineHint: 1,
+            contextLines: 1,
+            researchGoal: 'Find helper def',
+            reasoning: 'Testing no-chain for different file',
+          },
+        ],
+      });
+
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain(defsPath);
+      expect(text).not.toContain('Followed import chain');
+      // Only one call — no chaining
+      expect(mockGotoDefinition).toHaveBeenCalledTimes(1);
+    });
+
+    it('should NOT chain when result line is not an import', async () => {
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+
+      const mockGotoDefinition = vi.fn().mockResolvedValue([
+        {
+          uri: testPath, // Same file but NOT an import line
+          range: {
+            start: { line: 2, character: 0 },
+            end: { line: 2, character: 30 },
+          },
+          content: 'const localVar = 42;',
+        },
+      ]);
+
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(lspModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
+        gotoDefinition: mockGotoDefinition,
+      } as any);
+
+      vi.mocked(fs.readFile).mockImplementation(async () => {
+        return 'const a = 1;\nconst b = 2;\nconst localVar = 42;\nconst d = 4;';
+      });
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'localVar',
+            lineHint: 3,
+            contextLines: 1,
+            researchGoal: 'Find localVar',
+            reasoning: 'Testing no-chain for non-import',
+          },
+        ],
+      });
+
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).not.toContain('Followed import chain');
+      // Only one call — no chaining
+      expect(mockGotoDefinition).toHaveBeenCalledTimes(1);
+    });
+
+    it('should fallback to original when second hop returns empty', async () => {
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+
+      const mockGotoDefinition = vi.fn();
+      // First: resolves to import in same file
+      mockGotoDefinition.mockResolvedValueOnce([
+        {
+          uri: testPath,
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 35 },
+          },
+          content: "import { Bar } from './bar'",
+        },
+      ]);
+      // Second (chain): returns empty
+      mockGotoDefinition.mockResolvedValueOnce([]);
+
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(lspModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
+        gotoDefinition: mockGotoDefinition,
+      } as any);
+
+      vi.mocked(fs.readFile).mockImplementation(async () => {
+        return "import { Bar } from './bar'\nconst x = new Bar();";
+      });
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'Bar',
+            lineHint: 2,
+            contextLines: 0,
+            researchGoal: 'Find Bar',
+            reasoning: 'Testing fallback on empty chain',
+          },
+        ],
+      });
+
+      const text = result.content?.[0]?.text ?? '';
+      // Should still return original result (the import line)
+      expect(text).toContain('status: "hasResults"');
+      expect(text).not.toContain('Followed import chain');
+      // Two calls made: original + chain attempt
+      expect(mockGotoDefinition).toHaveBeenCalledTimes(2);
+    });
+
+    it('should use fallback character when symbol is not found in import line', async () => {
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+
+      const mockGotoDefinition = vi.fn();
+      // First: resolves to import in same file, with non-zero character offset
+      mockGotoDefinition.mockResolvedValueOnce([
+        {
+          uri: testPath,
+          range: {
+            start: { line: 0, character: 4 },
+            end: { line: 0, character: 38 },
+          },
+          content: "import { Bar } from './bar'",
+        },
+      ]);
+      // Second hop returns empty; we only verify call args here
+      mockGotoDefinition.mockResolvedValueOnce([]);
+
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(lspModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
+        gotoDefinition: mockGotoDefinition,
+      } as any);
+
+      vi.mocked(fs.readFile).mockImplementation(async () => {
+        return "import { Bar } from './bar'\nconst x = new Bar();";
+      });
+
+      const handler = createHandler();
+      await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'NotInImport',
+            lineHint: 2,
+            contextLines: 0,
+            researchGoal: 'Find unknown symbol',
+            reasoning: 'Testing fallback character behavior',
+          },
+        ],
+      });
+
+      expect(mockGotoDefinition).toHaveBeenCalledTimes(2);
+      expect(mockGotoDefinition).toHaveBeenNthCalledWith(2, testPath, {
+        line: 0,
+        character: 4,
+      });
+    });
+
+    it('should fallback when second hop resolves to same file', async () => {
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+
+      const mockGotoDefinition = vi.fn();
+      // First: resolves to import in same file
+      mockGotoDefinition.mockResolvedValueOnce([
+        {
+          uri: testPath,
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 35 },
+          },
+          content: "import { Baz } from './baz'",
+        },
+      ]);
+      // Second (chain): resolves BACK to same file (loop prevention)
+      mockGotoDefinition.mockResolvedValueOnce([
+        {
+          uri: testPath,
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 35 },
+          },
+          content: "import { Baz } from './baz'",
+        },
+      ]);
+
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(lspModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
+        gotoDefinition: mockGotoDefinition,
+      } as any);
+
+      vi.mocked(fs.readFile).mockImplementation(async () => {
+        return "import { Baz } from './baz'\nconst x = Baz;";
+      });
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'Baz',
+            lineHint: 2,
+            contextLines: 0,
+            researchGoal: 'Find Baz',
+            reasoning: 'Testing loop prevention',
+          },
+        ],
+      });
+
+      const text = result.content?.[0]?.text ?? '';
+      // Should NOT follow the import chain (would loop)
+      expect(text).not.toContain('Followed import chain');
+      expect(mockGotoDefinition).toHaveBeenCalledTimes(2);
     });
   });
 });

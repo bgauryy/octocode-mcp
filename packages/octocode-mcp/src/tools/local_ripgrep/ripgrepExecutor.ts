@@ -62,13 +62,16 @@ export async function executeRipgrepSearchInternal(
     } as SearchContentResult;
   }
 
-  // Use sanitized path (includes tilde expansion)
-  configuredQuery.path = pathValidation.sanitizedPath!;
+  // Use sanitized path (includes tilde expansion) — avoid mutating input query
+  const queryForExec = {
+    ...configuredQuery,
+    path: pathValidation.sanitizedPath!,
+  };
 
-  const dirStats = await estimateDirectoryStats(configuredQuery.path);
+  const dirStats = await estimateDirectoryStats(queryForExec.path);
   const chunkingWarnings: string[] = [];
 
-  if (dirStats.isLarge && !configuredQuery.filesOnly) {
+  if (dirStats.isLarge && !queryForExec.filesOnly) {
     chunkingWarnings.push(
       `Large directory detected (~${Math.round(dirStats.estimatedSizeMB)}MB, ~${dirStats.estimatedFileCount} files). Consider chunking workflow for better performance.`
     );
@@ -76,7 +79,7 @@ export async function executeRipgrepSearchInternal(
   }
 
   const builder = new RipgrepCommandBuilder();
-  const { command, args } = builder.fromQuery(configuredQuery).build();
+  const { command, args } = builder.fromQuery(queryForExec).build();
 
   const result = await safeExec(command, args);
 
@@ -86,7 +89,7 @@ export async function executeRipgrepSearchInternal(
     return {
       status: 'error',
       errorCode: LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT,
-      path: configuredQuery.path,
+      path: queryForExec.path,
       searchEngine: 'rg',
       researchGoal: configuredQuery.researchGoal,
       reasoning: configuredQuery.reasoning,
@@ -104,7 +107,7 @@ export async function executeRipgrepSearchInternal(
   if (result.code === 1 || (result.success && !result.stdout.trim())) {
     return {
       status: 'empty',
-      path: configuredQuery.path,
+      path: queryForExec.path,
       searchEngine: 'rg',
       warnings: [...validation.warnings, ...chunkingWarnings],
       researchGoal: configuredQuery.researchGoal,
@@ -128,7 +131,7 @@ export async function executeRipgrepSearchInternal(
   // filesOnly (-l) and filesWithoutMatch (--files-without-match) output plain text
   const parsed = parseRipgrepOutput(result.stdout, configuredQuery);
 
-  return buildSearchResult(
+  return await buildSearchResult(
     parsed.files,
     configuredQuery,
     'rg',
@@ -185,13 +188,16 @@ export async function executeGrepSearch(
     } as SearchContentResult;
   }
 
-  // Use sanitized path (includes tilde expansion)
-  configuredQuery.path = pathValidation.sanitizedPath!;
+  // Use sanitized path (includes tilde expansion) — avoid mutating input query
+  const queryForExec = {
+    ...configuredQuery,
+    path: pathValidation.sanitizedPath!,
+  };
 
-  const dirStats = await estimateDirectoryStats(configuredQuery.path);
+  const dirStats = await estimateDirectoryStats(queryForExec.path);
   const chunkingWarnings: string[] = [];
 
-  if (dirStats.isLarge && !configuredQuery.filesOnly) {
+  if (dirStats.isLarge && !queryForExec.filesOnly) {
     chunkingWarnings.push(
       `Large directory detected (~${Math.round(dirStats.estimatedSizeMB)}MB, ~${dirStats.estimatedFileCount} files). Consider chunking workflow for better performance.`
     );
@@ -199,7 +205,7 @@ export async function executeGrepSearch(
   }
 
   const builder = new GrepCommandBuilder();
-  const { command, args } = builder.fromQuery(configuredQuery).build();
+  const { command, args } = builder.fromQuery(queryForExec).build();
 
   const result = await safeExec(command, args);
 
@@ -209,7 +215,7 @@ export async function executeGrepSearch(
     return {
       status: 'error',
       errorCode: LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT,
-      path: configuredQuery.path,
+      path: queryForExec.path,
       searchEngine: 'grep',
       researchGoal: configuredQuery.researchGoal,
       reasoning: configuredQuery.reasoning,
@@ -227,7 +233,7 @@ export async function executeGrepSearch(
   if (result.code === 1 || (result.success && !result.stdout.trim())) {
     return {
       status: 'empty',
-      path: configuredQuery.path,
+      path: queryForExec.path,
       searchEngine: 'grep',
       warnings: [...grepWarnings, ...validation.warnings, ...chunkingWarnings],
       researchGoal: configuredQuery.researchGoal,
@@ -250,7 +256,7 @@ export async function executeGrepSearch(
   // Parse grep output
   const parsedFiles = parseGrepOutputWrapper(result.stdout, configuredQuery);
 
-  return buildSearchResult(parsedFiles, configuredQuery, 'grep', [
+  return await buildSearchResult(parsedFiles, configuredQuery, 'grep', [
     ...grepWarnings,
     ...validation.warnings,
     ...chunkingWarnings,

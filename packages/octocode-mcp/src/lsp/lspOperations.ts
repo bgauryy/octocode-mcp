@@ -22,7 +22,7 @@ import {
   SymbolKind as LSPSymbolKind,
 } from 'vscode-languageserver-protocol';
 import { toUri, fromUri } from './uri.js';
-import { convertSymbolKind } from './symbols.js';
+import { convertSymbolKind, toLSPSymbolKind } from './symbols.js';
 import type {
   ExactPosition,
   CodeSnippet,
@@ -31,6 +31,33 @@ import type {
   OutgoingCall,
 } from './types.js';
 import { LSPDocumentManager } from './lspDocumentManager.js';
+
+/** Default timeout for LSP requests (30 seconds) */
+const LSP_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Wraps an LSP sendRequest with a timeout to prevent indefinite hangs.
+ * Language servers can become unresponsive; this ensures we always reject within a bounded time.
+ */
+async function sendRequestWithTimeout<T>(
+  connection: MessageConnection,
+  method: string,
+  params: unknown,
+  timeoutMs: number = LSP_REQUEST_TIMEOUT_MS
+): Promise<T> {
+  return Promise.race([
+    connection.sendRequest(method, params) as Promise<T>,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(`LSP request '${method}' timed out after ${timeoutMs}ms`)
+          ),
+        timeoutMs
+      )
+    ),
+  ]);
+}
 
 /**
  * LSP operations handler
@@ -74,10 +101,9 @@ export class LSPOperations {
         } as Position,
       };
 
-      const result = (await this.connection.sendRequest(
-        'textDocument/definition',
-        params
-      )) as Location | Location[] | LocationLink[] | null;
+      const result = await sendRequestWithTimeout<
+        Location | Location[] | LocationLink[] | null
+      >(this.connection, 'textDocument/definition', params);
 
       return this.locationsToSnippets(result);
     } finally {
@@ -110,10 +136,11 @@ export class LSPOperations {
         context: { includeDeclaration },
       };
 
-      const result = (await this.connection.sendRequest(
+      const result = await sendRequestWithTimeout<Location[] | null>(
+        this.connection,
         'textDocument/references',
         params
-      )) as Location[] | null;
+      );
 
       return this.locationsToSnippets(result);
     } finally {
@@ -144,18 +171,15 @@ export class LSPOperations {
         } as Position,
       };
 
-      const result = await this.connection.sendRequest(
-        'textDocument/prepareCallHierarchy',
-        params
-      );
+      const result = await sendRequestWithTimeout<
+        LSPCallHierarchyItem[] | null
+      >(this.connection, 'textDocument/prepareCallHierarchy', params);
 
       if (!result || !Array.isArray(result)) {
         return [];
       }
 
-      return (result as LSPCallHierarchyItem[]).map(item =>
-        this.convertCallHierarchyItem(item)
-      );
+      return result.map(item => this.convertCallHierarchyItem(item));
     } finally {
       // Close document to prevent memory leak
       await this.documentManager.closeDocument(filePath);
@@ -174,16 +198,15 @@ export class LSPOperations {
       item: this.toProtocolCallHierarchyItem(item),
     };
 
-    const result = await this.connection.sendRequest(
-      'callHierarchy/incomingCalls',
-      params
-    );
+    const result = await sendRequestWithTimeout<
+      CallHierarchyIncomingCall[] | null
+    >(this.connection, 'callHierarchy/incomingCalls', params);
 
     if (!result || !Array.isArray(result)) {
       return [];
     }
 
-    return (result as CallHierarchyIncomingCall[]).map(call => ({
+    return result.map(call => ({
       from: this.convertCallHierarchyItem(call.from),
       fromRanges: call.fromRanges.map(r => ({
         start: { line: r.start.line, character: r.start.character },
@@ -204,16 +227,15 @@ export class LSPOperations {
       item: this.toProtocolCallHierarchyItem(item),
     };
 
-    const result = await this.connection.sendRequest(
-      'callHierarchy/outgoingCalls',
-      params
-    );
+    const result = await sendRequestWithTimeout<
+      CallHierarchyOutgoingCall[] | null
+    >(this.connection, 'callHierarchy/outgoingCalls', params);
 
     if (!result || !Array.isArray(result)) {
       return [];
     }
 
-    return (result as CallHierarchyOutgoingCall[]).map(call => ({
+    return result.map(call => ({
       to: this.convertCallHierarchyItem(call.to),
       fromRanges: call.fromRanges.map(r => ({
         start: { line: r.start.line, character: r.start.character },
@@ -312,7 +334,7 @@ export class LSPOperations {
   ): LSPCallHierarchyItem {
     return {
       name: item.name,
-      kind: LSPSymbolKind.Function, // Default to function
+      kind: item.kind ? toLSPSymbolKind(item.kind) : LSPSymbolKind.Function,
       uri: toUri(item.uri),
       range: {
         start: {

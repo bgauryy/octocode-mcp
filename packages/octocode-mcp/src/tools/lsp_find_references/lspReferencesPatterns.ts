@@ -7,7 +7,7 @@
  * @module tools/lsp_find_references/lspReferencesPatterns
  */
 
-import { readFile } from 'fs/promises';
+import { readFile, access } from 'fs/promises';
 import * as path from 'path';
 
 import type {
@@ -21,16 +21,97 @@ import { getHints } from '../../hints/index.js';
 import { STATIC_TOOL_NAMES } from '../toolNames.js';
 import { RipgrepMatchOnlySchema } from '../../utils/parsers/schemas.js';
 import { matchesFilePatterns } from './lspReferencesCore.js';
+import { validateCommand } from '../../security/commandValidator.js';
 
 const TOOL_NAME = STATIC_TOOL_NAMES.LSP_FIND_REFERENCES;
+const DEFAULT_GREP_EXTENSIONS = [
+  'ts',
+  'tsx',
+  'js',
+  'jsx',
+  'py',
+  'go',
+  'rs',
+  'java',
+  'c',
+  'cpp',
+  'h',
+] as const;
 
-// Lazy-load exec to avoid module-level dependency on child_process
-// which can cause issues with test mocks
-const getExecAsync = async () => {
-  const { exec } = await import('child_process');
-  const { promisify } = await import('util');
-  return promisify(exec);
+/**
+ * Escape regex metacharacters for safe interpolation into RegExp.
+ * @internal Exported for testing
+ */
+export function escapeForRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Lazy-load spawn to avoid module-level child_process dependency
+const getSpawn = async () => {
+  const { spawn } = await import('child_process');
+  return spawn;
 };
+
+/**
+ * Spawn a command with args and collect stdout.
+ * Validates command against the security allowlist before execution.
+ */
+async function spawnCollectOutput(
+  command: string,
+  args: string[],
+  options: { maxBuffer?: number; timeout?: number } = {}
+): Promise<{ stdout: string }> {
+  // Validate command against security allowlist
+  const validation = validateCommand(command, args);
+  if (!validation.isValid) {
+    throw new Error(
+      `Command validation failed: ${validation.error || 'Command not allowed'}`
+    );
+  }
+
+  const spawnFn = await getSpawn();
+  const { maxBuffer = 10 * 1024 * 1024, timeout = 30000 } = options;
+
+  return new Promise((resolve, reject) => {
+    const child = spawnFn(command, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout,
+      env: {
+        ...Object.fromEntries(
+          ['PATH', 'HOME', 'USER', 'LANG', 'TERM', 'SHELL'].map(k => [
+            k,
+            process.env[k],
+          ])
+        ),
+      },
+    });
+
+    let stdout = '';
+    let totalSize = 0;
+
+    child.stdout?.on('data', (data: Buffer) => {
+      totalSize += data.length;
+      if (totalSize > maxBuffer) {
+        child.kill('SIGKILL');
+        reject(new Error('Output size limit exceeded'));
+        return;
+      }
+      stdout += data.toString();
+    });
+
+    child.on('close', code => {
+      if (code === 0 || code === 1) {
+        resolve({ stdout });
+      } else {
+        reject(
+          Object.assign(new Error(`Process exited with code ${code}`), { code })
+        );
+      }
+    });
+
+    child.on('error', reject);
+  });
+}
 
 /**
  * Raw reference before content enhancement (no file I/O).
@@ -198,10 +279,11 @@ export async function findReferencesWithPatternMatching(
 }
 
 /**
- * Find the workspace root by looking for common markers
+ * Find the workspace root by looking for common markers.
+ * Uses async fs.access to avoid blocking the event loop.
  * @internal Exported for testing
  */
-export function findWorkspaceRoot(filePath: string): string {
+export async function findWorkspaceRoot(filePath: string): Promise<string> {
   let currentDir = path.dirname(filePath);
   const markers = [
     'package.json',
@@ -213,14 +295,19 @@ export function findWorkspaceRoot(filePath: string): string {
   ];
 
   for (let i = 0; i < 10; i++) {
-    for (const marker of markers) {
+    // Check all markers in current directory in parallel
+    const checks = markers.map(async marker => {
       try {
-        const markerPath = path.join(currentDir, marker);
-        require('fs').accessSync(markerPath);
-        return currentDir;
+        await access(path.join(currentDir, marker));
+        return true;
       } catch {
-        // Continue
+        return false;
       }
+    });
+
+    const results = await Promise.all(checks);
+    if (results.some(found => found)) {
+      return currentDir;
     }
 
     const parentDir = path.dirname(currentDir);
@@ -251,6 +338,34 @@ export function buildRipgrepGlobArgs(
     }
   }
   return args;
+}
+
+/**
+ * Build ripgrep argv for symbol reference search.
+ * Adds "--" to stop option parsing before user-provided symbol/path values.
+ * @internal Exported for testing
+ */
+export function buildRipgrepSearchArgs(
+  workspaceRoot: string,
+  symbolName: string,
+  includePattern?: string[],
+  excludePattern?: string[]
+): string[] {
+  const escapedSymbol = escapeForRegex(symbolName);
+  return [
+    '--json',
+    '--line-number',
+    '--column',
+    '-w',
+    '--type-add',
+    'code:*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,java,c,cpp,h,hpp,cs,rb,php}',
+    '-t',
+    'code',
+    ...buildRipgrepGlobArgs(includePattern, excludePattern),
+    '--',
+    escapedSymbol,
+    workspaceRoot,
+  ];
 }
 
 /**
@@ -285,6 +400,66 @@ export function buildGrepFilterArgs(
 }
 
 /**
+ * Build grep include/exclude arguments as an array (shell-safe).
+ * Each flag and its value are separate array elements for use with spawn().
+ * @internal Exported for testing
+ */
+export function buildGrepFilterArgsArray(
+  includePattern?: string[],
+  excludePattern?: string[]
+): string[] {
+  const args: string[] = [];
+  if (includePattern?.length) {
+    for (const pattern of includePattern) {
+      const filename = pattern.replace(/^\*\*\//, '');
+      args.push(`--include=${filename}`);
+    }
+  }
+  if (excludePattern?.length) {
+    for (const pattern of excludePattern) {
+      const cleaned = pattern.replace(/^\*\*\//, '').replace(/\/\*\*$/, '');
+      if (pattern.includes('/')) {
+        args.push(`--exclude-dir=${cleaned}`);
+      } else {
+        args.push(`--exclude=${cleaned}`);
+      }
+    }
+  }
+  return args;
+}
+
+/**
+ * Build grep argv for symbol reference search.
+ * Adds "--" to stop option parsing before user-provided symbol/path values.
+ * @internal Exported for testing
+ */
+export function buildGrepSearchArgs(
+  workspaceRoot: string,
+  symbolName: string,
+  includePattern?: string[],
+  excludePattern?: string[]
+): string[] {
+  const escapedSymbol = escapeForRegex(symbolName);
+  const grepArgs: string[] = ['-rn', '-w'];
+
+  if (includePattern?.length || excludePattern?.length) {
+    grepArgs.push(...buildGrepFilterArgsArray(includePattern, excludePattern));
+    if (!includePattern?.length) {
+      for (const ext of DEFAULT_GREP_EXTENSIONS) {
+        grepArgs.push(`--include=*.${ext}`);
+      }
+    }
+  } else {
+    for (const ext of DEFAULT_GREP_EXTENSIONS) {
+      grepArgs.push(`--include=*.${ext}`);
+    }
+  }
+
+  grepArgs.push('--', escapedSymbol, workspaceRoot);
+  return grepArgs;
+}
+
+/**
  * Search for references in the workspace using ripgrep.
  * Returns raw references without content enhancement.
  */
@@ -296,31 +471,19 @@ async function searchReferencesInWorkspace(
   excludePattern?: string[]
 ): Promise<RawPatternReference[]> {
   const references: RawPatternReference[] = [];
-  const escapedSymbol = symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-  const rgArgs = [
-    '--json',
-    '--line-number',
-    '--column',
-    '-w',
-    '--type-add',
-    'code:*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,java,c,cpp,h,hpp,cs,rb,php}',
-    '-t',
-    'code',
-    ...buildRipgrepGlobArgs(includePattern, excludePattern),
-    escapedSymbol,
+  const escapedSymbol = escapeForRegex(symbolName);
+  const rgArgs = buildRipgrepSearchArgs(
     workspaceRoot,
-  ];
+    symbolName,
+    includePattern,
+    excludePattern
+  );
 
   try {
-    const execAsync = await getExecAsync();
-    const { stdout } = await execAsync(
-      `rg ${rgArgs.map(a => `'${a}'`).join(' ')}`,
-      {
-        maxBuffer: 10 * 1024 * 1024,
-        timeout: 30000,
-      }
-    );
+    const { stdout } = await spawnCollectOutput('rg', rgArgs, {
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 30000,
+    });
 
     const lines = stdout.trim().split('\n').filter(Boolean);
 
@@ -403,55 +566,19 @@ async function searchReferencesWithGrep(
   excludePattern?: string[]
 ): Promise<RawPatternReference[]> {
   const references: RawPatternReference[] = [];
-  const escapedSymbol = symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-  // Use custom patterns if provided, otherwise default extensions
-  let filterArgs: string;
-  if (includePattern?.length || excludePattern?.length) {
-    filterArgs = buildGrepFilterArgs(includePattern, excludePattern);
-    // If only exclude patterns but no include, keep default extensions
-    if (!includePattern?.length) {
-      const extensions = [
-        'ts',
-        'tsx',
-        'js',
-        'jsx',
-        'py',
-        'go',
-        'rs',
-        'java',
-        'c',
-        'cpp',
-        'h',
-      ];
-      const defaultIncludes = extensions
-        .map(ext => `--include="*.${ext}"`)
-        .join(' ');
-      filterArgs = `${defaultIncludes} ${filterArgs}`;
-    }
-  } else {
-    const extensions = [
-      'ts',
-      'tsx',
-      'js',
-      'jsx',
-      'py',
-      'go',
-      'rs',
-      'java',
-      'c',
-      'cpp',
-      'h',
-    ];
-    filterArgs = extensions.map(ext => `--include="*.${ext}"`).join(' ');
-  }
+  const escapedSymbol = escapeForRegex(symbolName);
+  const grepArgs = buildGrepSearchArgs(
+    workspaceRoot,
+    symbolName,
+    includePattern,
+    excludePattern
+  );
 
   try {
-    const execAsync = await getExecAsync();
-    const { stdout } = await execAsync(
-      `grep -rn -w ${filterArgs} '${escapedSymbol}' '${workspaceRoot}' 2>/dev/null || true`,
-      { maxBuffer: 10 * 1024 * 1024, timeout: 30000 }
-    );
+    const { stdout } = await spawnCollectOutput('grep', grepArgs, {
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 30000,
+    });
 
     const lines = stdout.trim().split('\n').filter(Boolean);
 
@@ -516,23 +643,31 @@ export function isLikelyDefinition(
   lineContent: string,
   symbolName: string
 ): boolean {
+  // Guard against excessive input that could cause ReDoS
+  if (lineContent.length > 1000 || symbolName.length > 255) {
+    return false;
+  }
+
   const trimmed = lineContent.trim();
+  const escapedSymbol = escapeForRegex(symbolName);
 
   const definitionPatterns = [
     new RegExp(
-      `^(export\\s+)?(const|let|var|function|class|interface|type|enum)\\s+${symbolName}\\b`
+      `^(export\\s+)?(const|let|var|function|class|interface|type|enum)\\s+${escapedSymbol}\\b`
     ),
-    new RegExp(`^(export\\s+)?async\\s+function\\s+${symbolName}\\b`),
-    new RegExp(`^(export\\s+)?default\\s+(function|class)\\s+${symbolName}\\b`),
+    new RegExp(`^(export\\s+)?async\\s+function\\s+${escapedSymbol}\\b`),
     new RegExp(
-      `^(public|private|protected|static|async|readonly)?\\s*${symbolName}\\s*[(:=]`
+      `^(export\\s+)?default\\s+(function|class)\\s+${escapedSymbol}\\b`
     ),
-    new RegExp(`^(def|class|async\\s+def)\\s+${symbolName}\\b`),
-    new RegExp(`^${symbolName}\\s*=`),
-    new RegExp(`^func\\s+(\\([^)]+\\)\\s+)?${symbolName}\\b`),
-    new RegExp(`^(var|const|type)\\s+${symbolName}\\b`),
     new RegExp(
-      `^(pub\\s+)?(fn|struct|enum|trait|type|const|static)\\s+${symbolName}\\b`
+      `^(public|private|protected|static|async|readonly)?\\s*${escapedSymbol}\\s*[(:=]`
+    ),
+    new RegExp(`^(def|class|async\\s+def)\\s+${escapedSymbol}\\b`),
+    new RegExp(`^${escapedSymbol}\\s*=`),
+    new RegExp(`^func\\s+(\\([^)]+\\)\\s+)?${escapedSymbol}\\b`),
+    new RegExp(`^(var|const|type)\\s+${escapedSymbol}\\b`),
+    new RegExp(
+      `^(pub\\s+)?(fn|struct|enum|trait|type|const|static)\\s+${escapedSymbol}\\b`
     ),
   ];
 

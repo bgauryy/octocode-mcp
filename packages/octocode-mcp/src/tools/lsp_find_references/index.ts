@@ -10,6 +10,7 @@ export {
   findReferencesWithLSP,
   findReferencesWithPatternMatching,
   matchesFilePatterns,
+  mergeReferenceResults,
   buildRipgrepGlobArgs,
   buildGrepFilterArgs,
 } from './lsp_find_references.js';

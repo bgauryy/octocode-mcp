@@ -58,7 +58,7 @@ export async function processCallHierarchy(
     }
 
     // Resolve the symbol position using the resolver
-    const resolver = new SymbolResolver({ lineSearchRadius: 2 });
+    const resolver = new SymbolResolver({ lineSearchRadius: 5 });
     let resolvedSymbol;
     try {
       resolvedSymbol = resolver.resolvePositionFromContent(content, {
@@ -100,7 +100,7 @@ export async function processCallHierarchy(
         );
         if (result) return result;
       } catch {
-        // Fall back to pattern matching if LSP fails
+        // LSP failed — fall back to pattern matching silently
       }
     }
 

@@ -92,6 +92,15 @@ export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
     .optional()
     .describe(LOCAL_FIND_FILES.filters.excludeDir),
 
+  sortBy: z
+    .enum(['modified', 'size', 'name', 'path'])
+    .optional()
+    .default('modified')
+    .describe(
+      LOCAL_FIND_FILES.sorting.sortBy ||
+        'Sort results by: modified (default), size, name, or path'
+    ),
+
   limit: z
     .number()
     .min(1)
@@ -104,7 +113,7 @@ export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
     .number()
     .int()
     .min(1)
-    .max(20)
+    .max(50)
     .optional()
     .default(20)
     .describe(LOCAL_FIND_FILES.pagination.filesPerPage),

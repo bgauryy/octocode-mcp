@@ -5,6 +5,8 @@
 
 import { dirname, join } from 'path';
 import {
+  TOOLING_ALLOWED_ENV_VARS,
+  PROXY_ENV_VARS,
   spawnWithTimeout,
   spawnCheckSuccess,
   spawnCollectStdout,
@@ -53,6 +55,11 @@ interface NpmExecResult {
   exitCode?: number;
 }
 
+const NETWORK_ALLOWED_ENV_VARS = [
+  ...TOOLING_ALLOWED_ENV_VARS,
+  ...PROXY_ENV_VARS,
+] as const;
+
 /**
  * Check if npm CLI is available by running `npm --version`
  * @param timeoutMs - Timeout in milliseconds (default 10000ms)
@@ -95,7 +102,7 @@ export async function executeNpmCommand(
     timeout,
     cwd,
     env,
-    removeEnvVars: ['NODE_OPTIONS', 'NPM_CONFIG_SCRIPT_SHELL'],
+    allowEnvVars: NETWORK_ALLOWED_ENV_VARS,
   });
 
   return {

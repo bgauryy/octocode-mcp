@@ -23,7 +23,14 @@ export const LOCAL_FETCH_CONTENT_DESCRIPTION =
  * Base schema for fetching file content (before refinement)
  */
 const FetchContentBaseSchema = BaseQuerySchemaLocal.extend({
-  path: z.string().min(1).describe(LOCAL_FETCH_CONTENT.scope.path),
+  path: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine(value => !value.includes('\0'), {
+      message: 'path contains invalid null byte',
+    })
+    .describe(LOCAL_FETCH_CONTENT.scope.path),
 
   fullContent: z
     .boolean()
@@ -53,6 +60,7 @@ const FetchContentBaseSchema = BaseQuerySchemaLocal.extend({
 
   matchString: z
     .string()
+    .max(2000)
     .optional()
     .describe(LOCAL_FETCH_CONTENT.options.matchString),
 
@@ -143,6 +151,19 @@ export const FetchContentQuerySchema = FetchContentBaseSchema.superRefine(
         message:
           'Cannot use startLine/endLine with fullContent - line extraction is partial by definition',
         path: ['fullContent'],
+      });
+    }
+
+    if (
+      data.matchStringIsRegex &&
+      data.matchString !== undefined &&
+      data.matchString.length > 1000
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Regex pattern too long. Use a shorter pattern (max 1000 chars in regex mode).',
+        path: ['matchString'],
       });
     }
   }

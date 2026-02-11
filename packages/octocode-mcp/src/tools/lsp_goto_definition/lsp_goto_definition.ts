@@ -37,4 +37,4 @@ export function registerLSPGotoDefinitionTool(server: McpServer) {
 }
 
 // Re-export for testing
-export { addLineNumbers } from './execution.js';
+export { addLineNumbers, isImportOrReExport } from './execution.js';

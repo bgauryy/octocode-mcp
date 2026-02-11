@@ -73,13 +73,17 @@ export function applyEntryFilters(
   }
 
   if (query.extension) {
-    filtered = filtered.filter(e => e.extension === query.extension);
+    filtered = filtered.filter(
+      e => e.type === 'directory' || e.extension === query.extension
+    );
   }
 
   if (query.extensions && query.extensions.length > 0) {
     const extensions = query.extensions;
     filtered = filtered.filter(
-      e => e.extension && extensions.includes(e.extension)
+      e =>
+        e.type === 'directory' ||
+        (e.extension && extensions.includes(e.extension))
     );
   }
 
@@ -111,11 +115,12 @@ export function formatEntryString(
         : '[FILE]';
   const nameDisplay =
     entry.type === 'directory' ? `${entry.name}/` : entry.name;
+  const dateStr = entry.modified ? ` ${entry.modified.split('T')[0]}` : '';
 
   if (entry.type === 'file' && entry.size) {
     const extStr = entry.extension ? ` .${entry.extension}` : '';
-    return `${indentation}${typeMarker} ${nameDisplay} (${entry.size})${extStr}`;
+    return `${indentation}${typeMarker} ${nameDisplay} (${entry.size})${dateStr}${extStr}`;
   } else {
-    return `${indentation}${typeMarker} ${nameDisplay}`;
+    return `${indentation}${typeMarker}${dateStr} ${nameDisplay}`;
   }
 }

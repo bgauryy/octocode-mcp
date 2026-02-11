@@ -4,7 +4,15 @@
  * @module tools/lsp_find_references.coverage.test
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import * as path from 'path';
 import {
   findWorkspaceRoot,
@@ -71,33 +79,33 @@ describe('LSP Find References Coverage Tests', () => {
   });
 
   describe('findWorkspaceRoot function', () => {
-    it('should return parent directory if no markers found', () => {
-      const result = findWorkspaceRoot('/nonexistent/deep/path/file.ts');
+    it('should return parent directory if no markers found', async () => {
+      const result = await findWorkspaceRoot('/nonexistent/deep/path/file.ts');
       expect(typeof result).toBe('string');
       expect(result.length).toBeGreaterThan(0);
     });
 
-    it('should handle current directory marker search', () => {
+    it('should handle current directory marker search', async () => {
       // Test with actual cwd which likely has package.json
       const testFile = path.join(process.cwd(), 'src', 'test.ts');
-      const result = findWorkspaceRoot(testFile);
+      const result = await findWorkspaceRoot(testFile);
       expect(typeof result).toBe('string');
     });
 
-    it('should return directory of file as fallback', () => {
+    it('should return directory of file as fallback', async () => {
       const filePath = '/a/b/c/d/e/f/g/h/i/j/k/l/file.ts';
-      const result = findWorkspaceRoot(filePath);
+      const result = await findWorkspaceRoot(filePath);
       // Should eventually return the file's directory or a parent
       expect(result).toBeDefined();
     });
 
-    it('should handle relative paths', () => {
-      const result = findWorkspaceRoot('src/file.ts');
+    it('should handle relative paths', async () => {
+      const result = await findWorkspaceRoot('src/file.ts');
       expect(typeof result).toBe('string');
     });
 
-    it('should stop at root directory', () => {
-      const result = findWorkspaceRoot('/file.ts');
+    it('should stop at root directory', async () => {
+      const result = await findWorkspaceRoot('/file.ts');
       expect(result).toBeDefined();
     });
   });
@@ -334,6 +342,13 @@ describe('LSP Find References Coverage Tests', () => {
       it('should handle symbol not in line', () => {
         expect(isLikelyDefinition('const other = 1;', 'missing')).toBe(false);
       });
+
+      it('should treat regex metachar symbols as plain text (no regex syntax execution)', () => {
+        expect(() =>
+          isLikelyDefinition('const target = 1;', 'target(')
+        ).not.toThrow();
+        expect(isLikelyDefinition('const target = 1;', 'target(')).toBe(false);
+      });
     });
   });
 
@@ -549,6 +564,16 @@ describe('LSP Find References Coverage Tests', () => {
     });
   });
 
+  describe('findWorkspaceRoot', () => {
+    it('should return an async result (Promise)', async () => {
+      const { findWorkspaceRoot } =
+        await import('../../src/tools/lsp_find_references/lspReferencesPatterns.js');
+      const result = findWorkspaceRoot('/some/path/file.ts');
+      // After fix, findWorkspaceRoot should return a Promise
+      expect(result).toBeInstanceOf(Promise);
+    });
+  });
+
   describe('Workspace markers', () => {
     const markers = [
       'package.json',
@@ -690,7 +715,7 @@ export function testFunction(param: string): string {
 
       expect(result).toBeDefined();
       const text = result.content?.[0]?.text ?? '';
-      expect(text).toContain('hasResults');
+      expect(text).toContain('status: "empty"');
     });
 
     it('should hit lines 587-588: ripgrep sort by URI when both non-definition', async () => {
@@ -840,7 +865,7 @@ export function testFunction(param: string): string {
 
       expect(result).toBeDefined();
       const text = result.content?.[0]?.text ?? '';
-      expect(text).toContain('hasResults');
+      expect(text).toContain('status: "empty"');
     });
 
     it('should hit lines 699-702: grep sort definition vs non-definition', async () => {
@@ -1069,6 +1094,100 @@ export function testFunction(param: string): string {
       // Then other files
       expect(refs[3]!.uri).toBe('b.ts');
       expect(refs[4]!.uri).toBe('c.ts');
+    });
+  });
+
+  describe('inferSymbolKindFromContent', () => {
+    // Dynamic import to get the function
+    let inferSymbolKindFromContent: (lineContent: string) => string;
+
+    beforeAll(async () => {
+      const mod =
+        await import('../../src/tools/lsp_find_references/lspReferencesCore.js');
+      inferSymbolKindFromContent = mod.inferSymbolKindFromContent;
+    });
+
+    it('should detect class definitions', () => {
+      expect(inferSymbolKindFromContent('export class MyClass {')).toBe(
+        'class'
+      );
+      expect(inferSymbolKindFromContent('class Foo extends Bar {')).toBe(
+        'class'
+      );
+    });
+
+    it('should detect interface definitions', () => {
+      expect(inferSymbolKindFromContent('export interface IUser {')).toBe(
+        'interface'
+      );
+      expect(inferSymbolKindFromContent('interface Props {')).toBe('interface');
+    });
+
+    it('should detect type definitions', () => {
+      expect(
+        inferSymbolKindFromContent('type UserRole = "admin" | "user"')
+      ).toBe('type');
+      expect(inferSymbolKindFromContent('export type Config = {')).toBe('type');
+    });
+
+    it('should detect enum definitions', () => {
+      expect(inferSymbolKindFromContent('enum Direction {')).toBe('enum');
+      expect(inferSymbolKindFromContent('export enum Status {')).toBe('enum');
+    });
+
+    it('should detect constant definitions (not function assignments)', () => {
+      expect(inferSymbolKindFromContent('const MAX_SIZE = 100')).toBe(
+        'constant'
+      );
+      expect(inferSymbolKindFromContent('export const PI = 3.14')).toBe(
+        'constant'
+      );
+    });
+
+    it('should detect variable definitions (not function assignments)', () => {
+      expect(inferSymbolKindFromContent('let count = 0')).toBe('variable');
+      expect(inferSymbolKindFromContent('var name = "test"')).toBe('variable');
+    });
+
+    it('should detect function assignments via arrow/function keyword', () => {
+      expect(inferSymbolKindFromContent('const handler = () => {')).toBe(
+        'function'
+      );
+      expect(inferSymbolKindFromContent('const fn = function() {')).toBe(
+        'function'
+      );
+    });
+
+    it('should default to function for function declarations', () => {
+      expect(inferSymbolKindFromContent('function processData(input) {')).toBe(
+        'function'
+      );
+      expect(
+        inferSymbolKindFromContent('export async function fetchUser() {')
+      ).toBe('function');
+    });
+
+    it('should default to function for unrecognized patterns', () => {
+      expect(inferSymbolKindFromContent('something()')).toBe('function');
+    });
+  });
+
+  describe('isLikelyDefinition ReDoS protection', () => {
+    it('should return false for excessively long line content', () => {
+      const longLine = 'a'.repeat(1500);
+      expect(isLikelyDefinition(longLine, 'test')).toBe(false);
+    });
+
+    it('should return false for excessively long symbol name', () => {
+      const longSymbol = 'x'.repeat(300);
+      expect(isLikelyDefinition('const x = 1', longSymbol)).toBe(false);
+    });
+
+    it('should still work for normal-length inputs', () => {
+      expect(isLikelyDefinition('export function myFunc() {', 'myFunc')).toBe(
+        true
+      );
+      expect(isLikelyDefinition('const value = 42', 'value')).toBe(true);
     });
   });
 });

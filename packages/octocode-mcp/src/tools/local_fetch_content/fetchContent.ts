@@ -268,12 +268,12 @@ export async function fetchContent(
         );
       }
 
-      resultContent = applyMinification(resultContent, query.path);
+      // Note: No minification for line-range extraction — preserves readability
     } else {
       resultContent = content;
       isPartial = false;
 
-      resultContent = applyMinification(resultContent, query.path);
+      // Note: No minification for fullContent — preserves readability
     }
 
     if (!resultContent || resultContent.trim().length === 0) {

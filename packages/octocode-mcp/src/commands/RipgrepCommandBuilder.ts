@@ -16,6 +16,7 @@ export class RipgrepCommandBuilder extends BaseCommandBuilder {
     this.addFlag('-S'); // smart case by default
     this.addOption('--color', 'never');
     this.addOption('--sort', 'path');
+    this.addArg('--');
     this.addArg(pattern);
     this.addArg(path);
     return this;
@@ -220,9 +221,13 @@ export class RipgrepCommandBuilder extends BaseCommandBuilder {
     }
 
     // Only add --json when NOT in plain text output modes
-    // -l (filesOnly) and --files-without-match output plain text (one item per line)
-    // These flags are mutually exclusive with --json in ripgrep
-    const isPlainTextOutput = query.filesOnly || query.filesWithoutMatch;
+    // -l (filesOnly), --files-without-match, -c (count), and --count-matches
+    // all output plain text (one item per line) — incompatible with or unnecessary for --json
+    const isPlainTextOutput =
+      query.filesOnly ||
+      query.filesWithoutMatch ||
+      query.count ||
+      query.countMatches;
     if (!isPlainTextOutput) {
       this.addFlag('--json');
     }
@@ -267,8 +272,9 @@ export class RipgrepCommandBuilder extends BaseCommandBuilder {
       this.addFlag('--debug');
     }
 
+    // End option parsing so user-provided pattern/path cannot be interpreted as flags.
+    this.addArg('--');
     this.addArg(query.pattern);
-
     this.addArg(query.path);
 
     return this;

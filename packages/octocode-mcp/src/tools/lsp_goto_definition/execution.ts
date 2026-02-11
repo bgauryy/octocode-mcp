@@ -79,7 +79,7 @@ async function gotoDefinition(
     }
 
     // Resolve fuzzy position to exact position
-    const resolver = new SymbolResolver({ lineSearchRadius: 2 });
+    const resolver = new SymbolResolver({ lineSearchRadius: 5 });
     let resolvedSymbol;
     try {
       resolvedSymbol = resolver.resolvePositionFromContent(content, {
@@ -122,7 +122,7 @@ async function gotoDefinition(
         );
         if (result) return result;
       } catch {
-        // Fall back to symbol resolver if LSP fails
+        // LSP failed — fall back to text resolution silently
       }
     }
 
@@ -148,7 +148,55 @@ async function gotoDefinition(
 }
 
 /**
- * Use LSP client to find definition
+ * Detect whether a line of code is an import or re-export statement.
+ * Used to determine if a goto-definition result resolved to an import
+ * rather than the actual source definition.
+ *
+ * Covers TypeScript/JavaScript patterns:
+ * - import { Foo } from './module'
+ * - import Foo from './module'
+ * - import * as Foo from './module'
+ * - export { Foo } from './module'
+ * - export * from './module'
+ * - export { default as Foo } from './module'
+ *
+ * @internal Exported for testing
+ */
+export function isImportOrReExport(lineContent: string): boolean {
+  const trimmed = lineContent.trim();
+  return /^(?:import|export)\s+.*\bfrom\b\s+['"]/.test(trimmed);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Resolve the best cursor character for a second-hop goto-definition call
+ * on import/re-export lines. Prefers the queried symbol token position
+ * before the "from" clause to avoid matching module path text.
+ */
+export function resolveImportSymbolCharacter(
+  lineContent: string,
+  symbolName: string,
+  fallbackCharacter: number
+): number {
+  if (!lineContent || !symbolName) return fallbackCharacter;
+
+  const fromMatch = /\bfrom\b/.exec(lineContent);
+  const searchScope = fromMatch
+    ? lineContent.slice(0, fromMatch.index)
+    : lineContent;
+  const symbolRegex = new RegExp(`\\b${escapeRegExp(symbolName)}\\b`);
+  const match = symbolRegex.exec(searchScope);
+
+  return match ? match.index : fallbackCharacter;
+}
+
+/**
+ * Use LSP client to find definition, with automatic import chaining.
+ * If the LSP resolves to an import/re-export in the same file,
+ * performs one additional hop to follow the import to the source definition.
  */
 async function gotoDefinitionWithLSP(
   filePath: string,
@@ -161,7 +209,7 @@ async function gotoDefinitionWithLSP(
   if (!client) return null;
 
   try {
-    const locations = await client.gotoDefinition(filePath, position);
+    let locations = await client.gotoDefinition(filePath, position);
 
     if (!locations || locations.length === 0) {
       return {
@@ -177,6 +225,52 @@ async function gotoDefinitionWithLSP(
           'Try packageSearch to find library source code',
         ],
       };
+    }
+
+    // Auto-chain through imports: if the result points to an import/re-export
+    // in the same file, perform one additional hop to reach the source definition
+    let followedImport = false;
+    if (locations.length === 1) {
+      const loc = locations[0]!;
+      const isSameFile = loc.uri === filePath;
+
+      if (isSameFile) {
+        try {
+          const locContent = await readFile(loc.uri, 'utf-8');
+          const lines = locContent.split(/\r?\n/);
+          const targetLine = lines[loc.range.start.line];
+
+          if (targetLine && isImportOrReExport(targetLine)) {
+            // Second hop: ask LSP to follow the import to its source
+            const importPosition: ExactPosition = {
+              line: loc.range.start.line,
+              character: resolveImportSymbolCharacter(
+                targetLine,
+                query.symbolName,
+                loc.range.start.character
+              ),
+            };
+            const chainedLocations = await client.gotoDefinition(
+              loc.uri,
+              importPosition
+            );
+
+            if (chainedLocations && chainedLocations.length > 0) {
+              // Only use chained result if it resolved to a DIFFERENT file
+              // (otherwise we'd loop back to the same import)
+              const resolvedToDifferentFile = chainedLocations.some(
+                cl => cl.uri !== filePath
+              );
+              if (resolvedToDifferentFile) {
+                locations = chainedLocations.filter(cl => cl.uri !== filePath);
+                followedImport = true;
+              }
+            }
+          }
+        } catch {
+          // If chaining fails, continue with original result
+        }
+      }
     }
 
     // Enhance snippets with context lines
@@ -223,12 +317,15 @@ async function gotoDefinitionWithLSP(
       status: 'hasResults',
       locations: enhancedLocations,
       resolvedPosition: position,
-      searchRadius: 2,
+      searchRadius: 5,
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
       hints: [
         ...getHints(TOOL_NAME, 'hasResults'),
         `Found ${locations.length} definition(s) via Language Server`,
+        followedImport
+          ? 'Followed import chain to source definition'
+          : undefined,
         locations.length > 1
           ? 'Multiple definitions - check overloads or re-exports'
           : undefined,
@@ -284,7 +381,7 @@ function createFallbackResult(
     status: 'hasResults',
     locations: [codeSnippet],
     resolvedPosition: resolvedSymbol.position,
-    searchRadius: 2,
+    searchRadius: 5,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
     hints: [

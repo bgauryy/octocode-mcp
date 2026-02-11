@@ -138,6 +138,7 @@ describe('MCP I/O Utilities', () => {
       expect(result.success).toBe(true);
       expect(fs.default.mkdirSync).toHaveBeenCalledWith('/path/to', {
         recursive: true,
+        mode: 0o700,
       });
     });
 

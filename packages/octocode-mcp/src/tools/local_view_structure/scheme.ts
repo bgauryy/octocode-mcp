@@ -23,7 +23,14 @@ export const LOCAL_VIEW_STRUCTURE_DESCRIPTION =
  * View structure query schema
  */
 export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
-  path: z.string().describe(LOCAL_VIEW_STRUCTURE.scope.path),
+  path: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine(value => !value.includes('\0'), {
+      message: 'path contains invalid null byte',
+    })
+    .describe(LOCAL_VIEW_STRUCTURE.scope.path),
 
   details: z
     .boolean()
@@ -51,7 +58,7 @@ export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
     .number()
     .int()
     .min(1)
-    .max(20)
+    .max(50)
     .optional()
     .default(20)
     .describe(LOCAL_VIEW_STRUCTURE.pagination.entriesPerPage),
@@ -63,7 +70,11 @@ export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
     .default(1)
     .describe(LOCAL_VIEW_STRUCTURE.pagination.entryPageNumber),
 
-  pattern: z.string().optional().describe(LOCAL_VIEW_STRUCTURE.filters.pattern),
+  pattern: z
+    .string()
+    .max(512)
+    .optional()
+    .describe(LOCAL_VIEW_STRUCTURE.filters.pattern),
   directoriesOnly: z
     .boolean()
     .optional()
@@ -74,10 +85,12 @@ export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
     .describe(LOCAL_VIEW_STRUCTURE.filters.filesOnly),
   extension: z
     .string()
+    .max(50)
     .optional()
     .describe(LOCAL_VIEW_STRUCTURE.filters.extension),
   extensions: z
-    .array(z.string())
+    .array(z.string().max(50))
+    .max(100)
     .optional()
     .describe(LOCAL_VIEW_STRUCTURE.filters.extensions),
 

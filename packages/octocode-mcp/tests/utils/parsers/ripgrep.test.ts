@@ -7,6 +7,11 @@ import {
   parseRipgrepJson,
   parseGrepOutput,
 } from '../../../src/utils/parsers/ripgrep.js';
+import {
+  parseCountOutput,
+  parseFilesOnlyOutput,
+  parseRipgrepOutput,
+} from '../../../src/tools/local_ripgrep/ripgrepParser.js';
 import type { RipgrepQuery } from '../../../src/tools/local_ripgrep/scheme.js';
 
 // Minimal query for testing - only includes fields used by parser functions
@@ -466,5 +471,155 @@ describe('parseGrepOutput', () => {
 
     expect(files).toHaveLength(1);
     expect(files[0]!.matches[0]!.value).toBe('obj.key ? a : b');
+  });
+});
+
+describe('parseCountOutput', () => {
+  it('should parse basic path:count format', () => {
+    const stdout = '/src/file1.ts:5\n/src/file2.ts:12\n';
+
+    const files = parseCountOutput(stdout);
+
+    expect(files).toHaveLength(2);
+    expect(files[0]!.path).toBe('/src/file1.ts');
+    expect(files[0]!.matchCount).toBe(5);
+    expect(files[0]!.matches).toEqual([]);
+    expect(files[1]!.path).toBe('/src/file2.ts');
+    expect(files[1]!.matchCount).toBe(12);
+  });
+
+  it('should handle single file output', () => {
+    const stdout = '/src/main.ts:1\n';
+
+    const files = parseCountOutput(stdout);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]!.path).toBe('/src/main.ts');
+    expect(files[0]!.matchCount).toBe(1);
+  });
+
+  it('should handle paths with colons (Windows-like or special chars)', () => {
+    // The count is always the LAST colon-separated segment
+    const stdout = 'C:/Users/project/file.ts:3\n';
+
+    const files = parseCountOutput(stdout);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]!.path).toBe('C:/Users/project/file.ts');
+    expect(files[0]!.matchCount).toBe(3);
+  });
+
+  it('should handle empty output', () => {
+    const files = parseCountOutput('');
+    expect(files).toHaveLength(0);
+  });
+
+  it('should handle whitespace-only output', () => {
+    const files = parseCountOutput('   \n  \n');
+    expect(files).toHaveLength(0);
+  });
+
+  it('should handle large counts', () => {
+    const stdout = '/src/bigfile.ts:999\n';
+
+    const files = parseCountOutput(stdout);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]!.matchCount).toBe(999);
+  });
+
+  it('should handle zero count (no matches in file)', () => {
+    const stdout = '/src/empty.ts:0\n';
+
+    const files = parseCountOutput(stdout);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]!.matchCount).toBe(0);
+  });
+
+  it('should filter out ripgrep stats lines', () => {
+    const stdout =
+      '/src/file.ts:5\n3 files contained matches\n10 files searched\n';
+
+    const files = parseCountOutput(stdout);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]!.path).toBe('/src/file.ts');
+    expect(files[0]!.matchCount).toBe(5);
+  });
+
+  it('should fallback to matchCount=1 for malformed lines without colon', () => {
+    const stdout = '/src/weirdfile.ts\n';
+
+    const files = parseCountOutput(stdout);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]!.path).toBe('/src/weirdfile.ts');
+    expect(files[0]!.matchCount).toBe(1);
+  });
+
+  it('should fallback to matchCount=1 for non-numeric count', () => {
+    const stdout = '/src/file.ts:abc\n';
+
+    const files = parseCountOutput(stdout);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]!.path).toBe('/src/file.ts');
+    expect(files[0]!.matchCount).toBe(1);
+  });
+});
+
+describe('parseFilesOnlyOutput', () => {
+  it('should parse plain filename-per-line output', () => {
+    const stdout = '/src/a.ts\n/src/b.ts\n';
+
+    const files = parseFilesOnlyOutput(stdout);
+
+    expect(files).toHaveLength(2);
+    expect(files[0]!.path).toBe('/src/a.ts');
+    expect(files[0]!.matchCount).toBe(1);
+    expect(files[1]!.path).toBe('/src/b.ts');
+    expect(files[1]!.matchCount).toBe(1);
+  });
+
+  it('should return empty array for empty output', () => {
+    expect(parseFilesOnlyOutput('')).toHaveLength(0);
+  });
+});
+
+describe('parseRipgrepOutput routing', () => {
+  it('should route count queries to parseCountOutput', () => {
+    const stdout = '/src/file.ts:7\n/src/other.ts:3\n';
+    const query = { ...baseQuery, count: true } as RipgrepQuery;
+
+    const { files, stats } = parseRipgrepOutput(stdout, query);
+
+    expect(files).toHaveLength(2);
+    expect(files[0]!.matchCount).toBe(7);
+    expect(files[1]!.matchCount).toBe(3);
+    expect(stats.matchCount).toBe(10);
+  });
+
+  it('should route countMatches queries to parseCountOutput', () => {
+    const stdout = '/src/file.ts:15\n';
+    const query = { ...baseQuery, countMatches: true } as RipgrepQuery;
+
+    const { files, stats } = parseRipgrepOutput(stdout, query);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]!.matchCount).toBe(15);
+    expect(stats.matchCount).toBe(15);
+  });
+
+  it('should route filesOnly queries to parseFilesOnlyOutput', () => {
+    const stdout = '/src/file.ts\n/src/other.ts\n';
+    const query = { ...baseQuery, filesOnly: true } as RipgrepQuery;
+
+    const { files, stats } = parseRipgrepOutput(stdout, query);
+
+    expect(files).toHaveLength(2);
+    expect(files[0]!.matchCount).toBe(1);
+    expect(files[1]!.matchCount).toBe(1);
+    expect(stats).toEqual({});
   });
 });

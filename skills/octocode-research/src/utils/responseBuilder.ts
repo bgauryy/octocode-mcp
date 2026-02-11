@@ -94,7 +94,7 @@ export const ResearchResponse = {
             .slice(0, 10)
             .map(
               f =>
-                `- ${f.repo ? `${f.repo}:` : ''}${f.path}${f.line ? ` (line ${f.line})` : ''}${f.matches ? ` [${f.matches} matches]` : ''}${f.preview ? `\n  "${f.preview.slice(0, 100)}${f.preview.length > 100 ? '...' : ''}"` : ''}`
+                `- ${f.repo ? `${f.repo}:` : ''}${f.path}${f.line ? ` (line ${f.line})` : ''}${f.matches ? ` [${f.matches} matches]` : ''}${typeof f.preview === 'string' && f.preview ? `\n  "${f.preview.slice(0, 100)}${f.preview.length > 100 ? '...' : ''}"` : ''}`
             )
             .join('\n') +
           (files.length > 10 ? `\n... and ${files.length - 10} more files` : '')
@@ -328,7 +328,7 @@ export const ResearchResponse = {
             .slice(0, 10)
             .map(
               p =>
-                `- ${p.name}${p.version ? `@${p.version}` : ''}\n  ${p.description || 'No description'}${p.repository ? `\n  ${p.repository}` : ''}`
+                `- ${p.name}${p.version ? `@${p.version}` : ''}\n  ${typeof p.description === 'string' ? p.description : 'No description'}${p.repository ? `\n  ${p.repository}` : ''}`
             )
             .join('\n')
         : `No packages found${queryInfo} on ${registry.toUpperCase()}`;

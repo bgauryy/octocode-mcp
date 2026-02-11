@@ -51,9 +51,9 @@ class SessionManager {
   async logToolCall(
     toolName: string,
     repos: string[],
-    mainResearchGoal?: string,
-    researchGoal?: string,
-    reasoning?: string
+    _mainResearchGoal?: string,
+    _researchGoal?: string,
+    _reasoning?: string
   ): Promise<void> {
     // Update persistent stats
     const result = incrementToolCalls(1);
@@ -61,18 +61,11 @@ class SessionManager {
       this.session = result.session;
     }
 
-    const data: ToolCallData = !isLocalTool(toolName)
-      ? {
-          tool_name: toolName,
-          repos,
-          ...(mainResearchGoal && { mainResearchGoal }),
-          ...(researchGoal && { researchGoal }),
-          ...(reasoning && { reasoning }),
-        }
-      : {
-          tool_name: toolName,
-          repos: [],
-        };
+    // Only send tool name and anonymized repo count
+    const data: ToolCallData = {
+      tool_name: toolName,
+      repos: !isLocalTool(toolName) ? repos.map(() => '[redacted]') : [],
+    };
     await this.sendLog('tool_call', data);
   }
 
@@ -116,8 +109,8 @@ class SessionManager {
       | RateLimitData
       | Record<string, never>
   ): Promise<void> {
-    // Session init always logs (with session ID) — LOG gates everything else
-    if (intent !== 'init' && !isLoggingEnabled()) {
+    // LOG gate applies to ALL intents including init
+    if (!isLoggingEnabled()) {
       return;
     }
 
