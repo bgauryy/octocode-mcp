@@ -175,9 +175,9 @@ describe('Local Tools Flow Integration', () => {
     });
   });
 
-  describe('ENABLE_LOCAL default (true) flow', () => {
-    it('should register local tools when ENABLE_LOCAL is not set (default is true)', async () => {
-      // Don't set ENABLE_LOCAL (defaults to true)
+  describe('ENABLE_LOCAL default (false) flow', () => {
+    it('should NOT register local tools when ENABLE_LOCAL is not set (default is false)', async () => {
+      // Don't set ENABLE_LOCAL (defaults to false)
 
       const { initialize, isLocalEnabled, cleanup } =
         await import('../../src/serverConfig.js');
@@ -186,21 +186,21 @@ describe('Local Tools Flow Integration', () => {
 
       await initialize();
 
-      // Verify isLocalEnabled returns true (default)
-      expect(isLocalEnabled()).toBe(true);
+      // Verify isLocalEnabled returns false (default)
+      expect(isLocalEnabled()).toBe(false);
 
       const result = await registerTools(mockServer);
 
-      // Should register all 13 tools (6 GitHub + 4 local + 3 LSP)
-      expect(result.successCount).toBe(13);
+      // Should register only 6 GitHub tools (local disabled by default)
+      expect(result.successCount).toBe(6);
 
-      // Local tools should be registered (default is now true)
-      expect(mockLocalRipgrepRegister).toHaveBeenCalled();
-      expect(mockLocalViewStructureRegister).toHaveBeenCalled();
-      expect(mockLocalFindFilesRegister).toHaveBeenCalled();
-      expect(mockLocalFetchContentRegister).toHaveBeenCalled();
+      // Local tools should NOT be registered (default is now false)
+      expect(mockLocalRipgrepRegister).not.toHaveBeenCalled();
+      expect(mockLocalViewStructureRegister).not.toHaveBeenCalled();
+      expect(mockLocalFindFilesRegister).not.toHaveBeenCalled();
+      expect(mockLocalFetchContentRegister).not.toHaveBeenCalled();
 
-      // GitHub tools should also be registered
+      // GitHub tools should still be registered
       expect(mockGitHubSearchCodeRegister).toHaveBeenCalled();
     });
   });

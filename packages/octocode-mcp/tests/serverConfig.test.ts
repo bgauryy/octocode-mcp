@@ -142,7 +142,7 @@ describe('ServerConfig - Simplified Version', () => {
       expect(config.timeout).toBe(30000);
       expect(config.maxRetries).toBe(3);
       expect(config.loggingEnabled).toBe(true);
-      expect(config.enableLocal).toBe(true);
+      expect(config.enableLocal).toBe(false);
       expect(config.disablePrompts).toBe(false);
       expect(config.tokenSource).toBe('none');
     });
@@ -568,10 +568,10 @@ describe('ServerConfig - Simplified Version', () => {
       delete process.env.ENABLE_LOCAL;
     });
 
-    it('should default to true when ENABLE_LOCAL is not set', async () => {
+    it('should default to false when ENABLE_LOCAL is not set', async () => {
       mockSpawnFailure();
       await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
+      expect(getServerConfig().enableLocal).toBe(false);
     });
 
     it('should enable local when ENABLE_LOCAL is "true"', async () => {
@@ -643,7 +643,7 @@ describe('ServerConfig - Simplified Version', () => {
       }
     });
 
-    it('should return true (default) for invalid/unrecognized ENABLE_LOCAL values', async () => {
+    it('should return false (default) for invalid/unrecognized ENABLE_LOCAL values', async () => {
       const invalidValues = ['no', 'yes', 'enabled', '', '   '];
 
       for (const value of invalidValues) {
@@ -652,17 +652,17 @@ describe('ServerConfig - Simplified Version', () => {
         process.env.ENABLE_LOCAL = value;
         mockSpawnFailure();
         await initialize();
-        expect(getServerConfig().enableLocal).toBe(true);
+        expect(getServerConfig().enableLocal).toBe(false);
       }
     });
   });
 
   describe('isLocalEnabled() helper', () => {
-    it('should return true when enableLocal is true (default)', async () => {
+    it('should return false when enableLocal is false (default)', async () => {
       delete process.env.ENABLE_LOCAL;
       mockSpawnFailure();
       await initialize();
-      expect(isLocalEnabled()).toBe(true);
+      expect(isLocalEnabled()).toBe(false);
     });
 
     it('should return false when ENABLE_LOCAL is "false"', async () => {

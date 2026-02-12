@@ -42,7 +42,7 @@ const mockDefaultConfig = {
     host: 'https://gitlab.com',
   },
   local: {
-    enabled: true,
+    enabled: false,
     allowedPaths: [],
     workspaceRoot: undefined,
   },

@@ -73,8 +73,8 @@ describe('Environment Detection', () => {
   });
 
   describe('shouldUseMCPLsp', () => {
-    it('should return true when local tools are enabled by default', () => {
-      expect(shouldUseMCPLsp()).toBe(true);
+    it('should return false when local tools are disabled by default', () => {
+      expect(shouldUseMCPLsp()).toBe(false);
     });
 
     it('should return false when ENABLE_LOCAL is false', () => {
@@ -91,16 +91,24 @@ describe('Environment Detection', () => {
   });
 
   describe('getLspEnvironmentHint', () => {
-    it('should return null when local tools are enabled', () => {
-      expect(getLspEnvironmentHint()).toBeNull();
+    it('should return hint when local tools are disabled by default', () => {
+      const hint = getLspEnvironmentHint();
+      expect(hint).not.toBeNull();
+      expect(hint).toContain('Local tools are disabled');
     });
 
-    it('should return hint when local tools are disabled', () => {
+    it('should return hint when local tools are explicitly disabled', () => {
       process.env.ENABLE_LOCAL = 'false';
       _resetConfigCache();
       const hint = getLspEnvironmentHint();
       expect(hint).not.toBeNull();
       expect(hint).toContain('Local tools are disabled');
+    });
+
+    it('should return null when local tools are explicitly enabled', () => {
+      process.env.ENABLE_LOCAL = 'true';
+      _resetConfigCache();
+      expect(getLspEnvironmentHint()).toBeNull();
     });
   });
 });

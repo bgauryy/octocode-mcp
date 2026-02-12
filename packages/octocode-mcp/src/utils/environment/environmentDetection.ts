@@ -25,7 +25,7 @@ export function shouldUseMCPLsp(): boolean {
     return getConfigSync().local.enabled;
   } catch {
     // Ignore config errors; default to enabled.
-    return true;
+    return false;
   }
 }
 

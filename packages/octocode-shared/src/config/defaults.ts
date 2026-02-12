@@ -31,7 +31,7 @@ export const DEFAULT_GITLAB_CONFIG: RequiredGitLabConfig = {
  * Default local tools configuration
  */
 export const DEFAULT_LOCAL_CONFIG: RequiredLocalConfig = {
-  enabled: true,
+  enabled: false,
   allowedPaths: [],
   workspaceRoot: undefined,
 };

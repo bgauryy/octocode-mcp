@@ -24,7 +24,7 @@ Environment Variable  →  .octocoderc File  →  Default
 |---------|--------|-------------|---------------------|------|---------|
 | **GitHub** | API URL | `GITHUB_API_URL` | `github.apiUrl` | string | `https://api.github.com` |
 | **GitLab** | Host URL | `GITLAB_HOST` | `gitlab.host` | string | `https://gitlab.com` |
-| **Local** | Enable local tools | `ENABLE_LOCAL` | `local.enabled` | boolean | `true` |
+| **Local** | Enable local tools | `ENABLE_LOCAL` | `local.enabled` | boolean | `false` |
 | **Local** | Workspace root | `WORKSPACE_ROOT` | `local.workspaceRoot` | string | Current working directory |
 | **Local** | Allowed paths | `ALLOWED_PATHS` | `local.allowedPaths` | list | `[]` (all paths) |
 | **Tools** | Tool whitelist | `TOOLS_TO_RUN` | `tools.enabled` | list | All tools |
