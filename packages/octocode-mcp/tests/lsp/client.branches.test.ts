@@ -488,9 +488,9 @@ describe('LSP Client Branch Coverage', () => {
         character: 1,
       });
 
-      expect(snippets).toHaveLength(1);
-      // The uri should be returned as-is since it's not a file:// URI
-      expect(snippets[0]!.uri).toBe('untitled:Untitled-1');
+      // SECURITY: Non-file:// URIs are now skipped by path validation
+      // (locationsToSnippets validates all paths are under the workspace)
+      expect(snippets).toHaveLength(0);
     });
   });
 

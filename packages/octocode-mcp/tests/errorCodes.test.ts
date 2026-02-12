@@ -493,6 +493,7 @@ describe('errorCodes', () => {
         ...mockedGetConfig(),
         local: {
           enabled: true,
+          enableClone: false,
           allowedPaths: [],
           workspaceRoot: '/custom/root',
         },

@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-> Common issues and solutions for Octocode MCP and Research Skill
+> Common issues and solutions for Octocode MCP.
 
 ## Quick Diagnostics
 
@@ -110,8 +110,8 @@ Simply paste the output into your conversation and let the agent resolve it.
 
 | Check | Description |
 |-------|-------------|
-| Node.js version | Minimum 20.0.0 required |
-| npm version | Minimum 10.0.0 required |
+| Node.js version | Minimum **20.0.0** required |
+| npm version | Minimum **10.0.0** required |
 | PATH configuration | Ensures Node is accessible |
 | Multiple installations | Detects nvm, homebrew, system conflicts |
 | Permission issues | Identifies npm/node_modules ownership problems |
@@ -120,7 +120,7 @@ Simply paste the output into your conversation and let the agent resolve it.
 
 ```bash
 node --version  # Should be >= 20.0.0
-npm --version   # Should be >= 8.0.0
+npm --version   # Should be >= 10.0.0
 which node      # Check which Node is being used
 which npm       # Should match Node installation
 ```
@@ -160,7 +160,7 @@ Or use an absolute path:
 
 ## 3. Authentication Issues
 
-> **Full authentication guide:** [Authentication Setup](../packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
+> **Full authentication guide:** [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
 
 ### Quick Auth Check
 
@@ -284,3 +284,11 @@ If your issue persists after trying the solutions above:
 2. **Report a new issue:** Include diagnostic output (`npx node-doctor info`), your environment details, and steps to reproduce
 
 We actively monitor and respond to issues!
+
+---
+
+## See Also
+
+- [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) — All env vars and `.octocoderc` options
+- [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) — GitHub/GitLab auth guide
+- [Development Guide](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md) — Build commands, testing, code standards

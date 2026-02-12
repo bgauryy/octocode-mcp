@@ -74,6 +74,7 @@ vi.mock('../../src/tools/toolMetadata.js', async () => {
 vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn(),
   isLocalEnabled: vi.fn().mockReturnValue(false),
+  isCloneEnabled: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock('../../src/session.js', () => ({
@@ -81,13 +82,18 @@ vi.mock('../../src/session.js', () => ({
 }));
 
 import { ALL_TOOLS, type ToolConfig } from '../../src/tools/toolConfig.js';
-import { getServerConfig, isLocalEnabled } from '../../src/serverConfig.js';
+import {
+  getServerConfig,
+  isLocalEnabled,
+  isCloneEnabled,
+} from '../../src/serverConfig.js';
 import { TOOL_NAMES, isToolInMetadata } from '../../src/tools/toolMetadata.js';
 import { logSessionError } from '../../src/session.js';
 
 const mockGetServerConfig = vi.mocked(getServerConfig);
 const mockIsToolAvailableSync = vi.mocked(isToolInMetadata);
 const mockIsLocalEnabled = vi.mocked(isLocalEnabled);
+const mockIsCloneEnabled = vi.mocked(isCloneEnabled);
 const mockLogSessionError = vi.mocked(logSessionError);
 
 describe('ToolsManager', () => {
@@ -106,6 +112,7 @@ describe('ToolsManager', () => {
     // Reset mocks to default state
     mockIsToolAvailableSync.mockReturnValue(true);
     mockIsLocalEnabled.mockReturnValue(false); // Default: local tools disabled
+    mockIsCloneEnabled.mockReturnValue(false); // Default: clone tools disabled
 
     // Reset all tool function mocks
     ALL_TOOLS.forEach(tool => {
@@ -127,6 +134,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -166,6 +174,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -191,6 +200,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -213,6 +223,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -240,6 +251,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -261,6 +273,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -283,6 +296,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -305,6 +319,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -334,6 +349,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -357,6 +373,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -380,6 +397,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -403,6 +421,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -431,6 +450,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -465,6 +485,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -490,6 +511,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -515,6 +537,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -544,6 +567,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -570,6 +594,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -599,6 +624,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -639,6 +665,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -655,6 +682,35 @@ describe('ToolsManager', () => {
     });
   });
 
+  describe('Defensive: getServerConfig() throws', () => {
+    it('should handle getServerConfig() throwing (config not initialized)', async () => {
+      mockGetServerConfig.mockImplementation(() => {
+        throw new Error('Server config not initialized');
+      });
+
+      // Should NOT crash — uses safe defaults
+      const result = await registerTools(mockServer);
+
+      // With safe defaults (empty toolsToRun/enableTools/disableTools),
+      // all default tools should be attempted
+      expect(typeof result.successCount).toBe('number');
+      expect(Array.isArray(result.failedTools)).toBe(true);
+    });
+
+    it('should register default tools when getServerConfig throws', async () => {
+      mockIsLocalEnabled.mockReturnValue(true);
+      mockGetServerConfig.mockImplementation(() => {
+        throw new Error('Server config not initialized');
+      });
+
+      const result = await registerTools(mockServer);
+
+      // Default tools should still be attempted since safe defaults
+      // return empty arrays (all defaults enabled)
+      expect(result.successCount).toBeGreaterThanOrEqual(0);
+    });
+  });
+
   describe('Unified tool registration (ALL_TOOLS)', () => {
     it('should register all tools from ALL_TOOLS when ENABLE_LOCAL is true', async () => {
       mockIsLocalEnabled.mockReturnValue(true);
@@ -666,6 +722,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });
@@ -692,6 +749,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GITHUB_TOKEN',
       });

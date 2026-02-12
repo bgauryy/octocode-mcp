@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  ContentBuilder,
   createRoleBasedResult,
   QuickResult,
   StatusEmoji,
@@ -350,6 +351,47 @@ describe('responses.branches', () => {
         'more available'
       );
       expect((result.content as any[])[2]?.text).toContain(StatusEmoji.success);
+    });
+  });
+
+  describe('Defensive: ContentBuilder.data handles serialization errors', () => {
+    it('should handle circular references in JSON format without crashing', () => {
+      const circularObj: Record<string, unknown> = { key: 'value' };
+      circularObj.self = circularObj;
+
+      const block = ContentBuilder.data(circularObj, 'json');
+
+      expect(block.type).toBe('text');
+      expect(typeof block.text).toBe('string');
+      expect(block.text.length).toBeGreaterThan(0);
+      // Should contain fallback error message
+      expect(block.text).toContain('serialization failed');
+    });
+
+    it('should handle circular references in YAML format without crashing', () => {
+      const circularObj: Record<string, unknown> = { key: 'value' };
+      circularObj.self = circularObj;
+
+      const block = ContentBuilder.data(circularObj, 'yaml');
+
+      expect(block.type).toBe('text');
+      expect(typeof block.text).toBe('string');
+      expect(block.text.length).toBeGreaterThan(0);
+    });
+
+    it('should handle normal data in JSON format', () => {
+      const block = ContentBuilder.data({ key: 'value' }, 'json');
+
+      expect(block.type).toBe('text');
+      expect(block.text).toContain('"key"');
+      expect(block.text).toContain('"value"');
+    });
+
+    it('should handle normal data in YAML format', () => {
+      const block = ContentBuilder.data({ key: 'value' }, 'yaml');
+
+      expect(block.type).toBe('text');
+      expect(block.text).toContain('key:');
     });
   });
 

@@ -43,6 +43,7 @@ function buildResolvedConfig(
     process.env.GITHUB_API_URL !== undefined ||
     process.env.GITLAB_HOST !== undefined ||
     process.env.ENABLE_LOCAL !== undefined ||
+    process.env.ENABLE_CLONE !== undefined ||
     process.env.WORKSPACE_ROOT !== undefined ||
     process.env.ALLOWED_PATHS !== undefined ||
     process.env.TOOLS_TO_RUN !== undefined ||

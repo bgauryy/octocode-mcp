@@ -1,6 +1,6 @@
-# Octocode MCP Tools Reference
+# Local & LSP Tools Reference
 
-> Complete reference for all Octocode MCP tools - Local exploration, LSP semantic analysis, and research workflows.
+> Complete reference for Octocode MCP local tools — File system exploration, code search, content reading, and LSP semantic analysis.
 
 ---
 
@@ -21,6 +21,30 @@ Octocode MCP provides **7 tools** across 2 categories for code research and expl
 2. Find a symbol: `localSearchCode` (get `lineHint`).
 3. Use LSP: `lspGotoDefinition` / `lspFindReferences` / `lspCallHierarchy`.
 4. Read details last: `localGetFileContent`.
+
+### Working with Cloned Repositories
+
+Local + LSP tools work on **any path on disk** — including repos cloned by `githubCloneRepo`. Use the returned `localPath` as the `path` parameter:
+
+```
+githubCloneRepo(owner="vercel", repo="next.js") → localPath
+localViewStructure(path=localPath)              → browse the tree
+localSearchCode(path=localPath, pattern="...")   → search code
+lspGotoDefinition(uri=localPath+"/src/file.ts") → semantic navigation
+```
+
+> **Full workflow guide:** [Clone & Local Tools Workflow](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md)
+
+### Research Context (Optional)
+
+All local and LSP tools accept optional research context fields:
+
+| Field | Description |
+|-------|-------------|
+| `researchGoal` | Specific goal for this query |
+| `reasoning` | Why this tool/query was chosen |
+
+These are optional (unlike GitHub/GitLab tools where they are required), but recommended for tracking research sessions.
 
 ## Tools at a Glance
 
@@ -143,7 +167,7 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `humanReadable`: Format sizes (e.g., "1.2MB") (default: true)
 - `summary`: Include directory summary (default: true)
 - `pattern`: Filter by name pattern
-- `entriesPerPage`: Entries per page (default: 20, max: 20)
+- `entriesPerPage`: Entries per page (default: 20, max: 50)
 - `entryPageNumber`: Page number (default: 1)
 
 **Additional parameters:**
@@ -187,9 +211,10 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `permissions`: Filter by permission string
 - `executable`/`readable`/`writable`: Permission flags
 - `excludeDir`: Directories to exclude (array)
+- `sortBy`: Sort results — `modified` (default), `size`, `name`, `path`
 - `limit`: Max results (1-10000)
 - `details`: Include file metadata (default: true)
-- `filesPerPage`: Results per page (default: 20, max: 20)
+- `filesPerPage`: Results per page (default: 20, max: 50)
 - `filePageNumber`: Page number (default: 1)
 - `charOffset`/`charLength`: Character-based pagination
 - `showFileLastModified`: Show modification timestamps (default: true)
@@ -279,6 +304,8 @@ MCP Client → Octocode MCP → Language Server (spawned)
 - `contextLines`: Lines of context (default: 2, max: 10)
 - `referencesPerPage`: Results per page (default: 20, max: 50)
 - `page`: Page number (default: 1)
+- `includePattern`: Filter results to files matching these glob patterns (array)
+- `excludePattern`: Exclude results from files matching these glob patterns (array)
 
 **Use when:** "Who uses this type/interface/variable/constant?"
 
@@ -650,5 +677,13 @@ Tools with no dependencies can run in parallel:
 ```
 
 **Batch limits:**
-- Local tools: Up to 5 queries per call
-- LSP tools: 5 queries per call (except `lspCallHierarchy`: 3 max)
+- Local tools: Up to **5 queries** per call
+- LSP tools: Up to **5 queries** per call (except `lspCallHierarchy`: **3 max**)
+
+---
+
+## Related Documentation
+
+- [Clone & Local Tools Workflow](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md) — How to clone external repos and analyze them with local + LSP tools
+- [GitHub & GitLab Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) — GitHub/GitLab tools including `githubCloneRepo`
+- [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) — `ENABLE_LOCAL`, `ENABLE_CLONE`, and other settings

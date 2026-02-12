@@ -41,6 +41,8 @@ export interface GitLabConfigOptions {
 export interface LocalConfigOptions {
   /** Enable local filesystem tools (default: true) */
   enabled?: boolean;
+  /** Enable clone/fetch repository functionality (default: false, requires enabled=true) */
+  enableClone?: boolean;
   /** Restrict to specific paths (empty = all allowed) */
   allowedPaths?: string[];
   /** Root directory for path validation (default: cwd()) */
@@ -128,6 +130,7 @@ export interface RequiredGitLabConfig {
 
 export interface RequiredLocalConfig {
   enabled: boolean;
+  enableClone: boolean;
   allowedPaths: string[];
   workspaceRoot: string | undefined;
 }

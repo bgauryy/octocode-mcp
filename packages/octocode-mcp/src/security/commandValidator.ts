@@ -77,6 +77,41 @@ const FIND_DISALLOWED_OPERATORS = new Set([
   '-ls',
 ]);
 
+/**
+ * Git: only allow specific subcommands and flags for security.
+ * - clone: shallow-clone repositories (githubCloneRepo tool)
+ * - sparse-checkout: partial tree fetching for specific paths
+ */
+const GIT_ALLOWED_SUBCOMMANDS = new Set(['clone', 'sparse-checkout']);
+
+const GIT_CLONE_ALLOWED_FLAGS = new Set([
+  '--depth',
+  '--single-branch',
+  '--branch',
+  '--filter',
+  '--sparse',
+  '--no-checkout',
+  '--quiet',
+  '-q',
+  '-c',
+  '--', // end-of-flags separator (security: prevents positional args being parsed as flags)
+]);
+
+/** Allowed sub-subcommands for `git sparse-checkout` */
+const GIT_SPARSE_CHECKOUT_ALLOWED_ACTIONS = new Set([
+  'init',
+  'set',
+  'add',
+  'list',
+  'disable',
+]);
+
+const GIT_SPARSE_CHECKOUT_ALLOWED_FLAGS = new Set([
+  '--cone',
+  '--no-cone',
+  '--', // end-of-flags separator (security: prevents path args being parsed as flags)
+]);
+
 const FIND_ALLOWED_TOKENS = new Set([
   '-O3',
   '-empty',
@@ -123,6 +158,14 @@ export function validateCommand(
   command: string,
   args: string[]
 ): CommandValidationResult {
+  // Guard: args must be an array to prevent TypeError on .length / iteration
+  if (!Array.isArray(args)) {
+    return {
+      isValid: false,
+      error: 'Arguments must be an array',
+    };
+  }
+
   if (
     !ALLOWED_COMMANDS.includes(command as (typeof ALLOWED_COMMANDS)[number])
   ) {
@@ -154,6 +197,11 @@ function validateCommandArgs(
         isValid: false,
         error: `rg option '${disallowedFlag}' is not allowed.`,
       };
+    }
+  } else if (command === 'git') {
+    const gitError = validateGitArgs(args);
+    if (gitError) {
+      return { isValid: false, error: gitError };
     }
   } else if (command === 'find') {
     const invalidFindArg = findInvalidFindArg(args);
@@ -258,8 +306,9 @@ function getPatternArgPositions(command: string, args: string[]): Set<number> {
       }
     }
   } else if (command === 'grep') {
-    // In grep: pattern comes after -- separator or as first non-flag arg
+    // In grep: pattern is the first non-flag argument, or the arg after --
     // Also handle --include/--exclude patterns which can contain globs
+    let foundPattern = false;
     for (let i = 0; i < args.length; i++) {
       const arg = args[i]!;
       if (arg === '--') {
@@ -272,6 +321,10 @@ function getPatternArgPositions(command: string, args: string[]): Set<number> {
       // --include=*.ext and --exclude=dir patterns are safe
       if (arg.startsWith('--include=') || arg.startsWith('--exclude=')) {
         patternPositions.add(i);
+      } else if (!arg.startsWith('-') && !foundPattern) {
+        // First non-flag argument is the search pattern
+        patternPositions.add(i);
+        foundPattern = true;
       }
     }
   } else if (command === 'find') {
@@ -332,6 +385,82 @@ function findDisallowedRgFlag(args: string[]): string | null {
     }
 
     return arg;
+  }
+
+  return null;
+}
+
+/**
+ * Validate git command arguments.
+ * Only allows specific subcommands (clone) with safe flags.
+ */
+function validateGitArgs(args: string[]): string | null {
+  if (args.length === 0) {
+    return 'git command requires a subcommand';
+  }
+
+  // Find the subcommand (skip global options before subcommand)
+  //  -c key=value  → git config override
+  //  -C path       → change directory before running
+  let subcommandIndex = 0;
+  while (subcommandIndex < args.length) {
+    const arg = args[subcommandIndex]!;
+    if (arg === '-c' || arg === '-C') {
+      subcommandIndex += 2; // skip flag and its value
+      continue;
+    }
+    break;
+  }
+
+  if (subcommandIndex >= args.length) {
+    return 'git command requires a subcommand';
+  }
+
+  const subcommand = args[subcommandIndex]!;
+  if (!GIT_ALLOWED_SUBCOMMANDS.has(subcommand)) {
+    return `git subcommand '${subcommand}' is not allowed. Allowed: ${[...GIT_ALLOWED_SUBCOMMANDS].join(', ')}`;
+  }
+
+  if (subcommand === 'clone') {
+    // Validate clone-specific flags
+    for (let i = subcommandIndex + 1; i < args.length; i++) {
+      const arg = args[i]!;
+      if (!arg.startsWith('-')) {
+        continue; // URL or target dir (positional args)
+      }
+      if (GIT_CLONE_ALLOWED_FLAGS.has(arg)) {
+        // Flags with values: skip next arg
+        if (
+          arg === '--depth' ||
+          arg === '--branch' ||
+          arg === '--filter' ||
+          arg === '-c'
+        ) {
+          i++;
+        }
+        continue;
+      }
+      return `git clone flag '${arg}' is not allowed`;
+    }
+  } else if (subcommand === 'sparse-checkout') {
+    // Validate sparse-checkout action + flags
+    const actionIndex = subcommandIndex + 1;
+    if (actionIndex >= args.length) {
+      return 'git sparse-checkout requires an action (init, set, add, list, disable)';
+    }
+    const action = args[actionIndex]!;
+    if (!GIT_SPARSE_CHECKOUT_ALLOWED_ACTIONS.has(action)) {
+      return `git sparse-checkout action '${action}' is not allowed`;
+    }
+    for (let i = actionIndex + 1; i < args.length; i++) {
+      const arg = args[i]!;
+      if (!arg.startsWith('-')) {
+        continue; // path patterns (positional args for set/add)
+      }
+      if (!GIT_SPARSE_CHECKOUT_ALLOWED_FLAGS.has(arg)) {
+        return `git sparse-checkout flag '${arg}' is not allowed`;
+      }
+    }
   }
 
   return null;

@@ -43,6 +43,7 @@ const mockDefaultConfig = {
   },
   local: {
     enabled: false,
+    enableClone: false,
     allowedPaths: [],
     workspaceRoot: undefined,
   },
@@ -108,6 +109,7 @@ function mockParseStringArrayEnv(
 // Helper to build config dynamically (mirrors shared module's resolver behavior)
 const buildMockConfig = () => {
   const envEnableLocal = mockParseBooleanEnv(process.env.ENABLE_LOCAL);
+  const envEnableClone = mockParseBooleanEnv(process.env.ENABLE_CLONE);
   const envLogging = mockParseLoggingEnv(process.env.LOG);
   const envTimeout = mockParseIntEnv(process.env.REQUEST_TIMEOUT);
   const envMaxRetries = mockParseIntEnv(process.env.MAX_RETRIES);
@@ -135,6 +137,7 @@ const buildMockConfig = () => {
     local: {
       ...mockDefaultConfig.local,
       enabled: envEnableLocal ?? mockDefaultConfig.local.enabled,
+      enableClone: envEnableClone ?? mockDefaultConfig.local.enableClone,
     },
     tools: {
       enabled: envToolsToRun ?? mockDefaultConfig.tools.enabled,

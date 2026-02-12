@@ -1,8 +1,8 @@
-# Development Guide - Octocode Monorepo
+# Development Guide
 
-> Detailed development standards, workflows, and reference material for the Octocode MCP monorepo.
+> Development standards, workflows, and reference material for the Octocode monorepo.
 
-## 🛡️ Safety & Permissions
+## Safety & Permissions
 
 ### Approval Policy
 
@@ -20,7 +20,7 @@
 - **Never Modify**: `.env*`, `yarn.lock` (modify via yarn), `.git/`, `dist/`, `out/`, `coverage/`
 - **Ask Before Modifying**: `package.json`, `tsconfig*.json`, `vitest.config.ts`, `rollup.config.js`, `.eslintrc.json`
 
-## 🛠️ Commands & Workflow
+## Commands & Workflow
 
 **Use `yarn` for all package management.**
 
@@ -43,7 +43,7 @@
 | `octocode-vscode` | `yarn package`, `yarn publish` |
 | `octocode-shared` | `yarn typecheck` |
 
-### 🐧 Linux & File Operations
+#### Linux & File Operations
 
 - **String Replacement**: `sed -i '' 's/old/new/g' src/**/*.ts`
 - **Move/Copy**: `mv`, `cp`, `rsync` for file operations
@@ -52,7 +52,7 @@
 - **Bulk Actions**: Prefer Linux one-liners for simple operations
 - **Complex Tasks**: Write scripts (Node.js, Python, Shell)
 
-## 📏 Development Standards
+## Development Standards
 
 ### Style Guide
 
@@ -77,7 +77,7 @@
 - **Core**: `@modelcontextprotocol/sdk`, `zod`, `vitest`, `typescript`
 - **LSP**: `typescript-language-server`, `vscode-languageserver-protocol`
 
-## 🧪 Testing Protocol
+## Testing Protocol
 
 ### Requirements
 - **Coverage**: 90% required for `octocode-mcp` (Statements, Branches, Functions, Lines)
@@ -94,7 +94,7 @@ packages/<name>/tests/
 └── helpers/               # Test utilities
 ```
 
-## 🔬 Research Workflows
+## Research Workflows
 
 ### Code Navigation (LSP-First)
 ```
@@ -120,7 +120,7 @@ packageSearch → githubViewRepoStructure → githubSearchCode → githubGetFile
 2. Explore structure with `githubViewRepoStructure`
 3. Search code patterns with `githubSearchCode`
 
-## 📦 Skills System
+## Skills System
 
 Skills are markdown-based instruction sets that teach AI assistants specific tasks.
 
@@ -154,35 +154,43 @@ Skills are organized in two directories:
 └── references/           # Supporting documentation (optional)
 ```
 
-For complete details, see [`SKILLS_GUIDE.md`](../packages/octocode-cli/docs/SKILLS_GUIDE.md).
+For complete details, see [`SKILLS_GUIDE.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md).
 
-## 📚 Package Documentation
+## Package Documentation
 
 ### octocode-mcp
 | Document | Description |
 |----------|-------------|
-| [GITHUB_GITLAB_TOOLS_REFERENCE.md](../packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) | GitHub & GitLab API tools usage guide |
-| [LOCAL_TOOLS_REFERENCE.md](../packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) | Local codebase + LSP tools reference |
-| [AUTHENTICATION_SETUP.md](../packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) | GitHub/GitLab authentication setup |
+| [GITHUB_GITLAB_TOOLS_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) | GitHub & GitLab API tools usage guide |
+| [LOCAL_TOOLS_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) | Local codebase + LSP tools reference |
+| [AUTHENTICATION_SETUP.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) | GitHub/GitLab authentication setup |
 
 ### octocode-cli
 | Document | Description |
 |----------|-------------|
-| [CLI_REFERENCE.md](../packages/octocode-cli/docs/CLI_REFERENCE.md) | Complete CLI commands reference |
-| [MENU_FLOW.md](../packages/octocode-cli/docs/MENU_FLOW.md) | Interactive menu system documentation |
-| [ARCHITECTURE.md](../packages/octocode-cli/docs/ARCHITECTURE.md) | Technical architecture and design patterns |
-| [SKILLS_GUIDE.md](../packages/octocode-cli/docs/SKILLS_GUIDE.md) | AI skills system guide |
+| [CLI_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md) | Complete CLI commands reference |
+| [MENU_FLOW.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/MENU_FLOW.md) | Interactive menu system documentation |
+| [ARCHITECTURE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/ARCHITECTURE.md) | Technical architecture and design patterns |
+| [SKILLS_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md) | AI skills system guide |
 
 ### octocode-shared
 | Document | Description |
 |----------|-------------|
-| [API_REFERENCE.md](../packages/octocode-shared/docs/API_REFERENCE.md) | Complete API documentation |
-| [CREDENTIALS_ARCHITECTURE.md](../packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) | Token storage, encryption, keychain |
-| [SESSION_PERSISTENCE.md](../packages/octocode-shared/docs/SESSION_PERSISTENCE.md) | Deferred writes, exit handlers |
+| [API_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/API_REFERENCE.md) | Complete API documentation |
+| [CREDENTIALS_ARCHITECTURE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) | Token storage, encryption, keychain |
+| [SESSION_PERSISTENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/SESSION_PERSISTENCE.md) | Deferred writes, exit handlers |
 
-## 🤖 Agent Compatibility
+## Agent Compatibility
 
-- **Cursor**: Reads `AGENTS.md` automatically
-- **Claude Code**: Reads `AGENTS.md` as context
-- **Aider**: Add `read: AGENTS.md` in `.aider.conf.yml`
-- **Gemini CLI**: Set `"contextFileName": "AGENTS.md"` in `.gemini/settings.json`
+| Agent | Setup |
+|-------|-------|
+| **Cursor** | Reads `AGENTS.md` automatically |
+| **Claude Code** | Reads `AGENTS.md` as context |
+| **Aider** | Add `read: AGENTS.md` in `.aider.conf.yml` |
+| **Gemini CLI** | Set `"contextFileName": "AGENTS.md"` in `.gemini/settings.json` |
+
+## See Also
+
+- [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) — All env vars and `.octocoderc` options
+- [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) — Common issues and solutions
+- [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) — GitHub/GitLab auth

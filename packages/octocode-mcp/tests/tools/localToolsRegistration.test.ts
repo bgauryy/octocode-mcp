@@ -84,8 +84,10 @@ vi.mock('../../src/serverConfig.js', () => ({
     maxRetries: 3,
     loggingEnabled: true,
     enableLocal: true,
+    enableClone: false,
   }),
   isLocalEnabled: vi.fn().mockReturnValue(true),
+  isCloneEnabled: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock('../../src/session.js', () => ({

@@ -1,0 +1,313 @@
+/**
+ * Directory content fetching from GitHub via Contents API + download_url.
+ *
+ * Fetches all files in a directory by:
+ * 1. Listing directory contents via `repos.getContent` (1 API call)
+ * 2. Fetching each file via its `download_url` (parallel HTTP, not rate-limited)
+ * 3. Saving files to disk under ~/.octocode/repos/{owner}/{repo}/{branch}/
+ * 4. Writing cache metadata (24h TTL, same as clone tool)
+ *
+ * This is a lightweight alternative to cloning – no git required, just HTTP.
+ *
+ * @module github/directoryFetch
+ */
+
+import { writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { getOctocodeDir } from 'octocode-shared';
+import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import { getOctokit } from './client.js';
+import type {
+  DirectoryFetchResult,
+  DirectoryFileEntry,
+} from '../tools/github_fetch_content/types.js';
+import {
+  getCloneDir,
+  isCacheHit,
+  writeCacheMeta,
+  createCacheMeta,
+  ensureCloneParentDir,
+} from '../tools/github_clone_repo/cache.js';
+
+// ─────────────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────────────
+
+/** Maximum number of files to fetch from a directory */
+export const MAX_DIRECTORY_FILES = 50;
+
+/** Maximum total size of all files (5 MB) */
+export const MAX_TOTAL_SIZE = 5 * 1024 * 1024;
+
+/** Maximum size per individual file (300 KB, matches file fetch limit) */
+const MAX_FILE_SIZE = 300 * 1024;
+
+/** Number of concurrent download_url fetches */
+const CONCURRENCY = 5;
+
+/** Timeout for individual file fetch (10 seconds) */
+const FETCH_TIMEOUT_MS = 10_000;
+
+/** File extensions to skip (binary files) */
+const BINARY_EXTENSIONS = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.bmp',
+  '.ico',
+  '.svg',
+  '.webp',
+  '.mp3',
+  '.mp4',
+  '.wav',
+  '.avi',
+  '.mov',
+  '.mkv',
+  '.webm',
+  '.zip',
+  '.tar',
+  '.gz',
+  '.bz2',
+  '.7z',
+  '.rar',
+  '.xz',
+  '.exe',
+  '.dll',
+  '.so',
+  '.dylib',
+  '.bin',
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.woff',
+  '.woff2',
+  '.ttf',
+  '.eot',
+  '.otf',
+  '.pyc',
+  '.class',
+  '.o',
+  '.obj',
+  '.lock',
+  '.min.js',
+  '.min.css',
+]);
+
+// ─────────────────────────────────────────────────────────────────────
+// Types (internal)
+// ─────────────────────────────────────────────────────────────────────
+
+interface DirectoryEntry {
+  name: string;
+  path: string;
+  type: string;
+  size: number;
+  download_url: string | null;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Public API
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch all files in a GitHub directory and save them to disk.
+ *
+ * Uses the same cache layout as the clone tool:
+ *   ~/.octocode/repos/{owner}/{repo}/{branch}/{path}/
+ *
+ * Files are saved with 24-hour cache TTL. If the cache is still valid,
+ * the saved directory is returned immediately without any API calls.
+ *
+ * @returns DirectoryFetchResult with localPath and file list
+ */
+export async function fetchDirectoryContents(
+  owner: string,
+  repo: string,
+  path: string,
+  branch: string,
+  authInfo?: AuthInfo
+): Promise<DirectoryFetchResult> {
+  const octocodeDir = getOctocodeDir();
+  const cloneDir = getCloneDir(octocodeDir, owner, repo, branch);
+
+  // The actual directory on disk where files will be saved
+  const dirPath = join(cloneDir, path);
+
+  // ── 1. Cache hit? ─────────────────────────────────────────────
+  const cacheResult = isCacheHit(cloneDir);
+  if (cacheResult.hit && existsSync(dirPath)) {
+    return {
+      localPath: dirPath,
+      files: [],
+      fileCount: 0,
+      totalSize: 0,
+      cached: true,
+      expiresAt: cacheResult.meta.expiresAt,
+      owner,
+      repo,
+      branch,
+      directoryPath: path,
+    };
+  }
+
+  // ── 2. List directory via Contents API ────────────────────────
+  const octokit = await getOctokit(authInfo);
+  const { data } = await octokit.rest.repos.getContent({
+    owner,
+    repo,
+    path,
+    ref: branch,
+  });
+
+  if (!Array.isArray(data)) {
+    throw new Error(
+      `Path "${path}" is not a directory. Use type "file" to fetch file content.`
+    );
+  }
+
+  // ── 3. Filter entries ─────────────────────────────────────────
+  const fileEntries: DirectoryEntry[] = data
+    .filter((item): item is DirectoryEntry & { download_url: string } => {
+      if (item.type !== 'file') return false;
+      if (!item.download_url) return false;
+      if (item.size > MAX_FILE_SIZE) return false;
+      const ext = getExtension(item.name);
+      if (BINARY_EXTENSIONS.has(ext)) return false;
+      return true;
+    })
+    .slice(0, MAX_DIRECTORY_FILES);
+
+  // ── 4. Parallel fetch via download_url ────────────────────────
+  const fetchedFiles = await fetchFilesInBatches(fileEntries, CONCURRENCY);
+
+  // ── 5. Enforce total size limit ───────────────────────────────
+  let totalSize = 0;
+  const filesToSave: Array<{ entry: DirectoryEntry; content: string }> = [];
+  for (const { entry, content } of fetchedFiles) {
+    if (totalSize + content.length > MAX_TOTAL_SIZE) break;
+    totalSize += content.length;
+    filesToSave.push({ entry, content });
+  }
+
+  // ── 6. Clean stale directory and write fresh files ─────────────
+  // Remove the specific directory being fetched so stale files
+  // (deleted from the repo) don't persist. This is the "override"
+  // behaviour: fresh content replaces whatever was on disk.
+  ensureCloneParentDir(cloneDir);
+  if (existsSync(dirPath)) {
+    rmSync(dirPath, { recursive: true, force: true });
+  }
+  mkdirSync(dirPath, { recursive: true, mode: 0o700 });
+
+  const savedFiles: DirectoryFileEntry[] = [];
+  for (const { entry, content } of filesToSave) {
+    const filePath = join(cloneDir, entry.path);
+    const fileDir = dirname(filePath);
+    if (!existsSync(fileDir)) {
+      mkdirSync(fileDir, { recursive: true, mode: 0o700 });
+    }
+    writeFileSync(filePath, content, 'utf-8');
+    savedFiles.push({
+      path: entry.path,
+      size: content.length,
+      type: 'file',
+    });
+  }
+
+  // ── 7. Write cache metadata ───────────────────────────────────
+  // Mark as 'directoryFetch' so the clone tool knows this is NOT
+  // a full/sparse clone and will re-clone instead of trusting it.
+  const meta = createCacheMeta(
+    owner,
+    repo,
+    branch,
+    undefined,
+    'directoryFetch'
+  );
+  writeCacheMeta(cloneDir, meta);
+
+  return {
+    localPath: dirPath,
+    files: savedFiles,
+    fileCount: savedFiles.length,
+    totalSize,
+    cached: false,
+    expiresAt: meta.expiresAt,
+    owner,
+    repo,
+    branch,
+    directoryPath: path,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Internal helpers
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch files in batches with concurrency control.
+ */
+async function fetchFilesInBatches(
+  entries: DirectoryEntry[],
+  concurrency: number
+): Promise<Array<{ entry: DirectoryEntry; content: string }>> {
+  const results: Array<{ entry: DirectoryEntry; content: string }> = [];
+
+  for (let i = 0; i < entries.length; i += concurrency) {
+    const batch = entries.slice(i, i + concurrency);
+    const batchResults = await Promise.allSettled(
+      batch.map(async entry => {
+        const content = await fetchDownloadUrl(entry.download_url!);
+        return { entry, content };
+      })
+    );
+
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled') {
+        results.push(result.value);
+      }
+      // Skip failed fetches silently — partial results are acceptable
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Fetch raw content from a download_url (raw.githubusercontent.com).
+ */
+async function fetchDownloadUrl(url: string): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'octocode-mcp',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} fetching ${url}`);
+    }
+
+    return await response.text();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Get file extension (lowercase, with dot).
+ */
+function getExtension(filename: string): string {
+  const lastDot = filename.lastIndexOf('.');
+  if (lastDot === -1) return '';
+  return filename.substring(lastDot).toLowerCase();
+}

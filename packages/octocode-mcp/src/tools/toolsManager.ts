@@ -1,6 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ALL_TOOLS, type ToolConfig } from './toolConfig.js';
-import { getServerConfig, isLocalEnabled } from '../serverConfig.js';
+import {
+  getServerConfig,
+  isLocalEnabled,
+  isCloneEnabled,
+} from '../serverConfig.js';
 import { ToolInvocationCallback } from '../types.js';
 import { isToolInMetadata } from './toolMetadata.js';
 import { logSessionError } from '../session.js';
@@ -22,7 +26,8 @@ export async function registerTools(
   failedTools: string[];
 }> {
   const localEnabled = isLocalEnabled();
-  const filterConfig = getToolFilterConfig();
+  const cloneEnabled = isCloneEnabled();
+  const filterConfig = getToolFilterConfigSafe();
 
   // Warn about configuration conflicts
   if (
@@ -40,25 +45,27 @@ export async function registerTools(
 
   for (const tool of ALL_TOOLS) {
     // Step 1: Check if tool should be enabled
-    if (!isToolEnabled(tool, localEnabled, filterConfig)) {
+    if (!isToolEnabled(tool, localEnabled, cloneEnabled, filterConfig)) {
       continue;
     }
 
-    // Step 2: Check if tool exists in metadata
-    try {
-      if (!isToolInMetadata(tool.name)) {
+    // Step 2: Check if tool exists in metadata (skip for tools that opt out)
+    if (!tool.skipMetadataCheck) {
+      try {
+        if (!isToolInMetadata(tool.name)) {
+          await logSessionError(
+            tool.name,
+            TOOL_METADATA_ERRORS.INVALID_FORMAT.code
+          );
+          continue;
+        }
+      } catch {
         await logSessionError(
           tool.name,
-          TOOL_METADATA_ERRORS.INVALID_FORMAT.code
+          TOOL_METADATA_ERRORS.INVALID_API_RESPONSE.code
         );
         continue;
       }
-    } catch {
-      await logSessionError(
-        tool.name,
-        TOOL_METADATA_ERRORS.INVALID_API_RESPONSE.code
-      );
-      continue;
     }
 
     // Step 3: Register the tool
@@ -83,29 +90,41 @@ interface ToolFilterConfig {
   disableTools: string[];
 }
 
-function getToolFilterConfig(): ToolFilterConfig {
-  const config = getServerConfig();
-  return {
-    toolsToRun: config.toolsToRun || [],
-    enableTools: config.enableTools || [],
-    disableTools: config.disableTools || [],
-  };
+function getToolFilterConfigSafe(): ToolFilterConfig {
+  try {
+    const config = getServerConfig();
+    return {
+      toolsToRun: config.toolsToRun || [],
+      enableTools: config.enableTools || [],
+      disableTools: config.disableTools || [],
+    };
+  } catch {
+    // Config not yet initialized — return safe defaults (all defaults enabled)
+    return { toolsToRun: [], enableTools: [], disableTools: [] };
+  }
 }
 
 /**
  * Check if tool should be enabled based on:
  * 1. Local tools require ENABLE_LOCAL
- * 2. TOOLS_TO_RUN (if set, only these tools are enabled)
- * 3. DISABLE_TOOLS (takes precedence over ENABLE_TOOLS)
- * 4. ENABLE_TOOLS or isDefault
+ * 2. Clone tools additionally require ENABLE_CLONE (and ENABLE_LOCAL)
+ * 3. TOOLS_TO_RUN (if set, only these tools are enabled)
+ * 4. DISABLE_TOOLS (takes precedence over ENABLE_TOOLS)
+ * 5. ENABLE_TOOLS or isDefault
  */
 function isToolEnabled(
   tool: ToolConfig,
   localEnabled: boolean,
+  cloneEnabled: boolean,
   config: ToolFilterConfig
 ): boolean {
   // Local tools require ENABLE_LOCAL
   if (tool.isLocal && !localEnabled) {
+    return false;
+  }
+
+  // Clone tools additionally require ENABLE_CLONE
+  if (tool.isClone && !cloneEnabled) {
     return false;
   }
 

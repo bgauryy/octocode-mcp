@@ -69,6 +69,7 @@ describe('GitHub Client Branch Coverage', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GH_TOKEN',
       });
@@ -90,6 +91,7 @@ describe('GitHub Client Branch Coverage', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GH_TOKEN',
       });
@@ -111,6 +113,7 @@ describe('GitHub Client Branch Coverage', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GH_TOKEN',
       });

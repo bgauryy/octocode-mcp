@@ -32,6 +32,7 @@ export const DEFAULT_GITLAB_CONFIG: RequiredGitLabConfig = {
  */
 export const DEFAULT_LOCAL_CONFIG: RequiredLocalConfig = {
   enabled: false,
+  enableClone: false,
   allowedPaths: [],
   workspaceRoot: undefined,
 };

@@ -1,4 +1,6 @@
-# Octocode — Configuration
+# Configuration Reference
+
+> All Octocode MCP configuration options — environment variables, `.octocoderc` file, and examples.
 
 ## How Configuration Works
 
@@ -24,7 +26,8 @@ Environment Variable  →  .octocoderc File  →  Default
 |---------|--------|-------------|---------------------|------|---------|
 | **GitHub** | API URL | `GITHUB_API_URL` | `github.apiUrl` | string | `https://api.github.com` |
 | **GitLab** | Host URL | `GITLAB_HOST` | `gitlab.host` | string | `https://gitlab.com` |
-| **Local** | Enable local tools | `ENABLE_LOCAL` | `local.enabled` | boolean | `false` |
+| **Local** | Enable local tools | `ENABLE_LOCAL` | `local.enabled` | boolean | `false` (opt-in) |
+| **Local** | Enable clone/fetch repos & directory fetch | `ENABLE_CLONE` | `local.enableClone` | boolean | `false` (opt-in, requires `ENABLE_LOCAL`) |
 | **Local** | Workspace root | `WORKSPACE_ROOT` | `local.workspaceRoot` | string | Current working directory |
 | **Local** | Allowed paths | `ALLOWED_PATHS` | `local.allowedPaths` | list | `[]` (all paths) |
 | **Tools** | Tool whitelist | `TOOLS_TO_RUN` | `tools.enabled` | list | All tools |
@@ -56,7 +59,8 @@ Auth tokens should not be stored in `.octocoderc`.
 - **Tool filtering:** `TOOLS_TO_RUN` is a strict whitelist (ignores `ENABLE_TOOLS`/`DISABLE_TOOLS`). When not set, `DISABLE_TOOLS` removes tools and `ENABLE_TOOLS` adds tools.
 - **Network values** outside the range are clamped, not rejected.
 - **Logging:** `LOG` controls whether tool calls and errors are sent to the telemetry endpoint. Session init (with session ID) is **always** logged regardless of the `LOG` setting.
-- **LSP** is optional. If unset, Octocode uses `.octocode/lsp-servers.json` in the workspace or home directory. LSP tools require local tools to be enabled.
+- **Clone & Directory Fetch** requires both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`. The `githubCloneRepo` tool and the directory fetch mode of `githubGetFileContent` (`type: "directory"`) will only work when both are enabled.
+- **LSP** is optional. If unset, Octocode uses `.octocode/lsp-servers.json` in the workspace or home directory. LSP tools require `ENABLE_LOCAL=true` to be available.
 
 ---
 
@@ -131,6 +135,7 @@ New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.octocode"
 
   "local": {
     "enabled": true,
+    "enableClone": false,         // requires enabled=true
     "workspaceRoot": "/path/to/workspace",
     "allowedPaths": []
   },
@@ -321,5 +326,7 @@ cat ~/.octocode/.octocoderc | python3 -c "import sys,json; json.load(sys.stdin)"
 
 ## See Also
 
-- [Authentication Setup](../packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) — GitHub and GitLab auth guide
-- [Troubleshooting](./TROUBLESHOOTING.md) — Node.js, npm, and connection issues
+- [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) — GitHub and GitLab auth guide
+- [Local & LSP Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) — Local tools (requires `ENABLE_LOCAL=true`)
+- [GitHub & GitLab Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) — Remote code research tools
+- [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) — Node.js, npm, and connection issues

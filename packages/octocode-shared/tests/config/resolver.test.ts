@@ -36,6 +36,7 @@ describe('config/resolver', () => {
     delete process.env.GITHUB_API_URL;
     delete process.env.GITLAB_HOST;
     delete process.env.ENABLE_LOCAL;
+    delete process.env.ENABLE_CLONE;
     delete process.env.WORKSPACE_ROOT;
     delete process.env.ALLOWED_PATHS;
     delete process.env.TOOLS_TO_RUN;

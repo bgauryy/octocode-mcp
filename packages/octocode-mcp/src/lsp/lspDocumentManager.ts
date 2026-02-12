@@ -35,6 +35,11 @@ export class LSPDocumentManager {
   setConnection(connection: MessageConnection, initialized: boolean): void {
     this.connection = connection;
     this.initialized = initialized;
+    // Clear tracked documents when disconnecting to prevent stale state.
+    // Old documents are no longer valid on a new/null connection.
+    if (!connection) {
+      this.openFiles.clear();
+    }
   }
 
   /**
@@ -94,8 +99,14 @@ export class LSPDocumentManager {
    */
   async closeAllDocuments(): Promise<void> {
     for (const uri of Array.from(this.openFiles.keys())) {
-      const filePath = fromUri(uri);
-      await this.closeDocument(filePath);
+      try {
+        const filePath = fromUri(uri);
+        await this.closeDocument(filePath);
+      } catch {
+        // Connection may already be disposed — force-remove from tracking
+        // to prevent the openFiles map from growing indefinitely.
+        this.openFiles.delete(uri);
+      }
     }
   }
 

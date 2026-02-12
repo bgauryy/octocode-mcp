@@ -217,6 +217,12 @@ function validateLocal(local: unknown, errors: string[]): void {
   const enabledError = validateBoolean(loc.enabled, 'local.enabled');
   if (enabledError) errors.push(enabledError);
 
+  const enableCloneError = validateBoolean(
+    loc.enableClone,
+    'local.enableClone'
+  );
+  if (enableCloneError) errors.push(enableCloneError);
+
   const allowedPathsError = validateStringArray(
     loc.allowedPaths,
     'local.allowedPaths'

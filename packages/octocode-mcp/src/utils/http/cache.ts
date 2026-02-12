@@ -9,10 +9,10 @@ const PENDING_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
 
 const cache = new NodeCache({
   stdTTL: 86400,
-  checkperiod: 3600,
-  maxKeys: 5000, // Increased from 1000 for heavy usage scenarios
+  checkperiod: 300, // Check every 5 minutes (was 3600 — expired entries could linger for up to 1 hour)
+  maxKeys: 5000,
   deleteOnExpire: true,
-  useClones: false,
+  useClones: false, // IMPORTANT: callers MUST NOT mutate cached values (read-only)
 });
 
 const cacheStats: CacheStats = {
@@ -74,7 +74,10 @@ export function generateCacheKey(
   return `${VERSION}-${prefix}:${hash}`;
 }
 
-function createStableParamString(params: unknown): string {
+function createStableParamString(
+  params: unknown,
+  visited: WeakSet<object> = new WeakSet()
+): string {
   if (params === null) {
     return 'null';
   }
@@ -87,14 +90,20 @@ function createStableParamString(params: unknown): string {
     return String(params);
   }
 
+  // Guard: cycle detection prevents infinite recursion on circular refs
+  if (visited.has(params as object)) {
+    return '"[Circular]"';
+  }
+  visited.add(params as object);
+
   if (Array.isArray(params)) {
-    return `[${params.map(createStableParamString).join(',')}]`;
+    return `[${params.map(p => createStableParamString(p, visited)).join(',')}]`;
   }
 
   const sortedKeys = Object.keys(params as Record<string, unknown>).sort();
   const sortedEntries = sortedKeys.map(key => {
     const value = (params as Record<string, unknown>)[key];
-    return `"${key}":${createStableParamString(value)}`;
+    return `"${key}":${createStableParamString(value, visited)}`;
   });
 
   return `{${sortedEntries.join(',')}}`;
@@ -108,6 +117,39 @@ function getTTLForPrefix(prefix: string): number {
     (CACHE_TTL_CONFIG as Record<string, number>)[prefix] ||
     CACHE_TTL_CONFIG.default
   );
+}
+
+/**
+ * Safely set a cache entry, handling ECACHEFULL by evicting expired entries
+ * and retrying once. node-cache throws when maxKeys is reached instead of
+ * evicting, so we must handle this explicitly.
+ */
+function safeCacheSet(key: string, value: unknown, ttl: number): boolean {
+  try {
+    cache.set(key, value, ttl);
+    cacheStats.sets++;
+    cacheStats.totalKeys = cache.keys().length;
+    return true;
+  } catch {
+    // ECACHEFULL — attempt to free space by flushing expired entries
+    // then retry once. If still full, skip caching (result is still valid).
+    try {
+      // node-cache internal check removes expired keys on individual get(),
+      // but we can trigger a bulk check by iterating keys
+      const keys = cache.keys();
+      for (const k of keys) {
+        cache.get(k); // triggers lazy expiry check for this key
+      }
+      // Retry after cleanup
+      cache.set(key, value, ttl);
+      cacheStats.sets++;
+      cacheStats.totalKeys = cache.keys().length;
+      return true;
+    } catch {
+      // Cache is genuinely full with non-expired entries — skip caching
+      return false;
+    }
+  }
 }
 
 /**
@@ -157,19 +199,13 @@ export async function withDataCache<T>(
 
       const shouldCache = options.shouldCache ?? (() => true);
       if (shouldCache(result)) {
-        try {
-          let ttl = options.ttl;
-          if (!ttl) {
-            const prefixMatch = cacheKey.match(/^v\d+-([^:]+):/);
-            const prefix = prefixMatch?.[1] ?? 'default';
-            ttl = getTTLForPrefix(prefix);
-          }
-          cache.set(cacheKey, result, ttl);
-          cacheStats.sets++;
-          cacheStats.totalKeys = cache.keys().length;
-        } catch {
-          // Cache write failure - result is still valid, just not cached
+        let ttl = options.ttl;
+        if (!ttl) {
+          const prefixMatch = cacheKey.match(/^v\d+-([^:]+):/);
+          const prefix = prefixMatch?.[1] ?? 'default';
+          ttl = getTTLForPrefix(prefix);
         }
+        safeCacheSet(cacheKey, result, ttl);
       }
 
       return result;

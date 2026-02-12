@@ -1,6 +1,19 @@
 # AGENTS.md - Octocode Monorepo
 
-> AI agent guidance for the Octocode MCP monorepo. **Full guide**: [docs/DEVELOPMENT_GUIDE.md](./docs/DEVELOPMENT_GUIDE.md)
+> AI agent guidance for the Octocode MCP monorepo. **Full guide**: [docs/DEVELOPMENT_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md)
+
+## Documentation Links Rule
+
+All links in documentation files (`docs/`, `packages/*/docs/`) **MUST** use absolute GitHub URLs — never relative paths.
+
+**Base URL:** `https://github.com/bgauryy/octocode-mcp/blob/main/`
+
+```
+❌ WRONG: [Config](./CONFIGURATION_REFERENCE.md)
+❌ WRONG: [Auth](../packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
+✅ RIGHT: [Config](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md)
+✅ RIGHT: [Auth](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
+```
 
 ## Core Methodology
 
@@ -75,31 +88,32 @@ Each package has specific guidelines that **override** this root file:
 
 | Package | Location |
 |---------|----------|
-| octocode-mcp | [packages/octocode-mcp/AGENTS.md](./packages/octocode-mcp/AGENTS.md) |
-| octocode-cli | [packages/octocode-cli/AGENTS.md](./packages/octocode-cli/AGENTS.md) |
-| octocode-vscode | [packages/octocode-vscode/AGENTS.md](./packages/octocode-vscode/AGENTS.md) |
-| octocode-shared | [packages/octocode-shared/AGENTS.md](./packages/octocode-shared/AGENTS.md) |
+| octocode-mcp | [packages/octocode-mcp/AGENTS.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/AGENTS.md) |
+| octocode-cli | [packages/octocode-cli/AGENTS.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/AGENTS.md) |
+| octocode-vscode | [packages/octocode-vscode/AGENTS.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-vscode/AGENTS.md) |
+| octocode-shared | [packages/octocode-shared/AGENTS.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/AGENTS.md) |
 
 ## Key References
 
 ### Core
-- **Docs Index**: [docs/README.md](./docs/README.md) — Documentation map
-- **Development Guide**: [docs/DEVELOPMENT_GUIDE.md](./docs/DEVELOPMENT_GUIDE.md)
-- **Configuration Reference**: [docs/CONFIGURATION_REFERENCE.md](./docs/CONFIGURATION_REFERENCE.md)
-- **Troubleshooting**: [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)
+- **Docs Index**: [docs/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/README.md) — Documentation map
+- **Development Guide**: [docs/DEVELOPMENT_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md)
+- **Configuration Reference**: [docs/CONFIGURATION_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md)
+- **Troubleshooting**: [docs/TROUBLESHOOTING.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md)
 
 ### Octocode CLI
-- **Skills Guide**: [packages/octocode-cli/docs/SKILLS_GUIDE.md](./packages/octocode-cli/docs/SKILLS_GUIDE.md)
-- **Architecture**: [packages/octocode-cli/docs/ARCHITECTURE.md](./packages/octocode-cli/docs/ARCHITECTURE.md)
-- **CLI Reference**: [packages/octocode-cli/docs/CLI_REFERENCE.md](./packages/octocode-cli/docs/CLI_REFERENCE.md)
-- **Menu Flow**: [packages/octocode-cli/docs/MENU_FLOW.md](./packages/octocode-cli/docs/MENU_FLOW.md)
+- **Skills Guide**: [packages/octocode-cli/docs/SKILLS_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md)
+- **Architecture**: [packages/octocode-cli/docs/ARCHITECTURE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/ARCHITECTURE.md)
+- **CLI Reference**: [packages/octocode-cli/docs/CLI_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md)
+- **Menu Flow**: [packages/octocode-cli/docs/MENU_FLOW.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/MENU_FLOW.md)
 
 ### Octocode MCP
-- **GitHub & GitLab Tools**: [packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md](./packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md)
-- **Local Tools**: [packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md](./packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md)
-- **Authentication**: [packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md](./packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
+- **GitHub & GitLab Tools**: [packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md)
+- **Local Tools**: [packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md)
+- **Clone & Local Workflow**: [packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md)
+- **Authentication**: [packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
 
 ### Octocode Shared
-- **API Reference**: [packages/octocode-shared/docs/API_REFERENCE.md](./packages/octocode-shared/docs/API_REFERENCE.md)
-- **Credentials**: [packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md](./packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md)
-- **Session Persistence**: [packages/octocode-shared/docs/SESSION_PERSISTENCE.md](./packages/octocode-shared/docs/SESSION_PERSISTENCE.md)
+- **API Reference**: [packages/octocode-shared/docs/API_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/API_REFERENCE.md)
+- **Credentials**: [packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md)
+- **Session Persistence**: [packages/octocode-shared/docs/SESSION_PERSISTENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/SESSION_PERSISTENCE.md)

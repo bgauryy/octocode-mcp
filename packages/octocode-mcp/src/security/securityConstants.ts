@@ -15,6 +15,7 @@ export const ALLOWED_COMMANDS = [
   'ls', // List directory contents (localViewStructure tool)
   'find', // Find files/directories recursively (localFindFiles tool)
   'grep', // Pattern search fallback (lspFindReferences pattern matching)
+  'git', // Git - Shallow clone repositories (githubCloneRepo tool)
 ] as const;
 
 /**

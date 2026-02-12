@@ -138,14 +138,19 @@ export function resolveGitLab(
 export function resolveLocal(
   fileConfig?: OctocodeConfig['local']
 ): RequiredLocalConfig {
-  // Env vars: ENABLE_LOCAL, WORKSPACE_ROOT, ALLOWED_PATHS
+  // Env vars: ENABLE_LOCAL, ENABLE_CLONE, WORKSPACE_ROOT, ALLOWED_PATHS
   const envEnableLocal = parseBooleanEnv(process.env.ENABLE_LOCAL);
+  const envEnableClone = parseBooleanEnv(process.env.ENABLE_CLONE);
   const envWorkspaceRoot = process.env.WORKSPACE_ROOT?.trim() || undefined;
   const envAllowedPaths = parseStringArrayEnv(process.env.ALLOWED_PATHS);
 
   return {
     enabled:
       envEnableLocal ?? fileConfig?.enabled ?? DEFAULT_LOCAL_CONFIG.enabled,
+    enableClone:
+      envEnableClone ??
+      fileConfig?.enableClone ??
+      DEFAULT_LOCAL_CONFIG.enableClone,
     allowedPaths:
       envAllowedPaths ??
       fileConfig?.allowedPaths ??

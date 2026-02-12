@@ -87,6 +87,11 @@ vi.mock('../../src/tools/package_search/package_search.js', () => ({
   registerPackageSearchTool: mockPackageSearchRegister,
 }));
 
+const mockGitHubCloneRepoRegister = vi.fn().mockReturnValue({});
+vi.mock('../../src/tools/github_clone_repo/index.js', () => ({
+  registerGitHubCloneRepoTool: mockGitHubCloneRepoRegister,
+}));
+
 describe('Local Tools Flow Integration', () => {
   let mockServer: McpServer;
   const originalEnv = { ...process.env };
@@ -97,6 +102,7 @@ describe('Local Tools Flow Integration', () => {
 
     // Reset environment
     delete process.env.ENABLE_LOCAL;
+    delete process.env.ENABLE_CLONE;
     delete process.env.GITHUB_TOKEN;
     delete process.env.TOOLS_TO_RUN;
     delete process.env.ENABLE_TOOLS;
@@ -121,7 +127,7 @@ describe('Local Tools Flow Integration', () => {
   });
 
   describe('ENABLE_LOCAL=true flow', () => {
-    it('should register ALL 4 local tools when ENABLE_LOCAL=true', async () => {
+    it('should register local tools (no clone) when ENABLE_LOCAL=true and ENABLE_CLONE is not set', async () => {
       // Set environment BEFORE importing/initializing
       process.env.ENABLE_LOCAL = 'true';
 
@@ -139,7 +145,7 @@ describe('Local Tools Flow Integration', () => {
       // Register tools
       const result = await registerTools(mockServer);
 
-      // Should register all 13 tools (6 GitHub + 4 local + 3 LSP)
+      // Should register 13 tools (6 GitHub + 4 local + 3 LSP, no clone)
       expect(result.successCount).toBe(13);
       expect(result.failedTools).toHaveLength(0);
 
@@ -158,6 +164,27 @@ describe('Local Tools Flow Integration', () => {
       expect(mockPackageSearchRegister).toHaveBeenCalledTimes(1);
     });
 
+    it('should register ALL tools including clone when both ENABLE_LOCAL and ENABLE_CLONE are true', async () => {
+      process.env.ENABLE_LOCAL = 'true';
+      process.env.ENABLE_CLONE = 'true';
+
+      const { initialize, isLocalEnabled, isCloneEnabled, cleanup } =
+        await import('../../src/serverConfig.js');
+      cleanup();
+      const { registerTools } = await import('../../src/tools/toolsManager.js');
+
+      await initialize();
+
+      expect(isLocalEnabled()).toBe(true);
+      expect(isCloneEnabled()).toBe(true);
+
+      const result = await registerTools(mockServer);
+
+      // Should register all 14 tools (6 GitHub + 1 clone + 4 local + 3 LSP)
+      expect(result.successCount).toBe(14);
+      expect(result.failedTools).toHaveLength(0);
+    });
+
     it('should register local tools when ENABLE_LOCAL=1', async () => {
       process.env.ENABLE_LOCAL = '1';
 
@@ -171,6 +198,7 @@ describe('Local Tools Flow Integration', () => {
       expect(isLocalEnabled()).toBe(true);
 
       const result = await registerTools(mockServer);
+      // 13 tools: 6 GitHub + 4 local + 3 LSP (no clone without ENABLE_CLONE)
       expect(result.successCount).toBe(13);
     });
   });
@@ -251,7 +279,7 @@ describe('Local Tools Flow Integration', () => {
       // Get local tool names from ALL_TOOLS
       const localToolNames = ALL_TOOLS.filter(t => t.isLocal).map(t => t.name);
 
-      // These should match what the API returns (4 local + 3 LSP = 7)
+      // These should match what the API returns (4 local + 3 LSP + 1 clone = 8)
       expect(localToolNames).toContain('localSearchCode');
       expect(localToolNames).toContain('localGetFileContent');
       expect(localToolNames).toContain('localFindFiles');
@@ -259,7 +287,8 @@ describe('Local Tools Flow Integration', () => {
       expect(localToolNames).toContain('lspGotoDefinition');
       expect(localToolNames).toContain('lspFindReferences');
       expect(localToolNames).toContain('lspCallHierarchy');
-      expect(localToolNames).toHaveLength(7);
+      expect(localToolNames).toContain('githubCloneRepo');
+      expect(localToolNames).toHaveLength(8);
     });
   });
 });

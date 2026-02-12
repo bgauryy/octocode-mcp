@@ -6,6 +6,7 @@ import { registerTools } from '../../src/tools/toolsManager.js';
 vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn(),
   isLocalEnabled: vi.fn(),
+  isCloneEnabled: vi.fn(),
 }));
 
 vi.mock('../../src/tools/toolMetadata.js', async () => {
@@ -47,6 +48,9 @@ vi.mock(
 vi.mock('../../src/tools/package_search/package_search.js', () => ({
   registerPackageSearchTool: vi.fn().mockReturnValue({}),
 }));
+vi.mock('../../src/tools/github_clone_repo/index.js', () => ({
+  registerGitHubCloneRepoTool: vi.fn().mockReturnValue({}),
+}));
 
 // Mock local tools - export registration functions used by toolConfig
 vi.mock('../../src/tools/local_ripgrep/index.js', () => ({
@@ -71,7 +75,11 @@ vi.mock('../../src/utils/bulkOperations.js', () => ({
   }),
 }));
 
-import { getServerConfig, isLocalEnabled } from '../../src/serverConfig.js';
+import {
+  getServerConfig,
+  isLocalEnabled,
+  isCloneEnabled,
+} from '../../src/serverConfig.js';
 
 describe('Tool Count Verification', () => {
   const originalStderr = process.stderr.write;
@@ -93,10 +101,12 @@ describe('Tool Count Verification', () => {
       maxRetries: 3,
       loggingEnabled: true,
       enableLocal: false,
+      enableClone: false,
       disablePrompts: false,
       tokenSource: 'env:GITHUB_TOKEN',
     });
     vi.mocked(isLocalEnabled).mockReturnValue(false);
+    vi.mocked(isCloneEnabled).mockReturnValue(false);
 
     const mockServer = {} as McpServer;
     const result = await registerTools(mockServer);
@@ -105,7 +115,7 @@ describe('Tool Count Verification', () => {
     expect(result.failedTools).toHaveLength(0);
   });
 
-  it('should register exactly 10 tools WITH local enabled', async () => {
+  it('should register exactly 13 tools WITH local enabled but WITHOUT clone', async () => {
     vi.mocked(getServerConfig).mockReturnValue({
       version: '1.0.0',
       githubApiUrl: 'https://api.github.com',
@@ -113,10 +123,12 @@ describe('Tool Count Verification', () => {
       maxRetries: 3,
       loggingEnabled: true,
       enableLocal: true,
+      enableClone: false,
       disablePrompts: false,
       tokenSource: 'env:GITHUB_TOKEN',
     });
     vi.mocked(isLocalEnabled).mockReturnValue(true);
+    vi.mocked(isCloneEnabled).mockReturnValue(false);
 
     const mockServer = {
       registerTool: vi.fn(),
@@ -124,8 +136,34 @@ describe('Tool Count Verification', () => {
 
     const result = await registerTools(mockServer);
 
-    // 6 GitHub + 4 Local + 3 LSP = 13 tools
+    // 6 GitHub + 4 Local + 3 LSP = 13 tools (no clone)
     expect(result.successCount).toBe(13);
+    expect(result.failedTools).toHaveLength(0);
+  });
+
+  it('should register exactly 14 tools WITH local AND clone enabled', async () => {
+    vi.mocked(getServerConfig).mockReturnValue({
+      version: '1.0.0',
+      githubApiUrl: 'https://api.github.com',
+      timeout: 30000,
+      maxRetries: 3,
+      loggingEnabled: true,
+      enableLocal: true,
+      enableClone: true,
+      disablePrompts: false,
+      tokenSource: 'env:GITHUB_TOKEN',
+    });
+    vi.mocked(isLocalEnabled).mockReturnValue(true);
+    vi.mocked(isCloneEnabled).mockReturnValue(true);
+
+    const mockServer = {
+      registerTool: vi.fn(),
+    } as unknown as McpServer;
+
+    const result = await registerTools(mockServer);
+
+    // 6 GitHub + 1 Clone + 4 Local + 3 LSP = 14 tools
+    expect(result.successCount).toBe(14);
     expect(result.failedTools).toHaveLength(0);
   });
 });

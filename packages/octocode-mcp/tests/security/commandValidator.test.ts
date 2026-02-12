@@ -447,6 +447,152 @@ describe('commandValidator', () => {
       });
     });
 
+    describe('git command validation', () => {
+      it('should allow git clone with valid flags', () => {
+        expect(
+          validateCommand('git', [
+            'clone',
+            '--depth',
+            '1',
+            '--single-branch',
+            '--branch',
+            'main',
+            '--',
+            'https://github.com/fb/react.git',
+            '/tmp/clone-dir',
+          ])
+        ).toEqual({ isValid: true });
+      });
+
+      it('should allow git clone with auth config', () => {
+        expect(
+          validateCommand('git', [
+            '-c',
+            'http.extraHeader=Authorization: Bearer token',
+            'clone',
+            '--depth',
+            '1',
+            '--filter',
+            'blob:none',
+            '--sparse',
+            '--single-branch',
+            '--branch',
+            'main',
+            '--',
+            'https://github.com/org/repo.git',
+            '/tmp/dir',
+          ])
+        ).toEqual({ isValid: true });
+      });
+
+      it('should allow git sparse-checkout set', () => {
+        expect(
+          validateCommand('git', [
+            '-C',
+            '/tmp/repo',
+            'sparse-checkout',
+            'set',
+            '--',
+            'packages/core',
+          ])
+        ).toEqual({ isValid: true });
+      });
+
+      it('should allow git sparse-checkout with flags', () => {
+        expect(
+          validateCommand('git', [
+            'sparse-checkout',
+            'set',
+            '--cone',
+            'src/utils',
+          ])
+        ).toEqual({ isValid: true });
+      });
+
+      it('should allow git sparse-checkout init', () => {
+        expect(validateCommand('git', ['sparse-checkout', 'init'])).toEqual({
+          isValid: true,
+        });
+      });
+
+      it('should allow git sparse-checkout list', () => {
+        expect(validateCommand('git', ['sparse-checkout', 'list'])).toEqual({
+          isValid: true,
+        });
+      });
+
+      it('should allow git sparse-checkout disable', () => {
+        expect(validateCommand('git', ['sparse-checkout', 'disable'])).toEqual({
+          isValid: true,
+        });
+      });
+
+      it('should reject git push', () => {
+        const result = validateCommand('git', ['push', 'origin', 'main']);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('not allowed');
+      });
+
+      it('should reject git reset', () => {
+        const result = validateCommand('git', ['reset', '--hard']);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('not allowed');
+      });
+
+      it('should reject git rm', () => {
+        const result = validateCommand('git', ['rm', '-rf', '.']);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('not allowed');
+      });
+
+      it('should reject disallowed git clone flags', () => {
+        const result = validateCommand('git', [
+          'clone',
+          '--recurse-submodules',
+          'https://github.com/fb/react.git',
+          '/tmp/dir',
+        ]);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('not allowed');
+      });
+
+      it('should reject disallowed git sparse-checkout actions', () => {
+        const result = validateCommand('git', ['sparse-checkout', 'reapply']);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('not allowed');
+      });
+
+      it('should reject disallowed git sparse-checkout flags', () => {
+        const result = validateCommand('git', [
+          'sparse-checkout',
+          'set',
+          '--stdin',
+        ]);
+        expect(result.isValid).toBe(false);
+        expect(result.error).toContain('not allowed');
+      });
+
+      it('should reject git with no subcommand', () => {
+        const result = validateCommand('git', []);
+        expect(result.isValid).toBe(false);
+      });
+
+      it('should handle git -C as a global option before subcommand', () => {
+        expect(
+          validateCommand('git', [
+            '-C',
+            '/tmp/repo',
+            'clone',
+            '--depth',
+            '1',
+            '--',
+            'https://github.com/fb/react.git',
+            '/tmp/dir',
+          ])
+        ).toEqual({ isValid: true });
+      });
+    });
+
     describe('dangerous pattern detection', () => {
       it('should reject shell execution patterns in non-pattern args', () => {
         // Path argument with command substitution

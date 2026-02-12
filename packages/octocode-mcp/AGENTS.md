@@ -341,7 +341,7 @@ tests/
 | Tool | Type | Local | Description |
 |------|------|-------|-------------|
 | `githubSearchCode` | search | ❌ | Search code across GitHub/GitLab |
-| `githubGetFileContent` | content | ❌ | Fetch file content from GitHub/GitLab repos |
+| `githubGetFileContent` | content | ❌ | Fetch file content or directory to disk (`type: "directory"` requires `ENABLE_CLONE`) |
 | `githubViewRepoStructure` | content | ❌ | Browse GitHub/GitLab repository tree |
 | `githubSearchRepositories` | search | ❌ | Search GitHub/GitLab repositories |
 | `githubSearchPullRequests` | history | ❌ | Search PRs/MRs and view diffs |
@@ -486,6 +486,7 @@ yarn test:ui
 | `GL_TOKEN` | GitLab token (fallback) | - |
 | `GITLAB_HOST` | GitLab instance URL | `https://gitlab.com` |
 | `ENABLE_LOCAL` | Enable local filesystem tools | `false` |
+| `ENABLE_CLONE` | Enable `githubCloneRepo` tool and `githubGetFileContent` directory mode (requires `ENABLE_LOCAL`) | `false` |
 | `DISABLE_PROMPTS` | Disable prompts/slash commands | `false` |
 | `LOG` | Enable session logging | `true` |
 | `REQUEST_TIMEOUT` | API request timeout (ms) | `30000` |
@@ -502,6 +503,7 @@ yarn test:ui
 |----------|-------------|
 | [`GITHUB_GITLAB_TOOLS_REFERENCE.md`](./docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) | GitHub/GitLab tools: search code/repos/PRs, content, packages |
 | [`LOCAL_TOOLS_REFERENCE.md`](./docs/LOCAL_TOOLS_REFERENCE.md) | Local + LSP tools: search, structure, files, semantic analysis |
+| [`CLONE_AND_LOCAL_TOOLS_WORKFLOW.md`](./docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md) | Clone repos → use local + LSP tools for deep analysis |
 | [`AUTHENTICATION_SETUP.md`](./docs/AUTHENTICATION_SETUP.md) | GitHub/GitLab authentication setup |
 | [`README.md`](./README.md) | Installation, usage, configuration |
 | [`../../AGENTS.md`](../../AGENTS.md) | Root monorepo guidelines |

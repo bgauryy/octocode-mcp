@@ -95,9 +95,9 @@ export function createSuccessResult<T extends Record<string, unknown>>(
   const hints = getHints(toolName, status, options?.hintContext);
   const extraHints = options?.extraHints || [];
 
-  // Combine, deduplicate, and filter empty/whitespace-only hints
+  // Combine, deduplicate, and filter empty/whitespace-only/non-string hints
   const allHints = [...new Set([...hints, ...extraHints])].filter(
-    h => h && h.trim().length > 0
+    (h): h is string => typeof h === 'string' && h.trim().length > 0
   );
 
   if (allHints.length > 0) {
@@ -149,7 +149,7 @@ export function handleApiError(
     retryAfter: apiResult.retryAfter,
   };
 
-  const externalHints = apiResult.hints || [];
+  const externalHints = Array.isArray(apiResult.hints) ? apiResult.hints : [];
 
   const errorResult = createErrorResult(apiError, query, {
     hintSourceError: apiError,

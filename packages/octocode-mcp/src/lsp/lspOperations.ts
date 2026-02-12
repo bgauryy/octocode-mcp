@@ -31,6 +31,7 @@ import type {
   OutgoingCall,
 } from './types.js';
 import { LSPDocumentManager } from './lspDocumentManager.js';
+import { PathValidator } from '../security/pathValidator.js';
 
 /** Default timeout for LSP requests (30 seconds) */
 const LSP_REQUEST_TIMEOUT_MS = 30_000;
@@ -38,6 +39,9 @@ const LSP_REQUEST_TIMEOUT_MS = 30_000;
 /**
  * Wraps an LSP sendRequest with a timeout to prevent indefinite hangs.
  * Language servers can become unresponsive; this ensures we always reject within a bounded time.
+ *
+ * Uses proper timer cleanup to prevent the "dangling setTimeout" leak
+ * that plain Promise.race + setTimeout causes.
  */
 async function sendRequestWithTimeout<T>(
   connection: MessageConnection,
@@ -45,18 +49,26 @@ async function sendRequestWithTimeout<T>(
   params: unknown,
   timeoutMs: number = LSP_REQUEST_TIMEOUT_MS
 ): Promise<T> {
-  return Promise.race([
-    connection.sendRequest(method, params) as Promise<T>,
-    new Promise<never>((_, reject) =>
-      setTimeout(
-        () =>
-          reject(
-            new Error(`LSP request '${method}' timed out after ${timeoutMs}ms`)
-          ),
-        timeoutMs
-      )
-    ),
-  ]);
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
+      () =>
+        reject(
+          new Error(`LSP request '${method}' timed out after ${timeoutMs}ms`)
+        ),
+      timeoutMs
+    );
+  });
+  try {
+    return await Promise.race([
+      connection.sendRequest(method, params) as Promise<T>,
+      timeoutPromise,
+    ]);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
 }
 
 /**
@@ -66,9 +78,17 @@ export class LSPOperations {
   private connection: MessageConnection | null = null;
   private initialized = false;
   private documentManager: LSPDocumentManager;
+  private pathValidator: PathValidator;
 
-  constructor(documentManager: LSPDocumentManager) {
+  constructor(documentManager: LSPDocumentManager, workspaceRoot?: string) {
     this.documentManager = documentManager;
+    // Validate LSP file reads against the workspace root.
+    // A malicious/buggy LSP server could return file:///etc/passwd;
+    // this ensures we only read files under the workspace.
+    this.pathValidator = new PathValidator({
+      workspaceRoot: workspaceRoot ?? process.cwd(),
+      includeHomeDir: true,
+    });
   }
 
   /**
@@ -206,13 +226,18 @@ export class LSPOperations {
       return [];
     }
 
-    return result.map(call => ({
-      from: this.convertCallHierarchyItem(call.from),
-      fromRanges: call.fromRanges.map(r => ({
-        start: { line: r.start.line, character: r.start.character },
-        end: { line: r.end.line, character: r.end.character },
-      })),
-    }));
+    return result
+      .filter(call => call?.from && call?.fromRanges)
+      .map(call => ({
+        from: this.convertCallHierarchyItem(call.from),
+        fromRanges: (call.fromRanges ?? []).map(r => ({
+          start: {
+            line: r?.start?.line ?? 0,
+            character: r?.start?.character ?? 0,
+          },
+          end: { line: r?.end?.line ?? 0, character: r?.end?.character ?? 0 },
+        })),
+      }));
   }
 
   /**
@@ -235,13 +260,18 @@ export class LSPOperations {
       return [];
     }
 
-    return result.map(call => ({
-      to: this.convertCallHierarchyItem(call.to),
-      fromRanges: call.fromRanges.map(r => ({
-        start: { line: r.start.line, character: r.start.character },
-        end: { line: r.end.line, character: r.end.character },
-      })),
-    }));
+    return result
+      .filter(call => call?.to && call?.fromRanges)
+      .map(call => ({
+        to: this.convertCallHierarchyItem(call.to),
+        fromRanges: (call.fromRanges ?? []).map(r => ({
+          start: {
+            line: r?.start?.line ?? 0,
+            character: r?.start?.character ?? 0,
+          },
+          end: { line: r?.end?.line ?? 0, character: r?.end?.character ?? 0 },
+        })),
+      }));
   }
 
   /**
@@ -256,14 +286,28 @@ export class LSPOperations {
     const snippets: CodeSnippet[] = [];
 
     for (const loc of locations) {
+      // Defensive: malformed LSP responses may have missing uri/range
+      if (!loc) continue;
+
       const uri = 'targetUri' in loc ? loc.targetUri : loc.uri;
       const range = 'targetRange' in loc ? loc.targetRange : loc.range;
 
+      if (!uri || !range?.start || !range?.end) continue;
+
       const filePath = fromUri(uri);
+
+      // SECURITY: Validate the file path returned by the LSP server.
+      // A malicious/buggy LSP could return URIs like file:///etc/passwd.
+      const pathValidation = this.pathValidator.validate(filePath);
+      if (!pathValidation.isValid) {
+        continue; // Skip files outside allowed directories
+      }
+
       let content = '';
 
       try {
-        const fileContent = await fs.readFile(filePath, 'utf-8');
+        const safePath = pathValidation.sanitizedPath ?? filePath;
+        const fileContent = await fs.readFile(safePath, 'utf-8');
         const lines = fileContent.split(/\r?\n/);
         const startLine = range.start.line;
         const endLine = range.end.line;
@@ -295,33 +339,45 @@ export class LSPOperations {
   /**
    * Convert LSP CallHierarchyItem to our CallHierarchyItem
    */
+  /**
+   * Convert LSP CallHierarchyItem to our CallHierarchyItem.
+   * Defensive: handles malformed LSP responses with missing range/selectionRange.
+   */
   private convertCallHierarchyItem(
     item: LSPCallHierarchyItem
   ): CallHierarchyItem {
+    // Defensive defaults for malformed LSP responses
+    const defaultPos = { line: 0, character: 0 };
+    const defaultRange = { start: defaultPos, end: defaultPos };
+
+    const range = item.range ?? defaultRange;
+    const selectionRange = item.selectionRange ?? range; // fallback to range
+
+    const startLine = range.start?.line ?? 0;
+    const startChar = range.start?.character ?? 0;
+    const endLine = range.end?.line ?? 0;
+    const endChar = range.end?.character ?? 0;
+
+    const selStartLine = selectionRange.start?.line ?? 0;
+    const selStartChar = selectionRange.start?.character ?? 0;
+    const selEndLine = selectionRange.end?.line ?? 0;
+    const selEndChar = selectionRange.end?.character ?? 0;
+
     return {
-      name: item.name,
+      name: item.name ?? '',
       kind: convertSymbolKind(item.kind),
-      uri: fromUri(item.uri),
+      uri: fromUri(item.uri ?? ''),
       range: {
-        start: {
-          line: item.range.start.line,
-          character: item.range.start.character,
-        },
-        end: { line: item.range.end.line, character: item.range.end.character },
+        start: { line: startLine, character: startChar },
+        end: { line: endLine, character: endChar },
       },
       selectionRange: {
-        start: {
-          line: item.selectionRange.start.line,
-          character: item.selectionRange.start.character,
-        },
-        end: {
-          line: item.selectionRange.end.line,
-          character: item.selectionRange.end.character,
-        },
+        start: { line: selStartLine, character: selStartChar },
+        end: { line: selEndLine, character: selEndChar },
       },
       displayRange: {
-        startLine: item.range.start.line + 1,
-        endLine: item.range.end.line + 1,
+        startLine: startLine + 1,
+        endLine: endLine + 1,
       },
     };
   }

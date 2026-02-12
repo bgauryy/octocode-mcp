@@ -7,6 +7,7 @@ import {
   getServerConfig,
   isLoggingEnabled,
   isLocalEnabled,
+  isCloneEnabled,
   arePromptsEnabled,
   getTokenSource,
   _setTokenResolvers,
@@ -143,6 +144,7 @@ describe('ServerConfig - Simplified Version', () => {
       expect(config.maxRetries).toBe(3);
       expect(config.loggingEnabled).toBe(true);
       expect(config.enableLocal).toBe(false);
+      expect(config.enableClone).toBe(false);
       expect(config.disablePrompts).toBe(false);
       expect(config.tokenSource).toBe('none');
     });
@@ -674,6 +676,92 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should throw when config is not initialized', () => {
       expect(() => isLocalEnabled()).toThrow();
+    });
+  });
+
+  describe('ENABLE_CLONE Configuration', () => {
+    beforeEach(() => {
+      delete process.env.ENABLE_CLONE;
+      delete process.env.ENABLE_LOCAL;
+    });
+
+    it('should default to false when ENABLE_CLONE is not set', async () => {
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().enableClone).toBe(false);
+    });
+
+    it('should enable clone when ENABLE_CLONE is "true"', async () => {
+      process.env.ENABLE_CLONE = 'true';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().enableClone).toBe(true);
+    });
+
+    it('should enable clone when ENABLE_CLONE is "1"', async () => {
+      process.env.ENABLE_CLONE = '1';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().enableClone).toBe(true);
+    });
+
+    it('should disable clone when ENABLE_CLONE is "false"', async () => {
+      process.env.ENABLE_CLONE = 'false';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().enableClone).toBe(false);
+    });
+
+    it('should return false for invalid/unrecognized ENABLE_CLONE values', async () => {
+      const invalidValues = ['no', 'yes', 'enabled', '', '   '];
+
+      for (const value of invalidValues) {
+        cleanup();
+        delete process.env.ENABLE_CLONE;
+        process.env.ENABLE_CLONE = value;
+        mockSpawnFailure();
+        await initialize();
+        expect(getServerConfig().enableClone).toBe(false);
+      }
+    });
+  });
+
+  describe('isCloneEnabled() helper', () => {
+    beforeEach(() => {
+      delete process.env.ENABLE_CLONE;
+      delete process.env.ENABLE_LOCAL;
+    });
+
+    it('should return false when both local and clone are disabled', async () => {
+      mockSpawnFailure();
+      await initialize();
+      expect(isCloneEnabled()).toBe(false);
+    });
+
+    it('should return false when local is enabled but clone is not', async () => {
+      process.env.ENABLE_LOCAL = 'true';
+      mockSpawnFailure();
+      await initialize();
+      expect(isCloneEnabled()).toBe(false);
+    });
+
+    it('should return false when clone is enabled but local is not', async () => {
+      process.env.ENABLE_CLONE = 'true';
+      mockSpawnFailure();
+      await initialize();
+      expect(isCloneEnabled()).toBe(false);
+    });
+
+    it('should return true when both local and clone are enabled', async () => {
+      process.env.ENABLE_LOCAL = 'true';
+      process.env.ENABLE_CLONE = 'true';
+      mockSpawnFailure();
+      await initialize();
+      expect(isCloneEnabled()).toBe(true);
+    });
+
+    it('should throw when config is not initialized', () => {
+      expect(() => isCloneEnabled()).toThrow();
     });
   });
 

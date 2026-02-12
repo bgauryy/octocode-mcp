@@ -199,6 +199,7 @@ describe('Index Module', () => {
       maxRetries: 3,
       loggingEnabled: true,
       enableLocal: false,
+      enableClone: false,
       disablePrompts: false,
       tokenSource: 'env:GITHUB_TOKEN',
     });

@@ -14,6 +14,7 @@ export const STATIC_TOOL_NAMES = {
   GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
   GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
   PACKAGE_SEARCH: 'packageSearch',
+  GITHUB_CLONE_REPO: 'githubCloneRepo',
   LOCAL_RIPGREP: 'localSearchCode',
   LOCAL_FETCH_CONTENT: 'localGetFileContent',
   LOCAL_FIND_FILES: 'localFindFiles',
