@@ -408,30 +408,14 @@ describe('index.ts - Shutdown Logic Patterns', () => {
   });
 
   describe('Process Stream Control', () => {
-    it('should resume stdin', () => {
-      const mockStdin = {
-        resume: vi.fn().mockReturnThis(),
-      };
-
-      mockStdin.resume();
-
-      expect(mockStdin.resume).toHaveBeenCalled();
-    });
-
-    it('should uncork streams', () => {
+    it('should not call uncork on stdout (stdio MCP safety)', () => {
+      // uncork/cork calls were removed to prevent potential stdout
+      // corruption in stdio MCP transport
       const mockStdout = {
         uncork: vi.fn(),
       };
-
-      const mockStderr = {
-        uncork: vi.fn(),
-      };
-
-      mockStdout.uncork();
-      mockStderr.uncork();
-
-      expect(mockStdout.uncork).toHaveBeenCalled();
-      expect(mockStderr.uncork).toHaveBeenCalled();
+      // Verify the pattern is NOT used
+      expect(mockStdout.uncork).not.toHaveBeenCalled();
     });
   });
 

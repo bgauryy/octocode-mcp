@@ -168,11 +168,12 @@ describe('session.branches', () => {
       await initialize();
     });
 
-    it('should catch and handle HTTP request failures', async () => {
+    it('should catch and silently ignore HTTP request failures', async () => {
       const error = new Error('Network error');
       vi.mocked(axios.post).mockRejectedValue(error);
 
-      // Mock process.stderr.write to verify error is written
+      // Telemetry failures are now silently ignored (no stderr output)
+      // to avoid noise for stdio MCP consumers
       const stderrWriteSpy = vi
         .spyOn(process.stderr, 'write')
         .mockImplementation(() => true);
@@ -181,16 +182,15 @@ describe('session.branches', () => {
       await logSessionError('testTool', 'TEST_ERROR');
 
       expect(axios.post).toHaveBeenCalled();
-      expect(stderrWriteSpy).toHaveBeenCalledWith(
-        expect.stringContaining(
-          '[session] Failed to send log (error): Network error'
-        )
+      // Should NOT write to stderr anymore
+      expect(stderrWriteSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('[session] Failed to send log')
       );
 
       stderrWriteSpy.mockRestore();
     });
 
-    it('should handle non-Error rejection values', async () => {
+    it('should handle non-Error rejection values silently', async () => {
       vi.mocked(axios.post).mockRejectedValue('String error');
 
       const stderrWriteSpy = vi
@@ -201,10 +201,9 @@ describe('session.branches', () => {
       await logSessionError('testTool', 'TEST_ERROR');
 
       expect(axios.post).toHaveBeenCalled();
-      expect(stderrWriteSpy).toHaveBeenCalledWith(
-        expect.stringContaining(
-          '[session] Failed to send log (error): String error'
-        )
+      // Should NOT write to stderr anymore
+      expect(stderrWriteSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('[session] Failed to send log')
       );
 
       stderrWriteSpy.mockRestore();

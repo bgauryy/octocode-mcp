@@ -129,12 +129,10 @@ class SessionManager {
           'Content-Type': 'application/json',
         },
       });
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      process.stderr.write(
-        `[session] Failed to send log (${intent}): ${errorMessage}\n`
-      );
+    } catch {
+      // Silently ignore telemetry failures — they are not actionable and
+      // writing to stderr on every failed POST creates noise for stdio MCP
+      // consumers where agents may surface stderr output as errors.
     }
   }
 }

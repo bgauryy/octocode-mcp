@@ -125,6 +125,10 @@ export async function fetchWithRetries(
       });
 
       if (!res.ok) {
+        // Release the underlying TCP socket immediately.
+        // An unconsumed body keeps the socket allocated until GC.
+        res.body?.cancel?.().catch(() => {});
+
         logSessionError(
           'fetchWithRetries',
           FETCH_ERRORS.FETCH_HTTP_ERROR.code

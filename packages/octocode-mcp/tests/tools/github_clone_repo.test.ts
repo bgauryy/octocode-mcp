@@ -406,8 +406,12 @@ vi.mock('../../src/utils/exec/spawn.js', async importOriginal => {
   };
 });
 
+// resolveDefaultBranch delegates to mockGetOctokit so existing tests work unchanged
+const mockResolveDefaultBranch = vi.hoisted(() => vi.fn());
+
 vi.mock('../../src/github/client.js', () => ({
   getOctokit: mockGetOctokit,
+  resolveDefaultBranch: mockResolveDefaultBranch,
 }));
 
 vi.mock('octocode-shared', () => ({
@@ -443,7 +447,10 @@ describe('cloneRepo', () => {
       }
     );
 
-    // Default: API returns 'main' as default branch
+    // Default: resolveDefaultBranch returns 'main'
+    mockResolveDefaultBranch.mockResolvedValue('main');
+
+    // Default: API returns 'main' as default branch (for other Octokit uses)
     mockGetOctokit.mockResolvedValue({
       rest: {
         repos: {
@@ -777,15 +784,7 @@ describe('cloneRepo', () => {
   });
 
   it('resolves default branch from API when not specified', async () => {
-    mockGetOctokit.mockResolvedValue({
-      rest: {
-        repos: {
-          get: vi.fn().mockResolvedValue({
-            data: { default_branch: 'develop' },
-          }),
-        },
-      },
-    });
+    mockResolveDefaultBranch.mockResolvedValue('develop');
 
     const result = await cloneRepo({
       mainResearchGoal: 'test',
@@ -796,10 +795,17 @@ describe('cloneRepo', () => {
     });
 
     expect(result.branch).toBe('develop');
+    expect(mockResolveDefaultBranch).toHaveBeenCalledWith(
+      'org',
+      'project',
+      undefined
+    );
   });
 
-  it('falls back to "main" when API fails', async () => {
-    mockGetOctokit.mockRejectedValue(new Error('Network error'));
+  it('uses branch from resolveDefaultBranch when query.branch is omitted', async () => {
+    // resolveDefaultBranch handles the API call + fallback internally
+    // (tested in client.test.ts). Here we verify cloneRepo uses its result.
+    mockResolveDefaultBranch.mockResolvedValue('main');
 
     const result = await cloneRepo({
       mainResearchGoal: 'test',
@@ -810,6 +816,11 @@ describe('cloneRepo', () => {
     });
 
     expect(result.branch).toBe('main');
+    expect(mockResolveDefaultBranch).toHaveBeenCalledWith(
+      'org',
+      'project',
+      undefined
+    );
   });
 
   it('throws clear error when git is not available', async () => {

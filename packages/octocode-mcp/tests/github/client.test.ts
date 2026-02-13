@@ -3,6 +3,7 @@ import {
   getOctokit,
   OctokitWithThrottling,
   clearOctokitInstances,
+  resolveDefaultBranch,
 } from '../../src/github/client.js';
 
 vi.mock('../../src/serverConfig.js', () => ({
@@ -236,6 +237,78 @@ describe('GitHub Client', () => {
     it('should export OctokitWithThrottling class', () => {
       expect(typeof OctokitWithThrottling).toEqual('function');
       expect(OctokitWithThrottling.name.length > 0).toEqual(true);
+    });
+  });
+
+  describe('resolveDefaultBranch', () => {
+    it('should return default branch from GitHub API', async () => {
+      mockGetGitHubToken.mockResolvedValue('test-token');
+      const mockReposGet = vi.fn().mockResolvedValue({
+        data: { default_branch: 'develop' },
+      });
+      mockOctokit.mockImplementation(function () {
+        return { rest: { repos: { get: mockReposGet } } };
+      });
+
+      const branch = await resolveDefaultBranch('org', 'repo');
+
+      expect(branch).toBe('develop');
+      expect(mockReposGet).toHaveBeenCalledWith({ owner: 'org', repo: 'repo' });
+    });
+
+    it('should fall back to "main" when API call fails', async () => {
+      mockGetGitHubToken.mockResolvedValue('test-token');
+      const mockReposGet = vi.fn().mockRejectedValue(new Error('Not found'));
+      mockOctokit.mockImplementation(function () {
+        return { rest: { repos: { get: mockReposGet } } };
+      });
+
+      const branch = await resolveDefaultBranch('org', 'repo');
+
+      expect(branch).toBe('main');
+    });
+
+    it('should fall back to "main" when getOctokit fails', async () => {
+      mockGetGitHubToken.mockRejectedValue(new Error('No token'));
+
+      const branch = await resolveDefaultBranch('org', 'repo');
+
+      expect(branch).toBe('main');
+    });
+
+    it('should forward authInfo to getOctokit', async () => {
+      const authInfo = {
+        token: 'oauth-token',
+        clientId: 'test-client',
+        scopes: [],
+      };
+      const mockReposGet = vi.fn().mockResolvedValue({
+        data: { default_branch: 'main' },
+      });
+      mockOctokit.mockImplementation(function () {
+        return { rest: { repos: { get: mockReposGet } } };
+      });
+
+      await resolveDefaultBranch('org', 'repo', authInfo);
+
+      // Verify Octokit was created with the auth token
+      expect(mockOctokit).toHaveBeenCalledWith(
+        expect.objectContaining({ auth: 'oauth-token' })
+      );
+    });
+
+    it('should handle repos with "master" as default branch', async () => {
+      mockGetGitHubToken.mockResolvedValue('test-token');
+      const mockReposGet = vi.fn().mockResolvedValue({
+        data: { default_branch: 'master' },
+      });
+      mockOctokit.mockImplementation(function () {
+        return { rest: { repos: { get: mockReposGet } } };
+      });
+
+      const branch = await resolveDefaultBranch('legacy-org', 'old-repo');
+
+      expect(branch).toBe('master');
     });
   });
 

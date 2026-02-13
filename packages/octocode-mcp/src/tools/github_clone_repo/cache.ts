@@ -16,6 +16,8 @@ import {
   writeFileSync,
   mkdirSync,
   rmSync,
+  readdirSync,
+  statSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -191,4 +193,94 @@ export function removeCloneDir(cloneDir: string): void {
     // Permission denied, file in use, etc. — best-effort cleanup.
     // The git clone step will fail with a clear error if the dir is unusable.
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Expired cache eviction
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Scan all cached clone directories and remove any whose TTL has expired.
+ *
+ * Layout: {reposBase}/{owner}/{repo}/{branchDir}/
+ * Each branchDir should contain a META_FILE_NAME with an `expiresAt` field.
+ *
+ * Non-throwing: best-effort cleanup. Failures for individual entries
+ * are silently skipped so one bad directory doesn't block the rest.
+ *
+ * Call this on server startup or before new clones to reclaim disk space.
+ */
+export function evictExpiredClones(octocodeDir: string): number {
+  const reposBase = getReposBaseDir(octocodeDir);
+  if (!existsSync(reposBase)) return 0;
+
+  let evicted = 0;
+
+  /** Helper: check if a path is a directory (non-throwing). */
+  function isDir(path: string): boolean {
+    try {
+      return statSync(path).isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
+  /** Helper: list directory entries as strings (non-throwing). */
+  function listDir(path: string): string[] {
+    try {
+      return readdirSync(path);
+    } catch {
+      return [];
+    }
+  }
+
+  try {
+    for (const ownerName of listDir(reposBase)) {
+      const ownerDir = join(reposBase, ownerName);
+      if (!isDir(ownerDir)) continue;
+
+      for (const repoName of listDir(ownerDir)) {
+        const repoDir = join(ownerDir, repoName);
+        if (!isDir(repoDir)) continue;
+
+        for (const branchName of listDir(repoDir)) {
+          const branchDir = join(repoDir, branchName);
+          if (!isDir(branchDir)) continue;
+
+          try {
+            const meta = readCacheMeta(branchDir);
+            // Evict if: no metadata (orphan) or expired
+            if (!meta || !isCacheValid(meta)) {
+              rmSync(branchDir, { recursive: true, force: true });
+              evicted++;
+            }
+          } catch {
+            // Skip entries we can't read/delete
+          }
+        }
+
+        // Clean up empty repo directories
+        if (listDir(repoDir).length === 0) {
+          try {
+            rmSync(repoDir, { recursive: true, force: true });
+          } catch {
+            // skip
+          }
+        }
+      }
+
+      // Clean up empty owner directories
+      if (listDir(ownerDir).length === 0) {
+        try {
+          rmSync(ownerDir, { recursive: true, force: true });
+        } catch {
+          // skip
+        }
+      }
+    }
+  } catch {
+    // reposBase unreadable — nothing to evict
+  }
+
+  return evicted;
 }

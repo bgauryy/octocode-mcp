@@ -19,17 +19,21 @@ type LogHandler = (entry: LogEntry) => void;
 let customHandler: LogHandler | null = null;
 
 /**
- * Default handler that writes to console with module prefix.
+ * Default handler that writes to stderr.
+ *
+ * IMPORTANT: This package is consumed by stdio MCP servers where stdout
+ * is reserved for JSON-RPC protocol messages. Using console.log (stdout)
+ * would corrupt the MCP transport. All log output MUST go to stderr.
  */
 function defaultHandler(entry: LogEntry): void {
   const prefix = `[${entry.module}]`;
-  const method =
-    entry.level === 'error' ? 'error' : entry.level === 'warn' ? 'warn' : 'log';
-  if (entry.data && Object.keys(entry.data).length > 0) {
-    console[method](prefix, entry.message, entry.data);
-  } else {
-    console[method](prefix, entry.message);
-  }
+  const dataStr =
+    entry.data && Object.keys(entry.data).length > 0
+      ? ` ${JSON.stringify(entry.data)}`
+      : '';
+  process.stderr.write(
+    `${prefix} ${entry.level}: ${entry.message}${dataStr}\n`
+  );
 }
 
 /**

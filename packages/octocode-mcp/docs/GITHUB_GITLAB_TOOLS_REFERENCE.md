@@ -286,6 +286,8 @@ Tools for reading file content and browsing repository structure.
 - **Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`** (same as `githubCloneRepo`)
 - Fetches all files via GitHub Contents API + `download_url` (no git required)
 - Saves to `~/.octocode/repos/{owner}/{repo}/{branch}/{path}/` (same cache as clone tool)
+- **Branch resolution**: If `branch` is omitted, auto-detects the default branch via GitHub API (same as `githubCloneRepo`)
+- The resolved branch name is always included in the result (`branch` field) and the cache path
 - 24-hour cache TTL (same as `githubCloneRepo`)
 - Returns `localPath` — use with `localSearchCode`, `localGetFileContent`, `localViewStructure`, etc.
 - Limits: max 50 files, max 5MB total, max 300KB per file, skips binary files
@@ -403,17 +405,27 @@ owner="group", repo="project", branch="develop", path="src/api"
 | **Full clone** | General exploration, LSP needs full project context | _(default — omit `sparse_path`)_ |
 | **Partial fetch** | Large monorepo, only need a specific package/dir | `sparse_path="packages/core"` |
 
+**Branch resolution:**
+- If `branch` is provided, that specific branch is cloned
+- If `branch` is **omitted**, the default branch is **auto-detected** via the GitHub API (falls back to `main`)
+- The resolved branch name is **always included** in the result (`branch` field) and the cache path
+
+**Cache path format:** `~/.octocode/repos/{owner}/{repo}/{branch}/` (branch is always present)
+
 **Example queries:**
 
 ```
-# Clone entire repo
+# Clone entire repo (branch auto-detected)
 owner="vercel", repo="next.js"
+# → localPath: ~/.octocode/repos/vercel/next.js/canary (auto-detected default branch)
 
 # Clone specific branch
 owner="facebook", repo="react", branch="main"
+# → localPath: ~/.octocode/repos/facebook/react/main
 
 # Sparse checkout — only fetch one directory (fast!)
 owner="microsoft", repo="TypeScript", sparse_path="src/compiler"
+# → localPath: ~/.octocode/repos/microsoft/TypeScript/main__sp_a3f8c1
 ```
 
 **After cloning, use these tools on the returned `localPath`:**
@@ -431,6 +443,8 @@ owner="microsoft", repo="TypeScript", sparse_path="src/compiler"
 - Clone timeout: **2 minutes** for full clone, **30 seconds** for sparse checkout
 - Use `sparse_path` for large monorepos to avoid downloading unnecessary files
 - Cached clones are reused within 24 hours (idempotent)
+- Branch is **auto-detected** when omitted — the resolved branch is always in the result
+- Cache path includes branch: `{owner}/{repo}/{branch}/` — different branches get separate caches
 - Auth token is passed via `http.extraHeader` — never persisted in the clone URL or on-disk git config
 
 ---

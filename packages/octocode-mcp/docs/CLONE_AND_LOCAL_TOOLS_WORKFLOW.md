@@ -24,6 +24,8 @@ Octocode MCP has two worlds of tools:
 
 Both share the **same cache** (`~/.octocode/repos/{owner}/{repo}/{branch}/`) with 24-hour TTL. Fetching a directory and then cloning the same repo reuses the cache location.
 
+**Branch resolution:** Both tools auto-detect the repository's default branch via the GitHub API when no `branch` is specified (falls back to `main`). The resolved branch name is always included in the result and the cache path.
+
 ```
 ┌─────────────────────┐       ┌────────────────────────────┐       ┌──────────────────────────┐
 │  GitHub (remote)     │       │  Bridge Tools              │       │  Local + LSP (on disk)   │
@@ -200,6 +202,7 @@ Step 4: Find files by metadata
 |----------|---------|
 | **TTL** | 24 hours from clone time |
 | **Location** | `~/.octocode/repos/{owner}/{repo}/{branch}/` |
+| **Branch** | Auto-detected via GitHub API when omitted; resolved branch always included in path and result |
 | **Sparse clones** | Separate cache: `{branch}__sp_{hash}/` |
 | **Coexistence** | Full clone and sparse clones of the same repo can coexist |
 | **Cache hit** | Returns instantly (no network call), includes `cached: true` |
@@ -224,8 +227,9 @@ No extra configuration is needed beyond enabling both `ENABLE_LOCAL=true` and `E
 
 | Action | Tool | Key Parameter |
 |--------|------|---------------|
-| Clone entire repo | `githubCloneRepo` | `owner`, `repo` |
-| Clone one folder | `githubCloneRepo` | `owner`, `repo`, `sparse_path` |
+| Clone entire repo | `githubCloneRepo` | `owner`, `repo` (branch auto-detected) |
+| Clone specific branch | `githubCloneRepo` | `owner`, `repo`, `branch` |
+| Clone one folder | `githubCloneRepo` | `owner`, `repo`, `sparse_path` (branch auto-detected) |
 | Browse cloned tree | `localViewStructure` | `path` = `localPath` |
 | Search cloned code | `localSearchCode` | `path` = `localPath` |
 | Read cloned file | `localGetFileContent` | `path` = `localPath + "/file.ts"` |

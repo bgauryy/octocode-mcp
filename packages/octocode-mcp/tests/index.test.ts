@@ -91,9 +91,7 @@ describe('Index Module', () => {
 
   let processOnSpy: any;
 
-  let processStdoutUncorkSpy: any;
-
-  let processStderrUncorkSpy: any;
+  // uncork spies removed — uncork calls were removed from index.ts (stdio safety)
   let originalGithubToken: string | undefined;
   let originalGhToken: string | undefined;
 
@@ -141,12 +139,7 @@ describe('Index Module', () => {
     processOnSpy = vi.spyOn(process, 'once').mockImplementation(function () {
       return process;
     });
-    processStdoutUncorkSpy = vi
-      .spyOn(process.stdout, 'uncork')
-      .mockImplementation(function () {});
-    processStderrUncorkSpy = vi
-      .spyOn(process.stderr, 'uncork')
-      .mockImplementation(function () {});
+    // uncork spies removed — uncork calls were removed from index.ts (stdio safety)
 
     // Mock server connect to resolve immediately
     mockMcpServer.connect.mockResolvedValue(undefined);
@@ -231,8 +224,7 @@ describe('Index Module', () => {
     processStdinResumeSpy?.mockRestore();
     processStdinOnSpy?.mockRestore();
     processOnSpy?.mockRestore();
-    processStdoutUncorkSpy?.mockRestore();
-    processStderrUncorkSpy?.mockRestore();
+    // uncork spies removed — uncork calls were removed from index.ts (stdio safety)
   });
 
   // Helper function to wait for async operations to complete

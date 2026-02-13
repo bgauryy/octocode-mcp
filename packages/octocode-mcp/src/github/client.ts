@@ -4,7 +4,7 @@ import type { OctokitOptions } from '@octokit/core';
 import { createHash } from 'crypto';
 import { getGitHubToken } from '../serverConfig.js';
 import { getServerConfig } from '../serverConfig.js';
-import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { version } from '../../package.json';
 
 /**
@@ -214,12 +214,54 @@ export async function getOctokit(
 }
 
 /**
+ * In-memory cache for default branch lookups.
+ * Key: "owner/repo", Value: branch name.
+ * TTL is tied to the Octokit instance cache (5 min) — cleared via clearOctokitInstances().
+ *
+ * Prevents redundant GitHub API calls when multiple queries in a bulk
+ * operation target the same repo without specifying a branch.
+ */
+const defaultBranchCache = new Map<string, string>();
+
+/**
+ * Fetch the default branch name for a GitHub repository.
+ * Results are cached in-memory to avoid redundant API calls within a session.
+ * Falls back to "main" on error (e.g. network failure, private repo without token).
+ *
+ * Shared utility used by:
+ * - githubCloneRepo (when branch is omitted)
+ * - githubGetFileContent directory mode (when branch is omitted)
+ */
+export async function resolveDefaultBranch(
+  owner: string,
+  repo: string,
+  authInfo?: AuthInfo
+): Promise<string> {
+  const cacheKey = `${owner}/${repo}`;
+  const cached = defaultBranchCache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const octokit = await getOctokit(authInfo);
+    const { data } = await octokit.rest.repos.get({ owner, repo });
+    const branch = data.default_branch;
+    defaultBranchCache.set(cacheKey, branch);
+    return branch;
+  } catch {
+    const fallback = 'main';
+    defaultBranchCache.set(cacheKey, fallback);
+    return fallback;
+  }
+}
+
+/**
  * Clear all cached Octokit instances and stop the purge timer.
  * Used for testing, shutdown, or when a full reset is needed.
  */
 export function clearOctokitInstances(): void {
   instances.clear();
   pendingDefaultPromise = null;
+  defaultBranchCache.clear();
 
   if (purgeTimer) {
     clearInterval(purgeTimer);

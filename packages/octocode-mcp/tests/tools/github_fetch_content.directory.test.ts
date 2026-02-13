@@ -18,8 +18,13 @@ const mockGetOctokit = vi.hoisted(() =>
   })
 );
 
+const mockResolveDefaultBranch = vi.hoisted(() =>
+  vi.fn().mockResolvedValue('main')
+);
+
 vi.mock('../../src/github/client.js', () => ({
   getOctokit: mockGetOctokit,
+  resolveDefaultBranch: mockResolveDefaultBranch,
 }));
 
 const mockGetOctocodeDir = vi.hoisted(() => vi.fn());
@@ -291,7 +296,8 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
     expect(text).toContain('error');
   });
 
-  it('should default branch to "main" when not specified', async () => {
+  it('should resolve default branch via API when not specified', async () => {
+    mockResolveDefaultBranch.mockResolvedValue('main');
     mockDirectoryListing([{ name: 'file.ts', path: 'src/file.ts', size: 50 }]);
     mockFetch.mockResolvedValue({
       ok: true,
@@ -316,5 +322,11 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
     const text =
       result.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
     expect(text).toContain('localPath');
+    // Verify resolveDefaultBranch was called with the right args
+    expect(mockResolveDefaultBranch).toHaveBeenCalledWith(
+      'owner',
+      'repo',
+      undefined
+    );
   });
 });

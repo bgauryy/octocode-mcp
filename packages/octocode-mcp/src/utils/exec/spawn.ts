@@ -185,12 +185,15 @@ export function spawnWithTimeout(
     const getStdout = (): string => state.stdoutChunks.join('');
     const getStderr = (): string => state.stderrChunks.join('');
 
-    // Spawn options
+    // Spawn options — timeout is intentionally NOT passed here.
+    // spawnWithTimeout manages its own timeout via setTimeout with
+    // SIGTERM → SIGKILL escalation. Passing timeout to spawn() would
+    // create a double-timeout race condition where Node's built-in
+    // timeout also sends SIGTERM at the same instant.
     const spawnOptions: SpawnOptions = {
       cwd,
       env: buildChildProcessEnv(env, allowEnvVars),
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout,
     };
 
     let childProcess: ChildProcess;

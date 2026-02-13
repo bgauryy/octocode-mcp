@@ -23,7 +23,7 @@
  */
 
 import { getOctocodeDir } from 'octocode-shared';
-import { getOctokit } from '../../github/client.js';
+import { resolveDefaultBranch } from '../../github/client.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import {
   spawnWithTimeout,
@@ -37,6 +37,7 @@ import {
   createCacheMeta,
   ensureCloneParentDir,
   removeCloneDir,
+  evictExpiredClones,
 } from './cache.js';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -100,7 +101,8 @@ export async function cloneRepo(
     };
   }
 
-  // ── 2. Wipe stale cache ─────────────────────────────────────────
+  // ── 2. Evict expired clones & wipe stale cache ─────────────────
+  evictExpiredClones(octocodeDir);
   removeCloneDir(cloneDir);
   ensureCloneParentDir(cloneDir);
 
@@ -245,24 +247,6 @@ function pickToken(authInfo?: AuthInfo, token?: string): string | undefined {
   if (authInfo?.token && typeof authInfo.token === 'string')
     return authInfo.token;
   return token;
-}
-
-/**
- * Fetch the default branch name from the GitHub API.
- * Falls back to "main" on error.
- */
-async function resolveDefaultBranch(
-  owner: string,
-  repo: string,
-  authInfo?: AuthInfo
-): Promise<string> {
-  try {
-    const octokit = await getOctokit(authInfo);
-    const { data } = await octokit.rest.repos.get({ owner, repo });
-    return data.default_branch;
-  } catch {
-    return 'main';
-  }
 }
 
 /**

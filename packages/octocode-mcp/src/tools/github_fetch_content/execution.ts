@@ -1,4 +1,5 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { FileContentQuery } from './types.js';
 import { TOOL_NAMES } from '../toolMetadata.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
@@ -8,6 +9,7 @@ import { getProvider } from '../../providers/factory.js';
 import { getActiveProviderConfig, isCloneEnabled } from '../../serverConfig.js';
 import { isProviderSuccess, type ProviderType } from '../../providers/types.js';
 import { fetchDirectoryContents } from '../../github/directoryFetch.js';
+import { resolveDefaultBranch } from '../../github/client.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Directory fetch hints
@@ -113,7 +115,7 @@ export async function fetchMultipleGitHubFileContents(
 
 async function handleDirectoryFetch(
   query: FileContentQuery,
-  authInfo?: import('@modelcontextprotocol/sdk/server/auth/types.js').AuthInfo
+  authInfo?: AuthInfo
 ) {
   // Directory mode requires ENABLE_LOCAL=true and ENABLE_CLONE=true
   if (!isCloneEnabled()) {
@@ -128,7 +130,10 @@ async function handleDirectoryFetch(
     );
   }
 
-  const branch = query.branch || 'main';
+  // Resolve branch: use provided value, or auto-detect via GitHub API (like githubCloneRepo)
+  const branch =
+    query.branch ??
+    (await resolveDefaultBranch(query.owner, query.repo, authInfo));
 
   const result = await fetchDirectoryContents(
     query.owner,
@@ -174,7 +179,7 @@ async function handleFileFetch(
   providerType: ProviderType,
   baseUrl: string | undefined,
   token: string | undefined,
-  authInfo?: import('@modelcontextprotocol/sdk/server/auth/types.js').AuthInfo
+  authInfo?: AuthInfo
 ) {
   // Get provider instance
   const provider = getProvider(providerType, {

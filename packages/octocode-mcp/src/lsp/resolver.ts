@@ -201,10 +201,19 @@ export class SymbolResolver {
   }
 
   /**
-   * Check if character is a valid identifier character
+   * Check if character is a valid identifier character.
+   * Uses charCode comparison instead of regex for performance —
+   * this is called per-character during symbol boundary checks.
    */
   private isIdentifierChar(char: string): boolean {
-    return /[a-zA-Z0-9_$]/.test(char);
+    const c = char.charCodeAt(0);
+    return (
+      (c >= 48 && c <= 57) || // 0-9
+      (c >= 65 && c <= 90) || // A-Z
+      (c >= 97 && c <= 122) || // a-z
+      c === 95 || // _
+      c === 36 // $
+    );
   }
 
   /**

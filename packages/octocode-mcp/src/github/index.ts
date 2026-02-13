@@ -2,6 +2,7 @@ export {
   getOctokit,
   OctokitWithThrottling,
   clearOctokitInstances,
+  resolveDefaultBranch,
 } from './client';
 export { handleGitHubAPIError } from './errors';
 
