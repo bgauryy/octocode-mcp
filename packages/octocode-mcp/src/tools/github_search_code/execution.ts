@@ -36,6 +36,7 @@ export async function searchMultipleGitHubCode(
           path: query.path,
           filename: query.filename,
           extension: query.extension,
+          match: query.match,
           limit: query.limit,
           page: query.page,
           mainResearchGoal: query.mainResearchGoal,
@@ -80,7 +81,7 @@ export async function searchMultipleGitHubCode(
             currentPage: apiResult.data.pagination.currentPage,
             totalPages: apiResult.data.pagination.totalPages,
             perPage: apiResult.data.pagination.entriesPerPage || 10,
-            totalMatches: apiResult.data.pagination.totalEntries || 0,
+            totalMatches: apiResult.data.pagination.totalMatches || 0,
             hasMore: apiResult.data.pagination.hasMore,
           };
         }

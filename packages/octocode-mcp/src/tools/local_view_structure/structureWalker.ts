@@ -4,6 +4,21 @@ import { getExtension } from '../../utils/file/filters.js';
 import { formatFileSize } from '../../utils/file/size.js';
 import type { DirectoryEntry } from './structureFilters.js';
 
+export interface WalkStats {
+  skipped: number;
+}
+
+/**
+ * Format Unix file mode bits as rwx permission string (e.g. "rw-r--r--")
+ */
+function formatPermissions(mode: number): string {
+  const chars = ['---', '--x', '-w-', '-wx', 'r--', 'r-x', 'rw-', 'rwx'];
+  const owner = chars[(mode >> 6) & 7]!;
+  const group = chars[(mode >> 3) & 7]!;
+  const other = chars[mode & 7]!;
+  return `${owner}${group}${other}`;
+}
+
 export async function walkDirectory(
   basePath: string,
   currentPath: string,
@@ -12,7 +27,9 @@ export async function walkDirectory(
   entries: DirectoryEntry[],
   maxEntries: number = 10000,
   showHidden: boolean = false,
-  showModified: boolean = false
+  showModified: boolean = false,
+  stats?: WalkStats,
+  showDetails: boolean = false
 ): Promise<void> {
   if (depth >= maxDepth) return;
   if (entries.length >= maxEntries) return;
@@ -28,21 +45,24 @@ export async function walkDirectory(
       const relativePath = path.relative(basePath, fullPath);
 
       try {
-        const stats = await fs.promises.lstat(fullPath);
+        const fileStats = await fs.promises.lstat(fullPath);
 
         let type: 'file' | 'directory' | 'symlink' = 'file';
-        if (stats.isDirectory()) type = 'directory';
-        else if (stats.isSymbolicLink()) type = 'symlink';
+        if (fileStats.isDirectory()) type = 'directory';
+        else if (fileStats.isSymbolicLink()) type = 'symlink';
 
         const entry: DirectoryEntry = {
           name: relativePath,
           type,
-          size: formatFileSize(stats.size),
+          size: formatFileSize(fileStats.size),
           extension: getExtension(item),
           depth: depth, // Store correct depth from walker
         };
-        if (showModified) {
-          entry.modified = stats.mtime.toISOString();
+        if (showDetails || showModified) {
+          entry.modified = fileStats.mtime.toISOString();
+        }
+        if (showDetails) {
+          entry.permissions = formatPermissions(fileStats.mode);
         }
         entries.push(entry);
 
@@ -55,14 +75,16 @@ export async function walkDirectory(
             entries,
             maxEntries,
             showHidden,
-            showModified
+            showModified,
+            stats,
+            showDetails
           );
         }
       } catch {
-        // Skip inaccessible items
+        if (stats) stats.skipped++;
       }
     }
   } catch {
-    // Skip unreadable directories
+    if (stats) stats.skipped++;
   }
 }

@@ -471,4 +471,76 @@ line8`;
       expect(result.foundAtLine).toBe(7);
     });
   });
+
+  describe('orderHint on re-exported symbols (nearby lines)', () => {
+    it('should find re-exported symbol on nearby line even with orderHint > 0', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 3 });
+      const content = [
+        'export {',
+        '  SymbolResolver,',
+        '  SymbolResolutionError,',
+        '  defaultResolver,',
+        "} from './resolver.js';",
+      ].join('\n');
+
+      // lineHint points to "export {" (line 1) but symbol is on line 2.
+      // With orderHint: 1 the old code would demand a 2nd occurrence on
+      // each nearby line and fail — the fix ignores orderHint for nearby lines.
+      const result = resolver.resolvePositionFromContent(content, {
+        symbolName: 'SymbolResolver',
+        lineHint: 1,
+        orderHint: 1,
+      });
+
+      expect(result.foundAtLine).toBe(2);
+      expect(result.lineContent).toContain('SymbolResolver');
+    });
+
+    it('should still respect orderHint on the exact target line', () => {
+      const resolver = new SymbolResolver();
+      const content = 'const x = x + x;';
+
+      // orderHint: 1 → second occurrence on the SAME line
+      const result = resolver.resolvePositionFromContent(content, {
+        symbolName: 'x',
+        lineHint: 1,
+        orderHint: 1,
+      });
+
+      expect(result.position.character).toBe(10); // "const x = " → second x
+    });
+
+    it('should find barrel re-export when lineHint is slightly off', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 3 });
+      const content = [
+        "export { createClient } from './client.js';",
+        '',
+        "export { isLanguageServerAvailable } from './manager.js';",
+      ].join('\n');
+
+      // lineHint is 2 (empty line), orderHint non-zero.
+      // Should still find isLanguageServerAvailable on line 3.
+      const result = resolver.resolvePositionFromContent(content, {
+        symbolName: 'isLanguageServerAvailable',
+        lineHint: 2,
+        orderHint: 2,
+      });
+
+      expect(result.foundAtLine).toBe(3);
+    });
+
+    it('should fail with orderHint > 0 when symbol appears once on exact line', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      const content = "export { Foo } from './foo';";
+
+      // orderHint: 1 on a line where Foo appears once → should throw
+      expect(() =>
+        resolver.resolvePositionFromContent(content, {
+          symbolName: 'Foo',
+          lineHint: 1,
+          orderHint: 1,
+        })
+      ).toThrow(SymbolResolutionError);
+    });
+  });
 });

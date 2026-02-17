@@ -764,7 +764,9 @@ describe('SAN-08: withBasicSecurityValidation – Local Tool Integration', () =>
         enumerable: true,
       });
 
-      const result = await wrapped(params);
+      const result = await wrapped(params, {
+        signal: new AbortController().signal,
+      });
       expect(getTextContent(result)).toContain('Security validation failed');
       expect(result.isError).toBe(true);
     });
@@ -775,7 +777,10 @@ describe('SAN-08: withBasicSecurityValidation – Local Tool Integration', () =>
       });
       const wrapped = withBasicSecurityValidation(mockHandler);
 
-      const result = await wrapped({ constructor: 'evil' });
+      const result = await wrapped(
+        { constructor: 'evil' },
+        { signal: new AbortController().signal }
+      );
       expect(getTextContent(result)).toContain('Security validation failed');
       expect(result.isError).toBe(true);
     });
@@ -786,7 +791,10 @@ describe('SAN-08: withBasicSecurityValidation – Local Tool Integration', () =>
       });
       const wrapped = withBasicSecurityValidation(mockHandler);
 
-      const result = await wrapped({ prototype: 'evil' });
+      const result = await wrapped(
+        { prototype: 'evil' },
+        { signal: new AbortController().signal }
+      );
       expect(getTextContent(result)).toContain('Security validation failed');
       expect(result.isError).toBe(true);
     });
@@ -804,7 +812,10 @@ describe('SAN-08: withBasicSecurityValidation – Local Tool Integration', () =>
       const wrapped = withBasicSecurityValidation(mockHandler);
 
       const longString = 'x'.repeat(15000);
-      await wrapped({ pattern: longString });
+      await wrapped(
+        { pattern: longString },
+        { signal: new AbortController().signal }
+      );
 
       expect(receivedArgs).toBeDefined();
       expect((receivedArgs!['pattern'] as string).length).toBe(10000);
@@ -822,9 +833,12 @@ describe('SAN-08: withBasicSecurityValidation – Local Tool Integration', () =>
       };
       const wrapped = withBasicSecurityValidation(mockHandler);
 
-      await wrapped({
-        pattern: 'search for sk_live_abcdefghijklmnopqrstuvwx in code',
-      });
+      await wrapped(
+        {
+          pattern: 'search for sk_live_abcdefghijklmnopqrstuvwx in code',
+        },
+        { signal: new AbortController().signal }
+      );
 
       expect(receivedArgs).toBeDefined();
       expect(receivedArgs!['pattern'] as string).not.toContain(
@@ -844,9 +858,12 @@ describe('SAN-08: withBasicSecurityValidation – Local Tool Integration', () =>
       };
       const wrapped = withBasicSecurityValidation(mockHandler);
 
-      await wrapped({
-        queries: [{ pattern: 'function hello', path: '/src' }],
-      });
+      await wrapped(
+        {
+          queries: [{ pattern: 'function hello', path: '/src' }],
+        },
+        { signal: new AbortController().signal }
+      );
 
       expect(receivedArgs).toBeDefined();
       const queries = receivedArgs!['queries'] as Array<
@@ -864,7 +881,9 @@ describe('SAN-08: withBasicSecurityValidation – Local Tool Integration', () =>
       });
       const wrapped = withBasicSecurityValidation(mockHandler);
 
-      const result = await wrapped(null);
+      const result = await wrapped(null, {
+        signal: new AbortController().signal,
+      });
       expect(getTextContent(result)).toContain('Security validation failed');
       expect(result.isError).toBe(true);
     });
@@ -875,7 +894,9 @@ describe('SAN-08: withBasicSecurityValidation – Local Tool Integration', () =>
       });
       const wrapped = withBasicSecurityValidation(mockHandler);
 
-      const result = await wrapped('string input');
+      const result = await wrapped('string input', {
+        signal: new AbortController().signal,
+      });
       expect(getTextContent(result)).toContain('Security validation failed');
       expect(result.isError).toBe(true);
     });

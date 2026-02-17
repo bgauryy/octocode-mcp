@@ -21,6 +21,15 @@ interface CommandAvailabilityResult {
 const availabilityCache = new Map<string, CommandAvailabilityResult>();
 
 /**
+ * POSIX-standard commands guaranteed on macOS/Linux — skip subprocess checks.
+ */
+const POSIX_COMMANDS = new Set<string>(['grep', 'find', 'ls']);
+
+/** Timeout for command availability checks, configurable via environment variable */
+const COMMAND_CHECK_TIMEOUT_MS =
+  parseInt(process.env.OCTOCODE_COMMAND_CHECK_TIMEOUT_MS || '5000', 10) || 5000;
+
+/**
  * Required commands for local tools
  */
 export const REQUIRED_COMMANDS = {
@@ -55,6 +64,16 @@ export async function checkCommandAvailability(
 
   const cmdInfo = REQUIRED_COMMANDS[command];
 
+  // POSIX-standard commands are always present on macOS/Linux — skip spawn check
+  if (POSIX_COMMANDS.has(command) && process.platform !== 'win32') {
+    const result: CommandAvailabilityResult = {
+      available: true,
+      command,
+    };
+    availabilityCache.set(command, result);
+    return result;
+  }
+
   try {
     // macOS find doesn't support --version, use different approach
     let isAvailable: boolean;
@@ -64,20 +83,28 @@ export async function checkCommandAvailability(
       isAvailable = await spawnCheckSuccess(
         'find',
         ['.', '-maxdepth', '0'],
-        5000
+        COMMAND_CHECK_TIMEOUT_MS
       );
     } else if (command === 'ls') {
       // ls --version may not work on macOS, just check basic functionality
-      isAvailable = await spawnCheckSuccess('ls', ['-la', '.'], 5000);
+      isAvailable = await spawnCheckSuccess(
+        'ls',
+        ['-la', '.'],
+        COMMAND_CHECK_TIMEOUT_MS
+      );
     } else if (command === 'grep') {
       // grep --version may not work on macOS BSD grep, check basic functionality
-      isAvailable = await spawnCheckSuccess('grep', ['--help'], 5000);
+      isAvailable = await spawnCheckSuccess(
+        'grep',
+        ['--help'],
+        COMMAND_CHECK_TIMEOUT_MS
+      );
     } else {
       // For rg and GNU tools, --version works
       isAvailable = await spawnCheckSuccess(
         command,
         [cmdInfo.versionFlag],
-        5000
+        COMMAND_CHECK_TIMEOUT_MS
       );
     }
 

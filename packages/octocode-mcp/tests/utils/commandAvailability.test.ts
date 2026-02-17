@@ -192,6 +192,71 @@ describe('commandAvailability', () => {
     });
   });
 
+  describe('POSIX command fast path', () => {
+    it('should return available for find without calling spawnCheckSuccess on non-Windows', async () => {
+      const spawnModule = await import('../../src/utils/exec/spawn.js');
+      const spawnSpy = vi.spyOn(spawnModule, 'spawnCheckSuccess');
+
+      clearAvailabilityCache();
+
+      const result = await checkCommandAvailability('find', true);
+
+      if (process.platform !== 'win32') {
+        expect(result.available).toBe(true);
+        expect(spawnSpy).not.toHaveBeenCalled();
+      }
+
+      spawnSpy.mockRestore();
+    });
+
+    it('should return available for ls without calling spawnCheckSuccess on non-Windows', async () => {
+      const spawnModule = await import('../../src/utils/exec/spawn.js');
+      const spawnSpy = vi.spyOn(spawnModule, 'spawnCheckSuccess');
+
+      clearAvailabilityCache();
+
+      const result = await checkCommandAvailability('ls', true);
+
+      if (process.platform !== 'win32') {
+        expect(result.available).toBe(true);
+        expect(spawnSpy).not.toHaveBeenCalled();
+      }
+
+      spawnSpy.mockRestore();
+    });
+
+    it('should return available for grep without calling spawnCheckSuccess on non-Windows', async () => {
+      const spawnModule = await import('../../src/utils/exec/spawn.js');
+      const spawnSpy = vi.spyOn(spawnModule, 'spawnCheckSuccess');
+
+      clearAvailabilityCache();
+
+      const result = await checkCommandAvailability('grep', true);
+
+      if (process.platform !== 'win32') {
+        expect(result.available).toBe(true);
+        expect(spawnSpy).not.toHaveBeenCalled();
+      }
+
+      spawnSpy.mockRestore();
+    });
+
+    it('should still call spawnCheckSuccess for rg (not POSIX)', async () => {
+      const spawnModule = await import('../../src/utils/exec/spawn.js');
+      const spawnSpy = vi
+        .spyOn(spawnModule, 'spawnCheckSuccess')
+        .mockResolvedValue(true);
+
+      clearAvailabilityCache();
+
+      await checkCommandAvailability('rg', true);
+
+      expect(spawnSpy).toHaveBeenCalled();
+
+      spawnSpy.mockRestore();
+    });
+  });
+
   describe('REQUIRED_COMMANDS', () => {
     it('should have required commands defined', () => {
       expect(REQUIRED_COMMANDS.rg).toBeDefined();

@@ -188,7 +188,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         ],
       });
 
-      expect(result.isError).toBe(false); // Bulk returns success with error in results
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('error');
     });
@@ -204,7 +204,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         queries: [{ keywordsToSearch: ['test'] }],
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('error');
     });
@@ -440,7 +440,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         queries: [{ keywordsToSearch: ['test'], owner: 'test', repo: 'repo' }],
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('error');
     });

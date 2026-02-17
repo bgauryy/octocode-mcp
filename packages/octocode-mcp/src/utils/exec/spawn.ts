@@ -101,7 +101,6 @@ export function buildChildProcessEnv(
   allowEnvVars: readonly string[] = DEFAULT_ALLOWED_ENV_VARS
 ): typeof process.env {
   const childEnv: Record<string, string | undefined> = {};
-  const allowlist = new Set(allowEnvVars);
 
   for (const key of allowEnvVars) {
     const value = process.env[key];
@@ -110,8 +109,13 @@ export function buildChildProcessEnv(
     }
   }
 
+  // Explicit caller overrides are gated by the same allowlist — only keys
+  // present in allowEnvVars can be set/deleted. This prevents accidentally
+  // leaking sensitive variables (e.g. GITHUB_TOKEN) into child processes.
+  // Callers that need non-standard env vars must add them to allowEnvVars.
+  const allowSet = new Set<string>(allowEnvVars);
   for (const [key, value] of Object.entries(envOverrides)) {
-    if (!allowlist.has(key)) continue;
+    if (!allowSet.has(key)) continue;
     if (value === undefined) {
       delete childEnv[key];
     } else {

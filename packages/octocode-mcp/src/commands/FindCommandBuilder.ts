@@ -113,7 +113,10 @@ export class FindCommandBuilder extends BaseCommandBuilder {
         this.addOption('-regextype', query.regexType);
       }
       // macOS -E flag was added at the beginning
-      this.addOption('-regex', query.regex);
+      // find -regex matches against the FULL path (e.g. /Users/.../foo.test.ts),
+      // not just the filename. Prepend .* so filename-oriented patterns work as expected.
+      const normalizedRegex = this.normalizeRegexForFullPath(query.regex);
+      this.addOption('-regex', normalizedRegex);
     }
 
     if (query.empty) {
@@ -230,6 +233,29 @@ export class FindCommandBuilder extends BaseCommandBuilder {
   path(path: string): this {
     this.addArg(path);
     return this;
+  }
+
+  /**
+   * Ensures regex patterns match against the full path.
+   *
+   * `find -regex` matches against the ENTIRE path (e.g. /Users/.../foo.test.ts),
+   * not just the filename. Users commonly provide filename-oriented patterns like
+   * `\.(test|spec)\.ts$` which silently return 0 results.
+   *
+   * This method prepends `.*` when the pattern doesn't already account for the
+   * full path, so `\.(test|spec)\.ts$` becomes `.*\.(test|spec)\.ts$` and works.
+   *
+   * Patterns that already start with `.*`, `/`, or `^` are left unchanged.
+   */
+  private normalizeRegexForFullPath(regex: string): string {
+    if (
+      regex.startsWith('.*') ||
+      regex.startsWith('/') ||
+      regex.startsWith('^')
+    ) {
+      return regex;
+    }
+    return `.*${regex}`;
   }
 
   /**

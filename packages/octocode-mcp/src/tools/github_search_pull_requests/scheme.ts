@@ -187,6 +187,21 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     )
     .optional()
     .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.partialContentMetadata),
+
+  charOffset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(GITHUB_SEARCH_PULL_REQUESTS.outputLimit.charOffset),
+
+  charLength: z
+    .number()
+    .int()
+    .min(1)
+    .max(50000)
+    .optional()
+    .describe(GITHUB_SEARCH_PULL_REQUESTS.outputLimit.charLength),
 });
 
 export const GitHubPullRequestSearchBulkQuerySchema = createBulkQuerySchema(

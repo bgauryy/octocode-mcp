@@ -206,7 +206,7 @@ describe('GitHub View Repository Structure Tool', () => {
       }
     );
 
-    expect(result.isError).toBe(false);
+    expect(result.isError).toBe(true);
     const responseText = getTextContent(result.content);
     expect(responseText).toContain('error');
   });
@@ -358,9 +358,62 @@ describe('GitHub View Repository Structure Tool', () => {
       }
     );
 
-    expect(result.isError).toBe(false);
+    expect(result.isError).toBe(true);
     const responseText = getTextContent(result.content);
     expect(responseText).toContain('error');
+  });
+
+  describe('Invalid branch handling (TC-9, TC-17)', () => {
+    it('should return error when branch does not exist instead of silent fallback', async () => {
+      // Provider returns branch "main" even though we asked for "nonexistent-branch"
+      // This simulates the silent fallback behavior - the provider should instead
+      // return an error or include a warning
+      mockProvider.getRepoStructure.mockResolvedValue({
+        data: {
+          projectPath: 'facebook/react',
+          branch: 'main', // silently fell back from 'nonexistent-branch'
+          path: '',
+          structure: {
+            '.': {
+              files: ['README.md'],
+              folders: ['src'],
+            },
+          },
+          summary: {
+            totalFiles: 1,
+            totalFolders: 1,
+            truncated: false,
+          },
+        },
+        status: 200,
+        provider: 'github',
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'facebook',
+              repo: 'react',
+              branch: 'nonexistent-branch',
+            },
+          ],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+      // When branch doesn't match what was requested, user should be informed
+      // Either via error OR via a warning in the response
+      const branchMismatchDetected =
+        responseText.includes('nonexistent-branch') ||
+        (responseText.includes('branch') &&
+          responseText.includes('not found')) ||
+        responseText.includes('branchFallback') ||
+        responseText.includes('warning');
+
+      expect(branchMismatchDetected).toBe(true);
+    });
   });
 
   it('should handle pagination', async () => {

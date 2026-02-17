@@ -23,3 +23,10 @@ export {
   generateGitHubPaginationHints,
   generateStructurePaginationHints,
 } from './hints.js';
+
+// Re-export output size limit utility
+export {
+  applyOutputSizeLimit,
+  type OutputSizeLimitOptions,
+  type OutputSizeLimitResult,
+} from './outputSizeLimit.js';

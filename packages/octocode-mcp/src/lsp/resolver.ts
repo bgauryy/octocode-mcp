@@ -127,18 +127,18 @@ export class SymbolResolver {
       }
     }
 
-    // Search nearby lines (alternating above and below)
+    // Search nearby lines (alternating above and below).
+    // orderHint is only meaningful for the exact target line (it selects the
+    // Nth occurrence on that specific line). When falling back to nearby lines,
+    // always pick the first occurrence (orderHint 0) — otherwise a non-zero
+    // orderHint causes every single-occurrence nearby line to miss.
     for (let offset = 1; offset <= this.lineSearchRadius; offset++) {
       for (const delta of [-offset, offset]) {
         const searchLine = targetLine + delta;
         if (searchLine >= 0 && searchLine < lines.length) {
           const line = lines[searchLine];
           if (line !== undefined) {
-            const result = this.findSymbolInLine(
-              line,
-              fuzzy.symbolName,
-              orderHint
-            );
+            const result = this.findSymbolInLine(line, fuzzy.symbolName, 0);
             if (result !== null) {
               return {
                 position: { line: searchLine, character: result },

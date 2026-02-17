@@ -214,6 +214,12 @@ export async function getOctokit(
 }
 
 /**
+ * Maximum number of entries in the default branch cache.
+ * FIFO eviction when full — Map preserves insertion order.
+ */
+export const MAX_BRANCH_CACHE_SIZE = 200;
+
+/**
  * In-memory cache for default branch lookups.
  * Key: "owner/repo", Value: branch name.
  * TTL is tied to the Octokit instance cache (5 min) — cleared via clearOctokitInstances().
@@ -245,12 +251,17 @@ export async function resolveDefaultBranch(
     const octokit = await getOctokit(authInfo);
     const { data } = await octokit.rest.repos.get({ owner, repo });
     const branch = data.default_branch;
+    if (defaultBranchCache.size >= MAX_BRANCH_CACHE_SIZE) {
+      // FIFO eviction — Map.keys() returns insertion order
+      const oldest = defaultBranchCache.keys().next().value;
+      if (oldest !== undefined) defaultBranchCache.delete(oldest);
+    }
     defaultBranchCache.set(cacheKey, branch);
     return branch;
   } catch {
-    const fallback = 'main';
-    defaultBranchCache.set(cacheKey, fallback);
-    return fallback;
+    // Return "main" as fallback but do NOT cache it — the error may be
+    // transient and the actual default branch could be master/develop/etc.
+    return 'main';
   }
 }
 

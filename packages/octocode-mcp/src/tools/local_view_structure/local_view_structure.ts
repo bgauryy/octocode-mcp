@@ -37,7 +37,7 @@ import {
   type DirectoryEntry,
 } from './structureFilters.js';
 import { parseLsSimple, parseLsLongFormat } from './structureParser.js';
-import { walkDirectory } from './structureWalker.js';
+import { walkDirectory, type WalkStats } from './structureWalker.js';
 
 /**
  * Register the local view structure tool with the MCP server.
@@ -120,7 +120,7 @@ export async function viewStructure(
     }
 
     const entries = query.details
-      ? parseLsLongFormat(result.stdout, query.showFileLastModified)
+      ? parseLsLongFormat(result.stdout, true)
       : await parseLsSimple(
           result.stdout,
           pathValidation.sanitizedPath!,
@@ -289,6 +289,8 @@ async function viewStructureRecursive(
 
   const maxEntries = query.limit ? query.limit * 2 : 10000;
 
+  const walkStats: WalkStats = { skipped: 0 };
+
   await walkDirectory(
     basePath,
     basePath,
@@ -297,7 +299,9 @@ async function viewStructureRecursive(
     entries,
     maxEntries,
     query.hidden,
-    showModified
+    showModified,
+    walkStats,
+    query.details ?? false
   );
 
   let filteredEntries = applyEntryFilters(entries, query);
@@ -405,6 +409,12 @@ async function viewStructureRecursive(
   });
   let structuredOutput = structuredLines.join('\n');
   const warnings: string[] = [];
+
+  if (walkStats.skipped > 0) {
+    warnings.push(
+      `${walkStats.skipped} entries skipped due to permission errors`
+    );
+  }
 
   let paginationMetadata: ReturnType<typeof applyPagination> | null = null;
 

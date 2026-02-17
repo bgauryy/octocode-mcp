@@ -68,7 +68,7 @@ describe('withSecurityValidation logging', () => {
       hasSecrets: false,
     });
 
-    await wrappedHandler(args, {});
+    await wrappedHandler(args, { signal: new AbortController().signal });
 
     expect(mockLogToolCall).toHaveBeenCalledWith(
       'test_tool',
@@ -103,7 +103,7 @@ describe('withSecurityValidation logging', () => {
       hasSecrets: false,
     });
 
-    await wrappedHandler(args, {});
+    await wrappedHandler(args, { signal: new AbortController().signal });
 
     expect(mockLogToolCall).toHaveBeenCalledWith(
       'test_tool',
@@ -140,7 +140,7 @@ describe('withSecurityValidation logging', () => {
       hasSecrets: false,
     });
 
-    await wrappedHandler(args, {});
+    await wrappedHandler(args, { signal: new AbortController().signal });
 
     // Verify isLoggingEnabled was called
     expect(mockIsLoggingEnabled).toHaveBeenCalled();
@@ -182,7 +182,7 @@ describe('withSecurityValidation logging', () => {
       hasSecrets: false,
     });
 
-    await wrappedHandler(args, {});
+    await wrappedHandler(args, { signal: new AbortController().signal });
 
     expect(mockLogToolCall).toHaveBeenCalledWith(
       'test_tool',
@@ -222,7 +222,7 @@ describe('withSecurityValidation logging', () => {
       hasSecrets: false,
     });
 
-    await wrappedHandler(args, {});
+    await wrappedHandler(args, { signal: new AbortController().signal });
 
     expect(mockLogToolCall).toHaveBeenCalledWith(
       'test_tool',
@@ -271,7 +271,7 @@ describe('withSecurityValidation logging', () => {
         hasSecrets: false,
       });
 
-      await wrappedHandler(args, {});
+      await wrappedHandler(args, { signal: new AbortController().signal });
 
       // Verify logToolCall was called twice (once per query)
       expect(mockLogToolCall).toHaveBeenCalledTimes(2);
@@ -332,7 +332,7 @@ describe('withSecurityValidation logging', () => {
         hasSecrets: false,
       });
 
-      await wrappedHandler(args, {});
+      await wrappedHandler(args, { signal: new AbortController().signal });
 
       // Verify logToolCall was called 3 times (once per query)
       expect(mockLogToolCall).toHaveBeenCalledTimes(3);
@@ -402,7 +402,7 @@ describe('withSecurityValidation logging', () => {
         hasSecrets: false,
       });
 
-      await wrappedHandler(args, {});
+      await wrappedHandler(args, { signal: new AbortController().signal });
 
       // Only queries with repos should be logged (2 out of 3)
       expect(mockLogToolCall).toHaveBeenCalledTimes(2);
@@ -467,7 +467,7 @@ describe('withSecurityValidation logging', () => {
         hasSecrets: false,
       });
 
-      await wrappedHandler(args, {});
+      await wrappedHandler(args, { signal: new AbortController().signal });
 
       expect(mockLogToolCall).toHaveBeenCalledTimes(3);
 
@@ -528,7 +528,7 @@ describe('withSecurityValidation logging', () => {
       hasSecrets: false,
     });
 
-    await wrappedHandler(args, {});
+    await wrappedHandler(args, { signal: new AbortController().signal });
 
     expect(mockLogToolCall).toHaveBeenCalledWith(
       'test_tool',

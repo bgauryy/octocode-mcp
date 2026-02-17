@@ -73,7 +73,7 @@ async function viewGitHubRepositoryStructureAPIInternal(
     const octokit = await getOctokit(authInfo);
     const { owner, repo, branch, path = '', depth = 1 } = params;
 
-    const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+    const cleanPath = path.replace(/^\/+|\/+$/g, '');
 
     let result;
     let workingBranch = branch;

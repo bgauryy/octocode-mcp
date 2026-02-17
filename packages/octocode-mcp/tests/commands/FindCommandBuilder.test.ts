@@ -151,6 +151,47 @@ describe('FindCommandBuilder', () => {
       expect(args).toContain('.*\\.test\\.ts$');
     });
 
+    it('should prepend .* to regex patterns that do not match full path', () => {
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({ path: '/test', regex: '\\.(test|spec)\\.ts$' })
+        .build();
+
+      expect(args).toContain('-regex');
+      // Pattern should be normalized to match full path
+      expect(args).toContain('.*\\.(test|spec)\\.ts$');
+    });
+
+    it('should NOT prepend .* when regex already starts with .*', () => {
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({ path: '/test', regex: '.*\\.test\\.ts$' })
+        .build();
+
+      expect(args).toContain('-regex');
+      expect(args).toContain('.*\\.test\\.ts$');
+    });
+
+    it('should NOT prepend .* when regex starts with /', () => {
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({ path: '/test', regex: '/Users/.*\\.ts$' })
+        .build();
+
+      expect(args).toContain('-regex');
+      expect(args).toContain('/Users/.*\\.ts$');
+    });
+
+    it('should NOT prepend .* when regex starts with ^', () => {
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({ path: '/test', regex: '^/test/.*\\.ts$' })
+        .build();
+
+      expect(args).toContain('-regex');
+      expect(args).toContain('^/test/.*\\.ts$');
+    });
+
     it('should handle regex with custom type (platform-aware)', () => {
       // This test is platform-aware - regexType only works on Linux
       const builder = new FindCommandBuilder();
@@ -526,6 +567,154 @@ describe('FindCommandBuilder', () => {
 
       expect(args).toContain('-E');
       expect(args).not.toContain('-regextype');
+    });
+
+    it('should normalize regex for full path on macOS', () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({
+          path: '/test',
+          regex: '\\.(test|spec)\\.ts$',
+          regexType: 'posix-extended',
+        })
+        .build();
+
+      expect(args).toContain('-E');
+      expect(args).toContain('-regex');
+      expect(args).toContain('.*\\.(test|spec)\\.ts$');
+      expect(args).not.toContain('-regextype');
+    });
+
+    it('should normalize regex for full path on Linux', () => {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({
+          path: '/test',
+          regex: '\\.(test|spec)\\.ts$',
+          regexType: 'posix-extended',
+        })
+        .build();
+
+      expect(args).not.toContain('-E');
+      expect(args).toContain('-regextype');
+      expect(args).toContain('posix-extended');
+      expect(args).toContain('-regex');
+      expect(args).toContain('.*\\.(test|spec)\\.ts$');
+    });
+
+    it('should normalize regex for full path on Linux with posix-egrep', () => {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({
+          path: '/test',
+          regex: '\\.(test|spec)\\.ts$',
+          regexType: 'posix-egrep',
+        })
+        .build();
+
+      expect(args).toContain('-regextype');
+      expect(args).toContain('posix-egrep');
+      expect(args).toContain('-regex');
+      expect(args).toContain('.*\\.(test|spec)\\.ts$');
+    });
+
+    it('should normalize regex on Linux without regexType', () => {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({
+          path: '/test',
+          regex: '\\.(test|spec)\\.ts$',
+        })
+        .build();
+
+      expect(args).not.toContain('-regextype');
+      expect(args).toContain('-regex');
+      expect(args).toContain('.*\\.(test|spec)\\.ts$');
+    });
+
+    it('should not double-prepend .* on macOS when regex already has it', () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({
+          path: '/test',
+          regex: '.*\\.(test|spec)\\.ts$',
+        })
+        .build();
+
+      expect(args).toContain('-regex');
+      expect(args).toContain('.*\\.(test|spec)\\.ts$');
+      // Must NOT have .*.*
+      expect(args).not.toContain('.*.*\\.(test|spec)\\.ts$');
+    });
+
+    it('should not double-prepend .* on Linux when regex already has it', () => {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+
+      const builder = new FindCommandBuilder();
+      const { args } = builder
+        .fromQuery({
+          path: '/test',
+          regex: '.*\\.(test|spec)\\.ts$',
+          regexType: 'posix-extended',
+        })
+        .build();
+
+      expect(args).toContain('-regex');
+      expect(args).toContain('.*\\.(test|spec)\\.ts$');
+      expect(args).not.toContain('.*.*\\.(test|spec)\\.ts$');
+    });
+
+    it('should not normalize regex starting with / on any platform', () => {
+      for (const platform of ['darwin', 'linux'] as const) {
+        Object.defineProperty(process, 'platform', { value: platform });
+
+        const builder = new FindCommandBuilder();
+        const { args } = builder
+          .fromQuery({ path: '/test', regex: '/Users/.*\\.ts$' })
+          .build();
+
+        expect(args).toContain('-regex');
+        expect(args).toContain('/Users/.*\\.ts$');
+      }
+    });
+
+    it('should not normalize regex starting with ^ on any platform', () => {
+      for (const platform of ['darwin', 'linux'] as const) {
+        Object.defineProperty(process, 'platform', { value: platform });
+
+        const builder = new FindCommandBuilder();
+        const { args } = builder
+          .fromQuery({ path: '/test', regex: '^/test/.*\\.ts$' })
+          .build();
+
+        expect(args).toContain('-regex');
+        expect(args).toContain('^/test/.*\\.ts$');
+      }
+    });
+
+    it('should throw on Windows before reaching regex normalization', () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+
+      const builder = new FindCommandBuilder();
+      expect(() => {
+        builder
+          .fromQuery({
+            path: 'C:\\test',
+            regex: '\\.(test|spec)\\.ts$',
+            regexType: 'posix-extended',
+          })
+          .build();
+      }).toThrow(/windows|unsupported|not supported/i);
     });
   });
 

@@ -182,6 +182,9 @@ export async function fetchWithRetries(
         maxDelayMs
       );
 
+      // Add jitter to prevent thundering herd
+      delayMs += Math.floor(Math.random() * initialDelayMs);
+
       // Respect Retry-After header if present (but still cap at maxDelayMs)
       if (
         extendedError &&

@@ -46,10 +46,11 @@ export const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
 }).refine(
   data =>
     (data.keywordsToSearch && data.keywordsToSearch.length > 0) ||
-    (data.topicsToSearch && data.topicsToSearch.length > 0),
+    (data.topicsToSearch && data.topicsToSearch.length > 0) ||
+    (data.owner && data.owner.trim().length > 0),
   {
     message:
-      "At least one of 'keywordsToSearch' or 'topicsToSearch' is required",
+      "At least one of 'keywordsToSearch', 'topicsToSearch', or 'owner' is required",
     path: ['keywordsToSearch'],
   }
 );

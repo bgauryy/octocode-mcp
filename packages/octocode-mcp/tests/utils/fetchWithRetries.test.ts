@@ -128,7 +128,10 @@ describe('fetchWithRetries', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
-  it('should use exponential backoff', async () => {
+  it('should use exponential backoff with jitter', async () => {
+    // Mock Math.random to return 0.5 for predictable jitter
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+
     const mockData = { success: true };
     const mockFetch = vi
       .fn()
@@ -158,20 +161,63 @@ describe('fetchWithRetries', () => {
     // First attempt fails immediately
     await vi.advanceTimersByTimeAsync(0);
 
-    // Wait for first retry delay (1s)
-    await vi.advanceTimersByTimeAsync(1000);
+    // Wait for first retry delay (1s base + 0.5*1000 jitter = 1500ms)
+    await vi.advanceTimersByTimeAsync(1500);
 
     // Second attempt fails
     await vi.advanceTimersByTimeAsync(0);
 
-    // Wait for second retry delay (2s)
-    await vi.advanceTimersByTimeAsync(2000);
+    // Wait for second retry delay (2s base + 0.5*1000 jitter = 2500ms)
+    await vi.advanceTimersByTimeAsync(2500);
 
     // Third attempt succeeds
     const result = await promise;
 
     expect(result).toEqual(mockData);
     expect(mockFetch).toHaveBeenCalledTimes(3);
+
+    randomSpy.mockRestore();
+  });
+
+  it('should add jitter in range [0, initialDelayMs)', async () => {
+    // Mock Math.random to return 0.99 for near-maximum jitter
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.99);
+
+    const mockData = { success: true };
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        headers: new Headers(),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockData,
+      });
+
+    (globalThis as { fetch?: typeof fetch }).fetch = mockFetch;
+
+    const promise = fetchWithRetries('https://example.com/data', {
+      initialDelayMs: 1000,
+    });
+
+    // First attempt fails
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Jitter = floor(0.99 * 1000) = 990ms, total = 1000 + 990 = 1990ms
+    // Should NOT have retried yet at 1989ms
+    await vi.advanceTimersByTimeAsync(1989);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // Should retry at 1990ms
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    await promise;
+
+    randomSpy.mockRestore();
   });
 
   it('should throw error after max retries', async () => {

@@ -30,21 +30,45 @@ describe('spawn env and memory hardening', () => {
     vi.clearAllTimers();
   });
 
-  it('buildChildProcessEnv should filter non-allowlisted overrides', () => {
+  it('buildChildProcessEnv should only inherit allowlisted vars from process.env', () => {
     process.env.PATH = '/usr/bin';
     process.env.HOME = '/Users/test';
     process.env.SECRET_TOKEN = 'secret';
 
+    const env = buildChildProcessEnv({}, ['PATH', 'HOME'] as const);
+
+    expect(env.PATH).toBe('/usr/bin');
+    expect(env.HOME).toBe('/Users/test');
+    // SECRET_TOKEN is not in allowlist, so not inherited from process.env
+    expect(env.SECRET_TOKEN).toBeUndefined();
+  });
+
+  it('buildChildProcessEnv should only apply overrides for keys in the allowlist', () => {
+    process.env.PATH = '/usr/bin';
+
     const env = buildChildProcessEnv(
-      { CUSTOM_FLAG: '1', GITHUB_TOKEN: 'secret', PATH: '/custom/path' },
-      ['PATH', 'HOME'] as const
+      { GIT_TERMINAL_PROMPT: '0', CUSTOM_FLAG: '1', PATH: '/custom/path' },
+      ['PATH'] as const
     );
 
+    // PATH is both allowlisted AND overridden — override wins
     expect(env.PATH).toBe('/custom/path');
-    expect(env.HOME).toBe('/Users/test');
+    // GIT_TERMINAL_PROMPT is NOT in allowlist — override is filtered out
+    expect(env.GIT_TERMINAL_PROMPT).toBeUndefined();
+    // CUSTOM_FLAG is NOT in allowlist — override is filtered out
     expect(env.CUSTOM_FLAG).toBeUndefined();
+  });
+
+  it('buildChildProcessEnv should not inherit sensitive vars from process.env', () => {
+    process.env.PATH = '/usr/bin';
+    process.env.GITHUB_TOKEN = 'ghp_secret';
+    process.env.AWS_SECRET_ACCESS_KEY = 'aws_secret';
+
+    const env = buildChildProcessEnv({}, ['PATH'] as const);
+
+    expect(env.PATH).toBe('/usr/bin');
     expect(env.GITHUB_TOKEN).toBeUndefined();
-    expect(env.SECRET_TOKEN).toBeUndefined();
+    expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
   });
 
   it('spawnCheckSuccess should use minimal default env (no proxy by default)', async () => {

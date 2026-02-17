@@ -113,6 +113,7 @@ const GIT_SPARSE_CHECKOUT_ALLOWED_FLAGS = new Set([
 ]);
 
 const FIND_ALLOWED_TOKENS = new Set([
+  '-E', // macOS BSD find: enable extended regex (must appear before path)
   '-O3',
   '-empty',
   '-executable',

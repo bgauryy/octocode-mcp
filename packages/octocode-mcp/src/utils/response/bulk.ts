@@ -17,6 +17,10 @@ import type {
 /** Default concurrency for bulk operations */
 const DEFAULT_BULK_CONCURRENCY = 3;
 
+/** Timeout for bulk query execution, configurable via environment variable */
+const BULK_QUERY_TIMEOUT_MS =
+  parseInt(process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS || '60000', 10) || 60000;
+
 export async function executeBulkOperation<TQuery extends object>(
   queries: Array<TQuery>,
   processor: (query: TQuery, index: number) => Promise<ProcessedBulkResult>,
@@ -177,7 +181,7 @@ function createBulkResponse<TQuery extends object>(
         text: createResponseFormat(responseData, fullKeysPriority),
       },
     ],
-    isError: false,
+    isError: hasAnyError && !hasAnyHasResults && !hasAnyEmpty,
   };
 }
 
@@ -223,7 +227,7 @@ async function processBulkQueries<TQuery extends object>(
   );
 
   const queryResults = await executeWithErrorIsolation(queryPromiseFunctions, {
-    timeout: 60000,
+    timeout: BULK_QUERY_TIMEOUT_MS,
     continueOnError: true,
     concurrency, // Configurable concurrent requests to balance rate limiting vs throughput
     onError: (error: Error, index: number) => {

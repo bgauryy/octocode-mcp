@@ -6,6 +6,19 @@ export function getOwnerQualifier(owner: string): string {
   return `user:${owner}`;
 }
 
+/**
+ * Characters that break GitHub search query syntax when used unquoted in keywords.
+ * Wrapping the keyword in double quotes forces GitHub to treat it as a literal term.
+ */
+const GITHUB_SEARCH_SPECIAL_CHARS = /[@/]/;
+
+function quoteKeywordIfNeeded(keyword: string): string {
+  if (GITHUB_SEARCH_SPECIAL_CHARS.test(keyword) && !keyword.startsWith('"')) {
+    return `"${keyword}"`;
+  }
+  return keyword;
+}
+
 abstract class BaseQueryBuilder {
   protected queryParts: string[] = [];
 
@@ -109,7 +122,7 @@ class CodeSearchQueryBuilder extends BaseQueryBuilder {
         term => term && term.trim()
       );
       if (nonEmptyTerms.length > 0) {
-        this.queryParts.push(...nonEmptyTerms);
+        this.queryParts.push(...nonEmptyTerms.map(quoteKeywordIfNeeded));
       }
     }
     return this;
@@ -145,7 +158,9 @@ class RepoSearchQueryBuilder extends BaseQueryBuilder {
       Array.isArray(params.keywordsToSearch) &&
       params.keywordsToSearch.length > 0
     ) {
-      this.queryParts.push(...params.keywordsToSearch);
+      this.queryParts.push(
+        ...params.keywordsToSearch.map(quoteKeywordIfNeeded)
+      );
     }
     return this;
   }

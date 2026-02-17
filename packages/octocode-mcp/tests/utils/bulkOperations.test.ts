@@ -71,7 +71,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('status: "error"');
@@ -87,7 +87,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('status: "error"');
@@ -163,7 +163,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 3 results');
       expect(responseText).toContain('3 failed');
@@ -180,7 +180,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 2 results');
       expect(responseText).toContain('2 failed');
@@ -1130,7 +1130,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain('Wait 60 seconds');
@@ -1183,7 +1183,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('errorStatusHints:');
@@ -1249,7 +1249,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('error:');
@@ -1272,7 +1272,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('3 failed');
       expect(responseText).toContain('mainResearchGoal: "Goal 1"');
@@ -1325,7 +1325,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('errorStatusHints:');
@@ -1343,7 +1343,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('errorStatusHints:');

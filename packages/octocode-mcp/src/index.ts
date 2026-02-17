@@ -163,10 +163,10 @@ export async function registerAllTools(
 async function createServer(content: CompleteMetadata): Promise<McpServer> {
   const capabilities: {
     prompts?: Record<string, never>;
-    tools: Record<string, never>;
+    tools: { listChanged: boolean };
     logging: Record<string, never>;
   } = {
-    tools: {},
+    tools: { listChanged: false },
     logging: {},
   };
 

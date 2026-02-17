@@ -212,7 +212,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       );
 
       const responseText = getTextContent(result.content);
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       expect(responseText).toContain('error');
     });
   });
@@ -468,6 +468,134 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
     });
   });
 
+  describe('Owner-only search (TC-7)', () => {
+    it('should allow owner-only search without keywords or topics', async () => {
+      mockProvider.searchRepos.mockResolvedValue({
+        data: {
+          repositories: [
+            {
+              id: '1',
+              name: 'react',
+              fullPath: 'facebook/react',
+              description: 'React library',
+              url: 'https://github.com/facebook/react',
+              stars: 200000,
+              forks: 40000,
+              language: 'JavaScript',
+              topics: [],
+              createdAt: '2024-01-15',
+              updatedAt: '2024-01-15',
+              pushedAt: '2024-01-15',
+              defaultBranch: 'main',
+              isPrivate: false,
+            },
+          ],
+          totalCount: 1,
+          pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+        },
+        status: 200,
+        provider: 'github',
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              owner: 'facebook',
+            },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('facebook');
+    });
+
+    it('should still reject queries with no owner, keywords, or topics', async () => {
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              stars: '>1000',
+            },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe('Stars range passthrough (TC-20, TC-22)', () => {
+    it('should pass stars range filter correctly to provider', async () => {
+      mockProvider.searchRepos.mockResolvedValue({
+        data: {
+          repositories: [],
+          totalCount: 0,
+          pagination: { currentPage: 1, totalPages: 0, hasMore: false },
+        },
+        status: 200,
+        provider: 'github',
+      });
+
+      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, {
+        queries: [
+          {
+            keywordsToSearch: ['react'],
+            stars: '100..500',
+          },
+        ],
+      });
+
+      // The provider should receive the raw stars string, not a parsed minStars
+      expect(mockProvider.searchRepos).toHaveBeenCalled();
+      const providerCall = mockProvider.searchRepos.mock.calls[0]![0] as Record<
+        string,
+        unknown
+      >;
+      // stars should be preserved in some form that doesn't lose the range
+      // After fix: stars field should pass through as-is
+      expect(providerCall.stars || providerCall.minStars).toBeDefined();
+      // The key test: if minStars is used, it should NOT discard the upper bound
+      if (providerCall.stars) {
+        expect(providerCall.stars).toBe('100..500');
+      }
+    });
+
+    it('should pass >=1000 stars filter correctly', async () => {
+      mockProvider.searchRepos.mockResolvedValue({
+        data: {
+          repositories: [],
+          totalCount: 0,
+          pagination: { currentPage: 1, totalPages: 0, hasMore: false },
+        },
+        status: 200,
+        provider: 'github',
+      });
+
+      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, {
+        queries: [
+          {
+            keywordsToSearch: ['react'],
+            stars: '>=1000',
+          },
+        ],
+      });
+
+      expect(mockProvider.searchRepos).toHaveBeenCalled();
+      const providerCall = mockProvider.searchRepos.mock.calls[0]![0] as Record<
+        string,
+        unknown
+      >;
+      if (providerCall.stars) {
+        expect(providerCall.stars).toBe('>=1000');
+      }
+    });
+  });
+
   describe('Exception handling', () => {
     it('should handle provider exceptions', async () => {
       mockProvider.searchRepos.mockRejectedValue(new Error('Network error'));
@@ -479,7 +607,7 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         }
       );
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('error');
     });

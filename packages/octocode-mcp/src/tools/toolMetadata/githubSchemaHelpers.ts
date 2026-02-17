@@ -142,6 +142,10 @@ export const GITHUB_SEARCH_PULL_REQUESTS = createSchemaHelper(
     type: string;
     partialContentMetadata: string;
   };
+  outputLimit: {
+    charOffset: string;
+    charLength: string;
+  };
 };
 
 export const GITHUB_VIEW_REPO_STRUCTURE = createSchemaHelper(

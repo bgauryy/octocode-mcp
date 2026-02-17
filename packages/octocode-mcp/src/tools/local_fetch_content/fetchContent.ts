@@ -33,6 +33,24 @@ export async function fetchContent(
 
     const absolutePath = pathValidation.sanitizedPath!;
 
+    // Validate mutually exclusive extraction options before any I/O
+    if (query.fullContent === true && query.matchString !== undefined) {
+      return {
+        status: 'error',
+        path: query.path,
+        error:
+          'Cannot use fullContent with matchString — these are mutually exclusive extraction methods. Choose ONE: fullContent=true to read the entire file, OR matchString to extract matching sections.',
+        researchGoal: query.researchGoal,
+        reasoning: query.reasoning,
+        hints: [
+          'fullContent and matchString are mutually exclusive — pick one extraction method',
+          'Use fullContent=true to read the entire file (small files only)',
+          'Use matchString="pattern" to extract specific sections (recommended for large files)',
+          'TIP: matchString is more token-efficient — prefer it when you know what to look for',
+        ],
+      } as FetchContentResult;
+    }
+
     let fileStats;
     try {
       fileStats = await stat(absolutePath);

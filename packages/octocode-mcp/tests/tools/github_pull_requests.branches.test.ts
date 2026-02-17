@@ -107,7 +107,7 @@ describe('GitHub Pull Requests Tool - Branch Coverage', () => {
           }
         );
 
-        expect(result.isError).toBe(false);
+        expect(result.isError).toBe(true);
         const responseText = getTextContent(result.content);
         expect(responseText).toContain('Query too long');
         expect(responseText).toContain('Maximum 256 characters allowed');
@@ -117,6 +117,15 @@ describe('GitHub Pull Requests Tool - Branch Coverage', () => {
 
       it('should add validation error to correct query when multiple queries provided', async () => {
         const longQuery = 'b'.repeat(300); // Exceeds limit
+        mockProvider.searchPullRequests.mockResolvedValue({
+          data: {
+            items: [],
+            totalCount: 0,
+            pagination: { currentPage: 1, totalPages: 0, hasMore: false },
+          },
+          status: 200,
+          provider: 'github',
+        });
 
         const result = await mockServer.callTool(
           TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
@@ -157,7 +166,7 @@ describe('GitHub Pull Requests Tool - Branch Coverage', () => {
           }
         );
 
-        expect(result.isError).toBe(false);
+        expect(result.isError).toBe(true);
         const responseText = getTextContent(result.content);
         expect(responseText).toContain('At least one valid search parameter');
         expect(responseText).toContain('is required');
@@ -182,7 +191,7 @@ describe('GitHub Pull Requests Tool - Branch Coverage', () => {
           }
         );
 
-        expect(result.isError).toBe(false);
+        expect(result.isError).toBe(true);
         const responseText = getTextContent(result.content);
         expect(responseText).toContain('At least one valid search parameter');
       });
@@ -236,7 +245,7 @@ describe('GitHub Pull Requests Tool - Branch Coverage', () => {
           }
         );
 
-        expect(result.isError).toBe(false);
+        expect(result.isError).toBe(true);
         // The validation error should be in the response
         const responseText = getTextContent(result.content);
         expect(responseText).toContain('Query too long');
@@ -264,7 +273,7 @@ describe('GitHub Pull Requests Tool - Branch Coverage', () => {
           }
         );
 
-        expect(result.isError).toBe(false);
+        expect(result.isError).toBe(true);
         const responseText = getTextContent(result.content);
         // Should return error result (not call provider)
         expect(responseText).toContain('Query too long');
@@ -292,7 +301,7 @@ describe('GitHub Pull Requests Tool - Branch Coverage', () => {
           }
         );
 
-        expect(result.isError).toBe(false);
+        expect(result.isError).toBe(true);
         const responseText = getTextContent(result.content);
         // Should handle the error gracefully
         expect(responseText).toContain('error');
@@ -317,7 +326,7 @@ describe('GitHub Pull Requests Tool - Branch Coverage', () => {
           }
         );
 
-        expect(result.isError).toBe(false);
+        expect(result.isError).toBe(true);
         const responseText = getTextContent(result.content);
         expect(responseText).toContain('error');
       });

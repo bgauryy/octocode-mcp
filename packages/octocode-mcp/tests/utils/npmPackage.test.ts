@@ -855,4 +855,72 @@ describe('npmPackage - branch coverage', () => {
       }
     });
   });
+
+  describe('cache behavior - empty results not cached', () => {
+    it('should NOT cache empty results from fetchPackageDetails failure', async () => {
+      // First call: npm command fails, returns empty result
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        stdout: '',
+        stderr: 'ENOENT',
+        exitCode: 1,
+        error: new Error('npm command failed'),
+      });
+
+      const result1 = await searchNpmPackage('express', 1, false);
+      expect('packages' in result1).toBe(true);
+      if ('packages' in result1) {
+        expect(result1.totalFound).toBe(0);
+      }
+
+      // Second call: npm command succeeds, should NOT serve cached empty result
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          name: 'express',
+          version: '4.18.2',
+          repository: { url: 'https://github.com/expressjs/express' },
+        }),
+        stderr: '',
+        exitCode: 0,
+      });
+
+      const result2 = await searchNpmPackage('express', 1, false);
+      expect('packages' in result2).toBe(true);
+      if ('packages' in result2) {
+        // Should get the real result, not the cached empty one
+        expect(result2.totalFound).toBe(1);
+        expect((result2.packages[0] as { path?: string })?.path).toBe(
+          'express'
+        );
+      }
+    });
+
+    it('should cache successful non-empty results', async () => {
+      mockExecuteNpmCommand.mockResolvedValue({
+        stdout: JSON.stringify({
+          name: 'lodash',
+          version: '4.17.21',
+          repository: { url: 'https://github.com/lodash/lodash' },
+        }),
+        stderr: '',
+        exitCode: 0,
+      });
+
+      const result1 = await searchNpmPackage('lodash', 1, false);
+      expect('packages' in result1).toBe(true);
+      if ('packages' in result1) {
+        expect(result1.totalFound).toBe(1);
+      }
+
+      // Second call should use cache (executeNpmCommand should not be called again)
+      mockExecuteNpmCommand.mockClear();
+      const result2 = await searchNpmPackage('lodash', 1, false);
+      expect('packages' in result2).toBe(true);
+      if ('packages' in result2) {
+        expect(result2.totalFound).toBe(1);
+      }
+
+      // executeNpmCommand should NOT have been called for the second request
+      expect(mockExecuteNpmCommand).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -110,20 +110,43 @@ export async function exploreMultipleRepositoryStructures(
         const filteredStructure = filterStructure(apiResult.data.structure);
         const hasContent = Object.keys(filteredStructure).length > 0;
 
+        // Detect branch fallback: if the returned branch differs from
+        // what was requested, the user-specified branch likely doesn't exist
+        const requestedBranch = query.branch;
+        const actualBranch = apiResult.data.branch ?? query.branch;
+        const branchFellBack =
+          requestedBranch &&
+          actualBranch &&
+          requestedBranch !== actualBranch &&
+          requestedBranch !== 'HEAD';
+
         const resultData: Record<string, unknown> = {
           owner: query.owner,
           repo: query.repo,
-          branch: apiResult.data.branch ?? query.branch,
+          branch: actualBranch,
           path: query.path || '/',
           structure: filteredStructure,
           summary: apiResult.data.summary,
         };
+
+        if (branchFellBack) {
+          resultData.branchFallback = {
+            requestedBranch,
+            actualBranch,
+            warning: `Branch '${requestedBranch}' was not found. Results are from branch '${actualBranch}' instead.`,
+          };
+        }
 
         if (apiResult.data.pagination) {
           resultData.pagination = apiResult.data.pagination;
         }
 
         const apiHints = apiResult.data.hints || [];
+        const branchHints: string[] = branchFellBack
+          ? [
+              `⚠️ Branch '${requestedBranch}' not found. Showing results from '${actualBranch}' instead.`,
+            ]
+          : [];
         const entryCount = Object.values(filteredStructure).reduce(
           (sum, entry) => sum + entry.files.length + entry.folders.length,
           0
@@ -136,7 +159,7 @@ export async function exploreMultipleRepositoryStructures(
           TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
           {
             hintContext: { entryCount },
-            extraHints: apiHints,
+            extraHints: [...branchHints, ...apiHints],
           }
         );
       } catch (error) {

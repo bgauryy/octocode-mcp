@@ -123,21 +123,12 @@ export async function searchMultipleGitHubRepos(
           authInfo,
         });
 
-        // Parse stars filter if provided
-        let minStars: number | undefined;
-        if (query.stars) {
-          const starsMatch = query.stars.match(/[<>=]*(\d+)/);
-          if (starsMatch && starsMatch[1]) {
-            minStars = parseInt(starsMatch[1], 10);
-          }
-        }
-
         // Convert query to provider format
         const providerQuery = {
           keywords: query.keywordsToSearch,
           topics: query.topicsToSearch,
           owner: query.owner,
-          minStars,
+          stars: query.stars,
           sort: query.sort as
             | 'stars'
             | 'forks'
@@ -187,9 +178,14 @@ export async function searchMultipleGitHubRepos(
 
         const paginationHints: string[] = [];
         if (pagination) {
-          const { currentPage, totalPages, totalEntries, hasMore } = pagination;
+          const {
+            currentPage,
+            totalPages,
+            totalMatches: totalMatchCount,
+            hasMore,
+          } = pagination;
           const perPage = pagination.entriesPerPage || 10;
-          const totalMatches = totalEntries || 0;
+          const totalMatches = totalMatchCount || 0;
           const startItem = (currentPage - 1) * perPage + 1;
           const endItem = Math.min(currentPage * perPage, totalMatches);
 
@@ -224,7 +220,7 @@ export async function searchMultipleGitHubRepos(
               currentPage: pagination.currentPage,
               totalPages: pagination.totalPages,
               perPage: pagination.entriesPerPage || 10,
-              totalMatches: pagination.totalEntries || 0,
+              totalMatches: pagination.totalMatches || 0,
               hasMore: pagination.hasMore,
             }
           : undefined;

@@ -17,6 +17,12 @@ All links in documentation files (`docs/`, `packages/*/docs/`) **MUST** use abso
 
 ## Core Methodology
 
+1. **Task Management**: Review → Plan (use `todo` tool) → Track progress
+2. **Research**: Prefer `octocode-local` MCP tools. LSP first, then local search, then GitHub
+3. **TDD**: Write failing test → Run (`yarn test`) → Fix → Verify coverage (90%)
+4. **ReAct Loop**: Reason → Act → Observe → Loop
+5. **Quality**: Clean Code, run `yarn lint` + `yarn test`, use `npx knip` for dead code
+6. **Efficiency**: Use Linux commands (`mv`, `cp`, `sed`) for file operations
 
 > **File Operations**: Use Linux commands for changes in files!
 > Create commands and then implement on files.
@@ -43,12 +49,6 @@ All links in documentation files (`docs/`, `packages/*/docs/`) **MUST** use abso
 > # Delete all test snapshots
 > find . -name "*.snap" -delete
 > ```
-1. **Task Management**: Review → Plan (use `todo` tool) → Track progress
-2. **Research**: Prefer `octocode-local` MCP tools. LSP first, then local search, then GitHub
-3. **TDD**: Write failing test → Run (`yarn test`) → Fix → Verify coverage (90%)
-4. **ReAct Loop**: Reason → Act → Observe → Loop
-5. **Quality**: Clean Code, run `yarn lint` + `yarn test`, use `npx knip` for dead code
-6. **Efficiency**: Use Linux commands (`mv`, `cp`, `sed`) for file operations
 
 ## Repository Structure
 
@@ -59,9 +59,10 @@ octocode-mcp/
 │   ├── octocode-cli/      # CLI installer & skills marketplace
 │   ├── octocode-vscode/   # VS Code extension (OAuth, multi-editor)
 │   └── octocode-shared/   # Shared utilities (credentials, platform, session)
-└── package.json           # Workspace root (yarn workspaces)
+├── skills/                 # AI agent skills (research, plan, roast, etc.)
+├── docs/                   # Monorepo documentation
+└── package.json            # Workspace root (yarn workspaces)
 ```
-
 
 ## Access Control
 
@@ -96,22 +97,25 @@ Each package has specific guidelines that **override** this root file:
 ## Key References
 
 ### Core
-- **Docs Index**: [docs/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/README.md) — Documentation map
+- **Docs Index**: [docs/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/README.md)
 - **Development Guide**: [docs/DEVELOPMENT_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md)
-- **Configuration Reference**: [docs/CONFIGURATION_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md)
+- **Configuration**: [docs/CONFIGURATION_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md)
 - **Troubleshooting**: [docs/TROUBLESHOOTING.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md)
 
-### Octocode CLI
+### Skills
+- **All Skills**: [skills/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/skills/README.md)
 - **Skills Guide**: [packages/octocode-cli/docs/SKILLS_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md)
-- **Architecture**: [packages/octocode-cli/docs/ARCHITECTURE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/ARCHITECTURE.md)
-- **CLI Reference**: [packages/octocode-cli/docs/CLI_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md)
-- **Menu Flow**: [packages/octocode-cli/docs/MENU_FLOW.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/MENU_FLOW.md)
 
 ### Octocode MCP
 - **GitHub & GitLab Tools**: [packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md)
 - **Local Tools**: [packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md)
 - **Clone & Local Workflow**: [packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md)
 - **Authentication**: [packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
+
+### Octocode CLI
+- **Architecture**: [packages/octocode-cli/docs/ARCHITECTURE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/ARCHITECTURE.md)
+- **CLI Reference**: [packages/octocode-cli/docs/CLI_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md)
+- **Menu Flow**: [packages/octocode-cli/docs/MENU_FLOW.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/MENU_FLOW.md)
 
 ### Octocode Shared
 - **API Reference**: [packages/octocode-shared/docs/API_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/API_REFERENCE.md)

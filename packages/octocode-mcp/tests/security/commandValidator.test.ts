@@ -320,6 +320,32 @@ describe('commandValidator', () => {
         expect(result.isValid).toBe(true);
       });
 
+      it('should allow -E flag for macOS BSD find extended regex', () => {
+        const result = validateCommand('find', [
+          '-E',
+          '.',
+          '-regex',
+          '.*\\.(ts|tsx)$',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should allow -E with -regex and other filters combined', () => {
+        const result = validateCommand('find', [
+          '-E',
+          '/workspace',
+          '-maxdepth',
+          '5',
+          '-type',
+          'f',
+          '-regex',
+          '.*\\.(js|ts|py)$',
+        ]);
+
+        expect(result.isValid).toBe(true);
+      });
+
       it('should allow patterns after -size', () => {
         const result = validateCommand('find', ['.', '-size', '+1M']);
 

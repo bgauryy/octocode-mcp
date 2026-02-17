@@ -636,6 +636,141 @@ describe('File Operations - Additional Coverage Tests', () => {
     });
   });
 
+  describe('viewGitHubRepositoryStructureAPI path normalization', () => {
+    it('should strip trailing slashes from path before calling GitHub API', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi.fn().mockResolvedValue({
+              data: [
+                {
+                  name: 'core',
+                  path: 'packages/core',
+                  type: 'dir',
+                  url: 'url',
+                  html_url: 'html',
+                  git_url: 'git',
+                  sha: 'sha1',
+                },
+              ],
+            }),
+            get: vi.fn().mockResolvedValue({
+              data: { default_branch: 'main' },
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'facebook',
+        repo: 'react',
+        branch: 'main',
+        path: 'packages/',
+      });
+
+      // Should succeed — trailing slash stripped before API call
+      expect('structure' in result).toBe(true);
+      // Verify the API was called with cleaned path (no trailing slash)
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: 'packages',
+        })
+      );
+    });
+
+    it('should strip both leading and trailing slashes from path', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi.fn().mockResolvedValue({
+              data: [
+                {
+                  name: 'index.ts',
+                  path: 'src/index.ts',
+                  type: 'file',
+                  size: 100,
+                  url: 'url',
+                  html_url: 'html',
+                  git_url: 'git',
+                  sha: 'sha1',
+                },
+              ],
+            }),
+            get: vi.fn().mockResolvedValue({
+              data: { default_branch: 'main' },
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        path: '/src/',
+      });
+
+      expect('structure' in result).toBe(true);
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: 'src',
+        })
+      );
+    });
+
+    it('should handle path with multiple trailing slashes', async () => {
+      const mockOctokit = {
+        rest: {
+          repos: {
+            getContent: vi.fn().mockResolvedValue({
+              data: [
+                {
+                  name: 'file.ts',
+                  path: 'lib/file.ts',
+                  type: 'file',
+                  size: 50,
+                  url: 'url',
+                  html_url: 'html',
+                  git_url: 'git',
+                  sha: 'sha1',
+                },
+              ],
+            }),
+            get: vi.fn().mockResolvedValue({
+              data: { default_branch: 'main' },
+            }),
+          },
+        },
+      };
+
+      vi.mocked(getOctokit).mockResolvedValue(
+        mockOctokit as unknown as ReturnType<typeof getOctokit>
+      );
+
+      const result = await viewGitHubRepositoryStructureAPI({
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        path: 'lib///',
+      });
+
+      expect('structure' in result).toBe(true);
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: 'lib',
+        })
+      );
+    });
+  });
+
   describe('Recursive fetch error handling', () => {
     it('should handle errors in recursive directory fetching gracefully', async () => {
       const mockOctokit = {

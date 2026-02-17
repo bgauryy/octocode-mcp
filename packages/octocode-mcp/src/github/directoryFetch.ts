@@ -13,7 +13,7 @@
  */
 
 import { writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve, sep } from 'node:path';
 import { getOctocodeDir } from 'octocode-shared';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { getOctokit } from './client.js';
@@ -135,8 +135,14 @@ export async function fetchDirectoryContents(
   const octocodeDir = getOctocodeDir();
   const cloneDir = getCloneDir(octocodeDir, owner, repo, branch);
 
-  // The actual directory on disk where files will be saved
-  const dirPath = join(cloneDir, path);
+  // The actual directory on disk where files will be saved.
+  // Validate that path doesn't escape cloneDir via '..' traversal.
+  const dirPath = resolve(join(cloneDir, path));
+  if (!dirPath.startsWith(cloneDir + sep) && dirPath !== cloneDir) {
+    throw new Error(
+      `Path "${path}" escapes the repository directory. Path traversal is not allowed.`
+    );
+  }
 
   // ── 1. Cache hit? ─────────────────────────────────────────────
   const cacheResult = isCacheHit(cloneDir);
@@ -183,7 +189,12 @@ export async function fetchDirectoryContents(
     .slice(0, MAX_DIRECTORY_FILES);
 
   // ── 4. Parallel fetch via download_url ────────────────────────
-  const fetchedFiles = await fetchFilesInBatches(fileEntries, CONCURRENCY);
+  const token = authInfo?.token;
+  const fetchedFiles = await fetchFilesInBatches(
+    fileEntries,
+    CONCURRENCY,
+    token
+  );
 
   // ── 5. Enforce total size limit ───────────────────────────────
   let totalSize = 0;
@@ -206,7 +217,9 @@ export async function fetchDirectoryContents(
 
   const savedFiles: DirectoryFileEntry[] = [];
   for (const { entry, content } of filesToSave) {
-    const filePath = join(cloneDir, entry.path);
+    const filePath = resolve(join(cloneDir, entry.path));
+    // Skip files whose resolved path escapes the clone directory
+    if (!filePath.startsWith(cloneDir + sep)) continue;
     const fileDir = dirname(filePath);
     if (!existsSync(fileDir)) {
       mkdirSync(fileDir, { recursive: true, mode: 0o700 });
@@ -254,7 +267,8 @@ export async function fetchDirectoryContents(
  */
 async function fetchFilesInBatches(
   entries: DirectoryEntry[],
-  concurrency: number
+  concurrency: number,
+  token?: string
 ): Promise<Array<{ entry: DirectoryEntry; content: string }>> {
   const results: Array<{ entry: DirectoryEntry; content: string }> = [];
 
@@ -262,7 +276,7 @@ async function fetchFilesInBatches(
     const batch = entries.slice(i, i + concurrency);
     const batchResults = await Promise.allSettled(
       batch.map(async entry => {
-        const content = await fetchDownloadUrl(entry.download_url!);
+        const content = await fetchDownloadUrl(entry.download_url!, token);
         return { entry, content };
       })
     );
@@ -281,16 +295,20 @@ async function fetchFilesInBatches(
 /**
  * Fetch raw content from a download_url (raw.githubusercontent.com).
  */
-async function fetchDownloadUrl(url: string): Promise<string> {
+async function fetchDownloadUrl(url: string, token?: string): Promise<string> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
+    const headers: Record<string, string> = {
+      'User-Agent': 'octocode-mcp',
+    };
+    if (token) {
+      headers['Authorization'] = `token ${token}`;
+    }
     const response = await fetch(url, {
       signal: controller.signal,
-      headers: {
-        'User-Agent': 'octocode-mcp',
-      },
+      headers,
     });
 
     if (!response.ok) {

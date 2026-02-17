@@ -6,6 +6,75 @@ import { logToolCall, logSessionError } from '../session.js';
 import { isLoggingEnabled as isSessionEnabled } from '../serverConfig.js';
 import { TOOL_ERRORS } from '../errorCodes.js';
 
+/**
+ * Default timeout for tool execution (1 minute).
+ * Per MCP spec: "Implementations SHOULD establish timeouts for all sent requests."
+ */
+const TOOL_TIMEOUT_MS = 60_000;
+
+/**
+ * Wraps a promise with a timeout that respects an optional AbortSignal.
+ * Returns an error result instead of throwing on timeout.
+ */
+function withToolTimeout(
+  toolName: string,
+  promise: Promise<CallToolResult>,
+  signal?: AbortSignal
+): Promise<CallToolResult> {
+  if (signal?.aborted) {
+    return Promise.resolve(
+      createResult({
+        data: { error: `Tool '${toolName}' was cancelled before execution.` },
+        isError: true,
+      })
+    );
+  }
+
+  return new Promise<CallToolResult>(resolve => {
+    const timer = setTimeout(() => {
+      resolve(
+        createResult({
+          data: {
+            error: `Tool '${toolName}' timed out after ${TOOL_TIMEOUT_MS / 1000}s. Try reducing query complexity or scope.`,
+          },
+          isError: true,
+        })
+      );
+    }, TOOL_TIMEOUT_MS);
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve(
+        createResult({
+          data: { error: `Tool '${toolName}' was cancelled by the client.` },
+          isError: true,
+        })
+      );
+    };
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    promise
+      .then(result => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        resolve(result);
+      })
+      .catch(error => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        resolve(
+          createResult({
+            data: {
+              error: `Tool '${toolName}' failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+            isError: true,
+          })
+        );
+      });
+  });
+}
+
 export function withSecurityValidation<T extends Record<string, unknown>>(
   toolName: string,
   toolHandler: (
@@ -15,11 +84,15 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
   ) => Promise<CallToolResult>
 ): (
   args: unknown,
-  { authInfo, sessionId }: { authInfo?: AuthInfo; sessionId?: string }
+  extra: { authInfo?: AuthInfo; sessionId?: string; signal?: AbortSignal }
 ) => Promise<CallToolResult> {
   return async (
     args: unknown,
-    { authInfo, sessionId }: { authInfo?: AuthInfo; sessionId?: string }
+    {
+      authInfo,
+      sessionId,
+      signal,
+    }: { authInfo?: AuthInfo; sessionId?: string; signal?: AbortSignal } = {}
   ): Promise<CallToolResult> => {
     try {
       const validation = ContentSanitizer.validateInputParameters(
@@ -40,10 +113,10 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
       if (isSessionEnabled()) {
         handleBulk(toolName, sanitizedParams);
       }
-      return await toolHandler(
-        validation.sanitizedParams as T,
-        authInfo,
-        sessionId
+      return await withToolTimeout(
+        toolName,
+        toolHandler(validation.sanitizedParams as T, authInfo, sessionId),
+        signal
       );
     } catch (error) {
       // Log security validation errors for monitoring
@@ -64,8 +137,15 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
 
 export function withBasicSecurityValidation<T extends object>(
   toolHandler: (sanitizedArgs: T) => Promise<CallToolResult>
-): (args: unknown) => Promise<CallToolResult> {
-  return async (args: unknown): Promise<CallToolResult> => {
+): (
+  args: unknown,
+  extra?: { signal?: AbortSignal }
+) => Promise<CallToolResult> {
+  return async (
+    args: unknown,
+    extra?: { signal?: AbortSignal }
+  ): Promise<CallToolResult> => {
+    const signal = extra?.signal;
     try {
       const validation = ContentSanitizer.validateInputParameters(
         args as Record<string, unknown>
@@ -80,7 +160,11 @@ export function withBasicSecurityValidation<T extends object>(
         });
       }
 
-      return await toolHandler(validation.sanitizedParams as T);
+      return await withToolTimeout(
+        'tool',
+        toolHandler(validation.sanitizedParams as T),
+        signal
+      );
     } catch (error) {
       // Log security validation errors for monitoring (no tool name in basic validation)
       logSessionError(

@@ -245,7 +245,7 @@ describe('Index Module', () => {
         expect.objectContaining({
           capabilities: expect.objectContaining({
             prompts: {},
-            tools: {},
+            tools: { listChanged: false },
           }),
         })
       );

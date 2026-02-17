@@ -309,7 +309,15 @@ export async function searchNpmPackage(
       return searchNpmPackageViaSearch(packageName, limit, fetchMetadata);
     },
     {
-      shouldCache: result => !('error' in result),
+      // Don't cache errors or empty results. Empty results may indicate
+      // transient npm failures (e.g. shebang PATH issues, network errors)
+      // and should be retried on the next call instead of being stuck for
+      // the entire cache TTL (4 hours).
+      shouldCache: result => {
+        if ('error' in result) return false;
+        if ('totalFound' in result && result.totalFound === 0) return false;
+        return true;
+      },
     }
   );
 }

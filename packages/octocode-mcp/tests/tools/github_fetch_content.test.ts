@@ -220,7 +220,7 @@ describe('GitHub Fetch Content Tool', () => {
         }
       );
 
-      expect(result.isError).toBe(false); // Bulk operation returns success with error in result
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('error');
     });
@@ -237,7 +237,7 @@ describe('GitHub Fetch Content Tool', () => {
         }
       );
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('error');
     });
@@ -258,7 +258,7 @@ describe('GitHub Fetch Content Tool', () => {
         }
       );
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('error');
     });

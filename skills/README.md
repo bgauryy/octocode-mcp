@@ -106,8 +106,3 @@ Holistic PR review via Octocode MCP: bugs, security, architecture, flow impact. 
 
 ---
 
-## Installation
-
-Skills require OctoCode MCP server. See each skill's `SKILL.md` for setup.
-
-**For contributors:** [Development Guide](../docs/DEVELOPMENT_GUIDE.md) • [CLI Skills Guide](../packages/octocode-cli/docs/SKILLS_GUIDE.md)

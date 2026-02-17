@@ -154,6 +154,16 @@ export const FetchContentQuerySchema = FetchContentBaseSchema.superRefine(
       });
     }
 
+    // Cannot use fullContent with matchString
+    if (data.fullContent === true && data.matchString !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Cannot use fullContent with matchString - choose one extraction method',
+        path: ['fullContent'],
+      });
+    }
+
     if (
       data.matchStringIsRegex &&
       data.matchString !== undefined &&

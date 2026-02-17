@@ -256,6 +256,42 @@ describe('localGetFileContent', () => {
     });
   });
 
+  describe('Conflicting extraction options', () => {
+    it('should return error when fullContent and matchString are both provided', async () => {
+      const testContent = 'line 1\nline 2\nMATCH\nline 4\nline 5';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        fullContent: true,
+        matchString: 'MATCH',
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.error).toBeDefined();
+      expect(String(result.error)).toContain('fullContent');
+      expect(String(result.error)).toContain('matchString');
+      expect(result.hints).toBeDefined();
+      expect(result.hints!.length).toBeGreaterThan(0);
+    });
+
+    it('should return error when fullContent and matchString are both provided even with other options', async () => {
+      const testContent = 'line 1\nline 2\nMATCH\nline 4\nline 5';
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'test.txt',
+        fullContent: true,
+        matchString: 'MATCH',
+        matchStringContextLines: 3,
+      });
+
+      expect(result.status).toBe('error');
+      expect(String(result.error)).toContain('fullContent');
+      expect(String(result.error)).toContain('matchString');
+    });
+  });
+
   describe('Error handling', () => {
     it('should handle invalid paths', async () => {
       mockValidate.mockReturnValue({
@@ -1472,6 +1508,36 @@ describe('localGetFileContent', () => {
       });
 
       expect(result.success).toBe(true);
+    });
+
+    it('should reject fullContent with matchString (TC-12: mutually exclusive)', () => {
+      const result = FetchContentQuerySchema.safeParse({
+        path: 'test.txt',
+        fullContent: true,
+        matchString: 'export',
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const hasConflictError = result.error.issues.some(
+          issue =>
+            issue.message.includes('fullContent') &&
+            issue.message.includes('matchString')
+        );
+        expect(hasConflictError).toBe(true);
+      }
+    });
+
+    it('should reject fullContent with matchString and startLine/endLine (all conflicts)', () => {
+      const result = FetchContentQuerySchema.safeParse({
+        path: 'test.txt',
+        fullContent: true,
+        matchString: 'export',
+        startLine: 1,
+        endLine: 10,
+      });
+
+      expect(result.success).toBe(false);
     });
   });
 });

@@ -58,7 +58,10 @@ describe('withSecurityValidation - Additional Coverage', () => {
       );
 
       const wrappedHandler = withBasicSecurityValidation(mockHandler);
-      const result = await wrappedHandler({ query: 'test' });
+      const result = await wrappedHandler(
+        { query: 'test' },
+        { signal: new AbortController().signal }
+      );
 
       expect(ContentSanitizer.validateInputParameters).toHaveBeenCalledWith({
         query: 'test',
@@ -82,7 +85,10 @@ describe('withSecurityValidation - Additional Coverage', () => {
       );
 
       const wrappedHandler = withBasicSecurityValidation(mockHandler);
-      const result = await wrappedHandler({ malicious: 'input' });
+      const result = await wrappedHandler(
+        { malicious: 'input' },
+        { signal: new AbortController().signal }
+      );
 
       expect(mockHandler).not.toHaveBeenCalled();
       expect(result).toHaveProperty('content');
@@ -115,8 +121,11 @@ describe('withSecurityValidation - Additional Coverage', () => {
 
       const wrappedHandler = withBasicSecurityValidation(mockHandler);
 
-      // Handler errors are caught and wrapped in createResult
-      const result = await wrappedHandler({ query: 'test' });
+      // Handler errors are caught by the timeout wrapper and returned as error results
+      const result = await wrappedHandler(
+        { query: 'test' },
+        { signal: new AbortController().signal }
+      );
 
       expect(result).toHaveProperty('content');
       const content = Array.isArray(result.content)
@@ -125,7 +134,6 @@ describe('withSecurityValidation - Additional Coverage', () => {
       const errorText = content
         .map(c => (typeof c === 'object' && 'text' in c ? c.text : String(c)))
         .join('');
-      expect(errorText).toContain('Security validation error');
       expect(errorText).toContain('Handler execution failed');
     });
 
@@ -139,7 +147,10 @@ describe('withSecurityValidation - Additional Coverage', () => {
       );
 
       const wrappedHandler = withBasicSecurityValidation(mockHandler);
-      const result = await wrappedHandler({ query: 'test' });
+      const result = await wrappedHandler(
+        { query: 'test' },
+        { signal: new AbortController().signal }
+      );
 
       expect(mockHandler).not.toHaveBeenCalled();
       expect(result).toHaveProperty('content');
@@ -163,7 +174,10 @@ describe('withSecurityValidation - Additional Coverage', () => {
       );
 
       const wrappedHandler = withBasicSecurityValidation(mockHandler);
-      const result = await wrappedHandler({ query: 'test' });
+      const result = await wrappedHandler(
+        { query: 'test' },
+        { signal: new AbortController().signal }
+      );
 
       expect(result).toHaveProperty('content');
       const content = Array.isArray(result.content)
@@ -211,7 +225,7 @@ describe('withSecurityValidation - Additional Coverage', () => {
 
       await wrappedHandler(
         { queries: [{ owner: 'facebook', repo: 'react' }] },
-        { sessionId: 'test-session' }
+        { sessionId: 'test-session', signal: new AbortController().signal }
       );
 
       // Bulk operations now log each query individually
@@ -263,7 +277,7 @@ describe('withSecurityValidation - Additional Coverage', () => {
 
       await wrappedHandler(
         { queries: [{ owner: 'facebook', repo: 'react' }] },
-        { sessionId: 'test-session' }
+        { sessionId: 'test-session', signal: new AbortController().signal }
       );
 
       expect(session.logToolCall).not.toHaveBeenCalled();
@@ -295,7 +309,7 @@ describe('withSecurityValidation - Additional Coverage', () => {
 
       await wrappedHandler(
         { someOtherParam: 'value' },
-        { sessionId: 'test-session' }
+        { sessionId: 'test-session', signal: new AbortController().signal }
       );
 
       expect(session.logToolCall).not.toHaveBeenCalled();
@@ -334,7 +348,7 @@ describe('withSecurityValidation - Additional Coverage', () => {
       // Should not throw despite logging error
       const result = await wrappedHandler(
         { queries: [{ owner: 'facebook', repo: 'react' }] },
-        { sessionId: 'test-session' }
+        { sessionId: 'test-session', signal: new AbortController().signal }
       );
 
       expect(result).toHaveProperty('content');
@@ -364,7 +378,10 @@ describe('withSecurityValidation - Additional Coverage', () => {
 
       const wrappedHandler = withSecurityValidation('test-tool', mockHandler);
 
-      await wrappedHandler({ query: 'test' }, { sessionId: 'session-123' });
+      await wrappedHandler(
+        { query: 'test' },
+        { sessionId: 'session-123', signal: new AbortController().signal }
+      );
 
       expect(mockHandler).toHaveBeenCalledWith(
         { query: 'test' },
@@ -400,7 +417,11 @@ describe('withSecurityValidation - Additional Coverage', () => {
 
       await wrappedHandler(
         { query: 'test' },
-        { authInfo: mockAuthInfo, sessionId: 'session-456' }
+        {
+          authInfo: mockAuthInfo,
+          sessionId: 'session-456',
+          signal: new AbortController().signal,
+        }
       );
 
       expect(mockHandler).toHaveBeenCalledWith(
@@ -431,7 +452,10 @@ describe('withSecurityValidation - Additional Coverage', () => {
 
       const wrappedHandler = withSecurityValidation('test-tool', mockHandler);
 
-      await wrappedHandler({ query: 'test' }, {});
+      await wrappedHandler(
+        { query: 'test' },
+        { signal: new AbortController().signal }
+      );
 
       expect(mockHandler).toHaveBeenCalledWith(
         { query: 'test' },
@@ -454,7 +478,7 @@ describe('withSecurityValidation - Additional Coverage', () => {
       const wrappedHandler = withSecurityValidation('test-tool', mockHandler);
       const result = await wrappedHandler(
         { query: 'test' },
-        { sessionId: 'test' }
+        { sessionId: 'test', signal: new AbortController().signal }
       );
 
       expect(result).toHaveProperty('content');
@@ -481,7 +505,7 @@ describe('withSecurityValidation - Additional Coverage', () => {
       const wrappedHandler = withSecurityValidation('test-tool', mockHandler);
       const result = await wrappedHandler(
         { query: 'test' },
-        { sessionId: 'test' }
+        { sessionId: 'test', signal: new AbortController().signal }
       );
 
       expect(result).toHaveProperty('content');
@@ -512,7 +536,7 @@ describe('withSecurityValidation - Additional Coverage', () => {
       const wrappedHandler = withSecurityValidation('test-tool', mockHandler);
       const result = await wrappedHandler(
         { query: "'; DROP TABLE users; --" },
-        { sessionId: 'test' }
+        { sessionId: 'test', signal: new AbortController().signal }
       );
 
       expect(result).toHaveProperty('content');
@@ -561,7 +585,7 @@ describe('withSecurityValidation - Additional Coverage', () => {
         {
           queries: [{ repository: 'facebook/react' }],
         },
-        { sessionId: 'test' }
+        { sessionId: 'test', signal: new AbortController().signal }
       );
 
       // Bulk operations now log each query individually
@@ -613,7 +637,7 @@ describe('withSecurityValidation - Additional Coverage', () => {
 
       await wrappedHandler(
         { queries: [{ owner: 'facebook' }] },
-        { sessionId: 'test' }
+        { sessionId: 'test', signal: new AbortController().signal }
       );
 
       // Bulk operations now log each query individually
@@ -663,7 +687,7 @@ describe('withSecurityValidation - Additional Coverage', () => {
 
       await wrappedHandler(
         { owner: 'vercel', repo: 'next.js' },
-        { sessionId: 'test' }
+        { sessionId: 'test', signal: new AbortController().signal }
       );
 
       expect(session.logToolCall).toHaveBeenCalledWith(
