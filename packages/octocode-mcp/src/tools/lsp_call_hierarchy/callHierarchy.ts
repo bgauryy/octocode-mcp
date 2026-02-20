@@ -35,7 +35,6 @@ export async function processCallHierarchy(
   query: LSPCallHierarchyQuery
 ): Promise<CallHierarchyResult> {
   try {
-    // Validate the file path
     const pathValidation = validateToolPath(
       { path: query.uri, ...query },
       TOOL_NAME

@@ -1014,9 +1014,9 @@ import {
 
 ## Related Documentation
 
-- [CREDENTIALS_ARCHITECTURE.md](./CREDENTIALS_ARCHITECTURE.md) - Deep dive into credential storage
-- [SESSION_PERSISTENCE.md](./SESSION_PERSISTENCE.md) - Session storage architecture
+- [CREDENTIALS_ARCHITECTURE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) - Deep dive into credential storage
+- [SESSION_PERSISTENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/SESSION_PERSISTENCE.md) - Session storage architecture
 
 ---
 
-*Part of [octocode-shared](../README.md) - Shared utilities for Octocode packages*
+*Part of [octocode-shared](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/README.md) - Shared utilities for Octocode packages*

@@ -53,7 +53,6 @@ async function gotoDefinition(
   query: LSPGotoDefinitionQuery
 ): Promise<GotoDefinitionResult> {
   try {
-    // Validate the file path
     const pathValidation = validateToolPath(
       { ...query, path: query.uri },
       TOOL_NAME

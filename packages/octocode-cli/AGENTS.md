@@ -18,7 +18,7 @@ Octocode CLI is the unified installer and management hub for AI-assisted develop
 - **Skills Manager**: Install and update AI coding skills for Claude Code
 - **MCP Marketplace**: Browse and install 70+ community MCP servers
 
-**Key Docs**: [`README.md`](./README.md) • [Root AGENTS.md](../../AGENTS.md) • [`docs/`](./docs/)
+**Key Docs**: [`README.md`](./README.md) • [`docs/`](./docs/)
 
 ### Documentation
 
@@ -34,6 +34,7 @@ Octocode CLI is the unified installer and management hub for AI-assisted develop
 ## 🛠️ Commands
 
 All commands run from this package directory (`packages/octocode-cli/`).
+For monorepo-wide setup and workflow commands, see [docs/DEVELOPMENT_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md).
 
 | Task | Command | Description |
 |------|---------|-------------|
@@ -440,4 +441,4 @@ The CLI includes a skills marketplace with 8+ community sources:
 | `src/ui/skills-menu/index.ts` | Skills management UI |
 | `src/ui/skills-menu/marketplace.ts` | Marketplace browsing UI |
 
-For complete details, see [`docs/SKILLS_GUIDE.md`](./docs/SKILLS_GUIDE.md).
+For complete details, see `docs/SKILLS_GUIDE.md`.

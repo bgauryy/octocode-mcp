@@ -17,13 +17,14 @@ Octocode MCP is an MCP server providing AI agents with code exploration tools:
 - **LSP Intelligence**: Semantic code navigation with goto definition, find references, call hierarchy
 - **Package Discovery**: Search NPM/PyPI for packages and repository URLs
 
-**Key Docs**: [`LOCAL_TOOLS_REFERENCE.md`](./docs/LOCAL_TOOLS_REFERENCE.md) • [`GITHUB_GITLAB_TOOLS_REFERENCE.md`](./docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) • [`README.md`](./README.md)
+**Key Docs**: See [Key Documentation](#-key-documentation) below for the canonical package doc index.
 
 ---
 
 ## 🛠️ Commands
 
 All commands run from this package directory (`packages/octocode-mcp/`).
+For monorepo-wide setup and workflow commands, see [docs/DEVELOPMENT_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md).
 
 | Task | Command | Description |
 |------|---------|-------------|
@@ -363,7 +364,7 @@ LSP (Language Server Protocol) tools provide **semantic** code intelligence:
 - **30+ languages supported** - Python, Go, Rust, Java, C/C++, etc. (requires server installation)
 - **Cross-platform** - macOS, Linux, Windows
 
-See [`LOCAL_TOOLS_REFERENCE.md`](./docs/LOCAL_TOOLS_REFERENCE.md) for full documentation.
+See the Local Tools reference document in `./docs/` for full documentation.
 
 ---
 
@@ -506,7 +507,6 @@ yarn test:ui
 | [`CLONE_AND_LOCAL_TOOLS_WORKFLOW.md`](./docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md) | Clone repos → use local + LSP tools for deep analysis |
 | [`AUTHENTICATION_SETUP.md`](./docs/AUTHENTICATION_SETUP.md) | GitHub/GitLab authentication setup |
 | [`README.md`](./README.md) | Installation, usage, configuration |
-| [`../../AGENTS.md`](../../AGENTS.md) | Root monorepo guidelines |
 | [MCP Spec](https://modelcontextprotocol.io/) | Model Context Protocol specification |
 | [GitHub REST API](https://docs.github.com/en/rest) | GitHub API reference |
 | [LSP Spec](https://microsoft.github.io/language-server-protocol/) | Language Server Protocol specification |

@@ -2498,9 +2498,7 @@ describe('registerPackageSearchTool', () => {
   });
 });
 
-// ============================================
 // NEW TESTS: Task 1 - Enhanced GitHub Integration Hints
-// ============================================
 describe('Task 1: Enhanced GitHub Integration Hints', () => {
   let mockServer: MockMcpServer;
 
@@ -2639,9 +2637,7 @@ describe('Task 1: Enhanced GitHub Integration Hints', () => {
   });
 });
 
-// ============================================
 // NEW TESTS: Task 2 - Name Variation Suggestions
-// ============================================
 describe('Task 2: Name Variation Suggestions', () => {
   let mockServer: MockMcpServer;
 
@@ -2796,9 +2792,7 @@ describe('Task 2: Name Variation Suggestions', () => {
   });
 });
 
-// ============================================
 // NEW TESTS: Task 3 - Deprecation Detection
-// ============================================
 describe('Task 3: Deprecation Detection', () => {
   let mockServer: MockMcpServer;
 
@@ -2914,9 +2908,7 @@ describe('Task 3: Deprecation Detection', () => {
   });
 });
 
-// ============================================
 // NEW TESTS: Task 4 - pythonFetchMetadata Parameter
-// ============================================
 describe('Task 4: pythonFetchMetadata Parameter', () => {
   const withResearchFields = <T extends object>(query: T) => ({
     ...query,
@@ -3043,9 +3035,7 @@ describe('Task 4: pythonFetchMetadata Parameter', () => {
   });
 });
 
-// ============================================
 // NEW TESTS: Task 5 - PyPI Fuzzy Search (REMOVED)
-// ============================================
 
 describe('searchPackage - NPM CLI Repository Fetching', () => {
   beforeEach(() => {

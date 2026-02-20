@@ -181,7 +181,6 @@ async function handleFileFetch(
   token: string | undefined,
   authInfo?: AuthInfo
 ) {
-  // Get provider instance
   const provider = getProvider(providerType, {
     type: providerType,
     baseUrl,

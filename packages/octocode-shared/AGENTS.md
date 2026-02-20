@@ -15,7 +15,7 @@ Octocode Shared provides common utilities used by multiple Octocode packages:
 - **Credential Management**: Secure token storage with AES-256-GCM encryption
 - **Session Persistence**: Session state with deferred writes and usage statistics
 - **Platform Detection**: Cross-platform path and environment utilities
-- **Keychain Integration**: Native file storage access via `file storage-napi`
+- **Encrypted File Storage**: Pure JavaScript AES-256-GCM storage in `~/.octocode/`
 
 **Key Consumers**: `octocode-cli`, `octocode-mcp`
 
@@ -24,6 +24,7 @@ Octocode Shared provides common utilities used by multiple Octocode packages:
 ## 🛠️ Commands
 
 All commands run from this package directory (`packages/octocode-shared/`).
+For monorepo-wide setup and workflow commands, see [docs/DEVELOPMENT_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md).
 
 | Task | Command | Description |
 |------|---------|-------------|
@@ -59,7 +60,7 @@ src/
 │
 ├── credentials/                # 🔐 Secure credential storage
 │   ├── index.ts                # Credentials module exports
-│   ├── file storage.ts             # System file storage wrapper (internal)
+│   ├── credentialEncryption.ts   # AES-256-GCM encryption + file I/O
 │   ├── storage.ts              # AES-256-GCM encrypted storage
 │   └── types.ts                # Credential type definitions
 │
@@ -78,7 +79,7 @@ src/
 ```
 tests/
 ├── credentials/
-│   ├── file storage.test.ts        # Keychain integration tests
+│   └── storage.test.ts           # Credential storage tests
 │   └── storage.test.ts         # Credential storage tests
 ├── platform/
 │   └── platform.test.ts        # Platform detection tests
@@ -194,7 +195,7 @@ import { ... } from 'octocode-shared/session';
 
 - **AES-256-GCM**: Authenticated encryption with associated data
 - **Random IV**: Unique initialization vector per encryption
-- **Keychain Integration**: Native OS file storage for encryption key
+- **File-Based Key Storage**: Encryption key stored securely in `~/.octocode/.key`
 - **Secure Fallback**: File-based key when file storage unavailable
 - **Token Resolution**: Automatic env → storage → gh CLI fallback chain
 - **Auto-Refresh**: Octocode tokens refreshed automatically when expired (via `@octokit/oauth-methods`)
@@ -242,7 +243,7 @@ import { ... } from 'octocode-shared/session';
 
 These are the core principles for this shared package:
 
-1. **Minimal Dependencies**: Only `file storage-napi` for file storage access.
+1. **Minimal Dependencies**: Keep runtime dependencies small and portable.
 2. **Cross-Platform**: Must work on macOS, Linux, and Windows.
 3. **Type-Safe Exports**: Full TypeScript types with strict mode.
 4. **Security First**: All credential operations use encryption.
@@ -341,13 +342,9 @@ startFlushTimer()
 │                    KEY MANAGEMENT                            │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│  Primary: System Keychain (file storage-napi)                   │
-│    └── Service: "octocode"                                  │
-│    └── Account: "encryption-key"                            │
-│                                                              │
-│  Fallback: File-Based Key                                   │
+│  File-Based Key Storage                                     │
 │    └── Location: ~/.octocode/.key                           │
-│    └── Used when file storage unavailable                       │
+│    └── Used by AES-256-GCM encryption/decryption            │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -372,7 +369,7 @@ startFlushTimer()
 
 ### Security Considerations
 
-- **Key Isolation**: Encryption keys never leave the system file storage
+- **Key Isolation**: Encryption keys are stored locally in `~/.octocode/.key` with restrictive permissions
 - **No Plaintext Storage**: Tokens are always encrypted at rest
 - **Env Variable Priority**: Environment tokens take precedence
 - **Deferred Writes**: Session data is flushed safely on exit
@@ -391,7 +388,7 @@ startFlushTimer()
 | Category | Path | Purpose |
 |----------|------|---------|
 | Unit | `tests/credentials/storage.test.ts` | Encryption/decryption, token management |
-| Unit | `tests/credentials/file storage.test.ts` | Keychain integration |
+| Unit | `tests/credentials/storage.test.ts` | Credential storage, encryption, token management |
 | Unit | `tests/platform/platform.test.ts` | OS detection, path resolution |
 | Unit | `tests/session/storage.test.ts` | Session persistence, stats, flushing |
 
@@ -419,7 +416,7 @@ yarn test:quiet        # Minimal output
 
 | Dependency | Purpose |
 |------------|---------|
-| `file storage-napi` | Native file storage access |
+| `zod` | Runtime schema validation for stored credential payloads |
 | `@octokit/oauth-methods` | GitHub OAuth token refresh |
 | `@octokit/request` | HTTP requests to GitHub API |
 
@@ -432,7 +429,7 @@ dist/
 ├── credentials/        # Credentials module
 │   ├── index.js
 │   ├── index.d.ts
-│   ├── file storage.js     # Internal file storage wrapper
+│   ├── credentialEncryption.js
 │   ├── storage.js
 │   └── types.d.ts
 ├── platform/           # Platform module

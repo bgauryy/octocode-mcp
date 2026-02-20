@@ -17,7 +17,7 @@ This will diagnose common Node.js issues and let your AI agent help resolve them
 ## Table of Contents
 
 - [1. npm Registry Issues](#1-npm-registry-issues)
-- [2. Node.js Version & Process Issues](#2-nodejs-version--process-issues)
+- [2. Node.js Version and Process Issues](#2-nodejs-version-and-process-issues)
 - [3. Authentication Issues](#3-authentication-issues)
 - [4. MCP Server Connection Issues](#4-mcp-server-connection-issues)
 - [5. Still Having Issues?](#5-still-having-issues)
@@ -88,7 +88,7 @@ npm cache clean --force
 
 ---
 
-## 2. Node.js Version & Process Issues
+## 2. Node.js Version and Process Issues
 
 ### Recommended: Let Your AI Agent Handle It
 

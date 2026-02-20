@@ -115,7 +115,6 @@ export async function searchMultipleGitHubRepos(
     expandedQueries,
     async (query: GitHubReposSearchQuery, _index: number) => {
       try {
-        // Get provider instance
         const provider = getProvider(providerType, {
           type: providerType,
           baseUrl,

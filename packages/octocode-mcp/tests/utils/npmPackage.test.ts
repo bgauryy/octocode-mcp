@@ -58,9 +58,7 @@ beforeEach(() => {
   _resetNpmRegistryUrlCache();
 });
 
-// ===========================================================================
 // mapToResult — time object parsing (via registry /latest endpoint)
-// ===========================================================================
 describe('mapToResult - time object parsing', () => {
   it('should extract lastPublished from version-specific time', async () => {
     mockFetchWithRetries.mockResolvedValue({
@@ -133,9 +131,7 @@ describe('mapToResult - time object parsing', () => {
   });
 });
 
-// ===========================================================================
 // fetchPackageDetails — HTTP error handling
-// ===========================================================================
 describe('fetchPackageDetails - HTTP error handling', () => {
   it('should return empty when registry returns 404', async () => {
     mockFetchWithRetries.mockRejectedValue(
@@ -201,9 +197,7 @@ describe('fetchPackageDetails - HTTP error handling', () => {
   });
 });
 
-// ===========================================================================
 // searchNpmPackageViaSearch — registry search API error handling
-// ===========================================================================
 describe('searchNpmPackageViaSearch - error handling', () => {
   it('should return error when fetch throws for search', async () => {
     mockFetchWithRetries.mockRejectedValue(new Error('Search network error'));
@@ -265,9 +259,7 @@ describe('searchNpmPackageViaSearch - error handling', () => {
   });
 });
 
-// ===========================================================================
 // checkNpmDeprecation — still uses CLI
-// ===========================================================================
 describe('checkNpmDeprecation - edge cases', () => {
   it('should handle command error', async () => {
     mockExecuteNpmCommand.mockResolvedValue({
@@ -321,9 +313,7 @@ describe('checkNpmDeprecation - edge cases', () => {
   });
 });
 
-// ===========================================================================
 // isExactPackageName routing — verifies fetch URL based on routing decision
-// ===========================================================================
 describe('isExactPackageName', () => {
   it('should call /latest URL for scoped packages', async () => {
     mockFetchWithRetries.mockResolvedValue({

@@ -35,7 +35,6 @@ export async function searchMultipleGitHubPullRequests(
           return createErrorResult(validationError, query);
         }
 
-        // Get provider instance
         const provider = getProvider(providerType, {
           type: providerType,
           baseUrl,

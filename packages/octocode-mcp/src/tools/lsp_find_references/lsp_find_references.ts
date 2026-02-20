@@ -67,7 +67,6 @@ export async function findReferences(
   query: LSPFindReferencesQuery
 ): Promise<FindReferencesResult> {
   try {
-    // Validate the file path
     const pathValidation = validateToolPath(
       { ...query, path: query.uri },
       TOOL_NAME

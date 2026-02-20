@@ -257,5 +257,5 @@ octocode --version
 
 ## See Also
 
-- [Menu Flow Documentation](./MENU_FLOW.md)
-- [Architecture Overview](./ARCHITECTURE.md)
+- [Menu Flow Documentation](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/MENU_FLOW.md)
+- [Architecture Overview](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/ARCHITECTURE.md)

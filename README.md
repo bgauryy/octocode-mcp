@@ -78,6 +78,7 @@ https://github.com/user-attachments/assets/de8d14c0-2ead-46ed-895e-09144c9b5071
 ## Skills
 
 > [Agent Skills](https://agentskills.io/what-are-skills) are a lightweight, open format for extending AI agent capabilities.
+> Skills index: [skills/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/skills/README.md)
 
 | Skill | What it does |
 |-------|--------------|
@@ -95,26 +96,16 @@ https://github.com/user-attachments/assets/5b630763-2dee-4c2d-b5c1-6335396723ec
 
 ## Documentation
 
-| Topic | Link |
-|-------|------|
-| **Getting Started** | [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) |
-| **Configuration** | [Environment variables, `.octocoderc`, examples](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) |
-| **GitHub & GitLab Tools** | [Search code/repos/PRs, content, packages](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) |
-| **Local & LSP Tools** | [Search, structure, files, semantic analysis](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) |
-| **Clone Workflow** | [Clone repos + local/LSP tools for deep analysis](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md) |
-| **Skills Guide** | [Skills system and marketplace](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md) |
-| **CLI** | [CLI installer and management hub](https://github.com/bgauryy/octocode-mcp/tree/main/packages/octocode-cli) |
-| **Troubleshooting** | [Common issues and solutions](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) |
-| **Tutorials** | [Octocode AI YouTube Channel](https://www.youtube.com/@Octocode-ai) |
+For the full documentation index, start here:
+[docs/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/README.md)
 
-### Packages
-
-| Package | Description |
-|---------|-------------|
-| [octocode-mcp](https://github.com/bgauryy/octocode-mcp/tree/main/packages/octocode-mcp) | Core MCP server -- GitHub, GitLab, Local FS, LSP |
-| [octocode-cli](https://github.com/bgauryy/octocode-mcp/tree/main/packages/octocode-cli) | CLI installer & skills marketplace |
-| [octocode-vscode](https://github.com/bgauryy/octocode-mcp/tree/main/packages/octocode-vscode) | VS Code extension for OAuth & multi-editor support |
-| [octocode-shared](https://github.com/bgauryy/octocode-mcp/tree/main/packages/octocode-shared) | Shared utilities (credentials, platform, session) |
+Recommended quick links:
+- [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
+- [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md)
+- [Local Tools + LSP Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md)
+- [CLI Skills Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md)
+- [Skills Index](https://github.com/bgauryy/octocode-mcp/blob/main/skills/README.md)
+- [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md)
 
 ### The Manifest
 

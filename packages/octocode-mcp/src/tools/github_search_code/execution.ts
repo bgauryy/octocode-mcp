@@ -18,7 +18,6 @@ export async function searchMultipleGitHubCode(
     queries,
     async (query: GitHubCodeSearchQuery, _index: number) => {
       try {
-        // Get provider instance
         const provider = getProvider(providerType, {
           type: providerType,
           baseUrl,
