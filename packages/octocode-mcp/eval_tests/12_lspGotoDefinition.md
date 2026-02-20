@@ -121,9 +121,11 @@ localSearchCode: {
 
 ---
 
-### TC-5: orderHint for Re-exports (Known Issue)
+### TC-5: orderHint for Re-exports
 
-**Goal:** Verify `orderHint` behavior on re-exported symbols. **KNOWN FAILURE.**
+**Goal:** Verify re-export following and `orderHint` semantics.
+
+**Important:** Use `orderHint: 0` (default) for import/re-export lines — they typically have one symbol occurrence. `orderHint: 1` asks for the 2nd occurrence and correctly returns "Symbol not found" when only one exists.
 
 **Step 1 — Search for import:**
 ```json
@@ -135,20 +137,19 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Goto definition with orderHint:**
+**Step 2 — Goto definition (use orderHint: 0 for single-occurrence lines):**
 ```json
 {
   "uri": "<file_with_import>",
   "symbolName": "ToolError",
   "lineHint": "<line_of_import>",
-  "orderHint": 1
+  "orderHint": 0
 }
 ```
 
 **Expected:**
-- [ ] **KNOWN BUG:** Returns "Symbol not found" for re-exported symbol
-- [ ] Should navigate to the source definition (not the re-export)
-- [ ] `orderHint: 0` (default) may work for the first definition
+- [ ] Navigates to source definition (not the re-export) via import chaining
+- [ ] `orderHint: 0` selects the single occurrence on the import line
 
 ---
 

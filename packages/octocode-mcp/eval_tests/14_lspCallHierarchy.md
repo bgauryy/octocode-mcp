@@ -148,7 +148,7 @@ localSearchCode: {
 
 **Expected:**
 - [ ] Two levels of callers (callers + callers-of-callers)
-- [ ] **Known Issue:** Output ~101KB for well-connected functions
+- [ ] Output ~101KB for well-connected functions — **Design:** depth=2 expands full tree
 - [ ] Response still succeeds (no timeout)
 - [ ] Chain structure visible in results
 

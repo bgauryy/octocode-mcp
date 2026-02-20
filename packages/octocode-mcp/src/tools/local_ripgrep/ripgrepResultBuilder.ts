@@ -191,19 +191,11 @@ function _getStructuredResultSizeHints(
       );
   }
 
-  if (totalMatches > 0 && totalMatches <= 100)
-    hints.push('', 'Good result size - manageable for analysis');
-
-  if (totalMatches > 0) {
+  if (totalMatches > 0 && query.mode === 'detailed') {
     const contentLength =
       query.matchContentLength || RESOURCE_LIMITS.DEFAULT_MATCH_CONTENT_LENGTH;
     hints.push(
-      '',
-      'Integration:',
-      '  - location.byteOffset/byteLength: raw byte offsets from ripgrep (use with Buffer operations)',
-      '  - location.charOffset/charLength: character indices for JavaScript strings',
-      `  - Match values truncated to ${contentLength} chars (configurable via matchContentLength: 1-800)`,
-      '  - Line/column numbers provided for human reference'
+      `Integration: byteOffset/charOffset available per match, values truncated to ${contentLength} chars (matchContentLength: 1-800)`
     );
   }
 

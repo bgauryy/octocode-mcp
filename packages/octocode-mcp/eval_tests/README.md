@@ -82,6 +82,16 @@
 
 ---
 
+## Audit Reports
+
+| Report | Description |
+|--------|-------------|
+| [FAILURE_ANALYSIS.md](./FAILURE_ANALYSIS.md) | Root cause: design vs bug vs test |
+| [MISSING_TESTS_AUDIT.md](./MISSING_TESTS_AUDIT.md) | Schema params vs test coverage |
+| [EVAL_DOCS_AUDIT_REPORT.md](./EVAL_DOCS_AUDIT_REPORT.md) | Per-doc schema alignment |
+
+---
+
 ## Reference Plans
 
 Comprehensive test matrices with schema validation, edge cases, and failure scenarios:
@@ -95,18 +105,18 @@ Comprehensive test matrices with schema validation, edge cases, and failure scen
 
 ---
 
-## Known Issues Under Test
+## Known Issues / Design Notes
 
-| Priority | Tool | Issue | Test Case |
-|----------|------|-------|-----------|
-| P0 | `packageSearch` | npm public search broken | TC-1, TC-2 |
-| P2 | `localSearchCode` | `count`+`filesOnly` conflict | TC-17 |
-| P2 | `lspGotoDefinition` | `orderHint` fails on re-exports | TC-5 |
-| P3 | `githubSearchPullRequests` | Large output (78KB+) | TC-8, TC-9 |
-| P3 | `lspCallHierarchy` | `depth: 2` output 101KB+ | TC-5 |
+| Tool | Note | Test Case |
+|------|------|-----------|
+| `packageSearch` | Env-dependent: npm config registry (private vs public) | TC-1, TC-2 |
+| `localSearchCode` | Design: filesOnly overrides count when both set | TC-17 |
+| `lspGotoDefinition` | Use orderHint=0 for single-occurrence lines (e.g. imports) | TC-5 |
+| `githubSearchPullRequests` | Design: No output size limits | TC-8, TC-9 |
+| `lspCallHierarchy` | Design: depth=2 produces large output for well-connected functions | TC-5 |
 
 ---
 
 ## Last Updated
 
-Feb 17, 2026
+Feb 19, 2026 — Design vs bug labels updated; missing tests audit added

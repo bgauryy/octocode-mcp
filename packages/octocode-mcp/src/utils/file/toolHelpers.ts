@@ -40,52 +40,29 @@ function getPathErrorHints(
 ): string[] {
   const hints: string[] = [];
 
-  // Determine error type and provide targeted hints
-  const isOutsideAllowedDirs = errorMessage?.includes('outside allowed');
-  const isPermissionDenied = errorMessage?.includes('Permission denied');
-  const isSymlinkIssue =
-    errorMessage?.includes('Symlink') || errorMessage?.includes('symlink');
-  const isNotFound =
-    errorMessage?.includes('ENOENT') || errorMessage?.includes('not found');
+  const resolvedInfo =
+    inputPath !== resolvedPath ? ` (resolved to: ${resolvedPath})` : '';
+  hints.push(`CWD: ${cwd}`);
 
-  // Always show CWD context for debugging
-  hints.push(`Current working directory (CWD): ${cwd}`);
-
-  if (inputPath !== resolvedPath) {
-    hints.push(`Path resolved to: ${resolvedPath}`);
-  }
-
-  // Path outside allowed directories - most common issue
-  if (isOutsideAllowedDirs) {
-    hints.push('');
-    hints.push('🔧 Fix: Use an absolute path within the workspace:');
-    hints.push(`   Instead of: path="${inputPath}"`);
-    hints.push(`   Try: path="${cwd}" (workspace root)`);
+  if (errorMessage?.includes('outside allowed')) {
     hints.push(
-      '   Or: path="/absolute/path/to/your/target" (full absolute path)'
+      `Fix: Use absolute path within workspace, e.g. path="${cwd}/..."${resolvedInfo}`
     );
-  } else if (isPermissionDenied) {
-    hints.push('');
-    hints.push('🔒 Permission denied - check file/directory permissions');
-  } else if (isSymlinkIssue) {
-    hints.push('');
+  } else if (errorMessage?.includes('Permission denied')) {
+    hints.push('Fix: Check file/directory permissions');
+  } else if (
+    errorMessage?.includes('Symlink') ||
+    errorMessage?.includes('symlink')
+  ) {
+    hints.push('Fix: Symlink target may be outside allowed directories');
+  } else if (
+    errorMessage?.includes('ENOENT') ||
+    errorMessage?.includes('not found')
+  ) {
     hints.push(
-      '🔗 Symlink issue - the target may be outside allowed directories'
-    );
-  } else if (isNotFound) {
-    hints.push('');
-    hints.push('📁 Path not found - verify the path exists');
-    hints.push(
-      `   Use absolute path to avoid CWD ambiguity: path="${cwd}/..."`
+      `Fix: Path not found. Use absolute path, e.g. path="${cwd}/..."${resolvedInfo}`
     );
   }
-
-  // General advice
-  hints.push('');
-  hints.push(
-    '💡 TIP: Relative paths resolve from CWD, which may differ from your workspace.'
-  );
-  hints.push('   Always prefer absolute paths for reliable results.');
 
   return hints;
 }
@@ -98,9 +75,10 @@ export function validateToolPath(
   toolName: string
 ): ToolPathValidationResult {
   const cwd = process.cwd();
-  const resolvedPath = path.resolve(query.path);
+  const inputPath = query.path.replace(/^file:\/\//, '');
+  const resolvedPath = path.resolve(inputPath);
 
-  const validation = pathValidator.validate(query.path);
+  const validation = pathValidator.validate(inputPath);
 
   if (!validation.isValid) {
     const toolError = ToolErrors.pathValidationFailed(

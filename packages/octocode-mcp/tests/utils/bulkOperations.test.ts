@@ -1281,6 +1281,81 @@ describe('executeBulkOperation', () => {
     });
   });
 
+  describe('Output size limiting', () => {
+    it('should auto-paginate response when output exceeds MAX_OUTPUT_CHARS', async () => {
+      const queries = [{ id: 'q1' }];
+      const largeContent = 'x'.repeat(500);
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        items: Array.from({ length: 50 }, (_, i) => ({
+          id: i,
+          name: `item-${i}`,
+          description: largeContent,
+          metadata: { field1: largeContent, field2: largeContent },
+        })),
+        hints: ['Test hint'],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        keysPriority: ['items'],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+
+      // Response should be auto-paginated to ~RECOMMENDED_CHAR_LENGTH (10000)
+      // and NOT exceed 15000 chars (10000 + pagination hints overhead)
+      expect(responseText.length).toBeLessThan(15000);
+
+      // Should contain pagination hints telling consumer to use charOffset
+      expect(responseText).toContain('Auto-paginated');
+      expect(responseText).toContain('charOffset');
+    });
+
+    it('should not paginate small responses', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        data: { test: true },
+        hints: ['Test hint'],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = getTextContent(result.content);
+
+      // Small response should NOT contain auto-pagination hints
+      expect(responseText).not.toContain('Auto-paginated');
+    });
+
+    it('should include output pagination metadata in paginated response', async () => {
+      const queries = [{ id: 'q1' }];
+      const largeContent = 'x'.repeat(1000);
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        items: Array.from({ length: 30 }, (_, i) => ({
+          id: i,
+          content: largeContent,
+        })),
+        hints: ['Test hint'],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        keysPriority: ['items'],
+      });
+
+      const responseText = getTextContent(result.content);
+
+      // Should contain pagination info with page numbers and total chars
+      expect(responseText).toMatch(/Page \d+\/\d+/);
+      expect(responseText).toMatch(/\d+ of \d+ chars/);
+    });
+  });
+
   describe('Status condition branches', () => {
     it('should correctly handle error status branch for hints aggregation', async () => {
       // This test specifically targets the error status condition branch (line 101)

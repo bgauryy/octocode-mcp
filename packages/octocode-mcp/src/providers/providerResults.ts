@@ -221,8 +221,10 @@ export interface DirectoryEntry {
 export interface RepoStructureResult {
   /** Project path */
   projectPath: string;
-  /** Branch/ref */
+  /** Branch/ref that was actually used */
   branch: string;
+  /** Default branch of the repository (populated when a branch fallback occurred) */
+  defaultBranch?: string;
   /** Current path */
   path: string;
   /** Structure by directory */

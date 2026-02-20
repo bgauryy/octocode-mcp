@@ -185,8 +185,11 @@ export function createErrorResult(
     hints.push(...(extra.hints as string[]));
   }
 
-  if (hints.length > 0) {
-    result.hints = hints;
+  const filteredHints = hints.filter(
+    h => typeof h === 'string' && h.trim().length > 0
+  );
+  if (filteredHints.length > 0) {
+    result.hints = filteredHints;
   }
 
   if (extra) {

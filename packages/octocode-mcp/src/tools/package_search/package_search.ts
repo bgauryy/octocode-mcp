@@ -11,6 +11,7 @@ import { PackageSearchBulkQuerySchema } from './scheme.js';
 import type { PackageSearchQuery } from './scheme.js';
 import { invokeCallbackSafely } from '../utils.js';
 import { checkNpmAvailability } from '../../utils/exec/index.js';
+import { checkNpmRegistryReachable } from '../../utils/package/npm.js';
 import { searchPackages } from './execution.js';
 
 export async function registerPackageSearchTool(
@@ -19,6 +20,11 @@ export async function registerPackageSearchTool(
 ): Promise<RegisteredTool | null> {
   const npmAvailable = await checkNpmAvailability(10000);
   if (!npmAvailable) {
+    return null;
+  }
+
+  const registryReachable = await checkNpmRegistryReachable();
+  if (!registryReachable) {
     return null;
   }
 

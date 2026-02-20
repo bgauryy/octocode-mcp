@@ -39,7 +39,9 @@ const LSPGotoDefinitionBaseSchema = BaseQuerySchemaLocal.extend({
     .int()
     .min(0)
     .default(0)
-    .describe(LSP_GOTO_DEFINITION.options.orderHint),
+    .describe(
+      `${LSP_GOTO_DEFINITION.options.orderHint} Counts only code occurrences on the exact line (0-indexed); string/comment text is ignored.`
+    ),
 
   contextLines: z
     .number()

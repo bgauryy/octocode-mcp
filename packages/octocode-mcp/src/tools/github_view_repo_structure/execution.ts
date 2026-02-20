@@ -133,7 +133,10 @@ export async function exploreMultipleRepositoryStructures(
           resultData.branchFallback = {
             requestedBranch,
             actualBranch,
-            warning: `Branch '${requestedBranch}' was not found. Results are from branch '${actualBranch}' instead.`,
+            ...(apiResult.data.defaultBranch !== undefined && {
+              defaultBranch: apiResult.data.defaultBranch,
+            }),
+            warning: `Branch '${requestedBranch}' not found. Showing '${actualBranch}' (default branch). Re-query with the correct branch name if branch-specific results are required.`,
           };
         }
 
@@ -144,7 +147,7 @@ export async function exploreMultipleRepositoryStructures(
         const apiHints = apiResult.data.hints || [];
         const branchHints: string[] = branchFellBack
           ? [
-              `⚠️ Branch '${requestedBranch}' not found. Showing results from '${actualBranch}' instead.`,
+              `⚠️ IMPORTANT: Branch '${requestedBranch}' not found — showing '${actualBranch}' (default branch). Re-query with the correct branch name if branch-specific results are required.`,
             ]
           : [];
         const entryCount = Object.values(filteredStructure).reduce(
@@ -159,7 +162,8 @@ export async function exploreMultipleRepositoryStructures(
           TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
           {
             hintContext: { entryCount },
-            extraHints: [...branchHints, ...apiHints],
+            prefixHints: branchHints,
+            extraHints: apiHints,
           }
         );
       } catch (error) {

@@ -180,10 +180,21 @@ export const FetchContentQuerySchema = FetchContentBaseSchema.superRefine(
 );
 
 /**
- * Bulk query schema for fetching multiple file contents
+ * Permissive single-query schema (no cross-field refinements).
+ * Used for the MCP inputSchema so that one invalid query in a batch
+ * does not reject the entire request. Per-query validation with the
+ * full FetchContentQuerySchema happens inside the execution handler.
+ */
+const FetchContentQuerySchemaPermissive = FetchContentBaseSchema;
+
+/**
+ * Bulk query schema for fetching multiple file contents.
+ * Uses the permissive schema so Zod doesn't reject the whole batch
+ * when a single query has cross-field validation errors (e.g.
+ * startLine > endLine). Per-query validation is done in the handler.
  */
 export const BulkFetchContentSchema = createBulkQuerySchema(
   TOOL_NAMES.LOCAL_FETCH_CONTENT,
-  FetchContentQuerySchema,
+  FetchContentQuerySchemaPermissive,
   { maxQueries: 5 }
 );

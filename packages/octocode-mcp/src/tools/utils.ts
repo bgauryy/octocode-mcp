@@ -38,6 +38,8 @@ export async function invokeCallbackSafely(
 interface SuccessResultOptions {
   /** Context for generating dynamic hints */
   hintContext?: HintContext;
+  /** High-priority hints prepended before all other hints (e.g., critical warnings) */
+  prefixHints?: string[];
   /** Additional custom hints to append (e.g., pagination hints) */
   extraHints?: string[];
 }
@@ -93,12 +95,13 @@ export function createSuccessResult<T extends Record<string, unknown>>(
 
   // Use unified getHints() which combines static + dynamic hints
   const hints = getHints(toolName, status, options?.hintContext);
+  const prefixHints = options?.prefixHints || [];
   const extraHints = options?.extraHints || [];
 
-  // Combine, deduplicate, and filter empty/whitespace-only/non-string hints
-  const allHints = [...new Set([...hints, ...extraHints])].filter(
-    (h): h is string => typeof h === 'string' && h.trim().length > 0
-  );
+  // prefixHints → tool hints → extraHints; deduplicate and filter empty
+  const allHints = [
+    ...new Set([...prefixHints, ...hints, ...extraHints]),
+  ].filter((h): h is string => typeof h === 'string' && h.trim().length > 0);
 
   if (allHints.length > 0) {
     result.hints = allHints;

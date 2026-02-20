@@ -265,6 +265,68 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
     expect(text).toContain('cached: true');
   });
 
+  it('should return real fileCount and totalSize on cache hit', async () => {
+    // First call: populate with 2 files
+    mockDirectoryListing([
+      { name: 'index.ts', path: 'src/index.ts', size: 100 },
+      { name: 'utils.ts', path: 'src/utils.ts', size: 200 },
+    ]);
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes('index.ts')) {
+        return { ok: true, text: async () => 'export const main = true;' };
+      }
+      if (url.includes('utils.ts')) {
+        return { ok: true, text: async () => 'export function helper() {}' };
+      }
+      return { ok: false, status: 404 };
+    });
+
+    const firstResult = await fetchMultipleGitHubFileContents({
+      queries: [
+        {
+          owner: 'owner',
+          repo: 'repo',
+          path: 'src',
+          branch: 'main',
+          type: 'directory',
+          mainResearchGoal: 'test',
+          researchGoal: 'test',
+          reasoning: 'test',
+        },
+      ],
+    });
+
+    const firstText =
+      firstResult.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
+    expect(firstText).toContain('cached: false');
+
+    // Second call: cache hit — must still report real fileCount/totalSize
+    const cachedResult = await fetchMultipleGitHubFileContents({
+      queries: [
+        {
+          owner: 'owner',
+          repo: 'repo',
+          path: 'src',
+          branch: 'main',
+          type: 'directory',
+          mainResearchGoal: 'test',
+          researchGoal: 'test',
+          reasoning: 'test',
+        },
+      ],
+    });
+
+    expect(cachedResult.isError).toBeFalsy();
+    const cachedText =
+      cachedResult.content?.map(c => ('text' in c ? c.text : '')).join('') ||
+      '';
+    expect(cachedText).toContain('cached: true');
+    // fileCount must reflect real files on disk, NOT hardcoded 0
+    expect(cachedText).toContain('fileCount: 2');
+    expect(cachedText).not.toContain('fileCount: 0');
+    expect(cachedText).not.toContain('totalSize: 0');
+  });
+
   it('should handle directory fetch errors gracefully', async () => {
     mockGetOctokit.mockResolvedValue({
       rest: {

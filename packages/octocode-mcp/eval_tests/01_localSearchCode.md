@@ -321,9 +321,11 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 
 ---
 
-### TC-17: Count + FilesOnly Conflict (Known Issue)
+### TC-17: Count + FilesOnly Conflict (Design)
 
 **Goal:** Verify behavior when mutually exclusive params are combined.
+
+**Design:** `filesOnly` intentionally takes precedence over `count` in the command builder. Warning is emitted.
 
 ```json
 {
@@ -336,10 +338,8 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 
 **Expected:**
 - [ ] Warning about mutually exclusive params
-- [ ] `count` silently dropped
-- [ ] `filesOnly` behavior takes precedence
-
-**Known Issue:** Count is silently dropped instead of returning count data or producing an error.
+- [ ] `count` dropped; `filesOnly` behavior takes precedence
+- [ ] filesOnly output (file paths only, no match counts)
 
 ---
 

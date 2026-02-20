@@ -204,8 +204,7 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 
 **Expected:**
 - [ ] Response succeeds (no timeout)
-- [ ] Output may be very large (78KB+)
-- [ ] **Known Issue:** No output size limits or auto-truncation
+- [ ] Output may be very large (78KB+) — **Design:** no output size limits
 
 ---
 
@@ -229,8 +228,7 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 
 **Expected:**
 - [ ] Response succeeds (may be slow)
-- [ ] Output very large (139KB+ for 45-file PR)
-- [ ] **Known Issue:** No output size limits
+- [ ] Output very large (139KB+ for 45-file PR) — **Design:** no output size limits
 
 ---
 

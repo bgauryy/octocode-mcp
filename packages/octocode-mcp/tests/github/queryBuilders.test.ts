@@ -95,7 +95,30 @@ describe('Query Builders', () => {
       });
 
       const query = buildCodeSearchQuery(params);
-      expect(query).toBe('test filename:package.json extension:ts path:src/');
+      expect(query).toBe('test filename:package.json extension:ts path:"src/"');
+    });
+
+    it('should quote path values containing slashes', () => {
+      const params = toCodeSearchQuery({
+        keywordsToSearch: ['export'],
+        owner: 'bgauryy',
+        repo: 'octocode-mcp',
+        path: 'src/tools',
+      });
+
+      const query = buildCodeSearchQuery(params);
+      expect(query).toContain('path:"src/tools"');
+    });
+
+    it('should not quote simple path values without special chars', () => {
+      const params = toCodeSearchQuery({
+        keywordsToSearch: ['test'],
+        path: 'src',
+      });
+
+      const query = buildCodeSearchQuery(params);
+      expect(query).toContain('path:src');
+      expect(query).not.toContain('path:"src"');
     });
 
     it('should build query with match filters', () => {

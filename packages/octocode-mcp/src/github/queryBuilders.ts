@@ -107,6 +107,21 @@ abstract class BaseQueryBuilder {
     return this;
   }
 
+  /**
+   * Like addSimpleFilter but wraps the value in quotes.
+   * Required for GitHub qualifiers whose values contain special chars
+   * (e.g. path:"src/utils" — unquoted `/` is silently ignored by GitHub).
+   */
+  addQuotedFilter(value: string | null | undefined, key: string): this {
+    if (value !== undefined && value !== null) {
+      const needsQuoting =
+        GITHUB_SEARCH_SPECIAL_CHARS.test(value) && !value.startsWith('"');
+      const formatted = needsQuoting ? `"${value}"` : value;
+      this.queryParts.push(`${key}:${formatted}`);
+    }
+    return this;
+  }
+
   build(): string {
     return this.queryParts.join(' ').trim();
   }
@@ -131,7 +146,7 @@ class CodeSearchQueryBuilder extends BaseQueryBuilder {
   addSearchFilters(params: GitHubCodeSearchQuery): this {
     this.addSimpleFilter(params.filename, 'filename');
     this.addSimpleFilter(params.extension, 'extension');
-    this.addSimpleFilter(params.path, 'path');
+    this.addQuotedFilter(params.path, 'path');
     return this;
   }
 

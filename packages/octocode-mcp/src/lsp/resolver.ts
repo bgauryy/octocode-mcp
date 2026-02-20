@@ -161,7 +161,8 @@ export class SymbolResolver {
   }
 
   /**
-   * Find symbol in a single line
+   * Find symbol in a single line, skipping occurrences inside string
+   * literals or comments.
    *
    * @param line - Line content
    * @param symbolName - Symbol to find (exact match)
@@ -188,6 +189,13 @@ export class SymbolResolver {
         !this.isIdentifierChar(line[index + symbolName.length]!);
 
       if (isWordBoundaryStart && isWordBoundaryEnd) {
+        // Skip matches inside string literals or line comments —
+        // the LSP server cannot resolve definitions for text in strings.
+        if (this.isInsideStringOrComment(line, index)) {
+          searchStart = index + 1;
+          continue;
+        }
+
         if (occurrenceCount === orderHint) {
           return index;
         }
@@ -198,6 +206,82 @@ export class SymbolResolver {
     }
 
     return null;
+  }
+
+  /**
+   * Determine whether a character position falls inside a string literal
+   * or a line comment (`//`).
+   *
+   * Walks the line left-to-right tracking quote state (`'`, `"`, `` ` ``),
+   * handling backslash escapes. This is a lightweight heuristic — it does
+   * not handle block comments or regex literals, but those
+   * are extremely rare in the single-line symbol-resolution context.
+   *
+   * @param line - Full line content
+   * @param position - 0-based character index to test
+   * @returns true if position is inside a string or comment
+   * @internal Exported via class for testing
+   */
+  private isInsideStringOrComment(line: string, position: number): boolean {
+    let inSingle = false;
+    let inDouble = false;
+    let inTemplate = false;
+    let templateExprDepth = 0; // tracks nested `${...}` — code inside is NOT a string
+    let escaped = false;
+
+    for (let i = 0; i < position; i++) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      const ch = line[i]!;
+
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+
+      // Line comment — everything after `//` (outside strings) is a comment
+      if (
+        ch === '/' &&
+        line[i + 1] === '/' &&
+        !inSingle &&
+        !inDouble &&
+        !inTemplate
+      ) {
+        return true;
+      }
+
+      // Template expression tracking: `${...}` contains code, not string text
+      if (
+        inTemplate &&
+        templateExprDepth === 0 &&
+        ch === '$' &&
+        line[i + 1] === '{'
+      ) {
+        templateExprDepth = 1;
+        i++; // skip the '{'
+        continue;
+      }
+      if (templateExprDepth > 0) {
+        if (ch === '{') templateExprDepth++;
+        else if (ch === '}') {
+          templateExprDepth--;
+          // When depth returns to 0, we're back inside the template string
+        }
+        continue; // inside ${...} — skip quote tracking, this is code
+      }
+
+      if (ch === "'" && !inDouble && !inTemplate) inSingle = !inSingle;
+      else if (ch === '"' && !inSingle && !inTemplate) inDouble = !inDouble;
+      else if (ch === '`' && !inSingle && !inDouble) inTemplate = !inTemplate;
+    }
+
+    // Inside a template but within a ${...} expression → code context, not string
+    if (inTemplate && templateExprDepth > 0) return false;
+
+    return inSingle || inDouble || inTemplate;
   }
 
   /**

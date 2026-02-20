@@ -6,6 +6,39 @@
 
 ---
 
+## Agent Instructions (Testing Prompt)
+
+**When validating Octocode MCP tools:**
+
+1. **Run the Quick Validation Sequence** (10 steps below) using actual MCP tools — do not skip steps.
+2. **For each step:** Execute the tool call, verify the expected outcome, record pass/fail.
+3. **For LSP steps (5–7):** Always get `lineHint` from `localSearchCode` first — never guess line numbers.
+4. **Reference all eval docs** when running full test suites — each tool has a dedicated doc with TCs.
+5. **Output a summary** after validation: failures/successes, insights, what went well, what did not.
+
+**All Eval Docs (run each for full coverage):**
+
+| Doc | Tool(s) | Path |
+|-----|---------|------|
+| 01 | localSearchCode | [01_localSearchCode.md](./01_localSearchCode.md) |
+| 02 | localViewStructure | [02_localViewStructure.md](./02_localViewStructure.md) |
+| 03 | localFindFiles | [03_localFindFiles.md](./03_localFindFiles.md) |
+| 04 | localGetFileContent | [04_localGetFileContent.md](./04_localGetFileContent.md) |
+| 05 | githubSearchRepositories | [05_githubSearchRepositories.md](./05_githubSearchRepositories.md) |
+| 06 | githubSearchCode | [06_githubSearchCode.md](./06_githubSearchCode.md) |
+| 07 | githubViewRepoStructure | [07_githubViewRepoStructure.md](./07_githubViewRepoStructure.md) |
+| 08 | githubGetFileContent | [08_githubGetFileContent.md](./08_githubGetFileContent.md) |
+| 09 | githubSearchPullRequests | [09_githubSearchPullRequests.md](./09_githubSearchPullRequests.md) |
+| 10 | packageSearch | [10_packageSearch.md](./10_packageSearch.md) |
+| 11 | githubCloneRepo | [11_githubCloneRepo.md](./11_githubCloneRepo.md) |
+| 12 | lspGotoDefinition | [12_lspGotoDefinition.md](./12_lspGotoDefinition.md) |
+| 13 | lspFindReferences | [13_lspFindReferences.md](./13_lspFindReferences.md) |
+| 14 | lspCallHierarchy | [14_lspCallHierarchy.md](./14_lspCallHierarchy.md) |
+| 15 | githubGetFileContent (dir) | [15_githubGetFileContent_directory.md](./15_githubGetFileContent_directory.md) |
+| 16 | Integration (cross-tool) | [16_integration_tests.md](./16_integration_tests.md) |
+
+---
+
 ## Prerequisites
 
 ### Environment Variables
@@ -143,25 +176,78 @@ Run these 10 steps in order for a fast smoke test across all categories:
    ✓ Root structure displayed
 
 9. githubCloneRepo          → owner="expressjs", repo="express"
-   ✓ Returns localPath, cached=false
+   ✓ Returns localPath (cached=true if already cloned, false if fresh)
 
 10. localViewStructure      → path=<localPath from step 9>, depth=2
-    ✓ Shows lib/, test/, package.json
+    ✓ Shows lib/, examples/, package.json (express: lib/ + examples/ at root)
 ```
 
 Each step feeds into the next — the **Funnel Method**: Structure → Search → Locate → Analyze → Read.
 
 ---
 
-## Known Issues
+## Validation Run Summary (Template)
 
-| Priority | Tool | Issue | Eval Doc |
-|----------|------|-------|----------|
-| P0 | `packageSearch` | npm public search broken | [10_packageSearch.md](./10_packageSearch.md) TC-1, TC-2 |
-| P2 | `localSearchCode` | `count`+`filesOnly` conflict | [01_localSearchCode.md](./01_localSearchCode.md) TC-17 |
-| P2 | `lspGotoDefinition` | `orderHint` fails on re-exports | [12_lspGotoDefinition.md](./12_lspGotoDefinition.md) TC-5 |
-| P3 | `githubSearchPullRequests` | Large output (78KB+) | [09_githubSearchPullRequests.md](./09_githubSearchPullRequests.md) TC-8, TC-9 |
-| P3 | `lspCallHierarchy` | `depth: 2` output 101KB+ | [14_lspCallHierarchy.md](./14_lspCallHierarchy.md) TC-5 |
+After running the Quick Validation Sequence, fill in:
+
+| Step | Tool | Result | Notes |
+|------|------|--------|-------|
+| 1 | localViewStructure | ☐ Pass / ☐ Fail | |
+| 2 | localSearchCode | ☐ Pass / ☐ Fail | |
+| 3 | localFindFiles | ☐ Pass / ☐ Fail | |
+| 4 | localGetFileContent | ☐ Pass / ☐ Fail | |
+| 5 | lspGotoDefinition | ☐ Pass / ☐ Fail | |
+| 6 | lspFindReferences | ☐ Pass / ☐ Fail | |
+| 7 | lspCallHierarchy | ☐ Pass / ☐ Fail | |
+| 8 | githubViewRepoStructure | ☐ Pass / ☐ Fail | |
+| 9 | githubCloneRepo | ☐ Pass / ☐ Fail | |
+| 10 | localViewStructure | ☐ Pass / ☐ Fail | |
+
+**Summary:** _Failures / Successes | Insights | What went well | What did not_
+
+### Latest Run: Feb 19, 2026
+
+| Step | Tool | Result | Notes |
+|------|------|--------|-------|
+| 1 | localViewStructure | ✓ Pass | 16 entries (11 files, 5 dirs) at root |
+| 2 | localSearchCode | ✓ Pass | 713 matches, 179 files in packages/octocode-mcp/src |
+| 3 | localFindFiles | ✓ Pass | 20 .ts files sorted by size, excludes dist/node_modules |
+| 4 | localGetFileContent | ✓ Pass | client.ts export sections with context |
+| 5 | lspGotoDefinition | ✓ Pass | resolveDefaultBranch → line 241 |
+| 6 | lspFindReferences | ✓ Pass | 16+ refs (def + cloneRepo, execution, tests) |
+| 7 | lspCallHierarchy | ✓ Pass | handleDirectoryFetch, cloneRepo, test module |
+| 8 | githubViewRepoStructure | ✓ Pass | bgauryy/octocode-mcp root: 16 files, 4 folders |
+| 9 | githubCloneRepo | ✓ Pass | expressjs/express → localPath, cached=true |
+| 10 | localViewStructure | ✓ Pass | lib/, examples/, index.js, History.md |
+
+**Failures:** 0  
+**Successes:** 10/10
+
+**Insights:**
+- Funnel works: localSearchCode → lineHint → LSP tools. Searching for `resolveDefaultBranch` gave line 241; LSP tools resolved correctly.
+- Clone cache hit is normal: express was already cloned; `cached: true` is valid.
+- Express root has `lib/`, `examples/`, `index.js` — no top-level `test/`; test dir may be elsewhere.
+
+**What went well:**
+- All tools returned structured data with hints.
+- LSP chain (goto def → find refs → call hierarchy) traced `resolveDefaultBranch` across 4 files.
+- packageSearch (express) returned owner/repo for githubViewRepoStructure.
+
+**What did not:**
+- `executeLocalSearch` search returned empty (symbol may not exist); switched to `resolveDefaultBranch` — always verify symbol exists before LSP.
+- localFindFiles limit=20 returned octocode-shared files first (largest .ts); pagination needed for full workspace.
+
+---
+
+## Known Issues / Design Notes
+
+| Tool | Note | Eval Doc |
+|------|------|----------|
+| `packageSearch` | Env-dependent: npm config registry (private vs public) | [10_packageSearch.md](./10_packageSearch.md) TC-1, TC-2 |
+| `localSearchCode` | Design: filesOnly overrides count when both set | [01_localSearchCode.md](./01_localSearchCode.md) TC-17 |
+| `lspGotoDefinition` | Use orderHint=0 for single-occurrence lines (e.g. imports) | [12_lspGotoDefinition.md](./12_lspGotoDefinition.md) TC-5 |
+| `githubSearchPullRequests` | Design: No output size limits | [09_githubSearchPullRequests.md](./09_githubSearchPullRequests.md) TC-8, TC-9 |
+| `lspCallHierarchy` | Design: depth=2 produces large output | [14_lspCallHierarchy.md](./14_lspCallHierarchy.md) TC-5 |
 
 ---
 
@@ -181,6 +267,8 @@ Each step feeds into the next — the **Funnel Method**: Structure → Search �
 
 ---
 
-*Complete Test Plan Version: 2.2*
-*Last Updated: Feb 17, 2026*
+*Complete Test Plan Version: 2.4*
+*Last Updated: Feb 19, 2026*
 *Total Tool Docs: 16 | Total Test Cases: 304*
+
+**Related:** [FAILURE_ANALYSIS.md](./FAILURE_ANALYSIS.md) | [MISSING_TESTS_AUDIT.md](./MISSING_TESTS_AUDIT.md) | [EVAL_DOCS_AUDIT_REPORT.md](./EVAL_DOCS_AUDIT_REPORT.md)

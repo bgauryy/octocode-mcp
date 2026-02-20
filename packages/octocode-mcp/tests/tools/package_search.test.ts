@@ -69,15 +69,30 @@ function mockNpmViewFull(
 function clearNpmCliViewMocks(): void {
   npmCliViewResponses.clear();
   npmViewFullResponses.clear();
+  lastSearchResult = null;
 }
 
-// Helper to create a mock implementation for executeNpmCommand that handles both search and view
+// Helper to create a mock implementation for executeNpmCommand that handles both search and view.
+// Also populates lastSearchResult for the fetch mock so registry search works.
 function createNpmCommandMock(searchResult: {
   stdout: string;
   stderr: string;
   exitCode: number;
   error?: Error;
 }) {
+  // Capture search output for the fetch mock (registry search format)
+  try {
+    const arr = JSON.parse(searchResult.stdout);
+    if (Array.isArray(arr) && arr.length > 0) {
+      lastSearchResult = {
+        objects: arr.map((pkg: unknown) => ({ package: pkg })),
+        total: arr.length,
+      };
+    }
+  } catch {
+    // Non-JSON or empty stdout — lastSearchResult stays null
+  }
+
   return (command: string, args: string[]) => {
     // Handle search command
     if (command === 'search') {
@@ -213,6 +228,85 @@ vi.mock('../../src/utils/http/cache.js', () => ({
   clearAllCache: vi.fn(),
 }));
 
+// ---------------------------------------------------------------------------
+// Mock: globalThis.fetch (used by fetchWithRetries in npm view/search paths)
+// ---------------------------------------------------------------------------
+const mockFetch = vi.fn();
+let _originalFetch: unknown;
+
+beforeAll(() => {
+  _originalFetch = (globalThis as Record<string, unknown>).fetch;
+  (globalThis as Record<string, unknown>).fetch = mockFetch;
+});
+
+afterAll(() => {
+  (globalThis as Record<string, unknown>).fetch = _originalFetch;
+});
+
+// Default fetch mock implementation: reads from npmViewFullResponses for /latest
+// URLs and from lastSearchResult for /-/v1/search URLs
+let lastSearchResult: {
+  objects: Array<{ package: unknown }>;
+  total: number;
+} | null = null;
+
+function setupDefaultFetchMock(): void {
+  mockFetch.mockImplementation((url: string) => {
+    // Handle registry root URL ping (for checkNpmRegistryReachable)
+    if (typeof url === 'string' && /^https?:\/\/[^/]+\/?$/.test(url)) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ db_name: 'registry' }),
+        body: null,
+      });
+    }
+    if (typeof url === 'string' && url.includes('/latest')) {
+      // Extract package name: https://registry.npmjs.org/<pkgName>/latest
+      const withoutProtocol = url.replace('https://registry.npmjs.org/', '');
+      const pkgName = decodeURIComponent(
+        withoutProtocol.slice(0, withoutProtocol.lastIndexOf('/latest'))
+      );
+      const data = npmViewFullResponses.get(pkgName);
+      if (data) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(data),
+          body: null,
+        });
+      }
+      return Promise.resolve({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        body: { cancel: vi.fn().mockResolvedValue(undefined) },
+        headers: new Headers(),
+      });
+    }
+    if (typeof url === 'string' && url.includes('/-/v1/search')) {
+      const result = lastSearchResult ?? { objects: [], total: 0 };
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(result),
+        body: null,
+      });
+    }
+    return Promise.reject(new Error(`Unexpected fetch call to: ${url}`));
+  });
+}
+
+function makeErrorFetchResponse(status: number, statusText: string) {
+  return {
+    ok: false,
+    status,
+    statusText,
+    body: { cancel: vi.fn().mockResolvedValue(undefined) },
+    headers: new Headers(),
+  };
+}
+
 // Mock toolMetadata
 vi.mock('../../src/tools/toolMetadata.js', async () => {
   const actual = await vi.importActual('../../src/tools/toolMetadata.js');
@@ -238,6 +332,7 @@ import {
   type PythonPackageResult,
 } from '../../src/utils/package/common.js';
 import { registerPackageSearchTool } from '../../src/tools/package_search/package_search.js';
+import { _resetNpmRegistryUrlCache } from '../../src/utils/package/npm.js';
 
 describe('PackageSearchQuerySchema', () => {
   const withResearchFields = <T extends object>(query: T) => ({
@@ -361,6 +456,8 @@ describe('searchPackage - NPM (CLI)', () => {
     clearAllCache();
     clearNpmRegistryMocks();
     clearNpmCliViewMocks();
+    _resetNpmRegistryUrlCache();
+    setupDefaultFetchMock();
   });
 
   it('should return minimal NPM package results by default (name and repository only)', async () => {
@@ -409,11 +506,11 @@ describe('searchPackage - NPM (CLI)', () => {
       expect(result.totalFound).toBe(1);
     }
 
-    // Verify npm view was called for exact package lookup
-    expect(mockExecuteNpmCommand).toHaveBeenCalledWith('view', [
-      'axios',
-      '--json',
-    ]);
+    // Verify registry HTTP endpoint was used (not CLI)
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/axios/latest'),
+      expect.any(Object)
+    );
   });
 
   it('should return full NPM package results when npmFetchMetadata is true', async () => {
@@ -528,12 +625,11 @@ describe('searchPackage - NPM (CLI)', () => {
       expect(pkg.mainEntry).toBeNull();
     }
 
-    // Verify searchLimit is passed (keyword search uses npm search)
-    expect(mockExecuteNpmCommand).toHaveBeenCalledWith('search', [
-      'lodash utilities',
-      '--json',
-      '--searchlimit=5',
-    ]);
+    // Verify registry search endpoint was used (not CLI)
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/-/v1/search'),
+      expect.any(Object)
+    );
   });
 
   it('should return package details when npmFetchMetadata is true', async () => {
@@ -573,12 +669,8 @@ describe('searchPackage - NPM (CLI)', () => {
     }
   });
 
-  it('should handle NPM CLI command error', async () => {
-    mockExecuteNpmCommand.mockResolvedValue({
-      stdout: '',
-      stderr: '',
-      error: new Error('Command timeout'),
-    });
+  it('should handle NPM registry fetch error', async () => {
+    mockFetch.mockRejectedValue(new Error('Command timeout'));
 
     // Use keyword search (with space) to test npm search flow error handling
     const query: PackageSearchInput = {
@@ -598,12 +690,10 @@ describe('searchPackage - NPM (CLI)', () => {
     }
   });
 
-  it('should handle NPM CLI non-zero exit code (keyword search)', async () => {
-    mockExecuteNpmCommand.mockResolvedValue({
-      stdout: '',
-      stderr: 'npm ERR! code E404',
-      exitCode: 1,
-    });
+  it('should handle NPM registry non-200 response (keyword search)', async () => {
+    mockFetch.mockResolvedValue(
+      makeErrorFetchResponse(500, 'Internal Server Error')
+    );
 
     // Use keyword search (with space) to test npm search flow error handling
     const query: PackageSearchInput = {
@@ -618,15 +708,16 @@ describe('searchPackage - NPM (CLI)', () => {
 
     expect('error' in result).toBe(true);
     if ('error' in result) {
-      expect(result.error).toContain('NPM search failed');
+      expect(result.error).toContain('NPM registry search failed');
     }
   });
 
-  it('should handle invalid JSON output from CLI (keyword search)', async () => {
-    mockExecuteNpmCommand.mockResolvedValue({
-      stdout: 'not valid json',
-      stderr: '',
-      exitCode: 0,
+  it('should handle invalid response format from registry (keyword search)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ notObjects: true }),
+      body: null,
     });
 
     // Use keyword search (with space) to test npm search flow error handling
@@ -642,15 +733,18 @@ describe('searchPackage - NPM (CLI)', () => {
 
     expect('error' in result).toBe(true);
     if ('error' in result) {
-      expect(result.error).toContain('Failed to parse npm search output');
+      expect(result.error).toContain(
+        'Invalid npm registry search response format'
+      );
     }
   });
 
   it('should handle empty search results (keyword search)', async () => {
-    mockExecuteNpmCommand.mockResolvedValue({
-      stdout: '[]',
-      stderr: '',
-      exitCode: 0,
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ objects: [], total: 0 }),
+      body: null,
     });
 
     // Use keyword search (with space) to test npm search flow
@@ -947,13 +1041,16 @@ describe('searchPackage - NPM Edge Cases', () => {
     vi.clearAllMocks();
     clearAllCache();
     clearNpmRegistryMocks();
+    _resetNpmRegistryUrlCache();
+    setupDefaultFetchMock();
   });
 
-  it('should handle non-array npm search response', async () => {
-    mockExecuteNpmCommand.mockResolvedValue({
-      stdout: '{"notAnArray": true}',
-      stderr: '',
-      exitCode: 0,
+  it('should handle non-array npm registry search response', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ notObjects: true }),
+      body: null,
     });
 
     // Use keyword search (with space) to test npm search flow
@@ -969,7 +1066,9 @@ describe('searchPackage - NPM Edge Cases', () => {
 
     expect('error' in result).toBe(true);
     if ('error' in result) {
-      expect(result.error).toContain('Invalid npm search response format');
+      expect(result.error).toContain(
+        'Invalid npm registry search response format'
+      );
     }
   });
 });
@@ -1321,23 +1420,18 @@ describe('Package search response structure', () => {
     mockAxiosGet.mockReset();
     mockExecuteNpmCommand.mockReset();
     clearNpmRegistryMocks();
+    clearNpmCliViewMocks();
+    _resetNpmRegistryUrlCache();
+    setupDefaultFetchMock();
   });
 
   it('should return minimal structure by default (name and repository only)', async () => {
-    const mockCliOutput = JSON.stringify([
-      {
-        name: 'express',
-        version: '4.18.2',
-        description: 'Fast web framework',
-        keywords: ['web', 'framework'],
-        links: { repository: 'https://github.com/expressjs/express' },
-      },
-    ]);
-
-    mockExecuteNpmCommand.mockResolvedValue({
-      stdout: mockCliOutput,
-      stderr: '',
-      exitCode: 0,
+    mockNpmViewFull('express', {
+      name: 'express',
+      version: '4.18.2',
+      description: 'Fast web framework',
+      keywords: ['web', 'framework'],
+      repository: 'https://github.com/expressjs/express',
     });
 
     const query: PackageSearchInput = {
@@ -1350,47 +1444,31 @@ describe('Package search response structure', () => {
 
     const result = await searchPackage(query);
 
-    // Check if we got packages or error
-    if ('error' in result) {
-      // If error, fail with the error message for debugging
-      expect(result.error).toBeUndefined();
-    }
-
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
-      // Verify structure
       expect(result).toHaveProperty('packages');
       expect(result).toHaveProperty('ecosystem');
       expect(result).toHaveProperty('totalFound');
       expect(Array.isArray(result.packages)).toBe(true);
 
-      // Verify NPM structure (always has version now, but specific fields for metadata might be missing if I checked that way, but I just rely on search results which have version)
       const pkg = result.packages[0] as NpmPackageResult;
       expect(pkg).toHaveProperty('path');
       expect(pkg).toHaveProperty('repoUrl');
       expect(pkg).toHaveProperty('version');
 
-      // Removed fields
+      // Without npmFetchMetadata, description/keywords are not included
       expect(pkg).not.toHaveProperty('description');
       expect(pkg).not.toHaveProperty('keywords');
     }
   });
 
   it('should return full structure when npmFetchMetadata is true', async () => {
-    const mockCliOutput = JSON.stringify([
-      {
-        name: 'express',
-        version: '4.18.2',
-        description: 'Fast web framework',
-        keywords: ['web', 'framework'],
-        links: { repository: 'https://github.com/expressjs/express' },
-      },
-    ]);
-
-    mockExecuteNpmCommand.mockResolvedValue({
-      stdout: mockCliOutput,
-      stderr: '',
-      exitCode: 0,
+    mockNpmViewFull('express', {
+      name: 'express',
+      version: '4.18.2',
+      description: 'Fast web framework',
+      keywords: ['web', 'framework'],
+      repository: 'https://github.com/expressjs/express',
     });
 
     const query: PackageSearchInput = {
@@ -1406,40 +1484,18 @@ describe('Package search response structure', () => {
 
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
-      // Verify full package structure
       const pkg = result.packages[0] as NpmPackageResult;
       expect(pkg).toHaveProperty('path');
       expect(pkg).toHaveProperty('version');
       expect(pkg).toHaveProperty('repoUrl');
-      // mainEntry/typeDefinitions will be present (fetched via view in real impl, but here mockCliOutput doesn't trigger view in test?)
-      // Wait, in `searchNpmPackageViaSearch`, if `fetchMetadata` is true, we call `fetchPackageDetails`.
-      // `fetchPackageDetails` calls `executeNpmCommand('view', ...)`
-      // In this test, we mock `mockExecuteNpmCommand` once.
-      // If code calls `view`, it will fail or use same mock?
-      // The mock returns search output.
-      // If code calls `view`, `createNpmCommandMock` handles it?
-      // In this test (L1355), `mockExecuteNpmCommand.mockResolvedValue` is used, NOT `createNpmCommandMock`.
-      // So subsequent call to `view` will get the SAME response (search output).
-      // `fetchPackageDetails` expects view output.
-      // `view` output: `{ name: 'express', ... }` (single object).
-      // Search output: `[{ name: 'express', ... }]` (array).
-      // My `fetchPackageDetails` handles array or object.
-      // So if it gets array, it takes [0].
-      // So it should work!
-      // And properties will be mapped.
-
-      expect(pkg).toHaveProperty('mainEntry'); // will be null if not in mock
+      expect(pkg).toHaveProperty('mainEntry');
     }
   });
 
   it('should return proper structure for error response', async () => {
-    mockExecuteNpmCommand.mockResolvedValue({
-      stdout: '',
-      stderr: '',
-      error: new Error('Command failed'),
-    });
+    // Simulate registry fetch failure for search path (name with spaces)
+    mockFetch.mockRejectedValue(new Error('Command failed'));
 
-    // Use keyword search (with space) to trigger npm search flow which returns errors
     const query: PackageSearchInput = {
       ecosystem: 'npm',
       name: 'test package search',
@@ -1469,11 +1525,14 @@ describe('registerPackageSearchTool', () => {
     mockCallback = vi.fn<ToolInvocationCallback>().mockResolvedValue(undefined);
     vi.clearAllMocks();
     clearAllCache();
+    clearNpmCliViewMocks();
     mockExecuteNpmCommand.mockReset();
     mockAxiosGet.mockReset();
     clearNpmRegistryMocks();
+    _resetNpmRegistryUrlCache();
     // Default: npm is available
     mockCheckNpmAvailability.mockResolvedValue(true);
+    setupDefaultFetchMock();
   });
 
   afterEach(() => {
@@ -1521,6 +1580,20 @@ describe('registerPackageSearchTool', () => {
       mockCheckNpmAvailability.mockResolvedValue(true);
       await registerPackageSearchTool(mockServer.server);
       expect(mockCheckNpmAvailability).toHaveBeenCalledWith(10000);
+    });
+
+    it('should NOT register tool when npm registry is unreachable', async () => {
+      mockCheckNpmAvailability.mockResolvedValue(true);
+
+      // Make the registry ping fail
+      mockFetch.mockRejectedValue(new Error('fetch failed'));
+
+      const result = await registerPackageSearchTool(
+        mockServer.server,
+        mockCallback
+      );
+      expect(result).toBeNull();
+      expect(mockServer.server.registerTool).not.toHaveBeenCalled();
     });
   });
 
@@ -1599,21 +1672,14 @@ describe('registerPackageSearchTool', () => {
     });
 
     it('should include install hint for npm packages', async () => {
-      const mockCliOutput = JSON.stringify([
-        {
-          name: 'lodash',
-          version: '4.17.21',
-          description: 'Utility library',
-          keywords: [],
-          links: {},
-        },
-      ]);
-
-      mockExecuteNpmCommand.mockResolvedValue({
-        stdout: mockCliOutput,
-        stderr: '',
-        exitCode: 0,
+      mockNpmViewFull('lodash', {
+        name: 'lodash',
+        version: '4.17.21',
+        description: 'Utility library',
       });
+      mockExecuteNpmCommand.mockImplementation(
+        createNpmCommandMock({ stdout: '', stderr: '', exitCode: 0 })
+      );
 
       await registerPackageSearchTool(mockServer.server);
 
@@ -1873,9 +1939,8 @@ describe('registerPackageSearchTool', () => {
       });
 
       expect(result.content).toBeDefined();
-      // For exact package names, npm view is called:
-      // 2 view calls for package info + 2 deprecation checks
-      expect(mockExecuteNpmCommand).toHaveBeenCalledTimes(4);
+      // CLI is used for: 1 × config get registry + 2 × deprecation check = 3 calls
+      expect(mockExecuteNpmCommand).toHaveBeenCalledTimes(3);
     });
 
     it('should handle empty queries array', async () => {
@@ -1891,13 +1956,11 @@ describe('registerPackageSearchTool', () => {
 
   describe('Error Handling', () => {
     it('should handle search errors gracefully', async () => {
-      mockExecuteNpmCommand.mockResolvedValue({
-        stdout: '',
-        stderr: '',
-        error: new Error('Network error'),
-      });
-
+      // Register first (setupDefaultFetchMock handles registry ping)
       await registerPackageSearchTool(mockServer.server);
+
+      // Then set up fetch to fail for subsequent requests
+      mockFetch.mockRejectedValue(new Error('Network error'));
 
       // Use keyword search (with space) to trigger npm search flow which returns errors
       const result = await mockServer.callTool('packageSearch', {
@@ -1972,21 +2035,15 @@ describe('registerPackageSearchTool', () => {
 
   describe('Success Hints Generation', () => {
     it('should not include repo hint when packages have no repository', async () => {
-      const mockCliOutput = JSON.stringify([
-        {
-          name: 'no-repo-pkg',
-          version: '1.0.0',
-          description: 'Package without repo',
-          keywords: [],
-          links: {}, // No repository
-        },
-      ]);
-
-      mockExecuteNpmCommand.mockResolvedValue({
-        stdout: mockCliOutput,
-        stderr: '',
-        exitCode: 0,
+      mockNpmViewFull('no-repo-pkg', {
+        name: 'no-repo-pkg',
+        version: '1.0.0',
+        description: 'Package without repo',
+        // No repository field
       });
+      mockExecuteNpmCommand.mockImplementation(
+        createNpmCommandMock({ stdout: '', stderr: '', exitCode: 0 })
+      );
 
       await registerPackageSearchTool(mockServer.server);
 
@@ -2054,21 +2111,15 @@ describe('registerPackageSearchTool', () => {
     });
 
     it('should return hasResultsStatusHints with only install hint when package has no repository', async () => {
-      const mockCliOutput = JSON.stringify([
-        {
-          name: 'no-repo-pkg',
-          version: '1.0.0',
-          description: 'Package without repo',
-          keywords: [],
-          links: {}, // No repository
-        },
-      ]);
-
-      mockExecuteNpmCommand.mockResolvedValue({
-        stdout: mockCliOutput,
-        stderr: '',
-        exitCode: 0,
+      mockNpmViewFull('no-repo-pkg', {
+        name: 'no-repo-pkg',
+        version: '1.0.0',
+        description: 'Package without repo',
+        // No repository field
       });
+      mockExecuteNpmCommand.mockImplementation(
+        createNpmCommandMock({ stdout: '', stderr: '', exitCode: 0 })
+      );
 
       await registerPackageSearchTool(mockServer.server);
 
@@ -2457,8 +2508,11 @@ describe('Task 1: Enhanced GitHub Integration Hints', () => {
     vi.clearAllMocks();
     clearAllCache();
     clearNpmRegistryMocks();
+    clearNpmCliViewMocks();
+    _resetNpmRegistryUrlCache();
     mockCheckNpmAvailability.mockResolvedValue(true);
     mockServer = createMockMcpServer();
+    setupDefaultFetchMock();
   });
 
   afterEach(() => {
@@ -2594,8 +2648,11 @@ describe('Task 2: Name Variation Suggestions', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     clearAllCache();
+    clearNpmCliViewMocks();
+    _resetNpmRegistryUrlCache();
     mockCheckNpmAvailability.mockResolvedValue(true);
     mockServer = createMockMcpServer();
+    setupDefaultFetchMock();
   });
 
   afterEach(() => {
@@ -2996,6 +3053,8 @@ describe('searchPackage - NPM CLI Repository Fetching', () => {
     clearAllCache();
     clearNpmRegistryMocks();
     clearNpmCliViewMocks();
+    _resetNpmRegistryUrlCache();
+    setupDefaultFetchMock();
   });
 
   it('should fetch repository URL via CLI (string format)', async () => {
@@ -3032,11 +3091,11 @@ describe('searchPackage - NPM CLI Repository Fetching', () => {
       expect(pkg.repoUrl).toBe('https://github.com/axios/axios');
     }
 
-    // Verify npm view was called for exact package lookup
-    expect(mockExecuteNpmCommand).toHaveBeenCalledWith('view', [
-      'axios',
-      '--json',
-    ]);
+    // Verify registry HTTP endpoint was used (not CLI)
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/axios/latest'),
+      expect.any(Object)
+    );
   });
 
   it('should fetch repository URL via CLI (object format like @wix packages)', async () => {

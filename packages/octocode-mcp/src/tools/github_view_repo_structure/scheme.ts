@@ -79,6 +79,8 @@ export interface GitHubRepositoryStructureResult {
   owner: string;
   repo: string;
   branch: string;
+  /** Default branch of the repository (populated when a branch fallback occurred) */
+  defaultBranch?: string;
   path: string;
   apiSource: boolean;
   summary: {

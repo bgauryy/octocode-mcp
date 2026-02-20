@@ -12,7 +12,14 @@
  * @module github/directoryFetch
  */
 
-import { writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
+import {
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+  rmSync,
+  readdirSync,
+  statSync,
+} from 'node:fs';
 import { join, dirname, resolve, sep } from 'node:path';
 import { getOctocodeDir } from 'octocode-shared';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
@@ -147,11 +154,12 @@ export async function fetchDirectoryContents(
   // ── 1. Cache hit? ─────────────────────────────────────────────
   const cacheResult = isCacheHit(cloneDir);
   if (cacheResult.hit && existsSync(dirPath)) {
+    const cached = scanDirectoryStats(dirPath, cloneDir);
     return {
       localPath: dirPath,
-      files: [],
-      fileCount: 0,
-      totalSize: 0,
+      files: cached.files,
+      fileCount: cached.fileCount,
+      totalSize: cached.totalSize,
       cached: true,
       expiresAt: cacheResult.meta.expiresAt,
       owner,
@@ -319,6 +327,47 @@ async function fetchDownloadUrl(url: string, token?: string): Promise<string> {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * Recursively scan a cached directory to compute fileCount, totalSize,
+ * and file entries. Used on cache hit so callers get real metadata
+ * instead of stale zeros.
+ */
+function scanDirectoryStats(
+  dirPath: string,
+  cloneDir: string
+): { files: DirectoryFileEntry[]; fileCount: number; totalSize: number } {
+  const files: DirectoryFileEntry[] = [];
+  let totalSize = 0;
+
+  function walk(current: string): void {
+    let entries: string[];
+    try {
+      entries = readdirSync(current);
+    } catch {
+      return;
+    }
+    for (const name of entries) {
+      if (name.startsWith('.')) continue;
+      const full = join(current, name);
+      try {
+        const st = statSync(full);
+        if (st.isDirectory()) {
+          walk(full);
+        } else if (st.isFile()) {
+          const relativePath = full.substring(cloneDir.length + 1);
+          totalSize += st.size;
+          files.push({ path: relativePath, size: st.size, type: 'file' });
+        }
+      } catch {
+        // skip unreadable entries
+      }
+    }
+  }
+
+  walk(dirPath);
+  return { files, fileCount: files.length, totalSize };
 }
 
 /**

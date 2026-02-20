@@ -4,6 +4,60 @@
 
 ---
 
+## Configuration
+
+Local and LSP tools must be enabled before use:
+
+```
+ENABLE_LOCAL=true
+```
+
+Or via config: `local.enabled=true`
+
+### LSP Supported Languages
+
+| Status | Languages |
+|--------|-----------|
+| **Bundled** | TypeScript (`.ts`, `.tsx`), JavaScript (`.js`, `.jsx`, `.mjs`, `.cjs`) |
+| **Requires Install** | Python, Go, Rust, Java, Kotlin, C/C++, C#, Ruby, PHP, Swift, Dart, Lua, Zig, Elixir, Scala, Haskell, OCaml, Clojure, Vue, Svelte, YAML, TOML, JSON, HTML, CSS, Bash, SQL, GraphQL, Terraform |
+
+### LSP Environment Variables
+
+Override language server paths:
+
+| Variable | Language |
+|----------|----------|
+| `OCTOCODE_TS_SERVER_PATH` | TypeScript/JavaScript |
+| `OCTOCODE_PYTHON_SERVER_PATH` | Python |
+| `OCTOCODE_GO_SERVER_PATH` | Go |
+| `OCTOCODE_RUST_SERVER_PATH` | Rust |
+| `OCTOCODE_JAVA_SERVER_PATH` | Java |
+| `OCTOCODE_CLANGD_SERVER_PATH` | C/C++ |
+
+### LSP Custom Configuration
+
+Config files loaded in priority order (optional — if unset, workspace/home fallbacks are used):
+
+1. `OCTOCODE_LSP_CONFIG=/path/to/config.json` (env var)
+2. `.octocode/lsp-servers.json` (workspace)
+3. `~/.octocode/lsp-servers.json` (user)
+
+```json
+{
+  "languageServers": {
+    ".py": {
+      "command": "pylsp",
+      "args": [],
+      "languageId": "python"
+    }
+  }
+}
+```
+
+If a language server is not installed, the tool returns a helpful error with installation instructions. No crashes — other tools continue working. Works on macOS, Linux, and Windows.
+
+---
+
 ## Overview
 
 Octocode MCP provides **7 tools** across 2 categories for code research and exploration:
@@ -17,7 +71,7 @@ Octocode MCP provides **7 tools** across 2 categories for code research and expl
 
 ## Quick Start
 
-1. Enable local tools: set `ENABLE_LOCAL=true`.
+1. Enable local tools in configuration: set `ENABLE_LOCAL=true` (or `local.enabled=true`).
 2. Find a symbol: `localSearchCode` (get `lineHint`).
 3. Use LSP: `lspGotoDefinition` / `lspFindReferences` / `lspCallHierarchy`.
 4. Read details last: `localGetFileContent`.
@@ -107,7 +161,9 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `excludeDir`: Directories to exclude (e.g., `node_modules`)
 - `hidden`: Search hidden files (default: false)
 - `smartCase`: Smart case sensitivity (default: true)
-- `matchesPerPage`/`filesPerPage`/`filePageNumber`: Pagination controls
+- `filesPerPage`: Files per page (default: 10)
+- `matchesPerPage`: Matches per page (default: 10)
+- `filePageNumber`: Page number (default: 1)
 - `multiline`: Enable multiline matching (memory intensive)
 
 **Additional parameters:**
@@ -129,7 +185,7 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `binaryFiles`: Binary file handling (`text`, `without-match`, `binary`)
 - `includeStats`: Include search statistics (default: true)
 - `includeDistribution`: Include match distribution (default: true)
-- `sort`: Sort results (`path`, `modified`, `accessed`, `created`)
+- `sort`: Sort results (`path`, `modified`, `accessed`, `created`) (default: `path`)
 - `sortReverse`: Reverse sort order
 - `showFileLastModified`: Show file modification timestamps
 - `threads`: Thread count for parallel search (1-32)
@@ -235,12 +291,19 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 **Key parameters:**
 - `path` (required): File to read
 - `startLine`/`endLine`: Line range (1-indexed)
-- `matchString`: Find specific content with context
+- `matchString`: Find specific content with context (max: 2000 chars)
 - `matchStringContextLines`: Lines around match (default: 5, max: 50)
-- `matchStringIsRegex`: Treat matchString as regex (default: false)
+- `matchStringIsRegex`: Treat matchString as regex (default: false, max pattern: 1000 chars)
 - `matchStringCaseSensitive`: Case-sensitive matching (default: false)
-- `charOffset`/`charLength`: Character-based pagination for large files
+- `charOffset`/`charLength`: Character-based pagination for large files (charLength max: 10000)
 - `fullContent`: Read entire file (use sparingly)
+
+**Extraction modes (choose ONE):**
+1. `matchString` with context lines
+2. `startLine` + `endLine` (must be used together)
+3. `fullContent=true` (small files only)
+
+Cannot combine `matchString` with `startLine`/`endLine`, or `fullContent` with either.
 
 **⚠️ Should be the LAST step** after search/LSP analysis.
 
@@ -278,7 +341,7 @@ MCP Client → Octocode MCP → Language Server (spawned)
 - `uri` (required): File containing the symbol
 - `symbolName` (required): Exact symbol name (case-sensitive, max 255 chars)
 - `lineHint` (required): Line number from `localSearchCode` (1-indexed)
-- `orderHint`: Which occurrence on line if multiple (0-indexed, default: 0)
+- `orderHint`: Which code occurrence on the exact line if multiple (0-indexed, default: 0). String/comment text matches are ignored.
 - `contextLines`: Lines of context around definition (default: 5, max: 20)
 
 **Use when:** "Where is this function/class/variable defined?"
@@ -331,6 +394,8 @@ MCP Client → Octocode MCP → Language Server (spawned)
 - `contextLines`: Lines of context (default: 2, max: 10)
 - `callsPerPage`: Results per page (default: 15, max: 30)
 - `page`: Page number (default: 1)
+- `charOffset`: Character offset for pagination (min: 0)
+- `charLength`: Character length for pagination (min: 1, max: 50000)
 
 **Use when:** "Trace the call flow" / "Who calls X?" / "What does X call?"
 
@@ -342,61 +407,6 @@ MCP Client → Octocode MCP → Language Server (spawned)
 - **Path Redaction**: Paths are always redacted in errors for security.
 
 > LSP tools work standalone - no IDE required. TypeScript/JavaScript bundled; other languages need server installation.
-
----
-
-## LSP Configuration & Setup
-
-### Supported Languages
-
-| Status | Languages |
-|--------|-----------|
-| **Bundled** | TypeScript (`.ts`, `.tsx`), JavaScript (`.js`, `.jsx`, `.mjs`, `.cjs`) |
-| **Requires Install** | Python, Go, Rust, Java, Kotlin, C/C++, C#, Ruby, PHP, Swift, Dart, Lua, Zig, Elixir, Scala, Haskell, OCaml, Clojure, Vue, Svelte, YAML, TOML, JSON, HTML, CSS, Bash, SQL, GraphQL, Terraform |
-
-For additional language servers, check your language's official LSP server documentation.
-
-### Environment Variables
-
-Override language server paths:
-
-| Variable | Language |
-|----------|----------|
-| `OCTOCODE_TS_SERVER_PATH` | TypeScript/JavaScript |
-| `OCTOCODE_PYTHON_SERVER_PATH` | Python |
-| `OCTOCODE_GO_SERVER_PATH` | Go |
-| `OCTOCODE_RUST_SERVER_PATH` | Rust |
-| `OCTOCODE_JAVA_SERVER_PATH` | Java |
-| `OCTOCODE_CLANGD_SERVER_PATH` | C/C++ |
-
-### Custom Configuration
-
-Config files are loaded in priority order:
-
-Optional: set only if you want a custom path. If unset, workspace/home fallbacks are used.
-
-1. `OCTOCODE_LSP_CONFIG=/path/to/config.json` (env var)
-2. `.octocode/lsp-servers.json` (workspace)
-3. `~/.octocode/lsp-servers.json` (user)
-
-```json
-{
-  "languageServers": {
-    ".py": {
-      "command": "pylsp",
-      "args": [],
-      "languageId": "python"
-    }
-  }
-}
-```
-
-### Graceful Degradation
-
-If a language server is not installed:
-1. Tool returns helpful error with installation instructions
-2. **No crashes** - other tools continue working
-3. Works on macOS, Linux, and Windows
 
 ---
 

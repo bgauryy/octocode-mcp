@@ -900,5 +900,143 @@ export interface Config {
       expect(text).not.toContain('Followed import chain');
       expect(mockGotoDefinition).toHaveBeenCalledTimes(2);
     });
+
+    it('should resolve via module path for .js extension imports when LSP chaining fails', async () => {
+      // Simulates TypeScript ESM projects where imports use .js extension but
+      // source files are .ts. The LSP returns the import line as "definition"
+      // (cannot follow .js → .ts cross-file), so both the first and second hops
+      // return the same import line. The fix: after LSP chaining fails, manually
+      // resolve the module path (.js → .ts) and text-search for the export.
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/execution.ts`;
+      const utilsPath = `${process.cwd()}/src/utils.ts`;
+
+      const mockGotoDefinition = vi.fn();
+      // TypeScript LSP returns the import declaration (same file) for BOTH hops
+      mockGotoDefinition.mockResolvedValueOnce([
+        {
+          uri: testPath,
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 51 },
+          },
+          content: "import { createSuccessResult } from './utils.js'",
+        },
+      ]);
+      // Second hop: also returns the import line (TypeScript .js limitation)
+      mockGotoDefinition.mockResolvedValueOnce([
+        {
+          uri: testPath,
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 51 },
+          },
+          content: "import { createSuccessResult } from './utils.js'",
+        },
+      ]);
+
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(lspModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
+        gotoDefinition: mockGotoDefinition,
+      } as any);
+
+      vi.mocked(fs.readFile).mockImplementation(async p => {
+        const path = typeof p === 'string' ? p : String(p);
+        if (path === testPath) {
+          return "import { createSuccessResult } from './utils.js'\nconst x = createSuccessResult();";
+        }
+        if (path === utilsPath) {
+          return 'const a = 1;\nexport function createSuccessResult() { return {}; }\n';
+        }
+        throw new Error(`Unexpected path: ${path}`);
+      });
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'createSuccessResult',
+            lineHint: 1, // points directly to the import line
+            contextLines: 0,
+            researchGoal: 'Find createSuccessResult definition',
+            reasoning: 'Testing .js loop detection with manual resolution',
+          },
+        ],
+      });
+
+      const text = result.content?.[0]?.text ?? '';
+      // Should resolve to utils.ts via manual path resolution
+      expect(text).toContain(utilsPath);
+      expect(text).toContain('Followed import chain to source definition');
+      // Two LSP calls: first hop returns import line, second hop also returns import line,
+      // then manual resolution finds the symbol in utils.ts
+      expect(mockGotoDefinition).toHaveBeenCalledTimes(2);
+    });
+
+    it('should fallback to import line when LSP chaining fails and module file not found', async () => {
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/execution.ts`;
+
+      const mockGotoDefinition = vi.fn();
+      // First hop: LSP returns the import line (cannot follow .js extension imports)
+      mockGotoDefinition.mockResolvedValueOnce([
+        {
+          uri: testPath,
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 45 },
+          },
+          content: "import { missingFunc } from './missing.js'",
+        },
+      ]);
+      // Second hop: same result (TypeScript .js limitation)
+      mockGotoDefinition.mockResolvedValueOnce([
+        {
+          uri: testPath,
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 45 },
+          },
+          content: "import { missingFunc } from './missing.js'",
+        },
+      ]);
+
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(lspModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
+        gotoDefinition: mockGotoDefinition,
+      } as any);
+
+      vi.mocked(fs.readFile).mockImplementation(async p => {
+        const path = typeof p === 'string' ? p : String(p);
+        if (path === testPath) {
+          return "import { missingFunc } from './missing.js'\n";
+        }
+        throw new Error(`File not found: ${path}`);
+      });
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'missingFunc',
+            lineHint: 1, // points to the import line
+            contextLines: 0,
+            researchGoal: 'Find missingFunc',
+            reasoning: 'Testing loop detection when module file missing',
+          },
+        ],
+      });
+
+      const text = result.content?.[0]?.text ?? '';
+      // Falls back to original import-line result — module file not found
+      expect(text).toContain('status: "hasResults"');
+      expect(text).not.toContain('Followed import chain');
+      // Two LSP calls made; both returned the same file; manual resolution also failed
+      expect(mockGotoDefinition).toHaveBeenCalledTimes(2);
+    });
   });
 });

@@ -6,7 +6,7 @@
 
 ## Tool Overview
 
-Searches npm and PyPI package registries. Returns package metadata including name, description, version, repository URL, and publish date. **Known critical issue:** npm public registry search returns empty results for well-known packages.
+Searches npm and PyPI package registries. Returns package metadata including name, description, version, repository URL, and publish date. **Environment note:** npm search uses `npm config get registry`. When that points to a private registry (e.g. corporate Artifactory), public packages like `express`/`zod` may return empty. Public registry works.
 
 ---
 
@@ -14,7 +14,9 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 
 ### TC-1: npm — Popular Package (express)
 
-**Goal:** Verify npm search for well-known package. **KNOWN FAILURE.**
+**Goal:** Verify npm search for well-known package.
+
+**Note:** Fails when `npm config get registry` points to a private registry (no public packages). Passes on public registry.
 
 ```json
 {
@@ -27,14 +29,16 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] **KNOWN BUG:** Returns empty result
-- [ ] Should return express with repo URL, version, description
+- [ ] Returns express with repo URL, version, description (when using public registry)
+- [ ] May return empty when npm config points to private registry (environment-dependent)
 
 ---
 
 ### TC-2: npm — Popular Package (zod) with Metadata
 
-**Goal:** Verify npm metadata fetch. **KNOWN FAILURE.**
+**Goal:** Verify npm metadata fetch.
+
+**Note:** Same environment dependency as TC-1 (npm registry config).
 
 ```json
 {
@@ -48,8 +52,8 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] **KNOWN BUG:** Returns empty result
-- [ ] Should return zod with version, description, lastPublished
+- [ ] Returns zod with version, description, lastPublished (when using public registry)
+- [ ] May return empty when npm config points to private registry (environment-dependent)
 
 ---
 
@@ -340,11 +344,9 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 
 | Issue | Status | Details |
 |-------|--------|---------|
-| npm public search broken | **OPEN (P0)** | `express`, `zod`, `react` return empty results |
+| npm public packages empty | **ENV-DEPENDENT** | When `npm config get registry` points to private registry, `express`/`zod` return empty. Public registry works. |
 | npm timeout | **FIXED** | `mcp` search no longer times out |
 | Python search | **Working** | All Python/PyPI searches work perfectly |
-
-**Root Cause Hypothesis:** The tool may be querying a private npm registry instead of `registry.npmjs.org` for public packages.
 
 ---
 
@@ -352,8 +354,8 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 
 | # | Test Case | Status |
 |---|-----------|--------|
-| 1 | npm express (known bug) | |
-| 2 | npm zod + metadata (known bug) | |
+| 1 | npm express (env-dependent) | |
+| 2 | npm zod + metadata (env-dependent) | |
 | 3 | npm scoped mcp | |
 | 4 | Python requests | |
 | 5 | Python flask + metadata | |

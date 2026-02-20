@@ -4,6 +4,30 @@
 
 ---
 
+## Configuration
+
+### GitHub
+
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_TOKEN` | GitHub personal access token |
+| `OCTOCODE_TOKEN` | Octocode-specific token (highest priority) |
+| `GH_TOKEN` | GitHub CLI compatible token |
+| `GITHUB_API_URL` | Custom API URL for GitHub Enterprise |
+| `ENABLE_CLONE` | Enable `githubCloneRepo` and `githubGetFileContent` directory mode (requires `ENABLE_LOCAL=true`) |
+
+### GitLab
+
+| Variable | Description |
+|----------|-------------|
+| `GITLAB_TOKEN` | GitLab personal access token |
+| `GL_TOKEN` | GitLab token (fallback) |
+| `GITLAB_HOST` | GitLab instance URL (default: `https://gitlab.com`) |
+
+**Auto-detection:** If `GITLAB_TOKEN` is set, GitLab becomes the active provider. Otherwise GitHub is the default.
+
+---
+
 ## Overview
 
 Octocode MCP provides **7 tools** for external code research that work with **GitHub** (and most with **GitLab**):
@@ -71,7 +95,7 @@ Tools use unified parameters that map to provider-specific concepts:
 
 | Tool | Description |
 |------|-------------|
-| **`githubGetFileContent`** | Read file content from repositories, or fetch an entire directory to disk (`type: "directory"`). Supports line ranges, string matching with context, and pagination for large files. Directory mode requires `ENABLE_CLONE=true`. |
+| **`githubGetFileContent`** | Read file content from repositories, or fetch an entire directory to disk (`type: "directory"`). Supports line ranges, string matching with context, and pagination for large files. Directory mode requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`. |
 | **`githubViewRepoStructure`** | Display directory tree structure of a repository. Configurable depth and pagination. |
 | **`githubCloneRepo`** | Clone a repository (or subdirectory) locally for deep analysis with local + LSP tools. GitHub only. Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`. |
 
@@ -111,7 +135,7 @@ Tools for discovering code, repositories, and pull requests/merge requests.
 
 **Key parameters:**
 - `keywordsToSearch` (required): Array of 1-5 search keywords
-- `owner`: Repository owner / GitLab Group
+- `owner`: User or organization / GitLab Group
 - `repo`: Specific repository / GitLab Project
 - `extension`: Filter by file extension (e.g., `ts`, `py`)
 - `filename`: Filter by filename
@@ -151,7 +175,7 @@ owner="mygroup", repo="myproject", keywordsToSearch=["middleware"]
 **Key parameters:**
 - `keywordsToSearch`: Keywords to search in repos
 - `topicsToSearch`: Topics to filter by
-- `owner`: Filter by owner/organization/group
+- `owner`: Filter by user or organization / GitLab Group
 - `stars`: Star count filter (e.g., `>1000`, `100..500`)
 - `size`: Repository size in KB
 - `created`: Creation date filters
@@ -191,7 +215,7 @@ owner="wix-private", keywordsToSearch=["auth-service"]
 
 **Key parameters:**
 - `prNumber`: Direct lookup (ignores all other filters). Maps to GitLab MR IID.
-- `owner`: Repository owner / GitLab Group
+- `owner`: User or organization / GitLab Group
 - `repo`: Repository name / GitLab Project
 - `query`: Free-text search
 - `state`: `open`, `closed`
@@ -259,7 +283,7 @@ Tools for reading file content and browsing repository structure.
 | **Directory fetch** | ✅ Supported (`type: "directory"`) | Not supported |
 
 **Key parameters:**
-- `owner` (required): Repository owner / GitLab Group
+- `owner` (required): User or organization / GitLab Group
 - `repo` (required): Repository name / GitLab Project
 - `path` (required): File path or directory path in repository
 - `branch`: Branch name (**required for GitLab**, optional for GitHub)
@@ -341,7 +365,7 @@ path="package.json", fullContent=true, owner="org", repo="repo"
 | **Depth control** | 1-2 levels | Recursive by default |
 
 **Key parameters:**
-- `owner` (required): Repository owner / GitLab Group
+- `owner` (required): User or organization / GitLab Group
 - `repo` (required): Repository name / GitLab Project
 - `branch` (required): Branch name (required for both GitHub and GitLab)
 - `path`: Starting path (default: root `""`)
@@ -393,7 +417,7 @@ owner="group", repo="project", branch="develop", path="src/api"
 | **After clone** | Returns `localPath` — pass it to local + LSP tools |
 
 **Key parameters:**
-- `owner` (required): Repository owner or organization (max 200 chars)
+- `owner` (required): User or organization (max 200 chars)
 - `repo` (required): Repository name (max 150 chars)
 - `branch`: Branch to clone (max 255 chars). Omit to auto-detect the repo's default branch via the GitHub API (falls back to `main`)
 - `sparse_path`: Fetch only this subdirectory via sparse checkout (max 500 chars). Dramatically faster for large monorepos. Examples: `src/compiler`, `packages/core/src`
@@ -703,30 +727,6 @@ GitLab requires project scope for code search.
 | GitLab code search without scope | API error | Specify `owner` and `repo` |
 | Cloning repo just to read one file | Slow, wastes disk | Use `githubGetFileContent` instead |
 | Cloning without `sparse_path` on monorepo | Downloads everything | Set `sparse_path` to the dir you need |
-
----
-
-## Environment Variables
-
-### GitHub
-
-| Variable | Description |
-|----------|-------------|
-| `GITHUB_TOKEN` | GitHub personal access token |
-| `OCTOCODE_TOKEN` | Octocode-specific token (highest priority) |
-| `GH_TOKEN` | GitHub CLI compatible token |
-| `GITHUB_API_URL` | Custom API URL for GitHub Enterprise |
-| `ENABLE_CLONE` | Enable `githubCloneRepo` tool and `githubGetFileContent` directory mode (requires `ENABLE_LOCAL=true`) |
-
-### GitLab
-
-| Variable | Description |
-|----------|-------------|
-| `GITLAB_TOKEN` | GitLab personal access token |
-| `GL_TOKEN` | GitLab token (fallback) |
-| `GITLAB_HOST` | GitLab instance URL (default: `https://gitlab.com`) |
-
-**Auto-detection:** If `GITLAB_TOKEN` is set, GitLab becomes the active provider.
 
 ---
 

@@ -49,6 +49,9 @@ export function transformRepoStructureResult(
   return {
     projectPath: `${data.owner}/${data.repo}`,
     branch: data.branch || '',
+    ...(data.defaultBranch !== undefined && {
+      defaultBranch: data.defaultBranch,
+    }),
     path: data.path || '/',
     structure: data.structure || {},
     summary: {

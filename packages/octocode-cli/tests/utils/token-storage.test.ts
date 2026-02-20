@@ -10,7 +10,7 @@ vi.mock('octocode-shared', () => ({
     success: true,
     deletedFromFile: false,
   }),
-  updateToken: vi.fn().mockResolvedValue({ success: true }),
+  updateToken: vi.fn().mockResolvedValue(true),
   listStoredHosts: vi.fn().mockResolvedValue([]),
   listStoredHostsSync: vi.fn().mockReturnValue([]),
   hasCredentials: vi.fn().mockResolvedValue(false),
@@ -65,7 +65,7 @@ describe('Token Storage (re-exports from octocode-shared)', () => {
       success: true,
       deletedFromFile: false,
     });
-    vi.mocked(shared.updateToken).mockResolvedValue({ success: true });
+    vi.mocked(shared.updateToken).mockResolvedValue(true);
     vi.mocked(shared.listStoredHosts).mockResolvedValue([]);
     vi.mocked(shared.listStoredHostsSync).mockReturnValue([]);
     vi.mocked(shared.hasCredentials).mockResolvedValue(false);
@@ -164,12 +164,12 @@ describe('Token Storage (re-exports from octocode-shared)', () => {
       const shared = await import('octocode-shared');
       const { updateToken } = await import('../../src/utils/token-storage.js');
 
-      vi.mocked(shared.updateToken).mockResolvedValue({ success: true });
+      vi.mocked(shared.updateToken).mockResolvedValue(true);
 
       const token = { token: 'new-token', tokenType: 'oauth' as const };
       const result = await updateToken('github.com', token);
 
-      expect(result).toEqual({ success: true });
+      expect(result).toBe(true);
       expect(shared.updateToken).toHaveBeenCalledWith('github.com', token);
     });
   });
