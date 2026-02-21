@@ -34,6 +34,8 @@ export interface FileContentQuery {
   charOffset?: number;
   charLength?: number;
   noTimestamp?: boolean;
+  /** When true, bypass the cache and force a fresh fetch */
+  forceRefresh?: boolean;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;

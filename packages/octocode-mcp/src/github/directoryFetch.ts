@@ -34,6 +34,7 @@ import {
   writeCacheMeta,
   createCacheMeta,
   ensureCloneParentDir,
+  evictExpiredClones,
 } from '../tools/github_clone_repo/cache.js';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -137,7 +138,8 @@ export async function fetchDirectoryContents(
   repo: string,
   path: string,
   branch: string,
-  authInfo?: AuthInfo
+  authInfo?: AuthInfo,
+  forceRefresh = false
 ): Promise<DirectoryFetchResult> {
   const octocodeDir = getOctocodeDir();
   const cloneDir = getCloneDir(octocodeDir, owner, repo, branch);
@@ -153,7 +155,7 @@ export async function fetchDirectoryContents(
 
   // ── 1. Cache hit? ─────────────────────────────────────────────
   const cacheResult = isCacheHit(cloneDir);
-  if (cacheResult.hit && existsSync(dirPath)) {
+  if (!forceRefresh && cacheResult.hit && existsSync(dirPath)) {
     const cached = scanDirectoryStats(dirPath, cloneDir);
     return {
       localPath: dirPath,
@@ -214,9 +216,8 @@ export async function fetchDirectoryContents(
   }
 
   // ── 6. Clean stale directory and write fresh files ─────────────
-  // Remove the specific directory being fetched so stale files
-  // (deleted from the repo) don't persist. This is the "override"
-  // behaviour: fresh content replaces whatever was on disk.
+  // Evict any globally-expired clones before writing new content.
+  evictExpiredClones(octocodeDir);
   ensureCloneParentDir(cloneDir);
   if (existsSync(dirPath)) {
     rmSync(dirPath, { recursive: true, force: true });

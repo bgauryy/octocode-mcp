@@ -10,6 +10,7 @@ import {
   cleanup,
   getGitHubToken,
   arePromptsEnabled,
+  isCloneEnabled,
 } from './serverConfig.js';
 import {
   initializeProviders,
@@ -25,6 +26,8 @@ import { loadToolContent, CompleteMetadata } from './tools/toolMetadata.js';
 import { registerTools } from './tools/toolsManager.js';
 import { version, name } from '../package.json';
 import { STARTUP_ERRORS } from './errorCodes.js';
+import { startCacheGC, stopCacheGC } from './tools/github_clone_repo/cache.js';
+import { getOctocodeDir } from 'octocode-shared';
 
 interface ShutdownState {
   inProgress: boolean;
@@ -65,6 +68,9 @@ function createShutdownHandler(
 
       // Force-exit safety net: if cleanup hangs, exit after timeout
       state.timeout = setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS);
+
+      // Stop periodic cache GC
+      stopCacheGC();
 
       // Cleanup all caches and instances
       clearAllCache();
@@ -221,6 +227,11 @@ async function startServer() {
       pid: process.pid,
       sessionId: session.getSessionId(),
     });
+
+    // Start periodic cache GC when clone support is enabled
+    if (isCloneEnabled()) {
+      startCacheGC(getOctocodeDir());
+    }
 
     // Background session logging
     logSessionInit().catch(() => {});

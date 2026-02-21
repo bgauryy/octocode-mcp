@@ -63,6 +63,14 @@ const FileContentBaseSchema = BaseQuerySchema.extend({
     .max(50000)
     .optional()
     .describe(GITHUB_FETCH_CONTENT.pagination.charLength),
+  forceRefresh: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      'When true, bypass the cache and force a fresh fetch even if a valid ' +
+        'cached copy exists. Only relevant for type "directory".'
+    ),
 });
 
 export const FileContentQuerySchema = FileContentBaseSchema.superRefine(

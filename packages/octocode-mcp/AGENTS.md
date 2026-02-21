@@ -488,6 +488,7 @@ yarn test:ui
 | `GITLAB_HOST` | GitLab instance URL | `https://gitlab.com` |
 | `ENABLE_LOCAL` | Enable local filesystem tools | `false` |
 | `ENABLE_CLONE` | Enable `githubCloneRepo` tool and `githubGetFileContent` directory mode (requires `ENABLE_LOCAL`) | `false` |
+| `OCTOCODE_CACHE_TTL_MS` | Cache TTL for cloned repos in milliseconds | `86400000` (24h) |
 | `DISABLE_PROMPTS` | Disable prompts/slash commands | `false` |
 | `LOG` | Enable session logging | `true` |
 | `REQUEST_TIMEOUT` | API request timeout (ms) | `30000` |

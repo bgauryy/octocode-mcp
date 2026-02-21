@@ -27,11 +27,17 @@ import type { CloneCacheMeta, CacheSource } from './types.js';
 // Constants
 // ─────────────────────────────────────────────────────────────────────
 
-/** Cache time-to-live: 24 hours in milliseconds */
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+/** Default cache TTL: 24 hours in milliseconds */
+const DEFAULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** GC sweep interval: 10 minutes in milliseconds */
+const GC_INTERVAL_MS = 10 * 60 * 1000;
 
 /** Metadata file stored inside each clone directory */
 const META_FILE_NAME = '.octocode-clone-meta.json';
+
+/** Handle for the periodic GC interval (null when not running) */
+let gcInterval: ReturnType<typeof setInterval> | null = null;
 
 // ─────────────────────────────────────────────────────────────────────
 // Path resolution
@@ -141,7 +147,20 @@ export function isCacheHit(
 // ─────────────────────────────────────────────────────────────────────
 
 /**
- * Build a fresh metadata object with a 24-hour TTL.
+ * Resolve the cache TTL from the environment or fall back to 24 hours.
+ * Accepts `OCTOCODE_CACHE_TTL_MS` (positive integer, milliseconds).
+ */
+export function getCacheTTL(): number {
+  const raw = process.env.OCTOCODE_CACHE_TTL_MS;
+  if (raw != null) {
+    const parsed = Number(raw);
+    if (!Number.isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return DEFAULT_CACHE_TTL_MS;
+}
+
+/**
+ * Build a fresh metadata object with a configurable TTL (default 24 h).
  */
 export function createCacheMeta(
   owner: string,
@@ -153,7 +172,7 @@ export function createCacheMeta(
   const now = new Date();
   return {
     clonedAt: now.toISOString(),
-    expiresAt: new Date(now.getTime() + CACHE_TTL_MS).toISOString(),
+    expiresAt: new Date(now.getTime() + getCacheTTL()).toISOString(),
     owner,
     repo,
     branch,
@@ -283,4 +302,38 @@ export function evictExpiredClones(octocodeDir: string): number {
   }
 
   return evicted;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Periodic garbage collection
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Start a periodic sweep that evicts expired clones every 10 minutes.
+ * Runs one immediate eviction on start, then schedules the interval.
+ * The timer is unref'd so it won't keep the process alive.
+ *
+ * Safe to call multiple times — subsequent calls are no-ops.
+ */
+export function startCacheGC(octocodeDir: string): void {
+  if (gcInterval) return;
+
+  // Immediate sweep on startup
+  evictExpiredClones(octocodeDir);
+
+  gcInterval = setInterval(() => {
+    evictExpiredClones(octocodeDir);
+  }, GC_INTERVAL_MS);
+
+  gcInterval.unref();
+}
+
+/**
+ * Stop the periodic GC sweep. Safe to call even if GC was never started.
+ */
+export function stopCacheGC(): void {
+  if (gcInterval) {
+    clearInterval(gcInterval);
+    gcInterval = null;
+  }
 }

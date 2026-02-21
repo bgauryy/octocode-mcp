@@ -128,6 +128,24 @@ describe('githubCloneRepo schema validation', () => {
     });
   });
 
+  describe('forceRefresh validation', () => {
+    it('accepts forceRefresh: true', () => {
+      expect(parseSchema({ forceRefresh: true }).success).toBe(true);
+    });
+
+    it('accepts forceRefresh: false', () => {
+      expect(parseSchema({ forceRefresh: false }).success).toBe(true);
+    });
+
+    it('defaults to false when omitted', () => {
+      const result = parseSchema({});
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.queries[0]!.forceRefresh).toBe(false);
+      }
+    });
+  });
+
   describe('query limits', () => {
     it('rejects more than 3 queries', () => {
       const result = BulkCloneRepoSchema.safeParse({
@@ -158,6 +176,10 @@ import {
   createCacheMeta,
   ensureCloneParentDir,
   removeCloneDir,
+  evictExpiredClones,
+  getCacheTTL,
+  startCacheGC,
+  stopCacheGC,
 } from '../../src/tools/github_clone_repo/cache.js';
 
 describe('github_clone_repo cache', () => {
@@ -384,8 +406,119 @@ describe('github_clone_repo cache', () => {
     });
 
     it('does nothing for non-existent directory', () => {
-      // Should not throw
       removeCloneDir(join(testBaseDir, 'does-not-exist'));
+    });
+  });
+
+  describe('getCacheTTL', () => {
+    const origEnv = process.env.OCTOCODE_CACHE_TTL_MS;
+    afterEach(() => {
+      if (origEnv === undefined) {
+        delete process.env.OCTOCODE_CACHE_TTL_MS;
+      } else {
+        process.env.OCTOCODE_CACHE_TTL_MS = origEnv;
+      }
+    });
+
+    it('returns 24 hours by default', () => {
+      delete process.env.OCTOCODE_CACHE_TTL_MS;
+      expect(getCacheTTL()).toBe(24 * 60 * 60 * 1000);
+    });
+
+    it('reads OCTOCODE_CACHE_TTL_MS env var', () => {
+      process.env.OCTOCODE_CACHE_TTL_MS = '3600000';
+      expect(getCacheTTL()).toBe(3600000);
+    });
+
+    it('ignores non-numeric env value', () => {
+      process.env.OCTOCODE_CACHE_TTL_MS = 'not-a-number';
+      expect(getCacheTTL()).toBe(24 * 60 * 60 * 1000);
+    });
+
+    it('ignores zero', () => {
+      process.env.OCTOCODE_CACHE_TTL_MS = '0';
+      expect(getCacheTTL()).toBe(24 * 60 * 60 * 1000);
+    });
+
+    it('ignores negative values', () => {
+      process.env.OCTOCODE_CACHE_TTL_MS = '-5000';
+      expect(getCacheTTL()).toBe(24 * 60 * 60 * 1000);
+    });
+  });
+
+  describe('createCacheMeta with custom TTL', () => {
+    const origEnv = process.env.OCTOCODE_CACHE_TTL_MS;
+    afterEach(() => {
+      if (origEnv === undefined) {
+        delete process.env.OCTOCODE_CACHE_TTL_MS;
+      } else {
+        process.env.OCTOCODE_CACHE_TTL_MS = origEnv;
+      }
+    });
+
+    it('uses custom TTL from env var', () => {
+      process.env.OCTOCODE_CACHE_TTL_MS = '60000'; // 1 minute
+      const meta = createCacheMeta('fb', 'react', 'main');
+      const clonedAt = new Date(meta.clonedAt).getTime();
+      const expiresAt = new Date(meta.expiresAt).getTime();
+      expect(expiresAt - clonedAt).toBe(60000);
+    });
+  });
+
+  describe('startCacheGC / stopCacheGC', () => {
+    afterEach(() => {
+      stopCacheGC();
+    });
+
+    it('runs immediate eviction on start', () => {
+      const dir = join(testBaseDir, 'gc-test');
+      const reposDir = join(dir, 'repos', 'owner', 'repo', 'main');
+      mkdirSync(reposDir, { recursive: true });
+      const expiredMeta = createCacheMeta('owner', 'repo', 'main');
+      expiredMeta.expiresAt = new Date(Date.now() - 1000).toISOString();
+      writeCacheMeta(reposDir, expiredMeta);
+
+      startCacheGC(dir);
+
+      expect(existsSync(reposDir)).toBe(false);
+    });
+
+    it('is idempotent — second call is a no-op', () => {
+      mkdirSync(testBaseDir, { recursive: true });
+      startCacheGC(testBaseDir);
+      startCacheGC(testBaseDir);
+      stopCacheGC();
+    });
+
+    it('stopCacheGC is safe when GC was never started', () => {
+      stopCacheGC();
+    });
+  });
+
+  describe('evictExpiredClones', () => {
+    it('removes expired entries and keeps valid ones', () => {
+      const dir = join(testBaseDir, 'evict-test');
+
+      const expiredDir = join(dir, 'repos', 'owner', 'repo', 'old-branch');
+      mkdirSync(expiredDir, { recursive: true });
+      const expiredMeta = createCacheMeta('owner', 'repo', 'old-branch');
+      expiredMeta.expiresAt = new Date(Date.now() - 1000).toISOString();
+      writeCacheMeta(expiredDir, expiredMeta);
+
+      const validDir = join(dir, 'repos', 'owner', 'repo', 'main');
+      mkdirSync(validDir, { recursive: true });
+      const validMeta = createCacheMeta('owner', 'repo', 'main');
+      writeCacheMeta(validDir, validMeta);
+
+      const count = evictExpiredClones(dir);
+
+      expect(count).toBe(1);
+      expect(existsSync(expiredDir)).toBe(false);
+      expect(existsSync(validDir)).toBe(true);
+    });
+
+    it('returns 0 when repos dir does not exist', () => {
+      expect(evictExpiredClones('/non/existent/path')).toBe(0);
     });
   });
 });
@@ -638,6 +771,51 @@ describe('cloneRepo', () => {
       }
     );
     expect(cloneCalls).toHaveLength(0);
+  });
+
+  it('forceRefresh: true bypasses valid cache and re-clones', async () => {
+    // First clone
+    await cloneRepo({
+      mainResearchGoal: 'test',
+      researchGoal: 'test',
+      reasoning: 'test',
+      owner: 'facebook',
+      repo: 'react',
+      branch: 'main',
+    });
+
+    mockSpawnWithTimeout.mockClear();
+    mockSpawnWithTimeout.mockImplementation(
+      async (_cmd: string, args: string[]) => {
+        if (args.includes('clone')) {
+          const targetDir = args[args.length - 1]!;
+          if (targetDir && !existsSync(targetDir)) {
+            mkdirSync(targetDir, { recursive: true });
+          }
+        }
+        return { success: true, stdout: 'ok', stderr: '', exitCode: 0 };
+      }
+    );
+
+    // Second call with forceRefresh - should NOT hit cache
+    const result = await cloneRepo({
+      mainResearchGoal: 'test',
+      researchGoal: 'test',
+      reasoning: 'test',
+      owner: 'facebook',
+      repo: 'react',
+      branch: 'main',
+      forceRefresh: true,
+    });
+
+    expect(result.cached).toBe(false);
+    const cloneCalls = mockSpawnWithTimeout.mock.calls.filter(
+      (call: unknown[]) => {
+        const a = call[1] as string[];
+        return a.includes('clone');
+      }
+    );
+    expect(cloneCalls.length).toBeGreaterThan(0);
   });
 
   it('rejects directoryFetch cache and re-clones', async () => {

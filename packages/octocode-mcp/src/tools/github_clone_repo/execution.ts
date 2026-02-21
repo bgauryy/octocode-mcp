@@ -49,7 +49,7 @@ const SPARSE_CLONE_HINTS: string[] = [
 
 /** Hints for cached results */
 const CACHE_HIT_HINT =
-  'Served from 24-hour cache (no network call). To force refresh, wait for expiry or manually delete the localPath.';
+  'Served from 24-hour cache (no network call). To force refresh, set forceRefresh: true in the query.';
 
 // ─────────────────────────────────────────────────────────────────────
 // Handler

@@ -155,7 +155,8 @@ async function handleDirectoryFetch(
     query.repo,
     String(query.path),
     branch,
-    authInfo
+    authInfo,
+    Boolean(query.forceRefresh)
   );
 
   const resultData: Record<string, unknown> = {

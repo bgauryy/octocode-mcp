@@ -91,6 +91,14 @@ const CloneRepoQuerySchema = BaseQuerySchema.extend({
         'Examples: "src/compiler", "packages/core/src", "lib/utils". ' +
         'Omit to clone the entire repository.'
     ),
+  forceRefresh: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      'When true, bypass the cache and force a fresh clone even if a ' +
+        'valid cached copy exists. Useful when you know upstream has changed.'
+    ),
 });
 
 export const BulkCloneRepoSchema = createBulkQuerySchema(

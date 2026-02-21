@@ -487,6 +487,79 @@ describe('directoryFetch', () => {
       );
     });
 
+    it('should bypass cache when forceRefresh is true', async () => {
+      // First call: populate cache
+      mockDirectoryListing([
+        { name: 'file.ts', path: 'src/file.ts', size: 50 },
+      ]);
+      mockFetchResponses({ 'src/file.ts': 'version 1' });
+
+      const result1 = await fetchDirectoryContents(
+        'owner',
+        'repo',
+        'src',
+        'main'
+      );
+      expect(result1.cached).toBe(false);
+
+      // Second call with forceRefresh: should NOT hit cache
+      mockDirectoryListing([
+        { name: 'file.ts', path: 'src/file.ts', size: 60 },
+      ]);
+      mockFetchResponses({ 'src/file.ts': 'version 2' });
+
+      const result2 = await fetchDirectoryContents(
+        'owner',
+        'repo',
+        'src',
+        'main',
+        undefined,
+        true // forceRefresh
+      );
+      expect(result2.cached).toBe(false);
+
+      const cloneDir = join(testDir, 'repos', 'owner', 'repo', 'main');
+      expect(readFileSync(join(cloneDir, 'src', 'file.ts'), 'utf-8')).toBe(
+        'version 2'
+      );
+    });
+
+    it('should evict expired clones on cache miss', async () => {
+      // Create an expired clone entry for a different repo
+      const expiredDir = join(
+        testDir,
+        'repos',
+        'stale-owner',
+        'stale-repo',
+        'main'
+      );
+      mkdirSync(expiredDir, { recursive: true });
+      writeFileSync(
+        join(expiredDir, '.octocode-clone-meta.json'),
+        JSON.stringify({
+          clonedAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
+          expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+          owner: 'stale-owner',
+          repo: 'stale-repo',
+          branch: 'main',
+          source: 'directoryFetch',
+        })
+      );
+
+      expect(existsSync(expiredDir)).toBe(true);
+
+      // Fetch a different directory — this triggers eviction
+      mockDirectoryListing([
+        { name: 'file.ts', path: 'src/file.ts', size: 50 },
+      ]);
+      mockFetchResponses({ 'src/file.ts': 'content' });
+
+      await fetchDirectoryContents('owner', 'repo', 'src', 'main');
+
+      // The expired entry should have been evicted
+      expect(existsSync(expiredDir)).toBe(false);
+    });
+
     it('should override existing files with fresh content', async () => {
       // First fetch: file has old content
       mockDirectoryListing([{ name: 'app.ts', path: 'src/app.ts', size: 50 }]);

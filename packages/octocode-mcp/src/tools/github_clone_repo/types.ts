@@ -37,6 +37,11 @@ export interface CloneRepoQuery {
    * Examples: "src/compiler", "packages/core", "lib"
    */
   sparse_path?: string;
+  /**
+   * When true, bypass the cache and force a fresh clone/fetch
+   * even if a valid cached copy exists.
+   */
+  forceRefresh?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────

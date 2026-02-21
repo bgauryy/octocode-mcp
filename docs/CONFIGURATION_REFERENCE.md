@@ -243,6 +243,7 @@ For the full authentication guide, see [Authentication Setup](https://github.com
 | | **Advanced** (env only) | | | | |
 | 20 | `OCTOCODE_BULK_QUERY_TIMEOUT_MS` | — | number | `60000` | Timeout for bulk/multi-query tool calls (ms). |
 | 21 | `OCTOCODE_COMMAND_CHECK_TIMEOUT_MS` | — | number | `5000` | Timeout for checking system command availability (ms). |
+| 22 | `OCTOCODE_CACHE_TTL_MS` | — | number | `86400000` | Cache TTL for cloned repos (ms). Default is 24 hours. Must be a positive integer. |
 
 **Type parsing (all values are case-insensitive, whitespace is trimmed):**
 

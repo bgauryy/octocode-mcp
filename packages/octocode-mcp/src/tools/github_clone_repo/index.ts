@@ -14,6 +14,9 @@ export {
   readCacheMeta,
   isCacheValid,
   isCacheHit,
+  getCacheTTL,
+  startCacheGC,
+  stopCacheGC,
 } from './cache.js';
 
 // Types

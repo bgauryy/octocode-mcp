@@ -200,13 +200,15 @@ Step 4: Find files by metadata
 
 | Behavior | Details |
 |----------|---------|
-| **TTL** | 24 hours from clone time |
+| **TTL** | 24 hours by default (configurable via `OCTOCODE_CACHE_TTL_MS` env var) |
 | **Location** | `~/.octocode/repos/{owner}/{repo}/{branch}/` |
 | **Branch** | Auto-detected via GitHub API when omitted; resolved branch always included in path and result |
 | **Sparse clones** | Separate cache: `{branch}__sp_{hash}/` |
 | **Coexistence** | Full clone and sparse clones of the same repo can coexist |
 | **Cache hit** | Returns instantly (no network call), includes `cached: true` |
-| **Expired** | Automatically re-cloned on next request |
+| **Expired** | Automatically evicted by periodic GC (every 10 min) and on next request |
+| **Force refresh** | Set `forceRefresh: true` in the query to bypass cache and re-clone/re-fetch |
+| **Periodic GC** | Expired clones are cleaned up every 10 minutes (runs on server startup and periodically) |
 | **Manual clear** | Delete the `localPath` directory to force re-clone |
 
 ---
@@ -230,6 +232,7 @@ No extra configuration is needed beyond enabling both `ENABLE_LOCAL=true` and `E
 | Clone entire repo | `githubCloneRepo` | `owner`, `repo` (branch auto-detected) |
 | Clone specific branch | `githubCloneRepo` | `owner`, `repo`, `branch` |
 | Clone one folder | `githubCloneRepo` | `owner`, `repo`, `sparse_path` (branch auto-detected) |
+| Force re-clone | `githubCloneRepo` | `forceRefresh: true` (bypasses valid cache) |
 | Browse cloned tree | `localViewStructure` | `path` = `localPath` |
 | Search cloned code | `localSearchCode` | `path` = `localPath` |
 | Read cloned file | `localGetFileContent` | `path` = `localPath + "/file.ts"` |

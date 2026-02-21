@@ -73,7 +73,7 @@ export async function cloneRepo(
   authInfo?: AuthInfo,
   token?: string
 ): Promise<CloneRepoResult> {
-  const { owner, repo, sparse_path } = query;
+  const { owner, repo, sparse_path, forceRefresh } = query;
 
   // ── Pre-flight: verify git is installed ──────────────────────────
   await assertGitAvailable();
@@ -86,10 +86,14 @@ export async function cloneRepo(
   const cloneDir = getCloneDir(octocodeDir, owner, repo, branch, sparse_path);
 
   // ── 1. Cache hit? ───────────────────────────────────────────────
+  // Skip the cache entirely when the caller requests a forced refresh.
   // Only accept cache from a real clone, not from a directoryFetch.
-  // A directoryFetch only has specific paths on disk, not a full/sparse clone.
   const cacheResult = isCacheHit(cloneDir);
-  if (cacheResult.hit && cacheResult.meta.source !== 'directoryFetch') {
+  if (
+    !forceRefresh &&
+    cacheResult.hit &&
+    cacheResult.meta.source !== 'directoryFetch'
+  ) {
     return {
       localPath: cloneDir,
       cached: true,
