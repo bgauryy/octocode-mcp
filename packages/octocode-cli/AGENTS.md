@@ -4,7 +4,7 @@
 
 AI agent guidance for the `octocode-cli` package - Interactive CLI installer and management hub for Octocode MCP servers and AI skills.
 
-This file **overrides** the root [`AGENTS.md`](../../AGENTS.md) for work within this package.
+This file **overrides** the root [`AGENTS.md`](https://github.com/bgauryy/octocode-mcp/blob/main/AGENTS.md) for work within this package.
 
 ---
 
@@ -363,14 +363,7 @@ Skills are markdown-based instruction sets that teach AI assistants how to perfo
 
 ### Official Skills
 
-| Skill | Description | Flow |
-|-------|-------------|------|
-| `octocode-research` | Evidence-first code forensics (external GitHub) | PREPARE → DISCOVER → ANALYZE → OUTPUT |
-| `octocode-local-search` | Local-first code exploration and discovery | DISCOVER → PLAN → EXECUTE → VERIFY → OUTPUT |
-| `octocode-implement` | Research-driven feature implementation from specs | SPEC → CONTEXT → PLAN → RESEARCH → IMPLEMENT → VALIDATE |
-| `octocode-plan` | Adaptive research & implementation planning | UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY |
-| `octocode-pr-review` | Defects-first PR review across 6+ domains | CONTEXT → CHECKPOINT → ANALYSIS → FINALIZE → REPORT |
-| `octocode-roast` | Brutally honest code review with comedic flair | SCOPE → ROAST → INVENTORY → SPOTLIGHT → REDEMPTION |
+For the complete skills list and documentation, see the [Skills Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md).
 
 ### Skill Structure
 

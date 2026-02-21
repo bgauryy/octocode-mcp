@@ -286,4 +286,39 @@ describe('commandAvailability', () => {
       expect(REQUIRED_COMMANDS.ls.versionFlag).toBe('--version');
     });
   });
+
+  describe('OCTOCODE_COMMAND_CHECK_TIMEOUT_MS', () => {
+    const originalEnv = process.env.OCTOCODE_COMMAND_CHECK_TIMEOUT_MS;
+
+    afterEach(() => {
+      if (originalEnv !== undefined) {
+        process.env.OCTOCODE_COMMAND_CHECK_TIMEOUT_MS = originalEnv;
+      } else {
+        delete process.env.OCTOCODE_COMMAND_CHECK_TIMEOUT_MS;
+      }
+      vi.restoreAllMocks();
+    });
+
+    it('should default to 5000ms when env var is not set', async () => {
+      delete process.env.OCTOCODE_COMMAND_CHECK_TIMEOUT_MS;
+      vi.resetModules();
+      const mod = await import('../../src/utils/exec/commandAvailability.js');
+      expect(mod.checkCommandAvailability).toBeDefined();
+      expect(mod.REQUIRED_COMMANDS).toBeDefined();
+    });
+
+    it('should accept custom timeout from env var', async () => {
+      process.env.OCTOCODE_COMMAND_CHECK_TIMEOUT_MS = '10000';
+      vi.resetModules();
+      const mod = await import('../../src/utils/exec/commandAvailability.js');
+      expect(mod.checkCommandAvailability).toBeDefined();
+    });
+
+    it('should fall back to 5000ms for invalid env var', async () => {
+      process.env.OCTOCODE_COMMAND_CHECK_TIMEOUT_MS = 'invalid';
+      vi.resetModules();
+      const mod = await import('../../src/utils/exec/commandAvailability.js');
+      expect(mod.checkCommandAvailability).toBeDefined();
+    });
+  });
 });

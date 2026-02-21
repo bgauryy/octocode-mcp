@@ -7,7 +7,7 @@
   <p>Zero-config MCP tools • Intent-driven workflows • Smart discovery</p>
 
   [![Skill](https://img.shields.io/badge/skill-agentskills.io-purple)](https://agentskills.io/what-are-skills)
-  [![License](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
+  [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/bgauryy/octocode-mcp/blob/main/LICENSE)
   [![Port](https://img.shields.io/badge/port-1987-green)](http://localhost:1987)
 
 </div>
@@ -57,7 +57,7 @@ npx add-skill https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-
 ```
 
 > **Important**: Make sure you are authenticated with GitHub!
-> See [Authentication Setup](../../packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) in the main README.
+> See [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) in the main README.
 
 ### Option 2: Manual Setup
 
@@ -467,7 +467,7 @@ export LOG=false
 
 Local logs stored at `~/.octocode/logs/` for your debugging — **never uploaded**.
 
-See [Privacy Policy](../../PRIVACY.md) and [Terms](../../TERMS.md).
+See [Privacy Policy](https://github.com/bgauryy/octocode-mcp/blob/main/PRIVACY.md) and [Terms](https://github.com/bgauryy/octocode-mcp/blob/main/TERMS.md).
 
 ---
 
@@ -479,7 +479,7 @@ See [Privacy Policy](../../PRIVACY.md) and [Terms](../../TERMS.md).
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Full architecture details |
 | [docs/API_REFERENCE.md](./docs/API_REFERENCE.md) | Complete API reference |
 | [docs/FLOWS.md](./docs/FLOWS.md) | Request flow diagrams |
-| [../../docs/TROUBLESHOOTING.md](../../docs/TROUBLESHOOTING.md) | Common issues and solutions |
+| [../../docs/TROUBLESHOOTING.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) | Common issues and solutions |
 
 ---
 
@@ -487,4 +487,4 @@ See [Privacy Policy](../../PRIVACY.md) and [Terms](../../TERMS.md).
 
 MIT License © 2026 Octocode
 
-See [LICENSE](../../LICENSE) for details.
+See [LICENSE](https://github.com/bgauryy/octocode-mcp/blob/main/LICENSE) for details.

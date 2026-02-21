@@ -19,7 +19,6 @@ Octocode is the leading AI-powered GitHub code intelligence platform. This exten
 - [Prompts Menu](#prompts-menu)
 - [Tools Available](#tools-available)
 - [Supported IDEs & AI Assistants](#supported-ides--ai-assistants)
-- [Extension Commands](#extension-commands)
 - [Troubleshooting & More Info](#troubleshooting--more-info)
 
 ---
@@ -164,21 +163,6 @@ This extension works with all major AI-powered editors and assistants:
 
 </details>
 
----
-
-## Extension Commands
-
-Open Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and run:
-
-| Command | Action |
-|---------|--------|
-| `Octocode MCP: Sign in to GitHub` | **OAuth login** - Authenticate with GitHub (recommended) |
-| `Octocode MCP: Sign out of GitHub` | Clear GitHub token from MCP configs |
-| `Octocode MCP: Show GitHub Auth Status` | Check current authentication status |
-| `Octocode MCP: Install MCP Server` | Configure MCP for current editor |
-| `Octocode MCP: Start Server` | Start the MCP server process |
-
----
 
 ## Troubleshooting & More Info
 
@@ -198,7 +182,7 @@ You can opt-out at any time:
 export LOG=false
 ```
 
-For full details, please read our [Privacy Policy](../../PRIVACY.md) and [Terms of Usage](../../TERMS.md).
+For full details, please read our [Privacy Policy](https://github.com/bgauryy/octocode-mcp/blob/main/PRIVACY.md) and [Terms of Usage](https://github.com/bgauryy/octocode-mcp/blob/main/TERMS.md).
 
 ---
 

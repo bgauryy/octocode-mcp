@@ -4,7 +4,7 @@
 
 AI agent guidance for the `octocode-mcp` package - Model Context Protocol server for GitHub and local code research.
 
-This file **overrides** the root [`AGENTS.md`](../../AGENTS.md) for work within this package.
+This file **overrides** the root [`AGENTS.md`](https://github.com/bgauryy/octocode-mcp/blob/main/AGENTS.md) for work within this package.
 
 ---
 

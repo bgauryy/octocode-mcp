@@ -4,7 +4,7 @@
 
 AI agent guidance for the `octocode-shared` package - Shared utilities for credential management, session persistence, and platform detection across Octocode packages.
 
-This file **overrides** the root [`AGENTS.md`](../../AGENTS.md) for work within this package.
+This file **overrides** the root [`AGENTS.md`](https://github.com/bgauryy/octocode-mcp/blob/main/AGENTS.md) for work within this package.
 
 ---
 
@@ -80,7 +80,6 @@ src/
 tests/
 ├── credentials/
 │   └── storage.test.ts           # Credential storage tests
-│   └── storage.test.ts         # Credential storage tests
 ├── platform/
 │   └── platform.test.ts        # Platform detection tests
 └── session/

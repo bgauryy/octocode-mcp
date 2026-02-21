@@ -149,6 +149,23 @@ describe('config/resolver', () => {
         expect(resolveConfigSync().local.enabled).toBe(false);
       });
 
+      it('parses ENABLE_CLONE as boolean', () => {
+        process.env.ENABLE_CLONE = 'true';
+        expect(resolveConfigSync().local.enableClone).toBe(true);
+
+        _resetConfigCache();
+        process.env.ENABLE_CLONE = '1';
+        expect(resolveConfigSync().local.enableClone).toBe(true);
+
+        _resetConfigCache();
+        process.env.ENABLE_CLONE = 'false';
+        expect(resolveConfigSync().local.enableClone).toBe(false);
+
+        _resetConfigCache();
+        process.env.ENABLE_CLONE = '0';
+        expect(resolveConfigSync().local.enableClone).toBe(false);
+      });
+
       it('parses TOOLS_TO_RUN as string array', () => {
         process.env.TOOLS_TO_RUN = 'githubSearchCode,packageSearch';
         const config = resolveConfigSync();
@@ -428,6 +445,36 @@ describe('config/resolver', () => {
 
         const config = resolveConfigSync();
         expect(config.local.enabled).toBe(DEFAULT_CONFIG.local.enabled);
+      });
+    });
+
+    describe('local.enableClone', () => {
+      it('env overrides file', () => {
+        vi.mocked(existsSync).mockReturnValue(true);
+        vi.mocked(readFileSync).mockReturnValue(
+          JSON.stringify({ local: { enableClone: true } })
+        );
+        process.env.ENABLE_CLONE = 'false';
+
+        const config = resolveConfigSync();
+        expect(config.local.enableClone).toBe(false);
+      });
+
+      it('file overrides default', () => {
+        vi.mocked(existsSync).mockReturnValue(true);
+        vi.mocked(readFileSync).mockReturnValue(
+          JSON.stringify({ local: { enableClone: true } })
+        );
+
+        const config = resolveConfigSync();
+        expect(config.local.enableClone).toBe(true);
+      });
+
+      it('falls back to default when neither env nor file', () => {
+        vi.mocked(existsSync).mockReturnValue(false);
+
+        const config = resolveConfigSync();
+        expect(config.local.enableClone).toBe(DEFAULT_CONFIG.local.enableClone);
       });
     });
 

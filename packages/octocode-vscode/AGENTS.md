@@ -4,7 +4,7 @@
 
 AI agent guidance for the `octocode-vscode` package - VS Code extension for Octocode MCP server management and GitHub authentication.
 
-This file **overrides** the root [`AGENTS.md`](../../AGENTS.md) for work within this package.
+This file **overrides** the root [`AGENTS.md`](https://github.com/bgauryy/octocode-mcp/blob/main/AGENTS.md) for work within this package.
 
 ---
 
@@ -27,7 +27,7 @@ Octocode VS Code Extension is the management hub for Octocode MCP:
 |----------|-------------|
 | [`docs/README.md`](./docs/README.md) | VS Code package docs index and quick reference |
 | [`README.md`](./README.md) | Extension overview, installation, and usage |
-| [`../octocode-mcp/docs/AUTHENTICATION_SETUP.md`](../octocode-mcp/docs/AUTHENTICATION_SETUP.md) | Shared authentication setup details |
+| [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) | Shared authentication setup details |
 
 ---
 

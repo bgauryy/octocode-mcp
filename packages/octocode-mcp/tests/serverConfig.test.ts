@@ -1236,11 +1236,41 @@ describe('ServerConfig - Simplified Version', () => {
     });
 
     it('should always return GitLabConfig (not null)', () => {
-      // Even without token, should return config object (not null)
       const config = getGitLabConfig();
       expect(config).not.toBeNull();
       expect(config.host).toBe('https://gitlab.com');
       expect(config.isConfigured).toBe(false);
+    });
+
+    it('should prioritize GITLAB_TOKEN over GL_TOKEN when both are set', () => {
+      process.env.GITLAB_TOKEN = 'gitlab-primary-token';
+      process.env.GL_TOKEN = 'gl-fallback-token';
+
+      const config = getGitLabConfig();
+      expect(config.token).toBe('gitlab-primary-token');
+      expect(config.isConfigured).toBe(true);
+    });
+
+    it('should fall back to GL_TOKEN when GITLAB_TOKEN is not set', () => {
+      delete process.env.GITLAB_TOKEN;
+      process.env.GL_TOKEN = 'gl-fallback-token';
+
+      const config = getGitLabConfig();
+      expect(config.token).toBe('gl-fallback-token');
+      expect(config.isConfigured).toBe(true);
+    });
+
+    it('should use GITLAB_TOKEN even when GL_TOKEN changes', () => {
+      process.env.GITLAB_TOKEN = 'gitlab-primary-token';
+      process.env.GL_TOKEN = 'gl-fallback-token';
+
+      const config1 = getGitLabConfig();
+      expect(config1.token).toBe('gitlab-primary-token');
+
+      process.env.GL_TOKEN = 'gl-changed-token';
+
+      const config2 = getGitLabConfig();
+      expect(config2.token).toBe('gitlab-primary-token');
     });
   });
 

@@ -552,12 +552,12 @@ curl -X POST http://localhost:1987/tools/call/localSearchCode \
 
 | Document | Purpose |
 |----------|---------|
-| [SKILL.md](../SKILL.md) | Agent workflow guide |
-| [AGENTS.md](../AGENTS.md) | Development guidelines |
+| [SKILL.md](https://github.com/bgauryy/octocode-mcp/blob/main/skills/octocode-research/SKILL.md) | Agent workflow guide |
+| [AGENTS.md](https://github.com/bgauryy/octocode-mcp/blob/main/skills/octocode-research/AGENTS.md) | Development guidelines |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Full architecture details |
 | [FLOWS.md](./FLOWS.md) | Request flow diagrams |
 | [API_REFERENCE.md](./API_REFERENCE.md) | HTTP API reference |
-| [GUARDRAILS.md](../references/GUARDRAILS.md) | Safety rules |
+| [GUARDRAILS.md](https://github.com/bgauryy/octocode-mcp/blob/main/skills/octocode-research/references/GUARDRAILS.md) | Safety rules |
 
 ---
 

@@ -39,7 +39,7 @@ export interface GitLabConfigOptions {
  * Local filesystem tools configuration
  */
 export interface LocalConfigOptions {
-  /** Enable local filesystem tools (default: true) */
+  /** Enable local filesystem tools (default: false) */
   enabled?: boolean;
   /** Enable clone/fetch repository functionality (default: false, requires enabled=true) */
   enableClone?: boolean;

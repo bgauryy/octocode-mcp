@@ -160,78 +160,11 @@ Or use an absolute path:
 
 ## 3. Authentication Issues
 
-> **Full authentication guide:** [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
+For detailed authentication setup and troubleshooting, see the [Authentication Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md).
 
-### Quick Auth Check
-
-```bash
-# Using Octocode CLI (recommended)
-npx octocode-cli
-# Select "Check GitHub Auth Status"
-
-# Or check GitHub CLI directly
-gh auth status
-```
-
-### Common Issues
-
-#### "No GitHub token found"
-
-1. **Run the CLI:**
-   ```bash
-   npx octocode-cli
-   # Select "Login to GitHub"
-   ```
-
-2. **Or use GitHub CLI:**
-   ```bash
-   gh auth login
-   ```
-
-3. **Check environment variable:**
-   ```bash
-   echo $GITHUB_TOKEN
-   ```
-
-#### "Token expired"
-
-```bash
-# Refresh via Octocode CLI
-npx octocode-cli
-# Select "Login to GitHub"
-
-# Or refresh via GitHub CLI
-gh auth refresh
-```
-
-#### "Bad credentials" or "401 Unauthorized"
-
-1. **Verify token is valid:**
-   ```bash
-   curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user
-   ```
-
-2. **Check token scopes:**
-   - Token needs: `repo`, `read:user`, `read:org`
-   - Create new token at: https://github.com/settings/tokens
-
-#### GitLab Authentication
-
-```bash
-# Check GitLab token
-echo $GITLAB_TOKEN
-
-# Test GitLab connection
-curl --header "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.com/api/v4/user"
-```
-
-For self-hosted GitLab, also set:
-```bash
-export GITLAB_HOST="https://gitlab.your-company.com"
-```
-
----
-
+**Quick tips not covered there:**
+- **401/bad credentials:** Verify token: `curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user`. Ensure scopes include `repo`, `read:user`, `read:org`.
+- **GitLab:** Test connection: `curl --header "PRIVATE-TOKEN: $GITLAB_TOKEN" https://gitlab.com/api/v4/user`
 ## 4. MCP Server Connection Issues
 
 ### Server Not Starting

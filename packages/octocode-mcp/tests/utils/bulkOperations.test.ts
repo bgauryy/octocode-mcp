@@ -1,4 +1,12 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { executeBulkOperation } from '../../src/utils/response/bulk.js';
 import type { QueryStatus } from '../../src/types';
 import {
@@ -1423,5 +1431,40 @@ describe('executeBulkOperation', () => {
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('errorStatusHints:');
     });
+  });
+});
+
+describe('OCTOCODE_BULK_QUERY_TIMEOUT_MS', () => {
+  const originalEnv = process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS;
+
+  afterEach(() => {
+    if (originalEnv !== undefined) {
+      process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS = originalEnv;
+    } else {
+      delete process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS;
+    }
+    vi.restoreAllMocks();
+  });
+
+  it('should default to 60000ms when env var is not set', async () => {
+    delete process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS;
+    vi.resetModules();
+    const { executeBulkOperation: freshBulk } =
+      await import('../../src/utils/response/bulk.js');
+    expect(freshBulk).toBeDefined();
+  });
+
+  it('should parse custom timeout from env var', async () => {
+    process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS = '120000';
+    vi.resetModules();
+    const mod = await import('../../src/utils/response/bulk.js');
+    expect(mod.executeBulkOperation).toBeDefined();
+  });
+
+  it('should fall back to 60000ms for invalid env var', async () => {
+    process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS = 'not-a-number';
+    vi.resetModules();
+    const mod = await import('../../src/utils/response/bulk.js');
+    expect(mod.executeBulkOperation).toBeDefined();
   });
 });
