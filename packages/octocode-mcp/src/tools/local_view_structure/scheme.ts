@@ -96,6 +96,7 @@ export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
 
   depth: z
     .number()
+    .int()
     .min(1)
     .max(5)
     .optional()
@@ -107,6 +108,7 @@ export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
 
   limit: z
     .number()
+    .int()
     .min(1)
     .max(10000)
     .optional()
@@ -118,12 +120,14 @@ export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
 
   charOffset: z
     .number()
+    .int()
     .min(0)
     .optional()
     .describe(LOCAL_VIEW_STRUCTURE.pagination.charOffset),
 
   charLength: z
     .number()
+    .int()
     .min(1)
     .max(10000)
     .optional()

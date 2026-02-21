@@ -149,33 +149,34 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .describe(GITHUB_SEARCH_PULL_REQUESTS.sorting.order),
   limit: z
     .number()
+    .int()
     .min(1)
     .max(10)
-    .default(5)
     .optional()
+    .default(5)
     .describe(GITHUB_SEARCH_PULL_REQUESTS.resultLimit.limit),
   page: z
     .number()
     .int()
     .min(1)
     .max(10)
-    .default(1)
     .optional()
+    .default(1)
     .describe(GITHUB_SEARCH_PULL_REQUESTS.pagination.page),
   withComments: z
     .boolean()
-    .default(false)
     .optional()
+    .default(false)
     .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.withComments),
   withCommits: z
     .boolean()
-    .default(false)
     .optional()
+    .default(false)
     .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.withCommits),
   type: z
     .enum(['metadata', 'fullContent', 'partialContent'])
-    .default('metadata')
     .optional()
+    .default('metadata')
     .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.type),
   partialContentMetadata: z
     .array(

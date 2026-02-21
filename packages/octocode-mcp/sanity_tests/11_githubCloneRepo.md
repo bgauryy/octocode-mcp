@@ -1,6 +1,4 @@
-# Eval Test: `githubCloneRepo`
-
-> **Rating: 9/10** | Category: GitHub | Last tested: Feb 17, 2026
+# Sanity Test: `githubCloneRepo`
 
 ---
 
@@ -129,30 +127,7 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 
 ---
 
-### TC-5: Cache Behavior (Repeat Clone)
-
-**Goal:** Verify cached clone returns immediately on second call.
-
-```json
-{
-  "mainResearchGoal": "Test cache behavior",
-  "researchGoal": "Verify cache hit on repeat clone",
-  "reasoning": "Second clone should use cache within 24h window",
-  "owner": "bgauryy",
-  "repo": "octocode-mcp"
-}
-```
-
-**Expected:**
-- [ ] `cached: true` on second call (within 24h)
-- [ ] Same `localPath` as first clone
-- [ ] Much faster response time
-- [ ] `expiresAt` shows remaining TTL
-- [ ] `.octocode-clone-meta.json` exists with `clonedAt`, `expiresAt`, `owner`, `repo`, `branch`, `source: "clone"`
-
----
-
-### TC-6: Sparse Clone with Branch
+### TC-5: Sparse Clone with Branch
 
 **Goal:** Verify sparse checkout works with explicit branch.
 
@@ -172,10 +147,18 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 - [ ] Only `packages/react` tree from `main` branch
 - [ ] Cache path includes branch + sparse hash
 - [ ] `localPath` usable by local tools
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with `localPath`, `expiresAt`, `cached`
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest using localPath with local tools
+- [ ] **Hints Validation:**
+  - [ ] Hints suggest localSearchCode, localViewStructure, LSP on localPath
 
 ---
 
-### TC-7: Different Sparse Paths Same Repo
+### TC-6: Different Sparse Paths Same Repo
 
 **Goal:** Verify different sparse paths create separate cache entries.
 
@@ -204,10 +187,18 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 - [ ] Two separate cache directories (`__sp_{hash1}` vs `__sp_{hash2}`)
 - [ ] Each `localPath` contains only its sparse subtree
 - [ ] Both return independently valid results
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with `localPath` per query
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest using localPath with local tools
+- [ ] **Hints Validation:**
+  - [ ] Hints suggest local tools on each localPath
 
 ---
 
-### TC-8: Local Tools Integration
+### TC-7: Local Tools Integration
 
 **Goal:** Verify cloned path works with all local tools.
 
@@ -231,10 +222,18 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 - [ ] All four local tools work on the cloned path
 - [ ] File content matches GitHub version
 - [ ] Structure shows expected directories
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with `localPath`
+  - [ ] Status-specific hints present (local tools integration)
+  - [ ] Hints suggest localViewStructure, localSearchCode, localGetFileContent, localFindFiles on localPath
+- [ ] **Hints Validation:**
+  - [ ] Hints suggest using local tools on localPath (GOLDEN for clone workflow)
 
 ---
 
-### TC-9: Clone → LSP Workflow
+### TC-8: Clone → LSP Workflow
 
 **Goal:** Verify full research funnel works on cloned repo.
 
@@ -258,10 +257,18 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 - [ ] LSP resolves definitions from cloned code
 - [ ] References found across cloned files
 - [ ] Call hierarchy traces function relationships
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with `localPath`
+  - [ ] Status-specific hints present (LSP workflow)
+  - [ ] Hints suggest localSearchCode → lspGotoDefinition → lspFindReferences → lspCallHierarchy on localPath
+- [ ] **Hints Validation:**
+  - [ ] Hints suggest full LSP workflow on cloned path
 
 ---
 
-### TC-10: Security — Path Traversal
+### TC-9: Security — Path Traversal
 
 **Goal:** Verify path traversal attempts are rejected.
 
@@ -285,10 +292,17 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 **Expected:**
 - [ ] All path traversal variants rejected at schema level
 - [ ] Error messages do not expose internal paths
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] Status-specific hints present (validation error hints)
+  - [ ] Hints suggest valid owner/repo/sparse_path format
+- [ ] **Hints Validation:**
+  - [ ] Hints suggest valid path format, no `..` or leading `/`
 
 ---
 
-### TC-11: Security — Flag Injection
+### TC-10: Security — Flag Injection
 
 **Goal:** Verify git flag injection attempts are rejected.
 
@@ -302,10 +316,17 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 - [ ] Leading dash rejected in branch and sparse_path
 - [ ] Backslash rejected in owner/repo
 - [ ] Token NOT present in error messages
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] Status-specific hints present (validation error hints)
+  - [ ] Hints suggest valid format (no leading `-`, no backslash)
+- [ ] **Hints Validation:**
+  - [ ] Hints suggest valid branch/sparse_path format
 
 ---
 
-### TC-12: Failure — Non-Existent Targets
+### TC-11: Failure — Non-Existent Targets
 
 **Goal:** Verify graceful errors for invalid repos/branches.
 
@@ -319,10 +340,17 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 - [ ] Clear error messages (not stack traces)
 - [ ] Token NOT exposed in error output
 - [ ] Errors isolated per query in bulk calls
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] Status-specific hints present (error hints)
+  - [ ] Hints suggest repo/branch/sparse_path verification
+- [ ] **Hints Validation:**
+  - [ ] Hints suggest verifying repo exists, branch name, sparse_path
 
 ---
 
-### TC-13: Failure — Missing Prerequisites
+### TC-12: Failure — Missing Prerequisites
 
 **Goal:** Verify errors when prerequisites are not met.
 
@@ -336,10 +364,15 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 **Expected:**
 - [ ] Clear, actionable error messages
 - [ ] Tool does not appear in tool list when disabled
+- [ ] **Response Validation:**
+  - [ ] When tool unavailable: clear error or tool not in list
+  - [ ] Hints suggest ENABLE_LOCAL, ENABLE_CLONE, git on PATH
+- [ ] **Hints Validation:**
+  - [ ] Hints suggest enabling prerequisites when applicable
 
 ---
 
-### TC-14: Failure — Schema Validation
+### TC-13: Failure — Schema Validation
 
 **Goal:** Verify schema rejects invalid inputs.
 
@@ -357,7 +390,7 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 
 ---
 
-### TC-15: Bulk Queries
+### TC-14: Bulk Queries
 
 **Goal:** Verify multiple clones in a single call.
 
@@ -396,7 +429,7 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 
 ---
 
-### TC-16: Edge Cases
+### TC-15: Edge Cases
 
 **Goal:** Verify handling of unusual but valid inputs.
 
@@ -411,10 +444,18 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 **Expected:**
 - [ ] All valid edge cases accepted and clone succeeds
 - [ ] Identifiers with special chars handled correctly
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with `localPath`
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest using localPath with local tools
+- [ ] **Hints Validation:**
+  - [ ] Hints suggest local tools on localPath
 
 ---
 
-### TC-17: Bulk Queries with Mixed Results (Error Isolation)
+### TC-16: Bulk Queries with Mixed Results (Error Isolation)
 
 **Goal:** Verify error isolation in bulk queries — valid and invalid mixed.
 
@@ -453,10 +494,18 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 - [ ] Third query returns clone error (branch not found)
 - [ ] Token NOT exposed in any error messages
 - [ ] Each result isolated — first success not affected by later failures
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with `localPath` for first query
+  - [ ] Status-specific hints present (success + error hints)
+  - [ ] Hints suggest local tools for success; recovery for errors
+- [ ] **Hints Validation:**
+  - [ ] Success hints for first; error recovery hints for second and third
 
 ---
 
-### TC-18: Owner/Repo Max Length (Boundary)
+### TC-17: Owner/Repo Max Length (Boundary)
 
 **Goal:** Verify schema handles owner and repo at max allowed length.
 
@@ -471,10 +520,17 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 - [ ] Values at max length accepted
 - [ ] Values over max length rejected with validation error
 - [ ] No crash on boundary values
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest valid owner (max 200), repo (max 150) when validation fails
+- [ ] **Hints Validation:**
+  - [ ] Hints suggest length limits when validation fails
 
 ---
 
-### TC-19: Branch With Special Characters
+### TC-18: Branch With Special Characters
 
 **Goal:** Verify branch names with slashes and dots work correctly.
 
@@ -493,10 +549,18 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 - [ ] Clone succeeds with hyphenated branch name
 - [ ] Cache path includes branch name
 - [ ] `localPath` usable by local tools
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with `localPath`, `expiresAt`, `cached`
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest using localPath with local tools
+- [ ] **Hints Validation:**
+  - [ ] Hints suggest local tools on localPath
 
 ---
 
-### TC-20: Sparse Path to Single File Area
+### TC-19: Sparse Path to Single File Area
 
 **Goal:** Verify `sparse_path` targeting a very specific/small directory.
 
@@ -516,6 +580,14 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 - [ ] Very fast clone (small scope)
 - [ ] `localPath` contains docs files
 - [ ] Other directories NOT present
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with `localPath`, `expiresAt`, `cached`
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest using localPath with local tools
+- [ ] **Hints Validation:**
+  - [ ] Hints suggest local tools on localPath
 
 ---
 
@@ -523,35 +595,41 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 
 | Score | Criteria |
 |:-----:|:---------|
-| 10 | All TC-1 through TC-20 pass. Full/sparse/cache/security/integration all work. |
-| 9 | 18-19 pass; minor issue (e.g. default branch fallback) |
-| 8 | 16-17 pass; sparse clone works but cache edge cases fail |
-| 7 | 14-15 pass; full clone works but sparse or LSP issues |
+| 10 | All TC-1 through TC-19 pass. Full/sparse/cache/security/integration all work. |
+| 9 | 17-18 pass; minor issue (e.g. default branch fallback) |
+| 8 | 15-16 pass; sparse clone works but cache edge cases fail |
+| 7 | 13-14 pass; full clone works but sparse or LSP issues |
 | ≤6 | Core cloning fails, cache broken, security validation missing |
 
 ---
 
 ## Validation Checklist
 
-| # | Test Case | Status |
-|---|-----------|--------|
-| 1 | Full clone | |
-| 2 | Sparse checkout | |
-| 3 | Explicit branch | |
-| 4 | Default branch detection | |
-| 5 | Cache behavior | |
-| 6 | Sparse clone with branch | |
-| 7 | Different sparse paths | |
-| 8 | Local tools integration | |
-| 9 | Clone → LSP workflow | |
-| 10 | Security — path traversal | |
-| 11 | Security — flag injection | |
-| 12 | Failure — non-existent targets | |
-| 13 | Failure — missing prerequisites | |
-| 14 | Failure — schema validation | |
-| 15 | Bulk queries | |
-| 16 | Edge cases | |
-| 17 | Bulk queries with mixed results (error isolation) | |
-| 18 | Owner/repo max length (boundary) | |
-| 19 | Branch with special characters | |
-| 20 | Sparse path to single file area | |
+### Core Requirements
+- [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning`
+- [ ] **Response validation** — every Expected section includes explicit response checking
+- [ ] **Hints validation** — every test case checks for hints (localPath usage, local tools)
+
+### Test Cases Status
+
+| # | Test Case | Queries | Hints | Response Validation | localPath | Status |
+|---|-----------|---------|-------|---------------------|-----------|--------|
+| 1 | Full clone | ✅ | ✅ | ✅ | ✅ | |
+| 2 | Sparse checkout | ✅ | ✅ | ✅ | ✅ | |
+| 3 | Explicit branch | ✅ | ✅ | ✅ | ✅ | |
+| 4 | Default branch detection | ✅ | ✅ | ✅ | ✅ | |
+| 5 | Sparse clone with branch | ✅ | ✅ | ✅ | ✅ | |
+| 6 | Different sparse paths | ✅ | ✅ | ✅ | ✅ | |
+| 7 | Local tools integration | ✅ | ✅ | ✅ | ✅ | |
+| 8 | Clone → LSP workflow | ✅ | ✅ | ✅ | ✅ | |
+| 9 | Security — path traversal | ✅ | ✅ | ✅ | - | |
+| 10 | Security — flag injection | ✅ | ✅ | ✅ | - | |
+| 11 | Failure — non-existent targets | ✅ | ✅ | ✅ | - | |
+| 12 | Failure — missing prerequisites | ✅ | ✅ | ✅ | - | |
+| 13 | Failure — schema validation | ✅ | ✅ | ✅ | - | |
+| 14 | Bulk queries | ✅ | ✅ | ✅ | ✅ | |
+| 15 | Edge cases | ✅ | ✅ | ✅ | ✅ | |
+| 16 | Bulk queries with mixed results (error isolation) | ✅ | ✅ | ✅ | ✅ | |
+| 17 | Owner/repo max length (boundary) | ✅ | ✅ | ✅ | - | |
+| 18 | Branch with special characters | ✅ | ✅ | ✅ | ✅ | |
+| 19 | Sparse path to single file area | ✅ | ✅ | ✅ | ✅ | |

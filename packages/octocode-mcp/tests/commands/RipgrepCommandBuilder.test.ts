@@ -153,6 +153,23 @@ describe('RipgrepCommandBuilder', () => {
       expect(args).toContain('!*.spec.*');
     });
 
+    it('should use fixedString when pattern has regex special chars (e.g. describe()', () => {
+      // describe( has ( which is regex special - unclosed group without fixedString
+      const query = createQuery({
+        pattern: 'describe(',
+        path: './src',
+        exclude: ['*.test.ts'],
+        fixedString: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('-F');
+      expect(args).toContain('-g');
+      expect(args).toContain('!*.test.ts');
+      expect(args).toContain('describe(');
+    });
+
     it('should handle excludeDir', () => {
       const query = createQuery({
         pattern: 'import',

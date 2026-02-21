@@ -541,6 +541,28 @@ describe('localFindFiles', () => {
       );
     });
 
+    it('should handle path not found (within workspace)', async () => {
+      mockValidate.mockReturnValue({
+        isValid: true,
+        sanitizedPath: '/workspace/nonexistent_path_xyz_123',
+      });
+      mockSafeExec.mockResolvedValue({
+        success: false,
+        code: 1,
+        stdout: '',
+        stderr:
+          '/workspace/nonexistent_path_xyz_123: No such file or directory',
+      });
+
+      const result = await findFiles({
+        path: '/workspace/nonexistent_path_xyz_123',
+        name: '*.ts',
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.error).toContain('No such file or directory');
+    });
+
     it('should handle general exceptions gracefully', async () => {
       mockSafeExec.mockRejectedValue(new Error('Unexpected error'));
 

@@ -17,10 +17,10 @@ const FileContentBaseSchema = BaseQuerySchema.extend({
     .describe(GITHUB_FETCH_CONTENT.scope.branch),
   type: z
     .enum(['file', 'directory'])
-    .default('file')
     .optional()
+    .default('file')
     .describe(
-      'Choose ONE: "file" (default) returns content inline; "directory" saves all files to disk and returns localPath. Directory mode requires ENABLE_LOCAL=true and ENABLE_CLONE=true.'
+      'Choose ONE: "file" (default) returns content inline; "directory" saves all files to disk and returns localPath. Directory mode requires ENABLE_LOCAL=true and ENABLE_CLONE=true, and is only available with the GitHub provider (not GitLab).'
     ),
   fullContent: z
     .boolean()
@@ -40,6 +40,7 @@ const FileContentBaseSchema = BaseQuerySchema.extend({
     .describe(GITHUB_FETCH_CONTENT.range.endLine),
   matchString: z
     .string()
+    .max(2000)
     .optional()
     .describe(GITHUB_FETCH_CONTENT.range.matchString),
   matchStringContextLines: z

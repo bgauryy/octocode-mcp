@@ -32,16 +32,16 @@ export const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
     .int()
     .min(1)
     .max(100)
-    .default(10)
     .optional()
+    .default(10)
     .describe(GITHUB_SEARCH_REPOS.resultLimit.limit),
   page: z
     .number()
     .int()
     .min(1)
     .max(10)
-    .default(1)
     .optional()
+    .default(1)
     .describe(GITHUB_SEARCH_REPOS.pagination.page),
 }).refine(
   data =>

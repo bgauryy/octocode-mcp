@@ -270,7 +270,22 @@ describe('File Pattern Filtering - Unit Tests', () => {
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
   stat: vi.fn(),
+  access: vi.fn(),
 }));
+
+vi.mock('../../src/security/pathValidator.js', () => ({
+  pathValidator: {
+    validate: vi.fn().mockReturnValue({ isValid: true }),
+  },
+}));
+
+vi.mock('../../src/lsp/validation.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/lsp/validation.js')>();
+  return {
+    ...mod,
+    safeReadFile: vi.fn(),
+  };
+});
 
 vi.mock('../../src/lsp/index.js', () => ({
   createClient: vi.fn(),
@@ -287,6 +302,7 @@ vi.mock('../../src/lsp/index.js', () => ({
 
 import * as fs from 'fs/promises';
 import * as lspModule from '../../src/lsp/index.js';
+import { safeReadFile } from '../../src/lsp/validation.js';
 import { findReferencesWithLSP } from '../../src/tools/lsp_find_references/lspReferencesCore.js';
 
 describe('LSP Find References - Filtering and Lazy Enhancement', () => {
@@ -313,9 +329,9 @@ describe('LSP Find References - Filtering and Lazy Enhancement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(lspModule.createClient).mockResolvedValue(mockClient as any);
-    vi.mocked(fs.readFile).mockResolvedValue(
-      'line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10'
-    );
+    const defaultContent = 'line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10';
+    vi.mocked(fs.readFile).mockResolvedValue(defaultContent);
+    vi.mocked(safeReadFile).mockResolvedValue(defaultContent);
   });
 
   afterEach(() => {
@@ -494,7 +510,7 @@ describe('LSP Find References - Filtering and Lazy Enhancement', () => {
     mockClient.findReferences.mockResolvedValue(refs);
 
     let readCount = 0;
-    vi.mocked(fs.readFile).mockImplementation(async () => {
+    vi.mocked(safeReadFile).mockImplementation(async () => {
       readCount++;
       return 'line1\nline2\nline3\nline4\nline5';
     });

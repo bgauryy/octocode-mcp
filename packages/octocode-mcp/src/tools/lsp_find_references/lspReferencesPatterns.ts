@@ -7,8 +7,9 @@
  * @module tools/lsp_find_references/lspReferencesPatterns
  */
 
-import { readFile, access } from 'fs/promises';
+import { access } from 'fs/promises';
 import * as path from 'path';
+import { safeReadFile } from '../../lsp/validation.js';
 
 import type {
   FindReferencesResult,
@@ -139,7 +140,8 @@ async function enhancePatternReference(
 
   if (contextLines > 0) {
     try {
-      const fileContent = await readFile(raw.absolutePath, 'utf-8');
+      const fileContent = await safeReadFile(raw.absolutePath);
+      if (!fileContent) throw new Error('Cannot read file');
       const fileLines = fileContent.split('\n');
       const startLine = Math.max(0, raw.lineNumber - 1 - contextLines);
       const endLine = Math.min(fileLines.length, raw.lineNumber + contextLines);

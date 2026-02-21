@@ -1,6 +1,4 @@
-# Eval Test: `githubGetFileContent` (directory mode)
-
-> **Rating: 9/10** | Category: GitHub | Last tested: Feb 17, 2026
+# Sanity Test: `githubGetFileContent` (directory mode)
 
 ---
 
@@ -49,13 +47,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ```json
 {
-  "mainResearchGoal": "Fetch docs for local analysis",
-  "researchGoal": "Directory fetch to disk",
-  "reasoning": "Directory mode saves files for local tool usage",
-  "owner": "bgauryy",
-  "repo": "octocode-mcp",
-  "path": "docs",
-  "type": "directory"
+  "queries": [{
+    "mainResearchGoal": "Fetch docs for local analysis",
+    "researchGoal": "Directory fetch to disk",
+    "reasoning": "Directory mode saves files for local tool usage",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "docs",
+    "type": "directory"
+  }]
 }
 ```
 
@@ -66,6 +66,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 - [ ] `totalSize` matches sum of file sizes
 - [ ] Files exist on disk at `localPath`
 - [ ] Helpful hints for using local tools
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -75,14 +81,16 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ```json
 {
-  "mainResearchGoal": "Fetch from specific branch",
-  "researchGoal": "Branch-specific directory fetch",
-  "reasoning": "Branch parameter should select correct branch",
-  "owner": "bgauryy",
-  "repo": "octocode-mcp",
-  "path": "docs",
-  "branch": "main",
-  "type": "directory"
+  "queries": [{
+    "mainResearchGoal": "Fetch from specific branch",
+    "researchGoal": "Branch-specific directory fetch",
+    "reasoning": "Branch parameter should select correct branch",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "docs",
+    "branch": "main",
+    "type": "directory"
+  }]
 }
 ```
 
@@ -90,6 +98,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 - [ ] `branch: "main"` in result
 - [ ] Content matches `main` branch on GitHub
 - [ ] `localPath` usable by local tools
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -99,13 +113,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ```json
 {
-  "mainResearchGoal": "Fetch nested config directory",
-  "researchGoal": "Deep path directory fetch",
-  "reasoning": "Nested paths should resolve correctly",
-  "owner": "bgauryy",
-  "repo": "octocode-mcp",
-  "path": "packages/octocode-shared/src/config",
-  "type": "directory"
+  "queries": [{
+    "mainResearchGoal": "Fetch nested config directory",
+    "researchGoal": "Deep path directory fetch",
+    "reasoning": "Nested paths should resolve correctly",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "packages/octocode-shared/src/config",
+    "type": "directory"
+  }]
 }
 ```
 
@@ -113,6 +129,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 - [ ] Returns config directory files (e.g. `defaults.ts`, `types.ts`)
 - [ ] `directoryPath` matches queried path
 - [ ] Files readable via `localGetFileContent`
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -122,13 +144,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ```json
 {
-  "mainResearchGoal": "Test directory cache",
-  "researchGoal": "Verify cache hit on repeat fetch",
-  "reasoning": "Second fetch should use cache within 24h window",
-  "owner": "bgauryy",
-  "repo": "octocode-mcp",
-  "path": "docs",
-  "type": "directory"
+  "queries": [{
+    "mainResearchGoal": "Test directory cache",
+    "researchGoal": "Verify cache hit on repeat fetch",
+    "reasoning": "Second fetch should use cache within 24h window",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "docs",
+    "type": "directory"
+  }]
 }
 ```
 
@@ -138,6 +162,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 - [ ] `expiresAt` valid ISO-8601, ~24h ahead
 - [ ] `.octocode-clone-meta.json` exists with `source: "directoryFetch"`
 - [ ] Second call much faster
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -147,13 +177,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ```json
 {
-  "mainResearchGoal": "Test binary file filtering",
-  "researchGoal": "Verify binary exclusion",
-  "reasoning": "Binary files should not be fetched",
-  "owner": "facebook",
-  "repo": "react",
-  "path": "packages/react",
-  "type": "directory"
+  "queries": [{
+    "mainResearchGoal": "Test binary file filtering",
+    "researchGoal": "Verify binary exclusion",
+    "reasoning": "Binary files should not be fetched",
+    "owner": "facebook",
+    "repo": "react",
+    "path": "packages/react",
+    "type": "directory"
+  }]
 }
 ```
 
@@ -162,6 +194,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 - [ ] `.lock` files excluded
 - [ ] `.min.js` and `.min.css` files excluded
 - [ ] Normal text files (`.ts`, `.js`, `.json`, `.md`) included
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -178,13 +216,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ```json
 {
-  "mainResearchGoal": "Test file limits",
-  "researchGoal": "Verify limits on large directory",
-  "reasoning": "Limits prevent excessive fetching",
-  "owner": "vercel",
-  "repo": "next.js",
-  "path": "packages/next/src/server",
-  "type": "directory"
+  "queries": [{
+    "mainResearchGoal": "Test file limits",
+    "researchGoal": "Verify limits on large directory",
+    "reasoning": "Limits prevent excessive fetching",
+    "owner": "vercel",
+    "repo": "next.js",
+    "path": "packages/next/src/server",
+    "type": "directory"
+  }]
 }
 ```
 
@@ -213,6 +253,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 **Expected:**
 - [ ] All file-mode parameters rejected with clear messages
 - [ ] `fullContent=false` allowed (default value)
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -229,13 +275,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ```json
 {
-  "mainResearchGoal": "Test error handling",
-  "researchGoal": "File path as directory",
-  "reasoning": "Should reject file paths in directory mode",
-  "owner": "facebook",
-  "repo": "react",
-  "path": "package.json",
-  "type": "directory"
+  "queries": [{
+    "mainResearchGoal": "Test error handling",
+    "researchGoal": "File path as directory",
+    "reasoning": "Should reject file paths in directory mode",
+    "owner": "facebook",
+    "repo": "react",
+    "path": "package.json",
+    "type": "directory"
+  }]
 }
 ```
 
@@ -259,6 +307,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 **Expected:**
 - [ ] Clear, actionable error messages
 - [ ] File mode (`type="file"`) still works when clone is disabled
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -278,6 +332,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 **Expected:**
 - [ ] All valid edge cases handled without errors
 - [ ] Empty results returned as valid (not errors)
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -287,13 +347,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ```json
 {
-  "mainResearchGoal": "Verify local tools work on fetch",
-  "researchGoal": "Test local tools after directory fetch",
-  "reasoning": "Directory fetch value comes from local tool usage",
-  "owner": "bgauryy",
-  "repo": "octocode-mcp",
-  "path": "packages/octocode-shared/src/config",
-  "type": "directory"
+  "queries": [{
+    "mainResearchGoal": "Verify local tools work on fetch",
+    "researchGoal": "Test local tools after directory fetch",
+    "reasoning": "Directory fetch value comes from local tool usage",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "packages/octocode-shared/src/config",
+    "type": "directory"
+  }]
 }
 ```
 
@@ -323,6 +385,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 - [ ] Different cache directories
 - [ ] Both `localPath` values usable by local tools
 - [ ] File mode (`type="file"`) still returns inline content (no disk write)
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -367,6 +435,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 - [ ] Directory queries return `localPath` + file list
 - [ ] File query returns inline content (no disk write)
 - [ ] Mixed file + directory queries work in same call
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -376,13 +450,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ```json
 {
-  "mainResearchGoal": "Test root directory fetch",
-  "researchGoal": "Fetch repo root files",
-  "reasoning": "Root path edge case",
-  "owner": "bgauryy",
-  "repo": "octocode-mcp",
-  "path": "",
-  "type": "directory"
+  "queries": [{
+    "mainResearchGoal": "Test root directory fetch",
+    "researchGoal": "Fetch repo root files",
+    "reasoning": "Root path edge case",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "",
+    "type": "directory"
+  }]
 }
 ```
 
@@ -391,6 +467,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 - [ ] `fileCount > 0`
 - [ ] No subdirectory files (only immediate files)
 - [ ] No error with empty path
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -400,13 +482,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ```json
 {
-  "mainResearchGoal": "Test trailing slash",
-  "researchGoal": "Path with trailing slash",
-  "reasoning": "Users may include trailing slash",
-  "owner": "bgauryy",
-  "repo": "octocode-mcp",
-  "path": "docs/",
-  "type": "directory"
+  "queries": [{
+    "mainResearchGoal": "Test trailing slash",
+    "researchGoal": "Path with trailing slash",
+    "reasoning": "Users may include trailing slash",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "docs/",
+    "type": "directory"
+  }]
 }
 ```
 
@@ -414,6 +498,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 - [ ] Same results as `path: "docs"` without trailing slash
 - [ ] No error
 - [ ] `localPath` valid and usable
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -423,13 +513,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ```json
 {
-  "mainResearchGoal": "Test all-filtered scenario",
-  "researchGoal": "Directory where all files get filtered",
-  "reasoning": "Edge case: all files are binary or excluded types",
-  "owner": "facebook",
-  "repo": "react",
-  "path": "fixtures/art",
-  "type": "directory"
+  "queries": [{
+    "mainResearchGoal": "Test all-filtered scenario",
+    "researchGoal": "Directory where all files get filtered",
+    "reasoning": "Edge case: all files are binary or excluded types",
+    "owner": "facebook",
+    "repo": "react",
+    "path": "fixtures/art",
+    "type": "directory"
+  }]
 }
 ```
 
@@ -438,6 +530,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 - [ ] Or whatever files pass the filter
 - [ ] No error thrown for empty result
 - [ ] Valid response structure
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -447,13 +545,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ```json
 {
-  "mainResearchGoal": "Test dotfile inclusion",
-  "researchGoal": "Verify dotfiles fetched",
-  "reasoning": "Dotfiles should be included as text files",
-  "owner": "bgauryy",
-  "repo": "octocode-mcp",
-  "path": "",
-  "type": "directory"
+  "queries": [{
+    "mainResearchGoal": "Test dotfile inclusion",
+    "researchGoal": "Verify dotfiles fetched",
+    "reasoning": "Dotfiles should be included as text files",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "",
+    "type": "directory"
+  }]
 }
 ```
 
@@ -461,6 +561,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 - [ ] Dotfiles like `.gitignore`, `.eslintrc` included in files list
 - [ ] Dotfiles are text files and pass binary filter
 - [ ] Content readable via `localGetFileContent`
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -470,13 +576,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ```json
 {
-  "mainResearchGoal": "Test deep path",
-  "researchGoal": "Deeply nested directory fetch",
-  "reasoning": "Deep paths should resolve correctly",
-  "owner": "bgauryy",
-  "repo": "octocode-mcp",
-  "path": "packages/octocode-mcp/src/security/regexes",
-  "type": "directory"
+  "queries": [{
+    "mainResearchGoal": "Test deep path",
+    "researchGoal": "Deeply nested directory fetch",
+    "reasoning": "Deep paths should resolve correctly",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "packages/octocode-mcp/src/security/regexes",
+    "type": "directory"
+  }]
 }
 ```
 
@@ -485,6 +593,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 - [ ] Files like `index.ts`, `ai-providers.ts` visible
 - [ ] No path resolution errors
 - [ ] `localPath` valid and usable
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -494,13 +608,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ```json
 {
-  "mainResearchGoal": "Test auto branch detection",
-  "researchGoal": "Directory fetch without branch",
-  "reasoning": "Branch should be auto-detected via API",
-  "owner": "expressjs",
-  "repo": "express",
-  "path": "lib",
-  "type": "directory"
+  "queries": [{
+    "mainResearchGoal": "Test auto branch detection",
+    "researchGoal": "Directory fetch without branch",
+    "reasoning": "Branch should be auto-detected via API",
+    "owner": "expressjs",
+    "repo": "express",
+    "path": "lib",
+    "type": "directory"
+  }]
 }
 ```
 
@@ -509,6 +625,12 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 - [ ] Branch name included in response
 - [ ] `localPath` valid and contains lib/ files
 - [ ] No error about missing branch
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -526,24 +648,24 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ## Validation Checklist
 
-| # | Test Case | Status |
-|---|-----------|--------|
-| 1 | Fetch source directory | |
-| 2 | Fetch with explicit branch | |
-| 3 | Fetch nested directory | |
-| 4 | Cache behavior | |
-| 5 | Binary file filtering | |
-| 6 | File limits | |
-| 7 | Schema validation — rejected params | |
-| 8 | Failure — invalid targets | |
-| 9 | Failure — missing prerequisites | |
-| 10 | Edge cases | |
-| 11 | Local tools integration | |
-| 12 | Cross-tool — fetch vs clone | |
-| 13 | Bulk queries | |
-| 14 | Root directory fetch | |
-| 15 | Trailing slash in path | |
-| 16 | Directory with only filtered files | |
-| 17 | Dotfiles in directory | |
-| 18 | Very deep path | |
-| 19 | Default branch auto-detection | |
+| # | Test Case | Queries | Pagination | Hints | Core Requirements | Status |
+|---|-----------|---------|------------|-------|-------------------|--------|
+| 1 | Fetch source directory | ✓ | — | ✓ | ✓ | ✅ |
+| 2 | Fetch with explicit branch | ✓ | — | ✓ | ✓ | ✅ |
+| 3 | Fetch nested directory | ✓ | — | ✓ | ✓ | ✅ |
+| 4 | Cache behavior | ✓ | — | ✓ | ✓ | ✅ |
+| 5 | Binary file filtering | ✓ | — | ✓ | ✓ | ✅ |
+| 6 | File limits | ✓ | — | ✓ | ✓ | ✅ |
+| 7 | Schema validation — rejected params | ✓ | — | ✓ | ✓ | ✅ |
+| 8 | Failure — invalid targets | ✓ | — | ✓ | ✓ | ✅ |
+| 9 | Failure — missing prerequisites | ✓ | — | ✓ | ✓ | ✅ |
+| 10 | Edge cases | ✓ | — | ✓ | ✓ | ✅ |
+| 11 | Local tools integration | ✓ | — | ✓ | ✓ | ✅ |
+| 12 | Cross-tool — fetch vs clone | ✓ | — | ✓ | ✓ | ✅ |
+| 13 | Bulk queries | ✓ | — | ✓ | ✓ | ✅ |
+| 14 | Root directory fetch | ✓ | — | ✓ | ✓ | ✅ |
+| 15 | Trailing slash in path | ✓ | — | ✓ | ✓ | ✅ |
+| 16 | Directory with only filtered files | ✓ | — | ✓ | ✓ | ✅ |
+| 17 | Dotfiles in directory | ✓ | — | ✓ | ✓ | ✅ |
+| 18 | Very deep path | ✓ | — | ✓ | ✓ | ✅ |
+| 19 | Default branch auto-detection | ✓ | — | ✓ | ✓ | ✅ |

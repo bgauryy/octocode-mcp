@@ -27,6 +27,11 @@ import {
 import { getHints } from '../../hints/index.js';
 import { STATIC_TOOL_NAMES } from '../toolNames.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
+import {
+  applyOutputSizeLimit,
+  serializeForPagination,
+} from '../../utils/pagination/index.js';
+import { safeReadFile } from '../../lsp/validation.js';
 
 const TOOL_NAME = STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION;
 
@@ -129,7 +134,7 @@ async function gotoDefinition(
           query,
           content
         );
-        if (result) return result;
+        if (result) return applyGotoDefinitionOutputLimit(result, query);
       } catch {
         // LSP failed — fall back to text resolution silently
       }
@@ -137,12 +142,9 @@ async function gotoDefinition(
 
     // Fallback: Return the resolved position as the "definition"
     // This is less accurate but works without a language server
-    return createFallbackResult(
-      query,
-      absolutePath,
-      content,
-      resolver,
-      resolvedSymbol
+    return applyGotoDefinitionOutputLimit(
+      createFallbackResult(query, absolutePath, content, resolver, resolvedSymbol),
+      query
     );
   } catch (error) {
     return createErrorResult(error, query, {
@@ -250,7 +252,8 @@ async function gotoDefinitionWithLSP(
 
       if (isSameFile) {
         try {
-          const locContent = await readFile(loc.uri, 'utf-8');
+          const locContent = await safeReadFile(loc.uri);
+          if (!locContent) throw new Error('Cannot read file');
           const lines = locContent.split(/\r?\n/);
           const targetLine = lines[loc.range.start.line];
 
@@ -310,7 +313,11 @@ async function gotoDefinitionWithLSP(
 
     for (const loc of locations) {
       try {
-        const locContent = await readFile(loc.uri, 'utf-8');
+        const locContent = await safeReadFile(loc.uri);
+        if (!locContent) {
+          enhancedLocations.push(loc);
+          continue;
+        }
         const lines = locContent.split(/\r?\n/);
         const startLine = Math.max(0, loc.range.start.line - contextLines);
         const endLine = Math.min(
@@ -402,12 +409,8 @@ async function resolveDefinitionViaModulePath(
     resolvedPath = resolvedPath.replace(/\.js$/, '.ts');
   }
 
-  let content: string;
-  try {
-    content = await readFile(resolvedPath, 'utf-8');
-  } catch {
-    return null;
-  }
+  const content = await safeReadFile(resolvedPath);
+  if (!content) return null;
 
   const lines = content.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
@@ -485,6 +488,43 @@ function createFallbackResult(
         : undefined,
       'Use lspFindReferences to find all usages',
     ].filter(Boolean) as string[],
+  };
+}
+
+/**
+ * Apply output size limits with charOffset/charLength pagination.
+ * Follows the same pattern used by lspCallHierarchy.
+ */
+function applyGotoDefinitionOutputLimit(
+  result: GotoDefinitionResult,
+  query: LSPGotoDefinitionQuery
+): GotoDefinitionResult {
+  if (result.status !== 'hasResults') return result;
+
+  const serialized = serializeForPagination(result, true);
+  const sizeLimitResult = applyOutputSizeLimit(serialized, {
+    charOffset: query.charOffset,
+    charLength: query.charLength,
+  });
+
+  if (!sizeLimitResult.wasLimited || !sizeLimitResult.pagination) return result;
+
+  const { pagination } = sizeLimitResult;
+  return {
+    ...result,
+    outputPagination: {
+      charOffset: pagination.charOffset!,
+      charLength: pagination.charLength!,
+      totalChars: pagination.totalChars!,
+      hasMore: pagination.hasMore,
+      currentPage: pagination.currentPage,
+      totalPages: pagination.totalPages,
+    },
+    hints: [
+      ...(result.hints || []),
+      ...sizeLimitResult.warnings,
+      ...sizeLimitResult.paginationHints,
+    ],
   };
 }
 

@@ -6,6 +6,7 @@ import {
 } from './scheme.js';
 import { executeCallHierarchy } from './execution.js';
 import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
+import { STATIC_TOOL_NAMES } from '../toolNames.js';
 
 /**
  * Register the LSP call hierarchy tool with the MCP server.
@@ -24,6 +25,6 @@ export function registerLSPCallHierarchyTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    withBasicSecurityValidation(executeCallHierarchy)
+    withBasicSecurityValidation(executeCallHierarchy, STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY)
   );
 }

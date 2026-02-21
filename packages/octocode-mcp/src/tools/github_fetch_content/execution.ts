@@ -6,7 +6,11 @@ import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { handleCatchError, createSuccessResult } from '../utils.js';
 import { getProvider } from '../../providers/factory.js';
-import { getActiveProviderConfig, isCloneEnabled } from '../../serverConfig.js';
+import {
+  getActiveProvider,
+  getActiveProviderConfig,
+  isCloneEnabled,
+} from '../../serverConfig.js';
 import { isProviderSuccess, type ProviderType } from '../../providers/types.js';
 import { fetchDirectoryContents } from '../../github/directoryFetch.js';
 import { resolveDefaultBranch } from '../../github/client.js';
@@ -117,7 +121,6 @@ async function handleDirectoryFetch(
   query: FileContentQuery,
   authInfo?: AuthInfo
 ) {
-  // Directory mode requires ENABLE_LOCAL=true and ENABLE_CLONE=true
   if (!isCloneEnabled()) {
     return handleCatchError(
       new Error(
@@ -126,6 +129,18 @@ async function handleDirectoryFetch(
       ),
       query,
       'Clone not enabled',
+      TOOL_NAMES.GITHUB_FETCH_CONTENT
+    );
+  }
+
+  if (getActiveProvider() !== 'github') {
+    return handleCatchError(
+      new Error(
+        'Directory fetch (type: "directory") is only available with the GitHub provider. ' +
+          'GitLab does not support directory fetch yet. Use file mode (type: "file") instead.'
+      ),
+      query,
+      'Provider not supported',
       TOOL_NAMES.GITHUB_FETCH_CONTENT
     );
   }

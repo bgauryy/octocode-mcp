@@ -196,6 +196,30 @@ export async function searchMultipleGitHubPullRequests(
           ...sizeLimitResult.paginationHints,
         ];
 
+        const fileChangeHints: string[] = [];
+        const largeFileChangePRs = pullRequests.filter(
+          (pr: Record<string, unknown>) =>
+            Array.isArray(pr.fileChanges) &&
+            (pr.fileChanges as unknown[]).length > 30
+        );
+        if (largeFileChangePRs.length > 0) {
+          const prNumbers = largeFileChangePRs
+            .map((pr: Record<string, unknown>) => `#${pr.number}`)
+            .join(', ');
+          const maxFiles = Math.max(
+            ...largeFileChangePRs.map((pr: Record<string, unknown>) =>
+              Array.isArray(pr.fileChanges)
+                ? (pr.fileChanges as unknown[]).length
+                : 0
+            )
+          );
+          fileChangeHints.push(
+            `Large PR(s) ${prNumbers} have ${maxFiles}+ file changes`,
+            'Use charOffset/charLength to paginate through full output',
+            "Or use type='partialContent' with partialContentMetadata=[{file: \"path/to/file.ts\"}] for targeted file diffs"
+          );
+        }
+
         return createSuccessResult(
           query,
           outputLimitData,
@@ -203,7 +227,11 @@ export async function searchMultipleGitHubPullRequests(
           TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
           {
             hintContext: { matchCount: pullRequests.length },
-            extraHints: [...paginationHints, ...outputLimitHints],
+            extraHints: [
+              ...paginationHints,
+              ...outputLimitHints,
+              ...fileChangeHints,
+            ],
           }
         );
       } catch (error) {

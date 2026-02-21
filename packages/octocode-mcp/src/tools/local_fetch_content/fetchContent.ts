@@ -73,7 +73,8 @@ export async function fetchContent(
     if (
       fileSizeKB > RESOURCE_LIMITS.LARGE_FILE_THRESHOLD_KB &&
       !query.charLength &&
-      !query.matchString
+      !query.matchString &&
+      !query.startLine
     ) {
       const toolError = ToolErrors.fileTooLarge(
         query.path,

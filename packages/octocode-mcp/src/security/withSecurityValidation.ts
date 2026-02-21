@@ -136,7 +136,8 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
 }
 
 export function withBasicSecurityValidation<T extends object>(
-  toolHandler: (sanitizedArgs: T) => Promise<CallToolResult>
+  toolHandler: (sanitizedArgs: T) => Promise<CallToolResult>,
+  toolName?: string
 ): (
   args: unknown,
   extra?: { signal?: AbortSignal }
@@ -161,14 +162,14 @@ export function withBasicSecurityValidation<T extends object>(
       }
 
       return await withToolTimeout(
-        'tool',
+        toolName || 'tool',
         toolHandler(validation.sanitizedParams as T),
         signal
       );
     } catch (error) {
-      // Log security validation errors for monitoring (no tool name in basic validation)
+      // Log security validation errors for monitoring
       logSessionError(
-        'basic_security_validation',
+        toolName || 'basic_security_validation',
         TOOL_ERRORS.SECURITY_VALIDATION_FAILED.code
       ).catch(() => {});
 

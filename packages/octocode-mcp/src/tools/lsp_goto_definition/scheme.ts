@@ -50,6 +50,23 @@ const LSPGotoDefinitionBaseSchema = BaseQuerySchemaLocal.extend({
     .max(20)
     .default(5)
     .describe(LSP_GOTO_DEFINITION.options.contextLines),
+
+  charOffset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      'Character offset for output pagination. Use when response was auto-paginated to navigate to next page.'
+    ),
+
+  charLength: z
+    .number()
+    .int()
+    .min(1)
+    .max(50000)
+    .optional()
+    .describe('Character length for output pagination window.'),
 });
 
 /**

@@ -1,12 +1,23 @@
-# Eval Test: `githubSearchRepositories`
-
-> **Rating: 9/10** | Category: GitHub | Last tested: Feb 17, 2026
+# Sanity Test: `githubSearchRepositories`
 
 ---
 
 ## Tool Overview
 
 Searches GitHub repositories by keywords, topics, stars, creation date, and owner. Returns rich metadata including stars, forks, topics, visibility, and timestamps.
+
+## Enhanced Testing Requirements
+
+**ALL test cases must validate:**
+1. **Queries Structure** - Every query includes `mainResearchGoal`, `researchGoal`, and `reasoning` (wrap bulk in `{ "queries": [{ ... }] }`)
+2. **Pagination/Limits** - Test `limit`, `page` parameters for result management
+3. **Hints Validation** - **GOLDEN**: Check response hints for user guidance and next steps
+
+### Hints Validation Checklist
+- [ ] Response includes helpful hints for repo discovery
+- [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+- [ ] Pagination hints when results are truncated
+- [ ] Status-specific hints present (hasResults, empty, error)
 
 ---
 
@@ -29,6 +40,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 - [ ] Returns repos tagged with `mcp` or `model-context-protocol`
 - [ ] Well-known repos like `fastmcp` appear
 - [ ] Repo metadata includes stars, forks, topics
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -49,6 +65,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 **Expected:**
 - [ ] All returned repos have 100+ stars
 - [ ] Star counts visible in metadata
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -70,6 +91,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 **Expected:**
 - [ ] Highest-starred repos appear first
 - [ ] Descending star count order
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -89,6 +115,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 **Expected:**
 - [ ] Repos with "mcp server" in name/description/README
 - [ ] Relevant results returned
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -110,6 +141,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 **Expected:**
 - [ ] Only repos with "mcp" in name or description
 - [ ] More precise than unscoped search
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -131,6 +167,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 **Expected:**
 - [ ] All repos created after Jan 1, 2025
 - [ ] `createdAt` dates in metadata confirm filter
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -150,6 +191,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 **Expected:**
 - [ ] Only repos owned by `bgauryy`
 - [ ] `owner` field matches in all results
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -171,6 +217,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 **Expected:**
 - [ ] Most recently updated repos first
 - [ ] `updatedAt` or `pushedAt` timestamps descending
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -191,6 +242,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 **Expected:**
 - [ ] Exactly 3 repos returned
 - [ ] Total count in pagination may be higher
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -212,6 +268,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 - [ ] `pagination.totalMatches` > 0
 - [ ] Count reflects actual number of matching repos
 - [ ] Not 0 (previously known bug, now fixed)
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -233,6 +294,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 **Expected:**
 - [ ] All repos under the size threshold
 - [ ] Size metadata visible
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -254,6 +320,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 **Expected:**
 - [ ] All repos updated after Jan 1, 2025
 - [ ] `updatedAt` dates confirm filter
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -276,6 +347,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 - [ ] Different repos than page 1
 - [ ] No overlap with first page results
 - [ ] Pagination metadata shows current page
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -297,6 +373,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 - [ ] No error thrown
 - [ ] Empty results or `totalMatches: 0`
 - [ ] Clear indication no repos found
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -318,6 +399,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 **Expected:**
 - [ ] Results match both keyword and topic criteria
 - [ ] More precise than either filter alone
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -340,6 +426,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 - [ ] Highest-forked repos appear first
 - [ ] Fork count visible in metadata
 - [ ] Descending fork order
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -362,6 +453,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 - [ ] Results sorted by relevance (not stars, forks, or date)
 - [ ] Most relevant repos first
 - [ ] Same behavior as omitting `sort` parameter
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -383,6 +479,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 - [ ] Up to 100 repos returned
 - [ ] No timeout or error
 - [ ] All entries valid
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -405,6 +506,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 - [ ] Returns results from page 10 or empty if fewer pages exist
 - [ ] No error thrown
 - [ ] Pagination metadata accurate
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -427,6 +533,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 - [ ] All repos have between 100 and 1000 stars
 - [ ] Star counts in metadata confirm range
 - [ ] More precise than single-bound filter
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -449,6 +560,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 - [ ] Repos found based on README content
 - [ ] May differ from name/description search results
 - [ ] README content contains the keywords
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -470,6 +586,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 - [ ] Search completes without error
 - [ ] Results relevant to the keywords
 - [ ] Special characters properly escaped or handled
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -491,6 +612,11 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 - [ ] Validation error about missing keywords/topics
 - [ ] Clear error message
 - [ ] No empty search executed
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -513,34 +639,74 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 - [ ] Second query returns error or empty results
 - [ ] Each result isolated per query
 - [ ] No cascade failure
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+
+---
+
+### TC-25: Pagination Test (limit + page)
+
+**Goal:** Verify `limit` and `page` parameters control result pagination together.
+
+```json
+{
+  "queries": [{
+    "mainResearchGoal": "Test pagination functionality",
+    "researchGoal": "Verify limit and page parameters work correctly",
+    "reasoning": "Pagination is essential for browsing through search results",
+    "keywordsToSearch": ["typescript"],
+    "limit": 5,
+    "page": 2
+  }]
+}
+```
+
+**Expected:**
+- [ ] Max 5 results returned from page 2
+- [ ] Different repos than page 1
+- [ ] Pagination metadata shows current page and total
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array with per-query status
+  - [ ] Status-specific hints present
+  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
 ## Validation Checklist
 
-| # | Test Case | Status |
-|---|-----------|--------|
-| 1 | Topic search | |
-| 2 | Stars filter | |
-| 3 | Sort by stars | |
-| 4 | Keyword search | |
-| 5 | Match fields | |
-| 6 | Created date | |
-| 7 | Owner scoping | |
-| 8 | Sort by updated | |
-| 9 | Limit results | |
-| 10 | Pagination totalMatches | |
-| 11 | Size filter | |
-| 12 | Updated date filter | |
-| 13 | Page navigation | |
-| 14 | No results query | |
-| 15 | Keywords + topics combined | |
-| 16 | Sort by forks | |
-| 17 | Sort by best match (default) | |
-| 18 | Limit maximum (boundary) | |
-| 19 | Page maximum (boundary) | |
-| 20 | Stars range format | |
-| 21 | Match README only | |
-| 22 | Keywords with special characters | |
-| 23 | No keywords and no topics (validation) | |
-| 24 | Bulk queries (error isolation) | |
+### Core Requirements
+- [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning` (bulk in `{ "queries": [{ ... }] }`)
+- [ ] **Pagination tests** verify `limit`, `page` parameters for result management
+- [ ] **Hints validation** checks for helpful guidance in all responses
+
+| # | Test Case | Queries | Pagination | Hints | Status |
+|---|-----------|---------|------------|-------|--------|
+| 1 | Topic search | ✅ | - | ✅ | |
+| 2 | Stars filter | ✅ | - | ✅ | |
+| 3 | Sort by stars | ✅ | - | ✅ | |
+| 4 | Keyword search | ✅ | - | ✅ | |
+| 5 | Match fields | ✅ | - | ✅ | |
+| 6 | Created date | ✅ | - | ✅ | |
+| 7 | Owner scoping | ✅ | - | ✅ | |
+| 8 | Sort by updated | ✅ | - | ✅ | |
+| 9 | Limit results | ✅ | ✅ | ✅ | |
+| 10 | Pagination totalMatches | ✅ | ✅ | ✅ | |
+| 11 | Size filter | ✅ | - | ✅ | |
+| 12 | Updated date filter | ✅ | - | ✅ | |
+| 13 | Page navigation | ✅ | ✅ | ✅ | |
+| 14 | No results query | ✅ | - | ✅ | |
+| 15 | Keywords + topics combined | ✅ | - | ✅ | |
+| 16 | Sort by forks | ✅ | - | ✅ | |
+| 17 | Sort by best match (default) | ✅ | - | ✅ | |
+| 18 | Limit maximum (boundary) | ✅ | ✅ | ✅ | |
+| 19 | Page maximum (boundary) | ✅ | ✅ | ✅ | |
+| 20 | Stars range format | ✅ | - | ✅ | |
+| 21 | Match README only | ✅ | - | ✅ | |
+| 22 | Keywords with special characters | ✅ | - | ✅ | |
+| 23 | No keywords and no topics (validation) | ✅ | - | ✅ | |
+| 24 | Bulk queries (error isolation) | ✅ | - | ✅ | |
+| 25 | Pagination test (limit + page) | ✅ | ✅ | ✅ | |

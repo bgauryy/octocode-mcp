@@ -95,9 +95,9 @@ Tools use unified parameters that map to provider-specific concepts:
 
 | Tool | Description |
 |------|-------------|
-| **`githubGetFileContent`** | Read file content from repositories, or fetch an entire directory to disk (`type: "directory"`). Supports line ranges, string matching with context, and pagination for large files. Directory mode requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`. |
+| **`githubGetFileContent`** | Read file content from repositories, or fetch an entire directory to disk (`type: "directory"`). Supports line ranges, string matching with context, and pagination for large files. Directory mode requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`, and is **GitHub only**. |
 | **`githubViewRepoStructure`** | Display directory tree structure of a repository. Configurable depth and pagination. |
-| **`githubCloneRepo`** | Clone a repository (or subdirectory) locally for deep analysis with local + LSP tools. GitHub only. Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`. |
+| **`githubCloneRepo`** | Clone a repository (or subdirectory) locally for deep analysis with local + LSP tools. **GitHub only.** Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`. |
 
 ### Package Tools
 
@@ -260,6 +260,10 @@ owner="group", repo="project", state="merged", author="johndoe"
 prNumber=123, type="metadata", withComments=true, owner="org", repo="app"
 ```
 
+**Output pagination:**
+- `charOffset`/`charLength`: Character-based pagination for large responses
+- PRs with >30 file changes emit hints guiding you to use `type='partialContent'` with `partialContentMetadata` for targeted file diffs
+
 **⚠️ Gotchas:**
 - `prNumber` **ignores ALL other filters** when set
 - Use `type=metadata` first (fast), then `partialContent` for details
@@ -280,7 +284,8 @@ Tools for reading file content and browsing repository structure.
 |---------|--------|--------|
 | **Branch** | Optional (auto-detects default) | **Required** (`branch` param) |
 | **Identifier** | `owner` + `repo` + `path` | `owner` + `repo` + `path` + `branch` |
-| **Directory fetch** | ✅ Supported (`type: "directory"`) | Not supported |
+| **Directory fetch** | ✅ Supported (`type: "directory"`) | ❌ Not supported (GitHub only) |
+| **Clone to disk** | ✅ `githubCloneRepo` | ❌ Not supported (GitHub only) |
 
 **Key parameters:**
 - `owner` (required): User or organization / GitLab Group
@@ -307,6 +312,7 @@ Tools for reading file content and browsing repository structure.
 3. `fullContent=true` (small configs only)
 
 **Directory mode details:**
+- **GitHub only** — returns an error if GitLab is the active provider (same restriction as `githubCloneRepo`)
 - **Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`** (same as `githubCloneRepo`)
 - Fetches all files via GitHub Contents API + `download_url` (no git required)
 - Saves to `~/.octocode/repos/{owner}/{repo}/{branch}/{path}/` (same cache as clone tool)
@@ -345,6 +351,7 @@ path="package.json", fullContent=true, owner="org", repo="repo"
 **⚠️ Gotchas:**
 - Choose ONE mode: `matchString` OR `startLine/endLine` OR `fullContent` (file mode only)
 - When `type="directory"`: `startLine`, `endLine`, `matchString`, `charOffset`, `charLength` are rejected
+- **Directory mode is GitHub only** — returns an error with GitLab (use file mode instead)
 - **Directory mode requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`**
 - Max file size: 300KB (FILE_TOO_LARGE error)
 - Directory mode: max 50 files, max 5MB total, skips binary files
@@ -711,6 +718,16 @@ Unlike GitHub, GitLab does not auto-detect the default branch.
 
 GitLab requires project scope for code search.
 
+### ⚠️ Rule 8: Clone & Directory Fetch are GitHub Only
+
+```
+❌ WRONG (GitLab): githubCloneRepo(owner="g", repo="p")
+❌ WRONG (GitLab): githubGetFileContent(type="directory", owner="g", repo="p", path="src")
+✅ RIGHT (GitLab): githubGetFileContent(type="file", owner="g", repo="p", path="src/main.ts", branch="main")
+```
+
+`githubCloneRepo` and `githubGetFileContent` directory mode use GitHub-specific APIs (Contents API, git clone). These features are not available when GitLab is the active provider. Use file mode for GitLab content retrieval.
+
 ---
 
 ## Anti-Patterns to Avoid
@@ -727,6 +744,7 @@ GitLab requires project scope for code search.
 | GitLab code search without scope | API error | Specify `owner` and `repo` |
 | Cloning repo just to read one file | Slow, wastes disk | Use `githubGetFileContent` instead |
 | Cloning without `sparse_path` on monorepo | Downloads everything | Set `sparse_path` to the dir you need |
+| Using clone/directory fetch with GitLab | Not supported, errors | Use `githubGetFileContent` file mode for GitLab |
 
 ---
 

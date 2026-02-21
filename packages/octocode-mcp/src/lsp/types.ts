@@ -233,6 +233,15 @@ export interface GotoDefinitionResult extends LSPToolResultBase {
   resolvedPosition?: ExactPosition;
   /** Search radius used */
   searchRadius?: number;
+  /** Output pagination metadata when response exceeds size limits */
+  outputPagination?: {
+    charOffset: number;
+    charLength: number;
+    totalChars: number;
+    hasMore: boolean;
+    currentPage: number;
+    totalPages: number;
+  };
 }
 
 /**

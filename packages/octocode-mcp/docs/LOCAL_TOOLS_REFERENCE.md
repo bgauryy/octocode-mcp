@@ -78,7 +78,7 @@ Octocode MCP provides **7 tools** across 2 categories for code research and expl
 
 ### Working with Cloned Repositories
 
-Local + LSP tools work on **any path on disk** — including repos cloned by `githubCloneRepo`. Use the returned `localPath` as the `path` parameter:
+Local + LSP tools work on **any path on disk** — including repos cloned by `githubCloneRepo` or fetched via `githubGetFileContent` directory mode. Use the returned `localPath` as the `path` parameter:
 
 ```
 githubCloneRepo(owner="vercel", repo="next.js") → localPath
@@ -86,6 +86,8 @@ localViewStructure(path=localPath)              → browse the tree
 localSearchCode(path=localPath, pattern="...")   → search code
 lspGotoDefinition(uri=localPath+"/src/file.ts") → semantic navigation
 ```
+
+> **Note:** `githubCloneRepo` and `githubGetFileContent` directory mode are **GitHub only** — they are not available when GitLab is the active provider. Both require `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
 
 > **Full workflow guide:** [Clone & Local Tools Workflow](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md)
 
@@ -343,6 +345,8 @@ MCP Client → Octocode MCP → Language Server (spawned)
 - `lineHint` (required): Line number from `localSearchCode` (1-indexed)
 - `orderHint`: Which code occurrence on the exact line if multiple (0-indexed, default: 0). String/comment text matches are ignored.
 - `contextLines`: Lines of context around definition (default: 5, max: 20)
+- `charOffset`: Character offset for output pagination (min: 0)
+- `charLength`: Character length for output pagination window (min: 1, max: 50000)
 
 **Use when:** "Where is this function/class/variable defined?"
 

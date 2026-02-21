@@ -16,6 +16,8 @@ export interface LSPGotoDefinitionQuery {
   lineHint: number;
   orderHint?: number;
   contextLines?: number;
+  charOffset?: number;
+  charLength?: number;
   researchGoal?: string;
   reasoning?: string;
 }
@@ -99,5 +101,13 @@ export interface GotoDefinitionResult {
   locations?: CodeSnippet[];
   resolvedPosition?: ExactPosition;
   searchRadius?: number;
+  outputPagination?: {
+    charOffset: number;
+    charLength: number;
+    totalChars: number;
+    hasMore: boolean;
+    currentPage: number;
+    totalPages: number;
+  };
   [key: string]: unknown;
 }

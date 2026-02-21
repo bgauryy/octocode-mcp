@@ -1028,7 +1028,7 @@ describe('localViewStructure', () => {
       }
     });
 
-    it('should error for large recursive listing exceeding MAX_ENTRIES_BEFORE_PAGINATION', async () => {
+    it('should handle large recursive listing with auto-pagination', async () => {
       // Mock very large recursive result (>100 entries)
       mockReaddir.mockResolvedValue(
         Array.from({ length: 150 }, (_, i) => `file${i}.txt`)
@@ -1045,15 +1045,11 @@ describe('localViewStructure', () => {
       const result = await viewStructure({
         path: '/test/path',
         depth: 1,
-        // No charLength - should trigger error for too many entries
       });
 
-      expect(result.status).toBe('error');
-      expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.OUTPUT_TOO_LARGE);
-      expect(result.hints).toBeDefined();
-      expect(
-        result.hints?.some(h => h.toLowerCase().includes('recursive'))
-      ).toBe(true);
+      // Default entriesPerPage (20) auto-paginates large results
+      expect(result.status).toBe('hasResults');
+      expect(result.pagination).toBeDefined();
     });
 
     it('should stop at maxEntries in walkDirectory', async () => {

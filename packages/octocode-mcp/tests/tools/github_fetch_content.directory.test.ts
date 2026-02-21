@@ -41,6 +41,9 @@ vi.mock('octocode-shared', () => ({
 }));
 
 const mockIsCloneEnabled = vi.hoisted(() => vi.fn().mockReturnValue(true));
+const mockGetActiveProvider = vi.hoisted(() =>
+  vi.fn().mockReturnValue('github')
+);
 
 vi.mock('../../src/serverConfig.js', () => ({
   getActiveProviderConfig: vi.fn(() => ({
@@ -48,7 +51,7 @@ vi.mock('../../src/serverConfig.js', () => ({
     baseUrl: undefined,
     token: 'mock-token',
   })),
-  getActiveProvider: vi.fn(() => 'github'),
+  getActiveProvider: mockGetActiveProvider,
   isLoggingEnabled: vi.fn(() => false),
   isCloneEnabled: mockIsCloneEnabled,
 }));
@@ -104,6 +107,7 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
     testDir = createTestDir();
     mockGetOctocodeDir.mockReturnValue(testDir);
     mockIsCloneEnabled.mockReturnValue(true);
+    mockGetActiveProvider.mockReturnValue('github');
   });
 
   afterEach(() => {
@@ -356,6 +360,123 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
     const text =
       result.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
     expect(text).toContain('error');
+  });
+
+  // ── GitHub-only provider guard ──────────────────────────────────────
+
+  it('should reject directory fetch when provider is gitlab', async () => {
+    mockGetActiveProvider.mockReturnValue('gitlab');
+
+    const result = await fetchMultipleGitHubFileContents({
+      queries: [
+        {
+          owner: 'group',
+          repo: 'project',
+          path: 'src',
+          branch: 'main',
+          type: 'directory',
+          mainResearchGoal: 'test',
+          researchGoal: 'test',
+          reasoning: 'test',
+        },
+      ],
+    });
+
+    const text =
+      result.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
+    expect(text).toContain('GitHub provider');
+    expect(text).toContain('error');
+    expect(text).not.toContain('localPath');
+  });
+
+  it('should reject directory fetch for any non-github provider', async () => {
+    mockGetActiveProvider.mockReturnValue('some-other-provider');
+
+    const result = await fetchMultipleGitHubFileContents({
+      queries: [
+        {
+          owner: 'owner',
+          repo: 'repo',
+          path: 'src',
+          branch: 'main',
+          type: 'directory',
+          mainResearchGoal: 'test',
+          researchGoal: 'test',
+          reasoning: 'test',
+        },
+      ],
+    });
+
+    const text =
+      result.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
+    expect(text).toContain('GitHub provider');
+    expect(text).toContain('error');
+  });
+
+  it('should allow file mode when provider is gitlab', async () => {
+    mockGetActiveProvider.mockReturnValue('gitlab');
+
+    const { getProvider } = await import('../../src/providers/factory.js');
+    const mockGetProvider = vi.mocked(getProvider);
+    mockGetProvider.mockReturnValue({
+      getFileContent: vi.fn().mockResolvedValue({
+        data: {
+          path: 'src/main.ts',
+          content: 'const x = 1;',
+          encoding: 'utf-8',
+          size: 12,
+          ref: 'main',
+        },
+        status: 200,
+        provider: 'gitlab',
+      }),
+    } as any);
+
+    const result = await fetchMultipleGitHubFileContents({
+      queries: [
+        {
+          owner: 'group',
+          repo: 'project',
+          path: 'src/main.ts',
+          branch: 'main',
+          type: 'file',
+          mainResearchGoal: 'test',
+          researchGoal: 'test',
+          reasoning: 'test',
+        },
+      ],
+    });
+
+    const text =
+      result.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
+    expect(text).not.toContain('GitHub provider');
+    expect(text).not.toContain('Provider not supported');
+  });
+
+  it('should check provider AFTER clone-enabled check', async () => {
+    mockIsCloneEnabled.mockReturnValue(false);
+    mockGetActiveProvider.mockReturnValue('gitlab');
+
+    const result = await fetchMultipleGitHubFileContents({
+      queries: [
+        {
+          owner: 'group',
+          repo: 'project',
+          path: 'src',
+          branch: 'main',
+          type: 'directory',
+          mainResearchGoal: 'test',
+          researchGoal: 'test',
+          reasoning: 'test',
+        },
+      ],
+    });
+
+    const text =
+      result.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
+    // Clone-enabled check should fire first
+    expect(text).toContain('ENABLE_LOCAL=true');
+    expect(text).toContain('ENABLE_CLONE=true');
   });
 
   it('should resolve default branch via API when not specified', async () => {

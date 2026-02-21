@@ -162,6 +162,21 @@ export class ContentSanitizer {
             }
             return secretsResult.sanitizedContent;
           }
+          if (
+            item !== null &&
+            typeof item === 'object' &&
+            !Array.isArray(item)
+          ) {
+            const nestedValidation = this.validateInputParameters(
+              item as Record<string, unknown>,
+              _depth + 1,
+              visited
+            );
+            if (nestedValidation.hasSecrets) {
+              hasSecrets = true;
+            }
+            return nestedValidation.sanitizedParams;
+          }
           return item;
         });
       } else if (value !== null && typeof value === 'object') {

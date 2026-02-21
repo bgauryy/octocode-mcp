@@ -7,8 +7,8 @@
  * @module tools/lsp_find_references/lspReferencesCore
  */
 
-import { readFile } from 'fs/promises';
 import * as path from 'path';
+import { safeReadFile } from '../../lsp/validation.js';
 import picomatch from 'picomatch';
 
 import type {
@@ -272,7 +272,8 @@ async function enhanceReferenceLocation(
   // Get context if needed
   if (contextLines > 0) {
     try {
-      const fileContent = await readFile(raw.absoluteUri, 'utf-8');
+      const fileContent = await safeReadFile(raw.absoluteUri);
+      if (!fileContent) throw new Error('Cannot read file');
       const lines = fileContent.split(/\r?\n/);
       const startLine = Math.max(0, raw.range.start.line - contextLines);
       const endLine = Math.min(

@@ -300,10 +300,32 @@ async function fetchFilesInBatches(
   return results;
 }
 
+/** Allowed hostnames for download_url fetches (SSRF prevention) */
+const ALLOWED_DOWNLOAD_HOSTS = new Set([
+  'raw.githubusercontent.com',
+  'objects.githubusercontent.com',
+  'github.com',
+]);
+
 /**
  * Fetch raw content from a download_url (raw.githubusercontent.com).
  */
 async function fetchDownloadUrl(url: string, token?: string): Promise<string> {
+  // Validate URL hostname to prevent SSRF via crafted download_url
+  try {
+    const parsed = new URL(url);
+    if (!ALLOWED_DOWNLOAD_HOSTS.has(parsed.hostname)) {
+      throw new Error(
+        `Blocked fetch to unexpected host: ${parsed.hostname}. Only GitHub download URLs are allowed.`
+      );
+    }
+  } catch (e) {
+    if (e instanceof TypeError) {
+      throw new Error(`Invalid download URL: ${url}`);
+    }
+    throw e;
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 

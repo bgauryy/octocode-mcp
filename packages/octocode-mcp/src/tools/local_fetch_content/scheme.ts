@@ -86,12 +86,14 @@ const FetchContentBaseSchema = BaseQuerySchemaLocal.extend({
 
   charOffset: z
     .number()
+    .int()
     .min(0)
     .optional()
     .describe(LOCAL_FETCH_CONTENT.pagination.charOffset),
 
   charLength: z
     .number()
+    .int()
     .min(1)
     .max(10000)
     .optional()

@@ -39,6 +39,13 @@ const RG_ALLOWED_FLAGS = new Set([
   '--debug',
 ]);
 
+/** Single-character flags extracted from RG_ALLOWED_FLAGS for bundle validation */
+const RG_ALLOWED_SHORT_FLAGS = new Set(
+  [...RG_ALLOWED_FLAGS]
+    .filter(f => /^-[a-zA-Z]$/.test(f))
+    .map(f => f[1]!)
+);
+
 const RG_ALLOWED_FLAGS_WITH_VALUES = new Set([
   '-g',
   '--glob',
@@ -379,10 +386,15 @@ function findDisallowedRgFlag(args: string[]): string | null {
       continue;
     }
 
-    // Allow short flag bundles like -rnH; builder uses split flags,
-    // but users may provide equivalent forms.
+    // Allow short flag bundles like -rnH if every character is an allowed single-char flag.
+    // This prevents passing dangerous flags (e.g. -x for --pre) in a bundle.
     if (/^-[a-zA-Z]{2,}$/.test(arg)) {
-      continue;
+      const chars = arg.slice(1); // remove leading '-'
+      const allAllowed = [...chars].every(ch => RG_ALLOWED_SHORT_FLAGS.has(ch));
+      if (allAllowed) {
+        continue;
+      }
+      return arg;
     }
 
     return arg;

@@ -1,12 +1,23 @@
-# Eval Test: `githubGetFileContent`
-
-> **Rating: 9/10** | Category: GitHub | Last tested: Feb 17, 2026
+# Sanity Test: `githubGetFileContent`
 
 ---
 
 ## Tool Overview
 
 Reads file content from a GitHub repository. Supports match string extraction with context, line range extraction, and full content retrieval. Provides metadata like `lastModified`, `lastModifiedBy`, and `isPartial`.
+
+## Enhanced Testing Requirements
+
+**ALL test cases must validate:**
+1. **Queries Structure** - Every query includes `mainResearchGoal`, `researchGoal`, and `reasoning` (wrap bulk in `{ "queries": [{ ... }] }`)
+2. **Pagination/Limits** - Test `charOffset`, `charLength` parameters for content pagination
+3. **Hints Validation** - **GOLDEN**: Check response hints for user guidance and next steps
+
+### Hints Validation Checklist
+- [ ] Response includes helpful hints for content exploration
+- [ ] Hints suggest reading more content, code search, or structure exploration
+- [ ] Pagination hints when content is truncated (charOffset/charLength)
+- [ ] Status-specific hints present
 
 ---
 
@@ -33,6 +44,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] Match found at correct location
 - [ ] 5 lines context before and after
 - [ ] `lastModified` and `lastModifiedBy` metadata present
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -57,6 +74,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] Lines 1 through 15 returned
 - [ ] Content matches actual file on GitHub
 - [ ] `isPartial` metadata present
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -80,6 +103,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] Entire file content returned
 - [ ] `isPartial: false`
 - [ ] Valid JSON content
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -103,6 +132,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 **Expected:**
 - [ ] Up to 20 lines context before and after
 - [ ] Does not error on file boundaries
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -127,6 +162,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] No error thrown
 - [ ] Clear indication of no matches
 - [ ] File metadata still returned
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -151,6 +192,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] `lastModified` timestamp present
 - [ ] `lastModifiedBy` author present
 - [ ] Dates are valid ISO timestamps
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -175,6 +222,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 **Expected:**
 - [ ] Content matches `main` branch version
 - [ ] Branch info in response
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -199,6 +252,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] First 500 characters of file returned
 - [ ] Pagination hint for next charOffset
 - [ ] `isPartial: true` if file is larger
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -222,6 +281,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] Error message returned (not a crash)
 - [ ] Clear indication file not found
 - [ ] No stack trace leaked
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -246,6 +311,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] Validation error about mutually exclusive parameters
 - [ ] Clear error message
 - [ ] No content returned
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -268,6 +339,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 **Expected:**
 - [ ] Validation error about missing endLine
 - [ ] Clear error message about required pair
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -293,6 +370,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] Pagination hint for next charOffset
 - [ ] `isPartial: true`
 - [ ] No error at minimum value
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -317,6 +400,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] Returns up to 50000 characters
 - [ ] No timeout or error at maximum value
 - [ ] Full file if smaller than 50000 chars
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -341,6 +430,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] Empty results or error
 - [ ] No crash
 - [ ] Clear indication lines don't exist
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -364,6 +459,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] Validation error about missing startLine
 - [ ] Clear error message about required pair
 - [ ] No content returned
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -388,6 +489,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] Error message about branch not found
 - [ ] No crash
 - [ ] Actionable error message
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -412,6 +519,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] 1 line of context before and after
 - [ ] Minimal but useful output
 - [ ] Much less than default (5 lines)
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -436,6 +549,12 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] Up to 50 lines context before and after
 - [ ] Does not exceed file boundaries
 - [ ] No error at maximum value
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -458,29 +577,73 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 - [ ] Second query returns error (file not found)
 - [ ] Each result isolated per query
 - [ ] No cascade failure
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
+
+---
+
+### TC-20: Pagination Test (charOffset + charLength)
+
+**Goal:** Verify `charOffset` and `charLength` parameters control content pagination together.
+
+```json
+{
+  "queries": [{
+    "mainResearchGoal": "Test content pagination",
+    "researchGoal": "Verify charOffset and charLength work correctly",
+    "reasoning": "Character pagination is essential for large files",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "packages/octocode-mcp/src/index.ts",
+    "charOffset": 500,
+    "charLength": 500
+  }]
+}
+```
+
+**Expected:**
+- [ ] Characters 500-1000 returned (or next 500 chars)
+- [ ] Pagination hint for next charOffset
+- [ ] `isPartial: true` if file is larger
+- [ ] **Response Validation:**
+  - [ ] `instructions` field describes bulk response summary
+  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  - [ ] `data` object present with tool-specific fields
+  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  - [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
 ## Validation Checklist
 
-| # | Test Case | Status |
-|---|-----------|--------|
-| 1 | Match string + context | |
-| 2 | Line range | |
-| 3 | Full content | |
-| 4 | Large context | |
-| 5 | Non-existent match | |
-| 6 | Code archaeology metadata | |
-| 7 | Branch-specific content | |
-| 8 | CharOffset + CharLength | |
-| 9 | Non-existent file (error) | |
-| 10 | fullContent + matchString conflict | |
-| 11 | startLine without endLine (validation) | |
-| 12 | CharLength minimum (boundary) | |
-| 13 | CharLength maximum (boundary) | |
-| 14 | startLine beyond file length | |
-| 15 | endLine without startLine (validation) | |
-| 16 | Non-existent branch (error) | |
-| 17 | matchStringContextLines minimum (boundary) | |
-| 18 | matchStringContextLines maximum (boundary) | |
-| 19 | Bulk queries (error isolation) | |
+### Core Requirements
+- [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning` (bulk in `{ "queries": [{ ... }] }`)
+- [ ] **Pagination tests** verify `charOffset`, `charLength` parameters for content management
+- [ ] **Hints validation** checks for helpful guidance in all responses
+
+| # | Test Case | Queries | Pagination | Hints | Status |
+|---|-----------|---------|------------|-------|--------|
+| 1 | Match string + context | ✅ | - | ✅ | |
+| 2 | Line range | ✅ | - | ✅ | |
+| 3 | Full content | ✅ | - | ✅ | |
+| 4 | Large context | ✅ | - | ✅ | |
+| 5 | Non-existent match | ✅ | - | ✅ | |
+| 6 | Code archaeology metadata | ✅ | - | ✅ | |
+| 7 | Branch-specific content | ✅ | - | ✅ | |
+| 8 | CharOffset + CharLength | ✅ | ✅ | ✅ | |
+| 9 | Non-existent file (error) | ✅ | - | ✅ | |
+| 10 | fullContent + matchString conflict | ✅ | - | ✅ | |
+| 11 | startLine without endLine (validation) | ✅ | - | ✅ | |
+| 12 | CharLength minimum (boundary) | ✅ | ✅ | ✅ | |
+| 13 | CharLength maximum (boundary) | ✅ | ✅ | ✅ | |
+| 14 | startLine beyond file length | ✅ | - | ✅ | |
+| 15 | endLine without startLine (validation) | ✅ | - | ✅ | |
+| 16 | Non-existent branch (error) | ✅ | - | ✅ | |
+| 17 | matchStringContextLines minimum (boundary) | ✅ | - | ✅ | |
+| 18 | matchStringContextLines maximum (boundary) | ✅ | - | ✅ | |
+| 19 | Bulk queries (error isolation) | ✅ | - | ✅ | |
+| 20 | Pagination test (charOffset + charLength) | ✅ | ✅ | ✅ | |
