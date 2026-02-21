@@ -560,6 +560,172 @@ describe('directoryFetch', () => {
       expect(existsSync(expiredDir)).toBe(false);
     });
 
+    // ── Clone-protection tests ──────────────────────────────────────
+
+    it('should use clone cache when source is "clone" (never degrade)', async () => {
+      const cloneDir = join(testDir, 'repos', 'owner', 'repo', 'main');
+      const dirPath = join(cloneDir, 'src');
+
+      // Simulate a full clone with source: 'clone'
+      mkdirSync(dirPath, { recursive: true });
+      writeFileSync(join(dirPath, 'index.ts'), 'clone content');
+      writeFileSync(
+        join(cloneDir, '.octocode-clone-meta.json'),
+        JSON.stringify({
+          clonedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          owner: 'owner',
+          repo: 'repo',
+          branch: 'main',
+          source: 'clone',
+        })
+      );
+
+      const result = await fetchDirectoryContents(
+        'owner',
+        'repo',
+        'src',
+        'main'
+      );
+
+      expect(result.cached).toBe(true);
+      expect(result.files.length).toBeGreaterThan(0);
+      // Original clone file must still exist
+      expect(readFileSync(join(dirPath, 'index.ts'), 'utf-8')).toBe(
+        'clone content'
+      );
+      // Meta must still say 'clone' — not overwritten
+      const meta = JSON.parse(
+        readFileSync(join(cloneDir, '.octocode-clone-meta.json'), 'utf-8')
+      );
+      expect(meta.source).toBe('clone');
+    });
+
+    it('should use clone cache even when forceRefresh is true', async () => {
+      const cloneDir = join(testDir, 'repos', 'owner', 'repo', 'main');
+      const dirPath = join(cloneDir, 'src');
+
+      mkdirSync(dirPath, { recursive: true });
+      writeFileSync(join(dirPath, 'app.ts'), 'clone version');
+      writeFileSync(
+        join(cloneDir, '.octocode-clone-meta.json'),
+        JSON.stringify({
+          clonedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          owner: 'owner',
+          repo: 'repo',
+          branch: 'main',
+          source: 'clone',
+        })
+      );
+
+      const result = await fetchDirectoryContents(
+        'owner',
+        'repo',
+        'src',
+        'main',
+        undefined,
+        true // forceRefresh should be ignored for clone caches
+      );
+
+      expect(result.cached).toBe(true);
+      // Clone content must be untouched
+      expect(readFileSync(join(dirPath, 'app.ts'), 'utf-8')).toBe(
+        'clone version'
+      );
+    });
+
+    it('should use clone cache when source is undefined (backward compat)', async () => {
+      const cloneDir = join(testDir, 'repos', 'owner', 'repo', 'main');
+      const dirPath = join(cloneDir, 'src');
+
+      mkdirSync(dirPath, { recursive: true });
+      writeFileSync(join(dirPath, 'legacy.ts'), 'old clone');
+      writeFileSync(
+        join(cloneDir, '.octocode-clone-meta.json'),
+        JSON.stringify({
+          clonedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          owner: 'owner',
+          repo: 'repo',
+          branch: 'main',
+          // no source field — backward compat treated as 'clone'
+        })
+      );
+
+      const result = await fetchDirectoryContents(
+        'owner',
+        'repo',
+        'src',
+        'main'
+      );
+
+      expect(result.cached).toBe(true);
+      expect(readFileSync(join(dirPath, 'legacy.ts'), 'utf-8')).toBe(
+        'old clone'
+      );
+    });
+
+    it('should throw when path not found in clone cache', async () => {
+      const cloneDir = join(testDir, 'repos', 'owner', 'repo', 'main');
+
+      // Clone exists but requested subdir does NOT
+      mkdirSync(cloneDir, { recursive: true });
+      writeFileSync(
+        join(cloneDir, '.octocode-clone-meta.json'),
+        JSON.stringify({
+          clonedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          owner: 'owner',
+          repo: 'repo',
+          branch: 'main',
+          source: 'clone',
+        })
+      );
+
+      await expect(
+        fetchDirectoryContents('owner', 'repo', 'nonexistent', 'main')
+      ).rejects.toThrow('not found in the cloned repository');
+    });
+
+    it('should allow forceRefresh on directoryFetch cache', async () => {
+      // First call: populate directoryFetch cache
+      mockDirectoryListing([
+        { name: 'file.ts', path: 'src/file.ts', size: 50 },
+      ]);
+      mockFetchResponses({ 'src/file.ts': 'version 1' });
+
+      await fetchDirectoryContents('owner', 'repo', 'src', 'main');
+
+      // Verify it's a directoryFetch cache
+      const cloneDir = join(testDir, 'repos', 'owner', 'repo', 'main');
+      const meta = JSON.parse(
+        readFileSync(join(cloneDir, '.octocode-clone-meta.json'), 'utf-8')
+      );
+      expect(meta.source).toBe('directoryFetch');
+
+      // forceRefresh should work on directoryFetch caches
+      mockDirectoryListing([
+        { name: 'file.ts', path: 'src/file.ts', size: 60 },
+      ]);
+      mockFetchResponses({ 'src/file.ts': 'version 2' });
+
+      const result = await fetchDirectoryContents(
+        'owner',
+        'repo',
+        'src',
+        'main',
+        undefined,
+        true
+      );
+      expect(result.cached).toBe(false);
+      expect(readFileSync(join(cloneDir, 'src', 'file.ts'), 'utf-8')).toBe(
+        'version 2'
+      );
+    });
+
+    // ── Override / fresh content tests ─────────────────────────────────
+
     it('should override existing files with fresh content', async () => {
       // First fetch: file has old content
       mockDirectoryListing([{ name: 'app.ts', path: 'src/app.ts', size: 50 }]);

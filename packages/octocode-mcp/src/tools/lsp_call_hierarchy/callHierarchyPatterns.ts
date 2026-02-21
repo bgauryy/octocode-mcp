@@ -4,6 +4,7 @@
 
 import { getHints } from '../../hints/index.js';
 import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
 import { SymbolResolver } from '../../lsp/index.js';
 import { RipgrepMatchOnlySchema } from '../../utils/parsers/schemas.js';
 import { safeExec, checkCommandAvailability } from '../../utils/exec/index.js';
@@ -84,7 +85,7 @@ async function findIncomingCallsWithPatternMatching(
   page: number,
   contextLines: number
 ): Promise<CallHierarchyResult> {
-  const workspaceRoot = process.cwd();
+  const workspaceRoot = resolveWorkspaceRoot();
   const symbolName = query.symbolName;
 
   // Search for calls to this function using grep pattern: symbolName(
@@ -121,7 +122,6 @@ async function findIncomingCallsWithPatternMatching(
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
       hints: [
-        'Note: Using text-based search (language server not available)',
         'Search for callers failed',
         'Try using localSearchCode to find calls manually',
         `Pattern: ${symbolName}(`,
@@ -134,7 +134,7 @@ async function findIncomingCallsWithPatternMatching(
     site =>
       !(
         site.filePath === targetFilePath &&
-        site.lineNumber === targetItem.displayRange?.startLine
+        site.lineNumber === targetItem.range.start.line + 1
       )
   );
 
@@ -149,11 +149,9 @@ async function findIncomingCallsWithPatternMatching(
       reasoning: query.reasoning,
       hints: [
         ...getHints(TOOL_NAME, 'empty'),
-        'Note: Using text-based search (language server not available)',
         `No callers found for '${symbolName}'`,
         'The function may not be called directly',
         'Check if it is called via alias or dynamic invocation',
-        'Install typescript-language-server for semantic call hierarchy',
       ],
     };
   }
@@ -203,11 +201,7 @@ async function findIncomingCallsWithPatternMatching(
     pagination,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
-    hints: [
-      ...getHints(TOOL_NAME, 'hasResults'),
-      'Note: Using text-based search (language server not available)',
-      'Install typescript-language-server for semantic call hierarchy',
-    ],
+    hints: [...getHints(TOOL_NAME, 'hasResults')],
   };
 }
 
@@ -239,11 +233,9 @@ async function findOutgoingCallsWithPatternMatching(
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
       hints: [
-        'Note: Using text-based analysis (language server not available)',
         'Could not extract function body',
         'The function may have unusual syntax',
         'Try using localGetFileContent to read the function manually',
-        'Install typescript-language-server for semantic call hierarchy',
       ],
     };
   }
@@ -343,10 +335,8 @@ async function findOutgoingCallsWithPatternMatching(
       reasoning: query.reasoning,
       hints: [
         ...getHints(TOOL_NAME, 'empty'),
-        'Note: Using text-based analysis (language server not available)',
         `No function calls found in '${query.symbolName}'`,
         'The function may only contain primitive operations',
-        'Install typescript-language-server for semantic call hierarchy',
       ],
     };
   }
@@ -369,15 +359,6 @@ async function findOutgoingCallsWithPatternMatching(
         kind: 'function' as SymbolKind,
         uri: filePath,
         range: createRange(firstLoc.line - 1, firstLoc.column, funcName.length),
-        selectionRange: createRange(
-          firstLoc.line - 1,
-          firstLoc.column,
-          funcName.length
-        ),
-        displayRange: {
-          startLine: firstLoc.line,
-          endLine: firstLoc.line,
-        },
       };
 
       const fromRanges: LSPRange[] = locations.map(loc =>
@@ -410,9 +391,7 @@ async function findOutgoingCallsWithPatternMatching(
     reasoning: query.reasoning,
     hints: [
       ...getHints(TOOL_NAME, 'hasResults'),
-      'Note: Using text-based analysis (language server not available)',
       'Use lspGotoDefinition to find where each callee is defined',
-      'Install typescript-language-server for semantic call hierarchy',
     ],
   };
 }

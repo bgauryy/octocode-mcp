@@ -14,6 +14,7 @@ import {
 import { isProviderSuccess, type ProviderType } from '../../providers/types.js';
 import { fetchDirectoryContents } from '../../github/directoryFetch.js';
 import { resolveDefaultBranch } from '../../github/client.js';
+import { LOCAL_TOOL_LIST } from '../../hints/localToolUsageHints.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Directory fetch hints
@@ -22,10 +23,7 @@ import { resolveDefaultBranch } from '../../github/client.js';
 const DIRECTORY_FETCH_HINTS: string[] = [
   'Directory fetched and saved to disk.',
   'Use `localPath` as the `path` parameter for local tools:',
-  '  localSearchCode – search code with ripgrep',
-  '  localGetFileContent – read file content',
-  '  localViewStructure – browse the directory tree',
-  '  localFindFiles – find files by name/metadata',
+  ...LOCAL_TOOL_LIST,
   'Tip: start with localViewStructure to explore the fetched directory.',
 ];
 
@@ -59,7 +57,6 @@ const FILE_KEYS_PRIORITY = [
   'repo',
   'path',
   'branch',
-  'contentLength',
   'content',
   'pagination',
   'isPartial',
@@ -168,8 +165,6 @@ async function handleDirectoryFetch(
     fileCount: result.fileCount,
     totalSize: result.totalSize,
     files: result.files,
-    cached: result.cached,
-    expiresAt: result.expiresAt,
   };
 
   const hints = [...DIRECTORY_FETCH_HINTS];
@@ -239,7 +234,6 @@ async function handleFileFetch(
     repo: query.repo,
     path: apiResult.data.path,
     branch: apiResult.data.ref,
-    contentLength: apiResult.data.size,
     content: apiResult.data.content,
     ...(apiResult.data.isPartial && {
       isPartial: apiResult.data.isPartial,

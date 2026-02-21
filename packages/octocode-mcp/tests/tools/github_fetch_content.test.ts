@@ -121,7 +121,7 @@ describe('GitHub Fetch Content Tool', () => {
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('status: "hasResults"');
-      expect(responseText).toContain('contentLength: 35');
+      expect(responseText).toContain('content:');
     });
 
     it('should pass authInfo to provider', async () => {

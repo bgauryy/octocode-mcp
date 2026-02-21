@@ -201,17 +201,20 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `passthru`: Print all lines from matched files
 - `debug`: Enable debug output
 
+**Output format:** Each match contains `value` (text), `line` (1-indexed), and `column`. Use `line` as `lineHint` for LSP tools.
+
 **Critical:** Produces `lineHint` values **required** for all LSP tools.
 
 ---
 
 ### `localViewStructure`
 
-**What it does:** Lists directory contents with metadata using `ls`.
+**What it does:** Lists directory contents with metadata using `ls`. Returns structured entry objects (not a formatted string).
 
 | Feature | Description |
 |---------|-------------|
-| **Metadata** | Size, type, permissions, modification time |
+| **Structured output** | Each entry is an object with `name`, `type` (`file`/`dir`/`link`), `size`, `modified`, `permissions` |
+| **Summary** | One-line summary string (e.g., `"42 entries (30 files, 12 dirs, 1.5MB)"`) |
 | **Depth control** | 1-5 levels deep |
 | **Sorting** | By name, size, time, or extension |
 | **Filtering** | Pattern, extension, directories/files only |
@@ -234,8 +237,20 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `extension`/`extensions`: Filter by file extension(s)
 - `recursive`: Enable recursive traversal
 - `limit`: Max entries returned (1-10000)
-- `charOffset`/`charLength`: Character-based pagination for large outputs
 - `showFileLastModified`: Show file modification timestamps (default: false)
+
+**Output format:**
+```yaml
+entries:
+  - name: "src/"
+    type: dir
+  - name: "README.md"
+    type: file
+    size: "4.2KB"
+    modified: "2026-02-20"
+summary: "15 entries (12 files, 3 dirs, 128KB)"
+pagination: { currentPage: 1, totalPages: 1, ... }
+```
 
 ---
 
@@ -406,9 +421,11 @@ MCP Client → Octocode MCP → Language Server (spawned)
 ### LSP Security
 
 - **Symlink Resolution**: Paths resolved before access to prevent traversal attacks
+- **Allowed Roots**: Workspace directory + `~/.octocode/` (for cloned repos) are the allowed path roots
 - **Symbol Name Length**: Limited to 255 characters
 - **Depth Parameter**: Capped at 3 to prevent resource exhaustion
-- **Path Redaction**: Paths are always redacted in errors for security.
+- **Path Redaction**: Paths are always redacted in errors for security
+- **Workspace Root Resolution**: Unified via `resolveWorkspaceRoot()` — explicit parameter → `WORKSPACE_ROOT` env → config file → `process.cwd()`
 
 > LSP tools work standalone - no IDE required. TypeScript/JavaScript bundled; other languages need server installation.
 
@@ -660,6 +677,18 @@ When you just need to know which files contain something:
 localSearchCode(pattern="TODO", filesOnly=true)  // Fast
 localSearchCode(pattern="TODO")  // Returns all matches (slower)
 ```
+
+---
+
+## Response Format
+
+All local and LSP tool responses are optimized for LLM token efficiency:
+
+- **Per-result hints**: Hints are included inline within each result (not aggregated at the top level)
+- **No redundant metadata**: Fields like `cwd`, `contentLength`, `searchEngine`, `totalMatches`, `totalFiles`, `extractedLines` have been removed from responses
+- **Structured entries**: `localViewStructure` returns an `entries` array of objects (not a formatted string) with a `summary` one-liner
+- **Compact matches**: `localSearchCode` matches contain `value`, `line`, `column` — use `line` as `lineHint` for LSP tools
+- **LSP result stripping**: LSP tools strip internal fields (`selectionRange`, `displayRange`) from results — use `range.start.line + 1` as `lineHint` for follow-up calls
 
 ---
 

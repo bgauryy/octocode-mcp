@@ -187,7 +187,6 @@ export async function findFiles(
       return {
         status: 'error',
         errorCode: safetyCheck.errorCode! as LocalToolErrorCode,
-        totalFiles,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
         hints: safetyCheck.hints!,
@@ -286,8 +285,6 @@ export async function findFiles(
     return {
       status,
       files: finalFiles,
-      cwd: process.cwd(),
-      totalFiles,
       pagination: {
         currentPage: filePageNumber,
         totalPages,

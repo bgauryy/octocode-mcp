@@ -16,6 +16,10 @@ import {
   getActiveProvider,
 } from '../../serverConfig.js';
 import { cloneRepo } from './cloneRepo.js';
+import {
+  LOCAL_TOOL_LIST,
+  LSP_TOOL_LIST,
+} from '../../hints/localToolUsageHints.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Hints
@@ -25,13 +29,8 @@ import { cloneRepo } from './cloneRepo.js';
 const FULL_CLONE_HINTS: string[] = [
   'Repository cloned locally (full, shallow depth=1).',
   'Use `localPath` as the `path` parameter for local tools:',
-  '  localSearchCode – search code with ripgrep',
-  '  localGetFileContent – read file content (matchString for large files)',
-  '  localViewStructure – browse the directory tree',
-  '  localFindFiles – find files by name, size, or modification time',
-  '  lspGotoDefinition – jump to symbol definitions (semantic)',
-  '  lspFindReferences – find all usages of a symbol',
-  '  lspCallHierarchy – trace call chains (incoming/outgoing)',
+  ...LOCAL_TOOL_LIST,
+  ...LSP_TOOL_LIST,
   'Tip: start with localViewStructure to understand the project layout.',
 ];
 
@@ -39,10 +38,7 @@ const FULL_CLONE_HINTS: string[] = [
 const SPARSE_CLONE_HINTS: string[] = [
   'Partial tree fetched (sparse checkout – only the requested path was downloaded).',
   'Use `localPath` as the `path` parameter for local tools:',
-  '  localSearchCode – search within the fetched subtree',
-  '  localGetFileContent – read file content',
-  '  localViewStructure – browse the fetched directory tree',
-  '  localFindFiles – find files by name/metadata',
+  ...LOCAL_TOOL_LIST,
   'Note: LSP may have limited cross-file resolution in sparse checkouts.',
   'If you need full project context, re-clone without sparse_path.',
 ];
@@ -95,8 +91,6 @@ export async function executeCloneRepo(
           repo: result.repo,
           branch: result.branch,
           localPath: result.localPath,
-          cached: result.cached,
-          expiresAt: result.expiresAt,
           ...(result.sparse_path ? { sparse_path: result.sparse_path } : {}),
         };
 
@@ -133,8 +127,6 @@ export async function executeCloneRepo(
         'branch',
         'sparse_path',
         'localPath',
-        'cached',
-        'expiresAt',
         'error',
       ],
     }

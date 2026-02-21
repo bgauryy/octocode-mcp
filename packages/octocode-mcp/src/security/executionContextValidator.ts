@@ -5,33 +5,8 @@
 import path from 'path';
 import fs from 'fs';
 import type { PathValidationResult } from '../utils/core/types.js';
-import { getConfigSync } from 'octocode-shared';
-
-/**
- * Gets the workspace root directory
- * Uses WORKSPACE_ROOT environment variable if set, otherwise falls back to process.cwd()
- */
-function getWorkspaceRoot(workspaceRoot?: string): string {
-  if (workspaceRoot) {
-    return path.resolve(workspaceRoot);
-  }
-
-  if (process.env.WORKSPACE_ROOT) {
-    return path.resolve(process.env.WORKSPACE_ROOT);
-  }
-
-  // Fallback to global config
-  try {
-    const configRoot = getConfigSync().local.workspaceRoot;
-    if (configRoot) {
-      return path.resolve(configRoot);
-    }
-  } catch {
-    // Config not loaded yet, fall through
-  }
-
-  return process.cwd();
-}
+import { resolveWorkspaceRoot } from './workspaceRoot.js';
+import { getOctocodeDir } from 'octocode-shared';
 
 /**
  * Validates that a command execution context (cwd) is within the workspace directory
@@ -45,7 +20,7 @@ export function validateExecutionContext(
   cwd: string | undefined,
   workspaceRoot?: string
 ): PathValidationResult {
-  const workspace = getWorkspaceRoot(workspaceRoot);
+  const workspace = resolveWorkspaceRoot(workspaceRoot);
 
   if (cwd === undefined) {
     return { isValid: true };
@@ -60,10 +35,22 @@ export function validateExecutionContext(
 
   const absoluteCwd = path.resolve(cwd);
 
-  if (
-    absoluteCwd !== workspace &&
-    !absoluteCwd.startsWith(workspace + path.sep)
-  ) {
+  // Build allowed roots: workspace + octocode home dir (for cloned repos)
+  const allowedRoots = [workspace];
+  try {
+    const octocodeHome = path.resolve(getOctocodeDir());
+    if (!allowedRoots.includes(octocodeHome)) {
+      allowedRoots.push(octocodeHome);
+    }
+  } catch {
+    // getOctocodeDir unavailable, skip
+  }
+
+  const isInAllowedRoot = allowedRoots.some(
+    root => absoluteCwd === root || absoluteCwd.startsWith(root + path.sep)
+  );
+
+  if (!isInAllowedRoot) {
     return {
       isValid: false,
       error: `Can only execute commands within workspace directory: ${workspace}. Attempted execution in: ${absoluteCwd}`,
@@ -74,7 +61,10 @@ export function validateExecutionContext(
     fs.lstatSync(absoluteCwd);
     const realPath = fs.realpathSync(absoluteCwd);
 
-    if (realPath !== workspace && !realPath.startsWith(workspace + path.sep)) {
+    const isRealPathAllowed = allowedRoots.some(
+      root => realPath === root || realPath.startsWith(root + path.sep)
+    );
+    if (!isRealPathAllowed) {
       return {
         isValid: false,
         error: `Symlink target '${realPath}' is outside workspace directory: ${workspace}`,

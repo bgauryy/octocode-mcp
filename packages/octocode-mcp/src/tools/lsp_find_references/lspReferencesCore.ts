@@ -109,7 +109,6 @@ export async function findReferencesWithLSP(
     if (!locations || locations.length === 0) {
       return {
         status: 'empty',
-        totalReferences: 0,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
         hints: [
@@ -162,7 +161,6 @@ export async function findReferencesWithLSP(
     if (filteredLocations.length === 0) {
       return {
         status: 'empty',
-        totalReferences: 0,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
         hints: [
@@ -212,6 +210,7 @@ export async function findReferencesWithLSP(
     const hints = [
       ...getHints(TOOL_NAME, 'hasResults'),
       `Found ${totalReferences} reference(s) via Language Server`,
+      'Each location = a usage of this symbol; isDefinition=true marks the declaration',
     ];
 
     if (hasFilters && totalUnfiltered !== totalReferences) {
@@ -234,7 +233,6 @@ export async function findReferencesWithLSP(
       status: 'hasResults',
       locations: paginatedReferences,
       pagination,
-      totalReferences,
       hasMultipleFiles,
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
@@ -266,8 +264,6 @@ async function enhanceReferenceLocation(
   contextLines: number
 ): Promise<ReferenceLocation> {
   let content = raw.content;
-  let displayStartLine = raw.range.start.line + 1;
-  let displayEndLine = raw.range.end.line + 1;
 
   // Get context if needed
   if (contextLines > 0) {
@@ -290,9 +286,6 @@ async function enhanceReferenceLocation(
           return `${marker}${String(lineNum).padStart(4, ' ')}| ${line}`;
         })
         .join('\n');
-
-      displayStartLine = startLine + 1;
-      displayEndLine = endLine + 1;
     } catch {
       // Keep original content
     }
@@ -306,9 +299,5 @@ async function enhanceReferenceLocation(
     symbolKind: raw.isDefinition
       ? inferSymbolKindFromContent(content)
       : undefined,
-    displayRange: {
-      startLine: displayStartLine,
-      endLine: displayEndLine,
-    },
   };
 }

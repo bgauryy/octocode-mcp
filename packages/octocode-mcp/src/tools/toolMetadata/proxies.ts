@@ -3,8 +3,7 @@
  * These proxies defer to the metadata state, enabling access before/after init.
  */
 import { CompleteMetadata, ToolNames } from '../../types/metadata.js';
-import { LOCAL_BASE_HINTS } from '../local_ripgrep/hints.js';
-import { STATIC_TOOL_NAMES, isLocalTool } from '../toolNames.js';
+import { STATIC_TOOL_NAMES } from '../toolNames.js';
 import { getMetadataOrNull } from './state.js';
 
 // ============================================================================
@@ -218,14 +217,8 @@ export function getToolHintsSync(
   if (!metadata || !metadata.tools[toolName]) {
     return [];
   }
-
-  // Use separated hints for local tools to avoid GitHub-specific context
-  const baseHints = isLocalTool(toolName)
-    ? (LOCAL_BASE_HINTS[resultType] ?? [])
-    : (metadata.baseHints[resultType] ?? []);
-
   const toolHints = metadata.tools[toolName]?.hints[resultType] ?? [];
-  return [...baseHints, ...toolHints];
+  return [...toolHints];
 }
 
 /**

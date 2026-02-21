@@ -5,12 +5,7 @@ vi.mock('../../../src/utils/http/fetch.js');
 vi.mock('../../../src/session.js', () => ({
   logSessionError: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('../../../src/tools/local_ripgrep/hints.js', () => ({
-  LOCAL_BASE_HINTS: {
-    hasResults: ['Local result hint'],
-    empty: ['Local empty hint'],
-  },
-}));
+// LOCAL_BASE_HINTS no longer used by getToolHintsSync (moved to server.instructions)
 
 const mockFetchWithRetries = vi.mocked(fetchWithRetries);
 
@@ -316,7 +311,7 @@ describe('toolMetadata/proxies', () => {
   });
 
   describe('getToolHintsSync', () => {
-    it('should return combined hints for GitHub tool', async () => {
+    it('should return tool hints only (base hints in server.instructions)', async () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { getToolHintsSync } =
@@ -326,11 +321,10 @@ describe('toolMetadata/proxies', () => {
       await initializeToolMetadata();
 
       const hints = getToolHintsSync('githubSearchCode', 'hasResults');
-      expect(hints).toContain('Base result hint');
       expect(hints).toContain('GitHub hint');
     });
 
-    it('should use local base hints for local tools', async () => {
+    it('should return tool hints only for local tools', async () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { getToolHintsSync } =
@@ -340,9 +334,7 @@ describe('toolMetadata/proxies', () => {
       await initializeToolMetadata();
 
       const hints = getToolHintsSync('localSearchCode', 'hasResults');
-      expect(hints).toContain('Local result hint');
       expect(hints).toContain('Local code hint');
-      expect(hints).not.toContain('Base result hint'); // GitHub base hint excluded
     });
 
     it('should return empty array for unknown tool', async () => {

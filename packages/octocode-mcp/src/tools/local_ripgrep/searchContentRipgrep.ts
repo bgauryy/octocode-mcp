@@ -64,7 +64,6 @@ export async function searchContentRipgrep(
         status: 'error',
         errorCode: LOCAL_TOOL_ERROR_CODES.OUTPUT_TOO_LARGE,
         path: configuredQuery.path,
-        searchEngine: 'rg',
         researchGoal: configuredQuery.researchGoal,
         reasoning: configuredQuery.reasoning,
         hints: [
@@ -101,5 +100,4 @@ export {
 export {
   buildSearchResult,
   getFileModifiedTime,
-  computeCharacterOffsets,
 } from './ripgrepResultBuilder.js';

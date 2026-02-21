@@ -32,6 +32,7 @@ import {
 } from '../../utils/file/toolHelpers.js';
 import { STATIC_TOOL_NAMES } from '../toolNames.js';
 import { ToolErrors } from '../../errorCodes.js';
+import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
 import { executeFindReferences } from './execution.js';
 import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
 import { findReferencesWithLSP } from './lspReferencesCore.js';
@@ -138,9 +139,7 @@ export async function findReferences(
       throw error;
     }
 
-    // Get workspace root - use process.cwd() like callHierarchy and gotoDefinition
-    // to ensure full monorepo scope (findWorkspaceRoot stops at first package.json)
-    const workspaceRoot = process.env.WORKSPACE_ROOT || process.cwd();
+    const workspaceRoot = resolveWorkspaceRoot();
 
     // Try LSP for semantic reference finding, then merge with pattern matching
     let lspResult: FindReferencesResult | null = null;
@@ -261,7 +260,6 @@ export function mergeReferenceResults(
       hasMore: page < totalPages,
       resultsPerPage: referencesPerPage,
     },
-    totalReferences,
     hasMultipleFiles: uniqueFiles.size > 1,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,

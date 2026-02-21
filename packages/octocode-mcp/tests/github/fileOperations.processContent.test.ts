@@ -359,7 +359,6 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
         expect(result.data.matchNotFound).toBe(true);
         expect(result.data.searchedFor).toBe('NonExistentString');
         expect(result.data.content).toBe('');
-        expect(result.data.contentLength).toBe(0);
         expect(result.data.hints).toBeDefined();
         expect(result.data.hints?.[0]).toContain('not found');
       }
@@ -742,11 +741,6 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
       });
 
       expect(result).toHaveProperty('data');
-      if ('data' in result && !('error' in result.data)) {
-        expect(result.data.minified).toBe(false);
-        expect(result.data.minificationFailed).toBe(true);
-        expect(result.data.minificationType).toBe('terser');
-      }
     });
   });
 

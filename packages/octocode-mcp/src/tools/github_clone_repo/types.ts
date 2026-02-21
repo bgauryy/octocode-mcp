@@ -96,10 +96,8 @@ export interface CloneCacheMeta {
 export interface CloneRepoResult {
   /** Absolute path to the cloned repository on disk */
   localPath: string;
-  /** Whether the result was served from a valid (non-expired) cache */
+  /** Whether the result was served from a valid (non-expired) cache (internal, not in user-facing response) */
   cached: boolean;
-  /** ISO-8601 timestamp of when the cache expires (24 h from clone) */
-  expiresAt: string;
   /** Repository owner */
   owner: string;
   /** Repository name */

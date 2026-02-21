@@ -60,10 +60,14 @@ export interface ViewStructureResult {
   status: 'hasResults' | 'empty' | 'error';
   path?: string;
   cwd?: string;
-  structuredOutput?: string;
-  totalFiles?: number;
-  totalDirectories?: number;
-  totalSize?: number;
+  entries?: Array<{
+    name: string;
+    type: 'file' | 'dir' | 'link';
+    size?: string;
+    modified?: string;
+    permissions?: string;
+  }>;
+  summary?: string;
   errorCode?: ErrorCode;
   hints?: readonly string[];
   warnings?: string[];

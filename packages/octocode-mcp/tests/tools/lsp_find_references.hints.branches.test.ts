@@ -15,29 +15,20 @@ import { hints } from '../../src/tools/lsp_find_references/hints.js';
 
 describe('lspFindReferences hints - branch coverage', () => {
   describe('hasResults hints', () => {
-    it('should add filtered info when isFiltered with counts', () => {
+    it('should not add filtered hints (isFiltered branch removed)', () => {
+      // isFiltered/filteredCount branches were removed — dead dynamic context
       const result = hints.hasResults!({
         isFiltered: true,
         filteredCount: 5,
         totalUnfiltered: 20,
       });
-      expect(result.some(h => h?.includes('Filtered: 5 of 20'))).toBe(true);
+      expect(result.some(h => h?.includes('Filtered: 5 of 20'))).toBe(false);
       expect(
         result.some(h => h?.includes('includePattern/excludePattern'))
-      ).toBe(true);
+      ).toBe(false);
     });
 
-    it('should add filtered hint without counts when undefined', () => {
-      const result = hints.hasResults!({
-        isFiltered: true,
-      });
-      expect(
-        result.some(h => h?.includes('includePattern/excludePattern'))
-      ).toBe(true);
-      expect(result.some(h => h?.includes('Filtered:'))).toBe(false);
-    });
-
-    it('should not add filtered hints when isFiltered is false', () => {
+    it('should return empty when no matching context', () => {
       const result = hints.hasResults!({});
       expect(
         result.some(h => h?.includes('includePattern/excludePattern'))
@@ -58,15 +49,13 @@ describe('lspFindReferences hints - branch coverage', () => {
       );
     });
 
-    it('should add usage tips when not filteredAll', () => {
+    it('should not add usage tips when not filteredAll (branch removed)', () => {
+      // TIP hints for non-filteredAll were removed — dead dynamic context
       const result = hints.empty!({
         filteredAll: false,
       });
       expect(result.some(h => h?.includes('TIP: Use includePattern'))).toBe(
-        true
-      );
-      expect(result.some(h => h?.includes('TIP: Use excludePattern'))).toBe(
-        true
+        false
       );
     });
 

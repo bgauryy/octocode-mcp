@@ -71,8 +71,10 @@ export async function searchMultipleGitHubCode(
 
         const result: SearchResult = { files };
 
-        if (apiResult.data.repositoryContext) {
-          result.repositoryContext = apiResult.data.repositoryContext;
+        if (apiResult.data.repositoryContext?.branch) {
+          result.repositoryContext = {
+            branch: apiResult.data.repositoryContext.branch,
+          };
         }
 
         if (apiResult.data.pagination) {

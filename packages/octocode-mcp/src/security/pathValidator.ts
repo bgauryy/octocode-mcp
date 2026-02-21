@@ -35,8 +35,9 @@ import fs from 'fs';
 import os from 'os';
 import type { PathValidationResult } from '../utils/core/types.js';
 import { shouldIgnore } from './ignoredPathFilter.js';
-import { getConfigSync } from 'octocode-shared';
 import { redactPath } from '../errors/pathUtils.js';
+import { resolveWorkspaceRoot } from './workspaceRoot.js';
+import { getOctocodeDir } from 'octocode-shared';
 
 /**
  * PathValidator configuration options
@@ -65,16 +66,7 @@ export class PathValidator {
     const opts: PathValidatorOptions =
       typeof options === 'string' ? { workspaceRoot: options } : options || {};
 
-    // Priority: explicit option > env var WORKSPACE_ROOT > config > CWD
-    let rootSource = opts.workspaceRoot;
-    if (!rootSource) {
-      try {
-        rootSource = getConfigSync().local.workspaceRoot;
-      } catch {
-        // Config not loaded yet, fall through
-      }
-    }
-    const root = rootSource ? this.expandTilde(rootSource) : process.cwd();
+    const root = this.expandTilde(resolveWorkspaceRoot(opts.workspaceRoot));
 
     this.allowedRoots = [path.resolve(root)];
 
@@ -84,6 +76,17 @@ export class PathValidator {
       if (homeDir && !this.allowedRoots.includes(homeDir)) {
         this.allowedRoots.push(homeDir);
       }
+    }
+
+    // Always add octocode home dir (~/.octocode) so local/LSP tools
+    // can access cloned repos under ~/.octocode/repos/
+    try {
+      const octocodeHome = path.resolve(getOctocodeDir());
+      if (!this.allowedRoots.includes(octocodeHome)) {
+        this.allowedRoots.push(octocodeHome);
+      }
+    } catch {
+      // getOctocodeDir unavailable, skip
     }
 
     // Add additional roots from options

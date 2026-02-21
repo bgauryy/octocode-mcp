@@ -6,7 +6,6 @@
 export {
   fetchMultipleGitHubFileContents,
   type FileContentQuery,
-  type SamplingInfo,
   type ContentResultData,
   type ContentResult,
 } from '../tools/github_fetch_content/index.js';
@@ -66,7 +65,6 @@ export {
   searchContentRipgrep,
   executeRipgrepSearch,
   type RipgrepSearchQuery,
-  type RipgrepMatchLocation,
   type RipgrepMatch,
   type RipgrepMatchPagination,
   type RipgrepFileMatches,

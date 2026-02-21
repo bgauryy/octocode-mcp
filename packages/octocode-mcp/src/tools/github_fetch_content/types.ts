@@ -45,32 +45,17 @@ export interface FileContentQuery {
 // OUTPUT TYPES
 // ============================================================================
 
-/** LLM sampling metadata for content operations */
-export interface SamplingInfo {
-  samplingId?: string;
-  samplingMethod?: string;
-  samplingTokens?: number;
-  samplingCost?: number;
-  [key: string]: unknown;
-}
-
 /** File content result data */
 export interface ContentResultData {
   owner?: string;
   repo?: string;
   path?: string;
-  contentLength?: number;
   content?: string;
   branch?: string;
   startLine?: number;
   endLine?: number;
   isPartial?: boolean;
-  minified?: boolean;
-  minificationFailed?: boolean;
-  minificationType?: string;
-  originalQuery?: FileContentQuery;
   matchLocations?: string[];
-  sampling?: SamplingInfo;
   lastModified?: string;
   lastModifiedBy?: string;
   pagination?: PaginationInfo;

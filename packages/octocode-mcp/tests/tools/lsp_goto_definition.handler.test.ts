@@ -329,7 +329,9 @@ describe('LSP Goto Definition Handler Tests', () => {
         searchRadius: 5,
         researchGoal: 'Find definition',
         reasoning: 'Test',
-        hints: ['Note: Using text-based resolution'],
+        hints: [
+          'Each location = a definition site; use range.start.line+1 as lineHint for follow-up LSP calls',
+        ],
       };
 
       expect(result.status).toBe('hasResults');

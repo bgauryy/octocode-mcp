@@ -135,8 +135,6 @@ async function enhancePatternReference(
   contextLines: number
 ): Promise<ReferenceLocation> {
   let content = raw.lineContent;
-  let displayStartLine = raw.lineNumber;
-  let displayEndLine = raw.lineNumber;
 
   if (contextLines > 0) {
     try {
@@ -146,8 +144,6 @@ async function enhancePatternReference(
       const startLine = Math.max(0, raw.lineNumber - 1 - contextLines);
       const endLine = Math.min(fileLines.length, raw.lineNumber + contextLines);
       content = fileLines.slice(startLine, endLine).join('\n');
-      displayStartLine = startLine + 1;
-      displayEndLine = endLine;
     } catch {
       // Keep single line content
     }
@@ -158,10 +154,6 @@ async function enhancePatternReference(
     range: raw.range,
     content,
     isDefinition: raw.isDefinition,
-    displayRange: {
-      startLine: displayStartLine,
-      endLine: displayEndLine,
-    },
   };
 }
 
@@ -212,8 +204,6 @@ export async function findReferencesWithPatternMatching(
     const emptyHints = [
       ...getHints(TOOL_NAME, 'empty'),
       `No references found for '${query.symbolName}'`,
-      'Note: Using text-based search (language server not available)',
-      'Install typescript-language-server for semantic reference finding',
     ];
 
     if (hasFilters && totalUnfiltered > 0) {
@@ -224,7 +214,6 @@ export async function findReferencesWithPatternMatching(
 
     return {
       status: 'empty',
-      totalReferences: 0,
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
       hints: emptyHints,
@@ -252,8 +241,7 @@ export async function findReferencesWithPatternMatching(
   const hints = [
     ...getHints(TOOL_NAME, 'hasResults'),
     `Found ${totalReferences} reference(s) using text search`,
-    'Note: Using text-based search (language server not available)',
-    'Install typescript-language-server for semantic reference finding',
+    'Each location = a usage of this symbol; isDefinition=true marks the declaration',
   ];
 
   if (hasFilters && totalUnfiltered !== totalReferences) {
@@ -272,7 +260,6 @@ export async function findReferencesWithPatternMatching(
     status: 'hasResults',
     locations: paginatedReferences,
     pagination,
-    totalReferences,
     hasMultipleFiles,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,

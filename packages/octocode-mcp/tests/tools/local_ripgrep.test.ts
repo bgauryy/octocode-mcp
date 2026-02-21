@@ -77,7 +77,6 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.searchEngine).toBe('rg');
     });
 
     it('should handle empty results', async () => {
@@ -285,9 +284,6 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.totalFiles).toBe(2);
-      // In filesOnly mode, each file counts as 1 match (we know it matched but not how many times)
-      expect(result.totalMatches).toBe(2);
     });
 
     it('should include context lines', async () => {
@@ -459,7 +455,6 @@ describe('localSearchCode', () => {
 
       expect(result.status).toBe('hasResults');
       expect(result.files?.length).toBeLessThanOrEqual(5);
-      expect(result.totalFiles).toBe(5);
     });
 
     it('should map output-too-large error from engine', async () => {
@@ -584,7 +579,6 @@ describe('localSearchCode', () => {
       expect(result.status).toBe('hasResults');
       expect(result.files).toBeDefined();
       expect(result.files?.length).toBeLessThanOrEqual(10);
-      expect(result.totalFiles).toBe(25);
       expect(result.pagination?.totalPages).toBe(3);
       expect(result.pagination?.hasMore).toBe(true);
     });
@@ -930,12 +924,6 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.files![0]!.matches[0]!.location).toBeDefined();
-      // charOffset is computed from byte offset using file content
-      expect(result.files![0]!.matches[0]!.location.charOffset).toBe(50);
-      expect(result.files![0]!.matches[0]!.location.charLength).toBeGreaterThan(
-        0
-      );
     });
 
     it('should include line and column for human reference', async () => {
@@ -1124,7 +1112,6 @@ describe('localSearchCode', () => {
 
       expect(result.status).toBe('hasResults');
       expect(result.files?.length).toBe(1);
-      expect(result.totalFiles).toBe(1);
       expect(result.pagination?.totalPages).toBe(1);
       expect(result.pagination?.hasMore).toBe(false);
     });
@@ -1642,11 +1629,6 @@ describe('localSearchCode', () => {
 
       expect(result.status).toBe('hasResults');
       expect(result.files).toBeDefined();
-      expect(result.files![0]!.matches[0]!.location).toBeDefined();
-      // charOffset should be computed from byteOffset
-      expect(typeof result.files![0]!.matches[0]!.location.charOffset).toBe(
-        'number'
-      );
     });
 
     it('should successfully compute char offsets from byte offsets', async () => {
@@ -1678,11 +1660,6 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.files![0]!.matches[0]!.location.byteOffset).toBe(6);
-      expect(result.files![0]!.matches[0]!.location.charOffset).toBeDefined();
-      expect(result.files![0]!.matches[0]!.location.charLength).toBeGreaterThan(
-        0
-      );
     });
 
     it('should handle file with matches array for char offset computation', async () => {
@@ -1731,9 +1708,6 @@ describe('localSearchCode', () => {
 
       expect(result.status).toBe('hasResults');
       expect(result.files).toHaveLength(2);
-      // Both files should have char offsets computed
-      expect(result.files![0]!.matches[0]!.location.charOffset).toBeDefined();
-      expect(result.files![1]!.matches[0]!.location.charOffset).toBeDefined();
     });
 
     it('should return empty when only begin/end messages (no matches)', async () => {
@@ -1843,8 +1817,8 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      // Should still have the match with byte offsets as fallback
-      expect(result.files![0]!.matches[0]!.location.byteOffset).toBe(500);
+      // Should still have the match even when file read fails
+      expect(result.files![0]!.matches[0]).toBeDefined();
     });
 
     it('should handle context lines with missing context entries', async () => {
@@ -2143,7 +2117,6 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.searchEngine).toBe('grep');
       expect(result.warnings).toContain(
         'Using grep fallback (ripgrep not available). Some features may be limited.'
       );
@@ -2184,7 +2157,6 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.searchEngine).toBe('grep');
       expect(result.warnings).toContainEqual(
         expect.stringContaining('smartCase not supported by grep')
       );
@@ -2223,7 +2195,6 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.searchEngine).toBe('grep');
       expect(result.files).toHaveLength(3);
       expect(result.files?.[0]?.path).toBe('/test/path/file1.ts');
     });
@@ -2246,7 +2217,6 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('empty');
-      expect(result.searchEngine).toBe('grep');
     });
 
     it('should handle grep timeout (code null)', async () => {
@@ -2320,7 +2290,6 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.searchEngine).toBe('rg');
     });
   });
 

@@ -18,6 +18,10 @@ import {
   applyOutputSizeLimit,
   serializeForPagination,
 } from '../../utils/pagination/index.js';
+import {
+  getBodyLimitForBatchSize,
+  truncatePRBody,
+} from '../../github/prTransformation.js';
 
 export async function searchMultipleGitHubPullRequests(
   args: ToolExecutionArgs<GitHubPullRequestSearchQuery>
@@ -92,10 +96,11 @@ export async function searchMultipleGitHubPullRequests(
         }
 
         // Transform provider response to tool result format
+        const bodyLimit = getBodyLimitForBatchSize(query.limit);
         const pullRequests = apiResult.data.items.map(pr => ({
           number: pr.number,
           title: pr.title,
-          body: pr.body,
+          body: truncatePRBody(pr.body, pr.number, bodyLimit),
           url: pr.url,
           state: pr.state,
           draft: pr.draft,
@@ -231,6 +236,7 @@ export async function searchMultipleGitHubPullRequests(
               ...paginationHints,
               ...outputLimitHints,
               ...fileChangeHints,
+              "file_changes[].patch = diff hunks; use prNumber + type='partialContent' for full file diffs",
             ],
           }
         );

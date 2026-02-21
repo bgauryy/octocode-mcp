@@ -11,6 +11,7 @@ import {
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
 import {
   SymbolResolver,
   SymbolResolutionError,
@@ -90,7 +91,7 @@ export async function processCallHierarchy(
     }
 
     // Try LSP first for semantic call hierarchy
-    const workspaceRoot = process.env.WORKSPACE_ROOT || process.cwd();
+    const workspaceRoot = resolveWorkspaceRoot();
 
     if (await isLanguageServerAvailable(absolutePath)) {
       try {

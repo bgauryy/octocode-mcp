@@ -8,7 +8,6 @@ import type {
 import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
 import { TOOL_NAMES } from '../toolMetadata.js';
 import { promises as fs } from 'fs';
-import { byteToCharIndex, byteSlice } from '../../utils/file/byteOffset.js';
 
 /**
  * Build the final search result with pagination and metadata
@@ -16,14 +15,11 @@ import { byteToCharIndex, byteSlice } from '../../utils/file/byteOffset.js';
 export async function buildSearchResult(
   parsedFiles: RipgrepFileMatches[],
   configuredQuery: RipgrepQuery,
-  searchEngine: 'rg' | 'grep',
+  _searchEngine: 'rg' | 'grep',
   warnings: string[],
   stats?: SearchStats
 ): Promise<SearchContentResult> {
-  const filesWithCharOffsets =
-    searchEngine === 'rg'
-      ? await computeCharacterOffsets(parsedFiles)
-      : parsedFiles; // grep doesn't provide byte offsets
+  const filesWithCharOffsets = parsedFiles;
 
   const filesWithMetadata = await Promise.all(
     filesWithCharOffsets.map(async f => {
@@ -145,11 +141,7 @@ export async function buildSearchResult(
   return {
     status: 'hasResults',
     files: finalFiles,
-    cwd: process.cwd(),
-    totalMatches,
-    totalFiles,
     path: configuredQuery.path,
-    searchEngine,
     pagination: {
       currentPage: filePageNumber,
       totalPages: totalFilePages,
@@ -164,6 +156,7 @@ export async function buildSearchResult(
       ...paginationHints,
       ...refinementHints,
       ...getHints(TOOL_NAMES.LOCAL_RIPGREP, 'hasResults'),
+      'files[].matches[].line = use as lineHint for LSP tools',
     ],
   };
 }
@@ -191,14 +184,6 @@ function _getStructuredResultSizeHints(
       );
   }
 
-  if (totalMatches > 0 && query.mode === 'detailed') {
-    const contentLength =
-      query.matchContentLength || RESOURCE_LIMITS.DEFAULT_MATCH_CONTENT_LENGTH;
-    hints.push(
-      `Integration: byteOffset/charOffset available per match, values truncated to ${contentLength} chars (matchContentLength: 1-800)`
-    );
-  }
-
   return hints;
 }
 
@@ -211,55 +196,4 @@ export async function getFileModifiedTime(
   } catch {
     return undefined;
   }
-}
-
-/**
- * Compute actual character offsets for matches by reading file content.
- * This converts ripgrep's byte offsets to JavaScript string indices.
- */
-export async function computeCharacterOffsets(
-  files: RipgrepFileMatches[]
-): Promise<RipgrepFileMatches[]> {
-  return Promise.all(
-    files.map(async file => {
-      if (!file.matches || file.matches.length === 0) {
-        return file;
-      }
-
-      try {
-        // Read file content for byte-to-char conversion
-        const content = await fs.readFile(file.path, 'utf8');
-
-        // Update each match with actual character positions
-        const updatedMatches = file.matches.map(match => {
-          const charOffset = byteToCharIndex(
-            content,
-            match.location.byteOffset
-          );
-          const matchText = byteSlice(
-            content,
-            match.location.byteOffset,
-            match.location.byteOffset + match.location.byteLength
-          );
-
-          return {
-            ...match,
-            location: {
-              ...match.location,
-              charOffset,
-              charLength: matchText.length,
-            },
-          };
-        });
-
-        return {
-          ...file,
-          matches: updatedMatches,
-        };
-      } catch {
-        // If file read fails, keep byte offsets as fallback
-        return file;
-      }
-    })
-  );
 }

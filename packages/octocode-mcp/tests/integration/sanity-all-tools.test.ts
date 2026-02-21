@@ -106,7 +106,7 @@ describe('Integration sanity: all tools', () => {
       entryPageNumber: 1,
     });
     expect(vs.status).toBe('hasResults');
-    expect(vs.structuredOutput).toBeDefined();
+    expect(vs.entries).toBeDefined();
     expect(vs.pagination?.currentPage).toBe(1);
     expect(vs.pagination?.entriesPerPage).toBe(2);
 

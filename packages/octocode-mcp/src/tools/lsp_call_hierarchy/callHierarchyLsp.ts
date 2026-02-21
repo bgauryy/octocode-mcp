@@ -87,7 +87,7 @@ export async function callHierarchyWithLSP(
       );
 
       if (allIncomingCalls.length === 0) {
-        return {
+        return stripCallHierarchyInternalFields({
           status: 'empty',
           item: enhancedTargetItem,
           direction: 'incoming',
@@ -102,7 +102,7 @@ export async function callHierarchyWithLSP(
             'Check if it is called via alias or dynamic invocation',
             'Try lspFindReferences for broader usage search',
           ],
-        };
+        });
       }
 
       // Apply pagination first, then enhance only visible items
@@ -118,7 +118,7 @@ export async function callHierarchyWithLSP(
           ? await enhanceIncomingCalls(paginatedItems, contextLines)
           : paginatedItems;
 
-      return {
+      return stripCallHierarchyInternalFields({
         status: 'hasResults',
         item: enhancedTargetItem,
         direction: 'incoming',
@@ -130,9 +130,10 @@ export async function callHierarchyWithLSP(
         hints: [
           ...getHints(TOOL_NAME, 'hasResults'),
           `Found ${allIncomingCalls.length} caller(s) via Language Server (depth ${depth})`,
+          'Each incomingCall.from = a function that calls this symbol; fromRanges = exact call sites',
           'Use lspGotoDefinition to navigate to each caller',
         ],
-      };
+      });
     } else {
       const contextLines = query.contextLines ?? 2;
 
@@ -146,7 +147,7 @@ export async function callHierarchyWithLSP(
       );
 
       if (allOutgoingCalls.length === 0) {
-        return {
+        return stripCallHierarchyInternalFields({
           status: 'empty',
           item: enhancedTargetItem,
           direction: 'outgoing',
@@ -160,7 +161,7 @@ export async function callHierarchyWithLSP(
             'The function may only contain primitive operations',
             'Check if calls use dynamic invocation patterns',
           ],
-        };
+        });
       }
 
       // Apply pagination first, then enhance only visible items
@@ -176,7 +177,7 @@ export async function callHierarchyWithLSP(
           ? await enhanceOutgoingCalls(paginatedItems, contextLines)
           : paginatedItems;
 
-      return {
+      return stripCallHierarchyInternalFields({
         status: 'hasResults',
         item: enhancedTargetItem,
         direction: 'outgoing',
@@ -188,9 +189,10 @@ export async function callHierarchyWithLSP(
         hints: [
           ...getHints(TOOL_NAME, 'hasResults'),
           `Found ${allOutgoingCalls.length} callee(s) via Language Server (depth ${depth})`,
+          'Each outgoingCall.to = a function called by this symbol; fromRanges = exact call sites',
           'Use lspGotoDefinition to navigate to each callee',
         ],
-      };
+      });
     }
   } finally {
     await client.stop();
@@ -283,4 +285,34 @@ export async function gatherOutgoingCallsRecursive(
   }
 
   return allCalls;
+}
+
+/**
+ * Strip internal LSP fields from call hierarchy results before returning.
+ * Removes selectionRange and displayRange which are not useful for LLM consumers.
+ */
+function stripCallHierarchyInternalFields(
+  result: CallHierarchyResult
+): CallHierarchyResult {
+  const stripItem = (item: CallHierarchyItem): CallHierarchyItem => {
+    const { selectionRange, displayRange, ...rest } = item;
+    return rest as CallHierarchyItem;
+  };
+
+  return {
+    ...result,
+    ...(result.item && { item: stripItem(result.item) }),
+    ...(result.incomingCalls && {
+      incomingCalls: result.incomingCalls.map(call => ({
+        ...call,
+        from: stripItem(call.from),
+      })),
+    }),
+    ...(result.outgoingCalls && {
+      outgoingCalls: result.outgoingCalls.map(call => ({
+        ...call,
+        to: stripItem(call.to),
+      })),
+    }),
+  };
 }

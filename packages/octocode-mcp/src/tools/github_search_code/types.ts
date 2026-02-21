@@ -57,12 +57,10 @@ export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
     /** File last modified timestamp */
     lastModifiedAt?: string;
   }>;
-  /** When all files are from the same repo, this provides the owner, repo, and branch separately */
+  /** When all files are from the same repo, provides the branch for follow-up calls */
   repositoryContext?: {
-    owner: string;
-    repo: string;
     /** Default branch of the repository (for use with githubGetFileContent) */
-    branch?: string;
+    branch: string;
   };
   /** Pagination info for navigating through results */
   pagination?: {

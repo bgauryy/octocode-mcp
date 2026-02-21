@@ -155,20 +155,51 @@ export async function fetchDirectoryContents(
 
   // ── 1. Cache hit? ─────────────────────────────────────────────
   const cacheResult = isCacheHit(cloneDir);
-  if (!forceRefresh && cacheResult.hit && existsSync(dirPath)) {
-    const cached = scanDirectoryStats(dirPath, cloneDir);
-    return {
-      localPath: dirPath,
-      files: cached.files,
-      fileCount: cached.fileCount,
-      totalSize: cached.totalSize,
-      cached: true,
-      expiresAt: cacheResult.meta.expiresAt,
-      owner,
-      repo,
-      branch,
-      directoryPath: path,
-    };
+  if (cacheResult.hit) {
+    const isCloneCache =
+      !cacheResult.meta.source || cacheResult.meta.source === 'clone';
+
+    if (isCloneCache) {
+      // A full/sparse git clone is always a superset of what directoryFetch
+      // would produce. Use it unconditionally (even on forceRefresh) to avoid
+      // degrading clone content. To refresh a clone, use githubCloneRepo.
+      if (existsSync(dirPath)) {
+        const cached = scanDirectoryStats(dirPath, cloneDir);
+        return {
+          localPath: dirPath,
+          files: cached.files,
+          fileCount: cached.fileCount,
+          totalSize: cached.totalSize,
+          cached: true,
+          expiresAt: cacheResult.meta.expiresAt,
+          owner,
+          repo,
+          branch,
+          directoryPath: path,
+        };
+      }
+      throw new Error(
+        `Path "${path}" not found in the cloned repository (${owner}/${repo}@${branch}). ` +
+          'To refresh the clone, use githubCloneRepo with forceRefresh: true.'
+      );
+    }
+
+    // directoryFetch cache — use if valid and not force-refreshing
+    if (!forceRefresh && existsSync(dirPath)) {
+      const cached = scanDirectoryStats(dirPath, cloneDir);
+      return {
+        localPath: dirPath,
+        files: cached.files,
+        fileCount: cached.fileCount,
+        totalSize: cached.totalSize,
+        cached: true,
+        expiresAt: cacheResult.meta.expiresAt,
+        owner,
+        repo,
+        branch,
+        directoryPath: path,
+      };
+    }
   }
 
   // ── 2. List directory via Contents API ────────────────────────

@@ -198,10 +198,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           path: 'test.txt',
           branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
-          contentLength: 34,
-          minified: true,
-          minificationType: 'general',
-          minificationFailed: false,
         },
       });
     });
@@ -219,10 +215,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           path: 'test.txt',
           branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
-          contentLength: 34,
-          minified: true,
-          minificationType: 'general',
-          minificationFailed: false,
         },
       });
     });
@@ -243,10 +235,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           path: 'test.txt',
           branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
-          contentLength: 34,
-          minified: true,
-          minificationType: 'general',
-          minificationFailed: false,
         },
       });
     });
@@ -268,10 +256,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           path: 'test.txt',
           branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
-          contentLength: 34,
-          minified: true,
-          minificationType: 'general',
-          minificationFailed: false,
         },
       });
     });
@@ -293,10 +277,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           path: 'test.txt',
           branch: 'HEAD',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
-          contentLength: 34,
-          minified: true,
-          minificationType: 'general',
-          minificationFailed: false,
         },
       });
     });
@@ -316,7 +296,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         );
         expect(result.data.startLine).toBeUndefined();
         expect(result.data.endLine).toBeUndefined();
-        expect(result.data.contentLength).toBe(34);
         expect(result.data.isPartial).toBeUndefined();
       }
     });
@@ -353,9 +332,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         expect(result.data.startLine).toBe(3);
         expect(result.data.endLine).toBe(6);
         expect(result.data.isPartial).toBe(true);
-        expect(result.data.contentLength).toBe(
-          result.data.content?.length || 0
-        );
       }
     });
 
@@ -570,9 +546,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         expect(result.data.startLine).toBe(9); // Max(1, 12-3)
         expect(result.data.endLine).toBe(15); // Min(21, 12+3)
         expect(result.data.isPartial).toBe(true);
-        expect(result.data.contentLength).toBe(
-          result.data.content?.length || 0
-        );
 
         // Should contain the match and context
         expect(result.data.content).toContain('export function createRef');
@@ -603,7 +576,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         expect(result.data.matchNotFound).toBe(true);
         expect(result.data.searchedFor).toBe('nonexistent string');
         expect(result.data.content).toBe('');
-        expect(result.data.contentLength).toBe(0);
       }
     });
 
@@ -679,7 +651,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       expect(result.status).toBe(200);
       if ('data' in result) {
         expect(result.data.content).toBe('line 5\nline 6\nline 7\nline 8');
-        expect(result.data.minified).toBe(true);
         expect(result.data.isPartial).toBe(true);
       }
     });
@@ -699,7 +670,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       expect(result.status).toBe(200);
       if ('data' in result) {
         expect(result.data.content).toBe('line 14\nline 15\nline 16');
-        expect(result.data.minified).toBe(true);
         expect(result.data.isPartial).toBe(true);
       }
     });

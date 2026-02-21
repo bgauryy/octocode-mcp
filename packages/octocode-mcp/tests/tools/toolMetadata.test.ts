@@ -9,16 +9,7 @@ vi.mock('../../src/session.js', () => ({
 
 const mockFetchWithRetries = vi.mocked(fetchWithRetries);
 
-// Mock the local hints module
-vi.mock('../../src/tools/local_ripgrep/hints.js', () => ({
-  LOCAL_BASE_HINTS: {
-    hasResults: [
-      'Follow mainResearchGoal to navigate research',
-      'Common hint for all tools',
-    ],
-    empty: ['Try broader terms'],
-  },
-}));
+// LOCAL_BASE_HINTS no longer used by getToolHintsSync (moved to server.instructions)
 
 describe('toolMetadata', () => {
   // Common test data
@@ -406,7 +397,7 @@ describe('toolMetadata', () => {
       expect(Array.isArray(hints)).toBe(true);
     });
 
-    it('should return combined base and tool hints', async () => {
+    it('should return tool hints (base hints moved to server.instructions)', async () => {
       const { initializeToolMetadata, getToolHintsSync } =
         await import('../../src/tools/toolMetadata.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
@@ -415,6 +406,7 @@ describe('toolMetadata', () => {
       const hints = getToolHintsSync('githubSearchCode', 'hasResults');
       expect(hints?.length).toBeGreaterThan(0);
       expect(Array.isArray(hints)).toBe(true);
+      expect(hints).toContain('Review results');
     });
 
     it('should return empty array for non-existent tool', async () => {
@@ -698,8 +690,8 @@ describe('toolMetadata', () => {
     });
   });
 
-  describe('getToolHintsSync local tool filtering', () => {
-    it('should use local base hints for local tools', async () => {
+  describe('getToolHintsSync (base hints in server.instructions)', () => {
+    it('should return only tool-specific hints for local tools', async () => {
       const { initializeToolMetadata, getToolHintsSync } =
         await import('../../src/tools/toolMetadata.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadataWithGitHubHints);
@@ -707,18 +699,11 @@ describe('toolMetadata', () => {
 
       const hints = getToolHintsSync('localSearchCode', 'hasResults');
 
-      // Should include mocked local base hints
-      expect(hints).toContain('Follow mainResearchGoal to navigate research');
-      expect(hints).toContain('Common hint for all tools');
-      // Should include tool-specific hints
+      // Base hints moved to server.instructions; only tool hints returned
       expect(hints).toContain('Local search results');
-      // Should NOT include GitHub-specific hints from metadata
-      expect(hints).not.toContain(
-        "Use 'owner', 'repo', 'branch', 'path' fields directly in next tool calls"
-      );
     });
 
-    it('should use local base hints for localGetFileContent', async () => {
+    it('should return only tool-specific hints for localGetFileContent', async () => {
       const { initializeToolMetadata, getToolHintsSync } =
         await import('../../src/tools/toolMetadata.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadataWithGitHubHints);
@@ -726,15 +711,10 @@ describe('toolMetadata', () => {
 
       const hints = getToolHintsSync('localGetFileContent', 'hasResults');
 
-      // Should include mocked local base hints
-      expect(hints).toContain('Common hint for all tools');
-      // Should NOT include GitHub-specific hints
-      expect(hints).not.toContain(
-        "Use 'owner', 'repo', 'branch', 'path' fields directly in next tool calls"
-      );
+      expect(hints).toContain('Local file retrieved');
     });
 
-    it('should use base hints for GitHub tools', async () => {
+    it('should return only tool-specific hints for GitHub tools', async () => {
       const { initializeToolMetadata, getToolHintsSync } =
         await import('../../src/tools/toolMetadata.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadataWithGitHubHints);
@@ -742,13 +722,10 @@ describe('toolMetadata', () => {
 
       const hints = getToolHintsSync('githubSearchCode', 'hasResults');
 
-      // Should include GitHub-specific hints from metadata
-      expect(hints).toContain(
-        "Use 'owner', 'repo', 'branch', 'path' fields directly in next tool calls"
-      );
+      expect(hints).toContain('Review results');
     });
 
-    it('should use local base hints in empty status for local tools', async () => {
+    it('should return only tool-specific empty hints for local tools', async () => {
       const { initializeToolMetadata, getToolHintsSync } =
         await import('../../src/tools/toolMetadata.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadataWithGitHubHints);
@@ -756,10 +733,7 @@ describe('toolMetadata', () => {
 
       const hints = getToolHintsSync('localSearchCode', 'empty');
 
-      // Should include mocked local empty hints
-      expect(hints).toContain('Try broader terms');
-      // Should NOT include GitHub-specific hints
-      expect(hints).not.toContain("Use 'repo' and 'owner' to narrow scope");
+      expect(hints).toContain('No local matches');
     });
   });
 });

@@ -15,17 +15,12 @@ import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
-import {
-  applyPagination,
-  generatePaginationHints,
-} from '../../utils/pagination/index.js';
-import { parseFileSize } from '../../utils/file/size.js';
-import { RESOURCE_LIMITS, DEFAULTS } from '../../utils/core/constants.js';
+import { parseFileSize, formatFileSize } from '../../utils/file/size.js';
+import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
 import type {
   ViewStructureQuery,
   ViewStructureResult,
 } from '../../utils/core/types.js';
-import path from 'path';
 import { ToolErrors } from '../../errorCodes.js';
 import {
   BulkViewStructureSchema,
@@ -33,7 +28,7 @@ import {
 } from './scheme.js';
 import {
   applyEntryFilters,
-  formatEntryString,
+  toEntryObject,
   type DirectoryEntry,
 } from './structureFilters.js';
 import { parseLsSimple, parseLsLongFormat } from './structureParser.js';
@@ -148,7 +143,6 @@ export async function viewStructure(
         totalSizeBytes += parseFileSize(entry.size);
       }
     }
-    const totalSize = totalSizeBytes;
 
     const entriesPerPage =
       query.entriesPerPage || RESOURCE_LIMITS.DEFAULT_ENTRIES_PER_PAGE;
@@ -167,39 +161,12 @@ export async function viewStructure(
       hasMore: entryPageNumber < totalPages,
     };
 
-    const structuredLines = paginatedEntries.map(entry =>
-      formatEntryString(entry, 0)
-    );
-    let structuredOutput = structuredLines.join('\n');
+    const outputEntries = paginatedEntries.map(entry => toEntryObject(entry));
     const warnings: string[] = [];
-
-    let paginationMetadata: ReturnType<typeof applyPagination> | null = null;
-
-    // Auto-pagination: Apply character limit if output is large
-    let effectiveCharLength = query.charLength;
-    if (
-      !query.charLength &&
-      structuredOutput.length > DEFAULTS.MAX_OUTPUT_CHARS
-    ) {
-      effectiveCharLength = RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH;
-      warnings.push(
-        `Auto-paginated: Content (${structuredOutput.length} chars) exceeds ${DEFAULTS.MAX_OUTPUT_CHARS} char limit`
-      );
-    }
-
-    if (effectiveCharLength) {
-      paginationMetadata = applyPagination(
-        structuredOutput,
-        query.charOffset ?? 0,
-        effectiveCharLength
-      );
-      structuredOutput = paginationMetadata.paginatedContent;
-    }
 
     const status = totalEntries > 0 ? 'hasResults' : 'empty';
     const entryPaginationHints = [
       `Page ${entryPageNumber}/${totalPages} (showing ${paginatedEntries.length} of ${totalEntries})`,
-      `Total: ${totalFiles} files, ${totalDirectories} directories`,
       entryPaginationInfo.hasMore
         ? `Next: entryPageNumber=${entryPageNumber + 1}`
         : 'Final page',
@@ -211,21 +178,13 @@ export async function viewStructure(
       entriesPerPage: entryPaginationInfo.entriesPerPage,
       totalEntries: entryPaginationInfo.totalEntries,
       hasMore: entryPaginationInfo.hasMore,
-      ...(paginationMetadata && {
-        charOffset: paginationMetadata.charOffset,
-        charLength: paginationMetadata.charLength,
-        totalChars: paginationMetadata.totalChars,
-      }),
     };
 
     return {
       status,
       path: query.path,
-      cwd: process.cwd(),
-      structuredOutput,
-      totalFiles,
-      totalDirectories,
-      totalSize,
+      entries: outputEntries,
+      summary: `${totalEntries} entries (${totalFiles} files, ${totalDirectories} dirs, ${formatFileSize(totalSizeBytes)})`,
       pagination,
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
@@ -233,11 +192,6 @@ export async function viewStructure(
       hints: [
         ...entryPaginationHints,
         ...getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, status),
-        ...(paginationMetadata
-          ? generatePaginationHints(paginationMetadata, {
-              toolName: STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
-            })
-          : []),
       ],
     };
   } catch (error) {
@@ -328,7 +282,6 @@ async function viewStructureRecursive(
       totalSizeBytes += parseFileSize(entry.size);
     }
   }
-  const totalSize = totalSizeBytes;
 
   const totalEntries = filteredEntries.length;
 
@@ -350,41 +303,13 @@ async function viewStructureRecursive(
     hasMore: entryPageNumber < totalPages,
   };
 
-  const structuredLines = paginatedEntries.map(entry => {
-    // Fallback to path splitting if depth not present (e.g. from ls parsing)
-    const depth = entry.depth ?? entry.name.split(path.sep).length - 1;
-    return formatEntryString(entry, depth);
-  });
-  let structuredOutput = structuredLines.join('\n');
+  const outputEntries = paginatedEntries.map(entry => toEntryObject(entry));
   const warnings: string[] = [];
 
   if (walkStats.skipped > 0) {
     warnings.push(
       `${walkStats.skipped} entries skipped due to permission errors`
     );
-  }
-
-  let paginationMetadata: ReturnType<typeof applyPagination> | null = null;
-
-  // Auto-pagination: Apply character limit if output is large
-  let effectiveCharLength = query.charLength;
-  if (
-    !query.charLength &&
-    structuredOutput.length > DEFAULTS.MAX_OUTPUT_CHARS
-  ) {
-    effectiveCharLength = RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH;
-    warnings.push(
-      `Auto-paginated: Content (${structuredOutput.length} chars) exceeds ${DEFAULTS.MAX_OUTPUT_CHARS} char limit`
-    );
-  }
-
-  if (effectiveCharLength) {
-    paginationMetadata = applyPagination(
-      structuredOutput,
-      query.charOffset ?? 0,
-      effectiveCharLength
-    );
-    structuredOutput = paginationMetadata.paginatedContent;
   }
 
   const status = totalEntries > 0 ? 'hasResults' : 'empty';
@@ -395,17 +320,10 @@ async function viewStructureRecursive(
 
   const entryPaginationHints = [
     `Page ${entryPageNumber}/${totalPages} (showing ${paginatedEntries.length} of ${totalEntries})`,
-    `Total: ${totalFiles} files, ${totalDirectories} directories`,
     entryPaginationInfo.hasMore
       ? `Next: entryPageNumber=${entryPageNumber + 1}`
       : 'Final page',
   ];
-
-  const paginationHints = paginationMetadata
-    ? generatePaginationHints(paginationMetadata, {
-        toolName: STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
-      })
-    : [];
 
   const pagination = {
     currentPage: entryPaginationInfo.currentPage,
@@ -413,25 +331,17 @@ async function viewStructureRecursive(
     entriesPerPage: entryPaginationInfo.entriesPerPage,
     totalEntries: entryPaginationInfo.totalEntries,
     hasMore: entryPaginationInfo.hasMore,
-    ...(paginationMetadata && {
-      charOffset: paginationMetadata.charOffset,
-      charLength: paginationMetadata.charLength,
-      totalChars: paginationMetadata.totalChars,
-    }),
   };
 
   return {
     status,
     path: query.path,
-    cwd: process.cwd(),
-    structuredOutput,
-    totalFiles,
-    totalDirectories,
-    totalSize,
+    entries: outputEntries,
+    summary: `${totalEntries} entries (${totalFiles} files, ${totalDirectories} dirs, ${formatFileSize(totalSizeBytes)})`,
     pagination,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
     ...(warnings.length > 0 && { warnings }),
-    hints: [...baseHints, ...entryPaginationHints, ...paginationHints],
+    hints: [...baseHints, ...entryPaginationHints],
   };
 }

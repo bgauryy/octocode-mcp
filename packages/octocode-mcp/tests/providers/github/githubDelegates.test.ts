@@ -122,7 +122,6 @@ describe('GitHub Provider Delegates', () => {
         };
         const data = {
           content: 'test content',
-          contentLength: 12,
         };
         const result = transformFileContentResult(data as any, query);
         expect(result.path).toBe('fallback/path.ts');
@@ -135,7 +134,6 @@ describe('GitHub Provider Delegates', () => {
         };
         const data = {
           path: 'test.ts',
-          contentLength: 0,
         };
         const result = transformFileContentResult(data as any, query);
         expect(result.content).toBe('');
@@ -150,7 +148,6 @@ describe('GitHub Provider Delegates', () => {
         const data = {
           path: 'test.ts',
           content: 'content',
-          contentLength: 7,
         };
         const result = transformFileContentResult(data as any, query);
         expect(result.ref).toBe('main');
@@ -164,7 +161,6 @@ describe('GitHub Provider Delegates', () => {
         const data = {
           path: 'test.ts',
           content: 'content',
-          contentLength: 7,
         };
         const result = transformFileContentResult(data as any, query);
         expect(result.ref).toBe('');
@@ -259,7 +255,6 @@ describe('GitHub Provider Delegates', () => {
           data: {
             path: 'test.ts',
             content: 'export const test = 1;',
-            contentLength: 20,
             branch: 'main',
           },
           status: 200,

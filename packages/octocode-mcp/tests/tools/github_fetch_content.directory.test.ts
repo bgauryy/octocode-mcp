@@ -266,7 +266,8 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
     expect(result.isError).toBeFalsy();
     const text =
       result.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
-    expect(text).toContain('cached: true');
+    // cached field no longer in user-facing response (C9)
+    expect(text).toContain('fileCount:');
   });
 
   it('should return real fileCount and totalSize on cache hit', async () => {
@@ -302,7 +303,7 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
 
     const firstText =
       firstResult.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
-    expect(firstText).toContain('cached: false');
+    expect(firstText).toContain('fileCount:');
 
     // Second call: cache hit — must still report real fileCount/totalSize
     const cachedResult = await fetchMultipleGitHubFileContents({
@@ -324,7 +325,6 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
     const cachedText =
       cachedResult.content?.map(c => ('text' in c ? c.text : '')).join('') ||
       '';
-    expect(cachedText).toContain('cached: true');
     // fileCount must reflect real files on disk, NOT hardcoded 0
     expect(cachedText).toContain('fileCount: 2');
     expect(cachedText).not.toContain('fileCount: 0');

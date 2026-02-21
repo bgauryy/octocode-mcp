@@ -61,7 +61,7 @@ export function transformPullRequestResult(
       number: pr.number,
       title: pr.title,
       body: pr.body || null,
-      url: pr.html_url || pr.url,
+      url: pr.url,
       state: pr.merged ? 'merged' : pr.state,
       draft: pr.draft || false,
       author: pr.author,

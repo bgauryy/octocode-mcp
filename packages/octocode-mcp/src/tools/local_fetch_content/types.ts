@@ -50,18 +50,14 @@ export interface FetchContentPagination {
 export interface FetchContentResult {
   status: 'hasResults' | 'empty' | 'error';
   path?: string;
-  cwd?: string;
   content?: string;
-  contentLength?: number;
   isPartial?: boolean;
   totalLines?: number;
-  minificationFailed?: boolean;
   errorCode?: ErrorCode;
   hints?: readonly string[];
   warnings?: string[];
   startLine?: number;
   endLine?: number;
-  extractedLines?: number;
   matchRanges?: Array<{ start: number; end: number }>;
   pagination?: FetchContentPagination;
   mainResearchGoal?: string;

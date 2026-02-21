@@ -2101,8 +2101,7 @@ describe('registerPackageSearchTool', () => {
 
       const text = (result.content[0] as { text: string }).text;
 
-      // Response is YAML format - verify hasResultsStatusHints section
-      expect(text).toContain('hasResultsStatusHints');
+      // Hints are inside each result - verify actionable hints
       expect(text).toContain('githubViewRepoStructure');
       expect(text).toContain('Install: npm install axios');
 
@@ -2137,8 +2136,7 @@ describe('registerPackageSearchTool', () => {
 
       const text = (result.content[0] as { text: string }).text;
 
-      // Response is YAML format - verify hasResultsStatusHints section
-      expect(text).toContain('hasResultsStatusHints');
+      // Hints are inside each result - verify install hint
       expect(text).toContain('Install: npm install no-repo-pkg');
       expect(text).not.toContain('githubViewRepoStructure');
 
@@ -2179,8 +2177,7 @@ describe('registerPackageSearchTool', () => {
 
       const text = (result.content[0] as { text: string }).text;
 
-      // Response is YAML format - verify hasResultsStatusHints section
-      expect(text).toContain('hasResultsStatusHints');
+      // Hints are inside each result - verify actionable hints
       expect(text).toContain('githubViewRepoStructure');
       expect(text).toContain('Install: pip install requests');
 
@@ -2219,8 +2216,7 @@ describe('registerPackageSearchTool', () => {
 
       const text = (result.content[0] as { text: string }).text;
 
-      // Response is YAML format - verify hasResultsStatusHints section
-      expect(text).toContain('hasResultsStatusHints');
+      // Hints are inside each result - verify install hint
       expect(text).toContain('Install: pip install no-repo-pkg');
       expect(text).not.toContain('githubViewRepoStructure');
 
@@ -2252,8 +2248,7 @@ describe('registerPackageSearchTool', () => {
 
       const text = (result.content[0] as { text: string }).text;
 
-      // Response is YAML format - verify emptyStatusHints section
-      expect(text).toContain('emptyStatusHints');
+      // Hints are inside each result - verify empty hints
       expect(text).toContain(
         "No npm packages found for 'nonexistent pkg xyz123 keyword'"
       );
@@ -2291,8 +2286,7 @@ describe('registerPackageSearchTool', () => {
 
       const text = (result.content[0] as { text: string }).text;
 
-      // Response is YAML format - verify emptyStatusHints section
-      expect(text).toContain('emptyStatusHints');
+      // Hints are inside each result - verify empty hints
       expect(text).toContain(
         "No python packages found for 'nonexistent-pkg-xyz123'"
       );
@@ -2346,15 +2340,11 @@ describe('registerPackageSearchTool', () => {
 
       const text = (result.content[0] as { text: string }).text;
 
-      // Bulk response should have both hasResultsStatusHints and emptyStatusHints
-      expect(text).toContain('hasResultsStatusHints');
-      expect(text).toContain('emptyStatusHints');
-
-      // hasResultsStatusHints should contain actionable hints
+      // Hints are inside each result - verify actionable hints for hasResults
       expect(text).toContain('githubViewRepoStructure');
       expect(text).toContain('Install: npm install react');
 
-      // emptyStatusHints should contain empty hints
+      // Verify empty hints in empty result
       expect(text).toContain(
         "No npm packages found for 'nonexistent pkg keyword'"
       );
