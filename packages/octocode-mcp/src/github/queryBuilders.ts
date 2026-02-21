@@ -6,6 +6,19 @@ export function getOwnerQualifier(owner: string): string {
   return `user:${owner}`;
 }
 
+/**
+ * Characters that break GitHub search query syntax when used unquoted in keywords.
+ * Wrapping the keyword in double quotes forces GitHub to treat it as a literal term.
+ */
+const GITHUB_SEARCH_SPECIAL_CHARS = /[@/]/;
+
+function quoteKeywordIfNeeded(keyword: string): string {
+  if (GITHUB_SEARCH_SPECIAL_CHARS.test(keyword) && !keyword.startsWith('"')) {
+    return `"${keyword}"`;
+  }
+  return keyword;
+}
+
 abstract class BaseQueryBuilder {
   protected queryParts: string[] = [];
 
@@ -94,6 +107,21 @@ abstract class BaseQueryBuilder {
     return this;
   }
 
+  /**
+   * Like addSimpleFilter but wraps the value in quotes.
+   * Required for GitHub qualifiers whose values contain special chars
+   * (e.g. path:"src/utils" — unquoted `/` is silently ignored by GitHub).
+   */
+  addQuotedFilter(value: string | null | undefined, key: string): this {
+    if (value !== undefined && value !== null) {
+      const needsQuoting =
+        GITHUB_SEARCH_SPECIAL_CHARS.test(value) && !value.startsWith('"');
+      const formatted = needsQuoting ? `"${value}"` : value;
+      this.queryParts.push(`${key}:${formatted}`);
+    }
+    return this;
+  }
+
   build(): string {
     return this.queryParts.join(' ').trim();
   }
@@ -109,7 +137,7 @@ class CodeSearchQueryBuilder extends BaseQueryBuilder {
         term => term && term.trim()
       );
       if (nonEmptyTerms.length > 0) {
-        this.queryParts.push(...nonEmptyTerms);
+        this.queryParts.push(...nonEmptyTerms.map(quoteKeywordIfNeeded));
       }
     }
     return this;
@@ -118,7 +146,7 @@ class CodeSearchQueryBuilder extends BaseQueryBuilder {
   addSearchFilters(params: GitHubCodeSearchQuery): this {
     this.addSimpleFilter(params.filename, 'filename');
     this.addSimpleFilter(params.extension, 'extension');
-    this.addSimpleFilter(params.path, 'path');
+    this.addQuotedFilter(params.path, 'path');
     return this;
   }
 
@@ -145,7 +173,9 @@ class RepoSearchQueryBuilder extends BaseQueryBuilder {
       Array.isArray(params.keywordsToSearch) &&
       params.keywordsToSearch.length > 0
     ) {
-      this.queryParts.push(...params.keywordsToSearch);
+      this.queryParts.push(
+        ...params.keywordsToSearch.map(quoteKeywordIfNeeded)
+      );
     }
     return this;
   }

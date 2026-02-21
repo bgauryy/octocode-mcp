@@ -20,7 +20,7 @@ export class SymbolResolutionError extends Error {
     symbolName: string,
     lineHint: number,
     reason: string,
-    searchRadius: number = 2
+    searchRadius: number = 5
   ) {
     super(
       `Could not find symbol '${symbolName}' at or near line ${lineHint}. ${reason}`
@@ -37,7 +37,7 @@ export class SymbolResolutionError extends Error {
  * Configuration for symbol resolver
  */
 interface SymbolResolverConfig {
-  /** Number of lines to search above and below lineHint (default: 2) */
+  /** Number of lines to search above and below lineHint (default: 5) */
   lineSearchRadius?: number;
 }
 
@@ -63,7 +63,7 @@ export class SymbolResolver {
   private readonly lineSearchRadius: number;
 
   constructor(config?: SymbolResolverConfig) {
-    this.lineSearchRadius = config?.lineSearchRadius ?? 2;
+    this.lineSearchRadius = config?.lineSearchRadius ?? 5;
   }
 
   /**
@@ -127,18 +127,18 @@ export class SymbolResolver {
       }
     }
 
-    // Search nearby lines (alternating above and below)
+    // Search nearby lines (alternating above and below).
+    // orderHint is only meaningful for the exact target line (it selects the
+    // Nth occurrence on that specific line). When falling back to nearby lines,
+    // always pick the first occurrence (orderHint 0) — otherwise a non-zero
+    // orderHint causes every single-occurrence nearby line to miss.
     for (let offset = 1; offset <= this.lineSearchRadius; offset++) {
       for (const delta of [-offset, offset]) {
         const searchLine = targetLine + delta;
         if (searchLine >= 0 && searchLine < lines.length) {
           const line = lines[searchLine];
           if (line !== undefined) {
-            const result = this.findSymbolInLine(
-              line,
-              fuzzy.symbolName,
-              orderHint
-            );
+            const result = this.findSymbolInLine(line, fuzzy.symbolName, 0);
             if (result !== null) {
               return {
                 position: { line: searchLine, character: result },
@@ -161,7 +161,8 @@ export class SymbolResolver {
   }
 
   /**
-   * Find symbol in a single line
+   * Find symbol in a single line, skipping occurrences inside string
+   * literals or comments.
    *
    * @param line - Line content
    * @param symbolName - Symbol to find (exact match)
@@ -188,6 +189,13 @@ export class SymbolResolver {
         !this.isIdentifierChar(line[index + symbolName.length]!);
 
       if (isWordBoundaryStart && isWordBoundaryEnd) {
+        // Skip matches inside string literals or line comments —
+        // the LSP server cannot resolve definitions for text in strings.
+        if (this.isInsideStringOrComment(line, index)) {
+          searchStart = index + 1;
+          continue;
+        }
+
         if (occurrenceCount === orderHint) {
           return index;
         }
@@ -201,10 +209,95 @@ export class SymbolResolver {
   }
 
   /**
-   * Check if character is a valid identifier character
+   * Determine whether a character position falls inside a string literal
+   * or a line comment (`//`).
+   *
+   * Walks the line left-to-right tracking quote state (`'`, `"`, `` ` ``),
+   * handling backslash escapes. This is a lightweight heuristic — it does
+   * not handle block comments or regex literals, but those
+   * are extremely rare in the single-line symbol-resolution context.
+   *
+   * @param line - Full line content
+   * @param position - 0-based character index to test
+   * @returns true if position is inside a string or comment
+   * @internal Exported via class for testing
+   */
+  private isInsideStringOrComment(line: string, position: number): boolean {
+    let inSingle = false;
+    let inDouble = false;
+    let inTemplate = false;
+    let templateExprDepth = 0; // tracks nested `${...}` — code inside is NOT a string
+    let escaped = false;
+
+    for (let i = 0; i < position; i++) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      const ch = line[i]!;
+
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+
+      // Line comment — everything after `//` (outside strings) is a comment
+      if (
+        ch === '/' &&
+        line[i + 1] === '/' &&
+        !inSingle &&
+        !inDouble &&
+        !inTemplate
+      ) {
+        return true;
+      }
+
+      // Template expression tracking: `${...}` contains code, not string text
+      if (
+        inTemplate &&
+        templateExprDepth === 0 &&
+        ch === '$' &&
+        line[i + 1] === '{'
+      ) {
+        templateExprDepth = 1;
+        i++; // skip the '{'
+        continue;
+      }
+      if (templateExprDepth > 0) {
+        if (ch === '{') templateExprDepth++;
+        else if (ch === '}') {
+          templateExprDepth--;
+          // When depth returns to 0, we're back inside the template string
+        }
+        continue; // inside ${...} — skip quote tracking, this is code
+      }
+
+      if (ch === "'" && !inDouble && !inTemplate) inSingle = !inSingle;
+      else if (ch === '"' && !inSingle && !inTemplate) inDouble = !inDouble;
+      else if (ch === '`' && !inSingle && !inDouble) inTemplate = !inTemplate;
+    }
+
+    // Inside a template but within a ${...} expression → code context, not string
+    if (inTemplate && templateExprDepth > 0) return false;
+
+    return inSingle || inDouble || inTemplate;
+  }
+
+  /**
+   * Check if character is a valid identifier character.
+   * Uses charCode comparison instead of regex for performance —
+   * this is called per-character during symbol boundary checks.
    */
   private isIdentifierChar(char: string): boolean {
-    return /[a-zA-Z0-9_$]/.test(char);
+    const c = char.charCodeAt(0);
+    return (
+      (c >= 48 && c <= 57) || // 0-9
+      (c >= 65 && c <= 90) || // A-Z
+      (c >= 97 && c <= 122) || // a-z
+      c === 95 || // _
+      c === 36 // $
+    );
   }
 
   /**
@@ -237,7 +330,7 @@ export class SymbolResolver {
 /**
  * Default symbol resolver instance
  */
-export const defaultResolver = new SymbolResolver({ lineSearchRadius: 2 });
+export const defaultResolver = new SymbolResolver({ lineSearchRadius: 5 });
 
 /**
  * Convenience function to resolve symbol position

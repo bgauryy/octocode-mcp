@@ -1,6 +1,60 @@
-# Octocode MCP Tools Reference
+# Local & LSP Tools Reference
 
-> Complete reference for all Octocode MCP tools - Local exploration, LSP semantic analysis, and research workflows.
+> Complete reference for Octocode MCP local tools — File system exploration, code search, content reading, and LSP semantic analysis.
+
+---
+
+## Configuration
+
+Local and LSP tools must be enabled before use:
+
+```
+ENABLE_LOCAL=true
+```
+
+Or via config: `local.enabled=true`
+
+### LSP Supported Languages
+
+| Status | Languages |
+|--------|-----------|
+| **Bundled** | TypeScript (`.ts`, `.tsx`), JavaScript (`.js`, `.jsx`, `.mjs`, `.cjs`) |
+| **Requires Install** | Python, Go, Rust, Java, Kotlin, C/C++, C#, Ruby, PHP, Swift, Dart, Lua, Zig, Elixir, Scala, Haskell, OCaml, Clojure, Vue, Svelte, YAML, TOML, JSON, HTML, CSS, Bash, SQL, GraphQL, Terraform |
+
+### LSP Environment Variables
+
+Override language server paths:
+
+| Variable | Language |
+|----------|----------|
+| `OCTOCODE_TS_SERVER_PATH` | TypeScript/JavaScript |
+| `OCTOCODE_PYTHON_SERVER_PATH` | Python |
+| `OCTOCODE_GO_SERVER_PATH` | Go |
+| `OCTOCODE_RUST_SERVER_PATH` | Rust |
+| `OCTOCODE_JAVA_SERVER_PATH` | Java |
+| `OCTOCODE_CLANGD_SERVER_PATH` | C/C++ |
+
+### LSP Custom Configuration
+
+Config files loaded in priority order (optional — if unset, workspace/home fallbacks are used):
+
+1. `OCTOCODE_LSP_CONFIG=/path/to/config.json` (env var)
+2. `.octocode/lsp-servers.json` (workspace)
+3. `~/.octocode/lsp-servers.json` (user)
+
+```json
+{
+  "languageServers": {
+    ".py": {
+      "command": "pylsp",
+      "args": [],
+      "languageId": "python"
+    }
+  }
+}
+```
+
+If a language server is not installed, the tool returns a helpful error with installation instructions. No crashes — other tools continue working. Works on macOS, Linux, and Windows.
 
 ---
 
@@ -17,10 +71,36 @@ Octocode MCP provides **7 tools** across 2 categories for code research and expl
 
 ## Quick Start
 
-1. Enable local tools: set `ENABLE_LOCAL=true`.
+1. Enable local tools in configuration: set `ENABLE_LOCAL=true` (or `local.enabled=true`).
 2. Find a symbol: `localSearchCode` (get `lineHint`).
 3. Use LSP: `lspGotoDefinition` / `lspFindReferences` / `lspCallHierarchy`.
 4. Read details last: `localGetFileContent`.
+
+### Working with Cloned Repositories
+
+Local + LSP tools work on **any path on disk** — including repos cloned by `githubCloneRepo` or fetched via `githubGetFileContent` directory mode. Use the returned `localPath` as the `path` parameter:
+
+```
+githubCloneRepo(owner="vercel", repo="next.js") → localPath
+localViewStructure(path=localPath)              → browse the tree
+localSearchCode(path=localPath, pattern="...")   → search code
+lspGotoDefinition(uri=localPath+"/src/file.ts") → semantic navigation
+```
+
+> **Note:** `githubCloneRepo` and `githubGetFileContent` directory mode are **GitHub only** — they are not available when GitLab is the active provider. Both require `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
+
+> **Full workflow guide:** [Clone & Local Tools Workflow](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md)
+
+### Research Context (Optional)
+
+All local and LSP tools accept optional research context fields:
+
+| Field | Description |
+|-------|-------------|
+| `researchGoal` | Specific goal for this query |
+| `reasoning` | Why this tool/query was chosen |
+
+These are optional (unlike GitHub/GitLab tools where they are required), but recommended for tracking research sessions.
 
 ## Tools at a Glance
 
@@ -83,7 +163,9 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `excludeDir`: Directories to exclude (e.g., `node_modules`)
 - `hidden`: Search hidden files (default: false)
 - `smartCase`: Smart case sensitivity (default: true)
-- `matchesPerPage`/`filesPerPage`/`filePageNumber`: Pagination controls
+- `filesPerPage`: Files per page (default: 10)
+- `matchesPerPage`: Matches per page (default: 10)
+- `filePageNumber`: Page number (default: 1)
 - `multiline`: Enable multiline matching (memory intensive)
 
 **Additional parameters:**
@@ -105,7 +187,7 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `binaryFiles`: Binary file handling (`text`, `without-match`, `binary`)
 - `includeStats`: Include search statistics (default: true)
 - `includeDistribution`: Include match distribution (default: true)
-- `sort`: Sort results (`path`, `modified`, `accessed`, `created`)
+- `sort`: Sort results (`path`, `modified`, `accessed`, `created`) (default: `path`)
 - `sortReverse`: Reverse sort order
 - `showFileLastModified`: Show file modification timestamps
 - `threads`: Thread count for parallel search (1-32)
@@ -143,7 +225,7 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `humanReadable`: Format sizes (e.g., "1.2MB") (default: true)
 - `summary`: Include directory summary (default: true)
 - `pattern`: Filter by name pattern
-- `entriesPerPage`: Entries per page (default: 20, max: 20)
+- `entriesPerPage`: Entries per page (default: 20, max: 50)
 - `entryPageNumber`: Page number (default: 1)
 
 **Additional parameters:**
@@ -187,9 +269,10 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `permissions`: Filter by permission string
 - `executable`/`readable`/`writable`: Permission flags
 - `excludeDir`: Directories to exclude (array)
+- `sortBy`: Sort results — `modified` (default), `size`, `name`, `path`
 - `limit`: Max results (1-10000)
 - `details`: Include file metadata (default: true)
-- `filesPerPage`: Results per page (default: 20, max: 20)
+- `filesPerPage`: Results per page (default: 20, max: 50)
 - `filePageNumber`: Page number (default: 1)
 - `charOffset`/`charLength`: Character-based pagination
 - `showFileLastModified`: Show modification timestamps (default: true)
@@ -210,12 +293,19 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 **Key parameters:**
 - `path` (required): File to read
 - `startLine`/`endLine`: Line range (1-indexed)
-- `matchString`: Find specific content with context
+- `matchString`: Find specific content with context (max: 2000 chars)
 - `matchStringContextLines`: Lines around match (default: 5, max: 50)
-- `matchStringIsRegex`: Treat matchString as regex (default: false)
+- `matchStringIsRegex`: Treat matchString as regex (default: false, max pattern: 1000 chars)
 - `matchStringCaseSensitive`: Case-sensitive matching (default: false)
-- `charOffset`/`charLength`: Character-based pagination for large files
+- `charOffset`/`charLength`: Character-based pagination for large files (charLength max: 10000)
 - `fullContent`: Read entire file (use sparingly)
+
+**Extraction modes (choose ONE):**
+1. `matchString` with context lines
+2. `startLine` + `endLine` (must be used together)
+3. `fullContent=true` (small files only)
+
+Cannot combine `matchString` with `startLine`/`endLine`, or `fullContent` with either.
 
 **⚠️ Should be the LAST step** after search/LSP analysis.
 
@@ -253,8 +343,10 @@ MCP Client → Octocode MCP → Language Server (spawned)
 - `uri` (required): File containing the symbol
 - `symbolName` (required): Exact symbol name (case-sensitive, max 255 chars)
 - `lineHint` (required): Line number from `localSearchCode` (1-indexed)
-- `orderHint`: Which occurrence on line if multiple (0-indexed, default: 0)
+- `orderHint`: Which code occurrence on the exact line if multiple (0-indexed, default: 0). String/comment text matches are ignored.
 - `contextLines`: Lines of context around definition (default: 5, max: 20)
+- `charOffset`: Character offset for output pagination (min: 0)
+- `charLength`: Character length for output pagination window (min: 1, max: 50000)
 
 **Use when:** "Where is this function/class/variable defined?"
 
@@ -279,6 +371,8 @@ MCP Client → Octocode MCP → Language Server (spawned)
 - `contextLines`: Lines of context (default: 2, max: 10)
 - `referencesPerPage`: Results per page (default: 20, max: 50)
 - `page`: Page number (default: 1)
+- `includePattern`: Filter results to files matching these glob patterns (array)
+- `excludePattern`: Exclude results from files matching these glob patterns (array)
 
 **Use when:** "Who uses this type/interface/variable/constant?"
 
@@ -304,6 +398,8 @@ MCP Client → Octocode MCP → Language Server (spawned)
 - `contextLines`: Lines of context (default: 2, max: 10)
 - `callsPerPage`: Results per page (default: 15, max: 30)
 - `page`: Page number (default: 1)
+- `charOffset`: Character offset for pagination (min: 0)
+- `charLength`: Character length for pagination (min: 1, max: 50000)
 
 **Use when:** "Trace the call flow" / "Who calls X?" / "What does X call?"
 
@@ -315,61 +411,6 @@ MCP Client → Octocode MCP → Language Server (spawned)
 - **Path Redaction**: Paths are always redacted in errors for security.
 
 > LSP tools work standalone - no IDE required. TypeScript/JavaScript bundled; other languages need server installation.
-
----
-
-## LSP Configuration & Setup
-
-### Supported Languages
-
-| Status | Languages |
-|--------|-----------|
-| **Bundled** | TypeScript (`.ts`, `.tsx`), JavaScript (`.js`, `.jsx`, `.mjs`, `.cjs`) |
-| **Requires Install** | Python, Go, Rust, Java, Kotlin, C/C++, C#, Ruby, PHP, Swift, Dart, Lua, Zig, Elixir, Scala, Haskell, OCaml, Clojure, Vue, Svelte, YAML, TOML, JSON, HTML, CSS, Bash, SQL, GraphQL, Terraform |
-
-For additional language servers, check your language's official LSP server documentation.
-
-### Environment Variables
-
-Override language server paths:
-
-| Variable | Language |
-|----------|----------|
-| `OCTOCODE_TS_SERVER_PATH` | TypeScript/JavaScript |
-| `OCTOCODE_PYTHON_SERVER_PATH` | Python |
-| `OCTOCODE_GO_SERVER_PATH` | Go |
-| `OCTOCODE_RUST_SERVER_PATH` | Rust |
-| `OCTOCODE_JAVA_SERVER_PATH` | Java |
-| `OCTOCODE_CLANGD_SERVER_PATH` | C/C++ |
-
-### Custom Configuration
-
-Config files are loaded in priority order:
-
-Optional: set only if you want a custom path. If unset, workspace/home fallbacks are used.
-
-1. `OCTOCODE_LSP_CONFIG=/path/to/config.json` (env var)
-2. `.octocode/lsp-servers.json` (workspace)
-3. `~/.octocode/lsp-servers.json` (user)
-
-```json
-{
-  "languageServers": {
-    ".py": {
-      "command": "pylsp",
-      "args": [],
-      "languageId": "python"
-    }
-  }
-}
-```
-
-### Graceful Degradation
-
-If a language server is not installed:
-1. Tool returns helpful error with installation instructions
-2. **No crashes** - other tools continue working
-3. Works on macOS, Linux, and Windows
 
 ---
 
@@ -650,5 +691,13 @@ Tools with no dependencies can run in parallel:
 ```
 
 **Batch limits:**
-- Local tools: Up to 5 queries per call
-- LSP tools: 5 queries per call (except `lspCallHierarchy`: 3 max)
+- Local tools: Up to **5 queries** per call
+- LSP tools: Up to **5 queries** per call (except `lspCallHierarchy`: **3 max**)
+
+---
+
+## Related Documentation
+
+- [Clone & Local Tools Workflow](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md) — How to clone external repos and analyze them with local + LSP tools
+- [GitHub & GitLab Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) — GitHub/GitLab tools including `githubCloneRepo`
+- [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) — `ENABLE_LOCAL`, `ENABLE_CLONE`, and other settings

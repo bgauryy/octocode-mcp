@@ -34,6 +34,7 @@ describe('Prompts Registration', () => {
       LSP_GOTO_DEFINITION: 'lspGotoDefinition',
       LSP_FIND_REFERENCES: 'lspFindReferences',
       LSP_CALL_HIERARCHY: 'lspCallHierarchy',
+      GITHUB_CLONE_REPO: 'githubCloneRepo',
     },
     baseSchema: {
       mainResearchGoal: '',

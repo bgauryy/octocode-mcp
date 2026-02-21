@@ -145,21 +145,20 @@ console.log(getArchitecture());  // 'x64', 'arm64', etc.
 
 ## Configuration File
 
-Octocode looks for configuration in `~/.octocode/config.json`:
+Octocode looks for configuration in `~/.octocode/.octocoderc`:
 
 ```json
 {
-  "schemaVersion": "1.0.0",
+  "version": 1,
   "github": {
-    "defaultHost": "github.com",
-    "apiVersion": "2022-11-28"
+    "apiUrl": "https://api.github.com"
   },
   "network": {
     "timeout": 30000,
-    "retries": 3
+    "maxRetries": 3
   },
   "telemetry": {
-    "enabled": true
+    "logging": true
   }
 }
 ```
@@ -168,7 +167,7 @@ Octocode looks for configuration in `~/.octocode/config.json`:
 
 | Data | Location |
 |------|----------|
-| Config | `~/.octocode/config.json` |
+| Config | `~/.octocode/.octocoderc` |
 | Credentials | `~/.octocode/credentials.json` (encrypted) |
 | Session | `~/.octocode/session.json` |
 | Encryption Key | System keychain or `~/.octocode/.key` |
@@ -181,7 +180,7 @@ For detailed API documentation, see [docs/API_REFERENCE.md](./docs/API_REFERENCE
 
 - [Credentials Architecture](./docs/CREDENTIALS_ARCHITECTURE.md) - Secure token storage design
 - [Session Persistence](./docs/SESSION_PERSISTENCE.md) - Session management design
-- [Configuration](../../docs/CONFIGURATION_REFERENCE.md) - Configuration reference (env vars and `.octocoderc`)
+- [Configuration](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) - Configuration reference (env vars and `.octocoderc`)
 
 ## Development
 

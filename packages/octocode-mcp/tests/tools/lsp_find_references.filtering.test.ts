@@ -151,11 +151,13 @@ describe('File Pattern Filtering - Unit Tests', () => {
 
   describe('buildRipgrepGlobArgs', () => {
     let buildRipgrepGlobArgs: typeof import('../../src/tools/lsp_find_references/lspReferencesPatterns.js').buildRipgrepGlobArgs;
+    let buildRipgrepSearchArgs: typeof import('../../src/tools/lsp_find_references/lspReferencesPatterns.js').buildRipgrepSearchArgs;
 
     beforeEach(async () => {
       const mod =
         await import('../../src/tools/lsp_find_references/lspReferencesPatterns.js');
       buildRipgrepGlobArgs = mod.buildRipgrepGlobArgs;
+      buildRipgrepSearchArgs = mod.buildRipgrepSearchArgs;
     });
 
     it('should return empty array when no patterns', () => {
@@ -189,6 +191,15 @@ describe('File Pattern Filtering - Unit Tests', () => {
         '--glob',
         '!**/node_modules/**',
       ]);
+    });
+
+    it('should add -- separator before symbol and workspace root', () => {
+      const args = buildRipgrepSearchArgs('/workspace', '--pre=cat');
+      const separatorIndex = args.indexOf('--');
+
+      expect(separatorIndex).toBeGreaterThan(-1);
+      expect(args[separatorIndex + 1]).toBe('--pre=cat');
+      expect(args[separatorIndex + 2]).toBe('/workspace');
     });
   });
 
@@ -231,6 +242,25 @@ describe('File Pattern Filtering - Unit Tests', () => {
       expect(result).toBe('--include="*.ts" --exclude-dir="node_modules"');
     });
   });
+
+  describe('buildGrepSearchArgs', () => {
+    let buildGrepSearchArgs: typeof import('../../src/tools/lsp_find_references/lspReferencesPatterns.js').buildGrepSearchArgs;
+
+    beforeEach(async () => {
+      const mod =
+        await import('../../src/tools/lsp_find_references/lspReferencesPatterns.js');
+      buildGrepSearchArgs = mod.buildGrepSearchArgs;
+    });
+
+    it('should add -- separator before symbol and workspace root', () => {
+      const args = buildGrepSearchArgs('/workspace', '--include=*');
+      const separatorIndex = args.indexOf('--');
+
+      expect(separatorIndex).toBeGreaterThan(-1);
+      expect(args[separatorIndex + 1]).toBe('--include=\\*');
+      expect(args[separatorIndex + 2]).toBe('/workspace');
+    });
+  });
 });
 
 // ============================================================================
@@ -240,7 +270,23 @@ describe('File Pattern Filtering - Unit Tests', () => {
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
   stat: vi.fn(),
+  access: vi.fn(),
 }));
+
+vi.mock('../../src/security/pathValidator.js', () => ({
+  pathValidator: {
+    validate: vi.fn().mockReturnValue({ isValid: true }),
+  },
+}));
+
+vi.mock('../../src/lsp/validation.js', async importOriginal => {
+  const mod =
+    await importOriginal<typeof import('../../src/lsp/validation.js')>();
+  return {
+    ...mod,
+    safeReadFile: vi.fn(),
+  };
+});
 
 vi.mock('../../src/lsp/index.js', () => ({
   createClient: vi.fn(),
@@ -257,6 +303,7 @@ vi.mock('../../src/lsp/index.js', () => ({
 
 import * as fs from 'fs/promises';
 import * as lspModule from '../../src/lsp/index.js';
+import { safeReadFile } from '../../src/lsp/validation.js';
 import { findReferencesWithLSP } from '../../src/tools/lsp_find_references/lspReferencesCore.js';
 
 describe('LSP Find References - Filtering and Lazy Enhancement', () => {
@@ -283,9 +330,10 @@ describe('LSP Find References - Filtering and Lazy Enhancement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(lspModule.createClient).mockResolvedValue(mockClient as any);
-    vi.mocked(fs.readFile).mockResolvedValue(
-      'line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10'
-    );
+    const defaultContent =
+      'line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10';
+    vi.mocked(fs.readFile).mockResolvedValue(defaultContent);
+    vi.mocked(safeReadFile).mockResolvedValue(defaultContent);
   });
 
   afterEach(() => {
@@ -464,7 +512,7 @@ describe('LSP Find References - Filtering and Lazy Enhancement', () => {
     mockClient.findReferences.mockResolvedValue(refs);
 
     let readCount = 0;
-    vi.mocked(fs.readFile).mockImplementation(async () => {
+    vi.mocked(safeReadFile).mockImplementation(async () => {
       readCount++;
       return 'line1\nline2\nline3\nline4\nline5';
     });

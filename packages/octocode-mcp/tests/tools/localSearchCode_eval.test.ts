@@ -89,14 +89,14 @@ describe('localSearchCode Eval Tests - All Schema Parameters', () => {
    * ============================================================
    */
   describe('2. Workflow Modes (mode parameter)', () => {
-    it('2.1 mode=discovery - sets filesOnly=true', () => {
+    it('2.1 mode=discovery - sets count=true for per-file match counts', () => {
       const query = createQuery({
         pattern: 'test',
         path: '/src',
         mode: 'discovery',
       });
       const configured = applyWorkflowMode(query);
-      expect(configured.filesOnly).toBe(true);
+      expect(configured.count).toBe(true);
       expect(configured.smartCase).toBe(true);
     });
 
@@ -131,11 +131,11 @@ describe('localSearchCode Eval Tests - All Schema Parameters', () => {
         pattern: 'test',
         path: '/src',
         mode: 'discovery',
-        filesOnly: false, // explicit override
+        count: false, // explicit override
       });
       const configured = applyWorkflowMode(query);
       // Explicit value should win
-      expect(configured.filesOnly).toBe(false);
+      expect(configured.count).toBe(false);
     });
 
     it('2.5 no mode - returns query unchanged', () => {
@@ -1007,7 +1007,7 @@ describe('localSearchCode Eval Tests - All Schema Parameters', () => {
         type: 'tsx',
       });
       const configured = applyWorkflowMode(query);
-      expect(configured.filesOnly).toBe(true);
+      expect(configured.count).toBe(true);
       expect(configured.type).toBe('tsx');
     });
 
@@ -1101,7 +1101,7 @@ describe('localSearchCode Eval Tests - All Schema Parameters', () => {
       expect(query.filesWithoutMatch).toBe(true);
     });
 
-    it('13.8 high-performance discovery', () => {
+    it('13.8 high-performance discovery (uses count mode)', () => {
       const query = createQuery({
         pattern: 'export',
         path: '/src',
@@ -1113,7 +1113,7 @@ describe('localSearchCode Eval Tests - All Schema Parameters', () => {
         noMessages: true,
       });
       const configured = applyWorkflowMode(query);
-      expect(configured.filesOnly).toBe(true);
+      expect(configured.count).toBe(true);
       expect(configured.threads).toBe(16);
     });
   });

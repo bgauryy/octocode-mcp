@@ -146,7 +146,7 @@ describe('localSearchCode schema', () => {
 
       const result = applyWorkflowMode(query);
 
-      expect(result.filesOnly).toBe(true);
+      expect(result.count).toBe(true);
       expect(result.smartCase).toBe(true);
     });
 
@@ -184,12 +184,12 @@ describe('localSearchCode schema', () => {
         pattern: 'test',
         path: '/src',
         mode: 'discovery',
-        filesOnly: false, // Override discovery default
+        count: false, // Override discovery default
       } as RipgrepQuery;
 
       const result = applyWorkflowMode(query);
 
-      expect(result.filesOnly).toBe(false);
+      expect(result.count).toBe(false);
     });
   });
 

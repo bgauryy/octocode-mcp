@@ -7,6 +7,7 @@ import {
   GITHUB_SEARCH_REPOSITORIES,
   GITHUB_SEARCH_PULL_REQUESTS,
   PACKAGE_SEARCH,
+  GITHUB_CLONE_REPO,
   LOCAL_RIPGREP,
   LOCAL_VIEW_STRUCTURE,
   LOCAL_FIND_FILES,
@@ -16,8 +17,8 @@ import { TOOL_NAMES, DESCRIPTIONS } from '../../src/tools/toolMetadata.js';
 
 describe('Tool Configuration', () => {
   describe('ALL_TOOLS', () => {
-    it('should contain all expected tools (6 GitHub + 4 Local + 3 LSP = 13)', () => {
-      expect(ALL_TOOLS).toHaveLength(13);
+    it('should contain all expected tools (6 GitHub + 1 Clone + 4 Local + 3 LSP = 14)', () => {
+      expect(ALL_TOOLS).toHaveLength(14);
 
       const toolNames = ALL_TOOLS.map(t => t.name);
 
@@ -59,8 +60,8 @@ describe('Tool Configuration', () => {
 
     it('should have isLocal correctly set for Local tools', () => {
       const localTools = ALL_TOOLS.filter(t => t.isLocal);
-      // 4 local + 3 LSP = 7 local tools
-      expect(localTools).toHaveLength(7);
+      // 4 local + 3 LSP + 1 clone = 8 local tools
+      expect(localTools).toHaveLength(8);
       localTools.forEach(tool => {
         expect(tool.isLocal).toBe(true);
       });
@@ -162,6 +163,34 @@ describe('Tool Configuration', () => {
       expect(LOCAL_FETCH_CONTENT.type).toBe('content');
       expect(LOCAL_FETCH_CONTENT.isLocal).toBe(true);
       expect(LOCAL_FETCH_CONTENT.fn).toBeTypeOf('function');
+    });
+  });
+
+  describe('Clone tool config', () => {
+    it('GITHUB_CLONE_REPO should have isClone: true', () => {
+      expect(GITHUB_CLONE_REPO.isClone).toBe(true);
+    });
+
+    it('GITHUB_CLONE_REPO should have isLocal: true', () => {
+      expect(GITHUB_CLONE_REPO.isLocal).toBe(true);
+    });
+
+    it('GITHUB_CLONE_REPO should have skipMetadataCheck: true', () => {
+      expect(GITHUB_CLONE_REPO.skipMetadataCheck).toBe(true);
+    });
+
+    it('only GITHUB_CLONE_REPO should have isClone: true', () => {
+      const cloneTools = ALL_TOOLS.filter(t => t.isClone);
+      expect(cloneTools).toHaveLength(1);
+      expect(cloneTools[0]!.name).toBe(TOOL_NAMES.GITHUB_CLONE_REPO);
+    });
+
+    it('non-clone tools should not have isClone set', () => {
+      const nonCloneTools = ALL_TOOLS.filter(t => !t.isClone);
+      expect(nonCloneTools).toHaveLength(13);
+      nonCloneTools.forEach(tool => {
+        expect(tool.isClone).toBeFalsy();
+      });
     });
   });
 

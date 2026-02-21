@@ -28,6 +28,37 @@ import type {
 import { toUri } from './uri.js';
 import { LSPDocumentManager } from './lspDocumentManager.js';
 import { LSPOperations } from './lspOperations.js';
+import {
+  buildChildProcessEnv,
+  TOOLING_ALLOWED_ENV_VARS,
+} from '../utils/exec/spawn.js';
+
+// ─────────────────────────────────────────────────────────────────────
+// Timeout helper – prevents timer leaks in Promise.race patterns
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Race a promise against a timeout, properly cleaning up the timer
+ * when the main promise settles (win or lose). This prevents the
+ * "dangling setTimeout" leak that plain Promise.race + setTimeout causes.
+ */
+async function raceWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
 
 /**
  * LSP Client class
@@ -45,11 +76,15 @@ export class LSPClient {
   constructor(config: LanguageServerConfig) {
     this.config = config;
     this.documentManager = new LSPDocumentManager(config);
-    this.operations = new LSPOperations(this.documentManager);
+    this.operations = new LSPOperations(
+      this.documentManager,
+      config.workspaceRoot
+    );
   }
 
   /**
-   * Start the language server and initialize connection
+   * Start the language server and initialize connection.
+   * If initialization fails, the spawned process is cleaned up to prevent leaks.
    */
   async start(): Promise<void> {
     if (this.process) {
@@ -60,21 +95,19 @@ export class LSPClient {
     this.process = spawn(this.config.command, this.config.args ?? [], {
       cwd: this.config.workspaceRoot,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: process.env,
+      env: buildChildProcessEnv({}, TOOLING_ALLOWED_ENV_VARS),
     });
 
     if (!this.process.stdin || !this.process.stdout) {
+      // Kill orphaned process before throwing
+      try {
+        this.process.kill();
+      } catch {
+        // Process may not support kill (e.g. failed spawn) — ignore
+      }
+      this.process = null;
       throw new Error('Failed to create language server process pipes');
     }
-
-    // Create JSON-RPC connection
-    this.connection = createMessageConnection(
-      new StreamMessageReader(this.process.stdout),
-      new StreamMessageWriter(this.process.stdin)
-    );
-
-    // Start listening
-    this.connection.listen();
 
     // Handle process errors silently - errors propagate through the connection
     this.process.on('error', () => {
@@ -84,8 +117,23 @@ export class LSPClient {
     // Ignore stderr - language servers often write debug info there
     this.process.stderr?.on('data', () => {});
 
-    // Initialize the language server
-    await this.initialize();
+    // Create JSON-RPC connection and initialize — clean up on any failure
+    try {
+      this.connection = createMessageConnection(
+        new StreamMessageReader(this.process.stdout),
+        new StreamMessageWriter(this.process.stdin)
+      );
+
+      // Start listening
+      this.connection.listen();
+
+      // Initialize the language server
+      await this.initialize();
+    } catch (error) {
+      // Kill the spawned process and clean up connection to prevent leaks
+      await this.stop();
+      throw error;
+    }
   }
 
   /**
@@ -134,10 +182,11 @@ export class LSPClient {
       ],
     };
 
-    this.initializeResult = await this.connection.sendRequest(
-      'initialize',
-      initParams
-    );
+    this.initializeResult = (await raceWithTimeout(
+      this.connection.sendRequest('initialize', initParams),
+      30_000,
+      'LSP initialize timed out after 30s'
+    )) as InitializeResult;
 
     // Send initialized notification
     const initializedParams: InitializedParams = {};
@@ -223,26 +272,42 @@ export class LSPClient {
   }
 
   /**
-   * Shutdown and close the language server
+   * Shutdown and close the language server.
+   * Always cleans up process and connection, even if partially initialized.
    */
   async stop(): Promise<void> {
-    if (!this.connection) return;
-
     try {
-      // Close all open documents
-      await this.documentManager.closeAllDocuments();
+      if (this.connection) {
+        // Close all open documents
+        await this.documentManager.closeAllDocuments();
 
-      // Send shutdown request
-      await this.connection.sendRequest('shutdown');
+        // Send shutdown request (with timeout to avoid hanging)
+        await raceWithTimeout(
+          this.connection.sendRequest('shutdown'),
+          5_000,
+          'LSP shutdown timed out'
+        );
 
-      // Send exit notification
-      await this.connection.sendNotification('exit');
+        // Send exit notification
+        await this.connection.sendNotification('exit');
+      }
     } catch {
-      // Ignore errors during shutdown
+      // Ignore errors during shutdown — cleanup is more important
     } finally {
-      this.connection.dispose();
+      // Dispose connection (may throw if already disposed — safe to ignore)
+      try {
+        this.connection?.dispose();
+      } catch {
+        // Already disposed or never created
+      }
       this.connection = null;
-      this.process?.kill();
+
+      // Kill process (may throw ESRCH if already exited — safe to ignore)
+      try {
+        this.process?.kill();
+      } catch {
+        // Process already exited
+      }
       this.process = null;
       this.initialized = false;
 

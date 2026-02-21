@@ -648,6 +648,65 @@ describe('GitHub Provider Delegates', () => {
         expect(result.status).toBe(200);
         expect(result.data).toBeDefined();
       });
+
+      it('should pass stars range string through to GitHub API (TC-20)', async () => {
+        mockSearchGitHubReposAPI.mockResolvedValue({
+          data: {
+            repositories: [],
+          },
+          status: 200,
+        });
+
+        const query: RepoSearchQuery = {
+          keywords: ['react'],
+          stars: '100..500',
+        };
+        await searchRepos(query);
+
+        // Verify the GitHub API was called with the correct stars string
+        expect(mockSearchGitHubReposAPI).toHaveBeenCalled();
+        const apiCall = mockSearchGitHubReposAPI.mock.calls[0]![0];
+        expect(apiCall.stars).toBe('100..500');
+      });
+
+      it('should pass >=1000 stars string through to GitHub API (TC-22)', async () => {
+        mockSearchGitHubReposAPI.mockResolvedValue({
+          data: {
+            repositories: [],
+          },
+          status: 200,
+        });
+
+        const query: RepoSearchQuery = {
+          keywords: ['react'],
+          stars: '>=1000',
+        };
+        await searchRepos(query);
+
+        expect(mockSearchGitHubReposAPI).toHaveBeenCalled();
+        const apiCall = mockSearchGitHubReposAPI.mock.calls[0]![0];
+        expect(apiCall.stars).toBe('>=1000');
+      });
+
+      it('should NOT convert minStars to >=N format, losing range info', async () => {
+        mockSearchGitHubReposAPI.mockResolvedValue({
+          data: {
+            repositories: [],
+          },
+          status: 200,
+        });
+
+        const query: RepoSearchQuery = {
+          keywords: ['react'],
+          stars: '50..200',
+        };
+        await searchRepos(query);
+
+        const apiCall = mockSearchGitHubReposAPI.mock.calls[0]![0];
+        // Should NOT be >=50 (which loses the upper bound)
+        expect(apiCall.stars).not.toBe('>=50');
+        expect(apiCall.stars).toBe('50..200');
+      });
     });
   });
 

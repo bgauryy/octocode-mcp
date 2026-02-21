@@ -37,7 +37,7 @@ import {
   type DirectoryEntry,
 } from './structureFilters.js';
 import { parseLsSimple, parseLsLongFormat } from './structureParser.js';
-import { walkDirectory } from './structureWalker.js';
+import { walkDirectory, type WalkStats } from './structureWalker.js';
 
 /**
  * Register the local view structure tool with the MCP server.
@@ -57,7 +57,10 @@ export function registerLocalViewStructureTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    withBasicSecurityValidation(executeViewStructure)
+    withBasicSecurityValidation(
+      executeViewStructure,
+      TOOL_NAMES.LOCAL_VIEW_STRUCTURE
+    )
   );
 }
 
@@ -120,7 +123,7 @@ export async function viewStructure(
     }
 
     const entries = query.details
-      ? parseLsLongFormat(result.stdout, query.showFileLastModified)
+      ? parseLsLongFormat(result.stdout, true)
       : await parseLsSimple(
           result.stdout,
           pathValidation.sanitizedPath!,
@@ -164,33 +167,6 @@ export async function viewStructure(
       hasMore: entryPageNumber < totalPages,
     };
 
-    if (
-      !query.charLength &&
-      totalEntries > RESOURCE_LIMITS.MAX_ENTRIES_BEFORE_PAGINATION &&
-      !query.entriesPerPage
-    ) {
-      const estimatedSize = totalEntries * (query.details ? 150 : 30);
-      const toolError = ToolErrors.outputTooLarge(
-        estimatedSize,
-        RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH
-      );
-      return {
-        status: 'error',
-        errorCode: toolError.errorCode,
-        path: query.path,
-        totalFiles,
-        totalDirectories,
-        totalSize,
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
-        hints: [
-          `Directory contains ${totalEntries} entries - overwhelming to view all at once`,
-          'Use entriesPerPage to paginate through results (sorted by modification time, most recent first)',
-          'Why pagination helps: Lets you focus on relevant files first, reduces token usage, easier to navigate',
-        ],
-      };
-    }
-
     const structuredLines = paginatedEntries.map(entry =>
       formatEntryString(entry, 0)
     );
@@ -205,7 +181,7 @@ export async function viewStructure(
       !query.charLength &&
       structuredOutput.length > DEFAULTS.MAX_OUTPUT_CHARS
     ) {
-      effectiveCharLength = 5000;
+      effectiveCharLength = RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH;
       warnings.push(
         `Auto-paginated: Content (${structuredOutput.length} chars) exceeds ${DEFAULTS.MAX_OUTPUT_CHARS} char limit`
       );
@@ -289,6 +265,8 @@ async function viewStructureRecursive(
 
   const maxEntries = query.limit ? query.limit * 2 : 10000;
 
+  const walkStats: WalkStats = { skipped: 0 };
+
   await walkDirectory(
     basePath,
     basePath,
@@ -297,7 +275,9 @@ async function viewStructureRecursive(
     entries,
     maxEntries,
     query.hidden,
-    showModified
+    showModified,
+    walkStats,
+    query.details ?? false
   );
 
   let filteredEntries = applyEntryFilters(entries, query);
@@ -370,34 +350,6 @@ async function viewStructureRecursive(
     hasMore: entryPageNumber < totalPages,
   };
 
-  if (
-    !query.charLength &&
-    totalEntries > RESOURCE_LIMITS.MAX_ENTRIES_BEFORE_PAGINATION &&
-    !query.entriesPerPage
-  ) {
-    const estimatedSize = totalEntries * 150;
-    const toolError = ToolErrors.outputTooLarge(
-      estimatedSize,
-      RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH
-    );
-    return {
-      status: 'error',
-      errorCode: toolError.errorCode,
-      path: query.path,
-      totalFiles,
-      totalDirectories,
-      totalSize,
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
-      hints: [
-        `Recursive listing found ${totalEntries} entries - too much to process at once`,
-        'Options: Use entriesPerPage to paginate through results, or limit to reduce scope',
-        'Alternative: Start with depth=1 to get overview, then drill into specific subdirectories',
-        'Why this matters: Large trees overwhelm context and make it hard to find what you need',
-      ],
-    };
-  }
-
   const structuredLines = paginatedEntries.map(entry => {
     // Fallback to path splitting if depth not present (e.g. from ls parsing)
     const depth = entry.depth ?? entry.name.split(path.sep).length - 1;
@@ -405,6 +357,12 @@ async function viewStructureRecursive(
   });
   let structuredOutput = structuredLines.join('\n');
   const warnings: string[] = [];
+
+  if (walkStats.skipped > 0) {
+    warnings.push(
+      `${walkStats.skipped} entries skipped due to permission errors`
+    );
+  }
 
   let paginationMetadata: ReturnType<typeof applyPagination> | null = null;
 
@@ -465,6 +423,7 @@ async function viewStructureRecursive(
   return {
     status,
     path: query.path,
+    cwd: process.cwd(),
     structuredOutput,
     totalFiles,
     totalDirectories,

@@ -4,7 +4,7 @@ import type { OctokitOptions } from '@octokit/core';
 import { createHash } from 'crypto';
 import { getGitHubToken } from '../serverConfig.js';
 import { getServerConfig } from '../serverConfig.js';
-import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { version } from '../../package.json';
 
 /**
@@ -24,6 +24,20 @@ export const OctokitWithThrottling = Octokit.plugin(throttling);
  * between performance and token freshness.
  */
 const TOKEN_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Maximum number of cached Octokit instances.
+ * Each instance holds a Bottleneck instance (throttling plugin) which
+ * consumes non-trivial memory. Cap prevents unbounded growth when many
+ * different OAuth tokens are used (e.g. multi-user MCP server).
+ */
+const MAX_INSTANCES = 50;
+
+/**
+ * Interval for periodic cleanup of expired instances (60 seconds).
+ * This prevents expired instances from lingering in memory indefinitely.
+ */
+const PURGE_INTERVAL_MS = 60 * 1000;
 
 /**
  * Cached Octokit instance with creation timestamp for TTL checks.
@@ -46,6 +60,48 @@ const instances = new Map<string, CachedInstance>();
 let pendingDefaultPromise: Promise<
   InstanceType<typeof OctokitWithThrottling>
 > | null = null;
+
+// Periodic purge timer ref (unref'd so it doesn't block process exit)
+let purgeTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Evict all expired instances from the cache.
+ * Also enforces MAX_INSTANCES by removing the oldest entries when over capacity.
+ */
+function purgeExpiredInstances(): void {
+  // 1. Remove expired entries
+  for (const [key, cached] of instances.entries()) {
+    if (isExpired(cached)) {
+      instances.delete(key);
+    }
+  }
+
+  // 2. If still over capacity, evict oldest non-DEFAULT entries
+  if (instances.size > MAX_INSTANCES) {
+    const sorted = [...instances.entries()]
+      .filter(([key]) => key !== 'DEFAULT')
+      .sort((a, b) => a[1].createdAt - b[1].createdAt);
+
+    const excess = instances.size - MAX_INSTANCES;
+    for (let i = 0; i < excess && i < sorted.length; i++) {
+      const entry = sorted[i];
+      if (entry) instances.delete(entry[0]);
+    }
+  }
+}
+
+/**
+ * Start the periodic purge timer if not already running.
+ * Timer is unref'd so it does not prevent Node.js process exit.
+ */
+function ensurePurgeTimer(): void {
+  if (purgeTimer) return;
+  purgeTimer = setInterval(purgeExpiredInstances, PURGE_INTERVAL_MS);
+  // Unref so this timer doesn't keep the process alive
+  if (typeof purgeTimer === 'object' && 'unref' in purgeTimer) {
+    purgeTimer.unref();
+  }
+}
 
 /**
  * Maximum number of retries for rate-limited requests.
@@ -106,6 +162,9 @@ function createOctokitInstance(
 export async function getOctokit(
   authInfo?: AuthInfo
 ): Promise<InstanceType<typeof OctokitWithThrottling>> {
+  // Start periodic cleanup on first call
+  ensurePurgeTimer();
+
   // Case 1: Specific Auth Info provided
   if (authInfo?.token) {
     // Use hashed token as key to avoid storing raw tokens in memory
@@ -115,6 +174,11 @@ export async function getOctokit(
     // Check if cached instance exists and is not expired
     if (cached && !isExpired(cached)) {
       return cached.client;
+    }
+
+    // Purge expired entries before adding a new one to stay within limits
+    if (instances.size >= MAX_INSTANCES) {
+      purgeExpiredInstances();
     }
 
     // Create new instance (either doesn't exist or expired)
@@ -150,10 +214,68 @@ export async function getOctokit(
 }
 
 /**
- * Clear all cached Octokit instances.
- * Used for testing or when a full reset is needed.
+ * Maximum number of entries in the default branch cache.
+ * FIFO eviction when full — Map preserves insertion order.
+ */
+export const MAX_BRANCH_CACHE_SIZE = 200;
+
+/**
+ * In-memory cache for default branch lookups.
+ * Key: "owner/repo", Value: branch name.
+ * TTL is tied to the Octokit instance cache (5 min) — cleared via clearOctokitInstances().
+ *
+ * Prevents redundant GitHub API calls when multiple queries in a bulk
+ * operation target the same repo without specifying a branch.
+ */
+const defaultBranchCache = new Map<string, string>();
+
+/**
+ * Fetch the default branch name for a GitHub repository.
+ * Results are cached in-memory to avoid redundant API calls within a session.
+ * Falls back to "main" on error (e.g. network failure, private repo without token).
+ *
+ * Shared utility used by:
+ * - githubCloneRepo (when branch is omitted)
+ * - githubGetFileContent directory mode (when branch is omitted)
+ */
+export async function resolveDefaultBranch(
+  owner: string,
+  repo: string,
+  authInfo?: AuthInfo
+): Promise<string> {
+  const cacheKey = `${owner}/${repo}`;
+  const cached = defaultBranchCache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const octokit = await getOctokit(authInfo);
+    const { data } = await octokit.rest.repos.get({ owner, repo });
+    const branch = data.default_branch;
+    if (defaultBranchCache.size >= MAX_BRANCH_CACHE_SIZE) {
+      // FIFO eviction — Map.keys() returns insertion order
+      const oldest = defaultBranchCache.keys().next().value;
+      if (oldest !== undefined) defaultBranchCache.delete(oldest);
+    }
+    defaultBranchCache.set(cacheKey, branch);
+    return branch;
+  } catch {
+    // Return "main" as fallback but do NOT cache it — the error may be
+    // transient and the actual default branch could be master/develop/etc.
+    return 'main';
+  }
+}
+
+/**
+ * Clear all cached Octokit instances and stop the purge timer.
+ * Used for testing, shutdown, or when a full reset is needed.
  */
 export function clearOctokitInstances(): void {
   instances.clear();
   pendingDefaultPromise = null;
+  defaultBranchCache.clear();
+
+  if (purgeTimer) {
+    clearInterval(purgeTimer);
+    purgeTimer = null;
+  }
 }

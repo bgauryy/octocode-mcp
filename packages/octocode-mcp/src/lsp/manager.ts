@@ -48,7 +48,14 @@ export async function createClient(
     await client.start();
     return client;
   } catch {
-    // LSP start failed - return null to indicate unavailability
+    // LSP start failed - ensure the process is cleaned up.
+    // client.start() already calls stop() on init failure, but
+    // belt-and-suspenders to guarantee no orphaned process.
+    try {
+      await client.stop();
+    } catch {
+      // Ignore cleanup errors
+    }
     return null;
   }
 }

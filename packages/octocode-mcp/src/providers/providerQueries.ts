@@ -37,6 +37,8 @@ export interface CodeSearchQuery extends BaseProviderQuery {
   extension?: string;
   /** Branch, tag, or commit reference */
   ref?: string;
+  /** Search scope: 'file' for content, 'path' for filename/directory */
+  match?: 'file' | 'path';
   /** Maximum results per page (max 100) */
   limit?: number;
   /** Page number for pagination */
@@ -85,6 +87,8 @@ export interface RepoSearchQuery extends BaseProviderQuery {
   owner?: string;
   /** Minimum stars (GitHub only, GitLab: client-side filter) */
   minStars?: number;
+  /** Raw stars filter string for GitHub (e.g. '>1000', '100..500', '>=500') */
+  stars?: string;
   /** Visibility filter */
   visibility?: 'public' | 'private' | 'internal';
   /** Sort by field */

@@ -43,6 +43,7 @@ export interface GitHubPullRequestSearchQuery {
   sort?: 'created' | 'updated' | 'best-match';
   order?: 'asc' | 'desc';
   limit?: number;
+  page?: number;
   withComments?: boolean;
   withCommits?: boolean;
   type?: 'metadata' | 'fullContent' | 'partialContent';
@@ -51,6 +52,8 @@ export interface GitHubPullRequestSearchQuery {
     additions?: number[];
     deletions?: number[];
   }[];
+  charOffset?: number;
+  charLength?: number;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -165,6 +168,15 @@ export interface PullRequestSearchResultData {
   total_count?: number;
   incomplete_results?: boolean;
   pagination?: PRSearchPagination;
+  /** Character-based output pagination (when output exceeds size limit) */
+  outputPagination?: {
+    charOffset: number;
+    charLength: number;
+    totalChars: number;
+    hasMore: boolean;
+    currentPage: number;
+    totalPages: number;
+  };
 }
 
 /** Complete pull request search result */

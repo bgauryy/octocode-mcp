@@ -44,7 +44,7 @@ export function writeMCPConfig(
     // Ensure directory exists
     const dir = path.dirname(configPath);
     if (!dirExists(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
 
     // Write config

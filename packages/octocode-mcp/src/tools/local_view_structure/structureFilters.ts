@@ -1,4 +1,5 @@
 import type { ViewStructureQuery } from '../../utils/core/types.js';
+import { checkRegexSafety } from '../../utils/core/safeRegex.js';
 
 /**
  * Internal directory entry for processing
@@ -43,7 +44,19 @@ export function applyEntryFilters(
         .replace(/\\\]/g, ']');
 
       try {
-        const regex = new RegExp(`^${regexPattern}$`, 'i');
+        const fullPattern = `^${regexPattern}$`;
+        const safety = checkRegexSafety(fullPattern);
+        if (!safety.safe) {
+          // Fall back to literal match for unsafe patterns
+          filtered = filtered.filter(e => {
+            const filename = e.name.includes('/')
+              ? e.name.split('/').pop()!
+              : e.name;
+            return filename.includes(pattern);
+          });
+          return filtered;
+        }
+        const regex = new RegExp(fullPattern, 'i');
         filtered = filtered.filter(e => {
           // For recursive mode, entry.name is the relative path (e.g., "subdir/file.ts")
           // Pattern should match the filename part only for consistency
@@ -73,13 +86,17 @@ export function applyEntryFilters(
   }
 
   if (query.extension) {
-    filtered = filtered.filter(e => e.extension === query.extension);
+    filtered = filtered.filter(
+      e => e.type === 'directory' || e.extension === query.extension
+    );
   }
 
   if (query.extensions && query.extensions.length > 0) {
     const extensions = query.extensions;
     filtered = filtered.filter(
-      e => e.extension && extensions.includes(e.extension)
+      e =>
+        e.type === 'directory' ||
+        (e.extension && extensions.includes(e.extension))
     );
   }
 
@@ -96,7 +113,7 @@ export function applyEntryFilters(
 
 /**
  * Format directory entry as compact string
- * Format: [TYPE] name (size) .ext
+ * Format: [TYPE] [permissions] name (size) date .ext
  */
 export function formatEntryString(
   entry: DirectoryEntry,
@@ -111,11 +128,13 @@ export function formatEntryString(
         : '[FILE]';
   const nameDisplay =
     entry.type === 'directory' ? `${entry.name}/` : entry.name;
+  const dateStr = entry.modified ? ` ${entry.modified.split('T')[0]}` : '';
+  const permStr = entry.permissions ? ` ${entry.permissions}` : '';
 
   if (entry.type === 'file' && entry.size) {
     const extStr = entry.extension ? ` .${entry.extension}` : '';
-    return `${indentation}${typeMarker} ${nameDisplay} (${entry.size})${extStr}`;
+    return `${indentation}${typeMarker}${permStr} ${nameDisplay} (${entry.size})${dateStr}${extStr}`;
   } else {
-    return `${indentation}${typeMarker} ${nameDisplay}`;
+    return `${indentation}${typeMarker}${permStr}${dateStr} ${nameDisplay}`;
   }
 }

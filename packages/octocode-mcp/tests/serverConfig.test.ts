@@ -7,6 +7,7 @@ import {
   getServerConfig,
   isLoggingEnabled,
   isLocalEnabled,
+  isCloneEnabled,
   arePromptsEnabled,
   getTokenSource,
   _setTokenResolvers,
@@ -142,7 +143,8 @@ describe('ServerConfig - Simplified Version', () => {
       expect(config.timeout).toBe(30000);
       expect(config.maxRetries).toBe(3);
       expect(config.loggingEnabled).toBe(true);
-      expect(config.enableLocal).toBe(true);
+      expect(config.enableLocal).toBe(false);
+      expect(config.enableClone).toBe(false);
       expect(config.disablePrompts).toBe(false);
       expect(config.tokenSource).toBe('none');
     });
@@ -568,10 +570,10 @@ describe('ServerConfig - Simplified Version', () => {
       delete process.env.ENABLE_LOCAL;
     });
 
-    it('should default to true when ENABLE_LOCAL is not set', async () => {
+    it('should default to false when ENABLE_LOCAL is not set', async () => {
       mockSpawnFailure();
       await initialize();
-      expect(getServerConfig().enableLocal).toBe(true);
+      expect(getServerConfig().enableLocal).toBe(false);
     });
 
     it('should enable local when ENABLE_LOCAL is "true"', async () => {
@@ -643,7 +645,7 @@ describe('ServerConfig - Simplified Version', () => {
       }
     });
 
-    it('should return true (default) for invalid/unrecognized ENABLE_LOCAL values', async () => {
+    it('should return false (default) for invalid/unrecognized ENABLE_LOCAL values', async () => {
       const invalidValues = ['no', 'yes', 'enabled', '', '   '];
 
       for (const value of invalidValues) {
@@ -652,17 +654,17 @@ describe('ServerConfig - Simplified Version', () => {
         process.env.ENABLE_LOCAL = value;
         mockSpawnFailure();
         await initialize();
-        expect(getServerConfig().enableLocal).toBe(true);
+        expect(getServerConfig().enableLocal).toBe(false);
       }
     });
   });
 
   describe('isLocalEnabled() helper', () => {
-    it('should return true when enableLocal is true (default)', async () => {
+    it('should return false when enableLocal is false (default)', async () => {
       delete process.env.ENABLE_LOCAL;
       mockSpawnFailure();
       await initialize();
-      expect(isLocalEnabled()).toBe(true);
+      expect(isLocalEnabled()).toBe(false);
     });
 
     it('should return false when ENABLE_LOCAL is "false"', async () => {
@@ -674,6 +676,92 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should throw when config is not initialized', () => {
       expect(() => isLocalEnabled()).toThrow();
+    });
+  });
+
+  describe('ENABLE_CLONE Configuration', () => {
+    beforeEach(() => {
+      delete process.env.ENABLE_CLONE;
+      delete process.env.ENABLE_LOCAL;
+    });
+
+    it('should default to false when ENABLE_CLONE is not set', async () => {
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().enableClone).toBe(false);
+    });
+
+    it('should enable clone when ENABLE_CLONE is "true"', async () => {
+      process.env.ENABLE_CLONE = 'true';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().enableClone).toBe(true);
+    });
+
+    it('should enable clone when ENABLE_CLONE is "1"', async () => {
+      process.env.ENABLE_CLONE = '1';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().enableClone).toBe(true);
+    });
+
+    it('should disable clone when ENABLE_CLONE is "false"', async () => {
+      process.env.ENABLE_CLONE = 'false';
+      mockSpawnFailure();
+      await initialize();
+      expect(getServerConfig().enableClone).toBe(false);
+    });
+
+    it('should return false for invalid/unrecognized ENABLE_CLONE values', async () => {
+      const invalidValues = ['no', 'yes', 'enabled', '', '   '];
+
+      for (const value of invalidValues) {
+        cleanup();
+        delete process.env.ENABLE_CLONE;
+        process.env.ENABLE_CLONE = value;
+        mockSpawnFailure();
+        await initialize();
+        expect(getServerConfig().enableClone).toBe(false);
+      }
+    });
+  });
+
+  describe('isCloneEnabled() helper', () => {
+    beforeEach(() => {
+      delete process.env.ENABLE_CLONE;
+      delete process.env.ENABLE_LOCAL;
+    });
+
+    it('should return false when both local and clone are disabled', async () => {
+      mockSpawnFailure();
+      await initialize();
+      expect(isCloneEnabled()).toBe(false);
+    });
+
+    it('should return false when local is enabled but clone is not', async () => {
+      process.env.ENABLE_LOCAL = 'true';
+      mockSpawnFailure();
+      await initialize();
+      expect(isCloneEnabled()).toBe(false);
+    });
+
+    it('should return false when clone is enabled but local is not', async () => {
+      process.env.ENABLE_CLONE = 'true';
+      mockSpawnFailure();
+      await initialize();
+      expect(isCloneEnabled()).toBe(false);
+    });
+
+    it('should return true when both local and clone are enabled', async () => {
+      process.env.ENABLE_LOCAL = 'true';
+      process.env.ENABLE_CLONE = 'true';
+      mockSpawnFailure();
+      await initialize();
+      expect(isCloneEnabled()).toBe(true);
+    });
+
+    it('should throw when config is not initialized', () => {
+      expect(() => isCloneEnabled()).toThrow();
     });
   });
 
@@ -1148,11 +1236,41 @@ describe('ServerConfig - Simplified Version', () => {
     });
 
     it('should always return GitLabConfig (not null)', () => {
-      // Even without token, should return config object (not null)
       const config = getGitLabConfig();
       expect(config).not.toBeNull();
       expect(config.host).toBe('https://gitlab.com');
       expect(config.isConfigured).toBe(false);
+    });
+
+    it('should prioritize GITLAB_TOKEN over GL_TOKEN when both are set', () => {
+      process.env.GITLAB_TOKEN = 'gitlab-primary-token';
+      process.env.GL_TOKEN = 'gl-fallback-token';
+
+      const config = getGitLabConfig();
+      expect(config.token).toBe('gitlab-primary-token');
+      expect(config.isConfigured).toBe(true);
+    });
+
+    it('should fall back to GL_TOKEN when GITLAB_TOKEN is not set', () => {
+      delete process.env.GITLAB_TOKEN;
+      process.env.GL_TOKEN = 'gl-fallback-token';
+
+      const config = getGitLabConfig();
+      expect(config.token).toBe('gl-fallback-token');
+      expect(config.isConfigured).toBe(true);
+    });
+
+    it('should use GITLAB_TOKEN even when GL_TOKEN changes', () => {
+      process.env.GITLAB_TOKEN = 'gitlab-primary-token';
+      process.env.GL_TOKEN = 'gl-fallback-token';
+
+      const config1 = getGitLabConfig();
+      expect(config1.token).toBe('gitlab-primary-token');
+
+      process.env.GL_TOKEN = 'gl-changed-token';
+
+      const config2 = getGitLabConfig();
+      expect(config2.token).toBe('gitlab-primary-token');
     });
   });
 

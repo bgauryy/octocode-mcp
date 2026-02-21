@@ -1,4 +1,12 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { executeBulkOperation } from '../../src/utils/response/bulk.js';
 import type { QueryStatus } from '../../src/types';
 import {
@@ -71,7 +79,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('status: "error"');
@@ -87,7 +95,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('status: "error"');
@@ -163,7 +171,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 3 results');
       expect(responseText).toContain('3 failed');
@@ -180,7 +188,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('Bulk response with 2 results');
       expect(responseText).toContain('2 failed');
@@ -1130,7 +1138,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain('Wait 60 seconds');
@@ -1183,7 +1191,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('errorStatusHints:');
@@ -1249,7 +1257,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('error:');
@@ -1272,12 +1280,87 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('3 failed');
       expect(responseText).toContain('mainResearchGoal: "Goal 1"');
       expect(responseText).toContain('mainResearchGoal: "Goal 2"');
       expect(responseText).toContain('mainResearchGoal: "Goal 3"');
+    });
+  });
+
+  describe('Output size limiting', () => {
+    it('should auto-paginate response when output exceeds MAX_OUTPUT_CHARS', async () => {
+      const queries = [{ id: 'q1' }];
+      const largeContent = 'x'.repeat(500);
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        items: Array.from({ length: 50 }, (_, i) => ({
+          id: i,
+          name: `item-${i}`,
+          description: largeContent,
+          metadata: { field1: largeContent, field2: largeContent },
+        })),
+        hints: ['Test hint'],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        keysPriority: ['items'],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+
+      // Response should be auto-paginated to ~RECOMMENDED_CHAR_LENGTH (10000)
+      // and NOT exceed 15000 chars (10000 + pagination hints overhead)
+      expect(responseText.length).toBeLessThan(15000);
+
+      // Should contain pagination hints telling consumer to use charOffset
+      expect(responseText).toContain('Auto-paginated');
+      expect(responseText).toContain('charOffset');
+    });
+
+    it('should not paginate small responses', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        data: { test: true },
+        hints: ['Test hint'],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = getTextContent(result.content);
+
+      // Small response should NOT contain auto-pagination hints
+      expect(responseText).not.toContain('Auto-paginated');
+    });
+
+    it('should include output pagination metadata in paginated response', async () => {
+      const queries = [{ id: 'q1' }];
+      const largeContent = 'x'.repeat(1000);
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        items: Array.from({ length: 30 }, (_, i) => ({
+          id: i,
+          content: largeContent,
+        })),
+        hints: ['Test hint'],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        keysPriority: ['items'],
+      });
+
+      const responseText = getTextContent(result.content);
+
+      // Should contain pagination info with page numbers and total chars
+      expect(responseText).toMatch(/Page \d+\/\d+/);
+      expect(responseText).toMatch(/\d+ of \d+ chars/);
     });
   });
 
@@ -1325,7 +1408,7 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('errorStatusHints:');
@@ -1343,10 +1426,45 @@ describe('executeBulkOperation', () => {
         toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('errorStatusHints:');
     });
+  });
+});
+
+describe('OCTOCODE_BULK_QUERY_TIMEOUT_MS', () => {
+  const originalEnv = process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS;
+
+  afterEach(() => {
+    if (originalEnv !== undefined) {
+      process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS = originalEnv;
+    } else {
+      delete process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS;
+    }
+    vi.restoreAllMocks();
+  });
+
+  it('should default to 60000ms when env var is not set', async () => {
+    delete process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS;
+    vi.resetModules();
+    const { executeBulkOperation: freshBulk } =
+      await import('../../src/utils/response/bulk.js');
+    expect(freshBulk).toBeDefined();
+  });
+
+  it('should parse custom timeout from env var', async () => {
+    process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS = '120000';
+    vi.resetModules();
+    const mod = await import('../../src/utils/response/bulk.js');
+    expect(mod.executeBulkOperation).toBeDefined();
+  });
+
+  it('should fall back to 60000ms for invalid env var', async () => {
+    process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS = 'not-a-number';
+    vi.resetModules();
+    const mod = await import('../../src/utils/response/bulk.js');
+    expect(mod.executeBulkOperation).toBeDefined();
   });
 });

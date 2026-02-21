@@ -143,6 +143,7 @@ export async function initialize(): Promise<void> {
       maxRetries: resolved.network.maxRetries,
       loggingEnabled: resolved.telemetry.logging,
       enableLocal: resolved.local.enabled,
+      enableClone: resolved.local.enableClone,
       disablePrompts: resolved.tools.disablePrompts,
       tokenSource: tokenResult.source,
       gitlab: resolveGitLabConfig(),
@@ -185,6 +186,12 @@ export async function getToken(): Promise<string | null> {
 
 export function isLocalEnabled(): boolean {
   return getServerConfig().enableLocal;
+}
+
+export function isCloneEnabled(): boolean {
+  const cfg = getServerConfig();
+  // Clone requires both enableLocal AND enableClone
+  return cfg.enableLocal && cfg.enableClone;
 }
 
 export function isLoggingEnabled(): boolean {

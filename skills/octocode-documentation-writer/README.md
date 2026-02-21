@@ -7,7 +7,7 @@
   <p>Production-ready pipeline • Intelligent orchestration • Conflict-free writing</p>
 
   [![Skill](https://img.shields.io/badge/skill-agentskills.io-purple)](https://agentskills.io/what-are-skills)
-  [![License](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
+  [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/bgauryy/octocode-mcp/blob/main/LICENSE)
 
 </div>
 
@@ -137,4 +137,4 @@ The generated documentation will be saved in the `documentation/` directory with
 
 MIT License © 2026 Octocode
 
-See [LICENSE](../../LICENSE) for details.
+See [LICENSE](https://github.com/bgauryy/octocode-mcp/blob/main/LICENSE) for details.

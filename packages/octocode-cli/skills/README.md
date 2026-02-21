@@ -176,7 +176,7 @@ You can opt-out at any time:
 export LOG=false
 ```
 
-For full details, please read our [Privacy Policy](../../../PRIVACY.md) and [Terms of Usage](../../../TERMS.md).
+For full details, please read our [Privacy Policy](https://github.com/bgauryy/octocode-mcp/blob/main/PRIVACY.md) and [Terms of Usage](https://github.com/bgauryy/octocode-mcp/blob/main/TERMS.md).
 
 ---
 
@@ -186,4 +186,4 @@ This project is licensed under the **MIT License**.
 
 Copyright © 2026 Octocode AI.
 
-See [LICENSE](../LICENSE) for details.
+See [LICENSE](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/LICENSE) for details.

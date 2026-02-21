@@ -15,7 +15,7 @@ import {
   fileExists,
   copyDirectory,
 } from './fs.js';
-import { join } from 'node:path';
+import { join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { mkdirSync, statSync, readdirSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import { getSkillsSourcePath, getAvailableSkills } from './skills.js';
@@ -67,9 +67,21 @@ function getCacheDir(): string {
 function ensureCacheDir(): string {
   const cacheDir = getCacheDir();
   if (!dirExists(cacheDir)) {
-    mkdirSync(cacheDir, { recursive: true });
+    mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
   }
   return cacheDir;
+}
+
+function isPathInside(baseDir: string, targetPath: string): boolean {
+  const normalizedBase = resolve(baseDir);
+  const normalizedTarget = resolve(targetPath);
+  const relativePath = relative(normalizedBase, normalizedTarget);
+
+  return (
+    relativePath !== '..' &&
+    !relativePath.startsWith(`..${sep}`) &&
+    !isAbsolute(relativePath)
+  );
 }
 
 /**
@@ -311,7 +323,13 @@ export async function fetchMarketplaceTree(
 }
 
 /**
- * Fetch raw file content from GitHub
+ * Maximum content size for downloaded skill files (1MB).
+ */
+const MAX_CONTENT_SIZE_BYTES = 1024 * 1024;
+
+/**
+ * Fetch raw file content from GitHub with content validation.
+ * Validates response content-type and size before returning.
  */
 export async function fetchRawContent(
   source: MarketplaceSource,
@@ -329,7 +347,29 @@ export async function fetchRawContent(
     throw new Error(`Failed to fetch content: ${response.statusText}`);
   }
 
-  return response.text();
+  // Validate content size to prevent downloading unexpectedly large files
+  const contentLength = response.headers?.get?.('Content-Length');
+  const contentLengthBytes = contentLength ? Number(contentLength) : NaN;
+  if (
+    Number.isFinite(contentLengthBytes) &&
+    contentLengthBytes > MAX_CONTENT_SIZE_BYTES
+  ) {
+    throw new Error(
+      `Content too large: ${contentLengthBytes} bytes exceeds ${MAX_CONTENT_SIZE_BYTES} byte limit`
+    );
+  }
+
+  const content = await response.text();
+  const contentSizeBytes = Buffer.byteLength(content, 'utf8');
+
+  // Validate size of actual content (Content-Length may not be set)
+  if (contentSizeBytes > MAX_CONTENT_SIZE_BYTES) {
+    throw new Error(
+      `Content too large: ${contentSizeBytes} bytes exceeds ${MAX_CONTENT_SIZE_BYTES} byte limit`
+    );
+  }
+
+  return content;
 }
 
 /**
@@ -496,13 +536,16 @@ export async function installMarketplaceSkill(
     // Create destination directory
     const skillDestDir = join(destDir, skill.name);
     if (!dirExists(skillDestDir)) {
-      mkdirSync(skillDestDir, { recursive: true });
+      mkdirSync(skillDestDir, { recursive: true, mode: 0o700 });
     }
 
     if (source.skillPattern === 'flat-md') {
       // Single file skill - download and create SKILL.md
       const content = await fetchRawContent(source, skill.path);
       const skillMdPath = join(skillDestDir, 'SKILL.md');
+      if (!isPathInside(skillDestDir, skillMdPath)) {
+        throw new Error('Invalid skill destination path');
+      }
       writeFileContent(skillMdPath, content);
     } else {
       // Folder skill - download all files in the folder
@@ -513,7 +556,13 @@ export async function installMarketplaceSkill(
 
       for (const file of files) {
         const relativePath = file.path.slice(prefix.length);
+        if (!relativePath || isAbsolute(relativePath)) {
+          throw new Error('Invalid skill file path');
+        }
         const destPath = join(skillDestDir, relativePath);
+        if (!isPathInside(skillDestDir, destPath)) {
+          throw new Error('Invalid skill file path traversal');
+        }
 
         // Create subdirectories if needed
         const destSubDir = join(
@@ -521,7 +570,7 @@ export async function installMarketplaceSkill(
           relativePath.split('/').slice(0, -1).join('/')
         );
         if (destSubDir !== skillDestDir && !dirExists(destSubDir)) {
-          mkdirSync(destSubDir, { recursive: true });
+          mkdirSync(destSubDir, { recursive: true, mode: 0o700 });
         }
 
         const content = await fetchRawContent(source, file.path);

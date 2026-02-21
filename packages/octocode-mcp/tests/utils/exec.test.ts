@@ -372,9 +372,10 @@ describe('exec utilities', () => {
       const result = await promise;
 
       expect(result).toBe(true);
+      // npm is now spawned via process.execPath to bypass shebang PATH issues
       expect(vi.mocked(spawn)).toHaveBeenCalledWith(
-        expect.stringMatching(/npm(\.cmd)?$/),
-        ['--version'],
+        process.execPath,
+        [expect.stringMatching(/npm(\.cmd)?$/), '--version'],
         expect.objectContaining({
           timeout: 10000,
         })
@@ -421,9 +422,10 @@ describe('exec utilities', () => {
 
       await promise;
 
+      // npm is now spawned via process.execPath to bypass shebang PATH issues
       expect(vi.mocked(spawn)).toHaveBeenCalledWith(
-        expect.stringMatching(/npm(\.cmd)?$/),
-        ['--version'],
+        process.execPath,
+        [expect.stringMatching(/npm(\.cmd)?$/), '--version'],
         expect.objectContaining({
           timeout: 15000,
         })
@@ -436,9 +438,10 @@ describe('exec utilities', () => {
 
       await promise;
 
+      // npm is now spawned via process.execPath to bypass shebang PATH issues
       expect(vi.mocked(spawn)).toHaveBeenCalledWith(
-        expect.stringMatching(/npm(\.cmd)?$/),
-        ['--version'],
+        process.execPath,
+        [expect.stringMatching(/npm(\.cmd)?$/), '--version'],
         expect.objectContaining({
           timeout: 10000,
         })

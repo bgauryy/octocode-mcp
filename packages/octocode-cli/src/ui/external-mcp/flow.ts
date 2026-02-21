@@ -1,5 +1,5 @@
 import { c, bold, dim } from '../../utils/colors.js';
-import { loadInquirer, input } from '../../utils/prompts.js';
+import { loadInquirer, input, select, Separator } from '../../utils/prompts.js';
 import { Spinner } from '../../utils/spinner.js';
 import { assertDefined } from '../../utils/assert.js';
 import {
@@ -467,7 +467,6 @@ export async function runExternalMCPFlow(): Promise<void> {
         printMCPDetails(selectedMCP);
 
         type DetailChoice = 'continue' | 'back';
-        const { select, Separator } = await import('../../utils/prompts.js');
         const choice = await select<DetailChoice>({
           message: 'What would you like to do?',
           choices: [
@@ -550,9 +549,7 @@ export async function runExternalMCPFlow(): Promise<void> {
           console.log();
 
           type DuplicateChoice = 'update' | 'skip' | 'back';
-          const { select: selectPrompt, Separator } =
-            await import('../../utils/prompts.js');
-          const duplicateChoice = await selectPrompt<DuplicateChoice>({
+          const duplicateChoice = await select<DuplicateChoice>({
             message: 'What would you like to do?',
             choices: [
               {

@@ -4,7 +4,7 @@
 
 AI agent guidance for the `octocode-mcp` package - Model Context Protocol server for GitHub and local code research.
 
-This file **overrides** the root [`AGENTS.md`](../../AGENTS.md) for work within this package.
+This file **overrides** the root [`AGENTS.md`](https://github.com/bgauryy/octocode-mcp/blob/main/AGENTS.md) for work within this package.
 
 ---
 
@@ -17,13 +17,14 @@ Octocode MCP is an MCP server providing AI agents with code exploration tools:
 - **LSP Intelligence**: Semantic code navigation with goto definition, find references, call hierarchy
 - **Package Discovery**: Search NPM/PyPI for packages and repository URLs
 
-**Key Docs**: [`LOCAL_TOOLS_REFERENCE.md`](./docs/LOCAL_TOOLS_REFERENCE.md) • [`GITHUB_GITLAB_TOOLS_REFERENCE.md`](./docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) • [`README.md`](./README.md)
+**Key Docs**: See [Key Documentation](#-key-documentation) below for the canonical package doc index.
 
 ---
 
 ## 🛠️ Commands
 
 All commands run from this package directory (`packages/octocode-mcp/`).
+For monorepo-wide setup and workflow commands, see [docs/DEVELOPMENT_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md).
 
 | Task | Command | Description |
 |------|---------|-------------|
@@ -341,7 +342,7 @@ tests/
 | Tool | Type | Local | Description |
 |------|------|-------|-------------|
 | `githubSearchCode` | search | ❌ | Search code across GitHub/GitLab |
-| `githubGetFileContent` | content | ❌ | Fetch file content from GitHub/GitLab repos |
+| `githubGetFileContent` | content | ❌ | Fetch file content or directory to disk (`type: "directory"` requires `ENABLE_CLONE`) |
 | `githubViewRepoStructure` | content | ❌ | Browse GitHub/GitLab repository tree |
 | `githubSearchRepositories` | search | ❌ | Search GitHub/GitLab repositories |
 | `githubSearchPullRequests` | history | ❌ | Search PRs/MRs and view diffs |
@@ -363,7 +364,7 @@ LSP (Language Server Protocol) tools provide **semantic** code intelligence:
 - **30+ languages supported** - Python, Go, Rust, Java, C/C++, etc. (requires server installation)
 - **Cross-platform** - macOS, Linux, Windows
 
-See [`LOCAL_TOOLS_REFERENCE.md`](./docs/LOCAL_TOOLS_REFERENCE.md) for full documentation.
+See the Local Tools reference document in `./docs/` for full documentation.
 
 ---
 
@@ -485,7 +486,9 @@ yarn test:ui
 | `GITLAB_TOKEN` | GitLab personal access token | - |
 | `GL_TOKEN` | GitLab token (fallback) | - |
 | `GITLAB_HOST` | GitLab instance URL | `https://gitlab.com` |
-| `ENABLE_LOCAL` | Enable local filesystem tools | `true` |
+| `ENABLE_LOCAL` | Enable local filesystem tools | `false` |
+| `ENABLE_CLONE` | Enable `githubCloneRepo` tool and `githubGetFileContent` directory mode (requires `ENABLE_LOCAL`) | `false` |
+| `OCTOCODE_CACHE_TTL_MS` | Cache TTL for cloned repos in milliseconds | `86400000` (24h) |
 | `DISABLE_PROMPTS` | Disable prompts/slash commands | `false` |
 | `LOG` | Enable session logging | `true` |
 | `REQUEST_TIMEOUT` | API request timeout (ms) | `30000` |
@@ -502,9 +505,9 @@ yarn test:ui
 |----------|-------------|
 | [`GITHUB_GITLAB_TOOLS_REFERENCE.md`](./docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) | GitHub/GitLab tools: search code/repos/PRs, content, packages |
 | [`LOCAL_TOOLS_REFERENCE.md`](./docs/LOCAL_TOOLS_REFERENCE.md) | Local + LSP tools: search, structure, files, semantic analysis |
+| [`CLONE_AND_LOCAL_TOOLS_WORKFLOW.md`](./docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md) | Clone repos → use local + LSP tools for deep analysis |
 | [`AUTHENTICATION_SETUP.md`](./docs/AUTHENTICATION_SETUP.md) | GitHub/GitLab authentication setup |
 | [`README.md`](./README.md) | Installation, usage, configuration |
-| [`../../AGENTS.md`](../../AGENTS.md) | Root monorepo guidelines |
 | [MCP Spec](https://modelcontextprotocol.io/) | Model Context Protocol specification |
 | [GitHub REST API](https://docs.github.com/en/rest) | GitHub API reference |
 | [LSP Spec](https://microsoft.github.io/language-server-protocol/) | Language Server Protocol specification |

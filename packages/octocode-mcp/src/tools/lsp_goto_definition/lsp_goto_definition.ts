@@ -32,9 +32,12 @@ export function registerLSPGotoDefinitionTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    withBasicSecurityValidation(executeGotoDefinition)
+    withBasicSecurityValidation(
+      executeGotoDefinition,
+      STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION
+    )
   );
 }
 
 // Re-export for testing
-export { addLineNumbers } from './execution.js';
+export { addLineNumbers, isImportOrReExport } from './execution.js';

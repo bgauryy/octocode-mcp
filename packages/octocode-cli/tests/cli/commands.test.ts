@@ -318,8 +318,9 @@ describe('CLI Commands', () => {
         });
 
         // Get the output from console.log
-        const output = consoleSpy.mock.calls.find(call =>
-          call[0]?.includes('"token"')
+        const output = consoleSpy.mock.calls.find(
+          (call: unknown[]) =>
+            typeof call[0] === 'string' && call[0].includes('"token"')
         );
         expect(output).toBeDefined();
         const parsed = JSON.parse(output![0]);
@@ -345,8 +346,9 @@ describe('CLI Commands', () => {
           options: { json: true },
         });
 
-        const output = consoleSpy.mock.calls.find(call =>
-          call[0]?.includes('"token"')
+        const output = consoleSpy.mock.calls.find(
+          (call: unknown[]) =>
+            typeof call[0] === 'string' && call[0].includes('"token"')
         );
         expect(output).toBeDefined();
         const parsed = JSON.parse(output![0]);
@@ -371,8 +373,9 @@ describe('CLI Commands', () => {
           options: { json: true },
         });
 
-        const output = consoleSpy.mock.calls.find(call =>
-          call[0]?.includes('"token"')
+        const output = consoleSpy.mock.calls.find(
+          (call: unknown[]) =>
+            typeof call[0] === 'string' && call[0].includes('"token"')
         );
         expect(output).toBeDefined();
         const parsed = JSON.parse(output![0]);
@@ -396,8 +399,9 @@ describe('CLI Commands', () => {
           options: { json: true },
         });
 
-        const output = consoleSpy.mock.calls.find(call =>
-          call[0]?.includes('"token"')
+        const output = consoleSpy.mock.calls.find(
+          (call: unknown[]) =>
+            typeof call[0] === 'string' && call[0].includes('"token"')
         );
         expect(output).toBeDefined();
         const parsed = JSON.parse(output![0]);
@@ -422,8 +426,9 @@ describe('CLI Commands', () => {
           options: { j: true },
         });
 
-        const output = consoleSpy.mock.calls.find(call =>
-          call[0]?.includes('"token"')
+        const output = consoleSpy.mock.calls.find(
+          (call: unknown[]) =>
+            typeof call[0] === 'string' && call[0].includes('"token"')
         );
         expect(output).toBeDefined();
         const parsed = JSON.parse(output![0]);
@@ -441,8 +446,9 @@ describe('CLI Commands', () => {
           options: { json: true, type: 'invalid' },
         });
 
-        const output = consoleSpy.mock.calls.find(call =>
-          call[0]?.includes('"token"')
+        const output = consoleSpy.mock.calls.find(
+          (call: unknown[]) =>
+            typeof call[0] === 'string' && call[0].includes('"token"')
         );
         expect(output).toBeDefined();
         const parsed = JSON.parse(output![0]);

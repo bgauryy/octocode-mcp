@@ -2,7 +2,7 @@
  * Helper functions for call hierarchy operations
  */
 
-import { readFile } from 'fs/promises';
+import { safeReadFile } from '../../lsp/validation.js';
 import type {
   CallHierarchyItem,
   IncomingCall,
@@ -78,7 +78,11 @@ export async function enhanceIncomingCalls(
 
   for (const call of calls) {
     try {
-      const fileContent = await readFile(call.from.uri, 'utf-8');
+      const fileContent = await safeReadFile(call.from.uri);
+      if (!fileContent) {
+        enhanced.push(call);
+        continue;
+      }
       const enhancedFrom = await enhanceCallHierarchyItem(
         call.from,
         fileContent,
@@ -108,7 +112,11 @@ export async function enhanceOutgoingCalls(
 
   for (const call of calls) {
     try {
-      const fileContent = await readFile(call.to.uri, 'utf-8');
+      const fileContent = await safeReadFile(call.to.uri);
+      if (!fileContent) {
+        enhanced.push(call);
+        continue;
+      }
       const enhancedTo = await enhanceCallHierarchyItem(
         call.to,
         fileContent,
@@ -203,7 +211,8 @@ export async function createCallHierarchyItemFromSite(
   let content = site.lineContent;
 
   try {
-    const fileContent = await readFile(site.filePath, 'utf-8');
+    const fileContent = await safeReadFile(site.filePath);
+    if (!fileContent) throw new Error('Cannot read file');
     const lines = fileContent.split(/\r?\n/);
 
     // Look backwards for function declaration
@@ -253,7 +262,11 @@ export async function createCallHierarchyItemFromSite(
     kind: 'function' as SymbolKind,
     uri: site.filePath,
     range: createRange(site.lineNumber - 1, 0, site.lineContent.length),
-    selectionRange: createRange(site.lineNumber - 1, site.column, 10),
+    selectionRange: createRange(
+      site.lineNumber - 1,
+      site.column,
+      enclosingFunctionName.length
+    ),
     content,
     displayRange: {
       startLine: site.lineNumber,

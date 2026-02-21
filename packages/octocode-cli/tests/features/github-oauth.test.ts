@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { TokenSource } from 'octocode-shared';
 
 // Mock all external dependencies
 
@@ -155,7 +156,7 @@ describe('GitHub OAuth', () => {
           if (token && token.trim()) {
             return {
               token: token.trim(),
-              source: `env:${envVar}` as const,
+              source: `env:${envVar}` as TokenSource,
               wasRefreshed: false,
             };
           }

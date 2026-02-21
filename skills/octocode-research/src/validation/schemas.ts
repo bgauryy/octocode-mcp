@@ -283,7 +283,10 @@ export const localStructureSchema = z
     directoriesOnly: booleanString,
     filesOnly: booleanString,
     extension: z.string().optional(),
-    extensions: z.string().optional(),
+    extensions: z.preprocess(
+      (val) => (val === undefined || val === null) ? undefined : toArray(val),
+      z.array(z.string()).optional()
+    ),
     hidden: booleanString,
     showHidden: booleanString,
     depth: numericString,

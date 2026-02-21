@@ -1,16 +1,32 @@
 # Authentication Setup
 
-> How to authenticate Octocode with GitHub or GitLab
+> How to authenticate Octocode MCP with GitHub or GitLab.
 
 ## Overview
 
-The Octocode MCP server needs access to your code repositories to work. You can authenticate with either **GitHub** or **GitLab**.
+Octocode MCP needs a token to access code repositories. You can authenticate with **GitHub** or **GitLab** (one at a time).
+
+### Token Priority
+
+When multiple tokens are available, Octocode uses the **highest-priority** one:
+
+| Priority | Token | Source |
+|----------|-------|--------|
+| 1 (highest) | `OCTOCODE_TOKEN` | Octocode CLI login (stored in keychain) |
+| 2 | `GH_TOKEN` | GitHub CLI (`gh auth login`) |
+| 3 | `GITHUB_TOKEN` | Manual environment variable |
+| Fallback | `~/.octocode/credentials.json` | Cached credentials file |
+| Fallback | `gh auth token` | GitHub CLI token command |
+
+For **GitLab**, tokens are checked in this order: `GITLAB_TOKEN` → `GL_TOKEN`.
+
+> Setting any GitLab token automatically switches Octocode to **GitLab mode**.
 
 ---
 
-## 🐙 GitHub Authentication
+## GitHub Authentication
 
-Choose **ONE** of the following methods (listed in order of ease):
+Choose **one** of the following methods (listed from easiest to most manual):
 
 ### Option 1: Octocode CLI (Recommended)
 
@@ -65,11 +81,11 @@ Add to your MCP settings file (usually `claude_desktop_config.json` or similar):
 
 ---
 
-## 🦊 GitLab Authentication
+## GitLab Authentication
 
-To use GitLab, you simply need to set an environment variable.
+To use GitLab, set a personal access token as an environment variable.
 
-### Option 1: Personal Access Token
+### Personal Access Token
 
 1. Create a [GitLab Personal Access Token](https://gitlab.com/-/profile/personal_access_tokens) with `api` scope.
 2. Set the `GITLAB_TOKEN` variable in **one** of these places:
@@ -109,7 +125,7 @@ export GITLAB_HOST="https://gitlab.your-company.com"
 
 ---
 
-## ❓ Troubleshooting
+## Troubleshooting
 
 ### "No GitHub token found"
 - Run `npx octocode-cli` and select **"Check GitHub Auth Status"**.
@@ -125,4 +141,6 @@ export GITLAB_HOST="https://gitlab.your-company.com"
 
 ---
 
-> **For other issues** (npm registry, Node.js version, MCP connection): See the [Troubleshooting Guide](../../../docs/TROUBLESHOOTING.md)
+> **For other issues** (npm, Node.js, MCP connection): See the [Troubleshooting Guide](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md).
+>
+> **For configuration options** (env vars, `.octocoderc`): See the [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md).

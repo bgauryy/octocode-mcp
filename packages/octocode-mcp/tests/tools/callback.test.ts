@@ -43,8 +43,10 @@ vi.mock('../../src/serverConfig.js', () => ({
     maxRetries: 3,
     loggingEnabled: false,
     enableLocal: false,
+    enableClone: false,
   }),
   isLocalEnabled: vi.fn().mockReturnValue(false),
+  isCloneEnabled: vi.fn().mockReturnValue(false),
 }));
 
 describe('Tool Invocation Callback', () => {

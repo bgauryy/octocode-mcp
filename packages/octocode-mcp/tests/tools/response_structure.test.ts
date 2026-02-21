@@ -164,7 +164,7 @@ describe('Response Structure Tests - All Tools', () => {
         queries: [{ keywordsToSearch: ['test'], owner: 'bad', repo: 'repo' }],
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('error');
     });
@@ -219,7 +219,7 @@ describe('Response Structure Tests - All Tools', () => {
         }
       );
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('error');
     });
@@ -339,7 +339,7 @@ describe('Response Structure Tests - All Tools', () => {
         }
       );
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('error');
     });

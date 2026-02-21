@@ -1,17 +1,122 @@
-/**
- * Tests for spawn.ts utilities - validateArgs function
- *
- * NOTE: The spawn* functions are tested via integration tests since they require
- * real process execution. The global child_process mock in test setup prevents
- * unit testing those functions directly. Use commandAvailability.test.ts for
- * spawn-related integration tests.
- *
- * This file tests validateArgs which is a pure function without spawn dependencies.
- */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { EventEmitter } from 'events';
+import { ChildProcess, spawn } from 'child_process';
+import {
+  buildChildProcessEnv,
+  spawnCheckSuccess,
+  spawnCollectStdout,
+  spawnWithTimeout,
+  validateArgs,
+} from '../../src/utils/exec/spawn.js';
 
-import { describe, it, expect } from 'vitest';
-import { validateArgs } from '../../src/utils/exec/spawn.js';
+class MockChildProcess extends EventEmitter {
+  stdout = new EventEmitter();
+  stderr = new EventEmitter();
+  killed = false;
 
+  kill() {
+    this.killed = true;
+    setTimeout(() => this.emit('close', null), 0);
+    return true;
+  }
+}
+
+describe('spawn env and memory hardening', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+  });
+
+  it('buildChildProcessEnv should only inherit allowlisted vars from process.env', () => {
+    process.env.PATH = '/usr/bin';
+    process.env.HOME = '/Users/test';
+    process.env.SECRET_TOKEN = 'secret';
+
+    const env = buildChildProcessEnv({}, ['PATH', 'HOME'] as const);
+
+    expect(env.PATH).toBe('/usr/bin');
+    expect(env.HOME).toBe('/Users/test');
+    // SECRET_TOKEN is not in allowlist, so not inherited from process.env
+    expect(env.SECRET_TOKEN).toBeUndefined();
+  });
+
+  it('buildChildProcessEnv should only apply overrides for keys in the allowlist', () => {
+    process.env.PATH = '/usr/bin';
+
+    const env = buildChildProcessEnv(
+      { GIT_TERMINAL_PROMPT: '0', CUSTOM_FLAG: '1', PATH: '/custom/path' },
+      ['PATH'] as const
+    );
+
+    // PATH is both allowlisted AND overridden — override wins
+    expect(env.PATH).toBe('/custom/path');
+    // GIT_TERMINAL_PROMPT is NOT in allowlist — override is filtered out
+    expect(env.GIT_TERMINAL_PROMPT).toBeUndefined();
+    // CUSTOM_FLAG is NOT in allowlist — override is filtered out
+    expect(env.CUSTOM_FLAG).toBeUndefined();
+  });
+
+  it('buildChildProcessEnv should not inherit sensitive vars from process.env', () => {
+    process.env.PATH = '/usr/bin';
+    process.env.GITHUB_TOKEN = 'ghp_secret';
+    process.env.AWS_SECRET_ACCESS_KEY = 'aws_secret';
+
+    const env = buildChildProcessEnv({}, ['PATH'] as const);
+
+    expect(env.PATH).toBe('/usr/bin');
+    expect(env.GITHUB_TOKEN).toBeUndefined();
+    expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+  });
+
+  it('spawnCheckSuccess should use minimal default env (no proxy by default)', async () => {
+    const mockProcess = new MockChildProcess();
+    vi.mocked(spawn).mockReturnValue(mockProcess as unknown as ChildProcess);
+    process.env.HTTP_PROXY = 'http://proxy.internal:8080';
+
+    const promise = spawnCheckSuccess('npm', ['--version'], 1000);
+    setTimeout(() => mockProcess.emit('close', 0), 0);
+    const result = await promise;
+
+    const spawnOptions = vi.mocked(spawn).mock.calls[0]?.[2];
+    expect(result).toBe(true);
+    expect(spawnOptions?.env?.HTTP_PROXY).toBeUndefined();
+  });
+
+  it('spawnCollectStdout should include tooling profile envs by default', async () => {
+    const mockProcess = new MockChildProcess();
+    vi.mocked(spawn).mockReturnValue(mockProcess as unknown as ChildProcess);
+    process.env.HOME = '/Users/tooling-home';
+
+    const promise = spawnCollectStdout('gh', ['auth', 'token'], 1000);
+    setTimeout(() => {
+      mockProcess.stdout.emit('data', 'token-123');
+      mockProcess.emit('close', 0);
+    }, 0);
+    const result = await promise;
+
+    const spawnOptions = vi.mocked(spawn).mock.calls[0]?.[2];
+    expect(result).toBe('token-123');
+    expect(spawnOptions?.env?.HOME).toBe('/Users/tooling-home');
+  });
+
+  it('spawnWithTimeout should enforce default output limit to bound memory usage', async () => {
+    const mockProcess = new MockChildProcess();
+    vi.mocked(spawn).mockReturnValue(mockProcess as unknown as ChildProcess);
+
+    const promise = spawnWithTimeout('dummy', []);
+
+    setTimeout(() => {
+      mockProcess.stdout.emit('data', Buffer.alloc(11 * 1024 * 1024, 'a'));
+    }, 0);
+
+    const result = await promise;
+    expect(result.success).toBe(false);
+    expect(result.outputLimitExceeded).toBe(true);
+  });
+});
 describe('spawn utilities - validateArgs', () => {
   describe('validateArgs', () => {
     it('should accept valid arguments', () => {

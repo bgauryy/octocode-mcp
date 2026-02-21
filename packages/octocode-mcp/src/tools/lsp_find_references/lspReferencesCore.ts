@@ -7,8 +7,8 @@
  * @module tools/lsp_find_references/lspReferencesCore
  */
 
-import { readFile } from 'fs/promises';
 import * as path from 'path';
+import { safeReadFile } from '../../lsp/validation.js';
 import picomatch from 'picomatch';
 
 import type {
@@ -19,9 +19,35 @@ import type {
   ExactPosition,
 } from '../../lsp/types.js';
 import type { LSPFindReferencesQuery } from './scheme.js';
+import type { SymbolKind } from '../../lsp/types.js';
 import { createClient } from '../../lsp/index.js';
 import { getHints } from '../../hints/index.js';
 import { STATIC_TOOL_NAMES } from '../toolNames.js';
+
+/**
+ * Infer symbol kind from the definition line content.
+ * Used to provide accurate symbolKind instead of hardcoding 'function'.
+ * @internal Exported for testing
+ */
+export function inferSymbolKindFromContent(lineContent: string): SymbolKind {
+  const trimmed = lineContent.trim();
+  if (/\bclass\b/.test(trimmed)) return 'class';
+  if (/\binterface\b/.test(trimmed)) return 'interface';
+  if (/\b(type)\s+\w/.test(trimmed)) return 'type';
+  if (/\benum\b/.test(trimmed)) return 'enum';
+  if (/\bnamespace\b/.test(trimmed)) return 'namespace';
+  if (/\bmodule\b/.test(trimmed)) return 'module';
+  if (/\bconst\b/.test(trimmed) && !/=>|function/.test(trimmed))
+    return 'constant';
+  if (/\b(?:let|var)\b/.test(trimmed) && !/=>|function/.test(trimmed))
+    return 'variable';
+  if (
+    /\bproperty\b/.test(trimmed) ||
+    /^\s*(public|private|protected|readonly)\s+\w+\s*[:;]/.test(trimmed)
+  )
+    return 'property';
+  return 'function';
+}
 
 const TOOL_NAME = STATIC_TOOL_NAMES.LSP_FIND_REFERENCES;
 
@@ -63,6 +89,16 @@ export async function findReferencesWithLSP(
   if (!client) return null;
 
   try {
+    // Warm-up: prepareCallHierarchy forces tsserver to load the project graph.
+    // Without this, a freshly-spawned language server may only return references
+    // from the single opened file because it hasn't finished indexing.
+    // This adds ~200ms but dramatically improves cross-file reference coverage.
+    try {
+      await client.prepareCallHierarchy(filePath, position);
+    } catch {
+      // Warm-up failure is non-fatal — proceed with references anyway
+    }
+
     const includeDeclaration = query.includeDeclaration ?? true;
     const locations = await client.findReferences(
       filePath,
@@ -86,7 +122,7 @@ export async function findReferencesWithLSP(
     }
 
     // Step 1: Convert to raw reference locations (no file I/O yet)
-    const rawLocations: RawReferenceLocation[] = locations.map(loc => {
+    let rawLocations: RawReferenceLocation[] = locations.map(loc => {
       const relativeUri = path.relative(workspaceRoot, loc.uri);
       const isDefinition =
         loc.uri === filePath &&
@@ -101,6 +137,12 @@ export async function findReferencesWithLSP(
         isDefinition,
       };
     });
+
+    // Post-filter: Remove definitions when includeDeclaration is false
+    // Some LSP servers (e.g., TypeScript) don't always honor the flag
+    if (!includeDeclaration) {
+      rawLocations = rawLocations.filter(loc => !loc.isDefinition);
+    }
 
     const totalUnfiltered = rawLocations.length;
 
@@ -230,7 +272,8 @@ async function enhanceReferenceLocation(
   // Get context if needed
   if (contextLines > 0) {
     try {
-      const fileContent = await readFile(raw.absoluteUri, 'utf-8');
+      const fileContent = await safeReadFile(raw.absoluteUri);
+      if (!fileContent) throw new Error('Cannot read file');
       const lines = fileContent.split(/\r?\n/);
       const startLine = Math.max(0, raw.range.start.line - contextLines);
       const endLine = Math.min(
@@ -260,7 +303,9 @@ async function enhanceReferenceLocation(
     range: raw.range,
     content,
     isDefinition: raw.isDefinition,
-    symbolKind: raw.isDefinition ? 'function' : undefined,
+    symbolKind: raw.isDefinition
+      ? inferSymbolKindFromContent(content)
+      : undefined,
     displayRange: {
       startLine: displayStartLine,
       endLine: displayEndLine,

@@ -5,7 +5,9 @@
  */
 
 import { realpathSync, statSync } from 'fs';
+import { readFile } from 'fs/promises';
 import * as path from 'path';
+import { pathValidator } from '../security/pathValidator.js';
 
 /**
  * Result of LSP server path validation
@@ -100,4 +102,22 @@ export function validateLSPServerPath(
   }
 
   return { isValid: true, resolvedPath: realPath };
+}
+
+/**
+ * Safely read a file after validating its path is within allowed roots.
+ * Used for LSP-returned file paths (definition locations, references, etc.)
+ * that need defense-in-depth validation before reading.
+ *
+ * @param filePath - Absolute path to read
+ * @returns File content as string, or null if path is outside allowed roots or unreadable
+ */
+export async function safeReadFile(filePath: string): Promise<string | null> {
+  const validation = pathValidator.validate(filePath);
+  if (!validation.isValid) return null;
+  try {
+    return await readFile(filePath, 'utf-8');
+  } catch {
+    return null;
+  }
 }

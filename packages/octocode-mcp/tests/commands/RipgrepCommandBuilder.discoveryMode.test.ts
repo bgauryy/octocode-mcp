@@ -1,23 +1,10 @@
 /**
- * Bug Fix Tests: Discovery Mode Flag Conflict (OCTO-2026-001)
+ * Discovery Mode Tests (OCTO-2026-001)
  *
- * These tests validate the fix for the ripgrep flag conflict bug where
- * `--files-with-matches` (-l) and `--json` flags were passed together,
- * causing ripgrep to fail.
- *
- * TDD Approach:
- * - Tests are written BEFORE the fix
- * - Tests FAIL on current (buggy) code
- * - Tests PASS after the fix is applied
- *
- * Bug Root Cause:
- * - mode="discovery" sets filesOnly=true
- * - filesOnly=true adds -l flag (files-with-matches)
- * - --json is added unconditionally
- * - ripgrep rejects: "-l cannot be used with --json"
- *
- * Fix:
- * - Make --json conditional: don't add it when filesOnly or filesWithoutMatch is true
+ * These tests validate discovery mode behavior:
+ * - Discovery mode uses -c (count) for file discovery with accurate per-file match counts
+ * - Plain text modes (filesOnly, filesWithoutMatch, count, countMatches) never use --json
+ * - Normal modes (paginated, detailed, default) use --json for structured output
  */
 
 import { describe, it, expect } from 'vitest';
@@ -30,45 +17,33 @@ import {
 const createQuery = (query: Parameters<typeof RipgrepQuerySchema.parse>[0]) =>
   RipgrepQuerySchema.parse(query);
 
-describe('RipgrepCommandBuilder - Discovery Mode Flag Conflict Fix', () => {
+describe('RipgrepCommandBuilder - Discovery Mode', () => {
   /**
    * ============================================================
-   * BUG REPRODUCTION TESTS
-   * These tests demonstrate the bug exists
+   * PLAIN TEXT MODE TESTS
+   * These modes output plain text and must NOT use --json
    * ============================================================
    */
-  describe('Bug Reproduction: Flag Conflict Detection', () => {
-    it('should NOT have both -l and --json flags (discovery mode)', () => {
-      // This is the core bug: mode="discovery" sets filesOnly=true,
-      // which adds -l, but --json is also added unconditionally.
-      // Ripgrep cannot use both flags together.
-
+  describe('Plain Text Modes: No --json flag', () => {
+    it('should NOT have --json for discovery mode (uses -c)', () => {
       const query = createQuery({
         pattern: 'searchPattern',
         path: '/project/src',
         mode: 'discovery',
       });
 
-      // Apply workflow mode to set filesOnly=true
       const configuredQuery = applyWorkflowMode(query);
-      expect(configuredQuery.filesOnly).toBe(true);
+      expect(configuredQuery.count).toBe(true);
 
-      // Build the ripgrep command
       const { args } = new RipgrepCommandBuilder()
         .fromQuery(configuredQuery)
         .build();
 
-      // THE BUG: Both flags are present, causing ripgrep to fail
-      const hasFilesOnlyFlag = args.includes('-l');
-      const hasJsonFlag = args.includes('--json');
-
-      // This assertion captures the bug:
-      // If both flags are present, ripgrep will error with:
-      // "error: The argument '--files-with-matches' cannot be used with '--json'"
-      expect(hasFilesOnlyFlag && hasJsonFlag).toBe(false);
+      expect(args).toContain('-c');
+      expect(args).not.toContain('--json');
     });
 
-    it('should NOT have both -l and --json flags (explicit filesOnly=true)', () => {
+    it('should NOT have --json for explicit filesOnly=true (uses -l)', () => {
       const query = createQuery({
         pattern: 'test',
         path: './src',
@@ -77,14 +52,11 @@ describe('RipgrepCommandBuilder - Discovery Mode Flag Conflict Fix', () => {
 
       const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
 
-      const hasFilesOnlyFlag = args.includes('-l');
-      const hasJsonFlag = args.includes('--json');
-
-      // Both flags together = ripgrep error
-      expect(hasFilesOnlyFlag && hasJsonFlag).toBe(false);
+      expect(args).toContain('-l');
+      expect(args).not.toContain('--json');
     });
 
-    it('should NOT have both --files-without-match and --json flags', () => {
+    it('should NOT have --json for filesWithoutMatch', () => {
       const query = createQuery({
         pattern: 'deprecated',
         path: './src',
@@ -93,22 +65,45 @@ describe('RipgrepCommandBuilder - Discovery Mode Flag Conflict Fix', () => {
 
       const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
 
-      const hasFilesWithoutMatchFlag = args.includes('--files-without-match');
-      const hasJsonFlag = args.includes('--json');
+      expect(args).toContain('--files-without-match');
+      expect(args).not.toContain('--json');
+    });
 
-      // Both flags together = ripgrep error
-      expect(hasFilesWithoutMatchFlag && hasJsonFlag).toBe(false);
+    it('should NOT have --json for count mode', () => {
+      const query = createQuery({
+        pattern: 'TODO',
+        path: './src',
+        count: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('-c');
+      expect(args).not.toContain('--json');
+    });
+
+    it('should NOT have --json for countMatches mode', () => {
+      const query = createQuery({
+        pattern: 'TODO',
+        path: './src',
+        countMatches: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('--count-matches');
+      expect(args).not.toContain('--json');
     });
   });
 
   /**
    * ============================================================
-   * FIX VALIDATION TESTS
-   * These tests verify the fix works correctly
+   * DISCOVERY MODE DEFAULTS
+   * Discovery mode now sets count=true for per-file match counts
    * ============================================================
    */
-  describe('Fix Validation: Correct Flag Usage', () => {
-    it('should have -l flag WITHOUT --json for discovery mode', () => {
+  describe('Discovery Mode Defaults', () => {
+    it('should have -c flag WITHOUT --json for discovery mode', () => {
       const query = createQuery({
         pattern: 'findMe',
         path: '/src',
@@ -120,42 +115,31 @@ describe('RipgrepCommandBuilder - Discovery Mode Flag Conflict Fix', () => {
         .fromQuery(configuredQuery)
         .build();
 
-      // After fix: -l should be present, --json should NOT
-      expect(args).toContain('-l');
+      expect(args).toContain('-c');
       expect(args).not.toContain('--json');
+      expect(args).not.toContain('-l');
     });
 
-    it('should have -l flag WITHOUT --json for explicit filesOnly', () => {
+    it('should correctly apply discovery mode defaults (count + smartCase)', () => {
       const query = createQuery({
-        pattern: 'auth',
-        path: './src',
-        filesOnly: true,
+        pattern: 'search',
+        path: '/repo',
+        mode: 'discovery',
       });
 
-      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+      const configuredQuery = applyWorkflowMode(query);
 
-      expect(args).toContain('-l');
-      expect(args).not.toContain('--json');
-    });
-
-    it('should have --files-without-match flag WITHOUT --json', () => {
-      const query = createQuery({
-        pattern: 'unused',
-        path: './src',
-        filesWithoutMatch: true,
-      });
-
-      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
-
-      expect(args).toContain('--files-without-match');
-      expect(args).not.toContain('--json');
+      expect(configuredQuery.count).toBe(true);
+      expect(configuredQuery.smartCase).toBe(true);
+      // filesOnly should NOT be set by discovery mode
+      expect(configuredQuery.filesOnly).toBeUndefined();
     });
   });
 
   /**
    * ============================================================
    * REGRESSION TESTS
-   * These tests ensure normal functionality still works
+   * Normal modes still use JSON for structured output
    * ============================================================
    */
   describe('Regression: Normal Modes Still Use JSON', () => {
@@ -171,9 +155,9 @@ describe('RipgrepCommandBuilder - Discovery Mode Flag Conflict Fix', () => {
         .fromQuery(configuredQuery)
         .build();
 
-      // Paginated mode needs JSON for match details
       expect(args).toContain('--json');
       expect(args).not.toContain('-l');
+      expect(args).not.toContain('-c');
     });
 
     it('should have --json for mode="detailed"', () => {
@@ -188,7 +172,6 @@ describe('RipgrepCommandBuilder - Discovery Mode Flag Conflict Fix', () => {
         .fromQuery(configuredQuery)
         .build();
 
-      // Detailed mode needs JSON for match details
       expect(args).toContain('--json');
       expect(args).not.toContain('-l');
     });
@@ -201,24 +184,21 @@ describe('RipgrepCommandBuilder - Discovery Mode Flag Conflict Fix', () => {
 
       const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
 
-      // Default mode needs JSON for match details
       expect(args).toContain('--json');
       expect(args).not.toContain('-l');
     });
 
-    it('should have --json for count mode', () => {
-      // Count mode with --json outputs JSON with counts
+    it('should have -l flag WITHOUT --json for explicit filesOnly', () => {
       const query = createQuery({
-        pattern: 'TODO',
+        pattern: 'auth',
         path: './src',
-        count: true,
+        filesOnly: true,
       });
 
       const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
 
-      expect(args).toContain('-c');
-      // Note: -c (count) IS compatible with --json in ripgrep
-      expect(args).toContain('--json');
+      expect(args).toContain('-l');
+      expect(args).not.toContain('--json');
     });
   });
 
@@ -242,8 +222,8 @@ describe('RipgrepCommandBuilder - Discovery Mode Flag Conflict Fix', () => {
         .fromQuery(configuredQuery)
         .build();
 
-      // Should still have -l without --json
-      expect(args).toContain('-l');
+      // Should have -c without --json
+      expect(args).toContain('-c');
       expect(args).not.toContain('--json');
 
       // Other filters should work
@@ -265,20 +245,6 @@ describe('RipgrepCommandBuilder - Discovery Mode Flag Conflict Fix', () => {
       // Should have JSON, not -l
       expect(args).toContain('--json');
       expect(args).not.toContain('-l');
-    });
-
-    it('should correctly apply discovery mode defaults', () => {
-      const query = createQuery({
-        pattern: 'search',
-        path: '/repo',
-        mode: 'discovery',
-      });
-
-      const configuredQuery = applyWorkflowMode(query);
-
-      // Discovery mode should set these defaults
-      expect(configuredQuery.filesOnly).toBe(true);
-      expect(configuredQuery.smartCase).toBe(true);
     });
   });
 
@@ -302,8 +268,8 @@ describe('RipgrepCommandBuilder - Discovery Mode Flag Conflict Fix', () => {
         .fromQuery(configuredQuery)
         .build();
 
-      // Should generate valid ripgrep command
-      expect(args).toContain('-l');
+      // Should generate valid ripgrep command with -c
+      expect(args).toContain('-c');
       expect(args).not.toContain('--json');
       expect(args).toContain('useState');
       expect(args).toContain('/large/project/src');
@@ -325,7 +291,7 @@ describe('RipgrepCommandBuilder - Discovery Mode Flag Conflict Fix', () => {
     });
 
     it('should work in MCPHub Docker environment scenario', () => {
-      // Original bug report scenario
+      // Original bug report scenario — discovery mode uses -c (no --json)
       const query = createQuery({
         pattern: 'somePattern',
         path: '/data/code/myproject',
@@ -338,12 +304,10 @@ describe('RipgrepCommandBuilder - Discovery Mode Flag Conflict Fix', () => {
         .fromQuery(configuredQuery)
         .build();
 
-      // This should NOT produce conflicting flags
-      const flagConflict = args.includes('-l') && args.includes('--json');
-      expect(flagConflict).toBe(false);
-
+      // No --json in plain text modes
+      expect(args).not.toContain('--json');
       // Should have the correct flag
-      expect(args).toContain('-l');
+      expect(args).toContain('-c');
     });
   });
 });

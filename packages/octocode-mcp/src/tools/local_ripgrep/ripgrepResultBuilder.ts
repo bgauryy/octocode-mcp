@@ -58,17 +58,20 @@ export async function buildSearchResult(
   }
 
   const totalFiles = limitedFiles.length;
-  // When filesOnly=true with ripgrep, use stats.matchCount from summary if available
-  // (ripgrep's -l flag doesn't return individual match data, but summary has totals)
-  // For grep or when stats unavailable, fall back to summing individual matchCounts
-  // For filesOnly mode without stats, use totalFiles as fallback (each file = 1 match)
+  const isFileListMode =
+    configuredQuery.filesOnly ||
+    configuredQuery.count ||
+    configuredQuery.countMatches;
+  // When in file-list mode (filesOnly, count, countMatches), use stats.matchCount if available.
+  // For count/countMatches modes, stats.matchCount is computed from parsed per-file counts.
+  // For filesOnly mode (-l), stats are unavailable so fall back to summing individual matchCounts.
   const summedMatches = limitedFiles.reduce(
     (sum: number, f: RipgrepFileMatches & { modified?: string }) =>
       sum + f.matchCount,
     0
   );
-  const totalMatches = configuredQuery.filesOnly
-    ? (stats?.matchCount ?? totalFiles) // filesOnly: use stats or fallback to file count
+  const totalMatches = isFileListMode
+    ? (stats?.matchCount ?? summedMatches)
     : summedMatches;
 
   const filesPerPage =
@@ -86,16 +89,16 @@ export async function buildSearchResult(
     (file: RipgrepFileMatches & { modified?: string }) => {
       const totalFileMatches = file.matches.length;
       const totalMatchPages = Math.ceil(totalFileMatches / matchesPerPage);
-      const paginatedMatches = configuredQuery.filesOnly
+      const paginatedMatches = isFileListMode
         ? []
         : file.matches.slice(0, matchesPerPage);
 
       const result: RipgrepFileMatches = {
         path: file.path,
-        matchCount: totalFileMatches,
+        matchCount: isFileListMode ? file.matchCount || 1 : totalFileMatches,
         matches: paginatedMatches,
         pagination:
-          !configuredQuery.filesOnly && totalFileMatches > matchesPerPage
+          !isFileListMode && totalFileMatches > matchesPerPage
             ? {
                 currentPage: 1,
                 totalPages: totalMatchPages,
@@ -188,19 +191,11 @@ function _getStructuredResultSizeHints(
       );
   }
 
-  if (totalMatches > 0 && totalMatches <= 100)
-    hints.push('', 'Good result size - manageable for analysis');
-
-  if (totalMatches > 0) {
+  if (totalMatches > 0 && query.mode === 'detailed') {
     const contentLength =
       query.matchContentLength || RESOURCE_LIMITS.DEFAULT_MATCH_CONTENT_LENGTH;
     hints.push(
-      '',
-      'Integration:',
-      '  - location.byteOffset/byteLength: raw byte offsets from ripgrep (use with Buffer operations)',
-      '  - location.charOffset/charLength: character indices for JavaScript strings',
-      `  - Match values truncated to ${contentLength} chars (configurable via matchContentLength: 1-800)`,
-      '  - Line/column numbers provided for human reference'
+      `Integration: byteOffset/charOffset available per match, values truncated to ${contentLength} chars (matchContentLength: 1-800)`
     );
   }
 

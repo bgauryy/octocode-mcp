@@ -82,6 +82,37 @@ export const NpmCliSearchResultSchema = z.object({
 export const NpmSearchOutputSchema = z.array(NpmCliSearchResultSchema);
 
 // ============================================================================
+// NPM REGISTRY SEARCH API
+// ============================================================================
+
+/**
+ * Schema for a single result item from the npm registry search API
+ * `GET https://registry.npmjs.org/-/v1/search?text=<query>&size=<n>`
+ */
+export const NpmRegistrySearchItemSchema = z.object({
+  package: z.object({
+    name: z.string(),
+    version: z.string(),
+    description: z.string().optional(),
+    links: z
+      .object({
+        npm: z.string().optional(),
+        homepage: z.string().optional(),
+        repository: z.string().optional(),
+      })
+      .optional(),
+  }),
+});
+
+/**
+ * Schema for the full response from the npm registry search API.
+ */
+export const NpmRegistrySearchSchema = z.object({
+  objects: z.array(NpmRegistrySearchItemSchema),
+  total: z.number().optional(),
+});
+
+// ============================================================================
 // NPM DEPRECATION
 // ============================================================================
 

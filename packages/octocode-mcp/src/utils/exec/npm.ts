@@ -5,6 +5,8 @@
 
 import { dirname, join } from 'path';
 import {
+  TOOLING_ALLOWED_ENV_VARS,
+  PROXY_ENV_VARS,
   spawnWithTimeout,
   spawnCheckSuccess,
   spawnCollectStdout,
@@ -12,11 +14,11 @@ import {
 } from './spawn.js';
 
 /**
- * Get the npm binary path by looking next to the current node binary.
+ * Get the npm script path by looking next to the current node binary.
  * This ensures npm is found even when PATH doesn't include it.
  * On Windows, npm is a batch script (npm.cmd), not a binary.
  */
-function getNpmPath(): string {
+function getNpmScriptPath(): string {
   const nodeDir = dirname(process.execPath);
   const npmBinary = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   return join(nodeDir, npmBinary);
@@ -53,15 +55,29 @@ interface NpmExecResult {
   exitCode?: number;
 }
 
+const NETWORK_ALLOWED_ENV_VARS = [
+  ...TOOLING_ALLOWED_ENV_VARS,
+  ...PROXY_ENV_VARS,
+] as const;
+
 /**
- * Check if npm CLI is available by running `npm --version`
+ * Check if npm CLI is available by running `npm --version`.
+ *
+ * Uses process.execPath to invoke the npm script directly, bypassing the
+ * shebang (#!/usr/bin/env node). This is critical for GUI-launched
+ * environments (e.g. Cursor on macOS) where PATH may not include nvm paths.
+ *
  * @param timeoutMs - Timeout in milliseconds (default 10000ms)
  * @returns true if npm CLI is installed and accessible, false otherwise
  */
 export async function checkNpmAvailability(
   timeoutMs: number = 10000
 ): Promise<boolean> {
-  return spawnCheckSuccess(getNpmPath(), ['--version'], timeoutMs);
+  return spawnCheckSuccess(
+    process.execPath,
+    [getNpmScriptPath(), '--version'],
+    timeoutMs
+  );
 }
 
 /**
@@ -91,12 +107,20 @@ export async function executeNpmCommand(
 
   const { timeout = 30000, cwd, env } = options;
 
-  const result = await spawnWithTimeout(getNpmPath(), [command, ...args], {
-    timeout,
-    cwd,
-    env,
-    removeEnvVars: ['NODE_OPTIONS', 'NPM_CONFIG_SCRIPT_SHELL'],
-  });
+  // Use process.execPath (node) to invoke the npm script directly.
+  // npm's shebang (#!/usr/bin/env node) relies on PATH to find node,
+  // which fails in GUI-launched environments (e.g. Cursor on macOS)
+  // where PATH may not include nvm/node paths.
+  const result = await spawnWithTimeout(
+    process.execPath,
+    [getNpmScriptPath(), command, ...args],
+    {
+      timeout,
+      cwd,
+      env,
+      allowEnvVars: NETWORK_ALLOWED_ENV_VARS,
+    }
+  );
 
   return {
     stdout: result.stdout,

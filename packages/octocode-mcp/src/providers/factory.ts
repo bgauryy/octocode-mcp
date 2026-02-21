@@ -22,6 +22,12 @@ import { createHash } from 'crypto';
 const PROVIDER_CACHE_TTL_MS = 60 * 60 * 1000;
 
 /**
+ * Maximum number of cached provider instances.
+ * Prevents unbounded growth when many different tokens/base URLs are used.
+ */
+const MAX_PROVIDER_INSTANCES = 20;
+
+/**
  * Registry of provider classes by type.
  * Providers register themselves during module initialization.
  */
@@ -36,6 +42,7 @@ const providerRegistry = new Map<
 interface CachedProvider {
   provider: ICodeHostProvider;
   createdAt: number;
+  lastAccessedAt: number;
 }
 
 /**
@@ -49,6 +56,32 @@ const instanceCache = new Map<string, CachedProvider>();
  */
 function isProviderCacheValid(entry: CachedProvider): boolean {
   return Date.now() - entry.createdAt < PROVIDER_CACHE_TTL_MS;
+}
+
+/**
+ * Evict expired and excess provider instances.
+ * Removes all expired entries first, then evicts least-recently-used
+ * entries if still over MAX_PROVIDER_INSTANCES.
+ */
+function evictProviderInstances(): void {
+  // 1. Remove expired entries
+  for (const [key, entry] of instanceCache.entries()) {
+    if (!isProviderCacheValid(entry)) {
+      instanceCache.delete(key);
+    }
+  }
+
+  // 2. If still over capacity, evict least-recently-used
+  if (instanceCache.size > MAX_PROVIDER_INSTANCES) {
+    const sorted = [...instanceCache.entries()].sort(
+      (a, b) => a[1].lastAccessedAt - b[1].lastAccessedAt
+    );
+    const excess = instanceCache.size - MAX_PROVIDER_INSTANCES;
+    for (let i = 0; i < excess && i < sorted.length; i++) {
+      const entry = sorted[i];
+      if (entry) instanceCache.delete(entry[0]);
+    }
+  }
 }
 
 // ============================================================================
@@ -139,12 +172,18 @@ export function getProvider(
   // Return cached instance if available and not expired
   const cached = instanceCache.get(cacheKey);
   if (cached && isProviderCacheValid(cached)) {
+    cached.lastAccessedAt = Date.now();
     return cached.provider;
   }
 
   // Remove expired entry if present
   if (cached) {
     instanceCache.delete(cacheKey);
+  }
+
+  // Evict expired and excess entries before adding a new one
+  if (instanceCache.size >= MAX_PROVIDER_INSTANCES) {
+    evictProviderInstances();
   }
 
   // Get provider class from registry
@@ -163,9 +202,11 @@ export function getProvider(
   });
 
   // Cache with timestamp and return
+  const now = Date.now();
   instanceCache.set(cacheKey, {
     provider,
-    createdAt: Date.now(),
+    createdAt: now,
+    lastAccessedAt: now,
   });
   return provider;
 }

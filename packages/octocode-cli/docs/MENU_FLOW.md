@@ -485,5 +485,5 @@ src/ui/
 
 ## See Also
 
-- [CLI Reference](./CLI_REFERENCE.md)
-- [Architecture Overview](./ARCHITECTURE.md)
+- [CLI Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md)
+- [Architecture Overview](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/ARCHITECTURE.md)

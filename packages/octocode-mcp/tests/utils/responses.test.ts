@@ -118,6 +118,30 @@ describe('Response Utilities', () => {
     });
   });
 
+  describe('Defensive: createResult guards', () => {
+    it('should handle null options without crashing', () => {
+      const result = createResult(null as any);
+
+      expect(result.isError).toBe(true);
+      expect(result.content).toBeDefined();
+      expect(result.content.length).toBeGreaterThan(0);
+    });
+
+    it('should handle undefined options without crashing', () => {
+      const result = createResult(undefined as any);
+
+      expect(result.isError).toBe(true);
+      expect(result.content).toBeDefined();
+    });
+
+    it('should handle non-object options without crashing', () => {
+      const result = createResult('bad input' as any);
+
+      expect(result.isError).toBe(true);
+      expect(result.content).toBeDefined();
+    });
+  });
+
   describe('JSON Cleaning', () => {
     it('should clean response data by removing null, undefined, NaN and empty objects', () => {
       const dirtyData = {

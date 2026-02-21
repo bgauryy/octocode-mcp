@@ -610,5 +610,5 @@ npx octocode
 
 ## See Also
 
-- [CLI Reference](./CLI_REFERENCE.md)
-- [Menu Flow](./MENU_FLOW.md)
+- [CLI Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md)
+- [Menu Flow](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/MENU_FLOW.md)

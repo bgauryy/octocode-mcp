@@ -268,6 +268,7 @@ export interface FindFilesQuery extends BaseQuery {
   excludeDir?: string[];
   limit?: number;
   details?: boolean;
+  sortBy?: 'modified' | 'size' | 'name' | 'path';
 
   // File-based pagination (NEW)
   filesPerPage?: number;

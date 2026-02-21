@@ -4,7 +4,7 @@
 
 AI agent guidance for the `octocode-cli` package - Interactive CLI installer and management hub for Octocode MCP servers and AI skills.
 
-This file **overrides** the root [`AGENTS.md`](../../AGENTS.md) for work within this package.
+This file **overrides** the root [`AGENTS.md`](https://github.com/bgauryy/octocode-mcp/blob/main/AGENTS.md) for work within this package.
 
 ---
 
@@ -18,7 +18,7 @@ Octocode CLI is the unified installer and management hub for AI-assisted develop
 - **Skills Manager**: Install and update AI coding skills for Claude Code
 - **MCP Marketplace**: Browse and install 70+ community MCP servers
 
-**Key Docs**: [`README.md`](./README.md) • [Root AGENTS.md](../../AGENTS.md) • [`docs/`](./docs/)
+**Key Docs**: [`README.md`](./README.md) • [`docs/`](./docs/)
 
 ### Documentation
 
@@ -34,6 +34,7 @@ Octocode CLI is the unified installer and management hub for AI-assisted develop
 ## 🛠️ Commands
 
 All commands run from this package directory (`packages/octocode-cli/`).
+For monorepo-wide setup and workflow commands, see [docs/DEVELOPMENT_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md).
 
 | Task | Command | Description |
 |------|---------|-------------|
@@ -362,14 +363,7 @@ Skills are markdown-based instruction sets that teach AI assistants how to perfo
 
 ### Official Skills
 
-| Skill | Description | Flow |
-|-------|-------------|------|
-| `octocode-research` | Evidence-first code forensics (external GitHub) | PREPARE → DISCOVER → ANALYZE → OUTPUT |
-| `octocode-local-search` | Local-first code exploration and discovery | DISCOVER → PLAN → EXECUTE → VERIFY → OUTPUT |
-| `octocode-implement` | Research-driven feature implementation from specs | SPEC → CONTEXT → PLAN → RESEARCH → IMPLEMENT → VALIDATE |
-| `octocode-plan` | Adaptive research & implementation planning | UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY |
-| `octocode-pr-review` | Defects-first PR review across 6+ domains | CONTEXT → CHECKPOINT → ANALYSIS → FINALIZE → REPORT |
-| `octocode-roast` | Brutally honest code review with comedic flair | SCOPE → ROAST → INVENTORY → SPOTLIGHT → REDEMPTION |
+For the complete skills list and documentation, see the [Skills Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md).
 
 ### Skill Structure
 
@@ -440,4 +434,4 @@ The CLI includes a skills marketplace with 8+ community sources:
 | `src/ui/skills-menu/index.ts` | Skills management UI |
 | `src/ui/skills-menu/marketplace.ts` | Marketplace browsing UI |
 
-For complete details, see [`docs/SKILLS_GUIDE.md`](./docs/SKILLS_GUIDE.md).
+For complete details, see `docs/SKILLS_GUIDE.md`.

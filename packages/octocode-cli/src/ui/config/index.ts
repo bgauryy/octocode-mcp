@@ -343,7 +343,6 @@ export async function runConfigOptionsFlow(): Promise<void> {
  * Wait for user to press enter
  */
 async function pressEnterToContinue(): Promise<void> {
-  const { input } = await import('../../utils/prompts.js');
   console.log();
   await input({
     message: dim('Press Enter to continue...'),

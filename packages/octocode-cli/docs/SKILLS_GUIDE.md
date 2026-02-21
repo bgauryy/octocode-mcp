@@ -378,8 +378,8 @@ All official skills follow these core principles:
 
 ## Related Documentation
 
-- [CLI Reference](./CLI_REFERENCE.md) - Complete CLI commands
-- [Menu Flow](./MENU_FLOW.md) - Interactive menu system
-- [Architecture](./ARCHITECTURE.md) - Technical design patterns
+- [CLI Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md) - Complete CLI commands
+- [Menu Flow](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/MENU_FLOW.md) - Interactive menu system
+- [Architecture](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/ARCHITECTURE.md) - Technical design patterns
 - [Claude Skills Documentation](https://support.anthropic.com/en/articles/10176498-how-to-use-custom-instructions-for-your-projects)
 - [Octocode MCP](https://octocode.ai)

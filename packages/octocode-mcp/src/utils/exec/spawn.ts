@@ -15,10 +15,115 @@ interface SpawnWithTimeoutOptions {
   cwd?: string;
   /** Environment variables to merge with process.env */
   env?: Record<string, string | undefined>;
-  /** Maximum output size in bytes before killing process (default: unlimited) */
+  /** Environment variables to allow from process.env (opt-in) */
+  allowEnvVars?: readonly string[];
+  /** Maximum output size in bytes before killing process (default: 10MB) */
   maxOutputSize?: number;
-  /** Environment variables to explicitly remove */
-  removeEnvVars?: string[];
+}
+
+/**
+ * Legacy denylist kept for audit visibility.
+ * Process spawning now uses allowlist-only env propagation.
+ */
+export const SENSITIVE_ENV_VARS = [
+  'NODE_OPTIONS',
+  'GITHUB_TOKEN',
+  'GH_TOKEN',
+  'GITLAB_TOKEN',
+  'GL_TOKEN',
+  'OCTOCODE_TOKEN',
+  'GITHUB_PERSONAL_ACCESS_TOKEN',
+  'NPM_TOKEN',
+  'AWS_SECRET_ACCESS_KEY',
+  'AWS_SESSION_TOKEN',
+] as const;
+
+/**
+ * Default allowlist for environment variables propagated to child processes.
+ * All other variables are blocked unless explicitly provided via options.env.
+ */
+export const CORE_ALLOWED_ENV_VARS = [
+  // Command resolution/runtime
+  'PATH',
+  // Temp directories
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  // Windows command/runtime support
+  'SYSTEMROOT',
+  'WINDIR',
+  'COMSPEC',
+  'PATHEXT',
+] as const;
+
+/**
+ * User profile variables needed by tooling that reads local config/state
+ * (e.g., gh auth, npm user config, some language servers).
+ */
+export const TOOLING_ALLOWED_ENV_VARS = [
+  ...CORE_ALLOWED_ENV_VARS,
+  'HOME',
+  'USERPROFILE',
+  'APPDATA',
+  'LOCALAPPDATA',
+] as const;
+
+/**
+ * Default allowlist for local process execution.
+ * Keep this minimal for local tools and generic subprocesses.
+ */
+export const DEFAULT_ALLOWED_ENV_VARS = CORE_ALLOWED_ENV_VARS;
+
+/**
+ * Proxy env vars are intentionally NOT included in core/default allowlists.
+ * Commands that truly need network proxy support must opt in explicitly.
+ */
+export const PROXY_ENV_VARS = [
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'NO_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'no_proxy',
+] as const;
+
+const DEFAULT_MAX_OUTPUT_SIZE_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Grace period before escalating from SIGTERM to SIGKILL.
+ * 5 seconds matches execa's default forceKillAfterDelay.
+ * Processes (especially git) can ignore SIGTERM; SIGKILL is non-catchable.
+ */
+const SIGKILL_GRACE_MS = 5_000;
+
+export function buildChildProcessEnv(
+  envOverrides: Record<string, string | undefined> = {},
+  allowEnvVars: readonly string[] = DEFAULT_ALLOWED_ENV_VARS
+): typeof process.env {
+  const childEnv: Record<string, string | undefined> = {};
+
+  for (const key of allowEnvVars) {
+    const value = process.env[key];
+    if (value !== undefined) {
+      childEnv[key] = value;
+    }
+  }
+
+  // Explicit caller overrides are gated by the same allowlist — only keys
+  // present in allowEnvVars can be set/deleted. This prevents accidentally
+  // leaking sensitive variables (e.g. GITHUB_TOKEN) into child processes.
+  // Callers that need non-standard env vars must add them to allowEnvVars.
+  const allowSet = new Set<string>(allowEnvVars);
+  for (const [key, value] of Object.entries(envOverrides)) {
+    if (!allowSet.has(key)) continue;
+    if (value === undefined) {
+      delete childEnv[key];
+    } else {
+      childEnv[key] = value;
+    }
+  }
+
+  return childEnv as typeof process.env;
 }
 
 /**
@@ -46,8 +151,8 @@ interface SpawnResult {
  */
 interface ProcessState {
   killed: boolean;
-  stdout: string;
-  stderr: string;
+  stdoutChunks: string[];
+  stderrChunks: string[];
   totalOutputSize: number;
 }
 
@@ -69,35 +174,30 @@ export function spawnWithTimeout(
     timeout = 30000,
     cwd,
     env = {},
-    maxOutputSize,
-    removeEnvVars = ['NODE_OPTIONS'],
+    allowEnvVars = DEFAULT_ALLOWED_ENV_VARS,
+    maxOutputSize = DEFAULT_MAX_OUTPUT_SIZE_BYTES,
   } = options;
 
   return new Promise(resolve => {
     const state: ProcessState = {
       killed: false,
-      stdout: '',
-      stderr: '',
+      stdoutChunks: [],
+      stderrChunks: [],
       totalOutputSize: 0,
     };
 
-    // Build environment with removals
-    const processEnv: Record<string, string | undefined> = {
-      ...process.env,
-      ...env,
-    };
+    const getStdout = (): string => state.stdoutChunks.join('');
+    const getStderr = (): string => state.stderrChunks.join('');
 
-    // Remove specified env vars
-    for (const key of removeEnvVars) {
-      processEnv[key] = undefined;
-    }
-
-    // Spawn options
+    // Spawn options — timeout is intentionally NOT passed here.
+    // spawnWithTimeout manages its own timeout via setTimeout with
+    // SIGTERM → SIGKILL escalation. Passing timeout to spawn() would
+    // create a double-timeout race condition where Node's built-in
+    // timeout also sends SIGTERM at the same instant.
     const spawnOptions: SpawnOptions = {
       cwd,
-      env: processEnv as typeof process.env,
+      env: buildChildProcessEnv(env, allowEnvVars),
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout,
     };
 
     let childProcess: ChildProcess;
@@ -118,14 +218,31 @@ export function spawnWithTimeout(
       return;
     }
 
-    // Timeout handling with manual kill
+    // Timeout handling with SIGTERM → SIGKILL escalation.
+    // Some processes (e.g. git during network ops) can ignore SIGTERM,
+    // so we escalate to non-catchable SIGKILL after a grace period.
+    let sigkillHandle: ReturnType<typeof setTimeout> | undefined;
     const timeoutHandle = setTimeout(() => {
       if (!state.killed) {
         state.killed = true;
-        childProcess.kill('SIGTERM');
+        try {
+          childProcess.kill('SIGTERM');
+        } catch {
+          // Process may have already exited (ESRCH) — ignore
+        }
+
+        // Escalate to SIGKILL if process doesn't exit after grace period
+        sigkillHandle = setTimeout(() => {
+          try {
+            childProcess.kill('SIGKILL');
+          } catch {
+            // Process may have already exited — ignore
+          }
+        }, SIGKILL_GRACE_MS);
+
         resolve({
-          stdout: state.stdout,
-          stderr: state.stderr,
+          stdout: getStdout(),
+          stderr: getStderr(),
           exitCode: null,
           success: false,
           error: new Error(`Command timeout after ${timeout}ms`),
@@ -134,16 +251,29 @@ export function spawnWithTimeout(
       }
     }, timeout);
 
+    /** Clear all pending timers (timeout + SIGKILL escalation) */
+    const clearAllTimers = (): void => {
+      clearTimeout(timeoutHandle);
+      if (sigkillHandle !== undefined) {
+        clearTimeout(sigkillHandle);
+        sigkillHandle = undefined;
+      }
+    };
+
     // Helper to check and handle output size limit
     const checkOutputLimit = (): boolean => {
-      if (maxOutputSize && state.totalOutputSize > maxOutputSize) {
+      if (state.totalOutputSize > maxOutputSize) {
         if (!state.killed) {
           state.killed = true;
-          childProcess.kill('SIGKILL');
-          clearTimeout(timeoutHandle);
+          try {
+            childProcess.kill('SIGKILL');
+          } catch {
+            // Process may have already exited — ignore
+          }
+          clearAllTimers();
           resolve({
-            stdout: state.stdout,
-            stderr: state.stderr,
+            stdout: getStdout(),
+            stderr: getStderr(),
             exitCode: null,
             success: false,
             error: new Error('Output size limit exceeded'),
@@ -164,7 +294,7 @@ export function spawnWithTimeout(
 
       if (checkOutputLimit()) return;
 
-      state.stdout += chunk;
+      state.stdoutChunks.push(chunk);
     });
 
     // Collect stderr
@@ -176,18 +306,18 @@ export function spawnWithTimeout(
 
       if (checkOutputLimit()) return;
 
-      state.stderr += chunk;
+      state.stderrChunks.push(chunk);
     });
 
     // Handle process close
     childProcess.on('close', code => {
       if (state.killed) return;
 
-      clearTimeout(timeoutHandle);
+      clearAllTimers();
 
       resolve({
-        stdout: state.stdout,
-        stderr: state.stderr,
+        stdout: getStdout(),
+        stderr: getStderr(),
         exitCode: code,
         success: code === 0,
       });
@@ -198,11 +328,11 @@ export function spawnWithTimeout(
       if (state.killed) return;
 
       state.killed = true;
-      clearTimeout(timeoutHandle);
+      clearAllTimers();
 
       resolve({
-        stdout: state.stdout,
-        stderr: state.stderr,
+        stdout: getStdout(),
+        stderr: getStderr(),
         exitCode: null,
         success: false,
         error,
@@ -223,42 +353,72 @@ export function spawnWithTimeout(
 export function spawnCheckSuccess(
   command: string,
   args: string[],
-  timeoutMs: number = 10000
+  timeoutMs: number = 10000,
+  options: { allowEnvVars?: readonly string[] } = {}
 ): Promise<boolean> {
   return new Promise(resolve => {
     let killed = false;
+    const { allowEnvVars = DEFAULT_ALLOWED_ENV_VARS } = options;
 
-    const childProcess = spawn(command, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: timeoutMs,
-      env: {
-        ...process.env,
-        NODE_OPTIONS: undefined,
-      },
-    });
+    let childProcess: ChildProcess;
+    try {
+      childProcess = spawn(command, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: timeoutMs,
+        env: buildChildProcessEnv({}, allowEnvVars),
+      });
+    } catch {
+      resolve(false);
+      return;
+    }
+
+    // SIGTERM → SIGKILL escalation (matches spawnWithTimeout pattern).
+    // Processes that ignore SIGTERM (e.g. git during network ops) would
+    // become zombies without escalation to the non-catchable SIGKILL.
+    let sigkillHandle: ReturnType<typeof setTimeout> | undefined;
+
+    const clearAllTimers = (): void => {
+      clearTimeout(timeoutHandle);
+      if (sigkillHandle !== undefined) {
+        clearTimeout(sigkillHandle);
+        sigkillHandle = undefined;
+      }
+    };
+
+    const timeoutHandle = setTimeout(() => {
+      if (!killed) {
+        killed = true;
+        try {
+          childProcess.kill('SIGTERM');
+        } catch {
+          // Process may have already exited — ignore
+        }
+
+        // Escalate to SIGKILL if process doesn't exit after grace period
+        sigkillHandle = setTimeout(() => {
+          try {
+            childProcess.kill('SIGKILL');
+          } catch {
+            // Process may have already exited — ignore
+          }
+        }, SIGKILL_GRACE_MS);
+
+        resolve(false);
+      }
+    }, timeoutMs);
 
     childProcess.on('close', code => {
+      clearAllTimers();
       if (!killed) {
         resolve(code === 0);
       }
     });
 
     childProcess.on('error', () => {
+      clearAllTimers();
       if (!killed) {
         resolve(false);
       }
-    });
-
-    const timeoutHandle = setTimeout(() => {
-      if (!killed) {
-        killed = true;
-        childProcess.kill('SIGTERM');
-        resolve(false);
-      }
-    }, timeoutMs);
-
-    childProcess.on('close', () => {
-      clearTimeout(timeoutHandle);
     });
   });
 }
@@ -272,36 +432,108 @@ export function spawnCheckSuccess(
  * @param timeoutMs - Timeout in milliseconds (default: 10000)
  * @returns Promise resolving to trimmed stdout or null on failure/empty
  */
+/**
+ * Default max output size for spawnCollectStdout (1MB).
+ * This is intentionally smaller than spawnWithTimeout (10MB) because
+ * spawnCollectStdout is used for single-value commands like `gh auth token`.
+ */
+const COLLECT_STDOUT_MAX_OUTPUT_SIZE = 1 * 1024 * 1024;
+
 export function spawnCollectStdout(
   command: string,
   args: string[],
-  timeoutMs: number = 10000
+  timeoutMs: number = 10000,
+  options: {
+    allowEnvVars?: readonly string[];
+    maxOutputSize?: number;
+  } = {}
 ): Promise<string | null> {
   return new Promise(resolve => {
     let killed = false;
-    let stdout = '';
+    const stdoutChunks: string[] = [];
+    let totalOutputSize = 0;
+    const {
+      allowEnvVars = TOOLING_ALLOWED_ENV_VARS,
+      maxOutputSize = COLLECT_STDOUT_MAX_OUTPUT_SIZE,
+    } = options;
 
-    const childProcess = spawn(command, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: timeoutMs,
-      env: {
-        ...process.env,
-        NODE_OPTIONS: undefined,
-      },
-    });
+    let childProcess: ChildProcess;
+    try {
+      childProcess = spawn(command, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: timeoutMs,
+        env: buildChildProcessEnv({}, allowEnvVars),
+      });
+    } catch {
+      resolve(null);
+      return;
+    }
 
-    childProcess.stdout?.on('data', data => {
-      stdout += data.toString();
+    // SIGTERM → SIGKILL escalation (matches spawnWithTimeout pattern)
+    let sigkillHandle: ReturnType<typeof setTimeout> | undefined;
+
+    const clearAllTimers = (): void => {
+      clearTimeout(timeoutHandle);
+      if (sigkillHandle !== undefined) {
+        clearTimeout(sigkillHandle);
+        sigkillHandle = undefined;
+      }
+    };
+
+    childProcess.stdout?.on('data', (data: Buffer) => {
+      if (killed) return;
+      const chunk = data.toString();
+      totalOutputSize += Buffer.byteLength(chunk);
+
+      // OOM protection: kill process if output exceeds limit
+      if (totalOutputSize > maxOutputSize) {
+        if (!killed) {
+          killed = true;
+          try {
+            childProcess.kill('SIGKILL');
+          } catch {
+            // Process may have already exited — ignore
+          }
+          clearAllTimers();
+          resolve(null);
+        }
+        return;
+      }
+
+      stdoutChunks.push(chunk);
     });
 
     childProcess.stderr?.on('data', () => {
       // Ignore stderr
     });
 
+    const timeoutHandle = setTimeout(() => {
+      if (!killed) {
+        killed = true;
+        try {
+          childProcess.kill('SIGTERM');
+        } catch {
+          // Process may have already exited — ignore
+        }
+
+        // Escalate to SIGKILL if process doesn't exit after grace period
+        sigkillHandle = setTimeout(() => {
+          try {
+            childProcess.kill('SIGKILL');
+          } catch {
+            // Process may have already exited — ignore
+          }
+        }, SIGKILL_GRACE_MS);
+
+        resolve(null);
+      }
+    }, timeoutMs);
+
     childProcess.on('close', code => {
+      clearAllTimers();
       if (!killed) {
         if (code === 0) {
-          const trimmed = stdout.trim();
+          const trimmed = stdoutChunks.join('').trim();
           resolve(trimmed || null);
         } else {
           resolve(null);
@@ -310,21 +542,10 @@ export function spawnCollectStdout(
     });
 
     childProcess.on('error', () => {
+      clearAllTimers();
       if (!killed) {
         resolve(null);
       }
-    });
-
-    const timeoutHandle = setTimeout(() => {
-      if (!killed) {
-        killed = true;
-        childProcess.kill('SIGTERM');
-        resolve(null);
-      }
-    }, timeoutMs);
-
-    childProcess.on('close', () => {
-      clearTimeout(timeoutHandle);
     });
   });
 }

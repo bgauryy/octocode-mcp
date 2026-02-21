@@ -48,9 +48,9 @@ export function writeFileContent(filePath: string, content: string): boolean {
   try {
     const dir = path.dirname(filePath);
     if (!dirExists(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
-    fs.writeFileSync(filePath, content, 'utf8');
+    fs.writeFileSync(filePath, content, { encoding: 'utf8', mode: 0o600 });
     return true;
   } catch {
     return false;

@@ -76,6 +76,21 @@ export const LSPCallHierarchyQuerySchema = BaseQuerySchemaLocal.extend({
     .optional()
     .default(1)
     .describe(LSP_CALL_HIERARCHY.pagination.page),
+
+  charOffset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(LSP_CALL_HIERARCHY.outputLimit.charOffset),
+
+  charLength: z
+    .number()
+    .int()
+    .min(1)
+    .max(50000)
+    .optional()
+    .describe(LSP_CALL_HIERARCHY.outputLimit.charLength),
 });
 
 /**

@@ -185,7 +185,7 @@ describe('Session Management', () => {
           intent: 'tool_call',
           data: {
             tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
-            repos: ['my-owner/my-repo'],
+            repos: ['[redacted]'],
           },
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
@@ -218,10 +218,7 @@ describe('Session Management', () => {
           intent: 'tool_call',
           data: {
             tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
-            repos: ['my-owner/my-repo'],
-            mainResearchGoal: 'Find authentication patterns',
-            researchGoal: 'Locate login implementation',
-            reasoning: 'Need to understand auth flow',
+            repos: ['[redacted]'],
           },
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
@@ -254,9 +251,7 @@ describe('Session Management', () => {
           intent: 'tool_call',
           data: {
             tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
-            repos: ['my-owner/my-repo'],
-            mainResearchGoal: 'Find authentication patterns',
-            reasoning: 'Need to understand auth flow',
+            repos: ['[redacted]'],
           },
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
@@ -289,7 +284,7 @@ describe('Session Management', () => {
           intent: 'tool_call',
           data: {
             tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
-            repos: ['my-owner/my-repo'],
+            repos: ['[redacted]'],
           },
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
@@ -414,7 +409,7 @@ describe('Session Management', () => {
         intent: 'tool_call',
         data: {
           tool_name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
-          repos: ['test-owner/test-repo'],
+          repos: ['[redacted]'],
         },
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
@@ -441,10 +436,7 @@ describe('Session Management', () => {
         intent: 'tool_call',
         data: {
           tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
-          repos: ['owner/repo'],
-          mainResearchGoal: 'Main goal',
-          researchGoal: 'Specific goal',
-          reasoning: 'Reasoning text',
+          repos: ['[redacted]'],
         },
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
@@ -469,8 +461,7 @@ describe('Session Management', () => {
         intent: 'tool_call',
         data: {
           tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
-          repos: ['owner/repo'],
-          mainResearchGoal: 'Main goal only',
+          repos: ['[redacted]'],
         },
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/

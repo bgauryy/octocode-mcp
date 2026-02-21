@@ -289,6 +289,16 @@ describe('GrepCommandBuilder', () => {
       expect(args).toContain('pattern');
       expect(args).toContain('/path');
     });
+
+    it('should insert -- before positional args to prevent option injection', () => {
+      const builder = new GrepCommandBuilder();
+      const { args } = builder.simple('--include=*', '/path').build();
+
+      const separatorIndex = args.indexOf('--');
+      expect(separatorIndex).toBeGreaterThan(-1);
+      expect(args[separatorIndex + 1]).toBe('--include=*');
+      expect(args[separatorIndex + 2]).toBe('/path');
+    });
   });
 
   describe('method chaining', () => {

@@ -1087,3 +1087,167 @@ describe('Code Search Filtering - File Filters', () => {
     });
   });
 });
+
+describe('Code Search Resilience - Promise.allSettled', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should return other items when one item throws during processing', async () => {
+    // Use a getter on html_url that throws to make the item-level processing fail
+    const brokenItem = {
+      name: 'broken.js',
+      path: 'src/broken.js',
+      get html_url(): string {
+        throw new Error('Item processing crash');
+      },
+      repository: { full_name: 'test/repo', url: 'url' },
+      text_matches: [],
+    };
+
+    const mockResponse = {
+      data: {
+        total_count: 2,
+        items: [
+          {
+            name: 'good.js',
+            path: 'src/good.js',
+            html_url: 'https://github.com/test/repo/blob/main/src/good.js',
+            repository: { full_name: 'test/repo', url: 'url' },
+            text_matches: [],
+          },
+          brokenItem,
+        ],
+      },
+    };
+
+    mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+    const result = await searchGitHubCodeAPI({
+      keywordsToSearch: ['test'],
+      owner: 'test',
+      repo: 'repo',
+    });
+
+    if ('data' in result) {
+      // The good item should still be returned
+      expect(result.data.items.length).toBe(1);
+      expect(result.data.items[0]!.path).toBe('src/good.js');
+      // matchLocations should include dropped-count warning
+      expect(result.data.matchLocations).toBeDefined();
+      expect(
+        result.data.matchLocations!.some((m: string) =>
+          m.includes('item(s) dropped')
+        )
+      ).toBe(true);
+    } else {
+      expect.fail('Expected successful result');
+    }
+  });
+
+  it('should return other matches when one match throws in the same item', async () => {
+    const { ContentSanitizer } =
+      await import('../../src/security/contentSanitizer.js');
+    let callCount = 0;
+    const sanitizeSpy = vi
+      .spyOn(ContentSanitizer, 'sanitizeContent')
+      .mockImplementation((content: string) => {
+        callCount++;
+        if (callCount === 2) {
+          throw new Error('Match processing crash');
+        }
+        return {
+          content,
+          hasSecrets: false,
+          secretsDetected: [],
+          warnings: [],
+        };
+      });
+
+    const mockResponse = {
+      data: {
+        total_count: 1,
+        items: [
+          {
+            name: 'multi.js',
+            path: 'src/multi.js',
+            html_url: 'https://github.com/test/repo/blob/main/src/multi.js',
+            repository: { full_name: 'test/repo', url: 'url' },
+            text_matches: [
+              { fragment: 'match1', matches: [{ indices: [0, 6] }] },
+              { fragment: 'match2', matches: [{ indices: [0, 6] }] },
+              { fragment: 'match3', matches: [{ indices: [0, 6] }] },
+            ],
+          },
+        ],
+      },
+    };
+
+    mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+    const result = await searchGitHubCodeAPI({
+      keywordsToSearch: ['test'],
+      owner: 'test',
+      repo: 'repo',
+    });
+
+    if ('data' in result) {
+      expect(result.data.items.length).toBe(1);
+      // 2 of 3 matches should survive
+      expect(result.data.items[0]!.matches.length).toBe(2);
+      // matchLocations should include dropped-match warning
+      expect(result.data.matchLocations).toBeDefined();
+      expect(
+        result.data.matchLocations!.some((m: string) =>
+          m.includes('match(es) dropped')
+        )
+      ).toBe(true);
+    } else {
+      expect.fail('Expected successful result');
+    }
+
+    sanitizeSpy.mockRestore();
+  });
+
+  it('should return empty array (not throw) when all items fail', async () => {
+    const makeCrashingItem = (name: string, itemPath: string) => ({
+      name,
+      path: itemPath,
+      get html_url(): string {
+        throw new Error('Item processing crash');
+      },
+      repository: { full_name: 'test/repo', url: 'url' },
+      text_matches: [],
+    });
+
+    const mockResponse = {
+      data: {
+        total_count: 2,
+        items: [
+          makeCrashingItem('a.js', 'src/a.js'),
+          makeCrashingItem('b.js', 'src/b.js'),
+        ],
+      },
+    };
+
+    mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+    const result = await searchGitHubCodeAPI({
+      keywordsToSearch: ['test'],
+      owner: 'test',
+      repo: 'repo',
+    });
+
+    if ('data' in result) {
+      expect(result.data.items).toEqual([]);
+      expect(result.data.matchLocations).toBeDefined();
+      expect(
+        result.data.matchLocations!.some((m: string) =>
+          m.includes('2 item(s) dropped')
+        )
+      ).toBe(true);
+    } else {
+      expect.fail('Expected successful result');
+    }
+  });
+});

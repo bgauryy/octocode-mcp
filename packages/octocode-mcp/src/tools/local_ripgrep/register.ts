@@ -23,6 +23,6 @@ export function registerLocalRipgrepTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    withBasicSecurityValidation(executeRipgrepSearch)
+    withBasicSecurityValidation(executeRipgrepSearch, TOOL_NAMES.LOCAL_RIPGREP)
   );
 }

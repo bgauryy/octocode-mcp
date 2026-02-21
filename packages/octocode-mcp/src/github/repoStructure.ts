@@ -73,10 +73,11 @@ async function viewGitHubRepositoryStructureAPIInternal(
     const octokit = await getOctokit(authInfo);
     const { owner, repo, branch, path = '', depth = 1 } = params;
 
-    const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+    const cleanPath = path.replace(/^\/+|\/+$/g, '');
 
     let result;
     let workingBranch = branch;
+    let repoDefaultBranch: string | undefined;
     try {
       result = await octokit.rest.repos.getContent({
         owner,
@@ -90,6 +91,7 @@ async function viewGitHubRepositoryStructureAPIInternal(
         try {
           const repoInfo = await octokit.rest.repos.get({ owner, repo });
           defaultBranch = repoInfo.data.default_branch || 'main';
+          repoDefaultBranch = defaultBranch;
         } catch (repoError) {
           const apiError = handleGitHubAPIError(repoError);
           await logSessionError(
@@ -349,6 +351,9 @@ async function viewGitHubRepositoryStructureAPIInternal(
       owner,
       repo,
       branch: workingBranch,
+      ...(repoDefaultBranch !== undefined && {
+        defaultBranch: repoDefaultBranch,
+      }),
       path: cleanPath || '/',
       apiSource: true,
       summary: {

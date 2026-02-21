@@ -158,7 +158,7 @@ This will automatically:
 curl -fsSL https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/install/install.sh | sh
 ```
 
-See [Troubleshooting Guide](../../docs/TROUBLESHOOTING.md) for common issues and solutions.
+See [Troubleshooting Guide](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) for common issues and solutions.
 
 ---
 
@@ -166,7 +166,7 @@ See [Troubleshooting Guide](../../docs/TROUBLESHOOTING.md) for common issues and
 
 #### Prerequisites
 
-- **Node.js** >= 18.12.0
+- **Node.js** >= 20.0.0
 - **GitHub Authentication** (choose one):
   - **GitHub CLI (recommended)**: Install from [cli.github.com](https://cli.github.com/) and run `gh auth login`
   - **Personal Access Token**: Create at [github.com/settings/tokens](https://github.com/settings/tokens) with scopes: `repo`, `read:user`, `read:org`
@@ -680,9 +680,9 @@ Comprehensive security analysis of a repository. Identifies vulnerabilities, rev
 | Resource | Description | Link |
 |----------|-------------|------|
 | **Official Website** | Interactive tutorials, demos, community | [octocode.ai](https://octocode.ai) |
-| **Configuration Guide** | Environment variables and server configuration | [CONFIGURATION_REFERENCE.md](../../docs/CONFIGURATION_REFERENCE.md) |
+| **Configuration Guide** | Environment variables and server configuration | [CONFIGURATION_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) |
 | **Authentication Guide** | Setup instructions for GitHub & GitLab | [Authentication Setup](./docs/AUTHENTICATION_SETUP.md) |
-| **Troubleshooting** | Common issues and solutions | [Troubleshooting Guide](../../docs/TROUBLESHOOTING.md) |
+| **Troubleshooting** | Common issues and solutions | [Troubleshooting Guide](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) |
 | **YouTube Channel** | Video tutorials and demonstrations | [Octocode on YouTube](https://www.youtube.com/@Octocode-ai) |
 
 
@@ -719,7 +719,7 @@ You can opt-out at any time:
 export LOG=false
 ```
 
-For full details, please read our [Privacy Policy](../../PRIVACY.md) and [Terms of Usage](../../TERMS.md).
+For full details, please read our [Privacy Policy](https://github.com/bgauryy/octocode-mcp/blob/main/PRIVACY.md) and [Terms of Usage](https://github.com/bgauryy/octocode-mcp/blob/main/TERMS.md).
 
 ---
 

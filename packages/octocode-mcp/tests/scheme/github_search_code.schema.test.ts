@@ -30,9 +30,8 @@ describe('GitHubCodeSearchQuerySchema - Pagination', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        // Page is optional, so it can be undefined when not provided
-        // The default of 1 is applied at runtime in the API layer
-        expect(result.data.page).toBeUndefined();
+        // Page is optional with default of 1 applied by Zod
+        expect(result.data.page).toBe(1);
       }
     });
 

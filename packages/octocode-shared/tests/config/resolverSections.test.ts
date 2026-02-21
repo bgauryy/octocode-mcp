@@ -5,6 +5,7 @@ import {
   parseStringArrayEnv,
   parseLoggingEnv,
   resolveTelemetry,
+  resolveLocal,
 } from '../../src/config/resolverSections.js';
 
 // ============================================================================
@@ -328,6 +329,118 @@ describe('resolveTelemetry', () => {
       process.env.LOG = 'true';
       const result = resolveTelemetry({ logging: false });
       expect(result.logging).toBe(true);
+    });
+  });
+});
+
+// ============================================================================
+// INTEGRATION TESTS: resolveLocal with ENABLE_CLONE
+// ============================================================================
+
+describe('resolveLocal', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.ENABLE_LOCAL;
+    delete process.env.ENABLE_CLONE;
+    delete process.env.WORKSPACE_ROOT;
+    delete process.env.ALLOWED_PATHS;
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  describe('enableClone defaults', () => {
+    it('should default enableClone to false when no config or env var', () => {
+      const result = resolveLocal(undefined);
+      expect(result.enableClone).toBe(false);
+    });
+
+    it('should default enableClone to false when file config has no enableClone', () => {
+      const result = resolveLocal({ enabled: true });
+      expect(result.enableClone).toBe(false);
+    });
+  });
+
+  describe('enableClone from file config', () => {
+    it('should use file config enableClone when env var is not set', () => {
+      const result = resolveLocal({ enableClone: true });
+      expect(result.enableClone).toBe(true);
+    });
+
+    it('should use file config enableClone=false', () => {
+      const result = resolveLocal({ enableClone: false });
+      expect(result.enableClone).toBe(false);
+    });
+  });
+
+  describe('ENABLE_CLONE env var', () => {
+    it('should enable clone when ENABLE_CLONE=true', () => {
+      process.env.ENABLE_CLONE = 'true';
+      const result = resolveLocal(undefined);
+      expect(result.enableClone).toBe(true);
+    });
+
+    it('should enable clone when ENABLE_CLONE=1', () => {
+      process.env.ENABLE_CLONE = '1';
+      const result = resolveLocal(undefined);
+      expect(result.enableClone).toBe(true);
+    });
+
+    it('should disable clone when ENABLE_CLONE=false', () => {
+      process.env.ENABLE_CLONE = 'false';
+      const result = resolveLocal(undefined);
+      expect(result.enableClone).toBe(false);
+    });
+
+    it('should disable clone when ENABLE_CLONE=0', () => {
+      process.env.ENABLE_CLONE = '0';
+      const result = resolveLocal(undefined);
+      expect(result.enableClone).toBe(false);
+    });
+
+    it('should fall back to default when ENABLE_CLONE is empty', () => {
+      process.env.ENABLE_CLONE = '';
+      const result = resolveLocal(undefined);
+      expect(result.enableClone).toBe(false);
+    });
+  });
+
+  describe('ENABLE_CLONE env var overrides file config', () => {
+    it('ENABLE_CLONE=true overrides file enableClone: false', () => {
+      process.env.ENABLE_CLONE = 'true';
+      const result = resolveLocal({ enableClone: false });
+      expect(result.enableClone).toBe(true);
+    });
+
+    it('ENABLE_CLONE=false overrides file enableClone: true', () => {
+      process.env.ENABLE_CLONE = 'false';
+      const result = resolveLocal({ enableClone: true });
+      expect(result.enableClone).toBe(false);
+    });
+  });
+
+  describe('enableClone is independent from enabled', () => {
+    it('enableClone can be true while enabled is false', () => {
+      const result = resolveLocal({ enabled: false, enableClone: true });
+      expect(result.enabled).toBe(false);
+      expect(result.enableClone).toBe(true);
+    });
+
+    it('enableClone can be false while enabled is true', () => {
+      const result = resolveLocal({ enabled: true, enableClone: false });
+      expect(result.enabled).toBe(true);
+      expect(result.enableClone).toBe(false);
+    });
+
+    it('both can be true', () => {
+      process.env.ENABLE_LOCAL = 'true';
+      process.env.ENABLE_CLONE = 'true';
+      const result = resolveLocal(undefined);
+      expect(result.enabled).toBe(true);
+      expect(result.enableClone).toBe(true);
     });
   });
 });

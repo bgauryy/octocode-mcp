@@ -26,7 +26,7 @@ const baseConfig: UserConfig = {
   treeshake: true,
   minify: true,
   shims: true, // ESM shims for __dirname, require, etc.
-  dts: false, // Types generated separately via tsc
+  dts: { resolver: 'tsc' },
   sourcemap: false,
   outExtensions: () => ({ js: '.js' }),
 

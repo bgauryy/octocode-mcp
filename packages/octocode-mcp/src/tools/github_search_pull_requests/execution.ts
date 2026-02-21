@@ -14,6 +14,10 @@ import {
 import { getProvider } from '../../providers/factory.js';
 import { getActiveProviderConfig } from '../../serverConfig.js';
 import { isProviderSuccess } from '../../providers/types.js';
+import {
+  applyOutputSizeLimit,
+  serializeForPagination,
+} from '../../utils/pagination/index.js';
 
 export async function searchMultipleGitHubPullRequests(
   args: ToolExecutionArgs<GitHubPullRequestSearchQuery>
@@ -31,7 +35,6 @@ export async function searchMultipleGitHubPullRequests(
           return createErrorResult(validationError, query);
         }
 
-        // Get provider instance
         const provider = getProvider(providerType, {
           type: providerType,
           baseUrl,
@@ -73,6 +76,7 @@ export async function searchMultipleGitHubPullRequests(
           sort: query.sort as 'created' | 'updated' | 'best-match' | undefined,
           order: query.order as 'asc' | 'desc' | undefined,
           limit: query.limit,
+          page: query.page,
           mainResearchGoal: query.mainResearchGoal,
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
@@ -116,9 +120,13 @@ export async function searchMultipleGitHubPullRequests(
 
         const paginationHints: string[] = [];
         if (apiResult.data.pagination) {
-          const { currentPage, totalPages, totalEntries, hasMore } =
-            apiResult.data.pagination;
-          const totalMatches = totalEntries || 0;
+          const {
+            currentPage,
+            totalPages,
+            totalMatches: totalMatchCount,
+            hasMore,
+          } = apiResult.data.pagination;
+          const totalMatches = totalMatchCount || 0;
 
           paginationHints.push(
             `Page ${currentPage}/${totalPages} (showing ${pullRequests.length} of ${totalMatches} PRs)`
@@ -146,25 +154,84 @@ export async function searchMultipleGitHubPullRequests(
               currentPage: apiResult.data.pagination.currentPage,
               totalPages: apiResult.data.pagination.totalPages,
               perPage: apiResult.data.pagination.entriesPerPage || 10,
-              totalMatches: apiResult.data.pagination.totalEntries || 0,
+              totalMatches: apiResult.data.pagination.totalMatches || 0,
               hasMore: apiResult.data.pagination.hasMore,
             }
           : undefined;
 
+        const resultData: Record<string, unknown> = {
+          owner: query.owner,
+          repo: query.repo,
+          pull_requests: pullRequests,
+          total_count: apiResult.data.totalCount || pullRequests.length,
+          ...(resultPagination && { pagination: resultPagination }),
+        };
+
+        // Apply output size limits for large responses
+        const serialized = serializeForPagination(resultData, true);
+        const sizeLimitResult = applyOutputSizeLimit(serialized, {
+          charOffset: query.charOffset,
+          charLength: query.charLength,
+        });
+
+        // Add outputPagination if output was limited
+        let outputLimitData: Record<string, unknown> = resultData;
+        if (sizeLimitResult.wasLimited && sizeLimitResult.pagination) {
+          const pg = sizeLimitResult.pagination;
+          outputLimitData = {
+            ...resultData,
+            outputPagination: {
+              charOffset: pg.charOffset!,
+              charLength: pg.charLength!,
+              totalChars: pg.totalChars!,
+              hasMore: pg.hasMore,
+              currentPage: pg.currentPage,
+              totalPages: pg.totalPages,
+            },
+          };
+        }
+
+        const outputLimitHints = [
+          ...sizeLimitResult.warnings,
+          ...sizeLimitResult.paginationHints,
+        ];
+
+        const fileChangeHints: string[] = [];
+        const largeFileChangePRs = pullRequests.filter(
+          (pr: Record<string, unknown>) =>
+            Array.isArray(pr.fileChanges) &&
+            (pr.fileChanges as unknown[]).length > 30
+        );
+        if (largeFileChangePRs.length > 0) {
+          const prNumbers = largeFileChangePRs
+            .map((pr: Record<string, unknown>) => `#${pr.number}`)
+            .join(', ');
+          const maxFiles = Math.max(
+            ...largeFileChangePRs.map((pr: Record<string, unknown>) =>
+              Array.isArray(pr.fileChanges)
+                ? (pr.fileChanges as unknown[]).length
+                : 0
+            )
+          );
+          fileChangeHints.push(
+            `Large PR(s) ${prNumbers} have ${maxFiles}+ file changes`,
+            'Use charOffset/charLength to paginate through full output',
+            'Or use type=\'partialContent\' with partialContentMetadata=[{file: "path/to/file.ts"}] for targeted file diffs'
+          );
+        }
+
         return createSuccessResult(
           query,
-          {
-            owner: query.owner,
-            repo: query.repo,
-            pull_requests: pullRequests,
-            total_count: apiResult.data.totalCount || pullRequests.length,
-            ...(resultPagination && { pagination: resultPagination }),
-          },
+          outputLimitData,
           hasContent,
           TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
           {
             hintContext: { matchCount: pullRequests.length },
-            extraHints: paginationHints,
+            extraHints: [
+              ...paginationHints,
+              ...outputLimitHints,
+              ...fileChangeHints,
+            ],
           }
         );
       } catch (error) {
@@ -178,6 +245,7 @@ export async function searchMultipleGitHubPullRequests(
         'repo',
         'pull_requests',
         'pagination',
+        'outputPagination',
         'total_count',
         'error',
       ] satisfies Array<keyof PullRequestSearchResult>,

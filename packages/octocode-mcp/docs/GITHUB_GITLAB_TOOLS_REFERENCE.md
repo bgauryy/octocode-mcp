@@ -4,14 +4,38 @@
 
 ---
 
+## Configuration
+
+### GitHub
+
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_TOKEN` | GitHub personal access token |
+| `OCTOCODE_TOKEN` | Octocode-specific token (highest priority) |
+| `GH_TOKEN` | GitHub CLI compatible token |
+| `GITHUB_API_URL` | Custom API URL for GitHub Enterprise |
+| `ENABLE_CLONE` | Enable `githubCloneRepo` and `githubGetFileContent` directory mode (requires `ENABLE_LOCAL=true`) |
+
+### GitLab
+
+| Variable | Description |
+|----------|-------------|
+| `GITLAB_TOKEN` | GitLab personal access token |
+| `GL_TOKEN` | GitLab token (fallback) |
+| `GITLAB_HOST` | GitLab instance URL (default: `https://gitlab.com`) |
+
+**Auto-detection:** If `GITLAB_TOKEN` is set, GitLab becomes the active provider. Otherwise GitHub is the default.
+
+---
+
 ## Overview
 
-Octocode MCP provides **6 unified tools** for external code research that work with both **GitHub** and **GitLab**:
+Octocode MCP provides **7 tools** for external code research that work with **GitHub** (and most with **GitLab**):
 
 | Category | Tools | Purpose |
 |----------|-------|---------|
 | **Search Tools** (3) | `githubSearchCode`, `githubSearchRepositories`, `githubSearchPullRequests` | Find code, repos, and PRs/MRs across providers |
-| **Content Tools** (2) | `githubGetFileContent`, `githubViewRepoStructure` | Read files and browse repository trees |
+| **Content Tools** (3) | `githubGetFileContent`, `githubViewRepoStructure`, `githubCloneRepo` | Read files, browse trees, clone repos locally |
 | **Package Tools** (1) | `packageSearch` | Lookup NPM/PyPI packages → get repo URLs |
 
 ### Provider Selection
@@ -22,6 +46,18 @@ The active provider is determined by the **server configuration** (environment v
 - **GitLab**: Active when `GITLAB_TOKEN` is set (overrides GitHub).
 
 **To switch providers:** You must change the environment variables of the MCP server.
+
+### Research Context (All Tools)
+
+Every tool query **requires** three research context fields:
+
+| Field | Description |
+|-------|-------------|
+| `mainResearchGoal` | High-level objective of the research session |
+| `researchGoal` | Specific goal for this particular query |
+| `reasoning` | Why this tool/query was chosen |
+
+These fields are required on **every query** for all GitHub/GitLab and package tools. They help track research intent and improve result quality.
 
 ---
 
@@ -59,8 +95,9 @@ Tools use unified parameters that map to provider-specific concepts:
 
 | Tool | Description |
 |------|-------------|
-| **`githubGetFileContent`** | Read file content from repositories. Supports line ranges, string matching with context, and pagination for large files. |
+| **`githubGetFileContent`** | Read file content from repositories, or fetch an entire directory to disk (`type: "directory"`). Supports line ranges, string matching with context, and pagination for large files. Directory mode requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`, and is **GitHub only**. |
 | **`githubViewRepoStructure`** | Display directory tree structure of a repository. Configurable depth and pagination. |
+| **`githubCloneRepo`** | Clone a repository (or subdirectory) locally for deep analysis with local + LSP tools. **GitHub only.** Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`. |
 
 ### Package Tools
 
@@ -77,6 +114,7 @@ Tools use unified parameters that map to provider-specific concepts:
 | "Find PRs/MRs that changed X" | `githubSearchPullRequests` |
 | "Read file from repo" | `githubGetFileContent` |
 | "Browse repository structure" | `githubViewRepoStructure` |
+| "Clone repo for deep local analysis" | `githubCloneRepo` |
 | "Get repo URL for npm package" | `packageSearch` |
 
 ---
@@ -97,7 +135,7 @@ Tools for discovering code, repositories, and pull requests/merge requests.
 
 **Key parameters:**
 - `keywordsToSearch` (required): Array of 1-5 search keywords
-- `owner`: Repository owner / GitLab Group
+- `owner`: User or organization / GitLab Group
 - `repo`: Specific repository / GitLab Project
 - `extension`: Filter by file extension (e.g., `ts`, `py`)
 - `filename`: Filter by filename
@@ -137,13 +175,13 @@ owner="mygroup", repo="myproject", keywordsToSearch=["middleware"]
 **Key parameters:**
 - `keywordsToSearch`: Keywords to search in repos
 - `topicsToSearch`: Topics to filter by
-- `owner`: Filter by owner/organization/group
+- `owner`: Filter by user or organization / GitLab Group
 - `stars`: Star count filter (e.g., `>1000`, `100..500`)
 - `size`: Repository size in KB
 - `created`: Creation date filters
 - `updated`: Last update date
 - `sort`: Sorting field (`forks`, `stars`, `updated`, `best-match`)
-- `match`: Match scope (`name`, `description`, `readme`)
+- `match`: Match scope — array of: `name`, `description`, `readme`
 - `limit`: Results per page (default: 10)
 - `page`: Page number (default: 1, max: 10)
 
@@ -177,7 +215,7 @@ owner="wix-private", keywordsToSearch=["auth-service"]
 
 **Key parameters:**
 - `prNumber`: Direct lookup (ignores all other filters). Maps to GitLab MR IID.
-- `owner`: Repository owner / GitLab Group
+- `owner`: User or organization / GitLab Group
 - `repo`: Repository name / GitLab Project
 - `query`: Free-text search
 - `state`: `open`, `closed`
@@ -222,6 +260,10 @@ owner="group", repo="project", state="merged", author="johndoe"
 prNumber=123, type="metadata", withComments=true, owner="org", repo="app"
 ```
 
+**Output pagination:**
+- `charOffset`/`charLength`: Character-based pagination for large responses
+- PRs with >30 file changes emit hints guiding you to use `type='partialContent'` with `partialContentMetadata` for targeted file diffs
+
 **⚠️ Gotchas:**
 - `prNumber` **ignores ALL other filters** when set
 - Use `type=metadata` first (fast), then `partialContent` for details
@@ -236,39 +278,67 @@ Tools for reading file content and browsing repository structure.
 
 ### `githubGetFileContent`
 
-**What it does:** Read file content from repositories with flexible extraction options.
+**What it does:** Read file content from repositories with flexible extraction options, or fetch an entire directory to disk for local tool analysis.
 
 | Feature | GitHub | GitLab |
 |---------|--------|--------|
 | **Branch** | Optional (auto-detects default) | **Required** (`branch` param) |
 | **Identifier** | `owner` + `repo` + `path` | `owner` + `repo` + `path` + `branch` |
+| **Directory fetch** | ✅ Supported (`type: "directory"`) | ❌ Not supported (GitHub only) |
+| **Clone to disk** | ✅ `githubCloneRepo` | ❌ Not supported (GitHub only) |
 
 **Key parameters:**
-- `owner`: Repository owner / GitLab Group
-- `repo`: Repository name / GitLab Project
-- `path` (required): File path in repository
-- `branch`: Branch name (**required for GitLab**)
-- `fullContent`: Read entire file (use sparingly)
-- `startLine`/`endLine`: Line range (1-indexed)
-- `matchString`: Find specific content with context
-- `matchStringContextLines`: Lines around match (default: 5, max: 50)
-- `charOffset`/`charLength`: Character-based pagination
+- `owner` (required): User or organization / GitLab Group
+- `repo` (required): Repository name / GitLab Project
+- `path` (required): File path or directory path in repository
+- `branch`: Branch name (**required for GitLab**, optional for GitHub)
+- `type`: `"file"` (default) or `"directory"` — controls fetch mode
+- `fullContent`: Read entire file (use sparingly, file mode only)
+- `startLine`/`endLine`: Line range (1-indexed, file mode only)
+- `matchString`: Find specific content with context (file mode only)
+- `matchStringContextLines`: Lines around match (default: 5, max: 50, file mode only)
+- `charOffset`/`charLength`: Character-based pagination (file mode only)
 
-**Extraction modes (choose ONE):**
+**Fetch modes (choose ONE via `type`):**
+
+| Mode | `type` | What it does | Returns |
+|------|--------|-------------|---------|
+| **File** (default) | `"file"` | Read a single file with extraction options | Inline content |
+| **Directory** | `"directory"` | Fetch all files in a directory to disk | `localPath` for local tools |
+
+**File mode extraction (choose ONE):**
 1. `matchString` with context lines
 2. `startLine` + `endLine`
 3. `fullContent=true` (small configs only)
 
+**Directory mode details:**
+- **GitHub only** — returns an error if GitLab is the active provider (same restriction as `githubCloneRepo`)
+- **Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`** (same as `githubCloneRepo`)
+- Fetches all files via GitHub Contents API + `download_url` (no git required)
+- Saves to `~/.octocode/repos/{owner}/{repo}/{branch}/{path}/` (same cache as clone tool)
+- **Branch resolution**: If `branch` is omitted, auto-detects the default branch via GitHub API (same as `githubCloneRepo`)
+- The resolved branch name is always included in the result (`branch` field) and the cache path
+- 24-hour cache TTL (same as `githubCloneRepo`)
+- Returns `localPath` — use with `localSearchCode`, `localGetFileContent`, `localViewStructure`, etc.
+- Limits: max 50 files, max 5MB total, max 300KB per file, skips binary files
+- Shares cache with clone tool — fetching multiple directories builds up the same repo cache
+
 **Example queries:**
 
 ```
-# GitHub: Read specific function
+# GitHub: Read specific function (file mode, default)
 owner="vercel", repo="next.js", path="packages/next/src/server/app-render.tsx",
 matchString="export function handleAuth", matchStringContextLines=20
 
 # GitHub: Read file header
 owner="facebook", repo="react", path="packages/react/index.js",
 startLine=1, endLine=50
+
+# GitHub: Fetch entire directory to disk (directory mode)
+# Requires ENABLE_LOCAL=true and ENABLE_CLONE=true
+owner="facebook", repo="react", path="packages/react/src",
+type="directory", branch="main"
+# Returns localPath — use with localSearchCode, localGetFileContent, etc.
 
 # GitLab: Read file (branch required!)
 owner="group", repo="project", path="src/main.ts",
@@ -279,11 +349,16 @@ path="package.json", fullContent=true, owner="org", repo="repo"
 ```
 
 **⚠️ Gotchas:**
-- Choose ONE mode: `matchString` OR `startLine/endLine` OR `fullContent`
+- Choose ONE mode: `matchString` OR `startLine/endLine` OR `fullContent` (file mode only)
+- When `type="directory"`: `startLine`, `endLine`, `matchString`, `charOffset`, `charLength` are rejected
+- **Directory mode is GitHub only** — returns an error with GitLab (use file mode instead)
+- **Directory mode requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`**
 - Max file size: 300KB (FILE_TOO_LARGE error)
+- Directory mode: max 50 files, max 5MB total, skips binary files
 - **GitLab REQUIRES `branch`** - unlike GitHub which auto-detects
 - For `branch`: Use NAME (e.g., `main`), not SHA
 - Prefer `matchString` for large files (token efficient)
+- Directory mode shares cache with `githubCloneRepo` — if a clone exists, it's reused
 
 ---
 
@@ -297,8 +372,8 @@ path="package.json", fullContent=true, owner="org", repo="repo"
 | **Depth control** | 1-2 levels | Recursive by default |
 
 **Key parameters:**
-- `owner`: Repository owner / GitLab Group
-- `repo`: Repository name / GitLab Project
+- `owner` (required): User or organization / GitLab Group
+- `repo` (required): Repository name / GitLab Project
 - `branch` (required): Branch name (required for both GitHub and GitLab)
 - `path`: Starting path (default: root `""`)
 - `depth`: Traversal depth (1-2, default: 1)
@@ -332,6 +407,76 @@ owner="group", repo="project", branch="develop", path="src/api"
 - For monorepos: Check `packages/`, `apps/`, `libs/`
 - Max 200 entries per page - check `summary.truncated`
 - Noisy directories auto-filtered: `.git`, `node_modules`, `dist`
+
+---
+
+### `githubCloneRepo`
+
+**What it does:** Clone or partially fetch a GitHub repository to the local filesystem for deep analysis with local and LSP tools.
+
+> **GitHub only** — not available with GitLab. Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
+
+| Feature | Description |
+|---------|-------------|
+| **Full clone** | Shallow `git clone --depth 1` of the entire repo |
+| **Partial fetch** | Sparse checkout of a single subdirectory (fast for monorepos) |
+| **Caching** | Cloned repos cached for **24 hours** under `~/.octocode/repos/` |
+| **After clone** | Returns `localPath` — pass it to local + LSP tools |
+
+**Key parameters:**
+- `owner` (required): User or organization (max 200 chars)
+- `repo` (required): Repository name (max 150 chars)
+- `branch`: Branch to clone (max 255 chars). Omit to auto-detect the repo's default branch via the GitHub API (falls back to `main`)
+- `sparse_path`: Fetch only this subdirectory via sparse checkout (max 500 chars). Dramatically faster for large monorepos. Examples: `src/compiler`, `packages/core/src`
+
+**Two modes:**
+
+| Mode | When to use | Parameter |
+|------|-------------|-----------|
+| **Full clone** | General exploration, LSP needs full project context | _(default — omit `sparse_path`)_ |
+| **Partial fetch** | Large monorepo, only need a specific package/dir | `sparse_path="packages/core"` |
+
+**Branch resolution:**
+- If `branch` is provided, that specific branch is cloned
+- If `branch` is **omitted**, the default branch is **auto-detected** via the GitHub API (falls back to `main`)
+- The resolved branch name is **always included** in the result (`branch` field) and the cache path
+
+**Cache path format:** `~/.octocode/repos/{owner}/{repo}/{branch}/` (branch is always present)
+
+**Example queries:**
+
+```
+# Clone entire repo (branch auto-detected)
+owner="vercel", repo="next.js"
+# → localPath: ~/.octocode/repos/vercel/next.js/canary (auto-detected default branch)
+
+# Clone specific branch
+owner="facebook", repo="react", branch="main"
+# → localPath: ~/.octocode/repos/facebook/react/main
+
+# Sparse checkout — only fetch one directory (fast!)
+owner="microsoft", repo="TypeScript", sparse_path="src/compiler"
+# → localPath: ~/.octocode/repos/microsoft/TypeScript/main__sp_a3f8c1
+```
+
+**After cloning, use these tools on the returned `localPath`:**
+- `localSearchCode` — ripgrep code search
+- `localGetFileContent` — read files
+- `localViewStructure` — browse directory tree
+- `localFindFiles` — find files by name/metadata
+- `lspGotoDefinition` — jump to symbol definitions
+- `lspFindReferences` — find all usages of a symbol
+- `lspCallHierarchy` — trace call relationships
+
+**⚠️ Gotchas:**
+- **GitHub only** — returns an error if GitLab is the active provider
+- Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true` (both must be enabled)
+- Clone timeout: **2 minutes** for full clone, **30 seconds** for sparse checkout
+- Use `sparse_path` for large monorepos to avoid downloading unnecessary files
+- Cached clones are reused within 24 hours (idempotent)
+- Branch is **auto-detected** when omitted — the resolved branch is always in the result
+- Cache path includes branch: `{owner}/{repo}/{branch}/` — different branches get separate caches
+- Auth token is passed via `http.extraHeader` — never persisted in the clone URL or on-disk git config
 
 ---
 
@@ -468,6 +613,22 @@ githubSearchRepositories (gitlab) → githubViewRepoStructure → githubSearchCo
 
 ---
 
+### Flow 7: "Deep analysis of external repo with LSP"
+
+```
+githubCloneRepo → localSearchCode → lspGotoDefinition → lspCallHierarchy
+```
+
+**Steps:**
+1. `githubCloneRepo(owner="vercel", repo="next.js", sparse_path="packages/next/src")` → Get `localPath`
+2. `localSearchCode(pattern="handleRequest", path=localPath)` → Find code + get `lineHint`
+3. `lspGotoDefinition(uri="file.ts", symbolName="handleRequest", lineHint=42)` → Jump to definition
+4. `lspCallHierarchy(direction="incoming")` → Trace callers
+
+**When to use:** You need semantic analysis (LSP) on an external codebase — definitions, references, call hierarchy. Clone it first, then use local + LSP tools.
+
+---
+
 ## Quick Reference
 
 ### Tool Selection Guide
@@ -479,6 +640,7 @@ githubSearchRepositories (gitlab) → githubViewRepoStructure → githubSearchCo
 | "Find PRs/MRs that changed X" | `githubSearchPullRequests` |
 | "Read file from repo" | `githubGetFileContent` |
 | "Browse repo directory tree" | `githubViewRepoStructure` |
+| "Clone repo for local + LSP analysis" | `githubCloneRepo` |
 | "Get repo URL for package X" | `packageSearch` |
 
 ### Provider vs Local Tools
@@ -486,7 +648,8 @@ githubSearchRepositories (gitlab) → githubViewRepoStructure → githubSearchCo
 | Scenario | Use |
 |----------|-----|
 | Your codebase (files on disk) | **Local tools** + LSP |
-| External repos / libraries | **GitHub/GitLab tools** |
+| External repos — quick browse/read | **GitHub/GitLab tools** |
+| External repos — deep LSP analysis | `githubCloneRepo` → **Local tools** + LSP |
 | Found import, need source? | `packageSearch` → Provider tools |
 
 **⚠️ Local code questions → NEVER use `github*` tools. Use `localSearchCode` → LSP.**
@@ -555,6 +718,16 @@ Unlike GitHub, GitLab does not auto-detect the default branch.
 
 GitLab requires project scope for code search.
 
+### ⚠️ Rule 8: Clone & Directory Fetch are GitHub Only
+
+```
+❌ WRONG (GitLab): githubCloneRepo(owner="g", repo="p")
+❌ WRONG (GitLab): githubGetFileContent(type="directory", owner="g", repo="p", path="src")
+✅ RIGHT (GitLab): githubGetFileContent(type="file", owner="g", repo="p", path="src/main.ts", branch="main")
+```
+
+`githubCloneRepo` and `githubGetFileContent` directory mode use GitHub-specific APIs (Contents API, git clone). These features are not available when GitLab is the active provider. Use file mode for GitLab content retrieval.
+
 ---
 
 ## Anti-Patterns to Avoid
@@ -569,29 +742,9 @@ GitLab requires project scope for code search.
 | Ignoring `packageSearch` | Miss exact repo URL | Always check for packages |
 | GitLab without `branch` | API error | Always specify `branch` for GitLab file content |
 | GitLab code search without scope | API error | Specify `owner` and `repo` |
-
----
-
-## Environment Variables
-
-### GitHub
-
-| Variable | Description |
-|----------|-------------|
-| `GITHUB_TOKEN` | GitHub personal access token |
-| `OCTOCODE_TOKEN` | Octocode-specific token (highest priority) |
-| `GH_TOKEN` | GitHub CLI compatible token |
-| `GITHUB_API_URL` | Custom API URL for GitHub Enterprise |
-
-### GitLab
-
-| Variable | Description |
-|----------|-------------|
-| `GITLAB_TOKEN` | GitLab personal access token |
-| `GL_TOKEN` | GitLab token (fallback) |
-| `GITLAB_HOST` | GitLab instance URL (default: `https://gitlab.com`) |
-
-**Auto-detection:** If `GITLAB_TOKEN` is set, GitLab becomes the active provider.
+| Cloning repo just to read one file | Slow, wastes disk | Use `githubGetFileContent` instead |
+| Cloning without `sparse_path` on monorepo | Downloads everything | Set `sparse_path` to the dir you need |
+| Using clone/directory fetch with GitLab | Not supported, errors | Use `githubGetFileContent` file mode for GitLab |
 
 ---
 
@@ -609,9 +762,9 @@ Tools with no dependencies can run in parallel:
 - packageSearch → githubViewRepoStructure (needs owner/repo)
 - githubViewRepoStructure → githubGetFileContent (needs path discovery)
 - githubSearchPullRequests(metadata) → githubSearchPullRequests(partialContent)
+- githubCloneRepo → localSearchCode / lspGotoDefinition (needs localPath)
 ```
 
 **Batch limits:**
-- GitHub tools: Up to 3 queries per call
-- GitLab tools: Up to 3 queries per call
-- Package search: Up to 3 queries per call
+- All GitHub/GitLab tools: Up to **3 queries** per call
+- Package search: Up to **3 queries** per call

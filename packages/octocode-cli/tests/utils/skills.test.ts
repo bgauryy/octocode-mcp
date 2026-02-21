@@ -522,7 +522,7 @@ describe('Skills Config', () => {
 
       expect(mkdirSync).toHaveBeenCalledWith(
         expect.stringContaining('.octocode'),
-        { recursive: true }
+        { recursive: true, mode: 0o700 }
       );
     });
 
@@ -539,7 +539,10 @@ describe('Skills Config', () => {
       expect(writeFileSync).toHaveBeenCalledWith(
         expect.stringContaining('config.json'),
         expect.stringContaining('/custom/skills/path'),
-        'utf-8'
+        expect.objectContaining({
+          encoding: 'utf-8',
+          mode: 0o600,
+        })
       );
     });
 
@@ -558,7 +561,10 @@ describe('Skills Config', () => {
       expect(writeFileSync).toHaveBeenCalledWith(
         expect.stringContaining('config.json'),
         expect.not.stringContaining('skillsDestDir'),
-        'utf-8'
+        expect.objectContaining({
+          encoding: 'utf-8',
+          mode: 0o600,
+        })
       );
     });
   });

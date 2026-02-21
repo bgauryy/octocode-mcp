@@ -95,7 +95,30 @@ describe('Query Builders', () => {
       });
 
       const query = buildCodeSearchQuery(params);
-      expect(query).toBe('test filename:package.json extension:ts path:src/');
+      expect(query).toBe('test filename:package.json extension:ts path:"src/"');
+    });
+
+    it('should quote path values containing slashes', () => {
+      const params = toCodeSearchQuery({
+        keywordsToSearch: ['export'],
+        owner: 'bgauryy',
+        repo: 'octocode-mcp',
+        path: 'src/tools',
+      });
+
+      const query = buildCodeSearchQuery(params);
+      expect(query).toContain('path:"src/tools"');
+    });
+
+    it('should not quote simple path values without special chars', () => {
+      const params = toCodeSearchQuery({
+        keywordsToSearch: ['test'],
+        path: 'src',
+      });
+
+      const query = buildCodeSearchQuery(params);
+      expect(query).toContain('path:src');
+      expect(query).not.toContain('path:"src"');
     });
 
     it('should build query with match filters', () => {
@@ -132,6 +155,51 @@ describe('Query Builders', () => {
 
       const query = buildCodeSearchQuery(params);
       expect(query).toBe('user:microsoft');
+    });
+
+    it('should quote keywords containing @ character', () => {
+      const params = toCodeSearchQuery({
+        keywordsToSearch: ['@scope/package'],
+      });
+
+      const query = buildCodeSearchQuery(params);
+      expect(query).toBe('"@scope/package"');
+    });
+
+    it('should quote keywords containing / character', () => {
+      const params = toCodeSearchQuery({
+        keywordsToSearch: ['owner/repo'],
+      });
+
+      const query = buildCodeSearchQuery(params);
+      expect(query).toBe('"owner/repo"');
+    });
+
+    it('should not quote regular keywords', () => {
+      const params = toCodeSearchQuery({
+        keywordsToSearch: ['express', 'middleware'],
+      });
+
+      const query = buildCodeSearchQuery(params);
+      expect(query).toBe('express middleware');
+    });
+
+    it('should not double-quote already quoted keywords', () => {
+      const params = toCodeSearchQuery({
+        keywordsToSearch: ['"@scope/package"'],
+      });
+
+      const query = buildCodeSearchQuery(params);
+      expect(query).toBe('"@scope/package"');
+    });
+
+    it('should handle mix of special and regular keywords', () => {
+      const params = toCodeSearchQuery({
+        keywordsToSearch: ['express', '@types/node', 'middleware'],
+      });
+
+      const query = buildCodeSearchQuery(params);
+      expect(query).toBe('express "@types/node" middleware');
     });
   });
 
@@ -224,6 +292,63 @@ describe('Query Builders', () => {
 
       const query = buildRepoSearchQuery(params);
       expect(query).toBe('repo created:>2023-01-01 is:not-archived');
+    });
+
+    it('should build query with owner only (no keywords or topics)', () => {
+      const params = {
+        owner: 'facebook',
+      };
+
+      const query = buildRepoSearchQuery(params);
+      expect(query).toContain('user:facebook');
+      expect(query).toContain('is:not-archived');
+    });
+
+    it('should build query with stars range (100..500)', () => {
+      const params = {
+        keywordsToSearch: ['react'],
+        stars: '100..500',
+      };
+
+      const query = buildRepoSearchQuery(params);
+      expect(query).toBe('react stars:100..500 is:not-archived');
+    });
+
+    it('should build query with stars >=1000', () => {
+      const params = {
+        keywordsToSearch: ['react'],
+        stars: '>=1000',
+      };
+
+      const query = buildRepoSearchQuery(params);
+      expect(query).toBe('react stars:>=1000 is:not-archived');
+    });
+
+    it('should quote scoped package keywords with @ and /', () => {
+      const params = {
+        keywordsToSearch: ['@scope/package'],
+      };
+
+      const query = buildRepoSearchQuery(params);
+      expect(query).toBe('"@scope/package" is:not-archived');
+    });
+
+    it('should quote keywords with / in repo search', () => {
+      const params = {
+        keywordsToSearch: ['facebook/react'],
+      };
+
+      const query = buildRepoSearchQuery(params);
+      expect(query).toBe('"facebook/react" is:not-archived');
+    });
+
+    it('should not quote normal repo search keywords', () => {
+      const params = {
+        keywordsToSearch: ['react', 'typescript'],
+      };
+
+      const query = buildRepoSearchQuery(params);
+      expect(query).toBe('react typescript is:not-archived');
     });
   });
 

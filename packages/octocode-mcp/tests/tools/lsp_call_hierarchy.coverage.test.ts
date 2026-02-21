@@ -711,6 +711,39 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
     });
   });
 
+  describe('createCallHierarchyItemFromSite - selectionRange accuracy', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it('should use actual symbol name length for selectionRange instead of hardcoded value', async () => {
+      const { createCallHierarchyItemFromSite } =
+        await import('../../src/tools/lsp_call_hierarchy/callHierarchyHelpers.js');
+
+      // Mock file with function definition
+      const fileContent = `function processData(input) {\n  return input;\n}`;
+      (fsPromises.readFile as Mock).mockResolvedValue(fileContent);
+
+      const site = {
+        filePath: '/workspace/file.ts',
+        lineNumber: 1,
+        lineContent: 'function processData(input) {',
+        column: 9, // column where 'processData' starts
+      };
+
+      const result = await createCallHierarchyItemFromSite(site, 2);
+
+      // selectionRange end should be column + length of enclosing function name,
+      // NOT a hardcoded 10
+      const selEndChar = result.selectionRange.end.character;
+      const selStartChar = result.selectionRange.start.character;
+      const selLength = selEndChar - selStartChar;
+
+      // 'processData' is 11 chars, not 10
+      expect(selLength).toBe(result.name.length);
+    });
+  });
+
   describe('createCallHierarchyItemFromSite - method matching', () => {
     beforeEach(() => {
       vi.clearAllMocks();

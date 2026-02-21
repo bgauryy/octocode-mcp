@@ -21,7 +21,11 @@ import {
   SymbolResolutionError,
   isLanguageServerAvailable,
 } from '../../lsp/index.js';
-import type { FindReferencesResult, ExactPosition } from '../../lsp/types.js';
+import type {
+  FindReferencesResult,
+  ExactPosition,
+  ReferenceLocation,
+} from '../../lsp/types.js';
 import {
   validateToolPath,
   createErrorResult,
@@ -31,10 +35,7 @@ import { ToolErrors } from '../../errorCodes.js';
 import { executeFindReferences } from './execution.js';
 import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
 import { findReferencesWithLSP } from './lspReferencesCore.js';
-import {
-  findReferencesWithPatternMatching,
-  findWorkspaceRoot,
-} from './lspReferencesPatterns.js';
+import { findReferencesWithPatternMatching } from './lspReferencesPatterns.js';
 
 const TOOL_NAME = STATIC_TOOL_NAMES.LSP_FIND_REFERENCES;
 
@@ -55,7 +56,10 @@ export function registerLSPFindReferencesTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    withBasicSecurityValidation(executeFindReferences)
+    withBasicSecurityValidation(
+      executeFindReferences,
+      STATIC_TOOL_NAMES.LSP_FIND_REFERENCES
+    )
   );
 }
 
@@ -66,7 +70,6 @@ export async function findReferences(
   query: LSPFindReferencesQuery
 ): Promise<FindReferencesResult> {
   try {
-    // Validate the file path
     const pathValidation = validateToolPath(
       { ...query, path: query.uri },
       TOOL_NAME
@@ -107,7 +110,7 @@ export async function findReferences(
     }
 
     // Resolve the symbol position
-    const resolver = new SymbolResolver({ lineSearchRadius: 2 });
+    const resolver = new SymbolResolver({ lineSearchRadius: 5 });
     let resolvedSymbol: { position: ExactPosition; foundAtLine: number };
     try {
       resolvedSymbol = resolver.resolvePositionFromContent(content, {
@@ -135,37 +138,135 @@ export async function findReferences(
       throw error;
     }
 
-    // Get workspace root
-    const workspaceRoot =
-      process.env.WORKSPACE_ROOT || findWorkspaceRoot(absolutePath);
+    // Get workspace root - use process.cwd() like callHierarchy and gotoDefinition
+    // to ensure full monorepo scope (findWorkspaceRoot stops at first package.json)
+    const workspaceRoot = process.env.WORKSPACE_ROOT || process.cwd();
 
-    // Try to use LSP for semantic reference finding
+    // Try LSP for semantic reference finding, then merge with pattern matching
+    let lspResult: FindReferencesResult | null = null;
     if (await isLanguageServerAvailable(absolutePath)) {
       try {
-        const result = await findReferencesWithLSP(
+        lspResult = await findReferencesWithLSP(
           absolutePath,
           workspaceRoot,
           resolvedSymbol.position,
           query
         );
-        if (result) return result;
       } catch {
-        // Fall back to pattern matching if LSP fails
+        // LSP failed — fall through to pattern matching silently
       }
     }
 
-    // Fallback: Find references using pattern matching (ripgrep/grep)
-    return await findReferencesWithPatternMatching(
+    // Always run pattern matching for comprehensive coverage
+    const patternResult = await findReferencesWithPatternMatching(
       absolutePath,
       workspaceRoot,
       query
     );
+
+    // Merge LSP + pattern results for best coverage
+    return mergeReferenceResults(lspResult, patternResult, query);
   } catch (error) {
     return createErrorResult(error, query, {
       toolName: TOOL_NAME,
       extra: { uri: query.uri, symbolName: query.symbolName },
     }) as FindReferencesResult;
   }
+}
+
+/**
+ * Merge LSP and pattern-matching results for comprehensive coverage.
+ *
+ * LSP provides semantic accuracy but may miss cross-file references on cold start.
+ * Pattern matching (ripgrep) provides comprehensive text-based coverage.
+ * Merging both gives the best of both worlds without persistent caching.
+ *
+ * Deduplication is by (uri, startLine) to avoid showing the same reference twice.
+ */
+export function mergeReferenceResults(
+  lspResult: FindReferencesResult | null,
+  patternResult: FindReferencesResult,
+  query: LSPFindReferencesQuery
+): FindReferencesResult {
+  // If LSP returned nothing useful, use pattern results directly
+  if (
+    !lspResult ||
+    lspResult.status === 'empty' ||
+    !lspResult.locations?.length
+  ) {
+    return patternResult;
+  }
+
+  // If pattern returned nothing, use LSP results directly
+  if (patternResult.status === 'empty' || !patternResult.locations?.length) {
+    return lspResult;
+  }
+
+  // Build dedup set from LSP results (uri:startLine)
+  const seen = new Set(
+    lspResult.locations.map(
+      (loc: ReferenceLocation) => `${loc.uri}:${loc.range.start.line}`
+    )
+  );
+
+  // Find pattern-only references that LSP missed
+  const additionalRefs = patternResult.locations.filter(
+    (loc: ReferenceLocation) => !seen.has(`${loc.uri}:${loc.range.start.line}`)
+  );
+
+  if (additionalRefs.length === 0) {
+    // LSP found everything — return LSP result as-is (higher fidelity)
+    return {
+      ...lspResult,
+      hints: [
+        ...(lspResult.hints || []),
+        'All references confirmed by both LSP and text search',
+      ],
+    };
+  }
+
+  // Merge: LSP results + pattern-only additions
+  const mergedLocations = [...lspResult.locations, ...additionalRefs];
+  const totalReferences = mergedLocations.length;
+  const uniqueFiles = new Set(
+    mergedLocations.map((ref: ReferenceLocation) => ref.uri)
+  );
+
+  // Re-paginate the merged results
+  const referencesPerPage = query.referencesPerPage ?? 20;
+  const page = query.page ?? 1;
+  const totalPages = Math.ceil(totalReferences / referencesPerPage);
+  const startIndex = (page - 1) * referencesPerPage;
+  const endIndex = Math.min(startIndex + referencesPerPage, totalReferences);
+  const paginatedLocations = mergedLocations.slice(startIndex, endIndex);
+
+  const hints = [
+    ...(lspResult.hints || []),
+    `Added ${additionalRefs.length} reference(s) from text search that LSP missed`,
+  ];
+
+  if (page < totalPages) {
+    hints.push(
+      `Showing page ${page} of ${totalPages}. Use page=${page + 1} for more.`
+    );
+  }
+
+  return {
+    status: 'hasResults',
+    locations: paginatedLocations,
+    pagination: {
+      currentPage: page,
+      totalPages,
+      totalResults: totalReferences,
+      hasMore: page < totalPages,
+      resultsPerPage: referencesPerPage,
+    },
+    totalReferences,
+    hasMultipleFiles: uniqueFiles.size > 1,
+    researchGoal: query.researchGoal,
+    reasoning: query.reasoning,
+    hints,
+  };
 }
 
 // Re-export functions from focused modules

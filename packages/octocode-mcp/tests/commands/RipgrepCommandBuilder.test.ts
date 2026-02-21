@@ -27,6 +27,16 @@ describe('RipgrepCommandBuilder', () => {
       expect(args).toContain('--color');
       expect(args).toContain('never');
     });
+
+    it('should insert -- before positional args to prevent option injection', () => {
+      const builder = new RipgrepCommandBuilder();
+      const { args } = builder.simple('--pre=cat', '/repo').build();
+
+      const separatorIndex = args.indexOf('--');
+      expect(separatorIndex).toBeGreaterThan(-1);
+      expect(args[separatorIndex + 1]).toBe('--pre=cat');
+      expect(args[separatorIndex + 2]).toBe('/repo');
+    });
   });
 
   describe('pattern modes', () => {
@@ -141,6 +151,23 @@ describe('RipgrepCommandBuilder', () => {
       expect(args).toContain('-g');
       expect(args).toContain('!*.test.*');
       expect(args).toContain('!*.spec.*');
+    });
+
+    it('should use fixedString when pattern has regex special chars (e.g. describe()', () => {
+      // describe( has ( which is regex special - unclosed group without fixedString
+      const query = createQuery({
+        pattern: 'describe(',
+        path: './src',
+        exclude: ['*.test.ts'],
+        fixedString: true,
+      });
+
+      const { args } = new RipgrepCommandBuilder().fromQuery(query).build();
+
+      expect(args).toContain('-F');
+      expect(args).toContain('-g');
+      expect(args).toContain('!*.test.ts');
+      expect(args).toContain('describe(');
     });
 
     it('should handle excludeDir', () => {

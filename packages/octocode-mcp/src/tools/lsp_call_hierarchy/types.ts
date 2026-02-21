@@ -20,6 +20,8 @@ export interface LSPCallHierarchyQuery {
   depth?: number;
   page?: number;
   callsPerPage?: number;
+  charOffset?: number;
+  charLength?: number;
   researchGoal?: string;
   reasoning?: string;
 }
@@ -133,6 +135,15 @@ export interface CallHierarchyResult {
   incomingCalls?: IncomingCall[];
   outgoingCalls?: OutgoingCall[];
   pagination?: LSPPaginationInfo;
+  /** Character-based output pagination (when output exceeds size limit) */
+  outputPagination?: {
+    charOffset: number;
+    charLength: number;
+    totalChars: number;
+    hasMore: boolean;
+    currentPage: number;
+    totalPages: number;
+  };
   direction?: 'incoming' | 'outgoing';
   depth?: number;
   [key: string]: unknown;

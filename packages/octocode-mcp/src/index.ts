@@ -10,8 +10,12 @@ import {
   cleanup,
   getGitHubToken,
   arePromptsEnabled,
+  isCloneEnabled,
 } from './serverConfig.js';
-import { initializeProviders } from './providers/factory.js';
+import {
+  initializeProviders,
+  clearProviderCache,
+} from './providers/factory.js';
 import { createLogger, LoggerFactory, Logger } from './utils/core/logger.js';
 import {
   initializeSession,
@@ -22,6 +26,8 @@ import { loadToolContent, CompleteMetadata } from './tools/toolMetadata.js';
 import { registerTools } from './tools/toolsManager.js';
 import { version, name } from '../package.json';
 import { STARTUP_ERRORS } from './errorCodes.js';
+import { startCacheGC, stopCacheGC } from './tools/github_clone_repo/cache.js';
+import { getOctocodeDir } from 'octocode-shared';
 
 interface ShutdownState {
   inProgress: boolean;
@@ -42,7 +48,7 @@ const SHUTDOWN_TIMEOUT_MS = 5000;
 
 function createShutdownHandler(
   server: McpServer,
-  logger: Logger | null,
+  getLogger: () => Logger | null,
   state: ShutdownState
 ) {
   return async (signal?: string) => {
@@ -50,6 +56,9 @@ function createShutdownHandler(
     state.inProgress = true;
 
     try {
+      const logger = getLogger();
+
+      // Log while transport is still connected
       await logger?.info('Shutting down', { signal });
 
       if (state.timeout) {
@@ -57,21 +66,19 @@ function createShutdownHandler(
         state.timeout = null;
       }
 
+      // Force-exit safety net: if cleanup hangs, exit after timeout
       state.timeout = setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS);
 
-      // Log memory usage for debugging
-      const memUsage = process.memoryUsage();
-      await logger?.info('Memory at shutdown', {
-        heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024) + 'MB',
-        heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024) + 'MB',
-        rss: Math.round(memUsage.rss / 1024 / 1024) + 'MB',
-      });
+      // Stop periodic cache GC
+      stopCacheGC();
 
       // Cleanup all caches and instances
       clearAllCache();
       clearOctokitInstances();
+      clearProviderCache();
       cleanup();
 
+      // Close server transport — after this, logger calls are no-ops
       try {
         await server.close();
       } catch {
@@ -83,7 +90,6 @@ function createShutdownHandler(
         state.timeout = null;
       }
 
-      await logger?.info('Shutdown complete');
       process.exit(0);
     } catch {
       if (state.timeout) {
@@ -101,7 +107,7 @@ function createShutdownHandler(
 
 function setupProcessHandlers(
   gracefulShutdown: (signal?: string) => Promise<void>,
-  logger: Logger | null
+  getLogger: () => Logger | null
 ) {
   process.once('SIGINT', () => gracefulShutdown('SIGINT'));
   process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
@@ -109,7 +115,8 @@ function setupProcessHandlers(
   process.stdin.once('close', () => gracefulShutdown('STDIN_CLOSE'));
 
   process.once('uncaughtException', error => {
-    logger?.error('Uncaught exception', { error: error.message });
+    // Resolve logger lazily — may be null if crash is during startup
+    getLogger()?.error('Uncaught exception', { error: error.message });
     logSessionError('startup', STARTUP_ERRORS.UNCAUGHT_EXCEPTION.code).catch(
       () => {}
     );
@@ -117,7 +124,7 @@ function setupProcessHandlers(
   });
 
   process.once('unhandledRejection', reason => {
-    logger?.error('Unhandled rejection', { reason: String(reason) });
+    getLogger()?.error('Unhandled rejection', { reason: String(reason) });
     logSessionError('startup', STARTUP_ERRORS.UNHANDLED_REJECTION.code).catch(
       () => {}
     );
@@ -162,10 +169,10 @@ export async function registerAllTools(
 async function createServer(content: CompleteMetadata): Promise<McpServer> {
   const capabilities: {
     prompts?: Record<string, never>;
-    tools: Record<string, never>;
+    tools: { listChanged: boolean };
     logging: Record<string, never>;
   } = {
-    tools: {},
+    tools: { listChanged: false },
     logging: {},
   };
 
@@ -183,54 +190,51 @@ async function startServer() {
   const shutdownState: ShutdownState = { inProgress: false, timeout: null };
   let logger: Logger | null = null;
 
-  try {
-    // Initialize configuration
-    await initialize();
+  // Lazy getter: shutdown/error handlers always get the current logger
+  // (null before connect, valid after connect, works during the server lifetime)
+  const getLogger = () => logger;
 
-    // Initialize provider registry (GitHub + GitLab)
+  try {
+    // Phase 1: Initialize configuration & providers
+    await initialize();
     await initializeProviders();
     const content = await loadToolContent();
-
-    // Initialize session tracking
     const session = initializeSession();
 
-    // Create and configure server
+    // Phase 2: Create server, register tools & prompts (pre-connect)
     const server = await createServer(content);
-    logger = createLogger(server, 'server');
-    await logger.info('Server starting', { sessionId: session.getSessionId() });
-
-    // Register tools and prompts
     await registerAllTools(server, content);
     if (arePromptsEnabled()) {
       registerPrompts(server, content);
-      await logger.info('Prompts ready');
-    } else {
-      await logger.info('Prompts disabled via DISABLE_PROMPTS');
     }
 
-    // Setup shutdown handling
+    // Phase 3: Setup shutdown/crash handlers BEFORE connect
+    // Uses lazy getLogger() so handlers work both with and without a logger
     const gracefulShutdown = createShutdownHandler(
       server,
-      logger,
+      getLogger,
       shutdownState
     );
-    setupProcessHandlers(gracefulShutdown, logger);
+    setupProcessHandlers(gracefulShutdown, getLogger);
 
-    // Connect transport and start
+    // Phase 4: Connect transport — server is now live on stdio
     const transport = new StdioServerTransport();
     await server.connect(transport);
+
+    // Phase 5: Logger works NOW (transport connected, isConnected() = true)
+    logger = createLogger(server, 'server');
     await logger.info('Server ready', {
       pid: process.pid,
       sessionId: session.getSessionId(),
     });
 
+    // Start periodic cache GC when clone support is enabled
+    if (isCloneEnabled()) {
+      startCacheGC(getOctocodeDir());
+    }
+
     // Background session logging
     logSessionInit().catch(() => {});
-
-    // Enable output streams
-    process.stdout.uncork();
-    process.stderr.uncork();
-    process.stdin.resume();
   } catch (startupError) {
     await logger?.error('Startup failed', { error: String(startupError) });
     await logSessionError('startup', STARTUP_ERRORS.STARTUP_FAILED.code);

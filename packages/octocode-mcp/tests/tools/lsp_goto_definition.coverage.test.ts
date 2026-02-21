@@ -355,7 +355,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
           },
         ],
         resolvedPosition: { line: 10, character: 5 },
-        searchRadius: 2,
+        searchRadius: 5,
         researchGoal: 'Find definition',
         reasoning: 'User requested',
         hints: ['Note: Using text-based resolution'],
@@ -363,7 +363,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
 
       expect(fallbackResult.status).toBe('hasResults');
       expect(fallbackResult.locations.length).toBe(1);
-      expect(fallbackResult.searchRadius).toBe(2);
+      expect(fallbackResult.searchRadius).toBe(5);
     });
 
     it('should include hint about text-based resolution', () => {
@@ -397,7 +397,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
         status: 'empty' as const,
         error: 'Symbol not found',
         errorType: 'symbol_not_found',
-        searchRadius: 2,
+        searchRadius: 5,
         hints: [
           'Symbol not found at or near line 10',
           'Verify the exact symbol name',

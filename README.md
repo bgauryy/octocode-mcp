@@ -7,152 +7,25 @@
   <p><strong>Empower your AI assistant with the skills of a Senior Staff Engineer.</strong></p>
   
   <p>
-    <a href="https://octocode.ai"><strong>🌐 Official Website: octocode.ai</strong></a>
+    <a href="https://octocode.ai"><strong>octocode.ai</strong></a>
   </p>
 </div>
 
 ---
 
-Octocode is not just a tool; it's a methodology and a platform that transforms how AI interacts with code. It moves AI from "guessing" based on training data to "knowing" based on deep, evidence-based research.
+## Installation
 
-This repository contains the complete ecosystem that powers this transformation.
-
-## 📜 The Manifest
-
-**"Code is Truth, but Context is the Map."**
-
-At the heart of Octocode lies the **Manifest for Research Driven Development (RDD)**.
-
-👉 **Read the full manifest here: [MANIFEST.md](./MANIFEST.md)**
-
-The Manifest defines a new philosophy for AI coding:
-- **Vibe-Research**: Enabling AI to intuitively explore code like a human.
-- **Evidence First**: No line of code is written without proof it's needed and correct.
-- **Adversarial Validation**: AI agents check each other's work (Planner vs. Verifier) to ensure quality.
-
-It answers the question: *How can we trust AI to build complex software?* By forcing it to research before it acts.
-
----
-
-## 🔌 The MCP (Model Context Protocol)
-
-**The Eyes and Hands of Octocode.**
-
-The **Octocode MCP Server** (`packages/octocode-mcp`) is the bridge between your AI (like Claude or Cursor) and the world of code. It acts as the engine that powers the research.
-
-- **GitHub Tools**: Search millions of repositories, find usage patterns, and read real-world implementations.
-- **Local Tools**: Explore your local codebase with filesystem access.
-- **LSP Intelligence**: "Go to Definition", "Find References", and "Call Hierarchy" — giving AI the semantic understanding of a compiler.
-
-The MCP Server provides the *capabilities* to see, touch, and understand code structure.
-
-
-https://github.com/user-attachments/assets/de8d14c0-2ead-46ed-895e-09144c9b5071
-
-
----
-
-## 🧠 The Skill
-
-**The Brain of the Operation.**
-
-> **[Agent Skills](https://agentskills.io/what-are-skills)** are a lightweight, open format for extending AI agent capabilities with specialized knowledge and workflows.
-
-Octocode is supported in both MCP and as a skill!
-
-It adds specialized capabilities **out-of-the-box (OOTB)**:
-1.  **Correct Prompts**: Auto-injects the Research Driven Development system prompts.
-2.  **Advanced Planning**: Breaks down complex problems into specific research questions.
-3.  **Deep Research**: Orchestrates the right MCP tools in the right order (e.g., Search → Go to Definition → Read).
-4.  **Parallel Agents**: Handles spawning sub-agents for parallel execution of research tasks.
-
-This skill turns a generic AI model into a specialized **Research Architect**.
-
-> **💡 Tip**: Ask Octocode to "roast your code" and you will get a surprise! 🔥🎭
-
-https://github.com/user-attachments/assets/5b630763-2dee-4c2d-b5c1-6335396723ec
-
-
----
-
-## ⌨️ The CLI
-
-**Your Command Center.**
-
-Octocode comes with a powerful CLI to manage your agent's capabilities.
-
-```bash
-npx octocode-cli
-```
-
-It handles:
-- **Authentication**: Easy GitHub OAuth setup.
-- **Installations**: One-click setup for MCP servers and Skills.
-- **Management**: Interactive menu for all Octocode features.
-
----
-
-## 📚 Documentation
-
-Everything you need to master Octocode:
-
-### 📦 Packages
-- **[octocode-mcp](./packages/octocode-mcp)**: The core MCP server for GitHub, Local FS, and LSP.
-- **[octocode-cli](./packages/octocode-cli)**: The command-line interface for managing Octocode.
-- **[octocode-vscode](./packages/octocode-vscode)**: VS Code extension for authentication.
-- **[octocode-shared](./packages/octocode-shared)**: Shared utilities and types.
-
-### 🎯 Skills
-- **[octocode-research](./skills/octocode-research)**: The Research Skill for autonomous RDD.
-
-### 🎥 Tutorials
-- [**Octocode AI YouTube Channel**](https://www.youtube.com/@Octocode-ai) - Video tutorials and deep dives.
-
-### 🚀 Getting Started
-- [**Installation Guide**](./README.md#installation-guide) - Get started quickly. (See previous README sections below)
-- [**Octocode CLI**](./packages/octocode-cli/README.md) - The easiest way to install and manage skills.
-
-### 📖 Core Concepts
-- [**The Manifest**](./MANIFEST.md) - The philosophy behind RDD.
-
-### 🛠️ Reference
-- [**Development Guide**](./docs/DEVELOPMENT_GUIDE.md) - Monorepo setup, TDD, and agent guidelines
-- [**Authentication Setup**](./packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) - GitHub & GitLab authentication
-- [**Configuration**](./docs/CONFIGURATION_REFERENCE.md) - Environment variables, `.octocoderc` config file, and examples
-- [**Troubleshooting**](./docs/TROUBLESHOOTING.md) - Common issues and solutions
-
----
-## Installation Guide
-
-> **Prerequisites**: GitHub authentication is required for all installations.  
-> See [Authentication Setup](./packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) for details.
-
-### Quick Install
-
-| Component | Command | Description |
-|-----------|---------|-------------|
-| **MCP Server** | `npx octocode-cli` | GitHub, Local FS & LSP tools for your AI |
-| **Research Skill** | `npx add-skill octocode-research` | Autonomous research agent capabilities |
-
----
+> **Prerequisites**: GitHub authentication required. See [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md).
 
 ### Recommended: Octocode CLI
 
-The CLI is the easiest way to install and manage everything:
-
 ```bash
 npx octocode-cli
 ```
 
-**Features:**
-- Interactive setup wizard
-- GitHub OAuth authentication  
-- MCP server installation
-- Skills marketplace
+Interactive setup wizard with GitHub OAuth, MCP server installation, and skills marketplace.
 
----
-
-### Alternative Installation Methods
+### Alternative Methods
 
 <details>
 <summary><strong>One-Click Install (Cursor)</strong></summary>
@@ -162,7 +35,7 @@ npx octocode-cli
 </details>
 
 <details>
-<summary><strong>Manual Configuration</strong></summary>
+<summary><strong>Manual MCP Configuration</strong></summary>
 
 Add to your MCP configuration file:
 
@@ -190,6 +63,62 @@ npx add-skill https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-
 
 ---
 
+## MCP Server
+
+The [Octocode MCP Server](https://github.com/bgauryy/octocode-mcp/tree/main/packages/octocode-mcp) connects your AI assistant to code:
+
+- **GitHub & GitLab**: Search repositories, find usage patterns, read implementations, explore PRs
+- **Local Tools**: Search code, browse directories, find files in your local codebase
+- **LSP Intelligence**: Go to Definition, Find References, Call Hierarchy -- compiler-level understanding
+
+https://github.com/user-attachments/assets/de8d14c0-2ead-46ed-895e-09144c9b5071
+
+---
+
+## Skills
+
+> [Agent Skills](https://agentskills.io/what-are-skills) are a lightweight, open format for extending AI agent capabilities.
+> Skills index: [skills/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/skills/README.md)
+
+| Skill | What it does |
+|-------|--------------|
+| [**Research**](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-research) | Deep code exploration via LSP, local tools, GitHub API, packages, PRs |
+| [**Local Search**](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-local-search) | Fast local codebase exploration with LSP semantic navigation |
+| [**Plan**](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-plan) | Evidence-based planning: Understand, Research, Plan, Implement |
+| [**PR Reviewer**](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-pull-request-reviewer) | PR review across 7 domains with evidence-backed findings |
+| [**Roast**](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-roast) | Brutally honest code critique with file:line citations |
+| [**Prompt Optimizer**](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-prompt-optimizer) | Transform weak prompts into enforceable agent protocols |
+| [**Documentation Writer**](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-documentation-writer) | Generate comprehensive repo documentation in 6 phases |
+
+https://github.com/user-attachments/assets/5b630763-2dee-4c2d-b5c1-6335396723ec
+
+---
+
+## Documentation
+
+For the full documentation index, start here:
+[docs/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/README.md)
+
+Recommended quick links:
+- [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
+- [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md)
+- [Local Tools + LSP Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md)
+- [CLI Skills Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md)
+- [Skills Index](https://github.com/bgauryy/octocode-mcp/blob/main/skills/README.md)
+- [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md)
+
+### The Manifest
+
+**"Code is Truth, but Context is the Map."** -- Read the [Manifest for Research Driven Development](https://github.com/bgauryy/octocode-mcp/blob/main/MANIFEST.md) to understand the philosophy behind Octocode.
+
+---
+
+### Contributing
+
+See the [Development Guide](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md) for monorepo setup, testing, and contribution guidelines.
+
+---
+
 <div align="center">
-  <sub>Built with ❤️ for the AI Engineering Community</sub>
+  <sub>Built with care for the AI Engineering Community</sub>
 </div>

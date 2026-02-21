@@ -59,4 +59,8 @@ export const LSP_CALL_HIERARCHY = createSchemaHelper(
     callsPerPage: string;
     page: string;
   };
+  outputLimit: {
+    charOffset: string;
+    charLength: string;
+  };
 };

@@ -39,7 +39,10 @@ export const toBoolean = (val: unknown): unknown => {
  */
 export const toArray = (val: unknown): unknown => {
   if (Array.isArray(val)) return val;
-  if (typeof val === 'string') return val.split(',').map((s) => s.trim());
+  if (typeof val === 'string') {
+    if (val.trim() === '') return [];
+    return val.split(',').map((s) => s.trim()).filter(Boolean);
+  }
   return val;
 };
 

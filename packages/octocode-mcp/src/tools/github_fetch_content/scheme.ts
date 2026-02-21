@@ -15,6 +15,13 @@ const FileContentBaseSchema = BaseQuerySchema.extend({
     .max(255)
     .optional()
     .describe(GITHUB_FETCH_CONTENT.scope.branch),
+  type: z
+    .enum(['file', 'directory'])
+    .optional()
+    .default('file')
+    .describe(
+      'Choose ONE: "file" (default) returns content inline; "directory" saves all files to disk and returns localPath. Directory mode requires ENABLE_LOCAL=true and ENABLE_CLONE=true, and is only available with the GitHub provider (not GitLab).'
+    ),
   fullContent: z
     .boolean()
     .default(false)
@@ -33,6 +40,7 @@ const FileContentBaseSchema = BaseQuerySchema.extend({
     .describe(GITHUB_FETCH_CONTENT.range.endLine),
   matchString: z
     .string()
+    .max(2000)
     .optional()
     .describe(GITHUB_FETCH_CONTENT.range.matchString),
   matchStringContextLines: z
@@ -55,10 +63,44 @@ const FileContentBaseSchema = BaseQuerySchema.extend({
     .max(50000)
     .optional()
     .describe(GITHUB_FETCH_CONTENT.pagination.charLength),
+  forceRefresh: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      'When true, bypass the cache and force a fresh fetch even if a valid ' +
+        'cached copy exists. Only relevant for type "directory".'
+    ),
 });
 
 export const FileContentQuerySchema = FileContentBaseSchema.superRefine(
   (data, ctx) => {
+    // Directory type rejects all file-specific parameters
+    if (data.type === 'directory') {
+      const fileOnlyParams = [
+        'fullContent',
+        'startLine',
+        'endLine',
+        'matchString',
+        'charOffset',
+        'charLength',
+      ] as const;
+      for (const param of fileOnlyParams) {
+        if (
+          data[param] !== undefined &&
+          data[param] !== false &&
+          data[param] !== 5
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Parameter "${param}" is not supported when type is "directory". Directory mode saves all files to disk.`,
+            path: [param],
+          });
+        }
+      }
+      return; // Skip file-specific validations
+    }
+
     if (
       data.fullContent &&
       (data.startLine || data.endLine || data.matchString)

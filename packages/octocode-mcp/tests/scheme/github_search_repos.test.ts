@@ -10,12 +10,38 @@ describe('GitHubReposSearchQuerySchema', () => {
     reasoning: 'Unit test for schema',
   });
 
-  describe('refine validation - keywordsToSearch OR topicsToSearch required', () => {
-    it('should reject query with neither keywordsToSearch nor topicsToSearch', () => {
-      const invalidQuery = {
+  describe('refine validation - keywordsToSearch, topicsToSearch, or owner required', () => {
+    it('should accept query with owner only (no keywords or topics)', () => {
+      const validQuery = {
         queries: [
           withBaseFields({
             owner: 'facebook',
+          }),
+        ],
+      };
+
+      const result = GitHubReposSearchQuerySchema.safeParse(validQuery);
+      expect(result.success).toBe(true);
+    });
+
+    it('should accept query with owner and stars (no keywords or topics)', () => {
+      const validQuery = {
+        queries: [
+          withBaseFields({
+            owner: 'facebook',
+            stars: '>1000',
+          }),
+        ],
+      };
+
+      const result = GitHubReposSearchQuerySchema.safeParse(validQuery);
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject query with no owner, no keywords, and no topics', () => {
+      const invalidQuery = {
+        queries: [
+          withBaseFields({
             stars: '>1000',
           }),
         ],
@@ -25,17 +51,16 @@ describe('GitHubReposSearchQuerySchema', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.issues[0]?.message).toContain(
-          "At least one of 'keywordsToSearch' or 'topicsToSearch' is required"
+          "At least one of 'keywordsToSearch', 'topicsToSearch', or 'owner' is required"
         );
       }
     });
 
-    it('should reject query with empty keywordsToSearch array and no topicsToSearch', () => {
+    it('should reject query with empty keywordsToSearch array and no owner or topics', () => {
       const invalidQuery = {
         queries: [
           withBaseFields({
             keywordsToSearch: [],
-            owner: 'facebook',
           }),
         ],
       };
@@ -44,12 +69,12 @@ describe('GitHubReposSearchQuerySchema', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.issues[0]?.message).toContain(
-          "At least one of 'keywordsToSearch' or 'topicsToSearch' is required"
+          "At least one of 'keywordsToSearch', 'topicsToSearch', or 'owner' is required"
         );
       }
     });
 
-    it('should reject query with empty topicsToSearch array and no keywordsToSearch', () => {
+    it('should reject query with empty topicsToSearch array and no owner or keywords', () => {
       const invalidQuery = {
         queries: [
           withBaseFields({
@@ -278,15 +303,31 @@ describe('GitHubReposSearchQuerySchema', () => {
       }
     });
 
-    it('should fail if any query in bulk is invalid', () => {
+    it('should pass when one query has owner only and another has keywords', () => {
       const mixedQueries = {
         queries: [
           withBaseFields({
             keywordsToSearch: ['valid'],
           }),
           withBaseFields({
-            // Invalid: neither keywordsToSearch nor topicsToSearch
-            owner: 'invalid',
+            owner: 'facebook',
+          }),
+        ],
+      };
+
+      const result = GitHubReposSearchQuerySchema.safeParse(mixedQueries);
+      expect(result.success).toBe(true);
+    });
+
+    it('should fail if any query in bulk has no owner, keywords, or topics', () => {
+      const mixedQueries = {
+        queries: [
+          withBaseFields({
+            keywordsToSearch: ['valid'],
+          }),
+          withBaseFields({
+            // Invalid: no owner, no keywordsToSearch, no topicsToSearch
+            stars: '>1000',
           }),
         ],
       };

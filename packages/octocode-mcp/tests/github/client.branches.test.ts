@@ -69,6 +69,7 @@ describe('GitHub Client Branch Coverage', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GH_TOKEN',
       });
@@ -90,6 +91,7 @@ describe('GitHub Client Branch Coverage', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GH_TOKEN',
       });
@@ -111,6 +113,7 @@ describe('GitHub Client Branch Coverage', () => {
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: true,
+        enableClone: false,
         disablePrompts: false,
         tokenSource: 'env:GH_TOKEN',
       });
@@ -198,6 +201,36 @@ describe('GitHub Client Branch Coverage', () => {
       // Both calls should return the same instance (proving hash-based caching works)
       expect(instance1).toBe(instance2);
       expect(mockOctokit).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Expired instance replacement', () => {
+    it('should create new instance when cached auth instance has expired', async () => {
+      const authInfo = {
+        token: 'expiring-token',
+        clientId: 'test-client',
+        scopes: [] as string[],
+      };
+
+      // Control Date.now for both creation and expiry check
+      const originalNow = Date.now;
+      let fakeTime = 1_000_000;
+      Date.now = () => fakeTime;
+
+      try {
+        // First call creates instance (createdAt = 1_000_000)
+        await getOctokit(authInfo);
+        expect(mockOctokit).toHaveBeenCalledTimes(1);
+
+        // Advance past TTL (5 minutes = 300_000ms)
+        fakeTime += 5 * 60 * 1000 + 1;
+
+        // Second call should create new instance (expired)
+        await getOctokit(authInfo);
+        expect(mockOctokit).toHaveBeenCalledTimes(2);
+      } finally {
+        Date.now = originalNow;
+      }
     });
   });
 

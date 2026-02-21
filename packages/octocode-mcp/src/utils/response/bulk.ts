@@ -5,6 +5,7 @@ import {
   getGenericErrorHintsSync,
   getToolHintsSync,
 } from '../../tools/toolMetadata.js';
+import { applyOutputSizeLimit } from '../pagination/index.js';
 import type {
   ProcessedBulkResult,
   FlatQueryResult,
@@ -16,6 +17,10 @@ import type {
 
 /** Default concurrency for bulk operations */
 const DEFAULT_BULK_CONCURRENCY = 3;
+
+/** Timeout for bulk query execution, configurable via environment variable */
+const BULK_QUERY_TIMEOUT_MS =
+  parseInt(process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS || '60000', 10) || 60000;
 
 export async function executeBulkOperation<TQuery extends object>(
   queries: Array<TQuery>,
@@ -137,22 +142,31 @@ function createBulkResponse<TQuery extends object>(
     errorCount++;
   });
 
+  const filterHints = (hints: string[]) =>
+    hints.filter(h => typeof h === 'string' && h.trim().length > 0);
+
   const hasResultsHints = hasAnyHasResults
-    ? hasResultsHintsSet.size > 0
-      ? [...hasResultsHintsSet]
-      : [...getToolHintsSync(config.toolName, 'hasResults')]
+    ? filterHints(
+        hasResultsHintsSet.size > 0
+          ? [...hasResultsHintsSet]
+          : [...getToolHintsSync(config.toolName, 'hasResults')]
+      )
     : [];
 
   const emptyHints = hasAnyEmpty
-    ? emptyHintsSet.size > 0
-      ? [...emptyHintsSet]
-      : [...getToolHintsSync(config.toolName, 'empty')]
+    ? filterHints(
+        emptyHintsSet.size > 0
+          ? [...emptyHintsSet]
+          : [...getToolHintsSync(config.toolName, 'empty')]
+      )
     : [];
 
   const errorHints = hasAnyError
-    ? errorHintsSet.size > 0
-      ? [...errorHintsSet]
-      : [...getGenericErrorHintsSync()]
+    ? filterHints(
+        errorHintsSet.size > 0
+          ? [...errorHintsSet]
+          : [...getGenericErrorHintsSync()]
+      )
     : [];
 
   const instructions = generateBulkInstructions(
@@ -170,14 +184,29 @@ function createBulkResponse<TQuery extends object>(
     errorStatusHints: errorHints,
   };
 
+  let text = createResponseFormat(responseData, fullKeysPriority);
+
+  const sizeLimitResult = applyOutputSizeLimit(text, {});
+  if (sizeLimitResult.wasLimited) {
+    const paginationSuffix = [
+      ...sizeLimitResult.warnings,
+      ...sizeLimitResult.paginationHints,
+    ]
+      .filter(s => s.length > 0)
+      .join('\n');
+    text =
+      sizeLimitResult.content +
+      (paginationSuffix ? '\n' + paginationSuffix : '');
+  }
+
   return {
     content: [
       {
         type: 'text' as const,
-        text: createResponseFormat(responseData, fullKeysPriority),
+        text,
       },
     ],
-    isError: false,
+    isError: hasAnyError && !hasAnyHasResults && !hasAnyEmpty,
   };
 }
 
@@ -223,7 +252,7 @@ async function processBulkQueries<TQuery extends object>(
   );
 
   const queryResults = await executeWithErrorIsolation(queryPromiseFunctions, {
-    timeout: 60000,
+    timeout: BULK_QUERY_TIMEOUT_MS,
     continueOnError: true,
     concurrency, // Configurable concurrent requests to balance rate limiting vs throughput
     onError: (error: Error, index: number) => {

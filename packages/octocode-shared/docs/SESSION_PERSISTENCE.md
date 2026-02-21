@@ -413,9 +413,9 @@ beforeEach(() => {
 
 ## Related Documentation
 
-- [CREDENTIALS_ARCHITECTURE.md](./CREDENTIALS_ARCHITECTURE.md) - Credential storage system
-- [API_REFERENCE.md](./API_REFERENCE.md) - Complete API documentation
+- [CREDENTIALS_ARCHITECTURE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) - Credential storage system
+- [API_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/API_REFERENCE.md) - Complete API documentation
 
 ---
 
-*Part of [octocode-shared](../README.md) - Shared utilities for Octocode packages*
+*Part of [octocode-shared](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/README.md) - Shared utilities for Octocode packages*

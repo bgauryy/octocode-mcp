@@ -146,6 +146,7 @@ export async function searchCode(
     extension: query.extension,
     filename: query.filename,
     path: query.path,
+    match: query.match,
     limit: query.limit,
     page: query.page,
     mainResearchGoal: query.mainResearchGoal,
@@ -192,7 +193,7 @@ export async function searchRepos(
     keywordsToSearch: query.keywords,
     topicsToSearch: query.topics,
     owner: query.owner,
-    stars: query.minStars ? `>=${query.minStars}` : undefined,
+    stars: query.stars ?? (query.minStars ? `>=${query.minStars}` : undefined),
     sort:
       query.sort === 'best-match'
         ? undefined

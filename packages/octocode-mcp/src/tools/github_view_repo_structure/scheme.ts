@@ -32,28 +32,31 @@ export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
     .describe(GITHUB_VIEW_REPO_STRUCTURE.scope.branch),
   path: z
     .string()
-    .default('')
     .optional()
+    .default('')
     .describe(GITHUB_VIEW_REPO_STRUCTURE.scope.path),
   depth: z
     .number()
+    .int()
     .min(1)
     .max(2)
-    .default(1)
     .optional()
+    .default(1)
     .describe(GITHUB_VIEW_REPO_STRUCTURE.range.depth),
   entriesPerPage: z
     .number()
+    .int()
     .min(1)
     .max(GITHUB_STRUCTURE_DEFAULTS.MAX_ENTRIES_PER_PAGE)
-    .default(GITHUB_STRUCTURE_DEFAULTS.ENTRIES_PER_PAGE)
     .optional()
+    .default(GITHUB_STRUCTURE_DEFAULTS.ENTRIES_PER_PAGE)
     .describe(GITHUB_VIEW_REPO_STRUCTURE.pagination.entriesPerPage),
   entryPageNumber: z
     .number()
+    .int()
     .min(1)
-    .default(1)
     .optional()
+    .default(1)
     .describe(GITHUB_VIEW_REPO_STRUCTURE.pagination.entryPageNumber),
 });
 
@@ -79,6 +82,8 @@ export interface GitHubRepositoryStructureResult {
   owner: string;
   repo: string;
   branch: string;
+  /** Default branch of the repository (populated when a branch fallback occurred) */
+  defaultBranch?: string;
   path: string;
   apiSource: boolean;
   summary: {

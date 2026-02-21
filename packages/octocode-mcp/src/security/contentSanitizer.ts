@@ -6,6 +6,16 @@ export class ContentSanitizer {
     content: string,
     filePath?: string
   ): SanitizationResult {
+    // Guard: null/undefined content should not crash regex operations
+    if (content == null || typeof content !== 'string') {
+      return {
+        content: content == null ? '' : String(content),
+        hasSecrets: false,
+        secretsDetected: [],
+        warnings: [],
+      };
+    }
+
     const secretsResult = this.detectSecrets(content, filePath);
 
     return {
@@ -63,7 +73,9 @@ export class ContentSanitizer {
   }
 
   public static validateInputParameters(
-    params: Record<string, unknown>
+    params: Record<string, unknown>,
+    _depth = 0,
+    _visited?: WeakSet<object>
   ): ValidationResult {
     if (!params || typeof params !== 'object') {
       return {
@@ -73,6 +85,28 @@ export class ContentSanitizer {
         warnings: ['Invalid parameters: must be an object'],
       };
     }
+
+    // Guard: depth limit prevents stack overflow on deeply nested objects
+    if (_depth > 20) {
+      return {
+        sanitizedParams: {},
+        isValid: false,
+        hasSecrets: false,
+        warnings: ['Maximum nesting depth exceeded'],
+      };
+    }
+
+    // Guard: cycle detection prevents infinite recursion on circular refs
+    const visited = _visited ?? new WeakSet<object>();
+    if (visited.has(params)) {
+      return {
+        sanitizedParams: {},
+        isValid: false,
+        hasSecrets: false,
+        warnings: ['Circular reference detected'],
+      };
+    }
+    visited.add(params);
 
     const sanitizedParams: Record<string, unknown> = {};
     const warnings = new Set<string>();
@@ -110,17 +144,46 @@ export class ContentSanitizer {
         }
         sanitizedParams[key] = secretsResult.sanitizedContent;
       } else if (Array.isArray(value)) {
-        if (value.length > 100) {
-          warnings.add(
-            `Parameter ${key} array exceeds maximum length (100 items)`
-          );
-          sanitizedParams[key] = value.slice(0, 100);
-        } else {
-          sanitizedParams[key] = value;
-        }
+        const truncated =
+          value.length > 100
+            ? (warnings.add(
+                `Parameter ${key} array exceeds maximum length (100 items)`
+              ),
+              value.slice(0, 100))
+            : value;
+        sanitizedParams[key] = truncated.map(item => {
+          if (typeof item === 'string') {
+            const secretsResult = this.detectSecrets(item);
+            if (secretsResult.hasSecrets) {
+              hasSecrets = true;
+              secretsResult.secretsDetected.forEach(secret =>
+                warnings.add(`Secrets detected in ${key}[]: ${secret}`)
+              );
+            }
+            return secretsResult.sanitizedContent;
+          }
+          if (
+            item !== null &&
+            typeof item === 'object' &&
+            !Array.isArray(item)
+          ) {
+            const nestedValidation = this.validateInputParameters(
+              item as Record<string, unknown>,
+              _depth + 1,
+              visited
+            );
+            if (nestedValidation.hasSecrets) {
+              hasSecrets = true;
+            }
+            return nestedValidation.sanitizedParams;
+          }
+          return item;
+        });
       } else if (value !== null && typeof value === 'object') {
         const nestedValidation = this.validateInputParameters(
-          value as Record<string, unknown>
+          value as Record<string, unknown>,
+          _depth + 1,
+          visited
         );
         if (!nestedValidation.isValid) {
           hasValidationErrors = true;

@@ -168,6 +168,31 @@ describe('ResearchResponse.searchResults', () => {
     expect(result.content[0].text).toContain('export function helper()');
   });
 
+  it('handles non-string preview gracefully (no crash)', () => {
+    // preview could be a number or other non-string type from malformed data
+    const result = ResearchResponse.searchResults({
+      files: [
+        { path: 'src/utils.ts', matches: 1, preview: 42 as unknown as string },
+      ],
+      totalMatches: 1,
+    });
+
+    // Should not crash and should not include garbled output
+    expect(result.content[0].text).toContain('src/utils.ts');
+    expect(result.content[0].text).not.toContain('.slice');
+  });
+
+  it('handles undefined preview gracefully', () => {
+    const result = ResearchResponse.searchResults({
+      files: [
+        { path: 'src/utils.ts', matches: 1 },
+      ],
+      totalMatches: 1,
+    });
+
+    expect(result.content[0].text).toContain('src/utils.ts');
+  });
+
   it('includes repo info for GitHub results', () => {
     const result = ResearchResponse.searchResults({
       files: [
@@ -360,6 +385,29 @@ describe('ResearchResponse.packageSearch', () => {
 
     expect(result.content[0].text).toContain('No packages found');
     expect(result.isEmpty).toBe(true);
+  });
+
+  it('handles non-string description gracefully', () => {
+    const result = ResearchResponse.packageSearch({
+      packages: [
+        { name: 'test-pkg', version: '1.0.0', description: undefined },
+      ],
+      registry: 'npm',
+    });
+
+    expect(result.content[0].text).toContain('No description');
+  });
+
+  it('handles numeric description gracefully', () => {
+    const result = ResearchResponse.packageSearch({
+      packages: [
+        { name: 'test-pkg', version: '1.0.0', description: 123 as unknown as string },
+      ],
+      registry: 'npm',
+    });
+
+    // Should use 'No description' fallback for non-string
+    expect(result.content[0].text).toContain('No description');
   });
 });
 

@@ -1,0 +1,496 @@
+/**
+ * Token Fallback Chain Tests
+ *
+ * Tests the fallback behavior when token sources fail or become unavailable.
+ * Unlike tokenResolution tests (which mock resolveTokenFull at the top),
+ * these tests verify the actual fallback transitions and edge cases:
+ *
+ * - Source transitions at runtime (env → storage → gh-cli → none)
+ * - Refresh error propagation through the fallback chain
+ * - Empty/null token handling at each fallback level
+ * - Error recovery when a previously-failed source becomes available
+ * - Concurrent fallback resolution
+ * - mapSharedSourceToInternal edge cases
+ *
+ * The full priority chain:
+ *   1. OCTOCODE_TOKEN env var
+ *   2. GH_TOKEN env var
+ *   3. GITHUB_TOKEN env var
+ *   4. Encrypted storage (~/.octocode/credentials.json) with auto-refresh
+ *   5. gh auth token (GitHub CLI) — fallback via callback
+ */
+
+import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
+import {
+  initialize,
+  cleanup,
+  getGitHubToken,
+  getToken,
+  getTokenSource,
+  getServerConfig,
+  _setTokenResolvers,
+  _resetTokenResolvers,
+} from '../src/serverConfig.js';
+import type { FullTokenResolution } from 'octocode-shared';
+
+type ResolveTokenFullMock = Mock<
+  (options?: {
+    hostname?: string;
+    clientId?: string;
+    getGhCliToken?: (
+      hostname?: string
+    ) => string | null | Promise<string | null>;
+  }) => Promise<FullTokenResolution | null>
+>;
+
+let mockResolveTokenFull: ResolveTokenFullMock;
+
+function mockResult(
+  token: string | null,
+  source:
+    | 'env:OCTOCODE_TOKEN'
+    | 'env:GH_TOKEN'
+    | 'env:GITHUB_TOKEN'
+    | 'file'
+    | 'gh-cli'
+    | null,
+  extra?: Partial<FullTokenResolution>
+): FullTokenResolution | null {
+  if (!token && !extra?.refreshError) return null;
+  return {
+    token: token ?? '',
+    source,
+    wasRefreshed: false,
+    ...extra,
+  };
+}
+
+describe('Token Fallback Chain Behavior', () => {
+  const savedEnvVars: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    cleanup();
+
+    savedEnvVars.OCTOCODE_TOKEN = process.env.OCTOCODE_TOKEN;
+    savedEnvVars.GH_TOKEN = process.env.GH_TOKEN;
+    savedEnvVars.GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+    savedEnvVars.LOG = process.env.LOG;
+
+    delete process.env.OCTOCODE_TOKEN;
+    delete process.env.GH_TOKEN;
+    delete process.env.GITHUB_TOKEN;
+    delete process.env.LOG;
+
+    mockResolveTokenFull = vi.fn(async () => null);
+    _setTokenResolvers({ resolveTokenFull: mockResolveTokenFull });
+  });
+
+  afterEach(() => {
+    for (const key of Object.keys(savedEnvVars)) {
+      if (savedEnvVars[key] !== undefined) {
+        process.env[key] = savedEnvVars[key];
+      } else {
+        delete process.env[key];
+      }
+    }
+    cleanup();
+    _resetTokenResolvers();
+  });
+
+  describe('Runtime Source Transitions', () => {
+    it('should transition from env → storage when env token is removed', async () => {
+      mockResolveTokenFull
+        .mockResolvedValueOnce(mockResult('env-token', 'env:GITHUB_TOKEN'))
+        .mockResolvedValueOnce(mockResult('stored-token', 'file'));
+
+      const token1 = await getGitHubToken();
+      expect(token1).toBe('env-token');
+
+      const token2 = await getGitHubToken();
+      expect(token2).toBe('stored-token');
+
+      expect(mockResolveTokenFull).toHaveBeenCalledTimes(2);
+    });
+
+    it('should transition from env → gh-cli when env and storage fail', async () => {
+      mockResolveTokenFull
+        .mockResolvedValueOnce(mockResult('env-token', 'env:GH_TOKEN'))
+        .mockResolvedValueOnce(mockResult('cli-token', 'gh-cli'));
+
+      expect(await getGitHubToken()).toBe('env-token');
+      expect(await getTokenSource()).toBe('gh-cli');
+    });
+
+    it('should transition from storage → gh-cli when storage becomes empty', async () => {
+      mockResolveTokenFull
+        .mockResolvedValueOnce(mockResult('stored-token', 'file'))
+        .mockResolvedValueOnce(mockResult('gh-cli-fallback', 'gh-cli'));
+
+      expect(await getGitHubToken()).toBe('stored-token');
+      expect(await getGitHubToken()).toBe('gh-cli-fallback');
+    });
+
+    it('should transition from gh-cli → none when CLI becomes unavailable', async () => {
+      mockResolveTokenFull
+        .mockResolvedValueOnce(mockResult('cli-token', 'gh-cli'))
+        .mockResolvedValueOnce(null);
+
+      expect(await getGitHubToken()).toBe('cli-token');
+      expect(await getGitHubToken()).toBeNull();
+    });
+
+    it('should transition across full chain: env → storage → gh-cli → none', async () => {
+      mockResolveTokenFull
+        .mockResolvedValueOnce(mockResult('env-token', 'env:OCTOCODE_TOKEN'))
+        .mockResolvedValueOnce(mockResult('stored-token', 'file'))
+        .mockResolvedValueOnce(mockResult('cli-token', 'gh-cli'))
+        .mockResolvedValueOnce(null);
+
+      expect(await getGitHubToken()).toBe('env-token');
+      expect(await getGitHubToken()).toBe('stored-token');
+      expect(await getGitHubToken()).toBe('cli-token');
+      expect(await getGitHubToken()).toBeNull();
+      expect(mockResolveTokenFull).toHaveBeenCalledTimes(4);
+    });
+
+    it('should recover when a previously-failed source becomes available', async () => {
+      mockResolveTokenFull
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockResult('recovered-token', 'file'))
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockResult('new-env-token', 'env:GITHUB_TOKEN'));
+
+      expect(await getGitHubToken()).toBeNull();
+      expect(await getGitHubToken()).toBe('recovered-token');
+      expect(await getGitHubToken()).toBeNull();
+      expect(await getGitHubToken()).toBe('new-env-token');
+    });
+  });
+
+  describe('Token Source Tracking Through Fallbacks', () => {
+    it('should track source transitions accurately', async () => {
+      mockResolveTokenFull
+        .mockResolvedValueOnce(mockResult('tok1', 'env:OCTOCODE_TOKEN'))
+        .mockResolvedValueOnce(mockResult('tok2', 'env:GH_TOKEN'))
+        .mockResolvedValueOnce(mockResult('tok3', 'env:GITHUB_TOKEN'))
+        .mockResolvedValueOnce(mockResult('tok4', 'file'))
+        .mockResolvedValueOnce(mockResult('tok5', 'gh-cli'))
+        .mockResolvedValueOnce(null);
+
+      expect(await getTokenSource()).toBe('env:OCTOCODE_TOKEN');
+      expect(await getTokenSource()).toBe('env:GH_TOKEN');
+      expect(await getTokenSource()).toBe('env:GITHUB_TOKEN');
+      expect(await getTokenSource()).toBe('octocode-storage');
+      expect(await getTokenSource()).toBe('gh-cli');
+      expect(await getTokenSource()).toBe('none');
+    });
+
+    it('should map "file" source to "octocode-storage" consistently', async () => {
+      mockResolveTokenFull.mockResolvedValue(mockResult('stored-tok', 'file'));
+
+      expect(await getTokenSource()).toBe('octocode-storage');
+      expect(await getTokenSource()).toBe('octocode-storage');
+    });
+  });
+
+  describe('Refresh Error Propagation', () => {
+    it('should return null token when resolveTokenFull returns empty token with refresh error', async () => {
+      mockResolveTokenFull.mockResolvedValue(
+        mockResult(null, null, {
+          token: '',
+          refreshError: 'Token expired and no refresh token available',
+        })
+      );
+
+      const token = await getGitHubToken();
+      expect(token).toBeNull();
+    });
+
+    it('should return "none" source when token is empty with refresh error', async () => {
+      mockResolveTokenFull.mockResolvedValue({
+        token: '',
+        source: null,
+        wasRefreshed: false,
+        refreshError: 'Refresh token has expired. Please login again.',
+      });
+
+      expect(await getTokenSource()).toBe('none');
+      expect(await getGitHubToken()).toBeNull();
+    });
+
+    it('should handle refresh error then recovery via gh-cli', async () => {
+      mockResolveTokenFull
+        .mockResolvedValueOnce({
+          token: '',
+          source: null,
+          wasRefreshed: false,
+          refreshError: 'Token expired, refresh failed',
+        })
+        .mockResolvedValueOnce(mockResult('cli-rescue', 'gh-cli'));
+
+      expect(await getGitHubToken()).toBeNull();
+      expect(await getGitHubToken()).toBe('cli-rescue');
+    });
+
+    it('should handle wasRefreshed=true from storage (successful refresh)', async () => {
+      mockResolveTokenFull.mockResolvedValue({
+        token: 'refreshed-token',
+        source: 'file',
+        wasRefreshed: true,
+        username: 'testuser',
+      });
+
+      const token = await getGitHubToken();
+      expect(token).toBe('refreshed-token');
+
+      const source = await getTokenSource();
+      expect(source).toBe('octocode-storage');
+    });
+  });
+
+  describe('Error Recovery', () => {
+    it('should recover gracefully after resolveTokenFull throws', async () => {
+      mockResolveTokenFull
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockResolvedValueOnce(mockResult('recovered', 'env:GITHUB_TOKEN'));
+
+      expect(await getGitHubToken()).toBeNull();
+      expect(await getGitHubToken()).toBe('recovered');
+    });
+
+    it('should handle multiple consecutive errors before recovery', async () => {
+      mockResolveTokenFull
+        .mockRejectedValueOnce(new Error('Error 1'))
+        .mockRejectedValueOnce(new Error('Error 2'))
+        .mockRejectedValueOnce(new Error('Error 3'))
+        .mockResolvedValueOnce(mockResult('finally-works', 'env:GH_TOKEN'));
+
+      expect(await getGitHubToken()).toBeNull();
+      expect(await getGitHubToken()).toBeNull();
+      expect(await getGitHubToken()).toBeNull();
+      expect(await getGitHubToken()).toBe('finally-works');
+    });
+
+    it('should not leak error state between calls', async () => {
+      mockResolveTokenFull
+        .mockRejectedValueOnce(new Error('Crash'))
+        .mockResolvedValueOnce(mockResult('clean-token', 'env:GITHUB_TOKEN'));
+
+      const source1 = await getTokenSource();
+      expect(source1).toBe('none');
+
+      const source2 = await getTokenSource();
+      expect(source2).toBe('env:GITHUB_TOKEN');
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('should treat empty string token as no token', async () => {
+      mockResolveTokenFull.mockResolvedValue({
+        token: '',
+        source: 'env:GITHUB_TOKEN',
+        wasRefreshed: false,
+      });
+
+      expect(await getGitHubToken()).toBeNull();
+    });
+
+    it('should handle undefined source gracefully', async () => {
+      mockResolveTokenFull.mockResolvedValue({
+        token: 'some-token',
+        source: undefined as unknown as null,
+        wasRefreshed: false,
+      });
+
+      expect(await getGitHubToken()).toBe('some-token');
+      expect(await getTokenSource()).toBe('none');
+    });
+
+    it('should handle unrecognized source string gracefully', async () => {
+      mockResolveTokenFull.mockResolvedValue({
+        token: 'some-token',
+        source: 'unknown-source' as FullTokenResolution['source'],
+        wasRefreshed: false,
+      });
+
+      expect(await getGitHubToken()).toBe('some-token');
+      expect(await getTokenSource()).toBe('none');
+    });
+
+    it('should handle resolveTokenFull returning undefined', async () => {
+      mockResolveTokenFull.mockResolvedValue(undefined as unknown as null);
+
+      expect(await getGitHubToken()).toBeNull();
+      expect(await getTokenSource()).toBe('none');
+    });
+  });
+
+  describe('Concurrent Fallback Resolution', () => {
+    it('should handle concurrent calls with different fallback results', async () => {
+      let callCount = 0;
+      mockResolveTokenFull.mockImplementation(async () => {
+        callCount++;
+        const currentCall = callCount;
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        if (currentCall === 1)
+          return mockResult('env-token', 'env:GITHUB_TOKEN');
+        if (currentCall === 2) return mockResult('stored-token', 'file');
+        return mockResult('cli-token', 'gh-cli');
+      });
+
+      const results = await Promise.all([
+        getGitHubToken(),
+        getGitHubToken(),
+        getGitHubToken(),
+      ]);
+
+      expect(results).toContain('env-token');
+      expect(results).toContain('stored-token');
+      expect(results).toContain('cli-token');
+    });
+
+    it('should handle concurrent calls where some fail and some succeed', async () => {
+      mockResolveTokenFull
+        .mockResolvedValueOnce(mockResult('success-1', 'env:GITHUB_TOKEN'))
+        .mockRejectedValueOnce(new Error('Intermittent failure'))
+        .mockResolvedValueOnce(mockResult('success-2', 'file'))
+        .mockRejectedValueOnce(new Error('Another failure'));
+
+      const results = await Promise.all([
+        getGitHubToken(),
+        getGitHubToken(),
+        getGitHubToken(),
+        getGitHubToken(),
+      ]);
+
+      const successes = results.filter(t => t !== null);
+      const failures = results.filter(t => t === null);
+      expect(successes.length).toBe(2);
+      expect(failures.length).toBe(2);
+      expect(successes).toContain('success-1');
+      expect(successes).toContain('success-2');
+    });
+  });
+
+  describe('getGhCliToken Callback Passthrough', () => {
+    it('should pass getGhCliToken callback to resolveTokenFull on every call', async () => {
+      mockResolveTokenFull.mockResolvedValue(null);
+
+      await getGitHubToken();
+      await getGitHubToken();
+      await getGitHubToken();
+
+      expect(mockResolveTokenFull).toHaveBeenCalledTimes(3);
+      for (const call of mockResolveTokenFull.mock.calls) {
+        expect(call[0]).toMatchObject({
+          hostname: 'github.com',
+          getGhCliToken: expect.any(Function),
+        });
+      }
+    });
+
+    it('should use injected getGithubCLIToken when calling resolveTokenFull', async () => {
+      const customCLIGetter = vi.fn(async () => 'custom-cli-token');
+
+      _setTokenResolvers({
+        getGithubCLIToken: customCLIGetter,
+        resolveTokenFull: mockResolveTokenFull,
+      });
+
+      mockResolveTokenFull.mockImplementation(async options => {
+        const cliToken = await options?.getGhCliToken?.();
+        if (cliToken) return mockResult(cliToken, 'gh-cli');
+        return null;
+      });
+
+      const token = await getGitHubToken();
+      expect(token).toBe('custom-cli-token');
+      expect(customCLIGetter).toHaveBeenCalled();
+    });
+  });
+
+  describe('Initialize with Fallback', () => {
+    it('should initialize successfully even when no token is available', async () => {
+      mockResolveTokenFull.mockResolvedValue(null);
+
+      await expect(initialize()).resolves.not.toThrow();
+
+      const config = getServerConfig();
+      expect(config.tokenSource).toBe('none');
+    });
+
+    it('should initialize with storage fallback token', async () => {
+      mockResolveTokenFull.mockResolvedValue(
+        mockResult('init-stored-token', 'file')
+      );
+
+      await initialize();
+
+      const config = getServerConfig();
+      expect(config.tokenSource).toBe('octocode-storage');
+    });
+
+    it('should initialize with gh-cli fallback token', async () => {
+      mockResolveTokenFull.mockResolvedValue(
+        mockResult('init-cli-token', 'gh-cli')
+      );
+
+      await initialize();
+
+      const config = getServerConfig();
+      expect(config.tokenSource).toBe('gh-cli');
+    });
+
+    it('should initialize even when resolveTokenFull throws during init', async () => {
+      mockResolveTokenFull
+        .mockRejectedValueOnce(new Error('Init failure'))
+        .mockResolvedValueOnce(
+          mockResult('post-init-token', 'env:GITHUB_TOKEN')
+        );
+
+      await expect(initialize()).resolves.not.toThrow();
+
+      const config = getServerConfig();
+      expect(config.tokenSource).toBe('none');
+
+      const token = await getGitHubToken();
+      expect(token).toBe('post-init-token');
+    });
+
+    it('should use fresh resolution after initialize (not cached from init)', async () => {
+      mockResolveTokenFull
+        .mockResolvedValueOnce(mockResult('init-token', 'env:GITHUB_TOKEN'))
+        .mockResolvedValueOnce(mockResult('fresh-cli-token', 'gh-cli'));
+
+      await initialize();
+
+      const freshToken = await getGitHubToken();
+      expect(freshToken).toBe('fresh-cli-token');
+    });
+  });
+
+  describe('getToken Alias Fallback', () => {
+    it('should follow the same fallback chain as getGitHubToken', async () => {
+      mockResolveTokenFull
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockResult('alias-fallback', 'gh-cli'));
+
+      expect(await getToken()).toBeNull();
+      expect(await getToken()).toBe('alias-fallback');
+    });
+
+    it('should return same result as getGitHubToken for same mock state', async () => {
+      mockResolveTokenFull.mockResolvedValue(
+        mockResult('shared-token', 'file')
+      );
+
+      const token1 = await getGitHubToken();
+      const token2 = await getToken();
+
+      expect(token1).toBe('shared-token');
+      expect(token2).toBe('shared-token');
+    });
+  });
+});

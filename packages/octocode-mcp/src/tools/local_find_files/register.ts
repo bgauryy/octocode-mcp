@@ -23,6 +23,6 @@ export function registerLocalFindFilesTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    withBasicSecurityValidation(executeFindFiles)
+    withBasicSecurityValidation(executeFindFiles, TOOL_NAMES.LOCAL_FIND_FILES)
   );
 }

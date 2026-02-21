@@ -470,6 +470,23 @@ describe('safeExec', () => {
       validateCommandSpy.mockRestore();
     });
 
+    it('should reject arguments containing null bytes', async () => {
+      const { safeExec } = await import('../../../src/utils/exec/index.js');
+
+      await expect(
+        safeExec('ls', ['-la', 'path\0injected'], { cwd: process.cwd() })
+      ).rejects.toThrow('Argument validation failed');
+    });
+
+    it('should reject arguments exceeding max length', async () => {
+      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const longArg = 'a'.repeat(1001);
+
+      await expect(
+        safeExec('ls', [longArg], { cwd: process.cwd() })
+      ).rejects.toThrow('Argument validation failed');
+    });
+
     it('should handle context validation failure without error message', async () => {
       // Mock execution context validator to return invalid without error message
       const contextValidatorModule =
@@ -487,6 +504,25 @@ describe('safeExec', () => {
       );
 
       validateContextSpy.mockRestore();
+    });
+
+    it('should not forward non-allowlisted env overrides to child processes', async () => {
+      const { safeExec } = await import('../../../src/utils/exec/index.js');
+
+      const promise = safeExec('ls', ['-la'], {
+        cwd: process.cwd(),
+        env: { GITHUB_TOKEN: 'should-not-pass' },
+      });
+
+      setTimeout(() => {
+        mockProcess.emit('close', 0);
+      }, 10);
+
+      await promise;
+
+      const spawnCall = vi.mocked(spawn).mock.calls[0];
+      const spawnOptions = spawnCall?.[2];
+      expect(spawnOptions?.env?.GITHUB_TOKEN).toBeUndefined();
     });
   });
 

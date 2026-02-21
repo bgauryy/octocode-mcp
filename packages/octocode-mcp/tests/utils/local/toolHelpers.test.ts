@@ -44,6 +44,47 @@ describe('toolHelpers', () => {
       });
     });
 
+    describe('file:// URI protocol stripping', () => {
+      it('should strip file:// protocol and validate the underlying path', () => {
+        const query = {
+          path: `file://${process.cwd()}`,
+          researchGoal: 'test',
+          reasoning: 'test reasoning',
+        };
+
+        const result = validateToolPath(query, 'LSP_GOTO_DEFINITION');
+
+        expect(result.isValid).toBe(true);
+        expect(result.sanitizedPath).toBeDefined();
+      });
+
+      it('should strip file:/// (triple slash) and validate correctly', () => {
+        const query = {
+          path: `file:///${process.cwd().slice(1)}`,
+          researchGoal: 'test',
+          reasoning: 'test reasoning',
+        };
+
+        const result = validateToolPath(query, 'LSP_FIND_REFERENCES');
+
+        expect(result.isValid).toBe(true);
+        expect(result.sanitizedPath).toBeDefined();
+      });
+
+      it('should leave non-file:// paths unchanged', () => {
+        const query = {
+          path: process.cwd(),
+          researchGoal: 'test',
+          reasoning: 'test reasoning',
+        };
+
+        const result = validateToolPath(query, 'LSP_CALL_HIERARCHY');
+
+        expect(result.isValid).toBe(true);
+        expect(result.sanitizedPath).toBeDefined();
+      });
+    });
+
     describe('error context and debugging info', () => {
       it('should include CWD in error result for invalid paths', () => {
         const query = {
@@ -89,10 +130,7 @@ describe('toolHelpers', () => {
         expect(result.errorResult?.hints).toBeDefined();
 
         const hints = result.errorResult?.hints as string[];
-        // Should show CWD context
-        expect(hints.some(h => h.includes('Current working directory'))).toBe(
-          true
-        );
+        expect(hints.some(h => h.includes('CWD:'))).toBe(true);
       });
 
       it('should NOT show "resolved to" hint when input equals resolved path', () => {
@@ -107,12 +145,8 @@ describe('toolHelpers', () => {
 
         expect(result.isValid).toBe(false);
         const hints = result.errorResult?.hints as string[];
-        // Should NOT have "resolved to" since input === resolved
         expect(hints.some(h => h.includes('resolved to'))).toBe(false);
-        // But should still have CWD
-        expect(hints.some(h => h.includes('Current working directory'))).toBe(
-          true
-        );
+        expect(hints.some(h => h.includes('CWD:'))).toBe(true);
       });
 
       it('should preserve research context in error result', () => {
@@ -148,9 +182,7 @@ describe('toolHelpers', () => {
 
         expect(result.isValid).toBe(false);
         const hints = result.errorResult?.hints as string[];
-        // Should suggest a fix with emoji marker
-        expect(hints.some(h => h.includes('🔧 Fix'))).toBe(true);
-        // Should suggest using workspace root
+        expect(hints.some(h => h.includes('Fix:'))).toBe(true);
         expect(hints.some(h => h.includes(process.cwd()))).toBe(true);
       });
 
@@ -166,9 +198,8 @@ describe('toolHelpers', () => {
         const result = validateToolPath(query, 'LOCAL_FETCH_CONTENT');
 
         expect(result.isValid).toBe(false);
-        // The hints should include TIP about absolute paths (always present)
         const hints = result.errorResult?.hints as string[];
-        expect(hints.some(h => h.includes('💡 TIP'))).toBe(true);
+        expect(hints.some(h => h.includes('Fix:'))).toBe(true);
       });
 
       it('should provide not found hints when path does not exist', () => {
@@ -186,9 +217,7 @@ describe('toolHelpers', () => {
         if (!result.isValid) {
           const hints = result.errorResult?.hints as string[];
           expect(hints).toBeDefined();
-          expect(hints.some(h => h.includes('Current working directory'))).toBe(
-            true
-          );
+          expect(hints.some(h => h.includes('CWD:'))).toBe(true);
         }
       });
 
@@ -205,12 +234,10 @@ describe('toolHelpers', () => {
         expect(result.isValid).toBe(false);
         const hints = result.errorResult?.hints as string[];
 
-        // Should include TIP about absolute paths
-        expect(hints.some(h => h.includes('💡 TIP'))).toBe(true);
+        expect(hints.some(h => h.includes('Fix:'))).toBe(true);
         expect(hints.some(h => h.toLowerCase().includes('absolute'))).toBe(
           true
         );
-        expect(hints.some(h => h.includes('prefer absolute paths'))).toBe(true);
       });
 
       it('should include example fix syntax', () => {
@@ -225,10 +252,8 @@ describe('toolHelpers', () => {
         expect(result.isValid).toBe(false);
         const hints = result.errorResult?.hints as string[];
 
-        // Should show example with path= syntax
         expect(hints.some(h => h.includes('path="'))).toBe(true);
-        expect(hints.some(h => h.includes('Instead of:'))).toBe(true);
-        expect(hints.some(h => h.includes('Try:'))).toBe(true);
+        expect(hints.some(h => h.includes('Fix:'))).toBe(true);
       });
     });
 

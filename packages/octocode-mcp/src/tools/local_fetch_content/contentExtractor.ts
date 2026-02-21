@@ -2,6 +2,8 @@
  * Extract matching lines from content based on pattern
  * Supports both regex and literal string matching with context lines
  */
+import { createSafeRegExp } from '../../utils/core/safeRegex.js';
+
 export function extractMatchingLines(
   lines: string[],
   pattern: string,
@@ -16,12 +18,12 @@ export function extractMatchingLines(
 } {
   const matchingLineNumbers: number[] = [];
 
-  // Compile regex once if needed
+  // Compile regex once if needed — with ReDoS protection
   let regex: RegExp | null = null;
   if (isRegex) {
     try {
       const flags = caseSensitive ? '' : 'i';
-      regex = new RegExp(pattern, flags);
+      regex = createSafeRegExp(pattern, flags);
     } catch (error) {
       throw new Error(
         `Invalid regex pattern: ${error instanceof Error ? error.message : String(error)}`

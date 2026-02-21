@@ -119,7 +119,7 @@ describe('localSearchCode', () => {
       mockSafeExec.mockResolvedValue({
         success: true,
         code: 0,
-        stdout: 'file1.ts\nfile2.ts',
+        stdout: 'file1.ts:3\nfile2.ts:7',
         stderr: '',
       });
 
@@ -130,10 +130,10 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      // Discovery mode sets filesOnly=true (uses -l flag)
+      // Discovery mode sets count=true (uses -c flag for per-file match counts)
       expect(mockSafeExec).toHaveBeenCalledWith(
         'rg',
-        expect.arrayContaining(['-l'])
+        expect.arrayContaining(['-c'])
       );
     });
 

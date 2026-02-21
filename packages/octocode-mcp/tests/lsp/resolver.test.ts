@@ -343,7 +343,7 @@ line3`;
 
     it('should use default search radius', () => {
       const error = new SymbolResolutionError('sym', 10, 'reason');
-      expect(error.searchRadius).toBe(2);
+      expect(error.searchRadius).toBe(5);
     });
   });
 
@@ -352,7 +352,7 @@ line3`;
       expect(defaultResolver).toBeInstanceOf(SymbolResolver);
     });
 
-    it('should have default lineSearchRadius of 2', () => {
+    it('should have default lineSearchRadius of 5', () => {
       const content = `line1
 line2
 line3
@@ -469,6 +469,287 @@ line8`;
       });
 
       expect(result.foundAtLine).toBe(7);
+    });
+  });
+
+  describe('orderHint on re-exported symbols (nearby lines)', () => {
+    it('should find re-exported symbol on nearby line even with orderHint > 0', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 3 });
+      const content = [
+        'export {',
+        '  SymbolResolver,',
+        '  SymbolResolutionError,',
+        '  defaultResolver,',
+        "} from './resolver.js';",
+      ].join('\n');
+
+      // lineHint points to "export {" (line 1) but symbol is on line 2.
+      // With orderHint: 1 the old code would demand a 2nd occurrence on
+      // each nearby line and fail — the fix ignores orderHint for nearby lines.
+      const result = resolver.resolvePositionFromContent(content, {
+        symbolName: 'SymbolResolver',
+        lineHint: 1,
+        orderHint: 1,
+      });
+
+      expect(result.foundAtLine).toBe(2);
+      expect(result.lineContent).toContain('SymbolResolver');
+    });
+
+    it('should still respect orderHint on the exact target line', () => {
+      const resolver = new SymbolResolver();
+      const content = 'const x = x + x;';
+
+      // orderHint: 1 → second occurrence on the SAME line
+      const result = resolver.resolvePositionFromContent(content, {
+        symbolName: 'x',
+        lineHint: 1,
+        orderHint: 1,
+      });
+
+      expect(result.position.character).toBe(10); // "const x = " → second x
+    });
+
+    it('should find barrel re-export when lineHint is slightly off', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 3 });
+      const content = [
+        "export { createClient } from './client.js';",
+        '',
+        "export { isLanguageServerAvailable } from './manager.js';",
+      ].join('\n');
+
+      // lineHint is 2 (empty line), orderHint non-zero.
+      // Should still find isLanguageServerAvailable on line 3.
+      const result = resolver.resolvePositionFromContent(content, {
+        symbolName: 'isLanguageServerAvailable',
+        lineHint: 2,
+        orderHint: 2,
+      });
+
+      expect(result.foundAtLine).toBe(3);
+    });
+
+    it('should fail with orderHint > 0 when symbol appears once on exact line', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      const content = "export { Foo } from './foo';";
+
+      // orderHint: 1 on a line where Foo appears once → should throw
+      // Note: "Foo" (capital) != "foo" (lower) in path, so only 1 code occurrence
+      expect(() =>
+        resolver.resolvePositionFromContent(content, {
+          symbolName: 'Foo',
+          lineHint: 1,
+          orderHint: 1,
+        })
+      ).toThrow(SymbolResolutionError);
+    });
+  });
+
+  describe('string and comment context skipping', () => {
+    it('should skip symbol occurrence inside single-quoted string', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      const content = "const msg = 'ToolError is bad';";
+
+      // "ToolError" only appears inside a string — should not be found
+      expect(() =>
+        resolver.resolvePositionFromContent(content, {
+          symbolName: 'ToolError',
+          lineHint: 1,
+        })
+      ).toThrow(SymbolResolutionError);
+    });
+
+    it('should skip symbol occurrence inside double-quoted string', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      const content = 'const msg = "ToolError is bad";';
+
+      expect(() =>
+        resolver.resolvePositionFromContent(content, {
+          symbolName: 'ToolError',
+          lineHint: 1,
+        })
+      ).toThrow(SymbolResolutionError);
+    });
+
+    it('should skip symbol occurrence inside template literal', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      const content = 'const msg = `ToolError is bad`;';
+
+      expect(() =>
+        resolver.resolvePositionFromContent(content, {
+          symbolName: 'ToolError',
+          lineHint: 1,
+        })
+      ).toThrow(SymbolResolutionError);
+    });
+
+    it('should skip symbol occurrence inside line comment', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      const content = 'const x = 1; // ToolError here';
+
+      expect(() =>
+        resolver.resolvePositionFromContent(content, {
+          symbolName: 'ToolError',
+          lineHint: 1,
+        })
+      ).toThrow(SymbolResolutionError);
+    });
+
+    it('should find code symbol and skip string occurrence on re-export line', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      const content =
+        "export { ToolError, isToolError, toToolError } from './ToolError.js';";
+
+      // orderHint: 0 should find the export specifier (code), NOT the path string
+      const result = resolver.resolvePositionFromContent(content, {
+        symbolName: 'ToolError',
+        lineHint: 1,
+        orderHint: 0,
+      });
+
+      // "export { ToolError," — ToolError starts at char 9
+      expect(result.position.character).toBe(9);
+    });
+
+    it('should NOT find second code occurrence when only string occurrence remains', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      const content =
+        "export { ToolError, isToolError, toToolError } from './ToolError.js';";
+
+      // orderHint: 1 — only 1 code occurrence of "ToolError" exists (char 9).
+      // The second word-boundary match (char 55 in path string) should be skipped.
+      expect(() =>
+        resolver.resolvePositionFromContent(content, {
+          symbolName: 'ToolError',
+          lineHint: 1,
+          orderHint: 1,
+        })
+      ).toThrow(SymbolResolutionError);
+    });
+
+    it('should handle escaped quotes correctly', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      // The escaped quote does NOT close the string, so ToolError is still inside it
+      const content = "const msg = 'it\\'s a ToolError';";
+
+      expect(() =>
+        resolver.resolvePositionFromContent(content, {
+          symbolName: 'ToolError',
+          lineHint: 1,
+        })
+      ).toThrow(SymbolResolutionError);
+    });
+
+    it('should find symbol after a closed string on same line', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      const content = "const msg = 'hello'; const err = new ToolError();";
+
+      const result = resolver.resolvePositionFromContent(content, {
+        symbolName: 'ToolError',
+        lineHint: 1,
+      });
+
+      // ToolError is in code after the string closes — should be found
+      expect(result.position.character).toBe(37);
+    });
+
+    it('should prefer code occurrence over string occurrence with orderHint 0', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      // Code symbol first, then same name in string
+      const content = "const ToolError = 'ToolError';";
+
+      const result = resolver.resolvePositionFromContent(content, {
+        symbolName: 'ToolError',
+        lineHint: 1,
+        orderHint: 0,
+      });
+
+      // Should find the code identifier at char 6, not the string at char 19
+      expect(result.position.character).toBe(6);
+    });
+
+    it('should count only code occurrences for orderHint', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      // Two code occurrences with a string occurrence in between
+      const content = "const x = x + 'x is nice' + x;";
+
+      // orderHint: 0 → first code x (char 6)
+      const r0 = resolver.resolvePositionFromContent(content, {
+        symbolName: 'x',
+        lineHint: 1,
+        orderHint: 0,
+      });
+      expect(r0.position.character).toBe(6);
+
+      // orderHint: 1 → second code x (char 10), skipping string occurrence
+      const r1 = resolver.resolvePositionFromContent(content, {
+        symbolName: 'x',
+        lineHint: 1,
+        orderHint: 1,
+      });
+      expect(r1.position.character).toBe(10);
+
+      // orderHint: 2 → third code x (char 28)
+      const r2 = resolver.resolvePositionFromContent(content, {
+        symbolName: 'x',
+        lineHint: 1,
+        orderHint: 2,
+      });
+      expect(r2.position.character).toBe(28);
+    });
+
+    it('should find symbol inside template expression ${...} (code context)', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      const content = 'const msg = `Error: ${ToolError.message}`;';
+
+      // ToolError is inside ${...} which is code, not string
+      const result = resolver.resolvePositionFromContent(content, {
+        symbolName: 'ToolError',
+        lineHint: 1,
+      });
+
+      expect(result.position.character).toBe(22);
+    });
+
+    it('should skip symbol in template text but find it in template expression', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      const content = 'const msg = `ToolError: ${ToolError.message}`;';
+
+      // First "ToolError" at char 14 is in template text → skip
+      // Second "ToolError" at char 26 is inside ${...} → code → find it
+      const result = resolver.resolvePositionFromContent(content, {
+        symbolName: 'ToolError',
+        lineHint: 1,
+        orderHint: 0,
+      });
+
+      expect(result.position.character).toBe(26);
+    });
+
+    it('should skip symbol in template text entirely when no expression match', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      const content = 'const msg = `ToolError happened`;';
+
+      // ToolError is in template text (no ${...}) → skip
+      expect(() =>
+        resolver.resolvePositionFromContent(content, {
+          symbolName: 'ToolError',
+          lineHint: 1,
+        })
+      ).toThrow(SymbolResolutionError);
+    });
+
+    it('should handle nested braces inside template expression', () => {
+      const resolver = new SymbolResolver({ lineSearchRadius: 0 });
+      const content = 'const msg = `${obj.fn({ key: ToolError })}`;';
+
+      // ToolError is inside ${...{ ... }} — nested braces, still code
+      const result = resolver.resolvePositionFromContent(content, {
+        symbolName: 'ToolError',
+        lineHint: 1,
+      });
+
+      expect(result.position.character).toBe(29);
     });
   });
 });

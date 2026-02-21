@@ -8,7 +8,7 @@
 
 **The unified installer and management hub for Octocode MCP servers and AI skills.**
 
-[Website](https://octocode.ai) • [Documentation](https://docs.octocode.ai) • [GitHub](https://github.com/bgauryy/octocode-mcp)
+[Website](https://octocode.ai) • [Documentation](https://github.com/bgauryy/octocode-mcp/blob/main/docs/README.md) • [GitHub](https://github.com/bgauryy/octocode-mcp)
 
 <img src="https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/packages/octocode-cli/assets/example.png" alt="Octocode CLI Demo" width="700" style="border-radius: 8px; margin: 20px 0;">
 
@@ -58,97 +58,7 @@ npx octocode-cli
 
 ### CLI Commands
 
-For automation and power users, Octocode CLI offers a comprehensive command-line interface.
-
-#### 1. Install Octocode MCP
-
-Install the GitHub MCP server for your preferred IDE.
-
-```bash
-# Interactive install
-octocode-cli install
-
-# Specific IDEs
-octocode-cli install --ide cursor --method npx
-octocode-cli install --ide claude-desktop --method direct
-octocode-cli install --ide windsurf
-octocode-cli install --ide zed
-```
-
-**Supported IDEs**: `cursor`, `claude-desktop`, `claude-code`, `windsurf`, `zed`, `vscode-cline`, `vscode-roo`, `vscode-continue`, `opencode`, `trae`, `antigravity`
-
-#### 2. Manage Authentication
-
-Securely authenticate with GitHub. Credentials are encrypted (AES-256-GCM) and stored in `~/.octocode/`.
-
-```bash
-# Interactive login (OAuth device flow)
-octocode-cli login
-
-# Check authentication status
-octocode-cli status
-
-# Enterprise Login
-octocode-cli login --hostname github.mycompany.com
-
-# Sign out
-octocode-cli logout
-
-# Auth management menu
-octocode-cli auth
-```
-
-#### 3. Get GitHub Token
-
-Retrieve tokens for scripting or debugging.
-
-```bash
-# Get token (auto: env → gh → octocode)
-octocode-cli token
-
-# Get token from specific source
-octocode-cli token --type=octocode
-octocode-cli token --type=gh
-
-# Show token source and user info
-octocode-cli token --source
-
-# JSON output for scripting
-octocode-cli token --json
-```
-
-#### 4. Sync Configurations
-
-Keep your MCP settings consistent across different editors.
-
-```bash
-# Sync all IDEs
-octocode-cli sync
-
-# Preview changes (dry run)
-octocode-cli sync --dry-run
-
-# Show sync status
-octocode-cli sync --status
-
-# Force sync (auto-resolve conflicts)
-octocode-cli sync --force
-```
-
-#### 5. Manage Skills
-
-Install AI skills for Claude Code.
-
-```bash
-# List available skills
-octocode-cli skills list
-
-# Install all skills
-octocode-cli skills install
-
-# Force reinstall (overwrite existing)
-octocode-cli skills install --force
-```
+For the complete CLI reference including all commands and options, see the [CLI Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md).
 
 ---
 
@@ -201,7 +111,7 @@ You can opt-out at any time:
 export LOG=false
 ```
 
-For full details, please read our [Privacy Policy](../../PRIVACY.md) and [Terms of Usage](../../TERMS.md).
+For full details, please read our [Privacy Policy](https://github.com/bgauryy/octocode-mcp/blob/main/PRIVACY.md) and [Terms of Usage](https://github.com/bgauryy/octocode-mcp/blob/main/TERMS.md).
 
 ---
 

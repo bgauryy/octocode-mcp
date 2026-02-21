@@ -299,6 +299,33 @@ describe('Tools Utils', () => {
       expect(result.hints).toBeDefined();
       expect(result.hints!.every(h => h.trim().length > 0)).toBe(true);
     });
+
+    it('should filter out non-string hints without crashing', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Testing' };
+      const data = { files: ['file1.ts'] };
+      // Simulate non-string hints from malformed metadata/API
+      const extraHints = [
+        'Valid hint',
+        42 as unknown as string,
+        null as unknown as string,
+        undefined as unknown as string,
+        { obj: true } as unknown as string,
+        'Another valid',
+      ];
+
+      const result = createSuccessResult(query, data, true, 'localSearchCode', {
+        extraHints,
+      });
+
+      expect(result.hints).toBeDefined();
+      expect(result.hints).toContain('Valid hint');
+      expect(result.hints).toContain('Another valid');
+      // Non-string values should be filtered out
+      result.hints!.forEach(h => {
+        expect(typeof h).toBe('string');
+        expect(h.trim().length).toBeGreaterThan(0);
+      });
+    });
   });
 
   describe('createErrorResult', () => {
@@ -483,6 +510,26 @@ describe('Tools Utils', () => {
       expect(result?.hints).toBeDefined();
       expect(result?.hints).toContain('Check your GitHub token');
       expect(result?.hints).toContain('Verify token permissions');
+    });
+
+    it('should handle non-array hints in API result without crashing', () => {
+      const query = {
+        researchGoal: 'Find files',
+        reasoning: 'Searching',
+      };
+      const apiResult = {
+        error: 'Bad response',
+        type: 'http' as const,
+        status: 500,
+        hints: 'not-an-array' as unknown as string[],
+      };
+
+      const result = handleApiError(apiResult, query);
+
+      expect(result).not.toBeNull();
+      expect(result?.status).toBe('error');
+      // Should not crash and should not include the non-array hints
+      expect(!result?.hints || Array.isArray(result?.hints)).toBe(true);
     });
 
     it('should combine API hints with extracted error hints', () => {

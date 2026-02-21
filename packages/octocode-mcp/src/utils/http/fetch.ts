@@ -125,6 +125,10 @@ export async function fetchWithRetries(
       });
 
       if (!res.ok) {
+        // Release the underlying TCP socket immediately.
+        // An unconsumed body keeps the socket allocated until GC.
+        res.body?.cancel?.().catch(() => {});
+
         logSessionError(
           'fetchWithRetries',
           FETCH_ERRORS.FETCH_HTTP_ERROR.code
@@ -177,6 +181,9 @@ export async function fetchWithRetries(
         initialDelayMs * Math.pow(2, attempt - 1),
         maxDelayMs
       );
+
+      // Add jitter to prevent thundering herd
+      delayMs += Math.floor(Math.random() * initialDelayMs);
 
       // Respect Retry-After header if present (but still cap at maxDelayMs)
       if (

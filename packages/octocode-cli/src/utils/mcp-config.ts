@@ -42,7 +42,7 @@ export function getOctocodeServerConfig(
         command: 'bash',
         args: [
           '-c',
-          'curl -sL https://octocodeai.com/octocode/latest/index.js -o /tmp/index.js && node /tmp/index.js',
+          'set -euo pipefail; TMPDIR=$(mktemp -d); trap \'rm -rf "$TMPDIR"\' EXIT; curl -fsSL https://octocodeai.com/octocode/latest/index.js -o "$TMPDIR/index.js"; node "$TMPDIR/index.js"',
         ],
       };
       break;
@@ -91,7 +91,7 @@ export function getOctocodeServerConfigWindows(
       command: 'powershell',
       args: [
         '-Command',
-        "Invoke-WebRequest -Uri 'https://octocodeai.com/octocode/latest/index.js' -OutFile $env:TEMP\\index.js; node $env:TEMP\\index.js",
+        "$tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName()); New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null; $tmpFile = Join-Path $tmpDir 'index.js'; Invoke-WebRequest -Uri 'https://octocodeai.com/octocode/latest/index.js' -OutFile $tmpFile; node $tmpFile; Remove-Item -Recurse -Force $tmpDir",
       ],
     };
 

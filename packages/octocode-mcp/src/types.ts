@@ -246,6 +246,8 @@ export interface ServerConfig {
   maxRetries: number;
   loggingEnabled: boolean;
   enableLocal: boolean;
+  /** Whether clone/fetch repository functionality is enabled (requires enableLocal) */
+  enableClone: boolean;
   /** Whether prompts/slash commands are disabled */
   disablePrompts: boolean;
   tokenSource: TokenSourceType;

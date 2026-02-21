@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-> Common issues and solutions for Octocode MCP and Research Skill
+> Common issues and solutions for Octocode MCP.
 
 ## Quick Diagnostics
 
@@ -17,7 +17,7 @@ This will diagnose common Node.js issues and let your AI agent help resolve them
 ## Table of Contents
 
 - [1. npm Registry Issues](#1-npm-registry-issues)
-- [2. Node.js Version & Process Issues](#2-nodejs-version--process-issues)
+- [2. Node.js Version and Process Issues](#2-nodejs-version-and-process-issues)
 - [3. Authentication Issues](#3-authentication-issues)
 - [4. MCP Server Connection Issues](#4-mcp-server-connection-issues)
 - [5. Still Having Issues?](#5-still-having-issues)
@@ -88,7 +88,7 @@ npm cache clean --force
 
 ---
 
-## 2. Node.js Version & Process Issues
+## 2. Node.js Version and Process Issues
 
 ### Recommended: Let Your AI Agent Handle It
 
@@ -110,8 +110,8 @@ Simply paste the output into your conversation and let the agent resolve it.
 
 | Check | Description |
 |-------|-------------|
-| Node.js version | Minimum 20.0.0 required |
-| npm version | Minimum 10.0.0 required |
+| Node.js version | Minimum **20.0.0** required |
+| npm version | Minimum **10.0.0** required |
 | PATH configuration | Ensures Node is accessible |
 | Multiple installations | Detects nvm, homebrew, system conflicts |
 | Permission issues | Identifies npm/node_modules ownership problems |
@@ -120,7 +120,7 @@ Simply paste the output into your conversation and let the agent resolve it.
 
 ```bash
 node --version  # Should be >= 20.0.0
-npm --version   # Should be >= 8.0.0
+npm --version   # Should be >= 10.0.0
 which node      # Check which Node is being used
 which npm       # Should match Node installation
 ```
@@ -160,78 +160,11 @@ Or use an absolute path:
 
 ## 3. Authentication Issues
 
-> **Full authentication guide:** [Authentication Setup](../packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
+For detailed authentication setup and troubleshooting, see the [Authentication Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md).
 
-### Quick Auth Check
-
-```bash
-# Using Octocode CLI (recommended)
-npx octocode-cli
-# Select "Check GitHub Auth Status"
-
-# Or check GitHub CLI directly
-gh auth status
-```
-
-### Common Issues
-
-#### "No GitHub token found"
-
-1. **Run the CLI:**
-   ```bash
-   npx octocode-cli
-   # Select "Login to GitHub"
-   ```
-
-2. **Or use GitHub CLI:**
-   ```bash
-   gh auth login
-   ```
-
-3. **Check environment variable:**
-   ```bash
-   echo $GITHUB_TOKEN
-   ```
-
-#### "Token expired"
-
-```bash
-# Refresh via Octocode CLI
-npx octocode-cli
-# Select "Login to GitHub"
-
-# Or refresh via GitHub CLI
-gh auth refresh
-```
-
-#### "Bad credentials" or "401 Unauthorized"
-
-1. **Verify token is valid:**
-   ```bash
-   curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user
-   ```
-
-2. **Check token scopes:**
-   - Token needs: `repo`, `read:user`, `read:org`
-   - Create new token at: https://github.com/settings/tokens
-
-#### GitLab Authentication
-
-```bash
-# Check GitLab token
-echo $GITLAB_TOKEN
-
-# Test GitLab connection
-curl --header "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://gitlab.com/api/v4/user"
-```
-
-For self-hosted GitLab, also set:
-```bash
-export GITLAB_HOST="https://gitlab.your-company.com"
-```
-
----
-
+**Quick tips not covered there:**
+- **401/bad credentials:** Verify token: `curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user`. Ensure scopes include `repo`, `read:user`, `read:org`.
+- **GitLab:** Test connection: `curl --header "PRIVATE-TOKEN: $GITLAB_TOKEN" https://gitlab.com/api/v4/user`
 ## 4. MCP Server Connection Issues
 
 ### Server Not Starting
@@ -284,3 +217,11 @@ If your issue persists after trying the solutions above:
 2. **Report a new issue:** Include diagnostic output (`npx node-doctor info`), your environment details, and steps to reproduce
 
 We actively monitor and respond to issues!
+
+---
+
+## See Also
+
+- [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) — All env vars and `.octocoderc` options
+- [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) — GitHub/GitLab auth guide
+- [Development Guide](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md) — Build commands, testing, code standards

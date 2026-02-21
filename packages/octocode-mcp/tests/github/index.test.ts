@@ -81,6 +81,7 @@ describe('GitHub Index Exports', () => {
         'getOctokit',
         'OctokitWithThrottling',
         'clearOctokitInstances',
+        'resolveDefaultBranch',
         'handleGitHubAPIError',
         'buildCodeSearchQuery',
         'buildRepoSearchQuery',
@@ -115,6 +116,7 @@ describe('GitHub Index Exports', () => {
       const functionExports = [
         'getOctokit',
         'clearOctokitInstances',
+        'resolveDefaultBranch',
         'handleGitHubAPIError',
         'buildCodeSearchQuery',
         'buildRepoSearchQuery',

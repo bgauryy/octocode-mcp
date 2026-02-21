@@ -26,6 +26,9 @@ export function registerLocalFetchContentTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    withBasicSecurityValidation(executeFetchContent)
+    withBasicSecurityValidation(
+      executeFetchContent,
+      TOOL_NAMES.LOCAL_FETCH_CONTENT
+    )
   );
 }

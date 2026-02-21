@@ -233,6 +233,15 @@ export interface GotoDefinitionResult extends LSPToolResultBase {
   resolvedPosition?: ExactPosition;
   /** Search radius used */
   searchRadius?: number;
+  /** Output pagination metadata when response exceeds size limits */
+  outputPagination?: {
+    charOffset: number;
+    charLength: number;
+    totalChars: number;
+    hasMore: boolean;
+    currentPage: number;
+    totalPages: number;
+  };
 }
 
 /**
@@ -261,6 +270,15 @@ export interface CallHierarchyResult extends LSPToolResultBase {
   outgoingCalls?: OutgoingCall[];
   /** Pagination info */
   pagination?: LSPPaginationInfo;
+  /** Character-based output pagination (when output exceeds size limit) */
+  outputPagination?: {
+    charOffset: number;
+    charLength: number;
+    totalChars: number;
+    hasMore: boolean;
+    currentPage: number;
+    totalPages: number;
+  };
   /** Direction of the hierarchy search */
   direction?: 'incoming' | 'outgoing';
   /** Depth of the search */

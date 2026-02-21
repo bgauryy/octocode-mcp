@@ -19,16 +19,25 @@ export const LOCAL_FIND_FILES_DESCRIPTION =
  * Find files query schema
  */
 export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
-  path: z.string().describe(LOCAL_FIND_FILES.scope.path),
+  path: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine(value => !value.includes('\0'), {
+      message: 'path contains invalid null byte',
+    })
+    .describe(LOCAL_FIND_FILES.scope.path),
 
   maxDepth: z
     .number()
+    .int()
     .min(1)
     .max(10)
     .optional()
     .describe(LOCAL_FIND_FILES.options.maxDepth),
   minDepth: z
     .number()
+    .int()
     .min(0)
     .max(10)
     .optional()
@@ -37,7 +46,8 @@ export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
   name: z.string().optional().describe(LOCAL_FIND_FILES.filters.name),
   iname: z.string().optional().describe(LOCAL_FIND_FILES.filters.iname),
   names: z
-    .array(z.string())
+    .array(z.string().max(256))
+    .max(100)
     .optional()
     .describe(LOCAL_FIND_FILES.filters.names),
   pathPattern: z
@@ -88,12 +98,23 @@ export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
   writable: z.boolean().optional().describe(LOCAL_FIND_FILES.filters.writable),
 
   excludeDir: z
-    .array(z.string())
+    .array(z.string().max(256))
+    .max(100)
     .optional()
     .describe(LOCAL_FIND_FILES.filters.excludeDir),
 
+  sortBy: z
+    .enum(['modified', 'size', 'name', 'path'])
+    .optional()
+    .default('modified')
+    .describe(
+      LOCAL_FIND_FILES.sorting.sortBy ||
+        'Sort results by: modified (default), size, name, or path'
+    ),
+
   limit: z
     .number()
+    .int()
     .min(1)
     .max(10000)
     .optional()
@@ -104,7 +125,7 @@ export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
     .number()
     .int()
     .min(1)
-    .max(20)
+    .max(50)
     .optional()
     .default(20)
     .describe(LOCAL_FIND_FILES.pagination.filesPerPage),
@@ -118,12 +139,14 @@ export const FindFilesQuerySchema = BaseQuerySchemaLocal.extend({
 
   charOffset: z
     .number()
+    .int()
     .min(0)
     .optional()
     .describe(LOCAL_FIND_FILES.pagination.charOffset),
 
   charLength: z
     .number()
+    .int()
     .min(1)
     .max(10000)
     .optional()

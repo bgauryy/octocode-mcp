@@ -75,22 +75,15 @@ export function registerSearchGitHubPullRequestsTool(
           queries
         );
 
-        const longQueryIndex = queries.findIndex(hasQueryLengthError);
-        if (longQueryIndex !== -1) {
-          queries = queries.map((q, i) =>
-            i === longQueryIndex
-              ? addValidationError(q, VALIDATION_MESSAGES.QUERY_TOO_LONG)
-              : q
-          );
-        }
-
-        if (queries.length > 0 && !queries.some(hasValidSearchParams)) {
-          queries = queries.map((q, i) =>
-            i === 0
-              ? addValidationError(q, VALIDATION_MESSAGES.MISSING_PARAMS)
-              : q
-          );
-        }
+        queries = queries.map(q => {
+          if (hasQueryLengthError(q)) {
+            return addValidationError(q, VALIDATION_MESSAGES.QUERY_TOO_LONG);
+          }
+          if (!hasValidSearchParams(q)) {
+            return addValidationError(q, VALIDATION_MESSAGES.MISSING_PARAMS);
+          }
+          return q;
+        });
 
         return searchMultipleGitHubPullRequests({
           queries,
