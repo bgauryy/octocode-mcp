@@ -12,7 +12,9 @@ import { agentLog, successLog, errorLog, dimLog, warnLog } from './utils/colors.
 import { fireAndForgetWithTimeout } from './utils/asyncTimeout.js';
 import { errorQueue } from './utils/errorQueue.js';
 
-const PORT = 1987;
+const HOST = process.env.OCTOCODE_RESEARCH_HOST ?? 'localhost';
+const rawPort = process.env.OCTOCODE_RESEARCH_PORT;
+const PORT = rawPort ? Number(rawPort) : 1987;
 const MAX_IDLE_TIME_MS = 30 * 60 * 1000;  // 30 minutes idle before restart
 const IDLE_CHECK_INTERVAL_MS = 120 * 1000; // Check every 2 minute
 
@@ -200,11 +202,11 @@ export async function startServer(): Promise<void> {
   const app = await createServer();
   
   await new Promise<void>((resolve) => {
-    const httpServer = app.listen(PORT);
+    const httpServer = app.listen(PORT, HOST);
     server = httpServer;
     
     httpServer.on('listening', () => {
-      console.log(agentLog(`🔍 Octocode Research Server running on http://localhost:${PORT}`));
+      console.log(agentLog(`🔍 Octocode Research Server running on http://${HOST}:${PORT}`));
       console.log(dimLog(`⏳ initializing context...`));
       
       // Start background initialization (Warm Start)

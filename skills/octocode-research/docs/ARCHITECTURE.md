@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `octocode-research` skill is an HTTP API server that provides code research capabilities. It runs on `localhost:1987` and exposes REST endpoints that wrap the `octocode-mcp` tool functions.
+The `octocode-research` skill is an HTTP API server that provides code research capabilities. By default it runs on `localhost:1987` and exposes REST endpoints that wrap the `octocode-mcp` tool functions. The host and port can be overridden via the `OCTOCODE_RESEARCH_HOST` and `OCTOCODE_RESEARCH_PORT` environment variables.
 
 **Key Design**: All tools are executed via a unified `POST /tools/call/:toolName` endpoint, NOT individual GET routes.
 
