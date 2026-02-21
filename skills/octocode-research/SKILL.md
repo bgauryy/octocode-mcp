@@ -59,7 +59,7 @@ Each phase MUST complete before proceeding to the next. **FORBIDDEN**: Skipping 
 ### Server Configuration
 
 <server>
-   <description>MCP-like implementation over http://localhost:1987</description>
+   <description>MCP-like implementation over http://localhost:1987 by default (configurable via OCTOCODE_RESEARCH_HOST / OCTOCODE_RESEARCH_PORT)</description>
    <port>1987</port>
 </server>
 
@@ -115,8 +115,8 @@ The script handles health checks, startup, and waiting automatically with mutex 
 | Problem | Cause | Solution |
 |---------|-------|----------|
 | `Missing script: server-init` | Wrong directory | **STOP.** Check "Base directory for this skill" in system message |
-| Health check fails | Server starting | Wait a few seconds, retry `curl http://localhost:1987/health` |
-| Port 1987 in use | Previous instance | Run `lsof -i :1987` then `kill <PID>` |
+| Health check fails | Server starting | Wait a few seconds, retry `curl http://localhost:1987/health` (or your configured host/port) |
+| Port 1987 (or your configured port) in use | Previous instance | Run `lsof -i :1987` (or your configured port) then `kill <PID>` |
 
 #### Retry Policy
 
@@ -148,9 +148,9 @@ App logs with rotation at `~/.octocode/logs/` (errors.log, tools.log).
 
 | # | Step | Command | Output to User |
 |---|------|---------|----------------|
-| 1 | Load context | `curl http://localhost:1987/tools/initContext` | "Context loaded" |
+| 1 | Load context | `curl http://localhost:1987/tools/initContext` (or your configured host/port) | "Context loaded" |
 | 2 | Choose prompt | Match user intent → prompt table below | "Using `{prompt}` prompt for this research" |
-| 3 | Load prompt | `curl http://localhost:1987/prompts/info/{prompt}` | - |
+| 3 | Load prompt | `curl http://localhost:1987/prompts/info/{prompt}` (or your configured host/port) | - |
 | 4 | Confirm ready | Read & understand prompt instructions | "Ready to plan research" |
 
 ### FORBIDDEN Until Context Loaded
