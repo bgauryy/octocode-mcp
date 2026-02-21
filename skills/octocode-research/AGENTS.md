@@ -1,13 +1,14 @@
 # Octocode Research Skill - Agent Development Guide
 
-> HTTP API server wrapping `octocode-mcp` tools for code research at `localhost:1987`
+> HTTP API server wrapping `octocode-mcp` tools for code research at `localhost:1987` by default (configurable via `OCTOCODE_RESEARCH_HOST` / `OCTOCODE_RESEARCH_PORT`)
 
 ## Project Overview
 
 | Attribute | Value |
 |-----------|-------|
 | **Type** | Express.js HTTP Server |
-| **Port** | 1987 |
+| **Host** | localhost (default) |
+| **Port** | 1987 (default) |
 | **Package** | `octocode-research` |
 | **Version** | 2.0.0 |
 | **Main Dependency** | `octocode-mcp` |

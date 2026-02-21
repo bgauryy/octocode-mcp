@@ -1,6 +1,6 @@
 # Octocode Research API Reference
 
-> HTTP API on `localhost:1987` - All tools via POST `/tools/call/:toolName`
+> HTTP API on `localhost:1987` by default (configurable via `OCTOCODE_RESEARCH_HOST` / `OCTOCODE_RESEARCH_PORT`) - All tools via POST `/tools/call/:toolName`
 > **v2.1.0** - Process managed by PM2
 
 ## Quick Start

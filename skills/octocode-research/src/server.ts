@@ -12,7 +12,27 @@ import { agentLog, successLog, errorLog, dimLog, warnLog } from './utils/colors.
 import { fireAndForgetWithTimeout } from './utils/asyncTimeout.js';
 import { errorQueue } from './utils/errorQueue.js';
 
-const PORT = 1987;
+const HOST = process.env.OCTOCODE_RESEARCH_HOST || 'localhost';
+
+const getPort = (raw?: string): number => {
+  const DEFAULT_PORT = 1987;
+  if (!raw) return DEFAULT_PORT;
+
+  const port = Number(raw);
+
+  // Strictly allow only the non-privileged, user-registered range
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw new Error(
+      `Invalid OCTOCODE_RESEARCH_PORT: "${raw}". ` +
+      `Please provide an integer between 1024 and 65535.`
+    );
+  }
+
+  return port;
+};
+
+const PORT = getPort(process.env.OCTOCODE_RESEARCH_PORT);
+
 const MAX_IDLE_TIME_MS = 30 * 60 * 1000;  // 30 minutes idle before restart
 const IDLE_CHECK_INTERVAL_MS = 120 * 1000; // Check every 2 minute
 
@@ -88,6 +108,7 @@ export async function createServer(): Promise<Express> {
 
     res.json({
       status: initialized ? 'ok' : 'initializing',
+      host: HOST,
       port: PORT,
       version: '2.2.0',
       uptime: Math.floor(process.uptime()),
@@ -200,11 +221,11 @@ export async function startServer(): Promise<void> {
   const app = await createServer();
   
   await new Promise<void>((resolve) => {
-    const httpServer = app.listen(PORT);
+    const httpServer = app.listen(PORT, HOST);
     server = httpServer;
     
     httpServer.on('listening', () => {
-      console.log(agentLog(`🔍 Octocode Research Server running on http://localhost:${PORT}`));
+      console.log(agentLog(`🔍 Octocode Research Server running on http://${HOST}:${PORT}`));
       console.log(dimLog(`⏳ initializing context...`));
       
       // Start background initialization (Warm Start)

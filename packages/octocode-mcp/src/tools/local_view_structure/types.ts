@@ -63,6 +63,7 @@ export interface ViewStructureResult {
   entries?: Array<{
     name: string;
     type: 'file' | 'dir' | 'link';
+    depth?: number;
     size?: string;
     modified?: string;
     permissions?: string;

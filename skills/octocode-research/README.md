@@ -65,7 +65,11 @@ npx add-skill https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-
 cd skills/octocode-research
 npm install && npm start
 
-# Verify it's running
+> By default the server listens on `localhost:1987`. You can override this with:
+> - `OCTOCODE_RESEARCH_HOST` (default: `localhost`)
+> - `OCTOCODE_RESEARCH_PORT` (default: `1987`)
+
+# Verify it's running (defaults to localhost:1987)
 curl http://localhost:1987/health
 ```
 

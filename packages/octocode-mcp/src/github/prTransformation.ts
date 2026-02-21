@@ -117,16 +117,8 @@ export function truncatePRBody(
 /**
  * Format a transformed PR item for API response output.
  * Standardizes the output format across all PR search/fetch methods.
- *
- * @param pr - The transformed PR item
- * @param bodyLimit - Optional character limit for the body field.
- *   When provided, bodies exceeding this limit are truncated with a hint.
- *   Use `getBodyLimitForBatchSize()` to compute from the query's `limit` parameter.
  */
-export function formatPRForResponse(
-  pr: GitHubPullRequestItem,
-  bodyLimit?: number
-) {
+export function formatPRForResponse(pr: GitHubPullRequestItem) {
   return {
     number: pr.number,
     title: pr.title,
@@ -143,7 +135,7 @@ export function formatPRForResponse(
     ...(pr.head_sha ? { head_sha: pr.head_sha } : {}),
     base_ref: pr.base || '',
     ...(pr.base_sha ? { base_sha: pr.base_sha } : {}),
-    body: truncatePRBody(pr.body, pr.number, bodyLimit),
+    body: pr.body,
     comments: pr.comments?.length || 0,
     commits: pr.commits?.length || 0,
     additions:

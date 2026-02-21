@@ -26,18 +26,11 @@ import { generateCacheKey, withDataCache } from '../utils/http/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 // Re-export public symbols from split modules
-export {
-  formatPRForResponse,
-  getBodyLimitForBatchSize,
-  truncatePRBody,
-} from './prTransformation.js';
+export { formatPRForResponse } from './prTransformation.js';
 export { transformPullRequestItemFromREST } from './prContentFetcher.js';
 export { fetchGitHubPullRequestByNumberAPI } from './prByNumber.js';
 
-import {
-  formatPRForResponse,
-  getBodyLimitForBatchSize,
-} from './prTransformation.js';
+import { formatPRForResponse } from './prTransformation.js';
 import {
   transformPullRequestItemFromSearch,
   transformPullRequestItemFromREST,
@@ -186,10 +179,7 @@ async function searchGitHubPullRequestsAPIInternal(
       })
     );
 
-    const bodyLimit = getBodyLimitForBatchSize(params.limit);
-    const formattedPRs = transformedPRs.map(pr =>
-      formatPRForResponse(pr, bodyLimit)
-    );
+    const formattedPRs = transformedPRs.map(formatPRForResponse);
 
     const totalMatches = Math.min(searchResult.data.total_count, 1000);
     const totalPages = Math.min(Math.ceil(totalMatches / perPage), 10);
@@ -251,10 +241,7 @@ async function searchPullRequestsWithREST(
       })
     );
 
-    const bodyLimit = getBodyLimitForBatchSize(params.limit);
-    const formattedPRs = transformedPRs.map(pr =>
-      formatPRForResponse(pr, bodyLimit)
-    );
+    const formattedPRs = transformedPRs.map(formatPRForResponse);
 
     const hasMore = result.data.length === perPage;
 

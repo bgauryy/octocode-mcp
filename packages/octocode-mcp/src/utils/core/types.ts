@@ -128,7 +128,7 @@ export interface SearchStats {
  */
 export interface RipgrepMatch {
   value: string; // Match + context, max 200 chars
-  line?: number; // Line number (1-indexed) for human reference
+  line: number; // Line number (1-indexed) — use as lineHint for LSP tools
   column?: number; // Column number (0-indexed) for human reference
 }
 
@@ -189,6 +189,7 @@ export interface ViewStructureResult extends BaseQuery {
   entries?: Array<{
     name: string;
     type: 'file' | 'dir' | 'link';
+    depth?: number;
     size?: string;
     modified?: string;
     permissions?: string;

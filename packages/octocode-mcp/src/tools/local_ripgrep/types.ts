@@ -62,7 +62,7 @@ export interface RipgrepSearchQuery {
  */
 export interface RipgrepMatch {
   value: string;
-  line?: number;
+  line: number;
   column?: number;
 }
 

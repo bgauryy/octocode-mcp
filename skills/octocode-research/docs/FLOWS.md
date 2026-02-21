@@ -22,7 +22,7 @@
 
 The **octocode-research** skill is a lightweight HTTP API server that wraps `octocode-mcp` tools for code research. It provides:
 
-- **HTTP Interface**: REST API on `localhost:1987`
+- **HTTP Interface**: REST API on `localhost:1987` by default (configurable via `OCTOCODE_RESEARCH_HOST` / `OCTOCODE_RESEARCH_PORT`)
 - **HTTP Clients**: curl, fetch, or any HTTP client
 - **Unified Tool API**: All tools via `POST /tools/call/:toolName`
 - **Resilience**: Circuit breaker + retry patterns for reliability
