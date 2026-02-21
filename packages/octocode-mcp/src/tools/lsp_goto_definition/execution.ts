@@ -143,7 +143,13 @@ async function gotoDefinition(
     // Fallback: Return the resolved position as the "definition"
     // This is less accurate but works without a language server
     return applyGotoDefinitionOutputLimit(
-      createFallbackResult(query, absolutePath, content, resolver, resolvedSymbol),
+      createFallbackResult(
+        query,
+        absolutePath,
+        content,
+        resolver,
+        resolvedSymbol
+      ),
       query
     );
   } catch (error) {

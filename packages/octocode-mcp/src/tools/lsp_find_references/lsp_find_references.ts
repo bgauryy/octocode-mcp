@@ -56,7 +56,10 @@ export function registerLSPFindReferencesTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    withBasicSecurityValidation(executeFindReferences, STATIC_TOOL_NAMES.LSP_FIND_REFERENCES)
+    withBasicSecurityValidation(
+      executeFindReferences,
+      STATIC_TOOL_NAMES.LSP_FIND_REFERENCES
+    )
   );
 }
 

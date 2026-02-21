@@ -57,7 +57,10 @@ export function registerLocalViewStructureTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    withBasicSecurityValidation(executeViewStructure, TOOL_NAMES.LOCAL_VIEW_STRUCTURE)
+    withBasicSecurityValidation(
+      executeViewStructure,
+      TOOL_NAMES.LOCAL_VIEW_STRUCTURE
+    )
   );
 }
 

@@ -216,7 +216,7 @@ export async function searchMultipleGitHubPullRequests(
           fileChangeHints.push(
             `Large PR(s) ${prNumbers} have ${maxFiles}+ file changes`,
             'Use charOffset/charLength to paginate through full output',
-            "Or use type='partialContent' with partialContentMetadata=[{file: \"path/to/file.ts\"}] for targeted file diffs"
+            'Or use type=\'partialContent\' with partialContentMetadata=[{file: "path/to/file.ts"}] for targeted file diffs'
           );
         }
 

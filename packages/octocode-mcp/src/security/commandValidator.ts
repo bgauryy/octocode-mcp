@@ -41,9 +41,7 @@ const RG_ALLOWED_FLAGS = new Set([
 
 /** Single-character flags extracted from RG_ALLOWED_FLAGS for bundle validation */
 const RG_ALLOWED_SHORT_FLAGS = new Set(
-  [...RG_ALLOWED_FLAGS]
-    .filter(f => /^-[a-zA-Z]$/.test(f))
-    .map(f => f[1]!)
+  [...RG_ALLOWED_FLAGS].filter(f => /^-[a-zA-Z]$/.test(f)).map(f => f[1]!)
 );
 
 const RG_ALLOWED_FLAGS_WITH_VALUES = new Set([

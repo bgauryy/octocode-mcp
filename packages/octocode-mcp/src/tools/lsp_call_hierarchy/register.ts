@@ -25,6 +25,9 @@ export function registerLSPCallHierarchyTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    withBasicSecurityValidation(executeCallHierarchy, STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY)
+    withBasicSecurityValidation(
+      executeCallHierarchy,
+      STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY
+    )
   );
 }

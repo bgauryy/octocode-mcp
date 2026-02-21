@@ -79,7 +79,10 @@ export async function enhanceIncomingCalls(
   for (const call of calls) {
     try {
       const fileContent = await safeReadFile(call.from.uri);
-      if (!fileContent) { enhanced.push(call); continue; }
+      if (!fileContent) {
+        enhanced.push(call);
+        continue;
+      }
       const enhancedFrom = await enhanceCallHierarchyItem(
         call.from,
         fileContent,
@@ -110,7 +113,10 @@ export async function enhanceOutgoingCalls(
   for (const call of calls) {
     try {
       const fileContent = await safeReadFile(call.to.uri);
-      if (!fileContent) { enhanced.push(call); continue; }
+      if (!fileContent) {
+        enhanced.push(call);
+        continue;
+      }
       const enhancedTo = await enhanceCallHierarchyItem(
         call.to,
         fileContent,
